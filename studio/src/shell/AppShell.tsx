@@ -45,6 +45,7 @@ const CompletionScreen = lazy(() => import('../screens/Completion').then((m) => 
 const SettingsScreen = lazy(() => import('../screens/Settings').then((m) => ({ default: m.SettingsScreen })));
 const AgentsScreen = lazy(() => import('../screens/Agents').then((m) => ({ default: m.AgentsScreen })));
 const SkillsScreen = lazy(() => import('../screens/Skills').then((m) => ({ default: m.SkillsScreen })));
+const OnboardingScreen = lazy(() => import('../screens/Onboarding'));
 /* cmdk rides in with the first Ctrl+K, not with the page. */
 const CommandPalette = lazy(() => import('./CommandPalette').then((m) => ({ default: m.CommandPalette })));
 const Tour = lazy(() => import('./Tour').then((m) => ({ default: m.Tour })));
@@ -234,6 +235,7 @@ function RouteBody() {
         <Route path="/settings" element={<SettingsScreen />} />
         <Route path="/agents" element={<AgentsScreen />} />
         <Route path="/skills" element={<SkillsScreen />} />
+        <Route path="/setup" element={<OnboardingScreen />} />
         {/*
           Two paths the interface Studio replaced used to own, and that are
           sitting in people's bookmarks and in the server's route whitelist.

@@ -14,6 +14,7 @@ import asyncio
 from contextlib import contextmanager
 from typing import Any, Dict, List, Optional, Set, TextIO, Tuple
 from src.database import McpServer, SessionLocal
+from src import safe_mode
 
 from src.native_env import (
     PROFILE_MCP,
@@ -546,6 +547,9 @@ class McpManager:
                 stderr_tail=read_stderr_tail(server_id) if transport == "stdio" else "")
             self._connections[server_id] = {"status": "error", "error": error_message, "name": name}
             self._generation += 1
+            # OPS-05: tell safe_mode about this outcome so a server that keeps
+            # failing gets quarantined automatically — see src/safe_mode.py.
+            safe_mode.record_mcp_connection(server_id, "error")
             return False
 
     async def _connect_stdio(self, server_id: str, name: str, command: str, args: List[str],
@@ -576,6 +580,7 @@ class McpManager:
                 "error": "mcp package not installed",
                 "name": name,
             }
+            safe_mode.record_mcp_connection(server_id, "error")
             return False
 
         server_params = StdioServerParameters(
@@ -763,6 +768,7 @@ class McpManager:
         except ImportError:
             logger.warning("MCP package not installed. Install with: pip install mcp")
             self._connections[server_id] = {"status": "error", "error": "mcp package not installed", "name": name}
+            safe_mode.record_mcp_connection(server_id, "error")
             return False
 
     async def _start_http_connect(self, server_id: str, name: str, url: str, wait: float = 8.0) -> bool:
@@ -779,6 +785,7 @@ class McpManager:
                 return task.result()
             except Exception as e:
                 self._connections[server_id] = {"status": "error", "error": str(e), "name": name}
+                safe_mode.record_mcp_connection(server_id, "error")
                 return False
         # Still running → either awaiting authorization, or discovery/DCR is
         # still in flight. If _on_redirect already published needs_auth+auth_url,
@@ -790,6 +797,7 @@ class McpManager:
                 "status": "needs_auth", "name": name, "transport": "http",
                 "auth_url": pop_auth_url(server_id),
             }
+            safe_mode.record_mcp_connection(server_id, "needs_auth")
         return False
 
     async def _connect_http(self, server_id: str, name: str, url: str) -> bool:
@@ -807,6 +815,7 @@ class McpManager:
                     "status": "needs_auth", "name": name, "transport": "http",
                     "auth_url": auth_url,
                 }
+                safe_mode.record_mcp_connection(server_id, "needs_auth")
 
             provider = build_provider(server_id, url, on_redirect=_on_redirect)
             stack = AsyncExitStack()
@@ -841,10 +850,12 @@ class McpManager:
         except ImportError:
             logger.warning("MCP package not installed. Install with: pip install mcp")
             self._connections[server_id] = {"status": "error", "error": "mcp package not installed", "name": name}
+            safe_mode.record_mcp_connection(server_id, "error")
             return False
         except Exception as e:
             logger.error(f"Failed to connect HTTP MCP server {name} ({server_id}): {e}")
             self._connections[server_id] = {"status": "error", "error": str(e), "name": name}
+            safe_mode.record_mcp_connection(server_id, "error")
             return False
 
     async def disconnect_server(self, server_id: str):
@@ -1158,6 +1169,7 @@ class McpManager:
                         "error": "server process exited and could not be restarted",
                     }
                     self._generation += 1
+                    safe_mode.record_mcp_connection(server_id, "error")
             return ok
 
     def get_all_openai_schemas(self, disabled_map: Optional[Dict[str, set]] = None) -> List[Dict]:

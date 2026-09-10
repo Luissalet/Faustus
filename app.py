@@ -1537,6 +1537,21 @@ app.router.lifespan_context = _lifespan
 async def _startup_event():
     global upload_cleanup_task
     logger.info("Application starting up...")
+    # OPS-05: mark this boot attempt before anything risky below runs. Most
+    # real launch paths (Docker, the Windows/macOS scripts, `uvicorn app:app`
+    # directly) invoke this lifespan without going through launcher.py's own
+    # mark_boot_started/mark_boot_completed pair around the module import —
+    # so for them this is the ONLY boot-failure signal that ever gets
+    # recorded. `mark_boot_completed()` runs at the very end of this
+    # function; a crash anywhere between here and there leaves the boot
+    # "in progress", and two such unfinished boots in a row put the next
+    # launch into safe mode on its own (src/safe_mode.py). Best-effort: a
+    # settings-write hiccup here must never block starting the app itself.
+    try:
+        from src import safe_mode
+        safe_mode.mark_boot_started()
+    except Exception as e:
+        logger.debug(f"safe_mode boot marker skipped: {e}")
     # uvicorn installs its handlers after this module is imported, so the
     # redaction has to be re-applied to reach `uvicorn.access` and friends.
     install_secret_redaction()
@@ -1953,6 +1968,13 @@ async def _startup_event():
     # A snapshot for diagnostics only. The supervisor owns these; nothing may
     # rely on this list to keep a task alive or to find it at shutdown.
     app.state._startup_tasks = _supervisor.live()
+    # OPS-05: startup actually finished — clear the boot marker set above so
+    # the next launch does not count this one as unfinished.
+    try:
+        from src import safe_mode
+        safe_mode.mark_boot_completed()
+    except Exception as e:
+        logger.debug(f"safe_mode boot marker skipped: {e}")
     logger.info("Application startup complete")
 
 async def _shutdown_event():

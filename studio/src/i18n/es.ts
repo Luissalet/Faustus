@@ -624,6 +624,7 @@ export const es: Record<string, string> = {
   "Changes accounted for": "Cambios que el ledger justifica",
   "Changes against what was claimed": "Cambios frente a lo afirmado",
   "Changes applied to the editor; save to keep them.": "Cambios aplicados al editor; guarda para conservarlos.",
+  "Changing the default model changes:\\n{changes}\\n\\nContinue?": "Cambiar el modelo por defecto cambia:\\n{changes}\\n\\n¿Continuar?",
   "Channel": "Canal",
   "Character cap": "Tope de caracteres",
   "Chat": "Chat",

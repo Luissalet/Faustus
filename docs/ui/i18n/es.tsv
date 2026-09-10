@@ -5907,6 +5907,7 @@ Verify the latest snapshot restores	Verificar que la última copia restaura
 What this machine can actually do, asked rather than assumed — the same report as `python -m src.doctor`.	Lo que esta máquina puede hacer de verdad, preguntado en vez de asumido — el mismo informe que `python -m src.doctor`.
 held back	retenido
 An admin account, a model provider and the data folder are all in place. Start a chat, or open Diagnostics for the full picture.	Ya hay una cuenta de administrador, un proveedor de modelos y la carpeta de datos. Empieza un chat, o abre Diagnóstico para ver el panorama completo.
+Changing the default model changes:\n{changes}\n\nContinue?	Cambiar el modelo por defecto cambia:\n{changes}\n\n¿Continuar?
 Checking what is set up	Comprobando qué está configurado
 Could not check what is set up yet	No se pudo comprobar todavía qué está configurado
 Faustus is ready	Faustus está listo

@@ -7,6 +7,22 @@ BENCH-02, BASE-02, ARCH-02), que sigue siendo la fuente de verdad para el
 resto de filas — este documento solo profundiza en las seis que tocaron
 estos dos lotes.
 
+**Re-verificado en el lote 37** (resto de la integración de la ola 5):
+`python3 scripts/ui_smoke.py` se ejecutó de nuevo en modo `live` (Chromium
+real disponible en este sandbox, a diferencia de los lotes 35/36). El
+`client_message_id` sigue sin quitarse de la petición (confirmado leyendo el
+script — ver la cabecera "FIXED (integration lot 36)" del propio fichero) y
+el resultado es idéntico, campo por campo, al documentado abajo para el lote
+36: `login`, `new_conversation` y los tres paneles de `Settings` en verde;
+`send_message_and_question_card` sigue en rojo con el mismo
+`TimeoutError` esperando `[data-testid="studio-question"]`, por el mismo
+hallazgo NUEVO (routing "low signal") descrito más abajo — no un bug distinto
+ni una regresión. `logs/ui_smoke/result.json` quedó regenerado con esta
+ejecución. `src/agent_loop.py` no estaba en el `PROPIOS` de este lote para
+ese heurístico de enrutamiento (solo la unificación de
+`_AGENT_PREAMBLE`/`_API_AGENT_RULES`, ya hecha en el lote 36), así que el
+hallazgo sigue abierto para un lote futuro con ese fichero en su `PROPIOS`.
+
 | ID | Estado | Dónde vive | Qué falta / nota |
 |---|---|---|---|
 | EVAL-01 | verde | `tests/eval/` (harness, tasks, tests), `scripts/eval_run.py`, `tests/eval/baseline.json` | `--live` (modelo real) está escrito y probado en su forma (`test_run_live_is_wired_but_not_exercised`) pero no ejecutado: este sandbox no tiene un endpoint de modelo real. |

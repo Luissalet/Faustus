@@ -23,6 +23,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router';
 import { Button, EmptyState, IconButton, Skeleton, Toast } from '../components';
+import { getJson } from '../adapters/api';
 import {
   addEndpoint,
   comboFromEvent,
@@ -277,6 +278,41 @@ const DEFAULT_KEYS = [
   'chat_versions', 'chat_versions_keep', 'chat_versions_keep_hours',
 ];
 
+/**
+ * SET-05: what changes (privacy, cost) when the default provider/model
+ * moves from one endpoint to another — `GET /api/setup/provider-change-preview`
+ * (routes/diagnostics_routes.py). Mirrors that route's response shape.
+ */
+interface ProviderChangePreview {
+  ok: boolean;
+  changes: string[];
+}
+
+/**
+ * Whether saving `changed` needs a provider-change preview at all, and what
+ * to ask the route for. Pure on purpose (no fetch, no window.confirm) so
+ * `studio/checks/l37-provider-change-preview.check.mjs` can exercise the
+ * decision directly, without rendering the screen: only an ACTUAL move from
+ * one endpoint to a DIFFERENT one is worth a round trip — a model swap on
+ * the same endpoint, or an unrelated field changing, changes neither privacy
+ * nor cost and must never prompt.
+ */
+export function providerChangeQuery(
+  savedDefaultEndpointId: unknown,
+  changed: Settings,
+): { from: string; to: string } | null {
+  const from = str(savedDefaultEndpointId);
+  const to = typeof changed.default_endpoint_id === 'string' ? changed.default_endpoint_id : '';
+  if (!to || to === from) return null;
+  return { from, to };
+}
+
+/** Only a preview that both loaded AND found a real difference is worth
+ * interrupting the save for — see `providerChangeQuery` above. */
+export function shouldConfirmBeforeSaving(preview: ProviderChangePreview): boolean {
+  return preview.ok && preview.changes.length > 0;
+}
+
 function ModelPair({ idPrefix, label, help, endpoints, draft, set, epKey, modelKey, allowEmpty }: { idPrefix: string; label: string; help?: string; endpoints: ModelEndpoint[]; draft: Settings; set: (k: string, v: unknown) => void; epKey: string; modelKey: string; allowEmpty?: string }) {
   const epId = str(draft[epKey]);
   const ep = endpoints.find((e) => e.id === epId);
@@ -295,6 +331,25 @@ function DefaultsSection({ settings, endpoints, onSave, say }: { settings: Setti
   const { draft, set, changed, dirty } = useDraft(settings, DEFAULT_KEYS);
   const [saving, setSaving] = useState(false);
   const save = async () => {
+    // SET-05: the default provider/model is a "consciously" change — before
+    // it is saved, preview what moves (privacy, cost) and let the person
+    // back out. Advisory: a preview that fails to load must never block the
+    // save it was only meant to inform.
+    const query = providerChangeQuery(settings?.default_endpoint_id, changed);
+    if (query) {
+      try {
+        const params = new URLSearchParams({ from_endpoint_id: query.from, to_endpoint_id: query.to });
+        const preview = await getJson<ProviderChangePreview>(`/api/setup/provider-change-preview?${params.toString()}`);
+        if (shouldConfirmBeforeSaving(preview)) {
+          const proceed = window.confirm(
+            t('Changing the default model changes:\n{changes}\n\nContinue?', { changes: preview.changes.join('\n') }),
+          );
+          if (!proceed) return;
+        }
+      } catch {
+        // Advisory only — see comment above.
+      }
+    }
     setSaving(true);
     try {
       await onSave(changed);
