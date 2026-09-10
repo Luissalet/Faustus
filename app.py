@@ -1407,15 +1407,27 @@ def _served_studio_info() -> Dict[str, Optional[str]]:
     substitution itself uses) rather than hashing the file a second way.
     """
     from src.app_helpers import asset_version
-    path = abs_join(BASE_DIR, "static/index.html")
-    info: Dict[str, Optional[str]] = {"path": "static/index.html", "mtime": None, "sha": None}
-    try:
-        stat = os.stat(path)
-        stamp = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc)
-        info["mtime"] = stamp.replace(microsecond=0).isoformat().replace("+00:00", "Z")
-        info["sha"] = asset_version(path)
-    except OSError:
-        pass
+
+    def _stamp(rel: str) -> Dict[str, Optional[str]]:
+        path = abs_join(BASE_DIR, rel)
+        info: Dict[str, Optional[str]] = {"path": rel, "mtime": None, "sha": None}
+        try:
+            stat = os.stat(path)
+            stamp = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc)
+            info["mtime"] = stamp.replace(microsecond=0).isoformat().replace("+00:00", "Z")
+            info["sha"] = asset_version(path)
+        except OSError:
+            pass
+        return info
+
+    info = _stamp("static/index.html")
+    # The shell is stable across builds; what changes when Studio is rebuilt
+    # is the bundle the shell loads, `/static/studio/studio.js?v=<sha>`, and
+    # that `v=` is exactly asset_version() of this file. Seen live on the
+    # 7001 (10-09-2026): the shell said 05-09 after a fresh build, the
+    # bundle said the build. So the bundle is the line that answers "which
+    # Studio am I actually running".
+    info["bundle"] = _stamp("static/studio/studio.js")  # type: ignore[assignment]
     return info
 
 

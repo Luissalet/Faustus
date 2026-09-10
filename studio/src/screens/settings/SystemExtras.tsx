@@ -25,7 +25,13 @@ export function SystemExtras({ say }: { say: (t: string) => void }) {
 interface VersionInfo {
   version: string;
   build: { sha: string | null; date: string | null };
-  served_studio: { mtime: string | null; sha: string | null };
+  served_studio: {
+    mtime: string | null;
+    sha: string | null;
+    /** The bundle the shell loads (`studio.js?v=<sha>`): the shell's own hash
+     *  does not move when Studio is rebuilt, this one does. */
+    bundle?: { mtime: string | null; sha: string | null };
+  };
 }
 
 function VersionCard() {
@@ -58,7 +64,9 @@ function VersionCard() {
                 v: info.version,
                 sha: info.build.sha,
                 date: info.build.date ?? '?',
-                served: info.served_studio.sha,
+                served: info.served_studio.bundle?.sha
+                  ? `${info.served_studio.bundle.sha} (${info.served_studio.bundle.mtime ?? '?'})`
+                  : info.served_studio.sha,
               })
             : t('Version {v}', { v: info.version })}
         </p>

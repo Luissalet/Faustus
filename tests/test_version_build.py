@@ -42,7 +42,10 @@ def test_version_endpoint_reports_build_and_served_studio(client: TestClient) ->
     assert body["build"]["date"].endswith("Z")
 
     assert "served_studio" in body
-    assert set(body["served_studio"].keys()) == {"path", "mtime", "sha"}
+    assert set(body["served_studio"].keys()) == {"path", "mtime", "sha", "bundle"}
+    # The bundle the shell loads is what a rebuild changes; the shell is not.
+    assert body["served_studio"]["bundle"]["path"] == "static/studio/studio.js"
+    assert set(body["served_studio"]["bundle"].keys()) == {"path", "mtime", "sha"}
     assert body["served_studio"]["path"] == "static/index.html"
     assert body["served_studio"]["mtime"] is not None
     assert body["served_studio"]["sha"] is not None
