@@ -18,6 +18,9 @@ MIN_INLINE_ATTACHMENT_SLICE = 500
 MAX_PDF_INLINE_CHARS = 15000
 MAX_PDF_ATTACHMENT_PAGES = 100
 MAX_PDF_ATTACHMENT_VISION_CALLS = 6
+# IDX-04: past this, don't even try to open the file inline — report the
+# size and point at the original instead of risking a slow/oversized parse.
+MAX_PDF_FILE_BYTES = 200 * 1024 * 1024
 
 
 def _is_text_file(path: str) -> bool:
@@ -118,13 +121,79 @@ def _process_pdf(path: str, owner: str | None = None) -> str:
 
     Stop work before producing text we would discard. The original uploaded
     file remains available for explicit page inspection/full indexing.
+
+    IDX-04: a huge, corrupted or password-protected file gets a LOCALIZED
+    error naming the file and the reason — never the generic
+    ``[PDF processing failed: ...]`` this function used to fall back to for
+    every failure mode alike, and never a silently empty result presented as
+    "read". A scanned page with no extractable text still falls back to
+    vision (unchanged from before); the returned text now also carries a
+    ``[PDF summary: pages=N, text_pages=M, needs_ocr=true/false]`` line so a
+    caller can tell "this PDF has no text at all" from "some pages were
+    skipped for budget" without re-parsing the preview.
     """
     try:
         from pypdf import PdfReader
+        from pypdf.errors import PdfReadError
+
+        try:
+            file_size = os.path.getsize(path)
+        except OSError:
+            file_size = 0
+        if file_size > MAX_PDF_FILE_BYTES:
+            return (
+                f"\n\n[PDF too large to process inline: {os.path.basename(path)} "
+                f"({file_size:,} bytes, limit {MAX_PDF_FILE_BYTES:,}). Inspect the "
+                "original file directly instead of relying on this preview.]"
+            )
+
+        try:
+            reader = PdfReader(path)
+        except PdfReadError as e:
+            return (f"\n\n[PDF appears corrupted and could not be parsed: "
+                    f"{os.path.basename(path)} ({e})]")
+        except Exception as e:
+            # Malformed/truncated PDFs can raise other exception types deep
+            # inside the parser (ValueError, struct.error, KeyError, …). A
+            # PDF that cannot be opened at all is a corruption to report, not
+            # a document to skip in silence.
+            return (f"\n\n[PDF appears corrupted and could not be parsed: "
+                    f"{os.path.basename(path)} ({e})]")
+
+        # Encryption is checked BEFORE any `.pages` access: pypdf raises
+        # FileNotDecryptedError (a PdfReadError) from page/xref access on a
+        # still-locked reader, which would otherwise be reported as generic
+        # corruption instead of the specific "needs a password" reason.
+        if getattr(reader, "is_encrypted", False):
+            unlocked = False
+            try:
+                # Many "protected" PDFs only restrict permissions/printing
+                # and open with an empty user password; try that once before
+                # reporting it as unreadable.
+                unlocked = bool(reader.decrypt(""))
+            except Exception:
+                unlocked = False
+            if not unlocked:
+                return (
+                    f"\n\n[PDF is password-protected and could not be read: "
+                    f"{os.path.basename(path)}. Provide the password or an "
+                    "unlocked copy.]"
+                )
+
+        try:
+            total_pages = len(reader.pages)  # forces xref/structure parsing now
+        except PdfReadError as e:
+            return (f"\n\n[PDF appears corrupted and could not be parsed: "
+                    f"{os.path.basename(path)} ({e})]")
+        except Exception as e:
+            return (f"\n\n[PDF appears corrupted and could not be parsed: "
+                    f"{os.path.basename(path)} ({e})]")
+
         pdf_text = ""
-        reader = PdfReader(path)
         vision_calls = 0
         limits = set()
+        text_pages = 0
+        used_vision = False
 
         for page_num, page in enumerate(reader.pages):
             if len(pdf_text) >= MAX_PDF_INLINE_CHARS:
@@ -136,6 +205,7 @@ def _process_pdf(path: str, owner: str | None = None) -> str:
             page_text = (page.extract_text() or "").strip()
             if page_text:
                 pdf_text += f"\n\n[Page {page_num + 1} text]:\n{page_text}"
+                text_pages += 1
 
             if len(pdf_text) >= MAX_PDF_INLINE_CHARS:
                 limits.add('text')
@@ -164,6 +234,7 @@ def _process_pdf(path: str, owner: str | None = None) -> str:
                             ocr_text = analyze_image_with_vl(temp_img_path, owner=owner)
                             if ocr_text and "unavailable" not in ocr_text.lower():
                                 pdf_text += f"\n\n[Page {page_num + 1} image {img_index + 1} text]: {ocr_text}"
+                                used_vision = True
                         finally:
                             try:
                                 os.unlink(temp_img_path)
@@ -193,10 +264,30 @@ def _process_pdf(path: str, owner: str | None = None) -> str:
                 + ". Not all content was inspected. Inspect the original PDF's "
                 "specific pages or index it explicitly for broader coverage.]"
             )
+        # IDX-04: never let a textless PDF pass as "read" without saying so.
+        # `needs_ocr` is the QA-40 signal — a scanned page with no extractable
+        # text — independent of whether vision actually recovered anything.
+        needs_ocr = total_pages > 0 and text_pages == 0
+        pdf_limitations: List[str] = []
+        if needs_ocr and not used_vision:
+            pdf_limitations.append(
+                "no extractable text on any page and no vision reading succeeded "
+                "(OCR unavailable or failed)"
+            )
+        if used_vision:
+            pdf_limitations.append(
+                "scanned/image content was read via vision, not OCR; tables inside "
+                "images are listed as plain text, not extracted as structured data"
+            )
+        summary = (f"\n[PDF summary: pages={total_pages}, text_pages={text_pages}, "
+                   f"needs_ocr={'true' if needs_ocr else 'false'}]")
+        if pdf_limitations:
+            summary += " Limitations: " + "; ".join(pdf_limitations) + "."
+
         if pdf_text:
-            return f"\n\n[PDF content]:{pdf_text}"
+            return f"\n\n[PDF content]:{pdf_text}{summary}"
         else:
-            return "\n\n[PDF processed but no readable content found]"
+            return f"\n\n[PDF processed but no readable content found]{summary}"
 
     except Exception as e:
         return f"\n\n[PDF processing failed: {str(e)}]"

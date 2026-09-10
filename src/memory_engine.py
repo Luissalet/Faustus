@@ -44,6 +44,7 @@ Pure stdlib.
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import json
 import logging
 import math
@@ -97,6 +98,17 @@ STATUSES: Tuple[str, ...] = ("active", "deprecated", "anti_pattern")
 MATURITIES: Tuple[str, ...] = ("candidate", "established", "proven", "deprecated")
 EVIDENCE_KINDS: Tuple[str, ...] = ("chat", "file", "dispatch")
 FEEDBACK_KINDS: Tuple[str, ...] = ("helpful", "harmful")
+
+# MEM-01: the SHAPE of a memory, independent of `level` (its decay lane) and
+# `status` (its lifecycle state). A `preference` and a `procedure` can both be
+# `level="procedural"`; keeping them apart is what lets the dashboard ask "why
+# do I have this?" and get an answer sharper than "it's a rule".
+TYPES: Tuple[str, ...] = ("preference", "fact", "procedure", "decision", "anti_pattern")
+# MEM-01: who can see it. `owner`/`project` columns already gate visibility
+# (scoped_items); `scope` is the human-readable label of that same gate, plus
+# room for a session-local memory the two columns alone cannot express.
+SCOPE_GLOBAL = "global"
+TOMBSTONE_TABLE = "tombstones"
 
 # Feedback events decay with their own half-life, independent of the item's.
 FEEDBACK_HALF_LIFE_DAYS = 90.0
@@ -281,13 +293,69 @@ _SCHEMA = (
     """,
     "CREATE INDEX IF NOT EXISTS idx_items_scope ON items(owner, project)",
     "CREATE INDEX IF NOT EXISTS idx_items_status ON items(status, level)",
+    # MEM-02: forget()/correct() leave one row here per deleted item so a
+    # later reindex, backup restore or consolidation pass can tell "never
+    # existed" apart from "the user removed this on purpose" and refuse to
+    # bring it back. Looked up by `text_key`, never by `item_id` — the whole
+    # point is to catch the SAME fact being reinserted under a new id.
+    f"""
+    CREATE TABLE IF NOT EXISTS {TOMBSTONE_TABLE} (
+        id            TEXT PRIMARY KEY,
+        item_id       TEXT NOT NULL DEFAULT '',
+        owner         TEXT NOT NULL DEFAULT '',
+        project       TEXT NOT NULL DEFAULT '',
+        level         TEXT NOT NULL DEFAULT '',
+        text_key      TEXT NOT NULL DEFAULT '',
+        reason        TEXT NOT NULL DEFAULT '',
+        ref           TEXT NOT NULL DEFAULT '',
+        tombstoned_at TEXT NOT NULL DEFAULT ''
+    )
+    """,
+    f"CREATE INDEX IF NOT EXISTS idx_tombstones_key ON {TOMBSTONE_TABLE}(text_key)",
 )
 
 _COLUMNS = (
     "id", "owner", "project", "level", "text", "category", "trust_class", "trust",
     "confidence", "status", "maturity", "evidence", "helpful", "harmful",
     "inverted_from", "created_at", "updated_at", "last_accessed", "access_count",
+    "type", "scope", "session_id", "valid_from", "valid_until", "provenance",
 )
+
+_TOMBSTONE_COLUMNS = (
+    "id", "item_id", "owner", "project", "level", "text_key", "reason", "ref",
+    "tombstoned_at",
+)
+
+# MEM-01: additive migration for a store created before these columns
+# existed. `(column, ddl, backfill_sql_or_None)` — the backfill runs ONLY the
+# first time a column is actually added, never on every open, so a value a
+# user or the Curator later wrote to it is never stomped on restart.
+_MEM01_MIGRATIONS: Tuple[Tuple[str, str, Optional[str]], ...] = (
+    ("type", "TEXT NOT NULL DEFAULT 'fact'",
+     "UPDATE items SET type = 'anti_pattern' WHERE status = 'anti_pattern'; "
+     "UPDATE items SET type = 'procedure' WHERE level = 'procedural' AND status != 'anti_pattern'"),
+    ("scope", "TEXT NOT NULL DEFAULT 'global'",
+     "UPDATE items SET scope = 'project:' || project WHERE project != ''"),
+    ("session_id", "TEXT NOT NULL DEFAULT ''", None),
+    ("valid_from", "TEXT NOT NULL DEFAULT ''",
+     "UPDATE items SET valid_from = created_at WHERE valid_from = ''"),
+    ("valid_until", "TEXT NOT NULL DEFAULT ''", None),
+    ("provenance", "TEXT NOT NULL DEFAULT '{}'", None),
+)
+
+
+def _migrate_schema(conn: sqlite3.Connection) -> None:
+    """Add any MEM-01 column this database predates it, then backfill it
+    once from the fields that already carried the same information
+    (`project` → `scope`, `created_at` → `valid_from`, `status`/`level` →
+    `type`). Every existing row keeps working; nothing is renamed."""
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(items)").fetchall()}
+    for column, ddl, backfill in _MEM01_MIGRATIONS:
+        if column in existing:
+            continue
+        conn.execute(f"ALTER TABLE items ADD COLUMN {column} {ddl}")
+        if backfill:
+            conn.executescript(backfill if backfill.rstrip().endswith(";") else backfill + ";")
 
 
 def db_path() -> str:
@@ -327,6 +395,7 @@ def _connect(path: str) -> sqlite3.Connection:
             pass
         for statement in _SCHEMA:
             conn.execute(statement)
+        _migrate_schema(conn)
         conn.execute("SELECT COUNT(*) FROM items").fetchone()
         conn.commit()
         return conn
@@ -373,10 +442,19 @@ def _loads(raw: Any) -> List[Dict[str, Any]]:
     return [v for v in value if isinstance(v, dict)] if isinstance(value, list) else []
 
 
+def _load_provenance(raw: Any) -> Dict[str, Any]:
+    try:
+        value = json.loads(raw or "{}")
+    except (TypeError, ValueError):
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
 def _row_to_item(row: sqlite3.Row) -> Dict[str, Any]:
     item = {key: row[key] for key in _COLUMNS}
     for key in ("evidence", "helpful", "harmful"):
         item[key] = _loads(item.get(key))
+    item["provenance"] = _load_provenance(item.get("provenance"))
     item["access_count"] = int(item.get("access_count") or 0)
     for key in ("trust", "confidence"):
         try:
@@ -435,6 +513,42 @@ def _valid_status(value: Any) -> str:
     if status not in STATUSES:
         raise MemoryEngineError(f"status must be one of {', '.join(STATUSES)}")
     return status
+
+
+def _valid_type(value: Any, default: str) -> str:
+    item_type = str(value or "").strip().lower()
+    if not item_type:
+        return default
+    if item_type not in TYPES:
+        raise MemoryEngineError(f"type must be one of {', '.join(TYPES)}")
+    return item_type
+
+
+def _compute_scope(owner: str, project: str, session_id: str) -> str:
+    """The human-readable label of the SAME gate `scoped_items` already
+    enforces via the `owner`/`project` columns — session first, since a
+    session-scoped memory is the narrowest of the three."""
+    if session_id:
+        return f"session:{session_id}"
+    if project:
+        return f"project:{project}"
+    return SCOPE_GLOBAL
+
+
+def is_valid_now(item: Dict[str, Any], now: Optional[datetime] = None) -> bool:
+    """MEM-01 vigencia: false once `valid_until` has passed or before
+    `valid_from` starts. No window at all (both blank, the default for every
+    item added before this field existed) is always valid — a refuted
+    hypothesis needs an EXPLICIT `valid_until`, an absent one is not treated
+    as "already expired"."""
+    now = now or _utcnow()
+    valid_from = parse_iso(item.get("valid_from"))
+    if valid_from and now < valid_from:
+        return False
+    valid_until = parse_iso(item.get("valid_until"))
+    if valid_until and now > valid_until:
+        return False
+    return True
 
 
 def normalize_evidence(spans: Any) -> List[Dict[str, Any]]:
@@ -549,9 +663,23 @@ def add_item(
     evidence: Any = None,
     status: Any = "active",
     maturity: Any = "candidate",
+    type: Any = None,  # noqa: A002 - matches the public vocabulary (MEM-01)
+    session_id: Any = "",
+    valid_from: Any = None,
+    valid_until: Any = None,
+    provenance: Any = None,
+    respect_tombstones: bool = True,
     now: Optional[datetime] = None,
 ) -> Dict[str, Any]:
-    """Store one item. Raises MemoryEngineError on invalid input."""
+    """Store one item. Raises MemoryEngineError on invalid input.
+
+    MEM-02: when `respect_tombstones` is true (the default) and the trust
+    class is anything but ``human_explicit``, text matching a forgotten
+    memory in the same scope is refused — that is precisely the "resurrected
+    by a reindex/import/consolidation" case the store must not allow. A human
+    explicitly stating the same fact again is a new decision, not a
+    resurrection, and is never blocked by this check.
+    """
     clean = _clean_text(text)
     level = _valid_level(level)
     trust_class = _valid_trust_class(trust_class)
@@ -559,16 +687,33 @@ def add_item(
     maturity = str(maturity or "candidate").strip().lower()
     if maturity not in MATURITIES:
         raise MemoryEngineError(f"maturity must be one of {', '.join(MATURITIES)}")
+    owner = str(owner or "")
+    project = str(project or "")
+    session_id = str(session_id or "")
+    item_type = _valid_type(
+        type,
+        default=("anti_pattern" if status == "anti_pattern"
+                 else ("procedure" if level == "procedural" else "fact")),
+    )
+    if (respect_tombstones and trust_class != "human_explicit"
+            and is_tombstoned(clean, owner, project, level)):
+        raise MemoryEngineError(
+            "this text matches a memory that was explicitly forgotten in this "
+            "scope; only an explicit human statement (trust_class="
+            "'human_explicit') can re-add it"
+        )
     trust = TRUST_CLASSES[trust_class]
     try:
         conf = float(confidence) if confidence is not None else trust
     except (TypeError, ValueError):
         conf = trust
     stamp = _iso(now or _utcnow())
+    prov = dict(provenance) if isinstance(provenance, dict) else {}
+    prov.setdefault("who", trust_class)
     item = {
         "id": uuid.uuid4().hex,
-        "owner": str(owner or ""),
-        "project": str(project or ""),
+        "owner": owner,
+        "project": project,
         "level": level,
         "text": clean,
         "category": str(category or "")[:80],
@@ -585,6 +730,12 @@ def add_item(
         "updated_at": stamp,
         "last_accessed": "",
         "access_count": 0,
+        "type": item_type,
+        "scope": _compute_scope(owner, project, session_id),
+        "session_id": session_id,
+        "valid_from": _iso(parse_iso(valid_from)) if parse_iso(valid_from) else stamp,
+        "valid_until": _iso(parse_iso(valid_until)) if parse_iso(valid_until) else "",
+        "provenance": prov,
     }
     save_item(item)
     _index(item["id"], clean)
@@ -597,9 +748,15 @@ def save_item(item: Dict[str, Any]) -> Dict[str, Any]:
     for key in ("evidence", "helpful", "harmful"):
         value = row.get(key) or []
         row[key] = json.dumps(list(value)[-MAX_EVENTS:], ensure_ascii=False)
+    row["provenance"] = json.dumps(dict(row.get("provenance") or {}), ensure_ascii=False)
     row.setdefault("inverted_from", "")
     row.setdefault("last_accessed", "")
     row.setdefault("access_count", 0)
+    row.setdefault("type", "fact")
+    row.setdefault("scope", SCOPE_GLOBAL)
+    row.setdefault("session_id", "")
+    row.setdefault("valid_from", "")
+    row.setdefault("valid_until", "")
     values = [row.get(column) for column in _COLUMNS]
     placeholders = ", ".join("?" for _ in _COLUMNS)
     with _db() as conn:
@@ -642,6 +799,149 @@ def delete_item(item_id: Any) -> bool:
     if deleted:
         _unindex(item_id)
     return deleted
+
+
+# ---------------------------------------------------------------------------
+# MEM-02: forget() / correct() — tombstoned deletion, no resurrection
+# ---------------------------------------------------------------------------
+
+
+def _text_key(owner: Any, project: Any, level: Any, text: Any) -> str:
+    """Same-scope, same-text identity, independent of `id`. Whitespace and
+    case are normalised so "Run the tests" and "run  the tests" tombstone the
+    same fact — the wording an importer/extractor reproduces is rarely
+    byte-identical to what a human originally typed."""
+    norm = " ".join(str(text or "").split()).casefold()
+    raw = "\x00".join((str(owner or ""), str(project or ""), str(level or ""), norm))
+    return hashlib.sha256(raw.encode("utf-8", "replace")).hexdigest()
+
+
+def is_tombstoned(text: Any, owner: Any = "", project: Any = "", level: Any = "") -> bool:
+    """True when `text` (same owner/project/level) was explicitly forgotten
+    and never explicitly re-added since. Never raises: an unreadable store
+    fails OPEN on this check alone would silently block every future write,
+    so — like the rest of this module's hot-path functions — a broken store
+    here costs the guard, not the call."""
+    key = _text_key(owner, project, level, text)
+    try:
+        with _db() as conn:
+            row = conn.execute(
+                f"SELECT 1 FROM {TOMBSTONE_TABLE} WHERE text_key = ? LIMIT 1", (key,)
+            ).fetchone()
+        return row is not None
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("memory engine: tombstone check failed (%s); treated as clear", exc)
+        return False
+
+
+def list_tombstones(owner: Optional[str] = None, project: Optional[str] = None,
+                    limit: int = 200) -> List[Dict[str, Any]]:
+    where: List[str] = []
+    params: List[Any] = []
+    for column, value in (("owner", owner), ("project", project)):
+        if value is not None:
+            where.append(f"{column} = ?")
+            params.append(str(value))
+    sql = f"SELECT * FROM {TOMBSTONE_TABLE}"
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    sql += " ORDER BY tombstoned_at DESC LIMIT ?"
+    params.append(max(1, min(2000, int(limit or 200))))
+    with _db() as conn:
+        rows = conn.execute(sql, params).fetchall()
+    return [{col: row[col] for col in _TOMBSTONE_COLUMNS} for row in rows]
+
+
+def forget(item_id: Any, *, reason: str = "", ref: str = "",
+          now: Optional[datetime] = None) -> Optional[Dict[str, Any]]:
+    """MEM-02: delete the item AND its derivatives, and leave a tombstone.
+
+    "Derivatives" as of this store: the row itself (physical DELETE, same as
+    `delete_item`) and its vector-store embedding (`_unindex`, same as
+    `delete_item`) — there is no separate summary/consolidation cache in this
+    module to clean (`memory_curator` reads `items` fresh on every run, it
+    keeps nothing of its own). The tombstone is what makes the deletion
+    durable across a REBUILD of either of those: `add_item` refuses to
+    resurrect the same text into this scope by anything less than an
+    explicit human statement (see `add_item`'s `respect_tombstones`).
+
+    Returns the tombstone record, or None if the item did not exist (forget
+    of an already-gone id is a no-op, not an error — the desired end state is
+    already reached).
+    """
+    item = get_item(item_id)
+    if not item:
+        return None
+    stamp = _iso(now or _utcnow())
+    tombstone = {
+        "id": uuid.uuid4().hex,
+        "item_id": str(item["id"]),
+        "owner": item.get("owner") or "",
+        "project": item.get("project") or "",
+        "level": item.get("level") or "",
+        "text_key": _text_key(item.get("owner"), item.get("project"),
+                              item.get("level"), item.get("text")),
+        "reason": " ".join(str(reason or "").split())[:MAX_REASON_CHARS],
+        "ref": str(ref or "")[:MAX_REF_CHARS],
+        "tombstoned_at": stamp,
+    }
+    with _db() as conn:
+        conn.execute(
+            f"INSERT INTO {TOMBSTONE_TABLE} ({', '.join(_TOMBSTONE_COLUMNS)}) "
+            f"VALUES ({', '.join('?' for _ in _TOMBSTONE_COLUMNS)})",
+            [tombstone[c] for c in _TOMBSTONE_COLUMNS],
+        )
+    delete_item(item["id"])
+    return tombstone
+
+
+def correct(item_id: Any, new_text: Any, *, reason: str = "",
+           now: Optional[datetime] = None, **fields: Any) -> Optional[Dict[str, Any]]:
+    """MEM-02: replace an item with corrected text, procedure linked back to
+    the original it replaces.
+
+    The original is forgotten (tombstoned, same as `forget`) so nothing can
+    resurrect the WRONG version; the correction itself is written with
+    `respect_tombstones=False` because it is the explicit human act the
+    tombstone exists to still allow — otherwise correcting a memory and
+    having the corrected text collide with its own tombstone would make
+    `correct` unusable. Any field in `fields` (e.g. `trust_class`, `evidence`)
+    overrides what is copied from the original. Returns the NEW item, or None
+    if `item_id` did not exist.
+    """
+    old = get_item(item_id)
+    if not old:
+        return None
+    # Validate the replacement BEFORE the original is gone: a correction
+    # with empty text must fail with the original still in place, not
+    # tombstone it and then raise from add_item.
+    if not isinstance(new_text, str) or not new_text.strip():
+        raise MemoryEngineError("correct(): new_text must be a non-empty string")
+    tombstone = forget(item_id, reason=reason or "corrected", now=now)
+    provenance = dict(old.get("provenance") or {})
+    provenance["corrected_from"] = str(item_id)
+    if tombstone:
+        provenance["tombstone_id"] = tombstone["id"]
+    kwargs: Dict[str, Any] = {
+        "owner": old.get("owner", ""),
+        "project": old.get("project", ""),
+        "level": old.get("level", "semantic"),
+        "category": old.get("category", ""),
+        "trust_class": old.get("trust_class", "agent_assertion"),
+        "confidence": old.get("confidence"),
+        "evidence": old.get("evidence") or [],
+        "status": "active",
+        "maturity": "candidate",
+        "type": old.get("type"),
+        "session_id": old.get("session_id", ""),
+        "valid_from": None,
+        "valid_until": None,
+        "provenance": provenance,
+    }
+    kwargs.update(fields)
+    kwargs["respect_tombstones"] = False
+    kwargs["now"] = now
+    return add_item(new_text, **kwargs)
 
 
 def list_items(
@@ -872,6 +1172,10 @@ def search(
     """
     now = now or _utcnow()
     items = scoped_items(owner, project, statuses)
+    # MEM-01 vigencia: an item outside its validity window is not recalled —
+    # this is what keeps a refuted hypothesis from coming back as a fact
+    # (list_items/the dashboard still shows it; this is the recall path).
+    items = [item for item in items if is_valid_now(item, now)]
     if levels:
         wanted_levels = {str(level) for level in levels}
         items = [item for item in items if item.get("level") in wanted_levels]
@@ -944,6 +1248,7 @@ def pack_detail(
         return {"text": "", "ids": [], "items": [], "degraded": False}
 
     everything = scoped_items(owner, project, ("active", "anti_pattern"))
+    everything = [item for item in everything if is_valid_now(item, now)]
     by_id = {item["id"]: item for item in everything}
 
     rules = [public_item(item, now) for item in everything

@@ -173,6 +173,7 @@ def _invert(item: Dict[str, Any], now: datetime, report: Dict[str, int]) -> bool
     item["text"] = f"AVOID: {original}"[:engine.MAX_TEXT_CHARS]
     item["status"] = "anti_pattern"
     item["maturity"] = "candidate"
+    item["type"] = "anti_pattern"  # MEM-01: type tracks status here too
     item["evidence"] = (list(item.get("evidence") or []) + engine.normalize_evidence(
         [{"kind": "chat", "excerpt": f"inverted from: {original}"}]))[-engine.MAX_EVENTS:]
     engine.save_item(item)

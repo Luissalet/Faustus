@@ -41,6 +41,19 @@ class ItemCreate(BaseModel):
     level: Optional[str] = None
     category: Optional[str] = None
     project: Optional[str] = None
+    #: MEM-01/MEM-05: the same vocabulary `engine.add_item()` already
+    #: validates (`TYPES`) — exposed here so a human-written item can say
+    #: what kind of memory it is instead of always falling back to
+    #: `add_item`'s default.
+    type: Optional[str] = None
+    #: Narrows `scope` below global/project (`engine._compute_scope`):
+    #: passing a session_id scopes the item to that one conversation.
+    session_id: Optional[str] = None
+    #: Free-form provenance dict (`engine.add_item`'s own `provenance` kwarg,
+    #: stored verbatim and returned as `scope`'s sibling column on read —
+    #: `public_item()` already includes both, this is what lets a caller
+    #: SET provenance on create rather than only ever reading the default).
+    provenance: Optional[Dict[str, Any]] = None
 
 
 class FeedbackBody(BaseModel):
@@ -50,6 +63,15 @@ class FeedbackBody(BaseModel):
 
 class CurateBody(BaseModel):
     project: Optional[str] = None
+
+
+class ForgetBody(BaseModel):
+    reason: Optional[str] = None
+
+
+class CorrectBody(BaseModel):
+    text: str
+    reason: Optional[str] = None
 
 
 def _owner(request: Request) -> str:
@@ -108,6 +130,9 @@ def setup_memory_engine_routes() -> APIRouter:
                 category=body.category or "",
                 trust_class="human_explicit",
                 evidence=[{"kind": "chat", "excerpt": "added by the owner in the Brain page"}],
+                type=body.type,
+                session_id=str(body.session_id or ""),
+                provenance=body.provenance,
             )
         except engine.MemoryEngineError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
@@ -133,6 +158,46 @@ def setup_memory_engine_routes() -> APIRouter:
         if not engine.delete_item(item_id):
             raise HTTPException(status_code=404, detail="no such memory item")
         return {"status": "success", "deleted": True, "id": item_id}
+
+    @router.delete("/items/{item_id}/forget")
+    async def forget_item(item_id: str, body: Optional[ForgetBody] = None,
+                          _admin: None = Depends(require_admin)) -> Dict[str, Any]:
+        """MEM-02: like DELETE /items/{id}, but leaves a tombstone so the same
+        text cannot silently resurrect through a later reindex/import/
+        consolidation (`engine.forget`) — the human-facing "no, and don't
+        bring this back" action, distinct from the plain delete above."""
+        from src import memory_engine as engine
+        reason = body.reason if body else None
+        tombstone = engine.forget(item_id, reason=reason or "", ref=f"human:{item_id}")
+        if tombstone is None:
+            raise HTTPException(status_code=404, detail="no such memory item")
+        return {"status": "success", "forgotten": True, "id": item_id, "tombstone": tombstone}
+
+    @router.post("/items/{item_id}/correct")
+    async def correct_item(item_id: str, body: CorrectBody,
+                           _admin: None = Depends(require_admin)) -> Dict[str, Any]:
+        """MEM-02: replace an item with corrected text — the original is
+        tombstoned (`engine.correct`, same guarantee as `forget` above) and a
+        fresh item is written in its place, linked back via `provenance.
+        corrected_from`."""
+        from src import memory_engine as engine
+        # Guard BEFORE calling engine.correct(): that function tombstones
+        # (deletes) the original unconditionally and only THEN calls
+        # add_item(new_text, ...) — if new_text is blank, add_item raises
+        # and the original is already gone. Reject empty text here so a bad
+        # request never destroys the item it was trying to correct.
+        # (src/memory_engine.py is not in this lote's vía libre; the deeper
+        # fix — validating new_text before tombstoning — belongs there; see
+        # the final report.)
+        if not str(body.text or "").strip():
+            raise HTTPException(status_code=400, detail="text must not be empty")
+        try:
+            item = engine.correct(item_id, body.text, reason=body.reason or "corrected")
+        except engine.MemoryEngineError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        if item is None:
+            raise HTTPException(status_code=404, detail="no such memory item")
+        return {"status": "success", "item": engine.public_item(item)}
 
     @router.post("/curate")
     async def run_curator(request: Request, body: Optional[CurateBody] = None,
