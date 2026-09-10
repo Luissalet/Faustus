@@ -201,7 +201,9 @@ async def _with_error_class(response: Response) -> Response:
     touching `response.body_iterator`, so a streamed reply is never
     buffered into memory here.
     """
-    if response.status_code < 400:
+    # A test double that only carries headers (test_document_render_pdf_iframe
+    # fakes the response) has no status_code: it is not an error reply.
+    if getattr(response, "status_code", 200) < 400:
         return response
     content_type = response.headers.get("content-type", "")
     if "application/json" not in content_type:
