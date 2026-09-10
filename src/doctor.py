@@ -38,6 +38,7 @@ import shutil
 import sys
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from src.contracts.base import now_iso
@@ -476,6 +477,176 @@ def _memory_vectors() -> Finding:
                    "service heartbeat answered; no collection or embedding was created")
 
 
+# ── first run: the question a brand-new install actually has (SET-01) ──────
+
+def _setup_admin() -> Finding:
+    """Read `auth.json` directly, the same file `core.auth.AuthManager` owns —
+    no AuthManager instantiated here, so this never takes its locks or starts
+    a session store just to answer "does anyone own this install yet"."""
+    from src.constants import AUTH_FILE
+
+    if not os.path.isfile(AUTH_FILE):
+        return Finding("setup", "admin account", "absent",
+                       "no auth.json yet — first run has not created an owner",
+                       fix="open the app once and complete first-run setup, or run setup.py")
+    try:
+        with open(AUTH_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        users = data.get("users") if isinstance(data, dict) else None
+        if not isinstance(users, dict):
+            raise ValueError("auth.json has no readable users map")
+    except Exception as e:
+        return Finding("setup", "admin account", "unknown",
+                       f"auth.json could not be read ({type(e).__name__})",
+                       fix="check auth.json permissions/JSON validity; do not edit it by hand")
+    if not users:
+        return Finding("setup", "admin account", "absent", "no users created yet",
+                       fix="complete first-run setup to create the owner account")
+    admins = [u for u, d in users.items() if isinstance(d, dict) and d.get("is_admin")]
+    if not admins:
+        return Finding("setup", "admin account", "fail",
+                       f"{len(users)} user(s), none is_admin",
+                       fix="promote an account to admin — some privileged screens "
+                           "(Diagnostics, backups) have no other way in",
+                       facts={"users": len(users)})
+    return Finding("setup", "admin account", "ok", f"{len(admins)} admin account(s)",
+                   facts={"admins": len(admins), "users": len(users)})
+
+
+def _setup_provider() -> Finding:
+    """Any usable source of models: a configured endpoint row, OR a local
+    Ollama that actually has something installed. Neither on its own proves
+    the other absent — a machine can be Ollama-only, endpoint-only, or both."""
+    try:
+        from core.database import ModelEndpoint, SessionLocal
+        db = SessionLocal()
+        try:
+            endpoints = db.query(ModelEndpoint).filter(ModelEndpoint.is_enabled == True).count()  # noqa: E712
+        finally:
+            db.close()
+    except Exception as e:
+        return Finding("setup", "model provider", "unknown",
+                       f"could not read model_endpoints ({type(e).__name__})")
+
+    ollama_has_models = False
+    try:
+        from routes.system_usage_routes import _ollama_base
+        data = _probe_json(_ollama_base() + "/api/tags")
+        models = data.get("models") if isinstance(data, dict) else None
+        ollama_has_models = isinstance(models, list) and len(models) > 0
+    except Exception:
+        pass
+
+    if endpoints or ollama_has_models:
+        return Finding("setup", "model provider", "ok",
+                       f"{endpoints} configured endpoint(s)"
+                       + (", local Ollama has models" if ollama_has_models else ""),
+                       facts={"endpoints": endpoints, "ollama_has_models": ollama_has_models})
+    return Finding("setup", "model provider", "absent",
+                   "no model endpoint configured and no local Ollama model installed",
+                   fix="add a provider in Settings → Models, or install a model with "
+                       "Ollama and Faustus will pick it up",
+                   facts={"endpoints": 0, "ollama_has_models": False})
+
+
+# ── the environment itself, reproducibly (BASE-03 / OPS-01) ────────────────
+
+def _environment_lockfiles() -> Finding:
+    """The two lockfiles a fresh clone needs pinned, and whether the
+    directories they describe actually exist — a present lockfile with no
+    matching install is exactly the "works on my machine" gap OPS-01 names."""
+    from src.runtime_paths import get_app_root
+
+    root = Path(get_app_root())
+    py_lock = root / "requirements.txt"
+    npm_lock = root / "package-lock.json"
+    node_modules = root / "node_modules"
+    missing = [str(p.name) for p in (py_lock, npm_lock) if not p.is_file()]
+    if missing:
+        return Finding("environment", "lockfiles", "fail",
+                       f"missing: {', '.join(missing)}",
+                       fix="a clone without these cannot reproduce this install's "
+                           "dependency versions; restore them from version control")
+    if not node_modules.is_dir():
+        return Finding("environment", "lockfiles", "warn",
+                       "package-lock.json is present but node_modules is not installed",
+                       fix="npm ci", facts={"repair": "npm_ci"})
+    return Finding("environment", "lockfiles", "ok",
+                   "requirements.txt, package-lock.json present; node_modules installed")
+
+
+def _environment_node() -> Finding:
+    import subprocess
+
+    node = shutil.which("node")
+    if not node:
+        return Finding("environment", "node", "fail", "no node on PATH",
+                       fix="install Node.js — the Studio build needs it")
+    try:
+        out = subprocess.run([node, "--version"], capture_output=True, text=True, timeout=5)
+        version = out.stdout.strip() or out.stderr.strip()
+    except Exception as e:
+        return Finding("environment", "node", "unknown",
+                       f"node is on PATH but did not answer --version ({type(e).__name__})")
+    return Finding("environment", "node", "ok", version, facts={"path": node, "version": version})
+
+
+def _environment_studio_build() -> Finding:
+    """Whether Studio's static assets were actually built, not just that
+    `npm ci` ran. `npx tsc` is deliberately never invoked from here (COMUN.md:
+    it resolves to whatever tsc happens to be on PATH, not this repo's own) —
+    this only looks for the build OUTPUT, it never triggers or checks the
+    type-check step."""
+    from src.runtime_paths import get_app_root
+
+    root = Path(get_app_root())
+    dist = root / "static" / "studio"
+    if not dist.is_dir() or not any(dist.glob("*.html")) and not any(dist.rglob("*.js")):
+        return Finding("environment", "studio assets", "warn",
+                       f"no built assets found under {dist}",
+                       fix="npx vite build (from the repo root)")
+    return Finding("environment", "studio assets", "ok", f"built assets present in {dist}")
+
+
+def _environment_launcher() -> Finding:
+    """launcher.py exists and at least parses — the Windows portable entry
+    point failing silently at import time is a machine that looks broken with
+    no error a user would ever see (it runs inside a windowed PyInstaller
+    bundle with stdout suppressed)."""
+    import ast
+    from src.runtime_paths import get_app_root
+
+    path = Path(get_app_root()) / "launcher.py"
+    if not path.is_file():
+        return Finding("environment", "launcher", "absent", "no launcher.py",
+                       fix="only needed for the Windows portable build")
+    try:
+        ast.parse(path.read_text(encoding="utf-8"))
+    except SyntaxError as e:
+        return Finding("environment", "launcher", "fail", f"launcher.py does not parse: {e}",
+                       fix="fix the syntax error before building the portable launcher")
+    return Finding("environment", "launcher", "ok", str(path))
+
+
+def _environment_psutil() -> Finding:
+    try:
+        import psutil
+        return Finding("environment", "psutil", "ok", psutil.__version__)
+    except Exception:
+        return Finding("environment", "psutil", "fail", "psutil is not importable",
+                       fix="pip install -r requirements.txt — psutil backs process/"
+                           "resource checks used across Diagnostics")
+
+
+def _environment_ffmpeg() -> Finding:
+    path = shutil.which("ffmpeg")
+    if not path:
+        return Finding("environment", "ffmpeg", "absent", "no ffmpeg on PATH",
+                       fix="install ffmpeg if you need audio/video transcoding; "
+                           "everything else works without it")
+    return Finding("environment", "ffmpeg", "ok", path, facts={"path": path})
+
+
 def _browser() -> Finding:
     from src.tool_utils import get_mcp_manager
 
@@ -499,6 +670,14 @@ def run(*, areas: Optional[List[str]] = None) -> Dict[str, Any]:
         ("runtime", "python", _python),
         ("runtime", "git", _git),
         ("runtime", "data directory", _data_dir),
+        ("setup", "admin account", _setup_admin),
+        ("setup", "model provider", _setup_provider),
+        ("environment", "lockfiles", _environment_lockfiles),
+        ("environment", "node", _environment_node),
+        ("environment", "studio assets", _environment_studio_build),
+        ("environment", "launcher", _environment_launcher),
+        ("environment", "psutil", _environment_psutil),
+        ("environment", "ffmpeg", _environment_ffmpeg),
         ("execution", "sandbox image", _sandbox_image),
         ("execution", "agent shell in the sandbox", _agent_sandbox),
         ("coding", "checkpoints", _checkpoints),
@@ -545,6 +724,86 @@ def run(*, areas: Optional[List[str]] = None) -> Dict[str, Any]:
         "note": "`absent` is a fact about this machine, not a fault. Nothing "
                 "reports ok that was not actually checked.",
     }
+
+
+# ── repair — a short, explicit allowlist, not "run whatever the check said" ─
+#
+# A Finding's `fix` text is for a person to read. `facts["repair"]` is the
+# separate, narrower promise that THIS exact command is safe to run from a
+# button: idempotent, scoped to this repo, and not a network install of
+# anything beyond what the lockfile already pins. Every other `fix` stays
+# text-only on purpose — "pip install -r requirements.txt" runs arbitrary
+# packages' setup code, which is not a click a diagnostics panel should offer.
+
+def _studio_root() -> Path:
+    from src.runtime_paths import get_app_root
+    return Path(get_app_root())
+
+
+REPAIRS: Dict[str, Dict[str, Any]] = {
+    "npm_ci": {
+        "description": "npm ci — installs Studio's pinned dependencies from package-lock.json",
+        "cwd": _studio_root,
+        "argv": ["npm", "ci"],
+    },
+}
+
+
+def repair(name: str, *, timeout: float = 300.0) -> Dict[str, Any]:
+    """Run one allowlisted repair. Raises ValueError for anything not in
+    `REPAIRS` — this is deliberately not a general command runner."""
+    import subprocess
+
+    spec = REPAIRS.get(name)
+    if spec is None:
+        raise ValueError(f"no such repair {name!r}; available: {sorted(REPAIRS)}")
+    cwd = spec["cwd"]()
+    npm = shutil.which("npm") or (shutil.which("npm.cmd") if os.name == "nt" else None)
+    argv = spec["argv"]
+    if argv and argv[0] == "npm" and npm:
+        argv = [npm, *argv[1:]]
+    started = time.time()
+    try:
+        proc = subprocess.run(argv, cwd=str(cwd), capture_output=True, text=True,
+                              timeout=timeout)
+        ok = proc.returncode == 0
+        return {"ok": ok, "repair": name, "returncode": proc.returncode,
+                "seconds": round(time.time() - started, 1),
+                "stdout": proc.stdout[-4000:], "stderr": proc.stderr[-4000:]}
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "repair": name, "error": f"timed out after {timeout}s"}
+    except FileNotFoundError as e:
+        return {"ok": False, "repair": name, "error": f"could not run it: {e}"}
+
+
+# ── first run: the next correct action, never a dead end (SET-01) ──────────
+
+_NEXT_ACTION_ORDER = (
+    # (finding area, finding name) -> what to do about it, checked in this
+    # order because doing them out of order sends someone in circles (no
+    # point picking a model before there is a provider to pick one FROM).
+    ("runtime", "data directory", {"label": "Fix the data directory", "route": "/settings"}),
+    ("setup", "admin account", {"label": "Finish first-run setup", "route": "/setup"}),
+    ("setup", "model provider", {"label": "Connect a model provider", "route": "/settings/models"}),
+    ("models", "Ollama catalogue", {"label": "Install or connect a model", "route": "/settings/models"}),
+)
+
+
+def next_setup_action() -> Dict[str, Any]:
+    """One recommendation, never a screen with nothing useful to press.
+
+    Walks `_NEXT_ACTION_ORDER` and returns the first gap it finds; `None`
+    action means the report found nothing blocking — the caller's empty
+    state is then "everything needed is here", not "click this button that
+    leads nowhere", which is the dead end SET-01 exists to remove.
+    """
+    report = run(areas=["runtime", "setup", "models"])
+    by_key = {(f["area"], f["name"]): f for f in report["findings"]}
+    for area, name, action in _NEXT_ACTION_ORDER:
+        finding = by_key.get((area, name))
+        if finding and finding["state"] in ("fail", "absent"):
+            return {"blocked": True, "finding": finding, "action": action}
+    return {"blocked": False, "finding": None, "action": None}
 
 
 MARK = {"ok": "ok  ", "warn": "WARN", "fail": "FAIL",

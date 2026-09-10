@@ -1,7 +1,12 @@
 #Requires -Version 5.1
-param([ValidateRange(1024,65535)][int]$Port=7000,[switch]$Desktop,[switch]$NoBrowser)
+param([ValidateRange(1024,65535)][int]$Port=7000,[switch]$Desktop,[switch]$NoBrowser,[switch]$SafeMode)
 $ErrorActionPreference='Stop'
 Set-Location -LiteralPath $PSScriptRoot
+# OPS-05: -SafeMode starts with external MCP servers, third-party plugins/
+# skills and scheduled tasks held back (see src/safe_mode.py) - the manual
+# equivalent of the app entering safe mode on its own after repeated failed
+# boots. Only this process and its children see the variable.
+if ($SafeMode) { $env:FAUSTUS_SAFE_MODE='1' }
 $runtimePython=Join-Path $PSScriptRoot 'venv\Scripts\python.exe'
 if (-not (Test-Path -LiteralPath $runtimePython)) {
     & (Join-Path $PSScriptRoot 'launch-windows.ps1') -SetupOnly -Port $Port

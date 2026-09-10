@@ -2810,60 +2810,95 @@ def init_db():
                     "Could not restrict %s to 0o600; it may expose DB pages.",
                     sidecar,
                 )
-    _migrate_add_hidden_models_column()
-    _migrate_add_cached_models_column()
-    _migrate_add_pinned_models_column()
-    _migrate_add_notes_sort_order()
-    _migrate_add_model_type_column()
-    _migrate_add_model_endpoint_refresh_columns()
-    _migrate_add_model_endpoint_owner_column()
-    _migrate_add_provider_auth_id_column()
-    _migrate_add_supports_tools_column()
-    _migrate_add_task_run_model_column()
-    _migrate_add_owner_column()
-    _migrate_add_document_archived_column()
-    _migrate_add_last_message_at_column()
-    _migrate_add_folder_column()
-    _migrate_add_token_columns()
-    _migrate_add_mode_column()
-    _migrate_add_multiuser_owner_columns()
-    _migrate_add_gallery_caption_column()
-    _migrate_add_api_token_scopes_column()
-    _migrate_backfill_document_owner_from_session()
-    _migrate_assign_legacy_owner()
-    _migrate_add_tidy_verdict()
-    _migrate_add_doc_source_email_cols()
-    _migrate_add_oauth_config()
-    _migrate_add_email_oauth_columns()
-    _migrate_add_task_automation_columns()
-    _migrate_add_disabled_tools()
-    _migrate_add_mcp_oauth_tokens_column()
-    _migrate_add_mcp_inherit_env_column()
-    _migrate_add_task_v2_columns()
-    _migrate_add_notifications_enabled()
-    _migrate_drop_ping_notes_tasks()
-    _migrate_add_crew_member_id()
-    _migrate_add_assistant_columns()
-    _migrate_add_email_smtp_security()
-    _migrate_email_account_default_invariant()
-    _migrate_seed_email_account()
-    _migrate_add_calendar_metadata()
-    _migrate_add_calendar_is_utc()
-    _migrate_add_calendar_origin()
-    _migrate_add_calendar_account_id()
-    _migrate_add_caldav_sync_columns()
-    _migrate_add_calendar_recurrence_exdates()
-    _migrate_add_task_lease_columns()
-    _migrate_add_node_run_lease_columns()
-    _migrate_add_media_run_client_id()
-    _migrate_chat_messages_fts()
-    _migrate_encrypt_email_passwords()
-    _migrate_encrypt_signatures()
-    _migrate_encrypt_endpoint_keys()
-    _migrate_backfill_task_folders()
-    _migrate_create_artifacts_table()
-    _migrate_create_artifact_identity_tables()
-    _migrate_add_session_project_id_column()
+    _run_formal_migrations()
+
+
+# OPS-02 / QA-45: the sequence below used to run as bare calls, each one on
+# its own connection/commit, with nothing recording what had been applied and
+# nothing to fall back on if one of them raised partway through — a crash or
+# a bug in step 23 of 51 left the schema exactly there, forever, with no
+# record of it. `src.migrations.run` wraps the same sequence: a WAL-safe
+# backup of app.db is taken first, every step below still runs exactly as it
+# always did (each is independently idempotent — this does not change one of
+# them), and if any step raises, the file is restored to the pre-migration
+# backup before the exception propagates, so the database that comes back is
+# the complete previous schema, never a half-applied or empty one. A
+# `schema_migrations` row records the checksum of this exact step sequence,
+# so an unchanged app skips the backup+wrap on every subsequent boot.
+def _formal_migration_steps() -> "list[tuple[str, object]]":
+    return [
+        ("add_hidden_models_column", _migrate_add_hidden_models_column),
+        ("add_cached_models_column", _migrate_add_cached_models_column),
+        ("add_pinned_models_column", _migrate_add_pinned_models_column),
+        ("add_notes_sort_order", _migrate_add_notes_sort_order),
+        ("add_model_type_column", _migrate_add_model_type_column),
+        ("add_model_endpoint_refresh_columns", _migrate_add_model_endpoint_refresh_columns),
+        ("add_model_endpoint_owner_column", _migrate_add_model_endpoint_owner_column),
+        ("add_provider_auth_id_column", _migrate_add_provider_auth_id_column),
+        ("add_supports_tools_column", _migrate_add_supports_tools_column),
+        ("add_task_run_model_column", _migrate_add_task_run_model_column),
+        ("add_owner_column", _migrate_add_owner_column),
+        ("add_document_archived_column", _migrate_add_document_archived_column),
+        ("add_last_message_at_column", _migrate_add_last_message_at_column),
+        ("add_folder_column", _migrate_add_folder_column),
+        ("add_token_columns", _migrate_add_token_columns),
+        ("add_mode_column", _migrate_add_mode_column),
+        ("add_multiuser_owner_columns", _migrate_add_multiuser_owner_columns),
+        ("add_gallery_caption_column", _migrate_add_gallery_caption_column),
+        ("add_api_token_scopes_column", _migrate_add_api_token_scopes_column),
+        ("backfill_document_owner_from_session", _migrate_backfill_document_owner_from_session),
+        ("assign_legacy_owner", _migrate_assign_legacy_owner),
+        ("add_tidy_verdict", _migrate_add_tidy_verdict),
+        ("add_doc_source_email_cols", _migrate_add_doc_source_email_cols),
+        ("add_oauth_config", _migrate_add_oauth_config),
+        ("add_email_oauth_columns", _migrate_add_email_oauth_columns),
+        ("add_task_automation_columns", _migrate_add_task_automation_columns),
+        ("add_disabled_tools", _migrate_add_disabled_tools),
+        ("add_mcp_oauth_tokens_column", _migrate_add_mcp_oauth_tokens_column),
+        ("add_mcp_inherit_env_column", _migrate_add_mcp_inherit_env_column),
+        ("add_task_v2_columns", _migrate_add_task_v2_columns),
+        ("add_notifications_enabled", _migrate_add_notifications_enabled),
+        ("drop_ping_notes_tasks", _migrate_drop_ping_notes_tasks),
+        ("add_crew_member_id", _migrate_add_crew_member_id),
+        ("add_assistant_columns", _migrate_add_assistant_columns),
+        ("add_email_smtp_security", _migrate_add_email_smtp_security),
+        ("email_account_default_invariant", _migrate_email_account_default_invariant),
+        ("seed_email_account", _migrate_seed_email_account),
+        ("add_calendar_metadata", _migrate_add_calendar_metadata),
+        ("add_calendar_is_utc", _migrate_add_calendar_is_utc),
+        ("add_calendar_origin", _migrate_add_calendar_origin),
+        ("add_calendar_account_id", _migrate_add_calendar_account_id),
+        ("add_caldav_sync_columns", _migrate_add_caldav_sync_columns),
+        ("add_calendar_recurrence_exdates", _migrate_add_calendar_recurrence_exdates),
+        ("add_task_lease_columns", _migrate_add_task_lease_columns),
+        ("add_node_run_lease_columns", _migrate_add_node_run_lease_columns),
+        ("add_media_run_client_id", _migrate_add_media_run_client_id),
+        ("chat_messages_fts", _migrate_chat_messages_fts),
+        ("encrypt_email_passwords", _migrate_encrypt_email_passwords),
+        ("encrypt_signatures", _migrate_encrypt_signatures),
+        ("encrypt_endpoint_keys", _migrate_encrypt_endpoint_keys),
+        ("backfill_task_folders", _migrate_backfill_task_folders),
+        ("create_artifacts_table", _migrate_create_artifacts_table),
+        ("create_artifact_identity_tables", _migrate_create_artifact_identity_tables),
+        ("add_session_project_id_column", _migrate_add_session_project_id_column),
+    ]
+
+
+def _run_formal_migrations() -> None:
+    from src.migrations import MigrationFailed, run as run_migrations  # local: avoid a load-time cycle
+
+    steps = _formal_migration_steps()
+    try:
+        result = run_migrations(engine, steps, name="app")
+    except MigrationFailed as e:
+        # The file has already been restored to its pre-migration state (see
+        # src.migrations.run) — informing loudly and refusing to start on a
+        # schema we cannot vouch for beats starting quietly on one that is.
+        logger.critical("[migrations] app.db migration failed and was rolled back: %s", e)
+        raise
+    if result.get("applied"):
+        logger.info("[migrations] app.db: applied %s step(s), version=%s",
+                    result.get("steps"), result.get("version"))
 
 
 def _migrate_backfill_task_folders():

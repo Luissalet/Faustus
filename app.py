@@ -1804,6 +1804,30 @@ async def _startup_event():
 
     from src.artifact_migration import startup_copy as _artifact_copy
     _supervisor.spawn(_artifact_copy(), name="artifact-identity-copy")
+
+    # Lot 36 / item 6: `src.artifact_migration.migrate_manifests` (idempotent —
+    # an occurrence that already has a manifest is skipped, see its own
+    # docstring) already existed but nothing ever called it with dry_run=False
+    # at boot, so occurrences created before manifests existed (including ones
+    # `_artifact_copy` above just backfilled) stayed without one forever.
+    # Defined here rather than in src/artifact_migration.py because this lot's
+    # file scope does not include that module — same bounded/restartable
+    # cursor shape as `startup_copy` just above it.
+    async def _artifact_manifest_backfill():
+        from src.artifact_migration import migrate_manifests
+        cursor = ""
+        total_created = 0
+        while True:
+            report = await asyncio.to_thread(migrate_manifests, dry_run=False, after_id=cursor)
+            total_created += report["created"]
+            if not report["next_cursor"]:
+                if total_created:
+                    logger.info("Backfilled %d artifact manifest(s) at boot", total_created)
+                return
+            cursor = report["next_cursor"]
+            await asyncio.sleep(0)
+
+    _supervisor.spawn(_artifact_manifest_backfill(), name="artifact-manifest-backfill")
     from src.media_scheduler import scheduler_loop as _media_loop
     _supervisor.spawn(_media_loop(), name="media-continuation")
 

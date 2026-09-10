@@ -1,4 +1,4 @@
-import { Download, RefreshCw, Trash2, Upload } from 'lucide-react';
+import { Download, RefreshCw, ShieldAlert, Stethoscope, Trash2, Upload } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '../../components';
 import { diagnosticsLogs, exportBackup, importBackup, wipe, WIPE_KINDS } from '../../adapters/account';
@@ -6,15 +6,228 @@ import { getJson } from '../../adapters/api';
 import { t } from '../../i18n';
 import { Select } from './fields';
 
+/** Small local POST helper (BASE-03/OPS-01/OPS-05 cards below). Not added to
+ *  adapters/account.ts on purpose: this file's PROPIOS scope for this lote is
+ *  SystemExtras.tsx itself, not the shared adapters module. */
+async function postJson<T>(path: string, body: unknown): Promise<T> {
+  const r = await fetch(path, {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) {
+    let reason = `${path}: ${r.status}`;
+    try {
+      const j = await r.json();
+      if (j?.detail) reason = typeof j.detail === 'string' ? j.detail : reason;
+    } catch {
+      /* ignore */
+    }
+    throw new Error(reason);
+  }
+  return (await r.json()) as T;
+}
+
 /** The admin cards of the previous interface's System tab: logs, backup, the danger zone. */
 export function SystemExtras({ say }: { say: (t: string) => void }) {
   return (
     <>
       <VersionCard />
+      <SetupCard />
+      <DoctorCard say={say} />
+      <SafeModeCard say={say} />
       <LogsCard />
       <BackupCard say={say} />
       <DangerCard say={say} />
     </>
+  );
+}
+
+/** SET-03: settings' effective-value / precedence view already exists
+ *  (lote 9, `Settings.tsx`'s `data-changed` + `explain` machinery) — this is
+ *  only the link INTO it from Diagnostics, so a person troubleshooting here
+ *  is not left to go hunt for it. */
+function SetupCard() {
+  return (
+    <div className="fs-set__card">
+      <h3 className="fs-set__card-title">{t('Setup & settings')}</h3>
+      <p className="fs-set__help">{t('Effective settings — what is actually in force, and why — live in the main Settings screen.')}</p>
+      <div className="fs-set__row-end">
+        <Button size="sm" variant="secondary" label={t('Open Settings')} onClick={() => { window.location.hash = '#/settings'; }} />
+      </div>
+    </div>
+  );
+}
+
+interface DoctorFinding {
+  area: string;
+  name: string;
+  state: 'ok' | 'warn' | 'fail' | 'unknown' | 'absent';
+  detail: string;
+  fix: string;
+  facts?: { repair?: string; [k: string]: unknown };
+}
+interface DoctorReport {
+  worst: string;
+  checked_at: string;
+  findings: DoctorFinding[];
+}
+
+const STATE_ORDER: Record<string, number> = { fail: 0, unknown: 1, warn: 2, absent: 3, ok: 4 };
+
+/** BASE-03 / OPS-01: `src/doctor.py::run()` asked and answered, in Studio —
+ *  it had no consumer here before this lote (see docs/spec/v2/MAPA_REUTILIZACION.md
+ *  BASE-03/OPS-01/SET-01 rows). Reads the SAME `/api/doctor` the CLI
+ *  (`python -m src.doctor --json`) and `routes/changesets_routes.py` already
+ *  serve — no new report format, only a screen for the existing one. */
+function DoctorCard({ say }: { say: (t: string) => void }) {
+  const [report, setReport] = useState<DoctorReport | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [repairing, setRepairing] = useState<string | null>(null);
+
+  const load = () => {
+    setErr(null);
+    getJson<DoctorReport>('/api/doctor')
+      .then(setReport)
+      .catch((e: Error) => setErr(e.message));
+  };
+  useEffect(load, []);
+
+  const repair = (name: string) => {
+    setRepairing(name);
+    postJson<{ ok: boolean; stderr?: string }>('/api/doctor/repair', { repair: name })
+      .then((r) => {
+        say(r.ok ? t('Repair finished.') : t('Repair did not succeed: {why}', { why: r.stderr || '?' }));
+        load();
+      })
+      .catch((e: Error) => say(e.message))
+      .finally(() => setRepairing(null));
+  };
+
+  const findings = [...(report?.findings ?? [])]
+    .filter((f) => f.state !== 'ok')
+    .sort((a, b) => STATE_ORDER[a.state] - STATE_ORDER[b.state]);
+
+  return (
+    <div className="fs-set__card">
+      <h3 className="fs-set__card-title fs-tools__cat">
+        <span><Stethoscope size={16} aria-hidden /> {t('Doctor')}</span>
+        <Button size="sm" variant="ghost" icon={RefreshCw} label={t('Re-check')} onClick={load} />
+      </h3>
+      <p className="fs-set__help">{t('What this machine can actually do, asked rather than assumed — the same report as `python -m src.doctor`.')}</p>
+      {err && <p className="fs-set__err">{err}</p>}
+      {!report && !err ? (
+        <p className="fs-set__help">{t('Loading')}</p>
+      ) : findings.length === 0 ? (
+        <p className="fs-set__help">{t('Everything checked is working.')}</p>
+      ) : (
+        <ul className="fs-wipe">
+          {findings.map((f) => (
+            <li key={`${f.area}/${f.name}`} className="fs-wipe__row">
+              <span>
+                <strong>{f.state.toUpperCase()} — {f.area}/{f.name}</strong>
+                <span className="fs-set__help">{f.detail}{f.fix ? ` — ${f.fix}` : ''}</span>
+              </span>
+              {f.facts?.repair && (
+                <Button size="sm" variant="secondary" loading={repairing === f.facts.repair}
+                        disabled={repairing !== null} label={t('Repair')}
+                        onClick={() => repair(f.facts!.repair as string)} />
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+interface SafeModeStatus {
+  active: boolean;
+  reason: string;
+  disabled: Record<string, boolean>;
+  quarantined_mcp_servers: string[];
+  core_available: boolean;
+}
+
+const SUBSYSTEM_LABEL: Record<string, string> = {
+  mcp_external: 'External MCP servers',
+  plugins_third_party: 'Third-party plugins',
+  skills_third_party: 'Skills not written by the owner',
+  scheduled_tasks: 'Scheduled / recurring tasks',
+};
+
+/** OPS-05 / QA-46: safe mode's status and one-at-a-time review, described in
+ *  plain terms — which is off, why, and a button per item to turn it back on.
+ *  Core (chat, files, settings) is never in this list; `src/safe_mode.py`
+ *  never gates it. */
+function SafeModeCard({ say }: { say: (t: string) => void }) {
+  const [status, setStatus] = useState<SafeModeStatus | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const load = () => {
+    setErr(null);
+    getJson<SafeModeStatus>('/api/safe-mode/status').then(setStatus).catch((e: Error) => setErr(e.message));
+  };
+  useEffect(load, []);
+
+  const reactivateSubsystem = (subsystem: string) => {
+    setBusy(subsystem);
+    postJson('/api/safe-mode/reactivate', { subsystem }).then(() => { say(t('Reactivated.')); load(); })
+      .catch((e: Error) => say(e.message)).finally(() => setBusy(null));
+  };
+  const reactivateServer = (id: string) => {
+    setBusy(id);
+    postJson('/api/safe-mode/reactivate', { mcp_server_id: id }).then(() => { say(t('Reactivated.')); load(); })
+      .catch((e: Error) => say(e.message)).finally(() => setBusy(null));
+  };
+
+  if (err) return <div className="fs-set__card"><h3 className="fs-set__card-title">{t('Safe mode')}</h3><p className="fs-set__err">{err}</p></div>;
+  if (!status) return <div className="fs-set__card"><h3 className="fs-set__card-title">{t('Safe mode')}</h3><p className="fs-set__help">{t('Loading')}</p></div>;
+
+  const heldBack = Object.entries(status.disabled).filter(([, v]) => v);
+
+  return (
+    <div className="fs-set__card">
+      <h3 className="fs-set__card-title"><ShieldAlert size={16} aria-hidden /> {t('Safe mode')}</h3>
+      {!status.active && status.quarantined_mcp_servers.length === 0 ? (
+        <p className="fs-set__help">{t('Not active. Core, external MCP servers, plugins, skills and scheduled tasks are all normal.')}</p>
+      ) : (
+        <>
+          {status.active && (
+            <p className="fs-set__help">
+              {t('ACTIVE — {reason}. Chat, files and settings still work normally.', { reason: status.reason || '?' })}
+            </p>
+          )}
+          {heldBack.length > 0 && (
+            <ul className="fs-wipe">
+              {heldBack.map(([key]) => (
+                <li key={key} className="fs-wipe__row">
+                  <span><strong>{t(SUBSYSTEM_LABEL[key] ?? key)}</strong> <span className="fs-set__help">{t('held back')}</span></span>
+                  <Button size="sm" variant="secondary" loading={busy === key} disabled={busy !== null}
+                          label={t('Turn back on')} onClick={() => reactivateSubsystem(key)} />
+                </li>
+              ))}
+            </ul>
+          )}
+          {status.quarantined_mcp_servers.length > 0 && (
+            <>
+              <p className="fs-set__help">{t('MCP servers quarantined after repeated failures at startup:')}</p>
+              <ul className="fs-wipe">
+                {status.quarantined_mcp_servers.map((id) => (
+                  <li key={id} className="fs-wipe__row">
+                    <span>{id}</span>
+                    <Button size="sm" variant="secondary" loading={busy === id} disabled={busy !== null}
+                            label={t('Reactivate')} onClick={() => reactivateServer(id)} />
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </>
+      )}
+    </div>
   );
 }
 
@@ -141,9 +354,38 @@ function LogsCard() {
   );
 }
 
+interface BackupSnapshot { name: string; modified: string; }
+interface VerifyReport {
+  ok: boolean;
+  problems: string[];
+  restore_check?: { performed: boolean; databases: { name: string; ok: boolean; compared_to_manifest: boolean }[]; problems: string[] };
+}
+
 function BackupCard({ say }: { say: (t: string) => void }) {
   const file = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
+  const [verifying, setVerifying] = useState(false);
+  const [verified, setVerified] = useState<VerifyReport | null>(null);
+
+  /** OPS-03: proves the newest whole-`data/` snapshot would actually
+   *  restore — `backup_service.verify_backup` extracts it to a throwaway
+   *  directory, opens every database and compares its row counts against
+   *  the manifest recorded at snapshot time, not just an integrity_check of
+   *  the tarball. */
+  const verifyLatest = () => {
+    setVerifying(true);
+    setVerified(null);
+    getJson<{ snapshots: BackupSnapshot[] }>('/api/backup/snapshots')
+      .then((r) => {
+        const latest = r.snapshots[0];
+        if (!latest) throw new Error(t('No snapshots yet.'));
+        return postJson<VerifyReport>('/api/backup/verify', { name: latest.name });
+      })
+      .then(setVerified)
+      .catch((e: Error) => say(e.message))
+      .finally(() => setVerifying(false));
+  };
+
   return (
     <div className="fs-set__card">
       <h3 className="fs-set__card-title">{t('Backup')}</h3>
@@ -171,6 +413,18 @@ function BackupCard({ say }: { say: (t: string) => void }) {
           }}
         />
       </div>
+      <div className="fs-set__row-end">
+        <Button size="sm" variant="ghost" loading={verifying} label={t('Verify the latest snapshot restores')} onClick={verifyLatest} />
+      </div>
+      {verified && (
+        <p className={verified.ok ? 'fs-set__help' : 'fs-set__err'}>
+          {verified.ok
+            ? t('Verified: the latest snapshot opens, restores and its row counts match the backup-time manifest.')
+            : t('NOT verified: {problems}', {
+                problems: [...verified.problems, ...(verified.restore_check?.problems ?? [])].join('; ') || '?',
+              })}
+        </p>
+      )}
     </div>
   );
 }

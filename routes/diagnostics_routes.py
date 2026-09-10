@@ -3,7 +3,7 @@
 import asyncio
 import logging
 import os
-from typing import Dict, Any
+from typing import Dict, Any, List, Optional
 
 from fastapi import APIRouter, HTTPException, Form, Request
 
@@ -127,5 +127,125 @@ def setup_diagnostics_routes(
             }
         except Exception as e:
             return {"status": "error", "error": str(e), "query": query}
+
+    # ── doctor repair (BASE-03 / OPS-01) ─────────────────────────────────
+    # `GET /api/doctor` itself already lives in routes/changesets_routes.py
+    # and calls src.doctor.run() — every check added there (see src/doctor.py)
+    # flows through that existing endpoint automatically. This is only the
+    # write side: running one of the narrow, allowlisted repairs a Finding
+    # can name in `facts.repair`.
+
+    @router.post("/api/doctor/repair")
+    async def doctor_repair(request: Request) -> Dict[str, Any]:
+        require_admin(request)
+        import asyncio
+
+        from src import doctor
+        body = await request.json()
+        name = str(body.get("repair") or "")
+        if name not in doctor.REPAIRS:
+            raise HTTPException(400, f"no such repair {name!r}; available: {sorted(doctor.REPAIRS)}")
+        return await asyncio.to_thread(doctor.repair, name)
+
+    # ── first run (SET-01) ───────────────────────────────────────────────
+
+    @router.get("/api/setup/status")
+    async def setup_status(request: Request) -> Dict[str, Any]:
+        """One recommendation, never a screen with nothing useful on it.
+
+        Admin-only like the rest of Diagnostics: the checks underneath (auth
+        config, model endpoints) are not for a signed-out visitor to probe.
+        """
+        require_admin(request)
+        from src import doctor
+        return doctor.next_setup_action()
+
+    # ── safe mode (OPS-05 / QA-46) ───────────────────────────────────────
+
+    @router.get("/api/safe-mode/status")
+    async def safe_mode_status(request: Request) -> Dict[str, Any]:
+        require_admin(request)
+        from src import safe_mode
+        return safe_mode.status()
+
+    @router.post("/api/safe-mode/reactivate")
+    async def safe_mode_reactivate(request: Request) -> Dict[str, Any]:
+        """Turn ONE held-back subsystem, or ONE quarantined MCP server, back
+        on — never all of them at once. Body: {"subsystem": "..."} or
+        {"mcp_server_id": "..."}."""
+        require_admin(request)
+        from src import safe_mode
+        body = await request.json()
+        subsystem = body.get("subsystem")
+        server_id = body.get("mcp_server_id")
+        if subsystem:
+            try:
+                return safe_mode.reactivate_subsystem(str(subsystem))
+            except ValueError as e:
+                raise HTTPException(400, str(e))
+        if server_id:
+            return safe_mode.reactivate_mcp_server(str(server_id))
+        raise HTTPException(400, "pass either 'subsystem' or 'mcp_server_id'")
+
+    # ── provider/model change, consciously (SET-05) ─────────────────────
+
+    @router.get("/api/setup/provider-change-preview")
+    async def provider_change_preview(request: Request, from_endpoint_id: str = "",
+                                      to_endpoint_id: str = "") -> Dict[str, Any]:
+        """What changes if the default provider/model moves from one
+        endpoint to another: privacy (local vs cloud — never guessed, read
+        from `ModelEndpoint.endpoint_kind`), whether a cost is even possible
+        (an API key is configured at all), and previously-measured
+        capabilities when they exist. Nothing here is invented: an endpoint
+        this process has never probed reports its capabilities as
+        `not_probed`, the same "unknown, not assumed ok" rule `src.doctor`
+        uses everywhere else.
+        """
+        require_admin(request)
+        from core.database import ModelEndpoint, SessionLocal
+
+        def describe(endpoint_id: str) -> Optional[Dict[str, Any]]:
+            if not endpoint_id:
+                return None
+            db = SessionLocal()
+            try:
+                ep = db.query(ModelEndpoint).filter(ModelEndpoint.id == endpoint_id).first()
+            finally:
+                db.close()
+            if ep is None:
+                return None
+            kind = ep.endpoint_kind or "auto"
+            is_local = kind == "local" or "localhost" in (ep.base_url or "") or "127.0.0.1" in (ep.base_url or "")
+            capabilities = "not_probed"
+            try:
+                from src import model_calibration as mcal
+                key = mcal.manifest_key(vendor="unknown", model_id="", endpoint_id=endpoint_id)
+                manifest = mcal.get_manifest(key)
+                if manifest.get("announced") or manifest.get("tested"):
+                    capabilities = "probed"
+            except Exception:
+                pass
+            return {
+                "id": ep.id, "name": ep.name, "base_url": ep.base_url,
+                "endpoint_kind": kind,
+                "privacy": "local — requests never leave this machine" if is_local
+                          else f"cloud — requests leave this machine to {ep.base_url}",
+                "has_api_key": bool(ep.api_key),
+                "cost": ("no per-token cost" if is_local else
+                         "billed by the provider" if ep.api_key else
+                         "cloud endpoint with no API key stored — requests will likely fail"),
+                "capabilities": capabilities,
+            }
+
+        before = describe(from_endpoint_id)
+        after = describe(to_endpoint_id)
+        changes: List[str] = []
+        if before and after:
+            if before["endpoint_kind"] != after["endpoint_kind"] or (before["privacy"] != after["privacy"]):
+                changes.append(f"privacy: {before['privacy']} → {after['privacy']}")
+            if before["cost"] != after["cost"]:
+                changes.append(f"cost: {before['cost']} → {after['cost']}")
+        return {"ok": before is not None and after is not None, "before": before, "after": after,
+                "changes": changes, "requires_confirmation": True}
 
     return router

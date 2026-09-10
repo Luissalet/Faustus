@@ -166,6 +166,31 @@ class _Lease:
 
 # ── writing ───────────────────────────────────────────────────────────────
 
+def _db_table_counts(path: Path) -> Dict[str, int]:
+    """Row count per user table in a SQLite file — the receipt `verify_backup`
+    checks a restored copy against. Internal tables (`sqlite_%`) are skipped;
+    a table that fails to count (locked, corrupt) is reported as -1 rather
+    than silently dropped, so a real problem cannot look like "no tables"."""
+    counts: Dict[str, int] = {}
+    conn = None
+    try:
+        conn = sqlite3.connect(str(path))
+        tables = [r[0] for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+        ).fetchall()]
+        for table in tables:
+            try:
+                counts[table] = conn.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0]
+            except sqlite3.Error:
+                counts[table] = -1
+    except sqlite3.Error:
+        pass
+    finally:
+        if conn is not None:
+            conn.close()
+    return counts
+
+
 def _sqlite_safe_copy(src: Path, dst: Path) -> None:
     """Copy a live SQLite file with its own backup API, not a byte copy.
 
@@ -208,6 +233,7 @@ def _tar_data_dir(src_root: Path, out: Path, *, include_research: bool,
     files = 0
     raw_bytes = 0
     excluded: List[str] = []
+    db_row_counts: Dict[str, Dict[str, int]] = {}
     with tempfile.TemporaryDirectory() as tmp_str:
         tmp = Path(tmp_str)
         staged: Dict[Path, Path] = {}
@@ -221,6 +247,10 @@ def _tar_data_dir(src_root: Path, out: Path, *, include_research: bool,
             target.parent.mkdir(parents=True, exist_ok=True)
             _sqlite_safe_copy(db, target)
             staged[db] = target
+            # OPS-03: the receipt `verify_backup` restores against. Taken from
+            # the WAL-safe copy just made, not the live file, so it reflects
+            # exactly what is about to go into the archive.
+            db_row_counts[str(PurePosixPath("data", *rel.parts))] = _db_table_counts(target)
 
         with tarfile.open(out, "w:gz") as tar:
             for path in sorted(src_root.rglob("*")):
@@ -241,7 +271,8 @@ def _tar_data_dir(src_root: Path, out: Path, *, include_research: bool,
                     raw_bytes += source.stat().st_size
                 except OSError:
                     pass
-    return {"files": files, "uncompressed_bytes": raw_bytes, "excluded": sorted(excluded)}
+    return {"files": files, "uncompressed_bytes": raw_bytes, "excluded": sorted(excluded),
+            "db_row_counts": db_row_counts}
 
 
 def _fsync_file(path: Path) -> None:
@@ -427,6 +458,7 @@ def snapshot(*, include_research: bool = False, include_attachments: bool = Fals
             "bytes": result["bytes"],
             "sha256": _sha256_file(out),
             "plaintext_sha256": plaintext_sha,
+            "db_row_counts": counted.get("db_row_counts", {}),
         })
         if verify:
             result["verified"] = verify_archive(out, passphrase=passphrase)
@@ -550,6 +582,92 @@ def verify_archive(path: Any, *, check_databases: bool = True,
     out["ok"] = not out["problems"] and not broken and out["members"] > 0
     if not out["members"]:
         out["problems"].append("archive is empty")
+    return out
+
+
+def verify_backup(path: Any, *, passphrase: Optional[str] = None) -> Dict[str, Any]:
+    """Prove a snapshot would actually restore — OPS-03's "verified" backup.
+
+    `verify_archive` opens the archive and PRAGMA integrity_checks every
+    database inside it, which catches a truncated or bit-rotted file. It does
+    NOT prove the data is the data that was backed up: a tarball can be
+    perfectly readable and still have silently dropped a table. This restores
+    every `*.db` member into a throwaway temp directory — a REAL restore, not
+    a re-read of the archive — opens each one, counts every table's rows, and
+    compares that against the receipt `write_manifest` recorded at backup
+    time (`manifest.db_row_counts`). A backup older than this change carries
+    no such receipt; row counts are then reported but not compared, so an old
+    snapshot is not falsely flagged as broken.
+    """
+    base = verify_archive(path, check_databases=True, passphrase=passphrase)
+    out: Dict[str, Any] = dict(base)
+    out["restore_check"] = {"performed": False, "databases": [], "problems": []}
+    if not base.get("members"):
+        return out  # nothing to restore — verify_archive already explains why
+
+    expected_all = (base.get("manifest", {}).get("manifest") or {}).get("db_row_counts") or {}
+    p = Path(path)
+    restore_report: Dict[str, Any] = {"performed": True, "databases": [], "problems": []}
+    try:
+        tar, closer = _open_archive(p, passphrase)
+    except Exception as e:
+        restore_report["performed"] = False
+        restore_report["problems"].append(f"could not reopen the archive to restore it: {type(e).__name__}")
+        out["restore_check"] = restore_report
+        return out
+    try:
+        with tempfile.TemporaryDirectory() as tmp_str:
+            tmp = Path(tmp_str)
+            for member in tar:
+                if not (member.isfile() and member.name.endswith(".db")):
+                    continue
+                if _member_problem(member):
+                    continue  # already reported by verify_archive above
+                src = tar.extractfile(member)
+                if src is None:
+                    restore_report["problems"].append(f"unreadable member: {member.name}")
+                    continue
+                target = tmp / PurePosixPath(member.name).name
+                with open(target, "wb") as fh:
+                    while True:
+                        block = src.read(1024 * 1024)
+                        if not block:
+                            break
+                        fh.write(block)
+                opens_ok = False
+                actual: Dict[str, int] = {}
+                try:
+                    actual = _db_table_counts(target)
+                    opens_ok = True
+                except Exception:
+                    opens_ok = False
+                expected = expected_all.get(member.name)
+                mismatches = []
+                if expected is not None:
+                    for table, exp_count in expected.items():
+                        if actual.get(table) != exp_count:
+                            mismatches.append({"table": table, "expected": exp_count,
+                                               "actual": actual.get(table)})
+                    for table in actual:
+                        if table not in expected:
+                            mismatches.append({"table": table, "expected": None, "actual": actual[table]})
+                restore_report["databases"].append({
+                    "name": member.name, "ok": opens_ok and not mismatches,
+                    "opened": opens_ok, "tables": actual,
+                    "compared_to_manifest": expected is not None,
+                    "mismatches": mismatches,
+                })
+                target.unlink(missing_ok=True)
+    finally:
+        tar.close()
+        closer.close()
+
+    broken = [d for d in restore_report["databases"] if not d["ok"]]
+    if broken:
+        restore_report["problems"].append(
+            f"{len(broken)} restored database(s) did not match the backup-time row counts")
+    out["restore_check"] = restore_report
+    out["ok"] = bool(out.get("ok")) and not broken and not restore_report["problems"]
     return out
 
 

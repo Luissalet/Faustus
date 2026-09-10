@@ -265,7 +265,16 @@ def setup_backup_routes(memory_manager, preset_manager, skills_manager) -> APIRo
 
     @router.post("/api/backup/verify")
     async def verify_snapshot(request: Request):
-        """Re-open a snapshot and integrity-check the databases inside it."""
+        """Re-open a snapshot, integrity-check it, AND prove it restores.
+
+        OPS-03: `backup_service.verify_backup` does what `verify_archive` alone
+        does not — it restores every database inside the archive to a throwaway
+        temp directory, opens each one, counts its rows, and compares that
+        against the manifest recorded when the snapshot was taken. The response
+        keeps every field `verify_archive` used to return (`ok`, `members`,
+        `databases`, `problems`, `manifest`...) plus `restore_check` with the
+        new comparison, so nothing that read this endpoint before breaks.
+        """
         require_admin(request)
         import asyncio
 
@@ -275,7 +284,7 @@ def setup_backup_routes(memory_manager, preset_manager, skills_manager) -> APIRo
         if target is None:
             raise HTTPException(404, "No such snapshot")
         report = await asyncio.to_thread(
-            backup_service.verify_archive, target,
+            backup_service.verify_backup, target,
             passphrase=(body.get("passphrase") or None),
         )
         report["restore_command"] = backup_service.restore_command(target.name)

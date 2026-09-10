@@ -126,8 +126,27 @@ def open_browser(url):
 
 if __name__ == "__main__":
     import uvicorn
+
+    # OPS-05: mark this boot attempt BEFORE the risky part (importing app.py,
+    # which runs the app's own startup init). If the process dies here or
+    # anywhere before `mark_boot_completed()` below, the NEXT launch sees this
+    # one as unfinished — two such unfinished boots in a row is what puts the
+    # next launch into safe mode on its own (see src/safe_mode.py). Best-effort:
+    # a settings-write hiccup here must never block starting the app itself.
+    try:
+        from src import safe_mode
+        safe_mode.mark_boot_started()
+    except Exception:
+        safe_mode = None
+
     # Import the FastAPI app from app.py
     from app import app
+
+    if safe_mode is not None:
+        try:
+            safe_mode.mark_boot_completed()
+        except Exception:
+            pass
 
     bind_host = os.getenv("APP_BIND", "127.0.0.1")
     bind_port = int(os.getenv("APP_PORT", "7000"))
