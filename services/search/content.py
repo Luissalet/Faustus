@@ -157,6 +157,39 @@ def _detect_js_frameworks(soup: BeautifulSoup) -> bool:
     return False
 
 
+# WEB-02: content types this fetcher can turn into text. Anything outside
+# this set used to fall straight into the HTML branch below regardless of
+# what it actually was -- a PNG or a .zip got BeautifulSoup'd and came back
+# `"success": True` with empty/garbled `content` and no `error`, which reads
+# to a caller exactly like a thin-but-real page. `_is_extractable_content`
+# refuses those explicitly instead of guessing at their bytes.
+_BINARY_CONTENT_PREFIXES = ("image/", "video/", "audio/", "font/")
+_BINARY_CONTENT_TYPES = frozenset({
+    "application/octet-stream", "application/zip", "application/gzip",
+    "application/x-gzip", "application/x-tar", "application/x-bzip2",
+    "application/x-rar-compressed", "application/x-7z-compressed",
+    "application/x-msdownload", "application/x-executable",
+    "application/vnd.ms-cab-compressed", "application/wasm",
+    "application/vnd.android.package-archive", "application/x-shockwave-flash",
+})
+
+
+def _is_disallowed_binary(content_type: str, url_path: str) -> bool:
+    """True when `content_type` is binary and no text-suffix override applies.
+
+    `application/octet-stream` is ambiguous by design (plenty of servers use
+    it for everything), so it is only refused when the URL's own suffix does
+    not already mark it as one of the text/JSON extensions the plain-text
+    branch above recognises -- that keeps `test_octet_stream_with_txt_suffix
+    _returns_body` and its JSON sibling working unchanged.
+    """
+    if not content_type:
+        return False
+    if content_type == "application/octet-stream":
+        return not url_path.endswith((".md", ".markdown", ".txt", ".text", ".json", ".jsonl"))
+    return content_type.startswith(_BINARY_CONTENT_PREFIXES) or content_type in _BINARY_CONTENT_TYPES
+
+
 def _empty_result(url: str, error: str = "") -> dict:
     """Build a standard failure result dict."""
     return {
@@ -322,6 +355,20 @@ def fetch_webpage_content(url: str, timeout: int = 5, retry_attempt: int = 0,
             "error": "" if text_body else "Empty response body",
             **_size_fields,
         }
+        _cache_result(cache_file, cache_key, result, url)
+        return result
+
+    # WEB-02: refuse binary content explicitly instead of feeding it to the
+    # HTML parser below, which would silently return `"success": True` with
+    # empty/garbled text and no error -- a fetch that did not read anything
+    # useful must not look identical to a thin-but-real page.
+    if not is_html and _is_disallowed_binary(content_type, url_path):
+        result = _empty_result(
+            url,
+            f"UnsupportedContentType: {content_type or 'unknown'} is not extractable "
+            "as text (web_fetch reads HTML, plain text, Markdown, JSON and PDF only)",
+        )
+        result.update(_size_fields)
         _cache_result(cache_file, cache_key, result, url)
         return result
 

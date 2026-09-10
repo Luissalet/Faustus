@@ -74,15 +74,22 @@ def setup_search_routes(config) -> APIRouter:
         pages for any phrasing of a topic. This says who answered, who was
         suspended and why, and who asked-for engine stayed silent.
         """
-        from services.search.providers import searxng_engine_health, _GENERAL_ENGINES
+        from services.search.providers import searxng_engine_health, degradation_reason, _GENERAL_ENGINES
         report = searxng_engine_health()
         answered = report.get("answered") or {}
+        reason = degradation_reason(report)
         return {
             "provider": "searxng",
             "instance": _get_search_instance(),
             "configured_engines": [e.strip() for e in (_GENERAL_ENGINES or "").split(",") if e.strip()],
             "last_call": report or None,
             "single_engine": bool(report) and len(answered) <= 1 and bool(report.get("unresponsive") or report.get("silent")),
+            # WEB-01: explicit cause instead of a bare boolean — "only bing
+            # answered" and "nobody answered" are different failures and the
+            # UI/agent must not collapse them into the same "degraded: true".
+            "degraded": reason is not None,
+            "degraded_reason": reason,
+            "diversity": report.get("diversity") if report else None,
         }
 
     @router.get("/api/search/providers")

@@ -78,6 +78,46 @@ class WebSearchTool:
             output += "\n\n<!-- SOURCES:" + json.dumps(sources) + " -->"
         return {"output": output, "exit_code": 0}
 
+def _evidence_for_fetch(url: str, text: str, *, owner_id: str, project_id, truncated: bool,
+                         fetched_bytes, total_bytes):
+    """EvidenceRef for a web_fetch result (WEB-02): URL, content hash, and
+
+    capture time, so a caller can later tell whether the page it is citing
+    still matches what was actually read -- the same idea
+    `context_ledger.evidence_for_read` already gives file reads, applied to
+    the web instead of duplicating a second evidence shape for it (rule 4).
+    `locator` is `byte_range` when the download budget cut the body short
+    (the hash only covers what was kept, never the whole page) and `whole`
+    otherwise, so a stale/partial fetch is distinguishable from a complete one.
+    """
+    import hashlib
+
+    from src.contracts import EvidenceLocator, EvidenceRef
+    from src.contracts.base import now_iso
+
+    digest = hashlib.sha256((text or "").encode("utf-8", "replace")).hexdigest()
+    evidence_id = "evi_web_" + hashlib.sha256(
+        f"{url}:{digest}".encode("utf-8", "replace")
+    ).hexdigest()[:24]
+    if truncated:
+        locator = EvidenceLocator(kind="byte_range", value=f"0-{int(fetched_bytes or 0)}")
+    else:
+        locator = EvidenceLocator(kind="whole", value=str(url)[:512])
+    return EvidenceRef(
+        evidence_id=evidence_id,
+        owner_id=owner_id or "system",
+        project_id=project_id,
+        source_type="web",
+        source_ref=str(url)[:512],
+        source_revision=digest[:16],
+        content_sha256=digest,
+        captured_at=now_iso(),
+        locator=locator,
+        derived_from=(),
+        retention="task",
+    )
+
+
 class WebFetchTool:
     async def execute(self, content: str, ctx: dict) -> dict:
         from src.search.content import fetch_webpage_content
@@ -166,6 +206,41 @@ class WebFetchTool:
             title = title[:300] + "..."
         header = (f"# {title}\n" if title else "") + f"Source: {url}\n\n"
         output = size_note + header + text
-        if len(output) > MAX_OUTPUT_CHARS:
+        download_truncated = bool(result.get("truncated"))
+        fetched_bytes = result.get("fetched_bytes")
+        total_bytes = result.get("total_bytes")
+
+        output_truncated = len(output) > MAX_OUTPUT_CHARS
+        if output_truncated:
             output = output[:MAX_OUTPUT_CHARS] + "\n\n[...truncated]"
-        return {"output": output, "exit_code": 0}
+
+        # WEB-02: declared, never silent -- two independent truncation points
+        # (the download budget in fetch_webpage_content, and the output-char
+        # cap here) collapse into one explicit `truncated`/`kept_bytes` pair
+        # instead of the caller having to notice a "[...truncated]" string.
+        response: Dict[str, Any] = {"output": output, "exit_code": 0}
+        response["truncated"] = download_truncated or output_truncated
+        if download_truncated:
+            response["kept_bytes"] = fetched_bytes
+        elif output_truncated:
+            response["kept_bytes"] = len(output)
+
+        # EvidenceRef (WEB-02): URL, content hash, capture time -- best-effort,
+        # must never turn a successful fetch into a failure (mirrors
+        # ReadFileTool's own evidence bookkeeping in filesystem_tools.py).
+        try:
+            owner_id = str(ctx.get("owner") or "") if isinstance(ctx, dict) else ""
+            project_id = (str(ctx.get("project_id") or "") or None) if isinstance(ctx, dict) else None
+            evidence = _evidence_for_fetch(
+                url, text,
+                owner_id=owner_id or "system",
+                project_id=project_id,
+                truncated=download_truncated,
+                fetched_bytes=fetched_bytes,
+                total_bytes=total_bytes,
+            )
+            response["evidence_refs"] = [evidence.to_mapping()]
+        except Exception:
+            pass
+
+        return response

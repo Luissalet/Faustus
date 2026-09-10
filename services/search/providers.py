@@ -5,7 +5,7 @@ import logging
 import os
 import threading
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Mapping, Optional
 from urllib.parse import urljoin, urlparse, parse_qs
 
 import httpx
@@ -13,6 +13,7 @@ from bs4 import BeautifulSoup
 
 from src.constants import SEARXNG_INSTANCE, REQUEST_TIMEOUT, WEB_FETCH_USER_AGENT
 from .analytics import RateLimitError, error_logger
+from .diversity import diversity_report as _diversity_report
 from .query import build_enhanced_query
 
 logger = logging.getLogger(__name__)
@@ -313,8 +314,9 @@ def _record_engine_health(query: str, requested: str, data: Any) -> None:
     global _LAST_ENGINE_WARNING
     if not isinstance(data, dict):
         return
+    results = data.get("results", []) or []
     answered: Dict[str, int] = {}
-    for r in data.get("results", []) or []:
+    for r in results:
         for eng in (r.get("engines") or []):
             answered[str(eng)] = answered.get(str(eng), 0) + 1
     unresponsive = []
@@ -326,6 +328,14 @@ def _record_engine_health(query: str, requested: str, data: Any) -> None:
         unresponsive.append({"engine": str(name), "reason": str(reason)})
     asked = [e.strip() for e in str(requested or "").split(",") if e.strip()]
     silent = [e for e in asked if e not in answered and not any(u["engine"] == e for u in unresponsive)]
+    urls = [str(r.get("url") or "") for r in results if isinstance(r, dict) and r.get("url")]
+    # WEB-01: diversity/coverage against the PREVIOUS snapshot's URLs, read
+    # before this call overwrites ENGINE_HEALTH -- the same single-store
+    # discipline the rest of this dict already follows (rule 4: no second
+    # store just to remember "the last query's URLs").
+    with _ENGINE_HEALTH_LOCK:
+        previous_urls = ENGINE_HEALTH.get("urls") or []
+    diversity = _diversity_report(results, previous_urls=previous_urls, engines_answered=answered)
     snapshot = {
         "at": time.time(),
         "query": str(query)[:120],
@@ -333,7 +343,9 @@ def _record_engine_health(query: str, requested: str, data: Any) -> None:
         "answered": answered,
         "unresponsive": unresponsive,
         "silent": silent,
-        "results": len(data.get("results", []) or []),
+        "results": len(results),
+        "urls": urls,
+        "diversity": diversity,
     }
     with _ENGINE_HEALTH_LOCK:
         ENGINE_HEALTH.clear()
@@ -356,6 +368,33 @@ def searxng_engine_health() -> Dict[str, Any]:
     """The last SearXNG call's engine report (see ENGINE_HEALTH); {} before any."""
     with _ENGINE_HEALTH_LOCK:
         return dict(ENGINE_HEALTH)
+
+
+def degradation_reason(report: Optional[Mapping[str, Any]]) -> Optional[str]:
+    """Why the last search call is degraded, or ``None`` when it is not (WEB-01).
+
+    Named causes for ``GET /api/search/health``'s ``degraded``/
+    ``degraded_reason`` fields, distinguishing the two shapes QA-23 requires
+    stay distinct: "only one engine answered" (a narrow but real result) and
+    "no engine answered" (a diagnosed failure) must never collapse into the
+    same silent-success reading. ``report`` is a ``searxng_engine_health()``
+    snapshot (or ``None``/``{}`` before any call has happened, in which case
+    there is nothing to call degraded yet).
+    """
+    if not report:
+        return None
+    answered = report.get("answered") or {}
+    unresponsive = report.get("unresponsive") or []
+    silent = report.get("silent") or []
+    down = ", ".join(f"{u['engine']} ({u['reason']})" for u in unresponsive)
+    quiet = f"silent: {', '.join(silent)}" if silent else ""
+    causes = " ; ".join(p for p in (down, quiet) if p)
+    if not answered:
+        return "no engine answered" + (f" — {causes}" if causes else "")
+    if len(answered) == 1 and (unresponsive or silent):
+        who = next(iter(answered))
+        return f"only {who} answered" + (f" — {causes}" if causes else "")
+    return None
 
 
 def searxng_search_api(query: str, count: Optional[int] = None, categories: str = "general",
