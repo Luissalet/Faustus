@@ -478,6 +478,7 @@ _AGENT_RULES = """\
 - After a tool succeeds, do not second-guess it; reply with one short confirmation unless more work remains.
 - After a tool fails, retry with a concrete fix or state what is blocking you.
 - Finish only when the user's concrete request is actually done, or clearly state that you are blocked.
+- A NEW SYSTEM IS DECIDED WITH THE USER FIRST. "Implement X" / "add auth" / "make me a system for Y" with at least two reasonable designs (where the data lives, which framework or language, where it goes, how far the scope reaches) that neither the request nor the code settles: your FIRST action is `ask_user` with 2-4 options (recommended first, one line each) and you write NOTHING until they answer. A small edit has one obvious reading - just do it; a new system has several - ask, once, and only about what you cannot decide yourself.
 - User identity facts/preferences ("my name is X", "call me X", "I live in X") use `manage_memory`, not contacts.
 """
 
@@ -492,6 +493,7 @@ _API_AGENT_RULES = """\
 - After a tool succeeds, do not second-guess it; reply with one short confirmation unless more work remains.
 - After a tool fails, retry with a concrete fix or state what is blocking you.
 - Finish only when the user's concrete request is actually done, or clearly state that you are blocked.
+- A NEW SYSTEM IS DECIDED WITH THE USER FIRST. "Implement X" / "add auth" / "make me a system for Y" with at least two reasonable designs (where the data lives, which framework or language, where it goes, how far the scope reaches) that neither the request nor the code settles: your FIRST action is `ask_user` with 2-4 options (recommended first, one line each) and you write NOTHING until they answer. A small edit has one obvious reading - just do it; a new system has several - ask, once, and only about what you cannot decide yourself.
 - User identity facts/preferences ("my name is X", "call me X", "I live in X") use `manage_memory`, not contacts.
 """
 
@@ -1528,6 +1530,7 @@ def _workspace_coding_rules(workspace: Optional[str]) -> str:
         "- This mode is for coding, debugging, shell, file, build, benchmark, and repo tasks. Do not use personal-assistant tools like email, calendar, notes, memory, documents, gallery, or UI panels for workspace work.\n"
         "- Work from the real filesystem and command output. Inspect before editing.\n"
         "- Start by orienting with `get_workspace` plus `grep`/`glob`/`ls`/`read_file`; prefer targeted reads over dumping whole files.\n"
+        "- A new system is decided with the user first: when the request (\"implement X\", \"add Y\") admits several reasonable designs (storage, framework or language, location, scope) and neither the request nor the code settles it, call `ask_user` with 2-4 options (recommended first, one line each) BEFORE writing any file. Small edits have one obvious reading: just do them.\n"
         "- For multi-step coding work, call `todowrite` and keep the task list current.\n"
         "- Change repo files with `apply_patch` for related source edits, `edit_file` for one exact replacement, or `write_file` for new/full files. Do not use `create_document`, shell redirects, heredocs, or `sed -i` to modify repo files.\n"
         "- For code repair tasks, find the canonical helper, parser, validator, service, or boundary function responsible for the behavior and patch it there when possible. Hidden tests often call helpers directly.\n"
