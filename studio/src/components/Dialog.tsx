@@ -41,9 +41,24 @@ export function Dialog({
               alignItems: 'flex-start',
               justifyContent: 'space-between',
               gap: 'var(--fs-space-3)',
+              // A11Y-01/QA-44: at 200% zoom the dialog's own width shrinks
+              // (`.fs-dialog`'s `inline-size: min(560px, calc(100vw - ...))`)
+              // but a flex item's default `min-inline-size: auto` still lets
+              // a long, unbroken title (a filename, an id) push this row —
+              // and the Close button riding along in it — past the dialog's
+              // right edge and off the viewport (scripts/ui_a11y.py's
+              // "in viewport" check). Bounding the row and letting the title
+              // shrink/wrap keeps the Close button reachable regardless of
+              // zoom or title length.
+              maxInlineSize: '100%',
             }}
           >
-            <RadixDialog.Title className="fs-dialog__title">{title}</RadixDialog.Title>
+            <RadixDialog.Title
+              className="fs-dialog__title"
+              style={{ minInlineSize: 0, maxInlineSize: '100%', overflowWrap: 'anywhere' }}
+            >
+              {title}
+            </RadixDialog.Title>
             <RadixDialog.Close asChild>
               <IconButton icon={X} label={t('Close')} size="sm" />
             </RadixDialog.Close>

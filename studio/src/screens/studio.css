@@ -285,14 +285,33 @@
   color: var(--fs-text-1);
 }
 
-/* ── Turns ── */
+/* ── Turns ──
+   PERF-01/QA-37: virtualized (studio/src/screens/studio/Transcript.tsx,
+   `useVirtualizer`) — `.fs-studio__turns` is the sizer, its inline `height`
+   set to the virtualizer's total size, and every `.fs-studio__turn-row` is
+   absolutely positioned at its measured offset instead of taking part in
+   grid/flow layout, so only the rows actually on screen (plus overscan) are
+   ever mounted regardless of how long the conversation is. */
 
 .fs-studio__turns {
-  display: grid;
-  gap: var(--fs-space-5);
+  position: relative;
 }
 
-.fs-turn {
+.fs-studio__turn-row {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline: 0;
+  padding-block-end: var(--fs-space-5);
+}
+
+/* The arrival animation plays once per turn, ever — `data-enter` is only
+   set the render a turn's id is first seen (Transcript.tsx's `seenIds`), so
+   scrolling a turn back into view (virtualization mounting it again) never
+   replays it. Before this a bare `.fs-turn` animated on every mount, which
+   was fine when every turn only ever mounted once; virtualized, that same
+   rule would flash a "just arrived" animation across the screen on every
+   scroll, exactly the opposite of the calm reading UX-05 asks for. */
+.fs-turn[data-enter] {
   animation: fs-rise var(--fs-duration-enter) var(--fs-ease-out) both;
 }
 
@@ -2453,11 +2472,8 @@ aside.fs-panel {
   }
 }
 
-/* Quote a selection */
-
-.fs-studio__turns {
-  position: relative;
-}
+/* Quote a selection (`.fs-studio__turns`'s `position: relative` lives in
+   the "Turns" section above — the virtualized sizer needed it first). */
 
 .fs-studio__quote {
   position: absolute;
@@ -2491,6 +2507,71 @@ aside.fs-panel {
   .fs-studio__quote {
     animation: none;
   }
+}
+
+/* UX-05/PERF-01: "volver abajo" — shown only once the reader has scrolled
+   past `BOTTOM_THRESHOLD` (Transcript.tsx), same reading Studio.tsx's own
+   auto-scroll uses for "pinned to the bottom". `position: sticky` pins it to
+   the bottom of the nearest SCROLLING ancestor (`.fs-studio__scroll`, found
+   through the intervening `position: relative` sizer — sticky's containing
+   block is the scrollport, not the nearest positioned ancestor, so that is
+   not in the way) without needing a portal or a ref into a fichero ajeno. */
+.fs-studio__back-to-bottom {
+  position: sticky;
+  z-index: 4;
+  inset-block-end: var(--fs-space-4);
+  inset-inline-start: 50%;
+  translate: -50% 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-pill);
+  background: var(--fs-surface-1);
+  color: var(--fs-text-1);
+  font: inherit;
+  font-size: var(--fs-label-size);
+  font-weight: var(--fs-label-weight);
+  box-shadow: var(--fs-lift-shadow);
+  cursor: pointer;
+  min-block-size: auto;
+  animation: fs-quote-in var(--fs-duration-fast) var(--fs-ease-out);
+}
+
+.fs-studio__back-to-bottom:hover {
+  background: var(--fs-surface-2);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fs-studio__back-to-bottom {
+    animation: none;
+  }
+}
+
+/* CALL-03: a repaired argument next to the field it touched — original →
+   corrección — and any error the repair could not resolve. */
+.fs-studio__arg-repairs {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-block-start: 6px;
+  font-size: 0.85em;
+}
+
+.fs-studio__arg-repair,
+.fs-studio__arg-error {
+  margin: 0;
+  opacity: 0.85;
+}
+
+.fs-studio__arg-repair strong,
+.fs-studio__arg-error strong {
+  font-weight: var(--fs-label-weight);
+}
+
+.fs-studio__arg-error {
+  color: var(--fs-warning);
 }
 
 /* ?????? Conversations column hidden on wide layouts (Ctrl+Alt+B) ?????? */

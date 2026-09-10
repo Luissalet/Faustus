@@ -1,5 +1,6 @@
-import { Check, ChevronDown, Copy, FileText, GitFork, Pencil, Quote, RefreshCw, Telescope, Trash2, Volume2, VolumeX, X } from 'lucide-react';
-import { Fragment, lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { ArrowDown, Check, ChevronDown, Copy, FileText, GitFork, Pencil, Quote, RefreshCw, Telescope, Trash2, Volume2, VolumeX, X } from 'lucide-react';
+import { useVirtualizer } from '@tanstack/react-virtual';
+import { Fragment, lazy, Suspense, useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 import { Button, describeError, friendlyError, IconButton } from '../../components';
 import type { AskUser, ContextLedger, DelegationTask } from '../../adapters/chat';
 import { attachmentUrl, isImage } from '../../adapters/composer';
@@ -7,9 +8,34 @@ import { Rich } from '../rich';
 import { splitMentions } from '../../lib/mentions';
 import { safeExternal } from '../../lib/markdown';
 import { stripExecutedFences, toolFenceRegex } from '../../lib/fences';
+import { frameBatcher } from '../../lib/frame-batch';
 import { formatMetrics, liveTps, type LiveRate, type PlanStepView, type Step, type Turn } from './model';
 import { t, tn } from '../../i18n';
 import { getDisplay } from '../../shell/display';
+
+/**
+ * PERF-01/UX-05: paint a fast-changing value at most once per animation
+ * frame instead of once per state update — see `lib/frame-batch.ts`'s doc
+ * comment for why. `active` opts a value in only while it is worth
+ * batching (a turn still streaming); once it settles, the exact final
+ * value is delivered immediately, with nothing left pending in the batcher.
+ */
+function useFrameBatched<T>(value: T, active: boolean): T {
+  const [shown, setShown] = useState(value);
+  const batcherRef = useRef<ReturnType<typeof frameBatcher<T>> | null>(null);
+  if (!batcherRef.current) batcherRef.current = frameBatcher<T>((v) => setShown(v));
+  useEffect(() => () => batcherRef.current?.cancel(), []);
+  useEffect(() => {
+    if (!active) {
+      batcherRef.current?.cancel();
+      setShown(value);
+      return;
+    }
+    batcherRef.current?.push(value);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value, active]);
+  return active ? shown : value;
+}
 
 /** Loaded on the first click: the speech adapter is not part of the eager bundle. */
 const speak = (text: string) => import('../../adapters/speech').then((m) => m.speak(text));
@@ -114,10 +140,30 @@ function useQuoteSelection(onQuote?: (text: string) => void) {
 
 const FILE_TOOLS = /^(read_file|write_file|edit_file|apply_patch|create_file|multi_edit|replace_across_files)$/;
 
-/** The unified diff of a file write, coloured line by line. */
+/** The unified diff of a file write, coloured line by line.
+ *
+ * A11Y-01/QA-44: `.fs-diff` scrolls its own box (`overflow: auto;
+ * max-block-size: 320px` in studio.css) once a diff runs long, so without a
+ * `tabIndex` it is a control a keyboard-only reader cannot reach at all —
+ * the mouse-only trap this lote's Playwright walkthrough checks for. Same
+ * fix as `rich.tsx`'s `.fs-rich__tablewrap` (a fichero ajeno already doing
+ * this correctly): `role="region"` + `tabIndex={0}` so Tab lands on it and
+ * the arrow/Page keys scroll it, with a live label instead of a mystery box. */
 export function DiffLines({ text }: { text: string }) {
   return (
-    <pre className="fs-diff" data-testid="step-diff">
+    <pre
+      className="fs-diff"
+      role="region"
+      tabIndex={0}
+      aria-label={t('Diff')}
+      data-testid="step-diff"
+      // A11Y-01/QA-44: the `<details>` this sits in already nudges itself
+      // into view on open, but Tab moving focus one step further, onto
+      // this box specifically, can re-scroll past that — found live at
+      // 200% zoom, ~20px of the box left below the fold either way. This
+      // is the tab stop that actually matters, so it gets the final say.
+      onFocus={(e) => e.currentTarget.scrollIntoView({ block: 'nearest' })}
+    >
       {text.split('\n').map((line, i) => {
         let cls = 'fs-diff-ctx';
         let body = line;
@@ -140,6 +186,52 @@ export function DiffLines({ text }: { text: string }) {
   );
 }
 
+/** A value from a repair's `from`/`to` (or an error `detail`), rendered as
+ *  the model sent it — `""` for an empty string reads as nothing happened,
+ *  so an explicit empty case is spelled out. */
+function argValue(v: unknown): string {
+  if (v === undefined) return t('(missing)');
+  if (v === '') return t('(empty)');
+  if (typeof v === 'string') return v;
+  try {
+    return JSON.stringify(v);
+  } catch {
+    return String(v);
+  }
+}
+
+/**
+ * CALL-03: what the argument check found for this call, next to the field
+ * it touched — a repair shows original → corrección, and an error the
+ * repair could not resolve shows on its own. `field`s covered by a repair
+ * are not repeated as bare errors: `_validate_native_tool_call`
+ * (src/agent_loop.py) reports the FULL error list even for fields it went
+ * on to fix, so without this filter every repaired field would also read
+ * as still broken.
+ */
+function ArgumentRepairs({ step }: { step: Step }) {
+  const repairs = step.repairs ?? [];
+  const fixedFields = new Set(repairs.map((r) => r.field));
+  const openErrors = (step.argumentErrors ?? []).filter((e) => !fixedFields.has(e.field));
+  if (!repairs.length && !openErrors.length) return null;
+  return (
+    <div className="fs-studio__arg-repairs" data-testid="tool-argument-repairs">
+      {repairs.map((r, i) => (
+        <p key={`r${i}`} className="fs-studio__arg-repair">
+          <strong>{r.field}</strong>
+          {' '}
+          {t('{from} → {to} (auto-corrected)', { from: argValue(r.from), to: argValue(r.to) })}
+        </p>
+      ))}
+      {openErrors.map((e, i) => (
+        <p key={`e${i}`} className="fs-studio__arg-error" data-tone="warning">
+          <strong>{e.field}</strong> {e.detail || t('Argument error')}
+        </p>
+      ))}
+    </div>
+  );
+}
+
 function ToolRail({ steps, live, onOpenFile, onOpenDoc }: { steps: Step[]; live: boolean; onOpenFile?: (path: string) => void; onOpenDoc?: (docId: string) => void }) {
   const [expanded, setExpanded] = useState(false);
   const leadingDone = steps.findIndex((s) => s.state !== 'succeeded');
@@ -159,7 +251,20 @@ function ToolRail({ steps, live, onOpenFile, onOpenDoc }: { steps: Step[]; live:
       )}
       {visible.map((step) =>
         step.output || step.command || step.diff || step.screenshot ? (
-          <details key={step.id} className="fs-trace__step fs-studio__step" data-state={step.state}>
+          <details
+            key={step.id}
+            className="fs-trace__step fs-studio__step"
+            data-state={step.state}
+            // A11Y-01/QA-44: opening this by keyboard (Enter on the
+            // <summary>) can reveal a tall diff/output the browser's own
+            // focus-scroll only partly brought into view — found live at
+            // 200% zoom, the box's own bottom edge a few px below the
+            // fold. Nudging on open (never on close) covers it without
+            // fighting the reader's scroll position the rest of the time.
+            onToggle={(e) => {
+              if (e.currentTarget.open) e.currentTarget.scrollIntoView({ block: 'nearest' });
+            }}
+          >
             <summary>
               <span className="fs-trace__node" aria-hidden="true" />
               <span className="fs-trace__label">{step.label}</span>
@@ -187,6 +292,7 @@ function ToolRail({ steps, live, onOpenFile, onOpenDoc }: { steps: Step[]; live:
               </p>
             ) : null}
             {step.diff ? <DiffLines text={step.diff.text} /> : step.command && step.command !== step.label && <pre className="fs-studio__cmd">{step.command}</pre>}
+            {(step.repairs?.length || step.argumentErrors?.length) ? <ArgumentRepairs step={step} /> : null}
             {step.output && <pre className="fs-studio__out">{step.output.slice(0, 6000)}</pre>}
             {step.screenshot && <img className="fs-studio__shot" src={step.screenshot} alt={t('Tool screenshot')} loading="lazy" />}
           </details>
@@ -202,6 +308,26 @@ function ToolRail({ steps, live, onOpenFile, onOpenDoc }: { steps: Step[]; live:
   );
 }
 
+/**
+ * A11Y-01/QA-44: scroll a newly-arrived card into view the moment it
+ * mounts, instead of counting on the browser's own focus-triggered
+ * scrolling. Found live with `scripts/ui_a11y.py` at 200% zoom: a card
+ * appearing near the foot of a tall reply can render with its action
+ * buttons already below the fold, and Tab-focusing one of them is not
+ * guaranteed to bring it fully into view by itself (`scrollIntoView` on
+ * focus is a courtesy some engines/zoom modes skip, not a spec guarantee)
+ * — every keyboard user's very next Tab stop would then be a button they
+ * cannot see. `block: 'nearest'` never fights the reader's own scroll
+ * position once the card is already visible; it only acts the first time.
+ */
+function useScrollIntoViewOnMount<T extends HTMLElement>() {
+  const ref = useRef<T>(null);
+  useEffect(() => {
+    ref.current?.scrollIntoView({ block: 'nearest' });
+  }, []);
+  return ref;
+}
+
 export function AskCard({
   ask,
   busy,
@@ -213,9 +339,10 @@ export function AskCard({
   onApproval: (decision: Decision) => void;
   onAnswer: (text: string, optionIds?: string[]) => void;
 }) {
+  const ref = useScrollIntoViewOnMount<HTMLDivElement>();
   if (ask.kind === 'tool_approval') {
     return (
-      <div className="fs-studio__ask" data-testid="studio-approval">
+      <div className="fs-studio__ask" ref={ref} data-testid="studio-approval">
         <p className="fs-studio__ask-title">{t('Needs your permission')}</p>
         {ask.question && <p className="fs-prose">{ask.question}</p>}
         <div className="fs-studio__ask-actions">
@@ -226,7 +353,7 @@ export function AskCard({
       </div>
     );
   }
-  return <QuestionCard ask={ask} busy={busy} onAnswer={onAnswer} />;
+  return <QuestionCard ask={ask} busy={busy} onAnswer={onAnswer} rootRef={ref} />;
 }
 
 /**
@@ -237,7 +364,19 @@ export function AskCard({
  * did not think of (Luis, 10-09-2026: "varias opciones para elegir y una
  * para que escribas tú, o una checklist").
  */
-function QuestionCard({ ask, busy, onAnswer }: { ask: AskUser; busy: boolean; onAnswer: (text: string, optionIds?: string[]) => void }) {
+function QuestionCard({
+  ask,
+  busy,
+  onAnswer,
+  rootRef,
+}: {
+  ask: AskUser;
+  busy: boolean;
+  onAnswer: (text: string, optionIds?: string[]) => void;
+  /** See `useScrollIntoViewOnMount`'s doc comment — `AskCard` owns the ref
+   *  so it can pass the SAME one down whichever branch it renders. */
+  rootRef?: RefObject<HTMLDivElement | null>;
+}) {
   const [picked, setPicked] = useState<string[]>([]);
   const [own, setOwn] = useState('');
   const toggle = (label: string) => setPicked((cur) => (cur.includes(label) ? cur.filter((l) => l !== label) : [...cur, label]));
@@ -254,7 +393,7 @@ function QuestionCard({ ask, busy, onAnswer }: { ask: AskUser; busy: boolean; on
     onAnswer(picked.join('; '), pickedIds.length ? pickedIds : undefined);
   };
   return (
-    <div className="fs-studio__ask" data-testid="studio-question" data-multi={ask.multi || undefined}>
+    <div className="fs-studio__ask" ref={rootRef} data-testid="studio-question" data-multi={ask.multi || undefined}>
       <p className="fs-studio__ask-title">{ask.multi ? t('Asks you — pick all that apply') : t('Asks you')}</p>
       <p className="fs-prose">{ask.question}</p>
       {ask.options.length > 0 && !ask.multi && (
@@ -541,6 +680,7 @@ function useFenceRegex(): RegExp | null {
 function UserTurn({
   turn,
   busy,
+  enter,
   onEdit,
   onRegenerate,
   onDelete,
@@ -548,6 +688,9 @@ function UserTurn({
 }: {
   turn: Turn;
   busy: boolean;
+  /** Play the arrival animation: only true the render a turn's id was first
+   *  seen, never again when virtualization remounts it on scroll (PERF-01). */
+  enter?: boolean;
   onEdit: TranscriptProps['onEdit'];
   onRegenerate: TranscriptProps['onRegenerate'];
   onDelete: TranscriptProps['onDelete'];
@@ -555,7 +698,7 @@ function UserTurn({
 }) {
   const [editing, setEditing] = useState(false);
   return (
-    <article className="fs-turn fs-turn--user" data-nav-id={turn.id} data-db-id={turn.dbId} data-testid="turn-user">
+    <article className="fs-turn fs-turn--user" data-enter={enter || undefined} data-nav-id={turn.id} data-db-id={turn.dbId} data-testid="turn-user">
       <div className="fs-turn__user-wrap">
         {editing ? (
           <Editor
@@ -650,8 +793,9 @@ function PlanStepsCard({ steps, revision, warnings }: { steps: PlanStepView[]; r
 }
 
 function AssistantTurn({
-  turn,
+  turn: liveTurn,
   busy,
+  enter,
   onApproval,
   onAnswer,
   onRegenerate,
@@ -664,6 +808,8 @@ function AssistantTurn({
 }: {
   turn: Turn;
   busy: boolean;
+  /** See `UserTurn`'s doc comment for the same prop. */
+  enter?: boolean;
   onApproval: (decision: Decision) => void;
   onAnswer: (text: string, optionIds?: string[]) => void;
   onRegenerate: () => void;
@@ -674,11 +820,16 @@ function AssistantTurn({
   onRerun?: TranscriptProps['onRerun'];
   onFork?: () => void;
 }) {
+  // PERF-01/UX-05: while streaming, repaint this card at most once per
+  // frame — see `useFrameBatched`'s doc comment. A settled turn (most of a
+  // long transcript, at any moment) renders straight off the prop, no
+  // batching in the way.
+  const turn = useFrameBatched(liveTurn, liveTurn.streaming);
   // The tool call has already run and is in the rail; its fence is leftovers.
   const fences = useFenceRegex();
   const body = stripExecutedFences(turn.text, fences);
   return (
-    <article className="fs-turn fs-turn--assistant" data-nav-id={turn.id} data-db-id={turn.dbId} data-streaming={turn.streaming || undefined} data-testid="turn-assistant">
+    <article className="fs-turn fs-turn--assistant" data-enter={enter || undefined} data-nav-id={turn.id} data-db-id={turn.dbId} data-streaming={turn.streaming || undefined} data-testid="turn-assistant">
       <span className="fs-turn__node" aria-hidden="true" />
       <div className="fs-turn__body">
         {turn.speaker && <p className="fs-turn__speaker">{turn.speaker}</p>}
@@ -889,10 +1040,69 @@ function ResearchLine({ research }: { research: NonNullable<Turn['research']> })
   );
 }
 
+/** No turn has been measured yet at this height — corrected the moment
+ *  each row mounts and reports its real size (`measureElement`); only
+ *  changes how many off-screen rows the very first paint guesses at. */
+const ESTIMATED_TURN_HEIGHT = 180;
+/** Same "close enough to the bottom" reading as Studio.tsx's own
+ *  pinned-scroll effect (`pinnedRef`, a fichero ajeno to this lote), so the
+ *  back-to-bottom button and the auto-scroll agree on what "at the bottom"
+ *  means without the two files sharing state. */
+const BOTTOM_THRESHOLD = 80;
+
 export function Transcript({ turns, busy, onApproval, onAnswer, onEdit, onRegenerate, onDelete, onNotice, onOpenFile, onOpenDoc, onRerun, onFork, onQuote }: TranscriptProps) {
   const quote = useQuoteSelection(onQuote);
+
+  // PERF-01/QA-37: Studio.tsx owns the actual scrolling element
+  // (`.fs-studio__scroll`) and is off-limits to this lote, so it is found
+  // from here instead of threaded down as a prop — this root node is
+  // always its direct content, whether loading/hero/empty siblings are
+  // present or not (see Studio.tsx's `fs-studio__transcript-stage`).
+  const scrollElRef = useRef<HTMLElement | null>(null);
+  const setRootRef = useCallback(
+    (el: HTMLDivElement | null) => {
+      quote.holder.current = el;
+      scrollElRef.current = el ? el.closest<HTMLElement>('.fs-studio__scroll') : null;
+    },
+    [quote.holder],
+  );
+
+  const rowVirtualizer = useVirtualizer({
+    count: turns.length,
+    getScrollElement: () => scrollElRef.current,
+    estimateSize: () => ESTIMATED_TURN_HEIGHT,
+    overscan: 8,
+    getItemKey: useCallback((index: number) => turns[index]?.id ?? index, [turns]),
+  });
+
+  // A turn's id enters this set the first render it is seen at all; a LATER
+  // render — virtualization mounting it again after a scroll, or a delta
+  // updating some other turn — never replays its arrival animation (see
+  // `.fs-turn[data-enter]` in studio.css). Updated in an effect, which runs
+  // after the render that reads it, so a genuinely new id still reads as new.
+  const seenIds = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    for (const turn of turns) seenIds.current.add(turn.id);
+  }, [turns]);
+
+  // The "new messages" button: independent of Studio.tsx's own `pinnedRef`
+  // (which drives the actual auto-scroll and is a fichero ajeno), reading
+  // the same element and the same threshold so the two never disagree about
+  // what "at the bottom" means.
+  const [pastBottom, setPastBottom] = useState(false);
+  useEffect(() => {
+    const el = scrollElRef.current;
+    if (!el) return;
+    const check = () => setPastBottom(el.scrollHeight - el.scrollTop - el.clientHeight >= BOTTOM_THRESHOLD);
+    check();
+    el.addEventListener('scroll', check, { passive: true });
+    return () => el.removeEventListener('scroll', check);
+  }, []);
+
+  const items = rowVirtualizer.getVirtualItems();
+
   return (
-    <div className="fs-studio__turns" ref={quote.holder}>
+    <div className="fs-studio__turns" ref={setRootRef} style={{ blockSize: rowVirtualizer.getTotalSize() }}>
       {quote.pos && onQuote && (
         <button
           type="button"
@@ -908,33 +1118,60 @@ export function Transcript({ turns, busy, onApproval, onAnswer, onEdit, onRegene
           <Quote size={13} aria-hidden="true" /> Citar
         </button>
       )}
-      {turns.map((turn, index) =>
-        turn.role === 'user' ? (
-          <UserTurn key={turn.id} turn={turn} busy={busy} onEdit={onEdit} onRegenerate={onRegenerate} onDelete={onDelete} onOpenFile={onOpenFile} />
-        ) : (
-          <AssistantTurn
-            key={turn.id}
-            turn={turn}
-            busy={busy}
-            onApproval={(decision) => onApproval(turn, decision)}
-            onAnswer={(text, optionIds) => onAnswer(turn, text, optionIds)}
-            onRegenerate={() => {
-              // Regenerating a reply means redoing it from the user turn before it.
-              for (let i = index - 1; i >= 0; i--) {
-                if (turns[i].role === 'user') {
-                  onRegenerate(turns[i]);
-                  return;
-                }
-              }
-            }}
-            onDelete={() => onDelete(turn)}
-            onNotice={onNotice}
-            onOpenFile={onOpenFile}
-            onOpenDoc={onOpenDoc}
-            onRerun={onRerun}
-            onFork={onFork ? () => onFork(turn) : undefined}
-          />
-        ),
+      {items.map((virtualItem) => {
+        const turn = turns[virtualItem.index];
+        if (!turn) return null;
+        const index = virtualItem.index;
+        const enter = !seenIds.current.has(turn.id);
+        return (
+          <div
+            key={virtualItem.key}
+            ref={rowVirtualizer.measureElement}
+            data-index={virtualItem.index}
+            className="fs-studio__turn-row"
+            style={{ transform: `translateY(${virtualItem.start}px)` }}
+          >
+            {turn.role === 'user' ? (
+              <UserTurn turn={turn} busy={busy} enter={enter} onEdit={onEdit} onRegenerate={onRegenerate} onDelete={onDelete} onOpenFile={onOpenFile} />
+            ) : (
+              <AssistantTurn
+                turn={turn}
+                busy={busy}
+                enter={enter}
+                onApproval={(decision) => onApproval(turn, decision)}
+                onAnswer={(text, optionIds) => onAnswer(turn, text, optionIds)}
+                onRegenerate={() => {
+                  // Regenerating a reply means redoing it from the user turn before it.
+                  for (let i = index - 1; i >= 0; i--) {
+                    if (turns[i].role === 'user') {
+                      onRegenerate(turns[i]);
+                      return;
+                    }
+                  }
+                }}
+                onDelete={() => onDelete(turn)}
+                onNotice={onNotice}
+                onOpenFile={onOpenFile}
+                onOpenDoc={onOpenDoc}
+                onRerun={onRerun}
+                onFork={onFork ? () => onFork(turn) : undefined}
+              />
+            )}
+          </div>
+        );
+      })}
+      {pastBottom && (
+        <button
+          type="button"
+          className="fs-studio__back-to-bottom"
+          onClick={() => {
+            const el = scrollElRef.current;
+            if (el) el.scrollTop = el.scrollHeight;
+          }}
+          data-testid="turn-back-to-bottom"
+        >
+          <ArrowDown size={14} aria-hidden="true" /> {t('New messages')}
+        </button>
       )}
     </div>
   );

@@ -271,6 +271,14 @@ export type ChatEvent =
       docId?: string;
       /** A validated raster data: URL (desktop_screenshot and browser tools). */
       screenshot?: string;
+      /** CALL-03: `_validate_native_tool_call`'s (src/agent_loop.py) argument
+       *  validation outcome for this call, forwarded from the wire's
+       *  `argument_errors`/`repairs` — `model.ts`'s `argumentRepairFields`
+       *  already reads these defensively off a `tool_output` event, so this
+       *  is the one change that lights up the live path (history restore
+       *  already worked off the persisted `tool_events[i]` entry). */
+      argumentErrors?: { field: string; kind: string; detail: string }[];
+      repairs?: { field: string; from: unknown; to: unknown; reason: string }[];
     }
   | { type: 'subagent'; payload: SubagentPayload }
   | { type: 'frame'; frame: BrowserFrame }
@@ -713,6 +721,29 @@ export function diffFrom(raw: unknown): StepDiff | undefined {
   };
 }
 
+/** CALL-03 passthrough: the wire's `argument_errors` on a `tool_output`
+ *  event, same field names `_validate_native_tool_call` (src/agent_loop.py)
+ *  attaches to both the live event and the persisted `tool_events[i]` entry
+ *  — mirrors `model.ts`'s `argumentRepairFields` mapping so both readers of
+ *  this shape agree on it. */
+function argumentErrorsFrom(raw: unknown): { field: string; kind: string; detail: string }[] | undefined {
+  const errors = asArray<Record<string, unknown>>(raw)
+    .map((e) => ({ field: str(e.field), kind: str(e.kind), detail: str(e.detail) }))
+    .filter((e) => e.field);
+  return errors.length ? errors : undefined;
+}
+
+/** CALL-03 passthrough: the wire's `repairs` on a `tool_output` event —
+ *  the bounded, same-meaning fixes `repair_tool_arguments` actually applied
+ *  before the call ran. `from`/`to` are left as-is (their type depends on
+ *  the field being repaired), same as `model.ts`'s own mapping. */
+function repairsFrom(raw: unknown): { field: string; from: unknown; to: unknown; reason: string }[] | undefined {
+  const repairs = asArray<Record<string, unknown>>(raw)
+    .map((r) => ({ field: str(r.field), from: r.from, to: r.to, reason: str(r.reason) }))
+    .filter((r) => r.field);
+  return repairs.length ? repairs : undefined;
+}
+
 /** `harness_summary` data, and the `harness` block history keeps. */
 export function summaryFrom(data: Record<string, unknown>): HarnessSummary {
   const cs = (data.changeset && typeof data.changeset === 'object' ? data.changeset : null) as Record<string, unknown> | null;
@@ -836,6 +867,8 @@ export function decode(raw: Record<string, unknown>, sseEvent: string | null): C
         diff: diffFrom(raw.diff),
         docId: str(raw.doc_id) || undefined,
         screenshot: safeFrameSrc(raw.screenshot) || undefined,
+        argumentErrors: argumentErrorsFrom(raw.argument_errors),
+        repairs: repairsFrom(raw.repairs),
       };
     case 'browser_view': {
       const frame = frameFrom(raw);

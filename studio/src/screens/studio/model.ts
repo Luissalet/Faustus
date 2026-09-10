@@ -38,6 +38,14 @@ export interface Step {
   screenshot?: string;
   /** The living document this call created or changed. */
   docId?: string;
+  /** CALL-03: what `_validate_native_tool_call` (src/agent_loop.py) found in
+   *  this call's arguments — every error, whether or not it blocked
+   *  execution, matching `src/tool_schemas.py`'s `ArgumentError` fields. */
+  argumentErrors?: { field: string; kind: string; detail: string }[];
+  /** CALL-03: the bounded, same-meaning repairs actually applied before the
+   *  call ran (`repair_tool_arguments`'s `applied_repairs`) — one entry per
+   *  field, so the tool card can show "original → corrección" next to it. */
+  repairs?: { field: string; from: unknown; to: unknown; reason: string }[];
 }
 
 /**
@@ -339,6 +347,39 @@ export function newWorker(id: string, delegation: string, now: number): Worker {
 const s = (v: unknown): string => (v === undefined || v === null ? '' : String(v));
 const n = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : typeof v === 'string' && v.trim() && Number.isFinite(Number(v)) ? Number(v) : null);
 
+/** CALL-03 passthrough for a tool call's argument-validation outcome —
+ *  `{"errors": [...], "repairs": [...]}`, the exact shape
+ *  `_validate_native_tool_call`'s `meta` (src/agent_loop.py) attaches to
+ *  `tool_output_data`/the persisted `tool_events[i]` entry, field names
+ *  straight from `src/tool_schemas.py`'s `ArgumentError`/
+ *  `repair_tool_arguments`. Same defensive-read idiom as `errorTraceFields`
+ *  above: `adapters/chat.ts`'s `decode()` does not forward `argument_errors`/
+ *  `repairs` onto the live `tool_output` `ChatEvent` yet (a fichero ajeno to
+ *  this lote — see the report's "Cambios necesarios en ficheros ajenos"),
+ *  so today this only ever finds something on history restore, where
+ *  `restoreFromMetadata` reads the raw persisted event directly; a client
+ *  that gains it on the wire needs no further change here. */
+function argumentRepairFields(raw: unknown): { argumentErrors?: Step['argumentErrors']; repairs?: Step['repairs'] } {
+  const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+  const errsRaw = Array.isArray(r.argumentErrors) ? r.argumentErrors : Array.isArray(r.argument_errors) ? r.argument_errors : undefined;
+  const repsRaw = Array.isArray(r.repairs) ? r.repairs : undefined;
+  const obj = (v: unknown) => (v && typeof v === 'object' ? (v as Record<string, unknown>) : null);
+  const errors = errsRaw
+    ?.map(obj)
+    .filter((e): e is Record<string, unknown> => e !== null)
+    .map((e) => ({ field: s(e.field), kind: s(e.kind), detail: s(e.detail) }))
+    .filter((e) => e.field);
+  const repairs = repsRaw
+    ?.map(obj)
+    .filter((rr): rr is Record<string, unknown> => rr !== null)
+    .map((rr) => ({ field: s(rr.field), from: rr.from, to: rr.to, reason: s(rr.reason) }))
+    .filter((rr) => rr.field);
+  return {
+    argumentErrors: errors && errors.length ? errors : undefined,
+    repairs: repairs && repairs.length ? repairs : undefined,
+  };
+}
+
 /** Fold one `subagent` payload into a worker (pure; the legacy _saApply). */
 export function applyWorker(prev: Worker, sa: SubagentPayload, now: number): Worker {
   const w: Worker = { ...prev, steers: prev.steers.slice(), supervisor: prev.supervisor.slice(), lastEventAt: now };
@@ -630,6 +671,10 @@ export function apply(turn: Turn, event: ChatEvent): Turn {
     }
     case 'tool_output': {
       const index = lastRunning(turn.steps, event.tool);
+      // CALL-03: not on `ChatEvent['tool_output']` yet (see
+      // `argumentRepairFields`'s doc comment) — reads as absent until
+      // `decode()` forwards it, same as every other passthrough field here.
+      const repairFields = argumentRepairFields(event);
       const finished: Step = {
         id: index === -1 ? uid('step') : turn.steps[index].id,
         tool: event.tool,
@@ -641,6 +686,8 @@ export function apply(turn: Turn, event: ChatEvent): Turn {
         round: index === -1 ? turn.rounds : turn.steps[index].round,
         diff: event.diff,
         screenshot: event.screenshot,
+        argumentErrors: repairFields.argumentErrors ?? (index === -1 ? undefined : turn.steps[index].argumentErrors),
+        repairs: repairFields.repairs ?? (index === -1 ? undefined : turn.steps[index].repairs),
         docId: event.docId,
       };
       const steps = turn.steps.slice();
@@ -821,16 +868,23 @@ export function restoreFromMetadata(turn: Turn, meta: Record<string, unknown>): 
   const planUpdate = planUpdateFromMeta(meta);
   const speaker = typeof meta.group_model === 'string' && meta.group_model ? meta.group_model : undefined;
   if (!events.length && !meta.harness && !meta.web_sources && !meta.research_sources) return speaker ? { ...turn, speaker } : turn;
+  // CALL-03: `toolEventsFrom` (adapters/chat.ts) strips `argument_errors`/
+  // `repairs` down to nothing, the same way it used to strip `plan_update`
+  // before `planUpdateFromMeta` started reading it straight off the raw
+  // array below — same fix, same reason: `events[i]` and `rawEvents[i]` are
+  // the same persisted `tool_events` entry, 1:1 in order.
+  const rawEvents = Array.isArray(meta.tool_events) ? (meta.tool_events as Record<string, unknown>[]) : [];
   const steps: Step[] = [];
   const workers: Worker[] = [];
   let ask: AskUser | undefined;
   let approval: Turn['approval'];
   let rounds = turn.rounds;
-  for (const ev of events) {
+  events.forEach((ev, idx) => {
     const parked = ev.exitCode === null && /^Waiting for an exact user approval/i.test(ev.output.trim());
     const ok = ev.exitCode === null || ev.exitCode === 0;
     const pending = parked && ev.ask !== undefined && !ev.askResolved;
     const superseded = ev.askResolved && ev.askDecision === 'superseded';
+    const repairFields = argumentRepairFields(rawEvents[idx]);
     steps.push({
       id: uid('step'),
       tool: ev.tool,
@@ -843,6 +897,8 @@ export function restoreFromMetadata(turn: Turn, meta: Record<string, unknown>): 
       diff: ev.diff,
       screenshot: ev.screenshot,
       docId: ev.docId,
+      argumentErrors: repairFields.argumentErrors,
+      repairs: repairFields.repairs,
     });
     rounds = Math.max(rounds, ev.round);
     ev.subagents.forEach((sa, i) => workers.push(workerFromPersisted(sa, i)));
@@ -851,7 +907,7 @@ export function restoreFromMetadata(turn: Turn, meta: Record<string, unknown>): 
     // the message's own text as well, and left alone it comes back as a
     // bubble asking for a permission that was granted minutes ago.
     if (ev.ask && ev.askResolved) approval = { question: ev.ask.question, decision: ev.askDecision ?? '' };
-  }
+  });
   const harness = meta.harness && typeof meta.harness === 'object' ? (meta.harness as Record<string, unknown>) : null;
   const rawSources = Array.isArray(meta.web_sources) ? meta.web_sources : Array.isArray(meta.research_sources) ? meta.research_sources : null;
   const sources = rawSources
