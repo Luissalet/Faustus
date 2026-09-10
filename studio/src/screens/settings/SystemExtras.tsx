@@ -2,6 +2,7 @@ import { Download, RefreshCw, Trash2, Upload } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '../../components';
 import { diagnosticsLogs, exportBackup, importBackup, wipe, WIPE_KINDS } from '../../adapters/account';
+import { getJson } from '../../adapters/api';
 import { t } from '../../i18n';
 import { Select } from './fields';
 
@@ -9,10 +10,60 @@ import { Select } from './fields';
 export function SystemExtras({ say }: { say: (t: string) => void }) {
   return (
     <>
+      <VersionCard />
       <LogsCard />
       <BackupCard say={say} />
       <DangerCard say={say} />
     </>
+  );
+}
+
+/** BASE-01: `/api/version`'s app version plus, since lote 6, the running
+ *  checkout's build (short commit sha + date, read straight out of `.git`)
+ *  and the actually-served `/studio` HTML's mtime + content hash — the
+ *  Diagnostics-screen "what am I actually running" line. */
+interface VersionInfo {
+  version: string;
+  build: { sha: string | null; date: string | null };
+  served_studio: { mtime: string | null; sha: string | null };
+}
+
+function VersionCard() {
+  const [info, setInfo] = useState<VersionInfo | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    getJson<VersionInfo>('/api/version')
+      .then((v) => {
+        if (!cancelled) setInfo(v);
+      })
+      .catch((e: Error) => {
+        if (!cancelled) setErr(e.message);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return (
+    <div className="fs-set__card">
+      <h3 className="fs-set__card-title">{t('Version')}</h3>
+      {err ? (
+        <p className="fs-set__err">{err}</p>
+      ) : !info ? (
+        <p className="fs-set__help">{t('Loading')}</p>
+      ) : (
+        <p className="fs-set__help">
+          {info.build.sha && info.served_studio.sha
+            ? t('Version {v} · build {sha} ({date}) · Studio served: {served}', {
+                v: info.version,
+                sha: info.build.sha,
+                date: info.build.date ?? '?',
+                served: info.served_studio.sha,
+              })
+            : t('Version {v}', { v: info.version })}
+        </p>
+      )}
+    </div>
   );
 }
 

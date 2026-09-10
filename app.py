@@ -1328,10 +1328,105 @@ async def serve_login(request: Request):
         return RedirectResponse(url="/", status_code=302)
     return serve_html_with_nonce(request, abs_join(BASE_DIR, "static/login.html"))
 
+def _git_build_info(repo_root: str) -> Dict[str, Optional[str]]:
+    """Short commit sha + its date for the running checkout (BASE-01),
+    read straight out of `.git` — no `git` subprocess (COMUN.md's hard rule
+    against calling git applies to us just as much as to a lote script, and
+    a version endpoint has no real need for one anyway).
+
+    `.git/logs/HEAD`'s last line is whatever most recently moved HEAD
+    (commit, checkout, pull, reset) and already carries a real unix
+    timestamp trailer, so reading it avoids decompressing a loose git
+    object or parsing a packfile for the common case. Falls back to
+    resolving `.git/HEAD` -> the ref file (loose, or `packed-refs`) for the
+    sha alone when there is no reflog (`core.logAllRefUpdates=false`, or a
+    fresh clone) — best-effort throughout: a checkout with no `.git` at all
+    (a zipped release, a container without history) answers
+    {"sha": None, "date": None} rather than raising, since /api/version
+    must answer regardless of how this copy of the app got here.
+    """
+    import re
+    info: Dict[str, Optional[str]] = {"sha": None, "date": None}
+    git_dir = os.path.join(repo_root, ".git")
+    try:
+        log_path = os.path.join(git_dir, "logs", "HEAD")
+        if os.path.isfile(log_path):
+            with open(log_path, "r", encoding="utf-8", errors="replace") as fh:
+                lines = [ln for ln in fh.read().splitlines() if ln.strip()]
+            if lines:
+                fields = lines[-1].split("\t", 1)[0].split(" ")
+                # <old-sha> <new-sha> <name...> <email> <unix-ts> <tz>
+                if len(fields) >= 5:
+                    new_sha = fields[1]
+                    if len(new_sha) >= 7 and re.fullmatch(r"[0-9a-f]{7,40}", new_sha):
+                        info["sha"] = new_sha[:7]
+                    try:
+                        stamp = datetime.fromtimestamp(int(fields[-2]), tz=timezone.utc)
+                        info["date"] = stamp.replace(microsecond=0).isoformat().replace("+00:00", "Z")
+                    except (ValueError, OverflowError, OSError):
+                        pass
+        if not info["sha"]:
+            head_path = os.path.join(git_dir, "HEAD")
+            if os.path.isfile(head_path):
+                with open(head_path, "r", encoding="utf-8", errors="replace") as fh:
+                    head = fh.read().strip()
+                sha = None
+                if head.startswith("ref:"):
+                    ref = head.split(":", 1)[1].strip()
+                    ref_path = os.path.join(git_dir, *ref.split("/"))
+                    if os.path.isfile(ref_path):
+                        with open(ref_path, "r", encoding="utf-8", errors="replace") as fh:
+                            sha = fh.read().strip()
+                    else:
+                        packed_path = os.path.join(git_dir, "packed-refs")
+                        if os.path.isfile(packed_path):
+                            with open(packed_path, "r", encoding="utf-8", errors="replace") as fh:
+                                for line in fh:
+                                    if line.strip().endswith(" " + ref):
+                                        sha = line.split()[0]
+                                        break
+                elif re.fullmatch(r"[0-9a-f]{7,40}", head):
+                    sha = head
+                if sha and re.fullmatch(r"[0-9a-f]{7,40}", sha):
+                    info["sha"] = sha[:7]
+    except OSError:
+        pass
+    return info
+
+
+def _served_studio_info() -> Dict[str, Optional[str]]:
+    """mtime + content hash of the HTML actually sent for `/studio` (BASE-01).
+
+    Deliberately NOT static/studio/index.html — vite writes that file next
+    to the bundle, but nothing serves it: `/studio`, like every shell route,
+    answers through `serve_index()`, which reads static/index.html and
+    templates `{{ASSET_V:...}}` into it (src/app_helpers.py). Diagnostics
+    needs to say what a browser actually gets for that route, not what the
+    build tool happened to emit next to studio.js — reuses
+    `asset_version()` (the same content-hash cache the template
+    substitution itself uses) rather than hashing the file a second way.
+    """
+    from src.app_helpers import asset_version
+    path = abs_join(BASE_DIR, "static/index.html")
+    info: Dict[str, Optional[str]] = {"path": "static/index.html", "mtime": None, "sha": None}
+    try:
+        stat = os.stat(path)
+        stamp = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc)
+        info["mtime"] = stamp.replace(microsecond=0).isoformat().replace("+00:00", "Z")
+        info["sha"] = asset_version(path)
+    except OSError:
+        pass
+    return info
+
+
 @app.get("/api/version")
 async def get_version():
     from core.constants import APP_VERSION
-    return {"version": APP_VERSION}
+    return {
+        "version": APP_VERSION,
+        "build": _git_build_info(BASE_DIR),
+        "served_studio": _served_studio_info(),
+    }
 
 @app.get("/api/health")
 async def health_check() -> Dict[str, str]:
