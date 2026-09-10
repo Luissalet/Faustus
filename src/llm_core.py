@@ -12,9 +12,13 @@ import os
 import math
 from contextlib import asynccontextmanager
 from fastapi import HTTPException
-from typing import Optional, Dict, List, Tuple
+from typing import Optional, Dict, List, Tuple, Callable
 from src.model_context import get_context_length, DEFAULT_CONTEXT, is_local_endpoint
 from src.tool_call_assembler import ToolCallAssembler
+from src.retry_policy import (
+    RetryClass, RetryBudget, classify_http, parse_retry_after,
+    delay as _retry_delay, error_class_for as _retry_error_class,
+)
 from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
@@ -198,6 +202,11 @@ class LLMConfig:
     DEFAULT_MAX_TOKENS = 0
     MAX_RETRIES = 3
     RETRY_DELAY = 0.5
+    # Wall-clock ceiling on the whole retry sequence of one provider call
+    # (src.retry_policy.RetryBudget), independent of MAX_RETRIES: a run of
+    # long Retry-After waits could otherwise burn far more time than
+    # MAX_RETRIES alone suggests. Override with env LLM_RETRY_TIME_BUDGET.
+    RETRY_TIME_BUDGET = float(os.getenv('LLM_RETRY_TIME_BUDGET', '45') or '45')
     STREAM_TIMEOUT = 300
     # TCP+TLS connect budget for a SINGLE attempt. The old hard-coded 3.0s
     # assumed LAN/Tailscale peers ('SYN in <100ms'); it is too tight for public
@@ -2466,12 +2475,29 @@ async def llm_call_async(
     return_model_metadata: bool = False,
     response_schema: Optional[Dict] = None,
     pin_public_dns: bool = False,
+    on_outcome_unknown: Optional[Callable[[int, float], None]] = None,
 ) -> str | tuple[str, str]:
     """Asynchronous LLM call using httpx with connection pooling, timeout, retry logic, and performance logging.
 
     ``response_schema`` is a JSON Schema the answer must obey. Native Ollama
     enforces it while decoding (``format`` on /api/chat); every other provider
     ignores it and never sees it, so callers keep their own parsing as a net.
+
+    Retries (CALL-06, spec §34.5) are classified by ``src.retry_policy`` rather
+    than retried on optimism: 429/503 honour ``Retry-After``, other 5xx use
+    jittered backoff, and 4xx never retry. A read timeout or a reset that
+    happens after the request body was already written is ``outcome_unknown``
+    — this call still retries it (a plain completion's only "effect" is
+    provider-side tokens spent, which §34.5 accepts as retryable), but calls
+    ``on_outcome_unknown(attempt, elapsed_seconds)`` first so a caller can log
+    or account for the fact that the first attempt may have completed
+    upstream. A tool wrapping a call with a REMOTE EFFECT (sending mail,
+    posting, anything not just "tokens spent") must NOT reuse this
+    auto-retry-on-outcome-unknown behaviour: classify with
+    ``src.retry_policy.classify_http`` directly and, on
+    ``RetryClass.OUTCOME_UNKNOWN``, reconcile (query the service for the
+    effect's own idempotency key / status) or surface it for a human instead
+    of resending blindly.
     """
     if str(url or '').startswith('faustus-cli://'):
         from src.cli_model import complete_async
@@ -2670,6 +2696,19 @@ async def llm_call_async(
             logger.warning("public DNS pinning failed closed for %s: %s",
                            _host_key(target_url), exc)
             raise HTTPException(503, "Could not establish a safe connection to the endpoint")
+    def _annotate(exc: HTTPException, *, error_class: str, retryable: bool,
+                   attempts: int) -> HTTPException:
+        """Attach the §34.5 error_class/retryable/attempts fields to the
+        exception this loop raises, without changing its type — fallback
+        eligibility elsewhere keys off `isinstance`/`fallback_eligible`, and
+        HTTPException happily carries extra attributes."""
+        exc.error_class = error_class
+        exc.retryable = retryable
+        exc.attempts = attempts
+        return exc
+
+    _budget = RetryBudget(LLMConfig.RETRY_TIME_BUDGET)
+    _budget.start()
     attempt = 0
     while attempt < max_retries:
         attempt += 1
@@ -2701,14 +2740,34 @@ async def llm_call_async(
             duration = time.time() - start
             if not r.is_success:
                 friendly = _format_upstream_error(r.status_code, r.text, target_url)
+                classification = classify_http(status=r.status_code, headers=r.headers)
+                err_class = _retry_error_class(status=r.status_code)
                 logger.warning(
                     f"LLM async call to {target_url} failed in {duration:.2f}s "
-                    f"(attempt {attempt}): HTTP {r.status_code} {friendly}"
+                    f"(attempt {attempt}, {classification}): HTTP {r.status_code} {friendly}"
                 )
-                if r.status_code in (429, 502, 503, 504) and attempt < max_retries:
-                    await asyncio.sleep(LLMConfig.RETRY_DELAY)
+                # retry_now (429/503 honouring Retry-After, 502/504) and
+                # retry_backoff (any other 5xx with no Retry-After) both
+                # retry here — the difference between the two classes is
+                # only whether a Retry-After is honoured, which parse_retry_after
+                # already handles regardless of which class this is.
+                if (classification in (RetryClass.RETRY_NOW, RetryClass.RETRY_BACKOFF)
+                        and attempt < max_retries and not _budget.exhausted()):
+                    _retry_after = parse_retry_after(r.headers)
+                    _wait = _retry_delay(attempt, retry_after=_retry_after)
+                    if _retry_after is not None:
+                        logger.info(
+                            f"LLM async call to {target_url}: server busy (HTTP {r.status_code}), "
+                            f"retrying in {_wait:.1f}s (Retry-After honoured)"
+                        )
+                    await asyncio.sleep(_wait)
                     continue
-                raise HTTPException(r.status_code, friendly)
+                raise _annotate(
+                    HTTPException(r.status_code, friendly),
+                    error_class=err_class,
+                    retryable=classification is not RetryClass.NO_RETRY,
+                    attempts=attempt,
+                )
             logger.info(f"LLM async call to {target_url} succeeded in {duration:.2f}s (attempt {attempt})")
             _clear_host_dead(target_url)
             data = r.json()
@@ -2766,63 +2825,138 @@ async def llm_call_async(
                     f"Unexpected schema from {target_url}: {str(data)[:400]}",
                 )
         except (httpx.ConnectError, httpx.ConnectTimeout) as e:
+            classification = classify_http(exc=e)  # connect-phase: retry_backoff
+            err_class = _retry_error_class(exc=e)
             _cooled = _mark_host_dead(target_url)
             duration = time.time() - start
             _tail = f" — host cooled for {DEAD_HOST_COOLDOWN:.0f}s" if _cooled else " — transient, will retry"
             logger.warning(f"LLM async connect to {target_url} failed after {duration:.2f}s: {e}{_tail}")
-            if _cooled or attempt >= max_retries:
-                raise HTTPException(503, f"Cannot reach {_host_key(target_url)}: {e}")
-            await asyncio.sleep(LLMConfig.RETRY_DELAY)
+            if _cooled or attempt >= max_retries or _budget.exhausted():
+                raise _annotate(
+                    HTTPException(503, f"Cannot reach {_host_key(target_url)}: {e}"),
+                    error_class=err_class,
+                    retryable=classification is not RetryClass.NO_RETRY,
+                    attempts=attempt,
+                )
+            await asyncio.sleep(_retry_delay(attempt))
         except httpx.ReadTimeout as e:
             duration = time.time() - start
-            logger.warning(f"LLM async read timed out after {duration:.2f}s: {e}")
-            if attempt >= max_retries:
-                raise HTTPException(504, f"POST {target_url} timed out after {max_retries} attempts")
-            await asyncio.sleep(LLMConfig.RETRY_DELAY)
+            classification = classify_http(exc=e)  # outcome_unknown: body was already written
+            err_class = _retry_error_class(exc=e)
+            logger.warning(
+                f"LLM async read timed out after {duration:.2f}s (attempt {attempt}): {e} "
+                f"— the request body was already sent; the call may have completed "
+                f"upstream even though no response arrived"
+            )
+            if on_outcome_unknown is not None:
+                try:
+                    on_outcome_unknown(attempt, duration)
+                except Exception:
+                    logger.debug("on_outcome_unknown hook raised", exc_info=True)
+            if attempt >= max_retries or _budget.exhausted():
+                raise _annotate(
+                    HTTPException(
+                        504,
+                        f"POST {target_url} timed out after {max_retries} attempts "
+                        f"(request may have completed upstream; outcome unknown)",
+                    ),
+                    error_class=err_class, retryable=False, attempts=attempt,
+                )
+            # A plain completion's only effect is provider-side tokens spent,
+            # which §34.5 accepts as retryable even under outcome_unknown —
+            # see the on_outcome_unknown note in this function's docstring. A
+            # caller wrapping a REMOTE EFFECT must not copy this: classify
+            # with RetryClass.OUTCOME_UNKNOWN itself and reconcile instead of
+            # resending blindly (QA-11).
+            await asyncio.sleep(_retry_delay(attempt))
         except httpx.PoolTimeout as e:
             duration = time.time() - start
+            classification = classify_http(exc=e)  # retry_backoff: never got a connection
+            err_class = _retry_error_class(exc=e)
             logger.warning(f"LLM async connection pool timed out after {duration:.2f}s: {e}")
             if availability_only_transport:
-                raise HTTPException(
-                    504,
-                    f"POST {target_url} could not acquire an upstream connection",
+                raise _annotate(
+                    HTTPException(504, f"POST {target_url} could not acquire an upstream connection"),
+                    error_class=err_class, retryable=False, attempts=attempt,
                 )
-            if attempt >= max_retries:
-                raise HTTPException(504, f"POST {target_url} timed out after {max_retries} attempts")
-            await asyncio.sleep(LLMConfig.RETRY_DELAY)
+            if attempt >= max_retries or _budget.exhausted():
+                raise _annotate(
+                    HTTPException(504, f"POST {target_url} timed out after {max_retries} attempts"),
+                    error_class=err_class,
+                    retryable=classification is not RetryClass.NO_RETRY,
+                    attempts=attempt,
+                )
+            await asyncio.sleep(_retry_delay(attempt))
         except httpx.WriteTimeout as e:
             duration = time.time() - start
+            classification = classify_http(exc=e)  # still sending: retry_backoff
+            err_class = _retry_error_class(exc=e)
             logger.warning(f"LLM async upstream timeout after {duration:.2f}s: {e}")
             if availability_only_transport:
-                raise _FallbackIneligibleHTTPException(
-                    504,
-                    f"POST {target_url} failed during request delivery",
+                raise _annotate(
+                    _FallbackIneligibleHTTPException(504, f"POST {target_url} failed during request delivery"),
+                    error_class=err_class, retryable=False, attempts=attempt,
                 )
-            if attempt >= max_retries:
-                raise HTTPException(504, f"POST {target_url} timed out after {max_retries} attempts")
-            await asyncio.sleep(LLMConfig.RETRY_DELAY)
+            if attempt >= max_retries or _budget.exhausted():
+                raise _annotate(
+                    HTTPException(504, f"POST {target_url} timed out after {max_retries} attempts"),
+                    error_class=err_class,
+                    retryable=classification is not RetryClass.NO_RETRY,
+                    attempts=attempt,
+                )
+            await asyncio.sleep(_retry_delay(attempt))
         except httpx.ProtocolError as e:
             duration = time.time() - start
+            # RemoteProtocolError (server reset/violated protocol mid-stream)
+            # classifies outcome_unknown; a local one (malformed request on
+            # our side) classifies retry_backoff like any unrecognised
+            # transport failure — see retry_policy.classify_http.
+            classification = classify_http(exc=e)
+            err_class = _retry_error_class(exc=e)
             logger.warning(f"LLM async protocol failure after {duration:.2f}s: {e}")
+            if classification is RetryClass.OUTCOME_UNKNOWN and on_outcome_unknown is not None:
+                try:
+                    on_outcome_unknown(attempt, duration)
+                except Exception:
+                    logger.debug("on_outcome_unknown hook raised", exc_info=True)
             if availability_only_transport:
-                raise _FallbackIneligibleHTTPException(
-                    502,
-                    f"POST {target_url} failed with a protocol error",
+                raise _annotate(
+                    _FallbackIneligibleHTTPException(502, f"POST {target_url} failed with a protocol error"),
+                    error_class=err_class, retryable=False, attempts=attempt,
                 )
-            if attempt >= max_retries:
-                raise HTTPException(502, f"POST {target_url} failed after {max_retries} attempts: {e}")
-            await asyncio.sleep(LLMConfig.RETRY_DELAY)
+            if attempt >= max_retries or _budget.exhausted():
+                raise _annotate(
+                    HTTPException(502, f"POST {target_url} failed after {max_retries} attempts: {e}"),
+                    error_class=err_class,
+                    retryable=classification is not RetryClass.NO_RETRY,
+                    attempts=attempt,
+                )
+            await asyncio.sleep(_retry_delay(attempt))
         except httpx.NetworkError as e:
             duration = time.time() - start
+            # ReadError (reset while reading the response) classifies
+            # outcome_unknown; WriteError/CloseError classify retry_backoff.
+            classification = classify_http(exc=e)
+            err_class = _retry_error_class(exc=e)
             logger.warning(f"LLM async network failure after {duration:.2f}s: {e}")
+            if classification is RetryClass.OUTCOME_UNKNOWN and on_outcome_unknown is not None:
+                try:
+                    on_outcome_unknown(attempt, duration)
+                except Exception:
+                    logger.debug("on_outcome_unknown hook raised", exc_info=True)
             if availability_only_transport:
-                raise _FallbackIneligibleHTTPException(
-                    502,
-                    f"POST {target_url} failed with a network error",
+                raise _annotate(
+                    _FallbackIneligibleHTTPException(502, f"POST {target_url} failed with a network error"),
+                    error_class=err_class, retryable=False, attempts=attempt,
                 )
-            if attempt >= max_retries:
-                raise HTTPException(502, f"POST {target_url} failed after {max_retries} attempts: {e}")
-            await asyncio.sleep(LLMConfig.RETRY_DELAY)
+            if attempt >= max_retries or _budget.exhausted():
+                raise _annotate(
+                    HTTPException(502, f"POST {target_url} failed after {max_retries} attempts: {e}"),
+                    error_class=err_class,
+                    retryable=classification is not RetryClass.NO_RETRY,
+                    attempts=attempt,
+                )
+            await asyncio.sleep(_retry_delay(attempt))
         except httpx.HTTPStatusError as e:
             status = e.response.status_code if e.response is not None else 502
             raise HTTPException(status, str(e))
