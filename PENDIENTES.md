@@ -226,6 +226,12 @@ deep-link de workflows, recetas desde un run real) ya no aparece aquí.
   Settings con el navegador apagado cortaba `browser_pid` en los tests de
   reconexión; dos `SyntaxWarning`). Los ocho ficheros afectados: 86 correctas
   en Windows (Docker encendido, el test de cancelación real incluido).
+  Segunda pasada entera sobre `71fd5ca`: 16.883 correctas, 1 fallo que NO
+  estaba en la primera y pasa solo (`test_cookbook_shell_uses_bash_syntax_on_windows_too`:
+  `_run_shell` devolvió «command could not be completed» bajo carga `-n 6`).
+  La excepción se tragaba en un logger de debug; ahora `routes/codex_routes.py`
+  la nombra en `stderr` para que la próxima vez se pueda bisecar en vez de
+  encogerse de hombros. **Pendiente: si vuelve a salir, leer la clase.**
 
 - **11-09-2026, cierre completo (lotes 71-72, suite y pantalla).** Lote 71
   cerró PLAN-01/PLAN-03 (99/99 P0 existente). Suite nube `-m "not slow"`

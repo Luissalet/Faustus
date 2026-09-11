@@ -76,9 +76,13 @@ async def _run_shell(cmd: str, timeout: float = 15.0) -> dict:
         return {'exit_code': -1, 'stdout': '', 'stderr': 'timed out'}
     except MediaInspectionError:
         return {'exit_code': -1, 'stdout': '', 'stderr': 'command output exceeded the limit'}
-    except Exception:
-        logging.getLogger(__name__).debug('Cookbook query failed', exc_info=True)
-        return {'exit_code': -1, 'stdout': '', 'stderr': 'command could not be completed'}
+    except Exception as exc:
+        # Name the cause. A bare "could not be completed" was seen once in the
+        # Windows suite under xdist load and left nothing to bisect: the
+        # traceback went to a debug logger nobody reads in a test run.
+        logging.getLogger(__name__).warning('Cookbook query failed: %s: %s', type(exc).__name__, exc)
+        return {'exit_code': -1, 'stdout': '',
+                'stderr': f'command could not be completed ({type(exc).__name__}: {exc})'}
     finally:
         for reader in readers:
             reader.cancel()
