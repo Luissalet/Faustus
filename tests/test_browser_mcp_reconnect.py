@@ -75,6 +75,13 @@ def fake_browser_server(tmp_path, monkeypatch):
     # the settings-staleness check agree so only the CRASH path reconnects.
     monkeypatch.setattr(builtin_mcp, "_npx_server_launch", lambda sid: ([str(script)], None))
     monkeypatch.setattr(builtin_mcp, "browser_launch_args", lambda settings=None: [str(script)])
+    # These tests are about the CONNECTION surviving a crash, not about the
+    # operator's policy: on a machine whose real settings switch the browser
+    # off (`disabled_tools`), `call_tool` would refuse `browser_pid` before
+    # the fake server is ever reached. The policy gate has its own tests
+    # (tests/test_l63_web03_mcp_manager_browser_dispatch.py).
+    from src import mcp_manager as _mm
+    monkeypatch.setattr(_mm, "builtin_browser_policy_disabled", lambda: set())
     return script
 
 

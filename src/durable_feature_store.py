@@ -15,7 +15,8 @@ import logging
 import os
 import sqlite3
 import threading
-from typing import Any, Dict, List, Mapping, Optional
+from contextlib import contextmanager
+from typing import Any, Dict, Iterator, List, Mapping, Optional
 
 from src.contracts.base import now_iso
 
@@ -37,13 +38,26 @@ class DurableFeatureStore:
         os.makedirs(os.path.dirname(self.path) or ".", exist_ok=True)
         self._init()
 
-    def _connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
+        """One transaction on a connection that is CLOSED on the way out.
+
+        `sqlite3.Connection` as a context manager commits or rolls back but
+        never closes, so every `with self._connect()` left a handle (and the
+        WAL side files) open until garbage collection — harmless on Linux,
+        `WinError 32` on Windows the moment a temporary directory holding
+        `futures.db` is removed.
+        """
         connection = sqlite3.connect(self.path, timeout=10.0)
-        connection.row_factory = sqlite3.Row
-        connection.execute("PRAGMA journal_mode=WAL")
-        connection.execute("PRAGMA foreign_keys=ON")
-        connection.execute("PRAGMA busy_timeout=10000")
-        return connection
+        try:
+            connection.row_factory = sqlite3.Row
+            connection.execute("PRAGMA journal_mode=WAL")
+            connection.execute("PRAGMA foreign_keys=ON")
+            connection.execute("PRAGMA busy_timeout=10000")
+            with connection:
+                yield connection
+        finally:
+            connection.close()
 
     def _init(self) -> None:
         with self._connect() as db:

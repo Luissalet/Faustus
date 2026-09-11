@@ -63,7 +63,16 @@ def test_minimal_env_carries_no_unrelated_secret(secrets):
 
 def test_minimal_env_still_carries_what_a_process_needs_to_start(secrets):
     env = mm.build_server_env({}, inherit_env=False)
-    assert env["PATH"] == os.environ["PATH"]
+    # PATH survives, minus the venv entries `native_env` strips on purpose
+    # (under a venv — the Windows suite runs in one — the raw PATH carries
+    # `venv\Scripts`, and handing that to a third-party child is the leak
+    # the profile exists to close). Everything left is a real PATH entry.
+    from src import native_env
+    expected = native_env._strip_venv_from_path(os.environ["PATH"], native_env._roots_for(os.environ))
+    assert env["PATH"] == expected
+    assert env["PATH"]
+    for entry in env["PATH"].split(os.pathsep):
+        assert entry in os.environ["PATH"].split(os.pathsep)
     assert env["HOME"] == os.environ["HOME"]
     # Every name in the allowlist is structural, never a credential.
     for key in mm._MINIMAL_ENV_KEYS:

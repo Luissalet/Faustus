@@ -83,7 +83,18 @@ Run report.py to write the report.
                                           "artifact_filenames": ["report.md"], "stdout_tail": "done"})
 
     monkeypatch.setattr(execution_router.execution_backends, "build", lambda *a, **kw: Backend())
-    return {"workspace": workspace, "folder": folder, "calls": calls}
+
+    def reapprove():
+        """A test that rewrites `report.py` changes the skill digest, and the
+        ADP-25 gate then refuses the run as edited-since-approval (that is
+        the gate working, see `test_source_change_invalidates_an_approved_script`).
+        Tests about something else call this after editing."""
+        text = (folder / "SKILL.md").read_text(encoding="utf-8")
+        skill_import_review.approve(
+            skill_id=manifest.id, manifest=bridge.manifest_from_markdown(text, source=found.path),
+            manifest_text=text, digest=discovery.skill_digest(found), by="alice")
+
+    return {"workspace": workspace, "folder": folder, "calls": calls, "reapprove": reapprove}
 
 
 def start(store, *, config=None, owner="alice", project_id="project-a"):
@@ -177,6 +188,7 @@ def test_cancelling_a_real_workflow_stops_its_script(store, project, monkeypatch
         "from pathlib import Path\nimport time\n"
         "Path('/workspace/ready').touch()\n"
         "time.sleep(8)\nPath('/workspace/late').touch()\n", encoding="utf-8")
+    project["reapprove"]()
     original = backend.run
     requested = []
 

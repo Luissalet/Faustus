@@ -1,7 +1,7 @@
 """Lote 67 — OPS-07 (`GET /api/ops/remote-cost`) and EVAL-03
 (`POST /api/ops/chaos/{fixture}`), both in `routes/ops_routes.py`.
 
-Before this lote `grep -rn "remote_cost_report\|src.chaos" routes/` matched
+Before this lote `grep -rn "remote_cost_report\\|src.chaos" routes/` matched
 nothing: `cleanup_service.remote_cost_report()` had no HTTP door, and
 `src/chaos.py` did not exist.
 """

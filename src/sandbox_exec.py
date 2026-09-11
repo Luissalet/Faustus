@@ -123,7 +123,7 @@ _WINDOWS_ABS = re.compile(r"^[A-Za-z]:[\\/]")
 
 
 def _host_root(workspace: str) -> str:
-    """The workspace root as the host spells it. A Windows path is left as
+    r"""The workspace root as the host spells it. A Windows path is left as
     given: `os.path.abspath` on Linux would glue the cwd in front of `D:\...`
     and the rewrite would never match -- which is exactly what happened when
     the Windows workspace tests ran on the Linux CI clone."""
