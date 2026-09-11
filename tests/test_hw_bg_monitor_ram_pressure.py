@@ -120,6 +120,9 @@ async def _run_one_tick(monkeypatch, *, pending, ran):
         ran.append(("ran", rec["id"]))
         return True
     monkeypatch.setattr(bg_monitor, "_run_followup", _fake_followup)
+    # A previous test in this worker may have shut the monitor down; the loop
+    # honours that flag, so re-arm it for this one tick (xdist isolation).
+    monkeypatch.setattr(bg_monitor, "_accepting", True)
 
     stop = asyncio.Event()
     task = asyncio.create_task(bg_monitor._loop(stop))
