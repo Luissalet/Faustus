@@ -44,16 +44,16 @@ Las carencias de backend del índice anterior están implementadas; se ha elimin
 Las ampliaciones acordadas viven en OBJETIVOS.md; ahora mismo, OBJ-1 (puerta de admisión de VRAM). Eliminados los índices de UI resueltos; se pueden recuperar del historial Git.
 No contar planes de inspiración o notas de implementación como otra cola de tareas.
 
-## Spec v2 (cierre lotes 60-70 — 2026-09-11, master cfaa30d)
+## Spec v2 (cierre lotes 60-72 — 2026-09-11)
 
 Ya no es una rama aparte: `feat/spec-v2-m1` está fusionada a master, y los
 lotes 60-70 cierran el resto del paquete P0/P1 auditado en `MAPA_REUTILIZACION.md`
 y `MAPA_P1.md`. Estado real tras este cierre:
 
 - **P0** (`docs/spec/v2/MAPA_REUTILIZACION.md`): 99 IDs P0 propios de ese
-  fichero, **97 existente, 2 parcial** (PLAN-01, PLAN-03 — ver su resumen
-  para el detalle; ninguno de los lotes 60-70 los tocó, se detectaron al
-  recontar contra `backlog.json` en este cierre).
+  fichero, **99 existente, 0 parcial** (PLAN-01 y PLAN-03 se detectaron al
+  recontar contra `backlog.json` y los cerró el Lote 71: plan corto/expandible
+  y la tarjeta «Quién edita qué» sobre los leases reales de una delegación).
 - **P1/P2/LAB** (`docs/spec/v2/MAPA_P1.md`): 84 IDs, **83 existente, 1
   parcial** (HW-06, decisión de producto — ver abajo).
 - `FAUSTUS_TOOL_ARG_VALIDATION` nace en `strict`. Si un modelo local empieza
@@ -67,7 +67,12 @@ y `MAPA_P1.md`. Estado real tras este cierre:
   manda `revision` (`agent_loop.py:9303`); el selector de modelo marca «not
   installed» cuando el modelo por defecto de una sesión vieja ya no está en
   las rutas (`studio/src/lib/model-label.ts::isInstalled` +
-  `ModelPicker.tsx`); Playwright ya corre por sesión, no con el perfil
+  `ModelPicker.tsx`; visto en vivo en el 7001 que además el chip caía en
+  silencio al primer modelo de la lista — desde el Lote 72 la ruta recordada
+  se conserva como `missing`, se enseña «not installed» y enviar abre el
+  picker en vez de contestar con un modelo que nadie eligió; `/api/models`
+  sirve `cached_models` del endpoint, así que un modelo borrado sigue en la
+  lista hasta el siguiente refresh); Playwright ya corre por sesión, no con el perfil
   global (WEB-03, Lote 63); `budget_for` ya se integra en
   `_trim_route_request_messages` (CTX-01, Lote 60, `agent_loop.py:5923`);
   EXEC-01/DESK-02 ya tienen UI/journey real (Lotes 65/68).
@@ -93,6 +98,10 @@ y `MAPA_P1.md`. Estado real tras este cierre:
   (Playwright + servidor real bajo carga); sin evidencia de ser un bug de UI
   real y no de temporización del entorno. Los huecos 1 y 2 del mismo
   escenario ya se cerraron en Studio (Lote 65).
+- **Higiene de tests (nube)** — algún test escribe `disabled_tools` en el
+  `data/settings.json` REAL del clon (no se localizó cuál); con ese fichero
+  contaminado `tests/test_browser_mcp_reconnect.py` (3) falla. Borrar el
+  fichero y pasan. No afecta a Windows (su settings es el de la app).
 - **Docker Desktop / puente MCP en la máquina de Luis** — arranque lanzado a
   través del puente falla con `unable to get 'ProgramData'` (PowerShell
   entregado sin `ProgramData`/`ALLUSERSPROFILE`); cuatro vías probadas,
@@ -100,6 +109,26 @@ y `MAPA_P1.md`. Estado real tras este cierre:
   pendientes" arriba.
 
 ## Última evidencia
+
+- **11-09-2026, cierre completo (lotes 71-72, suite y pantalla).** Lote 71
+  cerró PLAN-01/PLAN-03 (99/99 P0 existente). Suite nube `-m "not slow"`
+  tras el cierre: 15.800 correctas, 13 fallos todos preexistentes de entorno
+  (docker, marca, markitdown, rutas Windows en Linux, dubbing) o por el
+  `data/settings.json` contaminado (ver Abiertos); siete regresiones reales
+  detectadas por la suite entera y corregidas antes de transferir
+  (middleware con dobles de request sin `scope`/`method`, `NameError` en el
+  evento de coste remoto, `reindex` con `paths=` contra dobles antiguos,
+  `outline: none` en la caja de búsqueda, el filtro de logs que re-lanzaba
+  si `redact_secrets` fallaba, `process` volátil en usage, campo aditivo
+  `execution_target` en bash). En vivo en el 7001 (build 982fcf9+): cabecera
+  `X-Faustus-Api-Version: 2.0` en todo `/api/*`, 426 comprensible con un
+  cliente 0.1.0 salvo en `/api/version` y `/api/health`, Settings → Security
+  (perfil de privacidad con ida y vuelta real local_only↔local_preferred,
+  concesiones activas, allowlist), búsqueda en la conversación (1/3
+  coincidencias), traza por call_id en Activity, «Reubicar» en cada fila de
+  Projects, chaos dry-run, coste remoto, leases. Hallazgo: el chip de modelo
+  caía en silencio al primer modelo cuando el recordado ya no existía →
+  Lote 72.
 
 - **11-09-2026, cierre lotes 60-70 (master cfaa30d).** Los 16 cableados de
   ficheros ajenos pendientes de la integración de los lotes 60-69b se
