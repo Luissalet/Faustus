@@ -140,7 +140,11 @@ class SecretRedactingFormatter(logging.Formatter):
         self.inner = inner
 
     def format(self, record: logging.LogRecord) -> str:
-        return redact_secrets(self.inner.format(record))
+        rendered = self.inner.format(record)
+        try:
+            return redact_secrets(rendered)
+        except Exception:  # noqa: BLE001 - same contract as the filter above
+            return "<log line withheld: secret redaction failed>"
 
 
 #: Loggers that install their own handlers instead of propagating to root.

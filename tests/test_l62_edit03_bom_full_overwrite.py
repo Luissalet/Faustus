@@ -68,7 +68,7 @@ async def test_write_file_of_a_brand_new_file_never_invents_a_bom(tmp_path):
 @pytest.mark.asyncio
 async def test_write_file_overwrite_of_a_non_bom_file_stays_bom_free(tmp_path):
     p = tmp_path / "plain.txt"
-    p.write_text("old\n", encoding="utf-8")
+    p.write_bytes(b"old\n")  # bytes: text mode would write CRLF on Windows, which the tool preserves
     res = await WriteFileTool().execute(
         json.dumps({"path": str(p), "content": "new\n"}), {})
     assert res["exit_code"] == 0
