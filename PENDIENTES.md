@@ -139,87 +139,86 @@ y `MAPA_P1.md`. Estado real tras este cierre:
 
 ## ADP/CMP (11-09)
 
-Lo que queda abierto tras la ola ADP (commit `95747d9`) y la ola CMP
-(commit `757262e`, informe comparativo V2) — extraído de los límites que
-las propias fichas `docs/adaptations/decisions/CMP-*.md` y `docs/api/*.md`
-declaran, no inventado aquí. Detalle fila a fila en
-`docs/adaptations/baseline.md`; asignación concreta a lotes de la ola W3
-(en marcha en paralelo a este documento) en `CONTRATO_W3.md`.
+Lo que queda abierto tras la ola ADP (`95747d9`), la ola CMP (`757262e`),
+la ola W3 de cableado (`23f418a`) y el lote W4-A (`2da388a`, pestaña
+Requisitos) — extraído de los límites que las propias fichas
+`docs/adaptations/decisions/CMP-*.md` y `docs/api/*.md` declaran. Detalle
+fila a fila en `docs/adaptations/baseline.md`. Lo que la ola W3 cerró
+(chip de contexto en el compositor, `anchor` en sugerencias, evento
+`strategy` en vivo, `WorktreeIsolator`/`SnapshotDirIsolator`, alternativas
+sobre `DocumentVersion`, `desktop_control_session` → `invalidate_generation`,
+`skill_call_history.json`, `calls_profile` en el frontmatter, export/layout/
+deep-link de workflows, recetas desde un run real) ya no aparece aquí.
 
 - **Validación física Windows UIA (ADP-09).** `src/desktop_semantics/windows_uia.py`
   está construido, aislado y probado contra fakes; nadie lo ha ejecutado
   todavía contra una sesión Windows real con UIA activo.
 - **Herdr contra una instancia real (ADP-13/CMP-06).** `src/external_runtimes/herdr.py`
-  infiere el contrato de cable (`/version`, `/sessions`) estrictamente del
-  texto del informe — nunca se llamó a un Herdr real, «sin investigación
-  externa, por instrucción del encargo» (`CMP-06.md`). Ningún verbo de
-  escritura existe todavía, por diseño (CMP-06 es solo lectura).
-- **`workflow_iteration` sin cablear al motor (ADP-31/CMP-07).** El diseño
-  y las dataclasses existen (`src/contracts/workflow_iteration.py`,
-  `docs/design/bounded-workflow-iterations.md`, `max_iterations` siempre
-  requerido) pero deliberadamente sin tipo de nodo `"loop"` en el esquema
-  ni import de `workflows/engine.py`/`handlers.py` — activar un bucle real
-  es una decisión de producto pendiente, no una tarea de código suelta.
-- **`_usage_bucket` sin `RouteDecision` (ADP-22, `docs/api/model_router.md`
-  §Límites).** El motivo de ruteo viaja en el evento SSE `model_router` y
-  en `record_outcome`/`choose`, no en `src/agent_loop.py::_usage_bucket`
-  (firma de kwargs fija, sin hueco genérico) — falta pasar
-  `RouteDecision.to_dict()` como kwargs nuevos con default `None`, mismo
-  patrón que `cost_usd`/`cached_tokens`.
-- **MOD-05/`execution_router.py` sin reconciliar del todo (ADP-22).** La
-  ola ADP cableó `model_router.choose()` a `/api/chat`/`/api/chat_stream`
-  solo para `model=='auto'`; una sesión con modelo explícito sigue
-  decidiendo por `execution_router.py`, sin auditar contra MOD-05.
+  infiere el contrato de cable (`/version`, `/sessions`) del texto del
+  informe — nunca se llamó a un Herdr real. Solo lectura, por diseño; la
+  pestaña «Externos» de Actividad lo muestra como «no configurado» hasta
+  que exista una URL.
+- **`workflow_iteration` sin cablear al motor (ADP-31/CMP-07).** Diseño y
+  dataclasses existen (`src/contracts/workflow_iteration.py`,
+  `docs/design/bounded-workflow-iterations.md`) sin tipo de nodo `"loop"`
+  en el esquema — activar un bucle real es decisión de producto.
+- **`_usage_bucket` sin `RouteDecision` (ADP-22).** El motivo de ruteo viaja
+  en el evento SSE `model_router` y en `record_outcome`, no en
+  `src/agent_loop.py::_usage_bucket` — falta pasar `RouteDecision.to_dict()`
+  como kwargs con default `None`, mismo patrón que `cost_usd`.
+- **MOD-05/`execution_router.py` sin reconciliar del todo (ADP-22).**
+  `model_router.choose()` solo decide para `model=='auto'`; una sesión con
+  modelo explícito sigue decidiendo por `execution_router.py`.
 - **Medir los pools de admisión (ADP-32).** `src/resource_admission.py`
-  define pools y prioridad de primer plano reutilizando la normalización
-  de `vram_admission`, pero no se ha medido en producción si el candado
-  global (`llm_core._LOCAL_MODEL_LOCK`) sigue limitando tareas reales.
-- **Vista móvil / disposición por debajo de 1280px (CMP-01-layout).** El
-  conmutador de tres disposiciones (conversación/documento/revisión) no
-  tiene efecto de rejilla por debajo de ese ancho — el panel ya era una
-  capa superpuesta antes de esta ola y `data-layout` no la alcanza; se
-  comporta siempre como `conversation` en pantalla estrecha. Documentado,
-  no construido.
-- **Estimador: `local_latency` sin calcular en ningún sitio (CMP-08).** El
-  parámetro llega end-to-end (módulo puro → ruta → tipo TS) pero nadie
-  invoca `resource_admission.status()`/`llm_core.local_speed()`/
-  `vram_admission.reservations_snapshot()`/`gpu_policy.model_sizes()` para
-  rellenarlo. `skill_calls_profiles` "declarado" tampoco se descubre
-  automáticamente del manifiesto de una skill (falta el campo
-  `calls_profile` en el frontmatter), y nadie escribe todavía
-  `DATA_DIR/skill_call_history.json`.
+  define pools y prioridad de primer plano, pero no se ha medido en
+  producción si `llm_core._LOCAL_MODEL_LOCK` sigue limitando tareas reales.
+- **Vista móvil / disposición por debajo de 1280px (CMP-01-layout).** Las
+  tres disposiciones no tienen efecto de rejilla en pantalla estrecha; el
+  panel sigue siendo capa superpuesta. Documentado, no construido.
+- **Estimador: `local_latency` parcial (CMP-08).** W3 rellena el campo desde
+  `resource_admission.status()`/`llm_core.local_speed()` cuando existen;
+  sin GPU medida el estimador lo declara `unknown`, nunca 0.
 - **`capability_pricing` de OpenRouter sin contrastar contra un payload
-  real (CMP-08).** `price_from_openrouter_raw` se probó solo contra el
-  shape documentado por OpenRouter, sin red disponible en este entorno.
+  real (CMP-08).** Probado solo contra el shape documentado.
 - **Canal `app_api`/`dom_cdp` sin llamador real (CMP-10).** `choose_channel`
-  los admite como lógica pura con tests; solo `native_a11y`/`pixels`
-  tienen un consumidor de producción (`desktop_act`). El disparador "el
-  usuario toma el control del escritorio" hacia
-  `desktop_control_session.invalidate_generation` tampoco está cableado.
-- **Alternativas: diff por pares y `doc_version` real (CMP-13).**
-  `compare()` da diff contra la base + `contested_files`, no un diff
-  explícito ALTERNATIVA-vs-ALTERNATIVA (el conjunto ya dice dónde mirar a
-  mano). `doc_version` no está cableado al almacén real de documentos de
-  Studio (`core.database.Document/DocumentVersion`), y el adaptador
-  `WorktreeIsolator` sobre `branching_futures.isolation.BranchIsolator`
-  queda documentado como trivial de construir, no construido.
-- **Importación real de un export de aigraphstudio (ADP-17/CMP-07).** La
-  forma del formato de intercambio (`src/workflows/interchange.py`) sigue
-  siendo la asumida a partir del informe, nunca contrastada contra el
-  exportador real de esa herramienta.
-- **Studio: `Composer.tsx` sin escuchar `COMPOSER_CONTEXT_EVENT`, sin
-  `anchor` en sugerencias, sin decodificar el evento `strategy` en vivo
-  (CMP-01/02/09/12).** El chip de contexto de una selección/comentario se
-  dispara pero nada lo pinta; una sugerencia del agente no trae su propio
-  desambiguador de ocurrencia; el compositor lee el perfil de estrategia
-  vía `GET /api/strategy/profile`, no vía el evento SSE en vivo. Los tres
-  puntos son el encargo concreto de W3-A de esta misma ola.
-
-No se repite aquí lo que la ola W3 (en curso al escribir esto) ya tiene
-asignado como encargo explícito de otro lote — la lista de arriba nombra
-el lote correspondiente entre paréntesis donde aplica.
+  los admite como lógica pura; solo `native_a11y`/`pixels` tienen consumidor.
+- **Alternativas: diff por pares (CMP-13).** `compare()` da diff contra la
+  base + `contested_files`, no un diff ALTERNATIVA-vs-ALTERNATIVA.
+- **Importación real de un export de aigraphstudio (ADP-17/CMP-07).** El
+  formato de `src/workflows/interchange.py` nunca se contrastó contra el
+  exportador real.
+- **Requisitos (W4-A): sin importación masiva ni edición desde el
+  editor de documentos.** La pestaña crea/edita/acepta/rechaza, enlaza y
+  quita enlaces y consulta matriz/contexto; importar el fichero sidecar
+  entero o crear un requisito desde una selección del documento no existe.
 
 ## Última evidencia
+
+- **11-09-2026, QA en vivo de las olas ADP/CMP/W3 + W4-A (master
+  `e075293`, Windows `2da388a`+).** Suite nube tras los arreglos de
+  entorno: 16.913 correctas, 0 fallos (antes: fallos preexistentes en
+  chat_helpers/chatgpt_subscription/session_image_cleanup/git_invariants/
+  qa_26/sandbox_exec/docker/markitdown, todos corregidos en `29d99fc` y
+  `966b647`; `terminate_tree` suspende la raíz antes de matar hojas). Vistos
+  y arreglados en pantalla (7001, Chrome): fila de Actividad con el título
+  aplastado (`flex-wrap`), barra del compositor desbordada a 1920px (media
+  query insuficiente → `@container` sobre `.fs-studio__bar`), cabecera del
+  Studio oculta tras la columna de documento en las disposiciones
+  documento/revisión, «Aplicar» de Alternativas fusionaba con un clic
+  (ahora dos pasos), `suggest_document` fallaba con «No active document»
+  con un turno en español (puerta de relevancia bilingüe +
+  `active_document_pinned` cuando el chip de contexto apunta a ese doc),
+  ReviewPane creaba comentarios vacíos (ahora pide el texto),
+  `alternatives.run_tests` en Windows comía barras invertidas
+  (`shlex` solo en POSIX). Verificado en vivo: `/workflows`
+  (cargar/simular/inspector/lint), `/alternatives` (crear → worktree →
+  comparar → aplicar, fichero cambiado en disco), atención en Actividad,
+  tres disposiciones, documento → selección → chip → sugerencia con
+  `anchor` → aplicar (v2), comentario en ReviewPane, Ajustes → OpenRouter,
+  vecindario en Contexto, y la pestaña Requisitos (crear REQ-1, enlazar
+  `store.py@remove_link`, «Quitar» → «Enlace quitado», campos de edición
+  apilados tras verlos en línea). Suite Windows (`suite_m1.ps1`) no
+  relanzada desde 982fcf9; solo los tests dirigidos de cada transferencia.
 
 - **11-09-2026, cierre completo (lotes 71-72, suite y pantalla).** Lote 71
   cerró PLAN-01/PLAN-03 (99/99 P0 existente). Suite nube `-m "not slow"`
