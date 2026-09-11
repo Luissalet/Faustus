@@ -217,8 +217,15 @@ deep-link de workflows, recetas desde un run real) ya no aparece aquí.
   `anchor` → aplicar (v2), comentario en ReviewPane, Ajustes → OpenRouter,
   vecindario en Contexto, y la pestaña Requisitos (crear REQ-1, enlazar
   `store.py@remove_link`, «Quitar» → «Enlace quitado», campos de edición
-  apilados tras verlos en línea). Suite Windows (`suite_m1.ps1`) no
-  relanzada desde 982fcf9; solo los tests dirigidos de cada transferencia.
+  apilados tras verlos en línea). Suite Windows entera (`suite_m1.ps1`,
+  19 min) sobre `ac9fb88`: 16.878 correctas, 6 fallos, todos de entorno y
+  todos corregidos en `32723fe` (PATH mínimo sin `venv\Scripts` frente al
+  PATH crudo; `futures.db` abierto hasta el GC bloqueaba el borrado del
+  temporal — ahora `_connect()` cierra; test de cancelación que reescribía
+  `report.py` sin re-aprobar la skill (puerta ADP-25); la política real de
+  Settings con el navegador apagado cortaba `browser_pid` en los tests de
+  reconexión; dos `SyntaxWarning`). Los ocho ficheros afectados: 86 correctas
+  en Windows (Docker encendido, el test de cancelación real incluido).
 
 - **11-09-2026, cierre completo (lotes 71-72, suite y pantalla).** Lote 71
   cerró PLAN-01/PLAN-03 (99/99 P0 existente). Suite nube `-m "not slow"`
