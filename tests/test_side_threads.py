@@ -319,6 +319,30 @@ def test_add_reference_is_idempotent(sm):
     assert first["wire"]["id"] == second["wire"]["id"]
 
 
+def test_wiring_again_after_withdraw_revives_the_same_wire(sm):
+    """Withdraw archives; wiring the pair again must un-archive THAT row
+    (with the depth just asked for and a fresh fingerprint), never leave an
+    orphan archived row behind a new one."""
+    from core.database import SessionLocal, SessionWire
+    from src.side_threads import add_reference, update_reference, wires_for
+
+    _mk_session(sm, "main", n_messages=1)
+    _mk_session(sm, "exc", n_messages=1)
+    first = add_reference("alice", "exc", "main")["wire"]
+    update_reference("alice", first["id"], archived=True)
+    assert wires_for("alice", "main")["references_in"] == []
+
+    again = add_reference("alice", "exc", "main", depth="full")["wire"]
+    assert again["id"] == first["id"]
+    assert again["archived"] is False and again["depth"] == "full"
+    db = SessionLocal()
+    try:
+        rows = db.query(SessionWire).filter(SessionWire.kind == "reference").all()
+    finally:
+        db.close()
+    assert len(rows) == 1
+
+
 def test_removing_a_reference_does_not_delete_the_side_thread(sm):
     from src.side_threads import add_reference, remove_reference
 

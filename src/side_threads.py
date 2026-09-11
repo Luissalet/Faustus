@@ -415,18 +415,32 @@ def add_reference(owner: Optional[str], source_id: str, target_id: str, depth: s
         if source_row is None or target_row is None:
             raise SideThreadError("Session not found", "excursos.not_found", 404)
 
-        existing = (
+        pair = (
             db.query(DbSessionWire)
             .filter(
                 DbSessionWire.kind == "reference",
                 DbSessionWire.source_session_id == source_id,
                 DbSessionWire.target_session_id == target_id,
-                DbSessionWire.archived == False,  # noqa: E712
             )
-            .first()
+            .order_by(DbSessionWire.archived.asc(), DbSessionWire.created_at.desc())
+            .all()
         )
+        existing = next((w for w in pair if not w.archived), None)
+        withdrawn = next((w for w in pair if w.archived), None)
         if existing is not None:
             wire = existing
+        elif withdrawn is not None:
+            # "Withdraw" archives the wire; "Wire" again must bring THAT wire
+            # back, not stack a second row behind it (seen live: the panel
+            # showed one child, the table grew one orphan per toggle). The
+            # user asked for it fresh, so depth and fingerprint follow the
+            # request and the block is current again.
+            withdrawn.archived = False
+            withdrawn.depth = depth
+            withdrawn.source_fingerprint = fingerprint(SimpleNamespace(history=_history_rows(source_id)))
+            db.commit()
+            db.refresh(withdrawn)
+            wire = withdrawn
         else:
             max_order = (
                 db.query(func.max(DbSessionWire.context_order))

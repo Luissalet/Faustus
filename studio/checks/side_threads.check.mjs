@@ -80,7 +80,8 @@ const mod = await load(join('adapters', 'sideThreads.ts'), 'side-threads.mjs');
     ],
   };
   const line = mod.layerSummaryLine(preview);
-  assert(!line.includes('('), `layerSummaryLine omits the parenthetical with nothing inherited/referenced: "${line}"`);
+  assert(!/\(\d+ (inherited|reference)/.test(line), `layerSummaryLine omits the inherited/reference parenthetical when there is nothing to report: "${line}"`);
+  assert(line.includes('not counted'), `layerSummaryLine says what it does NOT count (system prompt, tools): "${line}"`);
   assert(line.includes('2 messages'), `layerSummaryLine still reports the own-layer count: "${line}"`);
 }
 

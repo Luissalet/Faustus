@@ -298,7 +298,7 @@ export function layerSummaryLine(preview: ContextPreview): string {
   const detail = bits.length ? ` (${bits.join(', ')})` : '';
   const messages = tn(totalMessages, '{n} message', '{n} messages', { n: totalMessages });
 
-  return t('Will send ~{tokens} tok · {messages}{detail}', {
+  return t('History for the next turn: ~{tokens} tok · {messages}{detail} (system prompt and tools not counted)', {
     tokens: formatTokenCount(preview.total_tokens),
     messages,
     detail,

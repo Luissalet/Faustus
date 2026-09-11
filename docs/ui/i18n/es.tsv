@@ -7028,7 +7028,7 @@ The whole parent transcript is inherited instead of stopping at that turn.	Se he
 Thought map	Mapa
 Update reference	Actualizar referencia
 What do you want to explore separately?	¿Qué quieres explorar aparte?
-Will send ~{tokens} tok · {messages}{detail}	Enviará ~{tokens} tok · {messages}{detail}
+History for the next turn: ~{tokens} tok · {messages}{detail} (system prompt and tools not counted)	Historia del próximo turno: ~{tokens} tok · {messages}{detail} (sin contar prompt de sistema ni tools)
 Wire	Cablear
 Withdraw	Retirar
 from an earlier turn	desde un turno anterior

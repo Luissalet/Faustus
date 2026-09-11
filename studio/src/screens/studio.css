@@ -3723,13 +3723,21 @@ aside.fs-panel { position: relative; }
   background: var(--fs-surface-1);
 }
 
+/* The name takes the whole first row and truncates; `flex: 1 1 auto` with
+   `nowrap` let a long side-thread title push the row past the popover and
+   grow a horizontal scrollbar (seen live). */
 .fs-st__child-name {
-  flex: 1 1 auto;
-  min-inline-size: 8ch;
+  flex: 1 1 100%;
+  min-inline-size: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--fs-text-1);
+}
+
+.fs-st__popover,
+.fs-st {
+  overflow-x: hidden;
 }
 
 .fs-st__child-meta {
@@ -3815,9 +3823,21 @@ aside.fs-panel { position: relative; }
 
 .fs-st__map-node {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
-  gap: var(--fs-space-2);
+  gap: 2px var(--fs-space-2);
   padding-block: 2px;
+}
+
+/* Seen live: the nested list sat BESIDE its parent's link (flex row), so a
+   two-node map rendered as two cramped columns. Children go under. */
+.fs-st__map-node > .fs-st__map-list {
+  flex-basis: 100%;
+}
+
+.fs-st__map-link {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
 }
 
 .fs-st__map-link {
