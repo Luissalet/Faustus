@@ -6992,3 +6992,47 @@ Evidences	Evidencia
 Needs review	Necesita revisión
 Stale	Caducado
 Link removed.	Enlace quitado.
+{n} inherited	{n} heredado
+{n} inherited#	{n} heredados
+{n} reference	{n} referencia
+{n} references	{n} referencias
+A new thread opens that sees the conversation up to this turn. The current conversation does not change.	Se abre un hilo nuevo que ve la conversación hasta este turno. La conversación actual no cambia.
+Already referenced	Ya referenciado
+Bring back	Traer de vuelta
+Confirm removal	Confirmar eliminación
+Could not load the side threads.	No he podido cargar los excursos.
+Could not open the side thread	No he podido abrir el excurso
+Could not remove the reference.	No he podido quitar el cable.
+Could not update the reference.	No he podido actualizar la referencia.
+Could not wire the reference.	No he podido cablear la referencia.
+Explore from here	Explorar desde aquí
+Explore separately	Explorar aparte
+Full	Completo
+Inherited	Heredado
+Layer detail	Detalle por capas
+Loading the side threads	Cargando los excursos
+No side threads yet. Select text in a reply to start one.	Todavía no hay excursos. Selecciona texto en una respuesta para abrir uno.
+Open the thread	Abrir el hilo
+Own	Propio
+Reference added to "{name}"	Referencia añadida a «{name}»
+Reference depth	Profundidad de la referencia
+Remove wire	Quitar cable
+Selection actions	Acciones sobre la selección
+Send the first message before branching a side thread from it.	Envía el primer mensaje antes de abrir un excurso desde esta conversación.
+Side thread of	Excurso de
+Side thread opened.	Excurso abierto.
+Side threads	Excursos
+Side threads of this conversation	Excursos de esta conversación
+The map was cut off; it goes deeper than this.	El mapa se ha recortado; sigue más allá.
+The whole parent transcript is inherited instead of stopping at that turn.	Se hereda toda la transcripción de la madre en su lugar, en vez de detenerse en ese turno.
+Thought map	Mapa
+Update reference	Actualizar referencia
+What do you want to explore separately?	¿Qué quieres explorar aparte?
+Will send ~{tokens} tok · {messages}{detail}	Enviará ~{tokens} tok · {messages}{detail}
+Wire	Cablear
+Withdraw	Retirar
+from an earlier turn	desde un turno anterior
+from turn {n}	desde el turno {n}
+not wired	sin cablear
+outdated	desactualizado
+the source turn no longer exists	el turno de origen ya no existe

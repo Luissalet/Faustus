@@ -1,9 +1,9 @@
-import { CheckSquare, FileText, FolderKanban, GitBranch, MessageSquare, PanelRight, X } from 'lucide-react';
+import { CheckSquare, FileText, FolderKanban, GitBranch, MessageSquare, PanelRight, Waypoints, X } from 'lucide-react';
 import {withImageReferences} from '../lib/image-references';
 import {MessageNavigator} from './studio/MessageNavigator';
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
-import { Button, Dialog, IconButton, Skeleton } from '../components';
+import { Button, Dialog, IconButton, Popover, Skeleton } from '../components';
 import {
   createSession,
   listModels,
@@ -83,6 +83,8 @@ import { useChatPanel } from './studio/useChatPanel';
 import ChatTeam from './studio/ChatTeam';
 import { SessionsPane } from './studio/SessionsPane';
 import { Transcript, type Decision } from './studio/Transcript';
+import SideThreadsPanel from './studio/SideThreadsPanel';
+import ExploreDialog, { type ExploreAnchor } from './studio/ExploreDialog';
 import { VramAdmissionDialog } from './VramAdmissionDialog';
 import { Vitals } from './studio/Vitals';
 import './projects.css';
@@ -255,6 +257,27 @@ function writeDraftFor(sessionId: string | null, text: string) {
   }
 }
 
+/* B3 (CONTRATO_EXCURSOS.md): "Explorar aparte" asks its one question BEFORE
+   the new excurso session exists, so there is nothing to key a normal
+   draft slot on yet. `ExploreDialog` seeds this tab-scoped (never synced to
+   the server, unlike the draft above) slot right after `createSideThread`
+   resolves and right before navigating to the new session; the effect that
+   restores the draft on a session switch consumes and clears it in the same
+   breath, so a later visit to that same conversation never sees it again. */
+const EXCURSO_DRAFT_PREFIX = 'faustus:excurso-draft:';
+
+function consumeExcursoDraftSeed(sessionId: string | null): string | null {
+  if (!sessionId) return null;
+  try {
+    const key = `${EXCURSO_DRAFT_PREFIX}${sessionId}`;
+    const seed = sessionStorage.getItem(key);
+    if (seed) sessionStorage.removeItem(key);
+    return seed;
+  } catch {
+    return null; /* private mode: the seed simply does not arrive */
+  }
+}
+
 /* QA-35 (UX-01/MEDIA-03): the composer's already-uploaded-but-unsent
    attachments, same "one slot per session, empty removes the slot" shape as
    the draft text above — a reload used to bring the text back but drop the
@@ -374,6 +397,11 @@ export function StudioScreen() {
     draftSession.current = sessionId;
     const local = readDraftFor(sessionId);
     setDraft(local);
+    // B3 (CONTRATO_EXCURSOS.md): a freshly-created excurso's question,
+    // seeded by ExploreDialog right before this navigation — takes over the
+    // (necessarily empty) local draft for this brand-new session id.
+    const excursoSeed = consumeExcursoDraftSeed(sessionId);
+    if (excursoSeed) setDraft(excursoSeed);
     // UX-01: merge with the server's copy of this draft (src/session_draft.py)
     // — only meaningful for a saved conversation, and never for Nobody mode,
     // whose whole point is that nothing about the chat outlives the tab.
@@ -2108,6 +2136,14 @@ export function StudioScreen() {
     [],
   );
 
+  // B2/B3 (CONTRATO_EXCURSOS.md): a passage or a whole turn, offered up to
+  // branch a side thread — `exploreAnchor !== null` is what opens
+  // `ExploreDialog`. Disabled in Nobody mode, same as `forkFrom` above: an
+  // excurso is a real, persisted, listed session, exactly what incognito's
+  // "nothing outlives the tab" promise rules out.
+  const [exploreAnchor, setExploreAnchor] = useState<ExploreAnchor | null>(null);
+  const onExplore = knobs.incognito ? undefined : (anchor: ExploreAnchor) => setExploreAnchor(anchor);
+
   const refreshModels = useCallback(() => {
     setRefreshingModels(true);
     listModels(undefined, true)
@@ -2546,6 +2582,22 @@ export function StudioScreen() {
                 testId="studio-open-source-control"
               />
             )}
+            {/* B4 (CONTRATO_EXCURSOS.md): a Popover, not a SidePanel tab —
+                SidePanel.tsx is a fichero ajeno to this lote (see
+                SideThreadsPanel.tsx's own header comment for why). Radix
+                unmounts the Popover's content on close, so the panel fetches
+                fresh every time this opens; no side thread yet on a chat
+                that has not been sent means nothing to branch from. */}
+            {sessionId && (
+              <Popover
+                testId="side-threads-popover"
+                align="end"
+                className="fs-st__popover"
+                trigger={<IconButton icon={Waypoints} label={t('Side threads')} size="sm" testId="studio-open-side-threads" />}
+              >
+                <SideThreadsPanel sessionId={sessionId} onNotice={say} />
+              </Popover>
+            )}
             <IconButton
               icon={PanelRight}
               label={panel.open ? t('Close the side panel') : t('Side panel: browser, document, file')}
@@ -2629,6 +2681,7 @@ export function StudioScreen() {
               onRerun={rerunWorker}
               onFork={knobs.incognito ? undefined : (turn) => void forkFrom(turn)}
               onQuote={quote}
+              onExplore={onExplore}
               onOpenSourceControl={() => panelDispatch({ type: 'open', tab: 'git' })}
               projectId={project?.id}
               boardKey={boardKey}
@@ -2657,6 +2710,28 @@ export function StudioScreen() {
             </Suspense>
           )}
         </Dialog>
+        {/* B3 (CONTRATO_EXCURSOS.md): "Explorar aparte" — the confirmation
+            step for both entry points Transcript.tsx offers (a quoted
+            passage, or a whole turn with no passage). */}
+        <ExploreDialog
+          open={exploreAnchor !== null}
+          onOpenChange={(open) => {
+            if (!open) setExploreAnchor(null);
+          }}
+          sessionId={sessionId}
+          anchor={exploreAnchor}
+          onNotice={say}
+          onCreated={(newSessionId, question) => {
+            try {
+              sessionStorage.setItem(`${EXCURSO_DRAFT_PREFIX}${newSessionId}`, question);
+            } catch {
+              /* private mode: the new thread opens with an empty composer instead */
+            }
+            setExploreAnchor(null);
+            openSession(newSessionId);
+            say(t('Side thread opened.'));
+          }}
+        />
         </div>
 
         {notice && (

@@ -794,7 +794,28 @@ async def build_chat_context(
         # transcripts are ephemeral and are deliberately left unstamped, so
         # compaction can never rewrite a durable session from that path.
         annotate_history_positions(sess, _history_messages)
-    messages = preface + _history_messages
+
+    # Excursos (side threads, CONTRATO_EXCURSOS): whatever is cabled to this
+    # session — inherited `reference` blocks and, if this session is itself a
+    # side thread, its parent's transcript up to the branch anchor — goes
+    # BEFORE the session's own history, and AFTER annotate_history_positions
+    # above so these messages never carry `_history_index`: compaction may
+    # summarize them in the prompt, but can never delete a row from ANY
+    # session because of them (see `src.side_threads.inherited_context`).
+    # Best-effort: a side-thread lookup failure must never break a plain
+    # chat turn that has no wires at all.
+    if incognito:
+        _inherited: list = []
+    else:
+        try:
+            from src.side_threads import inherited_context
+            _inherited = inherited_context(
+                getattr(chat_handler, "session_manager", None), user, session_id,
+            )
+        except Exception:
+            logger.debug("side_threads.inherited_context failed", exc_info=True)
+            _inherited = []
+    messages = preface + _inherited + _history_messages
 
     # Current date/time — injected as a standalone *user*-role context message
     # placed immediately before the latest user turn, NOT folded into the

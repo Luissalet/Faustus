@@ -290,6 +290,59 @@ class ChatMessage(Base):
         Index('ix_messages_session_time', 'session_id', 'timestamp'),  # Composite for efficient message retrieval
     )
 
+class SessionWire(Base):
+    """A cable between two sessions — the only channel context crosses
+    between conversations (CONTRATO_EXCURSOS: "lo que el modelo ve es
+    exactamente lo que está cableado al nodo"). Two kinds share one table
+    because every consumer (the Studio wiring panel, the thought-map) wants
+    "everything touching this session" in one query, not a UNION of two:
+
+    - ``branch`` (structural, "sólido"): ``source`` is the parent session,
+      ``target`` the side thread created from it. At most one per
+      ``target`` — a side thread has exactly one parent — held by
+      construction: ``src.side_threads.create_side_thread`` is the only
+      place a ``branch`` wire is ever inserted, and it always pairs one with
+      a session it just created, so no later code path can attach a second
+      one to an existing ``target``.
+    - ``reference`` ("discontinuo"): ``source`` is the side thread being
+      brought back, ``target`` the session receiving it as one
+      ``[Reference: ...]`` block. Several can point at the same ``target``
+      (``context_order`` sequences them); ``archived`` retires one without
+      deleting the side thread it points at, and a row can also be deleted
+      outright without touching either session.
+
+    Both foreign keys cascade on delete, so a wire never outlives either
+    session it names and needs no side-thread-specific cleanup wherever a
+    session is deleted.
+    """
+    __tablename__ = "session_wires"
+
+    id = Column(String, primary_key=True, index=True)
+    owner = Column(String, nullable=True, index=True)
+    kind = Column(String, nullable=False)  # 'branch' | 'reference'
+
+    source_session_id = Column(String, ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False, index=True)
+    target_session_id = Column(String, ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    # branch-only: where in source.history this side thread branched from,
+    # and the (optional) passage of text the user selected to branch on.
+    anchor_index = Column(Integer, nullable=True)
+    anchor_passage = Column(Text, nullable=True)  # <= 2000 chars, enforced in src.side_threads
+
+    # reference-only
+    depth = Column(String, nullable=False, default="quote")  # 'quote' | 'full'
+    context_order = Column(Integer, nullable=False, default=0)
+    archived = Column(Boolean, nullable=False, default=False)
+    source_fingerprint = Column(String, nullable=True)  # src.side_threads.fingerprint() at wiring time
+
+    created_at = Column(DateTime, default=utcnow_naive)
+
+    __table_args__ = (
+        Index("ix_session_wires_kind_target", "kind", "target_session_id"),
+        Index("ix_session_wires_kind_source", "kind", "source_session_id"),
+    )
+
+
 class Document(TimestampMixin, Base):
     """Living document that the AI can create and edit in-place."""
     __tablename__ = "documents"

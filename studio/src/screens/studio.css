@@ -2580,7 +2580,12 @@ aside.fs-panel {
 }
 
 /* Quote a selection (`.fs-studio__turns`'s `position: relative` lives in
-   the "Turns" section above — the virtualized sizer needed it first). */
+   the "Turns" section above — the virtualized sizer needed it first).
+   B2 (CONTRATO_EXCURSOS.md) turned this from a single clickable pill into a
+   small GROUP of up to two ("Citar" / "Explorar aparte") — `.fs-studio__quote`
+   is now the positioned, non-interactive wrapper (padding trimmed, no
+   `cursor: pointer`) and each action is its own `.fs-studio__quote-btn`,
+   styled at the end of this file alongside the rest of B2's additions. */
 
 .fs-studio__quote {
   position: absolute;
@@ -2588,8 +2593,7 @@ aside.fs-panel {
   translate: -50% calc(-100% - 8px);
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
+  padding: 3px;
   border: 1px solid var(--fs-border);
   border-radius: var(--fs-radius-pill);
   background: var(--fs-surface-1);
@@ -2597,7 +2601,6 @@ aside.fs-panel {
   font: inherit;
   font-size: var(--fs-code-size);
   box-shadow: var(--fs-lift-shadow);
-  cursor: pointer;
   min-block-size: auto;
   animation: fs-quote-in var(--fs-duration-fast) var(--fs-ease-out);
 }
@@ -3624,5 +3627,247 @@ aside.fs-panel { position: relative; }
 @container (max-width: 1040px) {
   .fs-studio__chip--compact .fs-studio__chip-label { display: none; }
   .fs-studio__chip--compact { padding-inline: var(--fs-space-2); }
+}
+
+/* ═══ Lote B (CONTRATO_EXCURSOS.md) — excursos ═══ */
+
+/* B2: the second button in the floating selection group (`.fs-studio__quote`,
+   restyled above as the group's wrapper). Individual buttons carry their own
+   padding/radius now instead of the wrapper doing it for a single child. */
+.fs-studio__quote-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border: 0;
+  border-radius: var(--fs-radius-pill);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: var(--fs-code-size);
+  cursor: pointer;
+  transition: background-color var(--fs-duration-fast) var(--fs-ease);
+}
+
+.fs-studio__quote-btn:hover,
+.fs-studio__quote-btn:focus-visible {
+  background: var(--fs-surface-2);
+}
+
+.fs-studio__quote-btn + .fs-studio__quote-btn {
+  border-inline-start: 1px solid var(--fs-border);
+  border-start-start-radius: 0;
+  border-end-start-radius: 0;
+  padding-inline-start: 10px;
+}
+
+/* B4: the excursos panel, opened from the header's Waypoints button inside
+   a Popover (SideThreadsPanel.tsx's own header comment says why a Popover
+   rather than a SidePanel tab). Capped so it never blows out a ~400px
+   viewport — the popover's own positioning keeps it on-screen. */
+.fs-st__popover {
+  inline-size: min(400px, calc(100vw - 32px));
+  max-block-size: min(70vh, 560px);
+  overflow-y: auto;
+  padding: var(--fs-space-3);
+}
+
+.fs-st {
+  display: grid;
+  gap: var(--fs-space-4);
+  font-size: var(--fs-code-size);
+}
+
+.fs-st__heading {
+  margin: 0 0 var(--fs-space-2);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--fs-text-3);
+}
+
+.fs-st__parent {
+  display: grid;
+  gap: var(--fs-space-2);
+  padding-block-end: var(--fs-space-3);
+  border-block-end: 1px solid var(--fs-border);
+}
+
+.fs-st__parent-line {
+  margin: 0;
+  color: var(--fs-text-2);
+}
+
+.fs-st__children {
+  display: grid;
+  gap: var(--fs-space-2);
+}
+
+.fs-st__child-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--fs-space-2);
+}
+
+.fs-st__child {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--fs-space-2);
+  padding: var(--fs-space-2);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-control);
+  background: var(--fs-surface-1);
+}
+
+.fs-st__child-name {
+  flex: 1 1 auto;
+  min-inline-size: 8ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fs-text-1);
+}
+
+.fs-st__child-meta {
+  color: var(--fs-text-3);
+  white-space: nowrap;
+}
+
+.fs-st__badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-pill);
+  color: var(--fs-text-3);
+  font-size: 0.7rem;
+  white-space: nowrap;
+}
+
+.fs-st__badge[data-tone='ok'] {
+  border-color: color-mix(in srgb, var(--fs-success) 55%, var(--fs-border));
+  color: var(--fs-success);
+}
+
+.fs-st__badge[data-tone='warn'] {
+  border-color: color-mix(in srgb, var(--fs-warning) 55%, var(--fs-border));
+  color: var(--fs-warning);
+}
+
+.fs-st__depth {
+  padding: 2px 6px;
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-control);
+  background: var(--fs-surface-2);
+  color: var(--fs-text-1);
+  font: inherit;
+  font-size: 0.75rem;
+}
+
+.fs-st__preview,
+.fs-st__map {
+  display: grid;
+  gap: var(--fs-space-2);
+  padding-block-start: var(--fs-space-3);
+  border-block-start: 1px solid var(--fs-border);
+}
+
+.fs-st__summary {
+  margin: 0;
+  color: var(--fs-text-2);
+}
+
+.fs-st__layers {
+  list-style: none;
+  margin: var(--fs-space-2) 0 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.fs-st__layers li {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--fs-space-2);
+  color: var(--fs-text-3);
+}
+
+/* B4 block 4: the thought map as a nested list, `--depth` (set inline by
+   ThoughtMapTree, same convention as SessionsPane's own `--depth`) giving
+   each generation its own indent. */
+.fs-st__map-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.fs-st__map-list .fs-st__map-list {
+  margin-inline-start: 14px;
+  border-inline-start: 1px solid var(--fs-border);
+  padding-inline-start: var(--fs-space-2);
+}
+
+.fs-st__map-node {
+  display: flex;
+  align-items: baseline;
+  gap: var(--fs-space-2);
+  padding-block: 2px;
+}
+
+.fs-st__map-link {
+  color: var(--fs-text-2);
+}
+
+.fs-st__map-node[data-current] .fs-st__map-link {
+  color: var(--fs-text-1);
+  font-weight: 600;
+}
+
+.fs-st__map-meta {
+  color: var(--fs-text-3);
+  font-size: 0.7rem;
+  white-space: nowrap;
+}
+
+/* B5: a side thread drawn under its parent in the conversation list gets a
+   little extra start padding per ancestor level (`--depth`, set inline by
+   `indentSessions`) — purely visual nesting, sort order still decides what
+   comes first and this never reorders anything on its own. Declared after
+   `.fs-studio__session`'s own block above so the longhand wins over that
+   rule's shorthand `padding`. */
+.fs-studio__session {
+  padding-inline-start: calc(var(--fs-space-4) + var(--depth, 0) * 14px);
+}
+
+/* B3: ExploreDialog's own content. */
+.fs-explore {
+  display: grid;
+  gap: var(--fs-space-2);
+}
+
+.fs-explore__passage {
+  margin: 0;
+  padding: var(--fs-space-2) var(--fs-space-3);
+  border-inline-start: 2px solid var(--fs-border-strong);
+  color: var(--fs-text-2);
+  font-style: italic;
+}
+
+.fs-explore__hint {
+  margin: 0;
+  color: var(--fs-text-3);
+  font-size: 0.8rem;
+}
+
+.fs-explore__textarea {
+  min-block-size: 96px;
+  resize: vertical;
+  font: inherit;
 }
 

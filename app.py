@@ -1033,6 +1033,12 @@ app.include_router(setup_git_routes())
 from routes.board_routes import setup_board_routes
 app.include_router(setup_board_routes())
 
+# Excursos (side threads, CONTRATO_EXCURSOS Lote A): side-thread creation,
+# wiring panel data, thought-map, context preview, and reference cables
+# (src/side_threads.py).
+from routes.side_thread_routes import setup_side_thread_routes
+app.include_router(setup_side_thread_routes(session_manager))
+
 # Observable strategy + recipes (CMP-09/CMP-12): GET/PUT /api/strategy/profile,
 # POST /api/strategy/preview, GET /api/recipes, POST /api/recipes/from-run/{run_id}
 # (src/strategy_policy.py, src/recipes.py).

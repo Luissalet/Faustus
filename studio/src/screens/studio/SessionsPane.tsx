@@ -15,6 +15,7 @@ import {
   unarchiveSession,
   type ArchivedSession,
 } from '../../adapters/sessions';
+import { getParentsMap, indentSessions } from '../../adapters/sideThreads';
 import { t, tn } from '../../i18n';
 
 const SessionDialog = lazy(() => import('./SessionDialog'));
@@ -59,16 +60,16 @@ function sortSessions(list: ChatSession[], mode: SortMode): ChatSession[] {
   return out.sort((a, b) => Number(b.isImportant) - Number(a.isImportant));
 }
 
-function Row({ s, i, currentId, selecting, selected, live, queuePos, liveDetail, onToggle, onOpen, onMenu }: { s: ChatSession; i: number; currentId: string | null; selecting: boolean; selected: boolean; live: SessionActivity | null; queuePos?: number; liveDetail?: ChatActivity['details'][string]; onToggle: () => void; onOpen: (id: string) => void; onMenu: () => void }) {
+function Row({ s, i, depth, currentId, selecting, selected, live, queuePos, liveDetail, onToggle, onOpen, onMenu }: { s: ChatSession; i: number; depth: number; currentId: string | null; selecting: boolean; selected: boolean; live: SessionActivity | null; queuePos?: number; liveDetail?: ChatActivity['details'][string]; onToggle: () => void; onOpen: (id: string) => void; onMenu: () => void }) {
   return (
-    <div className="fs-studio__session-row" role="listitem" data-selected={selected || undefined} data-selecting={selecting || undefined}>
+    <div className="fs-studio__session-row" role="listitem" data-selected={selected || undefined} data-selecting={selecting || undefined} data-depth={depth || undefined}>
       {selecting && (
         <input type="checkbox" className="fs-studio__session-check" checked={selected} onChange={onToggle} aria-label={t('Select {name}', { name: s.name })} />
       )}
       <Link
         to={`/studio?s=${encodeURIComponent(s.id)}`}
         className="fs-studio__session fs-enter"
-        style={{ ['--i' as string]: Math.min(i, 8) }}
+        style={{ ['--i' as string]: Math.min(i, 8), ['--depth' as string]: depth }}
         aria-current={s.id === currentId ? 'page' : undefined}
         data-testid="studio-session"
         onClick={(event) => {
@@ -163,6 +164,21 @@ export function SessionsPane({ sessions, currentId, filter, setFilter, searchRef
   // What is running right now, so a conversation you walked away from still
   // says so from the list (src/agent_runs.py keeps the turn going).
   const activity: ChatActivity = useChatActivity();
+  // B5 (CONTRATO_EXCURSOS.md): "pide getParentsMap() una vez" — fetched once
+  // per mount of this pane, never blocking the list itself (a failed fetch
+  // just leaves every row at depth 0, "la lista se pinta como hoy").
+  const [parents, setParents] = useState<Record<string, string>>({});
+  useEffect(() => {
+    let alive = true;
+    getParentsMap()
+      .then((r) => {
+        if (alive) setParents(r.parents);
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   useEffect(() => {
     try {
@@ -252,8 +268,8 @@ export function SessionsPane({ sessions, currentId, filter, setFilter, searchRef
   }
 
   const renderRows = (list: ChatSession[], offset = 0) =>
-    list.map((s, i) => (
-      <Row key={s.id} s={s} i={i + offset} currentId={currentId} selecting={selecting} selected={selected.has(s.id)} live={sessionActivity(activity, s.id)} queuePos={activity.queued[s.id]} liveDetail={activity.details[s.id]} onToggle={() => toggle(s.id)} onOpen={(id) => onOpen(id)} onMenu={() => setTarget(s)} />
+    indentSessions(list, parents).map(({ item: s, depth }, i) => (
+      <Row key={s.id} s={s} i={i + offset} depth={depth} currentId={currentId} selecting={selecting} selected={selected.has(s.id)} live={sessionActivity(activity, s.id)} queuePos={activity.queued[s.id]} liveDetail={activity.details[s.id]} onToggle={() => toggle(s.id)} onOpen={(id) => onOpen(id)} onMenu={() => setTarget(s)} />
     ));
 
   return (

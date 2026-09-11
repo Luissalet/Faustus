@@ -1,4 +1,4 @@
-import { ArrowDown, BookmarkPlus, Check, ChevronDown, Copy, FileText, GitBranch, GitCommit, GitFork, Pencil, Quote, RefreshCw, Telescope, Trash2, UploadCloud, Volume2, VolumeX, X } from 'lucide-react';
+import { ArrowDown, BookmarkPlus, Check, ChevronDown, Copy, FileText, GitBranch, GitBranchPlus, GitCommit, GitFork, Pencil, Quote, RefreshCw, Telescope, Trash2, UploadCloud, Volume2, VolumeX, X } from 'lucide-react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Link } from 'react-router';
 import { Fragment, lazy, Suspense, useCallback, useEffect, useRef, useState, type RefObject } from 'react';
@@ -113,6 +113,14 @@ export interface TranscriptProps {
   onFork?: (turn: Turn) => void;
   /** Selected text from a reply, quoted into the composer. */
   onQuote?: (text: string) => void;
+  /** B2 (CONTRATO_EXCURSOS.md): branch a new excurso from this point — a
+   *  quoted passage (the floating selection button, alongside "Citar") or
+   *  the whole turn (the turn's own "Explorar desde aquí", no `passage`).
+   *  `historyIndex` is the SAME 0-based position `forkFrom` (Studio.tsx)
+   *  already reads off `turn.historyIndex ?? index` — the excurso's anchor
+   *  is "everything up to and including this reply", exactly what a fork
+   *  from here would have kept. */
+  onExplore?: (input: { historyIndex: number; passage?: string }) => void;
   /** Lote 86: a `git_policy` chip opens the Source control panel. */
   onOpenSourceControl?: () => void;
   /** Lote 93: the project's board key ("FAU") — `FAU-12`-shaped ids in the
@@ -160,12 +168,17 @@ function SpeakButton({ text }: { text: string }) {
   );
 }
 
-/** Selecting text inside a reply offers to quote it into the composer. */
-function useQuoteSelection(onQuote?: (text: string) => void) {
-  const [pos, setPos] = useState<{ x: number; y: number; text: string } | null>(null);
+/** Selecting text inside a reply offers to quote it into the composer, or
+ *  (B2, CONTRATO_EXCURSOS.md) to branch a side thread from it. `turnId` is
+ *  the selected assistant turn's `data-nav-id` (set on `AssistantTurn`'s
+ *  root `<article>`), captured here so the caller can resolve it back to a
+ *  `Turn`/`historyIndex` without this hook knowing anything about `Turn`
+ *  itself. */
+function useQuoteSelection(onQuote?: (text: string) => void, exploreEnabled?: boolean) {
+  const [pos, setPos] = useState<{ x: number; y: number; text: string; turnId: string | null } | null>(null);
   const holder = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    if (!onQuote) return;
+    if (!onQuote && !exploreEnabled) return;
     const onUp = () => {
       window.setTimeout(() => {
         const sel = window.getSelection();
@@ -177,13 +190,14 @@ function useQuoteSelection(onQuote?: (text: string) => void) {
         const range = sel.getRangeAt(0);
         const node = range.commonAncestorContainer;
         const el = node.nodeType === 1 ? (node as Element) : node.parentElement;
-        if (!el || !holder.current.contains(el) || !el.closest('.fs-turn--assistant')) {
+        const turnEl = el?.closest('.fs-turn--assistant');
+        if (!el || !holder.current.contains(el) || !turnEl) {
           setPos(null);
           return;
         }
         const rect = range.getBoundingClientRect();
         const host = holder.current.getBoundingClientRect();
-        setPos({ x: rect.left - host.left + rect.width / 2, y: rect.top - host.top, text });
+        setPos({ x: rect.left - host.left + rect.width / 2, y: rect.top - host.top, text, turnId: turnEl.getAttribute('data-nav-id') });
       }, 0);
     };
     const onDown = (e: MouseEvent) => {
@@ -195,7 +209,7 @@ function useQuoteSelection(onQuote?: (text: string) => void) {
       document.removeEventListener('mouseup', onUp);
       document.removeEventListener('mousedown', onDown);
     };
-  }, [onQuote]);
+  }, [onQuote, exploreEnabled]);
   return { holder, pos, clear: () => setPos(null) };
 }
 
@@ -1212,6 +1226,7 @@ function AssistantTurn({
   onOpenEvidence,
   onRerun,
   onFork,
+  onExplore,
   onOpenSourceControl,
   boardKey,
   projectId,
@@ -1232,6 +1247,9 @@ function AssistantTurn({
   onOpenEvidence?: TranscriptProps['onOpenEvidence'];
   onRerun?: TranscriptProps['onRerun'];
   onFork?: () => void;
+  /** B2: "Explorar desde aquí" — bound with this turn's own `historyIndex`
+   *  and no `passage`, unlike the floating selection button's call. */
+  onExplore?: () => void;
   onOpenSourceControl?: TranscriptProps['onOpenSourceControl'];
   boardKey?: TranscriptProps['boardKey'];
   projectId?: TranscriptProps['projectId'];
@@ -1422,6 +1440,7 @@ function AssistantTurn({
                 <>
                   <IconButton icon={RefreshCw} label={t('Regenerate')} size="sm" onClick={onRegenerate} />
                   {onFork && <IconButton icon={GitFork} label={t('Fork from here')} size="sm" onClick={onFork} testId="turn-fork" />}
+                  {onExplore && <IconButton icon={GitBranchPlus} label={t('Explore from here')} size="sm" onClick={onExplore} testId="turn-explore" />}
                   {sessionId && (
                     <IconButton
                       icon={BookmarkPlus}
@@ -1609,8 +1628,8 @@ const ESTIMATED_TURN_HEIGHT = 180;
  *  means without the two files sharing state. */
 const BOTTOM_THRESHOLD = 80;
 
-export function Transcript({ turns, busy, sessionId, onApproval, onAnswer, onEdit, onRegenerate, onDelete, onNotice, onOpenFile, onOpenDoc, onOpenEvidence, onRerun, onFork, onQuote, onOpenSourceControl, boardKey, projectId, onOpenBoardIssue }: TranscriptProps) {
-  const quote = useQuoteSelection(onQuote);
+export function Transcript({ turns, busy, sessionId, onApproval, onAnswer, onEdit, onRegenerate, onDelete, onNotice, onOpenFile, onOpenDoc, onOpenEvidence, onRerun, onFork, onQuote, onExplore, onOpenSourceControl, boardKey, projectId, onOpenBoardIssue }: TranscriptProps) {
+  const quote = useQuoteSelection(onQuote, Boolean(onExplore));
 
   // PERF-01/QA-37: Studio.tsx owns the actual scrolling element
   // (`.fs-studio__scroll`) and is off-limits to this lote, so it is found
@@ -1662,20 +1681,46 @@ export function Transcript({ turns, busy, sessionId, onApproval, onAnswer, onEdi
 
   return (
     <div className="fs-studio__turns" ref={setRootRef} style={{ blockSize: rowVirtualizer.getTotalSize() }}>
-      {quote.pos && onQuote && (
-        <button
-          type="button"
+      {quote.pos && (onQuote || onExplore) && (
+        <div
           className="fs-studio__quote"
+          role="group"
+          aria-label={t('Selection actions')}
           style={{ insetInlineStart: quote.pos.x, insetBlockStart: quote.pos.y }}
-          onClick={() => {
-            onQuote(quote.pos?.text ?? '');
-            quote.clear();
-            window.getSelection()?.removeAllRanges();
-          }}
-          data-testid="turn-quote"
         >
-          <Quote size={13} aria-hidden="true" /> Citar
-        </button>
+          {onQuote && (
+            <button
+              type="button"
+              className="fs-studio__quote-btn"
+              onClick={() => {
+                onQuote(quote.pos?.text ?? '');
+                quote.clear();
+                window.getSelection()?.removeAllRanges();
+              }}
+              data-testid="turn-quote"
+            >
+              <Quote size={13} aria-hidden="true" /> Citar
+            </button>
+          )}
+          {onExplore && quote.pos.turnId && (
+            <button
+              type="button"
+              className="fs-studio__quote-btn"
+              onClick={() => {
+                const turnId = quote.pos?.turnId;
+                const passage = quote.pos?.text ?? '';
+                const index = turns.findIndex((tu) => tu.id === turnId);
+                const turn = index === -1 ? undefined : turns[index];
+                quote.clear();
+                window.getSelection()?.removeAllRanges();
+                if (turn) onExplore({ historyIndex: turn.historyIndex ?? index, passage });
+              }}
+              data-testid="explore-selection"
+            >
+              <GitBranchPlus size={13} aria-hidden="true" /> {t('Explore separately')}
+            </button>
+          )}
+        </div>
       )}
       {items.map((virtualItem) => {
         const turn = turns[virtualItem.index];
@@ -1716,6 +1761,7 @@ export function Transcript({ turns, busy, sessionId, onApproval, onAnswer, onEdi
                 onOpenEvidence={onOpenEvidence}
                 onRerun={onRerun}
                 onFork={onFork ? () => onFork(turn) : undefined}
+                onExplore={onExplore ? () => onExplore({ historyIndex: turn.historyIndex ?? index }) : undefined}
                 onOpenSourceControl={onOpenSourceControl}
                 boardKey={boardKey}
                 projectId={projectId}

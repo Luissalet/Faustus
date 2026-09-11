@@ -27,4 +27,7 @@ export const en: Record<string, string> = {
   'Blocks#issue_link_kind': 'Blocks',
   'Link#issue_link_verb': 'Link',
   'The board is empty#issue_board': 'The board is empty',
+  // B1 (CONTRATO_EXCURSOS.md): "N inherited" reads the same in English
+  // whether N is 1 or many; Spanish needs "heredado"/"heredados".
+  '{n} inherited#': '{n} inherited',
 };
