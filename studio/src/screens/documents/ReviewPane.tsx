@@ -206,6 +206,10 @@ export function ReviewPane({ docId, docTitle }: ReviewPaneProps) {
     setSelected(new Set());
   };
 
+  // Seen live: the button created an EMPTY comment straight away. A comment
+  // is a note on a passage — ask for the note first, one inline field.
+  const [draftBody, setDraftBody] = useState<string | null>(null);
+
   const addFromSelection = async () => {
     if (!session || !session.selection.length) return;
     const range = session.selection[0];
@@ -218,8 +222,9 @@ export function ReviewPane({ docId, docTitle }: ReviewPaneProps) {
       // uses) so a quote that repeats elsewhere still anchors to THIS
       // occurrence instead of failing `quote_ambiguous`.
       const occ = findOccurrences(text, quote).find((o) => o.start === range.start) ?? findOccurrences(text, quote)[0];
-      const created = await createDocComment(docId, { quote, beforeCtx: occ?.before, afterCtx: occ?.after });
+      const created = await createDocComment(docId, { quote, body: (draftBody ?? '').trim(), beforeCtx: occ?.before, afterCtx: occ?.after });
       setComments((cur) => (cur ? [...cur, created] : [created]));
+      setDraftBody(null);
       say(t('Comment added.'));
     } catch (e) {
       say((e as Error).message, 'danger');
@@ -240,9 +245,26 @@ export function ReviewPane({ docId, docTitle }: ReviewPaneProps) {
         {orphanCount > 0 && <span className="fs-review__badge" data-tone="warn">{tn(orphanCount, '{n} lost anchor', '{n} lost anchors')}</span>}
       </div>
 
-      {session && session.selection.length > 0 && (
+      {session && session.selection.length > 0 && draftBody === null && (
         <div className="fs-panel__row">
-          <Button size="sm" icon={MessageSquarePlus} label={t('Comment on the current selection')} loading={addingFromSelection} onClick={() => void addFromSelection()} />
+          <Button size="sm" icon={MessageSquarePlus} label={t('Comment on the current selection')} onClick={() => setDraftBody('')} data-testid="review-comment-start" />
+        </div>
+      )}
+      {session && session.selection.length > 0 && draftBody !== null && (
+        <div className="fs-review__draft" data-testid="review-comment-draft">
+          <textarea
+            className="fs-panel__editor"
+            rows={3}
+            value={draftBody}
+            placeholder={t('What about this passage?')}
+            aria-label={t('Comment text')}
+            onChange={(e) => setDraftBody(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) void addFromSelection(); if (e.key === 'Escape') setDraftBody(null); }}
+          />
+          <div className="fs-panel__row">
+            <Button size="sm" label={t('Cancel')} onClick={() => setDraftBody(null)} />
+            <Button size="sm" variant="primary" icon={MessageSquarePlus} label={t('Add comment')} loading={addingFromSelection} disabled={!draftBody.trim()} onClick={() => void addFromSelection()} />
+          </div>
         </div>
       )}
 
