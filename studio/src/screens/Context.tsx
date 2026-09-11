@@ -62,6 +62,7 @@ import {
   type Experience,
   type Finding,
   type MaintenanceRun,
+  type ManifestItem,
   type PacketRow,
   type RefreshBlock,
   type RefreshReport,
@@ -678,9 +679,31 @@ function SelectionPanel({ projectId }: { projectId: string }) {
 
 /* ── Packets: the ledger, and the manifest behind each row ─────────────── */
 
+/**
+ * CTX-03: filters the already-loaded manifest rows by section, source,
+ * reference, lanes, transformation or the "why" note — a real "search
+ * within this packet's output" (the map's cited gap), done client-side
+ * since every row is already on the wire. It does NOT reach inside the
+ * text a source actually contributed (that fragment is never sent to the
+ * browser at all — see the report's "Cambios necesarios en ficheros
+ * ajenos" for the backend endpoint CTX-03's other half needs).
+ */
+export function manifestItemMatches(item: ManifestItem, needle: string): boolean {
+  const haystack = [item.section, item.sourceType, item.sourceRef, item.lanes.join(' '), item.transformation, item.reason]
+    .join(' ')
+    .toLowerCase();
+  return haystack.includes(needle.toLowerCase());
+}
+
 function ManifestPane({ packet, onClose }: { packet: PacketRow; onClose: () => void }) {
   const manifest = useRemote(`manifest:${packet.id}`, (signal) => loadManifest(packet.id, signal));
   const data = manifest.data;
+  const [query, setQuery] = useState('');
+  const needle = query.trim();
+  const items = useMemo(() => {
+    if (!data) return [];
+    return needle ? data.items.filter((item) => manifestItemMatches(item, needle)) : data.items;
+  }, [data, needle]);
 
   return (
     <aside className="fs-ctx__pane" aria-labelledby="fs-ctx-manifest" data-testid="context-manifest">
@@ -730,6 +753,18 @@ function ManifestPane({ packet, onClose }: { packet: PacketRow; onClose: () => v
 
       {data && data.retained && (
         <div className="fs-ctx__table-wrap">
+          {data.items.length > 0 && (
+            <label className="fs-ctx__manifest-search" data-testid="context-manifest-search">
+              <Search size={13} aria-hidden="true" />
+              <input
+                type="search"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder={t('Search within this packet…')}
+                aria-label={t('Search within this packet')}
+              />
+            </label>
+          )}
           <table className="fs-ctx__table fs-ctx__table--dense">
             <thead>
               <tr>
@@ -743,7 +778,7 @@ function ManifestPane({ packet, onClose }: { packet: PacketRow; onClose: () => v
               </tr>
             </thead>
             <tbody>
-              {data.items.map((item) => (
+              {items.map((item) => (
                 <tr key={item.itemId} data-testid="context-manifest-item">
                   <td>{item.section}</td>
                   <td>{item.sourceType}</td>
@@ -767,6 +802,13 @@ function ManifestPane({ packet, onClose }: { packet: PacketRow; onClose: () => v
                 <tr>
                   <td colSpan={7} className="fs-ctx__empty-cell">
                     {t('The packet carried nothing: every candidate was left out.')}
+                  </td>
+                </tr>
+              )}
+              {data.items.length > 0 && items.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="fs-ctx__empty-cell" data-testid="context-manifest-search-empty">
+                    {t('Nothing in this packet matches "{query}".', { query })}
                   </td>
                 </tr>
               )}

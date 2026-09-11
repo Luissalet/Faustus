@@ -3,6 +3,7 @@ import {
   Check,
   CheckSquare,
   Download,
+  EyeOff,
   FileUp,
   Pin,
   PinOff,
@@ -32,6 +33,7 @@ import {
   deleteRule,
   exportMemories,
   extractFromSession,
+  forgetRule,
   getPref,
   importFromFile,
   invalidateDecision,
@@ -249,7 +251,12 @@ function SuggestionsDialog({ title, items, onClose, onSave }: { title: string; i
 
 /* ── Learned rules ── */
 
-function RuleRow({ rule, onFeedback, onDelete }: { rule: LearnedRule; onFeedback: (kind: 'helpful' | 'harmful') => void; onDelete: () => void }) {
+/** MEM-01: confirmed (a human said so, still active) / inferred (nobody
+ *  confirmed it yet) / obsolete (the lifecycle already retired it — a
+ *  refuted hypothesis stays obsolete no matter how the trust math moves). */
+const CONFIDENCE_LABEL: Record<string, string> = { confirmed: 'confirmed', inferred: 'inferred', obsolete: 'obsolete' };
+
+function RuleRow({ rule, onFeedback, onDelete, onForget }: { rule: LearnedRule; onFeedback: (kind: 'helpful' | 'harmful') => void; onDelete: () => void; onForget: () => void }) {
   const pct = Math.max(0, Math.min(100, Math.round(rule.effectiveScore * 100)));
   const harm = Math.round(rule.harmfulRatio * 100);
   return (
@@ -264,6 +271,14 @@ function RuleRow({ rule, onFeedback, onDelete }: { rule: LearnedRule; onFeedback
         </span>
         <span className="fs-rule__chip">{rule.maturity}</span>
         {rule.trustClass && <span className="fs-rule__trust">{rule.trustClass}</span>}
+        <span className="fs-rule__confidence" data-state={rule.confidenceState} data-testid="rule-confidence" title={t('How sure Faustus is this still holds — confirmed by a human, only inferred so far, or retired')}>
+          {t(CONFIDENCE_LABEL[rule.confidenceState] ?? rule.confidenceState)}
+        </span>
+        {rule.sensitivity !== 'normal' && (
+          <span className="fs-rule__sensitivity" data-level={rule.sensitivity} data-testid="rule-sensitivity" title={t('Never leaves this owner/project scope regardless of retrieval settings')}>
+            <EyeOff size={11} aria-hidden="true" /> {rule.sensitivity === 'secret' ? t('secret') : t('sensitive')}
+          </span>
+        )}
         <span className="fs-rule__score" title={t('Effective score: confidence × freshness + helpful − 4 × harmful')}>
           <span className="fs-rule__bar" aria-hidden="true">
             <span style={{ inlineSize: `${pct}%` }} />
@@ -274,6 +289,7 @@ function RuleRow({ rule, onFeedback, onDelete }: { rule: LearnedRule; onFeedback
         <span className="fs-rule__actions">
           <IconButton icon={ThumbsUp} label={t('This rule helped')} size="sm" onClick={() => onFeedback('helpful')} />
           <IconButton icon={ThumbsDown} label={t('This rule did harm')} size="sm" onClick={() => onFeedback('harmful')} />
+          <IconButton icon={EyeOff} label={t('Forget (never let this text come back on its own)')} size="sm" onClick={onForget} testId="rule-forget" />
           <IconButton icon={X} label={t('Delete the rule')} size="sm" onClick={onDelete} />
         </span>
       </div>
@@ -431,6 +447,14 @@ function LearnedRules({ say }: { say: (text: string) => void }) {
                 void deleteRule(r.id)
                   .then(() => setRules((cur) => (cur ? cur.filter((x) => x.id !== r.id) : cur)))
                   .catch(() => say(t('Could not delete the rule.')))
+              }
+              onForget={() =>
+                void forgetRule(r.id)
+                  .then(() => {
+                    setRules((cur) => (cur ? cur.filter((x) => x.id !== r.id) : cur));
+                    say(t('Forgotten — it will not come back through a later reindex or import.'));
+                  })
+                  .catch(() => say(t('Could not forget the rule.')))
               }
             />
           ))}

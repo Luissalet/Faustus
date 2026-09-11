@@ -842,6 +842,10 @@ app.include_router(setup_code_index_routes())
 from routes.observability_routes import setup_observability_routes
 app.include_router(setup_observability_routes())
 
+# OPS-07 / EVAL-03: remote-run cost report and the chaos-fixture dry-run door.
+from routes.ops_routes import setup_ops_routes
+app.include_router(setup_ops_routes())
+
 # Media renders on a separate engine. There is deliberately no endpoint that
 # takes a graph: a caller picks an approved template and fills its declared
 # inputs, and that is the whole surface.
@@ -919,6 +923,9 @@ app.include_router(setup_diagnostics_routes(rag_manager, rag_available, research
 
 from routes.command_guard_routes import setup_command_guard_routes
 app.include_router(setup_command_guard_routes())
+
+from routes.privacy_routes import setup_privacy_routes
+app.include_router(setup_privacy_routes())
 
 # Cleanup
 from routes.cleanup.cleanup_routes import setup_cleanup_routes

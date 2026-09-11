@@ -25,6 +25,28 @@ export interface ResearchItem {
 export interface ResearchSource {
   title: string;
   url: string;
+  /** WEB-02: set when this source's content already arrived this run under
+   *  a different URL — the URL it duplicates (`src/deep_research.py::
+   *  _stamp_duplicate`). Undefined, not a fetch failure: most sources are
+   *  not duplicates. Requires the backend passthrough described in this
+   *  lote's report ("Cambios necesarios en ficheros ajenos") — absent
+   *  until then, never guessed at. */
+  duplicateOf?: string;
+  /** WEB-02: true when the response's own cache headers say this page is
+   *  stale (`src/outbound_fetch.py::staleness_from_headers`). Undefined
+   *  means "no signal", not "fresh" — same passthrough dependency as above. */
+  stale?: boolean;
+  ageDays?: number;
+}
+
+function sourceFrom(s: Record<string, unknown>): ResearchSource {
+  return {
+    title: String(s.title ?? s.url ?? ''),
+    url: typeof s.url === 'string' ? s.url : '',
+    duplicateOf: typeof s.duplicate_of === 'string' && s.duplicate_of ? s.duplicate_of : undefined,
+    stale: typeof s.stale === 'boolean' ? s.stale : undefined,
+    ageDays: typeof s.age_days === 'number' ? s.age_days : undefined,
+  };
 }
 
 export interface ResearchDetail {
@@ -64,7 +86,7 @@ export async function loadResearchLibrary(query: { search?: string; sort?: Resea
 
 export async function researchDetail(id: string): Promise<ResearchDetail> {
   const raw = await getJson<Record<string, unknown>>(`/api/research/detail/${encodeURIComponent(id)}`);
-  const sources = asArray<Record<string, unknown>>(raw, 'sources').map((s) => ({ title: String(s.title ?? s.url ?? ''), url: typeof s.url === 'string' ? s.url : '' }));
+  const sources = asArray<Record<string, unknown>>(raw, 'sources').map(sourceFrom);
   const stats: Record<string, string> = {};
   if (raw.stats && typeof raw.stats === 'object') for (const [k, v] of Object.entries(raw.stats as Record<string, unknown>)) stats[k] = String(v ?? '');
   return {
@@ -132,6 +154,16 @@ export interface ResearchSettings {
   model: string;
 }
 
+/** RES-01: one node of the brief's schema (`self.subquestions`) and how
+ *  much of it the evidence gathered so far actually addresses — deterministic,
+ *  no model call (`src/deep_research.py::_coverage_snapshot`). */
+export interface CoverageNode {
+  index: number;
+  question: string;
+  status: 'pending' | 'insufficient' | 'covered';
+  matchedSources: number;
+}
+
 export interface ResearchProgress {
   model?: string;
   phase: string;
@@ -143,6 +175,11 @@ export interface ResearchProgress {
   status?: string;
   /** Set while the loader is waiting for someone to free VRAM (`phase: vram_blocked`). */
   vram?: VramBlocked;
+  /** RES-01: present on `analyzing` progress events — the coverage map as
+   *  of that round's evidence. Empty until the brief has been broken into
+   *  subquestions (a short, single-topic query never gets one — nothing is
+   *  missing there either). */
+  coverage: CoverageNode[];
 }
 
 export interface ResearchResult {
@@ -185,6 +222,19 @@ export async function cancelResearch(id: string): Promise<void> {
   await post(`/api/research/cancel/${encodeURIComponent(id)}`);
 }
 
+function coverageNodeFrom(raw: unknown): CoverageNode | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const row = raw as Record<string, unknown>;
+  const status = row.status;
+  if (status !== 'pending' && status !== 'insufficient' && status !== 'covered') return null;
+  return {
+    index: typeof row.index === 'number' ? row.index : 0,
+    question: String(row.question ?? ''),
+    status,
+    matchedSources: typeof row.matched_sources === 'number' ? row.matched_sources : 0,
+  };
+}
+
 function progressFrom(raw: Record<string, unknown>): ResearchProgress {
   return {
     model: typeof raw.model === 'string' ? raw.model : undefined,
@@ -196,6 +246,7 @@ function progressFrom(raw: Record<string, unknown>): ResearchProgress {
     message: typeof raw.message === 'string' ? raw.message : undefined,
     status: typeof raw.status === 'string' ? raw.status : undefined,
     vram: vramBlockedFrom(raw),
+    coverage: Array.isArray(raw.coverage) ? raw.coverage.map(coverageNodeFrom).filter((n): n is CoverageNode => n !== null) : [],
   };
 }
 
@@ -353,7 +404,7 @@ function resultFrom(raw: Record<string, unknown>): ResearchResult {
   const resumedFrom = typeof raw.resumed_from === 'string' && raw.resumed_from ? raw.resumed_from : undefined;
   return {
     result: String(raw.result ?? ''),
-    sources: asArray<Record<string, unknown>>(raw, 'sources').map((s) => ({ title: String(s.title ?? s.url ?? ''), url: typeof s.url === 'string' ? s.url : '' })),
+    sources: asArray<Record<string, unknown>>(raw, 'sources').map(sourceFrom),
     findings: asArray<unknown>(raw, 'raw_findings').map((f) => (typeof f === 'string' ? f : String((f as { text?: unknown })?.text ?? ''))).filter(Boolean),
     category: String(raw.category ?? ''),
     resumedFrom,
@@ -449,7 +500,12 @@ export function phaseLabel(p: ResearchProgress | null, maxRounds: number): strin
     case 'analyzing':
       return `${round}${t('Analysing {n} findings', { n: p.totalFindings ?? 0 })}`;
     case 'writing':
-      return t('Writing the report — {n} sources', { n: p.totalSources ?? 0 });
+      // RES-04: a long brief writes its report a few sections at a time
+      // (`_final_report_in_parts`) and stamps which ones on `message`
+      // ("Writing sections 5-8 of 22 (part 2 of 3)") — the live, per-part
+      // detail behind a generic "Writing the report" line, shown whenever
+      // the server sent it instead of always collapsing to the fallback.
+      return p.message || t('Writing the report — {n} sources', { n: p.totalSources ?? 0 });
     case 'error':
     case 'warning':
       return p.message || p.phase;

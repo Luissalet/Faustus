@@ -1292,6 +1292,17 @@ details.fs-studio__step > summary:hover .fs-trace__label {
 .fs-message-nav__preview strong { font-size: 12px; }
 .fs-message-nav__preview p { margin: 6px 0 0; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
 
+/* UX-05: the conversation's own search — a toggle in the rail's own 44px
+   column, and its panel breaking out to the right like the preview above. */
+.fs-message-nav__search-toggle { position: absolute; inset-block-start: -22px; inset-inline-start: 10px; inline-size: 24px; block-size: 24px; display: grid; place-items: center; border: none; border-radius: 6px; background: transparent; color: var(--fs-text-3); cursor: pointer; }
+.fs-message-nav__search-toggle:hover, .fs-message-nav__search-toggle:focus-visible { background: var(--fs-surface-2); color: var(--fs-text-1); }
+.fs-message-nav__search { position: absolute; inset-block-start: -8px; inset-inline-start: 42px; z-index: 3; display: flex; align-items: center; gap: 6px; padding: 6px 8px; border: 1px solid var(--fs-border); border-radius: 10px; background: var(--fs-surface-2); color: var(--fs-text-1); inline-size: min(300px, calc(100vw - 100px)); }
+.fs-message-nav__search input { flex: 1; min-inline-size: 0; border: none; background: transparent; color: inherit; font-size: 13px; outline: none; }
+.fs-message-nav__search-count { font-size: 12px; color: var(--fs-text-3); white-space: nowrap; }
+.fs-message-nav__search button { border: none; background: transparent; color: var(--fs-text-3); cursor: pointer; display: grid; place-items: center; padding: 2px; border-radius: 4px; }
+.fs-message-nav__search button:hover:not(:disabled), .fs-message-nav__search button:focus-visible { background: var(--fs-surface-3); color: var(--fs-text-1); }
+.fs-message-nav__search button:disabled { opacity: 0.4; cursor: default; }
+
 .fs-studio__composer .fs-studio__attachment img {
   inline-size: 64px;
   block-size: 64px;

@@ -10126,6 +10126,15 @@ async def stream_agent_loop(*args, **kwargs) -> AsyncGenerator[str, None]:
     Lazy import and its own broad `except` so a close-side failure can never
     mask the run's real outcome or turn a clean turn into an error.
 
+    Lote 67: upgraded to `src.builtin_mcp.disconnect_session_browser`, which
+    does this SAME bookkeeping close plus the one thing it was missing — it
+    also tears down the task's own MCP subprocess connection
+    (`session_browser_server_id(owner, session_id)`), the other half of the
+    WEB-03 wiring `src/tool_execution.py::_ensure_session_browser` (same
+    lote) opens on a task's first `browser_*` call. Falls back to the plain
+    bookkeeping close when no MCP manager is available (mirrors every other
+    best-effort MCP call in this wrapper).
+
     A rename-and-wrap instead of editing the ~5,500-line body directly keeps
     this lote's change to exactly the one behavior its file list scopes
     agent_loop.py to ("SOLO cerrar la sesión de navegador al terminar el
@@ -10143,7 +10152,12 @@ async def stream_agent_loop(*args, **kwargs) -> AsyncGenerator[str, None]:
     finally:
         await gen.aclose()
         try:
-            from src.builtin_mcp import close_browser_session_for_task
-            close_browser_session_for_task(owner, session_id)
+            mcp_mgr = get_mcp_manager()
+            if mcp_mgr is not None:
+                from src.builtin_mcp import disconnect_session_browser
+                await disconnect_session_browser(mcp_mgr, owner, session_id)
+            else:
+                from src.builtin_mcp import close_browser_session_for_task
+                close_browser_session_for_task(owner, session_id)
         except Exception:  # noqa: BLE001 - never let cleanup mask the run's real outcome
             logger.debug("stream_agent_loop: browser session close failed", exc_info=True)

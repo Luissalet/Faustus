@@ -39,6 +39,7 @@ import {
   resumeResearch,
   searchProviders,
   startResearch,
+  type CoverageNode,
   type ResearchCheckpoint,
   type ResearchFit,
   type ResearchItem,
@@ -180,6 +181,42 @@ function Orbit({ progress, maxRounds }: { progress: ResearchProgress | null; max
   );
 }
 
+const COVERAGE_LABEL: Record<CoverageNode['status'], string> = {
+  covered: t('Covered'),
+  insufficient: t('Thin — one source so far'),
+  pending: t('Not touched yet'),
+};
+
+/**
+ * RES-01: the brief's own schema — every bullet it was broken into, none
+ * dropped — against how much of it the evidence gathered SO FAR actually
+ * addresses. Deterministic word-overlap, no model call
+ * (`src/deep_research.py::_coverage_snapshot`), refreshed once per round.
+ * Empty for a short, single-topic query — there is no schema to map, not a
+ * missing feature.
+ */
+export function CoverageMap({ coverage }: { coverage: CoverageNode[] }) {
+  if (coverage.length === 0) return null;
+  const counts = { covered: 0, insufficient: 0, pending: 0 };
+  for (const node of coverage) counts[node.status]++;
+  return (
+    <details className="fs-rs__coverage" data-testid="research-coverage-map">
+      <summary>
+        {t('Coverage of the brief')} ·{' '}
+        {t('{covered} covered, {thin} thin, {pending} not yet', { covered: counts.covered, thin: counts.insufficient, pending: counts.pending })}
+      </summary>
+      <ol className="fs-rs__coverage-list">
+        {coverage.map((node) => (
+          <li key={node.index} className="fs-rs__coverage-row" data-status={node.status}>
+            <span className="fs-rs__coverage-q">{node.question}</span>
+            <span className="fs-rs__coverage-status">{COVERAGE_LABEL[node.status]}</span>
+          </li>
+        ))}
+      </ol>
+    </details>
+  );
+}
+
 function ResultCard({ job, formats, onDiscuss, onDelete, onDismiss, say }: { job: Job; formats: string[]; onDiscuss: () => void; onDelete: () => void; onDismiss: () => void; say: (m: string, tone?: 'ok' | 'warn') => void }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
@@ -232,6 +269,19 @@ function ResultCard({ job, formats, onDiscuss, onDelete, onDismiss, say }: { job
                           </a>
                         ) : (
                           <span>{s.title || s.url}</span>
+                        )}
+                        {/* WEB-02: duplicate-content and staleness signals —
+                            shown when the backend stamps them (see this
+                            lote's report for the passthrough it still needs). */}
+                        {s.duplicateOf && (
+                          <span className="fs-rs__source-flag" data-tone="info" title={s.duplicateOf}>
+                            {t('duplicate content')}
+                          </span>
+                        )}
+                        {s.stale && (
+                          <span className="fs-rs__source-flag" data-tone="warning">
+                            {s.ageDays != null ? t('stale · {n}d old', { n: Math.round(s.ageDays) }) : t('stale')}
+                          </span>
                         )}
                       </li>
                     ))}
@@ -811,6 +861,7 @@ export function ResearchScreen() {
                   <Button variant="ghost" size="sm" icon={X} label={t('Cancel')} onClick={() => void cancel(job)} />
                 </div>
                 <Orbit progress={job.progress} maxRounds={job.settings.maxRounds} />
+                <CoverageMap coverage={job.progress?.coverage ?? []} />
               </li>
             ))}
           </ul>

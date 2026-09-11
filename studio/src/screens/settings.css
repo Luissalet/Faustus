@@ -193,6 +193,11 @@
   color: var(--fs-text-2);
 }
 
+.fs-set__toggle[data-disabled] {
+  cursor: default;
+  opacity: 0.6;
+}
+
 .fs-set__toggle input {
   position: absolute;
   opacity: 0;
@@ -999,6 +1004,20 @@
 
 .fs-set__help[data-tone='bad'] {
   color: var(--fs-danger);
+}
+
+.fs-set__help[data-tone='warn'] {
+  color: var(--fs-warning);
+}
+
+.fs-intg__status-icon {
+  vertical-align: -2px;
+  margin-inline-end: 4px;
+  color: var(--fs-text-2);
+}
+
+.fs-intg__status-icon[data-tone='warn'] {
+  color: var(--fs-warning);
 }
 
 .fs-set__secret--wide {

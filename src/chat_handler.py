@@ -281,7 +281,16 @@ class ChatHandler:
                             _m["vision"] = vl_desc
                             _m["vision_model"] = vl_model
 
-        user_content = build_user_content(
+        # PERF-02: build_user_content is sync (pypdf/markitdown extraction,
+        # base64-encoding images/audio, DB writes for auto-opened docs) and a
+        # large PDF can hold the CPU for seconds. Called directly on the
+        # request coroutine it blocks the whole event loop — every other
+        # request in flight (a healthcheck, another session's cancel) stalls
+        # behind this one attachment. asyncio.to_thread moves it off the loop;
+        # everything it touches (file I/O, its own SessionLocal()) is already
+        # safe to call from a worker thread.
+        user_content = await asyncio.to_thread(
+            build_user_content,
             enhanced_message, effective_att_ids, UPLOAD_DIR, self.upload_handler,
             session_id=getattr(sess, "id", None),
             auto_opened_docs=auto_opened_docs,

@@ -19,10 +19,10 @@ export function Field({ label, help, htmlFor, children }: { label: string; help?
   );
 }
 
-export function Toggle({ id, checked, onChange, label }: { id: string; checked: boolean; onChange: (v: boolean) => void; label?: string }) {
+export function Toggle({ id, checked, onChange, label, disabled }: { id: string; checked: boolean; onChange: (v: boolean) => void; label?: string; disabled?: boolean }) {
   return (
-    <label className="fs-set__toggle" htmlFor={id}>
-      <input id={id} type="checkbox" role="switch" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+    <label className="fs-set__toggle" htmlFor={id} data-disabled={disabled || undefined}>
+      <input id={id} type="checkbox" role="switch" checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
       <span className="fs-set__toggle-track" aria-hidden="true" />
       {label && <span>{label}</span>}
     </label>

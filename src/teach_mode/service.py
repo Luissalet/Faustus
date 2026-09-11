@@ -352,7 +352,7 @@ class TeachService:
         if target == "installed":
             self._register_with_immune(owner, saved)
         elif target in ("deprecated", "revoked", "quarantined"):
-            self._hide_installed_skill(owner, saved)
+            self._hide_installed_skill(owner, saved, procedure_target=target)
         return saved
 
     @staticmethod
@@ -390,15 +390,32 @@ class TeachService:
                      f"procedure revision {procedure.get('revision_hash') or ''}.",
         )
 
-    @staticmethod
-    def _hide_installed_skill(owner: str, procedure: Mapping[str, Any]) -> None:
+    #: Ola A wiring: the procedure FSM's own target status (deprecated /
+    #: revoked / quarantined) maps onto the skill catalogue's vocabulary
+    #: (`services/memory/skill_format.STATUSES`) rather than collapsing
+    #: every hide into "draft" — a status meaning "not reviewed yet", which
+    #: is backwards for a skill a person just revoked. `revoke` reaches
+    #: "obsolete" (permanently retired); `deprecate`/`quarantine` both reach
+    #: "deprecated" (discouraged, not gone — quarantine is reversible via a
+    #: later `install`, and a re-installed procedure overwrites this status
+    #: through `_install_skill` regardless).
+    _SKILL_STATUS_FOR_TARGET: Dict[str, str] = {
+        "deprecated": "deprecated",
+        "quarantined": "deprecated",
+        "revoked": "obsolete",
+    }
+
+    @classmethod
+    def _hide_installed_skill(cls, owner: str, procedure: Mapping[str, Any], *,
+                              procedure_target: str = "") -> None:
         ref = str(procedure.get("installed_skill_ref") or "")
         if not ref.startswith("skill://"):
             return
+        skill_status = cls._SKILL_STATUS_FOR_TARGET.get(procedure_target, "deprecated")
         try:
             from services.memory.skills import SkillsManager
             from src.constants import DATA_DIR
-            SkillsManager(DATA_DIR).update_skill(ref[8:], {"status": "draft"}, owner=owner)
+            SkillsManager(DATA_DIR).update_skill(ref[8:], {"status": skill_status}, owner=owner)
         except Exception:
             logger.exception("teach: could not hide %s", ref)
 

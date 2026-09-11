@@ -12,12 +12,34 @@ from typing import Optional, Callable, Awaitable, Tuple, Dict
 from core.platform_compat import IS_WINDOWS, find_bash
 from src import process_ownership, sandbox_exec
 from src.constants import MAX_OUTPUT_CHARS
-from src.native_env import VENV_MARKERS, native_host_environment
+from src.native_env import VENV_MARKERS, native_host_environment, host_kind, TARGET_CONTAINER, TARGET_REMOTE
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_BASH_TIMEOUT = 60 * 60     # 1 hour
 DEFAULT_PYTHON_TIMEOUT = 60 * 60
+
+
+def _execution_target(*, sandboxed: bool, cwd: str, shell: str, remote: bool = False) -> Dict[str, str]:
+    """EXEC-01: where a command actually ran, folded into every tool result.
+
+    `host_kind()` (src/native_env.py) answers "what is this machine" —
+    windows / wsl / posix. This adds the two facts only the call site knows:
+    `sandboxed` (the command ran inside the Docker sandbox, src/sandbox_exec.py)
+    and `remote` (dispatched to an external worker, src/external_worker.py).
+    Container and remote outrank the host, since that is where the command
+    actually executed, not where Faustus itself happens to run.
+    """
+    if remote:
+        kind = TARGET_REMOTE
+    elif sandboxed:
+        kind = TARGET_CONTAINER
+    else:
+        # IS_WINDOWS is this module's own routing flag (which launcher branch
+        # BashTool actually took) — passed in explicitly so it, not a second
+        # independent read of the platform, decides "windows" here.
+        kind = host_kind(is_windows=IS_WINDOWS)
+    return {"kind": kind, "cwd": str(cwd or ""), "shell": str(shell or "")}
 # A command that prints nothing for this long is treated as stuck (a server
 # left in the foreground, a process waiting for input) and its whole process
 # tree is killed. Setting `agent_subprocess_idle_timeout_seconds`; 0 disables.
@@ -549,6 +571,11 @@ class BashTool:
         # arrangement of failures that puts the command back on the host.
         sandboxed = await sandbox_exec.run("bash", content, ctx)
         if sandboxed is not None:
+            if isinstance(sandboxed, dict):
+                sandboxed.setdefault(
+                    "execution_target",
+                    _execution_target(sandboxed=True, cwd=agent_cwd(), shell="bash"),
+                )
             return sandboxed
         launcher = foreground_server_launch(content)
         if launcher:
@@ -558,6 +585,7 @@ class BashTool:
         # native Windows must not bypass the Git Bash launcher below: the tmux
         # setup hard-codes /bin/bash and cannot safely consume a native cwd.
         if session_id and not IS_WINDOWS and shutil.which("tmux"):
+            _target = _execution_target(sandboxed=False, cwd=agent_cwd(), shell="/bin/bash (tmux)")
             stdout, stderr, rc, timed_out = await _run_tmux_bash(
                 content,
                 session_id=str(session_id),
@@ -573,6 +601,7 @@ class BashTool:
                     "stdout": _truncate(stdout, MAX_OUTPUT_CHARS),
                     "stderr": _truncate(stderr, MAX_OUTPUT_CHARS),
                     "tmux_session": _tmux_session_name(str(session_id)),
+                    "execution_target": _target,
                 }
             output = stdout.rstrip()
             err = stderr.rstrip()
@@ -583,8 +612,11 @@ class BashTool:
                 "output": _truncate(output, MAX_OUTPUT_CHARS) or "(no output)",
                 "exit_code": rc or 0,
                 "tmux_session": _tmux_session_name(str(session_id)),
+                "execution_target": _target,
             }
 
+        _shell_name = find_bash() if IS_WINDOWS else "/bin/sh"
+        _target = _execution_target(sandboxed=False, cwd=agent_cwd(), shell=_shell_name or "")
         try:
             proc = await _create_bash_subprocess(
                 content,
@@ -594,7 +626,7 @@ class BashTool:
                 cwd=agent_cwd(),
             )
         except RuntimeError as e:
-            return {"error": f"bash: {e}", "exit_code": 1}
+            return {"error": f"bash: {e}", "exit_code": 1, "execution_target": _target}
         idle_s = _effective_idle_timeout("bash")
         stdout, stderr, rc, timed_out = await _run_subprocess_streaming(
             proc,
@@ -603,16 +635,16 @@ class BashTool:
             idle_timeout=idle_s,
         )
         if timed_out == "idle":
-            return _idle_result("bash", idle_s, stdout, stderr)
+            return {**_idle_result("bash", idle_s, stdout, stderr), "execution_target": _target}
         if timed_out:
-            return {"error": f"bash: timed out after {DEFAULT_BASH_TIMEOUT}s — process killed", "exit_code": 124, "stdout": _truncate(stdout, MAX_OUTPUT_CHARS), "stderr": _truncate(stderr, MAX_OUTPUT_CHARS)}
+            return {"error": f"bash: timed out after {DEFAULT_BASH_TIMEOUT}s — process killed", "exit_code": 124, "stdout": _truncate(stdout, MAX_OUTPUT_CHARS), "stderr": _truncate(stderr, MAX_OUTPUT_CHARS), "execution_target": _target}
         output = stdout.rstrip()
         err = stderr.rstrip()
         if err:
             output = (output + "\nSTDERR: " + err).strip() if output else "STDERR: " + err
         output = _truncate(output, MAX_OUTPUT_CHARS)
         _record_cycle("bash", started_at)
-        return {"output": output or "(no output)", "exit_code": rc or 0}
+        return {"output": output or "(no output)", "exit_code": rc or 0, "execution_target": _target}
 
 class PythonTool:
     async def execute(self, content: str, ctx: dict) -> dict:
@@ -621,8 +653,16 @@ class PythonTool:
         _subproc_env = ctx.get("subproc_env")
         sandboxed = await sandbox_exec.run("python", content, ctx)
         if sandboxed is not None:
+            if isinstance(sandboxed, dict):
+                sandboxed.setdefault(
+                    "execution_target",
+                    _execution_target(sandboxed=True, cwd=agent_cwd(), shell=sys.executable or "python"),
+                )
             return sandboxed
         started_at = time.time()
+        _target = _execution_target(
+            sandboxed=False, cwd=agent_cwd(), shell=sys.executable or "python",
+        )
         proc = await asyncio.create_subprocess_exec(
             (sys.executable or "python"), "-I", "-c", content,
             stdout=asyncio.subprocess.PIPE,
@@ -638,13 +678,13 @@ class PythonTool:
             idle_timeout=idle_s,
         )
         if timed_out == "idle":
-            return _idle_result("python", idle_s, stdout, stderr)
+            return {**_idle_result("python", idle_s, stdout, stderr), "execution_target": _target}
         if timed_out:
-            return {"error": f"python: timed out after {DEFAULT_PYTHON_TIMEOUT}s — process killed", "exit_code": 124, "stdout": _truncate(stdout, MAX_OUTPUT_CHARS), "stderr": _truncate(stderr, MAX_OUTPUT_CHARS)}
+            return {"error": f"python: timed out after {DEFAULT_PYTHON_TIMEOUT}s — process killed", "exit_code": 124, "stdout": _truncate(stdout, MAX_OUTPUT_CHARS), "stderr": _truncate(stderr, MAX_OUTPUT_CHARS), "execution_target": _target}
         output = stdout.rstrip()
         err = stderr.rstrip()
         if err:
             output = (output + "\nSTDERR: " + err).strip() if output else "STDERR: " + err
         output = _truncate(output, MAX_OUTPUT_CHARS)
         _record_cycle("python", started_at)
-        return {"output": output or "(no output)", "exit_code": rc or 0}
+        return {"output": output or "(no output)", "exit_code": rc or 0, "execution_target": _target}

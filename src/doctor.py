@@ -664,6 +664,29 @@ def _browser() -> Finding:
                        "browser; check its installation if it cannot start",
                    facts={"status": status})
 
+def _windows_shell() -> Finding:
+    """EXEC-01: on Windows, the agent's bash/python tools need Git Bash.
+
+    Without it every bash call fails one at a time, mid-turn, with a
+    `RuntimeError` (src/agent_tools/subprocess_tools.py::_create_bash_subprocess)
+    — correct, but a person only learns it the first time an agent tries to
+    run a command. This is the same gap asked before it bites, not after.
+    """
+    from core.platform_compat import IS_WINDOWS, find_bash
+
+    if not IS_WINDOWS:
+        return Finding("execution", "windows shell (git bash)", "ok",
+                       "not on Windows — the host shell runs commands directly")
+    bash = find_bash()
+    if not bash:
+        return Finding("execution", "windows shell (git bash)", "fail",
+                       "no Git Bash found — every bash/python tool call will fail "
+                       "the moment an agent tries to run one",
+                       fix="install Git for Windows and restart Faustus")
+    return Finding("execution", "windows shell (git bash)", "ok", bash,
+                   facts={"path": bash})
+
+
 def run(*, areas: Optional[List[str]] = None) -> Dict[str, Any]:
     """Ask everything, and say what is worth doing about it."""
     probes: List[Tuple[str, str, Callable]] = [
@@ -680,6 +703,7 @@ def run(*, areas: Optional[List[str]] = None) -> Dict[str, Any]:
         ("environment", "ffmpeg", _environment_ffmpeg),
         ("execution", "sandbox image", _sandbox_image),
         ("execution", "agent shell in the sandbox", _agent_sandbox),
+        ("execution", "windows shell (git bash)", _windows_shell),
         ("coding", "checkpoints", _checkpoints),
         ("coding", "test runner", _tests_runner),
         ("media", "engines", _media_engines),

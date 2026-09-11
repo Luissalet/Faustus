@@ -1,7 +1,8 @@
 import { AlertTriangle, Archive, ArrowLeft, Bold, Check, ChevronDown, Code, Copy, Download, Eye, FileCode2, FileText, Heading1, Heading2, Heading3, History as HistoryIcon, Italic, Link2, List, ListChecks, ListOrdered, Mail, Minus, Play, Quote, Search, Strikethrough, Table, Trash2, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router';
+import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { Button, Dialog, EmptyState, IconButton, Menu, Skeleton, Toast } from '../../components';
+import { ApiError } from '../../adapters/api';
 import { archiveDoc, deleteDoc, exportPdfBlob, getDoc, listDocVersions, prepareSignedReply, renameDoc, restoreDocVersion, runOnServer, saveDoc, type Doc, type DocVersion } from '../../adapters/documents';
 import { relativeTime } from '../../adapters/home';
 import { isPdfDoc } from '../../lib/pdfDoc';
@@ -12,6 +13,7 @@ import { DiffView } from './DiffView';
 import { baseName, download, toDocx, toHtml } from './exports';
 import { applyMarkdown, parseCsv, PREVIEWABLE, RUNNABLE, type MdAction } from './markdown';
 import { PdfPane } from './PdfPane';
+import { ReviewPanel } from './ReviewPanel';
 import '../documents.css';
 
 const LANGUAGES = ['markdown', 'text', 'python', 'javascript', 'typescript', 'html', 'css', 'json', 'yaml', 'bash', 'sql', 'csv', 'rust', 'go', 'java', 'c', 'cpp', 'ruby', 'php', 'xml', 'toml', 'ini'];
@@ -27,6 +29,11 @@ const LANGUAGES = ['markdown', 'text', 'python', 'javascript', 'typescript', 'ht
 export function DocumentScreen() {
   const { id = '' } = useParams();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  /** VER-06: ?review=<message_id> opens the accept/reject panel for that
+   *  turn's file changes — independent of whichever document `id` the URL
+   *  also carries, so a link into it never needs a specific document. */
+  const reviewId = searchParams.get('review');
   const [doc, setDoc] = useState<Doc | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [text, setText] = useState('');
@@ -42,6 +49,9 @@ export function DocumentScreen() {
   const [running, setRunning] = useState(false);
   const [confirm, setConfirm] = useState<'delete' | 'archive' | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  /** EDIT-01: someone else saved a newer version between our read and our write. */
+  const [conflict, setConflict] = useState<{ server: Doc; pendingSummary?: string } | null>(null);
+  const [conflictDiff, setConflictDiff] = useState(false);
   const editorRef = useRef<HTMLTextAreaElement>(null);
   const gutterRef = useRef<HTMLDivElement>(null);
   const noticeTimer = useRef(0);
@@ -62,6 +72,8 @@ export function DocumentScreen() {
         setTitle(d.title);
         setLanguage(d.language);
         setView(isPdfDoc(d.content) ? 'pdf' : 'edit');
+        setConflict(null);
+        setConflictDiff(false);
       })
       .catch((e: Error) => !cancelled && setError(e.message));
     return () => {
@@ -73,18 +85,40 @@ export function DocumentScreen() {
   const pdf = !!doc && isPdfDoc(doc.content);
   const lang = (language || doc?.language || '').toLowerCase();
 
-  /* ── Save ── */
+  /* ── Save ──
+   * Sends `expectedContent` (the revision this editor last read) so the
+   * server can detect an external edit made between read and write. On a
+   * 409 nothing is overwritten and nothing local is lost: the user's text
+   * stays in the editor and a recoverable conflict banner offers to view
+   * the difference, reload the other version, or force-save over it
+   * (EDIT-01). */
   const save = useCallback(
-    async (content = text, summary?: string) => {
+    async (content = text, summary?: string, force = false) => {
       if (!doc) return;
       setSaving(true);
       try {
-        const saved = await saveDoc(doc.id, content, summary);
+        const saved = await saveDoc(doc.id, content, summary, force, force ? undefined : doc.content);
         setDoc(saved);
         setText(saved.content);
+        setConflict(null);
+        setConflictDiff(false);
         say(t('Saved as v{n}', { n: saved.versionCount }));
       } catch (e) {
-        say(t('Save failed: {error}', { error: (e as Error).message }), 'warn');
+        if (e instanceof ApiError && e.status === 409) {
+          try {
+            const server = await getDoc(doc.id);
+            setConflict({ server, pendingSummary: summary });
+            // Move the "known revision" forward to the server's latest content so a
+            // plain retry (or the merge from the diff view) succeeds; `text` — the
+            // user's draft — is left untouched.
+            setDoc((d) => (d ? { ...d, content: server.content, versionCount: server.versionCount, updatedAt: server.updatedAt } : d));
+            say(t('This document changed elsewhere. Your edits are kept here — choose how to continue.'), 'warn');
+          } catch (e2) {
+            say(t('Save failed: {error}', { error: (e2 as Error).message }), 'warn');
+          }
+        } else {
+          say(t('Save failed: {error}', { error: (e as Error).message }), 'warn');
+        }
       } finally {
         setSaving(false);
       }
@@ -264,6 +298,23 @@ export function DocumentScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dirty, save, view, find.open, lang, text]);
 
+  if (reviewId) {
+    const closeReview = () => {
+      const next = new URLSearchParams(searchParams);
+      next.delete('review');
+      setSearchParams(next, { replace: true });
+    };
+    return (
+      <div className="fs-docs" data-testid="document-review">
+        <header className="fs-docs__top">
+          <IconButton icon={ArrowLeft} label={t('Back')} onClick={closeReview} />
+          <span className="fs-docs__facts">{t('Review')}</span>
+        </header>
+        <ReviewPanel messageId={reviewId} onClose={closeReview} />
+      </div>
+    );
+  }
+
   if (error) {
     return (
       <div className="fs-screen">
@@ -395,8 +446,33 @@ export function DocumentScreen() {
         </div>
       )}
 
+      {conflict && !conflictDiff && (
+        <div className="fs-docs__conflict" role="alert" data-testid="doc-conflict">
+          <AlertTriangle size={14} aria-hidden="true" />
+          <span>{t('Someone else saved this document while you were editing (now v{n}). Nothing was overwritten.', { n: conflict.server.versionCount })}</span>
+          <span className="fs-spacer" />
+          <Button size="sm" variant="ghost" label={t('View differences')} onClick={() => setConflictDiff(true)} />
+          <Button size="sm" variant="ghost" label={t('Reload their version')} onClick={() => { setText(conflict.server.content); setConflict(null); say(t('Reloaded. Your edits were discarded.')); }} />
+          <Button size="sm" variant="danger" label={t('Force-save mine')} onClick={() => void save(text, conflict.pendingSummary, true)} />
+          <IconButton icon={X} label={t('Dismiss')} size="sm" onClick={() => setConflict(null)} />
+        </div>
+      )}
+
       <div className="fs-docs__body">
-        {compare ? (
+        {conflict && conflictDiff ? (
+          <DiffView
+            oldText={conflict.server.content}
+            newText={text}
+            oldLabel={t('Their version (v{n})', { n: conflict.server.versionCount })}
+            newLabel={t('Your changes')}
+            onCancel={() => setConflictDiff(false)}
+            onApply={(merged) => {
+              setText(merged);
+              setConflictDiff(false);
+              say(t('Merged; save to keep it.'));
+            }}
+          />
+        ) : compare ? (
           <DiffView
             oldText={text}
             newText={compare.content}
@@ -460,7 +536,7 @@ export function DocumentScreen() {
           </>
         )}
 
-        {versions && !compare && (
+        {versions && !compare && !(conflict && conflictDiff) && (
           <aside className="fs-docs__versions" aria-label={t('Versions')}>
             <header>
               <h3>{t('Versions')}</h3>

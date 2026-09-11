@@ -463,31 +463,57 @@ def run_tests(
         kwargs["start_new_session"] = True
     else:
         kwargs["creationflags"] = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+
+    # EXEC-04: consult the shared `cpu_heavy` budget (src/bg_jobs.py) before
+    # spawning — the same pool a `#!bg` build or a local research run draws
+    # from, so a test suite does not start alongside several others and a
+    # model generation all fighting for the same cores. Best-effort: bg_jobs
+    # being unimportable, or the admission wait itself timing out, must never
+    # be why a test run silently never happens (this module "never raises"),
+    # so a wait that times out is reported as inconclusive rather than as a
+    # failing suite, and an unavailable admission module just runs the tests
+    # unthrottled, exactly as before EXEC-04 existed.
+    _release_cpu_heavy = lambda _ticket: None  # noqa: E731 - overwritten below on success
+    cpu_heavy_ticket = None
     try:
-        if shell_cmd is not None:
-            proc = subprocess.Popen(shell_cmd, shell=True, **kwargs)
-        else:
-            proc = subprocess.Popen(argv, **kwargs)
-    except (OSError, subprocess.SubprocessError) as e:
-        result.update(ran=False, summary=f"could not run: {e}"[:300], inconclusive=True)
+        from src.bg_jobs import acquire_cpu_heavy_sync, release_cpu_heavy as _release_cpu_heavy
+        wait_budget = max(60.0, min(timeout, 1800.0))
+        cpu_heavy_ticket = acquire_cpu_heavy_sync("test_suite", owner=workspace, timeout=wait_budget)
+    except TimeoutError as e:
+        result.update(ran=False, summary=str(e)[:300], inconclusive=True)
         result["duration_s"] = round(time.time() - t0, 1)
         return result
-    exit_code: Optional[int] = None
+    except Exception as e:  # noqa: BLE001 - admission is best-effort, never blocking
+        logger.debug("project_tests: cpu_heavy admission unavailable, running unthrottled: %s", e)
+
     try:
-        stdout, stderr = proc.communicate(timeout=timeout)
-        exit_code = proc.returncode
-        result.update(ran=True, exit_code=exit_code)
-    except subprocess.TimeoutExpired:
-        # Kill the whole tree: with shell=True (custom commands) the direct
-        # child is a shell, and on Windows killing it leaves the real test
-        # process running — and holding the pipes — until it finishes on its own.
-        _kill_tree(proc)
         try:
-            stdout, stderr = proc.communicate(timeout=15)
-        except (subprocess.TimeoutExpired, OSError, ValueError):
-            stdout, stderr = "", ""
-        result.update(ran=True, timed_out=True, exit_code=None, ok=False, inconclusive=True,
-                      summary=f"timed out after {int(timeout)} s")
+            if shell_cmd is not None:
+                proc = subprocess.Popen(shell_cmd, shell=True, **kwargs)
+            else:
+                proc = subprocess.Popen(argv, **kwargs)
+        except (OSError, subprocess.SubprocessError) as e:
+            result.update(ran=False, summary=f"could not run: {e}"[:300], inconclusive=True)
+            result["duration_s"] = round(time.time() - t0, 1)
+            return result
+        exit_code: Optional[int] = None
+        try:
+            stdout, stderr = proc.communicate(timeout=timeout)
+            exit_code = proc.returncode
+            result.update(ran=True, exit_code=exit_code)
+        except subprocess.TimeoutExpired:
+            # Kill the whole tree: with shell=True (custom commands) the direct
+            # child is a shell, and on Windows killing it leaves the real test
+            # process running — and holding the pipes — until it finishes on its own.
+            _kill_tree(proc)
+            try:
+                stdout, stderr = proc.communicate(timeout=15)
+            except (subprocess.TimeoutExpired, OSError, ValueError):
+                stdout, stderr = "", ""
+            result.update(ran=True, timed_out=True, exit_code=None, ok=False, inconclusive=True,
+                          summary=f"timed out after {int(timeout)} s")
+    finally:
+        _release_cpu_heavy(cpu_heavy_ticket)
     out = (stdout or "") + (("\n" + stderr) if stderr else "")
     result["duration_s"] = round(time.time() - t0, 1)
     out = out[-OUTPUT_CAP:]

@@ -496,3 +496,70 @@
 .fs-act__workflow p { margin-block: 8px 0; }
 .fs-act__step-head { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
 .fs-act__step-head strong { flex: 1; min-width: 0; }
+
+/* ── OBS-01: the trace-lookup panel ── */
+
+.fs-act__trace {
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-panel);
+  background: var(--fs-surface-1);
+  padding: var(--fs-space-2) var(--fs-space-3);
+}
+
+.fs-act__trace-title {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  cursor: pointer;
+  font-size: var(--fs-label-size);
+  font-weight: var(--fs-label-weight);
+  letter-spacing: 0.02em;
+  color: var(--fs-text-2);
+}
+
+.fs-act__trace[open] .fs-act__trace-title {
+  margin-block-end: var(--fs-space-3);
+}
+
+.fs-act__trace-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: var(--fs-space-3);
+  margin-block-end: var(--fs-space-3);
+}
+
+.fs-act__trace-form .fs-act__field {
+  flex: 1 1 220px;
+  min-inline-size: 180px;
+}
+
+.fs-act__trace-result {
+  display: grid;
+  gap: var(--fs-space-4);
+}
+
+.fs-act__trace-result h3 {
+  margin: 0 0 var(--fs-space-2);
+  font-size: var(--fs-label-size);
+  font-weight: var(--fs-label-weight);
+  color: var(--fs-text-2);
+}
+
+.fs-act__trace-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--fs-space-3);
+}
+
+.fs-act__trace-item {
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-control);
+  padding: var(--fs-space-3);
+}
+
+.fs-act__trace-item strong {
+  overflow-wrap: anywhere;
+}

@@ -1,8 +1,9 @@
-import { Archive, ChevronRight, FolderKanban, Pin, Plus, Search } from 'lucide-react';
+import { Archive, ChevronRight, FolderKanban, FolderOpen, Pin, Plus, Search } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
-import { ActivityDot, Button, EmptyState, Skeleton } from '../components';
-import { listProjects, type Project } from '../adapters/projects';
+import { ActivityDot, Button, Dialog, EmptyState, IconButton, Skeleton, Toast } from '../components';
+import { pickNative } from '../adapters/composer';
+import { listProjects, recentFolders, relocateProject, relocateResultMessage, type Project, type RecentFolder } from '../adapters/projects';
 import { listSessions, type ChatSession } from '../adapters/chat';
 import { groupActivity, useChatActivity } from '../shell/activity';
 import { relativeTime } from '../adapters/home';
@@ -57,6 +58,58 @@ export function ProjectsScreen() {
     for (const [folder, ids] of byFolder) out.set(folder, groupActivity(activity, ids));
     return out;
   }, [sessions, activity]);
+
+  /* IDX-01: "Reubicar" from the list, without opening the project first —
+   *  same action and route as Project.tsx's, offered here too since a
+   *  moved folder is usually noticed from the list ("this one shows as
+   *  broken"), not from inside a project already open. */
+  const [relocateTarget, setRelocateTarget] = useState<Project | null>(null);
+  const [relocatePath, setRelocatePath] = useState('');
+  const [relocateBusy, setRelocateBusy] = useState(false);
+  const [relocateErr, setRelocateErr] = useState<string | null>(null);
+  const [relocateRecent, setRelocateRecent] = useState<RecentFolder[] | null>(null);
+  const [relocatePickUnavailable, setRelocatePickUnavailable] = useState(false);
+  const [notice, setNotice] = useState('');
+  useEffect(() => {
+    if (!notice) return;
+    const timer = window.setTimeout(() => setNotice(''), 5000);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
+
+  const openRelocate = (project: Project) => {
+    setRelocateTarget(project);
+    setRelocatePath(project.workspace ?? '');
+    setRelocateErr(null);
+    setRelocatePickUnavailable(false);
+    setRelocateRecent(null);
+    recentFolders().then(setRelocateRecent).catch(() => setRelocateRecent([]));
+  };
+
+  const doRelocate = async () => {
+    if (!relocateTarget || !relocatePath.trim()) return;
+    setRelocateBusy(true);
+    setRelocateErr(null);
+    try {
+      const result = await relocateProject(relocateTarget.id, relocatePath.trim());
+      setProjects((cur) => (cur ? cur.map((p) => (p.id === result.project.id ? result.project : p)) : cur));
+      setNotice(relocateResultMessage(result));
+      setRelocateTarget(null);
+    } catch (e) {
+      setRelocateErr((e as Error).message);
+    } finally {
+      setRelocateBusy(false);
+    }
+  };
+
+  const browseRelocate = async () => {
+    try {
+      const pick = await pickNative('folder', relocatePath || relocateTarget?.workspace || '');
+      if (pick.status === 'ok' && pick.path) setRelocatePath(pick.path);
+      else if (pick.status === 'unavailable') setRelocatePickUnavailable(true);
+    } catch (e) {
+      setRelocateErr((e as Error).message);
+    }
+  };
 
   const archivedCount = useMemo(() => (projects ?? []).filter((p) => p.archived).length, [projects]);
 
@@ -157,12 +210,81 @@ export function ProjectsScreen() {
                     .join(' · ')}
                 </span>
               </span>
+              <span
+                className="fs-pj__row-relocate"
+                onClick={(e) => {
+                  // Inside a <Link> that wraps the whole row: stop the click
+                  // here so it never reaches the Link's own navigation.
+                  e.preventDefault();
+                  e.stopPropagation();
+                  openRelocate(project);
+                }}
+              >
+                <IconButton icon={FolderOpen} label={t('Relocate this project’s folder')} size="sm" testId="project-relocate-row" />
+              </span>
               <ChevronRight size={16} aria-hidden="true" className="fs-row__go" />
             </Link>
             );
           })}
         </div>
       )}
+
+      {relocateTarget && (
+        <Dialog
+          open
+          onOpenChange={(o) => !o && setRelocateTarget(null)}
+          title={t('The folder has moved…')}
+          testId="project-relocate-dialog"
+          footer={
+            <>
+              <Button variant="ghost" size="sm" label={t('Cancel')} onClick={() => setRelocateTarget(null)} />
+              <Button
+                variant="primary"
+                size="sm"
+                label={t('Update folder')}
+                loading={relocateBusy}
+                disabled={!relocatePath.trim()}
+                onClick={() => void doRelocate()}
+                testId="project-relocate-confirm"
+              />
+            </>
+          }
+        >
+          <p className="fs-prose">{t('The chats, memories and objectives stay linked to this project — only where its files live on disk changes. The new folder must already exist.')}</p>
+          <label className="fs-field-label">
+            {t('New folder path')}
+            <div className="fs-inline">
+              <input
+                className="fs-field"
+                value={relocatePath}
+                onChange={(e) => setRelocatePath(e.target.value)}
+                placeholder={relocateTarget.workspace ?? ''}
+                data-testid="project-relocate-path"
+                autoFocus
+              />
+              <Button variant="ghost" size="sm" icon={FolderOpen} label={t('Browse…')} onClick={() => void browseRelocate()} testId="project-relocate-browse" />
+            </div>
+          </label>
+          {relocatePickUnavailable && <p className="fs-set__help">{t('No system dialog is available for this browser — pick a recent folder below, or type the path.')}</p>}
+          {relocateRecent && relocateRecent.length > 0 && (
+            <div className="fs-relocate__recent" data-testid="project-relocate-recent">
+              <span className="fs-set__help">{t('Recent folders')}</span>
+              <ul>
+                {relocateRecent.filter((f) => f.path !== relocateTarget.workspace).map((f) => (
+                  <li key={f.path}>
+                    <button type="button" className="fs-chip" onClick={() => setRelocatePath(f.path)} title={f.path}>
+                      {f.projectName ? t('{path} ({project})', { path: f.path, project: f.projectName }) : f.path}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {relocateErr && <p className="fs-set__help" data-tone="bad" role="alert">{relocateErr}</p>}
+        </Dialog>
+      )}
+
+      {notice && <Toast>{notice}</Toast>}
     </div>
   );
 }

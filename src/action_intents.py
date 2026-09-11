@@ -29,6 +29,12 @@ _ACTION_FOLLOWUP = (
     r"you\s+(?:can|could|would|will|should|need\s+to|have\s+to))\s+"
 )
 _PLEASE = r"^\s*(?:(?:please|ok(?:ay)?|alright|right|sure|cool|great|thanks)[\s,.!-]+)*"
+# LANG-01: the Spanish equivalent of _PLEASE, for the generic Spanish
+# imperatives below. Kept separate from _PLEASE (rather than merged) so an
+# English filler can never accidentally license a Spanish verb match or vice
+# versa — each politeness vocabulary only opens the door for its own
+# language's imperatives.
+_PLEASE_ES = r"^\s*(?:(?:por favor|porfa|vale|vamos|ok(?:ay)?)[\s,.!-]+)*"
 
 _CALENDAR_ACTION = (
     r"(?:add|adding|create|creating|recreate|recreating|schedule|scheduling|"
@@ -100,6 +106,29 @@ _ROUTING_PATTERNS: tuple[tuple[str, str, Pattern[str]], ...] = tuple(
         ("project", "Spanish project objective action request", r"\b(?:aÃ±ade|anade|agrega|mete|pon|crea|actualiza|edita|cambia|elimina|borra|marca|completa)\b.{0,160}\b(?:objetivos?|metas?)(?:\s+del?\s+proyecto)?\b"),
         ("project", "project context attachment request", rf"{_PLEASE}(?:add|attach|link|put|move)\b.{{0,160}}\b(?:to|into|in)\s+(?:this|the|my)\s+project(?:\s+context)?\b"),
         ("project", "Spanish project context attachment request", r"\b(?:aÃ±ade|anade|agrega|adjunta|vincula|enlaza|mete|pon)\b.{0,160}\b(?:al|en el|dentro del)\s+(?:contexto\s+del\s+)?proyecto\b"),
+
+        # LANG-01: generic Spanish capability-activating verbs. Until this
+        # lot the Spanish imperatives above existed ONLY for the project-
+        # objectives domain — "impleméntame"/"créame"/"hazme"/"genera"/
+        # "búscame"/"resúmeme" used on their own (no "proyecto"/"objetivos"
+        # nearby) matched nothing, while their English equivalents already
+        # promote to agent/tool mode generically. _routing_text() strips
+        # combining accents before these run (impleméntame -> implementame),
+        # so one unaccented pattern each covers both spellings — that IS
+        # the "test con tildes y sin tildes" acceptance, not a second regex.
+        #
+        # Anchored to imperative position (start of message, after only
+        # Spanish filler words) like the file's shell/notes patterns already
+        # are: unanchored "crea"/"genera"/"busca"/"resume" stems collide
+        # with ordinary Spanish words and conjugations ("esto genera un
+        # problema", "no creas nada", "el resumen del proyecto", "el
+        # buscador") that are not commands at all.
+        ("workspace", "Spanish generic implementation request", rf"{_PLEASE_ES}implementa\w*\b.+"),
+        ("workspace", "Spanish generic creation request", rf"{_PLEASE_ES}crea(?:me|melo|mela)?\b.+"),
+        ("workspace", "Spanish generic build request", rf"{_PLEASE_ES}haz(?:me|melo|mela)?\b.+"),
+        ("workspace", "Spanish generic generation request", rf"{_PLEASE_ES}genera(?:me|lo|la)?\b.+"),
+        ("web", "Spanish generic search request", rf"{_PLEASE_ES}busca(?:me|lo|la)?\b.+"),
+        ("research", "Spanish generic summarize request", rf"{_PLEASE_ES}resume(?:me|lo|la)?\b.+"),
 
         # Deep research jobs, not quick conceptual mentions of research.
         ("web", "explicit web search request", rf"{_PLEASE}(?:do|run|use|perform|make)\s+(?:a\s+)?(?:web\s+search|search\s+the\s+web)\b.+"),

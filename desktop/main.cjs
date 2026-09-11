@@ -1,4 +1,4 @@
-const {app,BrowserWindow,dialog,shell,session,ipcMain}=require('electron');
+const {app,BrowserWindow,dialog,shell,session,ipcMain,net}=require('electron');
 const {execFile}=require('node:child_process');
 const {promisify}=require('node:util');
 const {join,resolve}=require('node:path');
@@ -29,23 +29,56 @@ const windowState=window=>({maximized:window.isMaximized(),fullscreen:window.isF
 // trigger shutdown(); the splash screen's own cancel button, which the
 // splash text already documents as "closes to cancel starting up"; and the
 // automated smoke test, which has no dialog to click.
+//
+// Best-effort count of what a stop would interrupt: GET /api/queue (agent
+// runs, background jobs, research, media runs still in flight - the same
+// admin-only endpoint Studio's queue panel reads). `net.fetch` carries the
+// default session's cookies for this same-origin request the way a page
+// load does, so it succeeds under normal auth exactly when the running
+// server would already let this window in; any failure (auth off in a way
+// that still 403s a bare fetch, server mid-restart, timeout) degrades to an
+// unknown count rather than blocking the close dialog on it.
+async function activeTaskCount(){
+  try{
+    const controller=new AbortController();
+    const timer=setTimeout(()=>controller.abort(),2000);
+    const response=await net.fetch(origin+'/api/queue',{signal:controller.signal});
+    clearTimeout(timer);
+    if(!response.ok)return null;
+    const body=await response.json();
+    return Array.isArray(body.items)?body.items.length:null;
+  }catch{return null;}
+}
 async function closeConfirmed(target,senderUrl){
-  if(target!==mainWindow||senderUrl===splash||process.argv.includes('--smoke-test'))return true;
+  if(target!==mainWindow||senderUrl===splash||process.argv.includes('--smoke-test'))return 'close';
   const owned=!!ownedToken;
+  if(!owned){
+    const {response}=await dialog.showMessageBox(target,{
+      type:'question',title:'Faustus',
+      message:'Close window? / ¿Cerrar la ventana?',
+      detail:'This window uses a server shared with other Faustus windows. Closing it does not stop that server: the turn keeps running there. / Esta ventana usa un servidor compartido con otras ventanas de Faustus. Cerrarla no lo detiene: el turno sigue en el servidor.',
+      buttons:['Cancel / Cancelar','Close / Cerrar'],
+      defaultId:1,cancelId:0,
+    });
+    return response===1?'close':'cancel';
+  }
+  const count=await activeTaskCount();
+  const countEn=count===null?'it may still have work in progress (could not check)'
+    :count>0?`this stops ${count} task${count===1?'':'s'} still in progress`
+    :'nothing is in progress on it right now';
+  const countEs=count===null?'puede seguir con trabajo en marcha (no se pudo comprobar)'
+    :count>0?`esto detiene ${count} tarea${count===1?'':'s'} en marcha`
+    :'no hay nada en marcha en él ahora mismo';
   const {response}=await dialog.showMessageBox(target,{
-    type:owned?'warning':'question',
+    type:'warning',
     title:'Faustus',
-    message:owned
-      ?'Close window and stop the server? / ¿Cerrar la ventana y detener el servidor?'
-      :'Close window? / ¿Cerrar la ventana?',
-    detail:owned
-      ?'This window started its own local server. Closing it stops that server, and any turn still running on it stops too. / Esta ventana inició su propio servidor local. Cerrarla lo detiene, y cualquier turno que siga en marcha en él se detiene también.'
-      :'This window uses a server shared with other Faustus windows. Closing it does not stop that server: the turn keeps running there. / Esta ventana usa un servidor compartido con otras ventanas de Faustus. Cerrarla no lo detiene: el turno sigue en el servidor.',
-    buttons:owned?['Cancel / Cancelar','Close and stop / Cerrar y detener']:['Cancel / Cancelar','Close / Cerrar'],
-    defaultId:owned?0:1,
+    message:'Close window? / ¿Cerrar la ventana?',
+    detail:`This window started its own local server; ${countEn}. Keep the server running to leave that work alone. / Esta ventana inició su propio servidor local; ${countEs}. Mantén el servidor en marcha para no interrumpir ese trabajo.`,
+    buttons:['Cancel / Cancelar','Keep the server running / Mantener el servidor','Close and stop the server / Cerrar y detener el servidor'],
+    defaultId:0,
     cancelId:0,
   });
-  return response===1;
+  return response===2?'stop':response===1?'keep':'cancel';
 }
 function secureWindow(window){
   for(const event of ['maximize','unmaximize','enter-full-screen','leave-full-screen'])window.on(event,()=>window.webContents.send('faustus:window-state',windowState(window)));
@@ -90,7 +123,16 @@ else{
       if(action==='minimize')target.minimize();
       if(action==='maximize'){if(target.isFullScreen())target.setFullScreen(false);if(target.isMaximized())target.unmaximize();else target.maximize();}
       if(action==='fullscreen')target.setFullScreen(!target.isFullScreen());
-      if(action==='close'&&!(await closeConfirmed(target,event.senderFrame.url)))return windowState(target);
+      let closeDecision='close';
+      if(action==='close'){
+        closeDecision=await closeConfirmed(target,event.senderFrame.url);
+        if(closeDecision==='cancel')return windowState(target);
+        // 'keep': this window's server stays up for whoever else is attached -
+        // clearing ownedToken before the window closes is what makes
+        // shutdown() (triggered by the 'closed' event just below) skip the
+        // stop call, the same way it already does for a non-owning window.
+        if(closeDecision==='keep')ownedToken='';
+      }
       const state=windowState(target);
       if(action==='close')setImmediate(()=>{if(!target.isDestroyed())target.close();});
       return state;

@@ -176,6 +176,12 @@ export interface LearnedRule {
   project: string;
   helpful: number;
   harmful: number;
+  /** MEM-01: normal/sensitive/secret — never shown to another project or owner regardless. */
+  sensitivity: 'normal' | 'sensitive' | 'secret' | string;
+  /** MEM-01: confirmed/inferred/obsolete, COMPUTED by the server from status + trust_class —
+   *  never stored, never set by this adapter. A refuted hypothesis reads obsolete forever;
+   *  a human's own word is the only way something reads confirmed. */
+  confidenceState: 'confirmed' | 'inferred' | 'obsolete' | string;
 }
 
 export interface RuleStats {
@@ -201,6 +207,8 @@ function ruleFrom(raw: Record<string, unknown>): LearnedRule {
     project: typeof raw.project === 'string' ? raw.project : '',
     helpful: num(raw.helpful_count),
     harmful: num(raw.harmful_count),
+    sensitivity: typeof raw.sensitivity === 'string' && raw.sensitivity ? raw.sensitivity : 'normal',
+    confidenceState: typeof raw.confidence_state === 'string' && raw.confidence_state ? raw.confidence_state : 'inferred',
   };
 }
 
@@ -237,8 +245,29 @@ export async function ruleFeedback(id: string, kind: 'helpful' | 'harmful'): Pro
   return ruleFrom(data.item ?? {});
 }
 
+/** A plain, physical delete — no tombstone. Kept as a distinct action from
+ *  `forgetRule` below (MEM-01): this is for cleaning up junk, not for "no,
+ *  and don't let this come back", which is what a person reaching for
+ *  "olvidar/forget" on a genuinely wrong belief actually wants. */
 export async function deleteRule(id: string): Promise<void> {
   await ok(await fetch(`/api/memory-engine/items/${encodeURIComponent(id)}`, { method: 'DELETE', credentials: 'same-origin' }), 'memory-engine/delete');
+}
+
+/** MEM-01: `DELETE .../forget` — like `deleteRule`, but leaves a tombstone
+ *  so the same text cannot silently resurrect through a later reindex,
+ *  import or consolidation pass. This is the human-facing "no, and don't
+ *  bring this back" action; `deleteRule` stays available separately for
+ *  plain cleanup (duplicates, junk) where a tombstone buys nothing. */
+export async function forgetRule(id: string, reason?: string): Promise<void> {
+  await ok(
+    await fetch(`/api/memory-engine/items/${encodeURIComponent(id)}/forget`, {
+      method: 'DELETE',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason: reason || undefined }),
+    }),
+    'memory-engine/forget',
+  );
 }
 
 export interface CuratorReport {

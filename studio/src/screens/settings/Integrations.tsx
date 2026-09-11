@@ -1,8 +1,9 @@
-import { Plus, RefreshCw, ShieldAlert, Trash2 } from 'lucide-react';
+import { AlertTriangle, Loader2, Plus, RefreshCw, ShieldAlert, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { Button, IconButton, Skeleton } from '../../components';
 import {
   agentKindOf,
+  approveMcpManifest,
   clearContacts,
   contactsConfig,
   deleteApiIntegration,
@@ -48,6 +49,21 @@ const MCP_STATUS_LABEL: Record<string, string> = {
   probing: 'reconnecting…',
 };
 
+/** TOOL-03: `degraded`/`probing` used to fall into the same text-only bucket
+ *  every other MCP status did — a person scanning the list by eye had
+ *  nothing to catch on besides the words themselves. Each state gets its
+ *  own icon now, not just a colour (colour alone repeats the mistake
+ *  `components/StatusBadge.tsx` documents against). `degraded`'s threshold
+ *  (`src/mcp_manager.py::degraded_threshold_for`/`set_degraded_threshold`,
+ *  keyed per server) has no HTTP route yet — see this lote's report for the
+ *  `GET`/`PUT /api/mcp/servers/{id}/degraded-threshold` this icon is ready
+ *  to link a per-server control to once that route exists. */
+function McpStatusIcon({ status }: { status: string }) {
+  if (status === 'degraded') return <AlertTriangle size={13} aria-hidden="true" className="fs-intg__status-icon" data-tone="warn" data-testid="mcp-status-degraded" />;
+  if (status === 'probing') return <Loader2 size={13} aria-hidden="true" className="fs-intg__status-icon fs-status__spin" data-testid="mcp-status-probing" />;
+  return null;
+}
+
 async function callMcp<T>(path: string, init: RequestInit = {}): Promise<T> {
   const r = await fetch(path, { credentials: 'same-origin', ...init });
   const text = await r.text();
@@ -63,8 +79,6 @@ async function callMcp<T>(path: string, init: RequestInit = {}): Promise<T> {
   }
   return data as T;
 }
-
-const approveMcpManifest = (serverId: string) => callMcp<unknown>(`/api/mcp/servers/${encodeURIComponent(serverId)}/manifest/approve`, { method: 'POST' });
 
 interface McpToolPage {
   tools: { name: string; description?: string }[];
@@ -280,7 +294,10 @@ export function IntegrationsSection({ say }: { say: (t: string) => void }) {
                   <span className="fs-intg__kind">{t(KIND_LABEL[item.kind])}</span>
                   <span className="fs-intg__text">
                     <strong>{item.name}</strong>
-                    <span className="fs-set__help">{item.detail}</span>
+                    <span className="fs-set__help">
+                      {mcp && <McpStatusIcon status={mcp.status} />}
+                      {item.detail}
+                    </span>
                   </span>
                   <span className="fs-intg__dot" data-on={item.enabled || undefined} aria-label={item.enabled ? t('Enabled') : t('Disabled')} />
                 </button>

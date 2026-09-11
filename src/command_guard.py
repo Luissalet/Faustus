@@ -1076,3 +1076,58 @@ def gate_check(
         )
         failed["denial"] = _degraded_denial(tool_name, "the guard itself failed")
         return failed
+
+
+# ── command_preview (EXEC-02) ────────────────────────────────────────────────
+# The approval card (src/tool_approvals.py::PendingToolApproval.public_payload)
+# shows the agent's exact command text to a person so they can judge it before
+# it runs. That text is whatever the model wrote, and a model composing a curl
+# call or an export line writes secrets into shell arguments constantly —
+# `Authorization: Bearer …`, `--password=…`, a provider key literally spelled
+# `sk-…`. `core.log_safety.redact_secrets` already keeps those out of the
+# logs; `command_preview` is the same redaction for the ONE other place raw
+# command text reaches a screen. Two shapes it adds on top, because
+# `redact_secrets` deliberately does not cover them:
+#   * a bare provider secret key (`sk-…`, `sk_live_…`) is not a `key=value`
+#     pair, so no KV rule catches it;
+#   * `SECRET_KEY_NAMES` excludes plain `token` on purpose (`token_count=812`
+#     is not a secret) — but a shell argument spelled `token=…`, `TOKEN=…` or
+#     `--auth-token=…` almost always is, so this masks that shape by itself.
+_SK_SECRET_RE = re.compile(r"\bsk[-_][A-Za-z0-9_-]{10,}\b")
+_TOKEN_KV_RE = re.compile(
+    r"(?i)(?P<key>[\w-]*token)(?P<eq>\s*[:=]\s*)"
+    r"(?P<quote>['\"]?)(?P<value>[^\s&;|'\"]+)(?P=quote)"
+)
+
+
+def _mask_sk_secret(match: "re.Match") -> str:
+    text = match.group(0)
+    return text[:3] + "***"
+
+
+def _mask_token_kv(match: "re.Match") -> str:
+    quote = match.group("quote")
+    return f"{match.group('key')}{match.group('eq')}{quote}***{quote}"
+
+
+def command_preview(command: Any, *, max_len: int = 4000) -> str:
+    """The command text an approval card (or a log line) may safely show.
+
+    Runs `core.log_safety.redact_secrets` (Authorization headers, `Bearer …`,
+    `password=`, `access_token=`, every name in `SECRET_KEY_NAMES`) and then
+    the two shapes above. Never raises — a preview that cannot be built falls
+    back to a fixed placeholder rather than showing raw text.
+    """
+    text = "" if command is None else str(command)
+    if not text.strip():
+        return text
+    text = text[:max_len]
+    try:
+        from core.log_safety import redact_secrets
+        text = redact_secrets(text)
+        text = _SK_SECRET_RE.sub(_mask_sk_secret, text)
+        text = _TOKEN_KV_RE.sub(_mask_token_kv, text)
+        return text
+    except Exception as exc:  # noqa: BLE001 - never show raw text on a bug here
+        logger.warning("command_guard.command_preview degraded: %r", exc)
+        return "<command preview unavailable — see the command guard log>"

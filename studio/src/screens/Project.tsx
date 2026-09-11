@@ -27,7 +27,10 @@ import {
   linkIsBroken,
   listContextLinks,
   patchContextLink,
+  recentFolders,
   refreshContextLink,
+  relocateProject,
+  relocateResultMessage,
   removeChatFromProject,
   removeContextRoot,
   RETRIEVAL_POLICIES,
@@ -40,6 +43,7 @@ import {
   type LinkKind,
   type LinkStatus,
   type Project,
+  type RecentFolder,
   type RefreshReport,
   type RetrievalPolicy,
 } from '../adapters/projects';
@@ -74,49 +78,14 @@ const FORMAT_LABEL: Record<string, string> = { md: 'Markdown', txt: 'Plain text'
  * route, wired to `src.project_identity.relocate` — refuses an absent
  * path, and the folder itself corroborates the move afterwards. Identity,
  * memories and relations are keyed by `project_id`, untouched by this.
+ *
+ * `relocateProject`/`relocateResultMessage`/`recentFolders` live in
+ * adapters/projects.ts now — Projects.tsx (the list) offers the same action
+ * without opening a project first, and needs them too. Re-exported here so
+ * `studio/checks/l43-project-relocate.check.mjs`, which bundles this file as
+ * its entry point, still finds `relocateResultMessage` at this path.
  */
-
-interface RelocateResult {
-  project: Project;
-  old_workspace: string;
-  old_path_missing: boolean;
-  marker_conflict: boolean;
-}
-
-async function relocateProject(id: string, newPath: string): Promise<RelocateResult> {
-  const r = await fetch(`/api/projects/${encodeURIComponent(id)}/relocate`, {
-    method: 'POST',
-    credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ new_path: newPath }),
-  });
-  const text = await r.text();
-  let data: unknown = {};
-  try {
-    data = text ? JSON.parse(text) : {};
-  } catch {
-    /* not json */
-  }
-  if (!r.ok) {
-    const d = data as { detail?: unknown };
-    throw new Error(typeof d.detail === 'string' ? d.detail : `HTTP ${r.status}`);
-  }
-  return data as RelocateResult;
-}
-
-/** What actually happened, in one sentence — pure so it is testable on its
- * own (studio/checks/l43-project-relocate.check.mjs), the same pattern this
- * file's own `describeRefresh()` uses for a context link's refresh. */
-export function relocateResultMessage(result: RelocateResult): string {
-  const bits: string[] = [t('The folder is now {path}.', { path: result.project.workspace ?? '' })];
-  if (result.old_path_missing) {
-    bits.push(t('The previous folder was already gone — memories and relations moved with the project, not the path.'));
-  }
-  if (result.marker_conflict) {
-    bits.push(t('The new folder already carried another project’s marker; this project claimed it.'));
-  }
-  return bits.join(' ');
-}
+export { relocateResultMessage } from '../adapters/projects';
 
 /* ── Context sources ──
  *
@@ -516,6 +485,8 @@ export function ProjectScreen() {
   const [relocatePath, setRelocatePath] = useState('');
   const [relocateBusy, setRelocateBusy] = useState(false);
   const [relocateErr, setRelocateErr] = useState<string | null>(null);
+  const [relocateRecent, setRelocateRecent] = useState<RecentFolder[] | null>(null);
+  const [relocatePickUnavailable, setRelocatePickUnavailable] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const noticeTimer = useRef<number | null>(null);
 
@@ -640,6 +611,20 @@ export function ProjectScreen() {
     }
   };
 
+  /** IDX-01: the real OS folder dialog when the browser runs on the same
+   *  machine as the server; `unavailable` (a remote browser, no display)
+   *  falls back to the recent-folders list and the plain text field, both
+   *  already shown alongside it. */
+  const browseRelocate = async () => {
+    try {
+      const pick = await pickNative('folder', relocatePath || project?.workspace || '');
+      if (pick.status === 'ok' && pick.path) setRelocatePath(pick.path);
+      else if (pick.status === 'unavailable') setRelocatePickUnavailable(true);
+    } catch (e) {
+      setRelocateErr((e as Error).message);
+    }
+  };
+
   const start = async () => {
     if (!project) return;
     setBusy('start');
@@ -760,7 +745,14 @@ export function ProjectScreen() {
             icon={FolderOpen}
             label={t('The folder has moved…')}
             title={t('Point this project at a new folder — refuses one that does not exist, and keeps its memories and relations.')}
-            onClick={() => { setRelocatePath(project.workspace ?? ''); setRelocateErr(null); setRelocating(true); }}
+            onClick={() => {
+              setRelocatePath(project.workspace ?? '');
+              setRelocateErr(null);
+              setRelocatePickUnavailable(false);
+              setRelocating(true);
+              setRelocateRecent(null);
+              recentFolders().then(setRelocateRecent).catch(() => setRelocateRecent([]));
+            }}
             testId="project-relocate"
           />
           <Menu
@@ -1110,15 +1102,33 @@ export function ProjectScreen() {
           <p className="fs-prose">{t('The chats, memories and objectives stay linked to this project — only where its files live on disk changes. The new folder must already exist.')}</p>
           <label className="fs-field-label">
             {t('New folder path')}
-            <input
-              className="fs-field"
-              value={relocatePath}
-              onChange={(e) => setRelocatePath(e.target.value)}
-              placeholder={project.workspace ?? ''}
-              data-testid="project-relocate-path"
-              autoFocus
-            />
+            <div className="fs-inline">
+              <input
+                className="fs-field"
+                value={relocatePath}
+                onChange={(e) => setRelocatePath(e.target.value)}
+                placeholder={project.workspace ?? ''}
+                data-testid="project-relocate-path"
+                autoFocus
+              />
+              <Button variant="ghost" size="sm" icon={FolderOpen} label={t('Browse…')} onClick={() => void browseRelocate()} testId="project-relocate-browse" />
+            </div>
           </label>
+          {relocatePickUnavailable && <p className="fs-set__help">{t('No system dialog is available for this browser — pick a recent folder below, or type the path.')}</p>}
+          {relocateRecent && relocateRecent.length > 0 && (
+            <div className="fs-relocate__recent" data-testid="project-relocate-recent">
+              <span className="fs-set__help">{t('Recent folders')}</span>
+              <ul>
+                {relocateRecent.filter((f) => f.path !== project.workspace).map((f) => (
+                  <li key={f.path}>
+                    <button type="button" className="fs-chip" onClick={() => setRelocatePath(f.path)} title={f.path}>
+                      {f.projectName ? t('{path} ({project})', { path: f.path, project: f.projectName }) : f.path}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           {relocateErr && <p className="fs-set__help" data-tone="bad" role="alert">{relocateErr}</p>}
         </Dialog>
       )}

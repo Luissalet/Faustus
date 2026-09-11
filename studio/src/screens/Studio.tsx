@@ -462,6 +462,19 @@ export function StudioScreen() {
   const pickWorkspace = useCallback(async () => {
     if (picking) return;
     setPicking(true);
+    // QA-44 hueco 1: `pickNative` below is async, and `setWsOpen(true)` (the
+    // fallback dialog) only runs once it resolves `unavailable` — so the
+    // lazy `WorkspaceDialog` chunk (Studio.tsx's own `lazy(() => import(...))`)
+    // was never even requested until AFTER that wait, and its `<Suspense
+    // fallback={null}>` rendered nothing at all while it loaded. A keyboard
+    // user's focus, mid-click on the chip, had nowhere to land for that
+    // window and read as "entered the dialog, then bounced back to the
+    // chip" once the chunk finally resolved and Radix's own focus trap
+    // caught up a beat late. Warming the SAME module cache `lazy` reads from
+    // — in parallel with the native attempt, not after it — means that by
+    // the time (if) the fallback dialog actually opens, its chunk is
+    // already resolved and Suspense never renders the empty fallback at all.
+    void import('./studio/WorkspaceDialog');
     try {
       const res = await pickNative('folder', workspace);
       if (res.status === 'ok' && res.path) {
@@ -758,6 +771,9 @@ export function StudioScreen() {
          *  with `optionIds` (the picked `AskOption.id`s, absent for free text). */
         questionId?: string;
         optionIds?: string[];
+        /** PENDIENTES.md M1 / this lote: `turn.ask?.revision` from the card
+         *  being answered — see `SendOptions.revision`'s doc comment. */
+        revision?: number;
       } = {},
     ) => {
       const controller = new AbortController();
@@ -799,6 +815,7 @@ export function StudioScreen() {
           approval: options.approval,
           questionId: options.questionId,
           optionIds: options.optionIds,
+          revision: options.revision,
           delegateTasks: options.delegation,
           incognito: knobs.incognito,
           autonomyPreset: knobs.autonomyPreset,
@@ -2357,6 +2374,7 @@ export function StudioScreen() {
             <Transcript
               turns={turns}
               busy={busy}
+              sessionId={sessionId}
               onApproval={(turn, decision) => {
                 if (sessionId && turn.ask?.approvalId) void run(sessionId, '', { approval: { id: turn.ask.approvalId, decision } });
               }}
@@ -2367,7 +2385,7 @@ export function StudioScreen() {
                 // answer never touches `draft`, so a 409 rejection (shown as
                 // an error bubble via sendTurn's questionRejectionMessage)
                 // leaves whatever the user was mid-typing untouched.
-                if (sessionId) void run(sessionId, text, { questionId: turn.ask?.questionId, optionIds });
+                if (sessionId) void run(sessionId, text, { questionId: turn.ask?.questionId, optionIds, revision: turn.ask?.revision });
               }}
               onEdit={onEdit}
               onRegenerate={(turn) => void regenerateFrom(turn)}
@@ -2490,7 +2508,12 @@ export function StudioScreen() {
       )}
 
       {wsOpen && (
-        <Suspense fallback={null}>
+        // QA-44 hueco 1: a real (if invisible) placeholder, not `null` — see
+        // `pickWorkspace`'s doc comment for why the chunk is almost always
+        // already warm by the time this renders at all, and why an EMPTY
+        // fallback specifically (no DOM node at all, however briefly) is
+        // what let the trigger keep focus with nothing to hand it off to.
+        <Suspense fallback={<div aria-hidden="true" data-testid="workspace-dialog-loading" />}>
           <WorkspaceDialog open initial={workspace} onClose={() => setWsOpen(false)} onPick={setWorkspace} />
         </Suspense>
       )}

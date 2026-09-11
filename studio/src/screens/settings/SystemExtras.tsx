@@ -37,10 +37,88 @@ export function SystemExtras({ say }: { say: (t: string) => void }) {
       <SetupCard />
       <DoctorCard say={say} />
       <SafeModeCard say={say} />
+      <ChaosCard say={say} />
       <LogsCard />
       <BackupCard say={say} />
       <DangerCard say={say} />
     </>
+  );
+}
+
+interface ChaosDryRun { fixture: string; would_inject: string; expected: string; }
+
+/**
+ * EVAL-03: a "play this chaos fixture" card, dry-run only — never anything
+ * that actually injects a failure from Studio. `POST /api/ops/chaos/
+ * {fixture}` (contract: `{dry_run: true}` -> `{fixture, would_inject,
+ * expected}`) is lote 67's route and does not exist in this checkout yet
+ * (`routes/`, `src/` have no `ops/chaos` route as of this lote — verified
+ * by grep, not assumed); this card is wired against that exact contract and
+ * degrades to a clear "not available yet" message on 404 rather than a bare
+ * fetch failure, so it starts working the moment that route lands with no
+ * further Studio change needed. */
+function ChaosCard({ say }: { say: (t: string) => void }) {
+  const [fixture, setFixture] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<ChaosDryRun | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [unavailable, setUnavailable] = useState(false);
+
+  const run = () => {
+    const name = fixture.trim();
+    if (!name) return;
+    setBusy(true);
+    setErr(null);
+    setResult(null);
+    setUnavailable(false);
+    fetch(`/api/ops/chaos/${encodeURIComponent(name)}`, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dry_run: true }),
+    })
+      .then(async (r) => {
+        if (r.status === 404) {
+          setUnavailable(true);
+          return;
+        }
+        if (!r.ok) {
+          let reason = `HTTP ${r.status}`;
+          try {
+            const j = await r.json();
+            if (typeof j?.detail === 'string') reason = j.detail;
+          } catch {
+            /* ignore */
+          }
+          throw new Error(reason);
+        }
+        setResult((await r.json()) as ChaosDryRun);
+      })
+      .catch((e: Error) => setErr(e.message))
+      .finally(() => setBusy(false));
+  };
+
+  return (
+    <div className="fs-set__card">
+      <h3 className="fs-set__card-title">{t('Chaos fixture (dry run)')}</h3>
+      <p className="fs-set__help">{t('Ask what a chaos fixture would inject and what a correct system does about it — dry run only, this card never injects a real failure.')}</p>
+      <div className="fs-set__inline">
+        <input className="fs-field" placeholder={t('fixture name')} value={fixture} onChange={(e) => setFixture(e.target.value)} data-testid="chaos-fixture-input" />
+        <Button size="sm" variant="secondary" label={t('Dry run')} loading={busy} disabled={!fixture.trim()} onClick={run} testId="chaos-fixture-run" />
+      </div>
+      {unavailable && (
+        <p className="fs-set__help" data-tone="warn">
+          {t('POST /api/ops/chaos/{fixture} does not exist on this server yet — this card is ready for it.', { fixture })}
+        </p>
+      )}
+      {err && <p className="fs-set__err">{err}</p>}
+      {result && (
+        <ul className="fs-set__help" data-testid="chaos-fixture-result">
+          <li><strong>{t('Would inject')}</strong>: {result.would_inject}</li>
+          <li><strong>{t('Expected')}</strong>: {result.expected}</li>
+        </ul>
+      )}
+    </div>
   );
 }
 
@@ -254,6 +332,13 @@ interface VersionInfo {
      *  does not move when Studio is rebuilt, this one does. */
     bundle?: { mtime: string | null; sha: string | null };
   };
+  /** BASE-01 / OPS-06: `src/api_version.py::client_adaptation_notice()`,
+   *  wired into `/api/version` by lote 61 — null unless THIS request's own
+   *  `X-Faustus-Client-Version` header (this same page, so it names Studio's
+   *  own build) reads as supported-but-below-the-server's-current version.
+   *  Shown so an administrator sees the soft warning before a client ever
+   *  hits it as a broken response instead of a name. */
+  client_adaptation_notice?: string | null;
 }
 
 function VersionCard() {
@@ -291,6 +376,11 @@ function VersionCard() {
                   : info.served_studio.sha,
               })
             : t('Version {v}', { v: info.version })}
+        </p>
+      )}
+      {info?.client_adaptation_notice && (
+        <p className="fs-set__help" data-tone="warn" role="alert">
+          {info.client_adaptation_notice}
         </p>
       )}
     </div>

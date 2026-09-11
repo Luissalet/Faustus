@@ -1,9 +1,17 @@
 import {useEffect, useRef, useState, type RefObject} from 'react';
+import {Search, X} from 'lucide-react';
 import type {Turn} from './model';
 import {t} from '../../i18n';
 
 export function navigationIndex(y:number, top:number, height:number, count:number) {
   return Math.max(0, Math.min(count-1, Math.round((y-top)/Math.max(1,height)*(count-1))));
+}
+
+/** Plain text a turn can be searched by: its own message, plus tool step
+ *  labels — enough to find "that bash command" without needing its exact
+ *  wording, without reaching into every attachment/diff. */
+function searchableText(turn:Turn):string {
+  return [turn.text, ...turn.steps.map(s=>s.label), ...turn.attachments.map(a=>a.name)].join(' ').toLowerCase();
 }
 
 /** One keyboard stop, with a continuous pointer track even for very long chats. */
@@ -14,6 +22,31 @@ export function MessageNavigator({turns,scrollRef,onJump}:{turns:Turn[];scrollRe
   const rail=useRef<HTMLDivElement>(null);
   const dragging=useRef(false);
   const key=turns.map(turn=>turn.id).join('|');
+  // UX-05: a search over the conversation's OWN text, not the browser's —
+  // a long chat is virtualized (Transcript.tsx), so most turns render
+  // nothing at all off-screen and the browser's Ctrl+F silently finds
+  // nothing past whatever happens to be mounted right now. Its own Ctrl+F
+  // steps in only when nothing else already wants the keystroke (an input,
+  // a textarea, anything contentEditable — the composer above all), so
+  // typing a message is never interrupted.
+  const [searchOpen,setSearchOpen]=useState(false);
+  const [query,setQuery]=useState('');
+  const [matchAt,setMatchAt]=useState(0);
+  const searchInputRef=useRef<HTMLInputElement>(null);
+  useEffect(()=>{setMatchAt(0);},[query]);
+  useEffect(()=>{
+    const onKey=(e:KeyboardEvent)=>{
+      if(!(e.ctrlKey||e.metaKey)||e.key.toLowerCase()!=='f')return;
+      const el=document.activeElement as HTMLElement|null;
+      const typingElsewhere=el&&el!==searchInputRef.current&&(el.tagName==='TEXTAREA'||el.tagName==='INPUT'||el.isContentEditable);
+      if(typingElsewhere)return;
+      e.preventDefault();
+      setSearchOpen(true);
+      requestAnimationFrame(()=>searchInputRef.current?.focus());
+    };
+    document.addEventListener('keydown',onKey);
+    return ()=>document.removeEventListener('keydown',onKey);
+  },[]);
   useEffect(()=>{
     const scroll=scrollRef.current;
     if(!scroll)return;
@@ -54,7 +87,37 @@ export function MessageNavigator({turns,scrollRef,onJump}:{turns:Turn[];scrollRe
   };
   const point=(y:number)=>{const bounds=rail.current!.getBoundingClientRect();return navigationIndex(y,bounds.top,bounds.height,turns.length);};
   const markers=Math.min(turns.length,180);
+  const trimmedQuery=query.trim().toLowerCase();
+  const matches=trimmedQuery?turns.map((turn,i)=>searchableText(turn).includes(trimmedQuery)?i:-1).filter(i=>i!==-1):[];
+  const jumpToMatch=(delta:number)=>{
+    if(!matches.length)return;
+    const next=((matchAt+delta)%matches.length+matches.length)%matches.length;
+    setMatchAt(next);
+    go(matches[next]);
+  };
+  const closeSearch=()=>{setSearchOpen(false);setQuery('');};
   return <nav className="fs-message-nav" aria-label={t('Message navigation')}>
+    {searchOpen&&<form className="fs-message-nav__search" role="search" aria-label={t('Search in this conversation')}
+      onSubmit={event=>{event.preventDefault();jumpToMatch(1);}}>
+      <Search size={13} aria-hidden="true"/>
+      <input ref={searchInputRef} value={query} onChange={event=>setQuery(event.target.value)}
+        placeholder={t('Search in this conversation…')} aria-label={t('Search in this conversation')}
+        onKeyDown={event=>{
+          if(event.key==='Escape'){event.stopPropagation();closeSearch();}
+          if(event.key==='Enter'&&event.shiftKey){event.preventDefault();jumpToMatch(-1);}
+        }}
+        data-testid="transcript-search-input"/>
+      <span className="fs-message-nav__search-count" aria-live="polite">
+        {trimmedQuery?(matches.length?`${matchAt+1}/${matches.length}`:t('No matches')):''}
+      </span>
+      <button type="button" onClick={()=>jumpToMatch(-1)} disabled={!matches.length} aria-label={t('Previous match')} data-testid="transcript-search-prev">‹</button>
+      <button type="button" onClick={()=>jumpToMatch(1)} disabled={!matches.length} aria-label={t('Next match')} data-testid="transcript-search-next">›</button>
+      <button type="button" onClick={closeSearch} aria-label={t('Close search')} data-testid="transcript-search-close"><X size={12} aria-hidden="true"/></button>
+    </form>}
+    {!searchOpen&&<button type="button" className="fs-message-nav__search-toggle"
+      aria-label={t('Search in this conversation')} title={t('Search in this conversation')}
+      onClick={()=>{setSearchOpen(true);requestAnimationFrame(()=>searchInputRef.current?.focus());}}
+      data-testid="transcript-search-toggle"><Search size={13} aria-hidden="true"/></button>}
     <div className="fs-message-nav__track" ref={rail} role="slider" tabIndex={0} aria-label={t('Jump to message')}
       aria-orientation="vertical" aria-valuemin={1} aria-valuemax={turns.length} aria-valuenow={current+1}
       aria-valuetext={`${current+1} / ${turns.length}: ${excerpt(current)}`}

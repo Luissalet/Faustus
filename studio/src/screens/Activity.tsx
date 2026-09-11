@@ -1,11 +1,12 @@
-import { Activity as ActivityIcon, ArrowUpToLine, Check, CircleStop, Copy, Download, ExternalLink, FileText, ListOrdered, MessageSquare, Play, RefreshCw, Search, Trash2, Workflow, X } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Activity as ActivityIcon, ArrowUpToLine, Check, CircleStop, Copy, Download, ExternalLink, FileText, Link2, ListOrdered, MessageSquare, Play, RefreshCw, Search, Trash2, Workflow, X } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { Button, EmptyState, friendlyError, Skeleton, StatusBadge, Toast, type RunStatus } from '../components';
 import { answerQuestion, artifactLinks, cancelRender, changeWorkflow, decideApproval, duration, loadActivity, loadQueue, normaliseStatus, openRunInChat, prioritizeQueueItem, reportUrl, retainUnavailableRuns, type ActivityRun, type ArtifactLink, type QuestionDetail, type QueueItem } from '../adapters/activity';
 import { CACHE_LABELS, clearAutomationCache, runAutomation, stopAutomation } from '../adapters/automations';
 import { relativeTime } from '../adapters/home';
 import { stopChat } from '../adapters/chat';
+import { traceForCall, type CallTrace } from '../adapters/observability';
 import { createActivityPoller } from '../lib/activity-poller';
 import { emitForNewRuns } from '../shell/notifications';
 import { Rich } from './rich';
@@ -174,6 +175,145 @@ function QueuePanel({
         })}
       </ul>
     </section>
+  );
+}
+
+/**
+ * OBS-01: given a `call_id` (one tool call), shows everything it produced —
+ * its trace events, the artifact(s) it wrote, and its command_guard receipt
+ * — joined server-side by `GET /api/observability/trace/{call_id}`
+ * (`src/agent_runs.py::trace_for_call`, lote 61). Nothing feeds this a
+ * call_id today (Transcript.tsx does not yet carry one per tool event — see
+ * the closure report's "Cambios necesarios en ficheros ajenos"), so it
+ * works two ways at once: a `?trace=<call_id>&session=<sid>` deep link for
+ * whenever that wiring lands, and a manual lookup form so it is already
+ * useful standalone — paste a call_id seen in a log or an artifact's
+ * `generator` field and see what it did.
+ */
+function TracePanel() {
+  const [params, setParams] = useSearchParams();
+  const paramCallId = params.get('trace') ?? '';
+  const paramSessionId = params.get('session') ?? '';
+  const [callId, setCallId] = useState(paramCallId);
+  const [sessionId, setSessionId] = useState(paramSessionId);
+  const [open, setOpen] = useState(!!paramCallId);
+  const [trace, setTrace] = useState<CallTrace | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const lookup = useCallback(async (id: string, sid: string) => {
+    if (!id.trim()) return;
+    setBusy(true);
+    setError(null);
+    try {
+      setTrace(await traceForCall(id.trim(), sid.trim() || undefined));
+    } catch (e) {
+      setTrace(null);
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+
+  // A `?trace=` arriving (or changing) from outside — a future "Ver traza"
+  // link — opens the panel and looks it up without the person touching the
+  // form first.
+  useEffect(() => {
+    if (!paramCallId) return;
+    setCallId(paramCallId);
+    setSessionId(paramSessionId);
+    setOpen(true);
+    void lookup(paramCallId, paramSessionId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paramCallId, paramSessionId]);
+
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    setParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (callId.trim()) next.set('trace', callId.trim());
+      else next.delete('trace');
+      if (sessionId.trim()) next.set('session', sessionId.trim());
+      else next.delete('session');
+      return next;
+    }, { replace: true });
+    void lookup(callId, sessionId);
+  };
+
+  return (
+    <details className="fs-act__trace" open={open} onToggle={(e) => setOpen(e.currentTarget.open)} data-testid="activity-trace">
+      <summary className="fs-act__trace-title"><Link2 size={14} aria-hidden="true" /> {t('Trace a tool call')}</summary>
+      <form className="fs-act__trace-form" onSubmit={submit}>
+        <label className="fs-act__field">
+          <span>{t('Call ID')}</span>
+          <input className="fs-field" value={callId} onChange={(ev) => setCallId(ev.target.value)} placeholder={t('Paste a call_id…')} data-testid="activity-trace-callid" />
+        </label>
+        <label className="fs-act__field">
+          <span>{t('Session ID (optional — narrows the search to a session you own)')}</span>
+          <input className="fs-field" value={sessionId} onChange={(ev) => setSessionId(ev.target.value)} data-testid="activity-trace-session" />
+        </label>
+        <Button type="submit" size="sm" icon={Search} label={t('Look up')} loading={busy} disabled={!callId.trim() || busy} testId="activity-trace-submit" />
+      </form>
+
+      {error && <p className="fs-act__error" role="alert">{error}</p>}
+
+      {trace && !trace.found && !error && (
+        <p className="fs-act__hint" data-testid="activity-trace-notfound">{t('Nothing on record under this call ID — check it was copied in full, or that this session had access to it.')}</p>
+      )}
+
+      {trace && trace.found && (
+        <div className="fs-act__trace-result" data-testid="activity-trace-result">
+          {trace.events.length > 0 && (
+            <section>
+              <h3>{tn(trace.events.length, '{n} event', '{n} events')}</h3>
+              <ol className="fs-act__trace-list">
+                {trace.events.map((ev, i) => (
+                  <li key={i} className="fs-act__trace-item">
+                    <div className="fs-act__step-head">
+                      <strong>{ev.type}{ev.tool ? ` · ${ev.tool}` : ''}</strong>
+                      {ev.round !== null && <span className="fs-act__when">{t('Round {n}', { n: ev.round })}</span>}
+                    </div>
+                    <pre className="fs-act__pre">{JSON.stringify(ev.raw, null, 2)}</pre>
+                  </li>
+                ))}
+              </ol>
+            </section>
+          )}
+
+          {trace.artifacts.length > 0 && (
+            <section>
+              <h3>{tn(trace.artifacts.length, '{n} artifact', '{n} artifacts')}</h3>
+              <ul className="fs-act__trace-list">
+                {trace.artifacts.map((a) => (
+                  <li key={a.occurrenceId || `${a.manifestId}-${a.version}`} className="fs-act__trace-item">
+                    <div className="fs-act__step-head"><strong>{a.label || a.manifestId}</strong><span className="fs-act__when">{a.state}</span></div>
+                    <dl className="fs-act__facts">
+                      <DetailRow label={t('Format')}>{a.format || '—'}</DetailRow>
+                      <DetailRow label={t('Size')}>{a.byteSize !== null ? `${a.byteSize.toLocaleString(locale())} B` : '—'}</DetailRow>
+                      <DetailRow label={t('SHA-256')}>{a.sha256 || '—'}</DetailRow>
+                      <DetailRow label={t('Generator')}>{a.generator || '—'}</DetailRow>
+                      <DetailRow label={t('Created')}>{a.createdAt ? new Date(a.createdAt).toLocaleString(locale()) : '—'}</DetailRow>
+                      {a.version !== null && <DetailRow label={t('Version')}>{a.version}</DetailRow>}
+                    </dl>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          {trace.receipt && (
+            <section>
+              <h3>{t('Permission receipt')}</h3>
+              <pre className="fs-act__pre">{JSON.stringify(trace.receipt, null, 2)}</pre>
+            </section>
+          )}
+
+          {trace.events.length === 0 && trace.artifacts.length === 0 && !trace.receipt && (
+            <p className="fs-act__hint">{t('Found this call ID, but it has no events, artifacts or receipt on record.')}</p>
+          )}
+        </div>
+      )}
+    </details>
   );
 }
 
@@ -370,6 +510,8 @@ export function ActivityScreen() {
       {updatedAt && <p className="fs-act__freshness">{t('Last checked {time}', { time: new Date(updatedAt).toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit', second: '2-digit' }) })}</p>}
 
       <QueuePanel items={queue} busyId={queueBusy} onPrioritize={(item) => void prioritizeQueued(item)} />
+
+      <TracePanel />
 
       <div className="fs-tabs" role="tablist" aria-label={t('Filter activity')}>
         {FILTERS.map((entry) => (

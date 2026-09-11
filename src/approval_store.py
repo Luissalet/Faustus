@@ -128,6 +128,89 @@ def pending(*, owner: str = "", limit: int = 50) -> List[Approval]:
         db.close()
 
 
+def active(*, owner: str = "", limit: int = 50) -> List[Approval]:
+    """SEC-01: the standing concessions a human could pull right now —
+    granted, not expired, with uses left. Distinct from `pending()`, which
+    lists cards nobody has decided on yet; a card here is one a model or a
+    document could currently point to and say "I have permission" — which is
+    exactly what needs to be visible (and revocable) independent of the
+    model's own claim.
+    """
+    from core.database import ApprovalRow, SessionLocal
+
+    stamp = now_iso()
+    db = SessionLocal()
+    try:
+        query = db.query(ApprovalRow).filter(
+            ApprovalRow.status == "granted", ApprovalRow.uses_left > 0)
+        if owner:
+            query = query.filter(ApprovalRow.owner == owner)
+        rows = query.order_by(ApprovalRow.decided_at.desc()).limit(max(1, min(limit, 200))).all()
+        # A granted row past its own TTL is not swept to "expired" the way a
+        # never-decided pending card is (expire_stale() only touches
+        # "pending") — `covers()`/`consume()` already refuse it live, and
+        # "active" should agree rather than list something nothing can use.
+        return [_from_row(r) for r in rows if not (r.expires_at and stamp > r.expires_at)]
+    finally:
+        db.close()
+
+
+def revoke(approval_id: str, *, by: str, reason: str = "") -> Dict[str, Any]:
+    """End a card's ability to authorise anything, right now — SEC-01's
+    "revocación inmediata", independent of its TTL or remaining uses.
+
+    Unlike `decide()` this accepts a card in ANY non-terminal status
+    (`pending` or `granted`): an open request is exactly the kind of standing
+    authority a human should be able to pull before it is ever acted on, not
+    only after someone said yes to it. A card already terminal (denied,
+    expired, consumed, or already revoked) is left exactly as it is and
+    reported honestly, never silently treated as a no-op success.
+    """
+    from core.database import ApprovalRow, SessionLocal
+
+    who = (by or "").strip()
+    if not who:
+        return {"ok": False, "reason": "no_decider",
+                "detail": "a revocation has to record who revoked it"}
+
+    db = SessionLocal()
+    try:
+        row = db.get(ApprovalRow, approval_id)
+        if row is None:
+            return {"ok": False, "reason": "not_found", "detail": approval_id}
+        if row.status not in ("pending", "granted"):
+            return {"ok": False, "reason": f"already_{row.status}",
+                    "detail": f"already {row.status}, nothing to revoke"}
+        stamp = now_iso()
+        values: Dict[str, Any] = {"status": "revoked", "decided_at": stamp, "decided_by": who}
+        if reason:
+            values["reason"] = reason
+        # CAS on the status this read saw, same shape as decide()'s guard
+        # against a concurrent grant/deny landing between the read and this
+        # write.
+        changed = (db.query(ApprovalRow).filter(
+            ApprovalRow.id == approval_id, ApprovalRow.status == row.status,
+        ).update(values, synchronize_session=False))
+        if not changed:
+            db.rollback()
+            db.expire_all()
+            current = db.get(ApprovalRow, approval_id)
+            if current is None:
+                return {"ok": False, "reason": "not_found", "detail": approval_id}
+            return {"ok": False, "reason": f"already_{current.status}",
+                    "detail": "the card changed status before the revocation landed"}
+        db.commit()
+        answer = _from_row(row).to_dict()
+        answer.update(status="revoked", decided_at=stamp, decided_by=who,
+                      reason=reason or answer.get("reason", ""))
+        return {"ok": True, "reason": "revoked", "approval": answer}
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+
 def decide(approval_id: str, *, granted: bool, by: str, reason: str = "") -> Dict[str, Any]:
     """Record a person's answer. `by` is required and is not defaulted: an
     approval whose decider is unknown cannot be audited, and "system" would be

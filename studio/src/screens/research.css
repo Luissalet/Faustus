@@ -303,6 +303,64 @@
   background: var(--fs-brand);
 }
 
+/* RES-01: the coverage map, folded under the running job's Orbit. */
+.fs-rs__coverage {
+  margin-block-start: var(--fs-space-2);
+}
+
+.fs-rs__coverage summary {
+  cursor: pointer;
+  font-size: var(--fs-label-size);
+  color: var(--fs-text-2);
+}
+
+.fs-rs__coverage-list {
+  list-style: none;
+  margin: var(--fs-space-2) 0 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.fs-rs__coverage-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--fs-space-3);
+  padding: var(--fs-space-1) var(--fs-space-2);
+  border-inline-start: 2px solid var(--fs-border);
+  font-size: var(--fs-label-size);
+}
+
+.fs-rs__coverage-row[data-status='covered'] {
+  border-inline-start-color: var(--fs-success);
+}
+
+.fs-rs__coverage-row[data-status='insufficient'] {
+  border-inline-start-color: var(--fs-warning);
+}
+
+.fs-rs__coverage-q {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+  color: var(--fs-text-1);
+}
+
+.fs-rs__coverage-status {
+  flex: 0 0 auto;
+  color: var(--fs-text-3);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.fs-rs__coverage-row[data-status='covered'] .fs-rs__coverage-status {
+  color: var(--fs-success);
+}
+
+.fs-rs__coverage-row[data-status='insufficient'] .fs-rs__coverage-status {
+  color: var(--fs-warning);
+}
+
 @keyframes fs-rs-pulse {
   0%,
   100% {
@@ -343,6 +401,25 @@
 .fs-rs__sources li {
   max-inline-size: none;
   overflow-wrap: anywhere;
+}
+
+/* WEB-02: duplicate-content / staleness badges beside a source link. */
+.fs-rs__source-flag {
+  display: inline-flex;
+  align-items: center;
+  margin-inline-start: var(--fs-space-2);
+  padding: 1px var(--fs-space-2);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-pill);
+  font-size: 11px;
+  font-weight: var(--fs-label-weight);
+  color: var(--fs-text-2);
+  white-space: nowrap;
+}
+
+.fs-rs__source-flag[data-tone='warning'] {
+  border-color: color-mix(in srgb, var(--fs-warning) 55%, var(--fs-border));
+  color: var(--fs-warning);
 }
 
 .fs-rs__actions {

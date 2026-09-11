@@ -23,12 +23,16 @@ import { Toggle } from './fields';
  */
 export function ToolsSection({ say }: { say: (t: string) => void }) {
   const [tools, setTools] = useState<ToolFlag[] | null>(null);
-  const [denied, setDenied] = useState(false);
+  // ACT-06: a 401/403 here means "sign in as an admin", not "nothing to
+  // show" or "the server is down" — those get their own EmptyState tone
+  // below instead of collapsing into the same generic "Administrators
+  // only" text every OTHER failure (network error, 500) used to get too.
+  const [failedStatus, setFailedStatus] = useState<number | 'other' | null>(null);
   const reload = () =>
     listTools()
-      .then(setTools)
-      .catch(() => {
-        setDenied(true);
+      .then((t) => { setTools(t); setFailedStatus(null); })
+      .catch((e: unknown) => {
+        setFailedStatus((e as { status?: number })?.status ?? 'other');
         setTools([]);
       });
   useEffect(() => {
@@ -57,7 +61,15 @@ export function ToolsSection({ say }: { say: (t: string) => void }) {
     }
   };
 
-  if (denied) return <EmptyState icon={Wrench} title={t('Administrators only')} body={t('This account cannot change the tools.')} />;
+  if (failedStatus === 401 || failedStatus === 403) {
+    return <EmptyState tone="denied" title={t('Administrators only')} body={t('This account cannot change the tools.')} />;
+  }
+  if (failedStatus === 426) {
+    return <EmptyState tone="incompatible" title={t('This client is out of date')} body={t('Update Faustus before changing the tools.')} />;
+  }
+  if (failedStatus === 'other') {
+    return <EmptyState icon={Wrench} tone="error" title={t('Could not read the tools.')} body={t('GET /api/tools failed.')} primaryAction={{ label: t('Try again'), onClick: () => void reload() }} />;
+  }
 
   return (
     <>
@@ -140,20 +152,23 @@ function matchesExecutor(tool: CatalogTool, filter: ExecutorFilter): boolean {
 
 function ToolCatalogPanel({ say }: { say: (t: string) => void }) {
   const [rows, setRows] = useState<CatalogTool[] | null>(null);
-  const [denied, setDenied] = useState(false);
+  const [failedStatus, setFailedStatus] = useState<number | 'other' | null>(null);
   const [query, setQuery] = useState('');
   const [effectFilter, setEffectFilter] = useState('');
   const [executorFilter, setExecutorFilter] = useState<ExecutorFilter>('');
   const [favorites, setFavorites] = useState<Set<string>>(() => loadFavoriteTools());
   const [selected, setSelected] = useState<string | null>(null);
 
-  useEffect(() => {
+  const load = () =>
     listToolCatalog()
-      .then((d) => setRows(d.tools))
-      .catch(() => {
-        setDenied(true);
+      .then((d) => { setRows(d.tools); setFailedStatus(null); })
+      .catch((e: unknown) => {
+        setFailedStatus((e as { status?: number })?.status ?? 'other');
         setRows([]);
       });
+  useEffect(() => {
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const effects = useMemo(() => [...new Set((rows ?? []).map((r) => r.effect_class))].sort(), [rows]);
@@ -180,14 +195,14 @@ function ToolCatalogPanel({ say }: { say: (t: string) => void }) {
     });
   };
 
-  if (denied) {
-    return (
-      <EmptyState
-        icon={ShieldAlert}
-        title={t('Administrators only')}
-        body={t('This account cannot see the tool catalog.')}
-      />
-    );
+  if (failedStatus === 401 || failedStatus === 403) {
+    return <EmptyState tone="denied" title={t('Administrators only')} body={t('This account cannot see the tool catalog.')} />;
+  }
+  if (failedStatus === 426) {
+    return <EmptyState tone="incompatible" title={t('This client is out of date')} body={t('Update Faustus before browsing the tool catalog.')} />;
+  }
+  if (failedStatus === 'other') {
+    return <EmptyState icon={ShieldAlert} tone="error" title={t('Could not read the tool catalog.')} body={t('GET /api/tools/catalog failed.')} primaryAction={{ label: t('Try again'), onClick: () => void load() }} />;
   }
 
   return (

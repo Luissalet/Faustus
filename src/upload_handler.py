@@ -1483,6 +1483,12 @@ class UploadHandler:
                     "owner": existing_file.get("owner"),
                     "width": existing_file.get("width"),
                     "height": existing_file.get("height"),
+                    # IDX-04: a re-upload of the same bytes is the same
+                    # ingestion verdict — an older index entry saved before
+                    # this field existed reports "ready" rather than nothing.
+                    "status": existing_file.get("status", "ready"),
+                    "partial": existing_file.get("partial", False),
+                    "partial_reason": existing_file.get("partial_reason"),
                     "is_duplicate": True
                 }
         
@@ -1517,6 +1523,18 @@ class UploadHandler:
             "last_accessed": created_at,
             "client_ip": client_ip,
             "owner": owner,
+            # IDX-04: ingestion status. The file itself is already on disk by
+            # this point (the write above either succeeded or raised), so
+            # "uploading"/"queued" never appear from this synchronous path —
+            # those two belong to the chunked-upload session
+            # (chunked_upload_status, below) before complete() hands the
+            # assembled file to this same method. From here it is either
+            # instantly "ready" (nothing left to extract, e.g. an image or a
+            # plain text file) or, for a PDF, "extracting" briefly while
+            # pdf_ingestion_signal runs and then one of ready/partial/failed.
+            "status": "ready",
+            "partial": False,
+            "partial_reason": None,
         }
         # Capture image dimensions (EXIF-rotated) so the chat thumbnail skeleton
         # can size itself to the right aspect ratio before the bytes arrive.
@@ -1529,7 +1547,32 @@ class UploadHandler:
                     file_metadata["height"] = _im.height
             except Exception as e:
                 logger.warning(f"Failed to read image dimensions for {file_id}: {e}")
-        
+
+        # IDX-04: a scanned PDF (or one that only yielded its cover page)
+        # must not come back indistinguishable from one that was actually
+        # read. One extraction pass — the same bounded pypdf pass chat uses,
+        # just without the vision fallback — decides status/partial/reason
+        # here, once, at upload time; a failure to even compute the signal
+        # (pypdf missing, an unexpected parser error) leaves the file usable
+        # rather than failing the upload itself, but is honest about not
+        # knowing: "extracting" is reported, not a fabricated "ready".
+        if content_type == "application/pdf":
+            try:
+                from src.document_processor import pdf_ingestion_signal
+                signal = pdf_ingestion_signal(file_path, owner=owner)
+                file_metadata["status"] = signal["status"]
+                file_metadata["partial"] = signal["partial"]
+                file_metadata["partial_reason"] = signal["reason"]
+                if "pages" in signal:
+                    file_metadata["pages"] = signal["pages"]
+                    file_metadata["text_pages"] = signal["text_pages"]
+                    file_metadata["needs_ocr"] = signal["needs_ocr"]
+            except Exception as e:
+                logger.warning(f"PDF ingestion signal failed for {file_id}: {e}")
+                file_metadata["status"] = "extracting"
+                file_metadata["partial"] = False
+                file_metadata["partial_reason"] = None
+
         # Update uploads database
         with self._index_lock:
             try:

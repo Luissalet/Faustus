@@ -59,8 +59,17 @@ def _save(data: Dict[str, Any]) -> None:
 
 
 def init(message_id: Any, *, session_id: Optional[str], workspace: str, files: List[str],
-         checkpoint: Optional[str]) -> Dict[str, Any]:
-    """Register a turn's changed files as pending. Idempotent per message."""
+         checkpoint: Optional[str], tests_status: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Register a turn's changed files as pending. Idempotent per message.
+
+    `tests_status` (VER-06) is an optional, opaque snapshot of whatever
+    automatic verification ran for this turn (e.g. a `verify_verifier`/
+    `project_tests.run_tests` result) — stored verbatim and never read or
+    written by `decide()`. It exists so a caller of `get()`/the review route
+    can show "tests: failed" next to "human: accepted" as two separate
+    facts, instead of a human's accept silently becoming the only signal
+    left once the turn is reviewed.
+    """
     key = str(message_id)
     with _LOCK:
         data = _load()
@@ -70,6 +79,7 @@ def init(message_id: Any, *, session_id: Optional[str], workspace: str, files: L
             "ts": int(time.time()), "session_id": session_id, "workspace": workspace,
             "checkpoint": checkpoint, "pending": [str(f) for f in files if f],
             "accepted": [], "rejected": [], "restored": [],
+            "tests_status": tests_status,
         }
         data[key] = entry
         _save(data)
@@ -152,6 +162,48 @@ def approval_still_valid(entry: Dict[str, Any], path: str, current_content: Opti
     if signature is None or current_content is None:
         return True
     return _sha256(current_content) == signature
+
+
+def status_payload(message_id: Any, entry: Dict[str, Any], *,
+                   current_content: Optional[Any] = None) -> Dict[str, Any]:
+    """The GET-worthy shape of a review entry: the raw entry plus one
+    `approvals` row per accepted path, each carrying the diff signature
+    captured at accept time and whether it is still `stale` (VER-06:
+    "cambiar el diff invalida la aprobación de la version anterior").
+
+    `current_content` is how this module (which owns no filesystem access)
+    learns what a path looks like right now — either a `{path: text|None}`
+    mapping or a one-argument callable `path -> text|None`; the route reads
+    the actual files and passes one of those in. Omitting it entirely
+    leaves every approval `stale=False` (nothing to compare against, same
+    "cannot be contradicted" rule `approval_still_valid` already follows).
+
+    `tests_status` is echoed from the entry unchanged — this function does
+    not derive it from the approvals, so a human accepting every file here
+    can never make a recorded test failure read as a pass.
+    """
+    if callable(current_content):
+        getter = current_content
+    else:
+        mapping = current_content or {}
+        getter = lambda p: mapping.get(p)  # noqa: E731
+
+    approvals = []
+    for path, approval in (entry.get("human_approved") or {}).items():
+        current = getter(path)
+        approvals.append({
+            "path": path,
+            "at": approval.get("at"),
+            "diff_sha256": approval.get("content_sha256"),
+            "stale": not approval_still_valid(entry, path, current),
+        })
+
+    return {
+        "message_id": str(message_id),
+        **entry,
+        "approvals": approvals,
+        "tests_status": entry.get("tests_status"),
+    }
 
 
 def pending_for_session(session_id: str) -> List[Dict[str, Any]]:

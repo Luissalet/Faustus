@@ -171,6 +171,16 @@ def setup_project_routes() -> APIRouter:
     def list_projects(request: Request, _admin: None = Depends(require_admin)) -> List[Dict[str, Any]]:
         return get_store().list(effective_user(request))
 
+    @router.get("/recent-folders")
+    def recent_folders(request: Request, _admin: None = Depends(require_admin)) -> Dict[str, Any]:
+        """IDX-01: folders for the "browse a folder" selector to suggest,
+        since there is no native `showOpenDialog`/`webkitdirectory` — the
+        owner's project workspaces, most recently touched first, capped at
+        10. Declared before `/{project_id}` so the literal path segment is
+        never swallowed as a project id."""
+        folders = get_store().recent_folders(effective_user(request), limit=10)
+        return {"folders": folders, "count": len(folders)}
+
     @router.post("")
     def create_project(
         payload: ProjectCreateRequest,

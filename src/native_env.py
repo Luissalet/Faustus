@@ -109,6 +109,55 @@ def is_venv_path(path: str) -> bool:
     return _is_under(path, detected_venv_roots())
 
 
+# ── execution_target (EXEC-01) ──────────────────────────────────────────────
+# A command an agent writes is not always run where it looks like it runs. A
+# `D:\Project\...` path typed by a model that thinks it is talking to native
+# Windows must not be handed, unexamined, to whatever shell this HOST actually
+# is — Windows, WSL and POSIX each resolve that path (or refuse to) very
+# differently. `host_kind()` names the host itself; `subprocess_tools.py`
+# folds in the two facts only the caller knows — is this call sandboxed
+# (container) or dispatched to a worker elsewhere (remote) — into the
+# `execution_target` a tool result and an approval event both carry.
+
+TARGET_WINDOWS = "windows"
+TARGET_WSL = "wsl"
+TARGET_POSIX = "posix"
+TARGET_CONTAINER = "container"
+TARGET_REMOTE = "remote"
+
+
+def host_kind(*, is_windows: Optional[bool] = None) -> str:
+    """This process's own platform, as an `execution_target` "kind" value.
+
+    ``"windows"``: native Windows — commands run through the Git Bash
+    launcher, but paths and the process tree are Windows's.
+    ``"wsl"``: Faustus's own server process is running inside the Windows
+    Subsystem for Linux — a real POSIX shell, but one sharing the Windows
+    host's drives under ``/mnt/*``, which is exactly the case a `D:\\...` path
+    needs distinguished from a plain Linux box.
+    ``"posix"``: any other POSIX host (Linux, macOS).
+
+    `is_windows` defaults to reading ``core.platform_compat.IS_WINDOWS``, but
+    a caller that already imported that flag locally (subprocess_tools.py
+    does, to pick its own launcher) should pass it in: that flag is what
+    actually decided how the command ran, and is what tests patch.
+    """
+    if is_windows is None:
+        try:
+            from core.platform_compat import IS_WINDOWS as is_windows
+        except Exception:  # noqa: BLE001 - never let a missing import hide the host
+            return TARGET_POSIX
+    if is_windows:
+        return TARGET_WINDOWS
+    try:
+        from core.platform_compat import is_wsl
+        if is_wsl():
+            return TARGET_WSL
+    except Exception:  # noqa: BLE001
+        pass
+    return TARGET_POSIX
+
+
 def _strip_venv_from_path(raw: str, roots: Iterable[str]) -> str:
     """`raw` with its venv entries removed, order and separator preserved.
 

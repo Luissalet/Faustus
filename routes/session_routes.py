@@ -18,6 +18,7 @@ from src.auth_helpers import effective_user, _auth_disabled, owner_filter
 from src.session_image_cleanup import _generated_image_path_for_cleanup, session_image_refs
 from src.session_actions import is_session_recently_active
 from src.upload_handler import reserve_message_upload_references
+from src import output_oracle
 
 
 # QA-28/MOD-06: a mid-task model switch must say what it lost, not silently
@@ -1135,6 +1136,23 @@ def setup_session_routes(
             logger.exception("Export of session %s as %s failed", sid, fmt)
             raise HTTPException(500, f"Could not export this conversation as {fmt}: {e}")
 
+        # VER-04: exit 0 (a renderer that returned without raising) is not
+        # proof the file is usable — reopen/validate the bytes exactly as
+        # the format's own reader would BEFORE handing back a download that
+        # looks like success. A corrupt DOCX, a truncated PDF or an empty
+        # export must fail here, not open broken in the user's hands.
+        verdict = output_oracle.verify_artifact(fmt, result.content)
+        if not verdict.ok:
+            logger.error(
+                "Export of session %s as %s failed material verification at "
+                "stage %r: %s", sid, fmt, verdict.stage, verdict.reason,
+            )
+            raise HTTPException(500, {
+                "error": f"Export as {fmt} did not pass verification: {verdict.reason}",
+                "stage": verdict.stage,
+                "stages": list(verdict.stages),
+            })
+
         out_name = result.filename or requested or f"conversation_{sid}.{fmt}"
         # Lot 36 / QA-39: route the export bytes through the same
         # collect()+persist() pipeline every other producer of a durable
@@ -1152,7 +1170,14 @@ def setup_session_routes(
         return Response(
             content=result.content,
             media_type=result.media_type or "application/octet-stream",
-            headers={"Content-Disposition": _content_disposition(out_name)},
+            headers={
+                "Content-Disposition": _content_disposition(out_name),
+                # The generated -> saved -> opens -> reviewed -> verified
+                # ladder this export actually cleared (see
+                # output_oracle.ArtifactVerdict) — a client can render this
+                # as the download's real state instead of just "it started".
+                "X-Export-Verification": ",".join(verdict.stages),
+            },
         )
 
     def _record_export_artifact(sid: str, result, out_name: str, owner: str) -> None:

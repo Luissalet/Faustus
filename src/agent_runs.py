@@ -1399,8 +1399,23 @@ def _partial_from_events(events: List[str]) -> Dict[str, Any]:
             if not d.get("thinking"):
                 text_parts.append(str(d["delta"]))
         elif d.get("type") == "tool_output":
+            # CALL-05: the call transported cleanly (its tool_output event
+            # made it into the run's own replay log) but that says nothing
+            # about whether the ACTION succeeded — a non-zero exit_code or a
+            # `blocked` refusal is exactly the "a successful transport can
+            # still carry a functional error" case the typed contract exists
+            # for (src/tool_result.py, lote 62). Reading `exit_code` here ad
+            # hoc (as this line did before) and calling it "done" the moment
+            # the event merely existed is the bug CALL-05 names: a step's
+            # recovered/traced status now comes from the SAME classifier
+            # `execute_tool_block` (src/tool_execution.py) already runs on
+            # every tool result, not a second, independent reading of the
+            # same two fields.
+            from src.tool_result import normalize_tool_result
+            _typed = normalize_tool_result(d)
             tool_events.append({"tool": d.get("tool"), "command": str(d.get("command") or "")[:400],
-                                "output": str(d.get("output") or "")[:1500], "exit_code": d.get("exit_code")})
+                                "output": str(d.get("output") or "")[:1500], "exit_code": d.get("exit_code"),
+                                "status": _typed.status})
         elif d.get("type") == "metrics":
             metrics = d.get("data")
         elif d.get("type") == "message_saved":

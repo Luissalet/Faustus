@@ -3,6 +3,7 @@
 
 import hashlib
 import os
+import re
 import logging
 import mimetypes
 import base64
@@ -152,7 +153,8 @@ def pdf_page_evidence_ref(path: str, page_num: int, page_text: str, *,
 
 
 def _process_pdf(path: str, owner: str | None = None,
-                 evidence_out: Optional[List[EvidenceRef]] = None) -> str:
+                 evidence_out: Optional[List[EvidenceRef]] = None,
+                 allow_vision: bool = True) -> str:
     """Bounded PDF preview, not complete corpus ingestion or exhaustive OCR.
 
     Stop work before producing text we would discard. The original uploaded
@@ -167,6 +169,11 @@ def _process_pdf(path: str, owner: str | None = None,
     ``[PDF summary: pages=N, text_pages=M, needs_ocr=true/false]`` line so a
     caller can tell "this PDF has no text at all" from "some pages were
     skipped for budget" without re-parsing the preview.
+
+    ``allow_vision=False`` skips the per-image OCR fallback entirely — used
+    by :func:`pdf_ingestion_signal` to get a fast queued/ready/partial/failed
+    verdict at upload time without paying for a VL model call per image on
+    every scanned page of every upload.
     """
     try:
         from pypdf import PdfReader
@@ -255,6 +262,8 @@ def _process_pdf(path: str, owner: str | None = None,
             # Do not decode embedded images on already-readable pages.
             if len(page_text) >= 50:
                 continue
+            if not allow_vision:
+                continue
             if vision_calls >= MAX_PDF_ATTACHMENT_VISION_CALLS:
                 limits.add('vision')
                 continue
@@ -341,6 +350,57 @@ def _process_pdf(path: str, owner: str | None = None,
 
     except Exception as e:
         return f"\n\n[PDF processing failed: {str(e)}]"
+
+
+_PDF_SUMMARY_RE = re.compile(
+    r"\[PDF summary: pages=(\d+), text_pages=(\d+), needs_ocr=(true|false)\]"
+)
+
+
+def pdf_ingestion_signal(path: str, owner: str | None = None) -> Dict[str, Any]:
+    """IDX-04: an upload-time verdict on how much of a PDF is actually usable.
+
+    Runs the same bounded extraction :func:`_process_pdf` uses for chat
+    (never a second parser, never a different page/char budget) with
+    ``allow_vision=False`` — this only needs to know "did we get text",
+    not spend a VL model call OCRing a scanned page at upload time — and
+    turns the result into the ``queued/uploading/extracting/ready/partial/
+    failed`` vocabulary the upload response carries:
+
+    * ``failed`` — the file could not be opened at all (encrypted, corrupted,
+      truncated, or past ``MAX_PDF_FILE_BYTES``). ``reason`` names why.
+    * ``partial`` — it opened, but what we got back is not a fair reading of
+      the document: no page had extractable text (``reason="scanned"``, the
+      whole thing needs OCR/vision the caller has not run yet), or only the
+      first page did while the file has more (``reason="cover_only"`` — a
+      scanned book with a text cover page is the textbook case). Never
+      reported as ``ready``: a scanned PDF must not "figure as read" on a
+      portada alone.
+    * ``ready`` — every page had text, or the file is a single page that had
+      text (nothing left to call partial).
+    """
+    text = _process_pdf(path, owner=owner, allow_vision=False)
+    if text.startswith("\n\n[PDF too large"):
+        return {"status": "failed", "partial": False, "reason": "too_large"}
+    if text.startswith("\n\n[PDF appears corrupted"):
+        return {"status": "failed", "partial": False, "reason": "corrupted"}
+    if text.startswith("\n\n[PDF is password-protected"):
+        return {"status": "failed", "partial": False, "reason": "encrypted"}
+    if text.startswith("\n\n[PDF processing failed"):
+        return {"status": "failed", "partial": False, "reason": "unreadable"}
+
+    m = _PDF_SUMMARY_RE.search(text)
+    if not m:
+        # No summary line at all means _process_pdf hit a path this function
+        # does not know about yet — fail safely closed rather than claim ready.
+        return {"status": "failed", "partial": False, "reason": "unreadable"}
+    pages, text_pages, needs_ocr = int(m.group(1)), int(m.group(2)), m.group(3) == "true"
+    base = {"pages": pages, "text_pages": text_pages, "needs_ocr": needs_ocr}
+    if needs_ocr:
+        return {"status": "partial", "partial": True, "reason": "scanned", **base}
+    if text_pages == 1 and pages > 1:
+        return {"status": "partial", "partial": True, "reason": "cover_only", **base}
+    return {"status": "ready", "partial": False, "reason": None, **base}
 
 
 def _truncate_inline(text: str, limit: int = 15000) -> tuple[str, str]:
@@ -761,13 +821,24 @@ def build_user_content(
             elif mime.startswith("text/") or _is_text_file(path):
                 extracted_text = _process_text_file(path)
             else:
-                extracted_text = _process_office_document(
-                    path,
-                    display_name,
-                    session_id=session_id,
-                    auto_opened_docs=auto_opened_docs,
-                    owner=owner,
-                )
+                # IDX-04: a bad file must not take the rest of the attachments
+                # down with it. _process_pdf/_process_text_file already
+                # contain their own failures; _process_office_document calls
+                # into the optional markitdown dependency, which is not
+                # guaranteed to raise only the RuntimeError it documents —
+                # catch anything here so one broken document still leaves the
+                # user's other attachments (and message) intact.
+                try:
+                    extracted_text = _process_office_document(
+                        path,
+                        display_name,
+                        session_id=session_id,
+                        auto_opened_docs=auto_opened_docs,
+                        owner=owner,
+                    )
+                except Exception as e:
+                    logger.warning("Office document processing failed for %s: %s", path, e)
+                    extracted_text = f"\n\n[Failed to process attachment: {display_name} ({e})]"
 
             extracted_text, inline_attachment_remaining = _fit_inline_attachment_text(
                 extracted_text,

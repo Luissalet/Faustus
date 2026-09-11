@@ -176,6 +176,66 @@ export async function deleteProject(id: string): Promise<void> {
   await ok(await fetch(base(id), jsonInit('DELETE')), 'projects/delete');
 }
 
+/* ── IDX-01: "The folder has moved…" ──
+ *
+ * Distinct from editing `workspace` in Settings (a plain field patch, which
+ * never checks the path exists and never writes the destination's identity
+ * marker): this calls the dedicated `POST /api/projects/{id}/relocate`
+ * route, wired to `src.project_identity.relocate` — refuses an absent
+ * path, and the folder itself corroborates the move afterwards. Identity,
+ * memories and relations are keyed by `project_id`, untouched by this.
+ * Shared by Project.tsx (inside a project) and Projects.tsx (from the list,
+ * without opening it first).
+ */
+export interface RelocateResult {
+  project: Project;
+  old_workspace: string;
+  old_path_missing: boolean;
+  marker_conflict: boolean;
+}
+
+export async function relocateProject(id: string, newPath: string): Promise<RelocateResult> {
+  const r = await ok(await fetch(`${base(id)}/relocate`, jsonInit('POST', { new_path: newPath })), 'projects/relocate');
+  return (await r.json()) as RelocateResult;
+}
+
+/** What actually happened, in one sentence — pure so it is testable on its
+ *  own (studio/checks/l43-project-relocate.check.mjs), the same pattern this
+ *  module's other summary functions use. */
+export function relocateResultMessage(result: RelocateResult): string {
+  const bits: string[] = [t('The folder is now {path}.', { path: result.project.workspace ?? '' })];
+  if (result.old_path_missing) {
+    bits.push(t('The previous folder was already gone — memories and relations moved with the project, not the path.'));
+  }
+  if (result.marker_conflict) {
+    bits.push(t('The new folder already carried another project’s marker; this project claimed it.'));
+  }
+  return bits.join(' ');
+}
+
+export interface RecentFolder {
+  path: string;
+  projectId: string | null;
+  projectName: string;
+  updatedAt: number | null;
+}
+
+/** Folders Faustus already knows about (every project's workspace, most
+ *  recently touched first) — offered as a picker's suggestions since there
+ *  is no native `showOpenDialog` from inside the browser itself (see
+ *  `pickNative` in adapters/composer.ts for the server-side native dialog,
+ *  which this list is the fallback/complement for: same folders, no dialog
+ *  round-trip, and it works on a remote browser too). */
+export async function recentFolders(signal?: AbortSignal): Promise<RecentFolder[]> {
+  const raw = await getJson<{ folders?: unknown }>('/api/projects/recent-folders', signal);
+  return asArray<Record<string, unknown>>(raw, 'folders').map((f) => ({
+    path: String(f.path ?? ''),
+    projectId: typeof f.project_id === 'string' ? f.project_id : null,
+    projectName: String(f.project_name ?? ''),
+    updatedAt: typeof f.updated_at === 'number' ? f.updated_at : null,
+  })).filter((f) => f.path);
+}
+
 /* ── Memory files ── */
 
 export function getMemory(id: string, signal?: AbortSignal): Promise<ProjectMemory> {

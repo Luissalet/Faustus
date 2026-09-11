@@ -240,6 +240,33 @@ export interface McpServer {
   needs_oauth?: boolean;
   env_mode?: string;
   stderr_log?: string;
+  /** TOOL-04 / SEC-08: what this server's row itself carries as declared
+   *  permissions (`network`/`files`/`secrets`), or null for a server no
+   *  install/update hook has run for yet. */
+  declared_permissions?: Record<string, boolean> | null;
+}
+/** TOOL-04: `{"added": [...], "removed": [...]}` permission keys, computed
+ *  by `src/extension_manifest.py::diff_permissions` against the prior
+ *  manifest — empty `removed` on a fresh install (nothing to diff against). */
+export interface McpManifestDiff {
+  added: string[];
+  removed: string[];
+}
+/** TOOL-04: `src/security_policy.py::PolicyDecision.to_dict()` — whether the
+ *  declared permissions are allowed under the active profile, whether they
+ *  still need a human's approval regardless, and why. */
+export interface McpPolicyDecision {
+  allowed: boolean;
+  requires_approval: boolean;
+  profile: string;
+  reason: string;
+  plugin_id?: string;
+}
+export interface McpGovernance {
+  declared_permissions: Record<string, boolean>;
+  manifest_diff: McpManifestDiff;
+  manifest_quarantined: boolean;
+  policy_decision: McpPolicyDecision;
 }
 export interface McpTool {
   name: string;
@@ -250,16 +277,31 @@ export async function listMcpServers(): Promise<McpServer[]> {
   const d = await getJson<McpServer[] | { servers?: McpServer[] }>('/api/mcp/servers');
   return Array.isArray(d) ? d : (d.servers ?? []);
 }
-export async function addMcpServer(fields: { name: string; transport: string; command?: string; args?: string; env?: string; url?: string; oauth_file?: string; oauth_config?: string }): Promise<{ id?: string; needs_auth?: boolean; auth_url?: string; connected?: boolean; status?: string; tool_count?: number }> {
+export async function addMcpServer(fields: { name: string; transport: string; command?: string; args?: string; env?: string; url?: string; oauth_file?: string; oauth_config?: string }): Promise<
+  { id?: string; needs_auth?: boolean; auth_url?: string; connected?: boolean; status?: string; tool_count?: number } & Partial<McpGovernance>
+> {
   return json(`/api/mcp/servers`, { method: 'POST', body: form(fields) }, 'mcp');
 }
 export const deleteMcpServer = (id: string) => del(`/api/mcp/servers/${id}`, 'mcp');
 export const reconnectMcpServer = (id: string) => json<{ connected?: boolean; tool_count?: number; error?: string }>(`/api/mcp/servers/${id}/reconnect`, { method: 'POST' }, 'mcp/reconnect');
 export const toggleMcpServer = (id: string, enabled: boolean) => json<unknown>(`/api/mcp/servers/${id}`, { method: 'PATCH', body: form({ is_enabled: String(enabled) }) }, 'mcp/toggle');
+/** TOOL-04: switch a server between the minimal environment and the full
+ *  one it inherits from Faustus (secrets included) — the other real caller
+ *  of the automatic permission-governance hook besides installing a server,
+ *  and until this lote had no UI trigger at all (`env_mode` was read-only
+ *  text in `McpServerCard`). Governance fields present exactly when the
+ *  switch escalated a permission and got quarantined pending approval. */
+export const setMcpEnvMode = (id: string, inherit: boolean) =>
+  json<{ id: string; inherit_env: boolean; env_mode: string; connected: boolean | null; status: string; error?: string | null } & Partial<McpGovernance>>(
+    `/api/mcp/servers/${id}/env-mode`, { method: 'PATCH', body: form({ inherit_env: String(inherit) }) }, 'mcp/env-mode',
+  );
 export const listMcpTools = (id: string) => getJson<McpTool[]>(`/api/mcp/servers/${id}/tools`);
 export const setMcpDisabledTools = (id: string, disabled: string[]) => patch(`/api/mcp/servers/${id}/tools`, { disabled }, 'mcp/tools');
 export const mcpOauthExchange = (id: string, callbackUrl: string) => json<unknown>(`/api/mcp/oauth/exchange/${id}`, { method: 'POST', body: form({ callback_url: callbackUrl }) }, 'mcp/oauth');
 export const mcpAuthorizeUrl = (id: string) => `/api/mcp/oauth/authorize/${id}`;
+/** TOOL-04: lift the quarantine `_apply_extension_governance` (install/
+ *  env-mode update) placed on a server that asked for a new permission. */
+export const approveMcpManifest = (id: string) => json<unknown>(`/api/mcp/servers/${id}/manifest/approve`, { method: 'POST' }, 'mcp/manifest/approve');
 
 /* ── agent tokens (Codex / Claude) ── */
 

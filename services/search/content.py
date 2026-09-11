@@ -276,10 +276,18 @@ def fetch_webpage_content(url: str, timeout: int = 5, retry_attempt: int = 0,
 
     # Size bookkeeping shared by every content branch below. getattr keeps
     # plain httpx.Response stand-ins (tests) working without the cap fields.
+    #
+    # `headers` (ola A wiring): a plain, JSON-serializable dict — this result
+    # is cache-written with `json.dump` (`_cache_result` below), and
+    # `httpx.Headers` is not itself serializable — so `deep_research.py` can
+    # read `Last-Modified`/`Date`/`Age` off it later
+    # (`src.outbound_fetch.staleness_from_headers`) without this module
+    # knowing anything about staleness itself.
     _size_fields = {
         "truncated": getattr(response, "truncated", False),
         "fetched_bytes": len(response.content),
         "total_bytes": getattr(response, "declared_bytes", None),
+        "headers": dict(response.headers) if hasattr(response, "headers") else {},
     }
 
     # PDF handling

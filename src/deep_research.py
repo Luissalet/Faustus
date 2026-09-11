@@ -1631,7 +1631,26 @@ class DeepResearcher:
         arrived this run under a different URL. Mutates in place (findings
         are freshly-built dicts at this call site, never shared) and never
         raises — a fingerprinting failure costs the signal, not the finding.
+
+        Also where `finding["stale"]`/`finding["age_days"]` get stamped
+        (ola A wiring): `_fetch_and_extract` threads the raw response
+        headers `services.search.content.fetch_webpage_content` now returns
+        through as the transient `_fetch_headers` key, popped here — the
+        one place this class already stamps cross-cutting metadata onto a
+        freshly-built finding — and never left on the dict a report or the
+        model actually sees.
         """
+        headers = finding.pop("_fetch_headers", None)
+        if headers:
+            try:
+                from src.outbound_fetch import staleness_from_headers
+
+                signal = staleness_from_headers(headers)
+                if signal:
+                    finding["stale"] = signal["stale"]
+                    finding["age_days"] = signal["age_days"]
+            except Exception:  # noqa: BLE001 - staleness is never load-bearing
+                logger.debug("staleness stamping failed for %s", finding.get("url"), exc_info=True)
         try:
             from src.outbound_fetch import content_fingerprint, find_duplicate
 
@@ -1824,6 +1843,13 @@ class DeepResearcher:
                 parsed["title"] = title or page.get("title", "")
                 parsed["og_image"] = page.get("og_image", "")
                 parsed["engine"] = engine
+                # Threaded through only for `_stamp_duplicate` to read and pop
+                # — the raw response headers this fetch got, so it (the one
+                # place that already stamps cross-cutting finding metadata)
+                # can also stamp staleness (src.outbound_fetch.
+                # staleness_from_headers). Never part of the finding a report
+                # or the model actually sees.
+                parsed["_fetch_headers"] = page.get("headers")
                 summary = parsed.get("summary")
                 summary = summary.strip() if isinstance(summary, str) else ""
                 evidence = parsed.get("evidence")
@@ -1855,6 +1881,7 @@ class DeepResearcher:
                 "rational": "LLM extraction (raw)",
                 "evidence": raw_response[:3000],
                 "summary": raw_response[:500],
+                "_fetch_headers": page.get("headers"),
             }
         except Exception as e:
             # RES-05: this URL's own failure — the round keeps whatever the
@@ -1885,7 +1912,8 @@ class DeepResearcher:
                 "engine": engine,
                 "rational": "Extraction failed; retained original source text, not a verified conclusion.",
                 "evidence": evidence, "summary": evidence[:1200],
-                "extraction_mode": "rendered_page_fallback"}
+                "extraction_mode": "rendered_page_fallback",
+                "_fetch_headers": page.get("headers")}
 
     # ------------------------------------------------------------------
     # SYNTHESIZE

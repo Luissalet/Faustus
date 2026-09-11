@@ -92,7 +92,13 @@ export default function WorkspaceDialog({
         if (!next) onClose();
       }}
       title={t('Working folder')}
-      description={t('The agent\'s file tools and terminal are confined to this folder.')}
+      // SEC-03: only the file tools (read/write/edit) are actually confined
+      // to this folder — src/agent_loop.py documents the shell itself as
+      // NOT sandboxed, so a bash/python call can reach anywhere the process
+      // can. The previous wording claimed the terminal was confined too,
+      // which is the exact overclaim SEC-03 flags: engaging copy, not a
+      // containment bug (the reserved-Windows-names case is already fixed).
+      description={t('The agent\'s file tools (read, write, edit) are confined to this folder. Its terminal is NOT sandboxed and can reach anywhere the Faustus process can.')}
       testId="workspace-dialog"
       footer={
         <>

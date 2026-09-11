@@ -131,6 +131,71 @@ export interface ComposerProps {
 const MENTION = /(^|\s)@([^\s@]*)$/;
 
 /**
+ * UX-06: an attachment that cannot possibly be used must say so before it is
+ * ever uploaded — not fail during inference once the model tries to use it.
+ * `/api/media/capabilities` (MEDIA-01, `src/media_capabilities.py`) is a
+ * real probe (ffmpeg present AND answering, a transcription backend
+ * actually loadable), never a guess from a file extension; this reads it
+ * once, cached for the session, and checks only the two kinds that DEPEND
+ * on an optional backend — audio needs a working transcriber, video needs
+ * ffmpeg. Everything else (images, text, PDF, code) has no such dependency
+ * and is never blocked here.
+ *
+ * The endpoint is admin-gated (`routes/local_video_routes.py`'s
+ * `Depends(require_admin)`) — a non-admin session's fetch answers 403, and
+ * that failure is read the same as "unknown": never blocks a normal send,
+ * only adds an upfront reason when the check actually succeeds.
+ */
+interface MediaCapabilities {
+  audio: boolean;
+  video: boolean;
+}
+let mediaCapsPromise: Promise<MediaCapabilities | null> | null = null;
+function mediaCapabilities(): Promise<MediaCapabilities | null> {
+  if (!mediaCapsPromise) {
+    mediaCapsPromise = fetch('/api/media/capabilities', { credentials: 'same-origin' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: unknown) => {
+        if (!data || typeof data !== 'object') return null;
+        const backends = (data as Record<string, unknown>).backends;
+        if (!backends || typeof backends !== 'object') return null;
+        const installed = (key: string) => {
+          const entry = (backends as Record<string, unknown>)[key];
+          return Boolean(entry && typeof entry === 'object' && (entry as Record<string, unknown>).installed);
+        };
+        return { audio: installed('stt'), video: installed('ffmpeg') };
+      })
+      .catch(() => null);
+  }
+  return mediaCapsPromise;
+}
+
+/** Pasting/dropping a very large file must never stall the composer while
+ *  it is merely being queued — the actual read happens off the main thread
+ *  either way (`URL.createObjectURL`/`FormData`, never `FileReader.
+ *  readAsDataURL`), but a file with nothing usable behind it is still worth
+ *  refusing outright rather than spending an upload attempt on it. */
+const MAX_ATTACHMENT_BYTES = 200 * 1024 * 1024; // 200MB
+
+/** Reason a file cannot be attached, or `null` when it is fine — checked
+ *  before it is ever queued, so nothing is uploaded (and no inference is
+ *  ever asked to use it) for a file this can already rule out locally. */
+async function incompatibilityReason(file: File): Promise<string | null> {
+  if (file.size > MAX_ATTACHMENT_BYTES) {
+    return t('{name} is too large ({size} MB) to attach.', { name: file.name, size: Math.round(file.size / 1024 / 1024) });
+  }
+  const caps = await mediaCapabilities();
+  if (!caps) return null; // unknown (not an admin session, or the probe failed): never block on a guess
+  if (file.type.startsWith('audio/') && !caps.audio) {
+    return t('{name} is audio, but no transcription backend is installed — it would not be usable.', { name: file.name });
+  }
+  if (file.type.startsWith('video/') && !caps.video) {
+    return t('{name} is video, but ffmpeg is not installed — it would not be usable.', { name: file.name });
+  }
+  return null;
+}
+
+/**
  * The composer. Everything the old input bar did — attachments, `@` files,
  * `#` rules, `/` commands, the mode and tool toggles, the folder — in one
  * slab, with the two pickers (files, commands) drawn as a strip above the
@@ -306,7 +371,21 @@ export function Composer({
   };
 
   /* ── Attachments ── */
-  const addFiles = (files: File[]) => uploads.add(files);
+  // UX-06: filtered before anything is queued — see `incompatibilityReason`'s
+  // doc comment. `void` on purpose: the caller (paste/drop/file-input) never
+  // waits on this, so a large batch never blocks the keystroke or drop event
+  // that triggered it.
+  const addFiles = (files: File[]) => {
+    void (async () => {
+      const accepted: File[] = [];
+      for (const file of files) {
+        const reason = await incompatibilityReason(file);
+        if (reason) onNotice(reason, 'warning');
+        else accepted.push(file);
+      }
+      if (accepted.length) uploads.add(accepted);
+    })();
+  };
 
   const onPaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
     const files = clipboardFiles(event.clipboardData);

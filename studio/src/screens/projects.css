@@ -895,3 +895,33 @@
     grid-template-columns: minmax(0, 1fr) auto;
   }
 }
+
+.fs-pj__row-relocate {
+  display: inline-flex;
+  align-items: center;
+}
+
+/* ── IDX-01: relocate dialog's recent-folders suggestions ── */
+
+.fs-relocate__recent {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fs-space-1);
+  margin-block-start: var(--fs-space-2);
+}
+
+.fs-relocate__recent ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fs-space-1);
+}
+
+.fs-relocate__recent .fs-chip {
+  max-inline-size: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

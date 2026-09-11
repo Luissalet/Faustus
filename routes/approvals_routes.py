@@ -52,6 +52,18 @@ def setup_approvals_routes():
                 "pending": [c.to_dict() for c in cards],
                 "count": len(cards)}
 
+    @router.get("/active")
+    def list_active(request: Request, owner: str = "", limit: int = 50):
+        """SEC-01: the concessions currently in force — granted, not
+        expired, with uses left. What a human reviews to see everything a
+        model or document could currently claim as "I have permission",
+        and revoke from with DELETE /{approval_id}."""
+        require_admin(request)
+        cards = approval_store.active(owner=owner, limit=limit)
+        return {"checked_at": now_iso(),
+                "active": [c.to_dict() for c in cards],
+                "count": len(cards)}
+
     @router.post("/request")
     async def open_card(request: Request):
         """Open a card. Deliberately reachable by the tool layer: asking for
@@ -111,6 +123,21 @@ def setup_approvals_routes():
             approval_id, granted=False,
             by=str(body.get("by") or _current_user(request) or "the signed-in user"),
             reason=str(body.get("reason") or ""))
+
+    @router.delete("/{approval_id}")
+    async def revoke(approval_id: str, request: Request):
+        """Immediate revocation (SEC-01). `require_human`, same as grant/deny:
+        pulling a standing concession is a decision for a person, not
+        something the agent's own loopback token can do to itself."""
+        require_human(request)
+        body = await _optional_json(request)
+        result = approval_store.revoke(
+            approval_id,
+            by=str(body.get("by") or _current_user(request) or "the signed-in user"),
+            reason=str(body.get("reason") or ""))
+        if not result.get("ok") and result.get("reason") == "not_found":
+            raise HTTPException(status_code=404, detail=approval_id)
+        return result
 
     return router
 

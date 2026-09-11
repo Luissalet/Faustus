@@ -114,11 +114,23 @@ const SCOPE_LABEL: Record<string, string> = { session: 'Session', project: 'Proj
  * the new `/options/effective` route rather than recomputing precedence
  * here.
  */
+/** MOD-04: which of the four numeric override fields only take effect on the
+ *  NEXT load of the model (`num_ctx`/`num_gpu`/`main_gpu` — Ollama runtime
+ *  options fixed at load time) versus one that applies to the model as it
+ *  already sits resident (`keep_alive`, honoured on the next request). A
+ *  field in this set gets the "reload" badge and, if the saved value
+ *  actually changes, the confirmation dialog below names the impact before
+ *  the save goes through — the literal MOD-04 acceptance ("un cambio que
+ *  exige recarga pide permiso y muestra impacto"). */
+const RELOAD_FIELDS = new Set(['num_ctx', 'num_gpu', 'main_gpu']);
+
 function ScopedOverridePanel({ endpointId, model }: { endpointId: string; model: InstalledModel }) {
   const [scope, setScope] = useState<LoadScope>('project');
   const [scopeId, setScopeId] = useState('');
   const [ctx, setCtx] = useState('');
   const [keep, setKeep] = useState('');
+  const [gpu, setGpu] = useState('');
+  const [main, setMain] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [saved, setSaved] = useState<Record<string, string | number> | null>(null);
@@ -132,6 +144,8 @@ function ScopedOverridePanel({ endpointId, model }: { endpointId: string; model:
       setSaved(d.options);
       setCtx(d.options.num_ctx == null ? '' : String(d.options.num_ctx));
       setKeep(d.options.keep_alive == null ? '' : String(d.options.keep_alive));
+      setGpu(d.options.num_gpu == null ? '' : String(d.options.num_gpu));
+      setMain(d.options.main_gpu == null ? '' : String(d.options.main_gpu));
       const eff = await getEffectiveOptions(
         endpointId, model.name,
         scope === 'session' ? scopeId.trim() : '',
@@ -143,12 +157,11 @@ function ScopedOverridePanel({ endpointId, model }: { endpointId: string; model:
     }
   }, [endpointId, model.name, scope, scopeId]);
 
-  const save = async () => {
-    if (!scopeId.trim()) { setErr(t('Enter a project or session id first.')); return; }
+  const doSave = async () => {
     setBusy(true);
     setErr(null);
     try {
-      const d = await putScopedOptions(endpointId, model.name, scope, scopeId.trim(), { num_ctx: ctx.trim(), keep_alive: keep.trim() });
+      const d = await putScopedOptions(endpointId, model.name, scope, scopeId.trim(), { num_ctx: ctx.trim(), keep_alive: keep.trim(), num_gpu: gpu.trim(), main_gpu: main.trim() });
       setSaved(d.options);
       await load();
     } catch (e) {
@@ -158,6 +171,19 @@ function ScopedOverridePanel({ endpointId, model }: { endpointId: string; model:
     }
   };
 
+  const save = async () => {
+    if (!scopeId.trim()) { setErr(t('Enter a project or session id first.')); return; }
+    const draft: Record<string, string> = { num_ctx: ctx.trim(), num_gpu: gpu.trim(), main_gpu: main.trim() };
+    const changedReloadFields = Object.keys(draft).filter((k) => RELOAD_FIELDS.has(k) && draft[k] !== (saved?.[k] == null ? '' : String(saved[k])));
+    if (changedReloadFields.length > 0) {
+      const impact = model.loaded
+        ? t('{model} is loaded right now; it will unload and reload with the new value the next time this scope uses it, interrupting anything using it mid-request.', { model: model.name })
+        : t('{model} is not loaded right now; the new value applies the next time this scope loads it.', { model: model.name });
+      if (!window.confirm(`${t('{fields} only takes effect on the next load — this requires a reload.', { fields: changedReloadFields.join(', ') })}\n\n${impact}\n\n${t('Save anyway?')}`)) return;
+    }
+    await doSave();
+  };
+
   const clear = async () => {
     setBusy(true);
     setErr(null);
@@ -165,6 +191,8 @@ function ScopedOverridePanel({ endpointId, model }: { endpointId: string; model:
       await putScopedOptions(endpointId, model.name, scope, scopeId.trim(), {});
       setCtx('');
       setKeep('');
+      setGpu('');
+      setMain('');
       await load();
     } catch (e) {
       setErr((e as Error).message);
@@ -190,8 +218,18 @@ function ScopedOverridePanel({ endpointId, model }: { endpointId: string; model:
           onBlur={() => void load()}
           data-testid="scoped-options-id"
         />
-        <input className="fs-field" type="number" min={512} max={1048576} step={512} placeholder="num_ctx" value={ctx} onChange={(e) => setCtx(e.target.value)} />
-        <input className="fs-field" placeholder="keep_alive" value={keep} onChange={(e) => setKeep(e.target.value)} />
+      </div>
+      <div className="fs-set__row" title={t('num_ctx takes effect on the next load of the model (requires reload).')}>
+        <input className="fs-field" type="number" min={512} max={1048576} step={512} placeholder="num_ctx" value={ctx} onChange={(e) => setCtx(e.target.value)} data-testid="scoped-options-num-ctx" />
+        <span className="fs-set__restart">{t('reload')}</span>
+        <input className="fs-field" type="number" min={0} max={1024} placeholder="num_gpu" value={gpu} onChange={(e) => setGpu(e.target.value)} data-testid="scoped-options-num-gpu" />
+        <span className="fs-set__restart">{t('reload')}</span>
+        <input className="fs-field" type="number" min={0} max={15} placeholder="main_gpu" value={main} onChange={(e) => setMain(e.target.value)} data-testid="scoped-options-main-gpu" />
+        <span className="fs-set__restart">{t('reload')}</span>
+        <input className="fs-field" placeholder="keep_alive" value={keep} onChange={(e) => setKeep(e.target.value)} data-testid="scoped-options-keep-alive" />
+      </div>
+      <p className="fs-set__help">{t('num_ctx, num_gpu and main_gpu only take effect the next time this scope loads the model; keep_alive applies to the model as it already sits loaded. Ollama-only values (the extra field above) that name a llama-server flag are rejected with the reason, not sent as an Ollama option.')}</p>
+      <div className="fs-set__row-end" style={{ justifyContent: 'flex-start' }}>
         <Button size="sm" variant="ghost" label={t('Save override')} loading={busy} onClick={() => void save()} disabled={!scopeId.trim()} />
         {saved && Object.keys(saved).length > 0 && <Button size="sm" variant="ghost" label={t('Clear')} onClick={() => void clear()} disabled={busy} />}
       </div>
@@ -224,6 +262,9 @@ export function LocalModelsSection({ admin, say }: { admin: boolean; say: (t: st
   const [data, setData] = useState<LocalModelsData | null>(null);
   const [endpointId, setEndpointId] = useState('');
   const [error, setError] = useState<string | null>(null);
+  // ACT-06: 401/403 and 426 read as their own EmptyState tone instead of
+  // the same generic "could not read" every other failure got.
+  const [errorStatus, setErrorStatus] = useState<number | null>(null);
   const [pulls, setPulls] = useState<Map<string, Pull>>(new Map());
   const sources = useRef<Map<string, EventSource>>(new Map());
   const dismissed = useRef<Set<string>>(new Set());
@@ -235,6 +276,7 @@ export function LocalModelsSection({ admin, say }: { admin: boolean; say: (t: st
         const d = await loadLocalModels(endpointId || undefined);
         setData(d);
         setError(null);
+        setErrorStatus(null);
         if (d.endpoint_id && d.endpoint_id !== endpointId) setEndpointId(d.endpoint_id);
         setPulls((cur) => {
           const next = new Map(cur);
@@ -246,7 +288,10 @@ export function LocalModelsSection({ admin, say }: { admin: boolean; say: (t: st
           return next;
         });
       } catch (e) {
-        if (!silent) setError((e as Error).message);
+        if (!silent) {
+          setError((e as Error).message);
+          setErrorStatus((e as { status?: number })?.status ?? null);
+        }
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -431,7 +476,15 @@ export function LocalModelsSection({ admin, say }: { admin: boolean; say: (t: st
     }
   }, [data, say]);
 
-  if (error && !data) return <EmptyState icon={HardDrive} title={t('Could not read the local models.')} body={error} />;
+  if (error && !data) {
+    if (errorStatus === 401 || errorStatus === 403) {
+      return <EmptyState tone="denied" title={t('Administrators only')} body={t('This account cannot see the local models.')} />;
+    }
+    if (errorStatus === 426) {
+      return <EmptyState tone="incompatible" title={t('This client is out of date')} body={t('Update Faustus before managing local models.')} />;
+    }
+    return <EmptyState icon={HardDrive} tone="error" title={t('Could not read the local models.')} body={error} primaryAction={{ label: t('Try again'), onClick: () => void refresh() }} />;
+  }
   const ep = data?.endpoints.find((e) => e.id === (data.endpoint_id || endpointId));
   const cards = (data?.vram.gpus ?? []) as GpuCard[];
 

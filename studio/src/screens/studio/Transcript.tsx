@@ -2,7 +2,7 @@ import { ArrowDown, Check, ChevronDown, Copy, FileText, GitFork, Pencil, Quote, 
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Fragment, lazy, Suspense, useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 import { Button, describeError, friendlyError, IconButton } from '../../components';
-import type { AskUser, ContextLedger, DelegationTask } from '../../adapters/chat';
+import { fetchCompactionEvent, pinCompactionFragment, type AskUser, type CompactionEvent, type ContextLedger, type DelegationTask } from '../../adapters/chat';
 import type { EvidenceRef } from '../../adapters/evidence';
 import { attachmentUrl, isImage } from '../../adapters/composer';
 import { Rich } from '../rich';
@@ -10,7 +10,7 @@ import { splitMentions } from '../../lib/mentions';
 import { safeExternal } from '../../lib/markdown';
 import { stripExecutedFences, toolFenceRegex } from '../../lib/fences';
 import { frameBatcher } from '../../lib/frame-batch';
-import { formatMetrics, liveTps, type LiveRate, type PlanStepView, type Step, type Turn } from './model';
+import { formatMetrics, liveTps, type CoverageItem, type LiveRate, type PlanStepView, type Step, type Turn } from './model';
 import { t, tn } from '../../i18n';
 import { getDisplay } from '../../shell/display';
 import { nextStreamAnnouncement } from '../../adapters/streamAnnounce';
@@ -84,6 +84,10 @@ export type Decision = 'approve' | 'approve_task' | 'deny';
 export interface TranscriptProps {
   turns: Turn[];
   busy: boolean;
+  /** CTX-02: which session's compaction log/pins the Ledger's "Qué se
+   *  compactó" reads and writes — `null` before a session exists yet
+   *  (nothing to fetch, the affordance simply does not render). */
+  sessionId: string | null;
   onApproval: (turn: Turn, decision: Decision) => void;
   /** CALL-07/TASK-04: `optionIds` are the stable `AskOption.id`s the user
    *  picked (Studio.tsx pairs these with `turn.ask?.questionId` to answer a
@@ -175,6 +179,47 @@ function useQuoteSelection(onQuote?: (text: string) => void) {
 }
 
 const FILE_TOOLS = /^(read_file|write_file|edit_file|apply_patch|create_file|multi_edit|replace_across_files)$/;
+
+/**
+ * EXEC-02: a command preview must not hand a secret to whoever is looking
+ * over the approver's shoulder — or sit in a screenshot — just because the
+ * model happened to interpolate one into an argument. Value-shaped, not
+ * key-shaped: `sk_…`/`pk_…`/`AKIA…` tokens are masked wherever they occur,
+ * and `token=`/`password=`/… are masked by what follows the `=`/`:`, never
+ * the key name itself, so the command still reads as what it does.
+ * Client-side only, and only for what is SHOWN: the real argv still runs
+ * unmodified (`src/agent_tools/subprocess_tools.py`'s `create_subprocess_exec`,
+ * never shell=True) — this never touches execution, only the preview.
+ */
+const SECRET_PATTERNS: [RegExp, string][] = [
+  [/\b((?:sk|pk|rk)[-_][A-Za-z0-9_-]{10,})\b/gi, '****'],
+  [/\b(AKIA[0-9A-Z]{16})\b/g, '****'],
+  [/\b(Bearer\s+)[A-Za-z0-9._-]{10,}/gi, '$1****'],
+  [/\b((?:api[_-]?key|token|secret|password|passwd|pwd)\s*[:=]\s*)(['"]?)([^\s'"]{3,})(\2)/gi, '$1$2****$4'],
+];
+
+export function maskSecrets(command: string): string {
+  return SECRET_PATTERNS.reduce((out, [re, replacement]) => out.replace(re, replacement), command);
+}
+
+/** EXEC-01: a short label for `Step.executionTarget.kind` — the words a
+ *  person reads next to the command, not the wire's own vocabulary. */
+function executionTargetLabel(kind: string): string {
+  switch (kind) {
+    case 'windows':
+      return t('Windows');
+    case 'wsl':
+      return t('WSL');
+    case 'posix':
+      return t('Linux/macOS');
+    case 'container':
+      return t('sandboxed container');
+    case 'remote':
+      return t('a remote worker');
+    default:
+      return kind;
+  }
+}
 
 /** The unified diff of a file write, coloured line by line.
  *
@@ -298,12 +343,25 @@ function ToolRail({ steps, live, onOpenFile, onOpenDoc, onOpenEvidence }: { step
             // fold. Nudging on open (never on close) covers it without
             // fighting the reader's scroll position the rest of the time.
             onToggle={(e) => {
-              if (e.currentTarget.open) e.currentTarget.scrollIntoView({ block: 'nearest' });
+              if (!e.currentTarget.open) return;
+              e.currentTarget.scrollIntoView({ block: 'nearest' });
+              // QA-44 hueco 2: at 200% zoom the whole card (command + output
+              // + diff) can be taller than the effective viewport, so
+              // bringing ITS edge into view still leaves a long diff below
+              // the fold — the diff's own box (studio.css's `.fs-diff`,
+              // capped by `max-block-size`) always fits on its own, so bring
+              // that in too once the card's content is actually visible.
+              e.currentTarget.querySelector('.fs-diff')?.scrollIntoView({ block: 'nearest' });
             }}
           >
             <summary>
               <span className="fs-trace__node" aria-hidden="true" />
               <span className="fs-trace__label">{step.label}</span>
+              {step.executionTarget && (
+                <span className="fs-trace__meta" data-testid="tool-execution-target" title={[step.executionTarget.cwd, step.executionTarget.shell].filter(Boolean).join(' · ')}>
+                  {t('runs on {target}', { target: executionTargetLabel(step.executionTarget.kind) })}
+                </span>
+              )}
               {step.diff && (
                 <span className="fs-trace__meta fs-diff-stat">
                   {step.diff.newFile && <em>nuevo</em>}
@@ -327,7 +385,16 @@ function ToolRail({ steps, live, onOpenFile, onOpenDoc, onOpenEvidence }: { step
                 )}
               </p>
             ) : null}
-            {step.diff ? <DiffLines text={step.diff.text} /> : step.command && step.command !== step.label && <pre className="fs-studio__cmd">{step.command}</pre>}
+            {step.diff ? (
+              <DiffLines text={step.diff.text} />
+            ) : (
+              step.command &&
+              step.command !== step.label && (
+                <pre className="fs-studio__cmd" data-testid="step-command">
+                  {maskSecrets(step.command)}
+                </pre>
+              )
+            )}
             {(step.repairs?.length || step.argumentErrors?.length) ? <ArgumentRepairs step={step} /> : null}
             {onOpenEvidence && step.evidenceRefs?.length ? (
               <p className="fs-studio__step-links" data-testid="tool-evidence-links">
@@ -664,7 +731,79 @@ function sectionLabel(label: string): string {
  * (`context_ledger`); this puts the number on screen at the round it
  * happens, folded away unless something is actually wrong.
  */
-function Ledger({ ledger }: { ledger: ContextLedger }) {
+/**
+ * CTX-02: what the most recent compaction pass actually did to this
+ * session, and a way to protect one more fragment from the next pass — a
+ * `<details>` of its own inside the Ledger, closed by default (checking is
+ * an extra fetch, not free) so it costs nothing until someone actually
+ * wonders "what did it throw away".
+ */
+function CompactionInspector({ sessionId, role, content }: { sessionId: string; role: string; content?: string }) {
+  const [opened, setOpened] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [event, setEvent] = useState<CompactionEvent | null | 'error'>(null);
+  const [pinned, setPinned] = useState<'idle' | 'pinning' | 'pinned' | 'failed'>('idle');
+
+  const load = () => {
+    if (loading) return;
+    setLoading(true);
+    fetchCompactionEvent(sessionId)
+      .then((e) => setEvent(e))
+      .catch(() => setEvent('error'))
+      .finally(() => setLoading(false));
+  };
+
+  return (
+    <details
+      className="fs-ctx__compaction"
+      data-testid="compaction-inspector"
+      onToggle={(e) => {
+        const next = e.currentTarget.open;
+        setOpened(next);
+        if (next && event === null && !loading) load();
+      }}
+    >
+      <summary>{t('What was compacted')}</summary>
+      {opened && (
+        <div className="fs-ctx__compaction-body">
+          {loading && <p className="fs-ctx__note">{t('Checking…')}</p>}
+          {!loading && event === 'error' && <p className="fs-ctx__note" data-level="warn">{t('Could not read the compaction log.')}</p>}
+          {!loading && event === null && <p className="fs-ctx__note">{t('Compaction has not run for this conversation yet.')}</p>}
+          {!loading && event && event !== 'error' && (
+            <p className="fs-ctx__note">
+              {event.foldedCount > 0
+                ? t('The last pass folded {n} earlier messages into a summary, keeping {refs} evidence reference(s) to the originals.', {
+                    n: event.foldedCount,
+                    refs: event.evidenceRefs.length,
+                  })
+                : t('Nothing has been folded away for this conversation yet.')}
+              {event.pinnedSkipped > 0 && ` ${t('{n} pinned fragment(s) were kept untouched.', { n: event.pinnedSkipped })}`}
+            </p>
+          )}
+          {content && (
+            <Button
+              size="sm"
+              variant={pinned === 'pinned' ? 'primary' : undefined}
+              icon={pinned === 'pinned' ? Check : undefined}
+              label={pinned === 'pinning' ? t('Pinning…') : pinned === 'pinned' ? t('Pinned') : pinned === 'failed' ? t('Retry pin') : t('Pin this message')}
+              disabled={pinned === 'pinning' || pinned === 'pinned'}
+              title={t('Keeps this exact message out of future compaction passes.')}
+              onClick={() => {
+                setPinned('pinning');
+                void pinCompactionFragment(sessionId, role, content, content.slice(0, 200)).then((fp) =>
+                  setPinned(fp ? 'pinned' : 'failed'),
+                );
+              }}
+              testId="compaction-pin"
+            />
+          )}
+        </div>
+      )}
+    </details>
+  );
+}
+
+function Ledger({ ledger, sessionId, role, content }: { ledger: ContextLedger; sessionId?: string | null; role?: string; content?: string }) {
   const tok = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(Math.round(n)));
   const warn = ledger.advice.some((a) => a.level === 'warn');
   return (
@@ -701,6 +840,7 @@ function Ledger({ ledger }: { ledger: ContextLedger }) {
           {a.text}
         </p>
       ))}
+      {sessionId && role && <CompactionInspector sessionId={sessionId} role={role} content={content} />}
     </details>
   );
 }
@@ -846,6 +986,7 @@ function AssistantTurn({
   turn: liveTurn,
   busy,
   enter,
+  sessionId,
   onApproval,
   onAnswer,
   onRegenerate,
@@ -861,6 +1002,8 @@ function AssistantTurn({
   busy: boolean;
   /** See `UserTurn`'s doc comment for the same prop. */
   enter?: boolean;
+  /** CTX-02: threaded to `Ledger`'s "Qué se compactó". */
+  sessionId: string | null;
   onApproval: (decision: Decision) => void;
   onAnswer: (text: string, optionIds?: string[]) => void;
   onRegenerate: () => void;
@@ -949,6 +1092,20 @@ function AssistantTurn({
             {turn.note}
           </p>
         )}
+        {turn.uncertain && (
+          <p className="fs-notice" data-tone="warning" data-testid="turn-uncertain">
+            {t('Uncertain outcome, checking…')}
+          </p>
+        )}
+        {turn.capabilitiesChanged && (
+          <p className="fs-notice" data-tone="warning" data-testid="turn-capabilities-changed">
+            {t('Switched from {from} to {to}: lost {lost}.', {
+              from: turn.capabilitiesChanged.fromModel || t('the previous model'),
+              to: turn.capabilitiesChanged.toModel || t('another model'),
+              lost: turn.capabilitiesChanged.lost.join(', '),
+            })}
+          </p>
+        )}
         {turn.error && (() => {
           // UX-08: the taxonomy (`src/contracts/errors.py`, mirrored client-side
           // in errorTaxonomy.ts) instead of raw provider prose — same pattern as
@@ -967,7 +1124,7 @@ function AssistantTurn({
             </p>
           );
         })()}
-        {turn.ledger && <Ledger ledger={turn.ledger} />}
+        {turn.ledger && <Ledger ledger={turn.ledger} sessionId={sessionId} role="assistant" content={turn.text} />}
         {/* The heartbeat, last of all: it sits exactly where the turn's own
             numbers will appear when it finishes. */}
         {turn.streaming && turn.live && !(turn.research && !turn.research.done) && <LiveLine live={turn.live} contextTokens={turn.ledger?.total} />}
@@ -1065,6 +1222,52 @@ function LiveLine({ live, contextTokens }: { live: LiveRate; contextTokens?: num
   );
 }
 
+/**
+ * RES-01: the schema's coverage as of the latest `analyzing` event — one
+ * line per subquestion, marked pending/thin/covered, so the reader can see
+ * which parts of the brief still have nothing behind them without waiting
+ * for the final report to find out. Same collapsible-list shape as
+ * `PlanStepsCard` above, deliberately: both are "here is the checklist, and
+ * where it stands".
+ */
+function CoverageMap({ coverage }: { coverage: CoverageItem[] }) {
+  const covered = coverage.filter((c) => c.status === 'covered').length;
+  const insufficient = coverage.filter((c) => c.status === 'insufficient').length;
+  const pending = coverage.length - covered - insufficient;
+  return (
+    <details className="fs-studio__thinking" data-testid="research-coverage">
+      <summary>
+        {t('Coverage map')} · {t('{covered} covered, {thin} thin, {pending} pending', { covered, thin: insufficient, pending })}
+      </summary>
+      <ul style={{ listStyle: 'none', margin: '6px 0 0', padding: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
+        {coverage.map((item, i) => (
+          <li key={i} style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+            <span aria-hidden="true">{item.status === 'covered' ? '☑' : item.status === 'insufficient' ? '◐' : '☐'}</span>
+            <span className="fs-prose">{item.question}</span>
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
+/** RES-04: `_final_report_in_parts` (src/deep_research.py) names the part it
+ *  is on in its own progress message ("Writing sections 5-8 of 12 (part 2
+ *  of 3)") — no separate structured field exists for it, so this reads the
+ *  same message `ResearchLine` already shows and turns "part N of M" into a
+ *  written/pending count: N-1 parts are already on disk (a part fails only
+ *  into a placeholder, never a gap — RES-04's backend half), part N is the
+ *  one being written now. `null` on any other phase, or a message shape
+ *  this does not recognise — nothing to show, not a guess. */
+export function reportPartsProgress(message: string): { written: number; total: number } | null {
+  const m = /part (\d+) of (\d+)/i.exec(message);
+  if (!m) return null;
+  const idx = Number(m[1]);
+  const total = Number(m[2]);
+  if (!Number.isFinite(idx) || !Number.isFinite(total) || total <= 0) return null;
+  return { written: Math.max(0, Math.min(total, idx - 1)), total };
+}
+
 /** Deep Research before the answer: the phase, the round and a clock. */
 function ResearchLine({ research }: { research: NonNullable<Turn['research']> }) {
   const [, tick] = useState(0);
@@ -1086,12 +1289,24 @@ function ResearchLine({ research }: { research: NonNullable<Turn['research']> })
     analyzing: t('analysing'),
     writing: t('writing the report'),
   };
+  // RES-04: "informe vivo" — the only structured signal for it is the part
+  // count folded into the writing-phase message itself (see
+  // `reportPartsProgress`'s doc comment); nothing to show on any other phase.
+  const parts = research.phase === 'writing' ? reportPartsProgress(research.message) : null;
   return (
-    <p className="fs-studio__waiting fs-studio__research" aria-live="polite">
-      <Telescope size={13} aria-hidden="true" />
-      {t('Deep Research')}
-      {research.round ? ` · ${t('round {n}', { n: research.round })}` : ''} · {research.message || phase[research.phase] || research.phase} · <span className="fs-studio__clock">{clock}{avg}</span>
-    </p>
+    <>
+      <p className="fs-studio__waiting fs-studio__research" aria-live="polite">
+        <Telescope size={13} aria-hidden="true" />
+        {t('Deep Research')}
+        {research.round ? ` · ${t('round {n}', { n: research.round })}` : ''} · {research.message || phase[research.phase] || research.phase} · <span className="fs-studio__clock">{clock}{avg}</span>
+        {parts && (
+          <span className="fs-studio__clock" data-testid="research-report-parts">
+            {' '}· {t('report: {written}/{total} sections written', { written: parts.written, total: parts.total })}
+          </span>
+        )}
+      </p>
+      {research.coverage && research.coverage.length > 0 && <CoverageMap coverage={research.coverage} />}
+    </>
   );
 }
 
@@ -1105,7 +1320,7 @@ const ESTIMATED_TURN_HEIGHT = 180;
  *  means without the two files sharing state. */
 const BOTTOM_THRESHOLD = 80;
 
-export function Transcript({ turns, busy, onApproval, onAnswer, onEdit, onRegenerate, onDelete, onNotice, onOpenFile, onOpenDoc, onOpenEvidence, onRerun, onFork, onQuote }: TranscriptProps) {
+export function Transcript({ turns, busy, sessionId, onApproval, onAnswer, onEdit, onRegenerate, onDelete, onNotice, onOpenFile, onOpenDoc, onOpenEvidence, onRerun, onFork, onQuote }: TranscriptProps) {
   const quote = useQuoteSelection(onQuote);
 
   // PERF-01/QA-37: Studio.tsx owns the actual scrolling element
@@ -1193,6 +1408,7 @@ export function Transcript({ turns, busy, onApproval, onAnswer, onEdit, onRegene
                 turn={turn}
                 busy={busy}
                 enter={enter}
+                sessionId={sessionId}
                 onApproval={(decision) => onApproval(turn, decision)}
                 onAnswer={(text, optionIds) => onAnswer(turn, text, optionIds)}
                 onRegenerate={() => {

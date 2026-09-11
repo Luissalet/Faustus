@@ -328,6 +328,40 @@ class ProjectStore:
                 return r
         return None
 
+    def recent_folders(self, owner: Optional[str] = None, limit: int = 10) -> List[Dict[str, Any]]:
+        """The owner's most recently touched project folders, deduplicated
+        by path — raw material for a folder picker (IDX-01: there is no
+        native `showOpenDialog`/`webkitdirectory`, so the selector offers
+        what Faustus already knows about instead of an empty text box).
+
+        Ordered by `updated_at` descending, which `update()` — including a
+        `relocate()` — always bumps on a workspace change, so a folder that
+        was just relocated INTO sorts first and the path it moved AWAY from
+        drops out once something newer takes its place past `limit`.
+        `os.path.normcase` dedupes `C:\\Foo` and `c:\\foo` as the same folder
+        on Windows while leaving POSIX paths untouched.
+        """
+        rows = [r for r in self._load()
+               if self._owned(r, owner) and (r.get("workspace") or "").strip()]
+        rows.sort(key=lambda r: r.get("updated_at") or 0, reverse=True)
+        seen = set()
+        out: List[Dict[str, Any]] = []
+        for r in rows:
+            path = (r.get("workspace") or "").strip()
+            key = os.path.normcase(path)
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append({
+                "path": path,
+                "project_id": r.get("id"),
+                "project_name": r.get("name") or "",
+                "updated_at": r.get("updated_at"),
+            })
+            if len(out) >= max(1, int(limit)):
+                break
+        return out
+
     # ------------------------------------------------------------------
     # Writes
     # ------------------------------------------------------------------

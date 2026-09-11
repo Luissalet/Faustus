@@ -9,16 +9,19 @@ import { Field, Toggle } from './fields';
 /** Users: registration, the shared defaults, each account with its privileges, and a new one. Admin only. */
 export function UsersSection({ say }: { say: (t: string) => void }) {
   const [users, setUsers] = useState<User[] | null>(null);
-  const [denied, setDenied] = useState(false);
+  // ACT-06: "not an admin" and "the request failed" read as the same
+  // generic screen before this — now each gets the EmptyState tone that
+  // matches what retrying can and cannot fix.
+  const [failedStatus, setFailedStatus] = useState<number | 'other' | null>(null);
   const [signup, setSignup] = useState(false);
   const [share, setShare] = useState(false);
   const [endpoints, setEndpoints] = useState<ModelEndpoint[]>([]);
 
   const reload = () =>
     listUsers()
-      .then(setUsers)
-      .catch(() => {
-        setDenied(true);
+      .then((u) => { setUsers(u); setFailedStatus(null); })
+      .catch((e: unknown) => {
+        setFailedStatus((e as { status?: number })?.status ?? 'other');
         setUsers([]);
       });
   useEffect(() => {
@@ -28,7 +31,15 @@ export function UsersSection({ say }: { say: (t: string) => void }) {
     listEndpoints().then(setEndpoints).catch(() => {});
   }, []);
 
-  if (denied) return <EmptyState icon={UserCog} title={t('Administrators only')} body={t('This account cannot manage users.')} />;
+  if (failedStatus === 401 || failedStatus === 403) {
+    return <EmptyState tone="denied" title={t('Administrators only')} body={t('This account cannot manage users.')} />;
+  }
+  if (failedStatus === 426) {
+    return <EmptyState tone="incompatible" title={t('This client is out of date')} body={t('Update Faustus before managing users.')} />;
+  }
+  if (failedStatus === 'other') {
+    return <EmptyState icon={UserCog} tone="error" title={t('Could not read the users.')} body={t('GET /api/auth/users failed.')} primaryAction={{ label: t('Try again'), onClick: () => void reload() }} />;
+  }
 
   return (
     <section className="fs-set__section" aria-labelledby="fs-set-users">

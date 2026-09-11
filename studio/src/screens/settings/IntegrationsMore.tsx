@@ -1,9 +1,10 @@
-import { Download, Pencil, Plus, Trash2, Upload } from 'lucide-react';
+import { AlertTriangle, Download, Pencil, Plus, Trash2, Upload } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Button, IconButton, Skeleton } from '../../components';
 import {
   addContact,
   addMcpServer,
+  approveMcpManifest,
   contactsConfig,
   deleteContact,
   EMAIL_PROVIDERS,
@@ -19,12 +20,14 @@ import {
   saveCardDav,
   saveEmailAccount,
   setMcpDisabledTools,
+  setMcpEnvMode,
   testEmailAccount,
   toggleMcpServer,
   updateContact,
   type Contact,
   type EmailAccount,
   type EmailBody,
+  type McpGovernance,
   type McpServer,
   type McpTool,
 } from '../../adapters/integrations';
@@ -217,6 +220,43 @@ export function EmailForm({ existing, onClose, onChanged, say }: { existing?: Em
 
 /* ── MCP ── */
 
+const PERMISSION_LABEL: Record<string, string> = { network: 'network access', files: 'file access', secrets: 'secrets (provider keys, internal token)' };
+
+/**
+ * TOOL-04: what a server's install or an environment-mode change actually
+ * asked for, shown BEFORE the admin can approve it — not just the fact that
+ * something is pending, which is all `Integrations.tsx`'s list-level notice
+ * (`manifest_pending_approval`) carries once this moment has passed. Both of
+ * this lote's real governance call sites (`McpNew.save`, the new env-mode
+ * toggle in `McpServerCard` below) pass their response straight through here.
+ */
+function ManifestDiffPanel({ governance, onApprove, onDismiss, busy }: { governance: McpGovernance; onApprove: () => void; onDismiss: () => void; busy: boolean }) {
+  const { manifest_diff: diff, policy_decision: decision } = governance;
+  return (
+    <div className="fs-notice" data-tone="warn" role="alert" data-testid="mcp-manifest-diff">
+      <AlertTriangle size={14} aria-hidden="true" />
+      <div>
+        <strong>{t('New permissions requested — review before approving')}</strong>
+        {diff.added.length > 0 && (
+          <p className="fs-set__help">
+            {t('Added: {list}', { list: diff.added.map((k) => t(PERMISSION_LABEL[k] ?? k)).join(', ') })}
+          </p>
+        )}
+        {diff.removed.length > 0 && (
+          <p className="fs-set__help">
+            {t('Removed: {list}', { list: diff.removed.map((k) => t(PERMISSION_LABEL[k] ?? k)).join(', ') })}
+          </p>
+        )}
+        {decision.reason && <p className="fs-set__help">{decision.reason}</p>}
+        <div className="fs-set__row-end" style={{ justifyContent: 'flex-start' }}>
+          <Button size="sm" variant="secondary" label={t('Approve')} loading={busy} onClick={onApprove} testId="mcp-manifest-diff-approve" />
+          <Button size="sm" variant="ghost" label={t('Review later')} disabled={busy} onClick={onDismiss} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function McpPanel({ existing, onClose, onChanged, say }: { existing?: McpServer; onClose: () => void; onChanged: () => void; say: (t: string) => void }) {
   return existing ? <McpServerCard server={existing} onClose={onClose} onChanged={onChanged} say={say} /> : <McpNew onClose={onClose} onChanged={onChanged} say={say} />;
 }
@@ -399,7 +439,44 @@ function McpServerCard({ server, onClose, onChanged, say }: { server: McpServer;
   const [srv, setSrv] = useState(server);
   const [tools, setTools] = useState<McpTool[] | null>(null);
   const [busy, setBusy] = useState(false);
+  const [envBusy, setEnvBusy] = useState(false);
+  // TOOL-04: switching to the full environment can escalate `secrets` —
+  // the response names exactly what changed, shown here before the admin
+  // can lift the quarantine it may have triggered, not after.
+  const [pendingGov, setPendingGov] = useState<McpGovernance | null>(null);
+  const [approving, setApproving] = useState(false);
   const m = useMsg();
+  const setEnvMode = async (inherit: boolean) => {
+    setEnvBusy(true);
+    setPendingGov(null);
+    try {
+      const d = await setMcpEnvMode(srv.id, inherit);
+      if (d.error) m.bad(d.error);
+      if (d.manifest_quarantined && d.declared_permissions && d.manifest_diff && d.policy_decision) {
+        setPendingGov({ declared_permissions: d.declared_permissions, manifest_diff: d.manifest_diff, manifest_quarantined: d.manifest_quarantined, policy_decision: d.policy_decision });
+      } else {
+        say(t('Environment mode saved.'));
+      }
+      await refresh();
+    } catch (e) {
+      m.bad((e as Error).message);
+    } finally {
+      setEnvBusy(false);
+    }
+  };
+  const approve = async () => {
+    setApproving(true);
+    try {
+      await approveMcpManifest(srv.id);
+      say(t('Approved.'));
+      setPendingGov(null);
+      await refresh();
+    } catch (e) {
+      m.bad((e as Error).message);
+    } finally {
+      setApproving(false);
+    }
+  };
   const refresh = async () => {
     const s = (await listMcpServers()).find((x) => x.id === server.id);
     if (s) setSrv(s);
@@ -424,12 +501,27 @@ function McpServerCard({ server, onClose, onChanged, say }: { server: McpServer;
     <>
       <h3 className="fs-set__card-title fs-tools__cat">
         <span>{srv.name}</span>
-        <span className="fs-set__help">{srv.transport} · {srv.env_mode === 'inherited' ? t('inherits the environment') : t('minimal environment')}</span>
+        <span className="fs-set__help">{srv.transport}</span>
       </h3>
       <p className="fs-set__help" data-tone={srv.status === 'connected' ? 'ok' : srv.status === 'error' ? 'bad' : undefined}>
         {status}
       </p>
       {srv.transport === 'stdio' ? <p className="fs-set__help"><code className="fs-tools__id">{[srv.command, ...(srv.args ?? [])].filter(Boolean).join(' ')}</code></p> : <p className="fs-set__help"><code className="fs-tools__id">{srv.url}</code></p>}
+      {srv.transport === 'stdio' && (
+        <Field
+          label={t('Environment')}
+          htmlFor={`mcp-env-${srv.id}`}
+          help={srv.env_mode === 'inherited'
+            ? t('Inherits this whole process\'s environment, including every provider key and the internal token — the widest access a server can have.')
+            : t('Minimal environment: only what this server was explicitly configured with.')}
+        >
+          <div className="fs-set__inline">
+            <Toggle id={`mcp-env-${srv.id}`} checked={srv.env_mode === 'inherited'} disabled={envBusy} onChange={(v) => void setEnvMode(v)} />
+            <span className="fs-set__help">{envBusy ? t('Applying…') : srv.env_mode === 'inherited' ? t('inherits the environment') : t('minimal environment')}</span>
+          </div>
+        </Field>
+      )}
+      {pendingGov && <ManifestDiffPanel governance={pendingGov} onApprove={() => void approve()} onDismiss={() => setPendingGov(null)} busy={approving} />}
       <div className="fs-set__row-end" style={{ justifyContent: 'flex-start' }}>
         {srv.needs_oauth && <Button size="sm" variant="secondary" label={t('Authorise')} onClick={() => window.open(mcpAuthorizeUrl(srv.id), '_blank', 'noopener')} />}
         <Button size="sm" variant="secondary" label={t('Reconnect')} loading={busy} onClick={() => { setBusy(true); reconnectMcpServer(srv.id).then((d) => { (d.connected ? m.good : m.bad)(d.connected ? t('Connected ({n} tools)', { n: d.tool_count ?? 0 }) : `${t('Failed')}: ${d.error ?? t('unknown')}`); return refresh(); }).catch((e: Error) => m.bad(e.message)).finally(() => setBusy(false)); }} />

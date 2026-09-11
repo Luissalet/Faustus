@@ -539,12 +539,71 @@ def _browser_result_text(result: Any) -> str:
     return ""
 
 
+def _browser_snapshot_tool_for(tool: str) -> str:
+    """The `browser_snapshot` call that belongs to the SAME MCP connection as
+    `tool` — `mcp__<server_id>__browser_click` -> `mcp__<server_id>__
+    browser_snapshot` — so a session-scoped action (see
+    `_ensure_session_browser` below) gets preconditioned against ITS OWN
+    page, never the shared browser's. `server_id` never itself contains
+    `"__"` (`session_browser_server_id` joins owner/task with `:`), so
+    splitting on it is exact. Falls back to the constant shared-browser
+    snapshot tool for anything that does not parse as `mcp__x__y`.
+    """
+    parts = tool.split("__", 2)
+    if len(parts) == 3 and parts[0] == "mcp":
+        return f"mcp__{parts[1]}__browser_snapshot"
+    return _BROWSER_SNAPSHOT_TOOL
+
+
+async def _ensure_session_browser(mcp: Any, owner: Any, session_id: Any) -> Optional[str]:
+    """Ola A wiring: connect (or reuse) THIS task's own isolated browser MCP
+    connection the first time it calls a `browser_*` tool, so two tasks'
+    authenticated sessions never share the one subprocess `BROWSER_SERVER_ID`
+    names (`src.builtin_mcp.connect_session_browser`/`session_browser_
+    server_id`, WEB-03 — built earlier with no real caller; see that
+    module's own docstring).
+
+    Returns the session-scoped server_id to route this call through, or
+    `None` when there is no owner+session identity to scope by (an
+    unattended/headless caller with neither falls back to the shared
+    browser exactly as before this wiring existed).
+
+    Idempotent by asking the manager's OWN connection table
+    (`get_all_statuses`) rather than a second, parallel "did we already
+    connect this" cache — the one thing rule 4 (COMUN.md) asks for: no
+    duplicate authority over the same fact. A task's matching disconnect
+    lives in `agent_loop.py`'s `stream_agent_loop` wrapper, at run end.
+    """
+    owner_s = str(owner or "").strip()
+    session_s = str(session_id or "").strip()
+    if not owner_s or not session_s:
+        return None
+    try:
+        from src.builtin_mcp import connect_session_browser, session_browser_server_id
+        server_id = session_browser_server_id(owner_s, session_s)
+        statuses = mcp.get_all_statuses()
+        if isinstance(statuses, dict) and statuses.get(server_id, {}).get("status") == "connected":
+            return server_id
+        ok, connected_id = await connect_session_browser(mcp, owner_s, session_s)
+        return connected_id if ok else None
+    except Exception as e:  # noqa: BLE001 - a failed session connect falls back
+        # to the shared browser rather than failing the tool call outright.
+        logger.warning("tool_execution: session browser connect failed for owner=%r session=%r: %s",
+                       owner_s, session_s, e)
+        return None
+
+
 async def _run_browser_action_with_precondition(mcp: Any, tool: str, args: Dict[str, Any]) -> Dict[str, Any]:
     """Wrap one page-mutating builtin-browser MCP call in `src.browser_actions
     .run_with_precondition`: a FRESH `browser_snapshot` right before the call,
     checked against whatever the model told us to expect, and a fresh
     post-action readback attached either way (WEB-04's own acceptance
     criterion — "a shifted layout must not produce a blind click").
+
+    `tool` may already be rewritten to a session-scoped server id (see
+    `_ensure_session_browser`) — `_browser_snapshot_tool_for` derives the
+    matching `browser_snapshot` call from the SAME connection rather than
+    always the shared one.
 
     Two optional args the model may pass double as the precondition:
       * `ref` — Playwright's own element handle from a PRIOR snapshot. When
@@ -564,9 +623,10 @@ async def _run_browser_action_with_precondition(mcp: Any, tool: str, args: Dict[
         require_element=str(args.get("ref") or ""),
     )
     forward_args = {k: v for k, v in args.items() if k != "expected_url"}
+    snapshot_tool = _browser_snapshot_tool_for(tool)
 
     async def _snapshot() -> Dict[str, Any]:
-        snap = await mcp.call_tool(_BROWSER_SNAPSHOT_TOOL, {})
+        snap = await mcp.call_tool(snapshot_tool, {})
         text = _browser_result_text(snap)
         url, title = parse_page_info(text)
         return {"url": url, "title": title, "text": text}
@@ -1814,7 +1874,16 @@ async def _execute_tool_block_impl(
                     args = dict(args)
                     args[_EMAIL_MCP_OWNER_ARG] = owner
                 if is_browser_action(tool):
-                    result = await _run_browser_action_with_precondition(mcp, tool, args)
+                    # Ola A wiring: route this task's browser_* calls through
+                    # its own isolated MCP connection (WEB-03) instead of the
+                    # one shared BROWSER_SERVER_ID — classification above
+                    # (`is_browser_action`) is still keyed to the model-facing
+                    # canonical tool name, never the rewritten one.
+                    effective_tool = tool
+                    session_server_id = await _ensure_session_browser(mcp, owner, session_id)
+                    if session_server_id:
+                        effective_tool = f"mcp__{session_server_id}__{tool[len(BROWSER_MCP_PREFIX):]}"
+                    result = await _run_browser_action_with_precondition(mcp, effective_tool, args)
                 else:
                     result = await mcp.call_tool(tool, args)
         else:

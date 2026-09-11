@@ -422,6 +422,13 @@ def assess(root: str, model: str) -> Dict[str, Any]:
     out.update({
         "fits": shortfall == 0,
         "measured": measured,
+        # HW-01: a model whose KV cost was never actually measured (never
+        # loaded, so vram_fit.KV_RATES has nothing for it) gets judged
+        # against a weights-only floor plus a wide headroom band, not a real
+        # KV estimate — labeling it "measured" would claim precision this
+        # number does not have. "minimum" says plainly what it is: the least
+        # this model could need, not a prediction of what it will.
+        "estimate": "measured" if measured else "minimum",
         "size_bytes": size, "kv_bytes": kv_bytes, "kv_ctx": kv_ctx,
         "footprint_bytes": footprint, "headroom_bytes": headroom, "need_bytes": need,
         "budget_alongside_bytes": budget_alongside,

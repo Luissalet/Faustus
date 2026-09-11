@@ -428,6 +428,40 @@
   color: var(--fs-danger);
 }
 
+.fs-rule__confidence {
+  padding: 1px 8px;
+  border-radius: var(--fs-radius-pill);
+  border: 1px solid var(--fs-border);
+  text-transform: capitalize;
+}
+
+.fs-rule__confidence[data-state='confirmed'] {
+  border-color: var(--fs-success);
+  color: var(--fs-success);
+}
+
+.fs-rule__confidence[data-state='obsolete'] {
+  border-color: var(--fs-text-3);
+  color: var(--fs-text-3);
+  text-decoration: line-through;
+}
+
+.fs-rule__sensitivity {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 8px;
+  border-radius: var(--fs-radius-pill);
+  border: 1px solid var(--fs-warning);
+  color: var(--fs-warning);
+  text-transform: capitalize;
+}
+
+.fs-rule__sensitivity[data-level='secret'] {
+  border-color: var(--fs-danger);
+  color: var(--fs-danger);
+}
+
 .fs-rule__actions {
   display: inline-flex;
   gap: 2px;

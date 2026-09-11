@@ -99,7 +99,10 @@ async def test_windows_bash_does_not_use_a_stray_tmux_executable(monkeypatch):
         {"subproc_env": {}, "session_id": "chat-1"},
     )
 
-    assert result == {"output": "ok", "exit_code": 0}
+    assert result["output"] == "ok" and result["exit_code"] == 0
+    # EXEC-01: every bash result now carries where it ran; this call went
+    # through the plain (non-tmux) Windows branch.
+    assert result["execution_target"]["kind"] == "windows"
     assert captured["command"] == "pwd"
     assert captured["kwargs"]["cwd"] == workspace
 

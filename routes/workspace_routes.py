@@ -1016,7 +1016,24 @@ def setup_workspace_routes():
         entry = rs.get(message_id)
         if not entry:
             raise HTTPException(status_code=404, detail="no review state for this message")
-        return {"message_id": message_id, **entry}
+
+        def _current_text(path: str):
+            # VER-06: a file's current content decides whether a prior human
+            # approval is `stale`. Unreadable/gone/binary all fall back to
+            # None, which `approval_still_valid` reads as "nothing to
+            # contradict the approval with" rather than manufacturing a
+            # stale=True the content itself does not support.
+            try:
+                target = _confine(entry.get("workspace") or "", path)
+                with open(target, "rb") as f:
+                    raw = f.read()
+                if b"\x00" in raw[:8000]:
+                    return None
+                return raw.decode("utf-8", errors="replace")
+            except Exception:
+                return None
+
+        return rs.status_payload(message_id, entry, current_content=_current_text)
 
     @router.post("/review/{message_id}/decide")
     async def review_decide(request: Request, message_id: str):
@@ -1070,7 +1087,24 @@ def setup_workspace_routes():
                     action = "restored"
                 else:
                     action = "unchanged"
-        updated = rs.decide(message_id, path, decision)
+        content = None
+        if decision == "accept":
+            # VER-06: capture the file's content AT ACCEPT TIME as the
+            # approval's signature, so a later edit to the same path can be
+            # told apart from the version a human actually looked at
+            # (services.review_state.approval_still_valid). Best-effort: an
+            # unreadable file (gone, binary, race) must not turn a working
+            # accept into a 500 — it just leaves the approval unsigned,
+            # exactly like the pre-VER-06 callers `approval_still_valid`
+            # already tolerates.
+            try:
+                with open(target, "rb") as f:
+                    raw = f.read()
+                if b"\x00" not in raw[:8000]:
+                    content = raw.decode("utf-8", errors="replace")
+            except OSError:
+                content = None
+        updated = rs.decide(message_id, path, decision, content=content)
         return {"ok": True, "action": action, "state": updated}
 
     return router

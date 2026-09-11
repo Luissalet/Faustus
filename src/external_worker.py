@@ -563,6 +563,39 @@ def _reconcile(ledger: Dict[str, Any], stream: Optional[_Stream]) -> Dict[str, A
     return out
 
 
+_RUN_COST_LOG_NAME = "_external_worker_costs.jsonl"
+
+
+def _append_run_cost_event(*, cost_usd: float, runner_key: Any, run_id: Optional[str],
+                            owner: Optional[str], seconds: float) -> None:
+    """OPS-07: the one write `cleanup_service.remote_cost_report()` was built
+    to read and nothing wrote — append-only, best effort, never raises into
+    the caller's result. Lands in `DATA_DIR/runs/` (the same replay-log
+    directory `src.support_bundle.recent_events` already scans) as its own
+    file rather than a chat session's `_RunLog` (src/agent_runs.py opens its
+    per-session file with mode "w", which truncates — sharing it here would
+    race a live chat turn and could erase its transcript).
+    """
+    try:
+        from src.constants import DATA_DIR
+        runs_dir = os.path.join(DATA_DIR, "runs")
+        os.makedirs(runs_dir, exist_ok=True)
+        event = {
+            "event": "external_worker_result",
+            "ts": time.time(),
+            "total_cost_usd": round(float(cost_usd), 6),
+            "runner": str(runner_key or ""),
+            "run_id": str(run_id or ""),
+            "owner": str(owner or ""),
+            "seconds": seconds,
+        }
+        with open(os.path.join(runs_dir, _RUN_COST_LOG_NAME), "a", encoding="utf-8") as f:
+            f.write(json.dumps(event, sort_keys=True) + "\n")
+    except Exception as e:  # noqa: BLE001 - a cost line that failed to write
+        # must never fail (or even flavor) the run's own result.
+        logger.debug("external_worker: could not persist run_cost event: %s", e)
+
+
 def run_task(runner_key: Any, task: str, *, workspace: Optional[str] = None,
              model: Optional[str] = None, endpoint: Optional[str] = None,
              timeout_s: Optional[float] = None,
@@ -950,6 +983,13 @@ def _spawn(runner: Any, key: str, task: str, *, argv: List[str], shown: str,
             # subscription runner's bill is the user's, and a number they did
             # not ask for is one they cannot check.
             out["total_cost_usd"] = float(cost)
+            # OPS-07: persist it — remote_cost_report() (src/cleanup_service.py)
+            # reads DATA_DIR/runs/*.jsonl for exactly this event and, until
+            # this line existed, nothing ever wrote one.
+            _append_run_cost_event(
+                cost_usd=float(cost), runner_key=key, run_id=run_id,
+                owner=owner, seconds=seconds,
+            )
     return out
 
 

@@ -67,8 +67,14 @@ def setup_code_index_routes():
         # Lote 50: this hop used to call the synchronous `refresh()` inline
         # inside an `async def` handler — exactly the event-loop-blocking
         # case IDX-06's `refresh_async` (src/code_index.py) exists to avoid.
+        # IDX-02: `paths` (the file(s) that actually changed) was accepted by
+        # `refresh_async`/`refresh` since Lote 64 but never reached them from
+        # here — every reindex paid for a full workspace walk regardless.
+        raw_paths = payload.get("paths")
+        paths = [str(p) for p in raw_paths] if isinstance(raw_paths, list) else None
         result = await code_index.refresh_async(
-            workspace, project_id=project_id, full=bool(payload.get("full") or False))
+            workspace, project_id=project_id, full=bool(payload.get("full") or False),
+            paths=paths)
         return {"ok": True, "project_id": project_id, "refresh": result}
 
     return router

@@ -51,6 +51,36 @@ export interface Step {
    *  result, forwarded from `ChatEvent['tool_output'].evidenceRefs` — lets a
    *  tool card offer a "ver evidencia" button per ref (`screens/Evidence.tsx`). */
   evidenceRefs?: EvidenceRef[];
+  /** EXEC-01: where this actually ran (`src/native_env.py`'s
+   *  `{kind, cwd, shell}`), forwarded from
+   *  `ChatEvent['tool_output'].executionTarget` — see that field's doc
+   *  comment in adapters/chat.ts for why it stays undefined until
+   *  agent_loop.py forwards it. */
+  executionTarget?: { kind: string; cwd?: string; shell?: string };
+}
+
+/** RES-01: one subquestion's coverage, from `DeepResearcher._coverage_snapshot`
+ *  (src/deep_research.py) via the `analyzing` progress event's `coverage`
+ *  list — the schema a research report is built against, each node marked
+ *  by how well the findings gathered so far actually answer it. */
+export interface CoverageItem {
+  question: string;
+  status: 'pending' | 'insufficient' | 'covered';
+  matchedSources: number;
+}
+
+function coverageFromRaw(raw: unknown): CoverageItem[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const items = raw
+    .map((entry) => (entry && typeof entry === 'object' ? (entry as Record<string, unknown>) : null))
+    .filter((entry): entry is Record<string, unknown> => entry !== null)
+    .map((entry) => ({
+      question: s(entry.question),
+      status: (entry.status === 'covered' || entry.status === 'insufficient' ? entry.status : 'pending') as CoverageItem['status'],
+      matchedSources: n(entry.matched_sources) ?? 0,
+    }))
+    .filter((item) => item.question);
+  return items.length ? items : undefined;
 }
 
 /**
@@ -149,7 +179,14 @@ export interface Turn {
   /** Group chat transcript: who said this (metadata.group_model). */
   speaker?: string;
   /** Deep Research running before the answer: the phase it is in. */
-  research?: { phase: string; round: number; totalSources: number; message: string; startedAt: number; avgDuration: number; done: boolean };
+  research?: {
+    phase: string; round: number; totalSources: number; message: string; startedAt: number;
+    avgDuration: number; done: boolean;
+    /** RES-01: the schema's coverage as of the latest `analyzing` event —
+     *  kept even once `done`, so the map is still readable once writing
+     *  starts. */
+    coverage?: CoverageItem[];
+  };
   /** Decoding speed measured from the stream, while it is still arriving. */
   live?: LiveRate;
   /** The VRAM gate is waiting for someone to choose what to unload (OBJ-1). */
@@ -177,6 +214,17 @@ export interface Turn {
    *  it was displayed) — the "incompatible version" screen state, not a
    *  network failure. Same fallback story as `errorClass`. */
   versionMismatch?: boolean;
+  /** UX-02/TASK-03: this turn reconnected to an outcome the client does not
+   *  know yet (`ChatEvent['uncertain']`) — cleared the moment anything else
+   *  arrives (a delta, a terminal event, done), since all of those mean the
+   *  question is answered one way or another. */
+  uncertain?: boolean;
+  /** MOD-06: a mid-task fallback switched to a model that does not announce
+   *  every capability the previous one did (`ChatEvent['capabilities_changed']`,
+   *  `recompute_capabilities_on_model_switch` in src/agent_loop.py). Sticks
+   *  for the rest of the turn — it is a fact about what happened, not a
+   *  transient status. */
+  capabilitiesChanged?: { fromModel: string; toModel: string; lost: string[] };
   edited?: boolean;
   /** The reliability harness: what it checked, and what really happened. */
   checks: HarnessCheck[];
@@ -609,9 +657,11 @@ export function apply(turn: Turn, event: ChatEvent): Turn {
   const live = turn.live ?? newLive(now);
   switch (event.type) {
     case 'delta':
+      // UX-02/TASK-03: real content arriving settles "uncertain" one way —
+      // the turn is plainly alive and answering.
       return event.thinking
-        ? { ...turn, thinking: turn.thinking + event.text, live: liveToken(live, now, true) }
-        : { ...turn, text: turn.text + event.text, live: liveToken(live, now, false) };
+        ? { ...turn, thinking: turn.thinking + event.text, live: liveToken(live, now, true), uncertain: undefined }
+        : { ...turn, text: turn.text + event.text, live: liveToken(live, now, false), uncertain: undefined };
     case 'heartbeat': {
       const phase: LiveRate['phase'] =
         event.phase === 'thinking' || event.phase === 'writing' || event.phase === 'tool'
@@ -700,6 +750,7 @@ export function apply(turn: Turn, event: ChatEvent): Turn {
         repairs: repairFields.repairs ?? (index === -1 ? undefined : turn.steps[index].repairs),
         docId: event.docId,
         evidenceRefs: event.evidenceRefs ?? (index === -1 ? undefined : turn.steps[index].evidenceRefs),
+        executionTarget: event.executionTarget ?? (index === -1 ? undefined : turn.steps[index].executionTarget),
       };
       const steps = turn.steps.slice();
       if (index === -1) steps.push(finished);
@@ -732,7 +783,15 @@ export function apply(turn: Turn, event: ChatEvent): Turn {
     case 'sources':
       return { ...turn, sources: event.sources, research: turn.research ? { ...turn.research, done: true } : turn.research };
     case 'research':
-      return { ...turn, research: { phase: event.phase, round: event.round, totalSources: event.totalSources, message: event.message, startedAt: event.startedAt ? event.startedAt * 1000 : turn.research?.startedAt || Date.now(), avgDuration: event.avgDuration || turn.research?.avgDuration || 0, done: false } };
+      return {
+        ...turn,
+        research: {
+          phase: event.phase, round: event.round, totalSources: event.totalSources, message: event.message,
+          startedAt: event.startedAt ? event.startedAt * 1000 : turn.research?.startedAt || Date.now(),
+          avgDuration: event.avgDuration || turn.research?.avgDuration || 0, done: false,
+          coverage: coverageFromRaw(event.coverage) ?? turn.research?.coverage,
+        },
+      };
     case 'image':
       return { ...turn, images: [...turn.images, event.url] };
     case 'fallback':
@@ -741,7 +800,7 @@ export function apply(turn: Turn, event: ChatEvent): Turn {
         note: t('{model} did not answer; {other} answered instead.', { model: event.selected || t('The chosen model'), other: event.answeredBy }),
       };
     case 'terminal': {
-      if (!event.failed) return turn;
+      if (!event.failed) return { ...turn, uncertain: undefined };
       const fields = errorTraceFields(event);
       return {
         ...turn, error: event.message ?? t('The model has failed.'),
@@ -749,6 +808,7 @@ export function apply(turn: Turn, event: ChatEvent): Turn {
         traceId: fields.traceId ?? turn.traceId,
         stepId: fields.stepId ?? turn.stepId,
         versionMismatch: fields.versionMismatch ?? turn.versionMismatch,
+        uncertain: undefined,
       };
     }
     case 'error': {
@@ -805,10 +865,23 @@ export function apply(turn: Turn, event: ChatEvent): Turn {
     case 'doc_update':
     case 'doc_suggestions':
       return turn;
+    // UX-02/TASK-03: the outbox reconnected to a turn whose true outcome is
+    // not known yet — say so plainly rather than leaving the last visible
+    // state (often nothing at all, for a brand-new reconnect) to be read as
+    // either "still going" or "it's done".
+    case 'uncertain':
+      return { ...turn, uncertain: true };
+    // MOD-06: sticks for the rest of the turn once it has happened.
+    case 'capabilities_changed':
+      return {
+        ...turn,
+        capabilitiesChanged: { fromModel: event.fromModel, toModel: event.toModel, lost: event.lost },
+      };
     case 'done':
       return {
         ...turn,
         streaming: false,
+        uncertain: undefined,
         steps: turn.steps.map((step) => (step.state === 'running' ? { ...step, state: 'cancelled' } : step)),
         workers: turn.workers.map((w) => (workerLive(w) ? { ...w, status: 'partial' as const, stopReason: w.stopReason || t('no signal') } : w)),
       };

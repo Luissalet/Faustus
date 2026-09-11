@@ -170,6 +170,17 @@ export interface AskUser {
    *  the server can check the answer against the exact question it opened
    *  instead of "whichever question is currently open for this session". */
   questionId?: string;
+  /** PENDIENTES.md M1 / this lote: the revision this question was AT when
+   *  this card was rendered (`src/question_store.py`'s `revision`, also
+   *  `GET /api/questions`'s own field). Round-tripped back as `revision`
+   *  when answering so a stale answer — the model re-asked with new
+   *  options after the user already had this exact card open — is
+   *  rejected with 409 `stale_revision` instead of silently resolving a
+   *  question that no longer matches what they see. Not yet sent by every
+   *  server that emits `ask_user` (see `sendTurn`'s doc comment on
+   *  `revision`); undefined here simply omits the field on answer, exactly
+   *  as every client before this lote already does. */
+  revision?: number;
 }
 
 export interface WebSource {
@@ -287,6 +298,16 @@ export type ChatEvent =
        *  `/api/evidence/resolve`. Forwarded as-is so a tool card can offer
        *  "ver evidencia" per ref without a second fetch to discover them. */
       evidenceRefs?: EvidenceRef[];
+      /** EXEC-01: where this ran (`src/native_env.py`'s `execution_target` —
+       *  `{kind, cwd, shell}`, `kind` one of windows/wsl/posix/container/
+       *  remote), folded into a bash/python tool's own result
+       *  (`src/agent_tools/subprocess_tools.py::_execution_target`) but not
+       *  yet forwarded onto the wire's `tool_output` event by
+       *  `src/agent_loop.py` (a fichero ajeno to this lote — see the
+       *  report's "Cambios necesarios en ficheros ajenos"). Reads it
+       *  defensively either way: absent until that one-line addition lands,
+       *  populated the moment it does, no further change needed here. */
+      executionTarget?: { kind: string; cwd?: string; shell?: string };
     }
   | { type: 'subagent'; payload: SubagentPayload }
   | { type: 'frame'; frame: BrowserFrame }
@@ -297,9 +318,35 @@ export type ChatEvent =
   | { type: 'round'; round: number }
   | { type: 'ask_user'; ask: AskUser }
   | { type: 'ask_resolved' }
+  /** UX-02/TASK-03: the outbox reconnected to a turn whose true outcome
+   *  this tab does not know yet (the outbox row is still `accepted`/
+   *  `running` and no live run exists to resubscribe to — most often a
+   *  server restart mid-turn) — `_idempotent_replay_stream`
+   *  (routes/chat_routes.py) emits this instead of a bare `[DONE]` a caller
+   *  could otherwise read as "it finished, and finished cleanly". */
+  | { type: 'uncertain'; status: string }
+  /** MOD-06: a mid-task fallback switched to a model that does not
+   *  announce every capability the previous one did
+   *  (`recompute_capabilities_on_model_switch`, src/agent_loop.py) — `lost`
+   *  is never empty when this event exists at all. */
+  | { type: 'capabilities_changed'; fromModel: string; toModel: string; lost: string[] }
   | { type: 'metrics'; metrics: TurnMetrics }
   | { type: 'sources'; sources: WebSource[] }
-  | { type: 'research'; phase: string; round: number; totalSources: number; message: string; startedAt: number; avgDuration: number }
+  | {
+      type: 'research';
+      phase: string;
+      round: number;
+      totalSources: number;
+      message: string;
+      startedAt: number;
+      avgDuration: number;
+      /** RES-01: per-subquestion coverage as of this `analyzing` event
+       *  (`DeepResearcher._coverage_snapshot`, src/deep_research.py) — raw,
+       *  mapped by `model.ts`'s `coverageFromRaw` the same way a plan's
+       *  `steps` stay raw here and get typed downstream. Undefined on any
+       *  phase that isn't `analyzing`, or from a server that predates it. */
+      coverage?: unknown[];
+    }
   /** The VRAM admission gate before the turn's first call (OBJ-1): what it
    *  is doing, and the ticket to answer while `phase` is `vram_blocked`. */
   | { type: 'vram'; phase: string; message: string; blocked?: VramBlocked }
@@ -697,6 +744,15 @@ export interface SendOptions {
   /** The stable `AskOption.id`s the user picked, alongside `questionId`.
    *  Omitted (or empty) for a free-text answer. */
   optionIds?: string[];
+  /** PENDIENTES.md M1 / this lote: `AskUser.revision` from the card being
+   *  answered — the revision this question was at when it was rendered.
+   *  The server checks it against the CURRENT revision before resolving
+   *  (`routes/chat_routes.py`'s `_parse_question_revision`, already live —
+   *  see `tests/test_l61_ux_ask_user_revision.py`) and answers 409
+   *  `stale_revision` on a mismatch, surfaced by `questionRejectionMessage`
+   *  below. Omitted exactly like `questionId` when there is nothing to
+   *  check (a plain send, or a server that never put one on the card). */
+  revision?: number;
 }
 
 export interface DelegationTask {
@@ -794,6 +850,18 @@ function evidenceRefsFrom(raw: unknown): EvidenceRef[] | undefined {
   return refs.length ? refs : undefined;
 }
 
+/** EXEC-01 passthrough: the wire's `execution_target` on a `tool_output`
+ *  event (`src/native_env.py`'s `{kind, cwd, shell}` shape) — see the
+ *  `tool_output` ChatEvent variant's doc comment for why this reads
+ *  defensively, absent from every server today. */
+function executionTargetFrom(raw: unknown): { kind: string; cwd?: string; shell?: string } | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const r = raw as Record<string, unknown>;
+  const kind = str(r.kind);
+  if (!kind) return undefined;
+  return { kind, cwd: str(r.cwd) || undefined, shell: str(r.shell) || undefined };
+}
+
 /** `harness_summary` data, and the `harness` block history keeps. */
 export function summaryFrom(data: Record<string, unknown>): HarnessSummary {
   const cs = (data.changeset && typeof data.changeset === 'object' ? data.changeset : null) as Record<string, unknown> | null;
@@ -864,6 +932,7 @@ export function toolEventsFrom(meta: Record<string, unknown>): HistoryToolEvent[
             kind: askRaw.kind === 'tool_approval' ? 'tool_approval' : 'question',
             approvalId: str(askRaw.approval_id) || undefined,
             questionId: str(askRaw.question_id) || undefined,
+            revision: num(askRaw.revision),
           }
         : undefined,
       askResolved: Boolean(askRaw?.resolved) || Boolean(ev.approved),
@@ -920,6 +989,7 @@ export function decode(raw: Record<string, unknown>, sseEvent: string | null): C
         argumentErrors: argumentErrorsFrom(raw.argument_errors),
         repairs: repairsFrom(raw.repairs),
         evidenceRefs: evidenceRefsFrom(raw.evidence_refs),
+        executionTarget: executionTargetFrom(raw.execution_target),
       };
     case 'browser_view': {
       const frame = frameFrom(raw);
@@ -969,7 +1039,19 @@ export function decode(raw: Record<string, unknown>, sseEvent: string | null): C
           kind: data.kind === 'tool_approval' ? 'tool_approval' : 'question',
           approvalId: str(data.approval_id) || undefined,
           questionId: str(data.question_id) || undefined,
+          revision: num(data.revision),
         },
+      };
+    // UX-02/TASK-03: `_idempotent_replay_stream` (routes/chat_routes.py)
+    // replaying a turn whose true outcome this tab does not know yet.
+    case 'uncertain':
+      return { type: 'uncertain', status: str(raw.status) };
+    case 'capabilities_changed':
+      return {
+        type: 'capabilities_changed',
+        fromModel: str(data.from_model),
+        toModel: str(data.to_model),
+        lost: asArray<unknown>(data.lost).map(String).filter(Boolean),
       };
     case 'metrics':
       return { type: 'metrics', metrics: metricsFrom(data) };
@@ -990,6 +1072,7 @@ export function decode(raw: Record<string, unknown>, sseEvent: string | null): C
         message: str(data.message),
         startedAt: num(data.started_at) ?? 0,
         avgDuration: num(data.avg_duration) ?? 0,
+        coverage: Array.isArray(data.coverage) ? data.coverage : undefined,
       };
     case 'run_activity':
       return {
@@ -1250,6 +1333,7 @@ export async function* sendTurn(options: SendOptions): AsyncGenerator<ChatEvent>
   }
   if (options.questionId) fd.append('question_id', options.questionId);
   if (options.optionIds?.length) fd.append('option_ids', JSON.stringify(options.optionIds));
+  if (options.revision != null) fd.append('revision', String(options.revision));
 
   let response: Response;
   try {
@@ -1526,6 +1610,95 @@ export async function steerChat(
     if (!response.ok) return false;
     const body = (await response.json()) as { ok?: unknown };
     return Boolean(body.ok);
+  } catch {
+    return false;
+  }
+}
+
+/* ── CTX-02: what compaction did, and pinning a fragment against it ── */
+
+/** One fragment pinned against compaction for this session
+ *  (`src/context_engine/compaction_pins.py::pin_fragment`). */
+export interface CompactionPin {
+  fingerprint: string;
+  excerpt: string;
+}
+
+/** The most recent compaction event for this session
+ *  (`GET /api/context/compaction/{session_id}`), or `null` when compaction
+ *  has never run for it. `evidenceRefs` names the untouched originals a
+ *  folded turn still points back to. */
+export interface CompactionEvent {
+  kind: string;
+  foldedCount: number;
+  pinnedSkipped: number;
+  evidenceRefs: string[];
+}
+
+function compactionEventFrom(raw: unknown): CompactionEvent | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  return {
+    kind: str(r.kind),
+    foldedCount: num(r.folded_count) ?? 0,
+    pinnedSkipped: num(r.pinned_skipped) ?? 0,
+    evidenceRefs: asArray<unknown>(r.evidence_refs).map(String).filter(Boolean),
+  };
+}
+
+/** What the most recent compaction pass did to this session — `null` when
+ *  compaction has never run for it, same as the route's own `event: null`. */
+export async function fetchCompactionEvent(sessionId: string): Promise<CompactionEvent | null> {
+  const raw = await getJson<{ event?: unknown }>(
+    `/api/context/compaction/${encodeURIComponent(sessionId)}`,
+  );
+  return compactionEventFrom(raw.event);
+}
+
+/** Every fragment this owner pinned against compaction for this session. */
+export async function listCompactionPins(sessionId: string): Promise<CompactionPin[]> {
+  const raw = await getJson<{ pins?: unknown }>(
+    `/api/context/compaction/pins?session_id=${encodeURIComponent(sessionId)}`,
+  );
+  return asArray<Record<string, unknown>>(raw.pins)
+    .map((p) => ({ fingerprint: str(p.fingerprint), excerpt: str(p.excerpt) }))
+    .filter((p) => p.fingerprint);
+}
+
+/** Pins one message (identified by role+content, the same identity
+ *  compaction itself hashes) so compaction never folds it away. Returns the
+ *  pin's fingerprint, or `null` on failure — pinning is a courtesy action, a
+ *  failed attempt should not read as a crash. */
+export async function pinCompactionFragment(
+  sessionId: string,
+  role: string,
+  content: string,
+  excerpt: string,
+): Promise<string | null> {
+  try {
+    const response = await fetch('/api/context/compaction/pins', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session_id: sessionId, role, content, excerpt }),
+    });
+    if (!response.ok) return null;
+    const body = (await response.json()) as { pin?: { fingerprint?: unknown } };
+    return str(body.pin?.fingerprint) || null;
+  } catch {
+    return null;
+  }
+}
+
+export async function unpinCompactionFragment(sessionId: string, fingerprint: string): Promise<boolean> {
+  try {
+    const response = await fetch(
+      `/api/context/compaction/pins/${encodeURIComponent(fingerprint)}?session_id=${encodeURIComponent(sessionId)}`,
+      { method: 'DELETE', credentials: 'same-origin' },
+    );
+    if (!response.ok) return false;
+    const body = (await response.json()) as { removed?: unknown };
+    return Boolean(body.removed);
   } catch {
     return false;
   }

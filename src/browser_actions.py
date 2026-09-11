@@ -74,17 +74,22 @@ def check_precondition(
     `expected_url` is a substring match, not equality — a caller usually
     knows "still on the checkout page", not the exact query string a
     redirect might have appended. `require_element` is checked against the
-    freshly-taken snapshot text (an accessibility-tree dump or similar,
-    whatever `src/browser_view.py`'s callers already produce), not a
-    coordinate, so a scrolled or resized page does not falsely fail this.
+    freshly-taken snapshot text via `src.browser_view.element_present` —
+    exact `ref=` identity when the snapshot parses as one, not a bare
+    substring test: a stale ``ref=e1`` that scrolled out and a brand new,
+    unrelated ``ref=e10`` both contain the digit sequence a naive
+    ``"e1" in text`` would match, which is exactly the "a shifted layout
+    must not produce a blind click" case this precondition exists to catch.
     """
     if precondition.expected_url and precondition.expected_url not in (current_url or ""):
         return (
             f"expected the current URL to contain {precondition.expected_url!r}, "
             f"but the page is at {current_url or '(unknown)'!r}"
         )
-    if precondition.require_element and precondition.require_element not in (snapshot_text or ""):
-        return f"expected element {precondition.require_element!r} was not found in the current page"
+    if precondition.require_element:
+        from src.browser_view import element_present
+        if not element_present(precondition.require_element, snapshot_text):
+            return f"expected element {precondition.require_element!r} was not found in the current page"
     return None
 
 

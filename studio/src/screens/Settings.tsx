@@ -5,6 +5,7 @@ import {
   HardDrive,
   HelpCircle,
   Layers,
+  Lock,
   UserRound,
   Users,
   Wrench,
@@ -18,6 +19,7 @@ import {
   Search,
   Server,
   Settings2,
+  ShieldAlert,
   Sparkles,
   Stethoscope,
   Trash2,
@@ -63,6 +65,8 @@ import { IntegrationsSection } from './settings/Integrations';
 import { LocalModelsSection } from './settings/LocalModels';
 import { AppearanceSection } from './settings/Appearance';
 import { authStatus } from '../adapters/account';
+import { listActiveApprovals, revokeApproval, type Approval } from '../adapters/approvals';
+import { addCommandAllowlistEntry, listCommandAllowlist, removeCommandAllowlistEntry, type AllowlistEntry } from '../adapters/commandGuard';
 import { t, tn } from '../i18n';
 
 /**
@@ -78,7 +82,7 @@ import { t, tn } from '../i18n';
  * there at their tab.
  */
 
-type SectionKey = 'general' | 'models' | 'local' | 'defaults' | 'voice' | 'search' | 'reminders' | 'integrations' | 'agent' | 'tools' | 'effective_config' | 'shortcuts' | 'account' | 'users' | 'system' | 'health';
+type SectionKey = 'general' | 'models' | 'local' | 'defaults' | 'voice' | 'search' | 'reminders' | 'integrations' | 'agent' | 'tools' | 'effective_config' | 'shortcuts' | 'account' | 'users' | 'system' | 'health' | 'security';
 
 const SECTIONS: { key: SectionKey; label: string; icon: typeof Bot; admin?: boolean }[] = [
   { key: 'general', label: 'Appearance', icon: Palette },
@@ -103,6 +107,10 @@ const SECTIONS: { key: SectionKey; label: string; icon: typeof Bot; admin?: bool
   { key: 'account', label: 'Account', icon: UserRound },
   { key: 'users', label: 'Users', icon: Users, admin: true },
   { key: 'system', label: 'System', icon: Settings2 },
+  // SEC-01 / SEC-04: the privacy profile, standing approval concessions
+  // (with immediate revocation) and the command-guard allowlist — three
+  // authority surfaces that had no screen at all before this lote.
+  { key: 'security', label: 'Security', icon: Lock, admin: true },
 ];
 
 
@@ -972,6 +980,187 @@ function SystemSection({ settings, onSave, say, admin }: { settings: Settings | 
   );
 }
 
+/* ── Security: privacy profile, active concessions, command-guard allowlist ── */
+
+/** SEC-04: `src/privacy_policy.py::PROFILES` — the three values that module
+ *  accepts, named exactly as it names them (`get_privacy_profile` treats
+ *  anything else as the default). `privacy_profile` is a registered
+ *  `DEFAULT_SETTINGS` key, so it round-trips through the same generic
+ *  `POST /api/auth/settings` every other field on this screen already uses
+ *  — no dedicated `/api/privacy/profile` route was needed or exists. */
+const PRIVACY_PROFILE: Opt[] = [
+  { value: 'local_only', label: 'Local only — every auxiliary (embeddings, the reranker, compaction) is blocked from reaching a non-local endpoint' },
+  { value: 'local_preferred', label: 'Local preferred (default) — nothing blocked here; per-request safety checks still apply' },
+  { value: 'cloud_allowed', label: 'Cloud allowed — remote auxiliaries are explicitly acceptable' },
+];
+
+function PrivacyProfileCard({ settings, onSave, say }: { settings: Settings | null; onSave: (patch: Settings) => Promise<void>; say: (t: string) => void }) {
+  const { draft, set, changed, dirty } = useDraft(settings, ['privacy_profile']);
+  const { saving, save } = useSaver(onSave, say);
+  if (!settings) return <Skeleton label={t('Loading')} count={1} height="56px" />;
+  return (
+    <div className="fs-set__card">
+      <h3 className="fs-set__card-title">{t('Privacy profile')}</h3>
+      <p className="fs-set__help">{t('What every auxiliary component (not just the main chat model) is allowed to send off this machine. Wired: the custom/HTTP embedding lane, the ChromaDB vector store, the remote compaction summarizer and the reranker. OCR and telemetry call sites have not been audited against this profile yet.')}</p>
+      <Field label={t('Active profile')} htmlFor="privacy-profile">
+        <Select id="privacy-profile" value={str(draft.privacy_profile, 'local_preferred')} onChange={(v) => set('privacy_profile', v)} options={PRIVACY_PROFILE.map((o) => ({ ...o, label: t(o.label) }))} />
+      </Field>
+      <SaveBar dirty={dirty} saving={saving} onSave={() => void save(changed)} />
+    </div>
+  );
+}
+
+/** SEC-01: standing concessions — granted, not expired, with uses left —
+ *  and immediate revocation, independent of what a model or a document
+ *  claims. `GET /api/approvals/active` / `DELETE /api/approvals/{id}`. */
+function ActiveApprovalsCard({ say }: { say: (t: string) => void }) {
+  const [items, setItems] = useState<Approval[] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    setErr(null);
+    listActiveApprovals().then(setItems).catch((e: Error) => setErr(e.message));
+  }, []);
+  useEffect(load, [load]);
+
+  const revoke = (a: Approval) => {
+    if (!window.confirm(t('Revoke this concession now? {action} will need a fresh approval next time.', { action: a.plan.action }))) return;
+    setBusy(a.id);
+    revokeApproval(a.id)
+      .then(() => { say(t('Revoked.')); load(); })
+      .catch((e: Error) => say(e.message))
+      .finally(() => setBusy(null));
+  };
+
+  return (
+    <div className="fs-set__card">
+      <h3 className="fs-set__card-title fs-tools__cat">
+        <span><ShieldAlert size={16} aria-hidden /> {t('Active concessions')}</span>
+        <Button size="sm" variant="ghost" icon={RefreshCw} label={t('Refresh')} onClick={load} />
+      </h3>
+      <p className="fs-set__help">{t('Every standing yes a model or a document could currently point to and say "I have permission" — independent of what it claims, since nothing here reads its own request as authority.')}</p>
+      {err && <p className="fs-set__err">{err}</p>}
+      {!items && !err ? (
+        <Skeleton label={t('Loading')} count={2} height="48px" />
+      ) : items && items.length === 0 ? (
+        <p className="fs-set__help">{t('Nothing standing right now.')}</p>
+      ) : (
+        <ul className="fs-wipe">
+          {(items ?? []).map((a) => (
+            <li key={a.id} className="fs-wipe__row">
+              <span>
+                <strong>{a.plan.action}</strong>{a.plan.detail ? ` — ${a.plan.detail}` : ''}
+                <span className="fs-set__help">
+                  {t('granted by {who} · {n} use(s) left', { who: a.decided_by || '?', n: a.uses_left })}
+                  {a.expires_at ? ` · ${t('expires {when}', { when: a.expires_at })}` : ''}
+                  {a.owner ? ` · ${a.owner}` : ''}
+                </span>
+              </span>
+              <Button size="sm" variant="danger" label={t('Revoke')} loading={busy === a.id} disabled={busy !== null} onClick={() => revoke(a)} />
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+const ALLOWLIST_KIND: Opt[] = [
+  { value: 'exact', label: 'Exact command' },
+  { value: 'prefix', label: 'Prefix' },
+];
+
+/** SEC-01: `routes/command_guard_routes.py`'s allowlist, previously reachable
+ *  only by calling the route directly — no Studio screen read or wrote it. */
+function CommandGuardAllowlistCard({ say }: { say: (t: string) => void }) {
+  const [items, setItems] = useState<AllowlistEntry[] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [pattern, setPattern] = useState('');
+  const [kind, setKind] = useState('exact');
+  const [reason, setReason] = useState('');
+  const [ttl, setTtl] = useState('');
+  const [adding, setAdding] = useState(false);
+
+  const load = useCallback(() => {
+    setErr(null);
+    listCommandAllowlist().then(setItems).catch((e: Error) => setErr(e.message));
+  }, []);
+  useEffect(load, [load]);
+
+  const add = () => {
+    if (!pattern.trim()) return;
+    setAdding(true);
+    addCommandAllowlistEntry({ pattern: pattern.trim(), kind, reason: reason.trim(), ttl_hours: ttl.trim() ? Number(ttl.trim()) : null })
+      .then(() => { setPattern(''); setReason(''); setTtl(''); say(t('Added to the allowlist.')); load(); })
+      .catch((e: Error) => say(e.message))
+      .finally(() => setAdding(false));
+  };
+  const remove = (entry: AllowlistEntry) => {
+    if (!window.confirm(t('Remove "{pattern}" from the allowlist? Faustus will classify it normally again.', { pattern: entry.pattern }))) return;
+    setBusy(entry.pattern);
+    removeCommandAllowlistEntry(entry.pattern)
+      .then(() => { say(t('Removed.')); load(); })
+      .catch((e: Error) => say(e.message))
+      .finally(() => setBusy(null));
+  };
+
+  return (
+    <div className="fs-set__card">
+      <h3 className="fs-set__card-title fs-tools__cat">
+        <span>{t('Command guard allowlist')}</span>
+        <Button size="sm" variant="ghost" icon={RefreshCw} label={t('Refresh')} onClick={load} />
+      </h3>
+      <p className="fs-set__help">{t('A command matching one of these entries skips command-guard classification entirely — a standing authority downgrade, so keep this short-lived and specific.')}</p>
+      <div className="fs-set__row">
+        <input className="fs-field" placeholder={t('command or prefix')} value={pattern} onChange={(e) => setPattern(e.target.value)} aria-label={t('Pattern')} />
+        <Select id="allowlist-kind" value={kind} options={ALLOWLIST_KIND.map((o) => ({ ...o, label: t(o.label) }))} onChange={setKind} />
+        <input className="fs-field" placeholder={t('reason')} value={reason} onChange={(e) => setReason(e.target.value)} aria-label={t('Reason')} />
+        <input className="fs-field" type="number" min={0} placeholder={t('hours (blank = never expires)')} value={ttl} onChange={(e) => setTtl(e.target.value)} aria-label={t('TTL hours')} />
+        <Button size="sm" variant="secondary" icon={Plus} label={t('Add')} loading={adding} disabled={!pattern.trim()} onClick={add} />
+      </div>
+      {err && <p className="fs-set__err">{err}</p>}
+      {!items && !err ? (
+        <Skeleton label={t('Loading')} count={2} height="40px" />
+      ) : items && items.length === 0 ? (
+        <p className="fs-set__help">{t('The allowlist is empty.')}</p>
+      ) : (
+        <ul className="fs-wipe">
+          {(items ?? []).map((e) => (
+            <li key={e.pattern} className="fs-wipe__row">
+              <span>
+                <strong><code className="fs-tools__id">{e.pattern}</code></strong>
+                <span className="fs-set__help">
+                  {t(ALLOWLIST_KIND.find((k) => k.value === e.kind)?.label ?? e.kind)}{e.reason ? ` · ${e.reason}` : ''}{e.added_by ? ` · ${e.added_by}` : ''}
+                  {e.expires_at ? ` · ${t('expires {when}', { when: e.expires_at })}` : ''}
+                </span>
+              </span>
+              <Button size="sm" variant="danger" label={t('Remove')} loading={busy === e.pattern} disabled={busy !== null} onClick={() => remove(e)} />
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function SecuritySection({ settings, onSave, say }: { settings: Settings | null; onSave: (patch: Settings) => Promise<void>; say: (t: string) => void }) {
+  return (
+    <section className="fs-set__section" aria-labelledby="fs-set-security">
+      <header className="fs-set__section-head">
+        <div>
+          <h2 id="fs-set-security" className="fs-set__title">{t('Security')}</h2>
+          <p className="fs-prose">{t('Authority a model or a document can currently claim — visible and revocable independent of what it says: the privacy profile, standing approvals and the command-guard allowlist.')}</p>
+        </div>
+      </header>
+      <PrivacyProfileCard settings={settings} onSave={onSave} say={say} />
+      <ActiveApprovalsCard say={say} />
+      <CommandGuardAllowlistCard say={say} />
+    </section>
+  );
+}
+
 /* ── Agent: rendered from the server's schema ── */
 
 function SchemaControl({ field, value, onChange }: { field: SchemaField; value: unknown; onChange: (v: unknown) => void }) {
@@ -1171,6 +1360,11 @@ export function SettingsScreen() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [endpoints, setEndpoints] = useState<ModelEndpoint[] | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
+  // ACT-06: a 401/403 here is not the same situation as the server being
+  // unreachable — retrying does not fix "not signed in as an admin" the way
+  // it fixes a dropped connection, and 426 (this client is below the
+  // server's supported floor, src/api_version.py) never will either.
+  const [failedStatus, setFailedStatus] = useState<number | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [admin, setAdmin] = useState(false);
   const epReload = useRef(0);
@@ -1197,7 +1391,16 @@ export function SettingsScreen() {
     loadSettings(c.signal)
       .then(setSettings)
       .catch((err: unknown) => {
-        if ((err as { name?: string })?.name !== 'AbortError') setFailed(t('Could not read the settings.'));
+        if ((err as { name?: string })?.name === 'AbortError') return;
+        const status = (err as { status?: number })?.status ?? null;
+        setFailedStatus(status);
+        setFailed(
+          status === 401 || status === 403
+            ? t('Sign in as an administrator to see and change the settings.')
+            : status === 426
+              ? t('This client is older than the server supports. Update it before continuing.')
+              : t('Could not read the settings.'),
+        );
       });
     return () => c.abort();
   }, []);
@@ -1219,11 +1422,13 @@ export function SettingsScreen() {
   };
 
   if (failed) {
+    const tone = failedStatus === 401 || failedStatus === 403 ? 'denied' : failedStatus === 426 ? 'incompatible' : 'error';
     return (
       <EmptyState
-        icon={Settings2}
+        icon={tone === 'error' ? Settings2 : undefined}
+        tone={tone}
         title={failed}
-        body={t('The server did not answer /api/auth/settings.')}
+        body={tone === 'error' ? t('The server did not answer /api/auth/settings.') : t('/api/auth/settings answered {status}.', { status: String(failedStatus) })}
         primaryAction={{
           label: t('Try again'),
           onClick: () => window.location.reload(),
@@ -1268,6 +1473,7 @@ export function SettingsScreen() {
           {section === 'users' && <UsersSection say={say} />}
           {section === 'system' && <SystemSection settings={settings} onSave={onSave} say={say} admin={admin} />}
           {section === 'health' && <HealthSection say={say} onJump={setSection} />}
+          {section === 'security' && <SecuritySection settings={settings} onSave={onSave} say={say} />}
         </div>
       </div>
       {notice && <Toast>{notice}</Toast>}

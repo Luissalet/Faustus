@@ -25,6 +25,10 @@ GET /api/system/usage
   "sysmem_fallback": {"exposed": false, "manual_only": true, "steps": [...]},
   "cpu": {"percent": 12.5, "count": 32},
   "ram": {"used": 40.1e9, "total": 137.0e9, "percent": 29.3},
+  "process": {"pid": 1234, "rss_bytes": 3.1e8, "vms_bytes": 1.2e9,   # PERF-04:
+              "num_threads": 41, "num_fds": 62},   # (or num_handles on Windows)
+              # Faustus's OWN footprint, not the machine's — a leak here does
+              # not show up in "cpu"/"ram" until it has already caused one.
   "errors": ["nvidia-smi: not found"],       # non-fatal collection problems
   "health": {"score": 62, "grade": "C", "collected": true,   # src/health.py
              "components": [{"name", "label", "value", "weight", "state", "why"}],
@@ -279,6 +283,38 @@ def _collect_host() -> Dict[str, Any]:
     return out
 
 
+def _collect_process() -> Dict[str, Any]:
+    """PERF-04: Faustus's OWN process footprint, not the whole machine's.
+
+    `_collect_host()` answers "is the box under pressure"; this answers "is
+    FAUSTUF ITSELF the reason" — a leaked file descriptor, a thread that never
+    joins, an RSS that only grows turn over turn are all invisible in the
+    system-wide CPU/RAM gauge until they have already taken the box down.
+
+    `num_fds()` (POSIX) and `num_handles()` (Windows) are mutually exclusive
+    on psutil.Process — probed via `hasattr` rather than a platform check so
+    this reads correctly under Wine/other odd combinations too. Whichever is
+    unavailable is simply absent from the dict, not reported as zero.
+    """
+    out: Dict[str, Any] = {}
+    try:
+        import psutil
+        p = psutil.Process()
+        with p.oneshot():
+            mem = p.memory_info()
+            out["pid"] = p.pid
+            out["rss_bytes"] = int(mem.rss)
+            out["vms_bytes"] = int(getattr(mem, "vms", 0) or 0)
+            out["num_threads"] = int(p.num_threads())
+            if hasattr(p, "num_fds"):
+                out["num_fds"] = int(p.num_fds())
+            elif hasattr(p, "num_handles"):
+                out["num_handles"] = int(p.num_handles())
+    except Exception as e:  # psutil missing or failing — never break the gauges
+        out["error"] = f"psutil: {e}"
+    return out
+
+
 def _disk_reading() -> Optional[Dict[str, Any]]:
     """Headroom where Faustus writes (DATA_DIR): one statvfs, no subprocess.
     None when the path cannot be measured — that is a missing source, not a
@@ -417,10 +453,11 @@ async def collect_usage() -> Dict[str, Any]:
             ollama_task = _collect_ollama(client)
             gpu_task = asyncio.to_thread(_collect_gpu)
             host_task = asyncio.to_thread(_collect_host)
+            process_task = asyncio.to_thread(_collect_process)
             shared_task = asyncio.to_thread(gpu_shared_memory.collect)
             policy_task = asyncio.to_thread(_collect_policy)
-            ollama, (gpus, gpu_err), host, gpu_mem, policy = await asyncio.gather(
-                ollama_task, gpu_task, host_task, shared_task, policy_task
+            ollama, (gpus, gpu_err), host, process, gpu_mem, policy = await asyncio.gather(
+                ollama_task, gpu_task, host_task, process_task, shared_task, policy_task
             )
         # Placement needs both answers (the loaded models and the cards), so
         # it runs after the gather; it is its own 2 s cache and never raises.
@@ -449,6 +486,7 @@ async def collect_usage() -> Dict[str, Any]:
             "sysmem_fallback": policy,
             "cpu": host.get("cpu", {}),
             "ram": host.get("ram", {}),
+            "process": process,
             "errors": errors,
         }
         # The honest health block (src/health.py): every signal above that this

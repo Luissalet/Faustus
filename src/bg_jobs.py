@@ -20,11 +20,13 @@ in the caller (so this stays import-light and unit-testable).
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
 import shlex
 import subprocess
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -98,6 +100,32 @@ def _is_paused_for_resource_pressure() -> bool:
         return bool(bg_monitor.is_paused_for_resource_pressure())
     except Exception:
         return False
+
+
+def _max_concurrent_jobs() -> int:
+    """PERF-04: an explicit ceiling on concurrently RUNNING background jobs,
+    independent of the RAM/commit-pressure guard above — a box with plenty of
+    memory can still have only so many CPU cores to give an install/test/build
+    swarm before it starts stealing cycles from the foreground chat turn.
+
+    0 (the default) means no limit: the pressure guard keeps deciding on its
+    own, exactly as before this existed. Configurable via the `bg_jobs_max_concurrent`
+    setting so a limit can be tuned per machine without a code change.
+    """
+    try:
+        from src.settings import get_setting
+        return max(0, int(get_setting("bg_jobs_max_concurrent", 0) or 0))
+    except Exception:
+        return 0
+
+
+def _running_count(jobs: Dict[str, Dict[str, Any]]) -> int:
+    return sum(1 for r in jobs.values() if r.get("status") == "running")
+
+
+def _at_concurrency_limit(jobs: Dict[str, Dict[str, Any]]) -> bool:
+    limit = _max_concurrent_jobs()
+    return limit > 0 and _running_count(jobs) >= limit
 
 
 def _spawn_process(job_id: str, command: str, cwd: Optional[str]) -> Dict[str, Any]:
@@ -194,12 +222,14 @@ def launch(command: str, session_id: str, cwd: Optional[str] = None,
     files so status survives a server restart, and the process is put in its
     own session (setsid) so it outlives the request/stream that started it.
 
-    Under RAM/commit pressure (PERF-04, `src/bg_monitor.py`) the job is
-    queued instead (`status='queued'`, nothing spawned yet) rather than
-    discarded or run into an already-stressed box: `refresh()` starts it on a
-    later poll once `bg_monitor.is_paused_for_resource_pressure()` clears, so
-    the command still runs — just later, the same way a follow-up the monitor
-    couldn't deliver this tick is simply retried next tick.
+    Under RAM/commit pressure (PERF-04, `src/bg_monitor.py`) OR at the
+    configured concurrency ceiling (`_max_concurrent_jobs`, also PERF-04) the
+    job is queued instead (`status='queued'`, nothing spawned yet) rather than
+    discarded or run into an already-stressed/saturated box: `refresh()`
+    starts it on a later poll once pressure clears and a slot is free, so the
+    command still runs — just later, the same way a follow-up the monitor
+    couldn't deliver this tick is simply retried next tick. Either reason
+    defers auxiliary work; neither one ever kills a process that isn't ours.
     """
     _JOBS_DIR.mkdir(parents=True, exist_ok=True)
     job_id = uuid.uuid4().hex[:12]
@@ -210,20 +240,26 @@ def launch(command: str, session_id: str, cwd: Optional[str] = None,
         "max_runtime_s": max_runtime_s,
         "followed_up": False,       # has the agent been re-invoked with the result?
     }
-    if _is_paused_for_resource_pressure():
+    # refresh() first: reconciles anything that finished since the last poll
+    # (freeing a concurrency slot) and opportunistically starts jobs already
+    # queued, before this new one is judged against the running count.
+    jobs = refresh()
+    pressured = _is_paused_for_resource_pressure()
+    at_limit = _at_concurrency_limit(jobs)
+    if pressured or at_limit:
         rec.update({
             "status": "queued",
             "pid": None, "pid_created_at": None, "pgid": None,
             "started_at": None, "ended_at": None, "exit_code": None,
             "log_path": None, "exit_path": None,
             "cwd": cwd,
-            "queued_for_pressure": True,
+            "queued_for_pressure": pressured,
+            "queued_for_concurrency": at_limit,
         })
-        logger.info("bg job %s: queued for RAM pressure instead of launched: %s",
-                    job_id, command[:80])
+        logger.info("bg job %s: queued (pressure=%s, at_concurrency_limit=%s) instead of launched: %s",
+                    job_id, pressured, at_limit, command[:80])
     else:
         rec.update(_spawn_process(job_id, command, cwd))
-    jobs = _load()
     jobs[job_id] = rec
     _save(jobs)
     return rec
@@ -268,13 +304,10 @@ def refresh() -> Dict[str, Dict[str, Any]]:
     jobs = _load()
     changed = False
     now = time.time()
-    if not _is_paused_for_resource_pressure():
-        for rec in jobs.values():
-            if rec.get("status") != "queued":
-                continue
-            rec.update(_spawn_process(rec["id"], rec.get("command", ""), rec.get("cwd")))
-            changed = True
-            logger.info("bg job %s: RAM pressure cleared, launching now", rec.get("id"))
+    # Reconcile every RUNNING job against disk first — this frees any
+    # concurrency slot a job that just finished was holding — so the
+    # queued-job promotion below sees an up-to-date count in the SAME pass,
+    # rather than needing a second refresh() to notice the room.
     for rec in jobs.values():
         if rec.get("status") != "running":
             continue
@@ -307,6 +340,25 @@ def refresh() -> Dict[str, Dict[str, Any]]:
             rec["ended_at"] = now
             rec["died"] = True
             changed = True
+    # Now promote queued jobs, using the just-reconciled running count — a
+    # job that finished above already freed its slot for this same pass.
+    if not _is_paused_for_resource_pressure():
+        limit = _max_concurrent_jobs()
+        running = _running_count(jobs)
+        for rec in jobs.values():
+            if rec.get("status") != "queued":
+                continue
+            if limit > 0 and running >= limit:
+                # Still at capacity: leave the rest queued for the next poll
+                # rather than starting some and stranding others — same
+                # "deferred, not dropped" contract, just gated on a different
+                # resource than RAM.
+                break
+            rec.update(_spawn_process(rec["id"], rec.get("command", ""), rec.get("cwd")))
+            rec["queued_for_concurrency"] = False
+            running += 1
+            changed = True
+            logger.info("bg job %s: pressure clear and a concurrency slot is free, launching now", rec.get("id"))
     if _prune(jobs, now):
         changed = True
     if changed:
@@ -468,3 +520,128 @@ def result_text(rec: Dict[str, Any]) -> str:
         head += (f" Its process was NOT signalled: {rec['kill_refused']}."
                  + (f" Stop it yourself with `{hint}` if it is still running." if hint else ""))
     return f"{head}\nCommand: {rec.get('command')}\n\nOutput:\n{out or '(no output)'}"
+
+
+# ── EXEC-04: the shared `cpu_heavy` resource ────────────────────────────────
+#
+# `_max_concurrent_jobs`/`_at_concurrency_limit` above gate `#!bg` background
+# jobs against EACH OTHER. EXEC-04 asks for a wider budget: a local research
+# run (src/deep_research.py / src/research_handler.py — heavy local
+# generation, CPU/RAM-bound the same way a build is), a project test suite
+# (src/project_tests.py::run_tests) and a `#!bg` build should all draw from
+# ONE shared pool, so a research run does not have to fight several test
+# suites and another model's generation for the same cores/commit all at
+# once — whichever gets there first holds a slot; the rest wait, exactly the
+# "deferred, not dropped" contract PERF-04 already uses for RAM pressure and
+# the concurrency ceiling, and the same atomic test-and-set shape
+# src/vram_admission.py's `try_reserve` uses for the VRAM budget (QA-24):
+# the read of what is already held and the write of a new hold happen under
+# one lock, so two callers arriving together cannot both see "room" for the
+# same slot.
+#
+# A running `#!bg` job already counts against this budget for free — its
+# record is the restart-safe source of truth `_running_count`/`_load` above
+# already read — so a build shows up here without needing to separately
+# acquire and release a ticket for a detached process that has no `finally`
+# of its own. A test suite or a research run, both in-process, hold an
+# explicit ticket for exactly as long as they run.
+CPU_HEAVY_KINDS = ("bg_job", "test_suite", "build", "research", "model_generation")
+# A ticket nobody released (a crash between acquire and the caller's finally)
+# must not starve the budget forever — same posture as
+# vram_admission.RESERVATION_TTL_SECONDS, and for the same reason.
+CPU_HEAVY_TICKET_TTL_SECONDS = 3600.0
+
+_CPU_HEAVY_LOCK = threading.Lock()
+_CPU_HEAVY_HOLDERS: Dict[str, Dict[str, Any]] = {}   # ticket -> {kind, owner, since}
+
+
+def cpu_heavy_max_concurrent() -> int:
+    """0 (default) = unlimited, same convention as `_max_concurrent_jobs`.
+    Configurable via the `cpu_heavy_max_concurrent` setting."""
+    try:
+        from src.settings import get_setting
+        return max(0, int(get_setting("cpu_heavy_max_concurrent", 0) or 0))
+    except Exception:
+        return 0
+
+
+def _expire_cpu_heavy_locked(now: float) -> None:
+    dead = [t for t, h in _CPU_HEAVY_HOLDERS.items()
+            if now - h["since"] > CPU_HEAVY_TICKET_TTL_SECONDS]
+    for t in dead:
+        stale = _CPU_HEAVY_HOLDERS.pop(t, None)
+        if stale:
+            logger.warning("cpu_heavy: ticket %s (%s, owner=%s) expired unreleased after %.0fs",
+                           t, stale.get("kind"), stale.get("owner"), CPU_HEAVY_TICKET_TTL_SECONDS)
+
+
+def cpu_heavy_active_count() -> int:
+    """Everything currently drawing from the shared budget: this process's own
+    in-memory holds (test suites, research) plus every `#!bg` job the on-disk
+    store says is actually `running` right now."""
+    with _CPU_HEAVY_LOCK:
+        _expire_cpu_heavy_locked(time.time())
+        in_process = len(_CPU_HEAVY_HOLDERS)
+    return in_process + _running_count(_load())
+
+
+def cpu_heavy_snapshot() -> List[Dict[str, Any]]:
+    """For diagnostics/tests: every in-process hold currently open (expired
+    ones already swept). Does not include `#!bg` jobs — those are already
+    visible via `refresh()`/`list_for_session`."""
+    with _CPU_HEAVY_LOCK:
+        _expire_cpu_heavy_locked(time.time())
+        return [dict(h, ticket=t) for t, h in _CPU_HEAVY_HOLDERS.items()]
+
+
+def try_acquire_cpu_heavy(kind: str, owner: str = "") -> Optional[str]:
+    """Atomic test-and-set: a ticket on success, None when the shared budget
+    is already fully held — the caller then waits/queues instead of racing
+    whoever got there first for the same slot."""
+    limit = cpu_heavy_max_concurrent()
+    now = time.time()
+    with _CPU_HEAVY_LOCK:
+        _expire_cpu_heavy_locked(now)
+        if limit > 0 and (len(_CPU_HEAVY_HOLDERS) + _running_count(_load())) >= limit:
+            return None
+        ticket = f"cpu-{uuid.uuid4().hex[:12]}"
+        _CPU_HEAVY_HOLDERS[ticket] = {"kind": kind, "owner": owner or "", "since": now}
+        return ticket
+
+
+def release_cpu_heavy(ticket: Optional[str]) -> None:
+    if not ticket:
+        return
+    with _CPU_HEAVY_LOCK:
+        _CPU_HEAVY_HOLDERS.pop(ticket, None)
+
+
+async def acquire_cpu_heavy(kind: str, owner: str = "", *, timeout: float = 3600.0,
+                            poll_interval: float = 1.0) -> str:
+    """Async wait for a slot (research, or any other async caller). Raises
+    TimeoutError if none frees up in time. The caller MUST
+    `release_cpu_heavy()` the returned ticket, normally in a `finally`."""
+    deadline = time.time() + timeout
+    while True:
+        ticket = try_acquire_cpu_heavy(kind, owner=owner)
+        if ticket is not None:
+            return ticket
+        if time.time() >= deadline:
+            raise TimeoutError(f"No cpu_heavy slot became free for {kind!r} within {timeout:.0f}s")
+        await asyncio.sleep(poll_interval)
+
+
+def acquire_cpu_heavy_sync(kind: str, owner: str = "", *, timeout: float = 3600.0,
+                           poll_interval: float = 1.0) -> str:
+    """Blocking wait for a slot — for a sync caller already off the event
+    loop (src/project_tests.py::run_tests runs its own subprocess.Popen and
+    blocks the calling thread already; this blocks the same thread a little
+    longer, never the event loop). Same contract as `acquire_cpu_heavy`."""
+    deadline = time.time() + timeout
+    while True:
+        ticket = try_acquire_cpu_heavy(kind, owner=owner)
+        if ticket is not None:
+            return ticket
+        if time.time() >= deadline:
+            raise TimeoutError(f"No cpu_heavy slot became free for {kind!r} within {timeout:.0f}s")
+        time.sleep(poll_interval)
