@@ -4990,6 +4990,7 @@ export const es: Record<string, string> = {
   "This node is not in the graph any more.": "Este nodo ya no está en el grafo.",
   "This packet is degraded.": "Este paquete está degradado.",
   "This page is reachable over plain HTTP from outside this machine — set up HTTPS or a tunnel before using it remotely.": "Esta página es accesible por HTTP simple desde fuera de esta máquina — configura HTTPS o un túnel antes de usarla en remoto.",
+  "This permission request expired before it was answered — nothing was executed. Ask again to get a fresh card.": "Esta petición de permiso caducó antes de responderse: no se ejecutó nada. Pídelo de nuevo para tener una tarjeta nueva.",
   "This permission request is closed. No approval was granted.": "Esta solicitud de permiso está cerrada. No se concedió autorización.",
   "This project is archived. Its existing chats still keep their context.": "Este proyecto está archivado. Sus conversaciones conservan el contexto.",
   "This project prepends nothing yet. As soon as it has a folder, instructions or memory, it will appear here exactly as the model reads it.": "Este proyecto no antepone nada todavía. En cuanto tenga carpeta, instrucciones o memoria, aparecerá aquí exactamente como lo lee el modelo.",

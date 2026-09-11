@@ -78,13 +78,16 @@ def setup_model_router_routes() -> APIRouter:
         require_admin(request)
         requirements = model_router.Requirements.from_dict(body.requirements)
         config = model_router.get_router_config()
+        # An empty list means "whatever this machine has": ask Ollama, the
+        # same way the live turn would, instead of answering "no candidates".
+        installed = list(body.installed) or model_router.installed_local_models()
         decision = model_router.choose(
             requirements,
-            installed=body.installed,
+            installed=installed,
             config=config,
             log=False,
         )
-        return {"decision": decision.to_dict(), "explain": model_router.explain(decision)}
+        return {"decision": decision.to_dict(), "explain": model_router.explain(decision), "installed": installed}
 
     @router.get("/log")
     async def get_log(request: Request, limit: int = 50) -> Dict[str, Any]:

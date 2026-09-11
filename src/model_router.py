@@ -406,6 +406,21 @@ def score_candidates(
     return out
 
 
+def installed_local_models(*, timeout: float = 3.0) -> List[str]:
+    """The model tags the local Ollama actually has right now (`/api/tags`),
+    via `gpu_policy.model_sizes` (cached ~2 min). Empty when Ollama is not
+    reachable -- the router then has no local candidate and says so, rather
+    than guessing from a catalogue. Callers that already know the installed
+    set (a test, a preview with an explicit list) pass it and skip this."""
+    try:
+        from routes.system_usage_routes import _ollama_base
+        from src.gpu_policy import model_sizes
+        return sorted(model_sizes(_ollama_base(), timeout=timeout).keys())
+    except Exception:  # noqa: BLE001 - discovery is best-effort
+        logger.debug("model_router: could not list installed models", exc_info=True)
+        return []
+
+
 def choose(
     requirements: Requirements,
     *,

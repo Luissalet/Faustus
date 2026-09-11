@@ -100,6 +100,53 @@ def _merge_continue_rows_to_delete(db_messages, db1, db2):
     return to_delete
 
 
+def _expire_dead_approval_cards(history_dict):
+    """Display-time only: a tool-approval card whose grant no longer exists
+    is shown closed, never as a live question.
+
+    The approval store lives in memory (`src/tool_approvals.py`); a server
+    restart, or the TTL, drops the grant while the card stays in the saved
+    history with no `resolved` mark. Served as-is, the Studio restores the
+    card with Approve/Deny buttons and parks the composer on "answer above"
+    — and any decision then fails as invalid (seen live after the 7001
+    restart). Marking the served copy `resolved: "expired"` keeps the
+    record honest (nothing was executed) and unblocks the conversation.
+    Nothing is written back here: this route is the display seam."""
+    try:
+        from src.tool_approvals import tool_approval_store
+    except Exception:  # pragma: no cover - store missing in a stub
+        return history_dict
+    out = []
+    for entry in history_dict:
+        meta = entry.get("metadata") if isinstance(entry, dict) else None
+        events = meta.get("tool_events") if isinstance(meta, dict) else None
+        if not isinstance(events, list):
+            out.append(entry)
+            continue
+        new_events = None  # copied lazily: the in-memory history is shared
+        for i, event in enumerate(events):
+            ask = event.get("ask_user") if isinstance(event, dict) else None
+            if not (isinstance(ask, dict) and ask.get("kind") == "tool_approval"):
+                continue
+            approval_id = str(ask.get("approval_id") or "")
+            if not approval_id or ask.get("resolved"):
+                continue
+            try:
+                alive = tool_approval_store.peek(approval_id) is not None
+            except Exception:
+                alive = True
+            if alive:
+                continue
+            if new_events is None:
+                new_events = list(events)
+            new_events[i] = dict(event, ask_user=dict(ask, resolved="expired"))
+        if new_events is None:
+            out.append(entry)
+        else:
+            out.append(dict(entry, metadata=dict(meta, tool_events=new_events)))
+    return out
+
+
 def setup_history_routes(session_manager, upload_handler=None, *, include_compact=True) -> APIRouter:
     router = APIRouter(tags=["history"])
 
@@ -175,7 +222,7 @@ def setup_history_routes(session_manager, upload_handler=None, *, include_compac
                     if not (entry.get("metadata") or {}).get("hidden")
                 ]
                 return {
-                    "history": history_dict,
+                    "history": _expire_dead_approval_cards(history_dict),
                     "model": db_session.model,
                     "endpoint_url": db_session.endpoint_url,
                     "name": db_session.name,
@@ -238,7 +285,7 @@ def setup_history_routes(session_manager, upload_handler=None, *, include_compac
                 db.close()
 
         return {
-            "history": history_dict,
+            "history": _expire_dead_approval_cards(history_dict),
             "model": session.model,
             "endpoint_url": session.endpoint_url,
             "name": session.name,

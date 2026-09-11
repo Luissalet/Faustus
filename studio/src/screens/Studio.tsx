@@ -895,8 +895,11 @@ export function StudioScreen() {
       if (route?.missing) {
         // The remembered model is gone from its endpoint: say so and open the
         // picker rather than answering with a model the user never chose.
+        // The text goes back to the composer: a message must never vanish
+        // into a toast (seen live — typed while the routes were loading).
         say(t('{model} is not installed on {where} any more — pick another model.', { model: route.model, where: route.endpointName || route.endpointUrl }), 'warning');
         setModelSignal((n) => n + 1);
+        if (!options.approval && message) setDraft((current) => (current.trim() ? current : message));
         return;
       }
       const controller = new AbortController();

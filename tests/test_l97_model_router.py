@@ -411,6 +411,26 @@ def test_preview_route_does_not_write_log(client, monkeypatch):
     assert model_router.read_log(limit=10) == []
 
 
+def test_preview_route_discovers_installed_models_when_none_given(client, monkeypatch):
+    """Seen live: an empty 'installed' box answered 'no candidates installed'
+    although Ollama had a dozen models. Empty now means 'ask Ollama'."""
+    _fake_manifests(monkeypatch, {
+        "m": {"tested": {model_calibration.TEST_TOOL_CALLING: {"ok": True}}, "announced": {"capabilities": {}}},
+    })
+    _fake_speeds(monkeypatch, {"m": 25.0})
+    monkeypatch.setattr(model_router, "installed_local_models", lambda **_kw: ["m"])
+    resp = client.post("/api/model-router/preview", json={"requirements": {"capabilities": ["tool_call"]}})
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["decision"]["model"] == "m"
+    assert resp.json()["installed"] == ["m"]
+
+
+def test_installed_local_models_is_empty_when_ollama_is_unreachable(monkeypatch):
+    from src import gpu_policy
+    monkeypatch.setattr(gpu_policy, "model_sizes", lambda base, timeout=3.0: (_ for _ in ()).throw(RuntimeError("down")))
+    assert model_router.installed_local_models() == []
+
+
 def test_log_and_stats_routes(client, monkeypatch):
     _fake_manifests(monkeypatch, {})
     _fake_speeds(monkeypatch, {})

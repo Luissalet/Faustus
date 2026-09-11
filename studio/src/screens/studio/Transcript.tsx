@@ -622,6 +622,13 @@ function QuestionCard({
  * exact shape of a chat that looks hung when it is not.
  */
 export function AnsweredCard({ decision }: { decision: string }) {
+  if (decision === 'expired') {
+    // The grant died with a server restart or its TTL: the card must not
+    // look answerable, and the way forward has to be on it.
+    return <p className="fs-studio__answered" data-testid="studio-approval-answered" data-decision="expired">
+      {t('This permission request expired before it was answered — nothing was executed. Ask again to get a fresh card.')}
+    </p>;
+  }
   if (!['approve', 'approve_task', 'deny'].includes(decision)) {
     return <p className="fs-studio__answered" data-testid="studio-approval-answered">
       {t('This permission request is closed. No approval was granted.')}
