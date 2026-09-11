@@ -34,6 +34,7 @@ mechanism.
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -44,6 +45,20 @@ from src.model_context import estimate_tokens
 logger = logging.getLogger(__name__)
 
 CONDENSE_LLM_TIMEOUT_S = 300
+
+_TEMPLATE_HEADER = re.compile(
+    r"^\s*\*\*Turns summarized:\*\*[^\n]*\n+", re.IGNORECASE,
+)
+
+
+def _strip_template_header(summary: str) -> str:
+    """The compactor prompt opens with a bookkeeping line (`**Turns
+    summarized:** N | **Compactions so far:** M`) that models echo back.
+    Inside the live compactor it is harmless; on a card the user reads, it
+    is noise that also lies (there was no "compaction"). Drop that line
+    only — the rest of the summary is the model's."""
+    return _TEMPLATE_HEADER.sub("", summary or "", count=1).lstrip()
+
 
 
 class CondenseError(Exception):
@@ -203,6 +218,7 @@ async def condense(
         )
     except Exception as e:
         raise CondenseError(f"Condense summary failed: {e}", "condense.summary_failed", 502) from e
+    summary_text = _strip_template_header(summary_text)
 
     # Complete, exact undo material — role/content/metadata, minus `_db_id`
     # (a DB-assigned key `replace_messages` reissues fresh for every row it

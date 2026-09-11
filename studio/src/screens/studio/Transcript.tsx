@@ -1244,12 +1244,14 @@ function CondensedTurn({
       <div className="fs-turn__body">
         <details className="fs-condensed">
           <summary className="fs-condensed__heading">{heading}</summary>
-          <p className="fs-prose fs-condensed__body">{body}</p>
+          <div className="fs-condensed__body">
+            <Said text={body} />
+          </div>
         </details>
         {onExpand && !busy && (
           <div className="fs-turn__foot">
             <span className="fs-turn__actions" data-testid="turn-actions">
-              <IconButton icon={Expand} label={t('Expand')} size="sm" onClick={onExpand} testId="turn-expand" />
+              <Button variant="ghost" size="sm" icon={Expand} label={t('Expand the original turns')} onClick={onExpand} testId="turn-expand" />
             </span>
           </div>
         )}

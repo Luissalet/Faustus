@@ -192,18 +192,18 @@ deep-link de workflows, recetas desde un run real) ya no aparece aquí.
   quita enlaces y consulta matriz/contexto; importar el fichero sidecar
   entero o crear un requisito desde una selección del documento no existe.
 
-## Excursos (11-09)
+## Excursos y cables de contexto (11-09)
 
-- Hecho y verificado en vivo (FAUSTUS.md §75). Queda por decidir, no por
-  codificar: **replay** de un excurso `stale` (regenerar la respuesta de la
-  madre cuando el excurso referenciado cambió — ThoughtDAG lo hace en orden
-  de dependencias; aquí solo se marca), **materiales** como nodos (notas,
-  ficheros cableables — el chip de documento ya cubre la mitad), y el
-  **fork clásico**: sigue existiendo copiando mensajes; podría pasar a ser
-  un excurso sin pasaje si nadie echa en falta la copia.
-- La vista previa cuenta solo las capas de historia (referencias, heredado,
-  propio); el prompt real lleva además preface/tools (11,6k frente a ~214
-  tok en la prueba). La etiqueta debería decirlo o sumar el preface.
+- Hecho y verificado en vivo (FAUSTUS.md §75-76): excursos, materiales
+  cableados (documentos y notas), replay bajo botón y condensar a mano.
+- **Condensar con un modelo local frío es lento** (visto: 27B con «PCIe
+  spill» a ~6 tok/s → más de dos minutos; el diálogo lo dice y espera hasta
+  300 s). Con un modelo «utility» configurado en Ajustes lo usa en su lugar
+  (misma resolución que la compactación automática). No se cambia solo.
+- Queda por decidir, no por codificar: enlace del material de documento al
+  documento desde el panel (el panel no conoce la ruta del documento);
+  el **fork clásico** sigue copiando mensajes — podría pasar a ser un
+  excurso sin pasaje si nadie echa en falta la copia.
 
 ## Última evidencia
 

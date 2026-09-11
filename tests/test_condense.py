@@ -357,3 +357,12 @@ def test_condense_route_nested_is_409(client, sm, monkeypatch):
     r2 = client.post("/api/session/s1/condense", json={"start": 0, "end": 2}, headers=_hdr("alice"))
     assert r2.status_code == 409
     assert r2.json()["error_class"] == "condense.nested"
+
+
+def test_condense_strips_the_compactor_bookkeeping_line():
+    from src.condense import _strip_template_header
+
+    raw = "**Turns summarized:** 8  |  **Compactions so far:** 1\n\n### User Goal\nShip it."
+    assert _strip_template_header(raw) == "### User Goal\nShip it."
+    # a summary without the line is untouched
+    assert _strip_template_header("### User Goal\nShip it.") == "### User Goal\nShip it."

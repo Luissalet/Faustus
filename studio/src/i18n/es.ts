@@ -1809,6 +1809,7 @@ export const es: Record<string, string> = {
   "Expand": "Ampliar",
   "Expand (+) or contract (−) the selection": "Expandir (+) o contraer (−) la selección",
   "Expand editor": "Ampliar editor",
+  "Expand the original turns": "Desplegar los turnos originales",
   "Expand with AI": "Expandir con IA",
   "Expected": "Se espera",
   "Expected: {answer}": "Esperada: {answer}",
