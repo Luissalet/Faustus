@@ -958,15 +958,34 @@ function UserTurn({
  * additive to the existing `<Harness plan={turn.plan} .../>` markdown card
  * above it, which keeps rendering exactly as before either way.
  */
+/**
+ * PLAN-01: a long plan (dozens of steps, e.g. a many-section research brief)
+ * used to dump every step at once inside the expanded card — correct, but
+ * unreadable past a screenful. `planStepsPreview` slices to the first `limit`
+ * and reports how many are hidden, so the card can show a short list plus a
+ * counter and let a click reveal the rest, instead of an ever-growing wall.
+ * Pure so it is checked directly (studio/checks/l71-plan-steps-preview.check.mjs)
+ * without mounting the component.
+ */
+export const PLAN_STEPS_PREVIEW_LIMIT = 12;
+
+export function planStepsPreview<T>(steps: T[], limit: number = PLAN_STEPS_PREVIEW_LIMIT): { shown: T[]; hidden: number } {
+  if (steps.length <= limit) return { shown: steps, hidden: 0 };
+  return { shown: steps.slice(0, limit), hidden: steps.length - limit };
+}
+
 function PlanStepsCard({ steps, revision, warnings }: { steps: PlanStepView[]; revision?: number; warnings?: string[] }) {
   const done = steps.filter((step) => step.status === 'done').length;
+  const [expanded, setExpanded] = useState(false);
+  const preview = planStepsPreview(steps);
+  const visible = expanded ? steps : preview.shown;
   return (
     <details className="fs-studio__thinking" data-testid="plan-steps-card">
       <summary>
         {t('Plan steps')} ({done}/{steps.length}){typeof revision === 'number' ? ` · rev ${revision}` : ''}
       </summary>
       <ul style={{ listStyle: 'none', margin: '6px 0 0', padding: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
-        {steps.map((step) => (
+        {visible.map((step) => (
           <li
             key={step.id}
             style={{ display: 'flex', alignItems: 'baseline', gap: 6, paddingLeft: step.dependsOn.length ? 16 : 0 }}
@@ -984,6 +1003,28 @@ function PlanStepsCard({ steps, revision, warnings }: { steps: PlanStepView[]; r
           </li>
         ))}
       </ul>
+      {!expanded && preview.hidden > 0 && (
+        <button
+          type="button"
+          className="fs-link"
+          style={{ marginTop: 6, fontSize: '0.85em' }}
+          data-testid="plan-steps-expand"
+          onClick={() => setExpanded(true)}
+        >
+          {t('+{n} more · Show all', { n: preview.hidden })}
+        </button>
+      )}
+      {expanded && preview.hidden > 0 && (
+        <button
+          type="button"
+          className="fs-link"
+          style={{ marginTop: 6, fontSize: '0.85em' }}
+          data-testid="plan-steps-collapse"
+          onClick={() => setExpanded(false)}
+        >
+          {t('Show fewer')}
+        </button>
+      )}
       {warnings && warnings.length > 0 && (
         <p className="fs-prose" style={{ opacity: 0.7, fontSize: '0.85em', marginTop: 6 }}>
           {t('Some lines could not be parsed as steps.')}

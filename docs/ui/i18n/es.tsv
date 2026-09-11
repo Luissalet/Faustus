@@ -6268,3 +6268,13 @@ num_ctx takes effect on the next load of the model (requires reload).	num_ctx ti
 report: {written}/{total} sections written	informe: {written}/{total} secciones redactadas
 the previous model	el modelo anterior
 {covered} covered, {thin} thin, {pending} pending	{covered} cubiertos, {thin} insuficientes, {pending} pendientes
++{n} more · Show all	+{n} más · Mostrar todo
+Show fewer	Mostrar menos
+Who edits what	Quién edita qué
+since {time}	desde {time}
+Conflict	Conflicto
+Another task asked for this resource while it was held	Otra tarea pidió este recurso mientras estaba ocupado
+{n} active lease	{n} cesión activa
+{n} active leases	{n} cesiones activas
+{n} task waited on a resource another one already held.	{n} tarea esperó un recurso que ya tenía otra.
+{n} tasks waited on a resource another one already held.	{n} tareas esperaron un recurso que ya tenía otra.

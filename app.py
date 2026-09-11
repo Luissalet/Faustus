@@ -1161,6 +1161,10 @@ from routes.local_models_routes import setup_local_models_routes
 app.include_router(setup_local_models_routes())
 from routes.agent_progress_routes import setup_agent_progress_routes
 app.include_router(setup_agent_progress_routes())
+# Who holds which resource lease right now, and any refused/conflicting
+# claims — "who edits what" for the Agents screen (PLAN-03).
+from routes.agent_leases_routes import setup_agent_leases_routes
+app.include_router(setup_agent_leases_routes())
 # Agent & automation settings schema (Settings → Agent Tools form).
 from routes.agent_settings_routes import setup_agent_settings_routes
 app.include_router(setup_agent_settings_routes())

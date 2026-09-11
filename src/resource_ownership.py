@@ -58,6 +58,11 @@ class Lease:
     acquired_at: float
     ttl_seconds: float
     renewed_at: float = 0.0
+    #: The delegation task this owner is doing right now, for a screen that
+    #: shows "who edits what" (PLAN-03) rather than just an opaque owner key.
+    #: Optional — a caller outside a delegation run (a model lease, a
+    #: council session) has no task to name, and leaves it "".
+    task_id: str = ""
     #: Free-text notes a holder chose to leave via `note_activity()` before
     #: the lease lapsed — "what it did", for the reconciliation record. Never
     #: inferred: an expiry with none of these says so honestly.
@@ -72,7 +77,8 @@ class Lease:
     def to_dict(self) -> Dict[str, Any]:
         return {
             "resource": self.resource, "kind": self.kind, "owner": self.owner,
-            "acquired_at": self.acquired_at, "ttl_seconds": self.ttl_seconds,
+            "task_id": self.task_id, "acquired_at": self.acquired_at,
+            "ttl_seconds": self.ttl_seconds,
             "expires_at": self.expires_at(), "activity": list(self.activity),
         }
 
@@ -101,6 +107,30 @@ class ReconciliationRecord:
         }
 
 
+@dataclass
+class ConflictAttempt:
+    """A second delegation asked for a resource a first one already holds.
+    `acquire()` still refuses it (leases stay exclusive) — this is only the
+    record of the attempt, for a screen that wants to show "task B is
+    waiting on a resource task A owns" rather than silence."""
+
+    resource: str
+    kind: str
+    holder: str
+    holder_task_id: str
+    requester: str
+    requester_task_id: str
+    at: float
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "resource": self.resource, "kind": self.kind,
+            "holder": self.holder, "holder_task_id": self.holder_task_id,
+            "requester": self.requester, "requester_task_id": self.requester_task_id,
+            "at": self.at,
+        }
+
+
 class ResourceOwnershipRegistry:
     """Lease-based ownership for any resource kind.
 
@@ -115,6 +145,11 @@ class ResourceOwnershipRegistry:
                  default_ttl_seconds: float = DEFAULT_TTL_SECONDS) -> None:
         self._leases: Dict[str, Lease] = {}   # "kind:key" -> Lease
         self._history: List[ReconciliationRecord] = []
+        #: Every time a second owner's `acquire()` was refused because
+        #: someone else already holds the resource — a bounded ring buffer
+        #: (see `acquire()`), read by `conflicts()` for the "quién edita
+        #: qué" screen's conflict state (PLAN-03).
+        self._conflicts: List[ConflictAttempt] = []
         self.default_ttl_seconds = default_ttl_seconds
         # The authority for "file" identity/conflicts stays FileLockRegistry;
         # this registry only adds a TTL and a reconciliation trail over it.
@@ -147,15 +182,20 @@ class ResourceOwnershipRegistry:
     # -- public API ----------------------------------------------------
 
     def acquire(self, kind: str, resource: str, owner: str, *,
-                ttl_seconds: Optional[float] = None, now: Optional[float] = None) -> bool:
-        """Claim `resource` for `owner`.
+                task_id: str = "", ttl_seconds: Optional[float] = None,
+                now: Optional[float] = None) -> bool:
+        """Claim `resource` for `owner`, doing work as `task_id` (a
+        delegation task/run id, for the "who edits what" screen — optional,
+        purely descriptive, never part of identity).
 
         Returns `False` when a DIFFERENT owner already holds an unexpired
-        lease on it. An expired lease is reaped (and reconciled) first, so a
-        holder that died without releasing never blocks a new owner forever.
-        The same owner re-acquiring what it already holds renews it instead
-        of failing — a subagent polling its own lease should not have to
-        special-case "I already have this".
+        lease on it — and records a `ConflictAttempt` (see `conflicts()`) so a
+        screen can show that this task is waiting on that one. An expired
+        lease is reaped (and reconciled) first, so a holder that died without
+        releasing never blocks a new owner forever. The same owner
+        re-acquiring what it already holds renews it instead of failing — a
+        subagent polling its own lease should not have to special-case "I
+        already have this".
         """
         key = self._key(kind, resource)
         self._reap_if_expired(key, now=now)
@@ -165,16 +205,34 @@ class ResourceOwnershipRegistry:
             if current.owner == owner:
                 current.renewed_at = moment
                 return True
+            self._record_conflict(current, kind, resource, owner, task_id, moment)
             return False
         if kind == "file":
             taken = self.files.claim(owner, [resource])
             if taken:
+                # FileLockRegistry itself already held it (claimed outside
+                # this registry) — same conflict, no Lease here to read the
+                # holder's task_id from.
+                self._conflicts.append(ConflictAttempt(
+                    resource=resource, kind=kind, holder=self.files.owner.get(self.files.norm(resource)) or "",
+                    holder_task_id="", requester=owner, requester_task_id=task_id, at=moment))
+                del self._conflicts[:-200]
                 return False
         self._leases[key] = Lease(resource=resource, kind=kind, owner=owner,
-                                  acquired_at=moment,
+                                  acquired_at=moment, task_id=task_id,
                                   ttl_seconds=ttl_seconds if ttl_seconds is not None
                                   else self.default_ttl_seconds)
         return True
+
+    def _record_conflict(self, held_by: "Lease", kind: str, resource: str,
+                          requester: str, requester_task_id: str, moment: float) -> None:
+        self._conflicts.append(ConflictAttempt(
+            resource=resource, kind=kind, holder=held_by.owner,
+            holder_task_id=held_by.task_id, requester=requester,
+            requester_task_id=requester_task_id, at=moment))
+        # A ring buffer, not an ever-growing log — this is UI-conflict state,
+        # not the reconciliation trail (`history()`), which stays complete.
+        del self._conflicts[:-200]
 
     def renew(self, kind: str, resource: str, owner: str, *, now: Optional[float] = None) -> bool:
         """Push a held lease's expiry out from now. `False` if `owner` does
@@ -242,3 +300,43 @@ class ResourceOwnershipRegistry:
 
     def active_leases(self) -> List[Lease]:
         return list(self._leases.values())
+
+    def conflicts(self, *, since: Optional[float] = None) -> List[ConflictAttempt]:
+        """Refused acquisition attempts, oldest first. `since` (a timestamp)
+        limits this to conflicts that happened at or after it — a screen
+        polling this registry wants "what's new", not the whole ring buffer
+        every time."""
+        if since is None:
+            return list(self._conflicts)
+        return [c for c in self._conflicts if c.at >= since]
+
+
+# ---------------------------------------------------------------------------
+# Process-wide registry
+# ---------------------------------------------------------------------------
+#
+# One registry shared by every delegation run in this process, so a "who
+# edits what" screen (PLAN-03) has one place to read leases and conflicts
+# from instead of reaching into each run's private FileLockRegistry. A
+# delegation run still creates its own `FileLockRegistry` for file identity
+# (unchanged — see the module docstring); code that wants leases visible here
+# passes `get_registry()` in alongside it, or mirrors acquire/release calls
+# into it. Lazy so importing this module never allocates one that nothing
+# uses (e.g. a unit test that only exercises `ResourceOwnershipRegistry`
+# directly, as tests/test_resource_ownership.py does with its own instances).
+_registry: Optional["ResourceOwnershipRegistry"] = None
+
+
+def get_registry() -> "ResourceOwnershipRegistry":
+    """The process-wide `ResourceOwnershipRegistry` — created on first use."""
+    global _registry
+    if _registry is None:
+        _registry = ResourceOwnershipRegistry()
+    return _registry
+
+
+def reset_registry() -> None:
+    """Replace the process-wide registry with a fresh, empty one. For tests
+    only — production code never needs to reset shared state mid-run."""
+    global _registry
+    _registry = ResourceOwnershipRegistry()

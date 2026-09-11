@@ -879,6 +879,25 @@ def parse_delegation_args(content: str, *, workspace: Optional[str] = None) -> D
     return out
 
 
+
+def _mirror_leases(run: "SubagentRun", files: List[str], *, acquire: bool) -> None:
+    """Reflect a worker's file claims in `src.resource_ownership.get_registry()`
+    (PLAN-03). Descriptive only — `FileLockRegistry` remains the lock
+    authority — so any failure is logged and swallowed."""
+    if not files:
+        return
+    try:
+        from src.resource_ownership import get_registry
+        reg = get_registry()
+        task_id = str(getattr(run, "delegation_id", "") or getattr(run, "id", "") or "")
+        for path in files:
+            if acquire:
+                reg.acquire("file", str(path), str(run.id), task_id=task_id)
+            else:
+                reg.release("file", str(path), str(run.id))
+    except Exception as exc:  # pragma: no cover - never break a delegation
+        logger.debug("delegate_agents: lease mirror skipped: %s", exc)
+
 def _apply_agent_defs(args: Dict[str, Any], reviewer_agent: str, workspace: Optional[str]) -> None:
     """Fill the tasks in from the definitions they name.
 
@@ -1152,6 +1171,11 @@ async def _run_subagent(
         taken = locks.claim(run.id, run.files) if run.files else []
         if taken:
             logger.info("delegate_agents: %s wanted %s but they belong to another worker", run.name, taken)
+        # PLAN-03: mirror the claim into the process-wide ownership registry
+        # so the "who edits what" screen (GET /api/agents/leases) sees a REAL
+        # delegation, not only what a test writes there. `locks` stays the
+        # authority; a failure here never touches the delegation itself.
+        _mirror_leases(run, [f for f in (run.files or []) if f not in set(taken)], acquire=True)
         # `bypass_locks` is set by whoever SCHEDULED the reviewer slot, not read
         # off `run.role`: an agent definition can say `mode: reviewer` too, and
         # a definition-driven reviewer running as an ordinary task runs
@@ -1964,6 +1988,7 @@ class DelegateAgentsTool:
                 # worker and the second task in "parallel: false" was refused.
                 if locks is not None:
                     locks.release(run.id)
+                    _mirror_leases(run, list(run.files or []), acquire=False)
                 # The transcript is saved HERE, after the stop reason is final
                 # (stopped / stalled / timeout), not in _run_subagent's finally.
                 _save_transcript(run, sm)

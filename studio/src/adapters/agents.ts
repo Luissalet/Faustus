@@ -1,4 +1,4 @@
-import { ApiError } from './api';
+import { ApiError, getJson } from './api';
 
 /**
  * The two things a person can do to a running sub-agent (delegate_agents
@@ -28,6 +28,72 @@ export async function steerWorker(childSessionId: string, text: string): Promise
   if (response.status === 404) return false;
   if (!response.ok) throw new ApiError(`steer responded ${response.status}`, response.status);
   return true;
+}
+
+/* ── resource leases (/api/agents/leases) ─────────────────────────────────
+ *
+ * PLAN-03: who holds which resource right now, and any conflicting claim a
+ * delegation's acquire refused — src/resource_ownership.py's process-wide
+ * registry, read-only. "Who edits what" for the Workers panel.
+ */
+
+export interface AgentLease {
+  resource: string;
+  kind: string;
+  ownerAgent: string;
+  taskId: string;
+  since: number;
+  expiresAt: number;
+  ttlSeconds: number;
+  activity: string[];
+}
+
+export interface LeaseConflict {
+  resource: string;
+  kind: string;
+  holderAgent: string;
+  holderTaskId: string;
+  requesterAgent: string;
+  requesterTaskId: string;
+  at: number;
+}
+
+export interface LeasesSnapshot {
+  leases: AgentLease[];
+  conflicts: LeaseConflict[];
+}
+
+function leaseFromRow(row: Record<string, unknown>): AgentLease {
+  return {
+    resource: asString(row.resource),
+    kind: asString(row.kind),
+    ownerAgent: asString(row.owner_agent),
+    taskId: asString(row.task_id),
+    since: asCount(row.since) ?? 0,
+    expiresAt: asCount(row.expires_at) ?? 0,
+    ttlSeconds: asCount(row.ttl_seconds) ?? 0,
+    activity: asList(row.activity),
+  };
+}
+
+function conflictFromRow(row: Record<string, unknown>): LeaseConflict {
+  return {
+    resource: asString(row.resource),
+    kind: asString(row.kind),
+    holderAgent: asString(row.holder_agent),
+    holderTaskId: asString(row.holder_task_id),
+    requesterAgent: asString(row.requester_agent),
+    requesterTaskId: asString(row.requester_task_id),
+    at: asCount(row.at) ?? 0,
+  };
+}
+
+/** Every active lease and any refused/conflicting claim, right now. */
+export async function loadLeases(signal?: AbortSignal): Promise<LeasesSnapshot> {
+  const body = asObject(await getJson<unknown>('/api/agents/leases', signal));
+  const leases = (Array.isArray(body.leases) ? body.leases : []).map((r) => leaseFromRow(asObject(r)));
+  const conflicts = (Array.isArray(body.conflicts) ? body.conflicts : []).map((r) => conflictFromRow(asObject(r)));
+  return { leases, conflicts };
 }
 
 /* ── agent profiles (/api/agent-profiles) ─────────────────────────────────

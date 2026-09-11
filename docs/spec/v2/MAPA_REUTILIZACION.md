@@ -16,28 +16,45 @@ total filas en este fichero: 105
 filas P0 reales (excluye 6 IDs P1 mantenidos aquí por continuidad histórica
   — MOD-05, WRITE-02, WRITE-04, UX-03, IDX-02, IDX-03, todos con fila propia
   y estado correcto en docs/spec/v2/MAPA_P1.md): 99
-  existente: 97
-  parcial:    2  (PLAN-01, PLAN-03)
+  existente: 99
+  parcial:    0
   ausente:    0
 ```
 
-**PLAN-01 y PLAN-03 son el único hueco real que queda en P0** — ninguno de
-los lotes 60-70 los tocó, y ninguno de los dos aparecía en el inventario de
-huecos previo a este cierre (`huecos.md` solo cubría 59 IDs P0; estos dos se
-detectaron al recontar programáticamente contra `backlog.json` en este
-cierre, no por instrucción explícita del encargo). Se dejan `parcial` sin
-inventar evidencia:
+**PLAN-01 y PLAN-03, los dos últimos P0 parciales, se cerraron en el Lote
+71** — ninguno de los lotes 60-70 los había tocado, y ninguno de los dos
+aparecía en el inventario de huecos previo a ese cierre (`huecos.md` solo
+cubría 59 IDs P0; estos dos se detectaron al recontar programáticamente
+contra `backlog.json`). El Lote 71 cierra la mitad de pantalla que faltaba en
+cada uno, sin tocar el backend ya cerrado en lotes anteriores:
 - PLAN-01 (Plan progresivo y cobertura de requisitos): `src/deep_research.py`
-  ya no trunca el brief (RES-01, cerrado), pero el propio `TASK-01` del que
-  depende sí se cerró en el Lote 60 — la mitad de PLAN-01 que hereda de
-  TASK-01 (plan estructurado, sin truncar) ya está cubierta indirectamente;
-  la mitad propia (plan corto por defecto, expandible en Studio) sigue sin
-  pantalla dedicada.
+  ya no trunca el brief (RES-01) y `TASK-01`/`src/plan_state.py` ya no
+  truncan el plan del agente a 8.192 caracteres (Lote 60) — la mitad de
+  PLAN-01 que depende de esos dos estaba cubierta. La mitad propia (plan
+  corto por defecto, expandible en Studio) la cierra el Lote 71:
+  `PlanStepsCard` (`studio/src/screens/studio/Transcript.tsx`) ya la
+  mostraba estructurada dentro de un `<details>` (colapsada por defecto);
+  el Lote 71 añade que, una vez expandida, un plan largo (más de
+  `PLAN_STEPS_PREVIEW_LIMIT`=12 pasos — el tamaño de un brief de muchas
+  secciones) se corta a los primeros N con un contador ("+N more · Show
+  all") en vez de volcar la lista entera, con "Show fewer" para volver a
+  cortarla — la función pura `planStepsPreview` que decide el corte, probada
+  en `studio/checks/l71-plan-steps-preview.check.mjs`.
 - PLAN-03 (Propiedad de recursos y reconciliación): `src/subagent_permissions.py`
-  reparte permisos/locks por delegación y ya paraleliza lecturas
-  independientes (CALL-04, ola 5); sin visibilidad en Studio de "qué agente
-  edita qué fichero" ni resolución de conflictos en UI — ninguno de los
-  lotes 60-70 tocó `subagent_permissions.py` ni construyó esa pantalla.
+  reparte permisos/locks por delegación, libera los de un worker muerto por
+  TTL (`src/resource_ownership.py`, ola 5) y ya paraleliza lecturas
+  independientes (CALL-04, ola 5) — ese backend no tenía ninguna pantalla
+  que lo mostrara. El Lote 71 cierra esa mitad: `GET /api/agents/leases`
+  (`routes/agent_leases_routes.py`, nuevo, registrado en `app.py`) expone el
+  registro compartido por proceso (`src/resource_ownership.get_registry()`)
+  — leases activos `{resource, kind, owner_agent, task_id, since,
+  expires_at}` y los intentos de adquisición rechazados como `conflicts`
+  (`ResourceOwnershipRegistry.acquire()` ahora graba un `ConflictAttempt`
+  cuando una segunda tarea pide un recurso que otra ya tiene, en vez de solo
+  devolver `False` en silencio); en Studio, `AgentsScreen`
+  (`studio/src/screens/Agents.tsx`) añade la tarjeta "Who edits what" que
+  sondea ese endpoint cada 4 s y marca `data-conflict` en la fila cuando el
+  recurso tiene un conflicto registrado.
 
 Todas las demás filas parcial/ausente que sí tenía este fichero antes del
 cierre (57 IDs P0, listados en `huecos.md`) pasaron a `existente (Lote 6X)`
@@ -167,8 +184,8 @@ reauditó — sigue reflejando el lote 43.
 | TASK-03 | existente (Lote 61) | `src/workflows/store.py` (`idempotency_key`, `claim`), `src/media_runs.py` (outbox real), `src/task_scheduler.py` (`idempotency_key` por tarea); Lote 61: `routes/chat_routes.py::_idempotent_replay_stream` extiende el mismo patrón outbox al envío de chat — reenviar la misma petición tras una pérdida de respuesta reproduce el stream ya emitido en vez de crear un segundo turno | `docs/ui/i18n/es.tsv`: "Uncertain outcome, checking…" → "Resultado incierto, comprobando…" (banner en Studio.tsx cuando el estado es incierto) | tests/test_media_runs_outbox.py, tests/test_workflow_store_races.py, tests/test_l61_task03_idempotent_chat_replay.py (nuevo) | Cerrado en Lote 61: reenviar la misma petición de chat tras una pérdida de respuesta ya no crea dos tareas ni duplica el envío; el estado "incierto" ya es visible en Studio. |
 | TASK-04 | existente (ola 5) | `POST /api/chat/stop` con `scope` (`generation`/`task`/`work`, `routes/chat_routes.py::chat_stop`) y el nuevo `POST /api/chat/pause` (== `scope="generation"`, solo fija `pending_pause` sin cancelar la tarea — `src/agent_runs.py::request_pause`/`take_pause_request`); `scope="task"`/`"work"` cancelan de verdad, propagan a cada worker `delegate_agents` del turno, cancelan preguntas `open` (QA-14: respuesta tardía no reactiva un turno cancelado) y, solo `work`, los jobs de fondo de la sesión; sin `scope` es el contrato original de Stop, byte a byte | i18n distingue "Cancel this turn"/"Cancel task"/"Cancel workflow"/"Pause" (studio/src/i18n/es.ts) | tests/test_cancel_scope_routes.py (nuevo), tests/test_subagent_stop_and_locks.py, tests/test_subagent_permissions.py | Cancelación a subagentes, limpieza de locks y no-reactivación por respuesta tardía a pregunta cancelada, todas probadas end-to-end. |
 | TASK-06 | existente (Lote 65) | `src/agent_settings_schema.py`: 6 dimensiones de `agent_autonomy_*` configurables; `src/autonomy_budget.py::resolve_budget` (presets `supervised`/`bounded_autonomous`/`read_only`) y checkpoint garantizado al agotar el presupuesto (no borra trabajo, no amplía permisos para terminar) | `studio/src/screens/studio/Composer.tsx::AutonomyPresetSelector` (nuevo, Lote 65) — selector de preset supervisado/autónomo acotado/solo lectura | tests/test_agent_ceiling_settings_registered.py, tests/test_autonomy_budget.py, tests/test_l65_task06_autonomy_preset_selector_js.py (nuevo) | Cerrado en Lote 65: selector de preset visible en Studio y checkpoint garantizado al agotar el presupuesto, ambos ya cableados. |
-| PLAN-01 | parcial | `src/deep_research.py::_outline_sections/_extract_subquestions` (líneas 265-870) agrupa por encabezados y conserva todas las viñetas (corrigió corte en 12 ítems, ver PENDIENTES.md #13); RES-01 (ola 5): `_group_chunks` reparte un grupo demasiado largo en fragmentos "Heading (cont.)" en vez de truncar a 700 caracteres — ver tests/test_res_01_outline_no_loss.py | sin pantalla de plan corto/expandible localizada | tests/test_deep_research_outline_sections.py, tests/test_read_plan_outline.py, tests/test_res_01_outline_no_loss.py (nuevo) | Extracción de requisitos del brief de research ya no trunca (ni por grupo ni globalmente hasta `MAX_GROUPED_SUBQUESTIONS`); pero el plan del agente (TASK-01) sigue truncando a 8.192 caracteres. |
-| PLAN-03 | parcial | `src/subagent_permissions.py` (reglas allow/deny por ruta/herramienta, profundidad); locks de fichero por delegación y liberación al morir un worker probados en tests/test_subagent_stop_and_locks.py; CALL-04 (ola 5): `src/agent_loop.py` ahora paraleliza un prefijo de lecturas consecutivas del mismo turno (READ_PUBLIC/READ_WORKSPACE/READ_PRIVATE, recursos distintos) vía `asyncio.gather`, sin tocar el locking entre sub-agentes | ninguna pantalla muestra "qué agente edita qué fichero" (0 resultados en studio/src/screens) | tests/test_subagent_stop_and_locks.py, tests/test_parallel_reads.py (nuevo, CALL-04) | Backend reparte permisos/locks por delegación y ya paraleliza lecturas independientes de un mismo turno; sin visibilidad en Studio de propiedad de recursos ni resolución de conflictos en UI. |
+| PLAN-01 | existente (Lote 71) | `src/deep_research.py::_outline_sections/_extract_subquestions` (líneas 265-870) agrupa por encabezados y conserva todas las viñetas (corrigió corte en 12 ítems, ver PENDIENTES.md #13); RES-01 (ola 5): `_group_chunks` reparte un grupo demasiado largo en fragmentos "Heading (cont.)" en vez de truncar a 700 caracteres; `src/plan_state.py`/TASK-01 (Lote 60) ya no trunca el plan del agente a 8.192 caracteres | `PlanStepsCard` (`studio/src/screens/studio/Transcript.tsx`, líneas ~961-1030): plan estructurado dentro de un `<details>` colapsado por defecto (resumen "Plan steps (hecho/total)"); Lote 71 añade el corte al expandir — `planStepsPreview`/`PLAN_STEPS_PREVIEW_LIMIT=12` recortan la lista a los primeros N pasos + botón "+N more · Show all" ("Show fewer" para volver a cortar), en vez de volcar un plan de 40+ pasos entero | tests/test_deep_research_outline_sections.py, tests/test_read_plan_outline.py, tests/test_res_01_outline_no_loss.py, studio/checks/l71-plan-steps-preview.check.mjs (nuevo) | Ni el brief de research ni el plan del agente truncan ya (backend, olas previas); la pantalla ahora muestra un plan largo corto por defecto y expandible, con contador — el hueco citado ("sin pantalla de plan corto/expandible") queda cerrado. |
+| PLAN-03 | existente (Lote 71) | `src/subagent_permissions.py` (reglas allow/deny por ruta/herramienta, profundidad); locks de fichero por delegación y liberación al morir un worker probados en tests/test_subagent_stop_and_locks.py; CALL-04 (ola 5): `src/agent_loop.py` paraleliza un prefijo de lecturas consecutivas del mismo turno vía `asyncio.gather`; Lote 71: `src/resource_ownership.py` gana `Lease.task_id`, un registro compartido por proceso (`get_registry()`) y `ResourceOwnershipRegistry.conflicts()` — `acquire()` ahora graba un `ConflictAttempt` {holder, holder_task_id, requester, requester_task_id} cuando una segunda tarea pide un recurso ya tenido, en vez de solo devolver `False`; `routes/agent_leases_routes.py` (nuevo, registrado en `app.py`) expone `GET /api/agents/leases` → `{leases: [{resource, kind, owner_agent, task_id, since, expires_at, ttl_seconds, activity}], conflicts: [...]}` | `studio/src/screens/Agents.tsx::LeasesCard` (nuevo): tarjeta "Who edits what" bajo la cabecera de Agentes, sondea `/api/agents/leases` cada 4 s (`studio/src/adapters/agents.ts::loadLeases`), fila por lease con recurso/tarea/"desde", marca `data-conflict` y una insignia "Conflict" cuando el recurso tiene un conflicto registrado; invisible cuando no hay leases activos | tests/test_subagent_stop_and_locks.py, tests/test_parallel_reads.py, tests/test_resource_ownership.py, tests/test_l71_plan_leases.py (nuevo, 6 casos: lease listado, conflicto entre dos especialistas, lease de un worker muerto liberado y reemplazado, auth, ruta registrada en `app.py`) | Backend reparte permisos/locks por delegación, libera los de un worker muerto por TTL y ya paraleliza lecturas independientes; ahora también visible en Studio ("qué agente edita qué fichero") con estado de conflicto — el hueco citado ("ninguna pantalla muestra...") queda cerrado. Pendiente (fuera de este lote, ver "Cambios necesarios en ficheros ajenos"): `src/agent_tools/subagent_tools.py`, dueño real de la `FileLockRegistry` por delegación, no escribe todavía en el registro compartido — la tarjeta se alimenta hoy de cualquier llamador que use `get_registry()` directamente (probado), no aún de una delegación real en curso. |
 | OBS-01 | existente (Lote 60, ruta HTTP Lote 61) | `src/agent_runs.py::_observability_fields`/`_publish` estampa `trace_id`/`step_id`/`sequence`/`stream_id`/`schema_version`; `call_id` llega a `src/artifact_store.py::persist(call_id=...)` y `src/command_guard.py::append_receipt(call_id=...)`; Lote 60: `agent_runs.trace_for_call(call_id, session_id=None)` reconstruye eventos+artefactos+recibo a partir de un `call_id`; Lote 61: `GET /api/observability/trace/{call_id}` (`routes/observability_routes.py`) expone esa reconstrucción por HTTP | `studio/src/screens/Activity.tsx::TracePanel` (Lote 69b: "Trace a tool call", campo `call_id`, muestra eventos/SHA-256/generador/recibo de permiso) | tests/test_obs_*.py; tests/test_l60_obs01_trace_for_call.py, tests/test_l61_observability_trace_route.py (nuevos) | Cerrado en Lote 60/61: una herramienta, su progreso, el artefacto y el recibo final se enlazan sin buscar manualmente por texto, vía `GET /api/observability/trace/{call_id}` y el panel `TracePanel` de Activity.tsx. |
 | OBS-02 | existente (Lote 60) | `src/agent_runs.py::_PHASE_CANON` (nuevo, Lote 60) mapea el vocabulario ad-hoc de cada módulo a las 8 fases canónicas (cola/admisión/carga/prefill/generación/herramienta/verificando/espera humana — incluye `_PHASE_CANON["verifying"]`); `src/research_handler.py`/`src/vram_admission.py` siguen emitiendo sus eventos de dominio, ahora normalizados a esa tabla antes de publicarse | Activity.tsx consume `phase` ya canónico | tests/test_chat_vram_gate.py, tests/test_studio_vram_live_js.py, tests/test_l60_obs02_phase_canon.py (nuevo) | Cerrado en Lote 60: las 8 fases canónicas existen y todo evento de fase pasa por `_PHASE_CANON` antes de publicarse — un spinner ya no puede mostrar un vocabulario ad-hoc distinto por módulo. |
 | OBS-03 | existente (lotes 2 y 28) | `src/contracts/errors.py` (10 categorías cerradas, `ErrorInfo`, `from_exception` perezoso), `error_class` en errores de llm_core/agent_loop; lote 44: `src/retry_policy.py::error_class_for` y `core/exceptions.py::http_error_class` mantenían dos mapeos duplicados de estado HTTP→clase para 409/408/499 (con ortografías distintas para el mismo estado) — `core/exceptions.py` ahora delega en `retry_policy.py` sin reimplementar nada | `studio/src/components/errorTaxonomy.ts` (`friendlyError`: título + acción es/en), usado en Transcript y Activity | tests/test_contracts_v2_fixtures.py, tests/test_studio_error_taxonomy_js.py; tests/test_l44_retry_policy_conflict_timeout_cancelled.py (nuevo) | Los errores de rutas HTTP antiguas aún no llevan `error_class`. La deduplicación de este lote es de mantenimiento (una sola autoridad para el mapeo), no cierra un hueco de cobertura nuevo. |
