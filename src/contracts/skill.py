@@ -184,6 +184,55 @@ class MemoryPolicy:
         return {"read_scopes": list(self.read_scopes), "write_scopes": list(self.write_scopes)}
 
 
+def _nonneg_number(data: Mapping[str, Any], key: str, path: str, *,
+                    default: float = 0.0) -> float:
+    """A non-negative float, local to this module: `whole` (base.py) only
+    accepts `int`, and CMP-08's `calls_profile` counts (`model_calls`,
+    `tokens_in`, ...) are legitimately fractional — an amortized per-run
+    average over `samples` history entries, not always a whole call."""
+    raw = data.get(key, None)
+    if raw is None:
+        return default
+    if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+        raise ContractError(f"{path}.{key}", "expected a non-negative number", got=raw)
+    value = float(raw)
+    if value < 0:
+        raise ContractError(f"{path}.{key}", "must be >= 0", got=raw)
+    return value
+
+
+@dataclass(frozen=True)
+class CallsProfileSpec:
+    """CMP-08 (W3-C): a composite skill's own claim about what ONE activation
+    of it really costs — `src.workflow_cost_estimate.CallsProfile`'s
+    "declared" source. Read from a `SKILL.md`'s frontmatter
+    (`src/skills_runtime/bridge.py::calls_profile_from_frontmatter`) so a
+    skill that itself makes several model calls or external operations is
+    not silently priced as if a `skill` node were always one call."""
+
+    model_calls: float = 0.0
+    external_ops: float = 0.0
+    tokens_in: float = 0.0
+    tokens_out: float = 0.0
+
+    _KEYS = ("model_calls", "external_ops", "tokens_in", "tokens_out")
+
+    @classmethod
+    def parse(cls, raw: Any, path: str) -> "CallsProfileSpec":
+        data = as_mapping(raw, path)
+        reject_unknown(data, cls._KEYS, path)
+        return cls(
+            model_calls=_nonneg_number(data, "model_calls", path),
+            external_ops=_nonneg_number(data, "external_ops", path),
+            tokens_in=_nonneg_number(data, "tokens_in", path),
+            tokens_out=_nonneg_number(data, "tokens_out", path),
+        )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {"model_calls": self.model_calls, "external_ops": self.external_ops,
+                "tokens_in": self.tokens_in, "tokens_out": self.tokens_out}
+
+
 @dataclass(frozen=True)
 class SkillManifest:
     """A capability's claim about itself: what it takes, what it produces,
@@ -202,9 +251,11 @@ class SkillManifest:
     tags: Tuple[str, ...] = ()
     source: str = ""                 # where this manifest was read from
     schema_version: int = SCHEMA_VERSION
+    calls_profile: Optional[CallsProfileSpec] = None  # CMP-08 (W3-C): declared cost shape
 
     _KEYS = ("id", "version", "title", "description", "family", "inputs", "outputs",
-             "memory", "permissions", "approval", "tags", "source", "schema_version")
+             "memory", "permissions", "approval", "tags", "source", "schema_version",
+             "calls_profile")
 
     @classmethod
     def parse(cls, raw: Any, path: str = "skill") -> "SkillManifest":
@@ -224,6 +275,9 @@ class SkillManifest:
                 "refusing to read it as if the unknown fields were absent",
                 got=version_seen,
             )
+        calls_profile = None
+        if "calls_profile" in data and data["calls_profile"] is not None:
+            calls_profile = CallsProfileSpec.parse(data["calls_profile"], f"{path}.calls_profile")
         return cls(
             id=ident(data, "id", path),
             version=semver(data, "version", path),
@@ -238,6 +292,7 @@ class SkillManifest:
             tags=text_list(data, "tags", path, max_items=32, max_len=64),
             source=text(data, "source", path, required=False, max_len=1024),
             schema_version=version_seen,
+            calls_profile=calls_profile,
         )
 
 
@@ -283,6 +338,7 @@ class SkillManifest:
             "approval": {"required_when": list(self.approval_required_when)},
             "tags": list(self.tags),
             "source": self.source,
+            "calls_profile": self.calls_profile.to_dict() if self.calls_profile else None,
         }
 
     def fingerprint(self) -> str:

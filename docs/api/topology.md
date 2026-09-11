@@ -197,8 +197,13 @@ POST /api/workflows/estimate?detail=1
  "capability_pricing"?: {model_id: {"pricing": {"prompt": "0.000002", "completion": "0.000006"}, ...}},
  "skill_calls_profiles"?: {skill_id: {"model_calls", "external_ops", "tokens_in", "tokens_out"}},
  "local_latency"?: {model_id: {"load", "queue", "prefill_tps", "generation_tps", "memory_server"}},
- "run_id"?: "wfr_..."}
+ "run_id"?: "wfr_...",
+ "owner"?: "...", "project_id"?: "..."}
 ```
+
+`owner`/`project_id` (W3-C) are ONLY used to auto-fill `skill_calls_profiles`
+for any skill declaring its own `calls_profile` in its `SKILL.md` — see the
+follow-up section below. Omitting either keeps today's behaviour exactly.
 
 ```json
 {
@@ -269,6 +274,7 @@ POST /api/workflows/estimate?detail=1
   which is exactly why `estimate_detailed` never makes it). This function
   only attaches whatever it is given onto the matching `per_node` row's
   `latency_estimate`; an unset model's row has none, not a guessed number.
+  W3-C adds the "caller" side of that sentence — see below.
 - **`preflight()` now also carries `cost_detail`** — the same
   `estimate_detailed()` shape, computed with the SAME `prices`/
   `assumed_iterations` the preflight already used (edición mínima, no new
@@ -314,6 +320,139 @@ responses by eye:
   out of `rows`/`detail` — one bad plan never hides the other two.
 - Nothing here ranks or picks a plan; that is left to whoever reads the
   table.
+
+### Follow-up (W3-C, `CONTRATO_W3.md`, CMP-08 seguimiento): declared profiles, call history, local latency, and the Studio UI
+
+Four gaps the W2-B lot above left open on purpose (documented as such at the
+time) closed here — no change to `estimate()`/`estimate_detailed()`'s own
+signature or to `/estimate`'s/`/compare-plans`' response shape, only to
+where their optional inputs come from and how the Studio surfaces the
+result:
+
+- **A skill can declare its own `calls_profile` in its `SKILL.md`.**
+  `SkillManifest` (`src/contracts/skill.py`) gained an optional
+  `calls_profile: CallsProfileSpec | None` field (`{model_calls,
+  external_ops, tokens_in, tokens_out}`, every count a non-negative number —
+  a fractional amortised average is legitimate, unlike the rest of this
+  contract's whole-number fields). `src/skills_runtime/bridge.py` reads it
+  from the same flat-key frontmatter shape `permissions_*` already uses
+  (this parser has no nested maps): `calls_profile_model_calls: 3`,
+  `calls_profile_external_ops: 1`, `calls_profile_tokens_in: 4200`,
+  `calls_profile_tokens_out: 900` in a `SKILL.md`'s frontmatter (or a
+  `calls_profile:` mapping, for callers building frontmatter as a dict).
+  Declaring none of the four keys leaves `calls_profile: None` — never a
+  zeroed-out profile.
+  `POST /api/workflows/estimate?detail=1` and `/compare-plans` now pick
+  this up automatically for every `skill` node's `config.skill` in the
+  definition, when the request body also names `owner`/`project_id`
+  (`routes.workflows_routes._declared_calls_profiles_from_manifests`,
+  walking that project's workspace with `src.skills_runtime.discovery` the
+  same way `src/workflows/skills.py::run` finds a script skill to execute).
+  An explicit `skill_calls_profiles` entry in the request body still wins
+  over the manifest for any skill named in both — this is a convenience
+  default, never a requirement. `/estimate?detail=1`'s body gains two
+  optional fields: `"owner"?: string, "project_id"?: string`.
+  `/compare-plans` has no single `definition` to walk (several plans, no
+  canonical one) and does not pick this up — only `skill_calls_profiles`
+  from the body and `skill_call_history.json` apply there, as before.
+
+- **`DATA_DIR/skill_call_history.json` is now actually written.** Every
+  time a workflow's `skill` node finishes running a script skill
+  (`src/workflows/skills.py::run`, not refused), it folds the run into
+  `{skill_id: {runs, model_calls?, external_ops?, tokens_in?, tokens_out?}}`
+  under a cross-process `core.kernel_file_lock.KernelFileLock` (same idiom
+  `src/workflows/credentials.py` uses for its own read-modify-write store),
+  written with `core.atomic_io.atomic_write_json`. `runs` is always known
+  and always counted. The four counts are folded in as a running average
+  over the runs that DID report them (`<key>_samples`, an internal
+  bookkeeping field) — **only when this call is actually given a real
+  number for that count**, which today it never is: a script skill runs in
+  a container and this handler has no signal for its own model/token
+  usage. So in practice every entry written today is `{"runs": N}` and
+  nothing else, honestly reflecting "we know it ran N times and nothing
+  about its call shape".
+  `routes.workflows_routes._skill_call_history_from_disk` — CMP-08's
+  second, fallback source of a `calls_profile` — now **drops any entry
+  that never gained a real count**, rather than handing `{"runs": N}`
+  straight to `workflow_cost_estimate.calls_profile_from_mapping`, which
+  reads a missing key as `0` via `.get(key, 0)`. Passing that through
+  unfiltered would have turned "we do not know this skill's call shape"
+  into "this skill makes 0 model calls" — exactly the `unknown`-read-as-
+  `0`/`free` mistake CMP-08 exists to refuse. A skill with only a `runs`
+  count keeps falling through to `calls_profile_source: "unknown"`, same
+  as if the history file had never mentioned it.
+
+- **`local_latency` can now actually be computed, in a NEW pair of
+  functions kept OUT of `estimate()`/`estimate_detailed()` on purpose** —
+  both stay pure and network-free, exactly as before.
+  `src.workflow_cost_estimate.local_latency_for(model, *, endpoint_url="")`
+  returns one `{"load", "queue", "prefill_tps", "generation_tps",
+  "memory_server"}` row (plus `size_bytes` when known), every field
+  `"unknown"` unless a real signal names it:
+  - `generation_tps` — `src.llm_core.local_speed(model)`, the decode speed
+    Faustus has itself learned from that model's own replies this
+    process's lifetime. `"unknown"` until the model has actually replied
+    once.
+  - `load` — always `"unknown"`. `src.gpu_policy.model_sizes(endpoint_url)`
+    gives the model's size on disk (surfaced as `size_bytes` when the
+    lookup succeeds), but nothing in this codebase measures how long
+    loading that many bytes takes — `llm_core`'s only local timing table is
+    decode speed, never load time. Per this lot's contract: report
+    `unknown` rather than guess a load time from size and an assumed
+    disk/PCIe throughput.
+  - `queue` — `src.resource_admission.status()`'s live counters
+    (`{pool_id, available, foreground_waiting}`) for whichever pool
+    `endpoint_url` belongs to (`resource_admission.pool_for_endpoint`);
+    `"unknown"` when the endpoint is in no pool (nothing is queuing there,
+    by construction of that module) or no `endpoint_url` was given.
+  - `prefill_tps`, `memory_server` — always `"unknown"`: neither
+    `gpu_policy`, `llm_core` nor `resource_admission` (the three sources
+    this function is scoped to) expose a prompt-processing rate or a
+    per-server VRAM reservation figure; `src.vram_admission` has the
+    latter, but reading it is a separate lot's scope.
+  `local_latency_snapshot({model_id: endpoint_url})` batches this over
+  several models into exactly the mapping `estimate_detailed(...,
+  local_latency=...)` expects.
+  **Wired into `/estimate?detail=1` (W3-INT).** When the request body does
+  not already carry `local_latency`, `_detail_inputs_from_payload` now calls
+  `_local_latency_snapshot_for_definition(definition)`, which walks the
+  definition's own `skill` nodes and calls `local_latency_snapshot` with
+  `endpoint_url=""` for each named model (no endpoint is known at the route
+  layer, so `load`/`queue` still read `"unknown"` there — only
+  `generation_tps`, keyed on model alone via `llm_core.local_speed`, can
+  come back populated this way). Never fails the route: any exception
+  (`_local_latency_snapshot_for_definition`'s own try/except) degrades to
+  `{}`, i.e. exactly the same as a caller sending no `local_latency` at all.
+  A caller with real endpoint URLs can still pass its own `local_latency` in
+  the body — that always wins, the fallback only fires when the field is
+  absent.
+
+- **Studio: `EstimateView.tsx` now shows CMP-08's separated accounts.**
+  `WorkflowEstimateView` gained two OPTIONAL props — `definition` and
+  `runId` — so `Activity.tsx` (a file this lot does not own) keeps
+  compiling and rendering exactly what it renders today with zero edits.
+  When a caller passes `definition`, the view fetches
+  `workflowEstimateDetailed` and renders: node activations vs. model calls
+  vs. external operations vs. tokens as separate rows (never one blended
+  number), every listed assumption and every `cost_unestimable` reason (so
+  an incomplete total reads as incomplete), a per-node breakdown where a
+  `calls_profile_source: "unknown"` row shows "desconocido" for its model
+  calls/tokens instead of `0`, "previsto vs real" once `measured` is
+  non-null, and a **"Comparar planes"** button. That button builds two
+  heuristic variants of the SAME graph client-side — `single_model` (every
+  `skill` node's `config.model` overridden to whichever model the plan
+  already names most often) and `deterministic_steps` (every `skill` node
+  turned into an empty `manual` node) — and calls
+  `POST /api/workflows/compare-plans` with `{current, single_model,
+  deterministic_steps}`, rendering the result as a table with each cell
+  tagged `computed`/`estimated`/`unknown` (`.fs-estimate__basis[data-basis]`).
+  **Wired (W3-INT).** `Activity.tsx`'s `openEstimate` now also stores the
+  resolved definition (`estimateDefinition`, alongside the existing
+  `estimateResult`/`estimateFor` state) and the estimate dialog passes both
+  `definition={estimateDefinition}` and `runId={estimateFor}` to
+  `<WorkflowEstimateView>` — the detailed-accounts section and "Comparar
+  planes" now render for real the first time a user opens "Estimate cost"
+  on a run, not just under `studio/checks/w3c_estimate_followups.check.mjs`.
 
 ## Preflight: a dry-run before authorizing a plan (ADP-16)
 

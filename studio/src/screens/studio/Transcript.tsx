@@ -1,9 +1,10 @@
-import { ArrowDown, Check, ChevronDown, Copy, FileText, GitBranch, GitCommit, GitFork, Pencil, Quote, RefreshCw, Telescope, Trash2, UploadCloud, Volume2, VolumeX, X } from 'lucide-react';
+import { ArrowDown, BookmarkPlus, Check, ChevronDown, Copy, FileText, GitBranch, GitCommit, GitFork, Pencil, Quote, RefreshCw, Telescope, Trash2, UploadCloud, Volume2, VolumeX, X } from 'lucide-react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Link } from 'react-router';
 import { Fragment, lazy, Suspense, useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 import { Button, describeError, friendlyError, IconButton } from '../../components';
 import { fetchCompactionEvent, pinCompactionFragment, type AskUser, type CompactionEvent, type ContextLedger, type ContextReceipt, type DelegationTask } from '../../adapters/chat';
+import { createRecipeFromRun } from '../../adapters/strategy';
 import type { EvidenceRef } from '../../adapters/evidence';
 import { attachmentUrl, isImage } from '../../adapters/composer';
 import { Rich } from '../rich';
@@ -13,7 +14,7 @@ import { splitMentions } from '../../lib/mentions';
 import { safeExternal } from '../../lib/markdown';
 import { stripExecutedFences, toolFenceRegex } from '../../lib/fences';
 import { frameBatcher } from '../../lib/frame-batch';
-import { formatMetrics, liveTps, type CoverageItem, type LiveRate, type PlanStepView, type Step, type Turn } from './model';
+import { formatMetrics, liveTps, type CoverageItem, type LiveRate, type PlanStepView, type Step, type Turn, type TurnStrategy } from './model';
 import { t, tn } from '../../i18n';
 import { getDisplay } from '../../shell/display';
 import { nextStreamAnnouncement } from '../../adapters/streamAnnounce';
@@ -1108,6 +1109,51 @@ function PlanStepsCard({ steps, revision, warnings }: { steps: PlanStepView[]; r
   );
 }
 
+// CMP-09/CMP-12 (W3-A): fast/balanced/deep_review, same three values
+// Composer.tsx's own STRATEGY_PROFILE_CHOICES chip names — a short,
+// translated word here rather than that chip's longer one-line consequence,
+// since this line is meant to stay discreet and collapsed.
+const STRATEGY_PROFILE_WORD: Record<string, string> = {
+  fast: t('fast'),
+  balanced: t('balanced'),
+  deep_review: t('deep review'),
+};
+
+/**
+ * CMP-09/CMP-12 (W3-A): a single discreet, collapsible line under a finished
+ * turn — "Estrategia: {method} · {profile} — {reason}" — showing what
+ * `strategy_policy.choose_strategy` decided for this turn (`turn.strategy`,
+ * from the live `strategy` SSE event or restored from `metadata.strategy`).
+ * Collapsed by default like `ContextReceiptCard` right below; the full
+ * reasons/steps/budget sit inside for whoever opens it.
+ */
+function StrategyLine({ strategy }: { strategy: TurnStrategy }) {
+  const profile = STRATEGY_PROFILE_WORD[strategy.profile] ?? strategy.profile;
+  const reason = strategy.reasons[0] ?? '';
+  return (
+    <details className="fs-studio__thinking" data-testid="turn-strategy">
+      <summary>
+        {t('Strategy: {method} · {profile}{reason}', { method: strategy.method, profile, reason: reason ? ` — ${reason}` : '' })}
+      </summary>
+      {strategy.recipeId && <p className="fs-prose">{t('Active recipe: {id}', { id: strategy.recipeId })}</p>}
+      {strategy.reasons.length > 1 && (
+        <ul className="fs-ctx__compaction-body">
+          {strategy.reasons.map((r, i) => (
+            <li key={i} className="fs-ctx__note">{r}</li>
+          ))}
+        </ul>
+      )}
+      {strategy.steps.length > 0 && (
+        <ol className="fs-prose">
+          {strategy.steps.map((step, i) => (
+            <li key={i}>{step}</li>
+          ))}
+        </ol>
+      )}
+    </details>
+  );
+}
+
 /**
  * CMP-04: "Contexto usado (n) — por qué" — a compact, collapsed-by-default
  * card listing what the turn's delivered context packets actually put in
@@ -1195,6 +1241,26 @@ function AssistantTurn({
   // long transcript, at any moment) renders straight off the prop, no
   // batching in the way.
   const turn = useFrameBatched(liveTurn, liveTurn.streaming);
+  // CMP-12 (W3-A): "Guardar como receta" on a finished turn's TURN SUMMARY —
+  // `POST /api/recipes/from-run/{run_id}` (`adapters/strategy.ts`'s
+  // `createRecipeFromRun`). `run_id` here IS the session id: the run log
+  // `src/recipes.py::from_run` reads is `DATA_DIR/runs/<session>.jsonl`
+  // (`src/agent_runs.py`'s own documented shape, `docs/api/strategy.md`'s
+  // "Límites"), so no separate per-turn run id needs threading through —
+  // this session's own `sessionId` prop already names the right log.
+  const [savingRecipe, setSavingRecipe] = useState(false);
+  const saveAsRecipe = async () => {
+    if (!sessionId || savingRecipe) return;
+    setSavingRecipe(true);
+    try {
+      const recipe = await createRecipeFromRun(sessionId);
+      onNotice(t('Saved as a draft recipe: {id}', { id: recipe.id }));
+    } catch (e) {
+      onNotice((e as Error).message, 'danger');
+    } finally {
+      setSavingRecipe(false);
+    }
+  };
   // The tool call has already run and is in the rail; its fence is leftovers.
   const fences = useFenceRegex();
   const body = linkifyBoardIds(stripExecutedFences(turn.text, fences), boardKey, projectId);
@@ -1255,6 +1321,7 @@ function AssistantTurn({
             })}
           </p>
         )}
+        {!turn.streaming && turn.strategy && <StrategyLine strategy={turn.strategy} />}
         {!turn.streaming && <ContextReceiptCard turn={turn} />}
         {turn.ask && <AskCard ask={turn.ask} busy={busy} onApproval={onApproval} onAnswer={onAnswer} />}
         {!turn.ask && turn.approval && <AnsweredCard decision={turn.approval.decision} />}
@@ -1355,6 +1422,16 @@ function AssistantTurn({
                 <>
                   <IconButton icon={RefreshCw} label={t('Regenerate')} size="sm" onClick={onRegenerate} />
                   {onFork && <IconButton icon={GitFork} label={t('Fork from here')} size="sm" onClick={onFork} testId="turn-fork" />}
+                  {sessionId && (
+                    <IconButton
+                      icon={BookmarkPlus}
+                      label={t('Save as recipe')}
+                      size="sm"
+                      disabled={savingRecipe}
+                      onClick={() => void saveAsRecipe()}
+                      testId="turn-save-recipe"
+                    />
+                  )}
                   <IconButton icon={Trash2} label={t('Delete message')} size="sm" onClick={onDelete} />
                 </>
               )}

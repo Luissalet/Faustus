@@ -6692,6 +6692,14 @@ async def _stream_agent_loop_body(
     # below (see the "Context receipts" block near the final metrics).
     _context_receipts_summary: List[Dict[str, str]] = []
     _context_receipt_refs_seen: Set[Tuple[str, str]] = set()
+    # CMP-09/CMP-12 (W3-A): the SAME dict the round-1 `strategy` SSE event
+    # sends as its `data`, kept here so it can also ride onto the turn's
+    # persisted metadata (see the "Context receipts" block near the final
+    # metrics, a few thousand lines down) — Transcript.tsx reads
+    # `metadata.strategy` on history restore the same way it already reads
+    # `metadata.context_receipts`. `None` until round 1 actually computes
+    # one (owner/task text missing, or the computation itself failed).
+    _strategy_event_summary: Optional[Dict[str, Any]] = None
 
     # Loop-breaker state. Small models (e.g. deepseek-v4-flash) can get
     # stuck firing the same tool call over and over with no text — burns
@@ -7305,13 +7313,18 @@ async def _stream_agent_loop_body(
                         profile=_strategy_active.get("profile", _strategy_policy_mod.DEFAULT_PROFILE),
                         context={"recipe_id": _strategy_active.get("recipe_id")},
                     )
+                    # W3-A: the exact same dict goes on the wire AND onto the
+                    # turn's persisted metadata (see `metrics["strategy"]`
+                    # near the final metrics below) — one computation, two
+                    # destinations, never a second call to choose_strategy.
+                    _strategy_event_summary = {
+                        "profile": _strategy_active.get("profile", _strategy_policy_mod.DEFAULT_PROFILE),
+                        "recipe_id": _strategy_active.get("recipe_id"),
+                        **_strategy_decision.to_dict(),
+                    }
                     yield "data: " + json.dumps({
                         "type": "strategy",
-                        "data": {
-                            "profile": _strategy_active.get("profile", _strategy_policy_mod.DEFAULT_PROFILE),
-                            "recipe_id": _strategy_active.get("recipe_id"),
-                            **_strategy_decision.to_dict(),
-                        },
+                        "data": _strategy_event_summary,
                     }) + "\n\n"
             except Exception as _strategy_event_err:
                 logger.debug("[strategy] event emission failed: %s", _strategy_event_err)
@@ -10609,6 +10622,13 @@ async def _stream_agent_loop_body(
         # `last_metrics` -> `md` in `save_assistant_response`, so this rides
         # onto the saved message's metadata with no separate write.
         metrics["context_receipts"] = _context_receipts_summary[:40]
+    if _strategy_event_summary:
+        # CMP-09/CMP-12 (W3-A): same persistence path as `context_receipts`
+        # right above — a reload restores the collapsible "Estrategia: ..."
+        # line (Transcript.tsx) from `metadata.strategy` instead of it only
+        # ever having existed for the tab that watched the live `strategy`
+        # SSE event.
+        metrics["strategy"] = _strategy_event_summary
     if _hsum:
         # Persisted with the message so the verification card survives reload.
         metrics["harness"] = {

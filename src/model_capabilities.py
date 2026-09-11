@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Dict
 
 
 FAMILY_CHAT = "chat"
@@ -283,6 +283,7 @@ _CAPABILITY_ALIASES = {
     "text-to-image": CAP_IMAGE_GENERATION,
     "img2img": CAP_IMAGE_EDITING,
     "image_edit": CAP_IMAGE_EDITING,
+    "images_edit": CAP_IMAGE_EDITING,
     "image-editing": CAP_IMAGE_EDITING,
     "text_rendering": CAP_TEXT_RENDERING,
     "reasoning_effort": CAP_REASONING,
@@ -932,3 +933,345 @@ def capability_from_endpoint_type(model_type: Any) -> ModelCapability:
             confidence=CONFIDENCE_EXPLICIT,
         )
     return unknown_capability(source=SOURCE_ENDPOINT_CONFIG)
+
+
+# ── CMP-11: capabilities → explainable selection ────────────────────────────
+#
+# `explain_fit` never turns "this model cannot do X" into a silently dropped
+# requirement (that is exactly what INFORME V2 §3.10 calls out: a picker
+# that just hides a disabled control with no reason). Every requested
+# capability becomes exactly one `FitReason` naming WHERE the evidence for it
+# stands — `tested` (this exact model+connection was probed and it worked,
+# `CapabilityAssertion.status == verified`), `announced` (the provider/model
+# claims it but nothing here has verified it, `claimed`), `missing` (proven
+# absent, `unsupported`) or `unknown` (no evidence either way) — plus a
+# human-readable reason and, when the model falls short, concrete
+# alternative model ids that DO meet it on the same evidence.
+#
+# Pure, like the rest of this module: no network, no disk. The caller (a
+# route, `src.provider_policy.resolve_route`) is the one that has already
+# resolved `assertions` — from `src.model_calibration`'s manifest for a local
+# model, or a remote provider's declared/probed capability list — into this
+# module's own `CapabilityAssertion` vocabulary, and gathered `candidates`
+# for any sibling models it wants named as alternatives. `explain_fit` only
+# reasons over what it is handed.
+
+FIT_TESTED = "tested"
+FIT_ANNOUNCED = "announced"
+FIT_UNKNOWN = "unknown"
+FIT_MISSING = "missing"
+
+FIT_STATES = frozenset({FIT_TESTED, FIT_ANNOUNCED, FIT_UNKNOWN, FIT_MISSING})
+
+# Best evidence wins when more than one assertion exists for the same
+# capability (e.g. an old `claimed` reading and a fresher `verified` probe):
+# proven states (verified/unsupported) outrank the merely-claimed one, which
+# outranks no evidence at all.
+_ASSERTION_STATE_PRIORITY: Dict[str, int] = {
+    ASSERTION_VERIFIED: 3,
+    ASSERTION_UNSUPPORTED: 2,
+    ASSERTION_CLAIMED: 1,
+    ASSERTION_UNKNOWN: 0,
+}
+
+_ASSERTION_TO_FIT_STATE: Dict[str, str] = {
+    ASSERTION_VERIFIED: FIT_TESTED,
+    ASSERTION_CLAIMED: FIT_ANNOUNCED,
+    ASSERTION_UNSUPPORTED: FIT_MISSING,
+    ASSERTION_UNKNOWN: FIT_UNKNOWN,
+}
+
+# Spanish labels for the tooltip/message text — this backend already speaks
+# Spanish in its other user-facing explanations (see
+# `model_calibration.compute_degraded`'s "tools por texto (fence)" etc.);
+# the Studio badges/tooltips this feeds (`docs/api/model_capabilities.md`)
+# render this string as-is, not through `t()`.
+_CAPABILITY_LABELS_ES: Dict[str, str] = {
+    CAP_TOOL_CALL: "herramientas",
+    CAP_STRUCTURED_OUTPUT: "salida estructurada",
+    CAP_JSON_MODE: "salida estructurada (JSON)",
+    CAP_VISION: "visión (imágenes de entrada)",
+    CAP_IMAGE_GENERATION: "generación de imagen",
+    CAP_IMAGE_EDITING: "edición de imagen",
+    CAP_INPAINTING: "retoque por máscara (inpainting)",
+    CAP_AUDIO_INPUT: "audio de entrada",
+    CAP_AUDIO_OUTPUT: "audio de salida",
+    CAP_VIDEO_GENERATION: "generación de vídeo",
+    CAP_REASONING: "razonamiento",
+    CAP_WEB_SEARCH: "búsqueda web",
+    CAP_STREAMING: "streaming",
+    CAP_TRANSCRIPTION: "transcripción",
+    CAP_TTS: "texto a voz",
+    CAP_REALTIME: "tiempo real",
+    CAP_TEXT_RENDERING: "renderizado de texto",
+    CAP_FILES: "adjuntos de archivo",
+    CAP_PDF: "PDF",
+}
+
+
+def capability_label_es(capability: str) -> str:
+    """Human label for a `CAP_*` token, falling back to the raw token for
+    one this table has not named yet — never a blank tooltip."""
+    return _CAPABILITY_LABELS_ES.get(capability, capability)
+
+
+@dataclass(frozen=True)
+class FitCandidateModel:
+    """One OTHER model the caller already has capability evidence for — a
+    sibling on the same endpoint, or any installed model — that `explain_fit`
+    may name as an alternative when `model` cannot meet a requirement.
+    `assertions` is in the exact same shape `explain_fit` itself accepts for
+    the primary model, so a caller builds both the same way."""
+
+    model_id: str
+    endpoint_id: str = ""
+    assertions: Any = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"model_id": self.model_id, "endpoint_id": self.endpoint_id}
+
+
+@dataclass(frozen=True)
+class FitReason:
+    capability: str
+    state: str = FIT_UNKNOWN
+    message: str = ""
+    alternatives: tuple[str, ...] = ()
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "capability": self.capability,
+            "state": self.state,
+            "message": self.message,
+            "alternatives": list(self.alternatives),
+        }
+
+
+@dataclass(frozen=True)
+class Fit:
+    ok: bool
+    model: str = ""
+    endpoint: str = ""
+    reasons: tuple[FitReason, ...] = ()
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "ok": self.ok,
+            "model": self.model,
+            "endpoint": self.endpoint,
+            "reasons": [r.to_dict() for r in self.reasons],
+        }
+
+
+def _one_assertion(value: Any) -> CapabilityAssertion | None:
+    if isinstance(value, CapabilityAssertion):
+        return value
+    if isinstance(value, Mapping):
+        built = CapabilityAssertion.from_dict(value)
+        return built if built.capability else None
+    return None
+
+
+def _assertions_by_capability(assertions: Any) -> Dict[str, CapabilityAssertion]:
+    """Normalize `assertions` — a `{capability: CapabilityAssertion|dict}`
+    mapping, or an iterable of `CapabilityAssertion`/dict — into one
+    assertion per capability, keeping the best-evidenced one when the same
+    capability appears more than once."""
+    out: Dict[str, CapabilityAssertion] = {}
+
+    def _consider(cap_hint: str, raw: Any) -> None:
+        assertion = _one_assertion(raw)
+        if assertion is None:
+            cap = normalize_capability(cap_hint)
+            if not cap:
+                return
+            assertion = CapabilityAssertion.build(capability=cap, status=raw if isinstance(raw, str) else ASSERTION_UNKNOWN)
+        cap = assertion.capability or normalize_capability(cap_hint)
+        if not cap:
+            return
+        existing = out.get(cap)
+        if existing is None or _ASSERTION_STATE_PRIORITY.get(assertion.status, 0) > _ASSERTION_STATE_PRIORITY.get(existing.status, 0):
+            out[cap] = assertion if assertion.capability else CapabilityAssertion.build(capability=cap, status=assertion.status, source=assertion.source, confidence=assertion.confidence, tested_at=assertion.tested_at)
+
+    if isinstance(assertions, Mapping):
+        for cap_hint, raw in assertions.items():
+            _consider(str(cap_hint), raw)
+    elif assertions is not None and isinstance(assertions, Iterable) and not isinstance(assertions, (str, bytes)):
+        for raw in assertions:
+            _consider("", raw)
+    return out
+
+
+def _fit_state_and_message(capability: str, assertion: CapabilityAssertion | None) -> tuple[str, str]:
+    label = capability_label_es(capability)
+    status = assertion.status if assertion is not None else ASSERTION_UNKNOWN
+    state = _ASSERTION_TO_FIT_STATE.get(status, FIT_UNKNOWN)
+    if state == FIT_TESTED:
+        message = f"Admite {label}: verificado en esta conexión."
+    elif state == FIT_ANNOUNCED:
+        message = f"El modelo anuncia {label}, pero esta conexión todavía no lo ha verificado."
+    elif state == FIT_MISSING:
+        message = f"El modelo no admite {label} en esta conexión."
+    else:
+        message = f"No hay evidencia de {label} en esta conexión: ni anunciado ni probado."
+    return state, message
+
+
+def _alternatives_for(capability: str, candidates: Any) -> tuple[str, ...]:
+    if not candidates or not isinstance(candidates, Iterable):
+        return ()
+    out: list[str] = []
+    for candidate in candidates:
+        if isinstance(candidate, FitCandidateModel):
+            model_id, cap_assertions = candidate.model_id, candidate.assertions
+        elif isinstance(candidate, Mapping):
+            model_id, cap_assertions = str(candidate.get("model_id") or ""), candidate.get("assertions")
+        else:
+            continue
+        if not model_id or model_id in out:
+            continue
+        by_cap = _assertions_by_capability(cap_assertions)
+        assertion = by_cap.get(capability)
+        state = _ASSERTION_TO_FIT_STATE.get(assertion.status, FIT_UNKNOWN) if assertion else FIT_UNKNOWN
+        if state in (FIT_TESTED, FIT_ANNOUNCED):
+            out.append(model_id)
+    return tuple(out)
+
+
+_MANIFEST_TESTED_KEY_FOR_CAP: Dict[str, str] = {
+    CAP_TOOL_CALL: "tool_calling",
+    CAP_VISION: "vision",
+    CAP_JSON_MODE: "json_mode",
+}
+_MANIFEST_ANNOUNCED_KEY_FOR_CAP: Dict[str, str] = {
+    CAP_TOOL_CALL: "tools",
+    CAP_VISION: "vision",
+    CAP_REASONING: "reasoning",
+}
+
+
+def assertions_from_calibration_manifest(manifest: Mapping[str, Any] | None) -> Dict[str, CapabilityAssertion]:
+    """Translate a `src.model_calibration.get_manifest`-shaped dict
+    (`{"announced": {...}, "tested": {...}}`) into this module's
+    `CapabilityAssertion` vocabulary: `verified` when the manifest's
+    `tested[...]["ok"]` is `True` for a probed capability, `unsupported`
+    when it is `False`, `claimed` when only the announced flag is set with
+    no probe either way, `unknown` otherwise — the same three-way read
+    `src.model_router._capability_status` already does for MOD-05, kept as
+    a plain function here so `explain_fit` and any route can share it
+    without importing `model_router` (which imports `model_calibration`,
+    which imports this module — a cycle this stays out of).
+
+    Pure translation of an already-loaded manifest: no disk read of its
+    own. The caller has already called `model_calibration.get_manifest`.
+    """
+    manifest = manifest if isinstance(manifest, Mapping) else {}
+    tested = manifest.get("tested")
+    tested = tested if isinstance(tested, Mapping) else {}
+    announced = manifest.get("announced")
+    announced = announced if isinstance(announced, Mapping) else {}
+    caps = announced.get("capabilities")
+    caps = caps if isinstance(caps, Mapping) else {}
+
+    out: Dict[str, CapabilityAssertion] = {}
+    for cap in set(_MANIFEST_TESTED_KEY_FOR_CAP) | set(_MANIFEST_ANNOUNCED_KEY_FOR_CAP):
+        tested_key = _MANIFEST_TESTED_KEY_FOR_CAP.get(cap)
+        tested_result = tested.get(tested_key) if tested_key else None
+        tested_ok = tested_result.get("ok") if isinstance(tested_result, Mapping) else None
+        if tested_ok is not True and tested_ok is not False:
+            tested_ok = None
+        announced_key = _MANIFEST_ANNOUNCED_KEY_FOR_CAP.get(cap)
+        declared = bool(caps.get(announced_key)) if announced_key else False
+
+        if tested_ok is True:
+            status, confidence = ASSERTION_VERIFIED, CONFIDENCE_EXPLICIT
+        elif tested_ok is False:
+            status, confidence = ASSERTION_UNSUPPORTED, CONFIDENCE_EXPLICIT
+        elif declared:
+            status, confidence = ASSERTION_CLAIMED, CONFIDENCE_PROVIDER_REPORTED
+        else:
+            status, confidence = ASSERTION_UNKNOWN, CONFIDENCE_UNKNOWN
+
+        out[cap] = CapabilityAssertion.build(
+            capability=cap,
+            status=status,
+            source=SOURCE_CAPABILITY_PROBE if tested_ok is not None else SOURCE_PROVIDER_READER,
+            confidence=confidence,
+            tested_at=str((tested_result or {}).get("tested_at") or "") if isinstance(tested_result, Mapping) else "",
+        )
+    return out
+
+
+def assertions_from_endpoint_capabilities(capabilities: Any, requirements: Any = None) -> Dict[str, CapabilityAssertion]:
+    """Translate an explicit remote-endpoint capability list — the same
+    caller-resolved fact `src.provider_policy._build_fit`
+    already treats as definitive, never a probe — into this module's
+    assertions: a listed token is `claimed` (provider-declared, not locally
+    probed), and any capability named in `requirements` that is absent from
+    the list is `unsupported`. An explicit list is exhaustive for what the
+    caller checked, so silence there is a proven no for a REQUESTED
+    capability, mirroring `provider_policy`'s own hard
+    `provider.parameter_unsupported` treatment of it — never a silent
+    `unknown`. Capabilities nobody asked about stay out of the result
+    entirely (nothing to say about them)."""
+    have = {normalize_capability(c) for c in (capabilities or [])}
+    have.discard("")
+    out: Dict[str, CapabilityAssertion] = {
+        cap: CapabilityAssertion.build(
+            capability=cap, status=ASSERTION_CLAIMED, source=SOURCE_ENDPOINT_CONFIG, confidence=CONFIDENCE_EXPLICIT,
+        )
+        for cap in have
+    }
+    for cap in _normalize_tokens(requirements, normalize_capability):
+        if cap not in have:
+            out[cap] = CapabilityAssertion.build(
+                capability=cap, status=ASSERTION_UNSUPPORTED, source=SOURCE_ENDPOINT_CONFIG, confidence=CONFIDENCE_EXPLICIT,
+            )
+    return out
+
+
+def explain_fit(
+    requirements: Any,
+    *,
+    model: str,
+    endpoint: str = "",
+    assertions: Any = None,
+    candidates: Any = (),
+) -> Fit:
+    """Explain, requirement by requirement, whether `model` on `endpoint`
+    meets `requirements` — never a bare true/false and never a requirement
+    dropped in silence (INFORME V2 §3.10: "admite herramientas pero no esta
+    salida estructurada; acepta imágenes pero no edición; el modelo anuncia
+    X pero la conexión no lo ha verificado").
+
+    `requirements` is any iterable of capability tokens/aliases (normalized
+    through `normalize_capability` — "tools", "json", "vision",
+    "images_edit"... all resolve to this module's `CAP_*` vocabulary).
+    `assertions` is the evidence already resolved for `model` on `endpoint`
+    (a `{capability: CapabilityAssertion}` mapping, or an iterable of
+    `CapabilityAssertion`/equivalent dicts) — for a local model this is the
+    calibration manifest's announced/tested pair translated into
+    `CapabilityAssertion`s by the caller; for a remote one, the provider's
+    declared or probed capability list. `candidates` are other already-
+    evidenced models (`FitCandidateModel`, same `assertions` shape) the
+    caller wants considered for `FitReason.alternatives` — typically
+    siblings on the same endpoint, or every installed local model.
+
+    `Fit.ok` is False only when a requirement is PROVEN unsupported
+    (`missing`) — matching `src.provider_policy`'s own invariant 3: `unknown`
+    is reported, never silently treated as a pass, but only a proven `missing`
+    blocks the route outright.
+    """
+    req_tokens = _normalize_tokens(requirements, normalize_capability)
+    by_cap = _assertions_by_capability(assertions)
+    reasons: list[FitReason] = []
+    ok = True
+    for cap in req_tokens:
+        state, message = _fit_state_and_message(cap, by_cap.get(cap))
+        alternatives: tuple[str, ...] = ()
+        if state in (FIT_MISSING, FIT_UNKNOWN):
+            alternatives = _alternatives_for(cap, candidates)
+            if state == FIT_MISSING:
+                ok = False
+        reasons.append(FitReason(capability=cap, state=state, message=message, alternatives=alternatives))
+    return Fit(ok=ok, model=str(model or ""), endpoint=str(endpoint or ""), reasons=tuple(reasons))

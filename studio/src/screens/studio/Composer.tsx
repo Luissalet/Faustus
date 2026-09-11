@@ -69,8 +69,9 @@ import { clipboardFiles, insertPastedText } from '../../lib/clipboard-attachment
 import {REFERENCE_ROLES} from '../../lib/image-references';
 import {MediaRecipes} from './MediaRecipes';
 import { createAttachmentUploads, type PendingAttachment } from '../../lib/attachment-uploads';
-import type { ContextOverrides } from '../../adapters/chat';
+import type { ContextOverrides, DocContextRef } from '../../adapters/chat';
 import { ContextPanel, pruneOverrides } from './ContextPanel';
+import { COMPOSER_CONTEXT_EVENT, type ComposerContextDetail } from '../../lib/docSession';
 
 export type Mode = 'chat' | 'agent';
 
@@ -96,6 +97,13 @@ export interface Knobs {
    *  sendTurn() as `context_overrides` exactly like autonomyPreset travels
    *  as `autonomy_preset` — never written back to any global setting. */
   contextOverrides?: ContextOverrides;
+  /** CMP-03/W3-A: document context chips still attached when this turn is
+   *  sent (`COMPOSER_CONTEXT_EVENT`) — forwarded to sendTurn() as
+   *  `docContext` exactly like `contextOverrides` above; see
+   *  `adapters/chat.ts`'s `DocContextRef` doc comment for the wire shape
+   *  and the one wiring step (Studio.tsx forwarding it into `sendTurn`)
+   *  this lot leaves for the orchestrator, same gap that doc comment names. */
+  docContext?: DocContextRef[];
 }
 
 export type AutonomyPreset = 'supervised' | 'bounded_autonomous' | 'read_only';
@@ -262,6 +270,45 @@ export function Composer({
   useEffect(() => { uploads.resume(); return () => uploads.dispose(); }, [uploads]);
   const uploading = pendingFiles.some((file) => file.state !== 'failed');
   const [dragging, setDragging] = useState(false);
+
+  /* ── CMP-03/W3-A: document context chips ──
+   * `docSession.ts`'s `sendComposerContext` (used today by `SidePanel.tsx`'s
+   * "Sobre esta selección…" and "enviar comentarios seleccionados") dispatches
+   * `COMPOSER_CONTEXT_EVENT` for the composer to pick up — that module's own
+   * doc comment says a listener "may not exist yet... wired up in whichever
+   * lot lands it"; this is that lot. Shown as a removable chip; the quoted
+   * text is NEVER written into `draft` as though the human had typed it — it
+   * travels with the turn as its own field (`Knobs.docContext`, kept in sync
+   * below), the exact posture `contextOverrides` already has. */
+  const [docContext, setDocContext] = useState<ComposerContextDetail[]>([]);
+  // A conversation switch leaves any attached context behind too — it was
+  // "context for the next message in THIS chat", not a global clipboard.
+  useEffect(() => { setDocContext([]); }, [sessionId]);
+  useEffect(() => {
+    const onContext = (event: Event) => {
+      const detail = (event as CustomEvent<ComposerContextDetail>).detail;
+      if (detail) setDocContext((list) => [...list, detail]);
+    };
+    window.addEventListener(COMPOSER_CONTEXT_EVENT, onContext);
+    return () => window.removeEventListener(COMPOSER_CONTEXT_EVENT, onContext);
+  }, []);
+  const removeDocContext = (index: number) => setDocContext((list) => list.filter((_, i) => i !== index));
+  useEffect(() => {
+    setKnobs((k) => ({
+      ...k,
+      docContext: docContext.length
+        ? docContext.map((d) => ({ docId: d.doc.id, docTitle: d.doc.title, ranges: d.ranges, action: d.action, quotes: d.items.map((it) => it.quote) }))
+        : undefined,
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [docContext]);
+  /** A sent turn has consumed its attached context — cleared here so the
+   *  next message starts from nothing, exactly like attachments do. */
+  const trySend = () => {
+    if (uploads.hasPending()) return;
+    onSend(draft);
+    if (docContext.length) setDocContext([]);
+  };
 
   /* ── CMP-09/CMP-12: strategy profile + recipe, persisted server-side per
      owner (optionally scoped to this session) — see adapters/strategy.ts's
@@ -480,7 +527,7 @@ export function Composer({
     }
     if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
       event.preventDefault();
-      if (!uploads.hasPending()) onSend(draft);
+      trySend();
       return;
     }
     if (event.key === 'ArrowUp' && !draft && lastSent) {
@@ -534,7 +581,7 @@ export function Composer({
       data-dragging={dragging || undefined}
       onSubmit={(event) => {
         event.preventDefault();
-        if (!uploads.hasPending()) onSend(draft);
+        trySend();
       }}
       onDragOver={(event) => {
         event.preventDefault();
@@ -596,6 +643,30 @@ export function Composer({
           onSetReferenceRole={(id, role) => setAttachments((list) => list.map((item) => (item.id === id ? { ...item, referenceRole: role } : item)))}
           onRemoveAttachment={(id) => setAttachments((list) => list.filter((x) => x.id !== id))}
         />
+      )}
+
+      {docContext.length > 0 && (
+        <ul className="fs-studio__context-chips" aria-label={t('Document context for this message')} data-testid="composer-doc-context">
+          {docContext.map((item, i) => {
+            const quote = item.items[0]?.quote ?? '';
+            const short = quote.length > 80 ? `${quote.slice(0, 80)}…` : quote;
+            return (
+              <li key={i} className="fs-studio__context-chip" data-testid="composer-doc-context-chip">
+                <FileText size={12} aria-hidden="true" />
+                <span className="fs-studio__context-chip-name" title={item.doc.title}>{item.doc.title}</span>
+                {short && <span className="fs-sa__muted">“{short}”</span>}
+                <button
+                  type="button"
+                  className="fs-studio__chip-x"
+                  aria-label={t('Remove context: {name}', { name: item.doc.title })}
+                  onClick={() => removeDocContext(i)}
+                >
+                  <X size={11} aria-hidden="true" />
+                </button>
+              </li>
+            );
+          })}
+        </ul>
       )}
 
       <ContextPanel

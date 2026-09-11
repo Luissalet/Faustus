@@ -49,14 +49,31 @@ def _engine(store: WorkflowStore) -> WorkflowEngine:
     return WorkflowEngine(production_handlers(), store)
 
 
+#: The counters that make a `skill_call_history.json` entry actually usable
+#: as a `CallsProfile` (W3-C — see `_skill_call_history_from_disk` below).
+_CALL_HISTORY_COUNT_KEYS = ("model_calls", "external_ops", "tokens_in", "tokens_out")
+
+
 def _skill_call_history_from_disk() -> dict:
     """`DATA_DIR/skill_call_history.json`, CMP-08's second (fallback) source
-    of a composite skill's real call shape — read only if the file exists,
-    never written by this module. Shape: `{skill_id: {model_calls,
-    external_ops, tokens_in, tokens_out, samples}}`. Any read/parse failure
-    is swallowed to `{}` — a missing or malformed history file must never
-    turn a cost estimate into a 500; it just means those skills stay
-    `calls_profile_source: "unknown"`, same as if the file never existed."""
+    of a composite skill's real call shape. Written by
+    `src/workflows/skills.py` at the end of every script-skill run — see
+    that module's own docstring for why the entry there is usually `{"runs":
+    N}` and nothing else: a container script execution never observes its
+    own model-call/token counts. Shape on disk: `{skill_id: {runs,
+    model_calls?, external_ops?, tokens_in?, tokens_out?}}`.
+
+    W3-C: an entry that has never gained a real count (only `runs`) is
+    dropped here, not handed to `workflow_cost_estimate.calls_profile_from_mapping`
+    as-is — that function reads a missing key as `0` via `.get(key, 0)`,
+    which would turn "we do not know this skill's call shape" into "this
+    skill makes 0 model calls", the exact `unknown`-read-as-`0`/`free`
+    mistake CMP-08 exists to refuse. Dropping the entry instead leaves
+    `estimate_detailed` falling through to `calls_profile_source: "unknown"`,
+    same as if the file never mentioned this skill.
+
+    Any read/parse failure is swallowed to `{}` — a missing or malformed
+    history file must never turn a cost estimate into a 500."""
     import json
     import os
 
@@ -65,29 +82,145 @@ def _skill_call_history_from_disk() -> dict:
     try:
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
-        return data if isinstance(data, dict) else {}
+        if not isinstance(data, dict):
+            return {}
     except FileNotFoundError:
         return {}
     except Exception:
         logger.debug("skill_call_history.json unreadable — treated as absent", exc_info=True)
         return {}
+    return {
+        skill_id: entry for skill_id, entry in data.items()
+        if isinstance(entry, dict)
+        and any(entry.get(key) is not None for key in _CALL_HISTORY_COUNT_KEYS)
+    }
 
 
-def _detail_inputs_from_payload(payload: dict) -> dict:
+def _declared_calls_profiles_from_manifests(definition, *, owner: str, project_id: str) -> dict:
+    """W3-C: `calls_profile` declared directly on a project's own `SKILL.md`
+    files (`src.skills_runtime.bridge.calls_profile_from_frontmatter`, read
+    into `SkillManifest.calls_profile` — `src/contracts/skill.py`), found the
+    same way `src/workflows/skills.py::run` finds a script skill: walking
+    the project's workspace with `src.skills_runtime.discovery`.
+
+    Only fills in a skill the caller did NOT already name in
+    `skill_calls_profiles` — that payload field is an explicit answer and
+    always wins (see the merge in `_detail_inputs_from_payload`). Missing
+    `owner`/`project_id`, an unknown project, or no workspace on disk all
+    resolve to `{}` rather than an error: this is a convenience default for
+    the common case (the workflow's own project has the skill installed),
+    never a requirement — `skill_calls_profiles`/`skill_call_history` keep
+    working with neither."""
+    if not owner or not project_id:
+        return {}
+    skill_ids = {
+        str((node.config or {}).get("skill") or "")
+        for node in definition.nodes if node.type == "skill"
+    }
+    skill_ids.discard("")
+    if not skill_ids:
+        return {}
+    import os
+    try:
+        from services.projects import get_store
+        project = get_store().get(project_id, owner=owner)
+        workspace = str((project or {}).get("workspace") or "")
+    except Exception:
+        return {}
+    if not workspace or not os.path.isdir(workspace):
+        return {}
+    from src.skills_runtime import bridge, discovery
+    out: dict = {}
+    try:
+        found_all = list(discovery.discover(workspace))
+    except Exception:
+        return {}
+    for found in found_all:
+        if found.error:
+            continue
+        try:
+            text = discovery.read_markdown(found)
+            manifest = bridge.manifest_from_markdown(text, source=found.path)
+        except Exception:
+            continue
+        if manifest.id in skill_ids and manifest.calls_profile is not None:
+            out.setdefault(manifest.id, manifest.calls_profile.to_dict())
+    return out
+
+
+def _local_latency_snapshot_for_definition(definition) -> dict:
+    """W3-INT (CONTRATO_CMP_W2.md § W2-B "punto a cablear por el
+    orquestador", `docs/api/topology.md` §Estimate): when the caller did not
+    already compute `local_latency` itself, build it from the definition's
+    own `skill` nodes rather than leave the detailed estimate's local-latency
+    columns permanently blank. No `endpoint_url` is known at this layer (the
+    route has no session/runtime context to resolve one from), so each model
+    is looked up with `endpoint_url=""` — `local_latency_for` already
+    degrades `load`/`queue` to `"unknown"` in that case and only
+    `generation_tps` (via `llm_core.local_speed`, which is keyed on model
+    alone) can still come back populated. That is strictly better than
+    omitting the field, and it costs nothing extra: same "unknown, never
+    guessed" contract as a fully-wired caller, just with fewer signals
+    available.
+
+    Never raises — a snapshot is a courtesy, not a requirement of the route;
+    any failure (a bad definition shape, an unexpected exception inside
+    `workflow_cost_estimate`) degrades to `None` (the same as "caller sent
+    nothing") rather than failing `/estimate?detail=1`."""
+    try:
+        from collections.abc import Mapping as _Mapping
+        from src.workflow_cost_estimate import local_latency_snapshot
+        models: set = set()
+        for node in getattr(definition, "nodes", []) or []:
+            if getattr(node, "type", None) != "skill":
+                continue
+            config = node.config if isinstance(getattr(node, "config", None), _Mapping) else {}
+            model = str((config or {}).get("model") or "").strip()
+            if model:
+                models.add(model)
+        if not models:
+            return {}
+        return local_latency_snapshot({model: "" for model in models})
+    except Exception:  # noqa: BLE001 — a latency hint must never break the route
+        return {}
+
+
+def _detail_inputs_from_payload(payload: dict, definition=None) -> dict:
     """The optional CMP-08 inputs `estimate_detailed`/`plan_compare.compare`
     take: everything the pure estimator refuses to fetch itself (see
     `workflow_cost_estimate.estimate_detailed`'s docstring — no network, no
     reaching into ambient runtime state from a pure function). A caller that
     already has an OpenRouter catalogue slice, a skill's declared
     `calls_profile`, or a precomputed local-latency figure passes it in
-    here; nothing is looked up behind the caller's back except the on-disk
-    call-history fallback, which is always attempted (`{}` if absent)."""
+    here.
+
+    Two sources are always attempted behind the caller's back, both
+    fallbacks that never override an explicit `skill_calls_profiles` entry:
+    the on-disk call-history (`{}` if absent), and — only when `definition`
+    is given, i.e. from `/estimate`, not the multi-plan `/compare-plans`
+    where no single definition applies — each named skill's own declared
+    `calls_profile` from its `SKILL.md` (`{}` if `owner`/`project_id` are
+    not on the payload)."""
     capability_pricing = payload.get("capability_pricing")
-    skill_calls_profiles = payload.get("skill_calls_profiles")
+    skill_calls_profiles_payload = payload.get("skill_calls_profiles")
     local_latency = payload.get("local_latency")
+    declared_from_manifests: dict = {}
+    if definition is not None:
+        owner = str(payload.get("owner") or "")
+        project_id = str(payload.get("project_id") or "")
+        declared_from_manifests = _declared_calls_profiles_from_manifests(
+            definition, owner=owner, project_id=project_id)
+    skill_calls_profiles = dict(declared_from_manifests)
+    if isinstance(skill_calls_profiles_payload, dict):
+        skill_calls_profiles.update(skill_calls_profiles_payload)
+    if not isinstance(local_latency, dict) and definition is not None:
+        # W3-INT: the caller sent no local_latency of its own — compute a
+        # best-effort snapshot from the definition instead of leaving this
+        # section unfilled (see _local_latency_snapshot_for_definition).
+        local_latency = _local_latency_snapshot_for_definition(definition) or None
     return {
         "capability_pricing": capability_pricing if isinstance(capability_pricing, dict) else None,
-        "skill_calls_profiles": skill_calls_profiles if isinstance(skill_calls_profiles, dict) else None,
+        "skill_calls_profiles": skill_calls_profiles or None,
         "skill_call_history": _skill_call_history_from_disk(),
         "local_latency": local_latency if isinstance(local_latency, dict) else None,
     }
@@ -211,7 +344,13 @@ def setup_workflows_routes():
         `local_latency`; `run_id`, if the run exists, supplies `measured`
         from `WorkflowStore.usage_so_far`). The plain (non-detail) shape is
         unchanged — `preflight.py` and every existing caller of this route
-        still gets exactly what they got before."""
+        still gets exactly what they got before.
+
+        W3-C: when the payload also names `owner`/`project_id`, a skill
+        named on a `skill` node that declares its own `calls_profile` in its
+        `SKILL.md` is picked up automatically — `skill_calls_profiles` from
+        the body still wins over it for any skill named in both (see
+        `_declared_calls_profiles_from_manifests`)."""
         require_admin(request)
         payload = await _json_object(request)
         definition = _definition_or_400(payload.get("definition", payload))
@@ -230,7 +369,7 @@ def setup_workflows_routes():
                 run_measured = store.usage_so_far(raw_run_id)
         result = compute_detailed(definition, prices=prices or None,
                                   run_measured=run_measured,
-                                  **_detail_inputs_from_payload(payload))
+                                  **_detail_inputs_from_payload(payload, definition))
         return {"ok": True, "estimate": result.to_dict()}
 
     @router.post("/compare-plans")

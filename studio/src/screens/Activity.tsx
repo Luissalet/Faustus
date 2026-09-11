@@ -2,7 +2,7 @@ import { Activity as ActivityIcon, ArrowUpToLine, Calculator, Check, CircleStop,
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { Button, Dialog, EmptyState, friendlyError, MermaidView, Skeleton, StatusBadge, Toast, type RunStatus } from '../components';
-import { answerQuestion, artifactLinks, cancelRender, changeWorkflow, decideApproval, duration, getWorkflowRunDefinition, groupByProject, loadActivity, loadQueue, mergeAttention, nextRunParam, normaliseStatus, openRunInChat, prioritizeQueueItem, reportUrl, retainUnavailableRuns, stableAttentionOrder, type ActivityRun, type ArtifactLink, type QuestionDetail, type QueueItem } from '../adapters/activity';
+import { answerQuestion, artifactLinks, cancelRender, changeWorkflow, decideApproval, duration, getWorkflowRunDefinition, groupByProject, loadActivity, loadExternalRuns, loadQueue, mergeAttention, nextRunParam, normaliseStatus, openRunInChat, prioritizeQueueItem, reportUrl, retainUnavailableRuns, stableAttentionOrder, type ActivityRun, type ArtifactLink, type QuestionDetail, type QueueItem } from '../adapters/activity';
 import { loadAttention, markAttentionRead, type AttentionRow, type NextAction } from '../adapters/attention';
 import { CACHE_LABELS, clearAutomationCache, runAutomation, stopAutomation } from '../adapters/automations';
 import { relativeTime } from '../adapters/home';
@@ -41,7 +41,7 @@ const FILTERS: { id: string; label: string; match: (run: ActivityRun) => boolean
   { id: 'fallido', label: 'Failed', match: (run) => run.status === 'failed' },
 ];
 
-type Kind = 'all' | 'task' | 'render' | 'approval' | 'notification' | 'chat' | 'workflow' | 'question';
+type Kind = 'all' | 'task' | 'render' | 'approval' | 'notification' | 'chat' | 'workflow' | 'question' | 'external';
 
 // CMP-05: plain English label maps for the three NEW axes a card carries
 // (`src/attention.py`'s module docstring has the full rationale) — kept as
@@ -408,6 +408,14 @@ export function ActivityScreen() {
   const [attentionRows, setAttentionRows] = useState<AttentionRow[]>([]);
   const [attentionUnread, setAttentionUnread] = useState(0);
 
+  // CMP-06/CMP-10 follow-up (W3-D): the "Externos" section/filter — presence
+  // reported by a runtime Faustus does not execute itself (today only
+  // Herdr), polled on its own cadence like Queue/Attention above and merged
+  // into `merged` below. Supplementary by design: a user who never
+  // connected an external runtime (or a failed poll) sees no rows here,
+  // never a broken screen.
+  const [externalRuns, setExternalRuns] = useState<ActivityRun[]>([]);
+
   // CMP-05: "orden estable mientras se interactúa" — the list freezes its
   // display order while the pointer/focus is inside it (`interacting`),
   // resuming a fresh sort only once the person leaves the list. `orderRef`
@@ -448,6 +456,11 @@ export function ActivityScreen() {
   const [estimateResult, setEstimateResult] = useState<WorkflowEstimate | null>(null);
   const [estimateBusy, setEstimateBusy] = useState(false);
   const [estimateError, setEstimateError] = useState<string | null>(null);
+  // W3-INT (CONTRATO_CMP_W2.md § W2-B): the definition the estimate above
+  // was computed for, kept alongside it so the dialog can pass it (with
+  // runId) to WorkflowEstimateView for the detailed accounts + "compare
+  // plans" section — see studio/src/screens/activity/EstimateView.tsx.
+  const [estimateDefinition, setEstimateDefinition] = useState<Record<string, unknown> | null>(null);
 
   const closeDiagram = useCallback(() => {
     setDiagramFor(null);
@@ -474,15 +487,18 @@ export function ActivityScreen() {
     setEstimateFor(null);
     setEstimateResult(null);
     setEstimateError(null);
+    setEstimateDefinition(null);
   }, []);
 
   const openEstimate = useCallback(async (runId: string) => {
     setEstimateFor(runId);
     setEstimateResult(null);
     setEstimateError(null);
+    setEstimateDefinition(null);
     setEstimateBusy(true);
     try {
       const definition = await getWorkflowRunDefinition(runId);
+      setEstimateDefinition(definition);
       setEstimateResult(await workflowEstimate(definition));
     } catch (e) {
       setEstimateError(e instanceof Error ? e.message : String(e));
@@ -541,23 +557,42 @@ export function ActivityScreen() {
     clear: (id) => window.clearTimeout(id),
   }), []);
 
+  // CMP-06/CMP-10 follow-up (W3-D): external-runtime presence, supplementary
+  // like Queue/Attention above — "not configured" already resolves to `[]`
+  // inside `loadExternalRuns`, so `error` here only ever fires on a real
+  // transport failure, and even then just leaves the last known rows.
+  const externalPoller = useMemo(() => createActivityPoller({
+    load: () => loadExternalRuns(),
+    live: (rows) => rows.length > 0,
+    visible: () => document.visibilityState === 'visible',
+    data: setExternalRuns,
+    error: () => {},
+    refreshing: () => {},
+    schedule: (fn, delay) => window.setTimeout(fn, delay),
+    clear: (id) => window.clearTimeout(id),
+  }), []);
+
   useEffect(() => {
     poller.start();
     queuePoller.start();
     attentionPoller.start();
+    externalPoller.start();
     document.addEventListener('visibilitychange', poller.visibilityChanged);
     document.addEventListener('visibilitychange', queuePoller.visibilityChanged);
     document.addEventListener('visibilitychange', attentionPoller.visibilityChanged);
+    document.addEventListener('visibilitychange', externalPoller.visibilityChanged);
     return () => {
       poller.dispose();
       queuePoller.dispose();
       attentionPoller.dispose();
+      externalPoller.dispose();
       if (noticeTimer.current) window.clearTimeout(noticeTimer.current);
       document.removeEventListener('visibilitychange', poller.visibilityChanged);
       document.removeEventListener('visibilitychange', queuePoller.visibilityChanged);
       document.removeEventListener('visibilitychange', attentionPoller.visibilityChanged);
+      document.removeEventListener('visibilitychange', externalPoller.visibilityChanged);
     };
-  }, [poller, queuePoller, attentionPoller]);
+  }, [poller, queuePoller, attentionPoller, externalPoller]);
 
   const prioritizeQueued = useCallback(async (item: QueueItem) => {
     const key = `${item.kind}-${item.id}`;
@@ -576,7 +611,10 @@ export function ActivityScreen() {
   // own `data` callback above is untouched); `merged` is the one place
   // attention rows are attached, so every consumer below sees the same
   // reason/priority/unread a raw `runs` read never carried.
-  const merged = useMemo(() => (runs ? mergeAttention(runs, attentionRows) : null), [runs, attentionRows]);
+  const merged = useMemo(
+    () => (runs ? mergeAttention(runs, attentionRows).concat(externalRuns) : null),
+    [runs, attentionRows, externalRuns],
+  );
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -610,7 +648,7 @@ export function ActivityScreen() {
   const groups = useMemo(() => (viewMode === 'project' ? groupByProject(displayed) : null), [viewMode, displayed]);
 
   const counts = useMemo(() => {
-    const c = { all: 0, task: 0, render: 0, approval: 0, notification: 0, chat: 0, workflow: 0, question: 0 };
+    const c = { all: 0, task: 0, render: 0, approval: 0, notification: 0, chat: 0, workflow: 0, question: 0, external: 0 };
     for (const run of merged ?? []) {
       if (run.kind === 'task' && run.task?.outputTarget === 'notification') c.notification++;
       else {
@@ -754,6 +792,21 @@ export function ActivityScreen() {
               )}
             </span>
           )}
+          {/* CMP-06/CMP-10 follow-up (W3-D): the external-runtime badge —
+              certainty (structured/heuristic) plus signal age, the same
+              "never presented with the same confidence" rule the attention
+              signal badge above already follows, reused here rather than a
+              second visual language for "how fresh is this fact". */}
+          {run.external && (
+            <span className="fs-act__external-badge" data-certainty={run.external.certainty} data-testid="activity-external-badge">
+              <span className="fs-act__external-certainty">{run.external.certainty === 'structured' ? t('Structured') : t('Heuristic')}</span>
+              {run.external.signalAgeS !== null && (
+                <span className="fs-act__signal-badge" data-health={run.external.signalAgeS < 60 ? 'live' : 'stale'}>
+                  <Wifi size={11} aria-hidden="true" />{t('{n}s old', { n: Math.round(run.external.signalAgeS) })}
+                </span>
+              )}
+            </span>
+          )}
           <span className="fs-row__meta">{[relativeTime(run.startedAt), duration(run.startedAt, run.finishedAt)].filter(Boolean).join(' · ')}</span>
           {(failed || run.stale) && <span className="fs-row__meta">{t('Last known activity')}</span>}
         </span>
@@ -871,6 +924,7 @@ export function ActivityScreen() {
               ['workflow', t('Workflows'), counts.workflow],
               ['approval', t('Approvals'), counts.approval],
               ['notification', t('Notifications'), counts.notification],
+              ['external', t('External'), counts.external],
             ] as [Kind, string, number][]
           )
             .filter(([k, , n]) => k === 'all' || k === kind || n > 0)
@@ -1162,6 +1216,18 @@ export function ActivityScreen() {
                   )}
                 </>
               )}
+
+              {current.kind === 'external' && current.external && (
+                <>
+                  <p className="fs-prose">{t('Reported by an external runtime Faustus does not run itself. Read-only: nothing here can be driven from Faustus.')}</p>
+                  <dl className="fs-act__facts">
+                    <DetailRow label={t('Runtime')}>{current.external.runtime}</DetailRow>
+                    <DetailRow label={t('State')}>{current.external.state || '—'}</DetailRow>
+                    <DetailRow label={t('Certainty')}>{current.external.certainty === 'structured' ? t('Structured') : t('Heuristic')}</DetailRow>
+                    <DetailRow label={t('Signal age')}>{current.external.signalAgeS !== null ? t('{n}s old', { n: Math.round(current.external.signalAgeS) }) : t('Unknown')}</DetailRow>
+                  </dl>
+                </>
+              )}
             </section>
           ) : (
             <div className="fs-act__blank">
@@ -1184,7 +1250,13 @@ export function ActivityScreen() {
         <Dialog open onOpenChange={(next) => { if (!next) closeEstimate(); }} title={t('Workflow cost estimate')} testId="activity-estimate-dialog">
           {estimateBusy && <Skeleton label={t('Estimating the cost')} height="52px" count={3} />}
           {estimateError && <p className="fs-act__error" role="alert">{estimateError}</p>}
-          {estimateResult && !estimateBusy && <WorkflowEstimateView estimate={estimateResult} />}
+          {estimateResult && !estimateBusy && (
+            <WorkflowEstimateView
+              estimate={estimateResult}
+              definition={estimateDefinition ?? undefined}
+              runId={estimateFor ?? undefined}
+            />
+          )}
         </Dialog>
       )}
 

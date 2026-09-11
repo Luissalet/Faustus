@@ -313,11 +313,49 @@ function DocTab({ doc, dispatch, onNotice }: { doc: DocState | null; dispatch: S
     removeSuggestions([sg.id]);
   };
 
+  /** W3-A: `sg.anchor` — same runtime object `chat.ts` decoded off the
+   *  `doc_suggestions` wire (`DocSuggestion.anchor`), which `docSession.ts`'s
+   *  `PendingSuggestion` type does not declare (that module has no
+   *  dependency on chat.ts's wire shape — see its own doc comment) but does
+   *  not strip either: the field survives on the object at runtime, this
+   *  just reads it back defensively, the same posture `chat.ts` itself uses
+   *  for every optional passthrough field. */
+  function suggestionAnchor(sg: PendingSuggestion): { quote: string; before: string; after: string } | undefined {
+    const a = (sg as unknown as { anchor?: unknown }).anchor;
+    if (!a || typeof a !== 'object') return undefined;
+    const r = a as Record<string, unknown>;
+    if (typeof r.quote !== 'string' || !r.quote) return undefined;
+    return { quote: r.quote, before: typeof r.before === 'string' ? r.before : '', after: typeof r.after === 'string' ? r.after : '' };
+  }
+
+  /** W3-A: mirrors `src/document_comments.py::locate_quote` — narrows every
+   *  occurrence of `anchor.quote` in `text` by matching its recorded
+   *  immediate surrounding context, never picking "the first match" when
+   *  more than one occurrence remains. `null` when the anchor cannot
+   *  disambiguate (zero occurrences, or still more than one after
+   *  narrowing) — the caller then falls back to the existing `find`-only
+   *  occurrence picker exactly as it did before this anchor existed. */
+  function locateAnchor(text: string, anchor: { quote: string; before: string; after: string }): DocRange | null {
+    const occ = findOccurrences(text, anchor.quote);
+    if (occ.length === 0) return null;
+    if (occ.length === 1) return occ[0];
+    const narrowed = occ.filter((o) => o.before === anchor.before && o.after === anchor.after);
+    return narrowed.length === 1 ? narrowed[0] : null;
+  }
+
   /** CMP-02: locate `sg.find`; zero occurrences skips it (as before), one
    *  occurrence applies it, more than one shows the picker — the bug this
-   *  fiche exists to fix was applying blindly to the first match. */
+   *  fiche exists to fix was applying blindly to the first match.
+   *  W3-A: an `anchor` that itself locates a single occurrence applies
+   *  straight away, without even showing the picker for what would
+   *  otherwise read as an ambiguous `find`. */
   const applySuggestion = (sg: PendingSuggestion) => {
     if (!doc.id) return;
+    const anchor = suggestionAnchor(sg);
+    if (anchor) {
+      const at = locateAnchor(text, anchor);
+      if (at) { void applyAt(sg, at); return; }
+    }
     const occ = findOccurrences(text, sg.find);
     if (occ.length === 0) {
       onNotice(t('The text it wants to change is no longer in the document; skipping it.'), 'warning');

@@ -189,6 +189,97 @@ def _run_log_path(run_id: str) -> str:
 # terminal values, none of them a success).
 _SUCCESS_STATUS = "done"
 
+# W3-F (CONTRATO_W3.md): the placeholder `from_run` used before real inputs
+# were wired up — kept as the fallback for the cases real inputs cannot
+# reach (no session_id in the log, no user message found, cross-owner
+# session, or a message with no readable text — see `_first_user_message`).
+_PLACEHOLDER_INPUT = "task description"
+
+# A first user message can be long (a pasted brief, a long request); a
+# recipe's `inputs` is a short label for what the run started from, not a
+# transcript, so it is capped the same way other prompt-adjacent text in
+# this codebase is (`src/agent_loop.py`'s own truncation helpers use a
+# similar few-hundred-char budget for a single field).
+_MAX_INPUT_CHARS = 600
+
+
+def _extract_text(raw: Any) -> str:
+    """The readable text of one `ChatMessage.content` value.
+
+    A plain user message is stored as its own string. A multimodal one
+    (image/audio attachments alongside text) is persisted as a JSON array
+    of content blocks (`core/session_manager.py::_persist_message` via
+    `src.attachment_refs.persistable_message_content`) — only the ``text``
+    blocks are a "real input" a human typed; attachment references are not
+    something a recipe's ``inputs`` should quote.
+    """
+    if not isinstance(raw, str):
+        return ""
+    text = raw
+    if raw.startswith("[{") and '"type"' in raw:
+        try:
+            parsed = json.loads(raw)
+        except (ValueError, TypeError):
+            parsed = None
+        if isinstance(parsed, list):
+            parts = [
+                str(block.get("text") or "")
+                for block in parsed
+                if isinstance(block, dict) and block.get("type") == "text"
+            ]
+            text = "\n".join(p for p in parts if p)
+    return text.strip()
+
+
+def _truncate_input(text: str) -> str:
+    if len(text) > _MAX_INPUT_CHARS:
+        return text[:_MAX_INPUT_CHARS].rstrip() + "…"
+    return text
+
+
+def _first_user_message(session_id: str, owner: str) -> Optional[str]:
+    """The task the run actually started from: the earliest ``role="user"``
+    message of the run's session (``core.database.ChatMessage``, via
+    ``core.database.SessionLocal`` — same local-import-per-call pattern as
+    ``src/approval_store.py``, so a test can monkeypatch
+    ``core.database.SessionLocal`` the same way).
+
+    Privacy (COMUN: privacy is a non-negotiable contract): a run's log file
+    carries no owner of its own, so this checks the SESSION's owner before
+    reading anything out of it — a session with a different, known owner
+    never leaks its first message into another owner's draft recipe. A
+    legacy/shared session (``Session.owner is None``) is readable, matching
+    how the rest of the chat history for such sessions already behaves.
+    Returns ``None`` on anything unexpected (no DB, no such session, no
+    user message, a read error) — the caller falls back to the placeholder,
+    never raises `from_run` itself over this.
+    """
+    try:
+        from core.database import ChatMessage as DbChatMessage, Session as DbSession, SessionLocal
+    except Exception:
+        return None
+    db = SessionLocal()
+    try:
+        db_session = db.query(DbSession).filter(DbSession.id == session_id).first()
+        if db_session is None:
+            return None
+        if getattr(db_session, "owner", None) and db_session.owner != owner:
+            return None
+        msg = (
+            db.query(DbChatMessage)
+            .filter(DbChatMessage.session_id == session_id, DbChatMessage.role == "user")
+            .order_by(DbChatMessage.timestamp.asc())
+            .first()
+        )
+        if msg is None:
+            return None
+        return _extract_text(msg.content)
+    except Exception:
+        logger.debug("[recipes] could not read first user message for session %s", session_id, exc_info=True)
+        return None
+    finally:
+        db.close()
+
 
 def from_run(run_id: str, owner: str) -> Recipe:
     """Turn one successful run into a DRAFT recipe (``status="draft"``) —
@@ -207,10 +298,17 @@ def from_run(run_id: str, owner: str) -> Recipe:
     message is masked before it can reach the draft — never only the
     fields this function happens to read.
 
-    Known limitation (see docs/adaptations/decisions/CMP-12.md): the run
-    log only carries the ASSISTANT side of the turn (tool events + status),
-    not the original user request, so ``inputs`` is a generic placeholder
-    rather than reverse-engineered from the conversation.
+    Inputs (W3-F, CONTRATO_W3.md): the run log itself only carries the
+    ASSISTANT side of the turn (tool events + status), never the original
+    user request — but the log's own first line names the ``session_id``
+    that turn ran in (`src/agent_runs.py::_RunLog` writes it), and
+    ``core.database.ChatMessage`` still has that session's messages. So
+    ``inputs`` is the session's EARLIEST ``role="user"`` message (redacted
+    again, separately, since it never passed through the raw-log
+    redaction above) when one can be found — falling back to the old
+    generic placeholder only when it genuinely cannot: no ``session_id`` in
+    the log, no such session, a session owned by someone else (never leak
+    another owner's message into this draft), or no user message at all.
     """
     path = _run_log_path(run_id)
     if not os.path.isfile(path):
@@ -226,6 +324,7 @@ def from_run(run_id: str, owner: str) -> Recipe:
     statuses: List[str] = []
     title = ""
     tools: List[str] = []
+    session_id = ""
     for line in raw.splitlines():
         line = line.strip()
         if not line:
@@ -242,6 +341,10 @@ def from_run(run_id: str, owner: str) -> Recipe:
         label = obj.get("label")
         if not title and isinstance(label, str) and label.strip():
             title = label.strip()
+        if not session_id:
+            sid = obj.get("session_id")
+            if isinstance(sid, str) and sid:
+                session_id = sid
         ev = obj.get("ev")
         if isinstance(ev, str) and ev.startswith("data: "):
             payload_text = ev[len("data: "):].strip()
@@ -264,10 +367,18 @@ def from_run(run_id: str, owner: str) -> Recipe:
         "repeat the run's own steps (no tool events were recorded for it)"
     ]
 
+    inputs = [_PLACEHOLDER_INPUT]
+    if session_id:
+        first_message = _first_user_message(session_id, owner)
+        if first_message:
+            first_message = _truncate_input(redact_secrets(first_message))
+            if first_message:
+                inputs = [first_message]
+
     recipe = Recipe(
         id=f"draft-{uuid.uuid4().hex[:12]}",
         title=title or f"Recipe from run {run_id}",
-        inputs=["task description"],
+        inputs=inputs,
         steps=steps,
         tools=tools,
         success_conditions=["the result is verified the same way the source run was"],

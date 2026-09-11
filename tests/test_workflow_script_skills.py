@@ -8,6 +8,7 @@ from src import skill_import_review
 from src.contracts import ExecutionResult
 from src.skills_runtime import bridge, discovery
 from src.workflows import WorkflowEngine
+from src.workflows import skills as workflow_skills
 from src.workflows.runtime import production_handlers
 from tests.test_workflow_handlers import store, wf  # noqa: F401
 
@@ -57,6 +58,13 @@ Run report.py to write the report.
     monkeypatch.setattr(tool_execution, "vet_workspace", lambda path: path)
     monkeypatch.setattr(artifact_store, "ARTIFACT_RUNS_DIR", str(tmp_path / "runs"))
     monkeypatch.setattr(artifact_store, "ARTIFACT_STORE_DIR", str(tmp_path / "blobs"))
+    # W3-INT (CONTRATO_CMP_W2.md): `skills.py::run` records every call in
+    # `DATA_DIR/skill_call_history.json` (see its module docstring) — same
+    # class of leak as `ARTIFACT_RUNS_DIR` above, just for a different file.
+    # The `.lock` companion (`core.kernel_file_lock.KernelFileLock`) is
+    # derived from `CALL_HISTORY_PATH` at call time, so repointing this one
+    # attribute moves both.
+    monkeypatch.setattr(workflow_skills, "CALL_HISTORY_PATH", tmp_path / "skill_call_history.json")
     monkeypatch.setattr(registry, "_probe_cache", {})
     monkeypatch.setattr(registry, "_probe_docker", lambda stamp: registry.Observation(
         "docker_workspace", "available", "inert fixture", stamp))

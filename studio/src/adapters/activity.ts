@@ -4,6 +4,7 @@ import { chatActivity, createSession, listModels, listSessions, sendTurn, type A
 import { sessionActivity } from '../lib/activity';
 import { t } from '../i18n';
 import type { AttentionRow, ConnectionHealth, Lifecycle, NextAction, WaitCause } from './attention';
+import { ExternalRuntimesApiError, getHerdrSessions, type HerdrCertainty, type HerdrPresence } from './externalRuntimes';
 
 /**
  * One shape for every kind of work (UI-050).
@@ -69,7 +70,7 @@ export interface QuestionDetail {
 
 export interface ActivityRun {
   id: string;
-  kind: 'task' | 'render' | 'approval' | 'chat' | 'workflow' | 'question';
+  kind: 'task' | 'render' | 'approval' | 'chat' | 'workflow' | 'question' | 'external';
   title: string;
   detail?: string;
   status: RunStatus;
@@ -104,6 +105,13 @@ export interface ActivityRun {
    *  the single field `groupByProject` groups on, so a caller never has to
    *  know which kind carries which. Null/absent means "no project". */
   projectId?: string | null;
+  /** CMP-06/CMP-10 follow-up (W3-D): presence reported by an external
+   *  runtime Faustus does NOT execute itself (today only Herdr, see
+   *  `adapters/externalRuntimes.ts`) — folded into the same Activity shape
+   *  everything else uses, but never presented with the same confidence as
+   *  Faustus's own structured events: `certainty` and `signalAgeS` travel
+   *  with the row so the UI can say so, not just imply it. */
+  external?: { runtime: string; certainty: HerdrCertainty; signalAgeS: number | null; state: string };
 }
 
 export interface WorkflowStep {
@@ -225,6 +233,49 @@ export function normaliseStatus(raw: unknown): { status: RunStatus; label?: stri
   if (['waiting', 'waiting_approval', 'pending_approval', 'needs_approval'].includes(value)) return { status: 'waiting' };
   if (['queued', 'pending', 'scheduled', 'submitted', 'submit_pending', ''].includes(value)) return { status: 'queued' };
   return { status: 'queued', label: value };
+}
+
+/**
+ * CMP-06/CMP-10 follow-up (W3-D) — one `ActivityRun` per external-runtime
+ * presence row. `certainty`/`signalAgeS` are NOT folded into `detail` (the
+ * way ADP-11's attention reason is): they are a distinct, always-visible
+ * fact about the SIGNAL, independent of whatever state word the external
+ * runtime happens to use — see `HerdrPresence`'s own docstring.
+ */
+function externalRunFrom(runtime: string, presence: HerdrPresence): ActivityRun {
+  const mapped = normaliseStatus(presence.state);
+  const sessionId = presence.sessionId || 'unknown';
+  return {
+    id: `${runtime}:${sessionId}`,
+    kind: 'external',
+    title: presence.label || sessionId,
+    detail: presence.certainty === 'heuristic'
+      ? t('Heuristic signal — not confirmed by the runtime itself')
+      : t('Structured signal from the runtime'),
+    status: mapped.status,
+    statusLabel: mapped.label,
+    repeats: 1,
+    external: { runtime, certainty: presence.certainty, signalAgeS: presence.signalAgeS, state: presence.state },
+  };
+}
+
+/**
+ * `GET`s every configured external runtime's presence list (today: only
+ * Herdr) and folds it into `ActivityRun[]`, the same normalised shape
+ * every other subsystem in this file produces. "Not configured" is NOT an
+ * error for this screen — it means exactly what an empty list means for a
+ * user who never connected the runtime, so it resolves to `[]` rather than
+ * rejecting; any OTHER failure (a real transport/version error) still
+ * rejects, same contract every other `load*` export here has.
+ */
+export async function loadExternalRuns(): Promise<ActivityRun[]> {
+  try {
+    const sessions = await getHerdrSessions();
+    return sessions.map((s) => externalRunFrom('herdr', s));
+  } catch (e) {
+    if (e instanceof ExternalRuntimesApiError && e.errorClass === 'external_runtimes.not_configured') return [];
+    throw e;
+  }
 }
 
 interface RawTaskRun {

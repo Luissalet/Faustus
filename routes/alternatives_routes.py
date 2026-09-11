@@ -40,6 +40,12 @@ class CreateExperimentRequest(BaseModel):
 class CreateDocExperimentRequest(BaseModel):
     goal: str = Field(..., min_length=1, max_length=2000)
     base_content: str = Field("", max_length=2_000_000)
+    document_id: Optional[str] = Field(
+        None, max_length=200,
+        description="W3-INT: a real Studio document this owner can read; when given, the "
+                     "experiment's base text is that document's LIVE current_content (never "
+                     "`base_content`) and apply/combine can write into its version history — "
+                     "see docs/api/alternatives.md §Cableado a core.database.Document")
 
 
 class AddAlternativeRequest(BaseModel):
@@ -126,7 +132,8 @@ def setup_alternatives_routes() -> APIRouter:
         owner = effective_user(request)
         _project_or_404(project_id, owner)
         try:
-            exp = alternatives.create_doc_experiment(owner, project_id, body.goal, body.base_content)
+            exp = alternatives.create_doc_experiment(
+                owner, project_id, body.goal, body.base_content, document_id=body.document_id)
         except alternatives.AlternativesError as exc:
             return _alt_error(exc)
         return exp

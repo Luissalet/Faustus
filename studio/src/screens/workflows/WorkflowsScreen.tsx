@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Compass, FileJson, Play, Workflow as WorkflowIcon } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router';
+import { Compass, Download, FileJson, Play, Workflow as WorkflowIcon } from 'lucide-react';
 import { Button, EmptyState, Skeleton } from '../../components';
 import { t } from '../../i18n';
 import { getWorkflowRunDefinition, loadActivity, type ActivityRun } from '../../adapters/activity';
 import {
+  exportWorkflowDefinition,
   importWorkflowDefinition,
   workflowPreflight,
   workflowSimulate,
@@ -57,7 +59,72 @@ function findInspectorNode(definition: Record<string, unknown> | null, nodeId: s
   return { id: node.id, type: node.type, title: node.title || node.id, needs: node.needs ?? [], config: node.config ?? {} };
 }
 
+// ---------------------------------------------------------------------------
+// W3-F (CONTRATO_W3.md) — a hand-adjusted node layout (PlanGraph's new
+// `onNodeMove`) is worth remembering per DEFINITION, not per session: the
+// same plan reopened later — from Recent runs or a paste — should come back
+// the way it was left. There is no server-side identity to key on until a
+// run exists (a pasted/imported definition has none), so the key is a
+// content fingerprint of the definition itself: a plain, non-cryptographic
+// hash (FNV-1a over a stably-ordered JSON.stringify) — good enough to tell
+// "the same plan" from "a different one", not a security boundary. A
+// coincidental collision only means an unrelated plan's old layout gets
+// reused as a starting point, never a wrong RUN or a wrong export target.
+// ---------------------------------------------------------------------------
+
+function stableStringify(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
+  if (value && typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+    return `{${entries.map(([k, v]) => JSON.stringify(k) + ':' + stableStringify(v)).join(',')}}`;
+  }
+  return JSON.stringify(value) ?? 'null';
+}
+
+function definitionFingerprint(definition: Record<string, unknown> | null): string {
+  if (!definition) return '';
+  const s = stableStringify(definition);
+  let hash = 0;
+  for (let i = 0; i < s.length; i++) hash = (Math.imul(31, hash) + s.charCodeAt(i)) | 0;
+  return (hash >>> 0).toString(36);
+}
+
+const LAYOUT_KEY_PREFIX = 'faustus_studio_workflows_layout:';
+
+function loadLayout(fingerprint: string): Record<string, { x: number; y: number }> {
+  if (!fingerprint) return {};
+  try {
+    const raw = localStorage.getItem(LAYOUT_KEY_PREFIX + fingerprint);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return {};
+    return parsed as Record<string, { x: number; y: number }>;
+  } catch {
+    return {};
+  }
+}
+
+function saveLayout(fingerprint: string, layout: Record<string, { x: number; y: number }>): void {
+  if (!fingerprint) return;
+  try {
+    localStorage.setItem(LAYOUT_KEY_PREFIX + fingerprint, JSON.stringify(layout));
+  } catch {
+    // best-effort only (private browsing / quota) — a lost layout is never
+    // data loss, just a redraw back to the computed default next time.
+  }
+}
+
+function downloadJson(data: unknown, filename: string): void {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  window.setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+
 export function WorkflowsScreen() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [mode, setMode] = useState<Mode>('design');
   const [definition, setDefinition] = useState<Record<string, unknown> | null>(null);
   const [boundRunId, setBoundRunId] = useState<string | null>(null);
@@ -80,6 +147,14 @@ export function WorkflowsScreen() {
   const [simBusy, setSimBusy] = useState(false);
   const [simError, setSimError] = useState<string | null>(null);
 
+  // W3-F: node layout, persisted in localStorage per definition fingerprint
+  // (see `loadLayout`/`saveLayout` above), and the Export button's state.
+  const [layout, setLayout] = useState<Record<string, { x: number; y: number }>>({});
+  const [exportBusy, setExportBusy] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const fingerprint = useMemo(() => definitionFingerprint(definition), [definition]);
+  const openedRunParam = useRef<string | null>(null);
+
   useEffect(() => {
     let cancelled = false;
     loadActivity()
@@ -97,6 +172,25 @@ export function WorkflowsScreen() {
       cancelled = true;
     };
   }, []);
+
+  // W3-F: a definition's hand-adjusted layout is loaded once per fingerprint
+  // (a new definition — pasted, imported, or loaded from a different run —
+  // starts from whatever this browser saved for THAT content before, or the
+  // computed default when there is none yet).
+  useEffect(() => {
+    setLayout(loadLayout(fingerprint));
+  }, [fingerprint]);
+
+  const onNodeMove = useCallback(
+    (id: string, pos: { x: number; y: number }) => {
+      setLayout((prev) => {
+        const next = { ...prev, [id]: pos };
+        saveLayout(fingerprint, next);
+        return next;
+      });
+    },
+    [fingerprint],
+  );
 
   const nodes = useMemo(() => planNodesOf(definition), [definition]);
   const rawNodes = useMemo(() => rawNodesOf(definition), [definition]);
@@ -125,18 +219,69 @@ export function WorkflowsScreen() {
     setSimChoices({});
   }, [definition, runPreflight]);
 
-  const loadFromRun = useCallback((run: ActivityRun) => {
+  // W3-F: shared by the "Recent runs" list AND the `?run=<id>` deep link —
+  // one code path loads a run's definition into `RunOverlay`'s Execute mode
+  // either way, so a shared/bookmarked `/workflows?run=<id>` behaves exactly
+  // like clicking that run in the list.
+  const openRun = useCallback((runId: string) => {
     setLoadError(null);
     setLoadNotice(null);
-    getWorkflowRunDefinition(run.id)
+    getWorkflowRunDefinition(runId)
       .then((def) => {
         setDefinition(def);
-        setBoundRunId(run.id);
+        setBoundRunId(runId);
         setSelectedNodeId(null);
         setMode('execute');
+        // Mark this id as already-opened BEFORE the param write below so
+        // the deep-link effect (watching `searchParams`) does not treat its
+        // own resulting change as a second, unopened `?run=` to load.
+        openedRunParam.current = runId;
+        setSearchParams((prev) => {
+          const next = new URLSearchParams(prev);
+          next.set('run', runId);
+          return next;
+        }, { replace: true });
       })
       .catch((e) => setLoadError(e instanceof Error ? e.message : String(e)));
-  }, []);
+  }, [setSearchParams]);
+
+  const loadFromRun = useCallback((run: ActivityRun) => openRun(run.id), [openRun]);
+
+  // A brand-new run started from Design/Execute (RunOverlay's own confirmed
+  // "Start for real") gets the same URL treatment as one loaded from
+  // history, so refreshing mid-run does not lose it either.
+  const onRunStarted = useCallback((runId: string) => {
+    setBoundRunId(runId);
+    openedRunParam.current = runId;
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set('run', runId);
+      return next;
+    }, { replace: true });
+  }, [setSearchParams]);
+
+  // Deep link: `/workflows?run=<id>` loads that run on arrival. Guarded by
+  // `openedRunParam` so it fires once per distinct `run` value, not on every
+  // render (`openRun` itself rewrites the same param via `setSearchParams`).
+  useEffect(() => {
+    const runId = searchParams.get('run');
+    if (!runId || openedRunParam.current === runId) return;
+    openedRunParam.current = runId;
+    openRun(runId);
+  }, [searchParams, openRun]);
+
+  // A paste/import replaces the run this screen was bound to (if any) — drop
+  // the `?run=` deep link along with it, so the address bar does not keep
+  // pointing at a run that is no longer what is on screen.
+  const clearRunParam = useCallback(() => {
+    openedRunParam.current = null;
+    setSearchParams((prev) => {
+      if (!prev.has('run')) return prev;
+      const next = new URLSearchParams(prev);
+      next.delete('run');
+      return next;
+    }, { replace: true });
+  }, [setSearchParams]);
 
   const loadFromPaste = useCallback(() => {
     setLoadError(null);
@@ -153,6 +298,7 @@ export function WorkflowsScreen() {
       setBoundRunId(null);
       setSelectedNodeId(null);
       setMode('design');
+      clearRunParam();
       return;
     }
     importWorkflowDefinition(parsed)
@@ -162,6 +308,7 @@ export function WorkflowsScreen() {
           setBoundRunId(null);
           setSelectedNodeId(null);
           setMode('design');
+          clearRunParam();
           if (result.designOnly.length > 0) {
             setLoadNotice(t('{n} node(s) were kept as design-only — not translated into anything executable.', { n: result.designOnly.length }));
           }
@@ -170,7 +317,7 @@ export function WorkflowsScreen() {
         }
       })
       .catch((e) => setLoadError(e instanceof Error ? e.message : String(e)));
-  }, [paste]);
+  }, [paste, clearRunParam]);
 
   const applyNodeConfig = useCallback(
     (nodeId: string, config: Record<string, unknown>) => {
@@ -179,6 +326,24 @@ export function WorkflowsScreen() {
     },
     [definition, rawNodes],
   );
+
+  // W3-F: the canonical envelope from `exportWorkflowDefinition` (round-trips
+  // through `/import` unchanged — `docs/api/topology.md` §Interchange),
+  // carrying this browser's saved `layout` so a hand-adjusted plan survives
+  // the download too. A file, not a copy-paste — the JSON textarea above is
+  // for the reverse direction (loading one).
+  const exportDefinition = useCallback(() => {
+    if (!definition) return;
+    setExportBusy(true);
+    setExportError(null);
+    exportWorkflowDefinition(definition, { layout })
+      .then((envelope) => {
+        const workflowId = typeof definition.id === 'string' && definition.id ? definition.id : 'workflow';
+        downloadJson(envelope, `${workflowId}.json`);
+      })
+      .catch((e) => setExportError(e instanceof Error ? e.message : String(e)))
+      .finally(() => setExportBusy(false));
+  }, [definition, layout]);
 
   const runSimulation = useCallback(() => {
     if (!definition) return;
@@ -236,7 +401,19 @@ export function WorkflowsScreen() {
             </button>
           ))}
         </div>
+        <Button
+          variant="secondary"
+          size="sm"
+          icon={Download}
+          label={t('Export')}
+          title={t('Download this definition as JSON, including your saved node layout.')}
+          onClick={exportDefinition}
+          loading={exportBusy}
+          disabled={!definition}
+          testId="workflows-export"
+        />
       </header>
+      {exportError && <p className="fs-workflows__error" role="alert">{exportError}</p>}
 
       <div className="fs-workflows__source">
         <div className="fs-workflows__recent">
@@ -290,7 +467,7 @@ export function WorkflowsScreen() {
           <div className="fs-workflows__canvas">
             {mode === 'design' && (
               <>
-                <PlanGraph nodes={nodes} selectedNodeId={selectedNodeId} onSelectNode={setSelectedNodeId} />
+                <PlanGraph nodes={nodes} selectedNodeId={selectedNodeId} onSelectNode={setSelectedNodeId} layout={layout} onNodeMove={onNodeMove} />
                 <div className="fs-workflows__preflight">
                   {preflightBusy && <Skeleton label={t('Running preflight')} count={2} height="28px" />}
                   {preflightError && <p className="fs-workflows__error" role="alert">{preflightError}</p>}
@@ -364,7 +541,7 @@ export function WorkflowsScreen() {
                   <Button variant="primary" size="sm" icon={Play} label={t('Run simulation')} onClick={runSimulation} loading={simBusy} testId="workflows-run-simulation" />
                 </div>
                 {simError && <p className="fs-workflows__error" role="alert">{simError}</p>}
-                <PlanGraph nodes={nodes} marks={simMarks} selectedNodeId={selectedNodeId} onSelectNode={setSelectedNodeId} />
+                <PlanGraph nodes={nodes} marks={simMarks} selectedNodeId={selectedNodeId} onSelectNode={setSelectedNodeId} layout={layout} />
                 {simulation && (
                   <div className="fs-workflows__simresult" data-testid="workflows-simulation-result">
                     <p>
@@ -389,7 +566,7 @@ export function WorkflowsScreen() {
               <RunOverlay
                 definition={definition}
                 runId={boundRunId}
-                onRunStarted={setBoundRunId}
+                onRunStarted={onRunStarted}
                 selectedNodeId={selectedNodeId}
                 onSelectNode={setSelectedNodeId}
               />

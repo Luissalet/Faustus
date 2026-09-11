@@ -420,3 +420,52 @@ de aigraphstudio (un segundo formato de proyecto desconectado de los
 datos reales), `openrouter/auto` y BYOK (van contra «nunca pasar a pago
 en silencio» y «una sola autoridad sobre privacidad»).
 
+**Tanda 2 «ADP» (11-09-2026, commit `95747d9`).** Auditoría fila a fila
+de las 32 fichas ADP-01..32 contra el código real (`docs/adaptations/
+baseline.md`) y, donde el hueco era genuino, construcción directa: ocho
+estados de atención con motivo y no-leídos (`src/attention.py`), escritorio
+semántico completo — snapshot acotado, `ref` con sesión+generación,
+disposición de entrega separada del resultado observado, backend UIA
+opcional (`src/desktop_semantics/`) —, requisitos versionados por proyecto
+con matriz de evidencia y caducidad honesta (`src/requirements/`),
+wiki-links con backlinks y comentarios anclados por cita+contexto
+(`src/document_links.py`, `src/document_comments.py`), política de
+proveedor explícita con MOD-05 cableado a `/api/chat` para `model=='auto'`
+(`src/provider_policy.py`), dry-run e importación de workflows externos
+(`src/workflows/preflight.py`, `interchange.py`), revisión de skills con
+hash/diff/aprobación pinneada (`src/skill_import_review.py`), snapshot
+acotado del navegador con subárbol/búsqueda (`src/browser_view.py`),
+`repo_map` consolidado sobre `code_index` (duplicidad cerrada) y pools de
+admisión de recursos (`src/resource_admission.py`). Detalle completo y
+estado fila a fila: `docs/adaptations/baseline.md` (reconciliado en el
+lote W3-E de esta misma ola).
+
+**Tanda 3 «CMP» (11-09-2026, commit `757262e`).** Informe comparativo V2
+(§3.1-3.14), nueve lotes en paralelo sobre huecos que la tanda 2 dejó
+documentados: sesión documental compartida entre panel y editor + selector
+de ocurrencias sin ambigüedad + `ReviewPane` (CMP-01/02/03), tres
+disposiciones del Studio — conversación/documento/revisión — sin duplicar
+estado (CMP-01-layout), vecindario de conocimiento tipado con evidencia
+caducada honesta y recibos de contexto por turno (CMP-04), cuatro ejes de
+atención (ciclo/espera/conexión/siguiente acción) sobre `src/attention.py`
+(CMP-05), adaptador Herdr de solo lectura con contrato propio declarado
+pendiente de validar (CMP-06), simulador estructural de workflows +
+pantalla `/workflows` con canvas SVG propio y tres modos (CMP-07),
+estimador con cuentas separadas (activaciones/llamadas/operaciones
+externas) y comparador de planes (CMP-08), estrategia observable del
+turno con perfiles fast/balanced/deep_review (CMP-09), canal de acción
+explícito para el escritorio semántico con fallback visible (CMP-10),
+recetas de trabajo reutilizables con `from-run` redactado (CMP-12),
+alternativas aisladas comparables con fusión a tres vías real (CMP-13), y
+el showcase de tres recorridos con datos mínimos (CMP-14). Fichas
+completas en `docs/adaptations/decisions/CMP-*.md`, cada una con su propia
+sección "Puntos a cablear por el orquestador" — la ola siguiente (W3,
+`CONTRATO_W3.md`) es precisamente el cableado de esos puntos (evento
+`strategy` y `anchor` en Studio, CMP-11 de capacidades explicables,
+`local_latency` real del estimador, aisladores de futures, exportar/
+persistir workflows).
+
+**Estado:** EN CURSO — la ola W3 (en marcha en paralelo a este mismo
+documento) cablea los puntos que las tandas 2 y 3 dejaron documentados
+como pendientes de un lote posterior; no cierra OBJ-8 todavía.
+

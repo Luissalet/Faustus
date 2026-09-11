@@ -300,12 +300,21 @@
   white-space: nowrap;
 }
 
-.fs-palette__cap[data-ok='true'] {
+/* CMP-11: four states, not two — `unknown` keeps the plain border above
+   (no colour invented for "we don't know"), the other three each get their
+   own, so a glance tells `tested` (probed, works) apart from `announced`
+   (claimed, unverified) without opening the tooltip. */
+.fs-palette__cap[data-state='tested'] {
   border-color: color-mix(in srgb, var(--fs-success) 45%, transparent);
   color: var(--fs-success);
 }
 
-.fs-palette__cap[data-ok='false'] {
+.fs-palette__cap[data-state='announced'] {
+  border-color: color-mix(in srgb, var(--fs-warning) 45%, transparent);
+  color: var(--fs-warning);
+}
+
+.fs-palette__cap[data-state='missing'] {
   border-color: color-mix(in srgb, var(--fs-danger) 45%, transparent);
   color: var(--fs-danger);
 }

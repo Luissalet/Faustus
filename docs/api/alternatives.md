@@ -30,7 +30,7 @@ si ninguno es un conflicto se escribe algo). Ver el test decisivo abajo.
 |---|---|---|
 | `worktree`       | `workspace` está dentro de un repo git (`git_panel.repo_toplevel`) | `git worktree add` en `DATA_DIR/alternatives/<exp>/<alt>`, HEAD desacoplado en `base_ref` — comparte el object store del repo, así que es barato y cualquier commit que la alternativa haga dentro sigue siendo alcanzable mientras el worktree exista. |
 | `snapshot_dir`   | `workspace` es un directorio normal, sin git | Copia (`shutil.copytree`) de una instantánea base congelada en `DATA_DIR/alternatives/<exp>/_base/`, tomada UNA vez al crear el experimento (sin git no hay otra forma de recuperar "cómo era al principio" una vez el directorio sigue cambiando). |
-| `doc_version`    | Un solo documento, sin workspace de fichero alguno | Texto guardado en el propio registro del experimento (`create_doc_experiment`, `set_doc_version_content`). **Alcance**: contrato de datos y `apply`/`compare` completos sobre esta forma de texto; NO está cableado al almacén real de documentos de Studio (`src/document_*.py`) — trabajo de integración futuro, documentado también en `docs/adaptations/decisions/CMP-13.md`. |
+| `doc_version`    | Un solo documento, sin workspace de fichero alguno | Mientras se edita: texto guardado en el propio registro del experimento (`create_doc_experiment`, `set_doc_version_content`) — la MISMA garantía de aislamiento que `worktree`/`snapshot_dir` dan a un workspace de fichero, nunca visible como contenido vivo del documento hasta que se aplica. **W3-D**: cuando `create_doc_experiment` recibe `document_id`, `apply_alternative` SÍ escribe el resultado fusionado en el almacén real de Studio (`core.database.Document`/`DocumentVersion`) — ver «Cableado a `core.database.Document`» abajo. |
 
 Hooks de repo (`.git/hooks`) **nunca** se ejecutan al crear un worktree:
 `git_panel.worktree_add` pasa `-c core.hooksPath=` (vacío) en el propio
@@ -75,6 +75,54 @@ sin que el caso de uso (decidir qué aplicar) lo necesite; el conjunto
 `contested_files` ya dice exactamente dónde haría falta mirar dos
 alternativas una junto a otra.
 
+## Cableado a `core.database.Document` (W3-D, CMP-13 seguimiento)
+
+`docs/adaptations/decisions/CMP-13.md` dejó esto declarado como alcance
+pendiente: *"`doc_version` cableado al almacén real de documentos de
+Studio | ausente"*. `src/alternatives.py` lo cierra sin tocar ningún otro
+fichero de este módulo más allá de las funciones `doc_version`:
+
+* `create_doc_experiment(owner, project_id, goal, base_content, *,
+  document_id=None)` — con `document_id`, el texto base del experimento es
+  el `current_content` LIVE de ese `Document` (owner-scoped, nunca el
+  `base_content` que el caller haya pasado a la vez, que podría estar
+  obsoleto); sin `document_id`, se comporta exactamente igual que antes
+  (texto autónomo, `apply_alternative` nunca escribe en ningún sitio).
+* `apply_alternative`: cuando la alternativa es `doc_version` y el
+  experimento tiene `document_id`, `mine_doc_content` (si el caller no lo
+  pasa explícitamente) se lee del documento LIVE en vez de la instantánea
+  de creación — la misma regla "mine es siempre el contenido actual" que
+  ya rige para `worktree`/`snapshot_dir`. Una vez el plan de fusión está
+  limpio (nunca si hay conflicto: `ApplyConflictError` no escribe nada, ni
+  en el JSON del experimento ni en el documento real), el resultado se
+  escribe como una `DocumentVersion` NUEVA e inmutable — el mismo mecanismo
+  que usa cualquier otra edición (`src/document_comments.py
+  ::_apply_document_edit`: `version_count` incrementado + una fila nueva),
+  nunca una segunda fuente de verdad — etiquetada `source="alternative:
+  <exp_id>"` y con `summary` nombrando la alternativa elegida
+  ("procedencia del fragmento elegido" queda consultable, no solo en un
+  comentario). La respuesta añade `document_version: {document_id,
+  version_number, unchanged}`.
+* Owner-scoped igual que el resto del módulo: un `document_id` que no
+  existe o pertenece a otro owner responde `alternatives.document_not_found`
+  (mapeado a 400 genérico por `_alt_error` — ese error_class no tiene un
+  código propio en la tabla de `_alt_error`, así que cae en el `else 400`
+  general, igual que cualquier otro `alternatives.*` no listado).
+
+### Cableado en las rutas (W3-INT)
+
+`routes/alternatives_routes.py`'s `POST /doc` acepta ahora `document_id`
+opcional en el cuerpo (`{goal, base_content, document_id?}`) y lo pasa tal
+cual a `alternatives.create_doc_experiment(..., document_id=...)` — la
+función ya lo aceptaba y lo probaba end-to-end a nivel de módulo
+(`tests/test_w3d_doc_alternatives.py`); ese fichero suma ahora un par de
+pruebas por `TestClient` contra el router real que confirman el paso a
+través de la ruta HTTP. `apply`/`combine` ya recorrían el camino que
+escribe `DocumentVersion` desde que el experimento tiene `document_id` (ver
+arriba) — no necesitaron ningún cambio de ruta adicional. `AlternativesScreen.tsx`
+sigue sin una UI de creación propia para `doc_version` (ver «Límites
+conocidos» abajo): la ruta está cableada, la pantalla no.
+
 ## Rutas
 
 Todas bajo `/api/projects/{project_id}/alternatives`. Lectura
@@ -88,7 +136,7 @@ copia principal del usuario son la misma clase de sorpresa que
 |---|---|
 | `GET /` | Lista los experimentos del proyecto (del owner). |
 | `POST /` | `{goal, workspace?}` — crea un experimento; `workspace` por defecto es el del proyecto. |
-| `POST /doc` | `{goal, base_content}` — experimento `doc_version`, sin workspace de fichero. |
+| `POST /doc` | `{goal, base_content, document_id?}` — experimento `doc_version`, sin workspace de fichero; con `document_id` (W3-INT), el texto base es el `current_content` LIVE de ese documento del owner (ver «Cableado a `core.database.Document`» arriba). |
 | `GET /{exp_id}` | Un experimento completo. |
 | `DELETE /{exp_id}` | Borra el experimento y limpia sus worktrees/directorios. |
 | `GET /{exp_id}/compare` | Ver arriba. |
@@ -142,17 +190,32 @@ segunda, para probar que ningún intento mezcló nada.
 
 ## Límites conocidos / pendiente de cablear
 
-* `doc_version` es un contrato de datos completo pero NO está integrado con
-  el almacén real de documentos de Studio (`src/document_*.py`) —
-  `set_doc_version_content` guarda texto en el propio registro del
-  experimento, no en un documento vivo que el editor de documentos también
-  vea.
+* `doc_version` SÍ está integrado con el almacén real de documentos de
+  Studio desde W3-D (ver «Cableado a `core.database.Document`» arriba), y
+  desde W3-INT la ruta `POST /doc` también acepta `document_id` en su
+  cuerpo (ver «Cableado en las rutas» arriba) — solo falta
+  `AlternativesScreen.tsx`: no tiene UI de creación propia para
+  `doc_version` (solo `worktree`/`snapshot_dir` desde un workspace) —
+  `set_doc_version_content` y `apply_alternative` están probados end-to-end
+  por el backend y ahora también la ruta `POST /doc`, listos para que un
+  lote de documentos/pantalla los cablee a una pantalla.
 * `compare` no calcula diffs por pares entre alternativas (solo cada una
   contra la base, más `contested_files`) — ver la nota de alcance arriba.
 * No hay seguimiento de coste real de ejecución (`run_id` queda `None`
   salvo que un futuro cableado del motor de agentes lo rellene).
-* El aislamiento `doc_version` no tiene UI de creación propia en
-  `AlternativesScreen.tsx` (solo `worktree`/`snapshot_dir` desde un
-  workspace); la ruta `POST /doc` y `set_doc_version_content` existen y
-  están probadas por el backend, listas para que un lote de documentos las
-  cablee.
+* `combine` (fusión por fichero) no tiene el mismo cableado a
+  `core.database.Document` que `apply_alternative` — su bucle de escritura
+  asume `exp["workspace"]` (una ruta de fichero), que un experimento
+  `doc_version` no tiene; en la práctica `combine` no se ha usado nunca con
+  una alternativa `doc_version` (solo hay UNA entrada posible, `"(document)"`),
+  así que no es una regresión de este lote, pero queda como hueco conocido
+  para quien cablee `combine` a documentos reales.
+* `src/branching_futures/isolation.py` (W3-D) añade `WorktreeIsolator`/
+  `SnapshotDirIsolator` reales sobre el mismo `git_panel.worktree_*` que
+  este módulo usa, e `isolator_for(workspace)`/`BranchingService(isolator=
+  ...)` para inyectarlos — pero `branching_futures.service.py::create`/
+  `start_branch` todavía NO llaman a `fork`/`inspect`/`cleanup`: siguen
+  tratando `namespace` como una etiqueta lógica, no un aislamiento real.
+  Cablear eso es trabajo futuro documentado, no código sin probar en este
+  lote (ver `tests/test_w3d_isolators.py`, que prueba los isoladores en
+  aislamiento, no un futuro fork real).

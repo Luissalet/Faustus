@@ -6,6 +6,13 @@
 // this is JSX wiring across several screens, not pure logic a bundled
 // import alone can exercise.
 //
+// W3-F (CONTRATO_W3.md) extends this with three checks: an Export button
+// that calls the existing `exportWorkflowDefinition` and downloads a JSON
+// file, a hand-adjusted node layout (PlanGraph's new `onNodeMove`)
+// persisted to localStorage keyed by a definition fingerprint, and
+// `/workflows?run=<id>` loading that run straight into RunOverlay (a real
+// deep link, not just a same-session state change).
+//
 // Run by tests/test_cmp07_workflows_js.py, or by hand:
 //   node studio/checks/workflows.check.mjs
 import assert from 'node:assert/strict';
@@ -48,6 +55,12 @@ const read = (p) => readFileSync(path(p), 'utf8').replace(/\r\n/g, '\n');
   assert.ok(src.includes('ArrowRight') && src.includes('ArrowLeft') && src.includes('ArrowUp') && src.includes('ArrowDown'), 'must support arrow-key navigation between layers');
   assert.ok(src.includes('<details') && src.includes('<table'), 'must offer a readable list/table alternative to the SVG (accessibility)');
   assert.ok(!/from ['"]reactflow['"]|from ['"]react-flow/.test(src), 'no graph-drawing dependency (ADP-14 limit: no react-flow, no new library)');
+  // W3-F: a node can be dragged to a hand-adjusted position, which the
+  // caller (WorkflowsScreen) then persists — PlanGraph itself never touches
+  // localStorage, it only reports the final position once per drag.
+  assert.ok(src.includes('onNodeMove') && src.includes('layout?:'), 'must accept an optional layout override and an onNodeMove callback');
+  assert.ok(src.includes('getScreenCTM'), 'dragging must convert pointer coordinates through the SVG CTM (correct under viewBox scaling)');
+  assert.ok(src.includes('onPointerDown') && src.includes('onPointerMove') && src.includes('onPointerUp'), 'must wire pointer events for dragging');
 }
 
 // ── screens/workflows/NodeInspector.tsx: contract + config + lint ──
@@ -92,6 +105,26 @@ const read = (p) => readFileSync(path(p), 'utf8').replace(/\r\n/g, '\n');
   // The SAME `definition` object flows into every mode — no per-mode copy
   // that could silently drift into a second format.
   assert.ok(src.includes('<PlanGraph nodes={nodes}') && src.includes('definition={definition}'), 'Design/Simulate and Execute must draw from the one definition in state');
+
+  // W3-F: Export button -> exportWorkflowDefinition -> JSON file download.
+  assert.ok(src.includes('exportWorkflowDefinition') && src.includes("testId=\"workflows-export\""), 'must offer an Export button wired to exportWorkflowDefinition');
+  assert.ok(src.includes('downloadJson') && src.includes("a.download = filename") && src.includes('createObjectURL'), 'export must trigger a real file download (Blob + <a download>), not just log the JSON');
+
+  // W3-F: layout persisted in localStorage, keyed by a fingerprint of the
+  // definition's own content (so a different plan never inherits another
+  // plan's hand-adjusted positions).
+  assert.ok(src.includes('function definitionFingerprint') && src.includes('function stableStringify'), 'layout must be keyed by a content fingerprint of the definition, not by array position or a random id');
+  assert.ok(src.includes('LAYOUT_KEY_PREFIX') && src.includes('localStorage.getItem') && src.includes('localStorage.setItem'), 'layout must be persisted to localStorage');
+  assert.ok(/localStorage\.(get|set)Item[\s\S]{0,80}?\}\s*catch/.test(src) || (src.includes('try {') && src.includes('localStorage')), 'localStorage access must be guarded (private browsing / quota can throw)');
+  assert.ok(src.includes('onNodeMove={onNodeMove}') && src.includes('layout={layout}'), 'PlanGraph in Design mode must receive both the persisted layout and the move callback');
+
+  // W3-F: `/workflows?run=<id>` is a real deep link — reading the `run`
+  // search param loads that run via the same path as clicking it in the
+  // "Recent runs" list, and starting/loading a run writes the param back.
+  assert.ok(src.includes("from 'react-router'") && src.includes('useSearchParams'), 'deep link must read/write the URL via react-router\'s useSearchParams, not window.location by hand');
+  assert.ok(src.includes("searchParams.get('run')"), 'must read the run id from the `run` query parameter');
+  assert.ok(src.includes('function openRun') || src.includes('const openRun'), 'loading a run by id must be one shared function (list click and deep link both call it)');
+  assert.ok(src.includes('getWorkflowRunDefinition') && /openRun[\s\S]{0,400}getWorkflowRunDefinition/.test(src), 'openRun must fetch the run\'s definition via the existing adapter, not a new endpoint');
 }
 
 // ── routing: /workflows registered everywhere a route must be ──
@@ -121,6 +154,7 @@ const read = (p) => readFileSync(path(p), 'utf8').replace(/\r\n/g, '\n');
     'Lint findings for this node', 'View as a list (keyboard/screen-reader alternative)',
     'The server did not return a simulation.', 'The server did not return a preflight report.',
     'The server did not return an export.',
+    'Download this definition as JSON, including your saved node layout.',
   ];
   for (const key of mustHave) {
     assert.ok(keys.has(key), `docs/ui/i18n/es.tsv is missing a Spanish row for: ${key}`);

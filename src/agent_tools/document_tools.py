@@ -806,6 +806,26 @@ class SuggestDocumentTool:
             if not valid:
                 return {"error": "No suggestions matched the document content"}
 
+            # W3-A: an `anchor` {quote, before, after} per suggestion, so the
+            # client can apply without asking whenever it uniquely locates the
+            # text — the same quote+context contract `document_comments.py`
+            # anchors a comment with (`locate_quote`/`context_for`), reused
+            # here rather than reimplemented. `find` unique in the CURRENT
+            # document -> real surrounding context, so the client's own
+            # locate-by-anchor check (studio/src/screens/studio/SidePanel.tsx)
+            # resolves it to that one span. `find` repeated -> the quote alone
+            # (empty before/after): never guess WHICH occurrence the model
+            # meant, so the client falls back to its existing occurrence
+            # picker exactly as it did before this anchor existed.
+            from src.document_comments import locate_quote, context_for
+            for s in valid:
+                located = locate_quote(doc.current_content, s["find"])
+                if located.status == "found":
+                    before, after = context_for(doc.current_content, located.start, located.end)
+                    s["anchor"] = {"quote": s["find"], "before": before, "after": after}
+                else:
+                    s["anchor"] = {"quote": s["find"], "before": "", "after": ""}
+
             return {
                 "action": "suggest",
                 "doc_id": target_id,

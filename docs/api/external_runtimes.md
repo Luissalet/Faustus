@@ -78,9 +78,38 @@ Convención de error: `{"error_class": ..., "detail": ...}` plano
 
 ## Adaptador de Studio (`studio/src/adapters/externalRuntimes.ts`)
 
-Solo el adaptador tipado — GET/PUT config, GET version, GET sessions. El
-cableado a una pantalla queda para un lote posterior (así lo dice la
-ficha); este fichero no monta nada por sí solo.
+Solo el adaptador tipado — GET/PUT config, GET version, GET sessions. Este
+fichero sigue sin montar nada por sí solo (W3-D no lo toca).
+
+## Cableado a Activity (W3-D, CMP-10 seguimiento)
+
+El lote posterior que esta ficha dejaba pendiente: `studio/src/screens/
+Activity.tsx` añade una sección/filtro «Externos» (`kind: 'external'`) y
+`studio/src/adapters/activity.ts` añade la categoría —
+`loadExternalRuns()` llama a `getHerdrSessions()` (el adaptador de arriba,
+SIN TOCAR) y convierte cada `HerdrPresence` en un `ActivityRun` normal con
+`external: {runtime, certainty, signalAgeS, state}`. Reglas:
+
+* **Solo lectura de punta a punta**: la UI no envía nada a Herdr — ni una
+  sesión, ni una entrada, ni un comando — exactamente la misma disciplina
+  que este documento ya exige del adaptador y de `herdr.py`.
+* **`external_runtimes.not_configured` no es un error para esta pantalla**:
+  `loadExternalRuns()` lo resuelve a `[]` (ningún usuario que no haya
+  conectado el runtime ve un aviso de fallo) — cualquier OTRO fallo
+  (versión no soportada, timeout, HTTP inesperado) sí se propaga, igual
+  que cualquier otro `load*` de `adapters/activity.ts`.
+* **La certeza nunca se disfraza de confianza real**: cada fila lleva su
+  propio badge `certainty ∈ {structured, heuristic}` y `signalAgeS`
+  (segundos desde la última confirmación, o "desconocido" si no hay dato)
+  — nunca presentados con la misma confianza que un evento estructurado
+  propio de Faustus. Fichero: `studio/src/screens/activity.css`, reglas al
+  final bajo el comentario `/* W3-D external */`.
+* Polling propio (`externalPoller`, mismo patrón que Queue/Attention en
+  `Activity.tsx`): un fallo de red solo deja de refrescar esa sección, sin
+  afectar al resto de la pantalla.
+
+Tests: `tests/test_w3d_activity_external_js.py` (envuelve `studio/checks/
+activity_external.check.mjs`).
 
 ## Tests
 

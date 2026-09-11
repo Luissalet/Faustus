@@ -160,6 +160,21 @@ export interface Worker {
   stopRequested: boolean;
 }
 
+/** CMP-09/CMP-12 (W3-A): what `strategy_policy.choose_strategy` decided for
+ *  THIS turn — the same shape `docs/api/strategy.md`'s `Strategy` documents,
+ *  plus the active `profile`/`recipeId`. Set once, on the live `strategy`
+ *  event (round 1 only) or restored from `metadata.strategy`; a turn from a
+ *  server that predates either stays `undefined`, same fallback story as
+ *  every other optional field on `Turn`. */
+export interface TurnStrategy {
+  method: string;
+  profile: string;
+  recipeId: string | null;
+  reasons: string[];
+  steps: string[];
+  budget: Record<string, unknown>;
+}
+
 export interface Turn {
   id: string;
   /** The message's database id, when the server has one; edits need it. */
@@ -177,6 +192,8 @@ export interface Turn {
   /** CMP-04: why each piece of context entered this turn (persisted as
    *  `metadata.context_receipts`); the transcript shows them as a card. */
   contextReceipts?: ContextReceipt[];
+  /** CMP-09/CMP-12 (W3-A): see `TurnStrategy`'s doc comment. */
+  strategy?: TurnStrategy;
   images: string[];
   attachments: Attachment[];
   ask?: AskUser;
@@ -799,6 +816,14 @@ export function apply(turn: Turn, event: ChatEvent): Turn {
       return { ...turn, sources: event.sources, research: turn.research ? { ...turn.research, done: true } : turn.research };
     case 'context_receipts':
       return { ...turn, contextReceipts: event.receipts };
+    case 'strategy':
+      return {
+        ...turn,
+        strategy: {
+          method: event.method, profile: event.profile, recipeId: event.recipeId,
+          reasons: event.reasons, steps: event.steps, budget: event.budget,
+        },
+      };
     case 'research':
       return {
         ...turn,
@@ -960,6 +985,26 @@ export function planUpdateFromMeta(meta: Record<string, unknown>):
   return { plan, steps, revision, warnings };
 }
 
+/** CMP-09/CMP-12 (W3-A): `metadata.strategy`, persisted by `src/agent_loop.py`
+ *  the same way `metadata.context_receipts` already is (see that field's own
+ *  handling below) — `undefined` when the message predates this, or when
+ *  round 1 never computed a strategy for it (no owner/task text). */
+function strategyFromMeta(meta: Record<string, unknown>): TurnStrategy | undefined {
+  const raw = meta.strategy;
+  if (!raw || typeof raw !== 'object') return undefined;
+  const r = raw as Record<string, unknown>;
+  const method = s(r.method);
+  if (!method) return undefined;
+  return {
+    method,
+    profile: s(r.profile),
+    recipeId: typeof r.recipe_id === 'string' && r.recipe_id ? r.recipe_id : null,
+    reasons: Array.isArray(r.reasons) ? r.reasons.map((x) => s(x)).filter(Boolean) : [],
+    steps: Array.isArray(r.steps) ? r.steps.map((x) => s(x)).filter(Boolean) : [],
+    budget: r.budget && typeof r.budget === 'object' ? (r.budget as Record<string, unknown>) : {},
+  };
+}
+
 /**
  * What history keeps of an agent turn, back into the turn: the tool rail
  * (`tool_events`, with diffs, screenshots and sub-agent records), the
@@ -970,7 +1015,7 @@ export function restoreFromMetadata(turn: Turn, meta: Record<string, unknown>): 
   const events = toolEventsFrom(meta);
   const planUpdate = planUpdateFromMeta(meta);
   const speaker = typeof meta.group_model === 'string' && meta.group_model ? meta.group_model : undefined;
-  if (!events.length && !meta.harness && !meta.web_sources && !meta.research_sources && !meta.context_receipts) return speaker ? { ...turn, speaker } : turn;
+  if (!events.length && !meta.harness && !meta.web_sources && !meta.research_sources && !meta.context_receipts && !meta.strategy) return speaker ? { ...turn, speaker } : turn;
   // CALL-03: `toolEventsFrom` (adapters/chat.ts) strips `argument_errors`/
   // `repairs` down to nothing, the same way it used to strip `plan_update`
   // before `planUpdateFromMeta` started reading it straight off the raw
@@ -1039,6 +1084,7 @@ export function restoreFromMetadata(turn: Turn, meta: Record<string, unknown>): 
     contextReceipts: Array.isArray(meta.context_receipts)
       ? (meta.context_receipts as Record<string, unknown>[]).map((x) => ({ source: s(x.source), kind: s(x.kind), ref: s(x.ref), why: s(x.why) }))
       : turn.contextReceipts,
+    strategy: strategyFromMeta(meta) ?? turn.strategy,
     plan: planUpdate?.plan ?? turn.plan,
     planSteps: planUpdate?.steps ?? turn.planSteps,
     planRevision: planUpdate?.revision ?? turn.planRevision,

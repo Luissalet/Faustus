@@ -19,10 +19,22 @@ Isolation, by what the workspace actually is (contract, INFORME §3.12):
                          there is no git history to recover an old revision
                          from once the directory moves on)
   * a single document -> ``doc_version`` (a text snapshot held in this
-                         experiment's own record — NOT wired to the real
-                         Studio document store; see the module-level note
-                         near ``set_doc_version_content`` for the scope this
-                         stops at and why)
+                         experiment's own record WHILE DRAFTING — an
+                         alternative's content never touches the real
+                         document until it is applied, the same isolation
+                         guarantee worktree/snapshot_dir give a filesystem
+                         workspace. W3-D wires ``apply``/``combine`` for
+                         this kind to the real Studio document store
+                         (``core.database.Document``/``DocumentVersion``)
+                         when ``create_doc_experiment`` was given a
+                         ``document_id``: the merged result is written as a
+                         new, immutable ``DocumentVersion`` tagged
+                         ``source="alternative:<exp_id>"`` — the SAME
+                         version-history mechanism a normal edit uses
+                         (``src.document_comments._apply_document_edit``),
+                         never a second, parallel content field. See
+                         ``_persist_alternative_as_document_version`` below
+                         for the exact provenance recorded.)
 
 ``apply``/``combine`` never destroy a manual edit the user made to the main
 copy after the experiment started (the decisive test, INFORME §3.12): every
@@ -347,14 +359,15 @@ def add_alternative(owner: str, exp_id: str, label: str, *,
 
 
 def set_doc_version_content(owner: str, exp_id: str, alt_id: str, content: str) -> Dict[str, Any]:
-    """Set/replace a `doc_version` alternative's text. Scope note: this
-    stores the text on the experiment's OWN record, not inside the real
-    Studio document store (`src/document_*.py`) — wiring a `doc_version`
-    alternative to an actual live document (so editing it in the document
-    editor and editing it here are the same text) is future integration
-    work, not done here; what IS complete is the data model and the
-    apply/compare contract for this isolation kind, exercised end-to-end by
-    this module's own tests against exactly this text-snapshot form."""
+    """Set/replace a `doc_version` alternative's DRAFT text. Always stored
+    on the experiment's OWN record, never the real Studio document store —
+    that is deliberate isolation, the same guarantee a worktree/snapshot_dir
+    alternative gets from its own private directory: an alternative being
+    edited must never be visible as the document's live content until a
+    human explicitly applies it (`apply_alternative`, which — when this
+    experiment carries a `document_id` — IS wired to the real
+    `core.database.Document`/`DocumentVersion` store; see that function and
+    the module docstring's `doc_version` bullet)."""
     exp = _load_experiment(owner, exp_id)
     alt = _alt_or_404(exp, alt_id)
     if alt["isolation"] != "doc_version":
@@ -371,12 +384,77 @@ def base_doc_content(exp: Dict[str, Any]) -> str:
     return str(exp.get("doc_base_content") or "")
 
 
-def create_doc_experiment(owner: str, project_id: str, goal: str, base_content: str) -> Dict[str, Any]:
+def _load_live_document(owner: str, document_id: str):
+    """Owner-scoped read of a real Studio `Document` row — the same
+    404-for-both-"missing"-and-"not-yours" shape `_load_experiment` already
+    uses. Imported lazily (module scope, not top-of-file) to avoid a
+    core.database <-> src.alternatives import cycle, the same choice
+    `src.document_comments._apply_document_edit` documents for itself."""
+    from core.database import Document, get_db_session
+    with get_db_session() as db:
+        doc = db.query(Document).filter(Document.id == document_id).first()
+        if doc is None or (doc.owner is not None and str(doc.owner) != str(owner or "")):
+            raise AlternativesError(f"no document {document_id!r}",
+                                     error_class="alternatives.document_not_found")
+        return doc.current_content or ""
+
+
+def _persist_alternative_as_document_version(owner: str, document_id: str, content: str, *,
+                                              exp_id: str, alt_id: str, alt_label: str) -> Dict[str, Any]:
+    """Materialise an APPLIED `doc_version` alternative onto the real
+    Studio document (CMP-13 follow-up, INFORME §3.12: "doc_version cableado
+    al almacén real de documentos"). Uses the exact same new-version shape
+    `document_comments._apply_document_edit`/`update_document` use for any
+    other edit — a bumped `document_count` and one new immutable
+    `DocumentVersion` row — so this is never a second source of truth for
+    the document's history, only a normal version TAGGED with where it
+    came from: `source="alternative:<exp_id>"` names the experiment,
+    `summary` names the specific alternative chosen — "procedencia del
+    fragmento elegido" made queryable, not just a comment."""
+    import uuid as _uuid
+
+    from core.database import Document, DocumentVersion, get_db_session
+    with get_db_session() as db:
+        doc = db.query(Document).filter(Document.id == document_id).first()
+        if doc is None or (doc.owner is not None and str(doc.owner) != str(owner or "")):
+            raise AlternativesError(f"no document {document_id!r}",
+                                     error_class="alternatives.document_not_found")
+        if doc.current_content == content:
+            return {"document_id": document_id, "version_number": doc.version_count, "unchanged": True}
+        new_version = (doc.version_count or 1) + 1
+        db.add(DocumentVersion(
+            id=str(_uuid.uuid4()),
+            document_id=document_id,
+            version_number=new_version,
+            content=content,
+            summary=f"Applied alternative {alt_label!r} ({alt_id}) from experiment {exp_id}",
+            source=f"alternative:{exp_id}",
+        ))
+        doc.version_count = new_version
+        doc.current_content = content
+        return {"document_id": document_id, "version_number": new_version, "unchanged": False}
+
+
+def create_doc_experiment(owner: str, project_id: str, goal: str, base_content: str, *,
+                           document_id: Optional[str] = None) -> Dict[str, Any]:
     """`create_experiment`'s sibling for a single document with no
-    filesystem workspace at all (`base_kind="doc"`)."""
+    filesystem workspace at all (`base_kind="doc"`).
+
+    `document_id`, when given, names a real Studio document this owner can
+    read: the experiment's base text becomes that document's LIVE
+    `current_content` (never the possibly-stale `base_content` the caller
+    passed alongside it) and every `doc_version` alternative created under
+    it can later be `apply_alternative`d straight into that document's own
+    version history (see `_persist_alternative_as_document_version`).
+    Without `document_id`, `doc_version` keeps working exactly as before:
+    a self-contained text experiment with no live document behind it —
+    `base_content` is used as given, and `apply_alternative` only ever
+    returns the merged text, it writes nothing anywhere."""
     goal = (goal or "").strip()
     if not goal:
         raise AlternativesError("`goal` is required", error_class="alternatives.invalid_request")
+    document_id = (document_id or "").strip() or None
+    resolved_content = _load_live_document(owner, document_id) if document_id else str(base_content or "")
     exp_id = _new_id("exp")
     exp = {
         "id": exp_id,
@@ -387,7 +465,8 @@ def create_doc_experiment(owner: str, project_id: str, goal: str, base_content: 
         "base_kind": "doc",
         "base_ref": f"doc-{uuid.uuid4().hex[:12]}",
         "workspace": None,
-        "doc_base_content": str(base_content or ""),
+        "document_id": document_id,
+        "doc_base_content": resolved_content,
         "alternatives": [],
         "created_at": time.time(),
         "applied": None,
@@ -700,11 +779,28 @@ def apply_alternative(owner: str, exp_id: str, alt_id: str, *,
     """Merge `alt_id`'s changes into the main copy. Every touched file is
     planned first; if ANY plan is a conflict, `ApplyConflictError` is
     raised and NOTHING is written -- the main copy is left exactly as the
-    user last had it, conflicting or not."""
+    user last had it, conflicting or not.
+
+    For a `doc_version` alternative on an experiment with a real
+    `document_id`: `mine_doc_content` defaults to that document's LIVE
+    `current_content` (fetched fresh, not `base_doc_content(exp)`'s
+    creation-time snapshot) when the caller doesn't pass one explicitly —
+    "mine" is always the CURRENT content of the main copy, the same rule
+    `_build_plans` already documents for the filesystem cases — and, once
+    the merge plan is clean, the result is written onto the real document
+    as a new `DocumentVersion` (see `_persist_alternative_as_document_version`)
+    BEFORE this experiment's own record is marked applied, so a document
+    write failure (deleted document, owner mismatch) leaves `alt_id`
+    exactly as unapplied as a raised conflict would."""
     exp = _load_experiment(owner, exp_id)
     alt = _alt_or_404(exp, alt_id)
     if alt["isolation"] == "doc_version":
-        exp["_mine_doc_content"] = mine_doc_content if mine_doc_content is not None else base_doc_content(exp)
+        if mine_doc_content is not None:
+            exp["_mine_doc_content"] = mine_doc_content
+        elif exp.get("document_id"):
+            exp["_mine_doc_content"] = _load_live_document(owner, str(exp["document_id"]))
+        else:
+            exp["_mine_doc_content"] = base_doc_content(exp)
     plans, conflicts = _build_plans(exp, alt)
     if conflicts:
         raise ApplyConflictError(conflicts)
@@ -726,6 +822,13 @@ def apply_alternative(owner: str, exp_id: str, alt_id: str, *,
             _atomic_write_text(full, plan.content or "")
         applied.append(plan.rel)
 
+    document_version: Optional[Dict[str, Any]] = None
+    if alt["isolation"] == "doc_version" and result_doc_content is not None and exp.get("document_id"):
+        document_version = _persist_alternative_as_document_version(
+            owner, str(exp["document_id"]), result_doc_content,
+            exp_id=exp_id, alt_id=alt_id, alt_label=str(alt.get("label") or alt_id),
+        )
+
     exp["applied"] = {"alternative_id": alt_id, "applied_at": time.time(), "files": applied}
     alt["status"] = "applied"
     exp.pop("_mine_doc_content", None)
@@ -733,6 +836,8 @@ def apply_alternative(owner: str, exp_id: str, alt_id: str, *,
     out: Dict[str, Any] = {"applied_files": applied, "skipped_same": True if not applied else False}
     if result_doc_content is not None:
         out["content"] = result_doc_content
+    if document_version is not None:
+        out["document_version"] = document_version
     return out
 
 

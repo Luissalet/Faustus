@@ -8,18 +8,99 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import stat
 from dataclasses import replace
 from pathlib import Path, PurePosixPath
+from typing import Optional
 
+from core.atomic_io import atomic_write_json
+from core.kernel_file_lock import KernelFileLock
 from src import approval_store, artifact_store, execution_router
+from src.constants import DATA_DIR
 from src.skills_runtime import bridge, discovery
 from src.workflows.scope import validate_output_scope
+
+logger = logging.getLogger(__name__)
 
 MAX_BUNDLE_BYTES = 16 * 1024 * 1024
 MAX_BUNDLE_FILES = 256
 INTERPRETERS = {".py": "python", ".js": "node", ".mjs": "node", ".sh": "bash"}
+
+#: W3-C (CMP-08 follow-up): `routes.workflows_routes._skill_call_history_from_disk`
+#: reads this same path as the "history" fallback source of a composite
+#: skill's call shape.
+CALL_HISTORY_PATH = Path(DATA_DIR) / "skill_call_history.json"
+
+
+def _load_call_history() -> dict:
+    try:
+        data = json.loads(CALL_HISTORY_PATH.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {}
+    except (ValueError, OSError):
+        logger.debug("skill_call_history.json unreadable — starting fresh", exc_info=True)
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _record_call_history(skill_id: str, *, model_calls: Optional[float] = None,
+                          external_ops: Optional[float] = None,
+                          tokens_in: Optional[float] = None,
+                          tokens_out: Optional[float] = None) -> None:
+    """W3-C (CMP-08 follow-up): fold one finished skill run into
+    `DATA_DIR/skill_call_history.json`'s per-skill counters — the "history"
+    fallback `src.workflow_cost_estimate.CallsProfile` reads when a skill's
+    own manifest declares no `calls_profile`
+    (`routes.workflows_routes._skill_call_history_from_disk`).
+
+    `runs` is always known — this is only called once a run has actually
+    finished — and always counted. Every other count is folded in ONLY when
+    this call is given a real number for it, as a running average over the
+    runs that DID report that count (`<key>_samples`), never guessed at 0
+    for the runs that did not: **this handler runs a skill's script in a
+    container and never itself observes that script's model/token usage**
+    (there is no such signal on `execution_router.execute`'s result — see
+    `run()` below), so every call from `run()` today passes none of the
+    optional keywords and the entry only ever gains `runs`.
+    `_skill_call_history_from_disk` drops any entry that never gained a real
+    count rather than let that absence read as "this skill is free" — see
+    its own docstring.
+
+    Read-modify-write under a cross-process lock
+    (`core.kernel_file_lock.KernelFileLock`, the same idiom
+    `src/workflows/credentials.py` uses for this same store shape) because
+    two workflow runs finishing the same skill concurrently must not lose
+    one's count to the other's overwrite. Never raises: a failure to record
+    history is a missed data point, not a reason to fail a skill run that
+    already completed."""
+    skill_id = str(skill_id or "").strip()
+    if not skill_id:
+        return
+    try:
+        with KernelFileLock(str(CALL_HISTORY_PATH) + ".lock"):
+            data = _load_call_history()
+            entry = data.get(skill_id)
+            entry = dict(entry) if isinstance(entry, dict) else {}
+            entry["runs"] = int(entry.get("runs") or 0) + 1
+            for key, value in (
+                ("model_calls", model_calls), ("external_ops", external_ops),
+                ("tokens_in", tokens_in), ("tokens_out", tokens_out),
+            ):
+                if value is None:
+                    continue
+                samples = int(entry.get(f"{key}_samples") or 0)
+                previous = entry.get(key)
+                if previous is None or samples <= 0:
+                    entry[key] = float(value)
+                else:
+                    entry[key] = (float(previous) * samples + float(value)) / (samples + 1)
+                entry[f"{key}_samples"] = samples + 1
+            data[skill_id] = entry
+            atomic_write_json(str(CALL_HISTORY_PATH), data, indent=2)
+    except Exception:  # noqa: BLE001 — a history write must never fail a run
+        logger.debug("skill_call_history.json update failed for %r", skill_id, exc_info=True)
 
 
 def _bundle(folder):
@@ -200,6 +281,9 @@ def run(node, context):
                      stderr_tail=redact(result.stderr_tail), reason=redact(result.reason))
     if result.status != "refused":
         context["mark_effect"]("confirmed" if result.status == "completed" else "unknown")
+        # W3-C: a refused run never reached the container, so it is not a
+        # "call" of this skill in any sense `skill_call_history.json` counts.
+        _record_call_history(manifest.id)
     collected = artifact_store.collect(replace(result, run_id=run_id), source_dir=str(scratch),
         owner=owner, project_id=project_id, skill_id=manifest.id, skill_version=manifest.version,
         provenance={"recipe": str(context.get("workflow") or ""),

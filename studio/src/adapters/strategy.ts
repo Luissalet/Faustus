@@ -7,14 +7,16 @@ import { ApiError, getJson, responseReason } from './api';
  *
  * The active profile/recipe are PERSISTED server-side per owner (optionally
  * scoped to one `session_id`) rather than travelling with `sendTurn` like
- * `autonomyPreset` does — `adapters/chat.ts` is out of this lot's file
- * scope, so this adapter reads/writes the persisted choice directly and
- * `Composer.tsx` reflects it via `loadStrategyProfile`, not by decoding the
- * turn's SSE stream. The backend also emits a `strategy` SSE event at the
- * start of each turn (src/agent_loop.py) for the SAME decision, live — but
- * `adapters/chat.ts` does not yet have a `case 'strategy':` to surface it
- * (that event type is a documented point left for the orchestrator to wire,
- * see docs/adaptations/decisions/CMP-09.md — "Límites").
+ * `autonomyPreset` does — this adapter reads/writes the persisted choice
+ * directly and `Composer.tsx` reflects it via `loadStrategyProfile`, for the
+ * picker itself. The backend ALSO emits a `strategy` SSE event at the start
+ * of each turn (src/agent_loop.py) for the same decision, live: `chat.ts`
+ * decodes it (`case 'strategy':`, landed in W3-A), `studio/src/screens/
+ * studio/model.ts` folds it into `turn.strategy`, and `Transcript.tsx`'s
+ * `StrategyLine` renders it per-turn — that live path no longer goes
+ * through this adapter at all, by design (the two are independent: one is
+ * "what did THIS turn decide", the other is "what is the persisted
+ * default").
  */
 
 export type StrategyProfile = 'fast' | 'balanced' | 'deep_review';

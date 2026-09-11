@@ -737,3 +737,146 @@
 .fs-estimate__note {
   color: var(--fs-text-3);
 }
+
+/* W3-C (CMP-08 follow-up): the detailed, separated-accounts section —
+   node activations / model calls / external ops / tokens are different
+   things, assumptions and unknowns are listed rather than folded into the
+   total, and a "Comparar planes" table tags each cell computed/estimated/
+   unknown. */
+
+.fs-estimate__detail {
+  display: grid;
+  gap: var(--fs-space-3);
+  padding-block-start: var(--fs-space-3);
+  border-block-start: 1px solid var(--fs-border);
+}
+
+.fs-estimate__section-title {
+  margin: 0;
+  font-size: var(--fs-label-size);
+  font-weight: 600;
+  color: var(--fs-text-2);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.fs-estimate__accounts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: var(--fs-space-2);
+}
+
+.fs-estimate__account {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--fs-space-2) var(--fs-space-3);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-control);
+  background: var(--fs-surface-1);
+}
+
+.fs-estimate__account-label {
+  font-size: var(--fs-label-size);
+  color: var(--fs-text-3);
+}
+
+.fs-estimate__account-value {
+  font-size: var(--fs-body-size, 14px);
+  font-weight: 600;
+  color: var(--fs-text-1);
+}
+
+.fs-estimate__list {
+  margin: var(--fs-space-1) 0 0;
+  padding-inline-start: 1.2em;
+}
+
+.fs-estimate__list li {
+  margin-block-end: 2px;
+}
+
+.fs-estimate__measured {
+  display: grid;
+  gap: 2px;
+}
+
+.fs-estimate__measured p {
+  margin: 0;
+  font-size: var(--fs-label-size);
+  color: var(--fs-text-1);
+}
+
+.fs-estimate__per-node summary {
+  cursor: pointer;
+  font-size: var(--fs-label-size);
+  font-weight: 600;
+  color: var(--fs-text-2);
+}
+
+.fs-estimate__latency {
+  font-size: var(--fs-label-size);
+  color: var(--fs-text-3);
+  white-space: nowrap;
+}
+
+.fs-estimate__compare {
+  display: grid;
+  gap: var(--fs-space-2);
+}
+
+.fs-estimate__basis {
+  font-weight: 600;
+  color: var(--fs-text-1);
+}
+
+.fs-estimate__basis-label {
+  font-size: var(--fs-label-size);
+  color: var(--fs-text-3);
+}
+
+.fs-estimate__basis[data-basis='computed'] {
+  color: var(--fs-success);
+}
+
+.fs-estimate__basis[data-basis='estimated'] {
+  color: var(--fs-warning);
+}
+
+.fs-estimate__basis[data-basis='unknown'] {
+  color: var(--fs-text-3);
+}
+
+/* W3-D external — CMP-06/CMP-10 follow-up: the "Externos" filter/section
+   badge (certainty + signal age) on an external-runtime row, both in the
+   list (renderRun) and the detail pane. Reuses the existing
+   `.fs-act__signal-badge`/`data-health` shape rather than a new pill
+   language for "how fresh is this fact". */
+.fs-act__external-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--fs-space-1);
+  margin-block-start: 2px;
+}
+
+.fs-act__external-certainty {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 6px;
+  border-radius: var(--fs-radius-pill);
+  border: 1px solid var(--fs-border);
+  color: var(--fs-text-3);
+  font-size: 11px;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+
+.fs-act__external-badge[data-certainty="structured"] .fs-act__external-certainty {
+  color: var(--fs-success);
+  border-color: color-mix(in srgb, var(--fs-success) 45%, var(--fs-border));
+}
+
+.fs-act__external-badge[data-certainty="heuristic"] .fs-act__external-certainty {
+  color: var(--fs-warning);
+  border-color: color-mix(in srgb, var(--fs-warning) 45%, var(--fs-border));
+}

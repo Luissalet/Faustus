@@ -257,6 +257,83 @@ export async function fetchModelCapabilities(model: string, endpointId: string):
 }
 
 /**
+ * CMP-11 (`GET /api/models/fit-explain`, `routes/model_routes.py`): the
+ * picker's OTHER capability badge, and the one this lote adds. Distinct from
+ * `fetchModelCapabilities` above (MOD-01/MOD-02's raw tested/failed pair) in
+ * exactly the way `src/model_capabilities.py::explain_fit`'s docstring
+ * describes: a capability is never reduced to yes/no. It comes back as one
+ * of four states — `tested` (this exact model+connection was probed and it
+ * worked), `announced` (claimed, never verified here), `unknown` (no
+ * evidence either way) or `missing` (proven absent) — each with the WHY in
+ * plain words and, when the model falls short, which other already-
+ * evidenced models on this endpoint (or installed) DO meet it. `unknown`
+ * still renders a badge: unlike the VRAM verdict above, silence here would
+ * be exactly the "requirement dropped without a word" CMP-11 exists to
+ * rule out.
+ */
+export type FitExplainState = 'tested' | 'announced' | 'unknown' | 'missing';
+
+export interface FitReason {
+  capability: string;
+  state: FitExplainState;
+  /** The server's own sentence: why this state, for the badge's tooltip. */
+  message: string;
+  /** Other model ids, on this endpoint or installed, that DO meet it. */
+  alternatives: string[];
+}
+
+export interface FitExplain {
+  ok: boolean;
+  reasons: FitReason[];
+}
+
+const FIT_EXPLAIN_STATES: FitExplainState[] = ['tested', 'announced', 'unknown', 'missing'];
+const EMPTY_FIT_EXPLAIN: FitExplain = { ok: true, reasons: [] };
+
+/** The capabilities the model picker asks about for every row — the exact
+ *  set INFORME V2 §3.10 names: tools, structured output, vision, image
+ *  editing. A caller that cares about a narrower or wider set (a workflow
+ *  node inspector, say) passes its own `needs` instead. */
+export const PICKER_CAPABILITY_NEEDS = ['tools', 'json', 'vision', 'images_edit'];
+
+/** Short badge word per state — never a colour on its own (same rule as
+ *  FIT_WORD above). */
+export const FIT_EXPLAIN_WORD: Record<FitExplainState, string> = {
+  tested: 'tested',
+  announced: 'announced',
+  unknown: 'unknown',
+  missing: 'missing',
+};
+
+/** Short label per capability token, for the badge itself (the tooltip
+ *  carries the full sentence). */
+export const FIT_EXPLAIN_CAP_LABEL: Record<string, string> = {
+  tool_call: 'tools',
+  json_mode: 'structured output',
+  vision: 'vision',
+  image_editing: 'image edit',
+};
+
+export async function fetchFitExplain(model: string, endpointId: string, needs: string[] = PICKER_CAPABILITY_NEEDS): Promise<FitExplain> {
+  try {
+    const raw = await getJson<{ ok?: boolean; reasons?: Array<Record<string, unknown>> }>(
+      `/api/models/fit-explain?model=${encodeURIComponent(model)}&endpoint_id=${encodeURIComponent(endpointId)}&needs=${encodeURIComponent(needs.join(','))}`,
+    );
+    const reasons: FitReason[] = (raw.reasons ?? []).map((r) => ({
+      capability: String(r.capability ?? ''),
+      state: FIT_EXPLAIN_STATES.includes(r.state as FitExplainState) ? (r.state as FitExplainState) : 'unknown',
+      message: typeof r.message === 'string' ? r.message : '',
+      alternatives: Array.isArray(r.alternatives) ? r.alternatives.map(String) : [],
+    }));
+    return { ok: raw.ok !== false, reasons };
+  } catch {
+    // A failed read leaves the row with no badges, not a wrong one — same
+    // "keep silent, never invent" rule as fitHints's own .catch above.
+    return EMPTY_FIT_EXPLAIN;
+  }
+}
+
+/**
  * The other tags that are the same weights as this one.
  *
  * Empty when there is no digest: not knowing is the honest answer, and

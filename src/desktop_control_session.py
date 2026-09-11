@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import contextvars
 import functools
+import inspect
 import json
 from pathlib import Path
 import threading
@@ -73,10 +74,49 @@ async def ensure_indicator():
     raise RuntimeError("Open the Faustus desktop app: the screen indicator and Escape stop must be ready before desktop control.")
 
 
+def _bound_session_id(signature: "inspect.Signature", args: tuple, kwargs: dict) -> Optional[str]:
+    """Best-effort `session_id` for the wrapped call, whatever calling
+    convention (positional or keyword) the caller used -- so the Escape/
+    cancel path below can tell `desktop_semantics.session` WHICH session
+    just took back control, without hard-coding an argument position that
+    could shift if the wrapped function's signature ever does."""
+    try:
+        bound = signature.bind_partial(*args, **kwargs)
+    except TypeError:
+        return None
+    value = bound.arguments.get("session_id")
+    return str(value) if value else None
+
+
+def _invalidate_desktop_session(session_id: Optional[str]) -> None:
+    """CMP-10 follow-up (W3-D): `desktop_semantics.session.invalidate_generation`'s
+    own docstring names this exact caller as a gap -- "the human takes back
+    control of the desktop mid-run — the existing Escape/indicator handshake
+    (src.desktop_control_session) stops the RUN, but does not by itself
+    tell this package 'whatever the human just did may have moved things'".
+    Escape here IS the user taking back control, so every `Ref` this
+    session still holds must not be trusted afterwards without a fresh
+    `desktop_snapshot`, exactly like the existing pixels-fallback caller in
+    `desktop_semantic_tools.py`. Best-effort: a session with no
+    desktop-semantics state yet is a no-op there, and a bump that fails for
+    any other reason must never turn a successful Escape-stop into a
+    reported failure -- the run already stopped either way."""
+    if not session_id:
+        return
+    try:
+        from src.desktop_semantics import session as ds_session
+        ds_session.invalidate_generation(session_id)
+    except Exception:  # noqa: BLE001 - best effort, never break the stop path
+        pass
+
+
 def desktop_control_run(function):
+    signature = inspect.signature(function)
+
     @functools.wraps(function)
     async def wrapped(*args, **kwargs):
         state = {"token": uuid.uuid4().hex, "active": False}
+        session_id = _bound_session_id(signature, args, kwargs)
         context = _run.set(state)
         iterator = function(*args, **kwargs)
         pending = None
@@ -89,6 +129,7 @@ def desktop_control_run(function):
                     if state["active"] and cancelled(state):
                         pending.cancel()
                         await asyncio.gather(pending, return_exceptions=True)
+                        _invalidate_desktop_session(session_id)
                         yield 'data: {"delta":"Control de pantalla detenido con Esc."}\n\n'
                         yield "data: [DONE]\n\n"
                         return

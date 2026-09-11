@@ -55,6 +55,7 @@ __all__ = [
     "StructuredPrice", "PRICE_UNIT_PER_1M", "price_from_openrouter_raw",
     "CallsProfile", "calls_profile_from_mapping",
     "DetailedEstimate", "estimate_detailed",
+    "local_latency_for", "local_latency_snapshot",
 ]
 
 #: Every cycle found is treated as unbounded (see module docstring); this is
@@ -634,3 +635,129 @@ def estimate_detailed(
         per_node=tuple(per_node),
         assumptions=tuple(assumptions),
     )
+
+
+# ---------------------------------------------------------------------------
+# W3-C (CMP-08 follow-up): computing the `local_latency` mapping
+# `estimate_detailed` above only threads through — never computes itself
+# (see that function's own docstring: no network, no ambient runtime state
+# from a pure function). `local_latency_for`/`local_latency_snapshot` are
+# where that computation actually happens, kept OUT of `estimate_detailed`
+# and `estimate` on purpose so both stay pure and testable with fakes alone.
+# A caller that wants a real number (the `/estimate` route, some future
+# orchestrator step) calls `local_latency_snapshot` first and passes its
+# result in as `estimate_detailed(..., local_latency=...)`.
+# ---------------------------------------------------------------------------
+
+#: Every field a `local_latency` entry can carry — the same four this
+#: module's own docstring and `estimate_detailed`'s promise, plus
+#: `size_bytes` as extra context a UI can show even when `load` itself
+#: stays unknown ("4.9 GB, load time unknown" reads better than nothing).
+LOCAL_LATENCY_FIELDS = ("load", "queue", "prefill_tps", "generation_tps", "memory_server")
+
+
+def _model_size_bytes(sizes: Mapping[str, int], model: str) -> int:
+    """The same tag-normalisation `gpu_policy._size_for` uses, duplicated
+    locally rather than imported: that name is private to `gpu_policy.py`
+    (leading underscore), and reaching across a module boundary for a
+    private helper is worse than four lines of the same lookup here."""
+    name = str(model or "").strip()
+    if not name:
+        return 0
+    if name in sizes:
+        return int(sizes[name])
+    short = name.split("/")[-1]
+    for candidate in (short, f"{short}:latest", name.split(":")[0] + ":latest"):
+        if candidate in sizes:
+            return int(sizes[candidate])
+    return 0
+
+
+def local_latency_for(model: str, *, endpoint_url: str = "") -> Dict[str, Any]:
+    """The CMP-08 `local_latency` entry for ONE model at ONE local endpoint.
+
+    Every field starts `"unknown"` and is only ever replaced by a value this
+    function can actually trace to a real signal — never a guess:
+
+    * **`generation_tps`** — `src.llm_core.local_speed(model)`, the decode
+      speed Faustus has itself learned from that model's own replies this
+      process's lifetime (`llm_core.remember_local_speed`, fed by Ollama's
+      `eval_count`/`eval_duration`). `"unknown"` until this model has
+      actually replied once.
+    * **`load`** — always `"unknown"`. `src.gpu_policy.model_sizes(endpoint_url)`
+      gives a model's size on disk (checked before writing this — the size
+      IS surfaced, as `size_bytes`, when the lookup succeeds), but nothing
+      in this codebase measures how long loading that many bytes actually
+      takes; `llm_core`'s only local timing table is decode speed, not load
+      time (`llm_core._LOCAL_SPEED`, read via `local_speed` above). Per the
+      W3-C contract: report `unknown` rather than estimate load time from
+      size and a guessed disk/PCIe throughput.
+    * **`queue`** — `src.resource_admission.status()`'s live counters for
+      whichever pool `endpoint_url` belongs to
+      (`resource_admission.pool_for_endpoint`): `{available,
+      foreground_waiting, pool_id}` when the endpoint is in a defined pool,
+      `"unknown"` when it is not (nothing is queuing there, by construction
+      of that module — an endpoint outside any pool is not admission-gated
+      at all) or `endpoint_url` was not given.
+    * **`prefill_tps`**, **`memory_server`** — always `"unknown"`: neither
+      `gpu_policy`, `llm_core` nor `resource_admission` (the three sources
+      this function is scoped to) expose a prompt-processing rate or a
+      per-server VRAM reservation figure; `src.vram_admission` has the
+      latter but reading it is a separate lot's scope, not this one's.
+
+    Never raises: every lookup is best-effort and a failure anywhere (a
+    server unreachable, a malformed pool) degrades that one field to
+    `"unknown"` rather than failing the whole estimate.
+    """
+    model = str(model or "").strip()
+    row: Dict[str, Any] = {field_name: "unknown" for field_name in LOCAL_LATENCY_FIELDS}
+    if not model:
+        return row
+
+    try:
+        from src import llm_core
+        tps = llm_core.local_speed(model)
+        if tps is not None:
+            row["generation_tps"] = tps
+    except Exception:  # noqa: BLE001 — a latency hint must never break an estimate
+        pass
+
+    endpoint_url = str(endpoint_url or "").strip()
+    if endpoint_url:
+        try:
+            from src import gpu_policy
+            sizes = gpu_policy.model_sizes(endpoint_url)
+            size_bytes = _model_size_bytes(sizes, model)
+            if size_bytes:
+                row["size_bytes"] = size_bytes
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            from src import resource_admission
+            pool_id = resource_admission.pool_for_endpoint(endpoint_url)
+            if pool_id:
+                pools = (resource_admission.status() or {}).get("pools") or []
+                pool_row = next((p for p in pools if p.get("pool_id") == pool_id), None)
+                if pool_row is not None:
+                    row["queue"] = {
+                        "pool_id": pool_id,
+                        "available": pool_row.get("available"),
+                        "foreground_waiting": pool_row.get("foreground_waiting"),
+                    }
+        except Exception:  # noqa: BLE001
+            pass
+
+    return row
+
+
+def local_latency_snapshot(endpoints_by_model: Mapping[str, str]) -> Dict[str, Dict[str, Any]]:
+    """`{model_id: endpoint_url}` → the full `local_latency` mapping
+    `estimate_detailed(..., local_latency=...)` expects — one
+    `local_latency_for` call per model, batched so a caller (the `/estimate`
+    route, once wired — see `docs/api/topology.md` §Estimate) can build it in
+    one pass over a definition's `skill` nodes instead of calling this once
+    per node by hand."""
+    out: Dict[str, Dict[str, Any]] = {}
+    for model, endpoint_url in (endpoints_by_model or {}).items():
+        out[str(model)] = local_latency_for(model, endpoint_url=endpoint_url)
+    return out

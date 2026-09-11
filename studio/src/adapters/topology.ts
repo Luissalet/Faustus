@@ -559,6 +559,17 @@ export interface DetailedEstimateOptions {
   skillCallsProfiles?: Record<string, { modelCalls: number; externalOps: number; tokensIn: number; tokensOut: number }>;
   localLatency?: Record<string, Record<string, unknown>>;
   runId?: string;
+  /**
+   * W3-C: lets the server auto-fill `skillCallsProfiles` for any skill named
+   * on a `skill` node that declares its own `calls_profile` in its own
+   * `SKILL.md` — read from this project's workspace
+   * (`routes.workflows_routes._declared_calls_profiles_from_manifests`).
+   * `skillCallsProfiles` above still wins for any skill named in both.
+   * Optional — omit either and this pickup just does not happen, exactly
+   * as before this addition.
+   */
+  owner?: string;
+  projectId?: string;
 }
 
 function detailBody(definition: Record<string, unknown>, options?: DetailedEstimateOptions): Record<string, unknown> {
@@ -578,6 +589,8 @@ function detailBody(definition: Record<string, unknown>, options?: DetailedEstim
   }
   if (options?.localLatency) body.local_latency = options.localLatency;
   if (options?.runId) body.run_id = options.runId;
+  if (options?.owner) body.owner = options.owner;
+  if (options?.projectId) body.project_id = options.projectId;
   return body;
 }
 

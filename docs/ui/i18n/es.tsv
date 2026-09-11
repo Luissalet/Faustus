@@ -6850,3 +6850,57 @@ The server did not return a preflight report.	El servidor no devolvió un inform
 The server did not return a simulation.	El servidor no devolvió una simulación.
 The server did not return an export.	El servidor no devolvió una exportación.
 The server did not return a plan comparison.	El servidor no devolvió una comparación de planes.
+Download this definition as JSON, including your saved node layout.	Descarga esta definición como JSON, incluida la disposición de nodos que guardaste.
+Document context for this message	Contexto de documento para este mensaje
+Remove context: {name}	Quitar contexto: {name}
+Save as recipe	Guardar como receta
+Saved as a draft recipe: {id}	Guardada como receta borrador: {id}
+Active recipe: {id}	Receta activa: {id}
+Strategy: {method} · {profile}{reason}	Estrategia: {method} · {profile}{reason}
+fast	rápido
+balanced	equilibrado
+deep review	revisión intensiva
+Alternatives: {names}	Alternativas: {names}
+load	carga
+gen	gen
+queue	cola
+computed	calculado
+estimated	estimado
+Metric	Métrica
+Current plan	Plan actual
+Single model	Modelo único
+Deterministic steps	Pasos deterministas
+Compare plans	Comparar planes
+Activations	Activaciones
+External ops	Operaciones externas
+Tokens in/out	Tokens entrada/salida
+Local latency	Latencia local
+Tokens in	Tokens de entrada
+Tokens out	Tokens de salida
+Known cost (USD)	Coste conocido (USD)
+Assumptions used	Supuestos utilizados
+Per-node breakdown	Desglose por nodo
+Forecast vs actual	Previsto vs real
+Model calls	Llamadas de modelo
+External operations	Operaciones externas
+Node activations	Activaciones de nodo
+{n} tok/s	{n} tok/s
+{available} free / {waiting} waiting	{available} libres / {waiting} en espera
+Cost of the current workflow	Coste del workflow actual
+Loading the detailed estimate…	Cargando la estimación detallada…
+Node activations, model calls and external operations are different things — a "deliver" or "artifact_store" node is an external operation, never a model call.	Las activaciones de nodo, las llamadas de modelo y las operaciones externas son cosas distintas — un nodo "deliver" o "artifact_store" es una operación externa, nunca una llamada de modelo.
+Unknown — never shown as zero or free	Desconocido — nunca se muestra como cero o gratis
+Forecast (max): {n} node activation(s)	Previsto (máx.): {n} activación(es) de nodo
+actual tool calls: {v}	llamadas a herramientas reales: {v}
+actual: {n} tool call(s)	real: {n} llamada(s) a herramienta(s)
+Actual active time: {s}s	Tiempo activo real: {s}s
+Separate accounts	Cuentas separadas
+External	Externos
+Structured	Estructurada
+Heuristic	Heurística
+Heuristic signal — not confirmed by the runtime itself	Señal heurística — no confirmada por el runtime
+Structured signal from the runtime	Señal estructurada del runtime
+Reported by an external runtime Faustus does not run itself. Read-only: nothing here can be driven from Faustus.	Comunicado por un runtime externo que Faustus no ejecuta. Solo lectura: nada aquí se puede controlar desde Faustus.
+Runtime	Runtime
+Certainty	Certeza
+Signal age	Antigüedad de la señal

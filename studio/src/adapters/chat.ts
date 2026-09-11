@@ -286,11 +286,25 @@ export interface DocSnapshot {
   content: string;
 }
 
+/** W3-A: where `find` sits in the document RIGHT NOW, when
+ *  `suggest_document` (`src/agent_tools/document_tools.py`) could compute
+ *  one — same quote+context contract `src/document_comments.py` anchors a
+ *  comment with. `before`/`after` are empty when `find` was not unique in
+ *  the document at suggestion time (the server never guesses which
+ *  occurrence was meant); the client's own locate-by-anchor check
+ *  (`SidePanel.tsx`) then falls back to the existing occurrence picker. */
+export interface DocSuggestionAnchor {
+  quote: string;
+  before: string;
+  after: string;
+}
+
 export interface DocSuggestion {
   id: string;
   find: string;
   replace: string;
   reason: string;
+  anchor?: DocSuggestionAnchor;
 }
 
 /** The raw `subagent` payload of a tool_progress event (delegate_agents);
@@ -368,6 +382,14 @@ export type ChatEvent =
   | { type: 'metrics'; metrics: TurnMetrics }
   | { type: 'sources'; sources: WebSource[] }
   | { type: 'context_receipts'; receipts: ContextReceipt[] }
+  /** CMP-09/CMP-12 (W3-A): the `strategy` SSE event, emitted once per turn
+   *  (round 1 only, `src/agent_loop.py`) — what `strategy_policy.
+   *  choose_strategy` decided for THIS turn, observable rather than a
+   *  hidden heuristic. `docs/api/strategy.md`'s `Strategy` shape plus the
+   *  active `profile`; `recipeId` is the persisted active recipe id, or
+   *  `null` when none is active — never surfaced before this lot added
+   *  this `case` (see `adapters/strategy.ts`'s own doc comment on the gap). */
+  | { type: 'strategy'; method: string; profile: string; recipeId: string | null; reasons: string[]; steps: string[]; budget: Record<string, unknown> }
   | {
       type: 'research';
       phase: string;
@@ -726,6 +748,24 @@ export function hasContextOverrides(overrides: ContextOverrides): boolean {
   );
 }
 
+/** W3-A: a `{doc, ranges, quote}` reference collected via `docSession.ts`'s
+ *  `sendComposerContext`/`COMPOSER_CONTEXT_EVENT` (CMP-03) and shown as a
+ *  removable chip in `Composer.tsx` — travels with the turn as its OWN
+ *  field, never inlined into `message` as though the quoted text were
+ *  something the human typed. Additive, same posture as `contextOverrides`
+ *  above: a server that does not yet read `doc_context` simply ignores the
+ *  unknown form field (`ContextPanel.tsx`'s own doc comment describes the
+ *  identical gap for its field, closed later by `chat_routes.py`, outside
+ *  this lot's file scope) — wiring `Composer.tsx`'s `Knobs.docContext`
+ *  through to this field is the orchestrator's job. */
+export interface DocContextRef {
+  docId: string;
+  docTitle: string;
+  ranges: { start: number; end: number }[];
+  action: string;
+  quotes: string[];
+}
+
 export interface SendOptions {
   sessionId: string;
   message: string;
@@ -766,6 +806,9 @@ export interface SendOptions {
    *  that does not yet look at this field ignores an unknown form field, so
    *  older and newer clients both keep working against it either way. */
   contextOverrides?: ContextOverrides;
+  /** W3-A: document context chips still attached in the composer when this
+   *  turn was sent — see `DocContextRef`'s doc comment. */
+  docContext?: DocContextRef[];
   /** A preset id from /api/presets (system prompt + sampling). */
   presetId?: string;
   /** The document open in the panel, so the model sees what you see. */
@@ -903,6 +946,18 @@ function executionTargetFrom(raw: unknown): { kind: string; cwd?: string; shell?
   const kind = str(r.kind);
   if (!kind) return undefined;
   return { kind, cwd: str(r.cwd) || undefined, shell: str(r.shell) || undefined };
+}
+
+/** W3-A: the wire's `anchor` on one `doc_suggestions` entry — absent from a
+ *  server that predates it (same defensive-read posture as every other
+ *  optional passthrough field in this file), or from a suggestion the
+ *  server could not anchor to a real span at all. */
+function anchorFrom(raw: unknown): DocSuggestionAnchor | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const r = raw as Record<string, unknown>;
+  const quote = str(r.quote);
+  if (!quote) return undefined;
+  return { quote, before: str(r.before), after: str(r.after) };
 }
 
 /** `harness_summary` data, and the `harness` block history keeps. */
@@ -1065,7 +1120,7 @@ export function decode(raw: Record<string, unknown>, sseEvent: string | null): C
         type: 'doc_suggestions',
         docId: str(raw.doc_id),
         suggestions: asArray<Record<string, unknown>>(raw.suggestions)
-          .map((s) => ({ id: String(s.id ?? ''), find: str(s.find), replace: str(s.replace), reason: str(s.reason) }))
+          .map((s) => ({ id: String(s.id ?? ''), find: str(s.find), replace: str(s.replace), reason: str(s.reason), anchor: anchorFrom(s.anchor) }))
           .filter((s) => s.id && s.find),
       };
     case 'agent_step':
@@ -1111,6 +1166,16 @@ export function decode(raw: Record<string, unknown>, sseEvent: string | null): C
           sha: str(raw.sha) || undefined,
           detail: str(raw.detail) || undefined,
         },
+      };
+    case 'strategy':
+      return {
+        type: 'strategy',
+        method: str(data.method),
+        profile: str(data.profile),
+        recipeId: str(data.recipe_id) || null,
+        reasons: asArray<unknown>(data.reasons).map(String).filter(Boolean),
+        steps: asArray<unknown>(data.steps).map(String).filter(Boolean),
+        budget: data.budget && typeof data.budget === 'object' ? (data.budget as Record<string, unknown>) : {},
       };
     case 'metrics':
       return { type: 'metrics', metrics: metricsFrom(data) };
@@ -1388,6 +1453,7 @@ export async function* sendTurn(options: SendOptions): AsyncGenerator<ChatEvent>
   if (options.contextOverrides && hasContextOverrides(options.contextOverrides)) {
     fd.append('context_overrides', JSON.stringify(options.contextOverrides));
   }
+  if (options.docContext?.length) fd.append('doc_context', JSON.stringify(options.docContext));
   if (options.noMemory || options.incognito || options.compare) fd.set('no_memory', 'true');
   if (options.noSkills) fd.set('no_skills', 'true');
   if (options.inputTokenBudget != null) fd.set('input_token_budget', String(options.inputTokenBudget));

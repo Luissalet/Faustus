@@ -39,10 +39,15 @@ turn through this module without deciding what to do about a violation:
      `RouteRequirements.required_parameters` is checked against capability
      evidence (`src.model_calibration`'s tested/announced manifest for a
      local model, or an explicit `endpoint["capabilities"]` list a caller
-     already resolved for a remote one). A parameter PROVEN unsupported
-     raises `provider.parameter_unsupported`; a parameter with no evidence
-     either way is reported in `RouteDecision.reason` as unknown, never
-     silently dropped and never treated as a pass.
+     already resolved for a remote one) via `src.model_capabilities.explain_fit`
+     (CMP-11) — every required capability gets an explained state
+     (tested/announced/unknown/missing), never a bare yes/no. A parameter
+     PROVEN unsupported raises `provider.parameter_unsupported` with the
+     per-capability reason and, when `endpoint["capability_alternatives"]`
+     names other already-evidenced models, which of them DO meet it; a
+     parameter with no evidence either way is reported in
+     `RouteDecision.reason` as unknown, never silently dropped and never
+     treated as a pass.
   4. **A per-token price ceiling is never described as a run-level cap.**
      `RouteRequirements.max_price_per_token` mirrors
      `src.openrouter_options`'s own `max_price` field name and shape
@@ -65,6 +70,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
 
+from src import model_capabilities as mc
 from src import privacy_policy
 
 logger = logging.getLogger(__name__)
@@ -242,28 +248,57 @@ def _fallback_scope(
     return FALLBACK_PROVIDER
 
 
-def _check_required_parameters(
+def _fit_candidates_from_endpoint(endpoint: Any) -> Tuple["mc.FitCandidateModel", ...]:
+    """Other already-evidenced models `explain_fit` may name as alternatives
+    (CMP-11) — read from the caller-supplied, optional
+    `endpoint["capability_alternatives"]`: an iterable of
+    `{"model_id":, "capabilities": [...]}` (explicit, remote-shaped) or
+    `{"model_id":, "manifest": {...}}` (a `model_calibration.get_manifest`
+    read the caller already did). This module performs no I/O of its own to
+    discover siblings — see the module docstring — so with nothing supplied
+    there are simply no alternatives to offer, never a guess."""
+    raw = _get(endpoint, "capability_alternatives", None) or ()
+    out = []
+    for item in raw:
+        model_id = str(_get(item, "model_id") or _get(item, "model") or "").strip()
+        if not model_id:
+            continue
+        explicit = _get(item, "capabilities", None)
+        if explicit is not None:
+            assertions = mc.assertions_from_endpoint_capabilities(explicit)
+        else:
+            assertions = mc.assertions_from_calibration_manifest(_get(item, "manifest", None))
+        out.append(mc.FitCandidateModel(model_id=model_id, assertions=assertions))
+    return tuple(out)
+
+
+def _build_fit(
     requested_model: str,
     endpoint: Any,
+    connection_id: Optional[str],
     network: str,
     required: Sequence[str],
-) -> Tuple[Tuple[str, ...], Tuple[str, ...]]:
-    """`(unsupported, unknown)` for `required` against whatever capability
-    evidence is available. `unsupported` is a PROVEN-false result (never
-    reached silently — see invariant 3); `unknown` is "no evidence either
-    way", surfaced in the decision's `reason` but not blocking, matching
-    this repo's `unknown`-is-not-`false` discipline."""
+) -> "mc.Fit":
+    """CMP-11: `required` explained capability-by-capability
+    (`src.model_capabilities.explain_fit`) against whatever evidence is
+    available — never a bare pass/fail. `Fit.ok` is False only when a
+    capability is PROVEN unsupported (never reached silently — see
+    invariant 3); a capability with no evidence either way comes back
+    `unknown`, surfaced in the decision's `reason` but not blocking,
+    matching this repo's `unknown`-is-not-`false` discipline."""
     if not required:
-        return (), ()
+        return mc.Fit(ok=True, model=requested_model, endpoint=str(connection_id or ""))
+
+    candidates = _fit_candidates_from_endpoint(endpoint)
 
     explicit = _get(endpoint, "capabilities", None)
     if explicit is not None:
-        have = {str(c) for c in explicit}
-        missing = tuple(p for p in required if p not in have)
         # An explicit capability list is a caller-resolved fact, not a probe
-        # result — a name absent from it is a clean "unsupported", not
-        # "unknown" (the caller already did the evidence-gathering).
-        return missing, ()
+        # result — a required name absent from it is a clean "unsupported",
+        # not "unknown" (the caller already did the evidence-gathering).
+        assertions = mc.assertions_from_endpoint_capabilities(explicit, requirements=required)
+        return mc.explain_fit(required, model=requested_model, endpoint=str(connection_id or ""),
+                               assertions=assertions, candidates=candidates)
 
     if network != NETWORK_LOCAL:
         # No explicit capability evidence for a remote connection: this
@@ -271,32 +306,21 @@ def _check_required_parameters(
         # `src.model_capability_readers`, per-vendor and out of this lote's
         # scope) — every required parameter is honestly unknown, not
         # silently assumed supported.
-        return (), tuple(required)
+        return mc.explain_fit(required, model=requested_model, endpoint=str(connection_id or ""),
+                               assertions=None, candidates=candidates)
 
     try:
         from src import model_calibration
-        from src import model_router as _model_router
     except Exception:
         logger.debug("provider_policy: capability lookup unavailable", exc_info=True)
-        return (), tuple(required)
+        return mc.explain_fit(required, model=requested_model, endpoint=str(connection_id or ""),
+                               assertions=None, candidates=candidates)
 
     key = model_calibration.manifest_key(vendor="ollama", model_id=requested_model)
     manifest = model_calibration.get_manifest(key)
-    unsupported = []
-    unknown = []
-    for cap in required:
-        if cap not in _model_router.VALID_CAPABILITIES:
-            # Not one of MOD-05's probed capability names — this module has
-            # no local evidence for it either.
-            unknown.append(cap)
-            continue
-        tested_ok, declared = _model_router._capability_status(manifest, cap)
-        if tested_ok is False:
-            unsupported.append(cap)
-        elif tested_ok is None and not declared:
-            unknown.append(cap)
-        # tested_ok is True, or (None and declared) -> treated as supported.
-    return tuple(unsupported), tuple(unknown)
+    assertions = mc.assertions_from_calibration_manifest(manifest)
+    return mc.explain_fit(required, model=requested_model, endpoint=str(connection_id or ""),
+                           assertions=assertions, candidates=candidates)
 
 
 def resolve_route(
@@ -376,17 +400,24 @@ def resolve_route(
         escalated = True
         reasons.append("paid API connection explicitly confirmed after a subscription auth failure")
 
-    # Invariant 3: a required parameter proven unsupported is a hard error;
-    # one with no evidence is reported, never dropped.
-    unsupported, unknown = _check_required_parameters(model, endpoint, network, requirements.required_parameters)
-    if unsupported:
+    # Invariant 3: a required parameter proven unsupported is a hard error,
+    # explained per capability (CMP-11) — never a bare name, never a
+    # silently-dropped requirement; one with no evidence is reported, never
+    # blocked.
+    fit = _build_fit(model, endpoint, connection_id, network, requirements.required_parameters)
+    missing_reasons = [r for r in fit.reasons if r.state == mc.FIT_MISSING]
+    unknown_caps = [r.capability for r in fit.reasons if r.state == mc.FIT_UNKNOWN]
+    if missing_reasons:
+        detail = "; ".join(f"{r.capability}: {r.message}" for r in missing_reasons)
+        alternatives = sorted({alt for r in missing_reasons for alt in r.alternatives})
+        alt_text = f" Alternatives that meet it: {', '.join(alternatives)}." if alternatives else ""
         raise ProviderPolicyError(
             "provider.parameter_unsupported",
             f"{model!r} on connection {connection_id!r} does not support required "
-            f"parameter(s): {', '.join(unsupported)}",
+            f"parameter(s) — {detail}.{alt_text}",
         )
-    if unknown:
-        reasons.append(f"support for {', '.join(unknown)} is unverified on this connection")
+    if unknown_caps:
+        reasons.append(f"support for {', '.join(unknown_caps)} is unverified on this connection")
 
     # Invariant 4: a per-token price ceiling is carried under an unambiguous
     # name and described as per-token, never as a run-level budget.

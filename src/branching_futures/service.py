@@ -4,7 +4,7 @@ from __future__ import annotations
 import uuid
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 
-from src.branching_futures import contracts, persistence
+from src.branching_futures import contracts, isolation, persistence
 from src.contracts.base import fingerprint, now_iso
 
 _service: Optional["BranchingService"] = None
@@ -15,11 +15,27 @@ def _id(prefix: str) -> str:
 
 
 class BranchingService:
-    def __init__(self, store: Any = None) -> None:
+    def __init__(self, store: Any = None, isolator: Optional[Any] = None) -> None:
         self._store = store
+        # W3-D: accept a real `isolation.BranchIsolator` (WorktreeIsolator/
+        # SnapshotDirIsolator/InMemoryIsolator, see isolation.py) so a
+        # caller that wires real branch execution has somewhere to inject
+        # one -- defaults to `InMemoryIsolator` (today's no-real-effect
+        # behaviour, unchanged) when not given.
+        self._isolator = isolator if isolator is not None else isolation.InMemoryIsolator()
 
     def _db(self):
         return self._store or persistence.store()
+
+    @property
+    def isolator(self) -> Any:
+        """The `isolation.BranchIsolator` this service was built with. Not
+        called anywhere in this file yet: `create`/`start_branch` below
+        still only track a LOGICAL `namespace` string (see their own
+        comments), never a real filesystem/git fork -- exposed so a caller
+        that DOES wire real branch execution has a single isolator to reach
+        instead of constructing a second, parallel one."""
+        return self._isolator
 
     def _emit(self, owner: str, name: str, kind: str, ident: str, payload: Mapping[str, Any]) -> None:
         self._db().emit(owner=owner, name=name, entity_kind=kind, entity_id=ident, payload=payload)

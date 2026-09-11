@@ -32,6 +32,8 @@ from src.endpoint_resolver import (
 from src.auth_helpers import _auth_disabled, effective_user, owner_filter, require_user
 from src import gpu_shared_memory
 from src import gpu_placement, vram_fit
+from src import model_calibration as mcal
+from src import model_capabilities as mc
 
 logger = logging.getLogger(__name__)
 
@@ -595,6 +597,27 @@ def _is_ollama_base(base_url: str) -> bool:
         return parsed.port == 11434 or "ollama" in host
     except Exception:
         return "ollama" in (base_url or "").lower()
+
+
+def _ollama_digests_for_root(root: str) -> Dict[str, str]:
+    """`{model tag: blob digest}` off `/api/tags` — CMP-11's fit-explain
+    route keys a model's calibration manifest by digest, same as
+    `routes/local_models_routes.py::_digest_for`, so a re-pull that changes
+    the digest starts explaining against a fresh (empty) manifest instead of
+    a stale one. Best-effort: an unreachable endpoint just means no digest,
+    never a route failure — the manifest still resolves via endpoint_id."""
+    out: Dict[str, str] = {}
+    try:
+        r = httpx.get(root + "/api/tags", timeout=3.0, verify=llm_verify())
+        r.raise_for_status()
+        for m in (r.json() or {}).get("models") or []:
+            name = str(m.get("name") or m.get("model") or "")
+            digest = str(m.get("digest") or "")
+            if name and digest:
+                out[name] = digest
+    except Exception as e:  # noqa: BLE001
+        logger.debug("fit-explain: /api/tags failed for %s: %s", _redact_url_for_log(root), e)
+    return out
 
 
 # Prefixes/substrings for models that are NOT chat-completions-capable
@@ -1999,6 +2022,156 @@ def setup_model_routes(model_discovery):
         _fit_cache["data"] = data
         _fit_cache["time"] = _time.time()
         return data
+
+    # ── CMP-11: capabilities → explainable selection (INFORME V2 §3.10) ─────
+    #
+    # Not to be confused with `/models/fit` above (VRAM: will it load), nor
+    # with `routes/local_models_routes.py`'s `/api/models/{name}/capabilities`
+    # (the raw announced/tested manifest for one Ollama model — this route
+    # reads the SAME manifest store but turns it into a per-requirement
+    # explanation, via `src.model_capabilities.explain_fit`). A missing/
+    # unverified requirement is never dropped in silence: every one of
+    # `needs` gets a reason, and, when another model this route already has
+    # evidence for meets it, that model's id — never a plain badge that just
+    # goes grey with no explanation attached.
+    def _endpoint_row_for(db, endpoint_id: str, owner: str, is_admin: bool) -> Optional[ModelEndpoint]:
+        q = db.query(ModelEndpoint).filter(ModelEndpoint.id == endpoint_id)
+        if owner and not is_admin:
+            q = owner_filter(q, ModelEndpoint, owner)
+        return q.first()
+
+    def _tool_call_assertion(supports_tools: Optional[bool]) -> Optional["mc.CapabilityAssertion"]:
+        """The only capability signal a non-Ollama endpoint has in this
+        schema today (`ModelEndpoint.supports_tools`) — everything else
+        about a remote model stays honestly `unknown` here until a
+        per-vendor declared-capability reader is wired to this route
+        (documented gap: see `docs/api/model_capabilities.md`)."""
+        if supports_tools is True:
+            return mc.CapabilityAssertion.build(
+                capability=mc.CAP_TOOL_CALL, status=mc.ASSERTION_CLAIMED,
+                source=mc.SOURCE_ENDPOINT_CONFIG, confidence=mc.CONFIDENCE_EXPLICIT,
+            )
+        if supports_tools is False:
+            return mc.CapabilityAssertion.build(
+                capability=mc.CAP_TOOL_CALL, status=mc.ASSERTION_UNSUPPORTED,
+                source=mc.SOURCE_ENDPOINT_CONFIG, confidence=mc.CONFIDENCE_EXPLICIT,
+            )
+        return None
+
+    def _other_tool_capable_endpoints(db, endpoint_id: str, owner: str, is_admin: bool) -> List[tuple]:
+        """Other enabled endpoints this owner can see that declare tool
+        support (`ModelEndpoint.supports_tools`) — the cross-endpoint
+        alternative for `tools` specifically, the one signal a REMOTE
+        endpoint has in this schema. Never consulted for a local Ollama
+        model: its siblings on the SAME endpoint already carry richer,
+        per-model evidence (`_collect_fit_explain`'s manifest read)."""
+        oq = db.query(ModelEndpoint).filter(
+            ModelEndpoint.is_enabled == True,  # noqa: E712
+            ModelEndpoint.supports_tools == True,  # noqa: E712
+            ModelEndpoint.id != endpoint_id,
+        )
+        if owner and not is_admin:
+            oq = owner_filter(oq, ModelEndpoint, owner)
+        out = []
+        for other in oq.limit(5).all():
+            other_base = _normalize_base(other.base_url)
+            other_kind = _effective_endpoint_kind(other, other_base)
+            other_ids, other_pinned = _picker_models_for_endpoint(other, other_base, other_kind)
+            rep = (other_pinned or other_ids or [None])[0]
+            if rep:
+                out.append((rep, other.id))
+        return out
+
+    def _collect_fit_explain(model: str, endpoint_id: str, owner: str, is_admin: bool) -> Dict[str, Any]:
+        db = SessionLocal()
+        try:
+            ep = _endpoint_row_for(db, endpoint_id, owner, is_admin)
+            if ep is None:
+                raise HTTPException(404, f"endpoint {endpoint_id!r} not found")
+            base = _normalize_base(ep.base_url)
+            kind = _effective_endpoint_kind(ep, base)
+            sibling_ids, pinned = _picker_models_for_endpoint(ep, base, kind)
+            supports_tools = ep.supports_tools
+            ep_name = ep.name
+            is_local_ollama = _is_ollama_base(base)
+
+            candidates: List["mc.FitCandidateModel"] = []
+            if is_local_ollama:
+                digests = _ollama_digests_for_root(base)
+                key = mcal.manifest_key(vendor="ollama", model_id=model, endpoint_id=endpoint_id,
+                                         digest=digests.get(model, ""))
+                manifest = mcal.get_manifest(key)
+                assertions: Dict[str, "mc.CapabilityAssertion"] = mc.assertions_from_calibration_manifest(manifest)
+                for sib in sibling_ids[:25]:
+                    if sib == model:
+                        continue
+                    sib_key = mcal.manifest_key(vendor="ollama", model_id=sib, endpoint_id=endpoint_id,
+                                                 digest=digests.get(sib, ""))
+                    sib_manifest = mcal.get_manifest(sib_key)
+                    candidates.append(mc.FitCandidateModel(
+                        model_id=sib, endpoint_id=endpoint_id,
+                        assertions=mc.assertions_from_calibration_manifest(sib_manifest),
+                    ))
+            else:
+                assertions = {}
+                tool_assertion = _tool_call_assertion(supports_tools)
+                if tool_assertion is not None:
+                    assertions[mc.CAP_TOOL_CALL] = tool_assertion
+                if supports_tools is not True:
+                    for rep_model, rep_endpoint_id in _other_tool_capable_endpoints(db, endpoint_id, owner, is_admin):
+                        candidates.append(mc.FitCandidateModel(
+                            model_id=rep_model, endpoint_id=rep_endpoint_id,
+                            assertions={mc.CAP_TOOL_CALL: mc.CapabilityAssertion.build(
+                                capability=mc.CAP_TOOL_CALL, status=mc.ASSERTION_CLAIMED,
+                                source=mc.SOURCE_ENDPOINT_CONFIG, confidence=mc.CONFIDENCE_EXPLICIT,
+                            )},
+                        ))
+        finally:
+            db.close()
+
+        return {"assertions": assertions, "candidates": candidates, "endpoint_name": ep_name}
+
+    @router.get("/models/fit-explain")
+    async def api_models_fit_explain(
+        request: Request,
+        model: str = Query(..., min_length=1),
+        endpoint_id: str = Query(..., min_length=1),
+        needs: str = Query(""),
+    ):
+        """CMP-11 (INFORME V2 §3.10): explain, capability by capability,
+        whether `model` on `endpoint_id` meets `needs` — a comma-separated
+        list of capability tokens (`tools,json,vision,images_edit`, any
+        `src.model_capabilities.normalize_capability` alias). Every
+        requested capability comes back with a state
+        (`tested`/`announced`/`unknown`/`missing`), a plain-language reason,
+        and — when the model falls short — the ids of other models this
+        route already has evidence for that DO meet it. Never a bare
+        compatible/incompatible, and never a silently dropped requirement.
+        """
+        require_user(request)
+        owner = effective_user(request) or ""
+        is_admin = False
+        try:
+            auth_mgr = getattr(request.app.state, "auth_manager", None)
+            if owner and auth_mgr is not None and getattr(auth_mgr, "is_admin", None):
+                is_admin = bool(auth_mgr.is_admin(owner))
+        except Exception:  # noqa: BLE001
+            is_admin = False
+
+        model_name = str(model or "").strip()
+        if not model_name:
+            raise HTTPException(400, "model is required")
+        needed = [tok for tok in (needs or "").split(",") if tok.strip()]
+
+        import asyncio as _asyncio
+        collected = await _asyncio.to_thread(_collect_fit_explain, model_name, endpoint_id, owner, is_admin)
+        fit = mc.explain_fit(
+            needed, model=model_name, endpoint=endpoint_id,
+            assertions=collected["assertions"], candidates=collected["candidates"],
+        )
+        result = fit.to_dict()
+        result["endpoint_name"] = collected["endpoint_name"]
+        return result
 
     # Brief cache for local-probe results so picker-open doesn't hammer
     # endpoint health checks every time. 8s TTL — long enough to amortize cost,

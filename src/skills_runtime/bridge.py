@@ -39,7 +39,14 @@ CAPABILITY_KEYS = (
     "permissions_max_seconds", "permissions_max_cost_units",
     "inputs", "outputs", "memory_read_scopes", "memory_write_scopes",
     "approval_required_when",
+    "calls_profile_model_calls", "calls_profile_external_ops",
+    "calls_profile_tokens_in", "calls_profile_tokens_out",
 )
+
+#: The four numbers a composite skill can declare about ONE of its own runs —
+#: CMP-08's `calls_profile` (W3-C, `src.workflow_cost_estimate.CallsProfile`
+#: "declared" source). Same flat-key shape as `permissions_*` above.
+CALLS_PROFILE_KEYS = ("model_calls", "external_ops", "tokens_in", "tokens_out")
 
 
 def permissions_from_frontmatter(fm: Mapping[str, Any]) -> Dict[str, Any]:
@@ -70,6 +77,30 @@ def permissions_from_frontmatter(fm: Mapping[str, Any]) -> Dict[str, Any]:
     flat = {key[len("permissions_"):]: value for key, value in fm.items()
             if isinstance(key, str) and key.startswith("permissions_")}
     return flat
+
+
+def calls_profile_from_frontmatter(fm: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
+    """A composite skill's own claim about what ONE activation of it costs —
+    read the same flat-key way `permissions_from_frontmatter` reads
+    permissions, because this frontmatter parser has no nested maps:
+
+        calls_profile_model_calls: 3
+        calls_profile_external_ops: 1
+        calls_profile_tokens_in: 4200
+        calls_profile_tokens_out: 900
+
+    A `calls_profile:` mapping is still accepted for callers building the
+    frontmatter as a dict. Returns `None` — never a zeroed-out profile — when
+    the skill declares none of the four keys, so `src/workflow_cost_estimate.py`
+    keeps this skill at `calls_profile_source: "unknown"` instead of pricing
+    it as a free composite skill."""
+    fm = fm or {}
+    raw = fm.get("calls_profile")
+    if isinstance(raw, Mapping):
+        return dict(raw)
+    flat = {key: fm[f"calls_profile_{key}"] for key in CALLS_PROFILE_KEYS
+            if fm.get(f"calls_profile_{key}") is not None}
+    return flat or None
 
 
 def _fields_from_list(raw: Any) -> Optional[Dict[str, str]]:
@@ -133,6 +164,9 @@ def manifest_from_skill(skill: Any, *, source: str = "",
         fields = _fields_from_list(merged.get(key))
         if fields is not None:
             body[key] = fields
+    calls_profile = calls_profile_from_frontmatter(merged)
+    if calls_profile is not None:
+        body["calls_profile"] = calls_profile
     memory = {}
     for scope_key in ("read_scopes", "write_scopes"):
         value = merged.get(f"memory_{scope_key}")

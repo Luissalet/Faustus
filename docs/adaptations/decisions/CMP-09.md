@@ -100,12 +100,15 @@ python3 -m pytest tests/test_studio_guards.py -q -p no:cacheprovider -W ignore
   simples (legibles, no un modelo de clasificación) — un texto de tarea
   ambiguo en un idioma no cubierto por los patrones cae al fallback
   `plan_then_execute`, documentado como "el default seguro y sin opinión".
-* El evento SSE `strategy` se emite y llega al navegador, pero
-  `studio/src/adapters/chat.ts` no tiene todavía un `case 'strategy':` que
-  lo decodifique — fuera del alcance de fichero de este lote (`chat.ts` es
-  de W2-D). El compositor refleja el perfil/receta activos vía
-  `GET /api/strategy/profile`, no vía el evento en vivo. **Punto a cablear
-  por el orquestador.**
+* El evento SSE `strategy` se emite y llega al navegador; desde W3-A
+  `studio/src/adapters/chat.ts` SÍ tiene un `case 'strategy':` que lo
+  decodifica, `studio/src/screens/studio/model.ts` lo pliega en
+  `turn.strategy`, y `Transcript.tsx::StrategyLine` lo muestra por turno,
+  en vivo (`data-testid="turn-strategy"`) — ya no es un punto pendiente de
+  cablear. El compositor sigue reflejando el perfil/receta *persistidos*
+  vía `GET /api/strategy/profile` para el propio selector, algo distinto
+  ("qué decidió ESTE turno" frente a "cuál es el valor por defecto
+  guardado") que sigue siendo correcto tal cual está.
 * `models_hint`/consultas de hardware son de solo lectura y best-effort
   (`model_router.get_router_config`, `vram_admission.pending`) — nunca
   bloquean la elección de estrategia si fallan.

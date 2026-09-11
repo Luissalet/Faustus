@@ -5,19 +5,12 @@ import { useRef, useState } from 'react';
 import { overlayRoot } from '../shell/overlayRoot';
 import type { ModelRoute } from '../adapters/chat';
 import {
-  aliasesOf, costLabel, FIT_WORD, fetchModelCapabilities, fitOf, fitSize, useEndpointProfiles, useFitHints,
-  type EndpointProfile, type ModelCapabilityManifest,
+  aliasesOf, costLabel, FIT_EXPLAIN_CAP_LABEL, FIT_WORD, fetchFitExplain, fitOf, fitSize,
+  useEndpointProfiles, useFitHints,
+  type FitExplain,
 } from '../adapters/fit';
 import { fmtGb, shortGpuName } from '../adapters/localModels';
 import '../shell/palette.css';
-
-/** SET-02: the tested-capability keys worth a one-glance badge, and the
- *  short word each stands for in the row's tooltip. */
-const CAP_LABEL: Record<string, string> = {
-  tool_calling: 'tools',
-  vision: 'vision',
-  json_mode: 'JSON mode',
-};
 
 /** The searchable list behind the model chip. Lazy: cmdk is ~15 KB gzip
  *  and nobody needs it until the chip is clicked or Ctrl+K is pressed. */
@@ -47,17 +40,20 @@ export default function ModelPalette({
   // SET-02: privacy + cost, one cheap DB-only read for every endpoint —
   // same "once per open" shape as fit above.
   const profiles = useEndpointProfiles(open);
-  // SET-02: tested capabilities are NOT prefetched (see fetchModelCapabilities's
-  // docstring) — fetched on hover/focus, once per row, kept here for the life
-  // of the open palette.
-  const [caps, setCaps] = useState<Record<string, ModelCapabilityManifest>>({});
+  // CMP-11: capability fit is NOT prefetched — one round trip per row would
+  // hammer every endpoint the moment the palette opens — fetched on
+  // hover/focus, once per row, kept here for the life of the open palette.
+  // Local AND remote rows both ask: a remote endpoint at least carries
+  // `supports_tools`, and every requirement it has no evidence for comes
+  // back `unknown` rather than being skipped.
+  const [caps, setCaps] = useState<Record<string, FitExplain>>({});
   const capsRequested = useRef(new Set<string>());
-  const requestCaps = (route: ModelRoute, profile: EndpointProfile | undefined) => {
-    if (!profile?.isLocal || capsRequested.current.has(route.id)) return;
+  const requestCaps = (route: ModelRoute) => {
+    if (capsRequested.current.has(route.id)) return;
     capsRequested.current.add(route.id);
-    void fetchModelCapabilities(route.model, route.endpointId)
-      .then((manifest) => setCaps((prev) => ({ ...prev, [route.id]: manifest })))
-      .catch(() => undefined); // best-effort: a failed probe leaves the row with no badge, not an error
+    void fetchFitExplain(route.model, route.endpointId)
+      .then((explain) => setCaps((prev) => ({ ...prev, [route.id]: explain })))
+      .catch(() => undefined); // best-effort: a failed read leaves the row with no badge, not an error
   };
   const byEndpoint = new Map<string, ModelRoute[]>();
   for (const route of routes) {
@@ -100,8 +96,8 @@ export default function ModelPalette({
               const alias = hint ? aliasesOf(route.model, fit) : [];
               const size = fitSize(hint);
               const profile = profiles[route.endpointId];
-              const manifest = caps[route.id];
-              const tested = manifest ? Object.entries(manifest.tested) : [];
+              const explain = caps[route.id];
+              const reasons = explain?.reasons ?? [];
               return (
                 <Command.Item
                   key={route.id}
@@ -110,8 +106,8 @@ export default function ModelPalette({
                     onPick(route);
                     onOpenChange(false);
                   }}
-                  onMouseEnter={() => requestCaps(route, profile)}
-                  onFocus={() => requestCaps(route, profile)}
+                  onMouseEnter={() => requestCaps(route)}
+                  onFocus={() => requestCaps(route)}
                   className="fs-palette__item"
                   data-testid={`model-${route.model}`}
                 >
@@ -138,14 +134,22 @@ export default function ModelPalette({
                       {profile.cost === 'paid' && <Coins size={12} aria-hidden="true" />}
                     </span>
                   )}
-                  {tested.length > 0 && (
-                    <span
-                      className="fs-palette__caps"
-                      title={tested.map(([key, cap]) => `${CAP_LABEL[key] ?? key}: ${cap.ok ? t('tested — passed') : t('tested — failed')}`).join(' · ')}
-                    >
-                      {tested.map(([key, cap]) => (
-                        <span key={key} className="fs-palette__cap" data-ok={cap.ok ?? undefined}>
-                          {CAP_LABEL[key] ?? key}
+                  {/* CMP-11 (INFORME V2 §3.10): each requested capability gets its
+                      own badge, never a merged yes/no — `announced`/`unknown`
+                      are shown, not hidden, and the tooltip carries the CAUSE
+                      plus, for a `missing` one, which other model does meet it. */}
+                  {reasons.length > 0 && (
+                    <span className="fs-palette__caps">
+                      {reasons.map((reason) => (
+                        <span
+                          key={reason.capability}
+                          className="fs-palette__cap"
+                          data-state={reason.state}
+                          title={reason.alternatives.length
+                            ? `${reason.message} ${t('Alternatives: {names}', { names: reason.alternatives.join(', ') })}`
+                            : reason.message}
+                        >
+                          {FIT_EXPLAIN_CAP_LABEL[reason.capability] ?? reason.capability}
                         </span>
                       ))}
                     </span>
