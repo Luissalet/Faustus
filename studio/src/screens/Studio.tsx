@@ -301,6 +301,10 @@ export function StudioScreen() {
   const [sessions, setSessions] = useState<ChatSession[] | null>(null);
   const [routes, setRoutes] = useState<ModelRoute[]>([]);
   const [routeId, setRouteId] = useState<string | null>(() => readJson<{ id: string | null }>(ROUTE_KEY, { id: null }).id);
+  /* The last pick as it was, so a model that has since been removed from its
+     endpoint can still be NAMED ("qwen3.5:9b · not installed") instead of
+     the composer quietly answering with whatever route comes first. */
+  const rememberedRoute = useRef<Partial<ModelRoute>>(readJson<Partial<ModelRoute>>(ROUTE_KEY, {}));
   const [knobs, setKnobsState] = useState<Knobs>(() => ({
     ...readJson<Knobs>(KNOBS_KEY, { mode: 'agent', web: false, bash: true, plan: false, rag: false, incognito: false, research: false }),
     rag: getRagActive(),
@@ -425,7 +429,23 @@ export function StudioScreen() {
   const freshRef = useRef<string | null>(null);
   const spotlight = useSpotlight();
 
-  const route = useMemo(() => routes.find((r) => r.id === routeId) ?? routes[0] ?? null, [routes, routeId]);
+  const route = useMemo<ModelRoute | null>(() => {
+    const hit = routes.find((r) => r.id === routeId);
+    if (hit) return hit;
+    const kept = rememberedRoute.current;
+    if (routeId && routes.length > 0 && kept.id === routeId && kept.model) {
+      return {
+        id: routeId,
+        model: kept.model,
+        endpointId: kept.endpointId ?? '',
+        endpointName: kept.endpointName ?? '',
+        endpointUrl: kept.endpointUrl ?? '',
+        kind: kept.kind ?? '',
+        missing: true,
+      };
+    }
+    return routes[0] ?? null;
+  }, [routes, routeId]);
   const current = useMemo(() => sessions?.find((s) => s.id === sessionId) ?? null, [sessions, sessionId]);
   const visibleSession = useRef(sessionId);
   visibleSession.current = sessionId;
@@ -745,8 +765,16 @@ export function StudioScreen() {
 
   useEffect(() => writeJson(KNOBS_KEY, { ...knobs, incognito: false }), [knobs]);
   useEffect(() => {
-    if (routeId) writeJson(ROUTE_KEY, { id: routeId });
-  }, [routeId]);
+    if (!routeId) return;
+    const live = routes.find((r) => r.id === routeId);
+    if (live) {
+      const snapshot = { id: live.id, model: live.model, endpointId: live.endpointId, endpointName: live.endpointName, endpointUrl: live.endpointUrl, kind: live.kind };
+      rememberedRoute.current = snapshot;
+      writeJson(ROUTE_KEY, snapshot);
+    } else if (rememberedRoute.current.id !== routeId) {
+      writeJson(ROUTE_KEY, { id: routeId });
+    }
+  }, [routeId, routes]);
   useEffect(() => writeJson(PRESET_KEY, preset ?? {}), [preset]);
 
   /* Nobody mode: its sessions live only while the mode is on. Leaving the
@@ -827,6 +855,13 @@ export function StudioScreen() {
         revision?: number;
       } = {},
     ) => {
+      if (route?.missing) {
+        // The remembered model is gone from its endpoint: say so and open the
+        // picker rather than answering with a model the user never chose.
+        say(t('{model} is not installed on {where} any more — pick another model.', { model: route.model, where: route.endpointName || route.endpointUrl }), 'warning');
+        setModelSignal((n) => n + 1);
+        return;
+      }
       const controller = new AbortController();
       runEpoch.current++;
       controllerRef.current = controller;

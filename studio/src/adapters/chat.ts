@@ -100,6 +100,11 @@ export interface ModelRoute {
   endpointName: string;
   endpointUrl: string;
   kind: string;
+  /** PENDIENTES.md M1: the remembered pick no longer resolves against the
+   *  live routes (the model was removed from the endpoint). The picker
+   *  shows it as "not installed" instead of silently switching to another
+   *  model; a send with it is refused until the user picks again. */
+  missing?: boolean;
 }
 
 export interface HistoryMessage {

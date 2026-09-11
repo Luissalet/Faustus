@@ -40,3 +40,12 @@ def test_model_picker_wires_the_not_installed_chip():
     assert "isInstalled" in src
     assert "routes.length > 0" in src
     assert "not installed" in src.lower()
+
+
+def test_missing_route_is_named_not_replaced():
+    """Lote 72 (seen live on 7001): a remembered model gone from its endpoint
+    used to fall back to the first route silently. Now it is kept as a
+    `missing` route, shown as "not installed", and a send opens the picker."""
+    check = _REPO / "studio" / "checks" / "l72-missing-route.check.mjs"
+    proc = subprocess.run(["node", str(check)], capture_output=True, text=True, timeout=60)
+    assert proc.returncode == 0, proc.stdout + proc.stderr

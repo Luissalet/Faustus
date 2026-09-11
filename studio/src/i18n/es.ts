@@ -5933,6 +5933,7 @@ export const es: Record<string, string> = {
   "{mb} MB · {p}% of its GPU memory": "{mb} MB · {p}% de su memoria de GPU",
   "{model} did not answer; {other} answered instead.": "{model} no ha respondido; ha contestado {other}.",
   "{model} is loaded right now; it will unload and reload with the new value the next time this scope uses it, interrupting anything using it mid-request.": "{model} está cargado ahora mismo; se descargará y recargará con el nuevo valor la próxima vez que este ámbito lo use, interrumpiendo lo que esté en marcha.",
+  "{model} is not installed on {where} any more — pick another model.": "{model} ya no está instalado en {where} — elige otro modelo.",
   "{model} is not loaded right now; the new value applies the next time this scope loads it.": "{model} no está cargado ahora mismo; el nuevo valor se aplicará la próxima vez que este ámbito lo cargue.",
   "{model} needs at least {need} — its {size} of weights, plus a KV cache that has never been measured on this machine — and there is {free} free next to what is loaded.": "{model} necesita al menos {need} — sus {size} de pesos, más una caché KV que nunca se ha medido en esta máquina — y hay {free} libres junto a lo que está cargado.",
   "{model} needs {need} — {size} of weights plus {kv} of KV cache — and there is {free} free next to what is loaded.": "{model} necesita {need} — {size} de pesos más {kv} de caché KV — y hay {free} libres junto a lo que está cargado.",

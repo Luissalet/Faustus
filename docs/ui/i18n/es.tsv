@@ -6278,3 +6278,4 @@ Another task asked for this resource while it was held	Otra tarea pidió este re
 {n} active leases	{n} cesiones activas
 {n} task waited on a resource another one already held.	{n} tarea esperó un recurso que ya tenía otra.
 {n} tasks waited on a resource another one already held.	{n} tareas esperaron un recurso que ya tenía otra.
+{model} is not installed on {where} any more — pick another model.	{model} ya no está instalado en {where} — elige otro modelo.
