@@ -182,7 +182,10 @@ export interface Turn {
   /** Position in the server's history when loaded from it; truncation
    *  counts server messages, and the list may hide some (approval prompts). */
   historyIndex?: number;
-  role: 'user' | 'assistant';
+  /** F3 (CONTRATO_CABLES2): `'system'` is a condensed-range summary row —
+   *  see `condensed` below and `adapters/chat.ts::loadHistory`'s own doc
+   *  comment for why it is the only `system` row that ever reaches here. */
+  role: 'user' | 'assistant' | 'system';
   text: string;
   thinking: string;
   steps: Step[];
@@ -252,6 +255,19 @@ export interface Turn {
    *  transient status. */
   capabilitiesChanged?: { fromModel: string; toModel: string; lost: string[] };
   edited?: boolean;
+  /** F1 (CONTRATO_CABLES2): this OWN assistant reply was written against an
+   *  earlier version of one or more wires (`GET .../stale-turns`'s per-turn
+   *  view, `Studio.tsx` maps it onto turns by `historyIndex`) — never set by
+   *  `apply()`/`restoreFromMetadata` (those know nothing about wires), only
+   *  patched in from outside once the session's stale-turns map loads. */
+  staleWires?: { wireId: string; label: string }[];
+  /** F3: this row is a condensed-range summary (`role === 'system'`,
+   *  `metadata.condensed === true`) — `from`/`to` are 0-based history
+   *  indices (the same range `POST .../condense` took), `count` the number
+   *  of original turns it replaced. Set by `Studio.tsx::turnsFromHistory`
+   *  from the row's own metadata, not by `apply()` (a condensed row is
+   *  never live-streamed, only ever restored from history). */
+  condensed?: { from: number; to: number; count: number };
   /** OBJ-4/Lote 83: every `git_policy` event this turn's workspace produced
    *  (branch created, commit made, push sent — or one skipped/failed),
    *  in arrival order. Same accumulate-in-place pattern as `checks` below. */

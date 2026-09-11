@@ -20,9 +20,24 @@ import { t, tn } from '../i18n';
  * FastAPI's own request validation, which does use `detail`).
  */
 
-export type WireKind = 'branch' | 'reference';
+export type WireKind = 'branch' | 'reference' | 'document' | 'note';
 export type ReferenceDepth = 'quote' | 'full';
+/** F2 (CONTRATO_CABLES2): a `document` material's own depth vocabulary —
+ *  deliberately NOT `ReferenceDepth` (`quote`/`full`), see `docs/api/
+ *  side_threads.md`'s "Deviación documentada" for why materials never share
+ *  a request shape with references. */
+export type MaterialDepth = 'selection' | 'full';
+export type MaterialKind = 'document' | 'note';
 export type AnchorState = 'ok' | 'missing';
+
+/** F1 (CONTRATO_CABLES2): how many of THIS session's own replies were
+ *  written against an earlier version of a wire — `src/side_threads.py::
+ *  _stale_turns_for_wire`'s exact shape, `last_index` a 0-based history
+ *  position (or `null` when nothing is stale). */
+export interface StaleTurns {
+  count: number;
+  last_index: number | null;
+}
 
 export interface Wire {
   id: string;
@@ -32,10 +47,21 @@ export interface Wire {
   target_session_id: string;
   anchor_index: number | null;
   anchor_passage: string | null;
-  depth: ReferenceDepth;
+  /** `'quote'|'full'` for a `reference` wire, `'selection'|'full'` for a
+   *  `document` material — left as `string` (rather than a union) since one
+   *  field on one server shape serves both vocabularies; callers that need
+   *  the narrower type use `ReferenceDepth`/`MaterialDepth` themselves. */
+  depth: string;
   context_order: number;
   archived: boolean;
   source_fingerprint: string | null;
+  /** F2: set only on a `document` material wire. */
+  document_id: string | null;
+  /** F2: set only on a `note` material wire. */
+  note_text: string | null;
+  /** F2: set only on a `document` material wire in `depth='selection'`. */
+  quotes: string[] | null;
+  ranges: { start: number; end: number }[] | null;
   created_at: string | null;
 }
 
@@ -48,7 +74,11 @@ export interface ParentInfo {
 export interface ChildInfo {
   wire: Wire;
   session: { id: string; name: string; message_count: number };
-  reference: Wire | null;
+  /** F1: the wire back into the parent gains `stale_turns` merged onto it
+   *  directly (`src/side_threads.py::wires_for`'s `ref_dict["stale_turns"]
+   *  = ...`) — unlike `references_in`/`materials` below, where it sits
+   *  beside `wire` rather than inside it. */
+  reference: (Wire & { stale_turns: StaleTurns }) | null;
   stale: boolean;
 }
 
@@ -56,6 +86,7 @@ export interface ReferenceInInfo {
   wire: Wire;
   session: { id: string; name: string };
   stale: boolean;
+  stale_turns: StaleTurns;
   tokens: number;
 }
 
@@ -64,11 +95,33 @@ export interface ReferenceOutInfo {
   session: { id: string; name: string };
 }
 
+/** F2: one `document`/`note` material wired into this session. */
+export interface MaterialInfo {
+  wire: Wire;
+  document: { id: string; title: string } | null;
+  stale: boolean;
+  stale_turns: StaleTurns;
+  tokens: number;
+}
+
 export interface WiresFor {
   parent: ParentInfo | null;
   children: ChildInfo[];
   references_in: ReferenceInInfo[];
   references_out: ReferenceOutInfo[];
+  materials: MaterialInfo[];
+}
+
+/** F1: `GET .../stale-turns` — the inverse view of `stale_turns` above, by
+ *  turn instead of by wire: every OWN assistant history index whose saved
+ *  reply used at least one wire that has since moved on. */
+export interface StaleTurnEntry {
+  wire_id: string;
+  label: string;
+}
+
+export interface StaleTurnsMap {
+  turns: Record<string, StaleTurnEntry[]>;
 }
 
 export interface ThoughtMapNode {
@@ -102,6 +155,23 @@ export interface ReferencesLayer {
   items: ReferenceLayerItem[];
 }
 
+/** F2: `context_preview`'s new first layer — one item per `document`/`note`
+ *  wire that contributed a block, `kind`/`label`/`stale` only (the full
+ *  wire lives in `wires_for`'s own `materials[]`, this is a preview). */
+export interface MaterialsLayerItem {
+  wire_id: string;
+  kind: MaterialKind;
+  label: string;
+  stale: boolean;
+}
+
+export interface MaterialsLayer {
+  layer: 'materials';
+  messages: number;
+  tokens: number;
+  items: MaterialsLayerItem[];
+}
+
 export interface InheritedFrom {
   session_id: string;
   name: string;
@@ -122,7 +192,7 @@ export interface OwnLayer {
   tokens: number;
 }
 
-export type ContextLayer = ReferencesLayer | InheritedLayer | OwnLayer;
+export type ContextLayer = MaterialsLayer | ReferencesLayer | InheritedLayer | OwnLayer;
 
 export interface ContextPreview {
   layers: ContextLayer[];
@@ -250,17 +320,89 @@ export function updateReference(targetId: string, wireId: string, patch: UpdateR
 }
 
 /** DELETE physically removes the `reference` wire (never the side thread
- *  it pointed at). This is the ONLY `method: 'DELETE'` call in this
- *  adapter, and it only ever targets a `/references/{id}` path —
- *  `studio/checks/side_threads.check.mjs` greps this file for exactly
- *  that invariant, so a future edit that adds another DELETE elsewhere in
- *  this module (e.g. against a bare session) would fail the check. */
+ *  it pointed at). Every `method: 'DELETE'` call in this adapter (this one,
+ *  and `removeMaterial` below) only ever targets a `/references/{id}` or a
+ *  `/materials/{id}` path — `studio/checks/side_threads.check.mjs` greps
+ *  this file for exactly that invariant, so a future edit that adds a
+ *  DELETE elsewhere in this module (e.g. against a bare session) would fail
+ *  the check. */
 export function removeReference(targetId: string, wireId: string): Promise<{ removed: true }> {
   return request(`${sessionBase(targetId)}/references/${encodeURIComponent(wireId)}`, { method: 'DELETE' });
 }
 
 export function getParentsMap(signal?: AbortSignal): Promise<{ parents: Record<string, string> }> {
   return get('/api/side-threads/parents', signal);
+}
+
+// ---------------------------------------------------------------------------
+// F2 (CONTRATO_CABLES2) — materials: documents and notes wired permanently
+// into a session, `POST/PATCH/DELETE /api/session/{id}/materials*`.
+// ---------------------------------------------------------------------------
+
+export interface AddMaterialInput {
+  kind: MaterialKind;
+  /** `kind='document'` only. */
+  documentId?: string;
+  /** `kind='document'` only; defaults server-side to `'selection'`. */
+  depth?: MaterialDepth;
+  /** `kind='document'`, `depth='selection'` only: 1-8 literal quotes. */
+  quotes?: string[];
+  ranges?: { start: number; end: number }[];
+  /** `kind='note'` only: 1-8000 chars. */
+  noteText?: string;
+}
+
+/** `POST .../materials` — wires a document fragment or a free-form note
+ *  PERMANENTLY into `sessionId`'s own context (unlike the transient,
+ *  single-turn doc chips `Composer.tsx`'s `docContext` already sends).
+ *  Idempotent on (document, depth, quotes) for `kind='document'`; a `note`
+ *  is never deduplicated. */
+export function addMaterial(sessionId: string, input: AddMaterialInput): Promise<{ wire: Wire; tokens: number }> {
+  return post(`${sessionBase(sessionId)}/materials`, {
+    kind: input.kind,
+    document_id: input.documentId,
+    depth: input.depth,
+    quotes: input.quotes,
+    ranges: input.ranges,
+    note_text: input.noteText,
+  });
+}
+
+export interface UpdateMaterialInput {
+  /** `kind='document'` only. */
+  depth?: MaterialDepth;
+  /** `kind='note'` only — re-stamps the wire's own fingerprint too. */
+  noteText?: string;
+  archived?: boolean;
+  contextOrder?: number;
+  /** Recomputes `source_fingerprint` from the document's/note's CURRENT
+   *  content — the "I accept the new version" gesture, clearing `stale`. */
+  refresh?: boolean;
+}
+
+export function updateMaterial(sessionId: string, wireId: string, patch: UpdateMaterialInput): Promise<{ wire: Wire }> {
+  return patchJson(`${sessionBase(sessionId)}/materials/${encodeURIComponent(wireId)}`, {
+    depth: patch.depth,
+    note_text: patch.noteText,
+    archived: patch.archived,
+    context_order: patch.contextOrder,
+    refresh: patch.refresh,
+  });
+}
+
+/** DELETE physically removes the `document`/`note` material wire — see
+ *  `removeReference`'s own doc comment for why this stays the second and
+ *  only other `method: 'DELETE'` call in this file. */
+export function removeMaterial(sessionId: string, wireId: string): Promise<{ removed: true }> {
+  return request(`${sessionBase(sessionId)}/materials/${encodeURIComponent(wireId)}`, { method: 'DELETE' });
+}
+
+/** F1: `GET .../stale-turns` — every one of `sessionId`'s own assistant
+ *  history rows whose saved reply used a wire that has since moved on,
+ *  keyed by history index. A lighter read than `getWires` for the
+ *  transcript to poll after load and after each turn finishes. */
+export function getStaleTurns(sessionId: string, signal?: AbortSignal): Promise<StaleTurnsMap> {
+  return get(`${sessionBase(sessionId)}/stale-turns`, signal);
 }
 
 // ---------------------------------------------------------------------------
@@ -285,14 +427,18 @@ export function formatTokenCount(n: number): string {
  *  only `preview.layers`/`total_tokens`, so it renders identically whether
  *  it is called from the panel or from this file's own check. */
 export function layerSummaryLine(preview: ContextPreview): string {
+  const materials = preview.layers.find((l): l is MaterialsLayer => l.layer === 'materials');
   const references = preview.layers.find((l): l is ReferencesLayer => l.layer === 'references');
   const inherited = preview.layers.find((l): l is InheritedLayer => l.layer === 'inherited');
   const own = preview.layers.find((l): l is OwnLayer => l.layer === 'own');
-  const totalMessages = (references?.messages ?? 0) + (inherited?.messages ?? 0) + (own?.messages ?? 0);
+  const totalMessages =
+    (materials?.messages ?? 0) + (references?.messages ?? 0) + (inherited?.messages ?? 0) + (own?.messages ?? 0);
   const inheritedCount = inherited?.messages ?? 0;
   const referenceCount = references?.items.length ?? 0;
+  const materialCount = materials?.items.length ?? 0;
 
   const bits: string[] = [];
+  if (materialCount > 0) bits.push(tn(materialCount, '{n} material', '{n} materials', { n: materialCount }));
   if (inheritedCount > 0) bits.push(tn(inheritedCount, '{n} inherited', '{n} inherited#', { n: inheritedCount }));
   if (referenceCount > 0) bits.push(tn(referenceCount, '{n} reference', '{n} references', { n: referenceCount }));
   const detail = bits.length ? ` (${bits.join(', ')})` : '';

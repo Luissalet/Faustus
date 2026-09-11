@@ -142,6 +142,61 @@ async def test_effect_tool_is_never_called_again_and_stays_blocked(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_regenerate_inherits_side_thread_wires(monkeypatch):
+    """CONTRATO_CABLES2 F1 fix: `regenerate_chat_response` used to build
+    `messages` straight from `sess.history`, bypassing `build_chat_context`
+    entirely — so a session with any wire (materials, references, a branch
+    anchor) silently lost all of it on regenerate. This proves the route now
+    calls `inherited_context_with_snapshot` itself and carries the returned
+    snapshot onto the saved reply, same as every other `save_assistant_
+    response` call site."""
+    from core.models import ChatMessage
+    import routes.chat_routes as chat_routes
+    import src.side_threads as side_threads
+
+    session, _ = _session([
+        ChatMessage("user", "q1"),
+        ChatMessage("assistant", "a1", metadata={"_db_id": "orig-1"}),
+    ])
+    saved = []
+    endpoint = _regenerate_endpoint(monkeypatch, session, saved=saved)
+
+    fake_inherited = [{"role": "user", "content": "[Reference: tangent]\nQ: x\nA: y"}]
+    fake_snapshot = [{
+        "wire_id": "w1", "kind": "reference",
+        "source_session_id": "exc", "document_id": None,
+        "fingerprint": "abc123456789",
+    }]
+    calls = []
+
+    def fake_inherited_context_with_snapshot(sm, owner, session_id, **kwargs):
+        calls.append((sm, owner, session_id))
+        return list(fake_inherited), list(fake_snapshot)
+
+    monkeypatch.setattr(side_threads, "inherited_context_with_snapshot", fake_inherited_context_with_snapshot)
+
+    captured = {}
+
+    async def fake_stream(endpoint_url, model, messages, **kwargs):
+        captured["messages"] = messages
+        yield 'data: {"delta": "regenerated"}\n\n'
+        yield "data: [DONE]\n\n"
+
+    monkeypatch.setattr(chat_routes, "stream_agent_loop", fake_stream)
+
+    response = await endpoint(_RouteRequest(), sid="sess-1")
+    await _drain_json(response)
+
+    assert calls and calls[0][2] == "sess-1"
+    # The inherited block comes BEFORE the trigger turn and the evidence note.
+    assert captured["messages"][0] == fake_inherited[0]
+    assert captured["messages"][1]["content"] == "q1"
+
+    assert len(saved) == 1
+    assert saved[0]["kwargs"]["wires"] == fake_snapshot
+
+
+@pytest.mark.asyncio
 async def test_no_assistant_reply_yet_is_rejected(monkeypatch):
     from core.models import ChatMessage
     session, _ = _session([ChatMessage("user", "hello")])

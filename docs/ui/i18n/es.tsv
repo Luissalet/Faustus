@@ -7036,3 +7036,42 @@ from turn {n}	desde el turno {n}
 not wired	sin cablear
 outdated	desactualizado
 the source turn no longer exists	el turno de origen ya no existe
+(removed)	(eliminado)
+Add a note	Añadir una nota
+Choose a start before the end.	Elige un inicio anterior al final.
+Condense	Condensar
+Condense up to here	Condensar hasta aquí
+Condensed turns	Turnos condensados
+Condensed {n} turns.	Se condensaron {n} turnos.
+Context wires	Cables de contexto
+Could not add the note.	No se pudo añadir la nota.
+Could not condense that range	No se pudo condensar ese rango
+Could not expand that summary	No se pudo expandir ese resumen
+Could not pin this context.	No se pudo fijar este contexto.
+Could not remove the material.	No se pudo eliminar el material.
+Could not remove the note.	No se pudo eliminar la nota.
+Could not update the material.	No se pudo actualizar el material.
+Could not update the note.	No se pudo actualizar la nota.
+End turn	Turno final
+Keep in context until you withdraw it	Mantener en el contexto hasta que lo retires
+Material depth	Profundidad del material
+Materials	Materiales
+No materials pinned yet.	Aún no hay materiales fijados.
+Pinned as a context wire.	Fijado como cable de contexto.
+Regenerate the last one (turn {n})	Regenerar la última (turno {n})
+Regenerate with the current version	Regenerar con la versión actual
+Start turn	Turno inicial
+Summarizing with {model}…	Resumiendo con {model}…
+Summarizing…	Resumiendo…
+Summary of {n} turn ({a}–{b})	Resumen de {n} turno ({a}–{b})
+Summary of {n} turns ({a}–{b})	Resumen de {n} turnos ({a}–{b})
+Turns already settled fold into one summary; every future turn stops paying to resend them. The last turn is never eligible — it is still in progress.	Los turnos ya resueltos se pliegan en un resumen; cada turno futuro deja de pagar por reenviarlos. El último turno nunca es elegible: aún está en curso.
+Written against an earlier version of "{names}"	Escrita con una versión anterior de «{names}»
+withdrawn	retirado
+{n} material	{n} material
+{n} materials	{n} materiales
+{n} replies were written with the earlier version	{n} respuestas se escribieron con la versión anterior
+{n} reply was written with the earlier version	{n} respuesta se escribió con la versión anterior
+{n} row	{n} fila
+{n} rows	{n} filas
+{rows} · ~{before} tok → ~{after} tok	{rows} · ~{before} tok → ~{after} tok

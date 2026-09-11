@@ -763,6 +763,88 @@ def post_compact_reminder(session, owner: Optional[str] = None) -> Optional[Dict
         return None
 
 
+async def summarize_rows(
+    rows: List[Dict[str, Any]],
+    *,
+    endpoint_url: str,
+    model: str,
+    headers: Optional[Dict] = None,
+    owner: Optional[str] = None,
+    compaction_count: int = 0,
+) -> str:
+    """Summarize a list of `{"role","content"}` rows with the self-summary
+    prompt, model resolution and privacy gate `maybe_compact` has always
+    used — pulled out (CONTRATO_CABLES2 F3) so `src.condense`'s manual
+    condense can reuse the exact same "which endpoint, which prompt, which
+    gate" instead of re-deriving it a second time. `maybe_compact` itself now
+    calls this too, so both paths stay byte-identical by construction rather
+    than by two implementations kept in sync by hand.
+
+    `compaction_count` is the caller's own running count of prior
+    compactions for this conversation (`maybe_compact` derives it from
+    `system_msgs`; a one-off manual condense has none, so it defaults to 0)
+    — it only feeds the prompt's cosmetic "Compactions so far: {n}" line.
+
+    Raises `src.privacy_policy.PrivacyPolicyError` when the resolved
+    endpoint is blocked for this owner's privacy profile, and whatever
+    `llm_call_async` itself raises on a failed call. Callers decide how to
+    degrade: `maybe_compact` catches both and leaves the conversation
+    uncompacted (a background best-effort); `src.condense.condense` lets its
+    route turn either into a flat error, since a manual condense is an
+    explicit user action, not something that should fail silently.
+    """
+    convo_text = "\n".join(
+        f"{row.get('role', 'user').upper()}: {_content_as_text(row.get('content'))[:2000]}"
+        for row in rows
+    )
+
+    # Use utility model if configured, otherwise fall back to session model
+    util_url, util_model, util_headers = resolve_endpoint("utility", owner=owner)
+    compact_url = util_url or endpoint_url
+    compact_model = util_model or model
+    compact_headers = util_headers if util_url else headers
+
+    prompt = SELF_SUMMARY_SYSTEM_PROMPT.replace(
+        "{count}", str(len(rows))
+    ).replace(
+        "{n}", str(compaction_count + 1)
+    )
+    summary_messages = [
+        {"role": "system", "content": prompt},
+        {"role": "user", "content": convo_text},
+    ]
+
+    # SEC-04/QA-29: the compaction summarizer ships these rows to whatever
+    # endpoint `compact_url` resolves to (the Utility model, or the session
+    # model as a fallback) — under a local-only privacy profile that must be
+    # gated exactly like a reranker or embedding call, not left to whichever
+    # endpoint the user happened to configure. A `PrivacyPolicyError` here is
+    # a real block and propagates; any OTHER failure of the check itself
+    # must not block a summary the policy never actually forbade.
+    try:
+        from src.privacy_policy import assert_outbound, PrivacyPolicyError
+        assert_outbound("context_compactor", compact_url, owner=owner)
+    except PrivacyPolicyError:
+        raise
+    except Exception as e:  # noqa: BLE001 - a broken policy check must not break compaction
+        logger.debug(f"privacy_policy check unavailable for compaction ({e}); proceeding")
+
+    try:
+        summary = await llm_call_async(
+            compact_url,
+            compact_model,
+            summary_messages,
+            temperature=0.2,
+            max_tokens=SUMMARY_MAX_TOKENS,
+            headers=compact_headers,
+            timeout=30,
+        )
+    except Exception as e:
+        logger.error(f"Compaction summary failed: {e}")
+        raise
+    return normalize_compaction_summary(summary)
+
+
 async def maybe_compact(
     session,
     endpoint_url: str,
@@ -806,65 +888,34 @@ async def maybe_compact(
     older = convo_msgs[:split_point]
     recent = convo_msgs[split_point:]
 
-    # Build the text to summarize
-    convo_text = "\n".join(
-        f"{msg.get('role', 'user').upper()}: {_content_as_text(msg.get('content'))[:2000]}"
-        for msg in older
-    )
-
     # Count prior compactions from existing summary messages
     compaction_count = sum(
         1 for m in system_msgs
         if "[Conversation summary" in m.get("content", "")
     )
 
-    # Use utility model if configured, otherwise fall back to session model
-    util_url, util_model, util_headers = resolve_endpoint("utility", owner=owner)
-    compact_url = util_url or endpoint_url
-    compact_model = util_model or model
-    compact_headers = util_headers if util_url else headers
-
-    prompt = SELF_SUMMARY_SYSTEM_PROMPT.replace(
-        "{count}", str(len(older))
-    ).replace(
-        "{n}", str(compaction_count + 1)
-    )
-    summary_messages = [
-        {"role": "system", "content": prompt},
-        {"role": "user", "content": convo_text},
-    ]
-
-    # SEC-04/QA-29: the compaction summarizer ships the older half of the
-    # conversation to whatever endpoint `compact_url` resolves to (the
-    # Utility model, or the session model as a fallback) — under a local-only
-    # privacy profile that must be gated exactly like a reranker or embedding
-    # call, not left to whichever endpoint the user happened to configure.
+    # Same prompt, model resolution, privacy gate and LLM call `condense`
+    # (CONTRATO_CABLES2 F3) now reuses — see `summarize_rows`'s own
+    # docstring for why this was pulled out. Both failure modes it can raise
+    # degrade this background best-effort compaction the same way the
+    # inline version always did: keep the conversation intact, report
+    # `was_compacted=False`, and let `trim_for_context` handle length.
     try:
-        from src.privacy_policy import assert_outbound, PrivacyPolicyError
-        assert_outbound("context_compactor", compact_url, owner=owner)
+        from src.privacy_policy import PrivacyPolicyError
+        summary = await summarize_rows(
+            older,
+            endpoint_url=endpoint_url,
+            model=model,
+            headers=headers,
+            owner=owner,
+            compaction_count=compaction_count,
+        )
     except PrivacyPolicyError as e:
         logger.warning(f"Compaction summary blocked by privacy policy: {e.error_info.message}")
         return messages, context_length, False
-    except Exception as e:  # noqa: BLE001 - a broken policy check must not break compaction
-        logger.debug(f"privacy_policy check unavailable for compaction ({e}); proceeding")
-
-    try:
-        summary = await llm_call_async(
-            compact_url,
-            compact_model,
-            summary_messages,
-            temperature=0.2,
-            max_tokens=SUMMARY_MAX_TOKENS,
-            headers=compact_headers,
-            timeout=30,
-        )
     except Exception as e:
         logger.error(f"Compaction summary failed: {e}")
-        # Degrade gracefully: keep the conversation intact rather than
-        # silently dropping the older half. was_compacted=False signals the
-        # caller nothing was summarized; trim_for_context handles length.
         return messages, context_length, False
-    summary = normalize_compaction_summary(summary)
 
     summary_msg = {
         "role": "system",

@@ -19,6 +19,7 @@ import {
   Mic,
   MicOff,
   Paperclip,
+  Pin,
   Plus,
   Shield,
   RefreshCw,
@@ -72,6 +73,7 @@ import { createAttachmentUploads, type PendingAttachment } from '../../lib/attac
 import type { ContextOverrides, DocContextRef } from '../../adapters/chat';
 import { ContextPanel, pruneOverrides } from './ContextPanel';
 import { COMPOSER_CONTEXT_EVENT, type ComposerContextDetail } from '../../lib/docSession';
+import { addMaterial } from '../../adapters/sideThreads';
 
 export type Mode = 'chat' | 'agent';
 
@@ -293,6 +295,24 @@ export function Composer({
     return () => window.removeEventListener(COMPOSER_CONTEXT_EVENT, onContext);
   }, []);
   const removeDocContext = (index: number) => setDocContext((list) => list.filter((_, i) => i !== index));
+  // F2 (CONTRATO_CABLES2): "Fijar" turns this transient, single-turn chip
+  // into a material wired PERMANENTLY into the session (`POST .../
+  // materials`) — never shown when the chat has no session yet (nothing to
+  // wire it into).
+  const [pinningIndex, setPinningIndex] = useState<number | null>(null);
+  const pinDocContext = (index: number) => {
+    const item = docContext[index];
+    if (!sessionId || !item || pinningIndex !== null) return;
+    const quotes = item.items.map((it) => it.quote).filter(Boolean);
+    setPinningIndex(index);
+    addMaterial(sessionId, { kind: 'document', documentId: item.doc.id, depth: 'selection', quotes, ranges: item.ranges })
+      .then(() => {
+        removeDocContext(index);
+        onNotice(t('Pinned as a context wire.'));
+      })
+      .catch((e: Error) => onNotice(`${t('Could not pin this context.')} ${e.message}`, 'danger'))
+      .finally(() => setPinningIndex(null));
+  };
   useEffect(() => {
     setKnobs((k) => ({
       ...k,
@@ -655,6 +675,19 @@ export function Composer({
                 <FileText size={12} aria-hidden="true" />
                 <span className="fs-studio__context-chip-name" title={item.doc.title}>{item.doc.title}</span>
                 {short && <span className="fs-sa__muted">“{short}”</span>}
+                {sessionId && (
+                  <button
+                    type="button"
+                    className="fs-studio__chip-x"
+                    aria-label={t('Keep in context until you withdraw it')}
+                    title={t('Keep in context until you withdraw it')}
+                    disabled={pinningIndex !== null}
+                    onClick={() => pinDocContext(i)}
+                    data-testid="doc-context-pin"
+                  >
+                    <Pin size={11} aria-hidden="true" />
+                  </button>
+                )}
                 <button
                   type="button"
                   className="fs-studio__chip-x"

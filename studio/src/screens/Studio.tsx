@@ -85,6 +85,9 @@ import { SessionsPane } from './studio/SessionsPane';
 import { Transcript, type Decision } from './studio/Transcript';
 import SideThreadsPanel from './studio/SideThreadsPanel';
 import ExploreDialog, { type ExploreAnchor } from './studio/ExploreDialog';
+import CondenseDialog from './studio/CondenseDialog';
+import { getStaleTurns } from '../adapters/sideThreads';
+import { expandCondensed } from '../adapters/condense';
 import { VramAdmissionDialog } from './VramAdmissionDialog';
 import { Vitals } from './studio/Vitals';
 import './projects.css';
@@ -703,8 +706,15 @@ export function StudioScreen() {
       // this task to continue?") right before the real answer. Reading it
       // back as a bubble of its own is noise; the answer that follows is the
       // turn.
+      //
+      // F3 (CONTRATO_CABLES2): `historyIndex` here is `m.index` — the SERVER's
+      // own history position `loadHistory` already assigned before its own
+      // filter ran — never this array's own position. A condensed `system`
+      // row (or any future non-contiguous filtering) would otherwise shift
+      // every later turn's `historyIndex` off by one, and truncate/fork/
+      // explore/condense would all act on the wrong row.
       const kept = result.history
-        .map((m, historyIndex) => ({ m, historyIndex }))
+        .map((m) => ({ m, historyIndex: m.index }))
         .filter(({ m }, i, all) => {
           if (m.role !== 'assistant') return true;
           const next = all[i + 1]?.m;
@@ -730,12 +740,42 @@ export function StudioScreen() {
           turn.metrics = metricsFrom(m.metadata);
           return restoreFromMetadata(turn, m.metadata);
         }
+        if (m.role === 'system') {
+          // F3: `src/condense.py::condense`'s own metadata shape —
+          // `range: [start, end]`, both 0-based and inclusive.
+          const range = Array.isArray(m.metadata.range) ? (m.metadata.range as unknown[]) : null;
+          const from = typeof range?.[0] === 'number' ? (range[0] as number) : historyIndex;
+          const to = typeof range?.[1] === 'number' ? (range[1] as number) : historyIndex;
+          turn.condensed = { from, to, count: Math.max(1, to - from + 1) };
+        }
         return turn;
       });
       return { ...result, turns: mapped };
     },
     [],
   );
+
+  /** F1 (CONTRATO_CABLES2): fetches `GET .../stale-turns` and patches the
+   *  matching turns' `staleWires` in place, by `historyIndex` — best-effort,
+   *  silent on failure (the banner simply does not show; nothing else about
+   *  the transcript depends on it). Called after the history first loads and
+   *  after every turn finishes, so the banner appears/clears without a
+   *  manual reload. */
+  const refreshStaleWires = useCallback((sid: string) => {
+    getStaleTurns(sid)
+      .then((map) => {
+        setTurns((list) =>
+          list?.map((turn) => {
+            const hits = turn.historyIndex !== undefined ? map.turns[String(turn.historyIndex)] : undefined;
+            const staleWires = hits?.map((h) => ({ wireId: h.wire_id, label: h.label }));
+            return staleWires?.length || turn.staleWires?.length
+              ? { ...turn, staleWires: staleWires?.length ? staleWires : undefined }
+              : turn;
+          }) ?? list,
+        );
+      })
+      .catch(() => undefined);
+  }, []);
 
   /* History: whenever the session in the URL changes — except the session
      this screen just created for a first message, whose stream is live. */
@@ -774,6 +814,9 @@ export function StudioScreen() {
         // still has it: rejoin so the conversation carries on in front of
         // you instead of looking frozen at its last saved line.
         if (!controller.signal.aborted) rejoinRef.current(sessionId);
+        // F1: the stale-wire banner needs its own read; best-effort and
+        // never blocks the history render above.
+        refreshStaleWires(sessionId);
       })
       .catch(() => {
         if (!controller.signal.aborted) setLoadError(t('Could not open this conversation.'));
@@ -1068,9 +1111,13 @@ export function StudioScreen() {
         }
         refreshSessions();
         refreshActivity();
+        // F1: the reply just saved may have used a wire that has since
+        // moved on further, or may itself have cleared an earlier banner —
+        // either way the stale-turns map is worth a fresh read now.
+        refreshStaleWires(sid);
       }
     },
-    [knobs, workspace, route, gen, patchLast, refreshSessions, syncIds, preset, panel.doc,teamEnabled,panelDispatch],
+    [knobs, workspace, route, gen, patchLast, refreshSessions, syncIds, preset, panel.doc,teamEnabled,panelDispatch,refreshStaleWires],
   );
 
   /**
@@ -2144,6 +2191,32 @@ export function StudioScreen() {
   const [exploreAnchor, setExploreAnchor] = useState<ExploreAnchor | null>(null);
   const onExplore = knobs.incognito ? undefined : (anchor: ExploreAnchor) => setExploreAnchor(anchor);
 
+  // F3 (CONTRATO_CABLES2): "Condense up to here" — `condenseEnd` is the
+  // 0-based history index the dialog defaults its range's END to (the
+  // clicked turn); `null` closes the dialog.
+  const [condenseEnd, setCondenseEnd] = useState<number | null>(null);
+  const onCondense = useCallback((input: { historyIndex: number }) => setCondenseEnd(input.historyIndex), []);
+  // The default START: the row right after the last condensed summary this
+  // session already has, or 0 when there is none — `turns` carries every
+  // condensed row's own `[from, to]` range (`turnsFromHistory`).
+  const condenseDefaultStart = useMemo(() => {
+    let after = 0;
+    for (const turn of turns ?? []) {
+      if (turn.condensed) after = Math.max(after, turn.condensed.to + 1);
+    }
+    return after;
+  }, [turns]);
+  const onExpandCondensed = useCallback(
+    (historyIndex: number) => {
+      if (!sessionId) return;
+      expandCondensed(sessionId, historyIndex)
+        .then(() => turnsFromHistory(sessionId))
+        .then((result) => setTurns(result.turns))
+        .catch((error: Error) => say(`${t('Could not expand that summary')}: ${error.message}`, 'danger'));
+    },
+    [sessionId, turnsFromHistory, say],
+  );
+
   const refreshModels = useCallback(() => {
     setRefreshingModels(true);
     listModels(undefined, true)
@@ -2322,6 +2395,19 @@ export function StudioScreen() {
       void run(sessionId, text ?? turn.text, { attachments: turn.attachments });
     },
     [sessionId, turns, run, say],
+  );
+
+  /** F1 (CONTRATO_CABLES2): "Regenerar la última (turno M)" from the wiring
+   *  panel — the panel only knows the 0-based history index of the reply to
+   *  redo; this looks the matching turn up and hands it to the SAME
+   *  truncate+resend `regenerateFrom` above, exactly like the transcript's
+   *  own "Regenerate" button. */
+  const onRegenerateTurn = useCallback(
+    (historyIndex: number) => {
+      const turn = turns?.find((tn) => tn.historyIndex === historyIndex);
+      if (turn) void regenerateFrom(turn);
+    },
+    [turns, regenerateFrom],
   );
 
   const onEdit = useCallback(
@@ -2587,15 +2673,18 @@ export function StudioScreen() {
                 SideThreadsPanel.tsx's own header comment for why). Radix
                 unmounts the Popover's content on close, so the panel fetches
                 fresh every time this opens; no side thread yet on a chat
-                that has not been sent means nothing to branch from. */}
+                that has not been sent means nothing to branch from.
+                CONTRATO_CABLES2: the trigger's label moves from "Side
+                threads" to "Context wires" — the panel now covers
+                materials and condensed turns too, not only excursos. */}
             {sessionId && (
               <Popover
                 testId="side-threads-popover"
                 align="end"
                 className="fs-st__popover"
-                trigger={<IconButton icon={Waypoints} label={t('Side threads')} size="sm" testId="studio-open-side-threads" />}
+                trigger={<IconButton icon={Waypoints} label={t('Context wires')} size="sm" testId="studio-open-side-threads" />}
               >
-                <SideThreadsPanel sessionId={sessionId} onNotice={say} />
+                <SideThreadsPanel sessionId={sessionId} onNotice={say} onRegenerateTurn={onRegenerateTurn} />
               </Popover>
             )}
             <IconButton
@@ -2682,6 +2771,8 @@ export function StudioScreen() {
               onFork={knobs.incognito ? undefined : (turn) => void forkFrom(turn)}
               onQuote={quote}
               onExplore={onExplore}
+              onCondense={knobs.incognito ? undefined : onCondense}
+              onExpandCondensed={knobs.incognito ? undefined : onExpandCondensed}
               onOpenSourceControl={() => panelDispatch({ type: 'open', tab: 'git' })}
               projectId={project?.id}
               boardKey={boardKey}
@@ -2730,6 +2821,22 @@ export function StudioScreen() {
             setExploreAnchor(null);
             openSession(newSessionId);
             say(t('Side thread opened.'));
+          }}
+        />
+        {/* F3 (CONTRATO_CABLES2): "Condense up to here" — one summary row
+            replaces a chosen range of already-settled turns. */}
+        <CondenseDialog
+          open={condenseEnd !== null}
+          onOpenChange={(open) => {
+            if (!open) setCondenseEnd(null);
+          }}
+          sessionId={sessionId}
+          toHistoryIndex={condenseEnd}
+          defaultStart={condenseDefaultStart}
+          modelLabel={route?.model}
+          onNotice={say}
+          onDone={() => {
+            if (sessionId) turnsFromHistory(sessionId).then((result) => setTurns(result.turns)).catch(() => undefined);
           }}
         />
         </div>

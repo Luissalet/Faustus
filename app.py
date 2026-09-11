@@ -1033,11 +1033,19 @@ app.include_router(setup_git_routes())
 from routes.board_routes import setup_board_routes
 app.include_router(setup_board_routes())
 
-# Excursos (side threads, CONTRATO_EXCURSOS Lote A): side-thread creation,
-# wiring panel data, thought-map, context preview, and reference cables
-# (src/side_threads.py).
+# Excursos (side threads, CONTRATO_EXCURSOS Lote A + CONTRATO_CABLES2 F1/F2
+# Lote A): side-thread creation, wiring panel data, thought-map, context
+# preview, reference cables, wired document/note materials, and per-turn
+# stale-wire flags (src/side_threads.py).
 from routes.side_thread_routes import setup_side_thread_routes
 app.include_router(setup_side_thread_routes(session_manager))
+
+# Manual condense of a turn range (CONTRATO_CABLES2 F3 Lote A): preview,
+# condense, expand — a user-requested one-time collapse of settled history,
+# distinct from the automatic context-window compaction in
+# src/context_compactor.py (src/condense.py).
+from routes.condense_routes import setup_condense_routes
+app.include_router(setup_condense_routes(session_manager))
 
 # Observable strategy + recipes (CMP-09/CMP-12): GET/PUT /api/strategy/profile,
 # POST /api/strategy/preview, GET /api/recipes, POST /api/recipes/from-run/{run_id}

@@ -310,6 +310,15 @@ class SessionWire(Base):
       (``context_order`` sequences them); ``archived`` retires one without
       deleting the side thread it points at, and a row can also be deleted
       outright without touching either session.
+    - ``document`` / ``note`` (CONTRATO_CABLES2 F2, "materiales cableados"):
+      a document fragment or a free-form note pinned into ONE session's own
+      context, permanently (until withdrawn/removed) rather than as a
+      one-message chip. These have no separate "other" session to point at —
+      the material belongs to the session it is cabled into — so both FKs
+      are set to that same session id, satisfying ``source_session_id NOT
+      NULL`` without meaning anything relational for these two kinds. The
+      ``source != target`` / no-cycles invariants below apply only to
+      ``branch``/``reference``.
 
     Both foreign keys cascade on delete, so a wire never outlives either
     session it names and needs no side-thread-specific cleanup wherever a
@@ -319,7 +328,7 @@ class SessionWire(Base):
 
     id = Column(String, primary_key=True, index=True)
     owner = Column(String, nullable=True, index=True)
-    kind = Column(String, nullable=False)  # 'branch' | 'reference'
+    kind = Column(String, nullable=False)  # 'branch' | 'reference' | 'document' | 'note'
 
     source_session_id = Column(String, ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False, index=True)
     target_session_id = Column(String, ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False, index=True)
@@ -329,11 +338,20 @@ class SessionWire(Base):
     anchor_index = Column(Integer, nullable=True)
     anchor_passage = Column(Text, nullable=True)  # <= 2000 chars, enforced in src.side_threads
 
-    # reference-only
-    depth = Column(String, nullable=False, default="quote")  # 'quote' | 'full'
+    # reference/document: 'quote'|'full' (reference) or 'selection'|'full' (document)
+    depth = Column(String, nullable=False, default="quote")
     context_order = Column(Integer, nullable=False, default=0)
     archived = Column(Boolean, nullable=False, default=False)
     source_fingerprint = Column(String, nullable=True)  # src.side_threads.fingerprint() at wiring time
+
+    # document-only (F2): the wired Document's id.
+    document_id = Column(String, nullable=True, index=True)
+    # note-only (F2): the note's own text, 1..8000 chars (enforced in src.side_threads).
+    note_text = Column(Text, nullable=True)
+    # document-only, depth='selection': JSON list of quoted substrings (<= 8, each <= 4000 chars).
+    quotes = Column(Text, nullable=True)
+    # document-only: JSON list of {"start","end"} character ranges the quotes came from (display only).
+    ranges = Column(Text, nullable=True)
 
     created_at = Column(DateTime, default=utcnow_naive)
 
@@ -1519,6 +1537,45 @@ def _migrate_add_session_project_id_column():
             conn.close()
         except Exception:
             pass
+
+
+def _migrate_add_session_wire_material_columns():
+    """Add F2's "material" wire columns to `session_wires` (CONTRATO_CABLES2).
+
+    `session_wires` itself was created by `create_all` when `SessionWire`
+    first landed (CONTRATO_EXCURSOS, commit 1237c6e) — on an install that
+    predates F2, `create_all` therefore leaves the table exactly as it was
+    and does NOT add these new columns to it (`create_all` only creates
+    missing TABLES, never alters existing ones). A brand-new install has no
+    such gap: its `session_wires` is created fresh from today's model, with
+    every column already present, so the `PRAGMA table_info` check below is
+    what keeps this idempotent either way — an existing install gets the
+    four columns ALTERed in once, a fresh one finds nothing missing and
+    no-ops. Guarded on the table existing at all for the (already
+    impossible in practice) case of an even older install this migration
+    sequence somehow reached before `create_all` ever ran.
+    """
+    try:
+        with engine.connect() as conn:
+            cols = [r[1] for r in conn.execute(text("PRAGMA table_info(session_wires)"))]
+            if not cols:
+                return
+            new_cols = {
+                "document_id": "TEXT",
+                "note_text": "TEXT",
+                "quotes": "TEXT",
+                "ranges": "TEXT",
+            }
+            for col_name, col_def in new_cols.items():
+                if col_name not in cols:
+                    conn.execute(text(f"ALTER TABLE session_wires ADD COLUMN {col_name} {col_def}"))
+            conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_session_wires_document_id ON session_wires(document_id)"
+            ))
+            conn.commit()
+            logging.getLogger(__name__).info("Migrated: added material columns to session_wires")
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"session_wires material columns migration: {e}")
 
 
 def _migrate_add_owner_column():
@@ -3017,6 +3074,7 @@ def _formal_migration_steps() -> "list[tuple[str, object]]":
         ("create_artifacts_table", _migrate_create_artifacts_table),
         ("create_artifact_identity_tables", _migrate_create_artifact_identity_tables),
         ("add_session_project_id_column", _migrate_add_session_project_id_column),
+        ("add_session_wire_material_columns", _migrate_add_session_wire_material_columns),
     ]
 
 

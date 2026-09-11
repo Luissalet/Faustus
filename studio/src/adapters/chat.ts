@@ -108,7 +108,10 @@ export interface ModelRoute {
 }
 
 export interface HistoryMessage {
-  role: 'user' | 'assistant';
+  /** F3 (CONTRATO_CABLES2): `'system'` is a condensed-range summary row
+   *  (`metadata.condensed === true`) — the only `system` rows `loadHistory`
+   *  ever keeps; see that function's own doc comment. */
+  role: 'user' | 'assistant' | 'system';
   content: string;
   metadata: Record<string, unknown>;
   /** Position in the server's history, which truncate counts from. */
@@ -551,6 +554,21 @@ export async function listSessions(signal?: AbortSignal): Promise<ChatSession[]>
     .sort((a, b) => (b.lastMessageAt ?? '').localeCompare(a.lastMessageAt ?? ''));
 }
 
+/**
+ * F3 (CONTRATO_CABLES2): a `system` row is kept ONLY when it is a condensed
+ * summary (`metadata.condensed === true`) — a row already folded by
+ * automatic compaction (`metadata.compacted`) stays filtered out exactly
+ * like before, and so does any other `system` row (there is nothing else to
+ * show; the model's own system prompt never lives in `history`).
+ *
+ * `index` is assigned BEFORE the filter runs — the position in the SERVER's
+ * own history, the same 0-based counting `anchor_index`/`truncate` already
+ * use — never the position in this function's filtered/returned array.
+ * `Studio.tsx::turnsFromHistory` reads `m.index` straight off this for its
+ * own `historyIndex` rather than re-numbering the (further-filtered) list it
+ * builds turns from; see that function's own doc comment for the bug this
+ * fixes when a condensed row sits ahead of a later turn.
+ */
 export async function loadHistory(
   sessionId: string,
   signal?: AbortSignal,
@@ -561,9 +579,16 @@ export async function loadHistory(
   );
   const history = asArray<Partial<HistoryMessage>>(raw.history)
     .map((m, index) => ({ m, index }))
-    .filter(({ m }) => m.role === 'user' || m.role === 'assistant')
+    .filter(({ m }) => {
+      if (m.role === 'user' || m.role === 'assistant') return true;
+      if (m.role === 'system') {
+        const meta = (m.metadata && typeof m.metadata === 'object' ? m.metadata : {}) as Record<string, unknown>;
+        return meta.condensed === true;
+      }
+      return false;
+    })
     .map(({ m, index }) => ({
-      role: m.role as 'user' | 'assistant',
+      role: m.role as 'user' | 'assistant' | 'system',
       content: str(m.content),
       metadata: (m.metadata && typeof m.metadata === 'object' ? m.metadata : {}) as Record<
         string,

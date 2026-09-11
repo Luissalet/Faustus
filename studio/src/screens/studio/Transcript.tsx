@@ -1,4 +1,4 @@
-import { ArrowDown, BookmarkPlus, Check, ChevronDown, Copy, FileText, GitBranch, GitBranchPlus, GitCommit, GitFork, Pencil, Quote, RefreshCw, Telescope, Trash2, UploadCloud, Volume2, VolumeX, X } from 'lucide-react';
+import { ArrowDown, BookmarkPlus, Check, ChevronDown, Copy, Expand, FileText, FoldVertical, GitBranch, GitBranchPlus, GitCommit, GitFork, Pencil, Quote, RefreshCw, Telescope, Trash2, UploadCloud, Volume2, VolumeX, X } from 'lucide-react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Link } from 'react-router';
 import { Fragment, lazy, Suspense, useCallback, useEffect, useRef, useState, type RefObject } from 'react';
@@ -121,6 +121,14 @@ export interface TranscriptProps {
    *  is "everything up to and including this reply", exactly what a fork
    *  from here would have kept. */
   onExplore?: (input: { historyIndex: number; passage?: string }) => void;
+  /** F3 (CONTRATO_CABLES2): "Condense up to here" on an assistant turn —
+   *  opens `CondenseDialog.tsx` seeded with `historyIndex` as the range's
+   *  end (Studio.tsx picks the start). */
+  onCondense?: (input: { historyIndex: number }) => void;
+  /** F3: "Expand" on a condensed summary row — `historyIndex` is that row's
+   *  own position (`turn.historyIndex`), the `summary_index` `POST
+   *  .../condense/{index}/expand` expects. */
+  onExpandCondensed?: (historyIndex: number) => void;
   /** Lote 86: a `git_policy` chip opens the Source control panel. */
   onOpenSourceControl?: () => void;
   /** Lote 93: the project's board key ("FAU") — `FAU-12`-shaped ids in the
@@ -1211,6 +1219,45 @@ function ContextReceiptCard({ turn }: { turn: Turn }) {
   );
 }
 
+/** F3 (CONTRATO_CABLES2): a condensed-range summary row (`role === 'system'`,
+ *  `metadata.condensed`) — a compact card, never rendered through
+ *  `AssistantTurn`'s full machinery (it has no steps, no metrics, nothing
+ *  streaming). "Expand" is the only action: it hands the range back exactly
+ *  as it was, byte-for-byte (`POST .../condense/{index}/expand`). */
+function CondensedTurn({
+  turn,
+  onExpand,
+  busy,
+}: {
+  turn: Turn;
+  onExpand?: () => void;
+  busy: boolean;
+}) {
+  const info = turn.condensed;
+  const body = turn.text.replace(/^\[Condensed:[^\n]*\]\n?/, '');
+  const heading = info
+    ? tn(info.count, 'Summary of {n} turn ({a}–{b})', 'Summary of {n} turns ({a}–{b})', { n: info.count, a: info.from + 1, b: info.to + 1 })
+    : t('Condensed turns');
+  return (
+    <article className="fs-turn fs-turn--condensed" data-nav-id={turn.id} data-testid="turn-condensed">
+      <span className="fs-turn__node" aria-hidden="true" />
+      <div className="fs-turn__body">
+        <details className="fs-condensed">
+          <summary className="fs-condensed__heading">{heading}</summary>
+          <p className="fs-prose fs-condensed__body">{body}</p>
+        </details>
+        {onExpand && !busy && (
+          <div className="fs-turn__foot">
+            <span className="fs-turn__actions" data-testid="turn-actions">
+              <IconButton icon={Expand} label={t('Expand')} size="sm" onClick={onExpand} testId="turn-expand" />
+            </span>
+          </div>
+        )}
+      </div>
+    </article>
+  );
+}
+
 function AssistantTurn({
   turn: liveTurn,
   busy,
@@ -1227,6 +1274,7 @@ function AssistantTurn({
   onRerun,
   onFork,
   onExplore,
+  onCondense,
   onOpenSourceControl,
   boardKey,
   projectId,
@@ -1250,6 +1298,8 @@ function AssistantTurn({
   /** B2: "Explorar desde aquí" — bound with this turn's own `historyIndex`
    *  and no `passage`, unlike the floating selection button's call. */
   onExplore?: () => void;
+  /** F3: "Condense up to here" — bound with this turn's own `historyIndex`. */
+  onCondense?: () => void;
   onOpenSourceControl?: TranscriptProps['onOpenSourceControl'];
   boardKey?: TranscriptProps['boardKey'];
   projectId?: TranscriptProps['projectId'];
@@ -1353,6 +1403,21 @@ function AssistantTurn({
             {turn.note}
           </p>
         )}
+        {/* F1 (CONTRATO_CABLES2): this reply was saved against an earlier
+            version of a wire (reference/document/note) it used — a discreet
+            line, not an alarm, since nothing is actually wrong: the source
+            simply moved on after this was written. Regenerating resends the
+            CURRENT block, so the banner clears on its own once the fresh
+            reply is saved (`note_wires_used` re-stamps the snapshot). */}
+        {!turn.streaming && turn.staleWires && turn.staleWires.length > 0 && (
+          <p className="fs-notice" data-tone="warning" data-testid="turn-stale-wire">
+            {t('Written against an earlier version of "{names}"', {
+              names: turn.staleWires.map((w) => w.label).join(', '),
+            })}
+            {' '}
+            <Button size="sm" label={t('Regenerate with the current version')} onClick={onRegenerate} />
+          </p>
+        )}
         {turn.uncertain && (
           <p className="fs-notice" data-tone="warning" data-testid="turn-uncertain">
             {t('Uncertain outcome, checking…')}
@@ -1441,6 +1506,7 @@ function AssistantTurn({
                   <IconButton icon={RefreshCw} label={t('Regenerate')} size="sm" onClick={onRegenerate} />
                   {onFork && <IconButton icon={GitFork} label={t('Fork from here')} size="sm" onClick={onFork} testId="turn-fork" />}
                   {onExplore && <IconButton icon={GitBranchPlus} label={t('Explore from here')} size="sm" onClick={onExplore} testId="turn-explore" />}
+                  {onCondense && <IconButton icon={FoldVertical} label={t('Condense up to here')} size="sm" onClick={onCondense} testId="turn-condense" />}
                   {sessionId && (
                     <IconButton
                       icon={BookmarkPlus}
@@ -1628,7 +1694,7 @@ const ESTIMATED_TURN_HEIGHT = 180;
  *  means without the two files sharing state. */
 const BOTTOM_THRESHOLD = 80;
 
-export function Transcript({ turns, busy, sessionId, onApproval, onAnswer, onEdit, onRegenerate, onDelete, onNotice, onOpenFile, onOpenDoc, onOpenEvidence, onRerun, onFork, onQuote, onExplore, onOpenSourceControl, boardKey, projectId, onOpenBoardIssue }: TranscriptProps) {
+export function Transcript({ turns, busy, sessionId, onApproval, onAnswer, onEdit, onRegenerate, onDelete, onNotice, onOpenFile, onOpenDoc, onOpenEvidence, onRerun, onFork, onQuote, onExplore, onCondense, onExpandCondensed, onOpenSourceControl, boardKey, projectId, onOpenBoardIssue }: TranscriptProps) {
   const quote = useQuoteSelection(onQuote, Boolean(onExplore));
 
   // PERF-01/QA-37: Studio.tsx owns the actual scrolling element
@@ -1737,6 +1803,12 @@ export function Transcript({ turns, busy, sessionId, onApproval, onAnswer, onEdi
           >
             {turn.role === 'user' ? (
               <UserTurn turn={turn} busy={busy} enter={enter} onEdit={onEdit} onRegenerate={onRegenerate} onDelete={onDelete} onOpenFile={onOpenFile} boardKey={boardKey} projectId={projectId} onOpenBoardIssue={onOpenBoardIssue} />
+            ) : turn.role === 'system' ? (
+              <CondensedTurn
+                turn={turn}
+                busy={busy}
+                onExpand={onExpandCondensed ? () => onExpandCondensed(turn.historyIndex ?? index) : undefined}
+              />
             ) : (
               <AssistantTurn
                 turn={turn}
@@ -1762,6 +1834,7 @@ export function Transcript({ turns, busy, sessionId, onApproval, onAnswer, onEdi
                 onRerun={onRerun}
                 onFork={onFork ? () => onFork(turn) : undefined}
                 onExplore={onExplore ? () => onExplore({ historyIndex: turn.historyIndex ?? index }) : undefined}
+                onCondense={onCondense ? () => onCondense({ historyIndex: turn.historyIndex ?? index }) : undefined}
                 onOpenSourceControl={onOpenSourceControl}
                 boardKey={boardKey}
                 projectId={projectId}

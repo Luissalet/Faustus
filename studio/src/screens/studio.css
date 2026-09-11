@@ -3895,3 +3895,115 @@ aside.fs-panel { position: relative; }
   font: inherit;
 }
 
+/* CONTRATO_CABLES2 F1: the discreet "written against an earlier version"
+   line under a reply, and the matching stale-turns notice inside the
+   wiring panel's own rows. */
+.fs-st__stale-turns {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--fs-space-2);
+  flex-basis: 100%;
+  margin-block-start: 2px;
+  padding-block-start: 2px;
+  border-block-start: 1px dashed var(--fs-border);
+  color: var(--fs-warning);
+  font-size: 0.75rem;
+}
+
+/* F2: the Materials section, mirroring `.fs-st__children`/`.fs-st__child`
+   above — same row shape, a document/note wire instead of an excurso. */
+.fs-st__materials {
+  display: grid;
+  gap: var(--fs-space-2);
+  padding-block-end: var(--fs-space-3);
+  border-block-end: 1px solid var(--fs-border);
+}
+
+.fs-st__material-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--fs-space-2);
+}
+
+.fs-st__material {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--fs-space-2);
+  padding: var(--fs-space-2);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-control);
+  background: var(--fs-surface-1);
+}
+
+.fs-st__note-edit {
+  flex: 1 1 100%;
+  min-block-size: 60px;
+  resize: vertical;
+  font: inherit;
+}
+
+.fs-st__add-note {
+  display: grid;
+  gap: var(--fs-space-2);
+}
+
+/* F3: a condensed-range summary row — a compact card, deliberately plainer
+   than `.fs-turn--assistant` (no metrics, no rail, nothing streaming). */
+.fs-turn--condensed .fs-turn__body {
+  border: 1px dashed var(--fs-border-strong);
+  border-radius: var(--fs-radius-control);
+  padding: var(--fs-space-2) var(--fs-space-3);
+  background: var(--fs-surface-1);
+}
+
+.fs-condensed__heading {
+  cursor: pointer;
+  color: var(--fs-text-2);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.fs-condensed__body {
+  margin-block-start: var(--fs-space-2);
+  color: var(--fs-text-2);
+}
+
+/* F3: CondenseDialog.tsx's own content, mirroring `.fs-explore` above. */
+.fs-condense-dialog {
+  display: grid;
+  gap: var(--fs-space-2);
+}
+
+.fs-condense-dialog__hint {
+  margin: 0;
+  color: var(--fs-text-3);
+  font-size: 0.8rem;
+}
+
+.fs-condense-dialog__range {
+  display: grid;
+  grid-template-columns: auto 1fr auto 1fr;
+  align-items: center;
+  gap: var(--fs-space-2);
+}
+
+.fs-condense-dialog__range input {
+  inline-size: 100%;
+}
+
+.fs-condense-dialog__summary {
+  margin: 0;
+  color: var(--fs-text-2);
+  font-size: 0.8rem;
+}
+
+@media (max-width: 480px) {
+  .fs-condense-dialog__range {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+

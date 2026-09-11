@@ -156,6 +156,12 @@ class ChatContext:
     # retained only when explicit foreground fallbacks are enabled so each
     # concrete candidate can apply its own context budget independently.
     route_messages: list = field(default_factory=list)
+    # CONTRATO_CABLES2 F1: the wire snapshot `src.side_threads.
+    # inherited_context_with_snapshot` returned for this turn — carried on
+    # `ChatContext` so every `save_assistant_response(..., wires=...)` call
+    # site can stamp it onto the saved reply without re-deriving it. `None`
+    # (not `[]`) when side threads were never consulted at all (incognito).
+    side_thread_wires: Optional[list] = None
 
 
 # ── Helpers ────────────────────────────────────────────────────────────── #
@@ -795,26 +801,33 @@ async def build_chat_context(
         # compaction can never rewrite a durable session from that path.
         annotate_history_positions(sess, _history_messages)
 
-    # Excursos (side threads, CONTRATO_EXCURSOS): whatever is cabled to this
-    # session — inherited `reference` blocks and, if this session is itself a
-    # side thread, its parent's transcript up to the branch anchor — goes
-    # BEFORE the session's own history, and AFTER annotate_history_positions
-    # above so these messages never carry `_history_index`: compaction may
+    # Excursos y materiales (CONTRATO_EXCURSOS + CONTRATO_CABLES2 F1/F2):
+    # whatever is cabled to this session — pinned document/note materials,
+    # inherited `reference` blocks and, if this session is itself a side
+    # thread, its parent's transcript up to the branch anchor — goes BEFORE
+    # the session's own history, and AFTER annotate_history_positions above
+    # so these messages never carry `_history_index`: compaction may
     # summarize them in the prompt, but can never delete a row from ANY
-    # session because of them (see `src.side_threads.inherited_context`).
-    # Best-effort: a side-thread lookup failure must never break a plain
-    # chat turn that has no wires at all.
+    # session because of them (see `src.side_threads.
+    # inherited_context_with_snapshot`). `_side_thread_wires` is the F1
+    # snapshot every `save_assistant_response(..., wires=...)` call site
+    # stamps onto the saved reply so a future source change can be told
+    # apart from "this reply already reflects it" — see `ChatContext.
+    # side_thread_wires`. Best-effort: a side-thread lookup failure must
+    # never break a plain chat turn that has no wires at all.
+    _side_thread_wires: Optional[list] = None
     if incognito:
         _inherited: list = []
     else:
         try:
-            from src.side_threads import inherited_context
-            _inherited = inherited_context(
+            from src.side_threads import inherited_context_with_snapshot
+            _inherited, _side_thread_wires = inherited_context_with_snapshot(
                 getattr(chat_handler, "session_manager", None), user, session_id,
             )
         except Exception:
-            logger.debug("side_threads.inherited_context failed", exc_info=True)
+            logger.debug("side_threads.inherited_context_with_snapshot failed", exc_info=True)
             _inherited = []
+            _side_thread_wires = None
     messages = preface + _inherited + _history_messages
 
     # Current date/time — injected as a standalone *user*-role context message
@@ -895,6 +908,7 @@ async def build_chat_context(
         auto_opened_docs=auto_opened_docs,
         uploaded_files=uploaded_files,
         route_messages=route_messages,
+        side_thread_wires=_side_thread_wires,
     )
 
 
@@ -1067,12 +1081,23 @@ def save_assistant_response(
     do_research: bool = False,
     tool_events: list = None,
     incognito: bool = False,
+    wires: list | None = None,
 ):
     """Add assistant response to session history.
 
     Incognito responses are intentionally not added to the session object. The
     session may later be saved by a normal turn, so "in-memory only" is not
     private enough.
+
+    `wires` (CONTRATO_CABLES2 F1) is the side-thread wire snapshot this
+    reply was built against (`ChatContext.side_thread_wires` /
+    `src.side_threads.inherited_context_with_snapshot`'s second return
+    value). When non-empty it is stamped onto the saved message as
+    `metadata["side_thread_wires"]` — the record `src.side_threads.
+    stale_turns_map` later reads to tell "written against a stale wire"
+    apart from "already fresh" — and `src.side_threads.note_wires_used`
+    advances each wire's own `source_fingerprint` to match, so `stale`
+    resets right after a response that actually used the current version.
     """
     md = dict(last_metrics) if last_metrics else {}
     def _model_value(value) -> str:
@@ -1102,6 +1127,8 @@ def save_assistant_response(
         md["research_clarification"] = True
     if tool_events:
         md["tool_events"] = tool_events
+    if wires:
+        md["side_thread_wires"] = wires
 
     # Extract thinking into metadata (don't pollute message content with <think> tags)
     _think_info = _extract_thinking_meta(full_response)
@@ -1121,6 +1148,13 @@ def save_assistant_response(
     from core.database import update_session_last_accessed
     update_session_last_accessed(session_id)
     session_manager.save_sessions()
+
+    if wires:
+        try:
+            from src.side_threads import note_wires_used
+            note_wires_used(wires)
+        except Exception:
+            logger.debug("side_threads.note_wires_used failed", exc_info=True)
 
     # Return the persisted message's DB id so the stream can wire it onto the
     # freshly-rendered bubble — lets the user edit/delete a just-streamed reply

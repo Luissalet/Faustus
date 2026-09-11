@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { Button, EmptyState, Skeleton } from '../../components';
 import {
+  addMaterial,
   addReference,
   formatAnchor,
   formatTokenCount,
@@ -9,12 +10,17 @@ import {
   getThoughtMap,
   getWires,
   layerSummaryLine,
+  removeMaterial,
   removeReference,
+  updateMaterial,
   updateReference,
   type ChildInfo,
   type ContextLayer,
   type ContextPreview,
+  type MaterialDepth,
+  type MaterialInfo,
   type ReferenceDepth,
+  type StaleTurns,
   type ThoughtMap,
   type ThoughtMapNode,
   type Wire,
@@ -43,6 +49,41 @@ import { t, tn } from '../../i18n';
 export interface SideThreadsPanelProps {
   sessionId: string | null;
   onNotice: (text: string, tone?: 'info' | 'warning' | 'danger', action?: { label: string; onClick: () => void }) => void;
+  /** F1 (CONTRATO_CABLES2): "Regenerar la última (turno M)" on a wire whose
+   *  `stale_turns.count > 0` — the panel never regenerates anything itself
+   *  (only Studio.tsx has the turn list `regenerateFrom` needs), so this is
+   *  handed the 0-based history index of the reply to redo. */
+  onRegenerateTurn?: (historyIndex: number) => void;
+}
+
+/** F1: "N respuestas escritas con la versión anterior" + "Regenerar la
+ *  última (turno M)" — shown on any wire (a child's reference, or a
+ *  material) whose `stale_turns.count > 0`. Deliberately separate from the
+ *  plain "Update"/"Actualizar referencia" button next to it: that one
+ *  clears `stale` going forward (`refresh=True`), this one is about
+ *  replies ALREADY saved against the earlier version. */
+function StaleTurnsNotice({ staleTurns, onRegenerateTurn }: { staleTurns: StaleTurns; onRegenerateTurn?: (historyIndex: number) => void }) {
+  if (!staleTurns.count) return null;
+  return (
+    <p className="fs-st__stale-turns" data-testid="wire-stale-turns">
+      <span>
+        {tn(
+          staleTurns.count,
+          '{n} reply was written with the earlier version',
+          '{n} replies were written with the earlier version',
+          { n: staleTurns.count },
+        )}
+      </span>
+      {onRegenerateTurn && staleTurns.last_index !== null && (
+        <Button
+          size="sm"
+          label={t('Regenerate the last one (turn {n})', { n: staleTurns.last_index + 1 })}
+          onClick={() => onRegenerateTurn(staleTurns.last_index as number)}
+          testId="wire-replay"
+        />
+      )}
+    </p>
+  );
 }
 
 function statusOf(child: ChildInfo): { label: string; tone: 'neutral' | 'ok' | 'warn' } {
@@ -56,19 +97,21 @@ function ChildRow({
   sessionId,
   onChanged,
   onNotice,
+  onRegenerateTurn,
 }: {
   child: ChildInfo;
   sessionId: string;
   onChanged: () => void;
   onNotice: SideThreadsPanelProps['onNotice'];
+  onRegenerateTurn?: SideThreadsPanelProps['onRegenerateTurn'];
 }) {
-  const [depth, setDepth] = useState<ReferenceDepth>(child.reference?.depth ?? 'quote');
+  const [depth, setDepth] = useState<ReferenceDepth>((child.reference?.depth as ReferenceDepth) ?? 'quote');
   const [busy, setBusy] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const status = statusOf(child);
 
   useEffect(() => {
-    setDepth(child.reference?.depth ?? 'quote');
+    setDepth((child.reference?.depth as ReferenceDepth) ?? 'quote');
   }, [child.reference?.depth, child.wire.id]);
 
   const fail = (prefix: string) => (error: unknown) => onNotice(`${prefix} ${(error as Error).message}`, 'danger');
@@ -159,12 +202,261 @@ function ChildRow({
       ) : (
         <Button size="sm" variant="primary" label={t('Wire')} disabled={busy} onClick={wireIt} />
       )}
+      {child.reference && <StaleTurnsNotice staleTurns={child.reference.stale_turns} onRegenerateTurn={onRegenerateTurn} />}
     </li>
+  );
+}
+
+function statusOfMaterial(material: MaterialInfo): { label: string; tone: 'neutral' | 'ok' | 'warn' } {
+  if (material.wire.archived) return { label: t('withdrawn'), tone: 'neutral' };
+  if (material.stale) return { label: t('outdated'), tone: 'warn' };
+  if (material.wire.kind === 'note') return { label: t('Note'), tone: 'ok' };
+  return { label: material.wire.depth === 'full' ? t('Full') : t('Selection'), tone: 'ok' };
+}
+
+/** F2: one `document` material wired into this session. */
+function DocumentMaterialRow({
+  material,
+  sessionId,
+  onChanged,
+  onNotice,
+  onRegenerateTurn,
+}: {
+  material: MaterialInfo;
+  sessionId: string;
+  onChanged: () => void;
+  onNotice: SideThreadsPanelProps['onNotice'];
+  onRegenerateTurn?: SideThreadsPanelProps['onRegenerateTurn'];
+}) {
+  const [depth, setDepth] = useState<MaterialDepth>((material.wire.depth as MaterialDepth) || 'selection');
+  const [busy, setBusy] = useState(false);
+  const [confirmRemove, setConfirmRemove] = useState(false);
+  const status = statusOfMaterial(material);
+
+  useEffect(() => {
+    setDepth((material.wire.depth as MaterialDepth) || 'selection');
+  }, [material.wire.depth, material.wire.id]);
+
+  const fail = (prefix: string) => (error: unknown) => onNotice(`${prefix} ${(error as Error).message}`, 'danger');
+
+  const changeDepth = (next: MaterialDepth) => {
+    setDepth(next);
+    setBusy(true);
+    updateMaterial(sessionId, material.wire.id, { depth: next })
+      .then(onChanged)
+      .catch(fail(t('Could not update the material.')))
+      .finally(() => setBusy(false));
+  };
+
+  const refreshIt = () => {
+    setBusy(true);
+    updateMaterial(sessionId, material.wire.id, { refresh: true })
+      .then(onChanged)
+      .catch(fail(t('Could not update the material.')))
+      .finally(() => setBusy(false));
+  };
+
+  const toggleArchived = () => {
+    setBusy(true);
+    updateMaterial(sessionId, material.wire.id, { archived: !material.wire.archived })
+      .then(onChanged)
+      .catch(fail(t('Could not update the material.')))
+      .finally(() => setBusy(false));
+  };
+
+  const remove = () => {
+    setBusy(true);
+    removeMaterial(sessionId, material.wire.id)
+      .then(() => {
+        setConfirmRemove(false);
+        onChanged();
+      })
+      .catch(fail(t('Could not remove the material.')))
+      .finally(() => setBusy(false));
+  };
+
+  return (
+    <li className="fs-st__material" data-testid="material-document">
+      {/* CONTRATO_CABLES2 F2 deviation: the contract asks for "enlace al
+          documento si hay ruta" — this panel has neither a document route
+          nor `Studio.tsx`'s `onOpenDoc` (a fichero ajeno's prop), so the
+          title renders as plain text rather than a broken/faked link. */}
+      <span className="fs-st__child-name" title={material.document?.title ?? material.wire.document_id ?? ''}>
+        {material.document?.title ?? t('(removed)')}
+      </span>
+      <span className="fs-st__badge" data-tone={status.tone}>
+        {status.label}
+      </span>
+      <select
+        className="fs-st__depth"
+        aria-label={t('Material depth')}
+        value={depth}
+        disabled={busy}
+        onChange={(e) => changeDepth(e.target.value as MaterialDepth)}
+        data-testid="material-depth"
+      >
+        <option value="selection">{t('Selection')}</option>
+        <option value="full">{t('Full')}</option>
+      </select>
+      {material.stale && <Button size="sm" label={t('Update')} disabled={busy} onClick={refreshIt} />}
+      <Button size="sm" label={material.wire.archived ? t('Wire') : t('Withdraw')} disabled={busy} onClick={toggleArchived} />
+      {confirmRemove ? (
+        <>
+          <Button size="sm" variant="danger-solid" label={t('Confirm removal')} disabled={busy} onClick={remove} testId="material-remove-confirm" />
+          <Button size="sm" label={t('Cancel')} disabled={busy} onClick={() => setConfirmRemove(false)} />
+        </>
+      ) : (
+        <Button size="sm" variant="danger" label={t('Remove')} disabled={busy} onClick={() => setConfirmRemove(true)} testId="material-remove" />
+      )}
+      <StaleTurnsNotice staleTurns={material.stale_turns} onRegenerateTurn={onRegenerateTurn} />
+    </li>
+  );
+}
+
+/** F2: one free-form `note` material wired into this session. */
+function NoteMaterialRow({
+  material,
+  sessionId,
+  onChanged,
+  onNotice,
+  onRegenerateTurn,
+}: {
+  material: MaterialInfo;
+  sessionId: string;
+  onChanged: () => void;
+  onNotice: SideThreadsPanelProps['onNotice'];
+  onRegenerateTurn?: SideThreadsPanelProps['onRegenerateTurn'];
+}) {
+  const [editing, setEditing] = useState(false);
+  const [text, setText] = useState(material.wire.note_text ?? '');
+  const [busy, setBusy] = useState(false);
+  const [confirmRemove, setConfirmRemove] = useState(false);
+
+  useEffect(() => {
+    setText(material.wire.note_text ?? '');
+  }, [material.wire.note_text, material.wire.id]);
+
+  const fail = (prefix: string) => (error: unknown) => onNotice(`${prefix} ${(error as Error).message}`, 'danger');
+
+  const save = () => {
+    if (!text.trim() || busy) return;
+    setBusy(true);
+    updateMaterial(sessionId, material.wire.id, { noteText: text.trim() })
+      .then(() => {
+        setEditing(false);
+        onChanged();
+      })
+      .catch(fail(t('Could not update the note.')))
+      .finally(() => setBusy(false));
+  };
+
+  const toggleArchived = () => {
+    setBusy(true);
+    updateMaterial(sessionId, material.wire.id, { archived: !material.wire.archived })
+      .then(onChanged)
+      .catch(fail(t('Could not update the note.')))
+      .finally(() => setBusy(false));
+  };
+
+  const remove = () => {
+    setBusy(true);
+    removeMaterial(sessionId, material.wire.id)
+      .then(() => {
+        setConfirmRemove(false);
+        onChanged();
+      })
+      .catch(fail(t('Could not remove the note.')))
+      .finally(() => setBusy(false));
+  };
+
+  const noteText = material.wire.note_text ?? '';
+  const truncated = noteText.length > 140 ? `${noteText.slice(0, 140)}…` : noteText;
+
+  return (
+    <li className="fs-st__material" data-testid="material-note">
+      <span className="fs-st__badge" data-tone={material.wire.archived ? 'neutral' : 'ok'}>
+        {material.wire.archived ? t('withdrawn') : t('Note')}
+      </span>
+      {editing ? (
+        <>
+          <textarea
+            className="fs-field fs-st__note-edit"
+            value={text}
+            disabled={busy}
+            onChange={(e) => setText(e.target.value)}
+            data-testid="material-note-edit"
+          />
+          <Button size="sm" variant="primary" label={t('Save')} disabled={busy || !text.trim()} onClick={save} testId="material-note-save" />
+          <Button
+            size="sm"
+            label={t('Cancel')}
+            disabled={busy}
+            onClick={() => {
+              setEditing(false);
+              setText(noteText);
+            }}
+          />
+        </>
+      ) : (
+        <>
+          <span className="fs-st__child-name" data-testid="material-note-text">
+            {truncated || t('(empty)')}
+          </span>
+          <Button size="sm" label={t('Edit')} disabled={busy} onClick={() => setEditing(true)} testId="material-note-edit-toggle" />
+        </>
+      )}
+      <Button size="sm" label={material.wire.archived ? t('Wire') : t('Withdraw')} disabled={busy} onClick={toggleArchived} />
+      {confirmRemove ? (
+        <>
+          <Button size="sm" variant="danger-solid" label={t('Confirm removal')} disabled={busy} onClick={remove} testId="material-remove-confirm" />
+          <Button size="sm" label={t('Cancel')} disabled={busy} onClick={() => setConfirmRemove(false)} />
+        </>
+      ) : (
+        <Button size="sm" variant="danger" label={t('Remove')} disabled={busy} onClick={() => setConfirmRemove(true)} testId="material-remove" />
+      )}
+      <StaleTurnsNotice staleTurns={material.stale_turns} onRegenerateTurn={onRegenerateTurn} />
+    </li>
+  );
+}
+
+/** F2 block: "Add a note" — the only way a `note` material is ever created
+ *  from inside the panel (a `document` material is created from the
+ *  Composer's "Fijar" pin — see `Composer.tsx`). */
+function AddNoteForm({ sessionId, onChanged, onNotice }: { sessionId: string; onChanged: () => void; onNotice: SideThreadsPanelProps['onNotice'] }) {
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const submit = () => {
+    if (!text.trim() || busy) return;
+    setBusy(true);
+    addMaterial(sessionId, { kind: 'note', noteText: text.trim() })
+      .then(() => {
+        setText('');
+        onChanged();
+      })
+      .catch((error: Error) => onNotice(`${t('Could not add the note.')} ${error.message}`, 'danger'))
+      .finally(() => setBusy(false));
+  };
+
+  return (
+    <div className="fs-st__add-note">
+      <textarea
+        className="fs-field fs-st__note-edit"
+        placeholder={t('Add a note')}
+        value={text}
+        disabled={busy}
+        onChange={(e) => setText(e.target.value)}
+        data-testid="material-add-note-text"
+      />
+      <Button size="sm" variant="primary" label={t('Add a note')} disabled={busy || !text.trim()} onClick={submit} testId="material-add-note" />
+    </div>
   );
 }
 
 function layerLabel(layer: ContextLayer['layer']): string {
   switch (layer) {
+    case 'materials':
+      return t('Materials');
     case 'references':
       return t('References');
     case 'inherited':
@@ -192,7 +484,7 @@ function ThoughtMapTree({ node, depth = 0 }: { node: ThoughtMapNode; depth?: num
   );
 }
 
-export default function SideThreadsPanel({ sessionId, onNotice }: SideThreadsPanelProps) {
+export default function SideThreadsPanel({ sessionId, onNotice, onRegenerateTurn }: SideThreadsPanelProps) {
   const navigate = useNavigate();
   const [wires, setWires] = useState<WiresFor | null>(null);
   // The reference (if any) FROM this side thread TO its parent — computed
@@ -277,7 +569,7 @@ export default function SideThreadsPanel({ sessionId, onNotice }: SideThreadsPan
   if (!sessionId) {
     return (
       <div className="fs-st" data-testid="side-threads-panel">
-        <EmptyState title={t('Side threads')} body={t('Send the first message before branching a side thread from it.')} />
+        <EmptyState title={t('Context wires')} body={t('Send the first message before branching a side thread from it.')} />
       </div>
     );
   }
@@ -314,6 +606,40 @@ export default function SideThreadsPanel({ sessionId, onNotice }: SideThreadsPan
             </section>
           )}
 
+          {/* F2 (CONTRATO_CABLES2): "encima de los excursos" — Materials
+              comes before the children/excursos section below. */}
+          <section className="fs-st__materials" aria-label={t('Materials')}>
+            <h3 className="fs-st__heading">{t('Materials')}</h3>
+            {wires.materials.length === 0 ? (
+              <p className="fs-studio__hint">{t('No materials pinned yet.')}</p>
+            ) : (
+              <ul className="fs-st__material-list">
+                {wires.materials.map((material) =>
+                  material.wire.kind === 'note' ? (
+                    <NoteMaterialRow
+                      key={material.wire.id}
+                      material={material}
+                      sessionId={sessionId}
+                      onChanged={() => void load()}
+                      onNotice={onNotice}
+                      onRegenerateTurn={onRegenerateTurn}
+                    />
+                  ) : (
+                    <DocumentMaterialRow
+                      key={material.wire.id}
+                      material={material}
+                      sessionId={sessionId}
+                      onChanged={() => void load()}
+                      onNotice={onNotice}
+                      onRegenerateTurn={onRegenerateTurn}
+                    />
+                  ),
+                )}
+              </ul>
+            )}
+            <AddNoteForm sessionId={sessionId} onChanged={() => void load()} onNotice={onNotice} />
+          </section>
+
           <section className="fs-st__children" aria-label={t('Side threads of this conversation')}>
             <h3 className="fs-st__heading">{t('Side threads of this conversation')}</h3>
             {wires.children.length === 0 ? (
@@ -321,7 +647,7 @@ export default function SideThreadsPanel({ sessionId, onNotice }: SideThreadsPan
             ) : (
               <ul className="fs-st__child-list">
                 {wires.children.map((child) => (
-                  <ChildRow key={child.wire.id} child={child} sessionId={sessionId} onChanged={() => void load()} onNotice={onNotice} />
+                  <ChildRow key={child.wire.id} child={child} sessionId={sessionId} onChanged={() => void load()} onNotice={onNotice} onRegenerateTurn={onRegenerateTurn} />
                 ))}
               </ul>
             )}

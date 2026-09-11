@@ -132,21 +132,60 @@ const mod = await load(join('adapters', 'sideThreads.ts'), 'side-threads.mjs');
   assert(selfOut.length === 1 && selfOut[0].depth === 0, 'indentSessions: a session naming itself as its own parent is ignored, not a cycle');
 }
 
+// ── addMaterial/updateMaterial/removeMaterial/getStaleTurns: exported, and
+//    keep the server's own field names (F2/F1, CONTRATO_CABLES2) ──
+{
+  const src = read('studio/src/adapters/sideThreads.ts');
+  for (const symbol of ['addMaterial', 'updateMaterial', 'removeMaterial', 'getStaleTurns']) {
+    assert(src.includes(`export function ${symbol}`), `sideThreads.ts must export ${symbol}()`);
+  }
+  for (const field of ['document_id', 'note_text', 'quotes', 'ranges', 'stale_turns', 'last_index']) {
+    assert(src.includes(field), `sideThreads.ts must keep the server's own field name ${JSON.stringify(field)}`);
+  }
+  assert(src.includes('/materials'), 'sideThreads.ts must call the /materials routes');
+  assert(src.includes('/stale-turns'), 'sideThreads.ts must call GET .../stale-turns');
+}
+
 // ── static wiring: the contract's own named checks ──
 
-// The adapter's ONLY `method: 'DELETE'` call, and it is scoped under
-// /references/ — never a bare session, never a branch wire.
+// The adapter's `method: 'DELETE'` calls — one for references, one for
+// materials (CONTRATO_CABLES2 F2) — and each is scoped exactly where it
+// says: never a bare session, never a branch wire.
 {
   const src = read('studio/src/adapters/sideThreads.ts');
   const matches = [...src.matchAll(/\{\s*method:\s*'DELETE'/g)];
-  assert(matches.length === 1, `sideThreads.ts must use method: 'DELETE' exactly once (found ${matches.length})`);
-  if (matches.length === 1) {
-    const idx = matches[0].index;
+  assert(matches.length === 2, `sideThreads.ts must use method: 'DELETE' exactly twice — references and materials (found ${matches.length})`);
+  const scopedUnder = (needle, path) => {
+    const idx = src.indexOf(needle);
+    assert(idx !== -1, `sideThreads.ts must define ${needle}`);
+    if (idx === -1) return;
     const fnStart = src.lastIndexOf('export function', idx);
-    const fnBody = src.slice(fnStart, idx);
-    assert(fnBody.includes('/references/'), 'the sole DELETE must be scoped under a /references/ path');
-    assert(fnBody.includes('export function removeReference'), 'the sole DELETE must live in removeReference()');
+    const fnEnd = src.indexOf('\n}', idx);
+    const fnBody = src.slice(fnStart, fnEnd === -1 ? undefined : fnEnd);
+    assert(fnBody.includes(path), `${needle} must be scoped under a ${path} path`);
+    assert(fnBody.includes("method: 'DELETE'"), `${needle} must actually issue a DELETE`);
+  };
+  scopedUnder('export function removeReference', '/references/');
+  scopedUnder('export function removeMaterial', '/materials/');
+}
+
+// ── adapters/condense.ts (F3, new): exported, and the range's own routes ──
+{
+  const src = read('studio/src/adapters/condense.ts');
+  for (const symbol of ['previewCondense', 'condense', 'expandCondensed']) {
+    assert(src.includes(`export function ${symbol}`), `condense.ts must export ${symbol}()`);
   }
+  assert(src.includes('/condense/preview'), 'condense.ts must call GET .../condense/preview');
+  assert(src.includes('/condense/'), 'condense.ts must call .../condense and .../condense/{index}/expand');
+  assert(src.includes('expand'), 'condense.ts must call the .../expand route');
+}
+
+// ── adapters/chat.ts::loadHistory (F3): keeps a condensed system row, uses
+//    the server's own index, and HistoryMessage.role admits 'system' ──
+{
+  const src = read('studio/src/adapters/chat.ts');
+  assert(/role:\s*'user'\s*\|\s*'assistant'\s*\|\s*'system'/.test(src), "chat.ts's HistoryMessage.role must admit 'system'");
+  assert(src.includes('meta.condensed'), 'loadHistory must keep a system row only when metadata.condensed is set');
 }
 
 // Transcript.tsx: the floating "Explorar aparte" button and the turn's own
@@ -157,6 +196,39 @@ const mod = await load(join('adapters', 'sideThreads.ts'), 'side-threads.mjs');
   assert(src.includes('onExplore'), 'Transcript.tsx must accept/thread an onExplore prop');
   assert(src.includes('testId="turn-explore"'), 'Transcript.tsx must render the per-turn "Explorar desde aquí" action');
   assert(src.includes('historyIndex'), 'Transcript.tsx must pass historyIndex to onExplore, not a raw array index alone');
+}
+
+// Transcript.tsx (CONTRATO_CABLES2): F1's stale-wire banner + regenerate,
+// F3's "Condense up to here" action and the condensed-row card + Expand.
+{
+  const src = read('studio/src/screens/studio/Transcript.tsx');
+  assert(src.includes('data-testid="turn-stale-wire"'), 'Transcript.tsx must render the F1 stale-wire banner');
+  assert(src.includes('staleWires'), 'Transcript.tsx must read Turn.staleWires');
+  assert(src.includes('testId="turn-condense"'), 'Transcript.tsx must render the per-turn "Condense up to here" action');
+  assert(src.includes('onCondense'), 'Transcript.tsx must accept/thread an onCondense prop');
+  assert(src.includes('data-testid="turn-condensed"'), 'Transcript.tsx must render the condensed-row card');
+  assert(src.includes('testId="turn-expand"'), 'Transcript.tsx must render the condensed row\'s Expand action');
+  assert(src.includes("turn.role === 'system'"), "Transcript.tsx must branch a condensed row off turn.role === 'system'");
+}
+
+// Composer.tsx (F2): the document-context chip gains a "Fijar" pin button
+// that calls addMaterial, hidden when there is no session yet.
+{
+  const src = read('studio/src/screens/studio/Composer.tsx');
+  assert(src.includes('data-testid="doc-context-pin"'), 'Composer.tsx must render the doc-context-pin button');
+  assert(src.includes('addMaterial'), 'Composer.tsx must call addMaterial() from its pin button');
+  assert(/sessionId\s*&&[\s\S]{0,400}doc-context-pin/.test(src), 'Composer.tsx must gate the pin button on a real sessionId (no session yet = nothing to wire into)');
+}
+
+// SideThreadsPanel.tsx (F1/F2): the Materials section, its add-note form,
+// and the wire-replay button for a wire whose stale_turns.count > 0.
+{
+  const src = read('studio/src/screens/studio/SideThreadsPanel.tsx');
+  assert(src.includes('testId="material-add-note"'), 'SideThreadsPanel.tsx must render the "Add a note" control');
+  assert(src.includes('testId="wire-replay"'), 'SideThreadsPanel.tsx must render the wire-replay button for stale turns');
+  assert(src.includes('onRegenerateTurn'), 'SideThreadsPanel.tsx must accept an onRegenerateTurn prop');
+  assert(src.includes('addMaterial') && src.includes('updateMaterial') && src.includes('removeMaterial'), 'SideThreadsPanel.tsx must use the materials adapter functions');
+  assert(src.includes("t('Context wires')"), 'SideThreadsPanel.tsx must use the renamed "Context wires" title');
 }
 
 // Studio.tsx: mounts SideThreadsPanel and ExploreDialog, and wires onExplore
@@ -171,6 +243,26 @@ const mod = await load(join('adapters', 'sideThreads.ts'), 'side-threads.mjs');
   assert(src.includes('data-testid="studio-open-side-threads"') || src.includes("testId=\"studio-open-side-threads\""), 'Studio.tsx must expose a way to open the side threads panel');
 }
 
+// Studio.tsx (CONTRATO_CABLES2): the popover's label moves to "Context
+// wires"; CondenseDialog is mounted and wired; turnsFromHistory uses the
+// SERVER's own m.index instead of re-numbering its filtered array.
+{
+  const src = read('studio/src/screens/Studio.tsx');
+  assert(src.includes("t('Context wires')"), 'Studio.tsx must rename the side-threads popover trigger to "Context wires"');
+  assert(!src.includes("t('Side threads')"), 'Studio.tsx must not still show the old "Side threads" popover label');
+  assert(src.includes("from './studio/CondenseDialog'"), 'Studio.tsx must import CondenseDialog');
+  assert(src.includes('<CondenseDialog'), 'Studio.tsx must render CondenseDialog');
+  assert(src.includes('onCondense={') && src.includes('onCondense'), 'Studio.tsx must wire onCondense into <Transcript>');
+  assert(src.includes('onExpandCondensed'), 'Studio.tsx must wire onExpandCondensed into <Transcript>');
+  assert(src.includes('onRegenerateTurn={onRegenerateTurn}'), 'Studio.tsx must wire onRegenerateTurn into <SideThreadsPanel>');
+  assert(src.includes('refreshStaleWires'), 'Studio.tsx must fetch/apply the F1 stale-turns map');
+  // The bug this fixes: turnsFromHistory must read `m.index` (the server's
+  // own history position loadHistory already assigned), not re-number the
+  // array it filters turns from — see adapters/chat.ts::loadHistory's own
+  // doc comment on why a condensed row ahead of a later turn breaks that.
+  assert(/historyIndex:\s*m\.index/.test(src), 'Studio.tsx::turnsFromHistory must use m.index as historyIndex, not the filtered array\'s own position');
+}
+
 // SessionsPane.tsx: fetches the parents map once and indents with it.
 {
   const src = read('studio/src/screens/studio/SessionsPane.tsx');
@@ -181,8 +273,10 @@ const mod = await load(join('adapters', 'sideThreads.ts'), 'side-threads.mjs');
 // The new files this lote owns actually exist.
 for (const p of [
   'studio/src/adapters/sideThreads.ts',
+  'studio/src/adapters/condense.ts',
   'studio/src/screens/studio/SideThreadsPanel.tsx',
   'studio/src/screens/studio/ExploreDialog.tsx',
+  'studio/src/screens/studio/CondenseDialog.tsx',
 ]) {
   assert(existsSync(path(p)), `missing ${p}`);
 }
@@ -191,4 +285,4 @@ if (failed) {
   console.error(`\n${failed} check(s) failed.`);
   process.exit(1);
 }
-console.log('\nSide threads (Lote B, CONTRATO_EXCURSOS.md): all checks passed');
+console.log('\nSide threads (Lote B, CONTRATO_EXCURSOS.md + CONTRATO_CABLES2 Lote B): all checks passed');

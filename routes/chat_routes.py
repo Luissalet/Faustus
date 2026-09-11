@@ -1701,11 +1701,21 @@ def setup_chat_routes(
                     ),
                 },
             )
+            _side_thread_wires = getattr(ctx, "side_thread_wires", None)
+            if _side_thread_wires:
+                _clean_md["side_thread_wires"] = _side_thread_wires
             sess.add_message(ChatMessage("assistant", _clean_reply, metadata=_clean_md))
 
             from core.database import update_session_last_accessed
             update_session_last_accessed(session)
             session_manager.save_sessions()
+
+            if _side_thread_wires:
+                try:
+                    from src.side_threads import note_wires_used
+                    note_wires_used(_side_thread_wires)
+                except Exception:
+                    logger.debug("side_threads.note_wires_used failed", exc_info=True)
 
             # Background tasks (memory, webhook, auto-name)
             run_post_response_tasks(
@@ -3250,6 +3260,7 @@ def setup_chat_routes(
                                     _terminal_metrics,
                                     character_name=ctx.preset.character_name,
                                     incognito=incognito,
+                                    wires=getattr(ctx, "side_thread_wires", None),
                                 )
                                 accumulate_token_usage(session, _terminal_metrics)
                                 _chat_terminal_saved = True
@@ -3320,6 +3331,7 @@ def setup_chat_routes(
                                     used_memories=ctx.used_memories,
                                     do_research=effective_do_research,
                                     incognito=incognito,
+                                    wires=getattr(ctx, "side_thread_wires", None),
                                 )
                                 if _saved_id:
                                     yield f'data: {json.dumps({"type": "message_saved", "id": _saved_id})}\n\n'
@@ -3675,6 +3687,7 @@ def setup_chat_routes(
                                             rag_sources=ctx.rag_sources,
                                             used_memories=ctx.used_memories,
                                             incognito=incognito,
+                                            wires=getattr(ctx, "side_thread_wires", None),
                                         )
                                         _terminal_saved = True
                                         accumulate_token_usage(session, terminal_metadata)
@@ -3737,6 +3750,7 @@ def setup_chat_routes(
                                     rag_sources=ctx.rag_sources,
                                     used_memories=ctx.used_memories,
                                     incognito=incognito,
+                                    wires=getattr(ctx, "side_thread_wires", None),
                                 )
                                 if _saved_id:
                                     yield f'data: {json.dumps({"type": "message_saved", "id": _saved_id})}\n\n'
@@ -4127,7 +4141,26 @@ def setup_chat_routes(
         # `Session.get_context_messages` applies, scoped to the slice up to
         # and including the trigger turn (that method's own index would not
         # line up with `history`'s once a filtered message sits before it).
-        messages = [
+        #
+        # CONTRATO_CABLES2 F1 fix: this route builds `messages` straight
+        # from `sess.history`, never through `build_chat_context` — so
+        # without this, regenerating a reply in a session with any wire
+        # (excurso materials, references, a branch anchor) silently lost
+        # ALL of it, the one caller `routes/chat_helpers.py::
+        # build_chat_context` does not cover. Insert the same
+        # `inherited_context_with_snapshot` the normal turn hook uses, and
+        # carry its snapshot onto the regenerated reply exactly like
+        # `save_assistant_response`'s other callers do, so the wire's own
+        # `stale`/`stale_turns` bookkeeping stays correct after a regenerate
+        # too.
+        try:
+            from src.side_threads import inherited_context_with_snapshot
+            _inherited, _wires_snapshot = inherited_context_with_snapshot(session_manager, owner, sid)
+        except Exception:
+            logger.debug("side_threads.inherited_context_with_snapshot failed for regenerate", exc_info=True)
+            _inherited, _wires_snapshot = [], []
+
+        messages = list(_inherited) + [
             {"role": m.role, "content": m.content}
             for m in history[:trigger_idx + 1]
             if (m.metadata or {}).get("source") != "slash"
@@ -4163,6 +4196,7 @@ def setup_chat_routes(
                 saved_id = save_assistant_response(
                     sess, session_manager, sid,
                     full_response.strip() or "Done.", metrics_to_save,
+                    wires=_wires_snapshot,
                 )
                 if saved_id:
                     yield f'data: {json.dumps({"type": "message_saved", "id": saved_id})}\n\n'
