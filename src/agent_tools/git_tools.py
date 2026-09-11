@@ -18,15 +18,21 @@ panel itself uses — see that module's docstring) — no subprocess of our own:
     git_pull      remote pull --ff-only
     git_fetch     remote fetch
 
-Workspace confinement
-----------------------
-Every tool resolves its (optional) `path` argument through
+Workspace confinement and repo resolution (Lote 90)
+-----------------------------------------------------
+`path` is optional on all eleven. When given, it resolves through
 `src.tool_execution._resolve_tool_path` — the SAME allowlist read_file/
 write_file/manage_spreadsheet already confine to (the turn's workspace, plus
-any other file/folder roots linked to the session's project). A `path` that
-escapes those roots, or a workspace with no repo at or above it, is refused
-before any `git` process runs — `error_class` `git.outside_workspace` /
-`git.not_a_repo`. An omitted `path` defaults to the active workspace itself.
+any other file/folder roots linked to the session's project) — and a `path`
+that escapes those roots, or has no repo at or above it, is refused before
+any `git` process runs (`error_class` `git.outside_workspace` /
+`git.not_a_repo`). Without `path`, "the repo"/"the project's repo" resolves
+on its own (`_repo_root` in this module): a `repo` name (exact or a unique
+case-insensitive prefix, among the repos the session's PROJECT links) beats
+the repo containing the active workspace, which beats the project's repo
+when it only has one; several repos and none of those picking one is
+`error_class` `git.which_repo` with the repo names, for the model to relay
+via `ask_user` — see docs/api/git.md "Lenguaje natural".
 
 Agent git policy gate (src/agent_git_policy.py)
 -------------------------------------------------
@@ -94,6 +100,27 @@ class _NotARepo(ValueError):
     """No `.git` found at or above the confined path."""
 
 
+class _WhichRepo(ValueError):
+    """Neither `path` nor `repo` picked a repo, the active workspace isn't
+    inside one either, and the session's project links more than one repo --
+    the caller has to say which (Lote 90)."""
+
+    def __init__(self, names: List[str]):
+        super().__init__(f"multiple repositories in this project: {', '.join(names)}")
+        self.names = names
+
+
+class _RepoNotFound(ValueError):
+    """`repo` named something that matches none of the project's repos,
+    exactly or by a unique prefix (Lote 90)."""
+
+    def __init__(self, query: str, names: List[str]):
+        have = ", ".join(names) if names else "(this project has none)"
+        super().__init__(f"no repository named {query!r} in this project (have: {have})")
+        self.query = query
+        self.names = names
+
+
 def _confined_path(raw_path: str) -> str:
     """`raw_path` resolved and confined to the turn's active workspace roots
     (`src.tool_execution._resolve_tool_path` — the same allowlist read_file/
@@ -116,19 +143,126 @@ def _confined_path(raw_path: str) -> str:
         raise _OutsideWorkspace(str(exc)) from exc
 
 
-def _repo_root(raw_path: str) -> str:
-    """The git repo containing `raw_path` (or the active workspace) --
-    `path` may be a subdirectory of the repo, not its root.  Raises
-    `_OutsideWorkspace` / `_NotARepo`; callers turn those into `error_class`
-    `git.outside_workspace` / `git.not_a_repo`."""
-    confined = _confined_path(raw_path)
-    root = git_panel.repo_toplevel(confined)
-    if not root:
-        raise _NotARepo(f"no git repository found at or above {confined!r}")
-    return root
+def _project_repos(owner: str, project_id: str) -> List[Dict[str, Any]]:
+    """Repos discovered under the session's PROJECT (Lote 90) -- every folder
+    the project links, not just the turn's active workspace. Empty when there
+    is no project bound, or discovery fails for any reason (a missing `git`
+    on the host, say) -- callers fall back to the workspace/error path rather
+    than blow up a git tool call over the convenience lookup."""
+    if not owner or not project_id:
+        return []
+    try:
+        repos = git_panel.discover_repos_for_owner(owner, project_id)
+    except Exception:
+        logger.debug("git_tools: discover_repos_for_owner(%r) failed", project_id, exc_info=True)
+        return []
+    return repos or []
+
+
+def _match_repo_by_name(repos: List[Dict[str, Any]], name: str) -> Dict[str, Any]:
+    """`name` against `repos`' own `name` field: exact match first (case-
+    insensitive), else a unique case-insensitive prefix match. Raises
+    `_WhichRepo` when the prefix matches more than one, `_RepoNotFound` when
+    it matches none."""
+    needle = name.strip().lower()
+    exact = [r for r in repos if str(r.get("name") or "").lower() == needle]
+    if exact:
+        return exact[0]
+    prefix = [r for r in repos if str(r.get("name") or "").lower().startswith(needle)]
+    if len(prefix) == 1:
+        return prefix[0]
+    all_names = sorted({str(r.get("name") or "") for r in repos if r.get("name")})
+    if len(prefix) > 1:
+        raise _WhichRepo(sorted({str(r.get("name") or "") for r in prefix}))
+    raise _RepoNotFound(name, all_names)
+
+
+def _repo_root(raw_path: str, repo_name: str = "", ctx: Optional[dict] = None) -> str:
+    """Resolve the repo a git_* tool call targets (Lote 90 -- "que no tenga
+    que ser todo tan explicito": a user can say "the repo" without naming a
+    tool or a path). Order:
+
+    1. explicit `path` -- confined to the turn's workspace roots, as before
+       (`_confined_path` -> `git_panel.repo_toplevel`); may be a subdirectory
+       of the repo, not its root.
+    2. `repo` by name -- exact match, else a unique case-insensitive prefix
+       match, among the repos discovered under the session's PROJECT
+       (`ctx["project_id"]`) -- a project can link folders beyond the turn's
+       own workspace, so this is not limited to `_confined_path`'s roots.
+    3. the repo containing the turn's active workspace (the original,
+       path-omitted fallback).
+    4. the project's only repo, when it has exactly one and steps 1-3 found
+       nothing.
+    5. otherwise `_WhichRepo` -- the project has several and nothing above
+       picked one; the caller turns that into `error_class` `git.which_repo`
+       with the repo names, so the model can `ask_user`.
+
+    Raises `_OutsideWorkspace` / `_NotARepo` / `_WhichRepo` / `_RepoNotFound`;
+    callers turn those into the matching `error_class` via `_repo_error`.
+    """
+    raw_path = str(raw_path or "").strip()
+    repo_name = str(repo_name or "").strip()
+    ctx = ctx or {}
+
+    if raw_path:
+        confined = _confined_path(raw_path)
+        root = git_panel.repo_toplevel(confined)
+        if not root:
+            raise _NotARepo(f"no git repository found at or above {confined!r}")
+        return root
+
+    owner = _owner(ctx)
+    project_id = str(ctx.get("project_id") or "")
+    repos = _project_repos(owner, project_id)
+
+    if repo_name:
+        return _match_repo_by_name(repos, repo_name)["path"]
+
+    workspace_err: Optional[Exception] = None
+    confined = ""
+    try:
+        confined = _confined_path("")
+    except _OutsideWorkspace as exc:
+        workspace_err = exc
+    if confined:
+        root = git_panel.repo_toplevel(confined)
+        if root:
+            return root
+
+    if len(repos) == 1:
+        return repos[0]["path"]
+    if len(repos) > 1:
+        raise _WhichRepo(sorted({str(r.get("name") or "") for r in repos}))
+
+    if workspace_err is not None:
+        raise workspace_err
+    raise _NotARepo(f"no git repository found at or above {confined!r}")
+
+
+def _resolve_repo_root(tool: str, args: Dict[str, Any], ctx: dict) -> "tuple[Optional[str], Optional[Dict[str, Any]]]":
+    """`(repo_root, None)` on success, else `(None, error_result)` -- the
+    shared entry point every Tool.execute below calls instead of `_repo_root`
+    directly, so the five ways resolution can fail all map onto the same
+    `error_class` vocabulary in one place."""
+    try:
+        repo_root = _repo_root(str(args.get("path") or ""), str(args.get("repo") or ""), ctx)
+    except (_OutsideWorkspace, _NotARepo, _WhichRepo, _RepoNotFound) as exc:
+        return None, _repo_error(tool, exc)
+    return repo_root, None
 
 
 def _repo_error(tool: str, exc: Exception) -> Dict[str, Any]:
+    if isinstance(exc, _WhichRepo):
+        return {
+            "error": f"{tool}: this project has more than one repository ({', '.join(exc.names)}) -- "
+                     "pass `repo` with one of these names (or `path`). Ask the user which one.",
+            "exit_code": 1, "error_class": "git.which_repo", "repos": list(exc.names),
+        }
+    if isinstance(exc, _RepoNotFound):
+        return {
+            "error": f"{tool}: {exc}",
+            "exit_code": 1, "error_class": "git.repo_not_found", "repos": list(exc.names),
+        }
     error_class = "git.outside_workspace" if isinstance(exc, _OutsideWorkspace) else "git.not_a_repo"
     return {"error": f"{tool}: {exc}", "exit_code": 1, "error_class": error_class}
 
@@ -248,10 +382,9 @@ class GitStatusTool:
 
     async def execute(self, content: str, ctx: dict) -> dict:
         args = _args(content)
-        try:
-            repo_root = _repo_root(str(args.get("path") or ""))
-        except (_OutsideWorkspace, _NotARepo) as exc:
-            return _repo_error("git_status", exc)
+        repo_root, _repo_err = _resolve_repo_root("git_status", args, ctx)
+        if _repo_err:
+            return _repo_err
         try:
             limit = max(1, min(int(args.get("limit") or 10), 100))
         except (TypeError, ValueError):
@@ -281,10 +414,9 @@ class GitLogTool:
 
     async def execute(self, content: str, ctx: dict) -> dict:
         args = _args(content)
-        try:
-            repo_root = _repo_root(str(args.get("path") or ""))
-        except (_OutsideWorkspace, _NotARepo) as exc:
-            return _repo_error("git_log", exc)
+        repo_root, _repo_err = _resolve_repo_root("git_log", args, ctx)
+        if _repo_err:
+            return _repo_err
         try:
             limit = max(1, min(int(args.get("limit") or 20), 500))
         except (TypeError, ValueError):
@@ -305,10 +437,9 @@ class GitDiffTool:
 
     async def execute(self, content: str, ctx: dict) -> dict:
         args = _args(content)
-        try:
-            repo_root = _repo_root(str(args.get("path") or ""))
-        except (_OutsideWorkspace, _NotARepo) as exc:
-            return _repo_error("git_diff", exc)
+        repo_root, _repo_err = _resolve_repo_root("git_diff", args, ctx)
+        if _repo_err:
+            return _repo_err
         commit = str(args.get("commit") or "").strip()
         raw_path = str(args.get("path_in_repo") or args.get("file") or "").strip()
         staged = bool(args.get("staged"))
@@ -359,10 +490,9 @@ class GitBranchTool:
 
     async def execute(self, content: str, ctx: dict) -> dict:
         args = _args(content)
-        try:
-            repo_root = _repo_root(str(args.get("path") or ""))
-        except (_OutsideWorkspace, _NotARepo) as exc:
-            return _repo_error("git_branch", exc)
+        repo_root, _repo_err = _resolve_repo_root("git_branch", args, ctx)
+        if _repo_err:
+            return _repo_err
         policy = _effective_policy(_owner(ctx), repo_root)
         denial = _policy_denied("git_branch", "use_branch", ctx, args, allowed=bool(policy.get("use_branch")))
         if denial:
@@ -387,10 +517,9 @@ class GitCheckoutTool:
 
     async def execute(self, content: str, ctx: dict) -> dict:
         args = _args(content)
-        try:
-            repo_root = _repo_root(str(args.get("path") or ""))
-        except (_OutsideWorkspace, _NotARepo) as exc:
-            return _repo_error("git_checkout", exc)
+        repo_root, _repo_err = _resolve_repo_root("git_checkout", args, ctx)
+        if _repo_err:
+            return _repo_err
         policy = _effective_policy(_owner(ctx), repo_root)
         denial = _policy_denied("git_checkout", "use_branch", ctx, args, allowed=bool(policy.get("use_branch")))
         if denial:
@@ -421,10 +550,9 @@ class GitCommitTool:
 
     async def execute(self, content: str, ctx: dict) -> dict:
         args = _args(content)
-        try:
-            repo_root = _repo_root(str(args.get("path") or ""))
-        except (_OutsideWorkspace, _NotARepo) as exc:
-            return _repo_error("git_commit", exc)
+        repo_root, _repo_err = _resolve_repo_root("git_commit", args, ctx)
+        if _repo_err:
+            return _repo_err
         policy = _effective_policy(_owner(ctx), repo_root)
         denial = _policy_denied("git_commit", "commit", ctx, args, allowed=bool(policy.get("commit")))
         if denial:
@@ -474,10 +602,9 @@ class GitMergeTool:
 
     async def execute(self, content: str, ctx: dict) -> dict:
         args = _args(content)
-        try:
-            repo_root = _repo_root(str(args.get("path") or ""))
-        except (_OutsideWorkspace, _NotARepo) as exc:
-            return _repo_error("git_merge", exc)
+        repo_root, _repo_err = _resolve_repo_root("git_merge", args, ctx)
+        if _repo_err:
+            return _repo_err
         policy = _effective_policy(_owner(ctx), repo_root)
         denial = _policy_denied("git_merge", "use_branch", ctx, args, allowed=bool(policy.get("use_branch")))
         if denial:
@@ -509,10 +636,9 @@ class GitDeleteBranchTool:
 
     async def execute(self, content: str, ctx: dict) -> dict:
         args = _args(content)
-        try:
-            repo_root = _repo_root(str(args.get("path") or ""))
-        except (_OutsideWorkspace, _NotARepo) as exc:
-            return _repo_error("git_delete_branch", exc)
+        repo_root, _repo_err = _resolve_repo_root("git_delete_branch", args, ctx)
+        if _repo_err:
+            return _repo_err
         policy = _effective_policy(_owner(ctx), repo_root)
         denial = _policy_denied("git_delete_branch", "use_branch", ctx, args, allowed=bool(policy.get("use_branch")))
         if denial:
@@ -538,10 +664,9 @@ class GitPushTool:
 
     async def execute(self, content: str, ctx: dict) -> dict:
         args = _args(content)
-        try:
-            repo_root = _repo_root(str(args.get("path") or ""))
-        except (_OutsideWorkspace, _NotARepo) as exc:
-            return _repo_error("git_push", exc)
+        repo_root, _repo_err = _resolve_repo_root("git_push", args, ctx)
+        if _repo_err:
+            return _repo_err
         policy = _effective_policy(_owner(ctx), repo_root)
         denial = _policy_denied("git_push", "push", ctx, args, allowed=bool(policy.get("push")))
         if denial:
@@ -562,10 +687,9 @@ class GitPullTool:
 
     async def execute(self, content: str, ctx: dict) -> dict:
         args = _args(content)
-        try:
-            repo_root = _repo_root(str(args.get("path") or ""))
-        except (_OutsideWorkspace, _NotARepo) as exc:
-            return _repo_error("git_pull", exc)
+        repo_root, _repo_err = _resolve_repo_root("git_pull", args, ctx)
+        if _repo_err:
+            return _repo_err
         remote = str(args.get("remote") or "").strip() or None
         branch = str(args.get("branch") or "").strip() or None
         try:
@@ -581,10 +705,9 @@ class GitFetchTool:
 
     async def execute(self, content: str, ctx: dict) -> dict:
         args = _args(content)
-        try:
-            repo_root = _repo_root(str(args.get("path") or ""))
-        except (_OutsideWorkspace, _NotARepo) as exc:
-            return _repo_error("git_fetch", exc)
+        repo_root, _repo_err = _resolve_repo_root("git_fetch", args, ctx)
+        if _repo_err:
+            return _repo_err
         remote = str(args.get("remote") or "").strip() or None
         prune = bool(args.get("prune"))
         try:

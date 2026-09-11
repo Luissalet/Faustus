@@ -425,6 +425,7 @@ _AGENT_RULES = """\
 - A NEW SYSTEM IS DECIDED WITH THE USER FIRST. "Implement X" / "add auth" / "make me a system for Y" with at least two reasonable designs (where the data lives, which framework or language, where it goes, how far the scope reaches) that neither the request nor the code settles: your FIRST action is `ask_user` with 2-4 options (recommended first, one line each) and you write NOTHING until they answer. A small edit has one obvious reading - just do it; a new system has several - ask, once, and only about what you cannot decide yourself.
 - User identity facts/preferences ("my name is X", "call me X", "I live in X") use `manage_memory`, not contacts.
 - For git, use the git_* tools, not bash: they respect the user's repository policy and show up in the Source control panel.
+- When the user talks about branches, commits, pushes or "the repo" without naming one, use git_* with `repo` (name) or no path at all — they resolve to the project's repository; only ask which one if there are several.
 """
 
 _API_AGENT_RULES = """\
@@ -441,6 +442,7 @@ _API_AGENT_RULES = """\
 - A NEW SYSTEM IS DECIDED WITH THE USER FIRST. "Implement X" / "add auth" / "make me a system for Y" with at least two reasonable designs (where the data lives, which framework or language, where it goes, how far the scope reaches) that neither the request nor the code settles: your FIRST action is `ask_user` with 2-4 options (recommended first, one line each) and you write NOTHING until they answer. A small edit has one obvious reading - just do it; a new system has several - ask, once, and only about what you cannot decide yourself.
 - User identity facts/preferences ("my name is X", "call me X", "I live in X") use `manage_memory`, not contacts.
 - For git, use the git_* tools, not bash: they respect the user's repository policy and show up in the Source control panel.
+- When the user talks about branches, commits, pushes or "the repo" without naming one, use git_* with `repo` (name) or no path at all — they resolve to the project's repository; only ask which one if there are several.
 """
 
 _LINK_RULES = """\
@@ -1657,6 +1659,86 @@ def _workspace_coding_rules(workspace: Optional[str]) -> str:
         "- After code changes, run the smallest relevant verification command you can infer from the repo (for example a focused test, `py_compile`, `node --check`, lint, or build). If verification cannot run, say exactly why.\n"
         "- Keep going until the requested change is actually made and checked, or state the concrete blocker."
     )
+
+
+_REPOS_BLOCK_CACHE: Dict[Tuple[str, str], Tuple[float, str]] = {}
+_REPOS_BLOCK_TTL = 20.0
+_REPOS_BLOCK_MAX_REPOS = 12
+_REPOS_BLOCK_MAX_CHARS = 400
+
+
+def _project_repos_block(owner: Optional[str], project_id: str) -> str:
+    """Lote 90 — "Repositories in this project": Luis's own framing ("que no
+    tenga que ser todo tan explicito ... un usuario no deberia saberse de
+    memoria todas las tools de Faustus") extended to git — without this, the
+    model has no way to know what "the repo" or "this project's repo" means
+    when the user names neither a tool nor a path. One compact line per repo
+    (name, branch, ahead/behind, dirty count, ssh identity when the origin
+    remote matches a known alias) using `git_panel`'s light summary mode (see
+    docs/api/git.md "Rendimiento") — never the heavier full mode, since this
+    runs on every prompt build, not a one-off panel poll.
+
+    Cached `_REPOS_BLOCK_TTL` seconds per (owner, project_id): uncached, every
+    turn would pay a fresh `git status` (+ `git remote -v` for identity) per
+    repo just to build a system prompt. Capped at `_REPOS_BLOCK_MAX_REPOS`
+    repos and `_REPOS_BLOCK_MAX_CHARS` characters — a project with many repos
+    still costs the prompt almost nothing; ``git_*`` tool calls still resolve
+    a repo the block had to omit (`src/agent_tools/git_tools.py::_repo_root`
+    queries the same discovery directly, uncapped).
+
+    Empty string when the project has no repos, has none bound, or discovery
+    fails for any reason (never blocks a prompt build over this)."""
+    if not owner or not project_id:
+        return ""
+    key = (str(owner), str(project_id))
+    now = time.monotonic()
+    cached = _REPOS_BLOCK_CACHE.get(key)
+    if cached is not None and (now - cached[0]) < _REPOS_BLOCK_TTL:
+        return cached[1]
+
+    text = ""
+    try:
+        from src import git_panel
+        from src import git_identities
+
+        metas = git_panel.discover_repos_for_owner(owner, project_id) or []
+        if metas:
+            metas = metas[:_REPOS_BLOCK_MAX_REPOS]
+            rows = git_panel.repo_summaries(metas, light=True)
+            header = "\n\n## Repositories in this project\n"
+            lines: List[str] = []
+            for row in rows:
+                name = str(row.get("name") or row.get("id") or "repo")
+                branch = row.get("branch") or ("(detached)" if row.get("detached") else "(unborn)")
+                dirty = sum((row.get("dirty") or {}).values())
+                ident_suffix = ""
+                try:
+                    ident = git_identities.active_identity_for_repo(str(row.get("path") or ""), owner)
+                    if ident and ident.get("label"):
+                        ident_suffix = f" ({ident['label']})"
+                except Exception:
+                    pass
+                lines.append(
+                    f"- {name}: {branch} +{row.get('ahead', 0)}/-{row.get('behind', 0)} "
+                    f"{dirty}d{ident_suffix}\n"
+                )
+            acc = header
+            shown = 0
+            for line in lines:
+                if len(acc) + len(line) > _REPOS_BLOCK_MAX_CHARS:
+                    break
+                acc += line
+                shown += 1
+            omitted = len(rows) - shown
+            if omitted > 0:
+                acc += f"- ... and {omitted} more (ask the user, or name the repo)\n"
+            text = acc
+    except Exception:
+        logger.debug("[repos-block] failed to build project repos block", exc_info=True)
+        text = ""
+
+    _REPOS_BLOCK_CACHE[key] = (now, text)
+    return text
 
 
 def _strip_think_blocks(text: str) -> str:
@@ -3108,6 +3190,24 @@ def _build_system_prompt(
         and (set(relevant_tools) & _WORKSPACE_TERMINUS_TOOLS)
     ):
         agent_prompt += _local_computer_rules()
+
+    # Lote 90 — "Repositories in this project": tells the model what "the
+    # repo"/"this project's repo" means so the user never has to name a tool
+    # or a path (see _project_repos_block above). Independent of the
+    # workspace branch above — a project can have repos even on a turn whose
+    # own `workspace` is unset or points elsewhere — gated only on having a
+    # session/owner to resolve the project from, and on suppress_local_context
+    # like every other project-scoped addition here.
+    if not suppress_local_context and session_id and owner:
+        try:
+            from services.projects import project_for_session as _project_for_session
+            _repos_project = _project_for_session(session_id, owner)
+            _repos_project_id = str((_repos_project or {}).get("id") or "")
+            if _repos_project_id:
+                agent_prompt += _project_repos_block(owner, _repos_project_id)
+        except Exception as _repos_block_err:
+            logger.debug("[repos-block] injection failed: %s", _repos_block_err)
+
     # Reliability rules: the harness (src/agent_harness.py) enforces them, so
     # tell the model up front. Injected whenever file/shell tools are in play,
     # which is exactly where local models fabricate paths and claim edits.
@@ -5588,8 +5688,9 @@ async def _stream_agent_loop_body(
             from src.tool_execution import _GIT_TOOL_NAMES
             _git_read = {"git_status", "git_log", "git_diff"}
             _git_intent = bool(re.search(
-                r"\b(git|commit|commits|commitea|push|pull|fetch|rama|ramas|branch|branches|merge|"
-                r"stage|checkout|repositorio|repo)\b", _last_user or "", re.IGNORECASE))
+                r"\b(git|commit|commits|commitea|push|pull|pull request|fetch|rama|ramas|branch|branches|merge|"
+                r"mergea|mergear|fusiona|subir|sube|sincroniza|stage|checkout|repositorio|repo)\b",
+                _last_user or "", re.IGNORECASE))
             import os as _os_git
             _dot_git = _os_git.path.join(workspace, ".git")
             _has_repo = _os_git.path.isdir(_dot_git) or _os_git.path.isfile(_dot_git)

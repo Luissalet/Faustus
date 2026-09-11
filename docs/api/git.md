@@ -602,9 +602,10 @@ git_pull          remoto    pull --ff-only (nunca merge/rebase)
 git_fetch         remoto    fetch
 ```
 
-Las once aceptan un `path` opcional (por defecto, el workspace activo del
-turno); las de solo lectura devuelven además datos estructurados (`branch`,
-`commits`, `diff`, ...) junto al `output` de texto.
+Las once aceptan un `path` opcional y, desde el Lote 90, un `repo` opcional
+(nombre del repositorio — ver "Lenguaje natural" abajo); las de solo lectura
+devuelven además datos estructurados (`branch`, `commits`, `diff`, ...) junto
+al `output` de texto.
 
 `git_merge` SIEMPRE llama a `git_panel.merge` con `keep_conflicts=False` --
 nunca deja un conflicto a medio resolver para que el modelo lo arregle
@@ -618,14 +619,16 @@ fusionada del todo (`git.branch_unmerged`) -- mismo vocabulario que
 
 ### Confinamiento al workspace del turno
 
-Todo `path` se resuelve con `src.tool_execution._resolve_tool_path` — el
-MISMO allowlist que ya usan `read_file`/`write_file`/`manage_spreadsheet`
-(el workspace del turno, más cualquier carpeta enlazada al proyecto de la
-sesión). Un `path` que se sale de esas raíces, o un workspace sin repo git
-en él o por encima, se rehúsa ANTES de lanzar ningún proceso `git`:
+Cuando se da `path`, se resuelve con `src.tool_execution._resolve_tool_path`
+— el MISMO allowlist que ya usan `read_file`/`write_file`/
+`manage_spreadsheet` (el workspace del turno, más cualquier carpeta enlazada
+al proyecto de la sesión). Un `path` que se sale de esas raíces, o cuyo
+confinado no tiene repo en él ni por encima, se rehúsa ANTES de lanzar
+ningún proceso `git`:
 
 - `error_class: "git.outside_workspace"` — el path (o el workspace activo,
-  si se omitió `path`) no está dentro de las raíces confinadas del turno.
+  cuando ni `path` ni `repo` resuelven a nada — ver "Lenguaje natural" abajo)
+  no está dentro de las raíces confinadas del turno.
 - `error_class: "git.not_a_repo"` — el path confinado no tiene ningún
   `.git` en él ni por encima.
 
@@ -633,6 +636,82 @@ El resto de errores reutiliza, byte a byte, el vocabulario que ya usan las
 rutas del panel: `git.dirty`, `git.diverged`, `git.rejected`,
 `git.no_identity`, `git.nothing_to_commit`, `git.command_failed`,
 `dependency.missing` (git no está instalado en el host).
+
+### Lenguaje natural (Lote 90)
+
+Luis (literal): *"que no tenga que ser todo tan explícito… en vez de 'con la
+herramienta X en el directorio X' simplemente 'dime nosequé para el proyecto
+X'. Un usuario no debería saberse de memoria todas las tools de Faustus."*
+"¿en qué rama está el repo del proyecto?", "mergea la rama pruebas en main y
+haz push", "crea una rama para esto", "commitea lo que has cambiado" —
+funcionan sin que el usuario nombre una tool ni una ruta.
+
+**Resolución del repo (`src/agent_tools/git_tools.py::_repo_root`), en
+orden:**
+
+1. `path` explícito (como antes — confinado al workspace del turno).
+2. `repo` (nombre del repositorio): coincidencia exacta, o si no, un prefijo
+   único, insensible a mayúsculas, entre los repos que enlaza el PROYECTO de
+   la sesión — `git_panel.discover_repos_for_owner(owner, project_id)`, no
+   solo el workspace activo del turno (un proyecto puede enlazar carpetas
+   además del workspace). Varias coincidencias por prefijo, o ninguna,
+   también caen en los errores de los pasos 4-5.
+3. el repo que contiene el workspace activo del turno (`git_panel.
+   repo_toplevel` — el fallback que ya existía).
+4. si el proyecto tiene UN solo repo, ese (aunque el workspace activo no
+   esté dentro de él, o no haya workspace).
+5. si el proyecto tiene VARIOS y nada de lo anterior resolvió uno:
+   `error_class: "git.which_repo"` con `"repos": [nombres]` — pensado para
+   que el modelo pregunte con `ask_user` ("¿cuál: a, b, c?"), nunca para que
+   adivine. `repo` con un nombre que no coincide con ninguno (ni exacto ni
+   por prefijo) es `error_class: "git.repo_not_found"` con `"repos"`: los
+   nombres que sí existen en el proyecto.
+
+`ctx["project_id"]` (el paso 2) ya viaja hasta la tool sin cambios en
+`tool_execution.py`: `_direct_fallback` lo pone en el `ctx` de TODAS las
+tools desde `turn_options["harness_options"]["project_id"]`
+(`services/projects.py::agent_options`, poblado por
+`routes/chat_routes.py` desde `project_for_session(session_id, owner)`) —
+ver el comentario de ese campo en `tool_execution.py::_direct_fallback`. Las
+tools git_* solo tenían que empezar a LEER esa clave, ya presente.
+
+**Contexto del proyecto en el prompt** (`src/agent_loop.py::
+_project_repos_block`, llamado desde `_build_system_prompt`): cuando el
+proyecto de la sesión tiene repos, el prompt del sistema gana una sección
+compacta que dice al modelo qué es "el repo":
+
+```
+## Repositories in this project
+- faustus: master +0/-2 3d (Luissalet)
+- other-repo: main +1/-0 0d
+```
+
+Una línea por repo — nombre, rama (o `(detached)`/`(unborn)`),
+ahead/behind, nº de ficheros sucios, alias de identidad ssh entre paréntesis
+cuando el remoto `origin` hace match (`git_identities.
+active_identity_for_repo`) — usando el modo `light` de `git_panel.
+repo_summaries` (un solo `git status` por repo; ver "Rendimiento" arriba),
+nunca el modo completo. Cacheada 20 s por `(owner, project_id)`
+(`agent_loop._REPOS_BLOCK_CACHE`) — corre en cada construcción del prompt,
+así que sin caché cada turno pagaría un `git status`+`git remote -v` fresco
+por repo solo para montar el prompt. Acotada a 12 repos y 400 caracteres
+(`_REPOS_BLOCK_MAX_REPOS`/`_REPOS_BLOCK_MAX_CHARS`) — un proyecto con más
+repos de los que caben en el bloque simplemente no los lista todos ahí (las
+tools git_* sí los resuelven igualmente por nombre, sin ese límite: el
+recorte es solo del texto del prompt). Vacía — no añade nada — cuando la
+sesión no tiene proyecto, o el proyecto no tiene repos.
+
+**Reglas del agente** (`_AGENT_RULES`/`_API_AGENT_RULES` en
+`src/agent_loop.py`): *"When the user talks about branches, commits, pushes
+or 'the repo' without naming one, use git_* with `repo` (name) or no path at
+all — they resolve to the project's repository; only ask which one if there
+are several."*
+
+**Detección de intención git** (`_git_intent`, el regex que decide si el
+turno recibe las git_* tools de escritura — ver "Herramientas del agente"
+arriba): además de `git|commit|commits|commitea|push|pull|fetch|rama|
+ramas|branch|branches|merge|stage|checkout|repositorio|repo`, ahora también
+`mergea|mergear|fusiona|subir|sube|sincroniza|pull request`.
 
 ### Política de git del agente y aprobación humana
 

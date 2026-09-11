@@ -1952,7 +1952,7 @@ FUNCTION_TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "git_status",
-            "description": "Git status of the repo at `path` (or the active workspace): current branch, ahead/behind its upstream, staged/unstaged/untracked/conflicted files, and the last `limit` commits. Read-only. `path` (and every git tool's `path`) is confined to this turn's workspace / the session's project folders; a repo outside that is refused.",
+            "description": "Git status of a repo: current branch, ahead/behind its upstream, staged/unstaged/untracked/conflicted files, and the last `limit` commits. Read-only. Every git tool accepts an optional `path` or `repo` (see below) -- when neither is given, and the project has more than one repo and the active workspace isn't inside any of them, the call is refused with error_class git.which_repo naming the repo choices; ask the user which one. `path` is confined to this turn's workspace / the session's project folders; a repo outside that is refused.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -1971,7 +1971,8 @@ FUNCTION_TOOL_SCHEMAS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "path": {"type": "string", "description": "Path inside the repo (optional; defaults to the active workspace)"},
+                    "path": {"type": "string", "description": "Path inside the repo (optional). Resolution order when omitted: `repo` (by name) > the repo containing the active workspace > the project's only repo (if it has just one) > ambiguous (error git.which_repo, listing the repo names) when the project has several and none of those picked one."},
+                    "repo": {"type": "string", "description": "Repo name instead of `path` -- matched by exact name, or a unique case-insensitive prefix, among the repos linked to this session's project. Usually unnecessary: leave both `path` and `repo` empty to use the active workspace's repo, or the project's only repo."},
                     "limit": {"type": "integer", "minimum": 1, "maximum": 500, "description": "Commits to return (default 20)"},
                     "ref": {"type": "string", "description": "Branch/ref to walk (default HEAD); 'all' walks every ref"},
                     "cursor": {"type": "string", "description": "Page cursor from a prior call's `next_cursor` (optional)"}
@@ -1988,7 +1989,8 @@ FUNCTION_TOOL_SCHEMAS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "path": {"type": "string", "description": "Path inside the repo (optional; defaults to the active workspace)"},
+                    "path": {"type": "string", "description": "Path inside the repo (optional). Resolution order when omitted: `repo` (by name) > the repo containing the active workspace > the project's only repo (if it has just one) > ambiguous (error git.which_repo, listing the repo names) when the project has several and none of those picked one."},
+                    "repo": {"type": "string", "description": "Repo name instead of `path` -- matched by exact name, or a unique case-insensitive prefix, among the repos linked to this session's project. Usually unnecessary: leave both `path` and `repo` empty to use the active workspace's repo, or the project's only repo."},
                     "path_in_repo": {"type": "string", "description": "Limit the diff to this one file, relative to the repo root (optional)"},
                     "staged": {"type": "boolean", "description": "Diff the index against HEAD instead of the working tree against the index (ignored when `commit` is set)"},
                     "commit": {"type": "string", "description": "Diff this commit against its parent instead of the working tree (a sha or ref)"}
@@ -2005,7 +2007,8 @@ FUNCTION_TOOL_SCHEMAS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "path": {"type": "string", "description": "Path inside the repo (optional; defaults to the active workspace)"},
+                    "path": {"type": "string", "description": "Path inside the repo (optional). Resolution order when omitted: `repo` (by name) > the repo containing the active workspace > the project's only repo (if it has just one) > ambiguous (error git.which_repo, listing the repo names) when the project has several and none of those picked one."},
+                    "repo": {"type": "string", "description": "Repo name instead of `path` -- matched by exact name, or a unique case-insensitive prefix, among the repos linked to this session's project. Usually unnecessary: leave both `path` and `repo` empty to use the active workspace's repo, or the project's only repo."},
                     "name": {"type": "string", "description": "New branch name"},
                     "start_point": {"type": "string", "description": "Commit/branch to start from (optional; defaults to HEAD)"},
                     "checkout": {"type": "boolean", "description": "Check out the new branch immediately (default true)"},
@@ -2023,7 +2026,8 @@ FUNCTION_TOOL_SCHEMAS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "path": {"type": "string", "description": "Path inside the repo (optional; defaults to the active workspace)"},
+                    "path": {"type": "string", "description": "Path inside the repo (optional). Resolution order when omitted: `repo` (by name) > the repo containing the active workspace > the project's only repo (if it has just one) > ambiguous (error git.which_repo, listing the repo names) when the project has several and none of those picked one."},
+                    "repo": {"type": "string", "description": "Repo name instead of `path` -- matched by exact name, or a unique case-insensitive prefix, among the repos linked to this session's project. Usually unnecessary: leave both `path` and `repo` empty to use the active workspace's repo, or the project's only repo."},
                     "branch": {"type": "string", "description": "Branch to check out"},
                     "user_confirmed": {"type": "boolean", "description": "Set true ONLY after the user explicitly approved this exact action — required when the repo's policy would otherwise refuse it"}
                 },
@@ -2039,7 +2043,8 @@ FUNCTION_TOOL_SCHEMAS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "path": {"type": "string", "description": "Path inside the repo (optional; defaults to the active workspace)"},
+                    "path": {"type": "string", "description": "Path inside the repo (optional). Resolution order when omitted: `repo` (by name) > the repo containing the active workspace > the project's only repo (if it has just one) > ambiguous (error git.which_repo, listing the repo names) when the project has several and none of those picked one."},
+                    "repo": {"type": "string", "description": "Repo name instead of `path` -- matched by exact name, or a unique case-insensitive prefix, among the repos linked to this session's project. Usually unnecessary: leave both `path` and `repo` empty to use the active workspace's repo, or the project's only repo."},
                     "branch": {"type": "string", "description": "Branch (or ref) to merge into the current branch"},
                     "ff": {"type": "string", "enum": ["auto", "only", "no"], "description": "Fast-forward mode (default 'auto')"},
                     "message": {"type": "string", "description": "Merge commit message (optional; used only when a merge commit is created)"},
@@ -2057,7 +2062,8 @@ FUNCTION_TOOL_SCHEMAS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "path": {"type": "string", "description": "Path inside the repo (optional; defaults to the active workspace)"},
+                    "path": {"type": "string", "description": "Path inside the repo (optional). Resolution order when omitted: `repo` (by name) > the repo containing the active workspace > the project's only repo (if it has just one) > ambiguous (error git.which_repo, listing the repo names) when the project has several and none of those picked one."},
+                    "repo": {"type": "string", "description": "Repo name instead of `path` -- matched by exact name, or a unique case-insensitive prefix, among the repos linked to this session's project. Usually unnecessary: leave both `path` and `repo` empty to use the active workspace's repo, or the project's only repo."},
                     "name": {"type": "string", "description": "Branch to delete"},
                     "force": {"type": "boolean", "description": "Delete even if not fully merged (default false)"},
                     "user_confirmed": {"type": "boolean", "description": "Set true ONLY after the user explicitly approved this exact action — required when the repo's policy would otherwise refuse it"}
@@ -2074,7 +2080,8 @@ FUNCTION_TOOL_SCHEMAS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "path": {"type": "string", "description": "Path inside the repo (optional; defaults to the active workspace)"},
+                    "path": {"type": "string", "description": "Path inside the repo (optional). Resolution order when omitted: `repo` (by name) > the repo containing the active workspace > the project's only repo (if it has just one) > ambiguous (error git.which_repo, listing the repo names) when the project has several and none of those picked one."},
+                    "repo": {"type": "string", "description": "Repo name instead of `path` -- matched by exact name, or a unique case-insensitive prefix, among the repos linked to this session's project. Usually unnecessary: leave both `path` and `repo` empty to use the active workspace's repo, or the project's only repo."},
                     "message": {"type": "string", "description": "Commit message"},
                     "paths": {"type": "array", "items": {"type": "string"}, "description": "Files to stage and commit, relative to the repo root or the active workspace. Required — never staged implicitly."},
                     "amend": {"type": "boolean", "description": "Amend the previous commit instead of creating a new one (default false)"},
@@ -2092,7 +2099,8 @@ FUNCTION_TOOL_SCHEMAS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "path": {"type": "string", "description": "Path inside the repo (optional; defaults to the active workspace)"},
+                    "path": {"type": "string", "description": "Path inside the repo (optional). Resolution order when omitted: `repo` (by name) > the repo containing the active workspace > the project's only repo (if it has just one) > ambiguous (error git.which_repo, listing the repo names) when the project has several and none of those picked one."},
+                    "repo": {"type": "string", "description": "Repo name instead of `path` -- matched by exact name, or a unique case-insensitive prefix, among the repos linked to this session's project. Usually unnecessary: leave both `path` and `repo` empty to use the active workspace's repo, or the project's only repo."},
                     "remote": {"type": "string", "description": "Remote name (optional; defaults to origin)"},
                     "branch": {"type": "string", "description": "Branch to push (optional; defaults to the current branch)"},
                     "set_upstream": {"type": "boolean", "description": "Set the pushed branch's upstream (-u) (default false)"},
@@ -2110,7 +2118,8 @@ FUNCTION_TOOL_SCHEMAS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "path": {"type": "string", "description": "Path inside the repo (optional; defaults to the active workspace)"},
+                    "path": {"type": "string", "description": "Path inside the repo (optional). Resolution order when omitted: `repo` (by name) > the repo containing the active workspace > the project's only repo (if it has just one) > ambiguous (error git.which_repo, listing the repo names) when the project has several and none of those picked one."},
+                    "repo": {"type": "string", "description": "Repo name instead of `path` -- matched by exact name, or a unique case-insensitive prefix, among the repos linked to this session's project. Usually unnecessary: leave both `path` and `repo` empty to use the active workspace's repo, or the project's only repo."},
                     "remote": {"type": "string", "description": "Remote name (optional; defaults to origin)"},
                     "branch": {"type": "string", "description": "Branch to pull (optional; defaults to the current branch's upstream)"}
                 },
@@ -2126,7 +2135,8 @@ FUNCTION_TOOL_SCHEMAS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "path": {"type": "string", "description": "Path inside the repo (optional; defaults to the active workspace)"},
+                    "path": {"type": "string", "description": "Path inside the repo (optional). Resolution order when omitted: `repo` (by name) > the repo containing the active workspace > the project's only repo (if it has just one) > ambiguous (error git.which_repo, listing the repo names) when the project has several and none of those picked one."},
+                    "repo": {"type": "string", "description": "Repo name instead of `path` -- matched by exact name, or a unique case-insensitive prefix, among the repos linked to this session's project. Usually unnecessary: leave both `path` and `repo` empty to use the active workspace's repo, or the project's only repo."},
                     "remote": {"type": "string", "description": "Remote name (optional; defaults to origin)"},
                     "prune": {"type": "boolean", "description": "Remove remote-tracking refs deleted on the remote (default false)"}
                 },
