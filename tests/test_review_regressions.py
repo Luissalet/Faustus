@@ -11,6 +11,40 @@ from unittest.mock import MagicMock
 import pytest
 
 from src.preset_manager import PresetManager
+from tests.helpers.import_state import clear_module
+
+
+@pytest.fixture(autouse=True)
+def _evict_modules_first_imported_under_stubs():
+    """Modules imported for the FIRST time while `_install_model_route_import_stubs`
+    had the fake `core.database` in place keep `_FakeModelEndpoint` and the
+    fake `SessionLocal` in their globals for the rest of the worker: monkeypatch
+    restores the sys.modules entries it replaced, but not modules that did not
+    exist before. Seen under the full suite as
+    `tests/test_chatgpt_subscription_routes.py` failing with
+    "got <class 'test_review_regressions._FakeModelEndpoint'>". This fixture
+    is set up before `monkeypatch` (autouse) so its teardown runs after the
+    stubs are gone, and evicts only what this test module brought in."""
+    before = set(sys.modules)
+    yield
+
+    def _tainted(module):
+        # Bound to one of this file's fakes (or to a stub module with no
+        # file), i.e. imported while the stubs were in sys.modules.
+        for value in list(vars(module).values()):
+            if getattr(value, "__module__", None) == __name__:
+                return True
+            if isinstance(value, types.ModuleType) and value.__name__.startswith("core") \
+                    and getattr(value, "__file__", None) is None:
+                return True
+        return False
+
+    for name in sorted(set(sys.modules) - before, reverse=True):
+        module = sys.modules.get(name)
+        if module is None or not name.startswith(("routes.", "src.", "core.", "services.")):
+            continue
+        if _tainted(module):
+            clear_module(name)
 
 
 async def _execute_without_run_context(execute_tool_block, *args, **kwargs):

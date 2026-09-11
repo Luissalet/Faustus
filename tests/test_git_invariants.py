@@ -18,9 +18,17 @@ pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git not on 
 GIT_ID = ("-c", "user.name=t", "-c", "user.email=t@x")
 
 
+def _clean_git_env():
+    """Drop any GIT_* variable another test may have leaked into the worker
+    (GIT_DIR/GIT_INDEX_FILE/GIT_WORK_TREE make `git commit` in a fresh
+    tmp_path fail at fixture setup -- seen once under the full suite)."""
+    import os
+    return {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+
+
 def git(cwd, *args, check=True):
     return subprocess.run(["git", *GIT_ID, *args], cwd=str(cwd), capture_output=True,
-                          text=True, check=check)
+                          text=True, check=check, env=_clean_git_env())
 
 
 @pytest.fixture

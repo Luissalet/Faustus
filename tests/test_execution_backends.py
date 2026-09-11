@@ -114,6 +114,8 @@ def test_a_run_is_credited_only_with_what_it_changed(tmp_path):
     assert _produced(str(d), before) == ["from_an_earlier_run.txt", "mine.txt"]
 
 
+@pytest.mark.skipif(_DOCKER.state != "available",
+                    reason=f"needs a running docker daemon to tell 'image missing' from 'daemon down' ({_DOCKER.evidence})")
 def test_a_missing_image_is_a_refusal_with_the_command_to_fix_it(sandbox):
     result = DockerWorkspaceBackend(image="faustus-no-such-image:0.0.1").run(
         ExecutionSpec.parse(sandbox), ["true"], run_id="r")

@@ -51,6 +51,12 @@ def test_a_ram_pressure_guard_pauses_auxiliary_jobs_before_a_cascade(monkeypatch
     curso"). Resultado: se pausa ANTES de invocar al agente (nunca se
     "ran"), followed_up se queda en False (estado conservado) y queda
     registrada como aparcada en vez de perderse en silencio."""
+    # Another test in the same worker may have run the monitor's shutdown
+    # path, which flips `_accepting` off for good: the loop then breaks out
+    # of the tick before it reaches the pressure guard, and nothing gets
+    # parked (seen only under the full suite). Re-arm it, like
+    # tests/test_bg_monitor*.py do.
+    monkeypatch.setattr(bg_monitor, "_accepting", True)
     bg_monitor.set_memory_reader(lambda: (2 * 2**30, 32 * 2**30))  # ~94% used
 
     ran = []

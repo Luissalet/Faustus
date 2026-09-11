@@ -134,8 +134,10 @@ def test_the_bare_root_and_nothing_at_all_both_work():
 
 def test_container_paths_come_back_as_host_paths():
     ws = r"D:\proj\demo"
+    # A Windows root comes back spelled as the host spells it, on any OS the
+    # tests run on (on Linux `os.path.abspath` would glue the cwd in front).
     assert sandbox_exec.to_host("/workspace/src/x.py: 3 lines", ws) == \
-        os.path.abspath(ws) + "/src/x.py: 3 lines"
+        r"D:\proj\demo" + "/src/x.py: 3 lines"
     assert sandbox_exec.to_host("", ws) == ""
 
 

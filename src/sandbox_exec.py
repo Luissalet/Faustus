@@ -119,6 +119,20 @@ def manifest() -> SkillManifest:
 _TOKEN_END = r"\s\"';|&<>()"
 
 
+_WINDOWS_ABS = re.compile(r"^[A-Za-z]:[\\/]")
+
+
+def _host_root(workspace: str) -> str:
+    """The workspace root as the host spells it. A Windows path is left as
+    given: `os.path.abspath` on Linux would glue the cwd in front of `D:\...`
+    and the rewrite would never match -- which is exactly what happened when
+    the Windows workspace tests ran on the Linux CI clone."""
+    ws = str(workspace or "")
+    if _WINDOWS_ABS.match(ws):
+        return ws.rstrip("\\/") or ws
+    return os.path.abspath(ws)
+
+
 def _root_re(workspace: str) -> "re.Pattern":
     """Match the workspace root **and the path that follows it**, in any of the
     spellings the root can arrive in.
@@ -133,7 +147,7 @@ def _root_re(workspace: str) -> "re.Pattern":
       swallows the first half of `D:\\proj\\demo2\\other.txt` and hands the
       container `/workspace2/other.txt`.
     """
-    root = os.path.abspath(workspace)
+    root = _host_root(workspace)
     forms = {root, root.replace("\\", "/"), root.replace("/", "\\")}
     alts = "|".join(re.escape(f) for f in sorted(forms, key=len, reverse=True))
     return re.compile(
@@ -164,7 +178,7 @@ def to_host(text: str, workspace: str) -> str:
     rest of Faustus can open."""
     if not text or not workspace:
         return text
-    return text.replace(CONTAINER_WORKSPACE, os.path.abspath(workspace))
+    return text.replace(CONTAINER_WORKSPACE, _host_root(workspace))
 
 
 # ── running a tool call ────────────────────────────────────────────────────

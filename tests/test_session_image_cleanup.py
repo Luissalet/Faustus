@@ -71,6 +71,13 @@ def test_cleanup_session_images_deactivates_gallery_rows_and_unlinks_files(tmp_p
         assert removed == 2
         assert not linked_file.exists()
         assert not event_file.exists()
+        # The caller owns `db`, so the cleanup leaves its changes pending for
+        # us to flush. Flush explicitly before reading back: the cleanup
+        # resolves `GalleryImage` at call time (`_database_models`), and under
+        # the full suite that can be a re-imported class mapped to the same
+        # table -- its dirty instances never reach this module's cached ones,
+        # but a flush writes the UPDATE either way and the query reads the row.
+        db.flush()
         assert db.query(GalleryImage).filter_by(id="img-linked").first().is_active is False
         assert db.query(GalleryImage).filter_by(id="img-event").first().is_active is False
     finally:
