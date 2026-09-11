@@ -45,6 +45,7 @@ unlimited" sentinel (`_base_from_setting`) — still overridable per call via
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Any, Callable, Iterable, Mapping, Optional
 
@@ -78,6 +79,18 @@ _FALLBACK_ACTIVE_SECONDS = 900.0
 _FALLBACK_SUBAGENTS = 4
 _FALLBACK_REMOTE_SPEND = 20_000.0
 _FALLBACK_MEMORY_MB = 2048.0
+
+# OBJ-8/A1: `max_remote_spend` has always been denominated in "1 unit == 1
+# estimated token" (see `remote_spend_units`'s token-sum fallback below) —
+# never a real currency. Now that OpenRouter can report REAL USD cost
+# (`usage.cost`, threaded through by `src/llm_core.py` when the payload opts
+# in via `src/openrouter_options.py`), that cost has to land on the SAME
+# unit or `max_remote_spend` stops meaning anything. USD_PER_UNIT is that
+# bridge, picked from a representative blended OpenRouter price (~$2 per
+# million tokens) — an approximation, not a live price feed, so a mismatch
+# between spend units and an endpoint's actual $/token is traceable to this
+# one documented number rather than silently baked into every call site.
+USD_PER_UNIT = 2.0 / 1_000_000  # $0.000002 per unit ($2 / 1,000,000 tokens)
 
 #: Effects a `read_only` turn may still use. Everything else (any write,
 #: code execution, network egress beyond a brokered read, an external or UI
@@ -302,15 +315,56 @@ class Ledger:
         return None
 
 
-def remote_spend_units(*, endpoint_cost_tracked: Any, input_tokens: int, output_tokens: int) -> float:
-    """Estimated spend for one usage bucket, in the same "cost unit" the
+def _finite_nonneg(value: Any) -> Optional[float]:
+    """`value` as a finite, non-negative float, or `None` for anything else
+    (missing, `bool`, NaN/inf, negative, non-numeric) — the same "fail to
+    absent, never fail to a wrong number" rule `src.llm_core._extract_usage_extras`
+    applies to the same provider-reported fields upstream."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    value = float(value)
+    if not math.isfinite(value) or value < 0:
+        return None
+    return value
+
+
+def spend_units_from_usd(usd: Any) -> float:
+    """Convert a REAL USD cost (OpenRouter's `usage.cost`) into the same
+    "spend unit" `Budget.max_remote_spend`/`Ledger.remote_spend` are
+    denominated in, via `USD_PER_UNIT`. A malformed/negative `usd` is 0.0 —
+    never lets a bad provider value push the ledger backwards or raise."""
+    value = _finite_nonneg(usd)
+    if value is None:
+        return 0.0
+    return value / USD_PER_UNIT
+
+
+def remote_spend_units(
+    *,
+    endpoint_cost_tracked: Any,
+    input_tokens: int,
+    output_tokens: int,
+    provider_cost_usd: Optional[float] = None,
+) -> float:
+    """Spend for one usage bucket, in the same "cost unit" the
     `max_remote_spend` budget is denominated in. A bucket whose endpoint is
     not cost-tracked (a local model, or a route this process never learned
     the cost of — see `endpoint_cost_tracked` on the usage buckets built by
     `src/agent_loop.py::_usage_bucket`) contributes nothing: this budget
-    exists to bound spend on a PAID endpoint, not local inference."""
+    exists to bound spend on a PAID endpoint, not local inference.
+
+    When `provider_cost_usd` is a real, non-negative number, it REPLACES the
+    token-count estimate below rather than adding to it — the two are not
+    additive, one prices what the provider actually charged (OpenRouter's
+    `usage.cost`, OBJ-8/A1) and the other guesses it from token counts alone;
+    once the real number is known the guess is strictly worse. Converted via
+    `spend_units_from_usd` so both paths land on the same "1 unit ≈ 1
+    estimated token" scale documented at `USD_PER_UNIT`."""
     if endpoint_cost_tracked is not True:
         return 0.0
+    _cost = _finite_nonneg(provider_cost_usd)
+    if _cost is not None:
+        return spend_units_from_usd(_cost)
     return max(0, int(input_tokens or 0)) + max(0, int(output_tokens or 0))
 
 

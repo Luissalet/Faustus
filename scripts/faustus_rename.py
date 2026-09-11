@@ -34,6 +34,8 @@ SKIP_FILES = {
     "tests/test_issue_description_check.py", "tests/test_readme_ascii_fenced.py",
     # This very test suite / script mention both names on purpose.
     "tests/test_faustus_brand.py", "scripts/faustus_rename.py",
+    # Upstream attribution: these name the fork's origin on purpose.
+    "docs/design/diogenes-adaptations.md", "tests/eval/tasks.py", "tests/test_task_scheduler_cache.py",
 }
 
 

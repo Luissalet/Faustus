@@ -86,6 +86,46 @@ def setup_workflows_routes():
                             for n in definition.nodes if n.needs],
                 "blocked": [n.id for n in blocked]}
 
+    @router.post("/mermaid")
+    async def mermaid(request: Request):
+        """Lote A4: a `flowchart TD` of the definition's nodes and `needs`
+        edges. Pure — parses the same way `/validate` does, so an invalid
+        definition is refused with the same field-level message rather than
+        drawn as if it could run."""
+        require_admin(request)
+        payload = await _json_object(request)
+        definition = _definition_or_400(payload.get("definition", payload))
+        from src.topology_export import workflow_to_mermaid
+        return {"ok": True, "mermaid": workflow_to_mermaid(definition)}
+
+    @router.post("/estimate")
+    async def estimate_cost(request: Request):
+        """Lote A4: a cost estimate for one run of the definition. Pure — no
+        model price catalogue is looked up automatically (see
+        `src/workflow_cost_estimate.py`'s docstring for why); pass
+        `prices: {model_id: {"prompt_usd_per_1k", "completion_usd_per_1k"}}`
+        to price the models named on `skill` nodes' `config.model`."""
+        require_admin(request)
+        payload = await _json_object(request)
+        definition = _definition_or_400(payload.get("definition", payload))
+        from src.workflow_cost_estimate import ModelPrice
+        from src.workflow_cost_estimate import estimate as compute_estimate
+        raw_prices = payload.get("prices")
+        prices: dict = {}
+        if isinstance(raw_prices, dict):
+            for model_id, raw_price in raw_prices.items():
+                if not isinstance(raw_price, dict):
+                    continue
+                try:
+                    prices[str(model_id)] = ModelPrice(
+                        prompt_usd_per_1k=float(raw_price.get("prompt_usd_per_1k", 0.0)),
+                        completion_usd_per_1k=float(raw_price.get("completion_usd_per_1k", 0.0)),
+                    )
+                except (TypeError, ValueError):
+                    raise HTTPException(status_code=400, detail=f"prices.{model_id}: expected numbers")
+        result = compute_estimate(definition, prices=prices or None)
+        return {"ok": True, "estimate": result.to_dict()}
+
     @router.post("/runs")
     async def create_run(request: Request):
         """Start a run. A `dedupe_key` makes a redelivered trigger one run

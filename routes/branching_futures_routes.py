@@ -90,6 +90,18 @@ def setup_branching_futures_routes() -> APIRouter:
             raise HTTPException(404, "no such future")
         return {"ok": True, "future": row, "enabled": enabled()}
 
+    @router.get("/{future_id}/mermaid")
+    async def future_mermaid(request: Request, future_id: str):
+        # Lote A4: a Mermaid diagram of the SAME tree `GET /{future_id}`
+        # already answers — no separate drawing-only model, so the diagram
+        # can never disagree with the branches it is drawn from.
+        require_admin(request)
+        row = branching_service().future(owner=_owner(request), future_id=future_id)
+        if row is None:
+            raise HTTPException(404, "no such future")
+        from src.topology_export import future_to_mermaid
+        return {"ok": True, "mermaid": future_to_mermaid(row)}
+
     @router.post("/{future_id}/branches/{branch_id}/start")
     async def start_branch(request: Request, future_id: str, branch_id: str):
         require_admin(request); _running()

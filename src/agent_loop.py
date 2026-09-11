@@ -4459,8 +4459,20 @@ def _usage_bucket(
     input_tokens: int,
     output_tokens: int,
     usage_source: str,
+    cost_usd: Optional[float] = None,
+    cached_tokens: Optional[int] = None,
+    reasoning_tokens: Optional[int] = None,
 ) -> dict:
-    """Build non-secret usage attribution for one concrete Agent round."""
+    """Build non-secret usage attribution for one concrete Agent round.
+
+    `cost_usd`/`cached_tokens`/`reasoning_tokens` (OBJ-8/A1) are OpenRouter's
+    REAL provider-reported numbers — `src/llm_core.py::_extract_usage_extras`,
+    surfaced on the `usage` SSE event this round's caller already parses —
+    persisted ONLY when the caller actually has them (a non-`None`,
+    non-negative number); every other provider simply never passes these
+    kwargs, so the bucket stays exactly as small as it was before this field
+    existed.
+    """
 
     bucket = {
         "round": round_num,
@@ -4475,6 +4487,12 @@ def _usage_bucket(
     # stable even if the session later selects a different endpoint.
     if isinstance(endpoint_cost_tracked, bool):
         bucket["endpoint_cost_tracked"] = endpoint_cost_tracked
+    if isinstance(cost_usd, (int, float)) and not isinstance(cost_usd, bool) and cost_usd >= 0:
+        bucket["cost_usd"] = float(cost_usd)
+    if isinstance(cached_tokens, (int, float)) and not isinstance(cached_tokens, bool) and cached_tokens >= 0:
+        bucket["cached_tokens"] = int(cached_tokens)
+    if isinstance(reasoning_tokens, (int, float)) and not isinstance(reasoning_tokens, bool) and reasoning_tokens >= 0:
+        bucket["reasoning_tokens"] = int(reasoning_tokens)
     return bucket
 
 
@@ -4487,13 +4505,21 @@ def _usage_bucket_summary(usage_buckets: list) -> dict:
     output_tokens = sum(bucket.get("output_tokens", 0) or 0 for bucket in usage_buckets)
     sources = {bucket.get("usage_source") for bucket in usage_buckets}
     usage_source = next(iter(sources)) if len(sources) == 1 else "mixed"
-    return {
+    summary = {
         "input_tokens": input_tokens,
         "output_tokens": output_tokens,
         "total_tokens": input_tokens + output_tokens,
         "usage_source": usage_source,
         "usage_buckets": [dict(bucket) for bucket in usage_buckets],
     }
+    # OBJ-8/A1: sum real provider cost across rounds when ANY bucket has one
+    # (a turn may mix a cost-tracked OpenRouter round with a local one that
+    # never sets it) — omitted entirely when no bucket ever got a real cost,
+    # same "absent, not zero" rule as the per-bucket field.
+    _cost_buckets = [b.get("cost_usd") for b in usage_buckets if isinstance(b.get("cost_usd"), (int, float))]
+    if _cost_buckets:
+        summary["cost_usd_total"] = sum(_cost_buckets)
+    return summary
 
 
 # ── Completion verifier ──
@@ -5167,6 +5193,12 @@ async def _stream_agent_loop_body(
         real_input_tokens = 0
         real_output_tokens = 0
         direct_has_real_usage = False
+        # OBJ-8/A1: OpenRouter's real cost/cache/reasoning extras, when the
+        # `usage` SSE event below carries them (src/llm_core.py). None until
+        # then, exactly like the token counters above staying 0.
+        direct_cost_usd = None
+        direct_cached_tokens = None
+        direct_reasoning_tokens = None
 
         def _direct_candidate_request(_index, _url, candidate_model, _headers):
             candidate_is_qwen = _is_odysseus_qwen_model(candidate_model)
@@ -5208,6 +5240,9 @@ async def _stream_agent_loop_body(
                     else max(len(direct_response + direct_reasoning) // 4, 0)
                 ),
                 usage_source="real" if direct_has_real_usage else "estimated",
+                cost_usd=direct_cost_usd,
+                cached_tokens=direct_cached_tokens,
+                reasoning_tokens=direct_reasoning_tokens,
             )
             failure_note = f"[Agent stopped: {failure_message}]"
             terminal_round = (
@@ -5276,6 +5311,14 @@ async def _stream_agent_loop_body(
                         real_input_tokens += normalized_usage["input_tokens"]
                         real_output_tokens += normalized_usage["output_tokens"]
                         direct_has_real_usage = True
+                        # OBJ-8/A1: OpenRouter real-cost extras, when present
+                        # on this event (src/llm_core.py::_extract_usage_extras).
+                        if isinstance(usage.get("cost_usd"), (int, float)) and not isinstance(usage.get("cost_usd"), bool):
+                            direct_cost_usd = (direct_cost_usd or 0.0) + float(usage["cost_usd"])
+                        if isinstance(usage.get("cached_tokens"), (int, float)) and not isinstance(usage.get("cached_tokens"), bool):
+                            direct_cached_tokens = int(usage["cached_tokens"])
+                        if isinstance(usage.get("reasoning_tokens"), (int, float)) and not isinstance(usage.get("reasoning_tokens"), bool):
+                            direct_reasoning_tokens = int(usage["reasoning_tokens"])
                         continue
                     if data.get("type") == "model_actual":
                         direct_actual_model = data.get("model") or direct_actual_model
@@ -5457,6 +5500,9 @@ async def _stream_agent_loop_body(
                 else max(len(direct_response) // 4, 1)
             ),
             usage_source="real" if direct_has_real_usage else "estimated",
+            cost_usd=direct_cost_usd,
+            cached_tokens=direct_cached_tokens,
+            reasoning_tokens=direct_reasoning_tokens,
         )
         metrics = {
             "model": direct_actual_model,
@@ -7481,6 +7527,13 @@ async def _stream_agent_loop_body(
         _round_real_output_tokens = 0
         _round_has_real_usage = False
         _round_usage_finalized = False
+        # OBJ-8/A1: OpenRouter real cost/cache/reasoning for this round, when
+        # the `usage` SSE event below carries them (src/llm_core.py). None
+        # until then — same "absent, not a guessed zero" rule as everywhere
+        # else this data flows.
+        _round_cost_usd = None
+        _round_cached_tokens = None
+        _round_reasoning_tokens = None
         candidate_index = 0
 
         def _finalize_round_usage(*, include_empty: bool = True):
@@ -7516,6 +7569,9 @@ async def _stream_agent_loop_body(
                 input_tokens=round_input_tokens,
                 output_tokens=round_output_tokens,
                 usage_source=usage_source,
+                cost_usd=_round_cost_usd,
+                cached_tokens=_round_cached_tokens,
+                reasoning_tokens=_round_reasoning_tokens,
             ))
         # --- Context ledger (FAUSTUS): what is eating the window this round.
         # Roadmap's "agent prompt/context bloat" starts as a measurement problem:
@@ -7746,6 +7802,17 @@ async def _stream_agent_loop_body(
                         last_round_input_tokens = round_input
                         has_real_usage = True
                         _round_has_real_usage = True
+                        # OBJ-8/A1: OpenRouter real-cost extras, when present
+                        # on this event (src/llm_core.py::_extract_usage_extras).
+                        # cost_usd sums (a round can emit more than one usage
+                        # chunk on a retried request); cached/reasoning take
+                        # the latest snapshot, like the raw counts above.
+                        if isinstance(u.get("cost_usd"), (int, float)) and not isinstance(u.get("cost_usd"), bool):
+                            _round_cost_usd = (_round_cost_usd or 0.0) + float(u["cost_usd"])
+                        if isinstance(u.get("cached_tokens"), (int, float)) and not isinstance(u.get("cached_tokens"), bool):
+                            _round_cached_tokens = int(u["cached_tokens"])
+                        if isinstance(u.get("reasoning_tokens"), (int, float)) and not isinstance(u.get("reasoning_tokens"), bool):
+                            _round_reasoning_tokens = int(u["reasoning_tokens"])
                         # Backend-reported TRUE generation speed (llama.cpp
                         # timings.predicted_per_second) — pure decode, excludes
                         # prefill/network. Preferred over tokens/wall-clock, which
@@ -10051,6 +10118,10 @@ async def _stream_agent_loop_body(
             _budget_ledger.add_remote_spend(autonomy_budget.remote_spend_units(
                 endpoint_cost_tracked=_round_usage_bucket.get("endpoint_cost_tracked"),
                 input_tokens=_round_in, output_tokens=_round_out,
+                # OBJ-8/A1: when this round's bucket carries OpenRouter's REAL
+                # cost (usage.cost, via src/llm_core.py), charge the ledger
+                # that instead of the token-count guess above.
+                provider_cost_usd=_round_usage_bucket.get("cost_usd"),
             ))
         _budget_ledger.add_active_seconds(time.time() - _round_start)
 

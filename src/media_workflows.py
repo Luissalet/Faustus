@@ -416,7 +416,9 @@ def _coerce(spec: InputSpec, value: Any) -> Any:
     elif spec.type == "artifact":
         if not isinstance(value, str) or not value:
             raise TemplateError(path, "expected an artifact filename", got=value)
-        if os.path.sep in value or "/" in value or ".." in value:
+        if os.path.sep in value or "/" in value or "\\" in value or ":" in value or ".." in value:
+            # Both separators and a drive letter are refused on every host:
+            # the engine may run on Windows while Faustus checks on Linux.
             # An input image reaches the engine as a name it looks up in its
             # own input folder. A path here would be someone reading a file
             # off the machine through a template that looked harmless.

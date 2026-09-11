@@ -300,6 +300,30 @@ def setup_agent_profiles_routes() -> APIRouter:
                     "degraded": ["agent_packs: not in this build yet"]}
         return {"ok": True, "packs": rows, "degraded": []}
 
+    @router.get("/lint")
+    async def lint_catalog(request: Request) -> Dict[str, Any]:
+        """Lote A4: every profile in the catalogue, linted (§9-§13).
+
+        These are legal-but-suspicious configurations, not schema errors —
+        a schema error is already refused at `catalog.register` time and
+        never reaches this list."""
+        require_admin(request)
+        from src.agent_profile_lint import lint_all
+        return {"ok": True, "findings": [f.to_dict() for f in lint_all()]}
+
+    @router.get("/lint/{kind}/{profile_id}")
+    async def lint_one(request: Request, kind: str, profile_id: str) -> Dict[str, Any]:
+        """Lote A4: one profile, linted."""
+        require_admin(request)
+        from src.agent_profile_lint import lint_profile
+        try:
+            profile = catalog.get(kind, profile_id)
+        except ProfileError as exc:
+            return _refused(exc.path, exc.message)
+        if profile is None:
+            return _refused(kind, "no {} profile called `{}`".format(kind, profile_id))
+        return {"ok": True, "findings": [f.to_dict() for f in lint_profile(kind, profile)]}
+
     @router.post("/resolve")
     async def preview(request: Request) -> Dict[str, Any]:
         """What this configuration would resolve to. Runs nothing.

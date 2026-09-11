@@ -54,6 +54,62 @@ def _normalize_usage_counts(input_value=0, output_value=0):
     }
 
 
+def _extract_usage_extras(usage) -> dict:
+    """Pull OpenRouter's REAL-cost fields out of a raw provider ``usage``
+    payload, when they are there.
+
+    OBJ-8/A1: OpenRouter only returns ``usage.cost`` (actual USD spent),
+    ``usage.cost_details.upstream_inference_cost``,
+    ``usage.prompt_tokens_details.cached_tokens`` and
+    ``usage.completion_tokens_details.reasoning_tokens`` when the request
+    opted in with ``payload["usage"] = {"include": True}``
+    (`src/openrouter_options.py`, Lote A2 — this module never sets that
+    itself). Every other provider's ``usage`` dict simply lacks these keys,
+    so this returns ``{}`` for them — ABSENT keys, never ``None`` ones, so a
+    caller can blindly ``dict.update()`` the result into a usage dict without
+    inventing a field that was never reported. A malformed/non-numeric value
+    (NaN, a string, a negative cost) is treated the same as absent rather
+    than propagated.
+    """
+    if not isinstance(usage, dict):
+        return {}
+
+    def _finite_nonneg(value):
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return None
+        value = float(value)
+        if not math.isfinite(value) or value < 0:
+            return None
+        return value
+
+    extras = {}
+
+    cost = _finite_nonneg(usage.get("cost"))
+    if cost is not None:
+        extras["cost_usd"] = cost
+        extras["cost_source"] = "provider"
+
+    cost_details = usage.get("cost_details")
+    if isinstance(cost_details, dict):
+        upstream = _finite_nonneg(cost_details.get("upstream_inference_cost"))
+        if upstream is not None:
+            extras["upstream_cost_usd"] = upstream
+
+    prompt_details = usage.get("prompt_tokens_details")
+    if isinstance(prompt_details, dict):
+        cached = _finite_nonneg(prompt_details.get("cached_tokens"))
+        if cached is not None:
+            extras["cached_tokens"] = int(cached)
+
+    completion_details = usage.get("completion_tokens_details")
+    if isinstance(completion_details, dict):
+        reasoning = _finite_nonneg(completion_details.get("reasoning_tokens"))
+        if reasoning is not None:
+            extras["reasoning_tokens"] = int(reasoning)
+
+    return extras
+
+
 def _ollama_rate(count, duration_ns) -> Optional[float]:
     """Tokens per second from Ollama's own counters, or None.
 
@@ -1768,7 +1824,7 @@ def _build_anthropic_payload(model, messages, temperature, max_tokens, stream=Fa
         # cache-WRITE premium wouldn't pay back (no reuse). Presence of `tools`
         # means an agentic/multi-round call, where the prefix is always reused.
         system_block = {"type": "text", "text": system_text}
-        if tools or len(system_text) > 4000:
+        if _anthropic_cache_breakpoint_applies(tools, system_text):
             system_block["cache_control"] = {"type": "ephemeral"}
         payload["system"] = [system_block]
     if stream:
@@ -1790,6 +1846,62 @@ def _build_anthropic_payload(model, messages, temperature, max_tokens, stream=Fa
             anthropic_tools[-1]["cache_control"] = {"type": "ephemeral"}
             payload["tools"] = anthropic_tools
     return payload
+
+
+def _anthropic_cache_breakpoint_applies(tools, system_text: str) -> bool:
+    """Shared threshold for attaching an Anthropic prompt-cache breakpoint:
+    an agentic call (tools present) always reuses its prefix every round, and
+    a big enough one-off system prompt earns back the cache-WRITE premium on
+    its own. `_build_anthropic_payload` above (the native Anthropic path) and
+    `_apply_openrouter_anthropic_cache_hints` below (OpenRouter's
+    OpenAI-compatible path, for `anthropic/*` models only) both call this, so
+    an OpenRouter call gets the identical breakpoint decision a native
+    Anthropic call would (OBJ-8 Lote A2).
+    """
+    return bool(tools) or len(system_text or "") > 4000
+
+
+def _openrouter_anthropic_cache_hints_applicable(provider: str, model: str) -> bool:
+    """True only for an OpenRouter call to an `anthropic/*` model. OpenRouter
+    forwards a `cache_control` marker on a message content BLOCK straight
+    through to Anthropic for these models — the same breakpoint mechanism
+    `_build_anthropic_payload` uses on the native path — but no other
+    OpenRouter model has any such mechanism, so this stays a narrow
+    allow-list rather than "any openrouter call" (OBJ-8 Lote A2).
+    """
+    return provider == "openrouter" and str(model or "").startswith("anthropic/")
+
+
+def _apply_openrouter_anthropic_cache_hints(payload: Dict, *, tools: Optional[List[Dict]] = None) -> None:
+    """Mirror `_build_anthropic_payload`'s system-prompt cache breakpoint for
+    an OpenRouter `anthropic/*` call riding the OpenAI-compatible payload
+    shape. Callers gate this with `_openrouter_anthropic_cache_hints_applicable`
+    first — it does not check `provider`/`model` itself.
+
+    A plain string `content` has no block to attach `cache_control` to, so
+    the already-consolidated system message (see the `sys_parts`/`non_sys`
+    merge each `llm_core` call site does before building its payload) is
+    rewritten as a one-block array — the same shape Anthropic's native
+    Messages API expects — only when `_anthropic_cache_breakpoint_applies`
+    says it is worth it.
+    """
+    messages = payload.get("messages")
+    if not isinstance(messages, list) or not messages:
+        return
+    first = messages[0]
+    if not isinstance(first, dict) or first.get("role") != "system":
+        return
+    system_text = first.get("content")
+    if not isinstance(system_text, str) or not system_text:
+        return
+    if not _anthropic_cache_breakpoint_applies(tools, system_text):
+        return
+    first["content"] = [{
+        "type": "text",
+        "text": system_text,
+        "cache_control": {"type": "ephemeral"},
+    }]
+
 
 def _build_anthropic_headers(headers):
     """Convert Bearer auth to x-api-key for Anthropic."""
@@ -2234,6 +2346,21 @@ def llm_call(url: str, model: str, messages: List[Dict], temperature: float = LL
         _apply_local_generation_stability(payload, target_url, model)
         if provider == "mistral" and _supports_thinking(model):
             payload["reasoning_effort"] = _MISTRAL_REASONING_EFFORT
+        if provider == "openrouter":
+            # OBJ-8 Lote A2 (src/openrouter_options.py): apply the endpoint's
+            # saved OpenRouter provider preferences, opt-in web search /
+            # native fallback, and set usage.include=True so Lote A1's
+            # real-cost accounting has something to read back. This sync
+            # call path has no `endpoint_id` to look up (callers here pass a
+            # bare url/model, not a saved endpoint config), so only schema
+            # defaults apply. Never fails the call over an options bug.
+            try:
+                from src.openrouter_options import apply_openrouter_payload
+                apply_openrouter_payload(payload, provider=provider, endpoint_id=None, model=model)
+            except Exception as exc:  # noqa: BLE001 -- an options bug must never break a chat call
+                logger.debug("openrouter_options: apply_openrouter_payload failed for %s: %s", model, exc)
+            if _openrouter_anthropic_cache_hints_applicable(provider, model):
+                _apply_openrouter_anthropic_cache_hints(payload, tools=None)
     try:
         note_model_activity(target_url, model)
         r = httpx_post_kimi_aware(target_url, h, json=payload, timeout=timeout)
@@ -2675,6 +2802,16 @@ async def llm_call_async(
             payload["reasoning_effort"] = _MISTRAL_REASONING_EFFORT
         _apply_local_cache_affinity(payload, url, session_id)
         _apply_local_generation_stability(payload, target_url, model)
+        if provider == "openrouter":
+            # Same OpenRouter options application as llm_call (OBJ-8 Lote A2)
+            # -- see that call site for the full rationale.
+            try:
+                from src.openrouter_options import apply_openrouter_payload
+                apply_openrouter_payload(payload, provider=provider, endpoint_id=None, model=model)
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("openrouter_options: apply_openrouter_payload failed for %s: %s", model, exc)
+            if _openrouter_anthropic_cache_hints_applicable(provider, model):
+                _apply_openrouter_anthropic_cache_hints(payload, tools=None)
 
     if _is_host_dead(target_url):
         raise HTTPException(503, f"Upstream {_host_key(target_url)} marked unreachable (cooldown active)")
@@ -3476,6 +3613,18 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
         _apply_local_cache_affinity(payload, url, session_id)
         _apply_local_generation_stability(payload, target_url, model)
         _scrub_openai_chat_tool_reasoning(payload, target_url, model)
+        if provider == "openrouter":
+            # Same OpenRouter options application as llm_call (OBJ-8 Lote A2)
+            # -- see that call site for the full rationale. `tools` is known
+            # here, so the anthropic/* cache breakpoint also covers the
+            # tool-call agentic case, not just a long system prompt.
+            try:
+                from src.openrouter_options import apply_openrouter_payload
+                apply_openrouter_payload(payload, provider=provider, endpoint_id=None, model=model)
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("openrouter_options: apply_openrouter_payload failed for %s: %s", model, exc)
+            if _openrouter_anthropic_cache_hints_applicable(provider, model):
+                _apply_openrouter_anthropic_cache_hints(payload, tools=tools)
         h = _provider_headers(provider, headers)
         if provider == "copilot":
             from src.copilot import apply_request_headers
@@ -3604,6 +3753,7 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                                 or "output_tokens" in usage
                                 or "completion_tokens" in usage
                             ):
+                                normalized_usage.update(_extract_usage_extras(usage))
                                 _annotate_usage_model(
                                     normalized_usage,
                                     model,
@@ -3856,6 +4006,11 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                                 j.get("eval_count", 0),
                             )
                             if normalized_usage:
+                                # OpenRouter cost/cache/reasoning extras never appear on
+                                # a native Ollama `done` message (no `usage.cost` shape
+                                # here) — this call is a no-op today, kept only so every
+                                # normalized_usage site applies the same helper.
+                                normalized_usage.update(_extract_usage_extras(j))
                                 # Ollama's own timings, in nanoseconds. This is the
                                 # same pure-decode figure llama.cpp reports as
                                 # predicted_per_second, and it was being thrown
@@ -4181,6 +4336,12 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                                 _anth_output_tokens,
                             )
                             if normalized_usage and _anth_usage_seen:
+                                # `_u` still holds the last `message_delta.usage` dict
+                                # seen this round — OpenRouter's Anthropic-compatible
+                                # messages endpoint (provider == "openrouter", model
+                                # startswith "anthropic/") reports cost there the same
+                                # shape as its OpenAI-compatible `usage` object.
+                                normalized_usage.update(_extract_usage_extras(_u))
                                 _annotate_usage_model(
                                     normalized_usage,
                                     model,
@@ -4498,6 +4659,13 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                                     )
                                     if _usage_data is None:
                                         continue
+                                    # OBJ-8/A1: OpenRouter's real cost (usage.cost etc,
+                                    # only present when the payload opted in with
+                                    # usage.include — src/openrouter_options.py) lands
+                                    # on this exact `usage` object, since OpenRouter
+                                    # speaks the OpenAI-compatible chat/completions
+                                    # shape. Absent for every other backend.
+                                    _usage_data.update(_extract_usage_extras(u))
                                     # llama.cpp puts a `timings` block alongside `usage` with the
                                     # TRUE generation speed (predicted_per_second) — pure decode,
                                     # excluding prefill/network. Pass it through so the UI shows the

@@ -1033,6 +1033,17 @@ app.include_router(setup_git_routes())
 from routes.board_routes import setup_board_routes
 app.include_router(setup_board_routes())
 
+# Per-endpoint OpenRouter options (OBJ-8 Lote A2): provider preferences,
+# opt-in web search, native model fallback (src/openrouter_options.py).
+from routes.openrouter_routes import setup_openrouter_routes
+app.include_router(setup_openrouter_routes())
+
+# MOD-05: measured router for local models -- config/preview/log/stats
+# (src/model_router.py). Off by default (RouterConfig.enabled=False); see
+# that module's docstring for the "no silent paid escalation" contract.
+from routes.model_router_routes import setup_model_router_routes
+app.include_router(setup_model_router_routes())
+
 # Model scorecard: per-model reliability metrics of agent turns (src/scorecard.py).
 from routes.scorecard_routes import setup_scorecard_routes
 app.include_router(setup_scorecard_routes())
