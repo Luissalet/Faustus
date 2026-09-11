@@ -1125,6 +1125,25 @@
   gap: var(--fs-space-2);
 }
 
+/* Edit fields stack label over control; seen live, the label sat inline
+   beside a shrunken input and the acceptance textarea overlapped it. */
+.fs-req__section .fs-field-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: var(--fs-label-size);
+  color: var(--fs-text-2);
+}
+
+.fs-req__section .fs-field-label > .fs-field {
+  inline-size: 100%;
+}
+
+.fs-req__section textarea.fs-field {
+  min-block-size: 4.5rem;
+  resize: vertical;
+}
+
 .fs-req__section-head {
   display: flex;
   align-items: center;
