@@ -1,4 +1,4 @@
-﻿"""The admission gate: ask before loading a model that does not fit (OBJ-1).
+"""The admission gate: ask before loading a model that does not fit (OBJ-1).
 
 The night of 08-09-2026 two 27B models were resident at once and the machine
 went down. Ollama never refuses a load; Faustus has to. These pin what the
