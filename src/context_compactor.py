@@ -771,6 +771,7 @@ async def summarize_rows(
     headers: Optional[Dict] = None,
     owner: Optional[str] = None,
     compaction_count: int = 0,
+    timeout: int = 30,
 ) -> str:
     """Summarize a list of `{"role","content"}` rows with the self-summary
     prompt, model resolution and privacy gate `maybe_compact` has always
@@ -837,7 +838,7 @@ async def summarize_rows(
             temperature=0.2,
             max_tokens=SUMMARY_MAX_TOKENS,
             headers=compact_headers,
-            timeout=30,
+            timeout=timeout,
         )
     except Exception as e:
         logger.error(f"Compaction summary failed: {e}")

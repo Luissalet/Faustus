@@ -249,12 +249,17 @@ _TIMEOUT_EXEMPT_PREFIXES = (
     "/api/calendar/quick-parse",  # one LLM call on the utility model; a local 9B needs more than 45s
     "/api/workspace/pick",  # waits on the user in a native OS dialog; own 600s timeout
 )
+# Session-scoped long calls: `/api/session/{id}/condense` is one LLM pass over a
+# hand-picked range on the session's own model — a cold local 27B needs minutes
+# to load before it can summarize anything (seen live: 504 at 45s, nothing
+# condensed). Matched by suffix because the session id sits in the middle.
+_TIMEOUT_EXEMPT_SUFFIXES = ("/condense",)
 
 
 class _RequestTimeoutMiddleware(_BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
         path = request.url.path or ""
-        if any(path.startswith(p) for p in _TIMEOUT_EXEMPT_PREFIXES):
+        if any(path.startswith(p) for p in _TIMEOUT_EXEMPT_PREFIXES) or path.endswith(_TIMEOUT_EXEMPT_SUFFIXES):
             return await call_next(request)
         try:
             return await _asyncio.wait_for(call_next(request), timeout=REQUEST_HARD_TIMEOUT)

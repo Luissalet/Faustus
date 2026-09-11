@@ -43,6 +43,8 @@ from src.model_context import estimate_tokens
 
 logger = logging.getLogger(__name__)
 
+CONDENSE_LLM_TIMEOUT_S = 300
+
 
 class CondenseError(Exception):
     """A request the caller must fix — `routes/condense_routes.py` hands
@@ -193,6 +195,11 @@ async def condense(
             model=sess.model,
             headers=getattr(sess, "headers", None),
             owner=owner,
+            # A person asked for this and is waiting on it: unlike the
+            # mid-turn compactor's 30s, give a cold local model time to load
+            # (the route is exempt from app.py's 45s hard timeout for the
+            # same reason).
+            timeout=CONDENSE_LLM_TIMEOUT_S,
         )
     except Exception as e:
         raise CondenseError(f"Condense summary failed: {e}", "condense.summary_failed", 502) from e
