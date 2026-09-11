@@ -528,6 +528,146 @@ export async function exportPdfBlob(id: string): Promise<{ blob: Blob; filename:
   return { blob: await res.blob(), filename: m ? decodeURIComponent(m[1]) : null };
 }
 
+/* ── Anchored comments and wiki-links (W1-E: docs/api/document_links.md) ──
+ * `src/document_comments.py`/`src/document_links.py` already own the
+ * anchoring/relocation/resolution logic and the routes below; this is thin
+ * decoding, the same pattern `docFrom` uses. `ReviewPane.tsx` (CMP-01/02/03)
+ * is the first consumer. */
+
+export interface DocCommentProposal {
+  find: string;
+  replace: string;
+}
+
+export interface DocComment {
+  id: string;
+  documentId: string;
+  baseVersion: number;
+  quote: string;
+  beforeCtx: string;
+  afterCtx: string;
+  /** Markdown block index — a cheap "jump roughly here" hint, never the
+   *  source of truth for where the anchor actually is (see
+   *  `document_comments.py`'s own docstring). */
+  structuralPos: number | null;
+  body: string;
+  author: 'human' | 'model';
+  state: 'open' | 'resolved' | 'orphan';
+  proposal: DocCommentProposal | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+function docCommentFrom(raw: Record<string, unknown>): DocComment {
+  const proposal = raw.proposal && typeof raw.proposal === 'object' ? (raw.proposal as Record<string, unknown>) : null;
+  const author = raw.author === 'model' ? 'model' : 'human';
+  const state = raw.state === 'resolved' ? 'resolved' : raw.state === 'orphan' ? 'orphan' : 'open';
+  return {
+    id: String(raw.id ?? ''),
+    documentId: String(raw.document_id ?? ''),
+    baseVersion: typeof raw.base_version === 'number' ? raw.base_version : 0,
+    quote: String(raw.quote ?? ''),
+    beforeCtx: String(raw.before_ctx ?? ''),
+    afterCtx: String(raw.after_ctx ?? ''),
+    structuralPos: typeof raw.structural_pos === 'number' ? raw.structural_pos : null,
+    body: String(raw.body ?? ''),
+    author,
+    state,
+    proposal: proposal && typeof proposal.find === 'string' ? { find: proposal.find, replace: String(proposal.replace ?? '') } : null,
+    createdAt: typeof raw.created_at === 'string' ? raw.created_at : null,
+    updatedAt: typeof raw.updated_at === 'string' ? raw.updated_at : null,
+  };
+}
+
+export async function listDocComments(docId: string, state?: 'open' | 'resolved' | 'orphan'): Promise<DocComment[]> {
+  const q = state ? `?state=${enc(state)}` : '';
+  const raw = await getJson<Record<string, unknown>>(`/api/documents/${enc(docId)}/comments${q}`);
+  return asArray<Record<string, unknown>>(raw, 'comments').map(docCommentFrom);
+}
+
+/** `before_ctx`/`after_ctx` omitted lets the server derive them (single
+ *  unambiguous occurrence); pass them only when the caller already
+ *  disambiguated a repeated quote itself (e.g. from `findOccurrences`). */
+export async function createDocComment(docId: string, input: { quote: string; body?: string; author?: 'human' | 'model'; beforeCtx?: string; afterCtx?: string; proposal?: DocCommentProposal }): Promise<DocComment> {
+  const raw = await send(`/api/documents/${enc(docId)}/comments`, 'POST', {
+    quote: input.quote,
+    body: input.body ?? '',
+    author: input.author ?? 'human',
+    before_ctx: input.beforeCtx ?? null,
+    after_ctx: input.afterCtx ?? null,
+    proposal: input.proposal ?? null,
+  });
+  return docCommentFrom((raw.comment as Record<string, unknown>) ?? raw);
+}
+
+export async function updateDocComment(docId: string, commentId: string, patch: { body?: string; state?: 'open' | 'resolved' | 'orphan' }): Promise<DocComment> {
+  const raw = await send(`/api/documents/${enc(docId)}/comments/${enc(commentId)}`, 'PATCH', { body: patch.body ?? null, state: patch.state ?? null });
+  return docCommentFrom((raw.comment as Record<string, unknown>) ?? raw);
+}
+
+export async function deleteDocComment(docId: string, commentId: string): Promise<void> {
+  await send(`/api/documents/${enc(docId)}/comments/${enc(commentId)}`, 'DELETE');
+}
+
+/** Applies `comment.proposal` at the comment's (freshly relocated) anchor.
+ *  A 409 (`document_comments.base_changed`) means the anchor no longer
+ *  relocates unambiguously — surfaced as `ApiError` with that status, same
+ *  as the workspace file's three-way conflict; callers never apply-and-
+ *  hope on a stale anchor. */
+export async function acceptDocComment(docId: string, commentId: string): Promise<{ doc: { id: string; content: string; version: number }; comment: DocComment }> {
+  const raw = await send(`/api/documents/${enc(docId)}/comments/${enc(commentId)}/accept`, 'POST');
+  const doc = (raw.document as Record<string, unknown>) ?? {};
+  return {
+    doc: { id: String(doc.id ?? docId), content: String(doc.current_content ?? ''), version: typeof doc.version_count === 'number' ? doc.version_count : 0 },
+    comment: docCommentFrom((raw.comment as Record<string, unknown>) ?? {}),
+  };
+}
+
+export interface DocLink {
+  raw: string;
+  targetType: 'title' | 'id';
+  targetValue: string;
+  alias: string | null;
+  status: 'resolved' | 'ambiguous' | 'broken' | 'rejected';
+  /** The document at the OTHER end: the target for an outgoing link
+   *  (`listDocLinks`), the source document that links here for a backlink
+   *  (`listDocBacklinks`) — `src/document_links.py::backlinks_for` returns
+   *  the same row shape, just filtered by `resolved_doc_id` instead of
+   *  `source_doc_id`, so one decoder serves both. */
+  resolvedDocId: string | null;
+  sourceDocId: string | null;
+  candidates: string[];
+}
+
+function docLinkFrom(raw: Record<string, unknown>): DocLink {
+  const status = raw.status;
+  return {
+    raw: String(raw.raw ?? ''),
+    targetType: raw.target_type === 'id' ? 'id' : 'title',
+    targetValue: String(raw.target_value ?? ''),
+    alias: typeof raw.alias === 'string' ? raw.alias : null,
+    status: status === 'resolved' || status === 'ambiguous' || status === 'rejected' ? status : 'broken',
+    resolvedDocId: typeof raw.resolved_doc_id === 'string' ? raw.resolved_doc_id : null,
+    sourceDocId: typeof raw.source_doc_id === 'string' ? raw.source_doc_id : null,
+    candidates: asArray<unknown>(raw.candidates).map(String),
+  };
+}
+
+/** This document's own `[[...]]` links, each with its resolution status —
+ *  never "found" by guessing at a similar title (see `document_links.md`). */
+export async function listDocLinks(docId: string): Promise<DocLink[]> {
+  const raw = await getJson<Record<string, unknown>>(`/api/documents/${enc(docId)}/links`);
+  return asArray<Record<string, unknown>>(raw, 'links').map(docLinkFrom);
+}
+
+/** Other documents (same owner) whose `[[...]]` link resolves to this one.
+ *  Only ever `resolved` links — an `ambiguous`/`broken` link never counts
+ *  as "this document is referenced". */
+export async function listDocBacklinks(docId: string): Promise<DocLink[]> {
+  const raw = await getJson<Record<string, unknown>>(`/api/documents/${enc(docId)}/backlinks`);
+  return asArray<Record<string, unknown>>(raw, 'backlinks').map(docLinkFrom);
+}
+
 /** Run a snippet on the server (bash or python) through the same shell endpoint the legacy runner used. */
 export async function runOnServer(code: string, lang: 'python' | 'bash'): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   const b64 = btoa(unescape(encodeURIComponent(code)));

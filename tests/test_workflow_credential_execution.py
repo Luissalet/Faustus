@@ -14,6 +14,19 @@ def bound(project, tmp_path, monkeypatch):
     monkeypatch.setattr(secret_storage, "_fernet", Fernet(Fernet.generate_key()))
     source = project["folder"] / "SKILL.md"
     source.write_text(source.read_text().replace("permissions_backends:", "permissions_secrets: [API_KEY]\npermissions_backends:"))
+    # ADP-25: editing the manifest changes its digest, so the approval the
+    # `project` fixture granted no longer matches -- exactly what the review
+    # gate is for. Re-approve the edited skill so these tests keep exercising
+    # the credential flow, not the gate (tests/test_adp25_skill_review.py).
+    from src import skill_import_review
+    from src.skills_runtime import bridge, discovery
+    found = discovery.DiscoveredSkill(
+        name="report", path=str(source), origin="agents", root=str(project["workspace"]), distance=0)
+    manifest_text = source.read_text(encoding="utf-8")
+    manifest = bridge.manifest_from_markdown(manifest_text, source=found.path)
+    skill_import_review.approve(
+        skill_id=manifest.id, manifest=manifest, manifest_text=manifest_text,
+        digest=discovery.skill_digest(found), by="alice")
     row = credentials.put("alice", "test-provider", "synthetic-workflow-secret")
     return row
 

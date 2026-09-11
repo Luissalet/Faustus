@@ -3,7 +3,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { Link } from 'react-router';
 import { Fragment, lazy, Suspense, useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 import { Button, describeError, friendlyError, IconButton } from '../../components';
-import { fetchCompactionEvent, pinCompactionFragment, type AskUser, type CompactionEvent, type ContextLedger, type DelegationTask } from '../../adapters/chat';
+import { fetchCompactionEvent, pinCompactionFragment, type AskUser, type CompactionEvent, type ContextLedger, type ContextReceipt, type DelegationTask } from '../../adapters/chat';
 import type { EvidenceRef } from '../../adapters/evidence';
 import { attachmentUrl, isImage } from '../../adapters/composer';
 import { Rich } from '../rich';
@@ -1108,6 +1108,49 @@ function PlanStepsCard({ steps, revision, warnings }: { steps: PlanStepView[]; r
   );
 }
 
+/**
+ * CMP-04: "Contexto usado (n) — por qué" — a compact, collapsed-by-default
+ * card listing what the turn's delivered context packets actually put in
+ * front of the model (`event: context_receipts`, `src/agent_loop.py`),
+ * each row with the short reason the server already wrote and, when its
+ * `ref` is a URL, a link to open it.
+ *
+ * Reads `turn.contextReceipts` defensively (`unknown` cast) rather than off
+ * a typed `Turn` field: the live-stream reducer that turns
+ * `ChatEvent['context_receipts']` into that field lives in
+ * `studio/src/screens/studio/model.ts`, outside this lot's file list
+ * (CONTRATO_CMP_W2.md, W2-D) — see the final report's "wiring pendiente"
+ * note. Until `model.ts` adds the field this renders nothing, exactly as a
+ * server that predates the event already does.
+ */
+function ContextReceiptCard({ turn }: { turn: Turn }) {
+  const receipts = turn.contextReceipts;
+  if (!receipts || receipts.length === 0) return null;
+  return (
+    <details className="fs-ctx__compaction" data-testid="context-receipts">
+      <summary>{t('Context used ({n}) — why', { n: receipts.length })}</summary>
+      <ul className="fs-ctx__compaction-body">
+        {receipts.slice(0, 40).map((r, i) => {
+          const href = /^https?:\/\//i.test(r.ref) ? r.ref : '';
+          return (
+            <li key={`${r.kind}:${r.ref}:${i}`} className="fs-ctx__note">
+              {r.why || r.source}
+              {' — '}
+              {href ? (
+                <a className="fs-link" href={href} target="_blank" rel="noreferrer">
+                  {t('Open source')}
+                </a>
+              ) : (
+                <code>{r.ref}</code>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </details>
+  );
+}
+
 function AssistantTurn({
   turn: liveTurn,
   busy,
@@ -1212,6 +1255,7 @@ function AssistantTurn({
             })}
           </p>
         )}
+        {!turn.streaming && <ContextReceiptCard turn={turn} />}
         {turn.ask && <AskCard ask={turn.ask} busy={busy} onApproval={onApproval} onAnswer={onAnswer} />}
         {!turn.ask && turn.approval && <AnsweredCard decision={turn.approval.decision} />}
         {!turn.streaming && (turn.summary || turn.checks.length > 0) && (

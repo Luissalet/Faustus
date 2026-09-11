@@ -1,0 +1,19 @@
+{
+  "id": "sources-to-report",
+  "title": "Turn these sources into a report",
+  "inputs": ["the sources (files, URLs, or pasted text)", "what the report needs to answer"],
+  "steps": [
+    "gather the candidate sources named",
+    "read and extract from each, keeping a citation attached to every claim as it is captured",
+    "synthesise into the report — drop any claim that loses its citation along the way",
+    "verify each claim in the final text against the source it cites before closing"
+  ],
+  "tools": ["read_file", "web_search", "web_fetch"],
+  "success_conditions": [
+    "every claim in the report traces to a source that was actually read",
+    "nothing in the report contradicts the source it cites"
+  ],
+  "optional_resources": [],
+  "license": null,
+  "status": "published"
+}

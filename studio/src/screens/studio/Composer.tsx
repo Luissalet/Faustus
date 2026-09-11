@@ -4,6 +4,7 @@ import {
   ArrowUp,
   AudioLines,
   Bot,
+  BookOpen,
   Brain,
   Database,
   EyeOff,
@@ -11,6 +12,7 @@ import {
   FolderOpen,
   Gauge,
   Globe,
+  Layers,
   Telescope,
   ListTodo,
   MessageSquare,
@@ -41,6 +43,14 @@ import {
   type RefObject,
 } from 'react';
 import { IconButton,Popover } from '../../components';
+import {
+  loadStrategyProfile,
+  saveStrategyProfile,
+  loadRecipes,
+  STRATEGY_PROFILES,
+  type StrategyProfile,
+  type Recipe,
+} from '../../adapters/strategy';
 import {
   attachmentUrl,
   basename,
@@ -252,6 +262,40 @@ export function Composer({
   useEffect(() => { uploads.resume(); return () => uploads.dispose(); }, [uploads]);
   const uploading = pendingFiles.some((file) => file.state !== 'failed');
   const [dragging, setDragging] = useState(false);
+
+  /* ── CMP-09/CMP-12: strategy profile + recipe, persisted server-side per
+     owner (optionally scoped to this session) — see adapters/strategy.ts's
+     module docstring for why this reads/writes the endpoint directly
+     instead of travelling with sendTurn like autonomyPreset does. */
+  const [strategyProfile, setStrategyProfile] = useState<StrategyProfile>('balanced');
+  const [activeRecipeId, setActiveRecipeId] = useState<string | null>(null);
+  const [recipes, setRecipes] = useState<Recipe[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    loadStrategyProfile(sessionId).then((active) => {
+      if (cancelled) return;
+      setStrategyProfile(active.profile);
+      setActiveRecipeId(active.recipeId);
+    }).catch(() => { /* best-effort — keeps the last known profile on screen */ });
+    return () => { cancelled = true; };
+  }, [sessionId]);
+  useEffect(() => {
+    let cancelled = false;
+    loadRecipes().then((list) => { if (!cancelled) setRecipes(list); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+  const pickStrategyProfile = useCallback((profile: StrategyProfile) => {
+    setStrategyProfile(profile);
+    saveStrategyProfile({ profile }, sessionId).catch(() => {
+      onNotice(t('Could not save the strategy profile.'), 'warning');
+    });
+  }, [sessionId, onNotice]);
+  const pickRecipe = useCallback((recipeId: string | null) => {
+    setActiveRecipeId(recipeId);
+    saveStrategyProfile({ recipeId }, sessionId).catch(() => {
+      onNotice(t('Could not save the active recipe.'), 'warning');
+    });
+  }, [sessionId, onNotice]);
 
   /* ── Dictation ── */
   const [dictation, setDictation] = useState<Dictation | null>(null);
@@ -754,6 +798,8 @@ export function Composer({
           />
         )}
         <ApprovalSelector disabled={busy} onNotice={onNotice} />
+        <StrategyProfileSelector profile={strategyProfile} onPick={pickStrategyProfile} />
+        <RecipeSelector recipeId={activeRecipeId} recipes={recipes} onPick={pickRecipe} />
         <div className="fs-studio__model-control">{modelPicker}</div>
           <span className="fs-studio__mic" data-recording={dictation ? true : undefined}>
             <IconButton
@@ -909,6 +955,99 @@ function AutonomyPresetSelector({ preset, onPick }: { preset: AutonomyPreset; on
           >
             <strong>{choice.label}</strong>
             <span>{choice.detail}</span>
+          </button>
+        ))}
+      </div>
+    </Popover>
+  );
+}
+
+// CMP-09: fast/balanced/deep_review — src/strategy_policy.py's own
+// PROFILES/_PROFILE_MULTIPLIERS. Same shape as AUTONOMY_PRESET_CHOICES
+// right above: label + a one-line, user-facing consequence, not a
+// number. Persisted server-side (see adapters/strategy.ts), so switching
+// here changes the NEXT turn's strategy without touching this one.
+export const STRATEGY_PROFILE_CHOICES: { value: StrategyProfile; label: string; detail: string }[] = [
+  { value: 'fast', label: t('Fast'),
+    detail: t('Fewer steps, smaller budget — for small, well-defined tasks.') },
+  { value: 'balanced', label: t('Balanced'),
+    detail: t('The default: a normal plan/verify cycle.') },
+  { value: 'deep_review', label: t('Deep review'),
+    detail: t('Adds an explicit review step and a larger budget — for anything worth double-checking.') },
+];
+
+function StrategyProfileSelector({ profile, onPick }: { profile: StrategyProfile; onPick: (value: StrategyProfile) => void }) {
+  const current = STRATEGY_PROFILE_CHOICES.find((c) => c.value === profile) ?? STRATEGY_PROFILE_CHOICES[1];
+  return (
+    <Popover
+      side="top"
+      className="fs-studio__permission-menu"
+      trigger={
+        <button type="button" className="fs-studio__chip" data-strategy-profile={profile} data-testid="studio-strategy-profile">
+          <Layers size={14} aria-hidden="true" /> {current.label}
+        </button>
+      }
+    >
+      <p>{t('How carefully the agent works this turn. Never changes WHAT kind of task it thinks this is — only how much budget and review it gets.')}</p>
+      <div role="radiogroup" aria-label={t('Strategy profile')}>
+        {STRATEGY_PROFILE_CHOICES.map((choice) => (
+          <button
+            key={choice.value}
+            type="button"
+            role="radio"
+            aria-checked={profile === choice.value}
+            onClick={() => onPick(choice.value)}
+            data-testid={`studio-strategy-profile-${choice.value}`}
+          >
+            <strong>{choice.label}</strong>
+            <span>{choice.detail}</span>
+          </button>
+        ))}
+      </div>
+    </Popover>
+  );
+}
+
+// CMP-12: which recipe (src/recipes.py) injects its structured procedure
+// into this turn, if any. `null` means "no recipe — the strategy's generic
+// steps for whatever method gets chosen".
+function RecipeSelector({
+  recipeId, recipes, onPick,
+}: { recipeId: string | null; recipes: Recipe[]; onPick: (value: string | null) => void }) {
+  const current = recipes.find((r) => r.id === recipeId) ?? null;
+  return (
+    <Popover
+      side="top"
+      className="fs-studio__permission-menu"
+      trigger={
+        <button type="button" className="fs-studio__chip" data-recipe={recipeId ?? ''} data-testid="studio-recipe-selector">
+          <BookOpen size={14} aria-hidden="true" /> {current ? current.title : t('No recipe')}
+        </button>
+      }
+    >
+      <p>{t('A recipe injects a fixed procedure for this turn instead of the default strategy.')}</p>
+      <div role="radiogroup" aria-label={t('Recipe')}>
+        <button
+          type="button"
+          role="radio"
+          aria-checked={!recipeId}
+          onClick={() => onPick(null)}
+          data-testid="studio-recipe-none"
+        >
+          <strong>{t('No recipe')}</strong>
+          <span>{t('Use the default strategy for this task.')}</span>
+        </button>
+        {recipes.map((recipe) => (
+          <button
+            key={recipe.id}
+            type="button"
+            role="radio"
+            aria-checked={recipeId === recipe.id}
+            onClick={() => onPick(recipe.id)}
+            data-testid={`studio-recipe-${recipe.id}`}
+          >
+            <strong>{recipe.title}{recipe.status === 'draft' ? ` (${t('draft')})` : ''}</strong>
+            <span>{recipe.steps.slice(0, 2).join(' · ') || t('No steps recorded.')}</span>
           </button>
         ))}
       </div>

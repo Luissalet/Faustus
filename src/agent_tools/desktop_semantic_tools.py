@@ -254,6 +254,47 @@ class DesktopActTool:
         ok, reason = backend.available()
         if not ok:
             raise DesktopError(reason)
+
+        # CMP-10: which CHANNEL this action actually travels through, decided
+        # per target rather than assumed — see `src/desktop_semantics/channel.py`.
+        # `desktop_act` only ever offers `native_a11y` (its whole reason to
+        # exist) or, when that is unavailable, an explicit refusal pointing the
+        # caller at the coordinate-based tools (`channel=pixels`) instead of
+        # silently degrading. A fallback that would have changed the risk
+        # category is made VISIBLE (an evidence entry with
+        # `channel_fallback: true`) and invalidates any ref this session is
+        # still holding, since pixel actions bypass the ref system entirely.
+        from src.desktop_semantics import channel as ds_channel
+
+        semantic_probe = backend.semantic() if hasattr(backend, "semantic") else None
+        native_a11y_ok = False
+        if semantic_probe is not None:
+            native_a11y_ok, _native_why = semantic_probe.available()
+        channel_decision = ds_channel.choose_channel(
+            {"kind": "desktop"},
+            capabilities={"native_a11y": native_a11y_ok, "pixels": True},
+            policy={"desktop_control_mode": desktop_control_mode()},
+        )
+        if channel_decision.requires_visible_fallback:
+            ds_channel.record_fallback(
+                session, channel_decision, target={"kind": "desktop", "ref": ref, "op": op}
+            )
+            ds.invalidate_generation(session)
+        if channel_decision.channel != "native_a11y":
+            message = (
+                "desktop_act needs the semantic (native_a11y) channel and it is not "
+                f"available right now ({channel_decision.reason}); use desktop_screenshot + "
+                "desktop_click/desktop_type (the pixels channel) for this action instead"
+            )
+            # Not `raise DesktopError(...)`: the caller still benefits from
+            # seeing WHICH channel this call landed on, same as a successful
+            # call does below — `_error()`'s fixed shape has no room for it.
+            return "desktop_act: failed", {
+                "error": f"desktop_act: {message}",
+                "exit_code": 1,
+                "channel": channel_decision.channel,
+            }
+
         if isinstance(backend, WindowsBackend):
             from src.desktop_control_session import ensure_indicator
 
@@ -285,6 +326,7 @@ class DesktopActTool:
             "output": summary + ". Take a new desktop_snapshot (or desktop_screenshot) to see the effect.",
             "exit_code": 0,
             "target": _element_summary(element),
+            "channel": channel_decision.channel,
             "delivery": result.delivery,
             "observed_after": result.observed_after,
             "verified": result.verified,

@@ -6673,3 +6673,180 @@ Finished — not reviewed yet	Terminado — sin revisar
 No recent events — is it disconnected?	Sin eventos recientes — ¿desconectado?
 Queued for its turn	En cola, esperando su turno
 Waiting on another run to finish	Esperando a que termine otra ejecución
+Layout	Disposición
+Main conversation (Ctrl+Alt+L)	Conversación principal (Ctrl+Alt+L)
+Main document (Ctrl+Alt+L)	Documento principal (Ctrl+Alt+L)
+Review (Ctrl+Alt+L)	Revisión (Ctrl+Alt+L)
+Could not save the strategy profile.	No se pudo guardar el perfil de estrategia.
+Could not save the active recipe.	No se pudo guardar la receta activa.
+Fast	Rápido
+Balanced	Equilibrado
+Deep review	Revisión intensiva
+Fewer steps, smaller budget — for small, well-defined tasks.	Menos pasos, presupuesto menor — para tareas pequeñas y bien definidas.
+The default: a normal plan/verify cycle.	El valor por defecto: un ciclo normal de planificar/verificar.
+Adds an explicit review step and a larger budget — for anything worth double-checking.	Añade un paso de revisión explícito y un presupuesto mayor — para todo lo que merezca revisarse dos veces.
+How carefully the agent works this turn. Never changes WHAT kind of task it thinks this is — only how much budget and review it gets.	Con cuánto cuidado trabaja el agente este turno. Nunca cambia QUÉ tipo de tarea cree que es — solo cuánto presupuesto y revisión recibe.
+Strategy profile	Perfil de estrategia
+No recipe	Sin receta
+A recipe injects a fixed procedure for this turn instead of the default strategy.	Una receta inyecta un procedimiento fijo para este turno en vez de la estrategia por defecto.
+Use the default strategy for this task.	Usa la estrategia por defecto para esta tarea.
+draft	borrador
+No steps recorded.	Sin pasos registrados.
+Add alternative	Añadir alternativa
+All experiments	Todos los experimentos
+Alternative created.	Alternativa creada.
+Alternatives	Alternativas
+Applied {n} file(s) into the main copy.	Se aplicaron {n} fichero(s) a la copia principal.
+Choose a project first.	Elige antes un proyecto.
+Delete experiment	Eliminar experimento
+Experiment started.	Experimento iniciado.
+Experiments	Experimentos
+Merge this alternative into the main copy. A local edit made since the experiment started is respected, never overwritten.	Fusiona esta alternativa con la copia principal. Una edición local hecha desde que empezó el experimento se respeta, nunca se sobrescribe.
+More than one alternative touches the same file(s) — applying one, then another, will need a merge:	Más de una alternativa toca el/los mismo(s) fichero(s) — aplicar una y luego otra necesitará una fusión:
+New experiment	Nuevo experimento
+No alternatives yet. Add one to start comparing approaches.	Aún no hay alternativas. Añade una para empezar a comparar enfoques.
+No experiments yet	Aún no hay experimentos
+Nothing to apply: the main copy already matches.	Nada que aplicar: la copia principal ya coincide.
+Ran.	Ejecutado.
+Reading the experiment	Leyendo el experimento
+Reading the experiments	Leyendo los experimentos
+Save text	Guardar texto
+Start one to try more than one approach to the same task, side by side.	Inicia uno para probar más de un enfoque a la misma tarea, uno junto al otro.
+This apply needs a human: these files changed on both sides since the experiment started, and nothing was written.	Este apply necesita a una persona: estos ficheros cambiaron en ambos lados desde que empezó el experimento, y no se escribió nada.
+Try more than one approach to the same task, each isolated from the other and from your own edits, then compare and apply the one you want — never a silent overwrite.	Prueba más de un enfoque a la misma tarea, cada uno aislado del resto y de tus propias ediciones, y luego compara y aplica el que quieras — nunca una sobrescritura silenciosa.
+a command to run inside this alternative	un comando para ejecutar dentro de esta alternativa
+alternative(s)	alternativa(s)
+an absolute path — defaults to the project's own workspace	una ruta absoluta — por defecto, el propio workspace del proyecto
+applied	aplicado
+base: {ref}	base: {ref}
+choose a project	elige un proyecto
+cost: {cost}	coste: {cost}
+document	documento
+e.g. minimal fix	p. ej. arreglo mínimo
+exit {code}	salida {code}
+folder snapshot	instantánea de carpeta
+git repository	repositorio git
+ready	listo
+tests failed	pruebas fallidas
+what these alternatives are trying to answer	qué intentan responder estas alternativas
+{n} alternative(s)	{n} alternativa(s)
+{n} file(s) changed, +{a}/-{d}	{n} fichero(s) cambiado(s), +{a}/-{d}
+Context used ({n}) — why	Contexto usado ({n}) — por qué
+Open source	Abrir fuente
+File neighborhood	Vecindario del fichero
+What a file must satisfy, which decisions condition it, what tests cover it, and what fell out of date — one path at a time.	Qué debe cumplir un fichero, qué decisiones lo condicionan, qué pruebas lo cubren y qué quedó desactualizado — una ruta a la vez.
+src/example.py	src/ejemplo.py
+File path	Ruta del fichero
+Looking up…	Buscando…
+Could not load the neighborhood.	No se pudo cargar el vecindario.
+Unknown: {ids}	Desconocido: {ids}
+What it must satisfy	Qué debe cumplir
+No requirements linked to this file yet.	Aún no hay requisitos enlazados a este fichero.
+Decisions that condition it	Decisiones que lo condicionan
+No decisions found for this file.	No se encontraron decisiones para este fichero.
+Tests that cover it	Pruebas que lo cubren
+No tests found for this file.	No se encontraron pruebas para este fichero.
+Nothing looks out of date.	Nada parece desactualizado.
+Requirement	Requisito
+Test file	Fichero de prueba
+Run record	Registro de ejecución
+No project	Sin proyecto
+By project	Por proyecto
+Continue: {label}	Continuar: {label}
+GPU queue	Cola de GPU
+Dependency	Dependencia
+Lifecycle	Ciclo de vida
+Waiting on	Esperando a
+Connection	Conexión
+{n}s old	hace {n}s
+Signal: {source}, session {id}	Señal: {source}, sesión {id}
+
+About this selection…	Sobre esta selección…
+Accept proposal	Aceptar propuesta
+Added as context for your next message.	Añadido como contexto para tu próximo mensaje.
+Apply to all occurrences	Aplicar a todas las apariciones
+Clarify	Aclara esto
+Keep this wording	Mantén este término
+Fix this	Corrige esto
+Comment added.	Comentario añadido.
+Comment on the current selection	Comentar la selección actual
+Documents that link here	Documentos que enlazan aquí
+Loading comments	Cargando los comentarios
+Loading links	Cargando los enlaces
+No comments to show.	No hay comentarios que mostrar.
+No document to review	Ningún documento que revisar
+No links.	Sin enlaces.
+Nothing references this document yet.	Nada enlaza todavía a este documento.
+Open a document to see comments anchored on it, and to review what it links to.	Abre un documento para ver los comentarios anclados en él y revisar a qué enlaza.
+Proposal applied.	Propuesta aplicada.
+Redo	Rehacer
+Resolve	Resolver
+Select this comment	Seleccionar este comentario
+Send {n} comment to the agent as a task	Enviar {n} comentario al agente como tarea
+Send {n} comments to the agent as a task	Enviar {n} comentarios al agente como tarea
+The document changed since this comment was anchored; it could not be applied automatically.	El documento cambió desde que se ancló este comentario; no se pudo aplicar automáticamente.
+The quoted text no longer occurs unambiguously in the document — this comment was not silently reattached elsewhere. Find the passage and either resolve or delete it by hand.	La cita ya no aparece de forma inequívoca en el documento — este comentario no se ha reubicado en otro sitio en silencio. Busca el pasaje y resuélvelo o elimínalo a mano.
+This document links to	Este documento enlaza a
+This text appears {n} time — choose which one.	Este texto aparece {n} vez — elige cuál.
+This text appears {n} times — choose which one.	Este texto aparece {n} veces — elige cuál.
+Which occurrence?	¿Qué aparición?
+ambiguous — {n} matches	ambiguo — {n} coincidencias
+broken	roto
+lost anchor — relocate by hand	anclaje perdido — reubicar a mano
+resolved	resuelto
+{n} comment added as context for your next message.	{n} comentario añadido como contexto para tu próximo mensaje.
+{n} comments added as context for your next message.	{n} comentarios añadidos como contexto para tu próximo mensaje.
+{n} lost anchor	{n} anclaje perdido
+{n} lost anchors	{n} anclajes perdidos
+{n} open comment	{n} comentario abierto
+{n} open comments	{n} comentarios abiertos
+A workflow definition, this module’s canonical export, or an aigraphstudio-shaped graph…	Una definición de workflow, la exportación canónica de este módulo, o un grafo con forma de aigraphstudio…
+Advance	Avanzar
+Apply and re-check	Aplicar y volver a comprobar
+Assume fails/denied	Suponer que falla/se deniega
+Assume passes/approved	Suponer que se cumple/se aprueba
+Authorized real execution	Ejecución real autorizada
+Cancel run	Cancelar ejecución
+Connections	Conexiones
+Could not read this run	No se pudo leer esta ejecución
+Design	Diseño
+Design a plan, simulate it structurally, then authorize a real run — the same definition throughout.	Diseña un plan, simúlalo estructuralmente y después autoriza una ejecución real — la misma definición en todo momento.
+Human waits	Esperas humanas
+Import or paste JSON	Importar o pegar JSON
+Lint findings for this node	Avisos de lint para este nodo
+Loading recent workflow runs	Cargando las ejecuciones recientes de workflows
+Loading the run	Cargando la ejecución
+Needs (entry contract)	Necesita (contrato de entrada)
+No condition or human_approval nodes to choose for.	No hay nodos condition ni human_approval para elegir.
+No nodes to draw yet.	Aún no hay nodos que dibujar.
+No workflow runs yet.	Aún no hay ejecuciones de workflows.
+Nothing executable came out of that import — see the rejected entries.	Esa importación no produjo nada ejecutable — revisa las entradas rechazadas.
+Nothing loaded yet	Nada cargado todavía
+Pick a recent run, or paste a definition, to see its plan.	Elige una ejecución reciente, o pega una definición, para ver su plan.
+Real, authorized execution	Ejecución real autorizada
+Recent runs	Ejecuciones recientes
+Rounds max	Rondas máximas
+Run simulation	Ejecutar simulación
+Running preflight	Ejecutando preflight
+Select a node in the plan to inspect its contract.	Selecciona un nodo del plan para inspeccionar su contrato.
+Start a real run?	¿Iniciar una ejecución real?
+Start for real	Iniciar de verdad
+Start run	Iniciar ejecución
+Structural simulation	Simulación estructural
+That is not valid JSON.	Eso no es JSON válido.
+The server refused to start this run.	El servidor rechazó iniciar esta ejecución.
+This calls POST /api/workflows/runs against the live engine. Effectful nodes can run for real.	Esto llama a POST /api/workflows/runs contra el motor real. Los nodos con efectos pueden ejecutarse de verdad.
+This starts an actual run of the current definition — effectful nodes (skills, deliveries) can run for real. Nothing happens until you confirm.	Esto inicia una ejecución real de la definición actual — los nodos con efectos (skills, entregas) pueden ejecutarse de verdad. No ocurre nada hasta que confirmes.
+Undecided	Sin decidir
+View as a list (keyboard/screen-reader alternative)	Ver como lista (alternativa para teclado/lector de pantalla)
+Workflow plan, {n} nodes	Plan del workflow, {n} nodos
+config (JSON) — changing the tool or model re-runs preflight and lint	config (JSON) — cambiar la herramienta o el modelo vuelve a ejecutar preflight y lint
+config must be a JSON object.	config debe ser un objeto JSON.
+config must be valid JSON.	config debe ser JSON válido.
+none — a root node	ninguno — un nodo raíz
+{a} activated · {n} not taken · {h} human wait(s) · {w} awaiting a choice	{a} activados · {n} no tomados · {h} espera(s) humana(s) · {w} pendientes de una elección
+{n} node(s) were kept as design-only — not translated into anything executable.	{n} nodo(s) se mantuvieron solo-diseño — no se tradujeron a nada ejecutable.
+The server did not return a preflight report.	El servidor no devolvió un informe de preflight.
+The server did not return a simulation.	El servidor no devolvió una simulación.
+The server did not return an export.	El servidor no devolvió una exportación.
+The server did not return a plan comparison.	El servidor no devolvió una comparación de planes.

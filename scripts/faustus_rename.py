@@ -36,7 +36,10 @@ SKIP_FILES = {
     "tests/test_faustus_brand.py", "scripts/faustus_rename.py",
     # Upstream attribution: these name the fork's origin on purpose.
     "docs/design/diogenes-adaptations.md", "tests/eval/tasks.py", "tests/test_task_scheduler_cache.py",
+    "THIRD_PARTY_NOTICES.md", "tests/test_adp02_provenance.py",
 }
+# Directories that are attribution/provenance records by nature.
+SKIP_DIRS = SKIP_DIRS + ("docs/adaptations/",)
 
 
 def tracked_files(root: str) -> List[str]:

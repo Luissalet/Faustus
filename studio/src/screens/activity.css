@@ -157,6 +157,94 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* CMP-05: lifecycle / wait-cause / connection badges — a compact row of
+   small pills under the reason line. Deliberately quieter than the reason
+   text itself (these are supporting facts, not the headline). */
+.fs-act__attention-meta {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--fs-space-1);
+  margin-block-start: 2px;
+}
+
+.fs-act__lifecycle-badge,
+.fs-act__wait-badge,
+.fs-act__signal-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0 6px;
+  border-radius: var(--fs-radius-pill);
+  border: 1px solid var(--fs-border);
+  color: var(--fs-text-3);
+  font-size: 11px;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+
+/* Connection health colours the signal badge — the one place colour alone
+   is allowed to carry meaning, because the icon + text next to it already
+   say the same thing in words. */
+.fs-act__signal-badge[data-health="live"] { color: var(--fs-success); border-color: color-mix(in srgb, var(--fs-success) 45%, var(--fs-border)); }
+.fs-act__signal-badge[data-health="stale"] { color: var(--fs-warning); border-color: color-mix(in srgb, var(--fs-warning) 45%, var(--fs-border)); }
+.fs-act__signal-badge[data-health="disconnected"] { color: var(--fs-danger); border-color: color-mix(in srgb, var(--fs-danger) 45%, var(--fs-border)); }
+
+/* CMP-05: the row's own "what do I click" chip — visually distinct from the
+   status badge (which says WHAT state the run is in) so the two never read
+   as the same fact restated twice. */
+.fs-act__next-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px var(--fs-space-2);
+  border-radius: var(--fs-radius-pill);
+  border: 1px solid color-mix(in srgb, var(--fs-brand) 45%, var(--fs-border));
+  color: var(--fs-brand);
+  font-size: var(--fs-label-size);
+  font-weight: var(--fs-label-weight);
+  white-space: nowrap;
+  flex: 0 0 auto;
+  cursor: pointer;
+}
+
+.fs-act__next-action:hover {
+  background: var(--fs-ember-faint);
+}
+
+/* CMP-05: header quick actions (Refresh + the MRU "continue" button) sit in
+   one flex row so a narrow header still wraps sanely. */
+.fs-act__head-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  flex-wrap: wrap;
+}
+
+/* CMP-05: "por proyecto" / "por atención" — same chip look as the kind
+   filter, pushed to the toolbar's far edge so it reads as a VIEW switch,
+   not one more filter among the kind chips. */
+.fs-act__view-toggle {
+  display: inline-flex;
+  gap: var(--fs-space-1);
+  margin-inline-start: auto;
+}
+
+.fs-act__project-group + .fs-act__project-group {
+  margin-block-start: var(--fs-space-4);
+}
+
+.fs-act__project-title {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  margin: 0 0 var(--fs-space-2);
+  font-size: var(--fs-label-size);
+  font-weight: var(--fs-label-weight);
+  letter-spacing: 0.02em;
+  color: var(--fs-text-2);
+}
+
 /* ── Lote X: a pane beside the list, rows you can open ── */
 
 .fs-act__lede {

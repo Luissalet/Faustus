@@ -11,10 +11,14 @@ the same audit trail the coordinate-based desktop_* tools already use.
 `src/agent_tools/desktop_semantic_tools.py` wraps this package as three
 agent tools (`desktop_snapshot`, `desktop_find`, `desktop_act`); this
 package itself has no dependency on the tool-calling layer and can be used
-directly (routes, scripts, tests).
+directly (routes, scripts, tests). `channel.py` (CMP-10) adds
+`choose_channel`/`ChannelDecision` on top — which of app_api/dom_cdp/
+native_a11y/pixels an action should travel through — without depending on
+any of the tool-calling layer either.
 """
 from __future__ import annotations
 
+from .channel import CHANNELS, SEMANTIC_CHANNELS, ChannelDecision, choose_channel, record_fallback
 from .contracts import (
     DELIVERY_STATES,
     ActionResult,
@@ -34,6 +38,7 @@ from .session import (
     check_precondition,
     current_generation,
     get_snapshot,
+    invalidate_generation,
     latest_snapshot,
     reset_state,
     resolve,
@@ -45,19 +50,25 @@ __all__ = [
     "ActionResult",
     "AmbiguousTargetError",
     "BackendUnavailableError",
+    "CHANNELS",
+    "ChannelDecision",
     "Element",
     "PreconditionFailedError",
+    "SEMANTIC_CHANNELS",
     "SemanticError",
     "Snapshot",
     "StaleRefError",
     "UnsupportedOperationError",
     "WrongSessionError",
-    "parse_ref",
     "act",
     "check_precondition",
+    "choose_channel",
     "current_generation",
     "get_snapshot",
+    "invalidate_generation",
     "latest_snapshot",
+    "parse_ref",
+    "record_fallback",
     "reset_state",
     "resolve",
     "take_snapshot",

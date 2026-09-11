@@ -221,6 +221,12 @@ NON_ADMIN_BLOCKED_TOOLS = BUILTIN_EMAIL_TOOLS | {
     "board_comment",
     "board_link",
     "board_claim",
+    # Isolated, comparable alternatives (CMP-13, W2-G): creates a git
+    # worktree/directory copy and, for alt_apply, writes into the user's own
+    # workspace files -- same privilege class as the git_* tools above.
+    "alt_start",
+    "alt_compare",
+    "alt_apply",
 }
 
 

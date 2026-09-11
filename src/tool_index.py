@@ -229,6 +229,12 @@ BUILTIN_TOOL_DESCRIPTIONS: Dict[str, str] = {
     "req_matrix": "Coverage matrix for one requirement or the whole project: linked/implemented/tested/verified/stale, each an independent fact. Use for 'is REQ-4 implemented', 'what's still not covered', 'está eso probado y verificado'. Read-only.",
     "req_propose": "File a new requirement as a MODEL PROPOSAL (always status: proposed — only a human accepts it). Returns its key; always cite it back. Use when the user states a new requirement or acceptance criterion, or you infer one that should be tracked — 'apunta esto como requisito', 'this should be a requirement'.",
     "req_link": "Attach evidence to a requirement — a file that implements it, a test that exercises it, a run/test result that verifies it, or a board issue. A workspace-escaping file target is refused. Use for 'link this file to REQ-3', 'this test covers that requirement', 'mark that this commit implements REQ-5'.",
+    # CMP-13 (W2-G) — isolated, comparable alternatives: try more than one
+    # approach to the same task without one overwriting the other or the
+    # user's own edits, then compare and apply the one that worked.
+    "alt_start": "Start a new experiment: try more than one approach to the same task, each fully isolated (a git worktree, a directory snapshot, or a text snapshot). Returns the experiment id and each alternative's id — always cite the experiment id back. Use for 'let's try this two different ways', 'try it again without losing the first attempt', 'compare a quick fix against a proper refactor'.",
+    "alt_compare": "Diff every alternative of an experiment against its shared base, and see which files more than one alternative touches. Use for 'how do these two attempts differ', 'which one changed less', 'did they touch the same files'. Read-only.",
+    "alt_apply": "Merge one alternative's changes into the user's main copy — a three-way merge that never discards a manual edit made there since the experiment started. On a conflict nothing is written; relay the conflicting files to the user rather than guessing. Use for 'go with the second one', 'apply that alternative'. Refused unless the user explicitly approved.",
 }
 
 

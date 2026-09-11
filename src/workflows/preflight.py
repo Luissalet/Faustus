@@ -53,12 +53,14 @@ config is not represented here — that gap is real, not hidden.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from src.agent_profile_lint import lint_workflow
 from src.contracts.workflow import WorkflowDefinition, WorkflowNode
-from src.workflow_cost_estimate import ModelPrice, estimate as _cost_estimate
+from src.workflow_cost_estimate import (
+    ModelPrice, estimate as _cost_estimate, estimate_detailed as _cost_estimate_detailed,
+)
 
 __all__ = ["Preflight", "preflight"]
 
@@ -88,6 +90,16 @@ class Preflight:
     token_estimate: Dict[str, Any]
     cost: Dict[str, Any]
     warnings: Tuple[Dict[str, Any], ...]
+    #: CMP-08 (edición mínima): `estimate_detailed()`'s separated accounts
+    #: (`node_activations`/`model_calls`/`external_ops`/`tokens`, structural
+    #: vs forecast split) computed with the SAME `prices`/`installed_models`
+    #: this preflight already received — nothing new to pass in. `cost`
+    #: above is untouched on purpose (every existing caller of `preflight()`
+    #: keeps reading exactly the shape it always has); this is an addition,
+    #: not a replacement. See `src/workflow_cost_estimate.py`'s
+    #: `estimate_detailed` for why it never guesses a composite skill's real
+    #: call count or fetches a price itself.
+    cost_detail: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -100,6 +112,7 @@ class Preflight:
             "token_estimate": dict(self.token_estimate),
             "cost": dict(self.cost),
             "warnings": [dict(row) for row in self.warnings],
+            "cost_detail": dict(self.cost_detail),
         }
 
 
@@ -229,6 +242,14 @@ def preflight(
 
     warnings = [f.to_dict() for f in lint_workflow(wf)]
 
+    # CMP-08 (edición mínima): the SAME `prices`/`assumed_iterations` this
+    # preflight already computed `cost_estimate` with — no new input, no
+    # network, no guess beyond what `estimate()` above already assumed.
+    cost_detail = _cost_estimate_detailed(
+        wf, prices=prices, default_tokens_per_call=default_tokens_per_call,
+        assumed_iterations=assumed_iterations,
+    ).to_dict()
+
     return Preflight(
         connections=tuple(sorted(connections)),
         tools=tuple(tools),
@@ -246,4 +267,5 @@ def preflight(
         },
         cost=cost,
         warnings=tuple(warnings),
+        cost_detail=cost_detail,
     )

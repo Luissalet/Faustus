@@ -687,6 +687,43 @@ def _windows_shell() -> Finding:
                    facts={"path": bash})
 
 
+def _showcase_demo() -> Finding:
+    """CMP-14: does this checkout actually have the showcase materials
+    `docs/showcase.md` points a reader at, not just the doc naming them.
+
+    Deliberately narrow: this checks the demo MATERIALS are on disk, never
+    that the three walkthroughs themselves pass — that is what
+    `tests/test_adp08_desktop_semantics.py`/`test_cmp10_channel.py`/
+    `test_cmp06_herdr_adapter.py`/etc. are for. Conflating "the file exists"
+    with "the walkthrough works" is exactly the kind of rounded-up `ok`
+    this module's own docstring warns against.
+    """
+    from src.runtime_paths import get_app_root
+
+    root = Path(get_app_root())
+    showcase_doc = root / "docs" / "showcase.md"
+    examples_dir = root / "examples" / "showcase"
+    sample_project = examples_dir / "sample-project"
+
+    missing = []
+    if not showcase_doc.is_file():
+        missing.append(str(showcase_doc.relative_to(root)))
+    if not sample_project.is_dir():
+        missing.append(str(sample_project.relative_to(root)))
+    elif not any(sample_project.iterdir()):
+        missing.append(f"{sample_project.relative_to(root)} (empty)")
+
+    if missing:
+        return Finding("docs", "showcase demo", "fail",
+                       f"missing: {', '.join(missing)}",
+                       fix="restore docs/showcase.md and examples/showcase/sample-project/ "
+                           "(see docs/showcase.md for what belongs there)")
+    return Finding("docs", "showcase demo", "ok",
+                   "docs/showcase.md and examples/showcase/sample-project/ are both present",
+                   facts={"doc": str(showcase_doc.relative_to(root)),
+                          "sample_project": str(sample_project.relative_to(root))})
+
+
 def run(*, areas: Optional[List[str]] = None) -> Dict[str, Any]:
     """Ask everything, and say what is worth doing about it."""
     probes: List[Tuple[str, str, Callable]] = [
@@ -716,6 +753,7 @@ def run(*, areas: Optional[List[str]] = None) -> Dict[str, Any]:
         ("memory", "stored memories", _memory_store),
         ("memory", "Chroma vector service", _memory_vectors),
         ("browser", "integrated browser", _browser),
+        ("docs", "showcase demo", _showcase_demo),
     ]
 
     findings: List[Finding] = []

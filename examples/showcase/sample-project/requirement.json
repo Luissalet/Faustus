@@ -1,0 +1,13 @@
+{
+  "_comment": "DEMO DATA (CMP-14 showcase) -- fabricated requirement, not a real project's board entry.",
+  "id": "REQ-DEMO-1",
+  "revision": 1,
+  "title": "Onboarding connection errors must name the cause",
+  "source": "examples/showcase/sample-project/README.md",
+  "implements": [
+    "examples/showcase/sample-project/README.md#open-questions"
+  ],
+  "tests": [],
+  "status": "draft",
+  "note": "Fabricated fixture only -- deliberately has no linked test yet, so the neighborhood walkthrough has a real 'not tested' row to show alongside a covered one. Not linked to any real project board."
+}

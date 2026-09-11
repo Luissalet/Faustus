@@ -100,6 +100,13 @@ DEFAULT_SETTINGS = {
     # "ask_each" = approval card on EVERY call, "ask_task" = the normal
     # scoped approval gate, "off" = not offered at all.
     "desktop_control_mode": "ask_each",
+    # CMP-06: connection to an externally configured, READ-ONLY Herdr
+    # runtime (src/external_runtimes/herdr.py). `token` is stored
+    # `secret_storage`-encrypted (`enc:` prefix), never plaintext, even
+    # though the settings file is where it lives; empty base_url means
+    # "not connected" (routes/external_runtimes_routes.py reports that
+    # plainly rather than trying an empty URL).
+    "external_runtimes_herdr": {"base_url": "", "token": ""},
     "tool_approval_mode": "ask",
     # Destructive command guard (src/command_guard.py): classifies bash/python
     # commands into SAFE/CAUTION/DANGEROUS/CRITICAL. "enforce" = the two

@@ -9,10 +9,12 @@ import {
   Gauge,
   GitBranch,
   GitCompare,
+  GitFork,
   Home,
   Library,
   ListChecks,
   Mail,
+  Network,
   Sparkles,
   StickyNote,
   Zap,
@@ -76,9 +78,11 @@ export const TOOLS: Tool[] = [
   { path: '/council', label: 'Council', icon: Scale },
   { path: '/state', label: 'State Mirror', icon: Database },
   { path: '/deltas', label: 'Deltas', icon: GitCompare },
+  { path: '/alternatives', label: 'Alternatives', icon: GitFork },
   { path: '/completion', label: 'Completion', icon: ListChecks },
   { path: '/cookbook', label: 'Cookbook', icon: ChefHat },
   { path: '/context', label: 'Context', icon: Gauge },
+  { path: '/workflows', label: 'Workflows', icon: Network },
 ];
 
 /**
@@ -110,9 +114,11 @@ export const SERVER_ROUTES = [
   '/council',
   '/state',
   '/deltas',
+  '/alternatives',
   '/completion',
   '/cookbook',
   '/context',
+  '/workflows',
   // The paths the interface this one replaced owned. Still served, still in
   // bookmarks; the router redirects each to the screen that took over.
   '/gallery',

@@ -146,3 +146,72 @@ arriba), evidencia, e integridad de registro de las tres tools nuevas en
 `tool_capabilities.KNOWN_CAPABILITY_TOOLS`/`tool_index.
 BUILTIN_TOOL_DESCRIPTIONS`/`tool_registry.snapshot()`/
 `tool_security.NON_ADMIN_BLOCKED_TOOLS`.
+
+## §Canal — elección de canal (CMP-10, `channel.py`)
+
+`src/desktop_semantics/channel.py::choose_channel(target, *, capabilities,
+policy, preferred=None) -> ChannelDecision` decide CUÁL de cuatro canales
+usa una acción, por objetivo y capacidades disponibles EN ESTA llamada —
+nunca un orden global fijo:
+
+- `app_api` — un endpoint/tool con nombre actúa en nombre del usuario (sin
+  ventana, sin coordenadas).
+- `dom_cdp` — árbol de accesibilidad/DOM del navegador integrado sobre CDP
+  (el mundo snapshot/ref de `src/browser_view.py`).
+- `native_a11y` — la capa semántica de este propio paquete
+  (`contracts.py`/`session.py`, UIA hoy).
+- `pixels` — clics/teclas por coordenada, sin identidad — el fallback
+  ORIGINAL, siempre disponible; cada otro canal es algo que Faustus prefiere
+  usar EN VEZ de este cuando puede.
+
+El orden de candidatos depende de `target["kind"]` (`api`/`browser`/
+`desktop`; cualquier otro valor cae a un orden por defecto que también deja
+`pixels` al final). `capabilities` son las capacidades REALES de esta
+llamada (p. ej. `native_a11y=False` si el backend UIA no está disponible
+ahora mismo), no lo que existe en abstracto; `policy["allow_pixels"]=False`
+quita `pixels` de la lista de candidatos por completo. Si ningún candidato
+es usable — incluido `pixels`, cuando la política lo permite — se lanza
+`BackendUnavailableError`: `choose_channel` nunca inventa un canal que
+nadie ofreció como capacidad.
+
+`ChannelDecision{channel, reason, risk_change, requires_visible_fallback}`:
+`risk_change` es `True` exactamente cuando el canal elegido NO es
+semántico (`SEMANTIC_CHANNELS = {app_api, dom_cdp, native_a11y}`) pero el
+canal natural para ese tipo de objetivo SÍ lo era — el caso
+"semántico→píxeles" de la ficha. `requires_visible_fallback` es `True` en
+ese mismo caso (o cuando `policy["require_fallback_visibility"]` lo pide
+explícitamente) y OBLIGA a dejarlo visible: `record_fallback(session_id,
+decision, target=...)` añade UNA entrada al MISMO rastro de auditoría que
+`desktop_act`/`evidence.py` ya usan
+(`src.desktop_control_session.record_action`, herramienta
+`"desktop_channel:decision"`, `note` JSON con `channel_fallback: true`) —
+sin segundo almacén.
+
+**Invalidación de generación (`session.invalidate_generation(session_id)`,
+nueva en este lote):** fuerza el bump de generación y vacía la memoria de
+snapshots de una sesión AHORA MISMO, sin esperar a que el próximo
+`take_snapshot` note un cambio de ventana/app por sí solo. `desktop_act`
+la llama cuando la decisión de canal exige visibilidad de fallback
+(`native_a11y` dejó de estar disponible entre un `desktop_snapshot` y el
+`desktop_act` que usa su ref): las acciones por píxeles esquivan el
+sistema de refs por completo, así que cualquier ref que la sesión siga
+sosteniendo deja de ser fiable sin una captura nueva. **Límite declarado:**
+el otro disparador que describe la ficha — "el usuario toma el control" del
+escritorio — no está cableado aquí: `src/desktop_control_session.py` (el
+handshake de indicador + cancelación con Escape) no es un fichero de este
+lote (`toca SOLO tus ficheros`), así que esa vía queda como
+`invalidate_generation` disponible y documentada, sin llamada automática
+desde la cancelación por Escape — pendiente para quien posea ese fichero.
+
+## Wiring en `desktop_act`
+
+`DesktopActTool._execute` calcula `choose_channel({"kind": "desktop"},
+capabilities={"native_a11y": <backend.semantic() disponible>, "pixels":
+True}, policy={"desktop_control_mode": ...})` antes de actuar. Hoy
+`desktop_act` SOLO sabe ejecutar por `native_a11y` (es su razón de ser); si
+la decisión no es `native_a11y`, se rechaza explícitamente señalando
+`desktop_screenshot`/`desktop_click`/`desktop_type` (canal `pixels`) como
+alternativa, en vez de degradar en silencio a una acción por coordenadas
+que esta tool no sabe ejecutar. Una llamada exitosa devuelve `"channel":
+"native_a11y"` en el resultado (`desktop_act` devuelve el canal usado, tal
+como pide la ficha).

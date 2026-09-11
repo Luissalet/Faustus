@@ -1,0 +1,534 @@
+/* W2-E (CMP-07) — /workflows: design / structural simulation / authorized
+   execution over one definition. `.fs-chip` (mode switch, choice toggles)
+   is the shared token-driven control from styles/components.css; this file
+   only lays out what is specific to this screen. Every colour below is a
+   var(--fs-*) token — none literal (tests/test_studio_guards.py). */
+
+.fs-workflows__title {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fs-space-1);
+}
+
+.fs-workflows__title h1 {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+}
+
+.fs-workflows__modes {
+  display: flex;
+  gap: var(--fs-space-2);
+  flex-wrap: wrap;
+}
+
+.fs-workflows__source {
+  display: grid;
+  grid-template-columns: minmax(200px, 1fr) minmax(240px, 1.4fr);
+  gap: var(--fs-space-4);
+  margin-block: var(--fs-space-4);
+}
+
+@media (max-width: 760px) {
+  .fs-workflows__source {
+    grid-template-columns: 1fr;
+  }
+}
+
+.fs-workflows__recent h2,
+.fs-workflows__paste h2 {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-1);
+  font-size: 0.85rem;
+  color: var(--fs-text-2);
+  margin: 0 0 var(--fs-space-2);
+}
+
+.fs-workflows__runlist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--fs-space-1);
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.fs-workflows__runbtn {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  gap: var(--fs-space-2);
+  padding: var(--fs-space-2) var(--fs-space-3);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-control);
+  background: var(--fs-surface-2);
+  color: var(--fs-text-1);
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.fs-workflows__runbtn:hover,
+.fs-workflows__runbtn:focus-visible {
+  border-color: var(--fs-border-strong);
+}
+
+.fs-workflows__runbtn span[data-status] {
+  color: var(--fs-text-3);
+  font-size: 0.8rem;
+}
+
+.fs-workflows__pastearea {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: var(--fs-font-code, monospace);
+  font-size: 0.8rem;
+  padding: var(--fs-space-2);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-control);
+  background: var(--fs-surface-2);
+  color: var(--fs-text-1);
+  resize: vertical;
+  margin-bottom: var(--fs-space-2);
+}
+
+.fs-workflows__error {
+  color: var(--fs-danger);
+  font-size: 0.85rem;
+  margin-top: var(--fs-space-2);
+}
+
+.fs-workflows__notice,
+.fs-workflows__empty {
+  color: var(--fs-text-3);
+  font-size: 0.85rem;
+  margin-top: var(--fs-space-2);
+}
+
+.fs-workflows__body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);
+  gap: var(--fs-space-4);
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .fs-workflows__body {
+    grid-template-columns: 1fr;
+  }
+}
+
+.fs-workflows__canvas {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--fs-space-3);
+}
+
+/* ── the plan graph itself (shared by design/simulate/execute) ── */
+
+.fs-plan {
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-panel);
+  background: var(--fs-surface-2);
+  padding: var(--fs-space-3);
+  overflow-x: auto;
+}
+
+.fs-plan__svg {
+  max-width: 100%;
+  height: auto;
+  display: block;
+}
+
+.fs-plan__rect {
+  fill: var(--fs-surface-3);
+  stroke: var(--fs-border);
+  stroke-width: 1.5;
+}
+
+.fs-plan__type {
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  fill: var(--fs-text-3);
+}
+
+.fs-plan__title {
+  font-size: 12px;
+  fill: var(--fs-text-1);
+}
+
+.fs-plan__edge {
+  fill: none;
+  stroke: var(--fs-border-strong);
+  stroke-width: 1.5;
+}
+
+.fs-plan__arrowhead {
+  fill: var(--fs-border-strong);
+}
+
+.fs-plan__node {
+  cursor: pointer;
+}
+
+.fs-plan__node:focus-visible .fs-plan__rect,
+.fs-plan__node[data-selected] .fs-plan__rect {
+  stroke: var(--fs-brand);
+  stroke-width: 2.5;
+}
+
+.fs-plan__node[data-mark='activated'] .fs-plan__rect,
+.fs-plan__edge[data-mark='activated'] {
+  stroke: var(--fs-success);
+}
+
+.fs-plan__node[data-mark='not_taken'] .fs-plan__rect,
+.fs-plan__edge[data-mark='not_taken'] {
+  stroke: var(--fs-text-3);
+  stroke-dasharray: 4 3;
+}
+
+.fs-plan__node[data-mark='awaiting_choice'] .fs-plan__rect,
+.fs-plan__edge[data-mark='awaiting_choice'] {
+  stroke: var(--fs-warning);
+  stroke-dasharray: 2 2;
+}
+
+.fs-plan__node[data-mark='human_wait'] .fs-plan__rect,
+.fs-plan__node[data-mark='run_paused'] .fs-plan__rect {
+  stroke: var(--fs-info);
+  stroke-width: 2;
+}
+
+.fs-plan__node[data-mark='run_completed'] .fs-plan__rect {
+  stroke: var(--fs-success);
+  stroke-width: 2;
+}
+
+.fs-plan__node[data-mark='run_failed'] .fs-plan__rect {
+  stroke: var(--fs-danger);
+  stroke-width: 2;
+}
+
+.fs-plan__node[data-mark='run_running'] .fs-plan__rect {
+  stroke: var(--fs-brand);
+  stroke-width: 2;
+}
+
+.fs-plan__list {
+  margin-top: var(--fs-space-3);
+  font-size: 0.85rem;
+}
+
+.fs-plan__list summary {
+  cursor: pointer;
+  color: var(--fs-text-2);
+}
+
+.fs-plan__table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: var(--fs-space-2);
+}
+
+.fs-plan__table th,
+.fs-plan__table td {
+  text-align: left;
+  padding: var(--fs-space-1) var(--fs-space-2);
+  border-bottom: 1px solid var(--fs-border);
+  font-size: 0.8rem;
+}
+
+.fs-plan__table tr[data-selected] {
+  background: var(--fs-surface-3);
+}
+
+.fs-plan__list-btn {
+  border: none;
+  background: none;
+  color: var(--fs-brand);
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+  text-decoration: underline;
+}
+
+.fs-plan__empty {
+  color: var(--fs-text-3);
+  font-size: 0.85rem;
+}
+
+/* ── design mode: preflight + lint ── */
+
+.fs-workflows__preflight {
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-panel);
+  padding: var(--fs-space-3);
+  background: var(--fs-surface-2);
+}
+
+.fs-workflows__preflight-summary {
+  font-size: 0.85rem;
+  color: var(--fs-text-2);
+  margin: 0 0 var(--fs-space-2);
+}
+
+.fs-workflows__lint {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--fs-space-2);
+}
+
+.fs-workflows__lint li[data-severity='error'] {
+  border-left: 3px solid var(--fs-danger);
+  padding-left: var(--fs-space-2);
+}
+
+.fs-workflows__lint li[data-severity='warn'] {
+  border-left: 3px solid var(--fs-warning);
+  padding-left: var(--fs-space-2);
+}
+
+.fs-workflows__lint li[data-severity='info'] {
+  border-left: 3px solid var(--fs-info);
+  padding-left: var(--fs-space-2);
+}
+
+.fs-workflows__lint-open {
+  border: none;
+  background: none;
+  color: var(--fs-text-1);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  padding: 0;
+}
+
+.fs-workflows__hint {
+  color: var(--fs-text-3);
+  font-size: 0.8rem;
+  margin: var(--fs-space-1) 0 0;
+}
+
+/* ── simulate mode ── */
+
+.fs-workflows__simcontrols {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fs-space-2);
+  align-items: center;
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-panel);
+  padding: var(--fs-space-3);
+  background: var(--fs-surface-2);
+}
+
+.fs-workflows__choice {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-1);
+  font-size: 0.8rem;
+}
+
+.fs-workflows__choice > span:first-child {
+  font-family: var(--fs-font-code, monospace);
+  color: var(--fs-text-2);
+}
+
+.fs-workflows__rounds {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-1);
+  font-size: 0.8rem;
+  color: var(--fs-text-2);
+}
+
+.fs-workflows__rounds input {
+  width: 4.5em;
+  padding: var(--fs-space-1);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-control);
+  background: var(--fs-surface-2);
+  color: var(--fs-text-1);
+}
+
+.fs-workflows__simresult {
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-panel);
+  padding: var(--fs-space-3);
+  background: var(--fs-surface-2);
+  font-size: 0.85rem;
+}
+
+.fs-workflows__warnings {
+  color: var(--fs-text-3);
+  margin: var(--fs-space-2) 0 0;
+  padding-left: var(--fs-space-4);
+}
+
+/* ── execute mode ── */
+
+.fs-runoverlay {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fs-space-3);
+}
+
+.fs-runoverlay__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--fs-space-2);
+}
+
+.fs-runoverlay__status {
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.fs-runoverlay__status[data-status='failed'] {
+  color: var(--fs-danger);
+}
+
+.fs-runoverlay__status[data-status='paused'] {
+  color: var(--fs-warning);
+}
+
+.fs-runoverlay__status[data-status='completed'] {
+  color: var(--fs-success);
+}
+
+.fs-runoverlay__reason {
+  color: var(--fs-text-3);
+  font-size: 0.8rem;
+  margin: 0;
+}
+
+.fs-runoverlay__actions {
+  display: flex;
+  gap: var(--fs-space-2);
+  flex-wrap: wrap;
+}
+
+.fs-runoverlay__error {
+  color: var(--fs-danger);
+  font-size: 0.85rem;
+}
+
+/* ── node inspector ── */
+
+.fs-inspector {
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-panel);
+  background: var(--fs-surface-2);
+  padding: var(--fs-space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--fs-space-2);
+  position: sticky;
+  top: var(--fs-space-3);
+}
+
+.fs-inspector--empty {
+  color: var(--fs-text-3);
+  font-size: 0.85rem;
+}
+
+.fs-inspector__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.fs-inspector__head h3 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.fs-inspector__facts {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--fs-space-1);
+  font-size: 0.8rem;
+}
+
+.fs-inspector__facts > div {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--fs-space-2);
+}
+
+.fs-inspector__facts dt {
+  color: var(--fs-text-3);
+}
+
+.fs-inspector__facts dd {
+  margin: 0;
+  text-align: right;
+  color: var(--fs-text-1);
+}
+
+.fs-inspector__config-label {
+  font-size: 0.78rem;
+  color: var(--fs-text-2);
+}
+
+.fs-inspector__config {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: var(--fs-font-code, monospace);
+  font-size: 0.78rem;
+  padding: var(--fs-space-2);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-control);
+  background: var(--fs-surface-1);
+  color: var(--fs-text-1);
+  resize: vertical;
+}
+
+.fs-inspector__error {
+  color: var(--fs-danger);
+  font-size: 0.8rem;
+}
+
+.fs-inspector__lint {
+  border-top: 1px solid var(--fs-border);
+  padding-top: var(--fs-space-2);
+}
+
+.fs-inspector__lint h4 {
+  margin: 0 0 var(--fs-space-1);
+  font-size: 0.8rem;
+  color: var(--fs-text-2);
+}
+
+.fs-inspector__lint ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--fs-space-2);
+}
+
+.fs-inspector__lint li {
+  font-size: 0.78rem;
+}
+
+.fs-inspector__lint li p {
+  margin: var(--fs-space-1) 0 0;
+}
+
+.fs-inspector__hint {
+  color: var(--fs-text-3);
+}

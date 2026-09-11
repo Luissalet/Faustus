@@ -13,6 +13,7 @@ import {
   type Todo,
   type TurnMetrics,
   type WebSource,
+  type ContextReceipt,
 } from '../../adapters/chat';
 import type { EvidenceRef } from '../../adapters/evidence';
 import type { Attachment } from '../../adapters/composer';
@@ -173,6 +174,9 @@ export interface Turn {
   rounds: number;
   metrics?: TurnMetrics;
   sources: WebSource[];
+  /** CMP-04: why each piece of context entered this turn (persisted as
+   *  `metadata.context_receipts`); the transcript shows them as a card. */
+  contextReceipts?: ContextReceipt[];
   images: string[];
   attachments: Attachment[];
   ask?: AskUser;
@@ -793,6 +797,8 @@ export function apply(turn: Turn, event: ChatEvent): Turn {
       return { ...turn, metrics: { ...turn.metrics, ...event.metrics } };
     case 'sources':
       return { ...turn, sources: event.sources, research: turn.research ? { ...turn.research, done: true } : turn.research };
+    case 'context_receipts':
+      return { ...turn, contextReceipts: event.receipts };
     case 'research':
       return {
         ...turn,
@@ -964,7 +970,7 @@ export function restoreFromMetadata(turn: Turn, meta: Record<string, unknown>): 
   const events = toolEventsFrom(meta);
   const planUpdate = planUpdateFromMeta(meta);
   const speaker = typeof meta.group_model === 'string' && meta.group_model ? meta.group_model : undefined;
-  if (!events.length && !meta.harness && !meta.web_sources && !meta.research_sources) return speaker ? { ...turn, speaker } : turn;
+  if (!events.length && !meta.harness && !meta.web_sources && !meta.research_sources && !meta.context_receipts) return speaker ? { ...turn, speaker } : turn;
   // CALL-03: `toolEventsFrom` (adapters/chat.ts) strips `argument_errors`/
   // `repairs` down to nothing, the same way it used to strip `plan_update`
   // before `planUpdateFromMeta` started reading it straight off the raw
@@ -1030,6 +1036,9 @@ export function restoreFromMetadata(turn: Turn, meta: Record<string, unknown>): 
     approval: approval ?? turn.approval,
     summary: approval?.decision === 'superseded' && !ask ? undefined : harness ? summaryFrom(harness) : turn.summary,
     sources,
+    contextReceipts: Array.isArray(meta.context_receipts)
+      ? (meta.context_receipts as Record<string, unknown>[]).map((x) => ({ source: s(x.source), kind: s(x.kind), ref: s(x.ref), why: s(x.why) }))
+      : turn.contextReceipts,
     plan: planUpdate?.plan ?? turn.plan,
     planSteps: planUpdate?.steps ?? turn.planSteps,
     planRevision: planUpdate?.revision ?? turn.planRevision,

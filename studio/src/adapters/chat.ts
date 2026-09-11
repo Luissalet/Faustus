@@ -193,6 +193,21 @@ export interface WebSource {
   url: string;
 }
 
+/** `event: context_receipts` (CMP-04, `src/agent_loop.py`): a compact,
+ *  deduplicated summary of what this turn's delivered context packets
+ *  actually put in front of the model -- built from
+ *  `context_engine.wiring.deliver_round`'s own report, never a second
+ *  accounting. `why` is already a short, human sentence written by the
+ *  server (nothing here re-derives it from a code); `ref` is the item's
+ *  provenance (`mem:…`, `doc:…`, `symbol:path#L…`, a URL) and is shown, not
+ *  parsed. */
+export interface ContextReceipt {
+  source: string;
+  kind: string;
+  ref: string;
+  why: string;
+}
+
 export interface Todo {
   content: string;
   status: 'pending' | 'in_progress' | 'completed';
@@ -352,6 +367,7 @@ export type ChatEvent =
   | { type: 'capabilities_changed'; fromModel: string; toModel: string; lost: string[] }
   | { type: 'metrics'; metrics: TurnMetrics }
   | { type: 'sources'; sources: WebSource[] }
+  | { type: 'context_receipts'; receipts: ContextReceipt[] }
   | {
       type: 'research';
       phase: string;
@@ -1105,6 +1121,13 @@ export function decode(raw: Record<string, unknown>, sseEvent: string | null): C
         sources: asArray<Record<string, unknown>>(raw.data)
           .map((s) => ({ title: str(s.title) || str(s.url), url: str(s.url) }))
           .filter((s) => s.url),
+      };
+    case 'context_receipts':
+      return {
+        type: 'context_receipts',
+        receipts: asArray<Record<string, unknown>>(raw.data)
+          .map((r) => ({ source: str(r.source), kind: str(r.kind), ref: str(r.ref), why: str(r.why) }))
+          .filter((r) => r.ref),
       };
     case 'research_progress':
       return {

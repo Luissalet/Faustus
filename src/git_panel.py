@@ -1560,3 +1560,110 @@ def create_repo(parent_folder: str, name: str, *, mode: str, owner: Optional[str
     # instead of waiting out `_DISCOVERY_TTL`.
     invalidate_discovery_cache(owner)
     return target
+
+
+# ---------------------------------------------------------------------------
+# Worktrees (CMP-13, src/alternatives.py) -- isolated checkouts for the
+# "alternatives" experiment feature: one worktree per alternative, so two
+# in-flight alternatives (and the main working copy) can each hold different
+# uncommitted content at the same time without a stash dance or a second
+# clone. Kept in this module rather than a new one because every other git
+# primitive an alternative needs (`repo_toplevel`, `_head_sha`, `run_git`
+# itself) already lives here, and `git worktree` is just another git
+# subcommand run the same hardened way.
+# ---------------------------------------------------------------------------
+class GitWorktreeError(Exception):
+    """`git worktree add/remove/list` exited non-zero."""
+
+    def __init__(self, cmd: Sequence[str], returncode: Optional[int], stdout: str, stderr: str):
+        self.cmd = list(cmd)
+        self.returncode = returncode
+        self.stdout = stdout or ""
+        self.stderr = stderr or ""
+        super().__init__(f"git {' '.join(str(a) for a in self.cmd[:3])} failed rc={returncode}")
+
+
+def worktree_add(repo_path: str, worktree_dir: str, commit_ish: str, *,
+                  branch: Optional[str] = None, timeout: float = GIT_TIMEOUT_DEFAULT) -> str:
+    """`git worktree add` a NEW worktree at `worktree_dir`, checked out at
+    `commit_ish` (a sha, branch or tag -- detached unless `branch` names a
+    new branch to create there).
+
+    Hooks NEVER run for this checkout (CMP-13 contract: "Hooks de repo
+    NUNCA se ejecutan al crear worktrees"). The chosen mechanism is
+    `-c core.hooksPath=` (empty) on the command itself, not `--no-checkout`
+    + a manual checkout: `core.hooksPath=` makes git look up every hook
+    (post-checkout included) in a directory that resolves to nothing, so
+    the checkout still happens in one git call -- simpler than a second
+    hardened `checkout` call, and it neutralises a `.git/hooks` script the
+    repo's own tracked content could otherwise plant (same threat this
+    module's docstring already documents for `-c diff.external=`).
+
+    Raises `GitWorktreeError` on failure (existing path, bad commit-ish,
+    branch already checked out elsewhere, ...); the caller decides how to
+    present that (CMP-13's contract has no specific worktree error class of
+    its own -- a generic failure is enough, since `src.alternatives` never
+    lets a model choose `worktree_dir` itself)."""
+    parent = os.path.dirname(worktree_dir.rstrip(os.sep + ("/" if os.sep != "/" else "")))
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+    args = ["-c", "core.hooksPath=", "worktree", "add"]
+    if branch:
+        args += ["-b", branch]
+    args += [worktree_dir, commit_ish]
+    proc = run_git(repo_path, *args, timeout=timeout)
+    if proc.returncode != 0:
+        raise GitWorktreeError(args, proc.returncode, proc.stdout, proc.stderr)
+    return os.path.realpath(worktree_dir)
+
+
+def worktree_remove(repo_path: str, worktree_dir: str, *, force: bool = False,
+                     timeout: float = GIT_TIMEOUT_DEFAULT) -> None:
+    """`git worktree remove` -- also prunes the worktree's administrative
+    metadata under `.git/worktrees/`. `force=True` matches `--force` (the
+    worktree has uncommitted changes or its directory was already deleted
+    by hand -- both real cases for an experiment the user abandoned without
+    going through `src.alternatives`)."""
+    args = ["worktree", "remove"]
+    if force:
+        args.append("--force")
+    args.append(worktree_dir)
+    proc = run_git(repo_path, *args, timeout=timeout)
+    if proc.returncode != 0:
+        raise GitWorktreeError(args, proc.returncode, proc.stdout, proc.stderr)
+
+
+def worktree_list(repo_path: str, *, timeout: float = GIT_TIMEOUT_DEFAULT) -> List[Dict[str, Any]]:
+    """`git worktree list --porcelain`, parsed into one dict per worktree:
+    `{path, sha, branch (None if detached), detached, locked, prunable}`."""
+    proc = run_git(repo_path, "worktree", "list", "--porcelain", timeout=timeout)
+    if proc.returncode != 0:
+        raise GitWorktreeError(["worktree", "list"], proc.returncode, proc.stdout, proc.stderr)
+    out: List[Dict[str, Any]] = []
+    current: Dict[str, Any] = {}
+    for line in proc.stdout.splitlines():
+        if not line.strip():
+            if current:
+                out.append(current)
+                current = {}
+            continue
+        if line.startswith("worktree "):
+            if current:
+                out.append(current)
+            current = {"path": os.path.realpath(line[len("worktree "):].strip()),
+                       "sha": None, "branch": None, "detached": False,
+                       "locked": False, "prunable": False}
+        elif line.startswith("HEAD "):
+            current["sha"] = line[len("HEAD "):].strip()
+        elif line.startswith("branch "):
+            ref = line[len("branch "):].strip()
+            current["branch"] = ref[len("refs/heads/"):] if ref.startswith("refs/heads/") else ref
+        elif line == "detached":
+            current["detached"] = True
+        elif line.startswith("locked"):
+            current["locked"] = True
+        elif line.startswith("prunable"):
+            current["prunable"] = True
+    if current:
+        out.append(current)
+    return out

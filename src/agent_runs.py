@@ -275,6 +275,94 @@ async def model_state(run: "_Run") -> Optional[Dict[str, Any]]:
 _EVICT_GRACE_S = 180
 
 
+# ---------------------------------------------------------------------------
+# CMP-05 (deepens ADP-11): a durable "this run reached a terminal status"
+# marker, keyed by session id, outliving `_EVICT_GRACE_S`'s in-memory
+# eviction. Before this existed, `src/attention.py`'s `finished_unreviewed`
+# had no real source once a run left `_RUNS` — it fell back to
+# `Session.last_message_at`, which cannot tell "the agent just finished a
+# turn" apart from "the human sent one more message and has not gotten a
+# reply yet", and always guessed the outcome as `done` even for a run that
+# actually failed or was stopped (see docs/api/attention.md's former "known
+# limit"). This file is the single place `run.status` ever settles to a
+# terminal value (`_drain`'s `finally`), so it is the only correct place to
+# record it. Read-only history once written: nothing here ever feeds back
+# into a LIVE run's own status, which is still exclusively `_RUNS`/
+# `activity_details()`.
+# ---------------------------------------------------------------------------
+
+_FINISHED_MARKER_LOCK = threading.Lock()
+
+
+def _finished_marker_path() -> str:
+    try:
+        from src.constants import DATA_DIR
+    except Exception:  # pragma: no cover
+        DATA_DIR = os.path.join(os.getcwd(), "data")
+    return os.path.join(DATA_DIR, "finished_runs.json")
+
+
+def _record_finished_marker(session_id: str, run: "_Run") -> None:
+    """Best-effort durable write for a run that just reached done/error/
+    stopped. Never raises — a marker write must not break the run actually
+    finishing (the same "never let bookkeeping break the real thing"
+    contract `_schedule_evict` next to it already follows)."""
+    if run.status not in ("done", "error", "stopped"):
+        return
+    try:
+        path = _finished_marker_path()
+        with _FINISHED_MARKER_LOCK:
+            data: Dict[str, Any] = {}
+            if os.path.isfile(path):
+                try:
+                    with open(path, "r", encoding="utf-8") as f:
+                        loaded = json.load(f)
+                    if isinstance(loaded, dict):
+                        data = loaded
+                except (OSError, ValueError):
+                    data = {}
+            data[str(session_id)] = {
+                "run_id": run.run_id,
+                "status": run.status,
+                "finished_at": time.time(),
+                "label": run.label,
+                "model": run.model,
+            }
+            # Bound the file — one entry per SESSION (overwritten on its next
+            # run, not appended per-turn), but an instance that runs forever
+            # still needs a cap; keep the newest, same shape as
+            # `attention.py`'s own read-marks file next to it.
+            if len(data) > 5000:
+                newest = sorted(data.items(), key=lambda kv: (kv[1] or {}).get("finished_at", 0), reverse=True)[:5000]
+                data = dict(newest)
+            from core.atomic_io import atomic_write_json
+            atomic_write_json(path, data)
+    except Exception:  # noqa: BLE001 - see docstring
+        logger.warning("[agent-run] could not record finished marker for %s", session_id, exc_info=True)
+
+
+def finished_marker(session_id: str) -> Optional[Dict[str, Any]]:
+    """This session's durable finished-run marker, or None if it never ran a
+    detached run through this module's `start()`/`_drain()` (an old session
+    predating this marker, or one whose only activity never went through a
+    detached run at all)."""
+    return finished_markers().get(str(session_id))
+
+
+def finished_markers() -> Dict[str, Dict[str, Any]]:
+    """Every durable finished-run marker on record, `{session_id: {...}}`.
+    `src/attention.py` is the intended reader — see its `_default_finished_rows`."""
+    try:
+        path = _finished_marker_path()
+        if not os.path.isfile(path):
+            return {}
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
 _PROGRESS_PREFIX = 'data: {"type": "tool_progress"'
 
 
@@ -991,6 +1079,11 @@ async def _drain(session_id: str, run: _Run, agen: AsyncGenerator[str, None],
                 pass
         # Wake every subscriber with the end sentinel so their SSE closes.
         _wake_subscribers()
+        # CMP-05: record the durable marker BEFORE the eviction timer is even
+        # armed — this is the one place `run.status` is already final,
+        # independent of whether/when `_schedule_evict` later frees `run`
+        # from memory. No-op for `waiting_user` (not a terminal state).
+        _record_finished_marker(session_id, run)
         # Run is terminal — arm the grace timer so it (and its buffer) is
         # eventually freed even if nobody ever reconnects. subscribe() cancels
         # this on connect and re-arms on disconnect.

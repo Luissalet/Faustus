@@ -30,6 +30,39 @@ never changes what `classify()` says about a run — an unread approval is
 still exactly as pending as a read one; reading it only silences the
 unread badge and, for the one kind that has nothing left to resolve
 (`finished_unreviewed`), drops it off the list.
+
+CMP-05 deepens ADP-11 rather than replacing it: `kind` (the fixed-priority
+"what does this need, in what order" word above) stays exactly as it was —
+every existing caller and test keeps working. What is NEW is that a card no
+longer collapses "what phase is this run in", "why is it not just
+proceeding" and "does its own signal look healthy" into that one word.
+`classify()` now ALSO returns three independent facts about the same run:
+
+* `lifecycle` — the run's own machine state (`queued`/`running`/`waiting`/
+  `finished`/`failed`/`cancelled`), never conflated with why it might be
+  stuck.
+* `wait_cause` — why it is not just proceeding right now
+  (`approval`/`question`/`gpu_queue`/`dependency`/`none`) — `gpu_queue` is
+  the same lane-queue signal `queued_model` always read
+  (`agent_runs.queued_positions()`); it is not yet cross-checked against
+  `src/resource_admission.py`'s pool state (W2-B's estimator territory, not
+  this module's).
+* `connection_health` (`live`/`stale`/`disconnected`) + a `signal` —
+  `{source, age_s, last_event_at}`. `source` lives on `RunInfo` itself
+  (default `"events"`, since every candidate this module classifies today
+  comes from this codebase's own structured signals — `agent_runs`'s
+  SSE-bumped `last_event_at`, `tool_approvals`/`question_store`'s real
+  state, `subagent_tools`'s worker board). `"heuristic"` is a real value the
+  TYPE accepts and nothing here ever sets: CMP-06's Herdr adapter (a
+  read-only external-runtime client, `certainty ∈ {structured, heuristic}`)
+  is the first source that will need it, and wiring it in is explicitly
+  that lot's job, not this one's.
+
+A `next_action` (`approve`/`answer`/`open`/`retry`/`reconnect`) rides along
+too — a plain, deterministic function of `kind` (and, for
+`finished_unreviewed`, of `lifecycle`: a run that finished by FAILING reads
+as "retry", not "open") — so a client never has to re-derive "what does the
+person actually click" from the reason string.
 """
 from __future__ import annotations
 
@@ -147,6 +180,12 @@ class RunInfo:
     #: `_Run` left to ask — see `_finished_rows_from_db`.
     finished_at: Optional[float] = None
     label: str = ""
+    #: CMP-05: where `last_event_at` came from — `events` (this codebase's
+    #: own structured signals, the only value anything in THIS module ever
+    #: sets), `heartbeat`, or `heuristic` (external runtimes, CMP-06). The
+    #: type accepts the other two now so that lot's `RunInfo`s need no
+    #: schema change to plug in — see the module docstring.
+    signal_source: str = "events"
 
 
 @dataclass(frozen=True)
@@ -159,6 +198,95 @@ class Attention:
     #: dependency's label — never required to make sense of `reason` on its
     #: own (a client that ignores this still shows a true, complete state).
     detail: str = ""
+    #: CMP-05 — see the module docstring for what each of these means and
+    #: why they are kept separate from `kind` rather than folded into it.
+    lifecycle: str = "waiting"
+    wait_cause: str = "none"
+    connection_health: str = "live"
+    signal_source: str = "events"
+    signal_age_s: Optional[float] = None
+    next_action: str = "open"
+
+
+def _lifecycle_of(run: RunInfo) -> str:
+    """CMP-05: the run's OWN machine state — `queued`/`running`/`waiting`/
+    `finished`/`failed`/`cancelled` — independent of why it might be stuck
+    (`_wait_cause_of`) and of whether its own signal looks healthy
+    (`_connection_of`). A `running` `_Run` with a pending approval is still
+    `lifecycle == "running"`: the turn itself has not ended, it is the
+    approval GATE that is new state layered on top, not a status the run
+    object carries — that is exactly the thing ADP-11's single `kind` used
+    to hide.
+    """
+    if run.status == "running":
+        return "running"
+    if run.status == "done":
+        return "finished"
+    if run.status == "error":
+        return "failed"
+    if run.status == "stopped":
+        return "cancelled"
+    # No live `_Run` on record (`status == ""`): a bare approval/question
+    # card, or a pure queue position with nothing else known, is still real,
+    # classifiable state — never silently "unknown".
+    if run.queued_position > 0:
+        return "queued"
+    return "waiting"
+
+
+def _wait_cause_of(run: RunInfo) -> str:
+    """CMP-05: why `run` is not just proceeding, if anything. Independent of
+    `lifecycle` — a `running` turn can have any of these; a `finished` one
+    always has `none` (there is nothing left to wait on)."""
+    if run.has_pending_approval:
+        return "approval"
+    if run.has_pending_question:
+        return "question"
+    if run.queued_position > 0:
+        return "gpu_queue"
+    if run.dependency:
+        return "dependency"
+    return "none"
+
+
+def _connection_of(run: RunInfo, now: float) -> Tuple[str, Optional[float]]:
+    """CMP-05: (`connection_health`, `signal_age_s`). `signal_source` is
+    `run.signal_source` verbatim (not computed here — see its docstring).
+
+    For a `running` turn this is exactly the existing `disconnected`
+    threshold (`STALE_AFTER_S`) restated as its own axis. For anything else
+    "healthy" just means "we still have a reasonably fresh signal about it
+    at all" — a `finished` run's last event being old is not a disconnection,
+    it is just over; `stale` there only flags a signal old enough that a
+    caller should treat it as history, not live state.
+    """
+    if run.last_event_at is None:
+        return "stale", None
+    age = max(0.0, now - run.last_event_at)
+    if run.status == "running":
+        return ("disconnected" if age >= STALE_AFTER_S else "live"), age
+    return ("live" if age < STALE_AFTER_S else "stale"), age
+
+
+#: CMP-05: the deterministic `kind -> next_action` map. `finished_unreviewed`
+#: is the one exception (handled in `_next_action_of`): whether it reads as
+#: "open" or "retry" depends on HOW the run finished, which `kind` alone
+#: does not carry.
+_NEXT_ACTION: Dict[str, str] = {
+    "approval": "approve",
+    "question": "answer",
+    "disconnected": "reconnect",
+    "queued_model": "open",
+    "dependency": "open",
+    "working": "open",
+    "none": "open",
+}
+
+
+def _next_action_of(kind: str, lifecycle: str) -> str:
+    if kind == "finished_unreviewed":
+        return "retry" if lifecycle == "failed" else "open"
+    return _NEXT_ACTION.get(kind, "open")
 
 
 def classify(run: RunInfo, *, now: Optional[float] = None) -> Attention:
@@ -168,41 +296,58 @@ def classify(run: RunInfo, *, now: Optional[float] = None) -> Attention:
     every fact it looks at is already on `run`.
     """
     now = time.time() if now is None else now
+    lifecycle = _lifecycle_of(run)
+    wait_cause = _wait_cause_of(run)
+    health, age = _connection_of(run, now)
+
+    def attn(kind: str, since: Optional[float], *, detail: str = "") -> Attention:
+        return _attn(kind, since, detail=detail, lifecycle=lifecycle, wait_cause=wait_cause,
+                     connection_health=health, signal_source=run.signal_source, signal_age_s=age)
 
     if run.has_pending_approval:
         since = run.last_event_at if run.last_event_at is not None else run.started_at
-        return _attn("approval", since)
+        return attn("approval", since)
 
     if run.has_pending_question:
         since = run.last_event_at if run.last_event_at is not None else run.started_at
-        return _attn("question", since)
+        return attn("question", since)
 
     if run.status in ("done", "error", "stopped"):
         since = run.finished_at if run.finished_at is not None else run.last_event_at
-        return _attn("finished_unreviewed", since)
+        return attn("finished_unreviewed", since)
 
     if run.status == "running":
-        age = None if run.last_event_at is None else max(0.0, now - run.last_event_at)
+        age_run = None if run.last_event_at is None else max(0.0, now - run.last_event_at)
         # STALE CHECK COMES BEFORE "queued": a queue position that stopped
         # ticking is itself the disconnection — see STALE_AFTER_S's docstring.
-        if age is not None and age >= STALE_AFTER_S:
-            mins = round(age / 60.0)
-            return _attn("disconnected", run.last_event_at, detail=f"{mins} min")
+        if age_run is not None and age_run >= STALE_AFTER_S:
+            mins = round(age_run / 60.0)
+            return attn("disconnected", run.last_event_at, detail=f"{mins} min")
         if run.queued_position > 0:
-            return _attn("queued_model", run.started_at, detail=f"#{run.queued_position}")
+            return attn("queued_model", run.started_at, detail=f"#{run.queued_position}")
         if run.dependency:
-            return _attn("dependency", run.last_event_at, detail=run.dependency)
-        return _attn("working", run.last_event_at)
+            return attn("dependency", run.last_event_at, detail=run.dependency)
+        return attn("working", run.last_event_at)
 
     if run.queued_position > 0:
-        return _attn("queued_model", run.started_at, detail=f"#{run.queued_position}")
+        return attn("queued_model", run.started_at, detail=f"#{run.queued_position}")
     if run.dependency:
-        return _attn("dependency", run.last_event_at, detail=run.dependency)
-    return _attn("none", None)
+        return attn("dependency", run.last_event_at, detail=run.dependency)
+    return attn("none", None)
 
 
-def _attn(kind: str, since: Optional[float], *, detail: str = "") -> Attention:
-    return Attention(kind=kind, reason=_REASONS[kind], priority=_PRIORITY[kind], since=since, detail=detail)
+def _attn(
+    kind: str, since: Optional[float], *, detail: str = "",
+    lifecycle: str = "waiting", wait_cause: str = "none",
+    connection_health: str = "live", signal_source: str = "events",
+    signal_age_s: Optional[float] = None,
+) -> Attention:
+    return Attention(
+        kind=kind, reason=_REASONS[kind], priority=_PRIORITY[kind], since=since, detail=detail,
+        lifecycle=lifecycle, wait_cause=wait_cause, connection_health=connection_health,
+        signal_source=signal_source, signal_age_s=signal_age_s,
+        next_action=_next_action_of(kind, lifecycle),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -267,14 +412,20 @@ def _default_finished_rows(owner: str, *, cutoff: float, exclude: Iterable[str])
     already uses for its own "recent" sort) newer than `cutoff`, excluding
     sessions already accounted for by a live run/approval/question above.
 
-    This is the ONLY source `finished_unreviewed` has: `src/agent_runs.py`
-    evicts a terminal run's in-memory record ~3 minutes after it goes quiet
-    (`_EVICT_GRACE_S`), and this module does not own that file, so it cannot
-    add a longer-lived marker there. Falling back to the session's own
-    last-activity timestamp is real data, not a new clock — but it is coarser
-    than agent_runs': it cannot tell "the agent just finished a turn" apart
-    from "the human sent one more message a minute ago and hasn't gotten a
-    reply yet". Documented as a known limit, not silently smoothed over.
+    This function still supplies the CANDIDATE session ids and their coarse
+    timestamp — that part is unavoidable, since only the DB knows which
+    sessions of `owner` even exist. `src/agent_runs.py` evicts a terminal
+    run's in-memory record ~3 minutes after it goes quiet (`_EVICT_GRACE_S`),
+    so for a session with no durable marker this coarse DB timestamp is still
+    all there is (a genuine "predates the marker" case). CMP-05 closed the
+    PRECISION gap this docstring used to describe as a known limit, though:
+    `attention_for_owner` now cross-references `agent_runs.finished_markers()`
+    (`_default_finished_statuses`) for the session ids this returns, and
+    prefers the marker's real status/timestamp whenever one exists —
+    `done`/`error`/`stopped` correctly told apart, "just finished" no longer
+    confused with "the human sent one more message a minute ago". The
+    fallback below remains exactly what it was, for sessions the marker does
+    not (yet) cover.
     """
     from core.database import SessionLocal, Session as DbSession
     from src.auth_helpers import owner_filter
@@ -299,6 +450,45 @@ def _default_finished_rows(owner: str, *, cutoff: float, exclude: Iterable[str])
     return out
 
 
+def _default_finished_statuses() -> Dict[str, Dict[str, Any]]:
+    """CMP-05: `src/agent_runs.py`'s durable finished-run markers — see that
+    module's `finished_markers()`. Closes the "always guesses `done`" gap
+    `_default_finished_rows`'s own docstring used to document: when a
+    session's marker is present, `attention_for_owner` uses its REAL status
+    (`done`/`error`/`stopped`) and its precise `finished_at` instead of the
+    DB-timestamp guess below. Best-effort — an old session with no marker
+    (it predates this, or never ran a detached run) still falls back exactly
+    as before."""
+    try:
+        from src import agent_runs
+        return agent_runs.finished_markers()
+    except Exception:  # noqa: BLE001 - a marker read failure must not break the tray
+        return {}
+
+
+def _default_project_ids(session_ids: Iterable[str]) -> Dict[str, str]:
+    """CMP-05: best-effort `{session_id: project_id}` for the studio's
+    "by project" view — reads the SAME `Session.project_id` column
+    `core/database.py`'s own migration added, never a second place a
+    session's project lives. A session with no project (or not a chat
+    session at all) simply has no entry."""
+    ids = [str(s) for s in session_ids if str(s or "").strip()]
+    if not ids:
+        return {}
+    try:
+        from core.database import SessionLocal, Session as DbSession
+    except Exception:  # noqa: BLE001 - optional enrichment, never break the tray
+        return {}
+    db = SessionLocal()
+    try:
+        rows = db.query(DbSession.id, DbSession.project_id).filter(DbSession.id.in_(ids)).all()
+        return {row.id: row.project_id for row in rows if row.project_id}
+    except Exception:  # noqa: BLE001
+        return {}
+    finally:
+        db.close()
+
+
 def attention_for_owner(
     owner: str,
     *,
@@ -310,6 +500,8 @@ def attention_for_owner(
     worker_cards: Optional[Dict[str, Dict[str, Any]]] = None,
     finished_rows: Optional[List[Tuple[str, str, Optional[float]]]] = None,
     reads: Optional[Dict[str, float]] = None,
+    finished_statuses: Optional[Dict[str, Dict[str, Any]]] = None,
+    project_ids: Optional[Dict[str, str]] = None,
 ) -> List[Dict[str, Any]]:
     """Every session of `owner` that needs attention, classified and sorted.
 
@@ -332,6 +524,7 @@ def attention_for_owner(
             question_by_session.setdefault(sid, q)
     workers = _default_worker_cards() if worker_cards is None else worker_cards
     reads_map = get_reads(owner) if reads is None else reads
+    markers = _default_finished_statuses() if finished_statuses is None else finished_statuses
 
     infos: Dict[str, RunInfo] = {}
     for sid, snap in activity.items():
@@ -374,7 +567,22 @@ def attention_for_owner(
         read_ts = reads_map.get(sid)
         if read_ts is not None and ts is not None and read_ts >= ts:
             continue  # already reviewed — finished_unreviewed has nothing else to resolve
-        infos[sid] = RunInfo(session_id=sid, status="done", finished_at=ts, label=label)
+        # CMP-05: prefer the durable marker's real status/timestamp over the
+        # DB-timestamp guess `_default_finished_rows` produced — see
+        # `_default_finished_statuses`'s docstring.
+        marker = markers.get(sid) if isinstance(markers, dict) else None
+        status = "done"
+        finished_at = ts
+        if isinstance(marker, dict):
+            marker_status = marker.get("status")
+            if marker_status in ("done", "error", "stopped"):
+                status = marker_status
+            marker_ts = marker.get("finished_at")
+            if isinstance(marker_ts, (int, float)):
+                finished_at = float(marker_ts)
+        infos[sid] = RunInfo(session_id=sid, status=status, finished_at=finished_at, label=label)
+
+    proj_ids = _default_project_ids(infos.keys()) if project_ids is None else project_ids
 
     out: List[Dict[str, Any]] = []
     for sid, info in infos.items():
@@ -392,6 +600,13 @@ def attention_for_owner(
             "detail": att.detail,
             "label": info.label,
             "unread": unread,
+            # CMP-05 — see the module docstring.
+            "lifecycle": att.lifecycle,
+            "wait_cause": att.wait_cause,
+            "connection_health": att.connection_health,
+            "signal": {"source": att.signal_source, "age_s": att.signal_age_s, "last_event_at": info.last_event_at},
+            "next_action": att.next_action,
+            "project_id": proj_ids.get(sid) or None,
         })
 
     out.sort(key=lambda r: (r["priority"], -(r["since"] or 0)))

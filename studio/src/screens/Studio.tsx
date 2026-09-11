@@ -1,4 +1,4 @@
-import { FolderKanban, GitBranch, MessageSquare, PanelRight, X } from 'lucide-react';
+import { CheckSquare, FileText, FolderKanban, GitBranch, MessageSquare, PanelRight, X } from 'lucide-react';
 import {withImageReferences} from '../lib/image-references';
 import {MessageNavigator} from './studio/MessageNavigator';
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
@@ -95,6 +95,10 @@ import { useDisplay } from '../shell/display';
    panel (browser frames, document editor, file viewer) arrive when opened. */
 const WorkspaceDialog = lazy(() => import('./studio/WorkspaceDialog'));
 const SidePanel = lazy(() => import('./studio/SidePanel'));
+/* CMP-01-layout (W2-A2): the "review" layout's fourth column. W2-A1 owns
+   this component (docs/adaptations/decisions/CMP-01.md); it is a named
+   export, not default, so it is wrapped here rather than imported directly. */
+const ReviewPane = lazy(() => import('./documents/ReviewPane').then((m) => ({ default: m.ReviewPane })));
 // Lote 50 (BENCH-03 wiring): only fetched once a tool card's "ver evidencia"
 // button is actually clicked — same rare-on-demand posture as the two above.
 const EvidenceInspector = lazy(() => import('./Evidence'));
@@ -113,6 +117,12 @@ const KNOBS_KEY = 'faustus_studio_knobs';
 const GEN_KEY = 'faustus_studio_gen';
 const PRESET_KEY = 'faustus_studio_preset';
 const PANE_KEY = 'faustus_studio_pane';
+/* CMP-01-layout (W2-A2): one of three pure presentations of the same
+   conversation/panel state — never a second copy of the session, the
+   document or a draft (see readLayoutFor/writeLayoutFor below and
+   `setLayout`: neither touches sessionId, doc.id or any adapter save). */
+type StudioLayout = 'conversation' | 'document' | 'review';
+const LAYOUT_KEY_PREFIX = 'faustus_studio_layout:';
 /* Sessions opened in Nobody mode, deleted when the mode ends or the page
    comes back. NOT the previous interface's key (`ody-incognito-sessions`):
    its sessions.js still runs underneath the pilot and deletes whatever is
@@ -164,6 +174,33 @@ function readJson<T>(key: string, fallback: T): T {
 function writeJson(key: string, value: unknown) {
   try {
     localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    /* private mode: the choice simply does not persist */
+  }
+}
+
+/* CMP-01-layout: one slot per conversation, same "one per id, `new` for a
+   fresh chat" shape as the draft/attachment slots below — a layout choice
+   made while looking at one conversation must not leak onto another. */
+function layoutKeyFor(sessionId: string | null): string {
+  return `${LAYOUT_KEY_PREFIX}${sessionId ?? 'new'}`;
+}
+
+function readLayoutFor(sessionId: string | null): StudioLayout {
+  try {
+    const raw = localStorage.getItem(layoutKeyFor(sessionId));
+    return raw === 'document' || raw === 'review' ? raw : 'conversation';
+  } catch {
+    return 'conversation';
+  }
+}
+
+function writeLayoutFor(sessionId: string | null, layout: StudioLayout): void {
+  try {
+    // 'conversation' is the default: no slot for it keeps the store from
+    // growing with the common case, same convention as the draft slot.
+    if (layout === 'conversation') localStorage.removeItem(layoutKeyFor(sessionId));
+    else localStorage.setItem(layoutKeyFor(sessionId), layout);
   } catch {
     /* private mode: the choice simply does not persist */
   }
@@ -401,6 +438,28 @@ export function StudioScreen() {
   const [gen, setGen] = useState<GenOverrides>({});
   const [modelSignal, setModelSignal] = useState(0);
   const [panel, panelDispatch] = useChatPanel(sessionId,knobs.incognito);
+  // CMP-01-layout (W2-A2): conversation / document / review, per session
+  // (see readLayoutFor/writeLayoutFor above), presentation only — the
+  // document and the conversation the three arrangements share both stay in
+  // `panel`/`turns`; nothing here duplicates them.
+  const [layout, setLayoutState] = useState<StudioLayout>(() => readLayoutFor(sessionId));
+  useEffect(() => {
+    setLayoutState(readLayoutFor(sessionId));
+  }, [sessionId]);
+  useEffect(() => {
+    writeLayoutFor(sessionId, layout);
+  }, [sessionId, layout]);
+  const setLayout = useCallback(
+    (next: StudioLayout) => {
+      setLayoutState(next);
+      // Same mechanism the header's existing "Source control" chip already
+      // uses (panelDispatch({type:'open', tab:'git'})): opens the panel to
+      // the doc tab so there is something in the wide column, but touches
+      // no session/document/draft and calls no save.
+      if (next !== 'conversation') panelDispatch({ type: 'open', tab: 'doc' });
+    },
+    [panelDispatch],
+  );
   const [teamEnabled,setTeamEnabled] = useState(false);
   // Lote 50 (BENCH-03 wiring): the evidence inspector opens as its own
   // lightweight dialog, independent of `panel`'s file/doc tab state machine
@@ -2406,11 +2465,28 @@ export function StudioScreen() {
     return () => window.removeEventListener('keydown', onKey, true);
   }, []);
 
+  /* CMP-01-layout: Ctrl+Alt+L cycles conversation → document → review. Its
+     own listener (not a `getKeybinds()` action above) because that table
+     lives in adapters/settings.ts, which W2-A2 does not own — this combo is
+     not in DEFAULT_KEYBINDS/KEYBIND_LABELS and so cannot collide with a
+     configured one. */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!matchesCombo(e, 'ctrl+alt+l')) return;
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
+      e.preventDefault();
+      setLayout(layout === 'conversation' ? 'document' : layout === 'document' ? 'review' : 'conversation');
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [layout, setLayout]);
+
   const pending = turns?.length ? Boolean(turns[turns.length - 1].ask) : false;
   const isEmpty = !sessionId && turns !== null && turns.length === 0;
 
   return (
-    <div className="fs-studio" style={{['--fs-panel-width' as string]:`${panel.width}px`}} data-testid="studio" data-voice={Boolean(voiceSession && voiceSession === sessionId) || undefined} data-drawer={drawerOpen || undefined} data-pane={paneHidden ? 'hidden' : undefined} data-panel={panel.open || undefined} data-incognito={knobs.incognito || undefined}>
+    <div className="fs-studio" style={{['--fs-panel-width' as string]:`${panel.width}px`}} data-testid="studio" data-voice={Boolean(voiceSession && voiceSession === sessionId) || undefined} data-drawer={drawerOpen || undefined} data-pane={paneHidden ? 'hidden' : undefined} data-panel={panel.open || undefined} data-incognito={knobs.incognito || undefined} data-layout={layout}>
       <SessionsPane
         sessions={sessions}
         currentId={sessionId}
@@ -2439,6 +2515,23 @@ export function StudioScreen() {
             </Link>
           )}
           <Vitals busy={busy} />
+          {/* CMP-01-layout (W2-A2): three arrangements of the same
+              conversation+panel — pure presentation, see `layout` above. */}
+          <div className="fs-studio__layout-switch" role="radiogroup" aria-label={t('Layout')} data-testid="studio-layout-switch">
+            <span className="fs-studio__layout-thumb" data-layout={layout} aria-hidden="true" />
+            <button type="button" role="radio" aria-checked={layout === 'conversation'} title={t('Main conversation (Ctrl+Alt+L)')} onClick={() => setLayout('conversation')} data-testid="studio-layout-conversation">
+              <MessageSquare size={13} aria-hidden="true" />
+              <span className="fs-sr-only">{t('Conversation')}</span>
+            </button>
+            <button type="button" role="radio" aria-checked={layout === 'document'} title={t('Main document (Ctrl+Alt+L)')} onClick={() => setLayout('document')} data-testid="studio-layout-document">
+              <FileText size={13} aria-hidden="true" />
+              <span className="fs-sr-only">{t('Document')}</span>
+            </button>
+            <button type="button" role="radio" aria-checked={layout === 'review'} title={t('Review (Ctrl+Alt+L)')} onClick={() => setLayout('review')} data-testid="studio-layout-review">
+              <CheckSquare size={13} aria-hidden="true" />
+              <span className="fs-sr-only">{t('Review')}</span>
+            </button>
+          </div>
           <div className="fs-studio__head-actions">
             {/* Lote 86 (CONTRATO_GIT_4.md, OBJ-4): "gestionarlo en vivo con
                 el modelo" — a repo only exists to manage once there is a
@@ -2647,6 +2740,18 @@ export function StudioScreen() {
             say(t('Capture and change request added to your draft.'));
           }}/>
         </Suspense>
+      )}
+
+      {/* CMP-01-layout (W2-A2): "review" adds this fourth column next to
+          the panel (a fifth grid track only exists at the 1280px breakpoint
+          — see studio.css; hidden below that, same as the panel becoming an
+          overlay there). `docId` is read from `panel.doc`, never copied. */}
+      {layout === 'review' && panel.open && (
+        <div className="fs-review" data-testid="studio-review-pane">
+          <Suspense fallback={<div aria-busy="true" />}>
+            <ReviewPane docId={panel.doc && !panel.doc.streaming ? panel.doc.id : null} />
+          </Suspense>
+        </div>
       )}
 
       {wsOpen && (

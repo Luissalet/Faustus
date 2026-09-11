@@ -1,0 +1,19 @@
+{
+  "id": "review-changes",
+  "title": "Review these changes",
+  "inputs": ["the diff or file(s) to review", "the criteria to check against, if any were stated"],
+  "steps": [
+    "read the diff/change in full before judging any part of it",
+    "check it against the stated review criteria (or, if none were given, correctness/safety/simplification/efficiency/test-coverage)",
+    "for each candidate finding, verify it against the actual code — never report a finding you have not re-checked in the real file",
+    "report findings, most severe first, each with the concrete failure scenario it causes"
+  ],
+  "tools": ["read_file", "grep"],
+  "success_conditions": [
+    "every reported finding was verified against the real diff, not just described from memory",
+    "findings are ordered most severe first"
+  ],
+  "optional_resources": [],
+  "license": null,
+  "status": "published"
+}

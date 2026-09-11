@@ -1033,12 +1033,39 @@ app.include_router(setup_git_routes())
 from routes.board_routes import setup_board_routes
 app.include_router(setup_board_routes())
 
+# Observable strategy + recipes (CMP-09/CMP-12): GET/PUT /api/strategy/profile,
+# POST /api/strategy/preview, GET /api/recipes, POST /api/recipes/from-run/{run_id}
+# (src/strategy_policy.py, src/recipes.py).
+from routes.strategy_routes import setup_strategy_routes
+app.include_router(setup_strategy_routes())
+
+# Isolated, comparable alternatives (W2-G / CMP-13): worktree/snapshot_dir/
+# doc_version experiments, three-way apply/combine against the main copy
+# (src/alternatives.py).
+from routes.alternatives_routes import setup_alternatives_routes
+app.include_router(setup_alternatives_routes())
+
 # Versioned requirements (ADP-18/19/20): REQ-N ids with immutable revisions,
 # implements/tests/evidences/issue links, a linked/implemented/tested/
 # verified/stale coverage matrix, and a budgeted per-task projection
 # (src/requirements/).
 from routes.requirements_routes import setup_requirements_routes
 app.include_router(setup_requirements_routes())
+
+# Knowledge neighborhood (W2-D / CMP-04): typed requirement -> decision ->
+# symbol -> test -> run neighbors for one file or requirement, reading
+# requirements/evidence, project_board and the code index without a second
+# store of record (src/knowledge_neighborhood.py).
+from routes.knowledge_routes import setup_knowledge_routes
+app.include_router(setup_knowledge_routes())
+
+# External runtimes (W2-H / CMP-06): READ-ONLY adapter config/status for an
+# externally configured Herdr runtime -- GET/PUT herdr/config, GET
+# herdr/version, GET herdr/sessions (src/external_runtimes/herdr.py). Never
+# sends anything TO Herdr; wire contract pending validation against a real
+# instance (see docs/api/external_runtimes.md).
+from routes.external_runtimes_routes import setup_external_runtimes_routes
+app.include_router(setup_external_runtimes_routes())
 
 # Attention priority in Activity (W1-A / ADP-11): approval/question/queue/
 # disconnect/finished-unreviewed ranking + per-user read marks (src/attention.py).
@@ -1458,6 +1485,19 @@ async def serve_completion(request: Request):
 async def serve_context(request: Request):
     """Studio Context Engine panel: the ledger, its manifests, blocks,
     experiences, the blackboard and the code index."""
+    return await serve_index(request)
+
+@app.get("/workflows")
+async def serve_workflows(request: Request):
+    """Studio Workflows (W2-E / CMP-07): design a plan, walk it structurally
+    with `POST /api/workflows/simulate` (nothing executed), then authorize a
+    real run over the same definition."""
+    return await serve_index(request)
+
+@app.get("/alternatives")
+async def serve_alternatives(request: Request):
+    """Studio Alternatives (W2-G / CMP-13): isolated experiments comparing
+    several approaches to the same task before one is applied."""
     return await serve_index(request)
 
 @app.get("/login")

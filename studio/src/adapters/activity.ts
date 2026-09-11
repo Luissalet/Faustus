@@ -3,7 +3,7 @@ import { ApiError, asArray, getJson, responseReason } from './api';
 import { chatActivity, createSession, listModels, listSessions, sendTurn, type AskOption, type ChatActivity, type ChatSession, type RunActivityDetail } from './chat';
 import { sessionActivity } from '../lib/activity';
 import { t } from '../i18n';
-import type { AttentionRow } from './attention';
+import type { AttentionRow, ConnectionHealth, Lifecycle, NextAction, WaitCause } from './attention';
 
 /**
  * One shape for every kind of work (UI-050).
@@ -90,8 +90,20 @@ export interface ActivityRun {
   question?: QuestionDetail;
   /** ADP-11: present only for a `chat`/`question` row `mergeAttention` matched
    *  against `GET /api/attention` (or synthesized one for a finished, never-
-   *  otherwise-listed conversation — see that function). */
-  attention?: { kind: AttentionRow['kind']; reason: string; since: number | null; detail: string; unread: boolean; priority: number };
+   *  otherwise-listed conversation — see that function). CMP-05 adds
+   *  `lifecycle`/`waitCause`/`connectionHealth`/`signal`/`nextAction` —
+   *  independent facts about the same row, see `src/attention.py`'s module
+   *  docstring for why they are kept apart from `kind`. */
+  attention?: {
+    kind: AttentionRow['kind']; reason: string; since: number | null; detail: string; unread: boolean; priority: number;
+    lifecycle: Lifecycle; waitCause: WaitCause; connectionHealth: ConnectionHealth;
+    signal: AttentionRow['signal']; nextAction: NextAction;
+  };
+  /** CMP-05: `Session.project_id` for a `chat`/`question` row (from the
+   *  matched attention row), or a workflow run's own `workflow.projectId` —
+   *  the single field `groupByProject` groups on, so a caller never has to
+   *  know which kind carries which. Null/absent means "no project". */
+  projectId?: string | null;
 }
 
 export interface WorkflowStep {
@@ -125,6 +137,7 @@ export function workflowFrom(item: Record<string, unknown>): ActivityRun {
   return { id: item.id, kind: 'workflow', title: str(item.title) || t('Workflow'),
     detail: str(item.reason), status: human ? 'waiting' : mapped.status, statusLabel: mapped.label,
     startedAt: str(item.started_at), finishedAt: str(item.finished_at), repeats: 1,
+    projectId: str(item.project_id) || null,
     workflow: { runId: item.id, recipe: str(item.workflow_id), projectId: str(item.project_id), nodes } };
 }
 
@@ -678,6 +691,14 @@ export async function prioritizeQueueItem(kind: QueueItem['kind'], id: string): 
  * so the tray can show it at all — never for the other five kinds, which
  * by construction always have a live match already.
  */
+function attentionOf(row: AttentionRow): NonNullable<ActivityRun['attention']> {
+  return {
+    kind: row.kind, reason: row.reason, since: row.since, detail: row.detail, unread: row.unread, priority: row.priority,
+    lifecycle: row.lifecycle, waitCause: row.waitCause, connectionHealth: row.connectionHealth,
+    signal: row.signal, nextAction: row.nextAction,
+  };
+}
+
 export function mergeAttention(runs: ActivityRun[], rows: AttentionRow[]): ActivityRun[] {
   const bySession = new Map(rows.map((r) => [r.sessionId, r]));
   const matched = new Set<string>();
@@ -686,7 +707,7 @@ export function mergeAttention(runs: ActivityRun[], rows: AttentionRow[]): Activ
     const row = sid ? bySession.get(sid) : undefined;
     if (!sid || !row) return run;
     matched.add(sid);
-    return { ...run, attention: { kind: row.kind, reason: row.reason, since: row.since, detail: row.detail, unread: row.unread, priority: row.priority } };
+    return { ...run, attention: attentionOf(row), projectId: run.projectId ?? row.projectId };
   });
   const synthesized: ActivityRun[] = [];
   for (const row of rows) {
@@ -698,9 +719,110 @@ export function mergeAttention(runs: ActivityRun[], rows: AttentionRow[]): Activ
       status: 'succeeded',
       repeats: 1,
       startedAt: row.since ? new Date(row.since * 1000).toISOString() : null,
-      attention: { kind: row.kind, reason: row.reason, since: row.since, detail: row.detail, unread: row.unread, priority: row.priority },
+      attention: attentionOf(row),
+      projectId: row.projectId,
       chat: { sessionId: row.sessionId, runId: '', model: '' },
     });
   }
   return [...withAttention, ...synthesized];
+}
+
+/**
+ * CMP-05: this run's project, whichever kind carries it — a `chat`/
+ * `question` row's matched attention row (`Session.project_id`), or a
+ * `workflow` run's own definition-carried project. Never a network call:
+ * purely a read of what `mergeAttention`/`workflowFrom` already attached.
+ */
+export function runProjectId(run: ActivityRun): string | null {
+  return run.projectId ?? run.workflow?.projectId ?? null;
+}
+
+export interface ProjectGroup {
+  projectId: string | null;
+  runs: ActivityRun[];
+}
+
+/**
+ * CMP-05: the studio's "by project" view — the SAME filtered/sorted `runs`
+ * a caller already has, partitioned by `runProjectId`, project-with-most-
+ * urgent-attention first (an ungrouped `null` bucket, "no project", always
+ * sorts last: it is a catch-all, not a project a person picked). Pure and
+ * order-preserving within each group — this never re-sorts the runs
+ * themselves, only buckets them, so a caller that already applied
+ * `stableAttentionOrder` keeps that order inside every group.
+ */
+export function groupByProject(runs: ActivityRun[]): ProjectGroup[] {
+  const order: (string | null)[] = [];
+  const byProject = new Map<string | null, ActivityRun[]>();
+  for (const run of runs) {
+    const pid = runProjectId(run);
+    if (!byProject.has(pid)) {
+      byProject.set(pid, []);
+      order.push(pid);
+    }
+    byProject.get(pid)!.push(run);
+  }
+  const urgency = (pid: string | null) => Math.min(
+    ...byProject.get(pid)!.map((r) => r.attention?.priority ?? Number.MAX_SAFE_INTEGER),
+    Number.MAX_SAFE_INTEGER,
+  );
+  order.sort((a, b) => {
+    if (a === null) return 1;
+    if (b === null) return -1;
+    return urgency(a) - urgency(b);
+  });
+  return order.map((pid) => ({ projectId: pid, runs: byProject.get(pid)! }));
+}
+
+/**
+ * CMP-05: "orden estable mientras se interactúa" — while `frozen` (the
+ * pointer/focus is inside the list, per the caller), keep every run that was
+ * already visible in its LAST rendered position; a run that just appeared
+ * (a new approval, e.g.) is appended after everything that was already
+ * there rather than reshuffling the list out from under a hand about to
+ * click. Once `frozen` is false the list is simply `runs` as given (already
+ * sorted by the caller — this function never re-sorts by itself, it only
+ * decides whether to HONOUR a fresh sort or hold the previous order).
+ * `keyOf` mirrors the `${kind}-${id}` key the screen already uses for React
+ * keys, so a caller does not need a second identity scheme.
+ */
+export function stableAttentionOrder(
+  runs: ActivityRun[],
+  previousOrder: string[],
+  frozen: boolean,
+  keyOf: (run: ActivityRun) => string = (r) => `${r.kind}-${r.id}`,
+): ActivityRun[] {
+  if (!frozen || previousOrder.length === 0) return runs;
+  const byKey = new Map(runs.map((r) => [keyOf(r), r]));
+  const ordered: ActivityRun[] = [];
+  const seen = new Set<string>();
+  for (const key of previousOrder) {
+    const run = byKey.get(key);
+    if (run && !seen.has(key)) {
+      ordered.push(run);
+      seen.add(key);
+    }
+  }
+  for (const run of runs) {
+    const key = keyOf(run);
+    if (!seen.has(key)) {
+      ordered.push(run);
+      seen.add(key);
+    }
+  }
+  return ordered;
+}
+
+/**
+ * CMP-05 (the decisive test's "a late response does not change the selected
+ * destination"): given the URL's CURRENT `run` param and the key an async
+ * action was performed on (captured at the moment the request STARTED, not
+ * when it resolves), decides the next param. If the person has since
+ * navigated to a different run — the current param no longer matches what
+ * this action was about — a stale resolution must never yank them back or
+ * clear what they are now looking at; it is simply dropped.
+ */
+export function nextRunParam(currentParam: string | null, actedOnKey: string, close: boolean): string | null {
+  if (currentParam !== actedOnKey) return currentParam;
+  return close ? null : currentParam;
 }

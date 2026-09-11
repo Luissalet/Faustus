@@ -1,13 +1,19 @@
-import { Archive, Check, Copy, FileText, GitBranch, Globe, History, Kanban, Monitor, Save, SkipForward, X, Users, Paperclip, Files } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Archive, Check, Copy, FileText, GitBranch, Globe, History, Kanban, Monitor, MessageSquarePlus, Redo2, Save, SkipForward, Undo2, X, Users, Paperclip, Files } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { Link } from 'react-router';
-import { Button, IconButton, Skeleton } from '../../components';
+import { Button, IconButton, Popover, Skeleton } from '../../components';
 import { archiveDoc, docPdfUrl, getDoc, listDocVersions, renameDoc, restoreDocVersion, saveDoc, type DocVersion } from '../../adapters/documents';
 import { readWorkspaceFile, saveWorkspaceFile, type WorkspaceFileText } from '../../adapters/workspace';
 import { ApiError } from '../../adapters/api';
 import { threeWayLines, threeWaySummary } from '../../adapters/fileConflict';
 import { Rich } from '../rich';
 import { autoOpenEnabled, setAutoOpen, fileKey,docKey,type PanelDraft,type DocState, type PanelAction, type PanelState, type PanelTab } from './panel';
+import {
+  currentText, discardDraft, findOccurrences, isDirty, markSaved, mergeSuggestions,
+  redo as sessionRedo, replaceAt, sendComposerContext, setDraftText, setSelection, setSuggestions,
+  sync as syncSession, undo as sessionUndo, useDocSession,
+  type DocRange, type Occurrence, type PendingSuggestion,
+} from '../../lib/docSession';
 import {WorkbenchResources} from './WorkbenchResources';
 import SubagentBoard from './SubagentBoard';
 import { SourceControlPanel } from '../source-control/SourceControlPanel';
@@ -19,6 +25,11 @@ import type {Turn} from './model';
 import type {Project} from '../../adapters/projects';
 import type {DelegationTask} from '../../adapters/chat';
 import { t, tn } from '../../i18n';
+// CMP-01/02 (W2-A1): the occurrence picker and selection chip's styles
+// (`.fs-occurrences`, `.fs-selchip*`) live in `documents.css` alongside
+// the rest of this lot's document CSS, not in `studio.css` (a different
+// lot's file this wave) — imported here so `DocTab` can use them.
+import '../documents.css';
 
 /**
  * The panel beside the transcript. Three things live here, each on its own
@@ -114,24 +125,117 @@ function BrowserTab({ state, dispatch, onVisualSelection }: { state: PanelState;
 
 /* ── Document ── */
 
-function DocTab({ doc, draft, dispatch, onNotice }: { doc: DocState | null; draft?:PanelDraft; dispatch: SidePanelProps['dispatch']; onNotice: SidePanelProps['onNotice'] }) {
-  const text=draft?.text ?? doc?.content ?? '';
-  const setText=(text:string)=>{if(doc)dispatch({type:'draft',key:docKey(doc),draft:{text,base:draft?.base??doc.content}});};
+/** The current selection inside the document, as index ranges into
+ *  `text` — captured from the `<textarea>`'s native `selectionStart`/
+ *  `selectionEnd` (the preview is rendered HTML; mapping a DOM selection
+ *  there back to source offsets is not attempted here — CMP-01 decision
+ *  doc notes it as a follow-up). Written into the shared `docSession` so
+ *  it survives switching to the full editor and back, per CMP-01's "el
+ *  panel y Editor.tsx la LEEN y ESCRIBEN". */
+function useTextSelection(docId: string | undefined | null, textareaRef: RefObject<HTMLTextAreaElement | null>) {
+  const [range, setRange] = useState<DocRange | null>(null);
+  const onSelect = () => {
+    const el = textareaRef.current;
+    if (!el || !docId) return;
+    if (el.selectionStart === el.selectionEnd) {
+      setRange(null);
+      return;
+    }
+    const r = { start: el.selectionStart, end: el.selectionEnd };
+    setRange(r);
+    setSelection(docId, [r]);
+  };
+  return { range, onSelect };
+}
+
+/** "Sobre esta selección…" (CMP-03, §3.2): turns a selection into a
+ *  structured context reference for the NEXT chat message, via
+ *  `sendComposerContext` — never a copy of the text into the transcript as
+ *  though the human had typed it, and never an edit made on its own. */
+function SelectionChip({ doc, text, range, onNotice }: { doc: DocState; text: string; range: DocRange; onNotice: SidePanelProps['onNotice'] }) {
+  const quote = text.slice(range.start, range.end);
+  const act = (action: 'clarify' | 'keep_term' | 'fix') => {
+    if (!doc.id) return;
+    sendComposerContext({ doc: { id: doc.id, title: doc.title }, ranges: [range], action, items: [{ quote }] });
+    onNotice(t('Added as context for your next message.'));
+  };
+  return (
+    <Popover
+      testId="doc-selection-chip"
+      trigger={<Button size="sm" icon={MessageSquarePlus} label={t('About this selection…')} />}
+    >
+      <div className="fs-selchip">
+        <p className="fs-selchip__quote">“{quote.length > 140 ? `${quote.slice(0, 140)}…` : quote}”</p>
+        <div className="fs-panel__row">
+          <Button size="sm" label={t('Clarify')} onClick={() => act('clarify')} />
+          <Button size="sm" label={t('Keep this wording')} onClick={() => act('keep_term')} />
+          <Button size="sm" label={t('Fix this')} onClick={() => act('fix')} />
+        </div>
+      </div>
+    </Popover>
+  );
+}
+
+/** CMP-02 (§3.2): `find` occurs more than once — show every occurrence
+ *  with its surrounding text and let the person pick, or replace every
+ *  occurrence identically ("todas"). Never a silent first-match. */
+function OccurrencePicker({ occurrences, onPick, onAll, onCancel }: { occurrences: Occurrence[]; onPick: (o: Occurrence) => void; onAll: () => void; onCancel: () => void }) {
+  return (
+    <div className="fs-occurrences" role="group" aria-label={t('Which occurrence?')} data-testid="doc-occurrences">
+      <p>{tn(occurrences.length, 'This text appears {n} time — choose which one.', 'This text appears {n} times — choose which one.')}</p>
+      <ul>
+        {occurrences.map((o, i) => (
+          <li key={o.start}>
+            <button type="button" onClick={() => onPick(o)} data-testid={`doc-occurrence-${i}`}>
+              <span className="fs-sa__muted">…{o.before}</span>
+              <mark>{'…'}</mark>
+              <span className="fs-sa__muted">{o.after}…</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+      <div className="fs-panel__row">
+        <Button size="sm" variant="primary" label={t('Apply to all occurrences')} onClick={onAll} testId="doc-occurrence-all" />
+        <Button size="sm" label={t('Cancel')} onClick={onCancel} />
+      </div>
+    </div>
+  );
+}
+
+function DocTab({ doc, dispatch, onNotice }: { doc: DocState | null; dispatch: SidePanelProps['dispatch']; onNotice: SidePanelProps['onNotice'] }) {
+  // CMP-01: identity/draft/selection/undo/proposals live in the shared
+  // `docSession`, not component state — that is what makes them survive
+  // switching to the full editor (a different mounted tree) and back.
+  const session = useDocSession(doc?.id ?? null, doc ? { content: doc.content, version: doc.version } : undefined);
+  const text = session ? currentText(session) : doc?.content ?? '';
+  const dirty = session ? isDirty(session) : false;
   const [title, setTitle] = useState(doc?.title ?? '');
   const [saving, setSaving] = useState(false);
   const mutation = useRef(false);
   const [preview, setPreview] = useState(true);
   const [versions, setVersions] = useState<DocVersion[] | null>(null);
   const [loading, setLoading] = useState(false);
-  const dirty = doc ? text !== doc.content : false;
+  const [occurrences, setOccurrences] = useState<{ sg: PendingSuggestion; occ: Occurrence[] } | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const selection = useTextSelection(doc?.id, textareaRef);
 
   // The server's content wins whenever the document changes under us
-  // (a new stream, a doc_update, a version restore) — never while typing.
+  // (a new stream, a doc_update, a version restore) — never while typing;
+  // `syncSession` keeps a pending draft instead of discarding it.
   useEffect(() => {
     setTitle(doc?.title ?? '');
     setVersions(null);
+    if (doc?.id && !doc.streaming) syncSession(doc.id, { content: doc.content, version: doc.version });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [doc?.id, doc?.version, doc?.streaming ? doc.content : '']);
+
+  // The chat stream is the only source of new suggestions; mirror them
+  // into the session so the full editor (which never sees SSE events) can
+  // still see what is pending after a mode switch.
+  useEffect(() => {
+    if (doc?.id && doc.suggestions.length) mergeSuggestions(doc.id, doc.suggestions);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [doc?.id, doc?.suggestions]);
 
   // Opened by id only (suggestions or a tool result without doc_update): fetch it.
   useEffect(() => {
@@ -151,12 +255,12 @@ function DocTab({ doc, draft, dispatch, onNotice }: { doc: DocState | null; draf
   if (loading) return <div className="fs-panel__body"><Skeleton label={t('Loading the document')} count={6} height="20px" /></div>;
 
   const save = async (content = text, summary?: string) => {
-    if (!doc.id || mutation.current) return false;
+    if (!doc.id || mutation.current || !session) return false;
     mutation.current = true;
     setSaving(true);
     try {
-      const saved = await saveDoc(doc.id, content, summary, false, draft?.base??doc.content);
-      dispatch({type:'draft-saved',key:docKey(doc),submitted:{text:content,base:draft?.base??doc.content},base:saved.content});
+      const saved = await saveDoc(doc.id, content, summary, false, session.baseText);
+      markSaved(doc.id, { content: saved.content, version: saved.versionCount });
       dispatch({ type: 'doc-saved', doc: { ...doc, content: saved.content, version: saved.versionCount, title: saved.title, language: saved.language } });
       onNotice(t('Saved (v{n}).', { n: saved.versionCount }));
       return true;
@@ -185,23 +289,65 @@ function DocTab({ doc, draft, dispatch, onNotice }: { doc: DocState | null; draf
     }
   };
 
-  const current = doc.suggestions[0];
-  const applySuggestion = async (all: boolean) => {
-    if (mutation.current) return;
-    let next = text;
-    const applied: string[] = [];
-    for (const sg of all ? doc.suggestions : doc.suggestions.slice(0, 1)) {
-      if (next.includes(sg.find)) {
-        next = next.replace(sg.find, sg.replace);
-        applied.push(sg.id);
-      } else if (!all) {
-        onNotice(t('The text it wants to change is no longer in the document; skipping it.'), 'warning');
-        applied.push(sg.id);
-      }
+  const suggestions = session?.suggestions ?? [];
+  const current = suggestions[0];
+
+  /** Removes `ids` from BOTH the session (so they stay gone across a mode
+   *  switch) and the panel's live `doc.suggestions` (so the merge effect
+   *  above does not resurrect them the next time it runs). */
+  const removeSuggestions = (ids: string[]) => {
+    if (!doc.id) return;
+    setSuggestions(doc.id, suggestions.filter((s) => !ids.includes(s.id)));
+    dispatch({ type: 'suggestions', docId: doc.id, suggestions: doc.suggestions.filter((s) => !ids.includes(s.id)) });
+  };
+
+  /** Applies ONE suggestion at a known, already-disambiguated span (or the
+   *  single unambiguous occurrence) — never at "the first occurrence". */
+  const applyAt = async (sg: PendingSuggestion, range: DocRange | 'all') => {
+    if (!doc.id || mutation.current) return;
+    const before = text;
+    const next = range === 'all' ? before.split(sg.find).join(sg.replace) : replaceAt(before, range.start, range.end, sg.replace);
+    setDraftText(doc.id, next, { record: true });
+    setOccurrences(null);
+    if (next !== before && !(await save(next, t("Agent's suggestion applied")))) return;
+    removeSuggestions([sg.id]);
+  };
+
+  /** CMP-02: locate `sg.find`; zero occurrences skips it (as before), one
+   *  occurrence applies it, more than one shows the picker — the bug this
+   *  fiche exists to fix was applying blindly to the first match. */
+  const applySuggestion = (sg: PendingSuggestion) => {
+    if (!doc.id) return;
+    const occ = findOccurrences(text, sg.find);
+    if (occ.length === 0) {
+      onNotice(t('The text it wants to change is no longer in the document; skipping it.'), 'warning');
+      removeSuggestions([sg.id]);
+      return;
     }
-    setText(next);
-    if (next !== text && !await save(next, all ? t('Agent\'s suggestions applied') : t('Agent\'s suggestion applied'))) return;
-    dispatch({ type: 'suggestions', docId: doc.id, suggestions: doc.suggestions.filter((sg) => !applied.includes(sg.id)) });
+    if (occ.length === 1) { void applyAt(sg, occ[0]); return; }
+    setOccurrences({ sg, occ });
+  };
+
+  /** "Apply all" = walk every pending suggestion once, in order, on the
+   *  text as it stands after the previous one. The first suggestion that
+   *  turns out ambiguous stops the bulk pass and opens the picker for it —
+   *  it never guesses which occurrence a bulk action meant either. */
+  const applyAllSuggestions = async () => {
+    if (!doc.id || mutation.current || !session) return;
+    let working = text;
+    const resolved: string[] = [];
+    for (const sg of suggestions) {
+      const occ = findOccurrences(working, sg.find);
+      if (occ.length === 0) { resolved.push(sg.id); continue; }
+      if (occ.length > 1) { setOccurrences({ sg, occ }); break; }
+      working = replaceAt(working, occ[0].start, occ[0].end, sg.replace);
+      resolved.push(sg.id);
+    }
+    if (working !== text) {
+      setDraftText(doc.id, working, { record: true });
+      if (!(await save(working, t("Agent's suggestions applied")))) return;
+    }
+    if (resolved.length) removeSuggestions(resolved);
   };
 
   return (
@@ -213,16 +359,31 @@ function DocTab({ doc, draft, dispatch, onNotice }: { doc: DocState | null; draf
         {!doc.streaming && doc.id && <span className="fs-sa__muted">v{doc.version}</span>}
       </div>
 
-      {current && !doc.streaming && (
+      {occurrences && (
+        <OccurrencePicker
+          occurrences={occurrences.occ}
+          onPick={(o) => void applyAt(occurrences.sg, o)}
+          onAll={() => void applyAt(occurrences.sg, 'all')}
+          onCancel={() => setOccurrences(null)}
+        />
+      )}
+
+      {current && !doc.streaming && !occurrences && (
         <div className="fs-panel__suggestion" data-testid="doc-suggestion">
-          <p>{t('Suggestion')}{doc.suggestions.length > 1 ? ` · 1 / ${doc.suggestions.length}` : ''}</p>
+          <p>{t('Suggestion')}{suggestions.length > 1 ? ` · 1 / ${suggestions.length}` : ''}</p>
           {current.reason && <p>{current.reason}</p>}
           <pre className="fs-panel__diff"><span className="fs-diff-del">− {current.find}</span><span className="fs-diff-add">+ {current.replace}</span></pre>
           <div className="fs-panel__row">
-            <Button size="sm" variant="primary" icon={Check} label={t('Apply')} disabled={saving} onClick={() => void applySuggestion(false)} />
-            <Button size="sm" icon={SkipForward} label={t('Skip')} disabled={saving} onClick={() => dispatch({ type: 'suggestions', docId: doc.id, suggestions: doc.suggestions.slice(1) })} />
-            {doc.suggestions.length > 1 && <Button size="sm" label={t('Apply all')} disabled={saving} onClick={() => void applySuggestion(true)} />}
+            <Button size="sm" variant="primary" icon={Check} label={t('Apply')} disabled={saving} onClick={() => applySuggestion(current)} />
+            <Button size="sm" icon={SkipForward} label={t('Skip')} disabled={saving} onClick={() => removeSuggestions([current.id])} />
+            {suggestions.length > 1 && <Button size="sm" label={t('Apply all')} disabled={saving} onClick={() => void applyAllSuggestions()} />}
           </div>
+        </div>
+      )}
+
+      {selection.range && !doc.streaming && !preview && (
+        <div className="fs-panel__row fs-selchip-row">
+          <SelectionChip doc={doc} text={text} range={selection.range} onNotice={onNotice} />
         </div>
       )}
 
@@ -230,10 +391,12 @@ function DocTab({ doc, draft, dispatch, onNotice }: { doc: DocState | null; draf
         <div className="fs-panel__preview"><Rich text={text} /></div>
       ) : (
         <textarea
+          ref={textareaRef}
           className="fs-panel__editor"
           value={text}
           disabled={saving}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => doc.id && setDraftText(doc.id, e.target.value)}
+          onSelect={selection.onSelect}
           readOnly={doc.streaming || !doc.id}
           spellCheck={false}
           aria-label={t('Document content')}
@@ -245,8 +408,10 @@ function DocTab({ doc, draft, dispatch, onNotice }: { doc: DocState | null; draf
         <div className="fs-panel__row fs-panel__doc-actions">
           <Button size="sm" variant="primary" icon={Save} label={dirty ? t('Save') : t('Saved')} disabled={!dirty || !doc.id} loading={saving} onClick={() => void save()} testId="doc-save" />
           <Button size="sm" label={preview ? t('Edit') : t('Preview')} onClick={() => setPreview((v) => !v)} />
-          {draft&&<Button size="sm" label={t('Discard draft')} disabled={saving} onClick={()=>dispatch({type:'draft',key:docKey(doc),draft:null})}/>}
-          {draft&&draft.base!==doc.content&&<p role="status">{t('The agent updated this document. Your draft is preserved; review before saving.')}</p>}
+          {session && session.undoStack.length > 0 && <IconButton icon={Undo2} label={t('Undo')} size="sm" onClick={() => doc.id && sessionUndo(doc.id)} />}
+          {session && session.redoStack.length > 0 && <IconButton icon={Redo2} label={t('Redo')} size="sm" onClick={() => doc.id && sessionRedo(doc.id)} />}
+          {dirty&&<Button size="sm" label={t('Discard draft')} disabled={saving} onClick={()=>doc.id && discardDraft(doc.id)}/>}
+          {session?.rebasedPending&&<p role="status">{t('The agent updated this document. Your draft is preserved; review before saving.')}</p>}
           <IconButton icon={Copy} label={t('Copy the content')} size="sm" onClick={() => void navigator.clipboard?.writeText(text)} />
           {doc.id && (
             <>
@@ -306,6 +471,7 @@ function DocTab({ doc, draft, dispatch, onNotice }: { doc: DocState | null; draf
                     setSaving(true);
                     restoreDocVersion(doc.id as string, v.number, doc.content)
                       .then((d) => {
+                        markSaved(doc.id as string, { content: d.content, version: d.versionCount });
                         dispatch({ type: 'doc-saved', doc: { ...doc, content: d.content, version: d.versionCount } });
                         setVersions(null);
                         onNotice(t('Restored v{a} as v{b}.', { a: v.number, b: d.versionCount }));
@@ -493,6 +659,22 @@ function PlanAndChanges({ turns }: { turns: Turn[] }) {
   );
 }
 
+/** One tab in the "open documents" strip. A separate component (not inlined
+ *  in the `.map` below) because it needs its own `useDocSession` — reading
+ *  the shared session is what shows the same "unsaved" dot the DocTab
+ *  itself shows, now sourced from `docSession` instead of the panel's own
+ *  (per-key, doc-and-file-shared) draft map. */
+function OpenDocChip({ doc, active, dispatch }: { doc: DocState; active: boolean; dispatch: SidePanelProps['dispatch'] }) {
+  const session = useDocSession(doc.id);
+  const dirty = session ? isDirty(session) : false;
+  return (
+    <span>
+      <button type="button" aria-pressed={active} onClick={() => dispatch({ type: 'doc', doc })}>{doc.title || t('Document')}{dirty ? ' •' : ''}</button>
+      <button type="button" aria-label={t('Close {name}', { name: doc.title })} disabled={dirty} onClick={() => dispatch({ type: 'forget', key: docKey(doc) })}><X size={13} /></button>
+    </span>
+  );
+}
+
 export default function SidePanel({ state, dispatch, onNotice,turns,workspace,project,busy,onRerun,onVisualSelection }: SidePanelProps) {
   const tabStrip=useRef<HTMLDivElement>(null);
   useEffect(()=>{tabStrip.current?.querySelector('[aria-selected=true]')?.scrollIntoView({block:'nearest',inline:'nearest'});},[state.tab]);
@@ -572,14 +754,14 @@ export default function SidePanel({ state, dispatch, onNotice,turns,workspace,pr
         <p className="fs-notice" data-tone="warning" role="alert">{t('This page is reachable over plain HTTP from outside this machine — set up HTTPS or a tunnel before using it remotely.')}</p>
       )}
       {(state.documents.length>0||state.files.length>0)&&<div className="fs-workbench-open" aria-label={t('Open results')}>
-        {state.documents.map(doc=><span key={docKey(doc)}><button type="button" aria-pressed={state.tab==='doc'&&state.doc?.id===doc.id} onClick={()=>dispatch({type:'doc',doc})}>{doc.title||t('Document')}{state.drafts[docKey(doc)]?' •':''}</button><button type="button" aria-label={t('Close {name}',{name:doc.title})} disabled={Boolean(state.drafts[docKey(doc)])} onClick={()=>dispatch({type:'forget',key:docKey(doc)})}><X size={13}/></button></span>)}
+        {state.documents.map(doc=><OpenDocChip key={docKey(doc)} doc={doc} active={state.tab==='doc'&&state.doc?.id===doc.id} dispatch={dispatch}/>)}
         {state.files.map(file=><span key={fileKey(file)}><button type="button" aria-pressed={state.tab==='file'&&state.file?.path===file.path} onClick={()=>dispatch({type:'file',...file})}>{file.path.split(/[\\/]/).pop()}{state.drafts[fileKey(file)]?' •':''}</button><button type="button" aria-label={t('Close {name}',{name:file.path})} disabled={Boolean(state.drafts[fileKey(file)])} onClick={()=>dispatch({type:'forget',key:fileKey(file)})}><X size={13}/></button></span>)}
       </div>}
       <div className="fs-workbench-content" role="tabpanel" id="workbench-content" aria-labelledby={'workbench-tab-'+state.tab}>
       {(state.tab==='outputs'||state.tab==='sources')&&<WorkbenchResources kind={state.tab} state={state} turns={turns} workspace={workspace} project={project} dispatch={dispatch}/>}
       {state.tab==='agents'&&<><PlanAndChanges turns={turns}/><div className="fs-panel__body"><h3>{t('Agents in this conversation')}</h3>{workers.length?<SubagentBoard workers={workers} live={busy} onRerun={onRerun} onNotice={onNotice}/>:<p>{t('No agents have worked in this conversation yet. Configure a team beside the model picker.')}</p>}</div></>}
       {state.tab === 'browser' && <BrowserTab state={state} dispatch={dispatch} onVisualSelection={onVisualSelection} />}
-      {state.tab === 'doc' && <DocTab key={state.doc?.id||'streaming'} doc={state.doc} draft={state.doc?state.drafts[docKey(state.doc)]:undefined} dispatch={dispatch} onNotice={onNotice} />}
+      {state.tab === 'doc' && <DocTab key={state.doc?.id||'streaming'} doc={state.doc} dispatch={dispatch} onNotice={onNotice} />}
       {state.tab === 'file' && <FileTab key={state.file?fileKey(state.file):'none'} file={state.file} draft={state.file?state.drafts[fileKey(state.file)]:undefined} dispatch={dispatch} onNotice={onNotice} />}
       {state.tab === 'git' && (workspace || project) && (
         <div className="fs-panel__body">

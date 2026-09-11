@@ -48,6 +48,7 @@ import {
   type RetrievalPolicy,
 } from '../adapters/projects';
 import { EXPORT_FORMATS } from '../adapters/sessions';
+import { getNeighborhood, type NeighborNodeType, type Neighborhood } from '../adapters/knowledge';
 import { SourceControlPanel } from './source-control/SourceControlPanel';
 import { ProjectAudit } from './project/Audit';
 import { ProjectMemoryFiles } from './project/Memory';
@@ -469,6 +470,153 @@ function ProjectSources({ project, links, statuses, say, reload }: SourcesProps)
             </ul>
           </section>
         ))
+      )}
+    </div>
+  );
+}
+
+/** `Symbol`/`Decision`/`File` are existing `t()` keys reused as-is (their
+ *  Spanish rows already read as the noun this screen needs); `Requirement`/
+ *  `Test file`/`Run record` are new rows added to `docs/ui/i18n/es.tsv`
+ *  rather than the plain `Test`/`Run`, which already exist with a VERB sense
+ *  ("Probar"/"Lanzar") that would be wrong here. */
+const NEIGHBOR_TYPE_LABEL: Record<NeighborNodeType, string> = {
+  requirement: 'Requirement',
+  decision: 'Decision',
+  symbol: 'Symbol',
+  test: 'Test file',
+  run: 'Run record',
+  path: 'File',
+};
+
+/**
+ * CMP-04 — "Vecindario de un fichero": one path in, and what it must
+ * satisfy, what decisions condition it, what tests cover it, and what
+ * quedó desactualizado, all read from one typed call
+ * (`src/knowledge_neighborhood.py` via `adapters/knowledge.ts`). Nothing
+ * here is a second index — every row is exactly a node the server already
+ * resolved, grouped by `type` for this one screen's reading order.
+ */
+function FileNeighborhood({ projectId }: { projectId: string }) {
+  const [path, setPath] = useState('');
+  const [state, setState] = useState<'idle' | 'loading' | 'error'>('idle');
+  const [result, setResult] = useState<Neighborhood | null>(null);
+
+  const lookup = useCallback(
+    (raw: string) => {
+      const value = raw.trim();
+      if (!value) return;
+      setState('loading');
+      getNeighborhood(projectId, { path: value, depth: 1 })
+        .then((r) => {
+          setResult(r);
+          setState('idle');
+        })
+        .catch(() => setState('error'));
+    },
+    [projectId],
+  );
+
+  const byType = (type: NeighborNodeType) => (result?.nodes ?? []).filter((n) => n.type === type);
+  const requirements = byType('requirement');
+  const decisions = byType('decision');
+  const tests = byType('test');
+  const stale = (result?.nodes ?? []).filter((n) => n.stale);
+
+  return (
+    <div className="fs-panel" data-testid="file-neighborhood">
+      <h3>{t('File neighborhood')}</h3>
+      <p className="fs-prose">
+        {t('What a file must satisfy, which decisions condition it, what tests cover it, and what fell out of date — one path at a time.')}
+      </p>
+      <form
+        className="fs-pj__row"
+        onSubmit={(e) => {
+          e.preventDefault();
+          lookup(path);
+        }}
+      >
+        <input
+          className="fs-field fs-pj__grow"
+          type="text"
+          value={path}
+          onChange={(e) => setPath(e.target.value)}
+          placeholder={t('src/example.py')}
+          aria-label={t('File path')}
+          spellCheck={false}
+          data-testid="neighborhood-path"
+        />
+        <Button type="submit" variant="secondary" size="sm" label={state === 'loading' ? t('Looking up…') : t('Look up')} disabled={state === 'loading' || !path.trim()} testId="neighborhood-lookup" />
+      </form>
+      {state === 'error' && <p className="fs-pj__error">{t('Could not load the neighborhood.')}</p>}
+      {result && state !== 'error' && (
+        <div data-testid="neighborhood-result">
+          {result.unknown.length > 0 && (
+            <p className="fs-pj__note">{t('Unknown: {ids}', { ids: result.unknown.join(', ') })}</p>
+          )}
+          <div>
+            <p className="fs-panel__label">{t('What it must satisfy')}</p>
+            {requirements.length === 0 ? (
+              <p className="fs-pj__note">{t('No requirements linked to this file yet.')}</p>
+            ) : (
+              <ul>
+                {requirements.map((n) => (
+                  <li key={n.id} data-stale={n.stale || undefined}>
+                    <strong>{n.label}</strong>
+                    {n.stale && <span className="fs-pj__badge" data-warn="">{t('Out of date')}</span>}
+                    {n.why && <span className="fs-pj__note"> — {n.why}</span>}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <div>
+            <p className="fs-panel__label">{t('Decisions that condition it')}</p>
+            {decisions.length === 0 ? (
+              <p className="fs-pj__note">{t('No decisions found for this file.')}</p>
+            ) : (
+              <ul>
+                {decisions.map((n) => (
+                  <li key={n.id}>
+                    <strong>{n.label}</strong>
+                    {n.status && <span className="fs-pj__badge">{n.status}</span>}
+                    {n.why && <span className="fs-pj__note"> — {n.why}</span>}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <div>
+            <p className="fs-panel__label">{t('Tests that cover it')}</p>
+            {tests.length === 0 ? (
+              <p className="fs-pj__note">{t('No tests found for this file.')}</p>
+            ) : (
+              <ul>
+                {tests.map((n) => (
+                  <li key={n.id} data-stale={n.stale || undefined}>
+                    <code>{n.label}</code>
+                    {n.stale && <span className="fs-pj__badge" data-warn="">{t('Out of date')}</span>}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <div>
+            <p className="fs-panel__label">{t('Out of date')}</p>
+            {stale.length === 0 ? (
+              <p className="fs-pj__note">{t('Nothing looks out of date.')}</p>
+            ) : (
+              <ul>
+                {stale.map((n) => (
+                  <li key={n.id} data-stale="">
+                    <span className="fs-pj__badge">{t(NEIGHBOR_TYPE_LABEL[n.type])}</span> {n.label}
+                    {n.why && <span className="fs-pj__note"> — {n.why}</span>}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );
@@ -1019,6 +1167,7 @@ export function ProjectScreen() {
           ) : (
             <EmptyState icon={Eye} title={t('No context block')} body={t('This project prepends nothing yet. As soon as it has a folder, instructions or memory, it will appear here exactly as the model reads it.')} />
           )}
+          <FileNeighborhood projectId={project.id} />
         </div>
       )}
 

@@ -22,7 +22,11 @@
 .fs-studio {
   position: relative;
   display: grid;
-  grid-template-columns: 264px minmax(0, 1fr);
+  /* CMP-01 (W2-A2): --fs-stage-col/--fs-side-col let the document/review
+     layouts (data-layout below) swap which column is dominant without
+     redeclaring every breakpoint's column list — each var falls back to
+     that breakpoint's existing width when no layout override sets it. */
+  grid-template-columns: 264px var(--fs-stage-col, minmax(0, 1fr));
   block-size: 100%;
   min-block-size: 0;
 }
@@ -1772,7 +1776,7 @@ button.fs-studio__git-chip:hover {
 /* ── Side panel: a third column while open; an overlay when narrow ── */
 
 .fs-studio[data-panel] {
-  grid-template-columns: 264px minmax(0, 1fr) minmax(320px, 30vw);
+  grid-template-columns: 264px var(--fs-stage-col, minmax(0, 1fr)) var(--fs-side-col, minmax(320px, 30vw));
 }
 
 aside.fs-panel {
@@ -3402,8 +3406,27 @@ aside.fs-panel { position: relative; }
 .fs-workbench-item:disabled { cursor: default; color: var(--fs-text-2); }
 .fs-panel__file .fs-panel__editor { min-block-size: 240px; }
 @media (min-width: 1280px) {
-  .fs-studio[data-panel] { grid-template-columns: 264px minmax(0,1fr) minmax(320px,min(var(--fs-panel-width,520px),50vw)); }
-  .fs-studio[data-panel][data-pane=hidden] { grid-template-columns: minmax(0,1fr) minmax(320px,min(var(--fs-panel-width,520px),50vw)); }
+  .fs-studio[data-panel] { grid-template-columns: 264px var(--fs-stage-col, minmax(0,1fr)) var(--fs-side-col, minmax(320px,min(var(--fs-panel-width,520px),50vw))); }
+  .fs-studio[data-panel][data-pane=hidden] { grid-template-columns: var(--fs-stage-col, minmax(0,1fr)) var(--fs-side-col, minmax(320px,min(var(--fs-panel-width,520px),50vw))); }
+  /* CMP-01 (W2-A2): "document" and "review" swap which column is dominant —
+     the conversation narrows to a side rail and the panel (which shows the
+     active document on its `doc` tab) takes the space instead. "review"
+     adds a fourth column for the review pane (studio/src/screens/documents/
+     ReviewPane.tsx, W2-A1). Below this breakpoint the panel is already an
+     absolute overlay, not a grid column (see the max-width:1279px rule
+     above) — layout mode has no column effect there, conversation's normal
+     stacked view is the fallback on narrow screens. */
+  .fs-studio[data-panel][data-layout='document'],
+  .fs-studio[data-panel][data-layout='review'] {
+    --fs-stage-col: minmax(280px, 360px);
+    --fs-side-col: minmax(0, 1fr);
+  }
+  .fs-studio[data-panel][data-layout='review'] {
+    grid-template-columns: 264px var(--fs-stage-col) var(--fs-side-col) minmax(280px, 360px);
+  }
+  .fs-studio[data-panel][data-layout='review'][data-pane=hidden] {
+    grid-template-columns: var(--fs-stage-col) var(--fs-side-col) minmax(280px, 360px);
+  }
 }
 @media (max-width: 1279px) { aside.fs-panel { inline-size: min(94vw,var(--fs-panel-width,520px)); } }
 @media (max-width: 600px) {
@@ -3487,4 +3510,85 @@ aside.fs-panel { position: relative; }
 .fs-studio__plan-step .fs-rich p {
   display: inline;
   margin: 0;
+}
+
+/* ═══ CMP-01 (W2-A2): three layouts of the same work — conversation /
+   document / review — as a header switcher plus a pure grid rearrangement
+   of the existing stage/panel columns (no new state duplicated: see
+   Studio.tsx's `layout`). ═══ */
+
+/* Segmented control with a sliding thumb, three-way variant of
+   .fs-studio__seg above (kept separate: that one's thumb math is a fixed
+   50%, not reusable for three positions). */
+.fs-studio__layout-switch {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  block-size: var(--fs-control-sm);
+  padding: 2px;
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-pill);
+  background: color-mix(in srgb, var(--fs-canvas) 60%, transparent);
+}
+
+.fs-studio__layout-thumb {
+  position: absolute;
+  inset-block: 2px;
+  inset-inline-start: 2px;
+  inline-size: calc(33.333% - 2px);
+  border-radius: var(--fs-radius-pill);
+  background: var(--fs-accent-gradient);
+  box-shadow: 0 0 14px var(--fs-ember-strong);
+  transition: translate var(--fs-duration-slow) var(--fs-ease-spring);
+}
+
+.fs-studio__layout-thumb[data-layout='document'] {
+  translate: 100% 0;
+}
+
+.fs-studio__layout-thumb[data-layout='review'] {
+  translate: 200% 0;
+}
+
+.fs-studio__layout-switch button {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  padding: 0 var(--fs-space-2);
+  border: 0;
+  background: transparent;
+  color: var(--fs-text-2);
+  cursor: pointer;
+  transition: color var(--fs-duration-fast) var(--fs-ease);
+}
+
+.fs-studio__layout-switch button[aria-checked='true'] {
+  color: var(--fs-on-brand);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fs-studio__layout-thumb {
+    transition: none;
+  }
+}
+
+/* The review pane: a fourth grid column next to the panel, only real at the
+   1280px breakpoint that turns the panel itself into a grid column (see
+   studio.css's @media (min-width: 1280px) block above) — an overlay/absolute
+   panel below that has no fourth column to give it, so it is hidden there
+   rather than floating over the transcript with nothing anchoring it. */
+.fs-review {
+  display: flex;
+  flex-direction: column;
+  min-block-size: 0;
+  min-inline-size: 0;
+  border-inline-start: 1px solid var(--fs-border);
+  background: color-mix(in srgb, var(--fs-surface-1) 72%, transparent);
+}
+
+@media (max-width: 1279px) {
+  .fs-review {
+    display: none;
+  }
 }

@@ -1,9 +1,9 @@
-import { Activity as ActivityIcon, ArrowUpToLine, Calculator, Check, CircleStop, Copy, Download, ExternalLink, FileText, Link2, ListOrdered, MessageSquare, Play, RefreshCw, Search, Trash2, Waypoints, Workflow, X } from 'lucide-react';
+import { Activity as ActivityIcon, ArrowUpToLine, Calculator, Check, CircleStop, Copy, Download, ExternalLink, FileText, FolderKanban, History, Link2, ListOrdered, MessageSquare, Play, RefreshCw, Rows3, RotateCcw, Search, Trash2, Waypoints, Wifi, Workflow, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { Button, Dialog, EmptyState, friendlyError, MermaidView, Skeleton, StatusBadge, Toast, type RunStatus } from '../components';
-import { answerQuestion, artifactLinks, cancelRender, changeWorkflow, decideApproval, duration, getWorkflowRunDefinition, loadActivity, loadQueue, mergeAttention, normaliseStatus, openRunInChat, prioritizeQueueItem, reportUrl, retainUnavailableRuns, type ActivityRun, type ArtifactLink, type QuestionDetail, type QueueItem } from '../adapters/activity';
-import { loadAttention, markAttentionRead, type AttentionRow } from '../adapters/attention';
+import { answerQuestion, artifactLinks, cancelRender, changeWorkflow, decideApproval, duration, getWorkflowRunDefinition, groupByProject, loadActivity, loadQueue, mergeAttention, nextRunParam, normaliseStatus, openRunInChat, prioritizeQueueItem, reportUrl, retainUnavailableRuns, stableAttentionOrder, type ActivityRun, type ArtifactLink, type QuestionDetail, type QueueItem } from '../adapters/activity';
+import { loadAttention, markAttentionRead, type AttentionRow, type NextAction } from '../adapters/attention';
 import { CACHE_LABELS, clearAutomationCache, runAutomation, stopAutomation } from '../adapters/automations';
 import { relativeTime } from '../adapters/home';
 import { stopChat } from '../adapters/chat';
@@ -13,6 +13,7 @@ import { createActivityPoller } from '../lib/activity-poller';
 import { emitForNewRuns } from '../shell/notifications';
 import { Rich } from './rich';
 import {ArtifactInfo} from './ArtifactInfo';
+import { WorkflowEstimateView } from './activity/EstimateView';
 import './projects.css';
 import './home.css';
 import './activity.css';
@@ -42,12 +43,57 @@ const FILTERS: { id: string; label: string; match: (run: ActivityRun) => boolean
 
 type Kind = 'all' | 'task' | 'render' | 'approval' | 'notification' | 'chat' | 'workflow' | 'question';
 
+// CMP-05: plain English label maps for the three NEW axes a card carries
+// (`src/attention.py`'s module docstring has the full rationale) — kept as
+// explicit phrases rather than feeding the raw enum word through `t()`
+// directly, so every one of these gets a real, reviewable translation row.
+const LIFECYCLE_LABEL: Record<AttentionRow['lifecycle'], string> = {
+  queued: 'Queued', running: 'Running', waiting: 'waiting', finished: 'Finished', failed: 'Failed', cancelled: 'Cancelled',
+};
+const WAIT_CAUSE_LABEL: Partial<Record<AttentionRow['waitCause'], string>> = {
+  approval: 'Approval', question: 'Question', gpu_queue: 'GPU queue', dependency: 'Dependency',
+};
+const CONNECTION_LABEL: Record<AttentionRow['connectionHealth'], string> = {
+  live: 'Live', stale: 'Stale', disconnected: 'Disconnected',
+};
+const NEXT_ACTION_LABEL: Record<NextAction, string> = {
+  approve: 'Approve', answer: 'Answer', open: 'Open', retry: 'Retry', reconnect: 'Reconnect',
+};
+const NEXT_ACTION_ICON: Record<NextAction, typeof Check> = {
+  approve: Check, answer: MessageSquare, open: ExternalLink, retry: RotateCcw, reconnect: Wifi,
+};
+
 function DetailRow({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="fs-act__fact">
       <dt>{label}</dt>
       <dd>{children}</dd>
     </div>
+  );
+}
+
+/**
+ * CMP-05: the detail-pane counterpart of the row's compact badges — the
+ * SAME three facts (`lifecycle`/`waitCause`/`connectionHealth`+`signal`),
+ * spelled out with labelled rows instead of icons, plus the signal's own
+ * identity (which session, which source) and age. `null` renders nothing —
+ * a run with no `.attention` (already resolved, or a kind ADP-11 does not
+ * cover) simply carries no extra facts here.
+ */
+function AttentionFacts({ run }: { run: ActivityRun }) {
+  const att = run.attention;
+  if (!att) return null;
+  const sessionId = run.chat?.sessionId || run.question?.session || '';
+  return (
+    <>
+      <DetailRow label={t('Lifecycle')}>{t(LIFECYCLE_LABEL[att.lifecycle])}</DetailRow>
+      {WAIT_CAUSE_LABEL[att.waitCause] && <DetailRow label={t('Waiting on')}>{t(WAIT_CAUSE_LABEL[att.waitCause]!)}</DetailRow>}
+      <DetailRow label={t('Connection')}>
+        {t(CONNECTION_LABEL[att.connectionHealth])}
+        {att.signal.ageS !== null && ` — ${t('{n}s old', { n: Math.round(att.signal.ageS) })} (${att.signal.source})`}
+      </DetailRow>
+      {sessionId && <DetailRow label={t('Session')}><code>{sessionId}</code></DetailRow>}
+    </>
   );
 }
 
@@ -362,6 +408,32 @@ export function ActivityScreen() {
   const [attentionRows, setAttentionRows] = useState<AttentionRow[]>([]);
   const [attentionUnread, setAttentionUnread] = useState(0);
 
+  // CMP-05: "orden estable mientras se interactúa" — the list freezes its
+  // display order while the pointer/focus is inside it (`interacting`),
+  // resuming a fresh sort only once the person leaves the list. `orderRef`
+  // is the last order rendered while NOT interacting — `stableAttentionOrder`
+  // (adapters/activity.ts) reads it, never causes a re-render by itself.
+  const [interacting, setInteracting] = useState(false);
+  const orderRef = useRef<string[]>([]);
+
+  // CMP-05: "por proyecto" / "por atención" — a pure client-side regrouping
+  // of the SAME already-loaded list, kept in the URL like every other
+  // Activity filter so a link to a grouped view is shareable.
+  const viewMode = (params.get('view') === 'project' ? 'project' : 'list') as 'list' | 'project';
+
+  // CMP-05: MRU "último agente usado" — the last chat/question session
+  // opened from this tray, remembered across visits (best-effort, per
+  // browser — never a reason the screen fails if storage is unavailable).
+  const [mru, setMru] = useState<{ sessionId: string; label: string } | null>(() => {
+    try {
+      const raw = localStorage.getItem('fs-act-mru-agent');
+      const parsed = raw ? JSON.parse(raw) : null;
+      return parsed && typeof parsed.sessionId === 'string' && typeof parsed.label === 'string' ? parsed : null;
+    } catch {
+      return null; // per-viewer convenience only
+    }
+  });
+
   // B2 (OBJ-8): "Ver diagrama"/"Estimar coste" for a workflow run's detail
   // pane. Both need the run's definition, which the activity list never
   // carries (see getWorkflowRunDefinition's own comment) — fetched fresh
@@ -525,6 +597,18 @@ export function ActivityScreen() {
       .sort((a, b) => (a.attention?.priority ?? Number.MAX_SAFE_INTEGER) - (b.attention?.priority ?? Number.MAX_SAFE_INTEGER));
   }, [merged, filter, kind, query]);
 
+  // CMP-05: the ORDER actually rendered — `visible` re-sorted above on every
+  // poll tick; `displayed` holds that order still while `interacting` is
+  // true (see `orderRef`'s comment), so a hand mid-click never has its
+  // target move. Recorded back into `orderRef` only when NOT interacting,
+  // so the frozen order always resumes from the last genuinely fresh sort.
+  const displayed = useMemo(() => stableAttentionOrder(visible, orderRef.current, interacting), [visible, interacting]);
+  useEffect(() => {
+    if (!interacting) orderRef.current = displayed.map((r) => `${r.kind}-${r.id}`);
+  }, [displayed, interacting]);
+
+  const groups = useMemo(() => (viewMode === 'project' ? groupByProject(displayed) : null), [viewMode, displayed]);
+
   const counts = useMemo(() => {
     const c = { all: 0, task: 0, render: 0, approval: 0, notification: 0, chat: 0, workflow: 0, question: 0 };
     for (const run of merged ?? []) {
@@ -557,12 +641,21 @@ export function ActivityScreen() {
     // badge (optimistic local update, confirmed by the next poll); it never
     // resolves an approval or answers a question, which still go through
     // the exact same routes they always did.
-    if (run?.attention) {
-      const sid = run.kind === 'chat' ? run.chat?.sessionId : run.kind === 'question' ? run.question?.session : undefined;
-      if (sid) {
-        void markAttentionRead([sid]);
-        setAttentionRows((prev) => prev.map((row) => (row.sessionId === sid ? { ...row, unread: false } : row)));
-      }
+    const sid = run?.kind === 'chat' ? run.chat?.sessionId : run?.kind === 'question' ? run.question?.session : undefined;
+    if (run?.attention && sid) {
+      // ADP-11: opening a run marks it read — this only silences the unread
+      // badge (optimistic local update, confirmed by the next poll); it never
+      // resolves an approval or answers a question, which still go through
+      // the exact same routes they always did.
+      void markAttentionRead([sid]);
+      setAttentionRows((prev) => prev.map((row) => (row.sessionId === sid ? { ...row, unread: false } : row)));
+    }
+    // CMP-05: MRU "último agente usado" — best-effort, never a reason to
+    // block opening the run.
+    if (sid && (run!.kind === 'chat' || run!.kind === 'question')) {
+      const entry = { sessionId: sid, label: run!.title };
+      setMru(entry);
+      try { localStorage.setItem('fs-act-mru-agent', JSON.stringify(entry)); } catch { /* per-viewer convenience only */ }
     }
     setReason('');
     setParams(
@@ -576,6 +669,24 @@ export function ActivityScreen() {
     );
   };
 
+  /**
+   * CMP-05: "una respuesta tardía no cambia... la selección" — the decisive
+   * test's async-race guard. `key` is captured by the CALLER at the moment
+   * the action started (the `current` run's own key, read synchronously at
+   * click time — see `nextRunParam`'s own docstring), so a person who has
+   * since opened a DIFFERENT run while this action was in flight is never
+   * yanked back to (or away from) whatever they navigated to meanwhile.
+   */
+  const closeIfStillOpen = useCallback((key: string) => {
+    setParams((prev) => {
+      const result = nextRunParam(prev.get('run'), key, true);
+      if (result === prev.get('run')) return prev; // already elsewhere — a stale resolve changes nothing
+      const next = new URLSearchParams(prev);
+      next.delete('run');
+      return next;
+    }, { replace: true });
+  }, [setParams]);
+
   const act = async (key: string, fn: () => Promise<void>, done?: string) => {
     if (currentStale || busy) return;
     setBusy(key);
@@ -588,6 +699,82 @@ export function ActivityScreen() {
     } finally {
       setBusy(null);
     }
+  };
+
+  /**
+   * One row, shared by the flat list and every "by project" group — CMP-05
+   * adds the lifecycle/connection badges and the next-action chip; nothing
+   * about the existing row (title, reason, unread dot, status badge)
+   * changes. The chip's OWN click opens the run just like the row does
+   * (`stopPropagation` only prevents a double `open()` call, not a
+   * different action) — see the module docstring on why a one-click
+   * grant/deny/answer from the row itself is deliberately not offered.
+   */
+  const renderRun = (run: ActivityRun) => {
+    const key = `${run.kind}-${run.id}`;
+    const att = run.attention;
+    const ActionIcon = att ? NEXT_ACTION_ICON[att.nextAction] : null;
+    return (
+      <button type="button" className="fs-run fs-act__row" key={key} ref={(node) => { if (node) rowButtons.current.set(key, node); else rowButtons.current.delete(key); }} data-state={run.status} aria-current={key === currentId || undefined} onClick={() => open(run)} data-testid="activity-run">
+        <span className="fs-run__kind" data-kind={run.kind}>
+          {t(run.kind)}
+        </span>
+        <span className="fs-run__main">
+          <span className="fs-row__name">
+            {run.title}
+            {run.repeats > 1 && <span className="fs-act__repeats" title={tn(run.repeats, '{n} identical row', '{n} identical rows')}>×{run.repeats}</span>}
+          </span>
+          {run.detail && <span className="fs-run__detail">{run.detail}</span>}
+          {/* ADP-11: the REASON this run is in "Needs action" — never
+              just a status word. `detail` here is the extra, untranslated
+              context classify() carried (a queue position, a dependency's
+              name), shown as-is next to the translated reason. */}
+          {att?.reason && (
+            <span className="fs-run__detail fs-act__attention-reason">
+              {t(att.reason)}
+              {att.detail ? ` · ${att.detail}` : ''}
+              {att.since ? ` — ${relativeTime(att.since)}` : ''}
+            </span>
+          )}
+          {/* CMP-05: lifecycle / wait cause / connection identity+age — three
+              facts kept visually separate, never folded back into the reason
+              line above (see src/attention.py's module docstring). */}
+          {att && (
+            <span className="fs-act__attention-meta" data-health={att.connectionHealth}>
+              <span className="fs-act__lifecycle-badge" data-lifecycle={att.lifecycle}>{t(LIFECYCLE_LABEL[att.lifecycle])}</span>
+              {WAIT_CAUSE_LABEL[att.waitCause] && <span className="fs-act__wait-badge">{t(WAIT_CAUSE_LABEL[att.waitCause]!)}</span>}
+              {att.signal.ageS !== null && (
+                <span
+                  className="fs-act__signal-badge"
+                  data-health={att.connectionHealth}
+                  title={t('Signal: {source}, session {id}', { source: att.signal.source, id: run.chat?.sessionId || run.question?.session || run.id })}
+                >
+                  <Wifi size={11} aria-hidden="true" />{t('{n}s old', { n: Math.round(att.signal.ageS) })}
+                </span>
+              )}
+            </span>
+          )}
+          <span className="fs-row__meta">{[relativeTime(run.startedAt), duration(run.startedAt, run.finishedAt)].filter(Boolean).join(' · ')}</span>
+          {(failed || run.stale) && <span className="fs-row__meta">{t('Last known activity')}</span>}
+        </span>
+        {att?.unread && <span className="fs-act__unread-dot" aria-hidden="true" data-testid="activity-unread-dot" />}
+        {/* CMP-05: "botón: aprobar / responder / abrir / reintentar /
+            reconectar" — opens the SAME detail pane the row itself opens
+            (the actual grant/deny/answer still requires the reason field
+            there, deliberately: this chip is the affordance, not a
+            one-click bypass of that review step). */}
+        {att && ActionIcon && (
+          <span
+            role="button" tabIndex={-1} className="fs-act__next-action" data-action={att.nextAction}
+            onClick={(e) => { e.stopPropagation(); open(run); }}
+            data-testid="activity-next-action"
+          >
+            <ActionIcon size={12} aria-hidden="true" /> {t(NEXT_ACTION_LABEL[att.nextAction])}
+          </span>
+        )}
+        <StatusBadge status={run.status as RunStatus} label={run.statusLabel} />
+      </button>
+    );
   };
 
   if (failed && !runs) {
@@ -605,7 +792,23 @@ export function ActivityScreen() {
           <h1 className="fs-screen__title">{t('Activity')}</h1>
           <p className="fs-prose fs-act__lede">{waiting > 0 ? tn(waiting, '{n} thing is waiting for your decision.', '{n} things are waiting for your decision.') : t('Conversations, tasks, renders and approvals. Work continues when you leave a chat.')}</p>
         </div>
-        <Button variant="secondary" size="sm" icon={RefreshCw} label={t('Refresh')} loading={refreshing} onClick={() => void reload()} testId="activity-refresh" />
+        <div className="fs-act__head-actions">
+          {/* CMP-05: MRU "último agente usado" — only shown when it is not
+              already what is open, so it never competes with the current
+              selection for attention. */}
+          {mru && current?.chat?.sessionId !== mru.sessionId && current?.question?.session !== mru.sessionId && (
+            <Button
+              variant="ghost" size="sm" icon={History}
+              label={t('Continue: {label}', { label: mru.label })}
+              onClick={() => {
+                const target = (merged ?? []).find((r) => r.chat?.sessionId === mru.sessionId || r.question?.session === mru.sessionId);
+                if (target) open(target);
+              }}
+              testId="activity-mru-continue"
+            />
+          )}
+          <Button variant="secondary" size="sm" icon={RefreshCw} label={t('Refresh')} loading={refreshing} onClick={() => void reload()} testId="activity-refresh" />
+        </div>
       </header>
 
       {failed && (
@@ -677,13 +880,37 @@ export function ActivityScreen() {
               </button>
             ))}
         </div>
+        {/* CMP-05: "vistas por proyecto y por atención" — "por atención" is
+            the existing priority sort every view already gets (ADP-11); this
+            toggle adds "por proyecto", a pure regrouping of the same list. */}
+        <div className="fs-act__view-toggle" role="group" aria-label={t('View')}>
+          <button type="button" className="fs-chip" aria-pressed={viewMode === 'list'} data-on={viewMode === 'list' || undefined}
+            onClick={() => setParams((prev) => { const n = new URLSearchParams(prev); n.delete('view'); return n; })} data-testid="activity-view-list">
+            <Rows3 size={13} aria-hidden="true" /> {t('List')}
+          </button>
+          <button type="button" className="fs-chip" aria-pressed={viewMode === 'project'} data-on={viewMode === 'project' || undefined}
+            onClick={() => setParams((prev) => { const n = new URLSearchParams(prev); n.set('view', 'project'); return n; })} data-testid="activity-view-project">
+            <FolderKanban size={13} aria-hidden="true" /> {t('By project')}
+          </button>
+        </div>
       </div>
 
       <div className="fs-act__layout" data-detail={current ? '' : undefined}>
-        <div className="fs-act__list">
+        <div
+          className="fs-act__list"
+          data-testid="activity-list"
+          // CMP-05: freeze the display order while the pointer or focus is
+          // inside the list — see `orderRef`'s comment. Focus uses onBlur's
+          // relatedTarget rather than a bare `focusout` so tabbing BETWEEN
+          // two rows never toggles frozen off and back on.
+          onMouseEnter={() => setInteracting(true)}
+          onMouseLeave={() => setInteracting(false)}
+          onFocus={() => setInteracting(true)}
+          onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setInteracting(false); }}
+        >
           {!runs && <Skeleton label={t('Loading the activity')} count={6} height="52px" />}
 
-          {runs && visible.length === 0 && (
+          {runs && displayed.length === 0 && (
             <EmptyState
               icon={ActivityIcon}
               headingLevel={3}
@@ -693,40 +920,22 @@ export function ActivityScreen() {
             />
           )}
 
-          {runs && visible.length > 0 && (
+          {runs && displayed.length > 0 && groups && (
+            groups.map((group) => (
+              <section key={group.projectId ?? '__none__'} className="fs-act__project-group" data-testid="activity-project-group">
+                <h2 className="fs-act__project-title">
+                  <FolderKanban size={13} aria-hidden="true" />
+                  {group.projectId ?? t('No project')}
+                  <span className="fs-act__chip-n">{group.runs.length}</span>
+                </h2>
+                <div className="fs-list fs-list--rail">{group.runs.map((run) => renderRun(run))}</div>
+              </section>
+            ))
+          )}
+
+          {runs && displayed.length > 0 && !groups && (
             <div className="fs-list fs-list--rail">
-              {visible.map((run) => {
-                const key = `${run.kind}-${run.id}`;
-                return (
-                  <button type="button" className="fs-run fs-act__row" key={key} ref={(node) => { if (node) rowButtons.current.set(key, node); else rowButtons.current.delete(key); }} data-state={run.status} aria-current={key === currentId || undefined} onClick={() => open(run)} data-testid="activity-run">
-                    <span className="fs-run__kind" data-kind={run.kind}>
-                      {t(run.kind)}
-                    </span>
-                    <span className="fs-run__main">
-                      <span className="fs-row__name">
-                        {run.title}
-                        {run.repeats > 1 && <span className="fs-act__repeats" title={tn(run.repeats, '{n} identical row', '{n} identical rows')}>×{run.repeats}</span>}
-                      </span>
-                      {run.detail && <span className="fs-run__detail">{run.detail}</span>}
-                      {/* ADP-11: the REASON this run is in "Needs action" — never
-                          just a status word. `detail` here is the extra, untranslated
-                          context classify() carried (a queue position, a dependency's
-                          name), shown as-is next to the translated reason. */}
-                      {run.attention?.reason && (
-                        <span className="fs-run__detail fs-act__attention-reason">
-                          {t(run.attention.reason)}
-                          {run.attention.detail ? ` · ${run.attention.detail}` : ''}
-                          {run.attention.since ? ` — ${relativeTime(run.attention.since)}` : ''}
-                        </span>
-                      )}
-                      <span className="fs-row__meta">{[relativeTime(run.startedAt), duration(run.startedAt, run.finishedAt)].filter(Boolean).join(' · ')}</span>
-                      {(failed || run.stale) && <span className="fs-row__meta">{t('Last known activity')}</span>}
-                    </span>
-                    {run.attention?.unread && <span className="fs-act__unread-dot" aria-hidden="true" data-testid="activity-unread-dot" />}
-                    <StatusBadge status={run.status as RunStatus} label={run.statusLabel} />
-                  </button>
-                );
-              })}
+              {displayed.map((run) => renderRun(run))}
             </div>
           )}
 
@@ -813,6 +1022,7 @@ export function ActivityScreen() {
                       {current.chat.progress.lastEventAt > 0 && <DetailRow label={t('Last progress')}>{new Date(current.chat.progress.lastEventAt).toLocaleTimeString(locale())}</DetailRow>}
                       {current.chat.progress.round > 0 && <DetailRow label={t('Round')}>{current.chat.progress.round}</DetailRow>}
                     </>}
+                    <AttentionFacts run={current} />
                   </dl>
                   {current.status === 'running' && <p className="fs-act__hint">{t('A quiet model is not necessarily stuck. Last progress refers to model or tool output, not a connection heartbeat.')}</p>}
                 </>
@@ -839,21 +1049,25 @@ export function ActivityScreen() {
                     <input className="fs-field" value={reason} onChange={(e) => setReason(e.target.value)} data-testid="activity-reason" />
                   </label>
                   <div className="fs-act__actions">
-                    <Button variant="primary" size="sm" icon={Check} label={t('Approve')} disabled={currentStale || !!busy} loading={busy === 'grant'} onClick={() => void act('grant', () => decideApproval(current.approval!.approvalId, true, reason).then(() => open(null)), t('Approved'))} testId="activity-approve" />
-                    <Button variant="danger" size="sm" icon={X} label={t('Deny')} disabled={currentStale || !!busy} loading={busy === 'deny'} onClick={() => void act('deny', () => decideApproval(current.approval!.approvalId, false, reason).then(() => open(null)), t('Denied'))} testId="activity-deny" />
+                    <Button variant="primary" size="sm" icon={Check} label={t('Approve')} disabled={currentStale || !!busy} loading={busy === 'grant'} onClick={() => { const key = `${current.kind}-${current.id}`; void act('grant', () => decideApproval(current.approval!.approvalId, true, reason).then(() => closeIfStillOpen(key)), t('Approved')); }} testId="activity-approve" />
+                    <Button variant="danger" size="sm" icon={X} label={t('Deny')} disabled={currentStale || !!busy} loading={busy === 'deny'} onClick={() => { const key = `${current.kind}-${current.id}`; void act('deny', () => decideApproval(current.approval!.approvalId, false, reason).then(() => closeIfStillOpen(key)), t('Denied')); }} testId="activity-deny" />
                   </div>
                 </>
               )}
 
               {current.kind === 'question' && current.question && (
-                <QuestionAnswerPanel
-                  key={current.question.questionId}
-                  question={current.question}
-                  busy={currentStale || !!busy}
-                  onAnswer={(text, optionIds) =>
-                    void act('answer', () => answerQuestion(current.question!, text, optionIds).then(() => open(null)), t('Answered'))
-                  }
-                />
+                <>
+                  <QuestionAnswerPanel
+                    key={current.question.questionId}
+                    question={current.question}
+                    busy={currentStale || !!busy}
+                    onAnswer={(text, optionIds) => {
+                      const key = `${current.kind}-${current.id}`;
+                      void act('answer', () => answerQuestion(current.question!, text, optionIds).then(() => closeIfStillOpen(key)), t('Answered'));
+                    }}
+                  />
+                  <dl className="fs-act__facts"><AttentionFacts run={current} /></dl>
+                </>
               )}
 
               {current.kind === 'task' && current.task && (
@@ -978,74 +1192,6 @@ export function ActivityScreen() {
         <Toast>
           <Check size={12} aria-hidden="true" /> {notice}
         </Toast>
-      )}
-    </div>
-  );
-}
-
-/**
- * B2 (OBJ-8): `POST /api/workflows/estimate`'s `Estimate`
- * (`docs/api/topology.md`'s "Cost estimate" section) — a min/max range, not
- * one number, because a `condition` branch or a cycle genuinely might or
- * might not run. `unpricedModels` and each `skill` node's own blank `note`
- * are shown rather than folded away: a model missing from the caller's
- * price map contributes $0 to the total, and that is a fact about the
- * estimate the person needs to see, not a rounding error to hide.
- */
-function usd(value: number): string {
-  return value.toLocaleString(locale(), { style: 'currency', currency: 'USD', maximumFractionDigits: 4 });
-}
-
-function WorkflowEstimateView({ estimate }: { estimate: WorkflowEstimate }) {
-  return (
-    <div className="fs-estimate" data-testid="workflow-estimate">
-      <p className="fs-estimate__total">
-        {t('Estimated total: {range} · {calls} calls', {
-          range: estimate.totalUsdMin === estimate.totalUsdMax ? usd(estimate.totalUsdMin) : `${usd(estimate.totalUsdMin)} – ${usd(estimate.totalUsdMax)}`,
-          calls: estimate.callsMin === estimate.callsMax ? String(estimate.callsMin) : `${estimate.callsMin}–${estimate.callsMax}`,
-        })}
-      </p>
-      <p className="fs-act__hint">{t('Only skill nodes are priced; every other node type is structural and costs nothing by itself.')}</p>
-      <div className="fs-estimate__table-wrap">
-        <table className="fs-estimate__table">
-          <thead>
-            <tr>
-              <th>{t('Node')}</th>
-              <th>{t('Type')}</th>
-              <th>{t('Model')}</th>
-              <th>{t('Calls')}</th>
-              <th>{t('Cost (USD)')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {estimate.perNode.map((n) => (
-              <tr key={n.nodeId}>
-                <td><code>{n.nodeId}</code></td>
-                <td>{n.type}</td>
-                <td>{n.model || '—'}</td>
-                <td>{n.callsMin === n.callsMax ? n.callsMin : `${n.callsMin}–${n.callsMax}`}</td>
-                <td>
-                  {n.usdMin === n.usdMax ? usd(n.usdMin) : `${usd(n.usdMin)} – ${usd(n.usdMax)}`}
-                  {n.note && <span className="fs-estimate__note"> — {n.note}</span>}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {estimate.unboundedLoops.length > 0 && (
-        <div className="fs-notice" data-tone="warning" role="status">
-          <strong>{t('Unbounded loops')}:</strong>{' '}
-          {estimate.unboundedLoops.map((loop, i) => (
-            <span key={i}>
-              {i > 0 && '; '}
-              {loop.nodes.join(' → ')} ({tn(loop.assumedIterations, 'assumed {n} iteration for the maximum', 'assumed {n} iterations for the maximum')})
-            </span>
-          ))}
-        </div>
-      )}
-      {estimate.unpricedModels.length > 0 && (
-        <p className="fs-act__hint">{t('Models without a price (contribute $0 to this estimate)')}: {estimate.unpricedModels.join(', ')}</p>
       )}
     </div>
   );

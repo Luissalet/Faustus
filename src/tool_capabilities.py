@@ -513,6 +513,24 @@ _register(
     {"req_propose", "req_link"},
     ToolEffect.WRITE_PRIVATE,
 )
+# Isolated, comparable alternatives (CMP-13, W2-G, src/agent_tools/
+# alternatives_tools.py). `alt_compare` only reads a diff against the base
+# (same class as git_diff) -- READ_WORKSPACE, workspace-sourced content.
+# `alt_start` creates a git worktree or copies a directory under DATA_DIR
+# (same class as git_branch/create_repo) and `alt_apply` writes directly
+# into the user's own workspace files (same class as apply_patch/edit_file)
+# -- both WRITE_WORKSPACE. Neither touches a remote host, so neither gets
+# NETWORK_EGRESS/EXTERNAL_SIDE_EFFECT the way git_push does.
+_register(
+    {"alt_compare"},
+    ToolEffect.READ_WORKSPACE,
+    result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED,
+)
+_register(
+    {"alt_start", "alt_apply"},
+    ToolEffect.WRITE_WORKSPACE,
+    result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED,
+)
 
 
 TOOL_CAPABILITIES: Mapping[str, ToolCapabilities] = MappingProxyType(dict(_REGISTRY))

@@ -1,0 +1,19 @@
+{
+  "id": "edit-passage-keep-tone",
+  "title": "Edit this passage without changing the tone",
+  "inputs": ["the exact passage to edit", "what should change about it"],
+  "steps": [
+    "read the passage and its surrounding paragraph, not just the sentence to change",
+    "locate every occurrence of the exact text to change; if there is more than one, disambiguate before editing (never apply to the first match blindly)",
+    "apply the edit, matching the passage's existing voice, register and punctuation style",
+    "read the edited passage back in context and confirm nothing around it now reads inconsistently"
+  ],
+  "tools": ["read_file", "edit_file"],
+  "success_conditions": [
+    "only the named passage changed — nothing else in the document did",
+    "the edited text reads as the same voice as the rest of the document"
+  ],
+  "optional_resources": [],
+  "license": null,
+  "status": "published"
+}

@@ -799,4 +799,21 @@ EXAMPLES: Dict[str, List[str]] = {
         "link this test as evidence for REQ-5",
         "marca que este commit implementa ese requisito",
     ],
+
+    # ── Isolated, comparable alternatives (CMP-13, W2-G) ───────────────────
+    "alt_start": [
+        "prueba esto de dos formas distintas y compáralas",
+        "try a quick fix and a proper refactor in parallel, without losing either",
+        "quiero comparar dos enfoques para este cambio",
+    ],
+    "alt_compare": [
+        "en qué se diferencian esos dos intentos",
+        "which alternative changed fewer files",
+        "compara las alternativas de ese experimento",
+    ],
+    "alt_apply": [
+        "quédate con la segunda alternativa",
+        "apply the first attempt into my working copy",
+        "aplica esa alternativa, la otra descártala",
+    ],
 }

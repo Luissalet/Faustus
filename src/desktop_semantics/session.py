@@ -134,6 +134,38 @@ def take_snapshot(session_id: str, raw: Dict[str, Any]) -> Snapshot:
         return snap
 
 
+def invalidate_generation(session_id: str) -> int:
+    """CMP-10 — force-bump `session_id`'s generation and drop its snapshot
+    memory RIGHT NOW, instead of waiting for the next `take_snapshot` to
+    notice a window/app change on its own.
+
+    Two callers need this eagerly (see `channel.py`'s module docstring):
+    the human takes back control of the desktop mid-run — the existing
+    Escape/indicator handshake (`src.desktop_control_session`) stops the
+    RUN, but does not by itself tell this package "whatever the human just
+    did may have moved things" — and a channel decision that falls back
+    onto `pixels` (native_a11y unavailable): pixel actions bypass the ref
+    system entirely, so any ref a caller is still holding for this session
+    must not be trusted afterwards without a fresh snapshot. `take_snapshot`
+    already bumps the generation the moment it NOTICES a window/app change;
+    this is the same effect, called explicitly, before that next snapshot
+    happens. Idempotent on a session with no snapshots yet — still returns
+    the new generation.
+    """
+    session_id = str(session_id or "")
+    if not session_id:
+        raise SemanticError("invalidate_generation requires a session")
+    with _LOCK:
+        state = _STATE.setdefault(
+            session_id, {"generation": 0, "window_key": None, "snapshots": {}, "latest": None}
+        )
+        state["generation"] += 1
+        state["window_key"] = None
+        state["snapshots"] = {}
+        state["latest"] = None
+        return state["generation"]
+
+
 def resolve(ref: str, snapshot_fresh: Snapshot, *, caller_session_id: str) -> Element:
     """Turn `ref` into the live `Element` inside `snapshot_fresh` — a
     snapshot the caller took JUST NOW, not the one `ref` was cut from.

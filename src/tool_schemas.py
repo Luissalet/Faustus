@@ -2411,6 +2411,52 @@ FUNCTION_TOOL_SCHEMAS = [
             }
         }
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "alt_start",
+            "description": "Start a new experiment: try more than one approach to the same task, each isolated (a git worktree, a directory snapshot, or a text snapshot) so they never collide with each other or with the user's own edits. Returns the experiment id and each alternative's id -- ALWAYS cite the experiment id back to the user, never invent one. Use when the user wants to compare two or more approaches, or asks to 'try it a different way without losing the first one'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "goal": {"type": "string", "description": "What these alternatives are trying to answer"},
+                    "workspace": {"type": "string", "description": "Absolute path to the repo/directory to branch from (optional -- defaults to the turn's active workspace)"},
+                    "alternatives": {"type": "array", "items": {"type": "string"}, "description": "One label per alternative to create (default: two, 'Alternative 1'/'Alternative 2')"}
+                },
+                "required": ["goal"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "alt_compare",
+            "description": "Diffs of every alternative of an experiment against its shared base, plus which files more than one alternative touches (those will need a merge if more than one is applied). Read-only.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "experiment_id": {"type": "string", "description": "Experiment id returned by alt_start"}
+                },
+                "required": ["experiment_id"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "alt_apply",
+            "description": "Merge one alternative's changes into the user's main copy -- a three-way merge (base / the main copy right now / the alternative) that NEVER discards a manual edit made to the main copy since the experiment started. On a conflict nothing is written and the conflicting files come back; never guess a resolution yourself, relay them to the user. Refused unless the user explicitly approved this exact call.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "experiment_id": {"type": "string", "description": "Experiment id returned by alt_start"},
+                    "alternative_id": {"type": "string", "description": "Which alternative to apply"},
+                    "user_confirmed": {"type": "boolean", "description": "Set true ONLY after the user explicitly approved applying this alternative"}
+                },
+                "required": ["experiment_id", "alternative_id"]
+            }
+        }
+    },
 ]
 
 

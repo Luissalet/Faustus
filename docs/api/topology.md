@@ -6,7 +6,15 @@ of its own. Pure modules, wired onto existing routers:
 - `src/topology_export.py` — `future_to_mermaid`, `workflow_to_mermaid`.
 - `src/agent_profile_lint.py` — `lint_profile`, `lint_all`, `lint_workflow`,
   `find_cycles`.
-- `src/workflow_cost_estimate.py` — `estimate`, `ModelPrice`.
+- `src/workflow_cost_estimate.py` — `estimate`, `ModelPrice`, and (CMP-08,
+  W2-B) `estimate_detailed`, `StructuredPrice`, `CallsProfile` — separate
+  `node_activations`/`model_calls`/`external_ops`/`tokens` accounts, a
+  structured/sourced price, and a `structural_bounds`/
+  `forecast_with_assumptions`/`measured` split. See "Detailed estimate"
+  below.
+- `src/plan_compare.py` (CMP-08, W2-B) — `compare`: several candidate
+  definitions for the same goal, one table with a `computed`/`estimated`/
+  `unknown` tag per cell. See "Comparing plans" below.
 - `src/workflows/preflight.py` (ADP-16, W1-G) — `preflight`: connections,
   tools, permissions, inputs, outputs, human waits, a token estimate and a
   cost estimate for a definition, with zero LLM/script/network effects. See
@@ -22,8 +30,11 @@ of its own. Pure modules, wired onto existing routers:
 | --- | --- | --- | --- |
 | `GET` | `/api/futures/{future_id}/mermaid` | — | `{"ok": true, "mermaid": "flowchart TD\n..."}` |
 | `POST` | `/api/workflows/mermaid` | `{"definition": {...}}` (same shape as `/api/workflows/validate`) | `{"ok": true, "mermaid": "..."}` |
+| `POST` | `/api/workflows/simulate` | `{"definition": {...}, "choices"?: {node_id: bool}, "rounds_max"?: 1-200 (default 25)}` | `{"ok": true, "simulation": {...}}` |
 | `POST` | `/api/workflows/estimate` | `{"definition": {...}, "prices"?: {model_id: {"prompt_usd_per_1k", "completion_usd_per_1k"}}}` | `{"ok": true, "estimate": {...}}` |
-| `POST` | `/api/workflows/preflight` | `{"definition": {...}, "prices"?: {...}, "installed_models"?: [...]}` | `{"ok": true, "preflight": {...}}` |
+| `POST` | `/api/workflows/estimate?detail=1` (CMP-08) | same body, plus `"capability_pricing"?`, `"skill_calls_profiles"?`, `"local_latency"?`, `"run_id"?` | `{"ok": true, "estimate": {...}}` — `estimate_detailed()`'s shape, see "Detailed estimate" below |
+| `POST` | `/api/workflows/compare-plans` (CMP-08) | `{"goal": str, "plans": [{"id", "label"?, "definition"}], "prices"?, "capability_pricing"?, "skill_calls_profiles"?, "local_latency"?}` | `{"ok": true, "comparison": {...}}` — see "Comparing plans" below |
+| `POST` | `/api/workflows/preflight` | `{"definition": {...}, "prices"?: {...}, "installed_models"?: [...]}` | `{"ok": true, "preflight": {...}}` — now also carries `cost_detail` (CMP-08, see below) |
 | `POST` | `/api/workflows/export` | `{"definition": {...}, "layout"?, "design_only"?, "provenance"?}` | `{"ok": true, "export": {...}}` |
 | `GET` | `/api/workflows/runs/{run_id}/export` | — | `{"ok": true, "run_id": ..., "export": {...}}` |
 | `POST` | `/api/workflows/import` | canonical envelope or aigraphstudio-shaped payload | `{"ok": true, "definition", "design_only", "rejected", "executable"}` |
@@ -169,6 +180,141 @@ assumed_iterations=3)` returns an `Estimate`:
   contributes `1` to the minimum and `assumed_iterations` (default `3`,
   overridable) to the maximum, and is named in `unbounded_loops`.
 
+### Detailed estimate (`?detail=1`) — separate accounts (CMP-08)
+
+`estimate()` above folds every node's activation count into one
+`calls_min`/`calls_max` and prices a `skill` node as if it always makes
+exactly one model call. Both are wrong for "how many model calls will this
+make" and "will a three-call skill get undercounted". `estimate_detailed()`
+(`src/workflow_cost_estimate.py`) answers those separately, and
+`POST /api/workflows/estimate?detail=1` exposes it — same body as
+`/estimate`, plus four optional inputs this pure function refuses to fetch
+itself (no network in an estimate):
+
+```json
+POST /api/workflows/estimate?detail=1
+{"definition": {...}, "prices"?: {...},
+ "capability_pricing"?: {model_id: {"pricing": {"prompt": "0.000002", "completion": "0.000006"}, ...}},
+ "skill_calls_profiles"?: {skill_id: {"model_calls", "external_ops", "tokens_in", "tokens_out"}},
+ "local_latency"?: {model_id: {"load", "queue", "prefill_tps", "generation_tps", "memory_server"}},
+ "run_id"?: "wfr_..."}
+```
+
+```json
+{
+  "node_activations": {"min": 3, "max": 3},
+  "model_calls": {"min": 1, "max": 1},
+  "external_ops": {"min": 1, "max": 1},
+  "tokens": {"in": {"min": 1500, "max": 1500}, "out": {"min": 500, "max": 500}},
+  "cost_known_usd": {"min": 0.0025, "max": 0.0025},
+  "cost_unestimable": [],
+  "structural_bounds": {"node_activations": {"min": 3, "max": 3}, "note": "..."},
+  "forecast_with_assumptions": {"node_activations": {"min": 3, "max": 3}, "model_calls": {...},
+                                 "external_ops": {...}, "assumed_iterations": 3,
+                                 "default_tokens_per_call": {"prompt": 1500, "completion": 500}},
+  "measured": null,
+  "prices_used": {"local:test-7b": {"amount_prompt_per_1m": 1000.0, "amount_completion_per_1m": 2000.0,
+                                     "unit": "per_1M_tokens", "currency": "USD", "source": "caller_prices", "as_of": ""}},
+  "per_node": [...],
+  "assumptions": ["a 'skill' node with a bare config.model (no calls_profile) is assumed to make exactly 1 model call of 1500 prompt + 500 completion tokens"]
+}
+```
+
+- **Separate accounts, not one blended number.** `node_activations` counts
+  every node's activation, `model_calls` counts only `skill` activations
+  that actually invoke a model, `external_ops` counts `deliver`/
+  `artifact_store` activations AND a composite skill's own declared
+  external operations (see below) — a `deliver` node is never counted as a
+  model call, and a plain `wait`/`condition`/`human_approval` activation is
+  never counted as either.
+- **Price is always structured, never a bare number.**
+  `{amount_prompt_per_1m, amount_completion_per_1m, unit: "per_1M_tokens",
+  currency, source, as_of}`. `source` is one of `"caller_prices"` (the same
+  `ModelPrice` shape `/estimate` already accepts, converted from per-1k to
+  per-1M) or `"openrouter_pricing_field"` (read off
+  `capability_pricing[model_id].pricing` — the caller's own already-fetched
+  OpenRouter `/models` payload; this module never fetches a catalogue
+  itself). `capability_pricing` wins over `prices` for a model ONLY when it
+  actually names a usable `pricing` field — never assumed present.
+- **A composite skill's real call count comes from a declared `calls_profile`
+  or compatible history, never assumed to be "one call".** A `skill` node
+  naming `config.skill` is looked up in `skill_calls_profiles` (declared,
+  from that skill's own manifest — the caller reads it; this module never
+  scans the filesystem), then in `DATA_DIR/skill_call_history.json` (this
+  route DOES read that file itself — see `_skill_call_history_from_disk`)
+  if `skill_calls_profiles` has nothing for it. Neither found →
+  `calls_profile_source: "unknown"`, `model_calls: {min: 0, max: 0}`, and the
+  skill is named in `cost_unestimable` — never defaulted to `1`. Two skill
+  nodes naming the SAME model but different `config.skill` ids get different
+  `model_calls`/`tokens_in`/`tokens_out` when their profiles differ. A plain
+  `skill` node with only `config.model` (no `config.skill`) IS assumed to
+  make one call — that assumption is named in `assumptions`.
+- **`structural_bounds` / `forecast_with_assumptions` / `measured` are three
+  different things.** `structural_bounds` is the graph shape alone — an
+  unbounded cycle reports `max: "unbounded"` (the string), never a number.
+  `forecast_with_assumptions` applies `assumed_iterations` to that same
+  cycle and lists every assumption used. `measured` is `null` unless a real
+  `run_id` is given, and even then only carries `tool_calls`/
+  `active_seconds` (from `WorkflowStore.usage_so_far`) — `tokens_in`/
+  `tokens_out`/`cost_usd` stay `null` with a note explaining why: no
+  per-node token/cost ledger exists for a workflow run today (checked
+  `src/workflows/engine.py` and `store.py` before writing this).
+- **Local latency is threaded through, never computed here.** `local_latency`
+  is `{model_id: {...}}` the CALLER already computed from
+  `resource_admission.status()` (queue), `llm_core.local_speed()`
+  (prefill/generation tok/s, learned per-model, `None` until observed),
+  `vram_admission.reservations_snapshot()` (memory reserved per real
+  server, never summed across servers) and `gpu_policy.model_sizes()`
+  (on-disk size — the one of these four that is itself a network call,
+  which is exactly why `estimate_detailed` never makes it). This function
+  only attaches whatever it is given onto the matching `per_node` row's
+  `latency_estimate`; an unset model's row has none, not a guessed number.
+- **`preflight()` now also carries `cost_detail`** — the same
+  `estimate_detailed()` shape, computed with the SAME `prices`/
+  `assumed_iterations` the preflight already used (edición mínima, no new
+  input). `preflight()`'s own `cost` field is unchanged.
+
+### Comparing plans — `plan_compare.compare` (CMP-08)
+
+`POST /api/workflows/compare-plans` — several candidate definitions for the
+same `goal` (typically `single_model`/`agent_team`/`deterministic_steps`,
+but any ids), one table instead of diffing several `/estimate?detail=1`
+responses by eye:
+
+```json
+{
+  "goal": "answer a research question",
+  "plan_ids": ["single_model", "agent_team", "deterministic_steps"],
+  "plan_labels": {"single_model": "One model", ...},
+  "rows": [
+    {"metric": "model_calls_max", "cells": {
+      "single_model": {"value": 1, "basis": "computed"},
+      "agent_team": {"value": 2, "basis": "unknown"},
+      "deterministic_steps": {"value": 0, "basis": "computed"}
+    }},
+    ...
+  ],
+  "reasons": {"agent_team": ["skill 'unknown_pack' has no declared calls_profile or compatible history — model_calls unknown"]},
+  "detail": {"single_model": {...estimate_detailed()...}, ...},
+  "errors": {}
+}
+```
+
+- Every plan is estimated with the SAME pricing/profile/latency inputs, so
+  none is priced more generously than another — this is the actual point of
+  "por qué este plan" ("why this plan"): the table, not a verdict.
+- **`basis` on every cell**: `"computed"` (the workflow's structure fixes
+  it — no cycle, nothing unpriced/uncharacterized touches this metric),
+  `"estimated"` (depends on a listed assumption — an unbounded cycle's
+  `assumed_iterations`), or `"unknown"` (the plan touches an unpriced model
+  or an uncharacterized composite skill — reported, never hidden).
+  `plan_compare.py` adds no estimation logic of its own; every number comes
+  from `estimate_detailed`.
+- A plan whose `definition` fails to parse is reported in `errors` and kept
+  out of `rows`/`detail` — one bad plan never hides the other two.
+- Nothing here ranks or picks a plan; that is left to whoever reads the
+  table.
+
 ## Preflight: a dry-run before authorizing a plan (ADP-16)
 
 `src/workflows/preflight.py::preflight(definition, *, installed_models=None,
@@ -229,6 +375,102 @@ returns a `Preflight` — pure and read-only, same guarantee `estimate` and
   never changes `cost`, `connections`, or anything else.
 - **`warnings`** is `agent_profile_lint.lint_workflow(definition)` verbatim —
   the same findings `/api/agent-profiles/lint` shape, not a second rulebook.
+
+## Simulate: a structural walk with nothing executed (CMP-07)
+
+`src/workflows/simulate.py::simulate(definition, *, choices=None,
+rounds_max=25)` returns a `SimulationResult` — a round-by-round structural
+walk of `definition`'s `needs` graph. It shares nothing with
+`WorkflowEngine.advance` (the real run): no handler from
+`src/workflows/handlers.py` is ever imported or called, no `WorkflowStore`
+is opened, no network of any kind. It exists to answer, before anyone
+authorizes a real run: which nodes would activate, where a run would stop
+for a human, and which branches would not be taken.
+
+```
+POST /api/workflows/simulate
+{"definition": {...}, "choices": {"gate": true, "approve": false}, "rounds_max": 25}
+```
+
+```json
+{
+  "ok": true,
+  "simulation": {
+    "rounds": [
+      {"round": 1, "activated": ["start"], "not_taken": [], "human_waits": [], "newly_awaiting_choice": []},
+      {"round": 2, "activated": ["audit", "gate"], "not_taken": [], "human_waits": [], "newly_awaiting_choice": []},
+      {"round": 3, "activated": [], "not_taken": ["approve"], "human_waits": ["approve"], "newly_awaiting_choice": []},
+      {"round": 4, "activated": [], "not_taken": ["send"], "human_waits": [], "newly_awaiting_choice": []}
+    ],
+    "activated": ["audit", "gate", "start"],
+    "not_taken": ["approve", "send"],
+    "human_waits": ["approve"],
+    "awaiting_choice": {},
+    "not_reached": [],
+    "rounds_used": 4,
+    "rounds_max": 25,
+    "warnings": ["`needs` are AND dependencies: ..."]
+  }
+}
+```
+
+### `choices`: a guess the caller supplies, never a computation
+
+`simulate()` never evaluates a `condition` node's real `config.when`
+against live data (that is `handlers.py::evaluate`'s job, against a real
+run's inputs) and never asks a real person to answer a `human_approval`
+node. `choices: {node_id: bool}` lets a caller explore one branch at a
+time: `true` assumes that `condition` passes or that `human_approval` is
+granted; `false` assumes it fails or is denied. A `condition`/
+`human_approval` node with **no** entry in `choices` is left **undecided**
+— reported in `awaiting_choice`, together with every node downstream of it
+(each pointing back at the SAME blocking node id, not at its own
+immediate, also-undecided parent) — never silently assumed to pass. This
+is the direct answer to INFORME §3.6's own limit: a simulator that
+defaulted an unanswered condition to "passes" would be lying about
+authorizing a plan it never actually checked.
+
+`human_waits` always lists a `human_approval` node once it is reached,
+whether or not `choices` supplied a guess for it — a real run always
+pauses there regardless of what a caller is choosing to explore past it in
+one simulation call.
+
+### `needs` are AND dependencies, never control branches
+
+This is INFORME §3.6's central warning, and `SimulationResult.warnings`
+states it on every call: a node with several `needs` only activates once
+**every** one of them is satisfied. This schema has exactly one dependency
+mechanism (`needs`) and no separate "true"/"false" edge — so a node
+downstream of an undecided or denied gate never activates just because
+some *other* path in a drawn diagram appears to reach it; `simulate()`
+respects `needs` exactly as `WorkflowEngine.ready_nodes`/`_stopping` would
+at run time. `tests/test_cmp07_simulate.py::
+test_and_dependencies_are_never_bypassed_by_a_second_path` pins a node
+with two `needs` — one clean, one gated by an undecided `condition` — and
+confirms it does not activate on the strength of the clean one alone.
+
+### Rounds are depth layers, not an arbitrary loop counter
+
+Each round only resolves nodes whose dependencies were **all** settled by
+the end of the PREVIOUS round; a node whose dependency resolved earlier in
+the SAME round still waits for the next one. `rounds_max` (1–200, default
+25) is therefore a real cap on how many dependency layers deep the walk
+goes — the same number `PlanGraph`'s depth-layered rendering (Studio, this
+lot) keys off — and hitting it is reported in `not_reached`/`warnings`,
+never silent.
+
+### Why a cyclic definition never reaches this module
+
+`WorkflowDefinition.parse()` already refuses every cycle
+(`src/contracts/workflow.py::_find_cycle`, untouched by this lot); `POST
+/api/workflows/simulate` reuses the same `_definition_or_400` every other
+`/api/workflows/*` route does, so a cyclic payload is refused with the
+usual `{path, reason, got}` message before `simulate()` ever runs. A
+hand-built `WorkflowDefinition` that bypasses `.parse()` (the same
+defensive case `agent_profile_lint.find_cycles` exists for) does not crash
+`simulate()` either — its cyclic nodes simply never resolve and are
+reported in `not_reached` once `rounds_max` is spent, which is an honest
+answer rather than an infinite loop.
 
 ## Interchange: import and export (ADP-17)
 

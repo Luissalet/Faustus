@@ -1,0 +1,20 @@
+{
+  "id": "design-function-and-tests",
+  "title": "Design a function and generate its tests",
+  "inputs": ["what the function should do", "its inputs/outputs, if known", "where it belongs in the codebase"],
+  "steps": [
+    "write a short plan: signature, inputs/outputs, edge cases",
+    "confirm the plan matches what was actually asked before writing code",
+    "implement the function",
+    "write tests that cover the normal case and the edge cases named in the plan",
+    "run the tests and fix the function (not the tests) until they pass for the right reason"
+  ],
+  "tools": ["read_file", "write_file", "edit_file", "run_tests"],
+  "success_conditions": [
+    "the tests exercise the edge cases the plan named, not just the happy path",
+    "the tests pass against the real function, not a stubbed one"
+  ],
+  "optional_resources": [],
+  "license": null,
+  "status": "published"
+}

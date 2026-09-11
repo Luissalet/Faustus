@@ -1,4 +1,4 @@
-import { AlertTriangle, Archive, ArrowLeft, Bold, Check, ChevronDown, Code, Copy, Download, Eye, FileCode2, FileText, Heading1, Heading2, Heading3, History as HistoryIcon, Italic, Link2, List, ListChecks, ListOrdered, Mail, Minus, Play, Quote, Search, Strikethrough, Table, Trash2, X } from 'lucide-react';
+import { AlertTriangle, Archive, ArrowLeft, Bold, Check, ChevronDown, Code, Copy, Download, Eye, FileCode2, FileText, Heading1, Heading2, Heading3, History as HistoryIcon, Italic, Link2, List, ListChecks, ListOrdered, Mail, Minus, Play, Quote, Redo2, Search, Strikethrough, Table, Trash2, Undo2, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { Button, Dialog, EmptyState, IconButton, Menu, Skeleton, Toast } from '../../components';
@@ -14,6 +14,7 @@ import { baseName, download, toDocx, toHtml } from './exports';
 import { applyMarkdown, parseCsv, PREVIEWABLE, RUNNABLE, type MdAction } from './markdown';
 import { PdfPane } from './PdfPane';
 import { ReviewPanel } from './ReviewPanel';
+import { currentText, discardDraft, isDirty, markSaved, redo as sessionRedo, setDraftText, setSelection, sync as syncSession, undo as sessionUndo, useDocSession } from '../../lib/docSession';
 import '../documents.css';
 
 const LANGUAGES = ['markdown', 'text', 'python', 'javascript', 'typescript', 'html', 'css', 'json', 'yaml', 'bash', 'sql', 'csv', 'rust', 'go', 'java', 'c', 'cpp', 'ruby', 'php', 'xml', 'toml', 'ini'];
@@ -36,7 +37,13 @@ export function DocumentScreen() {
   const reviewId = searchParams.get('review');
   const [doc, setDoc] = useState<Doc | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [text, setText] = useState('');
+  // CMP-01 (W2-A1): the draft/selection/undo live in `docSession`, shared
+  // with the side panel's `DocTab` — opening a document here that the
+  // panel already had a draft for picks that draft back up instead of
+  // discarding it, and vice versa switching back to the panel.
+  const session = useDocSession(doc?.id ?? null, doc ? { content: doc.content, version: doc.versionCount } : undefined);
+  const text = session ? currentText(session) : '';
+  const setText = useCallback((next: string, opts?: { record?: boolean }) => { if (doc) setDraftText(doc.id, next, opts); }, [doc]);
   const [title, setTitle] = useState('');
   const [language, setLanguage] = useState('');
   const [saving, setSaving] = useState(false);
@@ -68,7 +75,10 @@ export function DocumentScreen() {
       .then((d) => {
         if (cancelled) return;
         setDoc(d);
-        setText(d.content);
+        // Reconcile, never discard: a draft already in the session (e.g.
+        // left by the side panel, or by an earlier visit to this same
+        // route) survives; only `baseText`/`baseRevision` fast-forward.
+        syncSession(d.id, { content: d.content, version: d.versionCount });
         setTitle(d.title);
         setLanguage(d.language);
         setView(isPdfDoc(d.content) ? 'pdf' : 'edit');
@@ -81,7 +91,7 @@ export function DocumentScreen() {
     };
   }, [id]);
 
-  const dirty = !!doc && text !== doc.content;
+  const dirty = session ? isDirty(session) : false;
   const pdf = !!doc && isPdfDoc(doc.content);
   const lang = (language || doc?.language || '').toLowerCase();
 
@@ -97,9 +107,9 @@ export function DocumentScreen() {
       if (!doc) return;
       setSaving(true);
       try {
-        const saved = await saveDoc(doc.id, content, summary, force, force ? undefined : doc.content);
+        const saved = await saveDoc(doc.id, content, summary, force, force ? undefined : (session?.baseText ?? doc.content));
         setDoc(saved);
-        setText(saved.content);
+        markSaved(doc.id, { content: saved.content, version: saved.versionCount });
         setConflict(null);
         setConflictDiff(false);
         say(t('Saved as v{n}', { n: saved.versionCount }));
@@ -110,8 +120,9 @@ export function DocumentScreen() {
             setConflict({ server, pendingSummary: summary });
             // Move the "known revision" forward to the server's latest content so a
             // plain retry (or the merge from the diff view) succeeds; `text` — the
-            // user's draft — is left untouched.
+            // user's draft — is left untouched (`syncSession` never discards a draft).
             setDoc((d) => (d ? { ...d, content: server.content, versionCount: server.versionCount, updatedAt: server.updatedAt } : d));
+            syncSession(doc.id, { content: server.content, version: server.versionCount });
             say(t('This document changed elsewhere. Your edits are kept here — choose how to continue.'), 'warn');
           } catch (e2) {
             say(t('Save failed: {error}', { error: (e2 as Error).message }), 'warn');
@@ -123,7 +134,7 @@ export function DocumentScreen() {
         setSaving(false);
       }
     },
-    [doc, text, say],
+    [doc, text, session, say],
   );
 
   const rename = async () => {
@@ -157,7 +168,7 @@ export function DocumentScreen() {
     const ta = editorRef.current;
     if (!ta) return;
     const out = applyMarkdown(action, text, ta.selectionStart, ta.selectionEnd);
-    setText(out.text);
+    setText(out.text, { record: true });
     requestAnimationFrame(() => {
       ta.focus();
       ta.setSelectionRange(out.start, out.end);
@@ -193,14 +204,14 @@ export function DocumentScreen() {
   const replaceOne = () => {
     if (!matches.length) return;
     const at = matches[Math.min(find.at, matches.length - 1)];
-    setText(text.slice(0, at) + find.r + text.slice(at + find.q.length));
+    setText(text.slice(0, at) + find.r + text.slice(at + find.q.length), { record: true });
   };
 
   const replaceAll = () => {
     if (!find.q) return;
     const re = new RegExp(find.q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
     const n = matches.length;
-    setText(text.replace(re, find.r));
+    setText(text.replace(re, find.r), { record: true });
     say(tn(n, '{n} replaced', '{n} replaced'));
   };
 
@@ -375,6 +386,8 @@ export function DocumentScreen() {
         )}
         {canRun && <Button size="sm" variant="ghost" icon={Play} label={t('Run')} loading={running} onClick={() => void runIt()} title={t('Python and bash run on the server; JavaScript runs in a sandbox here; HTML opens the preview')} />}
         {view !== 'pdf' && <IconButton icon={Search} label={t('Find and replace (Ctrl+F)')} onClick={() => { setFind((f) => ({ ...f, open: !f.open })); window.setTimeout(() => document.getElementById('doc-find')?.focus(), 30); }} />}
+        {view !== 'pdf' && session && session.undoStack.length > 0 && <IconButton icon={Undo2} label={t('Undo')} onClick={() => doc && sessionUndo(doc.id)} />}
+        {view !== 'pdf' && session && session.redoStack.length > 0 && <IconButton icon={Redo2} label={t('Redo')} onClick={() => doc && sessionRedo(doc.id)} />}
         <IconButton
           icon={HistoryIcon}
           label={t('Versions')}
@@ -452,7 +465,7 @@ export function DocumentScreen() {
           <span>{t('Someone else saved this document while you were editing (now v{n}). Nothing was overwritten.', { n: conflict.server.versionCount })}</span>
           <span className="fs-spacer" />
           <Button size="sm" variant="ghost" label={t('View differences')} onClick={() => setConflictDiff(true)} />
-          <Button size="sm" variant="ghost" label={t('Reload their version')} onClick={() => { setText(conflict.server.content); setConflict(null); say(t('Reloaded. Your edits were discarded.')); }} />
+          <Button size="sm" variant="ghost" label={t('Reload their version')} onClick={() => { if (doc) discardDraft(doc.id); setConflict(null); say(t('Reloaded. Your edits were discarded.')); }} />
           <Button size="sm" variant="danger" label={t('Force-save mine')} onClick={() => void save(text, conflict.pendingSummary, true)} />
           <IconButton icon={X} label={t('Dismiss')} size="sm" onClick={() => setConflict(null)} />
         </div>
@@ -467,7 +480,7 @@ export function DocumentScreen() {
             newLabel={t('Your changes')}
             onCancel={() => setConflictDiff(false)}
             onApply={(merged) => {
-              setText(merged);
+              setText(merged, { record: true });
               setConflictDiff(false);
               say(t('Merged; save to keep it.'));
             }}
@@ -480,7 +493,7 @@ export function DocumentScreen() {
             newLabel={`v${compare.number}`}
             onCancel={() => setCompare(null)}
             onApply={(merged) => {
-              setText(merged);
+              setText(merged, { record: true });
               setCompare(null);
               say(t('Changes applied to the editor; save to keep them.'));
             }}
@@ -510,6 +523,11 @@ export function DocumentScreen() {
                   className="fs-docs__editor"
                   value={text}
                   onChange={(e) => setText(e.target.value)}
+                  onSelect={(e) => {
+                    if (!doc) return;
+                    const el = e.currentTarget;
+                    setSelection(doc.id, el.selectionStart === el.selectionEnd ? [] : [{ start: el.selectionStart, end: el.selectionEnd }]);
+                  }}
                   onScroll={(e) => {
                     if (gutterRef.current) gutterRef.current.scrollTop = e.currentTarget.scrollTop;
                   }}
@@ -561,7 +579,7 @@ export function DocumentScreen() {
                           restoreDocVersion(doc.id, v.number)
                             .then((d) => {
                               setDoc(d);
-                              setText(d.content);
+                              markSaved(d.id, { content: d.content, version: d.versionCount });
                               setVersions(null);
                               say(t('Restored v{a} as v{b}', { a: v.number, b: d.versionCount }));
                             })

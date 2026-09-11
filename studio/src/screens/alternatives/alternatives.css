@@ -1,0 +1,271 @@
+/* Alternatives (W2-G / CMP-13): isolated experiments, compared before one is
+   applied. Two rules follow from the backend contract and are enforced here
+   rather than left to chance:
+
+   1. A conflict is drawn as its own full-width banner with the danger tone,
+      never folded into a toast -- an apply that needed a human is not a
+      transient status line, it is the reason nothing happened.
+   2. `unknown` cost is drawn as the word, in the muted tone, never a blank
+      or a "$0" -- the same rule the estimator (CMP-08) follows. */
+
+.fs-alt {
+  display: grid;
+  gap: var(--fs-space-4);
+  min-inline-size: 0;
+  padding-block-end: var(--fs-space-6);
+}
+
+.fs-alt__lede {
+  margin-block-start: var(--fs-space-2);
+}
+
+.fs-alt__sr {
+  position: absolute;
+  clip-path: inset(50%);
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.fs-alt__project-picker {
+  display: inline-flex;
+}
+
+.fs-alt__muted {
+  min-inline-size: 0;
+  color: var(--fs-text-3);
+  font-size: 11px;
+}
+
+.fs-alt__mono {
+  font-family: var(--fs-font-mono, ui-monospace, monospace);
+  overflow-wrap: anywhere;
+}
+
+.fs-alt__grow {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── list of experiments ── */
+
+.fs-alt__list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--fs-space-3);
+}
+
+.fs-alt__exp-card {
+  display: grid;
+  gap: var(--fs-space-2);
+  padding: var(--fs-space-3);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-md);
+  background: var(--fs-surface-1);
+  color: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.fs-alt__exp-card:hover {
+  border-color: var(--fs-border-strong, var(--fs-border));
+  background: var(--fs-surface-2);
+}
+
+.fs-alt__card-top {
+  display: flex;
+  gap: var(--fs-space-2);
+  align-items: center;
+  min-inline-size: 0;
+}
+
+.fs-alt__tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px var(--fs-space-2);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-pill);
+  background: var(--fs-surface-2);
+  color: var(--fs-text-2);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.fs-alt__tag[data-tone='good'] {
+  border-color: color-mix(in srgb, var(--fs-success) 45%, var(--fs-border));
+  color: var(--fs-success);
+}
+
+.fs-alt__tag[data-tone='bad'] {
+  border-color: color-mix(in srgb, var(--fs-danger) 45%, var(--fs-border));
+  color: var(--fs-danger);
+}
+
+/* ── detail (CompareView) ── */
+
+.fs-alt__detail {
+  display: grid;
+  gap: var(--fs-space-4);
+}
+
+.fs-alt__detail-head {
+  display: grid;
+  gap: var(--fs-space-1);
+}
+
+.fs-alt__goal {
+  margin: var(--fs-space-2) 0 0;
+  font-size: 16px;
+}
+
+.fs-alt__notice {
+  display: flex;
+  gap: var(--fs-space-2);
+  align-items: flex-start;
+  padding: var(--fs-space-3);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-md);
+  background: var(--fs-surface-2);
+  font-size: 12px;
+}
+
+.fs-alt__notice[data-tone='warning'] {
+  border-color: color-mix(in srgb, var(--fs-warning) 45%, var(--fs-border));
+  color: var(--fs-warning);
+}
+
+.fs-alt__notice[data-tone='danger'] {
+  border-color: color-mix(in srgb, var(--fs-danger) 45%, var(--fs-border));
+  color: var(--fs-danger);
+}
+
+.fs-alt__gaps {
+  margin: var(--fs-space-1) 0 0;
+  padding-inline-start: 1.1em;
+}
+
+.fs-alt__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: var(--fs-space-3);
+  align-items: start;
+}
+
+.fs-alt__card {
+  display: grid;
+  gap: var(--fs-space-2);
+  padding: var(--fs-space-3);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-md);
+  background: var(--fs-surface-1);
+}
+
+.fs-alt__card[data-status='applied'] {
+  border-color: color-mix(in srgb, var(--fs-success) 40%, var(--fs-border));
+}
+
+.fs-alt__card[data-status='failed'] {
+  border-color: color-mix(in srgb, var(--fs-danger) 40%, var(--fs-border));
+}
+
+.fs-alt__card-head {
+  display: flex;
+  gap: var(--fs-space-2);
+  align-items: center;
+  min-inline-size: 0;
+}
+
+.fs-alt__row {
+  display: flex;
+  gap: var(--fs-space-2);
+  align-items: center;
+}
+
+.fs-alt__row-field {
+  display: grid;
+  gap: var(--fs-space-1);
+  font-size: 12px;
+}
+
+.fs-alt__form {
+  display: grid;
+  gap: var(--fs-space-3);
+}
+
+.fs-alt__textarea {
+  resize: vertical;
+  min-block-size: 4.5em;
+}
+
+.fs-alt__doc {
+  display: grid;
+  gap: var(--fs-space-2);
+}
+
+.fs-alt__files {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-block-size: 220px;
+  overflow-y: auto;
+}
+
+.fs-alt__file {
+  display: flex;
+  gap: var(--fs-space-2);
+  align-items: baseline;
+  padding: 2px var(--fs-space-1);
+  border-radius: var(--fs-radius-sm, 4px);
+  font-size: 11px;
+}
+
+.fs-alt__file[data-change='deleted'] {
+  text-decoration: line-through;
+  opacity: 0.75;
+}
+
+.fs-alt__file-path {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fs-alt__file-change {
+  color: var(--fs-text-3);
+  white-space: nowrap;
+}
+
+.fs-alt__file-add {
+  color: var(--fs-success);
+}
+
+.fs-alt__file-del {
+  color: var(--fs-danger);
+}
+
+.fs-alt__result {
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-sm, 4px);
+  padding: var(--fs-space-2);
+  background: var(--fs-surface-2);
+}
+
+.fs-alt__result[data-ok='no'] {
+  border-color: color-mix(in srgb, var(--fs-danger) 40%, var(--fs-border));
+}
+
+.fs-alt__output {
+  margin: var(--fs-space-1) 0 0;
+  max-block-size: 160px;
+  overflow: auto;
+  white-space: pre-wrap;
+  font-family: var(--fs-font-mono, ui-monospace, monospace);
+  font-size: 11px;
+}

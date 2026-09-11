@@ -46,6 +46,8 @@ const SettingsScreen = lazy(() => import('../screens/Settings').then((m) => ({ d
 const AgentsScreen = lazy(() => import('../screens/Agents').then((m) => ({ default: m.AgentsScreen })));
 const SkillsScreen = lazy(() => import('../screens/Skills').then((m) => ({ default: m.SkillsScreen })));
 const SourceControlScreen = lazy(() => import('../screens/SourceControl').then((m) => ({ default: m.SourceControlScreen })));
+const AlternativesScreen = lazy(() => import('../screens/alternatives/AlternativesScreen').then((m) => ({ default: m.AlternativesScreen })));
+const WorkflowsScreen = lazy(() => import('../screens/workflows/WorkflowsScreen').then((m) => ({ default: m.WorkflowsScreen })));
 const OnboardingScreen = lazy(() => import('../screens/Onboarding'));
 /* cmdk rides in with the first Ctrl+K, not with the page. */
 const CommandPalette = lazy(() => import('./CommandPalette').then((m) => ({ default: m.CommandPalette })));
@@ -196,7 +198,7 @@ function Rail() {
 function RouteStage() {
   const { pathname, search } = useLocation();
   const editing = (pathname.startsWith('/library/edit') && /[?&](img|draft|new)=/.test(search)) || /^\/documents\/[^/]+/.test(pathname);
-  const screen = pathname.startsWith('/studio') ? 'studio' : editing ? 'editor' : pathname.startsWith('/email') || pathname.startsWith('/compare') || pathname.startsWith('/council') || (pathname.startsWith('/memory') && /[?&]t=provenance/.test(search)) || (pathname.startsWith('/agents') && /[?&]t=tournament/.test(search)) || pathname.startsWith('/cookbook') || pathname.startsWith('/source-control') ? 'wide' : undefined;
+  const screen = pathname.startsWith('/studio') ? 'studio' : editing ? 'editor' : pathname.startsWith('/email') || pathname.startsWith('/compare') || pathname.startsWith('/council') || (pathname.startsWith('/memory') && /[?&]t=provenance/.test(search)) || (pathname.startsWith('/agents') && /[?&]t=tournament/.test(search)) || pathname.startsWith('/cookbook') || pathname.startsWith('/source-control') || pathname.startsWith('/workflows') ? 'wide' : undefined;
   return (
     <main className="fs-main" id="fs-main" tabIndex={-1} data-screen={screen}>
       <div className="fs-main__inner">
@@ -237,6 +239,8 @@ function RouteBody() {
         <Route path="/agents" element={<AgentsScreen />} />
         <Route path="/skills" element={<SkillsScreen />} />
         <Route path="/source-control" element={<SourceControlScreen />} />
+        <Route path="/alternatives" element={<AlternativesScreen />} />
+        <Route path="/workflows" element={<WorkflowsScreen />} />
         <Route path="/setup" element={<OnboardingScreen />} />
         {/*
           Two paths the interface Studio replaced used to own, and that are

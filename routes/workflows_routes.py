@@ -49,6 +49,50 @@ def _engine(store: WorkflowStore) -> WorkflowEngine:
     return WorkflowEngine(production_handlers(), store)
 
 
+def _skill_call_history_from_disk() -> dict:
+    """`DATA_DIR/skill_call_history.json`, CMP-08's second (fallback) source
+    of a composite skill's real call shape — read only if the file exists,
+    never written by this module. Shape: `{skill_id: {model_calls,
+    external_ops, tokens_in, tokens_out, samples}}`. Any read/parse failure
+    is swallowed to `{}` — a missing or malformed history file must never
+    turn a cost estimate into a 500; it just means those skills stay
+    `calls_profile_source: "unknown"`, same as if the file never existed."""
+    import json
+    import os
+
+    from src.constants import DATA_DIR
+    path = os.path.join(DATA_DIR, "skill_call_history.json")
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except FileNotFoundError:
+        return {}
+    except Exception:
+        logger.debug("skill_call_history.json unreadable — treated as absent", exc_info=True)
+        return {}
+
+
+def _detail_inputs_from_payload(payload: dict) -> dict:
+    """The optional CMP-08 inputs `estimate_detailed`/`plan_compare.compare`
+    take: everything the pure estimator refuses to fetch itself (see
+    `workflow_cost_estimate.estimate_detailed`'s docstring — no network, no
+    reaching into ambient runtime state from a pure function). A caller that
+    already has an OpenRouter catalogue slice, a skill's declared
+    `calls_profile`, or a precomputed local-latency figure passes it in
+    here; nothing is looked up behind the caller's back except the on-disk
+    call-history fallback, which is always attempted (`{}` if absent)."""
+    capability_pricing = payload.get("capability_pricing")
+    skill_calls_profiles = payload.get("skill_calls_profiles")
+    local_latency = payload.get("local_latency")
+    return {
+        "capability_pricing": capability_pricing if isinstance(capability_pricing, dict) else None,
+        "skill_calls_profiles": skill_calls_profiles if isinstance(skill_calls_profiles, dict) else None,
+        "skill_call_history": _skill_call_history_from_disk(),
+        "local_latency": local_latency if isinstance(local_latency, dict) else None,
+    }
+
+
 def _prices_from_payload(payload: dict) -> dict:
     """`prices: {model_id: {"prompt_usd_per_1k", "completion_usd_per_1k"}}`,
     shared by `/estimate` and `/preflight` so the two never parse it
@@ -107,6 +151,37 @@ def setup_workflows_routes():
                             for n in definition.nodes if n.needs],
                 "blocked": [n.id for n in blocked]}
 
+    @router.post("/simulate")
+    async def simulate_workflow(request: Request):
+        """CMP-07: a structural, round-by-round walk of the definition — no
+        handler is called, no store is touched, no network of any kind (see
+        `src/workflows/simulate.py`'s module docstring). `choices:
+        {node_id: bool}` lets the caller assume one outcome for a
+        `condition`/`human_approval` node while exploring; a node named in
+        neither `choices` nor reachable at all is reported in
+        `awaiting_choice`/`not_reached` rather than guessed past.
+        `rounds_max` (default 25) bounds how many dependency layers deep the
+        walk goes — a real cap, not a schedule; hitting it is reported in
+        `warnings`, never silent."""
+        require_admin(request)
+        payload = await _json_object(request)
+        definition = _definition_or_400(payload.get("definition", payload))
+        raw_choices = payload.get("choices")
+        choices: dict = {}
+        if raw_choices is not None:
+            if not isinstance(raw_choices, dict):
+                raise HTTPException(status_code=400, detail="choices must be an object of {node_id: bool}")
+            for node_id, value in raw_choices.items():
+                if not isinstance(value, bool):
+                    raise HTTPException(status_code=400, detail=f"choices.{node_id} must be true or false")
+                choices[str(node_id)] = value
+        raw_rounds = payload.get("rounds_max", 25)
+        if isinstance(raw_rounds, bool) or not isinstance(raw_rounds, int) or not 1 <= raw_rounds <= 200:
+            raise HTTPException(status_code=400, detail="rounds_max must be an integer from 1 to 200")
+        from src.workflows.simulate import simulate as compute_simulation
+        result = compute_simulation(definition, choices=choices, rounds_max=raw_rounds)
+        return {"ok": True, "simulation": result.to_dict()}
+
     @router.post("/mermaid")
     async def mermaid(request: Request):
         """Lote A4: a `flowchart TD` of the definition's nodes and `needs`
@@ -120,19 +195,72 @@ def setup_workflows_routes():
         return {"ok": True, "mermaid": workflow_to_mermaid(definition)}
 
     @router.post("/estimate")
-    async def estimate_cost(request: Request):
+    async def estimate_cost(request: Request, detail: int = 0):
         """Lote A4: a cost estimate for one run of the definition. Pure — no
         model price catalogue is looked up automatically (see
         `src/workflow_cost_estimate.py`'s docstring for why); pass
         `prices: {model_id: {"prompt_usd_per_1k", "completion_usd_per_1k"}}`
-        to price the models named on `skill` nodes' `config.model`."""
+        to price the models named on `skill` nodes' `config.model`.
+
+        CMP-08: `?detail=1` returns `estimate_detailed()`'s shape instead —
+        separate `node_activations`/`model_calls`/`external_ops`/`tokens`
+        accounts, structured prices, and a `structural_bounds`/
+        `forecast_with_assumptions`/`measured` split (see that function's
+        docstring for every optional input this route threads through from
+        the request body: `capability_pricing`, `skill_calls_profiles`,
+        `local_latency`; `run_id`, if the run exists, supplies `measured`
+        from `WorkflowStore.usage_so_far`). The plain (non-detail) shape is
+        unchanged — `preflight.py` and every existing caller of this route
+        still gets exactly what they got before."""
         require_admin(request)
         payload = await _json_object(request)
         definition = _definition_or_400(payload.get("definition", payload))
-        from src.workflow_cost_estimate import estimate as compute_estimate
         prices = _prices_from_payload(payload)
-        result = compute_estimate(definition, prices=prices or None)
+        if not detail:
+            from src.workflow_cost_estimate import estimate as compute_estimate
+            result = compute_estimate(definition, prices=prices or None)
+            return {"ok": True, "estimate": result.to_dict()}
+
+        from src.workflow_cost_estimate import estimate_detailed as compute_detailed
+        run_measured = None
+        raw_run_id = payload.get("run_id")
+        if isinstance(raw_run_id, str) and raw_run_id:
+            loaded = store.get_run(raw_run_id)
+            if loaded is not None:
+                run_measured = store.usage_so_far(raw_run_id)
+        result = compute_detailed(definition, prices=prices or None,
+                                  run_measured=run_measured,
+                                  **_detail_inputs_from_payload(payload))
         return {"ok": True, "estimate": result.to_dict()}
+
+    @router.post("/compare-plans")
+    async def compare_plans(request: Request):
+        """CMP-08: `plan_compare.compare` — several candidate definitions for
+        the same `goal`, one table, each cell tagged `computed`/`estimated`/
+        `unknown` instead of one blended number per plan. Body:
+        `{goal, plans: [{id, label?, definition}, ...], prices?,
+        capability_pricing?, skill_calls_profiles?, local_latency?}` — the
+        same optional inputs `/estimate?detail=1` accepts, shared across
+        every plan in the comparison so none is priced more generously than
+        another. A plan whose `definition` does not parse is reported in
+        `errors` rather than failing the whole request (see
+        `src/plan_compare.py`)."""
+        require_admin(request)
+        payload = await _json_object(request)
+        raw_plans = payload.get("plans")
+        if not isinstance(raw_plans, list) or not raw_plans:
+            raise HTTPException(status_code=400, detail="plans must be a non-empty list")
+        plans = []
+        for i, raw_plan in enumerate(raw_plans):
+            if not isinstance(raw_plan, dict):
+                raise HTTPException(status_code=400, detail=f"plans[{i}] must be an object")
+            plans.append(raw_plan)
+        prices = _prices_from_payload(payload)
+        from src.plan_compare import compare as compute_comparison
+        result = compute_comparison(str(payload.get("goal") or ""), plans,
+                                    prices=prices or None,
+                                    **_detail_inputs_from_payload(payload))
+        return {"ok": True, "comparison": result.to_dict()}
 
     @router.post("/preflight")
     async def preflight_definition(request: Request):

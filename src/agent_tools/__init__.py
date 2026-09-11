@@ -56,6 +56,9 @@ from .requirement_tools import (
     ReqListTool, ReqGetTool, ReqMatrixTool,
     ReqProposeTool, ReqLinkTool,
 )
+from .alternatives_tools import (
+    AltStartTool, AltCompareTool, AltApplyTool,
+)
 
 TOOL_HANDLERS = {
     "bash": BashTool().execute,
@@ -132,6 +135,11 @@ TOOL_HANDLERS = {
     "req_matrix": ReqMatrixTool().execute,
     "req_propose": ReqProposeTool().execute,
     "req_link": ReqLinkTool().execute,
+    # Isolated, comparable alternatives (CMP-13, W2-G): thin executors over
+    # src.alternatives. See src/agent_tools/alternatives_tools.py.
+    "alt_start": AltStartTool().execute,
+    "alt_compare": AltCompareTool().execute,
+    "alt_apply": AltApplyTool().execute,
 }
 # Config/integration admin tools (manage_endpoints/mcp/webhooks/tokens/settings).
 TOOL_HANDLERS.update(ADMIN_TOOL_HANDLERS)
@@ -215,7 +223,10 @@ TOOL_TAGS = {"bash", "python", "web_search", "web_fetch", "read_file", "inspect_
              # Versioned requirements tools (ADP-18/19/20) --
              # src/agent_tools/requirement_tools.py.
              "req_list", "req_get", "req_matrix",
-             "req_propose", "req_link"} | BUILTIN_EMAIL_TOOLS | DESKTOP_TOOLS | SEMANTIC_TOOLS
+             "req_propose", "req_link",
+             # Isolated, comparable alternatives (CMP-13, W2-G) --
+             # src/agent_tools/alternatives_tools.py.
+             "alt_start", "alt_compare", "alt_apply"} | BUILTIN_EMAIL_TOOLS | DESKTOP_TOOLS | SEMANTIC_TOOLS
 
 ToolBlock = namedtuple("ToolBlock", ["tool_type", "content"])
 

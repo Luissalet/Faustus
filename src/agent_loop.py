@@ -1846,6 +1846,80 @@ def _project_board_block(owner: Optional[str], project_id: str) -> str:
     return text
 
 
+_STRATEGY_BLOCK_CACHE: Dict[Tuple[str, str], Tuple[float, str]] = {}
+_STRATEGY_BLOCK_TTL = 5.0
+_STRATEGY_BLOCK_MAX_CHARS = 700
+
+
+def _strategy_block(owner: Optional[str], session_id: Optional[str], task_text: str) -> str:
+    """CMP-09/CMP-12 — the prompt-side twin of the ``strategy`` SSE event
+    (see the ``round_num == 1`` block in ``_stream_agent_loop_body`` below,
+    the actual emission site — same computation, two audiences: this
+    function tells the MODEL what procedure to follow, the event tells the
+    UI/orchestrator what was chosen and why).
+
+    Same shape and cache strategy as ``_project_board_block`` right above —
+    a separate cache so this feature's TTL/budget never interferes with the
+    board block's. TTL is short (5s, not the board block's 20s) because
+    switching the profile or recipe in the compositor
+    (``PUT /api/strategy/profile``) should be felt on the very next turn,
+    not wait out a stale cache.
+
+    A recipe REPLACES the method's generic steps (see
+    ``src/strategy_policy.py::choose_strategy``) — this is deliberately
+    "a structured procedure", not "the mountain of skills" the ficha warns
+    against dumping into the prompt. Empty string when there's no
+    owner/session to scope by, or on any failure — never blocks a prompt
+    build over this, exactly like the board block above.
+    """
+    if not owner or not task_text:
+        return ""
+    key = (str(owner), str(session_id or ""))
+    now = time.monotonic()
+    cached = _STRATEGY_BLOCK_CACHE.get(key)
+    if cached is not None and (now - cached[0]) < _STRATEGY_BLOCK_TTL:
+        return cached[1]
+
+    text = ""
+    try:
+        from src import strategy_policy
+        from src import recipes as _recipes
+
+        active = strategy_policy.get_active(owner, session_id)
+        profile = active.get("profile", strategy_policy.DEFAULT_PROFILE)
+        recipe_id = active.get("recipe_id")
+        strategy = strategy_policy.choose_strategy(
+            task_text, profile=profile, context={"recipe_id": recipe_id},
+        )
+        parts: List[str] = [f"\n\n## Strategy for this turn (profile: {profile})\n"]
+        if recipe_id:
+            recipe = _recipes.get_recipe(str(recipe_id), owner)
+            if recipe is not None:
+                parts.append(_recipes.procedure_block(recipe) + "\n")
+            else:
+                parts.append(f"(active recipe '{recipe_id}' not found — using the default procedure below)\n")
+        else:
+            parts.append(f"Method: {strategy.method}\n")
+            for i, step in enumerate(strategy.steps, 1):
+                parts.append(f"{i}. {step}\n")
+        if strategy.close_criteria:
+            parts.append("Done when: " + "; ".join(strategy.close_criteria) + "\n")
+        parts.append(
+            "Escalate beyond this only on an OBSERVABLE failure (a failing test, a "
+            "rejected result, an explicit uncovered requirement) — never because you "
+            "feel unsure.\n"
+        )
+        text = "".join(parts)
+        if len(text) > _STRATEGY_BLOCK_MAX_CHARS:
+            text = text[:_STRATEGY_BLOCK_MAX_CHARS].rstrip() + "…\n"
+    except Exception:
+        logger.debug("[strategy-block] failed to build strategy block", exc_info=True)
+        text = ""
+
+    _STRATEGY_BLOCK_CACHE[key] = (now, text)
+    return text
+
+
 def _strip_think_blocks(text: str) -> str:
     """Linear-time equivalent of
     ``re.sub(r'<think>.*?</think>', '', text, flags=DOTALL|IGNORECASE)``.
@@ -3374,6 +3448,18 @@ def _build_system_prompt(
                 agent_prompt += _project_board_block(owner, _board_project_id)
         except Exception as _board_block_err:
             logger.debug("[board-block] injection failed: %s", _board_block_err)
+
+    # CMP-09/CMP-12 — "Strategy for this turn": same gating as the board
+    # block just above (needs an owner; skipped under suppress_local_context
+    # like every other project-scoped addition here), plus the turn's own
+    # last user message as the task text `choose_strategy` classifies.
+    if not suppress_local_context and owner:
+        try:
+            _strategy_task_text = _extract_last_user_message(messages)
+            if _strategy_task_text:
+                agent_prompt += _strategy_block(owner, session_id, _strategy_task_text)
+        except Exception as _strategy_block_err:
+            logger.debug("[strategy-block] injection failed: %s", _strategy_block_err)
 
     # Reliability rules: the harness (src/agent_harness.py) enforces them, so
     # tell the model up front. Injected whenever file/shell tools are in play,
@@ -6597,6 +6683,15 @@ async def _stream_agent_loop_body(
     # gets a receipt after the turn's checks have established the outcome.
     _context_packets_delivered: List[Dict[str, str]] = []
     _context_turn_id = f"{session_id or 'session'}:{int(total_start * 1000)}"[:128]
+    # CMP-04: a compact, deduplicated summary of what the delivered context
+    # packets actually put in front of the model this turn — {source, kind,
+    # ref, why} rows built straight from `deliver_round`'s own report
+    # (`src/context_engine/wiring.py::deliver_round`), never a second
+    # accounting of the packet. Persisted onto the turn's metadata and
+    # streamed as its own SSE event alongside `_context_packets_delivered`
+    # below (see the "Context receipts" block near the final metrics).
+    _context_receipts_summary: List[Dict[str, str]] = []
+    _context_receipt_refs_seen: Set[Tuple[str, str]] = set()
 
     # Loop-breaker state. Small models (e.g. deepseek-v4-flash) can get
     # stuck firing the same tool call over and over with no text — burns
@@ -7191,6 +7286,35 @@ async def _stream_agent_loop_body(
     round_num = 0
     while True:
         round_num += 1
+        # CMP-09/CMP-12: the `strategy` event, emitted ONCE per turn (round 1
+        # only — mirrors agent_git_policy's before_turn, one event per hook,
+        # not one per round) so the UI/orchestrator can show what strategy
+        # this turn is following. Same computation as `_strategy_block`
+        # above (kept in sync deliberately: one reads strategy_policy, the
+        # other reads the SAME strategy_policy call with the SAME inputs) —
+        # never blocks the turn on any failure, exactly like every other
+        # optional event in this loop.
+        if round_num == 1:
+            try:
+                _strategy_task_text = _extract_last_user_message(messages)
+                if owner and _strategy_task_text:
+                    from src import strategy_policy as _strategy_policy_mod
+                    _strategy_active = _strategy_policy_mod.get_active(owner, session_id)
+                    _strategy_decision = _strategy_policy_mod.choose_strategy(
+                        _strategy_task_text,
+                        profile=_strategy_active.get("profile", _strategy_policy_mod.DEFAULT_PROFILE),
+                        context={"recipe_id": _strategy_active.get("recipe_id")},
+                    )
+                    yield "data: " + json.dumps({
+                        "type": "strategy",
+                        "data": {
+                            "profile": _strategy_active.get("profile", _strategy_policy_mod.DEFAULT_PROFILE),
+                            "recipe_id": _strategy_active.get("recipe_id"),
+                            **_strategy_decision.to_dict(),
+                        },
+                    }) + "\n\n"
+            except Exception as _strategy_event_err:
+                logger.debug("[strategy] event emission failed: %s", _strategy_event_err)
         # TASK-06: autonomy budget, checked at the top of every round — before
         # spending a model call on a round the turn is not allowed to have.
         # `total_tool_calls` is not in `_round_loop_budget` (merged into the
@@ -7364,6 +7488,30 @@ async def _stream_agent_loop_body(
                         "packet_id": str(_ce_live_report.get("packet_id") or ""),
                         "request_id": str(_ce_live_report.get("request_id") or ""),
                     })
+                    # CMP-04: fold this round's delivered sources into the
+                    # turn-level receipt summary, deduplicated by (kind, ref)
+                    # so a memory/document re-delivered on round two does not
+                    # double-count. `why` stays a short, honest description
+                    # of where the row landed — never a claim about how the
+                    # model used it (the packet's own receipt already tracks
+                    # what was *opened*, separately, via observe_receipt).
+                    for _ctx_src_row in _ce_live_report.get("sources") or ():
+                        _ctx_ref = str(_ctx_src_row.get("source_ref") or "").strip()
+                        if not _ctx_ref:
+                            continue
+                        _ctx_kind = str(_ctx_src_row.get("source_type") or "context")
+                        _ctx_receipt_key = (_ctx_kind, _ctx_ref)
+                        if _ctx_receipt_key in _context_receipt_refs_seen:
+                            continue
+                        _context_receipt_refs_seen.add(_ctx_receipt_key)
+                        _ctx_section = str(_ctx_src_row.get("section") or "")
+                        _context_receipts_summary.append({
+                            "source": _ctx_section or _ctx_kind,
+                            "kind": _ctx_kind,
+                            "ref": _ctx_ref,
+                            "why": (f"incluido en el contexto del turno (sección {_ctx_section})"
+                                    if _ctx_section else "incluido en el contexto del turno"),
+                        })
                     # Learned rules are marked as used only after their packet
                     # really entered the model request, never when retrieved.
                     _ce_memory_ids = [
@@ -10404,6 +10552,19 @@ async def _stream_agent_loop_body(
         except Exception as _ctx_receipt_err:
             logger.debug("[context-engine] receipt skipped: %s", _ctx_receipt_err)
 
+    # Context receipts (CMP-04): a compact "what was used and why" summary,
+    # attached to `metrics` below the same way `harness`/`web_sources` already
+    # ride the turn's persisted metadata (see `metrics["harness"]` a few lines
+    # down and `routes/chat_helpers.py::save_assistant_response`, which turns
+    # `last_metrics` straight into the saved message's `metadata`), and
+    # streamed once per turn so the transcript can show it without waiting for
+    # the message to be reloaded from history.
+    if _context_receipts_summary:
+        try:
+            yield f"data: {json.dumps({'type': 'context_receipts', 'data': _context_receipts_summary[:40]})}\n\n"
+        except Exception as _ctx_receipts_sse_err:
+            logger.debug("[context-engine] context_receipts SSE skipped: %s", _ctx_receipts_sse_err)
+
     # --- Final metrics ---
     total_duration = time.time() - total_start
     final_context_tokens = estimate_tokens(messages)
@@ -10443,6 +10604,11 @@ async def _stream_agent_loop_body(
             )
     metrics["requested_endpoint_id"] = requested_endpoint_id
     metrics["requested_endpoint_label"] = requested_endpoint_label
+    if _context_receipts_summary:
+        # Same persistence path as `harness` below: `metrics` becomes
+        # `last_metrics` -> `md` in `save_assistant_response`, so this rides
+        # onto the saved message's metadata with no separate write.
+        metrics["context_receipts"] = _context_receipts_summary[:40]
     if _hsum:
         # Persisted with the message so the verification card survives reload.
         metrics["harness"] = {

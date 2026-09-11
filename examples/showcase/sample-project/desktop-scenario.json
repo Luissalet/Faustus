@@ -1,0 +1,11 @@
+{
+  "_comment": "DEMO DATA (CMP-14 showcase) -- a static description fed to src/desktop_semantics/fake_backend.py in tests/manual walkthroughs. Never executed against a real OS or real window.",
+  "app": "DemoOnboardingApp",
+  "window": "Connection Settings",
+  "controls": [
+    {"role": "button", "name": "Save", "automation_id": "btnSave"},
+    {"role": "button", "name": "Retry", "automation_id": "btnRetryTop"},
+    {"role": "button", "name": "Retry", "automation_id": "btnRetryBottom"}
+  ],
+  "note": "Two controls share the name 'Retry' on purpose -- this is the fixture for 'an ambiguous target is refused, never guessed at' (src/desktop_semantics/contracts.py::AmbiguousTargetError), exercised by tests/test_adp08_desktop_semantics.py, not by anything in this file directly."
+}
