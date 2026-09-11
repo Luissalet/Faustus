@@ -57,7 +57,9 @@ async def test_with_the_setting_off_the_tool_takes_the_path_it_always_took(works
     assert result["exit_code"] == 0
     # None of the sandbox's keys appear: this result is shaped exactly like
     # the ones the tool returned before the module existed.
-    assert set(result) == {"output", "exit_code"}
+    # EXEC-01 (Lote 67) adds the descriptive `execution_target`; the sandbox's
+    # own keys still never appear.
+    assert set(result) - {"execution_target"} == {"output", "exit_code"}
 
 
 @pytest.mark.asyncio

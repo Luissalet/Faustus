@@ -1,4 +1,4 @@
-﻿"""The search backend is started, not assumed.
+"""The search backend is started, not assumed.
 
 08-09-2026: a research planned, wrote seven queries and read nothing because
 its own SearXNG container was down. Nothing was broken; nobody had started it.

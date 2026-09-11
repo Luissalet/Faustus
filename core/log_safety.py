@@ -109,12 +109,20 @@ class SecretRedactingFilter(logging.Filter):
             message = record.getMessage()
         except (TypeError, ValueError):
             return True
-        redacted = redact_secrets(message)
-        if redacted != message:
-            record.msg = redacted
+        try:
+            redacted = redact_secrets(message)
+            if redacted != message:
+                record.msg = redacted
+                record.args = ()
+            if getattr(record, "exc_text", None):
+                record.exc_text = redact_secrets(record.exc_text)
+        except Exception:  # noqa: BLE001
+            # A redactor that fails must never turn a log line into a crash
+            # in the caller -- and must never let the raw text through either.
+            record.msg = "<log line withheld: secret redaction failed>"
             record.args = ()
-        if getattr(record, "exc_text", None):
-            record.exc_text = redact_secrets(record.exc_text)
+            record.exc_text = None
+            record.exc_info = None
         return True
 
 

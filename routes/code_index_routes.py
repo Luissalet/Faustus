@@ -72,9 +72,12 @@ def setup_code_index_routes():
         # here — every reindex paid for a full workspace walk regardless.
         raw_paths = payload.get("paths")
         paths = [str(p) for p in raw_paths] if isinstance(raw_paths, list) else None
+        # `paths=` only when the caller sent some: a targeted reindex is
+        # additive, and callers (and doubles) of the full form keep their shape.
+        extra = {"paths": paths} if paths else {}
         result = await code_index.refresh_async(
             workspace, project_id=project_id, full=bool(payload.get("full") or False),
-            paths=paths)
+            **extra)
         return {"ok": True, "project_id": project_id, "refresh": result}
 
     return router

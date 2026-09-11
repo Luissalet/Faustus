@@ -987,8 +987,9 @@ def _spawn(runner: Any, key: str, task: str, *, argv: List[str], shown: str,
             # reads DATA_DIR/runs/*.jsonl for exactly this event and, until
             # this line existed, nothing ever wrote one.
             _append_run_cost_event(
-                cost_usd=float(cost), runner_key=key, run_id=run_id,
-                owner=owner, seconds=seconds,
+                cost_usd=float(cost), runner_key=key,
+                run_id=getattr(gate, "run_id", None),
+                owner=getattr(gate, "owner", None), seconds=seconds,
             )
     return out
 

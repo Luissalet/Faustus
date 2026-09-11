@@ -129,7 +129,8 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         nonce = secrets.token_hex(16)
         request.state.csp_nonce = nonce
 
-        route_path = get_application_route_path(request.scope)
+        scope = getattr(request, "scope", None)
+        route_path = get_application_route_path(scope) if scope is not None else request.url.path
         is_api_route = route_path.startswith("/api/")
 
         # ARCH-01: a client that IDENTIFIES itself as older than the server's
@@ -141,7 +142,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         if (
             is_api_route
             and route_path not in _VERSION_GATE_EXEMPT_PATHS
-            and not is_cors_preflight(request.method, request.headers)
+            and not is_cors_preflight(getattr(request, "method", "GET"), request.headers)
         ):
             client_version = request.headers.get(api_version.CLIENT_VERSION_HEADER)
             if not api_version.is_supported(client_version):

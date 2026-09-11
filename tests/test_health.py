@@ -119,8 +119,10 @@ def test_the_only_difference_with_the_setting_off_is_the_health_key(box, monkeyp
     monkeypatch.setattr(health, "enabled", lambda: False)
     without = _usage()
     assert "health" not in without
-    a = {k: v for k, v in with_health.items() if k not in ("health", "ts")}
-    b = {k: v for k, v in without.items() if k != "ts"}
+    # `process` (PERF-04) is the live RSS/threads of this very process and
+    # legitimately moves between two samples, like `ts`.
+    a = {k: v for k, v in with_health.items() if k not in ("health", "ts", "process")}
+    b = {k: v for k, v in without.items() if k not in ("ts", "process")}
     assert json.dumps(a, sort_keys=True, default=str) == json.dumps(b, sort_keys=True, default=str)
 
 
