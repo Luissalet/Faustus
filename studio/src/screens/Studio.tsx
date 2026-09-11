@@ -62,6 +62,7 @@ import { getKeybinds, KEYBIND_LABELS, matchesCombo } from '../adapters/settings'
 import { listCheckpoints } from '../adapters/workspace';
 import { addMemory, deleteMemory, listMemories } from '../adapters/memory';
 import { createNote, deleteNote } from '../adapters/notes';
+import { getSummary } from '../adapters/board';
 import { startTour } from '../shell/store';
 import { refreshActivity } from '../shell/activity';
 import { TOURS, resetTours, seenTours } from '../lib/tours';
@@ -525,6 +526,31 @@ export function StudioScreen() {
       /* private mode */
     }
   }, [project, setWorkspace]);
+
+  /* Lote 94: the project's board key (`FAU`), loaded once per project so
+   * `Transcript`'s `FAU-12` chips and `linkIssueIds` can recognize ids
+   * without a network round trip on every render. `getSummary` (the same
+   * call the compact board panel already makes) is the cheapest endpoint
+   * that carries the key -- a dedicated key-only route isn't worth adding.
+   * Stale-response guard mirrors the `listProjects`/workspace-sync effects
+   * just above: a project switch mid-flight must never let an older
+   * project's key land after a newer one. */
+  const [boardKey, setBoardKey] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    if (!project?.id) {
+      setBoardKey(undefined);
+      return;
+    }
+    let live = true;
+    getSummary(project.id).then((s) => {
+      if (live) setBoardKey(s.key);
+    }).catch(() => {
+      if (live) setBoardKey(undefined);
+    });
+    return () => {
+      live = false;
+    };
+  }, [project?.id]);
 
   /* The folder chip opens the OS's own dialog (Explorer on Windows) when the
    * browser runs on the server's machine; the in-page browser is only the
@@ -2507,6 +2533,9 @@ export function StudioScreen() {
               onFork={knobs.incognito ? undefined : (turn) => void forkFrom(turn)}
               onQuote={quote}
               onOpenSourceControl={() => panelDispatch({ type: 'open', tab: 'git' })}
+              projectId={project?.id}
+              boardKey={boardKey}
+              onOpenBoardIssue={(id) => panelDispatch({ type: 'board-issue', id })}
             />
           )}
         </div>

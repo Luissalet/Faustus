@@ -27,9 +27,11 @@ import os
 import re
 import threading
 import time
+import unicodedata
 from typing import Dict, List, Optional, Set
 
 import src.embedding_lanes as _lanes_mod
+from src.tool_index_examples import EXAMPLES as _TOOL_EXAMPLES
 from src.embedding_lanes import (
     LANE_CUSTOM,
     LANE_FASTEMBED,
@@ -205,7 +207,38 @@ BUILTIN_TOOL_DESCRIPTIONS: Dict[str, str] = {
     "git_push": "Push a repo to its remote. Never force. Use for 'push this', 'push to origin'. Refused when the repo's agent git policy disables push unless the user explicitly approved. Prefer this over `bash git push`.",
     "git_pull": "Pull a repo from its remote, fast-forward only (never merges). Use for 'pull the latest changes', 'git pull'. Fails clearly if local and upstream have diverged.",
     "git_fetch": "Fetch a repo's remote-tracking refs without touching the working tree. Use for 'fetch', 'check for new commits on origin' before deciding to pull/merge.",
+    # Lote 92 (OBJ-6) — project work board (FAU-12 style ids): the project's
+    # task list, so the agent never has to reread a markdown backlog in full.
+    "board_list": "List this project's board issues (FAU-12 style ids), filtered by status/type/assignee/priority/label or a text search. Use for 'what's on the board', 'list open bugs', 'my assigned issues', 'qué issues hay abiertas'. Read-only.",
+    "board_ready": "List issues ready to work on right now in this project: open/in_progress with no open blocker. Use for 'what's pending', 'what should I work on', 'qué hay pendiente en este proyecto', 'qué puedo hacer ahora' — instead of reasoning over the whole backlog yourself. Read-only.",
+    "board_get": "Full detail of one board issue: body, comments, history, links and linked commits/sessions. Use for 'show me FAU-12', 'what's the status of that bug'. Read-only.",
+    "board_create": "File a new board issue (bug/idea/feature/task/chore) for the current project and return its id. Use whenever the user reports a bug, asks for a feature, drops an idea, or says to note/apunta/track something for the project — 'apunta que hay que revisar el login', 'crea una tarea para X', 'this is broken, file a bug'. Always cite the returned id back to the user.",
+    "board_update": "Change an existing board issue's title/body/type/status/priority/assignee/labels — mark it done, reprioritize, reassign, reopen. Use for 'marca FAU-12 como hecho', 'close that bug', 'reassign this to me', 'bump the priority'.",
+    "board_comment": "Add a comment to a board issue — a progress note, a decision, why something changed. Use for 'add a note to FAU-9', 'log that we tried X'.",
+    "board_link": "Relate two board issues: blocks/blocked_by, relates_to, duplicate_of, discovered_from. Use for 'FAU-12 blocks FAU-9', 'these are duplicates', 'this was found while working on FAU-3'.",
+    "board_claim": "Atomically claim a board issue — mark it in_progress and assign it (to yourself/the agent by default). Use for 'I'll take FAU-12', 'assign this to me', 'start working on that bug'.",
 }
+
+
+# OBJ-7 (lote 91): natural-language examples appended to each tool's indexed
+# text (src.tool_index_examples.EXAMPLES), so a colloquial request that never
+# says the tool's name still ranks it — in the embedding lane AND in the
+# keyword/lexical fallback (src.two_tier_search over this same corpus, see
+# corpus_rows/lexical_retrieve below), since both read the same doc text.
+# Folded a second time without accents: src.hash_embed.tokens (the fallback's
+# tokenizer) does not normalize Unicode, so an unaccented Spanish query
+# ("que hay pendiente") must find the accented example ("qué hay pendiente")
+# on token identity, not just the vector lane.
+def _examples_block(name: str) -> str:
+    examples = _TOOL_EXAMPLES.get(name) or []
+    if not examples:
+        return ""
+    joined = " | ".join(examples)
+    folded = "".join(
+        ch for ch in unicodedata.normalize("NFKD", joined)
+        if not unicodedata.combining(ch)
+    )
+    return " Examples: " + joined + (" | " + folded if folded != joined else "")
 
 
 class ToolIndexUnavailable(RuntimeError):
@@ -307,7 +340,7 @@ class ToolIndex:
         ids = []
         metadatas = []
         for name, desc in BUILTIN_TOOL_DESCRIPTIONS.items():
-            doc_text = f"Tool: {name}\n{desc}"
+            doc_text = f"Tool: {name}\n{desc}" + _examples_block(name)
             docs.append(doc_text)
             ids.append(f"builtin_{name}")
             metadatas.append({"tool_name": name, "tool_type": "builtin"})

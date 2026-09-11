@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { Button, EmptyState, Skeleton } from '../../components';
 import { relativeTime } from '../../adapters/home';
 import { computeGraphLanes, parseRefs, type GitCommit, type GraphRow } from '../../adapters/git';
+import { renderIssueSegments } from '../board/IssueChips';
 import { t } from '../../i18n';
 import { GitCommit as GitCommitIcon } from 'lucide-react';
 
@@ -61,6 +62,7 @@ export function CommitGraph({
   hasMore,
   loadingMore,
   onLoadMore,
+  boardKey,
 }: {
   commits: GitCommit[];
   loading: boolean;
@@ -70,6 +72,19 @@ export function CommitGraph({
   hasMore: boolean;
   loadingMore: boolean;
   onLoadMore: () => void;
+  /**
+   * Lote 93: the project's board key — when known, `FAU-12`-shaped ids in a
+   * commit message get the chip's look. Rendered inert (no click of its
+   * own, no `Link`) rather than independently navigable: the row this sits
+   * in is a native `<button>` (`commit-row`, keyboard-operable, unchanged
+   * by this lote), and HTML forbids interactive content — an `<a>` or a
+   * second `<button>` — nested inside one. Clicking the chip still selects
+   * the commit, same as clicking anywhere else in the row. Absent is a
+   * no-op: `SourceControlPanel` (a fichero ajeno to this lote) does not
+   * thread it through yet — see the report's "ficheros ajenos" for what a
+   * true per-chip navigation would need (the row stops being a `<button>`).
+   */
+  boardKey?: string;
 }) {
   const rows = useMemo(() => computeGraphLanes(commits), [commits]);
   const width = useMemo(() => Math.max(1, ...rows.map((r) => r.laneCount)) * LANE_W + LANE_W / 2, [rows]);
@@ -111,7 +126,9 @@ export function CommitGraph({
               <span className="fs-sc__graph-main">
                 <span className="fs-sc__graph-message-row">
                   <span className="fs-sc__graph-message" title={commit.message}>
-                    {commit.message}
+                    {renderIssueSegments(commit.message, boardKey, (id) => (
+                      <span key={id} className="fs-issue-chip" data-testid="issue-id-chip">{id}</span>
+                    ))}
                   </span>
                   {refs.length > 0 && (
                     <span className="fs-sc__graph-refs">

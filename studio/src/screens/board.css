@@ -1,0 +1,424 @@
+/**
+ * Lote 93 (OBJ-6) — the project work board: kanban, table, compact chat
+ * list, the new/detail/import dialogs and the FAU-12 chip. Tokens only,
+ * same discipline as source-control.css (DESIGN.md's guard against literal
+ * colours).
+ */
+
+.fs-board {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fs-space-3);
+}
+
+.fs-board__toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  flex-wrap: wrap;
+}
+
+.fs-board__search {
+  min-inline-size: 160px;
+  flex: 1 1 200px;
+}
+
+.fs-board__toolbar-spacer {
+  flex: 1;
+}
+
+.fs-board__key {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+}
+
+.fs-board__key-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px dashed var(--fs-border);
+  border-radius: var(--fs-radius-pill);
+  padding: 2px var(--fs-space-3);
+  background: transparent;
+  color: var(--fs-text-2);
+  font-size: var(--fs-label-size);
+  cursor: pointer;
+}
+
+.fs-board__key-chip:hover {
+  color: var(--fs-text-1);
+  border-color: var(--fs-border-strong);
+}
+
+/* ── Kanban ── */
+
+.fs-board__columns {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(220px, 1fr);
+  gap: var(--fs-space-3);
+  overflow-x: auto;
+  padding-block-end: var(--fs-space-2);
+}
+
+.fs-board__column {
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 220px;
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-panel);
+  background: var(--fs-surface-1);
+  max-block-size: 74dvh;
+}
+
+.fs-board__column[data-drag-over] {
+  border-color: var(--fs-brand);
+  box-shadow: 0 0 0 1px var(--fs-brand) inset;
+}
+
+.fs-board__column-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--fs-space-2);
+  padding: var(--fs-space-2) var(--fs-space-3);
+  border: 0;
+  border-block-end: 1px solid var(--fs-border);
+  background: none;
+  color: var(--fs-text-1);
+  font-size: var(--fs-label-size);
+  font-weight: var(--fs-label-weight);
+  cursor: pointer;
+  text-align: start;
+}
+
+.fs-board__column-count {
+  color: var(--fs-text-3);
+  font-weight: 400;
+}
+
+.fs-board__column-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fs-space-2);
+  padding: var(--fs-space-2);
+  overflow-y: auto;
+}
+
+.fs-board__column-empty {
+  margin: var(--fs-space-2) 0;
+  color: var(--fs-text-3);
+  font-size: var(--fs-label-size);
+  text-align: center;
+}
+
+.fs-board__column[data-folded] .fs-board__column-body {
+  display: none;
+}
+
+/* ── Cards ── */
+
+.fs-issue-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: stretch;
+  text-align: start;
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-control);
+  background: var(--fs-surface-2);
+  color: var(--fs-text-1);
+  padding: var(--fs-space-2) var(--fs-space-3);
+  font: inherit;
+  cursor: pointer;
+  transition: border-color var(--fs-duration-fast) var(--fs-ease), translate var(--fs-duration-normal) var(--fs-ease-spring);
+}
+
+.fs-issue-card:hover {
+  border-color: var(--fs-border-strong);
+  translate: 0 -1px;
+}
+
+.fs-issue-card__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--fs-text-3);
+}
+
+.fs-issue-card__id {
+  color: var(--fs-text-2);
+  font-size: var(--fs-code-size);
+}
+
+.fs-issue-card__prio {
+  margin-inline-start: auto;
+  font-size: var(--fs-label-size);
+  font-weight: var(--fs-label-weight);
+  color: var(--fs-text-3);
+}
+
+.fs-issue-card__prio[data-prio='P0'] {
+  color: var(--fs-danger);
+}
+
+.fs-issue-card__prio[data-prio='P1'] {
+  color: var(--fs-warning);
+}
+
+.fs-issue-card__title {
+  font-size: var(--fs-body-size);
+  line-height: 1.35;
+}
+
+.fs-issue-card__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  color: var(--fs-text-3);
+  font-size: var(--fs-label-size);
+}
+
+.fs-issue-card__assignee {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.fs-issue-card__label {
+  padding: 0 6px;
+  border-radius: var(--fs-radius-pill);
+  background: var(--fs-surface-3);
+  color: var(--fs-text-2);
+  font-size: 11px;
+}
+
+.fs-issue-card__blocked {
+  color: var(--fs-warning);
+}
+
+/* ── Table ── */
+
+.fs-issue-table-wrap {
+  overflow-x: auto;
+}
+
+.fs-issue-table {
+  inline-size: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-label-size);
+}
+
+.fs-issue-table th,
+.fs-issue-table td {
+  padding: 6px var(--fs-space-2);
+  border-block-end: 1px solid var(--fs-border);
+  text-align: start;
+  white-space: nowrap;
+}
+
+.fs-issue-table th button {
+  border: 0;
+  background: none;
+  color: var(--fs-text-2);
+  font: inherit;
+  font-weight: var(--fs-label-weight);
+  cursor: pointer;
+}
+
+.fs-issue-row {
+  cursor: pointer;
+}
+
+.fs-issue-row:hover td {
+  background: var(--fs-surface-1);
+}
+
+.fs-issue-row__title {
+  max-inline-size: 42ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Compact chat panel ── */
+
+.fs-board--compact .fs-board__toolbar {
+  margin-block-end: 0;
+}
+
+.fs-board__compact-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fs-space-2);
+}
+
+.fs-board__compact-done summary {
+  cursor: pointer;
+  color: var(--fs-text-2);
+  font-size: var(--fs-label-size);
+  margin-block: var(--fs-space-2);
+}
+
+/* ── Dialog forms ── */
+
+.fs-issue-form,
+.fs-issue-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fs-space-3);
+}
+
+.fs-issue-form .fs-field-label,
+.fs-issue-detail .fs-field-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: var(--fs-label-size);
+  color: var(--fs-text-2);
+}
+
+.fs-issue-form__body {
+  block-size: auto;
+  padding-block: var(--fs-space-2);
+  resize: vertical;
+}
+
+.fs-issue-detail__fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: var(--fs-space-2);
+}
+
+.fs-issue-detail__body {
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-control);
+  padding: var(--fs-space-3);
+  background: var(--fs-surface-1);
+}
+
+.fs-issue-detail__labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.fs-issue-detail__list {
+  list-style: none;
+  margin: 0 0 var(--fs-space-2);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: var(--fs-label-size);
+}
+
+.fs-issue-detail__list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--fs-space-2);
+}
+
+.fs-issue-detail__comments {
+  list-style: none;
+  margin: 0 0 var(--fs-space-2);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--fs-space-2);
+}
+
+.fs-issue-detail__comments li {
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-control);
+  padding: var(--fs-space-2) var(--fs-space-3);
+  background: var(--fs-surface-1);
+}
+
+.fs-issue-detail__comment-head {
+  display: flex;
+  gap: var(--fs-space-2);
+  font-size: var(--fs-label-size);
+  margin-block-end: 4px;
+}
+
+.fs-issue-detail__events summary {
+  cursor: pointer;
+  color: var(--fs-text-2);
+  font-size: var(--fs-label-size);
+}
+
+.fs-issue-import__sources {
+  list-style: none;
+  margin: 0 0 var(--fs-space-3);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--fs-space-2);
+}
+
+.fs-issue-import__sources label {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--fs-space-2);
+}
+
+.fs-issue-import__sources small {
+  display: block;
+  color: var(--fs-text-3);
+}
+
+.fs-issue-import__preview {
+  margin-block-start: var(--fs-space-3);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-control);
+  padding: var(--fs-space-2) var(--fs-space-3);
+  background: var(--fs-surface-1);
+  font-size: var(--fs-label-size);
+}
+
+.fs-issue-import__preview ul {
+  margin: var(--fs-space-2) 0 0;
+  padding-inline-start: var(--fs-space-4);
+}
+
+/* ── The FAU-12 chip (Transcript.tsx / CommitGraph.tsx) ── */
+
+.fs-issue-chip {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid color-mix(in srgb, var(--fs-brand) 45%, var(--fs-border));
+  border-radius: var(--fs-radius-pill);
+  padding: 0 6px;
+  margin: 0 1px;
+  background: var(--fs-ember-faint);
+  color: var(--fs-text-1);
+  font-size: 0.85em;
+  font-family: var(--fs-font-code);
+  line-height: 1.6;
+  cursor: pointer;
+}
+
+.fs-issue-chip:hover:not(:disabled) {
+  background: var(--fs-ember);
+}
+
+.fs-issue-chip:disabled {
+  cursor: default;
+  opacity: 0.85;
+}
+
+@media (max-width: 640px) {
+  .fs-board__columns {
+    grid-auto-flow: row;
+    grid-auto-columns: unset;
+  }
+
+  .fs-board__column {
+    min-inline-size: 0;
+    max-block-size: none;
+  }
+}

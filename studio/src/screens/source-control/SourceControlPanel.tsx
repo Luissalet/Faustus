@@ -45,6 +45,7 @@ import { IdentityChip } from './IdentityChip';
 import { RepoPolicyDialog } from './RepoPolicyDialog';
 import { PublishToGithubDialog } from './PublishToGithubDialog';
 import { BranchPopover } from './BranchPopover';
+import { getSummary } from '../../adapters/board';
 import '../source-control.css';
 import { t } from '../../i18n';
 
@@ -86,6 +87,27 @@ export function SourceControlPanel({ projectId, repoId, compact = false, workspa
   // Compact mode never touches the URL — it lives inside a chat session's
   // own `?s=`/panel state, not a shareable "?project=&repo=" link.
   const effectiveProjectId = projectId ?? (!compact ? params.get('project') ?? undefined : undefined);
+
+  /* Lote 94: the project's board key, only when there IS a project -- same
+   * `getSummary` call and stale-response guard `Studio.tsx` uses for
+   * `Transcript`'s chips, so a commit message's `FAU-12` gets the same
+   * chip look here (`CommitGraph`'s `boardKey` prop, lote 93). */
+  const [boardKey, setBoardKey] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    if (!effectiveProjectId) {
+      setBoardKey(undefined);
+      return;
+    }
+    let live = true;
+    getSummary(effectiveProjectId).then((s) => {
+      if (live) setBoardKey(s.key);
+    }).catch(() => {
+      if (live) setBoardKey(undefined);
+    });
+    return () => {
+      live = false;
+    };
+  }, [effectiveProjectId]);
 
   const [repos, setRepos] = useState<GitRepo[] | null>(null);
   const [gitVersion, setGitVersion] = useState<string | null>(null);
@@ -682,6 +704,7 @@ export function SourceControlPanel({ projectId, repoId, compact = false, workspa
                 hasMore={nextCursor !== null}
                 loadingMore={logLoadingMore}
                 onLoadMore={loadMoreCommits}
+                boardKey={boardKey}
               />
             </div>
             {(selectedCommitSha || selectedFile) && (

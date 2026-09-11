@@ -285,6 +285,7 @@ class ProjectStore:
                 row.setdefault("pinned", False)
                 row.setdefault("archived", False)
                 row.setdefault("context_items", [])
+                row.setdefault("board_key", "")
             self._cache = rows
             return rows
 
@@ -1076,6 +1077,59 @@ class ProjectStore:
             return True
 
     # ------------------------------------------------------------------
+    # Board key (Lote 92 / OBJ-6) — the prefix of this project's issue ids
+    # ("FAU" in "FAU-12"). Stored on the project row like every other
+    # presentation field above; format and the name->key derivation live in
+    # `src.project_board` so there is one definition of what a valid key
+    # looks like, imported lazily to avoid a module-load cycle (project_board
+    # does not import this module, but keeping the import inside the
+    # functions that need it matches every other `src.*` import in this file).
+    # ------------------------------------------------------------------
+
+    def board_key(self, project: Dict[str, Any]) -> str:
+        """The key new issue ids use for this project: whatever was
+        explicitly set, else a default derived from the name. Never raises
+        and never persists the derived default — a project that has never
+        touched its board costs nothing on disk."""
+        stored = str((project or {}).get("board_key") or "").strip().upper()
+        if stored:
+            return stored
+        from src.project_board import derive_key
+        return derive_key((project or {}).get("name") or "Project")
+
+    def set_board_key(
+        self, project_id: str, key: str, owner: Optional[str] = None
+    ) -> Optional[Dict[str, Any]]:
+        """Change the key NEW issues get. Existing issue ids are never
+        renumbered or rewritten — CONTRATO_BOARD is explicit that changing
+        the key must not touch history, only what comes after it."""
+        from src.project_board import key_valid
+
+        key = str(key or "").strip().upper()
+        if not key_valid(key):
+            raise ProjectError("Board key must be 2-5 uppercase letters (A-Z)")
+        with self._lock:
+            rows = list(self._load())
+            for i, r in enumerate(rows):
+                if r.get("id") != project_id or not self._owned(r, owner):
+                    continue
+                for other in rows:
+                    if other is r or not self._owned(other, owner):
+                        continue
+                    if str(other.get("board_key") or "").strip().upper() == key:
+                        raise ProjectError(
+                            f"The board key '{key}' is already used by project "
+                            f"'{other.get('name') or other.get('id')}'"
+                        )
+                updated = dict(r)
+                updated["board_key"] = key
+                updated["updated_at"] = _now()
+                rows[i] = updated
+                self._save(rows)
+                return updated
+            return None
+
+    # ------------------------------------------------------------------
     # Memory on disk
     # ------------------------------------------------------------------
 
@@ -1530,3 +1584,15 @@ def instructions_for_session(session_id: str, owner: Optional[str] = None) -> st
     except Exception as e:  # noqa: BLE001 - hot path, never raise
         logger.debug("system_block failed for %s: %s", project.get("name"), e)
         return ""
+
+
+def board_key_for_project(project_id: str, owner: Optional[str] = None) -> str:
+    """The board key (`FAU` in `FAU-12`) for a project id, or '' when the
+    project does not resolve for this owner. Convenience for callers that
+    only have a project id — `src.agent_tools.board_tools`,
+    `src.agent_loop._project_board_block` — so they do not each re-derive the
+    stored-vs-default logic in `ProjectStore.board_key`."""
+    project = get_store().get(project_id, owner)
+    if not project:
+        return ""
+    return get_store().board_key(project)

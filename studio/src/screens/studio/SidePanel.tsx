@@ -1,4 +1,4 @@
-import { Archive, Check, Copy, FileText, GitBranch, Globe, History, Monitor, Save, SkipForward, X, Users, Paperclip, Files } from 'lucide-react';
+import { Archive, Check, Copy, FileText, GitBranch, Globe, History, Kanban, Monitor, Save, SkipForward, X, Users, Paperclip, Files } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router';
 import { Button, IconButton, Skeleton } from '../../components';
@@ -11,6 +11,7 @@ import { autoOpenEnabled, setAutoOpen, fileKey,docKey,type PanelDraft,type DocSt
 import {WorkbenchResources} from './WorkbenchResources';
 import SubagentBoard from './SubagentBoard';
 import { SourceControlPanel } from '../source-control/SourceControlPanel';
+import { BoardCompact } from '../board/BoardCompact';
 import FrameSelection, {type VisualSelection} from './FrameSelection';
 import { aggregateFileChanges } from '../../adapters/workbenchChanges';
 import { isInsecureRemoteAccess } from '../../adapters/remoteAccess';
@@ -45,6 +46,9 @@ const TABS: { id: PanelTab; label: string; icon: typeof Globe }[] = [
   // Lote 86 (CONTRATO_GIT_4.md): only meaningful once there is a workspace
   // or project to find a repo in — see the `tabs` filter below.
   { id: 'git', label: 'Source control', icon: GitBranch },
+  // Lote 93 (CONTRATO_BOARD.md): the project's own board — needs a project
+  // (the board is scoped by project id, not by a bare workspace folder).
+  { id: 'board', label: 'Board', icon: Kanban },
 ];
 
 /* ── Browser ── */
@@ -495,7 +499,8 @@ export default function SidePanel({ state, dispatch, onNotice,turns,workspace,pr
   const tabs=TABS.filter(tab=>
     (tab.id!=='doc'||state.doc) &&
     (tab.id!=='file'||state.file) &&
-    (tab.id!=='git'||Boolean(workspace||project)),
+    (tab.id!=='git'||Boolean(workspace||project)) &&
+    (tab.id!=='board'||Boolean(project)),
   );
   const workers=[...new Map(turns.flatMap(turn=>turn.workers).map(worker=>[worker.id,worker])).values()];
   return (
@@ -579,6 +584,11 @@ export default function SidePanel({ state, dispatch, onNotice,turns,workspace,pr
       {state.tab === 'git' && (workspace || project) && (
         <div className="fs-panel__body">
           <SourceControlPanel compact projectId={project?.id} workspace={workspace} />
+        </div>
+      )}
+      {state.tab === 'board' && project && (
+        <div className="fs-panel__body">
+          <BoardCompact projectId={project.id} openIssueId={state.boardIssue} />
         </div>
       )}
       </div>

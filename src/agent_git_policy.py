@@ -326,7 +326,18 @@ def after_turn(workspace: str, session_id: str, owner: Optional[str],
                 try:
                     git_panel.stage(repo_root, paths=rel_paths)
                     message = f"{policy.get('commit_message_prefix') or ''}{_summary_line(summary)}"
-                    result = git_panel.commit(repo_root, message)
+                    # Lote 92 (OBJ-6): hand the project id to git_panel.commit
+                    # so a FAU-12-style id (and a magic close word) in the
+                    # turn's own summary links/closes the board issue -- the
+                    # "agent commits" half of the board's git hook.
+                    board_project_id = ""
+                    try:
+                        from services.projects import project_for_session
+                        board_project = project_for_session(session_id, owner)
+                        board_project_id = str((board_project or {}).get("id") or "")
+                    except Exception:
+                        logger.debug("agent_git_policy: could not resolve project for board hook", exc_info=True)
+                    result = git_panel.commit(repo_root, message, project_id=board_project_id or None)
                 except git_panel.GitNothingToCommitError:
                     events.append({"action": "commit", "ok": False, "detail": "nothing_to_commit"})
                 except git_panel.GitNoIdentityError:

@@ -549,8 +549,12 @@ def setup_git_routes() -> APIRouter:
         meta = _repo_or_404(repo_id, owner)
         if not git_panel.git_available():
             return _git_missing()
+        project_id = meta.get("project_id")
+        if not project_id:
+            projects = meta.get("projects") or []
+            project_id = projects[0]["id"] if projects else None
         try:
-            result = git_panel.commit(meta["path"], body.message, amend=body.amend)
+            result = git_panel.commit(meta["path"], body.message, amend=body.amend, project_id=project_id)
         except git_panel.GitNothingToCommitError:
             return _error(400, "git.nothing_to_commit", "Empty message or nothing staged",
                           repo=_summary(_repo_or_404(repo_id, owner), owner))

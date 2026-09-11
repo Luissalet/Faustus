@@ -1,5 +1,5 @@
-import { Activity, AlertTriangle, Archive, ArchiveRestore, ArrowLeft, Brain, Check, Download, Eye, FileText, FolderOpen, FolderPlus, GitBranch, Image, Layers, Link2, Lock, MessageSquare, PencilLine, Pin, PinOff, Plus, RefreshCw, Send, Settings2, Target, Trash2, Unlink, X } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Activity, AlertTriangle, Archive, ArchiveRestore, ArrowLeft, Brain, Check, Download, Eye, FileText, FolderOpen, FolderPlus, GitBranch, Image, Kanban, Layers, Link2, Lock, MessageSquare, PencilLine, Pin, PinOff, Plus, RefreshCw, Send, Settings2, Target, Trash2, Unlink, X } from 'lucide-react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { ActivityDot, Button, Dialog, EmptyState, Menu, Skeleton, Toast } from '../components';
 import { listModels, type ChatSession, type ModelRoute } from '../adapters/chat';
@@ -60,6 +60,9 @@ import { t, tn } from '../i18n';
 const TABS = [
   { id: 'brief', label: 'Brief', icon: FileText },
   { id: 'chats', label: 'Chats', icon: MessageSquare },
+  // Lote 93 (OBJ-6, CONTRATO_BOARD.md): the project's own issue tracker
+  // (FAU-12 style ids) — kanban + table over `/api/projects/{id}/board/*`.
+  { id: 'board', label: 'Board', icon: Kanban },
   { id: 'objetivos', label: 'Objectives', icon: Target },
   { id: 'memoria', label: 'Memory', icon: Brain },
   { id: 'actividad', label: 'Agent activity', icon: Activity },
@@ -92,6 +95,13 @@ const FORMAT_LABEL: Record<string, string> = { md: 'Markdown', txt: 'Plain text'
  * its entry point, still finds `relocateResultMessage` at this path.
  */
 export { relocateResultMessage } from '../adapters/projects';
+
+/* Lote 93 (OBJ-6): lazy, the same way Transcript.tsx lazy-loads Harness/
+ * SubagentBoard — most tabs never open Board, and (unlike those two) this
+ * one also keeps `Project.tsx`'s own module import graph from reaching
+ * `<Rich>` (screens/rich.tsx → shell/display.ts's module-scope `document`
+ * access) until the Board tab actually renders, instead of at import time. */
+const BoardPanel = lazy(() => import('./board/BoardPanel').then((m) => ({ default: m.BoardPanel })));
 
 /* ── Context sources ──
  *
@@ -960,6 +970,14 @@ export function ProjectScreen() {
               })}
             </div>
           )}
+        </div>
+      )}
+
+      {tab === 'board' && (
+        <div className="fs-panel">
+          <Suspense fallback={<Skeleton label={t('Loading the board')} count={4} height="120px" />}>
+            <BoardPanel projectId={project.id} />
+          </Suspense>
         </div>
       )}
 

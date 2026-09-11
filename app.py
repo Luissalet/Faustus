@@ -1027,6 +1027,12 @@ app.include_router(setup_project_routes())
 from routes.git_routes import setup_git_routes
 app.include_router(setup_git_routes())
 
+# Project work board (Lote 92 / OBJ-6): per-project issues (FAU-12 style ids)
+# -- list/ready/summary, create/update/claim/comment/link/ref, import from
+# OBJETIVOS.md/PENDIENTES.md/backlog.json, markdown export (src/project_board.py).
+from routes.board_routes import setup_board_routes
+app.include_router(setup_board_routes())
+
 # Model scorecard: per-model reliability metrics of agent turns (src/scorecard.py).
 from routes.scorecard_routes import setup_scorecard_routes
 app.include_router(setup_scorecard_routes())

@@ -2144,6 +2144,138 @@ FUNCTION_TOOL_SCHEMAS = [
             }
         }
     },
+    # ── Project board tools (Lote 92, OBJ-6): the project's task list
+    # (FAU-12 style ids) -- see src/agent_tools/board_tools.py. The project is
+    # always resolved from the current chat; none of these take a project id.
+    {
+        "type": "function",
+        "function": {
+            "name": "board_list",
+            "description": "List this project's board issues (FAU-12 style ids), filtered by status/type/assignee/priority/label and/or a text search `q` over title and body. Read-only. Use for 'what's on the board', 'list open bugs', 'show my assigned issues'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "status": {"type": "string", "enum": ["open", "in_progress", "blocked", "done", "wontfix", "duplicate"], "description": "Filter by exact status (optional)"},
+                    "type": {"type": "string", "enum": ["bug", "idea", "feature", "task", "chore"], "description": "Filter by issue type (optional)"},
+                    "priority": {"type": "string", "enum": ["P0", "P1", "P2", "P3"], "description": "Filter by priority (optional)"},
+                    "assignee": {"type": "string", "description": "Filter by exact assignee (optional)"},
+                    "label": {"type": "string", "description": "Filter by exact label (optional)"},
+                    "q": {"type": "string", "description": "Free-text search over title and body (optional)"},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 200, "description": "Max issues to return (default 50)"}
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "board_ready",
+            "description": "List this project's issues that are ready to work on right now: open or in_progress, with no open blocker. Use this instead of listing everything and reasoning it out yourself -- for 'what should I work on', 'what's pending', 'what can I pick up next'.",
+            "parameters": {"type": "object", "properties": {}, "required": []}
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "board_get",
+            "description": "Full detail of one board issue: body, comments, event history, links (blocks/relates_to/...) and refs (linked commits/sessions). Read-only.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string", "description": "Issue id, e.g. 'FAU-12'"}
+                },
+                "required": ["id"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "board_create",
+            "description": "File a new board issue in the current project. Returns its id -- ALWAYS cite it back to the user (e.g. 'Apuntado como FAU-14'), never invent one yourself. Use this whenever the user reports a bug, asks for a feature, drops an idea, or asks you to note something down for the project -- instead of a markdown checklist.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "type": {"type": "string", "enum": ["bug", "idea", "feature", "task", "chore"], "description": "Issue type"},
+                    "title": {"type": "string", "description": "Short title"},
+                    "body": {"type": "string", "description": "Longer description in markdown (optional)"},
+                    "priority": {"type": "string", "enum": ["P0", "P1", "P2", "P3"], "description": "Priority (default P2)"},
+                    "assignee": {"type": "string", "description": "Who owns it -- 'user', 'agent', or a name (optional)"},
+                    "labels": {"type": "array", "items": {"type": "string"}, "description": "Free-form labels (optional)"},
+                    "links": {"type": "array", "items": {"type": "object", "properties": {"kind": {"type": "string", "enum": ["blocks", "blocked_by", "relates_to", "duplicate_of", "discovered_from"]}, "target": {"type": "string"}}, "required": ["kind", "target"]}, "description": "Relations to existing issues to create at the same time (optional)"}
+                },
+                "required": ["type", "title"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "board_update",
+            "description": "Change an existing issue's title/body/type/status/priority/assignee/labels. Moving `status` to 'done' closes it; a terminal issue (done/wontfix/duplicate) can only move to 'open' or 'in_progress' (reopen) -- any other change from a terminal status is refused (error_class board.invalid_transition).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string", "description": "Issue id, e.g. 'FAU-12'"},
+                    "title": {"type": "string", "description": "New title (optional)"},
+                    "body": {"type": "string", "description": "New body in markdown, replaces the old one (optional)"},
+                    "type": {"type": "string", "enum": ["bug", "idea", "feature", "task", "chore"], "description": "New type (optional)"},
+                    "status": {"type": "string", "enum": ["open", "in_progress", "blocked", "done", "wontfix", "duplicate"], "description": "New status (optional)"},
+                    "priority": {"type": "string", "enum": ["P0", "P1", "P2", "P3"], "description": "New priority (optional)"},
+                    "assignee": {"type": "string", "description": "New assignee, '' to unassign (optional)"},
+                    "labels": {"type": "array", "items": {"type": "string"}, "description": "Replace the full label set (optional)"}
+                },
+                "required": ["id"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "board_comment",
+            "description": "Add a comment to a board issue -- progress notes, a decision, why something changed.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string", "description": "Issue id, e.g. 'FAU-12'"},
+                    "body": {"type": "string", "description": "Comment text in markdown"}
+                },
+                "required": ["id", "body"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "board_link",
+            "description": "Relate two issues of this project: `blocks`/`blocked_by` (an issue that blocks another cannot be 'ready' until its blocker closes -- stored in both directions automatically), `relates_to` (a loose association, also mirrored), `duplicate_of`, or `discovered_from` (this issue was found while working on the target).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string", "description": "The issue this link is FROM, e.g. 'FAU-12'"},
+                    "kind": {"type": "string", "enum": ["blocks", "blocked_by", "relates_to", "duplicate_of", "discovered_from"]},
+                    "target": {"type": "string", "description": "The other issue id, e.g. 'FAU-9'"}
+                },
+                "required": ["id", "kind", "target"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "board_claim",
+            "description": "Atomically mark an issue in_progress and assign it (default: to yourself, 'agent', unless `assignee` is given). Refused with error_class board.claimed if another assignee already holds it -- ask the user before overriding someone else's claim.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string", "description": "Issue id, e.g. 'FAU-12'"},
+                    "assignee": {"type": "string", "description": "Who is claiming it (optional; defaults to 'agent')"}
+                },
+                "required": ["id"]
+            }
+        }
+    },
 ]
 
 

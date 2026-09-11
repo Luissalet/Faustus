@@ -1229,7 +1229,20 @@ def discard(repo_path: str, paths: List[str], *, timeout: float = GIT_TIMEOUT_DE
 
 
 def commit(repo_path: str, message: str, *, amend: bool = False,
+           project_id: Optional[str] = None,
            timeout: float = GIT_TIMEOUT_DEFAULT) -> Dict[str, str]:
+    """Commit staged changes. `project_id` (Lote 92 / OBJ-6, optional): when
+    given, a SUCCESSFUL commit is also handed to
+    `src.project_board.link_commit` -- every `KEY-N` id the message mentions
+    that belongs to this project gets a `commit` ref, and one preceded by a
+    magic close word (`fixes`, `closes`, `cierra`, ...) moves to `done`. This
+    is the one hook point every commit path in the app already funnels
+    through (the Source control panel's `POST .../commit`, `git_commit` the
+    agent tool, and `agent_git_policy.after_turn`'s own auto-commit), so it
+    lives here rather than duplicated at each call site. Best-effort: a board
+    failure is logged and never turns a successful `git commit` into an
+    error, and omitting `project_id` (every caller that predates Lote 92)
+    reproduces today's behavior exactly."""
     message = (message or "").strip()
     if not message:
         raise GitNothingToCommitError()
@@ -1248,6 +1261,12 @@ def commit(repo_path: str, message: str, *, amend: bool = False,
         raise GitCommandError(args, proc.returncode, proc.stdout, proc.stderr)
     sha = run_git(repo_path, "rev-parse", "HEAD").stdout.strip()
     short = run_git(repo_path, "rev-parse", "--short", "HEAD").stdout.strip()
+    if project_id:
+        try:
+            from src import project_board
+            project_board.link_commit(project_id, sha, message)
+        except Exception:  # noqa: BLE001 - a board failure must not fail the commit
+            logger.debug("project_board.link_commit failed for %s/%s", project_id, sha, exc_info=True)
     return {"sha": sha, "short": short, "message": message}
 
 

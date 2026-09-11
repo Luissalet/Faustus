@@ -1,15 +1,16 @@
 import type { BrowserFrame, ChatEvent, DocSuggestion } from '../../adapters/chat';
 import { pingGitRefresh } from '../../adapters/git';
+import { pingBoardRefresh } from '../../adapters/board';
 import { t } from '../../i18n';
 
 /**
  * The side panel next to the transcript: what the agent sees (browser and
  * desktop frames), the document it is writing, a file from the workspace,
- * and (Lote 86) the workspace's git repository, live. State and reducer
- * only; SidePanel.tsx paints it.
+ * (Lote 86) the workspace's git repository, live, and (Lote 93) the
+ * project's work board. State and reducer only; SidePanel.tsx paints it.
  */
 
-export type PanelTab = 'outputs' | 'sources' | 'agents' | 'browser' | 'doc' | 'file' | 'git';
+export type PanelTab = 'outputs' | 'sources' | 'agents' | 'browser' | 'doc' | 'file' | 'git' | 'board';
 export interface PanelDraft {text:string; base:string; revision?:string}
 
 export interface DocState {
@@ -37,6 +38,11 @@ export interface PanelState {
   drafts: Record<string,PanelDraft>;
   width: number;
   streamDoc: DocState | null;
+  /** Lote 93: the issue open in the Board tab's detail view, or `null` for
+   *  the list (ready + in_progress). Set by the Board tab's own row clicks,
+   *  and by an issue-id chip elsewhere in the chat (Transcript.tsx) via the
+   *  `board-issue` action below, so both land on the same tab+state. */
+  boardIssue: string | null;
 }
 
 export const MAX_FRAMES = 8;
@@ -68,6 +74,7 @@ export const initialPanel: PanelState = {
   doc: null,
   file: null,
   documents: [], files: [], drafts: {}, width: 520, streamDoc: null,
+  boardIssue: null,
 };
 
 export type PanelAction =
@@ -87,7 +94,11 @@ export type PanelAction =
   | { type: 'file'; workspace: string; path: string }
   | { type: 'doc'; doc: DocState | null }
   | { type: 'suggestions'; docId?:string|null; suggestions: DocSuggestion[] }
-  | { type: 'session-switch' };
+  | { type: 'session-switch' }
+  /** Lote 93: open the Board tab, optionally straight to one issue's
+   *  detail (an issue-id chip elsewhere in the chat) — `id: null` opens
+   *  the list. */
+  | { type: 'board-issue'; id: string | null };
 
 function reducePanel(state: PanelState, action: PanelAction): PanelState {
   switch (action.type) {
@@ -105,6 +116,8 @@ function reducePanel(state: PanelState, action: PanelAction): PanelState {
       return { ...state, live: false, doc: state.doc?.streaming ? { ...state.doc, streaming: false } : state.doc };
     case 'session-switch':
       return { ...initialPanel };
+    case 'board-issue':
+      return { ...state, open: true, tab: 'board', boardIssue: action.id };
     case 'file':
       return { ...state, open: true, tab: 'file', file: { workspace: action.workspace, path: action.path } };
     case 'doc':
@@ -193,6 +206,10 @@ export function panelReducer(state:PanelState,action:PanelAction):PanelState {
   // so `SourceControlPanel` (fixed props: no room for a dedicated signal
   // prop) can refetch status live wherever it happens to be mounted.
   if(action.type==='turn-end'||(action.type==='event'&&action.event.type==='git_policy')) pingGitRefresh();
+  // Lote 93: any turn may have used board_* tools — same "ping on turn-end"
+  // rule as git, one dedicated event so a mounted board panel and a
+  // mounted git panel each refresh only their own concern.
+  if(action.type==='turn-end') pingBoardRefresh();
   if(action.type==='suggestions' && action.docId !== undefined) {
     const update=(doc:DocState)=>doc.id===action.docId?{...doc,suggestions:action.suggestions}:doc;
     return {...state,documents:state.documents.map(update),doc:state.doc?update(state.doc):null};

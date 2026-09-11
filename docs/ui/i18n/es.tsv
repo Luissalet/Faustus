@@ -6472,3 +6472,82 @@ Merge {branch} into current…	Fusionar {branch} en la actual…
 Merged {branch} into {into} ({sha})	Se fusionó {branch} en {into} ({sha})
 Merge…	Fusionar…
 Merge aborted.	Merge abortado.
++{n} more	+{n} más
+Any priority	Cualquier prioridad
+Any type	Cualquier tipo
+Assigned to {who}	Asignado a {who}
+Assignee	Asignado a
+Blocked by (issue ids, comma-separated, optional)	Bloqueado por (ids de incidencias, separados por comas, opcional)
+Blocked by {ids}	Bloqueado por {ids}
+Comment	Comentar
+Comments	Comentarios
+Could not load the board	No se pudo cargar el tablero
+Delete issue	Eliminar incidencia
+Description (optional)	Descripción (opcional)
+Done recently	Completadas recientemente
+Existing markdown does not disappear; this copies what it describes into issues, without duplicating anything already imported.	El markdown existente no desaparece; esto copia lo que describe en incidencias, sin duplicar nada ya importado.
+Export .md	Exportar .md
+Filed as {id}.	Registrada como {id}.
+Filter by text or id…	Filtrar por texto o id…
+Ids for new issues start with this key. Changing it does not renumber existing ones.	Los ids de las incidencias nuevas empiezan por esta clave. Cambiarla no renumera las existentes.
+Import into the board	Importar al tablero
+Import…	Importar…
+Issue	Incidencia
+Issues table	Tabla de incidencias
+Kanban	Kanban
+Key: {key}	Clave: {key}
+Labels (comma-separated, optional)	Etiquetas (separadas por comas, opcional)
+Link kind	Tipo de enlace
+Links	Enlaces
+Loading the board	Cargando el tablero
+Loading the issue	Cargando la incidencia
+Log a bug, an idea or a task, or import what is already written down in OBJETIVOS.md, PENDIENTES.md or the backlog.	Apunta un bug, una idea o una tarea, o importa lo que ya está escrito en OBJETIVOS.md, PENDIENTES.md o el backlog.
+Markdown is fine.	Se admite markdown.
+New issue	Nueva incidencia
+New issues will use {key}-N. Existing ids keep their old key.	Las incidencias nuevas usarán {key}-N. Los ids existentes conservan su clave anterior.
+No comments yet.	Todavía no hay comentarios.
+No links yet.	Todavía no hay enlaces.
+No ready or in-progress issue for this project yet.	Todavía no hay ninguna incidencia lista o en curso en este proyecto.
+Nothing here	Nada aquí
+Nothing pending	Nada pendiente
+References	Referencias
+Remove link	Quitar enlace
+Session {id}	Sesión {id}
+Target issue id	Id de la incidencia destino
+This project's board key	La clave del tablero de este proyecto
+What needs doing?	¿Qué hay que hacer?
+Write a comment…	Escribe un comentario…
+user, agent, or a name	user, agent, o un nombre
+{created} to create, {skipped} already imported.	{created} para crear, {skipped} ya importadas.
+{id} cannot move straight from {from} to {to}.	{id} no puede pasar directamente de {from} a {to}.
+Bug	Bug
+Idea	Idea
+Feature	Función
+Chore	Mantenimiento
+Won't fix	No se arreglará
+Won't fix / Duplicate	No se arreglará / Duplicada
+P0 · Urgent	P0 · Urgente
+P1 · High	P1 · Alta
+P2 · Medium	P2 · Media
+P3 · Low	P3 · Baja
+Blocked by	Bloqueada por
+Relates to	Relacionada con
+Duplicate of	Duplicado de
+Discovered from	Descubierta a partir de
+Status changed	Estado cambiado
+Commented	Comentario añadido
+Link added	Enlace añadido
+Linked to a commit	Enlazada a un commit
+Linked to a session	Enlazada a una sesión
+Claimed	Reclamada
+Edited	Editada
+Each "## OBJ-N" becomes a feature; already-closed ones import as done.	Cada "## OBJ-N" se convierte en una función; las ya cerradas se importan como completadas.
+Checklist lines only — struck-through/[x] import as done, active ones as open.	Solo líneas de checklist — las tachadas o [x] se importan como completadas, las activas como abiertas.
+Its own id becomes a label; dependencies become "blocks" links.	Su propio id se convierte en una etiqueta; las dependencias se convierten en enlaces "bloquea".
+Open#issue_status	Abierta
+Blocked#issue_status	Bloqueada
+Done#issue_status	Completada
+Duplicate#issue_status	Duplicada
+Blocks#issue_link_kind	Bloquea
+Link#issue_link_verb	Enlazar
+The board is empty#issue_board	El tablero está vacío

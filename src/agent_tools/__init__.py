@@ -46,6 +46,11 @@ from .git_tools import (
     GitMergeTool, GitDeleteBranchTool,
     GitPushTool, GitPullTool, GitFetchTool,
 )
+from .board_tools import (
+    BoardListTool, BoardReadyTool, BoardGetTool,
+    BoardCreateTool, BoardUpdateTool, BoardCommentTool,
+    BoardLinkTool, BoardClaimTool,
+)
 
 TOOL_HANDLERS = {
     "bash": BashTool().execute,
@@ -105,6 +110,16 @@ TOOL_HANDLERS = {
     "git_push": GitPushTool().execute,
     "git_pull": GitPullTool().execute,
     "git_fetch": GitFetchTool().execute,
+    # Project board tools (Lote 92, OBJ-6): "the project's task list" --
+    # thin executors over src.project_board. See src/agent_tools/board_tools.py.
+    "board_list": BoardListTool().execute,
+    "board_ready": BoardReadyTool().execute,
+    "board_get": BoardGetTool().execute,
+    "board_create": BoardCreateTool().execute,
+    "board_update": BoardUpdateTool().execute,
+    "board_comment": BoardCommentTool().execute,
+    "board_link": BoardLinkTool().execute,
+    "board_claim": BoardClaimTool().execute,
 }
 # Config/integration admin tools (manage_endpoints/mcp/webhooks/tokens/settings).
 TOOL_HANDLERS.update(ADMIN_TOOL_HANDLERS)
@@ -178,7 +193,11 @@ TOOL_TAGS = {"bash", "python", "web_search", "web_fetch", "read_file", "inspect_
              "git_status", "git_log", "git_diff",
              "git_branch", "git_checkout", "git_commit",
              "git_merge", "git_delete_branch",
-             "git_push", "git_pull", "git_fetch"} | BUILTIN_EMAIL_TOOLS | DESKTOP_TOOLS
+             "git_push", "git_pull", "git_fetch",
+             # Project board tools (Lote 92, OBJ-6) -- src/agent_tools/board_tools.py.
+             "board_list", "board_ready", "board_get",
+             "board_create", "board_update", "board_comment",
+             "board_link", "board_claim"} | BUILTIN_EMAIL_TOOLS | DESKTOP_TOOLS
 
 ToolBlock = namedtuple("ToolBlock", ["tool_type", "content"])
 

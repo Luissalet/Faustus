@@ -575,7 +575,10 @@ class GitCommitTool:
             rel_paths.append(rel)
         try:
             git_panel.stage(repo_root, paths=rel_paths)
-            result = git_panel.commit(repo_root, message, amend=bool(args.get("amend")))
+            result = git_panel.commit(
+                repo_root, message, amend=bool(args.get("amend")),
+                project_id=str(ctx.get("project_id") or "") or None,
+            )
         except (git_panel.GitNoIdentityError, git_panel.GitNothingToCommitError,
                 git_panel.GitCommandError, git_panel.GitNotFoundError) as exc:
             return _git_error("git_commit", exc)

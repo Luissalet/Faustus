@@ -66,6 +66,10 @@ _ROUTING_PATTERNS: tuple[tuple[str, str, Pattern[str]], ...] = tuple(
         ("calendar", "calendar item action request", rf"{_PLEASE}{_CALENDAR_ACTION}\s+(?:it\s+)?(?:a\s+|an\s+)?(?:calendar\s+)?(?:event|meeting|appointment|entry|item|call)\b"),
         ("calendar", "calendar target action request", rf"\b{_CALENDAR_ACTION}\b.{{0,120}}\b(?:to|on|in|into|for)\s+(?:my\s+|the\s+|this\s+)?calendar\b"),
         ("calendar", "put item on calendar request", r"\bput\s+.+\bon\s+(?:my\s+)?calendar\b"),
+        # LANG-02 (lote 91): the Spanish equivalents — calendario/cita/
+        # reunión/agenda were entirely uncovered before this lot, so a plain
+        # "pon una reunión el viernes" never promoted to agent mode.
+        ("calendar", "Spanish calendar action request", rf"{_PLEASE_ES}(?:a[ñn]ade|pon|crea|agenda|programa|cancela|borra|elimina|mueve|cambia)\w*\b.{{0,120}}\b(?:calendario|citas?|reuni[oó]n(?:es)?|agenda)\b"),
 
         # Calendar/event lookup. A question such as "Do I have Taekwondo
         # classes this week?" needs the calendar tool; plain chat cannot know.
@@ -74,6 +78,10 @@ _ROUTING_PATTERNS: tuple[tuple[str, str, Pattern[str]], ...] = tuple(
         ("calendar", "calendar availability question", rf"\bdo\s+i\s+have\b.{{0,120}}\b(?:upcoming|next|today|tomorrow|this\s+week)\b.{{0,120}}\b{_CALENDAR_READ_THING}\b"),
         ("calendar", "calendar agenda question", r"\bwhat(?:'s| is)\s+on\s+(?:my\s+)?calendar\b"),
         ("calendar", "next calendar item question", r"\bwhen\s+(?:is|are)\s+(?:my\s+)?next\s+(?:event|meeting|appointment|class)\b"),
+        # LANG-02: "¿qué tengo mañana?" is the single commonest Spanish way
+        # to ask this, and named nothing above it — "mañana" alone is a
+        # calendar-lookup signal the same way "tomorrow's" is in English.
+        ("calendar", "Spanish calendar lookup question", r"\bqu[eé]\s+tengo\b.{0,60}\b(?:ma[ñn]ana|hoy|esta\s+semana)\b|\bqu[eé]\s+hay\s+en\s+(?:mi\s+)?(?:calendario|agenda)\b|\btengo\s+(?:algo|alguna\s+cita|reuni[oó]n)\b.{0,60}\b(?:ma[ñn]ana|hoy)\b"),
 
         # Notes, todos, checklists, and reminders.
         ("notes", "reminder request", r"\bremind\s+me\b"),
@@ -83,6 +91,11 @@ _ROUTING_PATTERNS: tuple[tuple[str, str, Pattern[str]], ...] = tuple(
         ("notes", "add item to notes/todo request", rf"{_PLEASE}(?:add|jot|write\s+down)\b.{{0,120}}\b(?:to|in|into)\s+(?:my\s+|the\s+)?(?:todo(?:\s+list)?|task\s+list|notes?|checklist)\b"),
         ("notes", "set reminder request", rf"{_PLEASE}set\s+(?:a\s+)?reminder\b"),
         ("notes", "assistant reminder request", rf"{_ACTION_QUESTION}set\s+(?:a\s+)?reminder\b"),
+        # LANG-02: nota/apunta/anota (take a note), recuerda(me)/aviso
+        # (remind) — entirely uncovered before this lot.
+        ("notes", "Spanish reminder request", rf"{_PLEASE_ES}recu[eé]rdame\b.+"),
+        ("notes", "Spanish take note request", rf"{_PLEASE_ES}(?:apunta|an[oó]ta|toma\s+nota)(?:me|lo|la)?\b.+"),
+        ("notes", "Spanish set reminder request", rf"{_PLEASE_ES}(?:av[ií]same|pon(?:me)?\s+un\s+aviso|crea\s+un\s+recordatorio)\b.+"),
 
         # Email actions.
         ("email", "assistant email action request", rf"{_ACTION_QUESTION}(?:send|write|reply|email|message|archive|delete|mark)\b.{{0,120}}\b(?:emails?|mail|messages?|inbox|unread|read)\b"),
@@ -92,10 +105,30 @@ _ROUTING_PATTERNS: tuple[tuple[str, str, Pattern[str]], ...] = tuple(
         ("email", "email contact request", r"\bemail\s+\w+\b"),
         ("email", "check inbox request", r"\bcheck\s+(?:my\s+)?(?:email|inbox|mail)\b"),
         ("email", "unread email request", r"\bunread\s+(?:email|mail)s?\b"),
+        # LANG-02: correo/mail, envía/mándale, contesta/responde — email was
+        # entirely English-only before this lot.
+        ("email", "Spanish email action request", rf"{_PLEASE_ES}(?:env[ií]a|manda|m[aá]ndale|escr[ií]bele|contesta|responde|reenv[ií]a)\w*\b.{{0,120}}\b(?:correos?|mensajes?|mail)\b"),
+        ("email", "Spanish email noun mention", r"\bcorreo\s+(?:a|para)\s+\w+\b|\b(?:env[ií]a|manda|escribe|contesta|responde)\w*\b.{0,60}\bcorreo\b"),
+        ("email", "Spanish check inbox request", r"\b(?:revisa|mira|comprueba)\s+(?:mi\s+|el\s+)?(?:correo|bandeja\s+de\s+entrada|inbox)\b"),
 
         # UI/control-plane actions that should open panels or flip toggles.
         ("ui", "open/show panel request", rf"{_PLEASE}(?:open|show|bring\s+up)\s+(?:me\s+)?(?:my\s+|the\s+)?{_PANEL}\b"),
         ("ui", "tool or feature toggle request", r"\b(?:disable|enable|turn\s+(?:on|off))\s+(?:the\s+)?(?:shell|search|web|browser|documents?|memory|skills|images?|calendar|email|mail|research|incognito)\b"),
+
+        # Media generation/inspection: generate/transcribe an image, video or
+        # audio clip. Had no routing category at all before this lot.
+        ("media", "assistant media generation request", rf"{_ACTION_QUESTION}(?:generate|make|create|draw|transcribe)\b.{{0,80}}\b(?:image|picture|photo|illustration|video|audio)\b"),
+        ("media", "media generation request", rf"{_PLEASE}(?:generate|draw|transcribe)\b.{{0,80}}\b(?:image|picture|photo|illustration|video|audio)\b"),
+        ("media", "Spanish media generation request", rf"{_PLEASE_ES}(?:genera|dibuja|crea|transcribe)(?:me)?\b.{{0,80}}\b(?:imagen|foto|ilustraci[oó]n|v[ií]deo|audio)\b"),
+        ("media", "Spanish media noun mention", r"\b(?:genera(?:me)?\s+una?\s+imagen|transcribe\s+(?:este|esta|el|la))\b"),
+
+        # "Remember this fact about me" / "forget that" — distinct from a
+        # note/reminder (LANG-02): "recuerda que X" states a durable fact,
+        # "recuérdame" (already in the notes patterns above) sets a reminder.
+        ("memory", "remember fact request", rf"{_PLEASE}remember\s+(?:that|this|my)\b.+"),
+        ("memory", "forget fact request", rf"{_PLEASE}forget\s+(?:that|this|my|about)\b.+"),
+        ("memory", "Spanish remember fact request", rf"{_PLEASE_ES}recuerda\s+que\b.+"),
+        ("memory", "Spanish forget fact request", rf"{_PLEASE_ES}(?:olv[ií]date?\s+(?:de|que)|borra\s+eso\s+de\s+tu\s+memoria)\b.+"),
 
         # Project control-plane mutations.  These are deliberately separate
         # from coding intent: adding an objective or attaching a document needs
@@ -106,6 +139,18 @@ _ROUTING_PATTERNS: tuple[tuple[str, str, Pattern[str]], ...] = tuple(
         ("project", "Spanish project objective action request", r"\b(?:aÃ±ade|anade|agrega|mete|pon|crea|actualiza|edita|cambia|elimina|borra|marca|completa)\b.{0,160}\b(?:objetivos?|metas?)(?:\s+del?\s+proyecto)?\b"),
         ("project", "project context attachment request", rf"{_PLEASE}(?:add|attach|link|put|move)\b.{{0,160}}\b(?:to|into|in)\s+(?:this|the|my)\s+project(?:\s+context)?\b"),
         ("project", "Spanish project context attachment request", r"\b(?:aÃ±ade|anade|agrega|adjunta|vincula|enlaza|mete|pon)\b.{0,160}\b(?:al|en el|dentro del)\s+(?:contexto\s+del\s+)?proyecto\b"),
+
+        # OBJ-6 (lote 92, board tools land alongside): the project's own
+        # issue tracker — reporting a bug, dropping an idea, asking what's
+        # pending. Kept under the "project" category (reason text never
+        # contains "objective", so `_project_objective_requested` above is
+        # unaffected) rather than a new category, because it is the same
+        # coarse "this needs a typed project tool, not shell/file mutation"
+        # gate the objectives patterns already exist for.
+        ("project", "project board pending/status request", rf"{_PLEASE}(?:what'?s|show|list)\b.{{0,60}}\b(?:pending|open\s+issues?|open\s+bugs?|on\s+the\s+board|on\s+the\s+backlog)\b"),
+        ("project", "project board report request", rf"{_PLEASE}(?:log|file|report|track|add)\b.{{0,60}}\b(?:a\s+)?(?:bug|issue|idea|feature\s+request)\b"),
+        ("project", "Spanish project board pending/status request", r"\bqu[eé]\s+(?:hay|queda)\s+pendiente\b.{0,80}\bproyecto\b|\bpendientes?\s+del?\s+proyecto\b|\btablero\s+del\s+proyecto\b"),
+        ("project", "Spanish project board report request", r"\b(?:apunta|anota|registra)\b.{0,80}\b(?:bug|fallo|idea|tarea)\b|\bhay\s+un\s+bug\b|\bnueva\s+idea\s+para\s+(?:el|este)\s+proyecto\b"),
 
         # LANG-01: generic Spanish capability-activating verbs. Until this
         # lot the Spanish imperatives above existed ONLY for the project-
@@ -149,6 +194,9 @@ _ROUTING_PATTERNS: tuple[tuple[str, str, Pattern[str]], ...] = tuple(
         ("web", "conversion-rate lookup request", r"\b(?:convert|conversion|exchange)\b.{0,120}\b(?:rate|rates|currency|currencies|price|prices)\b"),
         ("research", "deep research imperative request", rf"{_PLEASE}(?:research|deep\s+dive|look\s+into|investigate)\s+.+"),
         ("research", "assistant deep research request", rf"{_ACTION_QUESTION}(?:research|do\s+research|deep\s+dive|look\s+into|investigate)\s+.+"),
+        # LANG-02: "investiga" — "busca" is already covered by the LANG-01
+        # generic Spanish search pattern above; investigate/deep-dive was not.
+        ("research", "Spanish deep research imperative request", rf"{_PLEASE_ES}investiga(?:me|lo|la)?\b.+"),
 
         # Workspace / coding-agent intent. These should promote to the agent
         # workspace with shell/file tools available, not the "light" typed-tool
@@ -161,6 +209,13 @@ _ROUTING_PATTERNS: tuple[tuple[str, str, Pattern[str]], ...] = tuple(
         ("workspace", "local computer task request", r"\b(?:on|from|in|using|with)\s+(?:this|my|the)\s+(?:computer|machine|pc|laptop|device|system)\b|\b(?:local|host)\s+(?:computer|machine|files?|system)\b"),
         ("workspace", "named computer task request", r"\b(?:on|from)\s+(?!this\b|my\b|the\b|a\b|an\b)(?:[a-z][a-z0-9_.-]{1,31})\b"),
         ("workspace", "terminal workspace request", r"\b(?:terminal|shell|workspace|tmux|docker|container|git|branch|commit|diff|pytest|stacktrace|traceback|benchmark|terminal[- ]bench|tbench)\b"),
+        # LANG-02: archivo/fichero/carpeta (file/folder), and lee/abre scoped
+        # to "the/this X" so the bare, very common verbs don't fire on every
+        # Spanish sentence. repo/rama/commit in Spanish for the same
+        # coding-agent workspace intent the English git words above cover.
+        ("workspace", "Spanish file/folder inspection request", rf"{_PLEASE_ES}(?:lee|abre|busca|revisa)\s+(?:el|la|este|esta|los|las)\s+(?:archivo|fichero|carpeta|directorio)\b"),
+        ("workspace", "Spanish file/folder noun mention", r"\b(?:archivos?|ficheros?|carpetas?)\b"),
+        ("workspace", "Spanish git workspace request", r"\b(?:rama|ramas|commitea|commite[aá]|mergea|mergear|fusiona|repositorio|subir|sube|sincroniza|checkout)\b.{0,80}\b(?:cambios|repo|repositorio|rama|commit)\b|\b(?:rama|ramas|commitea|commite[aá]|mergea|mergear|fusiona|repositorio)\b"),
 
         # Shell / remote-host intent.
         ("shell", "ssh request", r"\bssh\s+(?:in)?to\b"),

@@ -399,11 +399,15 @@ def test_memory_lane_restart_reembeds_only_changed_descriptions(monkeypatch, tmp
     ToolIndex().index_builtin_tools()
     assert second.calls == 0, "unchanged descriptions must come from the persisted cache"
 
+    from src.tool_index import _examples_block
+
     monkeypatch.setitem(BUILTIN_TOOL_DESCRIPTIONS, "bash", "Run shell commands (edited)")
     third = _use_embedder(monkeypatch, tmp_path)
     ToolIndex().index_builtin_tools()
     assert third.calls == 1
-    assert third.texts_seen == ["Tool: bash\nRun shell commands (edited)"]
+    assert third.texts_seen == [
+        "Tool: bash\nRun shell commands (edited)" + _examples_block("bash")
+    ]
 
 
 def test_memory_lane_indexes_and_replaces_mcp_tools(monkeypatch, tmp_path):

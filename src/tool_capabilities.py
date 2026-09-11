@@ -458,6 +458,21 @@ _register(
     ToolEffect.NETWORK_EGRESS, ToolEffect.EXTERNAL_SIDE_EFFECT,
     result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
 )
+# Project board tools (Lote 92, OBJ-6, src/agent_tools/board_tools.py) — the
+# project's own task list, stored in its own SQLite under DATA_DIR (never the
+# workspace filesystem, never a network call). Same class as
+# manage_documents/manage_notes: a private read/write of the user's own data,
+# not a workspace or external effect — so reads sit with READ_PRIVATE (the
+# private-data equivalent of git_status's READ_WORKSPACE) and writes with
+# WRITE_PRIVATE, same bucket `manage_project_context`'s sibling `notes` are in.
+_register(
+    {"board_list", "board_ready", "board_get"},
+    ToolEffect.READ_PRIVATE,
+)
+_register(
+    {"board_create", "board_update", "board_comment", "board_link", "board_claim"},
+    ToolEffect.WRITE_PRIVATE,
+)
 
 
 TOOL_CAPABILITIES: Mapping[str, ToolCapabilities] = MappingProxyType(dict(_REGISTRY))

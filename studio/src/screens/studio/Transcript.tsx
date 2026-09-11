@@ -7,6 +7,8 @@ import { fetchCompactionEvent, pinCompactionFragment, type AskUser, type Compact
 import type { EvidenceRef } from '../../adapters/evidence';
 import { attachmentUrl, isImage } from '../../adapters/composer';
 import { Rich } from '../rich';
+import { issueIdRegex } from '../../adapters/board';
+import { IssueChip, renderIssueSegments } from '../board/IssueChips';
 import { splitMentions } from '../../lib/mentions';
 import { safeExternal } from '../../lib/markdown';
 import { stripExecutedFences, toolFenceRegex } from '../../lib/fences';
@@ -112,6 +114,21 @@ export interface TranscriptProps {
   onQuote?: (text: string) => void;
   /** Lote 86: a `git_policy` chip opens the Source control panel. */
   onOpenSourceControl?: () => void;
+  /** Lote 93: the project's board key ("FAU") — `FAU-12`-shaped ids in the
+   *  transcript (user text and assistant replies) become clickable chips.
+   *  Absent/empty is a no-op: nothing is scanned, zero risk to existing
+   *  renders until a caller actually has a key to give. */
+  boardKey?: string;
+  /** The project these ids belong to — the fallback navigation target
+   *  (`/projects/{id}?tab=board&issue=…`) when `onOpenBoardIssue` is not
+   *  given (e.g. the assistant's markdown body, which always navigates
+   *  rather than opening inline — see `AssistantTurn`'s doc comment). */
+  projectId?: string;
+  /** Opens the issue inline (the chat's own Board tab) instead of
+   *  navigating away. Used for the user's own text; the assistant's body
+   *  goes through `<Rich>` (a fichero ajeno to this lote) and always falls
+   *  back to a plain navigable link instead. */
+  onOpenBoardIssue?: (id: string) => void;
 }
 
 /** Read a reply aloud; the button flips to stop while it plays. */
@@ -203,6 +220,22 @@ const SECRET_PATTERNS: [RegExp, string][] = [
 
 export function maskSecrets(command: string): string {
   return SECRET_PATTERNS.reduce((out, [re, replacement]) => out.replace(re, replacement), command);
+}
+
+/**
+ * Lote 93: the assistant's reply goes through `<Rich>` (markdown → React, a
+ * fichero ajeno to this lote — no hook there to turn a matched run into a
+ * clickable button), so a `FAU-12` id becomes a real markdown link instead,
+ * pointing at the board tab on this project — `<Rich>`'s own `RichLink`
+ * then renders it exactly like any other link in a reply. A no-op unless
+ * BOTH `boardKey` and `projectId` are known (no id is ever falsely turned
+ * into a broken link with nowhere to point). Known limitation: a plain
+ * string replace does not know about code fences/inline code, so an id
+ * quoted verbatim in code would also linkify — cosmetic, not functional.
+ */
+export function linkifyBoardIds(text: string, boardKey: string | undefined, projectId: string | undefined): string {
+  if (!boardKey || !projectId) return text;
+  return text.replace(issueIdRegex(boardKey), (m) => `[${m}](/projects/${encodeURIComponent(projectId)}?tab=board&issue=${encodeURIComponent(m)})`);
 }
 
 /** EXEC-01: a short label for `Step.executionTarget.kind` — the words a
@@ -671,13 +704,39 @@ function Editor({
 
 /**
  * What the user typed, with the `@path` tokens turned into chips that open
- * the file. Gated on onOpenFile the way the previous interface gated on a
- * bound workspace: with no folder there is nothing to open them against.
+ * the file, and (Lote 93) `FAU-12`-shaped ids turned into chips that open
+ * the issue. Gated the same way the file-mention chip always was: with
+ * nothing to open them against (no `onOpenFile`, no `boardKey`), the text
+ * renders exactly as before.
  */
-function Said({ text, onOpenFile }: { text: string; onOpenFile?: (path: string) => void }) {
-  if (!onOpenFile || !text.includes('@')) return <>{text}</>;
-  const parts = splitMentions(text);
-  if (!parts.some((part) => part.mention)) return <>{text}</>;
+function Said({
+  text,
+  onOpenFile,
+  boardKey,
+  projectId,
+  onOpenBoardIssue,
+}: {
+  text: string;
+  onOpenFile?: (path: string) => void;
+  boardKey?: string;
+  projectId?: string;
+  onOpenBoardIssue?: (id: string) => void;
+}) {
+  const hasMentions = Boolean(onOpenFile) && text.includes('@');
+  if (!hasMentions && !boardKey) return <>{text}</>;
+  const parts = hasMentions ? splitMentions(text) : [{ text, mention: undefined, token: '' } as ReturnType<typeof splitMentions>[number]];
+
+  const renderIssue = (id: string) =>
+    onOpenBoardIssue ? (
+      <IssueChip key={id} id={id} onClick={() => onOpenBoardIssue(id)} />
+    ) : projectId ? (
+      <Link key={id} className="fs-issue-chip" to={`/projects/${encodeURIComponent(projectId)}?tab=board&issue=${encodeURIComponent(id)}`}>
+        {id}
+      </Link>
+    ) : (
+      <span key={id} className="fs-issue-chip" data-testid="issue-id-chip">{id}</span>
+    );
+
   return (
     <>
       {parts.map((part, i) =>
@@ -687,12 +746,12 @@ function Said({ text, onOpenFile }: { text: string; onOpenFile?: (path: string) 
             type="button"
             className="fs-turn__mention"
             title={t('Open {path}').replace('{path}', part.mention)}
-            onClick={() => onOpenFile(part.mention as string)}
+            onClick={() => onOpenFile?.(part.mention as string)}
           >
             {part.token}
           </button>
         ) : (
-          <Fragment key={i}>{part.text}</Fragment>
+          <Fragment key={i}>{renderIssueSegments(part.text ?? '', boardKey, renderIssue)}</Fragment>
         ),
       )}
     </>
@@ -888,6 +947,9 @@ function UserTurn({
   onRegenerate,
   onDelete,
   onOpenFile,
+  boardKey,
+  projectId,
+  onOpenBoardIssue,
 }: {
   turn: Turn;
   busy: boolean;
@@ -898,6 +960,9 @@ function UserTurn({
   onRegenerate: TranscriptProps['onRegenerate'];
   onDelete: TranscriptProps['onDelete'];
   onOpenFile?: TranscriptProps['onOpenFile'];
+  boardKey?: TranscriptProps['boardKey'];
+  projectId?: TranscriptProps['projectId'];
+  onOpenBoardIssue?: TranscriptProps['onOpenBoardIssue'];
 }) {
   const [editing, setEditing] = useState(false);
   return (
@@ -932,7 +997,7 @@ function UserTurn({
                   ))}
                 </ul>
               )}
-              <Said text={turn.text} onOpenFile={onOpenFile} />
+              <Said text={turn.text} onOpenFile={onOpenFile} boardKey={boardKey} projectId={projectId} onOpenBoardIssue={onOpenBoardIssue} />
               {turn.edited && <span className="fs-turn__edited">{t('edited')}</span>}
             </div>
             <div className="fs-turn__actions" data-testid="turn-actions">
@@ -1052,6 +1117,8 @@ function AssistantTurn({
   onRerun,
   onFork,
   onOpenSourceControl,
+  boardKey,
+  projectId,
 }: {
   turn: Turn;
   busy: boolean;
@@ -1070,6 +1137,8 @@ function AssistantTurn({
   onRerun?: TranscriptProps['onRerun'];
   onFork?: () => void;
   onOpenSourceControl?: TranscriptProps['onOpenSourceControl'];
+  boardKey?: TranscriptProps['boardKey'];
+  projectId?: TranscriptProps['projectId'];
 }) {
   // PERF-01/UX-05: while streaming, repaint this card at most once per
   // frame — see `useFrameBatched`'s doc comment. A settled turn (most of a
@@ -1078,7 +1147,7 @@ function AssistantTurn({
   const turn = useFrameBatched(liveTurn, liveTurn.streaming);
   // The tool call has already run and is in the rail; its fence is leftovers.
   const fences = useFenceRegex();
-  const body = stripExecutedFences(turn.text, fences);
+  const body = linkifyBoardIds(stripExecutedFences(turn.text, fences), boardKey, projectId);
   // A11Y-02: grouped, not per-token — see useGroupedStreamAnnouncement above.
   const streamAnnouncement = useGroupedStreamAnnouncement(body, turn.streaming);
   return (
@@ -1412,7 +1481,7 @@ const ESTIMATED_TURN_HEIGHT = 180;
  *  means without the two files sharing state. */
 const BOTTOM_THRESHOLD = 80;
 
-export function Transcript({ turns, busy, sessionId, onApproval, onAnswer, onEdit, onRegenerate, onDelete, onNotice, onOpenFile, onOpenDoc, onOpenEvidence, onRerun, onFork, onQuote, onOpenSourceControl }: TranscriptProps) {
+export function Transcript({ turns, busy, sessionId, onApproval, onAnswer, onEdit, onRegenerate, onDelete, onNotice, onOpenFile, onOpenDoc, onOpenEvidence, onRerun, onFork, onQuote, onOpenSourceControl, boardKey, projectId, onOpenBoardIssue }: TranscriptProps) {
   const quote = useQuoteSelection(onQuote);
 
   // PERF-01/QA-37: Studio.tsx owns the actual scrolling element
@@ -1494,7 +1563,7 @@ export function Transcript({ turns, busy, sessionId, onApproval, onAnswer, onEdi
             style={{ transform: `translateY(${virtualItem.start}px)` }}
           >
             {turn.role === 'user' ? (
-              <UserTurn turn={turn} busy={busy} enter={enter} onEdit={onEdit} onRegenerate={onRegenerate} onDelete={onDelete} onOpenFile={onOpenFile} />
+              <UserTurn turn={turn} busy={busy} enter={enter} onEdit={onEdit} onRegenerate={onRegenerate} onDelete={onDelete} onOpenFile={onOpenFile} boardKey={boardKey} projectId={projectId} onOpenBoardIssue={onOpenBoardIssue} />
             ) : (
               <AssistantTurn
                 turn={turn}
@@ -1520,6 +1589,8 @@ export function Transcript({ turns, busy, sessionId, onApproval, onAnswer, onEdi
                 onRerun={onRerun}
                 onFork={onFork ? () => onFork(turn) : undefined}
                 onOpenSourceControl={onOpenSourceControl}
+                boardKey={boardKey}
+                projectId={projectId}
               />
             )}
           </div>

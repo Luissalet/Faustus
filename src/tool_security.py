@@ -204,6 +204,16 @@ NON_ADMIN_BLOCKED_TOOLS = BUILTIN_EMAIL_TOOLS | {
     "git_push",
     "git_pull",
     "git_fetch",
+    # Project board tools (Lote 92): the project's own task list -- same
+    # privilege class as manage_documents/manage_notes above.
+    "board_list",
+    "board_ready",
+    "board_get",
+    "board_create",
+    "board_update",
+    "board_comment",
+    "board_link",
+    "board_claim",
 }
 
 
@@ -264,6 +274,10 @@ PLAN_MODE_READONLY_TOOLS = {
     "git_status",
     "git_log",
     "git_diff",
+    # Project board read tools (Lote 92): inspection only.
+    "board_list",
+    "board_ready",
+    "board_get",
 }
 
 
@@ -310,6 +324,10 @@ _PLAN_MODE_KNOWN_MUTATORS = {
     # durable change plan mode exists to defer.
     "git_branch", "git_checkout", "git_commit", "git_merge", "git_delete_branch",
     "git_push", "git_pull", "git_fetch",
+    # Project board write tools (Lote 92): plan mode investigates and never
+    # changes the board either -- filing/claiming/closing an issue is a
+    # durable change, same class as manage_notes/manage_tasks above.
+    "board_create", "board_update", "board_comment", "board_link", "board_claim",
 }
 
 
