@@ -6279,3 +6279,76 @@ Another task asked for this resource while it was held	Otra tarea pidió este re
 {n} task waited on a resource another one already held.	{n} tarea esperó un recurso que ya tenía otra.
 {n} tasks waited on a resource another one already held.	{n} tareas esperaron un recurso que ya tenía otra.
 {model} is not installed on {where} any more — pick another model.	{model} ya no está instalado en {where} — elige otro modelo.
+(staged)	(en el índice)
+(working tree)	(árbol de trabajo)
+Branches	Ramas
+Change branch — currently {branch}	Cambiar de rama — actualmente {branch}
+Close commit	Cerrar commit
+Commit	Commit
+Commit history	Historial de commits
+Commit message ({name})	Mensaje del commit ({name})
+Committed {sha}	Commit {sha} hecho
+Copy commit hash	Copiar hash del commit
+Could not load repositories	No he podido cargar los repositorios
+Create new branch…	Crear rama nueva…
+Discard changes in {path}	Descartar cambios en {path}
+Discard changes?	¿Descartar los cambios?
+Every git repository under your linked project folders.	Todos los repositorios git bajo las carpetas enlazadas de tus proyectos.
+Fetch	Obtener
+Fetched	Obtenido
+Files changed	Ficheros modificados
+Find a branch	Buscar una rama
+Find a branch…	Buscar una rama…
+Link a project folder that contains a git repository (a .git directory or worktree file) to see it here.	Enlaza una carpeta de proyecto que contenga un repositorio git (un directorio .git o un fichero de worktree) para verlo aquí.
+Load more commits	Cargar más commits
+Loading branches…	Cargando ramas…
+Loading changes	Cargando cambios
+Loading commit	Cargando commit
+Loading commit graph	Cargando el grafo de commits
+Loading diff for {path}	Cargando el diff de {path}
+Loading repositories	Cargando repositorios
+Merge Conflicts	Conflictos de fusión
+Message (Ctrl+Enter to commit)	Mensaje (Ctrl+Intro para confirmar)
+More actions for {name}	Más acciones para {name}
+New branch name	Nombre de la rama nueva
+No branches match "{query}".	Ninguna rama coincide con «{query}».
+No changes	Sin cambios
+No commits yet	Todavía no hay commits
+No differences.	Sin diferencias.
+No git repositories found	No se encontró ningún repositorio git
+Nothing selected	Nada seleccionado
+Pick a changed file or a commit to see its diff.	Elige un fichero modificado o un commit para ver su diff.
+Pick one from the list to see its changes and history.	Elige uno de la lista para ver sus cambios e historial.
+Pulled	Descargado
+Push	Enviar
+Pushed	Enviado
+Refresh repositories	Actualizar repositorios
+Refreshed	Actualizado
+Repositories	Repositorios
+Select a repository	Selecciona un repositorio
+Source control	Control de versiones
+Stage all	Preparar todo
+Stage {path}	Preparar {path}
+Staged Changes	Cambios preparados
+Sync (pull, then push)	Sincronizar (descarga y luego envía)
+Synced	Sincronizado
+The working tree is clean — nothing to stage or commit.	El árbol de trabajo está limpio — no hay nada que preparar ni confirmar.
+This branch has no history to show.	Esta rama no tiene historial que mostrar.
+This cannot be undone: the file goes back to its last committed content.	Esto no se puede deshacer: el fichero vuelve a su último contenido confirmado.
+This diff was too large and was truncated.	Este diff era demasiado grande y se ha recortado.
+Unstage all	Quitar todo del índice
+Unstage {path}	Quitar {path} del índice
+Untracked	Sin seguimiento
+Untracked Changes	Cambios sin seguimiento
+detached	separado
+detached HEAD	HEAD separada
+git is not available in this environment, so folders cannot be scanned for repositories.	git no está disponible en este entorno, así que no se pueden explorar las carpetas en busca de repositorios.
+no branch	sin rama
+no git identity configured	sin identidad de git configurada
+{n} pending changes	{n} cambios pendientes
+{path} is binary — no line-by-line diff to show.	{path} es binario — no hay diff línea a línea que mostrar.
+{n} file staged	{n} fichero preparado
+{n} files staged	{n} ficheros preparados
+git repositories under this project's linked folders	repositorios git bajo las carpetas enlazadas de este proyecto
+No branches match “{query}”.	Ninguna rama coincide con «{query}».
+git repositories under this project’s linked folders	repositorios git bajo las carpetas enlazadas de este proyecto

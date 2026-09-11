@@ -7,6 +7,7 @@ import {
   Database,
   FolderKanban,
   Gauge,
+  GitBranch,
   GitCompare,
   Home,
   Library,
@@ -63,6 +64,7 @@ export interface Tool {
 
 export const TOOLS: Tool[] = [
   { path: '/notes', label: 'Notes', icon: StickyNote },
+  { path: '/source-control', label: 'Source control', icon: GitBranch },
   { path: '/calendar', label: 'Calendar', icon: CalendarDays },
   { path: '/email', label: 'Mail', icon: Mail },
   { path: '/memory', label: 'Memory', icon: Brain },
@@ -95,6 +97,7 @@ export const SERVER_ROUTES = [
   '/automations',
   '/activity',
   '/notes',
+  '/source-control',
   '/memory',
   '/calendar',
   '/email',

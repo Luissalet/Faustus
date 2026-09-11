@@ -1,4 +1,4 @@
-import { Activity, AlertTriangle, Archive, ArchiveRestore, ArrowLeft, Brain, Check, Download, Eye, FileText, FolderOpen, FolderPlus, Image, Layers, Link2, Lock, MessageSquare, PencilLine, Pin, PinOff, Plus, RefreshCw, Send, Settings2, Target, Trash2, Unlink, X } from 'lucide-react';
+import { Activity, AlertTriangle, Archive, ArchiveRestore, ArrowLeft, Brain, Check, Download, Eye, FileText, FolderOpen, FolderPlus, GitBranch, Image, Layers, Link2, Lock, MessageSquare, PencilLine, Pin, PinOff, Plus, RefreshCw, Send, Settings2, Target, Trash2, Unlink, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { ActivityDot, Button, Dialog, EmptyState, Menu, Skeleton, Toast } from '../components';
@@ -739,6 +739,15 @@ export function ProjectScreen() {
         </div>
         <div className="fs-pj__head-actions">
           <Button variant="ghost" size="sm" icon={project.pinned ? PinOff : Pin} label={project.pinned ? t('Unpin') : t('Pin')} loading={busy === 'pin'} onClick={() => void patch('pin', { pinned: !project.pinned }, project.pinned ? t('Unpinned') : t('Pinned'))} testId="project-pin" />
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={GitBranch}
+            label={t('Source control')}
+            title={t('git repositories under this project’s linked folders')}
+            onClick={() => navigate(`/source-control?project=${encodeURIComponent(project.id)}`)}
+            testId="project-source-control"
+          />
           <Button
             variant="ghost"
             size="sm"

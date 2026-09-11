@@ -9,6 +9,12 @@ export interface PopoverProps {
   testId?: string;
   /** Extra class on the content, for a surface that needs its own width. */
   className?: string;
+  /** Uncontrolled by default (Radix owns open state); pass both to control
+   *  it — e.g. to lazily load the popover's content only once it opens
+   *  (git.ts's branch popover, which fetches branches on first open rather
+   *  than for every repo row up front). */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
 /**
@@ -24,9 +30,11 @@ export function Popover({
   side = 'bottom',
   testId = 'popover',
   className,
+  open,
+  onOpenChange,
 }: PopoverProps) {
   return (
-    <RadixPopover.Root>
+    <RadixPopover.Root open={open} onOpenChange={onOpenChange}>
       <RadixPopover.Trigger asChild>{trigger}</RadixPopover.Trigger>
       <RadixPopover.Portal container={document.getElementById('fs-overlay-root') ?? undefined}>
         <RadixPopover.Content

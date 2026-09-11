@@ -1021,6 +1021,12 @@ app.include_router(setup_workspace_trust_routes())
 from routes.project_routes import setup_project_routes
 app.include_router(setup_project_routes())
 
+# Version-control panel (OBJ-4): git repos under the owner's linked project
+# folders -- status, log, branches, commit detail/diff, checkout/fetch/pull/
+# push/sync/stage/unstage/discard/commit (src/git_panel.py).
+from routes.git_routes import setup_git_routes
+app.include_router(setup_git_routes())
+
 # Model scorecard: per-model reliability metrics of agent turns (src/scorecard.py).
 from routes.scorecard_routes import setup_scorecard_routes
 app.include_router(setup_scorecard_routes())
@@ -1348,6 +1354,12 @@ async def serve_agents(request: Request):
 
 @app.get("/skills")
 async def serve_skills(request: Request):
+    return await serve_index(request)
+
+
+@app.get("/source-control")
+async def serve_source_control(request: Request):
+    """Studio Source control panel (OBJ-4)."""
     return await serve_index(request)
 
 @app.get("/library/edit")

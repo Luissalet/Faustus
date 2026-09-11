@@ -1,0 +1,598 @@
+/* Source control (OBJ-4 · lote 81) — VS Code-style repos + changes + graph. */
+
+.fs-sc__title {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fs-space-1);
+}
+
+.fs-sc__title h1 {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+}
+
+/* ── Lane palette: cycled by lane index, tokens only ── */
+.fs-sc {
+  --fs-sc-lane-0: var(--fs-brand);
+  --fs-sc-lane-1: var(--fs-info);
+  --fs-sc-lane-2: var(--fs-success);
+  --fs-sc-lane-3: var(--fs-warning);
+  --fs-sc-lane-4: var(--fs-danger);
+  --fs-sc-lane-5: var(--fs-text-2);
+}
+
+/* ── Layout: repos | changes+graph | diff/detail ── */
+.fs-sc__layout {
+  display: grid;
+  grid-template-columns: minmax(220px, 260px) minmax(320px, 420px) minmax(0, 1fr);
+  gap: var(--fs-space-4);
+  align-items: start;
+  min-block-size: 50vh;
+}
+
+.fs-sc__repos {
+  min-inline-size: 0;
+  display: grid;
+  gap: var(--fs-space-2);
+}
+
+.fs-sc__middle {
+  min-inline-size: 0;
+  display: grid;
+  gap: var(--fs-space-4);
+}
+
+.fs-sc__right {
+  min-inline-size: 0;
+  position: sticky;
+  inset-block-start: var(--fs-space-4);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-panel);
+  background: var(--fs-surface-1);
+  padding: var(--fs-space-4);
+  min-block-size: 240px;
+}
+
+.fs-sc__blank {
+  grid-column: 2 / -1;
+}
+
+@media (max-width: 1100px) {
+  .fs-sc__layout {
+    grid-template-columns: minmax(200px, 240px) minmax(0, 1fr);
+  }
+  .fs-sc__right {
+    grid-column: 1 / -1;
+    position: static;
+  }
+  .fs-sc__blank {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 899px) {
+  .fs-sc__layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .fs-sc__layout[data-detail] .fs-sc__repos {
+    display: none;
+  }
+}
+
+/* ── Repo rail ── */
+.fs-sc__repo-list {
+  display: grid;
+  gap: 2px;
+}
+
+.fs-sc__repo-row {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-1);
+  border-radius: var(--fs-radius-control);
+  transition: background-color var(--fs-duration-fast) var(--fs-ease);
+}
+
+.fs-sc__repo-row[data-nested] {
+  margin-inline-start: var(--fs-space-4);
+}
+
+.fs-sc__repo-row[data-current] {
+  background: var(--fs-ember-faint);
+}
+
+.fs-sc__repo-row:hover {
+  background: var(--fs-surface-2);
+}
+
+.fs-sc__repo-nest {
+  color: var(--fs-text-3);
+  flex: 0 0 auto;
+}
+
+.fs-sc__repo-main {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  display: grid;
+  gap: 2px;
+  text-align: start;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  padding: var(--fs-space-2) var(--fs-space-1);
+}
+
+.fs-sc__repo-name {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  font-weight: var(--fs-label-weight);
+  overflow-wrap: anywhere;
+}
+
+.fs-sc__repo-dirty {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-inline-size: 18px;
+  block-size: 18px;
+  padding-inline: 5px;
+  border-radius: var(--fs-radius-pill);
+  background: var(--fs-brand);
+  color: var(--fs-on-brand);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.fs-sc__repo-project {
+  color: var(--fs-text-3);
+  font-size: 11px;
+}
+
+.fs-sc__repo-actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-1);
+}
+
+.fs-sc__repo-ab {
+  font-size: 11px;
+  color: var(--fs-text-2);
+  white-space: nowrap;
+}
+
+/* ── Branch popover ── */
+.fs-sc__branch-pop {
+  inline-size: min(320px, 90vw);
+  display: grid;
+  gap: var(--fs-space-2);
+  padding: var(--fs-space-3);
+}
+
+.fs-sc__branch-search {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  color: var(--fs-text-3);
+}
+
+.fs-sc__branch-search .fs-field {
+  flex: 1 1 auto;
+}
+
+.fs-sc__branch-list {
+  display: grid;
+  gap: 2px;
+  max-block-size: 260px;
+  overflow-y: auto;
+}
+
+.fs-sc__branch-row {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  padding: var(--fs-space-2);
+  border: 0;
+  border-radius: var(--fs-radius-control);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.fs-sc__branch-row:hover:not(:disabled) {
+  background: var(--fs-surface-2);
+}
+
+.fs-sc__branch-row:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.fs-sc__branch-row span:first-of-type {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+
+.fs-sc__branch-row[data-current] {
+  background: var(--fs-ember-faint);
+}
+
+.fs-sc__branch-tag {
+  font-size: 10px;
+  color: var(--fs-text-3);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-pill);
+  padding: 1px 6px;
+}
+
+.fs-sc__branch-create {
+  border-block-start: 1px solid var(--fs-border);
+  padding-block-start: var(--fs-space-2);
+}
+
+.fs-sc__dirty-list {
+  margin: var(--fs-space-2) 0 0;
+  padding-inline-start: var(--fs-space-4);
+  font-family: var(--fs-font-code);
+  font-size: 12px;
+}
+
+/* ── Changes pane ── */
+.fs-sc__changes {
+  display: grid;
+  gap: var(--fs-space-4);
+}
+
+.fs-sc__commit-box {
+  display: grid;
+  gap: var(--fs-space-2);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-panel);
+  background: var(--fs-surface-1);
+  padding: var(--fs-space-3);
+}
+
+.fs-sc__commit-label {
+  font-size: var(--fs-label-size);
+  color: var(--fs-text-2);
+}
+
+.fs-sc__commit-input {
+  resize: vertical;
+  font-family: inherit;
+}
+
+.fs-sc__section {
+  display: grid;
+  gap: var(--fs-space-1);
+}
+
+.fs-sc__section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--fs-space-2);
+}
+
+.fs-sc__section-head h3 {
+  margin: 0;
+  font-size: var(--fs-label-size);
+  font-weight: var(--fs-label-weight);
+  color: var(--fs-text-2);
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+}
+
+.fs-sc__section-count {
+  color: var(--fs-text-3);
+  font-weight: 400;
+}
+
+.fs-sc__file-row {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  border-radius: var(--fs-radius-control);
+}
+
+.fs-sc__file-row:hover,
+.fs-sc__file-main:hover {
+  background: var(--fs-surface-2);
+}
+
+.fs-sc__file-main {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+  padding: 6px var(--fs-space-1);
+  border-radius: var(--fs-radius-control);
+}
+
+.fs-sc__file-row[aria-current='true'] .fs-sc__file-main,
+.fs-sc__commit-files .fs-sc__file-row[aria-current='true'] {
+  background: var(--fs-ember-faint);
+}
+
+.fs-sc__file-status {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 16px;
+  block-size: 16px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--fs-text-3);
+  background: var(--fs-surface-3);
+}
+
+.fs-sc__file-status[data-status='A'] { color: var(--fs-success); }
+.fs-sc__file-status[data-status='M'] { color: var(--fs-warning); }
+.fs-sc__file-status[data-status='D'] { color: var(--fs-danger); }
+.fs-sc__file-status[data-status='R'],
+.fs-sc__file-status[data-status='C'] { color: var(--fs-info); }
+.fs-sc__file-status[data-status='conflict'] { color: var(--fs-danger); background: color-mix(in srgb, var(--fs-danger) 18%, transparent); }
+
+.fs-sc__file-path {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-label-size);
+}
+
+.fs-sc__file-stats {
+  flex: 0 0 auto;
+  display: flex;
+  gap: var(--fs-space-2);
+  font-size: 11px;
+  font-family: var(--fs-font-code);
+}
+
+.fs-sc__file-row-actions {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 2px;
+}
+
+/* ── Commit graph ── */
+.fs-sc__graph {
+  display: grid;
+  gap: var(--fs-space-2);
+}
+
+.fs-sc__graph-list {
+  display: grid;
+}
+
+.fs-sc__graph-row {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  border: 0;
+  border-radius: var(--fs-radius-control);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+  padding-inline-end: var(--fs-space-2);
+}
+
+.fs-sc__graph-row:hover {
+  background: var(--fs-surface-2);
+}
+
+.fs-sc__graph-row[aria-current='true'] {
+  background: var(--fs-ember-faint);
+}
+
+.fs-sc__graph-svg {
+  flex: 0 0 auto;
+}
+
+.fs-sc__graph-main {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  display: grid;
+  gap: 2px;
+  padding-block: 4px;
+}
+
+.fs-sc__graph-message {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+}
+
+.fs-sc__graph-refs {
+  display: inline-flex;
+  gap: 4px;
+  flex: 0 1 auto;
+  overflow: hidden;
+}
+
+.fs-sc__ref-chip {
+  flex: 0 0 auto;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: var(--fs-radius-pill);
+  border: 1px solid var(--fs-border);
+  white-space: nowrap;
+}
+
+.fs-sc__ref-chip[data-kind='head'] {
+  background: var(--fs-brand);
+  border-color: var(--fs-brand);
+  color: var(--fs-on-brand);
+}
+
+.fs-sc__ref-chip[data-kind='branch'] {
+  color: var(--fs-text-1);
+  border-color: var(--fs-border-strong);
+}
+
+.fs-sc__ref-chip[data-kind='remote'] {
+  color: var(--fs-info);
+  border-color: color-mix(in srgb, var(--fs-info) 45%, var(--fs-border));
+}
+
+.fs-sc__ref-chip[data-kind='tag'] {
+  color: var(--fs-warning);
+  border-color: color-mix(in srgb, var(--fs-warning) 45%, var(--fs-border));
+}
+
+.fs-sc__graph-meta {
+  display: flex;
+  gap: var(--fs-space-2);
+  color: var(--fs-text-3);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fs-sc__graph-meta code {
+  font-family: var(--fs-font-code);
+}
+
+.fs-sc__graph-more {
+  display: flex;
+  justify-content: center;
+  padding-block: var(--fs-space-2);
+}
+
+/* ── Commit detail / diff ── */
+.fs-sc__commit-detail {
+  display: grid;
+  gap: var(--fs-space-3);
+}
+
+.fs-sc__commit-detail-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--fs-space-3);
+}
+
+.fs-sc__commit-detail-title {
+  min-inline-size: 0;
+  display: grid;
+  gap: var(--fs-space-1);
+}
+
+.fs-sc__commit-message {
+  margin: 0;
+  font-weight: var(--fs-label-weight);
+  overflow-wrap: anywhere;
+}
+
+.fs-sc__commit-body {
+  margin: 0;
+  color: var(--fs-text-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.fs-sc__commit-meta {
+  margin: 0;
+  display: flex;
+  gap: var(--fs-space-3);
+  color: var(--fs-text-3);
+  font-size: 11px;
+}
+
+.fs-sc__commit-meta code {
+  font-family: var(--fs-font-code);
+}
+
+.fs-sc__commit-files {
+  display: grid;
+  gap: 2px;
+  max-block-size: 260px;
+  overflow-y: auto;
+}
+
+.fs-sc__commit-diff,
+.fs-sc__working-diff {
+  display: grid;
+  gap: var(--fs-space-2);
+  min-inline-size: 0;
+}
+
+.fs-sc__diff-title {
+  margin: 0;
+  font-family: var(--fs-font-code);
+  font-size: var(--fs-label-size);
+  overflow-wrap: anywhere;
+}
+
+.fs-sc__diff {
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-control);
+  overflow: hidden;
+}
+
+.fs-sc__diff-body {
+  margin: 0;
+  max-block-size: 60vh;
+  overflow: auto;
+  font-family: var(--fs-font-code);
+  font-size: var(--fs-code-size);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.fs-sc__diff-line {
+  display: flex;
+  gap: var(--fs-space-2);
+  padding-inline: var(--fs-space-2);
+}
+
+.fs-sc__diff-line[data-kind='add'] { background: color-mix(in srgb, var(--fs-success) 12%, transparent); }
+.fs-sc__diff-line[data-kind='del'] { background: color-mix(in srgb, var(--fs-danger) 12%, transparent); }
+.fs-sc__diff-line[data-kind='hunk'] { color: var(--fs-info); background: var(--fs-surface-2); }
+.fs-sc__diff-line[data-kind='meta'] { color: var(--fs-text-3); }
+
+.fs-sc__diff-gutter {
+  flex: 0 0 12px;
+  color: var(--fs-text-3);
+  user-select: none;
+}
+
+/* Notice tone this screen needed that the shared component did not yet
+   have: a real error (push rejected, dirty checkout, discard failed),
+   distinct from the existing warning tone. Additive — no other screen
+   used `data-tone="danger"` before this. */
+.fs-notice[data-tone='danger'] {
+  border-color: color-mix(in srgb, var(--fs-danger) 45%, var(--fs-border));
+  color: var(--fs-danger);
+}
+
+@media (max-width: 540px) {
+  .fs-sc__commit-detail-head {
+    flex-direction: column;
+  }
+}
