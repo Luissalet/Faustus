@@ -751,6 +751,22 @@ DEFAULT_SETTINGS = {
     # (routes/mcp/mcp_routes.py). Empty for every server nobody has
     # configured — McpManager's own class defaults apply then.
     "mcp_degraded_thresholds": {},
+    # OBJ-4 (Lote 82): global default for how the agent itself behaves
+    # inside a git repository it is working in -- does it use a separate
+    # branch, commit what it changed, push. A per-repo override lives in
+    # DATA_DIR/git_repo_policies.json (src/agent_git_policy.py), not here.
+    # Named "git_agent_policy" rather than "agent_git_policy" so it falls
+    # outside src/agent_settings_schema.py's agent_*/browser_*/desktop_*
+    # parity check -- see src/agent_git_policy.py's module docstring for why
+    # this compound value is edited through its own dedicated route instead.
+    "git_agent_policy": {
+        "use_branch": False,
+        "branch_prefix": "faustus/",
+        "commit": False,
+        "commit_message_prefix": "faustus: ",
+        "push": False,
+        "push_set_upstream": True,
+    },
     # Keyboard shortcuts (action: key combination)
     "keybinds": {
         "search": "ctrl+k",

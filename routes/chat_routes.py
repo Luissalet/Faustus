@@ -781,16 +781,20 @@ def _project_harness_options(request, session_id, workspace: str) -> Dict[str, A
 
 
 def _record_turn_side_effects(session_id: str, message_id: Any, metrics: Dict[str, Any],
-                              user_text: str, harness_options: Dict[str, Any]) -> None:
+                              user_text: str, harness_options: Dict[str, Any],
+                              owner: Optional[str] = None) -> List[Dict[str, Any]]:
     """After an assistant message is saved: append the turn to the project's
-    audit trail (src/project_audit.py) and, in review mode, register its files
-    as pending (services/review_state.py). Only turns that changed files."""
+    audit trail (src/project_audit.py), in review mode register its files as
+    pending (services/review_state.py), and -- OBJ-4 (Lote 82) -- run the
+    agent's git policy for the turn's workspace (branch/commit/push per
+    src/agent_git_policy.py). Only turns that changed files. Returns the
+    `git_policy` events the caller should forward as SSE (possibly empty)."""
     hz = (metrics or {}).get("harness") if isinstance(metrics, dict) else None
     if not isinstance(hz, dict):
-        return
+        return []
     files = [str(f) for f in (hz.get("mutations") or []) if f]
     if not files:
-        return
+        return []
     workspace = str(hz.get("workspace") or "")
     project_id = str(harness_options.get("project_id") or hz.get("project_id") or "")
     tests = hz.get("tests") if isinstance(hz.get("tests"), dict) else None
@@ -816,6 +820,16 @@ def _record_turn_side_effects(session_id: str, message_id: Any, metrics: Dict[st
                               checkpoint=hz.get("checkpoint"), tests_status=hz.get("tests"))
         except Exception as e:  # noqa: BLE001
             logger.debug("review state init failed: %s", e)
+    git_policy_events: List[Dict[str, Any]] = []
+    if workspace:
+        try:
+            from src import agent_git_policy
+            git_policy_events = agent_git_policy.after_turn(
+                workspace, session_id, owner, files, summary=user_text or "",
+            ) or []
+        except Exception as e:  # noqa: BLE001
+            logger.debug("agent_git_policy.after_turn failed: %s", e)
+    return git_policy_events
 
 
 def _project_work_roots(request, session_id) -> list[str]:
@@ -3150,6 +3164,23 @@ def setup_chat_routes(
                         _forced_tools = set(_forced_tools or ()) | {'delegate_agents'}
                         messages = [*messages, {'role': 'system', 'content': chat_team.instruction(_team)}]
 
+                    # OBJ-4 (Lote 82): the agent's own git policy for this
+                    # turn's workspace -- before ANY tool runs, so a
+                    # "work on a separate branch" policy has already
+                    # switched HEAD by the time the model's first write
+                    # lands. Idempotent (see src/agent_git_policy.py's
+                    # module docstring): a later turn in the same session
+                    # finds HEAD already on the agent branch and no-ops.
+                    if workspace:
+                        try:
+                            from src import agent_git_policy
+                            _git_policy_before = agent_git_policy.before_turn(workspace, session, _user)
+                        except Exception as _gp_err:
+                            logger.debug("agent_git_policy.before_turn failed: %s", _gp_err)
+                            _git_policy_before = None
+                        if _git_policy_before:
+                            yield f"data: {json.dumps({'type': 'git_policy', 'data': _git_policy_before})}\n\n"
+
                     async for chunk in stream_agent_loop(
                         sess.endpoint_url,
                         sess.model,
@@ -3392,13 +3423,17 @@ def setup_chat_routes(
                                     # Project audit trail + review-mode state for
                                     # a turn that changed files (linked to this
                                     # saved message so the UI can jump to it).
+                                    _git_policy_after: List[Dict[str, Any]] = []
                                     try:
-                                        _record_turn_side_effects(
+                                        _git_policy_after = _record_turn_side_effects(
                                             session, _saved_id, _metrics_to_save, message,
                                             _harness_options if isinstance(_harness_options, dict) else {},
+                                            owner=_user,
                                         )
                                     except Exception as _se_err:
                                         logger.debug("turn side effects failed: %s", _se_err)
+                                    for _gpe in _git_policy_after:
+                                        yield f"data: {json.dumps({'type': 'git_policy', 'data': _gpe})}\n\n"
                                 run_post_response_tasks(
                                     sess, session_manager, session, message, _response_to_save,
                                     _metrics_to_save, ctx.uprefs, memory_manager, memory_vector, webhook_manager,

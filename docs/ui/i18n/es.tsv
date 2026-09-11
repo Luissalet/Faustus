@@ -6352,3 +6352,73 @@ no git identity configured	sin identidad de git configurada
 git repositories under this project's linked folders	repositorios git bajo las carpetas enlazadas de este proyecto
 No branches match “{query}”.	Ninguna rama coincide con «{query}».
 git repositories under this project’s linked folders	repositorios git bajo las carpetas enlazadas de este proyecto
+New repository	Nuevo repositorio
+Start a repository in one of your linked folders, or clone one from a URL.	Empieza un repositorio en una de tus carpetas enlazadas, o clona uno desde una URL.
+Where this repository comes from	De dónde viene este repositorio
+Create here	Crear aquí
+my-project	mi-proyecto
+Only letters, numbers, dots, dashes and underscores.	Solo letras, números, puntos, guiones y guiones bajos.
+Parent folder	Carpeta padre
+One of your linked project folders — a new folder is created inside it for this repository.	Una de tus carpetas de proyecto enlazadas — se crea una carpeta nueva dentro para este repositorio.
+Subfolder (optional)	Subcarpeta (opcional)
+e.g. work/	p. ej. trabajo/
+URL	URL
+An https:// or git@ URL. Pick an SSH identity below to clone over ssh.	Una URL https:// o git@. Elige una identidad SSH abajo para clonar por ssh.
+SSH identity	Identidad SSH
+Sets this repository's local user.name/user.email.	Fija el user.name/user.email local de este repositorio.
+Used to clone over ssh with this identity's key.	Se usa para clonar por ssh con la clave de esta identidad.
+Create an initial commit	Crear un commit inicial
+Default branch	Rama por defecto
+Loading identities…	Cargando identidades…
+No SSH identities found yet.	Todavía no se encontró ninguna identidad SSH.
+SSH identities	Identidades SSH
+(login: {login})	(usuario: {login})
+ssh config	config de ssh
+manual	manual
+Refresh login for {label}	Actualizar el usuario de {label}
+Remote URL before	URL del remoto antes
+(none)	(ninguna)
+Remote URL after	URL del remoto después
+(cannot preview — unrecognized remote)	(no se puede previsualizar — remoto no reconocido)
+Also set user.name/user.email for this repository	También fijar user.name/user.email para este repositorio
+Apply to this repo	Aplicar a este repositorio
+Add identity…	Añadir identidad…
+e.g. Work GitHub	p. ej. GitHub del trabajo
+Host alias	Alias del host
+The Host entry in ~/.ssh/config; leave empty for github.com directly.	La entrada Host de ~/.ssh/config; déjalo vacío para github.com directamente.
+Key file	Fichero de la clave
+Also set user.name/user.email	También fijar user.name/user.email
+user.name	user.name
+user.email	user.email
+Save identity	Guardar identidad
+New branch	Rama nueva
+Current commit	Commit actual
+{name} (remote)	{name} (remoto)
+Switch to it	Cambiar a ella
+Work on a separate branch (faustus/…)	Trabajar en una rama aparte (faustus/…)
+Before writing anything, the agent switches to its own branch instead of the one you had checked out.	Antes de escribir nada, el agente cambia a su propia rama en vez de la que tenías activa.
+Commit what the agent changes at the end of each turn	Confirmar lo que cambia el agente al final de cada turno
+Only the files it actually wrote, edited or deleted that turn — never everything in the tree. Does not require a separate branch.	Solo los ficheros que de verdad escribió, editó o borró ese turno — nunca todo el árbol. No exige una rama aparte.
+Push those commits	Hacer push de esos commits
+Sends each commit to the remote right after it is made.	Envía cada commit al remoto justo después de hacerlo.
+Needs "Commit" turned on above.	Necesita tener "Commit" activado arriba.
+Advanced	Avanzado
+Branch name prefix	Prefijo del nombre de rama
+Commit message prefix	Prefijo del mensaje de commit
+Set the upstream on the first push (-u)	Fijar el upstream en el primer push (-u)
+Agent & this repository	El agente y este repositorio
+What the agent may do on its own in this repository, on top of the global default.	Lo que el agente puede hacer por su cuenta en este repositorio, además del valor global por defecto.
+Use the global policy	Usar la política global
+New branch…	Rama nueva…
+Repository created.	Repositorio creado.
+The default for what the agent may do on its own in a git repository it is working in — branches, commits, pushes. Any repository can override this from its own "Agent & this repository" card.	El valor por defecto de lo que el agente puede hacer por su cuenta en un repositorio git en el que trabaja — ramas, commits, pushes. Cualquier repositorio puede anular esto desde su propia tarjeta "El agente y este repositorio".
+Agent & git (global default)	El agente y git (valor global por defecto)
+Could not switch to a working branch{detail}	No se pudo cambiar a una rama de trabajo{detail}
+Could not commit{detail}	No se pudo confirmar el commit{detail}
+Could not push{detail}	No se pudo hacer push{detail}
+Switched to {branch}	Cambiado a {branch}
+Committed {sha} on {branch}	Commit {sha} hecho en {branch}
+Pushed {branch}	Push hecho de {branch}
+SSH: {label} (login: {login})	SSH: {label} (usuario: {login})
+SSH: {label}	SSH: {label}
+No SSH identity — using https/none	Sin identidad SSH — usando https/ninguna

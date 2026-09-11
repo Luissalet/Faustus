@@ -40,6 +40,80 @@ export interface GitUser {
   email: string;
 }
 
+/**
+ * OBJ-4 / Lote 83 (contract in scratchpad/CONTRATO_GIT_2.md) — SSH identity
+ * chip/selector, "New repository", branch-creation dialog and the agent's
+ * git policy (global + per-repo), all additive to lote 81's shapes above.
+ */
+export type GitIdentitySource = 'ssh_config' | 'manual';
+
+export interface GitIdentity {
+  id: string;
+  label: string;
+  ssh_host: string | null;
+  hostname: string;
+  identity_file: string;
+  git_user_name: string | null;
+  git_user_email: string | null;
+  github_login: string | null;
+  source: GitIdentitySource;
+}
+
+export interface GitIdentitiesResponse {
+  identities: GitIdentity[];
+  ssh_config_path: string;
+  ssh_dir: string;
+}
+
+export interface GitIdentityProbeResult {
+  github_login: string | null;
+  ok: boolean;
+  detail: string;
+}
+
+export interface RepoGitUser {
+  name: string;
+  email: string;
+  scope: 'local' | 'global' | 'none';
+}
+
+export interface RepoIdentity {
+  active: GitIdentity | null;
+  remote: string;
+  remote_url: string;
+  git_user: RepoGitUser;
+}
+
+export interface RepoIdentityResult extends RepoIdentity {
+  repo: GitRepo;
+}
+
+export interface GitFolder {
+  path: string;
+  project_id: string | null;
+  project_name: string | null;
+}
+
+export interface GitFoldersResponse {
+  folders: GitFolder[];
+}
+
+/** `DATA_DIR/git_repo_policies.json` shape and the global default under
+ *  `agent_git_policy` in `src/settings.py` — identical either way. */
+export interface AgentGitPolicy {
+  use_branch: boolean;
+  branch_prefix: string;
+  commit: boolean;
+  commit_message_prefix: string;
+  push: boolean;
+  push_set_upstream: boolean;
+}
+
+export interface RepoPolicyResponse {
+  effective: AgentGitPolicy;
+  overridden: boolean;
+}
+
 export interface GitRepo {
   id: string;
   path: string;
@@ -57,6 +131,12 @@ export interface GitRepo {
   dirty: GitDirtyCounts;
   user: GitUser;
   remotes: GitRemote[];
+  /** Lote 83: the identity whose ssh host alias matches `origin`'s remote,
+   *  `null` on https/no match. Optional — a server that predates this lot
+   *  simply omits it, and the identity chip then falls back to fetching
+   *  `GET /repos/{id}/identity` itself. */
+  identity?: { id: string; label: string; github_login: string | null } | null;
+  policy?: RepoPolicyResponse;
 }
 
 export interface GitReposResponse {
@@ -245,6 +325,18 @@ function postGit<T>(path: string, body?: unknown): Promise<T> {
   });
 }
 
+function putGit<T>(path: string, body: unknown): Promise<T> {
+  return request<T>(path, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
+function deleteGit(path: string): Promise<void> {
+  return request<void>(path, { method: 'DELETE' });
+}
+
 function query(params: Record<string, string | number | boolean | undefined>): string {
   const parts = Object.entries(params).filter(([, v]) => v !== undefined && v !== '');
   if (!parts.length) return '';
@@ -334,6 +426,112 @@ export function discard(repoId: string, paths: string[]): Promise<GitMutationRes
 
 export function commit(repoId: string, message: string, amend = false): Promise<GitCommitResult> {
   return postGit(`/api/git/repos/${encodeURIComponent(repoId)}/commit`, { message, amend });
+}
+
+/* ────────────────── Identities, folders, create/clone, policy ──────────────────
+ * Lote 83: everything the SSH identity chip, "New repository" dialog and the
+ * agent's git-policy cards call. Response shapes not fully pinned down by the
+ * contract (identity create/delete) are read defensively — see `unwrap*`
+ * below — so a shape the backend lot settles on slightly differently still
+ * works without a follow-up change here. */
+
+function unwrapIdentity(body: unknown): GitIdentity {
+  const obj = body && typeof body === 'object' ? (body as Record<string, unknown>) : {};
+  const inner = obj.identity && typeof obj.identity === 'object' ? obj.identity : obj;
+  return inner as GitIdentity;
+}
+
+export function listIdentities(): Promise<GitIdentitiesResponse> {
+  return getGit('/api/git/identities');
+}
+
+export function createIdentity(opts: {
+  label: string;
+  sshHost?: string;
+  hostname?: string;
+  identityFile: string;
+  gitUserName?: string;
+  gitUserEmail?: string;
+  writeSshConfig?: boolean;
+}): Promise<GitIdentity> {
+  return postGit<unknown>('/api/git/identities', {
+    label: opts.label,
+    ssh_host: opts.sshHost || undefined,
+    hostname: opts.hostname || 'github.com',
+    identity_file: opts.identityFile,
+    git_user_name: opts.gitUserName || undefined,
+    git_user_email: opts.gitUserEmail || undefined,
+    write_ssh_config: opts.writeSshConfig ?? false,
+  }).then(unwrapIdentity);
+}
+
+export function deleteIdentity(id: string): Promise<void> {
+  return deleteGit(`/api/git/identities/${encodeURIComponent(id)}`);
+}
+
+export function probeIdentity(id: string): Promise<GitIdentityProbeResult> {
+  return postGit(`/api/git/identities/${encodeURIComponent(id)}/probe`);
+}
+
+export function getRepoIdentity(repoId: string, remote = 'origin'): Promise<RepoIdentity> {
+  return getGit(`/api/git/repos/${encodeURIComponent(repoId)}/identity${query({ remote })}`);
+}
+
+export function setRepoIdentity(
+  repoId: string,
+  opts: { identityId: string; remote?: string; setGitUser?: boolean },
+): Promise<RepoIdentityResult> {
+  return putGit(`/api/git/repos/${encodeURIComponent(repoId)}/identity`, {
+    identity_id: opts.identityId,
+    remote: opts.remote ?? 'origin',
+    set_git_user: opts.setGitUser ?? true,
+  });
+}
+
+export function listFolders(): Promise<GitFoldersResponse> {
+  return getGit('/api/git/folders');
+}
+
+export interface CreateRepoOptions {
+  mode: 'init' | 'clone';
+  parentFolder: string;
+  name: string;
+  url?: string;
+  identityId?: string;
+  initialCommit?: boolean;
+  defaultBranch?: string;
+}
+
+export interface CreateRepoResult {
+  repo: GitRepo;
+}
+
+export function createRepo(opts: CreateRepoOptions): Promise<CreateRepoResult> {
+  return postGit('/api/git/repos', {
+    mode: opts.mode,
+    parent_folder: opts.parentFolder,
+    name: opts.name,
+    url: opts.mode === 'clone' ? opts.url : undefined,
+    identity_id: opts.identityId || undefined,
+    initial_commit: opts.initialCommit ?? true,
+    default_branch: opts.defaultBranch || 'main',
+  });
+}
+
+export function getGlobalPolicy(): Promise<AgentGitPolicy> {
+  return getGit('/api/git/policy');
+}
+
+export function setGlobalPolicy(policy: AgentGitPolicy): Promise<AgentGitPolicy> {
+  return putGit('/api/git/policy', policy);
+}
+
+export function getRepoPolicy(repoId: string): Promise<RepoPolicyResponse> {
+  return getGit(`/api/git/repos/${encodeURIComponent(repoId)}/policy`);
+}
+
+export function setRepoPolicy(repoId: string, policy: AgentGitPolicy | { inherit: true }): Promise<RepoPolicyResponse> {
+  return putGit(`/api/git/repos/${encodeURIComponent(repoId)}/policy`, policy);
 }
 
 /* ────────────────────────── Pure helpers ──────────────────────────
@@ -529,4 +727,53 @@ export function filterBranches<T extends { name: string }>(branches: T[], search
   const q = search.trim().toLowerCase();
   if (!q) return branches;
   return branches.filter((b) => b.name.toLowerCase().includes(q));
+}
+
+/**
+ * The backend's create-repo name rule (`src/git_panel.py`, 400 otherwise):
+ * `[A-Za-z0-9._-]` only, non-empty. Checked client-side too so the "New
+ * repository" dialog can disable Create instead of round-tripping a 400.
+ */
+export function isValidRepoName(name: string): boolean {
+  return /^[A-Za-z0-9._-]+$/.test(name);
+}
+
+const HTTPS_REMOTE_RE = /^https:\/\/[^/]+\/([^/]+\/[^/]+?)(?:\.git)?\/?$/;
+const SSH_REMOTE_RE = /^(?:ssh:\/\/)?git@[^:/]+:([^/]+\/[^/]+?)(?:\.git)?\/?$/;
+
+/**
+ * The same rewrite `PUT /repos/{id}/identity` performs server-side
+ * (CONTRATO_GIT_2.md: "si era https `https://github.com/o/r.git` ->
+ * `git@<alias>:o/r.git`"): pull the `owner/repo` path out of an https or
+ * `git@host:owner/repo` remote and put it back together on the given ssh
+ * host alias. `null` when `url` is neither shape — shown as "can't preview
+ * this remote" instead of a wrong guess.
+ */
+export function rewriteRemoteToAlias(url: string, alias: string): string | null {
+  const trimmed = url.trim();
+  const path = HTTPS_REMOTE_RE.exec(trimmed)?.[1] ?? SSH_REMOTE_RE.exec(trimmed)?.[1];
+  if (!path || !alias) return null;
+  return `git@${alias}:${path}.git`;
+}
+
+/**
+ * "Push those commits" only ever means something once commits are being
+ * made at all (CONTRATO_GIT_2.md: "push deshabilitado si commit está off;
+ * commit no exige rama") — the checkbox is disabled, not merely unchecked,
+ * whenever `commit` is off.
+ */
+export function pushToggleDisabled(commit: boolean): boolean {
+  return !commit;
+}
+
+/** `t()` key + values for the repo-header identity chip — the screen calls
+ *  `t(result.key, result.values)` so this stays a plain function the check
+ *  can call without a translation table. */
+export function identityChipLabel(
+  identity: { label: string; github_login: string | null } | null | undefined,
+): { key: string; values?: Record<string, string> } {
+  if (!identity) return { key: 'No SSH identity — using https/none' };
+  return identity.github_login
+    ? { key: 'SSH: {label} (login: {login})', values: { label: identity.label, login: identity.github_login } }
+    : { key: 'SSH: {label}', values: { label: identity.label } };
 }

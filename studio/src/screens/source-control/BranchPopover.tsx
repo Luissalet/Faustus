@@ -9,16 +9,18 @@ import {
   type GitBranchesResponse,
   type GitRepo,
 } from '../../adapters/git';
+import { CreateBranchDialog } from './CreateBranchDialog';
 import { t } from '../../i18n';
 
 /**
  * VS Code's branch switcher: click the current branch chip, get a
- * searchable list of local + remote branches plus "Create new branch…".
- * Branches load lazily on open (`Popover`'s `onOpenChange`, lote 81's
- * additive change to the shared component) rather than for every repo
- * row up front — with up to 60 repos discovered per owner, eagerly
- * calling `/branches` for all of them would be 60 requests nobody asked
- * for yet.
+ * searchable list of local + remote branches plus "New branch…", which
+ * opens `CreateBranchDialog` (lote 83: name + "from" + "switch to it",
+ * replacing the plain inline text field this used to have). Branches load
+ * lazily on open (`Popover`'s `onOpenChange`, lote 81's additive change to
+ * the shared component) rather than for every repo row up front — with up
+ * to 60 repos discovered per owner, eagerly calling `/branches` for all of
+ * them would be 60 requests nobody asked for yet.
  *
  * A dirty checkout (409 `git.dirty`) is shown right here, with the exact
  * files git named, rather than closing the popover on a generic toast —
@@ -41,8 +43,7 @@ export function BranchPopover({
   const [search, setSearch] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<{ message: string; dirty: string[] } | null>(null);
-  const [creating, setCreating] = useState(false);
-  const [newName, setNewName] = useState('');
+  const [createOpen, setCreateOpen] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -56,8 +57,6 @@ export function BranchPopover({
 
   const reset = () => {
     setOpen(false);
-    setCreating(false);
-    setNewName('');
     setError(null);
   };
 
@@ -175,30 +174,19 @@ export function BranchPopover({
       )}
 
       <div className="fs-sc__branch-create">
-        {creating ? (
-          <form
-            className="fs-inline"
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (newName.trim()) void doCheckout(newName.trim(), true);
-            }}
-          >
-            <input
-              className="fs-field"
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              placeholder={t('New branch name')}
-              aria-label={t('New branch name')}
-              autoFocus
-              data-testid="branch-new-name"
-            />
-            <Button type="submit" size="sm" variant="primary" label={t('Create')} disabled={!newName.trim() || busy !== null} loading={busy === newName.trim()} />
-            <Button size="sm" variant="ghost" label={t('Cancel')} onClick={() => { setCreating(false); setNewName(''); }} />
-          </form>
-        ) : (
-          <Button size="sm" variant="ghost" icon={Plus} label={t('Create new branch…')} onClick={() => setCreating(true)} testId="branch-create-open" />
-        )}
+        <Button size="sm" variant="ghost" icon={Plus} label={t('New branch…')} onClick={() => setCreateOpen(true)} testId="branch-create-open" />
       </div>
+
+      <CreateBranchDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        repoId={repoId}
+        branches={branches}
+        onCreated={(updated) => {
+          onCheckedOut(updated);
+          reset();
+        }}
+      />
     </Popover>
   );
 }

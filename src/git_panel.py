@@ -991,3 +991,189 @@ def commit(repo_path: str, message: str, *, amend: bool = False,
     sha = run_git(repo_path, "rev-parse", "HEAD").stdout.strip()
     short = run_git(repo_path, "rev-parse", "--short", "HEAD").stdout.strip()
     return {"sha": sha, "short": short, "message": message}
+
+
+# ---------------------------------------------------------------------------
+# Public wrappers (Lote 82) -- `src/agent_git_policy.py` and
+# `src/git_identities.py` need these without reaching into this module's
+# underscore-prefixed internals.
+# ---------------------------------------------------------------------------
+def current_branch(repo_path: str) -> Tuple[Optional[str], bool]:
+    """(branch name or None, detached) -- public alias of `_current_branch`."""
+    return _current_branch(repo_path)
+
+
+def upstream_ref(repo_path: str) -> Optional[str]:
+    """Public alias of `_upstream`."""
+    return _upstream(repo_path)
+
+
+def repo_toplevel(path: str, *, timeout: float = GIT_TIMEOUT_DEFAULT) -> Optional[str]:
+    """``git rev-parse --show-toplevel`` from `path` -- the root of the repo
+    containing it (which may be a subdirectory of the repo, not the repo
+    root itself), or None if `path` doesn't exist or isn't inside a git
+    working tree. This is how `src/agent_git_policy.py` finds the repo an
+    agent turn's `workspace` lives in."""
+    if not path or not os.path.isdir(path):
+        return None
+    proc = run_git(path, "rev-parse", "--show-toplevel", timeout=timeout)
+    if proc.returncode != 0:
+        return None
+    top = proc.stdout.strip()
+    return os.path.realpath(top) if top else None
+
+
+# ---------------------------------------------------------------------------
+# Owner's linked folders (Lote 82) -- where a new repo may be created/cloned
+# ---------------------------------------------------------------------------
+def list_owner_folders(owner: Optional[str]) -> List[Dict[str, Any]]:
+    """Every linked folder of every project the owner can see, de-duplicated
+    by realpath+normcase (`GET /api/git/folders`): the set of places
+    `create_repo` is allowed to write into."""
+    from services.projects import get_store  # lazy: avoid an import-time cycle
+
+    out: List[Dict[str, Any]] = []
+    seen = set()
+    for project in get_store().list(owner):
+        pid = project.get("id")
+        pname = project.get("name")
+        for root in _project_root_folders(project):
+            key = os.path.normcase(root)
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append({"path": root, "project_id": pid, "project_name": pname})
+    return out
+
+
+def resolve_allowed_parent_folder(owner: Optional[str], parent_folder: str) -> Optional[str]:
+    """`parent_folder` (realpath'd) if it IS one of the owner's linked
+    folders, or lives inside one -- else None. The containment check
+    `POST /api/git/repos` relies on so a new repo can never be written
+    outside the owner's linked project folders, the same guarantee
+    discovery already gives every other route in this module."""
+    candidate = os.path.realpath(str(parent_folder or ""))
+    if not candidate or not os.path.isdir(candidate):
+        return None
+    cand_key = os.path.normcase(candidate)
+    for folder in list_owner_folders(owner):
+        root_key = os.path.normcase(folder["path"])
+        if cand_key == root_key or cand_key.startswith(root_key + os.sep):
+            return candidate
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Repo creation: init / clone (Lote 82)
+# ---------------------------------------------------------------------------
+_REPO_NAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
+
+
+class GitInvalidNameError(Exception):
+    """`name` is empty, has characters outside `[A-Za-z0-9._-]`, an unknown
+    `mode` was given, or `mode="clone"` was given no `url`."""
+
+
+class GitRepoExistsError(Exception):
+    """The target directory already exists and is not empty."""
+
+    def __init__(self, path: str):
+        self.path = path
+        super().__init__(f"{path} already exists and is not empty")
+
+
+class GitCloneFailedError(Exception):
+    def __init__(self, stderr: str):
+        self.stderr = stderr or ""
+        super().__init__("clone failed")
+
+
+def init_repo(target: str, *, default_branch: str = "main", initial_commit: bool = True,
+              repo_name: str = "", git_user_name: Optional[str] = None,
+              git_user_email: Optional[str] = None, timeout: float = GIT_TIMEOUT_DEFAULT) -> None:
+    """`git init` at `target` (already created by the caller), with its
+    initial branch named `default_branch` from the very first commit --
+    set via `symbolic-ref` before anything is committed, which works on any
+    git version (`git init -b` needs 2.28+). `git_user_name`/`git_user_email`,
+    when given, become this repo's LOCAL identity -- never the global one.
+    `initial_commit` adds a `README.md` naming the repo and commits it (this
+    is where `GitNoIdentityError` can surface, via `commit()`, if neither an
+    identity was given nor the host has a global git identity configured)."""
+    proc = run_git(target, "init", timeout=timeout)
+    if proc.returncode != 0:
+        raise GitCommandError(["init"], proc.returncode, proc.stdout, proc.stderr)
+    branch = (default_branch or "main").strip() or "main"
+    run_git(target, "symbolic-ref", "HEAD", f"refs/heads/{branch}", timeout=timeout)
+    if git_user_name:
+        run_git(target, "config", "user.name", git_user_name, timeout=timeout)
+    if git_user_email:
+        run_git(target, "config", "user.email", git_user_email, timeout=timeout)
+    if initial_commit:
+        readme = os.path.join(target, "README.md")
+        if not os.path.exists(readme):
+            with open(readme, "w", encoding="utf-8", newline="\n") as fh:
+                fh.write(f"# {repo_name or os.path.basename(target.rstrip(os.sep))}\n")
+        stage(target, paths=["README.md"], timeout=timeout)
+        commit(target, "Initial commit", timeout=timeout)
+
+
+def clone_repo(url: str, target: str, *, timeout: float = GIT_TIMEOUT_LONG) -> None:
+    proc = run_git(os.path.dirname(target) or ".", "clone", "--", url, target, timeout=timeout)
+    if proc.returncode != 0:
+        raise GitCloneFailedError(proc.stderr or proc.stdout or "")
+
+
+def create_repo(parent_folder: str, name: str, *, mode: str, owner: Optional[str] = None,
+                url: Optional[str] = None, identity_id: Optional[str] = None,
+                initial_commit: bool = True, default_branch: str = "main",
+                timeout_clone: float = GIT_TIMEOUT_LONG) -> str:
+    """Create (`mode="init"`) or clone (`mode="clone"`) a repo named `name`
+    directly under `parent_folder` (already vetted by the caller via
+    `resolve_allowed_parent_folder`). Returns the new repo's absolute path.
+
+    `name` is restricted to `[A-Za-z0-9._-]` before it ever reaches a path,
+    so it cannot smuggle a `..` segment or become absolute -- the one thing
+    standing between "create a repo in one of my linked folders" and
+    "write anywhere the process can reach".
+
+    Raises `GitInvalidNameError`, `GitRepoExistsError`, `GitNotFoundError`,
+    `GitCloneFailedError`, `GitCommandError`, or (from an init's initial
+    commit) `GitNoIdentityError`.
+    """
+    name = (name or "").strip()
+    if not name or name in (".", "..") or not _REPO_NAME_RE.match(name):
+        raise GitInvalidNameError(name)
+    if mode not in ("init", "clone"):
+        raise GitInvalidNameError(f"unknown mode {mode!r}")
+    if not git_available():
+        raise GitNotFoundError()
+
+    parent_real = os.path.realpath(parent_folder)
+    target = os.path.join(parent_real, name)
+    if os.path.exists(target) and (not os.path.isdir(target) or os.listdir(target)):
+        raise GitRepoExistsError(target)
+
+    if mode == "clone":
+        clone_url = (url or "").strip()
+        if not clone_url:
+            raise GitInvalidNameError("url is required to clone")
+        if identity_id:
+            from src import git_identities  # lazy: avoid an import-time cycle
+            identity = git_identities.find_identity(owner, identity_id)
+            if identity and identity.get("ssh_host"):
+                rewritten = git_identities.rewrite_remote_alias(clone_url, identity["ssh_host"])
+                if rewritten:
+                    clone_url = rewritten
+        clone_repo(clone_url, target, timeout=timeout_clone)
+    else:
+        os.makedirs(target, exist_ok=True)
+        git_user_name = git_user_email = None
+        if identity_id:
+            from src import git_identities  # lazy: avoid an import-time cycle
+            identity = git_identities.find_identity(owner, identity_id)
+            if identity:
+                git_user_name = identity.get("git_user_name")
+                git_user_email = identity.get("git_user_email")
+        init_repo(target, default_branch=default_branch, initial_commit=initial_commit,
+                  repo_name=name, git_user_name=git_user_name, git_user_email=git_user_email)
+    return target

@@ -44,8 +44,8 @@ export function Select({ id, value, options, onChange, allowEmpty }: { id: strin
   );
 }
 
-export function Text({ id, value, onChange, type = 'text', placeholder, secret }: { id: string; value: string; onChange: (v: string) => void; type?: string; placeholder?: string; secret?: boolean }) {
-  return <input id={id} type={secret ? 'password' : type} className="fs-field" value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} autoComplete={secret ? 'new-password' : 'off'} />;
+export function Text({ id, value, onChange, type = 'text', placeholder, secret, disabled }: { id: string; value: string; onChange: (v: string) => void; type?: string; placeholder?: string; secret?: boolean; disabled?: boolean }) {
+  return <input id={id} type={secret ? 'password' : type} className="fs-field" value={value} placeholder={placeholder} disabled={disabled} onChange={(e) => onChange(e.target.value)} autoComplete={secret ? 'new-password' : 'off'} />;
 }
 
 /* A section with its own draft, dirty flag and Save. */

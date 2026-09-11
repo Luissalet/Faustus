@@ -831,6 +831,32 @@ details.fs-studio__step > summary:hover .fs-trace__label {
   color: var(--fs-text-1);
 }
 
+/* OBJ-4/Lote 83: `git_policy` events (a branch switch, a commit, a push the
+   agent made on its own under the repo's policy) — discreet, read-only
+   chips, never the width of `.fs-notice`. */
+.fs-studio__git-policy {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fs-space-2);
+}
+
+.fs-studio__git-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px var(--fs-space-2);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-pill);
+  color: var(--fs-text-3);
+  font-size: 11px;
+  font-family: var(--fs-font-code);
+}
+
+.fs-studio__git-chip[data-ok='false'] {
+  color: var(--fs-danger);
+  border-color: color-mix(in srgb, var(--fs-danger) 45%, var(--fs-border));
+}
+
 .fs-studio__image {
   max-inline-size: min(100%, 520px);
   border-radius: var(--fs-radius-preview);

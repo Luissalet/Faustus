@@ -1,7 +1,7 @@
-import { GitBranch, RefreshCw } from 'lucide-react';
+import { Bot, GitBranch, Plus, RefreshCw } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
-import { EmptyState, IconButton, Toast } from '../components';
+import { Button, EmptyState, IconButton, Toast } from '../components';
 import {
   canCommit,
   commit as commitRepo,
@@ -24,12 +24,16 @@ import {
   type GitDiff,
   type GitRepo,
   type GitStatus,
+  type RepoPolicyResponse,
 } from '../adapters/git';
 import { CommitDetail } from './source-control/CommitDetail';
 import { CommitGraph } from './source-control/CommitGraph';
 import { ChangesPane, type WorkingFileSelection } from './source-control/ChangesPane';
 import { DiffPane } from './source-control/DiffPane';
 import { RepoList, RepoListError, type RepoMenuAction } from './source-control/RepoList';
+import { NewRepositoryDialog } from './source-control/NewRepositoryDialog';
+import { IdentityChip } from './source-control/IdentityChip';
+import { RepoPolicyDialog } from './source-control/RepoPolicyDialog';
 import './source-control.css';
 import { t } from '../i18n';
 
@@ -87,6 +91,12 @@ export function SourceControlScreen() {
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<number | undefined>(undefined);
 
+  // Lote 83: "New repository" and the per-repo "Agent & this repository"
+  // policy dialog — both operate on `repos`/`selectedRepo` the same way
+  // every other mutation on this screen does (mergeRepo).
+  const [newRepoOpen, setNewRepoOpen] = useState(false);
+  const [policyDialogOpen, setPolicyDialogOpen] = useState(false);
+
   const say = useCallback((text: string) => {
     setToast(text);
     if (toastTimer.current) window.clearTimeout(toastTimer.current);
@@ -125,6 +135,10 @@ export function SourceControlScreen() {
 
   const mergeRepo = useCallback((updated: GitRepo) => {
     setRepos((cur) => (cur ? cur.map((r) => (r.id === updated.id ? updated : r)) : cur));
+  }, []);
+
+  const mergeRepoPolicy = useCallback((repoId: string, policy: RepoPolicyResponse) => {
+    setRepos((cur) => (cur ? cur.map((r) => (r.id === repoId ? { ...r, policy } : r)) : cur));
   }, []);
 
   const refreshStatus = useCallback(
@@ -327,6 +341,12 @@ export function SourceControlScreen() {
 
   const commitDisabled = !status || !canCommit(message, status.staged.length) || committing;
 
+  const onRepoCreated = (repo: GitRepo) => {
+    setRepos((cur) => (cur ? [...cur, repo] : [repo]));
+    selectRepo(repo);
+    say(t('Repository created.'));
+  };
+
   return (
     <div className="fs-screen fs-sc" data-testid="source-control">
       <header className="fs-screen__head">
@@ -345,8 +365,24 @@ export function SourceControlScreen() {
         </p>
       )}
 
+      {selectedRepo && (
+        <div className="fs-sc__repo-header">
+          <div className="fs-sc__repo-header-title">
+            <h2>{selectedRepo.name}</h2>
+            <p className="fs-muted">{selectedRepo.path}</p>
+          </div>
+          <div className="fs-sc__repo-header-actions">
+            <IdentityChip repo={selectedRepo} onRepoUpdate={mergeRepo} />
+            <Button variant="ghost" size="sm" icon={Bot} label={t('Agent & this repository')} onClick={() => setPolicyDialogOpen(true)} testId="repo-policy-open" />
+          </div>
+        </div>
+      )}
+
       <div className="fs-sc__layout" data-detail={selectedRepoId ? '' : undefined}>
         <aside className="fs-sc__repos" aria-label={t('Repositories')}>
+          <div className="fs-sc__repos-head">
+            <Button variant="ghost" size="sm" icon={Plus} label={t('New repository')} onClick={() => setNewRepoOpen(true)} testId="new-repo-open" />
+          </div>
           {reposError ? (
             <RepoListError message={reposError} onRetry={loadRepos} />
           ) : (
@@ -433,6 +469,17 @@ export function SourceControlScreen() {
       </div>
 
       {toast && <Toast>{toast}</Toast>}
+
+      <NewRepositoryDialog open={newRepoOpen} onOpenChange={setNewRepoOpen} onCreated={onRepoCreated} />
+
+      {selectedRepo && (
+        <RepoPolicyDialog
+          open={policyDialogOpen}
+          onOpenChange={setPolicyDialogOpen}
+          repo={selectedRepo}
+          onPolicyChange={(policy) => mergeRepoPolicy(selectedRepo.id, policy)}
+        />
+      )}
     </div>
   );
 }

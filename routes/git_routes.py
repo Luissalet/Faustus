@@ -23,6 +23,7 @@ forget.
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -31,7 +32,7 @@ from pydantic import BaseModel, Field
 
 from core.middleware import require_human
 from src.auth_helpers import effective_user, require_user
-from src import git_panel
+from src import agent_git_policy, git_identities, git_panel
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +84,45 @@ class CommitBody(BaseModel):
     amend: bool = False
 
 
+class IdentityCreateBody(BaseModel):
+    label: str = Field(..., min_length=1)
+    ssh_host: Optional[str] = None
+    hostname: str = "github.com"
+    identity_file: str = Field(..., min_length=1)
+    git_user_name: Optional[str] = None
+    git_user_email: Optional[str] = None
+    write_ssh_config: bool = False
+
+
+class RepoIdentityBody(BaseModel):
+    identity_id: str = Field(..., min_length=1)
+    remote: str = "origin"
+    set_git_user: bool = True
+
+
+class CreateRepoBody(BaseModel):
+    mode: str = Field(..., pattern="^(init|clone)$")
+    parent_folder: str = Field(..., min_length=1)
+    name: str = Field(..., min_length=1)
+    url: Optional[str] = None
+    identity_id: Optional[str] = None
+    initial_commit: bool = True
+    default_branch: str = "main"
+
+
+class PolicyBody(BaseModel):
+    use_branch: Optional[bool] = None
+    branch_prefix: Optional[str] = None
+    commit: Optional[bool] = None
+    commit_message_prefix: Optional[str] = None
+    push: Optional[bool] = None
+    push_set_upstream: Optional[bool] = None
+
+
+class RepoPolicyBody(PolicyBody):
+    inherit: Optional[bool] = None
+
+
 # ---------------------------------------------------------------------------
 # Small helpers
 # ---------------------------------------------------------------------------
@@ -127,11 +167,22 @@ def _repo_or_404(repo_id: str, owner: Optional[str]) -> Dict[str, Any]:
     return meta
 
 
-def _summary(meta: Dict[str, Any]) -> Dict[str, Any]:
-    return git_panel.repo_summary(
+def _summary(meta: Dict[str, Any], owner: Optional[str] = None) -> Dict[str, Any]:
+    row = git_panel.repo_summary(
         meta["path"], project_id=meta["project_id"], project_name=meta["project_name"],
         root_folder=meta["root_folder"], parent_repo_id=meta["parent_repo_id"],
     )
+    # Alias match only -- never probes ssh, so this never blocks a repo list
+    # on the network (that's what the dedicated identities/probe route is
+    # for). Login is whatever is already cached.
+    ident = git_identities.active_identity_for_repo(meta["path"], owner)
+    row["identity"] = (
+        {"id": ident["id"], "label": ident["label"], "github_login": ident.get("github_login")}
+        if ident else None
+    )
+    pol = agent_git_policy.effective_policy(owner, row["id"])
+    row["policy"] = {"effective": pol["effective"], "overridden": pol["overridden"]}
+    return row
 
 
 def _safe_path_or_404(meta: Dict[str, Any], path: str) -> str:
@@ -158,14 +209,15 @@ def setup_git_routes() -> APIRouter:
             raise HTTPException(404, "Project not found")
         if not git_panel.git_available():
             return _git_missing()
-        return {"repos": [_summary(m) for m in metas], "git_version": git_panel.git_version()}
+        return {"repos": [_summary(m, owner) for m in metas], "git_version": git_panel.git_version()}
 
     @router.get("/repos/{repo_id}")
     def get_repo(repo_id: str, request: Request, _u: str = Depends(require_user)) -> Any:
-        meta = _repo_or_404(repo_id, _owner(request))
+        owner = _owner(request)
+        meta = _repo_or_404(repo_id, owner)
         if not git_panel.git_available():
             return _git_missing()
-        return _summary(meta)
+        return _summary(meta, owner)
 
     @router.get("/repos/{repo_id}/status")
     def get_status(repo_id: str, request: Request, _u: str = Depends(require_user)) -> Any:
@@ -237,10 +289,10 @@ def setup_git_routes() -> APIRouter:
             )
         except git_panel.GitDirtyCheckoutError as e:
             return _error(409, "git.dirty", "Local changes would be overwritten by checkout",
-                          dirty=e.paths, repo=_summary(_repo_or_404(repo_id, owner)))
+                          dirty=e.paths, repo=_summary(_repo_or_404(repo_id, owner), owner))
         except git_panel.GitCommandError as e:
-            return _command_failed(e, repo=_summary(_repo_or_404(repo_id, owner)))
-        return {"ok": True, "branch": branch, "repo": _summary(_repo_or_404(repo_id, owner))}
+            return _command_failed(e, repo=_summary(_repo_or_404(repo_id, owner), owner))
+        return {"ok": True, "branch": branch, "repo": _summary(_repo_or_404(repo_id, owner), owner)}
 
     @router.post("/repos/{repo_id}/branches")
     def post_create_branch(repo_id: str, body: CreateBranchBody, request: Request,
@@ -255,10 +307,10 @@ def setup_git_routes() -> APIRouter:
             )
         except git_panel.GitDirtyCheckoutError as e:
             return _error(409, "git.dirty", "Local changes would be overwritten by checkout",
-                          dirty=e.paths, repo=_summary(_repo_or_404(repo_id, owner)))
+                          dirty=e.paths, repo=_summary(_repo_or_404(repo_id, owner), owner))
         except git_panel.GitCommandError as e:
-            return _command_failed(e, repo=_summary(_repo_or_404(repo_id, owner)))
-        return {"ok": True, "branch": name, "repo": _summary(_repo_or_404(repo_id, owner))}
+            return _command_failed(e, repo=_summary(_repo_or_404(repo_id, owner), owner))
+        return {"ok": True, "branch": name, "repo": _summary(_repo_or_404(repo_id, owner), owner)}
 
     @router.post("/repos/{repo_id}/fetch")
     def post_fetch(repo_id: str, body: FetchBody, request: Request,
@@ -270,8 +322,8 @@ def setup_git_routes() -> APIRouter:
         try:
             output = git_panel.fetch(meta["path"], remote=body.remote, prune=body.prune)
         except git_panel.GitCommandError as e:
-            return _command_failed(e, repo=_summary(_repo_or_404(repo_id, owner)))
-        return {"ok": True, "output": output, "repo": _summary(_repo_or_404(repo_id, owner))}
+            return _command_failed(e, repo=_summary(_repo_or_404(repo_id, owner), owner))
+        return {"ok": True, "output": output, "repo": _summary(_repo_or_404(repo_id, owner), owner)}
 
     @router.post("/repos/{repo_id}/pull")
     def post_pull(repo_id: str, body: PullBody, request: Request,
@@ -284,10 +336,10 @@ def setup_git_routes() -> APIRouter:
             output = git_panel.pull(meta["path"], remote=body.remote, branch=body.branch)
         except git_panel.GitDivergedError as e:
             return _error(409, "git.diverged", "Local branch has diverged from its upstream",
-                          ahead=e.ahead, behind=e.behind, repo=_summary(_repo_or_404(repo_id, owner)))
+                          ahead=e.ahead, behind=e.behind, repo=_summary(_repo_or_404(repo_id, owner), owner))
         except git_panel.GitCommandError as e:
-            return _command_failed(e, repo=_summary(_repo_or_404(repo_id, owner)))
-        return {"ok": True, "output": output, "repo": _summary(_repo_or_404(repo_id, owner))}
+            return _command_failed(e, repo=_summary(_repo_or_404(repo_id, owner), owner))
+        return {"ok": True, "output": output, "repo": _summary(_repo_or_404(repo_id, owner), owner)}
 
     @router.post("/repos/{repo_id}/push")
     def post_push(repo_id: str, body: PushBody, request: Request,
@@ -305,8 +357,8 @@ def setup_git_routes() -> APIRouter:
         except git_panel.GitRejectedError as e:
             return _error(409, "git.rejected", git_panel.stderr_snippet(e.stderr),
                           stderr=git_panel.stderr_snippet(e.stderr),
-                          repo=_summary(_repo_or_404(repo_id, owner)))
-        return {"ok": True, "output": output, "repo": _summary(_repo_or_404(repo_id, owner))}
+                          repo=_summary(_repo_or_404(repo_id, owner), owner))
+        return {"ok": True, "output": output, "repo": _summary(_repo_or_404(repo_id, owner), owner)}
 
     @router.post("/repos/{repo_id}/sync")
     def post_sync(repo_id: str, request: Request, _h: None = Depends(require_human)) -> Any:
@@ -319,20 +371,20 @@ def setup_git_routes() -> APIRouter:
         except git_panel.GitDivergedError as e:
             return _error(409, "git.diverged", "Local branch has diverged from its upstream",
                           ahead=e.ahead, behind=e.behind, pull=None, push=None,
-                          repo=_summary(_repo_or_404(repo_id, owner)))
+                          repo=_summary(_repo_or_404(repo_id, owner), owner))
         except git_panel.GitCommandError as e:
             snippet = git_panel.stderr_snippet(e.stderr or e.stdout or "")
             return _error(400, "git.command_failed", snippet, stderr=snippet, pull=None, push=None,
-                          repo=_summary(_repo_or_404(repo_id, owner)))
+                          repo=_summary(_repo_or_404(repo_id, owner), owner))
         pull_result = {"ok": True, "output": pull_output}
         try:
             push_output = git_panel.push(meta["path"])
         except git_panel.GitRejectedError as e:
             snippet = git_panel.stderr_snippet(e.stderr)
             return _error(409, "git.rejected", snippet, stderr=snippet, pull=pull_result, push=None,
-                          repo=_summary(_repo_or_404(repo_id, owner)))
+                          repo=_summary(_repo_or_404(repo_id, owner), owner))
         return {"ok": True, "pull": pull_result, "push": {"ok": True, "output": push_output},
-                "repo": _summary(_repo_or_404(repo_id, owner))}
+                "repo": _summary(_repo_or_404(repo_id, owner), owner)}
 
     @router.post("/repos/{repo_id}/stage")
     def post_stage(repo_id: str, body: PathsBody, request: Request,
@@ -347,8 +399,8 @@ def setup_git_routes() -> APIRouter:
         try:
             git_panel.stage(meta["path"], paths=rel_paths, all_=bool(body.all))
         except git_panel.GitCommandError as e:
-            return _command_failed(e, repo=_summary(_repo_or_404(repo_id, owner)))
-        return {"ok": True, "repo": _summary(_repo_or_404(repo_id, owner))}
+            return _command_failed(e, repo=_summary(_repo_or_404(repo_id, owner), owner))
+        return {"ok": True, "repo": _summary(_repo_or_404(repo_id, owner), owner)}
 
     @router.post("/repos/{repo_id}/unstage")
     def post_unstage(repo_id: str, body: PathsBody, request: Request,
@@ -363,8 +415,8 @@ def setup_git_routes() -> APIRouter:
         try:
             git_panel.unstage(meta["path"], paths=rel_paths, all_=bool(body.all))
         except git_panel.GitCommandError as e:
-            return _command_failed(e, repo=_summary(_repo_or_404(repo_id, owner)))
-        return {"ok": True, "repo": _summary(_repo_or_404(repo_id, owner))}
+            return _command_failed(e, repo=_summary(_repo_or_404(repo_id, owner), owner))
+        return {"ok": True, "repo": _summary(_repo_or_404(repo_id, owner), owner)}
 
     @router.post("/repos/{repo_id}/discard")
     def post_discard(repo_id: str, body: DiscardBody, request: Request,
@@ -381,8 +433,8 @@ def setup_git_routes() -> APIRouter:
         try:
             git_panel.discard(meta["path"], rel_paths)
         except git_panel.GitCommandError as e:
-            return _command_failed(e, repo=_summary(_repo_or_404(repo_id, owner)))
-        return {"ok": True, "repo": _summary(_repo_or_404(repo_id, owner))}
+            return _command_failed(e, repo=_summary(_repo_or_404(repo_id, owner), owner))
+        return {"ok": True, "repo": _summary(_repo_or_404(repo_id, owner), owner)}
 
     @router.post("/repos/{repo_id}/commit")
     def post_commit(repo_id: str, body: CommitBody, request: Request,
@@ -395,13 +447,172 @@ def setup_git_routes() -> APIRouter:
             result = git_panel.commit(meta["path"], body.message, amend=body.amend)
         except git_panel.GitNothingToCommitError:
             return _error(400, "git.nothing_to_commit", "Empty message or nothing staged",
-                          repo=_summary(_repo_or_404(repo_id, owner)))
+                          repo=_summary(_repo_or_404(repo_id, owner), owner))
         except git_panel.GitNoIdentityError:
             return _error(409, "git.no_identity", "The repository has no configured user.name/user.email",
-                          repo=_summary(_repo_or_404(repo_id, owner)))
+                          repo=_summary(_repo_or_404(repo_id, owner), owner))
         except git_panel.GitCommandError as e:
-            return _command_failed(e, repo=_summary(_repo_or_404(repo_id, owner)))
+            return _command_failed(e, repo=_summary(_repo_or_404(repo_id, owner), owner))
         return {"ok": True, "sha": result["sha"], "short": result["short"], "message": result["message"],
-                "repo": _summary(_repo_or_404(repo_id, owner))}
+                "repo": _summary(_repo_or_404(repo_id, owner), owner)}
+
+    # ------------------------------------------------------------------
+    # SSH identities (Lote 82) -- read is require_user, everything that
+    # writes a file (a manual identity, an ~/.ssh/config block) or runs a
+    # network probe is require_human, same split as every mutation above.
+    # ------------------------------------------------------------------
+    @router.get("/identities")
+    def get_identities(request: Request, _u: str = Depends(require_user)) -> Any:
+        return git_identities.list_identities(_owner(request))
+
+    @router.post("/identities")
+    def post_identity(body: IdentityCreateBody, request: Request,
+                      _h: None = Depends(require_human)) -> Any:
+        owner = _owner(request)
+        try:
+            record = git_identities.create_manual_identity(
+                owner, label=body.label, ssh_host=body.ssh_host, hostname=body.hostname,
+                identity_file=body.identity_file, git_user_name=body.git_user_name,
+                git_user_email=body.git_user_email, write_ssh_config=body.write_ssh_config,
+            )
+        except git_identities.GitIdentityError as e:
+            return _error(400, f"git.{e.code}", e.detail)
+        return JSONResponse(status_code=201, content={"identity": record})
+
+    @router.delete("/identities/{identity_id}")
+    def delete_identity(identity_id: str, request: Request,
+                        _h: None = Depends(require_human)) -> Any:
+        owner = _owner(request)
+        match = git_identities.find_identity(owner, identity_id)
+        if match is not None and match.get("source") != "manual":
+            return _error(400, "git.identity_not_manual", "Only manually added identities can be deleted")
+        if not git_identities.delete_manual_identity(owner, identity_id):
+            raise HTTPException(404, "Identity not found")
+        return {"ok": True}
+
+    @router.post("/identities/{identity_id}/probe")
+    def post_probe_identity(identity_id: str, request: Request,
+                            _h: None = Depends(require_human)) -> Any:
+        owner = _owner(request)
+        identity = git_identities.find_identity(owner, identity_id)
+        if identity is None:
+            raise HTTPException(404, "Identity not found")
+        return git_identities.probe_identity(identity, force=True)
+
+    @router.get("/repos/{repo_id}/identity")
+    def get_repo_identity(repo_id: str, request: Request, remote: str = "origin",
+                          _u: str = Depends(require_user)) -> Any:
+        owner = _owner(request)
+        meta = _repo_or_404(repo_id, owner)
+        if not git_panel.git_available():
+            return _git_missing()
+        return git_identities.repo_identity_info(meta["path"], owner, remote=remote)
+
+    @router.put("/repos/{repo_id}/identity")
+    def put_repo_identity(repo_id: str, body: RepoIdentityBody, request: Request,
+                          _h: None = Depends(require_human)) -> Any:
+        owner = _owner(request)
+        meta = _repo_or_404(repo_id, owner)
+        identity = git_identities.find_identity(owner, body.identity_id)
+        if identity is None:
+            raise HTTPException(404, "Identity not found")
+        if not git_panel.git_available():
+            return _git_missing()
+        try:
+            result = git_identities.set_repo_identity(
+                meta["path"], identity, remote=body.remote, set_git_user=body.set_git_user,
+            )
+        except git_identities.GitIdentityError as e:
+            return _error(400, f"git.{e.code}", e.detail, repo=_summary(_repo_or_404(repo_id, owner), owner))
+        except git_panel.GitCommandError as e:
+            return _command_failed(e, repo=_summary(_repo_or_404(repo_id, owner), owner))
+        result["repo"] = _summary(_repo_or_404(repo_id, owner), owner)
+        return result
+
+    # ------------------------------------------------------------------
+    # Create / clone repos (Lote 82)
+    # ------------------------------------------------------------------
+    @router.get("/folders")
+    def get_folders(request: Request, _u: str = Depends(require_user)) -> Any:
+        return {"folders": git_panel.list_owner_folders(_owner(request))}
+
+    @router.post("/repos")
+    def post_create_repo(body: CreateRepoBody, request: Request,
+                         _h: None = Depends(require_human)) -> Any:
+        owner = _owner(request)
+        parent_real = git_panel.resolve_allowed_parent_folder(owner, body.parent_folder)
+        if parent_real is None:
+            return _error(403, "git.folder_not_allowed", "parent_folder is not one of your linked folders")
+        if not git_panel.git_available():
+            return _git_missing()
+        try:
+            path = git_panel.create_repo(
+                parent_real, body.name, mode=body.mode, owner=owner, url=body.url,
+                identity_id=body.identity_id, initial_commit=body.initial_commit,
+                default_branch=body.default_branch or "main",
+            )
+        except git_panel.GitInvalidNameError as e:
+            return _error(400, "git.invalid_name", str(e) or "invalid repository name/mode")
+        except git_panel.GitRepoExistsError as e:
+            return _error(409, "git.exists", f"{e.path} already exists and is not empty")
+        except git_panel.GitCloneFailedError as e:
+            snippet = git_panel.stderr_snippet(e.stderr)
+            return _error(409, "git.clone_failed", snippet, stderr=snippet)
+        except git_panel.GitNoIdentityError:
+            return _error(409, "git.no_identity",
+                          "No git user.name/user.email configured to create the initial commit with")
+        except git_panel.GitCommandError as e:
+            return _command_failed(e)
+
+        repo_id = git_panel.compute_repo_id(path)
+        # Built directly rather than re-walking discovery (`_repo_or_404`):
+        # the new repo might sit past this project's depth/MAX_REPOS
+        # discovery caps even though it was created inside a linked folder.
+        root_folder, project_id, project_name = parent_real, None, None
+        for folder in git_panel.list_owner_folders(owner):
+            folder_key = os.path.normcase(folder["path"])
+            if os.path.normcase(path) == folder_key or path.startswith(folder["path"] + os.sep):
+                root_folder, project_id, project_name = folder["path"], folder["project_id"], folder["project_name"]
+                break
+        meta = {
+            "id": repo_id, "path": path, "name": os.path.basename(path.rstrip(os.sep)) or path,
+            "project_id": project_id, "project_name": project_name,
+            "root_folder": root_folder, "parent_repo_id": None,
+        }
+        return JSONResponse(status_code=201, content={"repo": _summary(meta, owner)})
+
+    # ------------------------------------------------------------------
+    # Agent git policy (Lote 82)
+    # ------------------------------------------------------------------
+    @router.get("/policy")
+    def get_policy(_u: str = Depends(require_user)) -> Any:
+        return {"policy": agent_git_policy.get_global_policy()}
+
+    @router.put("/policy")
+    def put_policy(body: PolicyBody, _h: None = Depends(require_human)) -> Any:
+        patch = body.model_dump(exclude_unset=True)
+        try:
+            merged = agent_git_policy.set_global_policy(patch)
+        except agent_git_policy.GitPolicyError as e:
+            return _error(400, f"git.{e.code}", e.detail)
+        return {"policy": merged}
+
+    @router.get("/repos/{repo_id}/policy")
+    def get_repo_policy(repo_id: str, request: Request, _u: str = Depends(require_user)) -> Any:
+        owner = _owner(request)
+        _repo_or_404(repo_id, owner)
+        return {"policy": agent_git_policy.effective_policy(owner, repo_id)}
+
+    @router.put("/repos/{repo_id}/policy")
+    def put_repo_policy(repo_id: str, body: RepoPolicyBody, request: Request,
+                        _h: None = Depends(require_human)) -> Any:
+        owner = _owner(request)
+        _repo_or_404(repo_id, owner)
+        patch = body.model_dump(exclude_unset=True)
+        try:
+            agent_git_policy.set_repo_override(owner, repo_id, patch)
+        except agent_git_policy.GitPolicyError as e:
+            return _error(400, f"git.{e.code}", e.detail)
+        return {"policy": agent_git_policy.effective_policy(owner, repo_id)}
 
     return router

@@ -596,3 +596,86 @@
     flex-direction: column;
   }
 }
+
+/* ── Lote 83: "New repository", the repo header (identity chip + agent
+   policy) and the identity popover ── */
+
+.fs-sc__repos-head {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.fs-sc__repo-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--fs-space-3);
+  flex-wrap: wrap;
+  margin-block-end: var(--fs-space-3);
+}
+
+.fs-sc__repo-header-title h2 {
+  margin: 0;
+  font-size: var(--fs-label-size);
+  font-weight: var(--fs-label-weight);
+}
+
+.fs-sc__repo-header-title p {
+  margin: 2px 0 0;
+  font-family: var(--fs-font-code);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.fs-sc__repo-header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  flex-wrap: wrap;
+}
+
+.fs-sc__identity-pop {
+  inline-size: min(360px, 92vw);
+  display: grid;
+  gap: var(--fs-space-3);
+  padding: var(--fs-space-3);
+}
+
+.fs-sc__identity-list {
+  display: grid;
+  gap: 2px;
+  max-block-size: 220px;
+  overflow-y: auto;
+}
+
+.fs-sc__identity-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--fs-space-2);
+  padding: var(--fs-space-1) var(--fs-space-2);
+  border-radius: var(--fs-radius-control);
+}
+
+.fs-sc__identity-row[data-active] {
+  background: var(--fs-ember-faint);
+}
+
+.fs-sc__identity-row label {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+
+.fs-sc__identity-confirm,
+.fs-sc__identity-add-form {
+  display: grid;
+  gap: var(--fs-space-2);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-control);
+  padding: var(--fs-space-2);
+}
+
+.fs-sc__identity-confirm code {
+  font-family: var(--fs-font-code);
+  overflow-wrap: anywhere;
+}

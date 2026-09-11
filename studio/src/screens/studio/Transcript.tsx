@@ -1,4 +1,4 @@
-import { ArrowDown, Check, ChevronDown, Copy, FileText, GitFork, Pencil, Quote, RefreshCw, Telescope, Trash2, Volume2, VolumeX, X } from 'lucide-react';
+import { ArrowDown, Check, ChevronDown, Copy, FileText, GitBranch, GitCommit, GitFork, Pencil, Quote, RefreshCw, Telescope, Trash2, UploadCloud, Volume2, VolumeX, X } from 'lucide-react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Link } from 'react-router';
 import { Fragment, lazy, Suspense, useCallback, useEffect, useRef, useState, type RefObject } from 'react';
@@ -1157,6 +1157,30 @@ function AssistantTurn({
               lost: turn.capabilitiesChanged.lost.join(', '),
             })}
           </p>
+        )}
+        {turn.gitPolicy.length > 0 && (
+          <div className="fs-studio__git-policy" data-testid="turn-git-policy">
+            {turn.gitPolicy.map((ev, i) => {
+              const Icon = ev.action === 'branch' ? GitBranch : ev.action === 'commit' ? GitCommit : UploadCloud;
+              const short = (ev.sha ?? '').slice(0, 7);
+              const label = !ev.ok
+                ? ev.action === 'branch'
+                  ? t('Could not switch to a working branch{detail}', { detail: ev.detail ? `: ${ev.detail}` : '' })
+                  : ev.action === 'commit'
+                    ? t('Could not commit{detail}', { detail: ev.detail ? `: ${ev.detail}` : '' })
+                    : t('Could not push{detail}', { detail: ev.detail ? `: ${ev.detail}` : '' })
+                : ev.action === 'branch'
+                  ? t('Switched to {branch}', { branch: ev.branch ?? '' })
+                  : ev.action === 'commit'
+                    ? t('Committed {sha} on {branch}', { sha: short, branch: ev.branch ?? '' })
+                    : t('Pushed {branch}', { branch: ev.branch ?? '' });
+              return (
+                <span key={i} className="fs-studio__git-chip" data-ok={ev.ok} data-testid="git-policy-chip">
+                  <Icon size={12} aria-hidden="true" /> {label}
+                </span>
+              );
+            })}
+          </div>
         )}
         {turn.error && (() => {
           // UX-08: the taxonomy (`src/contracts/errors.py`, mirrored client-side

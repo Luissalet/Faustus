@@ -200,6 +200,16 @@ export interface Todo {
   verified?: boolean;
 }
 
+/** `event: git_policy` from `src/agent_git_policy.py` — CONTRATO_GIT_2.md:
+ *  `{"action":"branch"|"commit"|"push","ok":bool,"branch"?,"sha"?,"detail"?}`. */
+export interface GitPolicyEvent {
+  action: 'branch' | 'commit' | 'push';
+  ok: boolean;
+  branch?: string;
+  sha?: string;
+  detail?: string;
+}
+
 export interface HarnessCheck {
   status: string;
   round?: number;
@@ -409,6 +419,13 @@ export type ChatEvent =
   | { type: 'check'; check: HarnessCheck }
   | { type: 'summary'; summary: HarnessSummary }
   | { type: 'context'; percent?: number; tokens?: number; window?: number; ledger?: ContextLedger }
+  /** OBJ-4/Lote 83: the agent's git policy acting on the turn's workspace
+   *  (`src/agent_git_policy.py`'s `before_turn`/`after_turn`, called from
+   *  `routes/chat_routes.py::_record_turn_side_effects`) — a branch created,
+   *  a commit made, a push sent, or one of those skipped/failed. Same
+   *  fallback story as `capabilities_changed`: absent entirely from a
+   *  server that predates this lot. */
+  | { type: 'git_policy'; event: GitPolicyEvent }
   | { type: 'done' };
 
 function str(value: unknown, fallback = ''): string {
@@ -1067,6 +1084,17 @@ export function decode(raw: Record<string, unknown>, sseEvent: string | null): C
         fromModel: str(data.from_model),
         toModel: str(data.to_model),
         lost: asArray<unknown>(data.lost).map(String).filter(Boolean),
+      };
+    case 'git_policy':
+      return {
+        type: 'git_policy',
+        event: {
+          action: raw.action === 'commit' || raw.action === 'push' ? raw.action : 'branch',
+          ok: Boolean(raw.ok),
+          branch: str(raw.branch) || undefined,
+          sha: str(raw.sha) || undefined,
+          detail: str(raw.detail) || undefined,
+        },
       };
     case 'metrics':
       return { type: 'metrics', metrics: metricsFrom(data) };

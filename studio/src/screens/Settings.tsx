@@ -2,6 +2,7 @@ import {
   Bot,
   Check,
   Copy,
+  GitBranch,
   HardDrive,
   HelpCircle,
   Layers,
@@ -67,6 +68,8 @@ import { AppearanceSection } from './settings/Appearance';
 import { authStatus } from '../adapters/account';
 import { listActiveApprovals, revokeApproval, type Approval } from '../adapters/approvals';
 import { addCommandAllowlistEntry, listCommandAllowlist, removeCommandAllowlistEntry, type AllowlistEntry } from '../adapters/commandGuard';
+import { getGlobalPolicy, setGlobalPolicy, type AgentGitPolicy } from '../adapters/git';
+import { AgentPolicyFields } from './source-control/AgentPolicyFields';
 import { t, tn } from '../i18n';
 
 /**
@@ -82,7 +85,7 @@ import { t, tn } from '../i18n';
  * there at their tab.
  */
 
-type SectionKey = 'general' | 'models' | 'local' | 'defaults' | 'voice' | 'search' | 'reminders' | 'integrations' | 'agent' | 'tools' | 'effective_config' | 'shortcuts' | 'account' | 'users' | 'system' | 'health' | 'security';
+type SectionKey = 'general' | 'models' | 'local' | 'defaults' | 'voice' | 'search' | 'reminders' | 'integrations' | 'agent' | 'repositories' | 'tools' | 'effective_config' | 'shortcuts' | 'account' | 'users' | 'system' | 'health' | 'security';
 
 const SECTIONS: { key: SectionKey; label: string; icon: typeof Bot; admin?: boolean }[] = [
   { key: 'general', label: 'Appearance', icon: Palette },
@@ -99,6 +102,9 @@ const SECTIONS: { key: SectionKey; label: string; icon: typeof Bot; admin?: bool
   { key: 'reminders', label: 'Reminders', icon: Check },
   { key: 'integrations', label: 'Integrations', icon: Plug },
   { key: 'agent', label: 'Agent', icon: Bot },
+  // OBJ-4 / Lote 83: the agent's default git policy (branch/commit/push),
+  // overridable per repository from Source control's own header card.
+  { key: 'repositories', label: 'Repositories', icon: GitBranch },
   { key: 'tools', label: 'Tools', icon: Wrench, admin: true },
   // ARCH-03: what actually governs a turn — global -> project -> role/preset ->
   // model -> turn — with sources, overrides and conflicts (src/effective_config.py).
@@ -1161,6 +1167,69 @@ function SecuritySection({ settings, onSave, say }: { settings: Settings | null;
   );
 }
 
+/* ── Repositories: the agent's global git policy ── */
+
+/** OBJ-4 / Lote 83: `GET/PUT /api/git/policy` — the global default for
+ *  `use_branch`/`commit`/`push` a repository's own "Agent & this
+ *  repository" card can override. Its own draft/save loop rather than
+ *  `useDraft`/`useSaver` above: those are keyed to the generic `Settings`
+ *  dictionary, and `AgentGitPolicy` is its own small, fully-typed shape. */
+function RepositoriesSection({ say }: { say: (t: string) => void }) {
+  const [policy, setPolicy] = useState<AgentGitPolicy | null>(null);
+  const [draft, setDraft] = useState<AgentGitPolicy | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    getGlobalPolicy()
+      .then((p) => {
+        setPolicy(p);
+        setDraft(p);
+      })
+      .catch((e: unknown) => say((e as Error).message))
+      .finally(() => setLoading(false));
+  }, [say]);
+  useEffect(load, [load]);
+
+  const dirty = Boolean(policy && draft && JSON.stringify(policy) !== JSON.stringify(draft));
+
+  const save = () => {
+    if (!draft) return;
+    setSaving(true);
+    setGlobalPolicy(draft)
+      .then((p) => {
+        setPolicy(p);
+        setDraft(p);
+        say(t('Saved.'));
+      })
+      .catch((e: unknown) => say((e as Error).message || t('Could not save.')))
+      .finally(() => setSaving(false));
+  };
+
+  return (
+    <section className="fs-set__section" aria-labelledby="fs-set-repos">
+      <header className="fs-set__section-head">
+        <div>
+          <h2 id="fs-set-repos" className="fs-set__title">{t('Repositories')}</h2>
+          <p className="fs-prose">
+            {t('The default for what the agent may do on its own in a git repository it is working in — branches, commits, pushes. Any repository can override this from its own "Agent & this repository" card.')}
+          </p>
+        </div>
+      </header>
+      <div className="fs-set__card">
+        <h3 className="fs-set__card-title">{t('Agent & git (global default)')}</h3>
+        {loading || !draft ? (
+          <Skeleton label={t('Loading')} count={3} height="48px" />
+        ) : (
+          <AgentPolicyFields idPrefix="global-git-policy" value={draft} onChange={setDraft} />
+        )}
+      </div>
+      <SaveBar dirty={dirty} saving={saving} onSave={save} />
+    </section>
+  );
+}
+
 /* ── Agent: rendered from the server's schema ── */
 
 function SchemaControl({ field, value, onChange }: { field: SchemaField; value: unknown; onChange: (v: unknown) => void }) {
@@ -1465,6 +1534,7 @@ export function SettingsScreen() {
           {section === 'search' && <SearchSection settings={settings} onSave={onSave} say={say} />}
           {section === 'reminders' && <RemindersSection settings={settings} onSave={onSave} say={say} />}
           {section === 'agent' && <AgentSection settings={settings} onSave={onSave} say={say} />}
+          {section === 'repositories' && <RepositoriesSection say={say} />}
           {section === 'integrations' && <IntegrationsSection say={say} />}
           {section === 'tools' && <ToolsSection say={say} />}
           {section === 'effective_config' && <EffectiveConfigSection say={say} />}

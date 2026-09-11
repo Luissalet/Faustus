@@ -5,6 +5,7 @@ import {
   type AskUser,
   type ChatEvent,
   type ContextLedger,
+  type GitPolicyEvent,
   type HarnessCheck,
   type HarnessSummary,
   type StepDiff,
@@ -230,6 +231,10 @@ export interface Turn {
    *  transient status. */
   capabilitiesChanged?: { fromModel: string; toModel: string; lost: string[] };
   edited?: boolean;
+  /** OBJ-4/Lote 83: every `git_policy` event this turn's workspace produced
+   *  (branch created, commit made, push sent — or one skipped/failed),
+   *  in arrival order. Same accumulate-in-place pattern as `checks` below. */
+  gitPolicy: GitPolicyEvent[];
   /** The reliability harness: what it checked, and what really happened. */
   checks: HarnessCheck[];
   summary?: HarnessSummary;
@@ -380,6 +385,7 @@ export function blankTurn(role: Turn['role'], text = ''): Turn {
     sources: [],
     images: [],
     attachments: [],
+    gitPolicy: [],
     checks: [],
     workers: [],
     streaming: role === 'assistant',
@@ -882,6 +888,8 @@ export function apply(turn: Turn, event: ChatEvent): Turn {
         ...turn,
         capabilitiesChanged: { fromModel: event.fromModel, toModel: event.toModel, lost: event.lost },
       };
+    case 'git_policy':
+      return { ...turn, gitPolicy: [...turn.gitPolicy, event.event] };
     case 'done':
       return {
         ...turn,
