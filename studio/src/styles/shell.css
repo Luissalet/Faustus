@@ -152,8 +152,9 @@ html[data-studio-shell='on'] body > *:not(#studio-root):not(#fs-overlay-root) {
   border-inline-end: 1px solid var(--fs-border);
   background: color-mix(in srgb, var(--fs-surface-1) 82%, transparent);
   backdrop-filter: blur(12px);
-  overflow-y: auto;
-  overflow-x: hidden;
+  /* The destinations never scroll away: only the tools list below them
+     scrolls (see .fs-nav__tools), so Home/Studio/... keep their place. */
+  overflow: hidden;
 }
 
 /* The line the nodes sit on. Painted by the nav, so it spans exactly the
@@ -221,7 +222,10 @@ html[data-studio-shell='on'] body > *:not(#studio-root):not(#fs-overlay-root) {
   display: flex;
   align-items: center;
   gap: var(--fs-space-4);
-  padding: var(--fs-space-2) var(--fs-space-2) var(--fs-space-2) var(--fs-space-2);
+  /* Room to breathe between destinations: the 26px node plus 10px of
+     vertical padding gives each row ~46px instead of stacking them. */
+  padding: 10px var(--fs-space-2);
+  margin-block: 1px;
   border-radius: var(--fs-radius-control);
   color: var(--fs-text-2);
   text-decoration: none;
@@ -276,7 +280,7 @@ html[data-studio-shell='on'] body > *:not(#studio-root):not(#fs-overlay-root) {
 }
 
 .fs-nav__spacer {
-  flex: 1;
+  flex: 0 0 var(--fs-space-2);
 }
 
 .fs-nav__foot {
@@ -464,10 +468,28 @@ html[data-studio-shell='on'] body > *:not(#studio-root):not(#fs-overlay-root) {
 
 .fs-nav__tools {
   display: grid;
+  align-content: start;
   gap: 2px;
   margin-block-start: var(--fs-space-4);
   padding-block-start: var(--fs-space-3);
   border-block-start: 1px solid var(--fs-border);
+  /* The tools list takes the remaining height and scrolls on its own,
+     so a long list never pushes Ajustes off-screen nor the destinations
+     out of view. */
+  flex: 1 1 auto;
+  min-block-size: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-gutter: stable;
+}
+
+.fs-nav__tools-head {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 1;
+  background: color-mix(in srgb, var(--fs-surface-1) 92%, transparent);
 }
 
 .fs-nav__tools-head {

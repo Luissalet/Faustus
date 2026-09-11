@@ -1,12 +1,13 @@
-import { Activity as ActivityIcon, ArrowUpToLine, Check, CircleStop, Copy, Download, ExternalLink, FileText, Link2, ListOrdered, MessageSquare, Play, RefreshCw, Search, Trash2, Workflow, X } from 'lucide-react';
+import { Activity as ActivityIcon, ArrowUpToLine, Calculator, Check, CircleStop, Copy, Download, ExternalLink, FileText, Link2, ListOrdered, MessageSquare, Play, RefreshCw, Search, Trash2, Waypoints, Workflow, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
-import { Button, EmptyState, friendlyError, Skeleton, StatusBadge, Toast, type RunStatus } from '../components';
-import { answerQuestion, artifactLinks, cancelRender, changeWorkflow, decideApproval, duration, loadActivity, loadQueue, normaliseStatus, openRunInChat, prioritizeQueueItem, reportUrl, retainUnavailableRuns, type ActivityRun, type ArtifactLink, type QuestionDetail, type QueueItem } from '../adapters/activity';
+import { Button, Dialog, EmptyState, friendlyError, MermaidView, Skeleton, StatusBadge, Toast, type RunStatus } from '../components';
+import { answerQuestion, artifactLinks, cancelRender, changeWorkflow, decideApproval, duration, getWorkflowRunDefinition, loadActivity, loadQueue, normaliseStatus, openRunInChat, prioritizeQueueItem, reportUrl, retainUnavailableRuns, type ActivityRun, type ArtifactLink, type QuestionDetail, type QueueItem } from '../adapters/activity';
 import { CACHE_LABELS, clearAutomationCache, runAutomation, stopAutomation } from '../adapters/automations';
 import { relativeTime } from '../adapters/home';
 import { stopChat } from '../adapters/chat';
 import { traceForCall, type CallTrace } from '../adapters/observability';
+import { workflowEstimate, workflowMermaid, type WorkflowEstimate } from '../adapters/topology';
 import { createActivityPoller } from '../lib/activity-poller';
 import { emitForNewRuns } from '../shell/notifications';
 import { Rich } from './rich';
@@ -346,6 +347,63 @@ export function ActivityScreen() {
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [queueBusy, setQueueBusy] = useState<string | null>(null);
 
+  // B2 (OBJ-8): "Ver diagrama"/"Estimar coste" for a workflow run's detail
+  // pane. Both need the run's definition, which the activity list never
+  // carries (see getWorkflowRunDefinition's own comment) — fetched fresh
+  // on each open rather than cached on the run, since a run's own list row
+  // already goes stale on its own five-second poll.
+  const [diagramFor, setDiagramFor] = useState<string | null>(null);
+  const [diagramCode, setDiagramCode] = useState<string | null>(null);
+  const [diagramBusy, setDiagramBusy] = useState(false);
+  const [diagramError, setDiagramError] = useState<string | null>(null);
+
+  const [estimateFor, setEstimateFor] = useState<string | null>(null);
+  const [estimateResult, setEstimateResult] = useState<WorkflowEstimate | null>(null);
+  const [estimateBusy, setEstimateBusy] = useState(false);
+  const [estimateError, setEstimateError] = useState<string | null>(null);
+
+  const closeDiagram = useCallback(() => {
+    setDiagramFor(null);
+    setDiagramCode(null);
+    setDiagramError(null);
+  }, []);
+
+  const openDiagram = useCallback(async (runId: string) => {
+    setDiagramFor(runId);
+    setDiagramCode(null);
+    setDiagramError(null);
+    setDiagramBusy(true);
+    try {
+      const definition = await getWorkflowRunDefinition(runId);
+      setDiagramCode(await workflowMermaid(definition));
+    } catch (e) {
+      setDiagramError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setDiagramBusy(false);
+    }
+  }, []);
+
+  const closeEstimate = useCallback(() => {
+    setEstimateFor(null);
+    setEstimateResult(null);
+    setEstimateError(null);
+  }, []);
+
+  const openEstimate = useCallback(async (runId: string) => {
+    setEstimateFor(runId);
+    setEstimateResult(null);
+    setEstimateError(null);
+    setEstimateBusy(true);
+    try {
+      const definition = await getWorkflowRunDefinition(runId);
+      setEstimateResult(await workflowEstimate(definition));
+    } catch (e) {
+      setEstimateError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setEstimateBusy(false);
+    }
+  }, []);
+
   const say = useCallback((msg: string) => {
     setNotice(msg);
     if (noticeTimer.current) window.clearTimeout(noticeTimer.current);
@@ -633,6 +691,12 @@ export function ActivityScreen() {
                   <Button variant="danger" icon={CircleStop} label={t('Cancel workflow')} disabled={currentStale || !!busy} loading={busy === 'workflow-cancel'}
                     onClick={() => void act('workflow-cancel', () => changeWorkflow(current.id, 'cancel'))} />
                 </div>}
+                <div className="fs-act__actions">
+                  <Button variant="secondary" size="sm" icon={Waypoints} label={t('View diagram')} disabled={currentStale} loading={diagramBusy && diagramFor === current.id}
+                    onClick={() => void openDiagram(current.id)} testId="activity-workflow-diagram" />
+                  <Button variant="secondary" size="sm" icon={Calculator} label={t('Estimate cost')} disabled={currentStale} loading={estimateBusy && estimateFor === current.id}
+                    onClick={() => void openEstimate(current.id)} testId="activity-workflow-estimate" />
+                </div>
                 <dl className="fs-act__facts">
                   <DetailRow label={t('Workflow')}>{current.workflow.recipe}</DetailRow>
                   {current.workflow.projectId && <DetailRow label={t('Project')}>{current.workflow.projectId}</DetailRow>}
@@ -822,10 +886,94 @@ export function ActivityScreen() {
         </div>
       </div>
 
+      {diagramFor && (
+        <Dialog open onOpenChange={(next) => { if (!next) closeDiagram(); }} title={t('Workflow diagram')} testId="activity-diagram-dialog">
+          {diagramBusy && <Skeleton label={t('Rendering the diagram')} height="120px" count={2} />}
+          {diagramError && <p className="fs-act__error" role="alert">{diagramError}</p>}
+          {diagramCode && !diagramBusy && <MermaidView code={diagramCode} filename={`${diagramFor}.mmd`} />}
+        </Dialog>
+      )}
+
+      {estimateFor && (
+        <Dialog open onOpenChange={(next) => { if (!next) closeEstimate(); }} title={t('Workflow cost estimate')} testId="activity-estimate-dialog">
+          {estimateBusy && <Skeleton label={t('Estimating the cost')} height="52px" count={3} />}
+          {estimateError && <p className="fs-act__error" role="alert">{estimateError}</p>}
+          {estimateResult && !estimateBusy && <WorkflowEstimateView estimate={estimateResult} />}
+        </Dialog>
+      )}
+
       {notice && (
         <Toast>
           <Check size={12} aria-hidden="true" /> {notice}
         </Toast>
+      )}
+    </div>
+  );
+}
+
+/**
+ * B2 (OBJ-8): `POST /api/workflows/estimate`'s `Estimate`
+ * (`docs/api/topology.md`'s "Cost estimate" section) — a min/max range, not
+ * one number, because a `condition` branch or a cycle genuinely might or
+ * might not run. `unpricedModels` and each `skill` node's own blank `note`
+ * are shown rather than folded away: a model missing from the caller's
+ * price map contributes $0 to the total, and that is a fact about the
+ * estimate the person needs to see, not a rounding error to hide.
+ */
+function usd(value: number): string {
+  return value.toLocaleString(locale(), { style: 'currency', currency: 'USD', maximumFractionDigits: 4 });
+}
+
+function WorkflowEstimateView({ estimate }: { estimate: WorkflowEstimate }) {
+  return (
+    <div className="fs-estimate" data-testid="workflow-estimate">
+      <p className="fs-estimate__total">
+        {t('Estimated total: {range} · {calls} calls', {
+          range: estimate.totalUsdMin === estimate.totalUsdMax ? usd(estimate.totalUsdMin) : `${usd(estimate.totalUsdMin)} – ${usd(estimate.totalUsdMax)}`,
+          calls: estimate.callsMin === estimate.callsMax ? String(estimate.callsMin) : `${estimate.callsMin}–${estimate.callsMax}`,
+        })}
+      </p>
+      <p className="fs-act__hint">{t('Only skill nodes are priced; every other node type is structural and costs nothing by itself.')}</p>
+      <div className="fs-estimate__table-wrap">
+        <table className="fs-estimate__table">
+          <thead>
+            <tr>
+              <th>{t('Node')}</th>
+              <th>{t('Type')}</th>
+              <th>{t('Model')}</th>
+              <th>{t('Calls')}</th>
+              <th>{t('Cost (USD)')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {estimate.perNode.map((n) => (
+              <tr key={n.nodeId}>
+                <td><code>{n.nodeId}</code></td>
+                <td>{n.type}</td>
+                <td>{n.model || '—'}</td>
+                <td>{n.callsMin === n.callsMax ? n.callsMin : `${n.callsMin}–${n.callsMax}`}</td>
+                <td>
+                  {n.usdMin === n.usdMax ? usd(n.usdMin) : `${usd(n.usdMin)} – ${usd(n.usdMax)}`}
+                  {n.note && <span className="fs-estimate__note"> — {n.note}</span>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {estimate.unboundedLoops.length > 0 && (
+        <div className="fs-notice" data-tone="warning" role="status">
+          <strong>{t('Unbounded loops')}:</strong>{' '}
+          {estimate.unboundedLoops.map((loop, i) => (
+            <span key={i}>
+              {i > 0 && '; '}
+              {loop.nodes.join(' → ')} ({tn(loop.assumedIterations, 'assumed {n} iteration for the maximum', 'assumed {n} iterations for the maximum')})
+            </span>
+          ))}
+        </div>
+      )}
+      {estimate.unpricedModels.length > 0 && (
+        <p className="fs-act__hint">{t('Models without a price (contribute $0 to this estimate)')}: {estimate.unpricedModels.join(', ')}</p>
       )}
     </div>
   );

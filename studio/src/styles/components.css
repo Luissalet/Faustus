@@ -1031,3 +1031,40 @@
   border-radius: var(--fs-radius-control);
   background: var(--fs-paper);
 }
+
+/* B2 (OBJ-8): components/MermaidView.tsx — a Mermaid `flowchart TD` source,
+   with copy/download, shown as-is because Studio has no renderer wired in
+   (see the component's own comment). Shared across screens (Activity's
+   workflow diagram today), so it lives here with the other components
+   rather than in one screen's own stylesheet. */
+.fs-mermaid {
+  display: grid;
+  gap: var(--fs-space-3);
+}
+
+.fs-mermaid__hint {
+  margin: 0;
+  color: var(--fs-text-3);
+  font-size: var(--fs-label-size);
+}
+
+.fs-mermaid__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fs-space-2);
+}
+
+.fs-mermaid__code {
+  margin: 0;
+  padding: var(--fs-space-3);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-panel);
+  background: var(--fs-surface-1);
+  color: var(--fs-text-1);
+  font-family: var(--fs-font-code);
+  font-size: var(--fs-code-size, var(--fs-label-size));
+  white-space: pre;
+  overflow-x: auto;
+  max-block-size: 50vh;
+  overflow-y: auto;
+}

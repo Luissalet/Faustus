@@ -3,6 +3,7 @@ import {
   Check,
   Copy,
   GitBranch,
+  Globe,
   HardDrive,
   HelpCircle,
   Layers,
@@ -17,10 +18,12 @@ import {
   Plug,
   Plus,
   RefreshCw,
+  Route,
   Search,
   Server,
   Settings2,
   ShieldAlert,
+  SlidersHorizontal,
   Sparkles,
   Stethoscope,
   Trash2,
@@ -70,6 +73,9 @@ import { listActiveApprovals, revokeApproval, type Approval } from '../adapters/
 import { addCommandAllowlistEntry, listCommandAllowlist, removeCommandAllowlistEntry, type AllowlistEntry } from '../adapters/commandGuard';
 import { getGlobalPolicy, setGlobalPolicy, type AgentGitPolicy } from '../adapters/git';
 import { AgentPolicyFields } from './source-control/AgentPolicyFields';
+import { isOpenRouterEndpoint } from '../adapters/openrouter';
+import { OpenRouterPrefsSection } from './settings/OpenRouterPrefs';
+import { ModelRouterSection } from './settings/ModelRouter';
 import { t, tn } from '../i18n';
 
 /**
@@ -85,12 +91,18 @@ import { t, tn } from '../i18n';
  * there at their tab.
  */
 
-type SectionKey = 'general' | 'models' | 'local' | 'defaults' | 'voice' | 'search' | 'reminders' | 'integrations' | 'agent' | 'repositories' | 'tools' | 'effective_config' | 'shortcuts' | 'account' | 'users' | 'system' | 'health' | 'security';
+type SectionKey = 'general' | 'models' | 'openrouter' | 'local' | 'model_router' | 'defaults' | 'voice' | 'search' | 'reminders' | 'integrations' | 'agent' | 'repositories' | 'tools' | 'effective_config' | 'shortcuts' | 'account' | 'users' | 'system' | 'health' | 'security';
 
 const SECTIONS: { key: SectionKey; label: string; icon: typeof Bot; admin?: boolean }[] = [
   { key: 'general', label: 'Appearance', icon: Palette },
   { key: 'models', label: 'Models', icon: Server },
+  // OBJ-8 / Lote B1: per-endpoint OpenRouter routing/privacy/cost prefs
+  // (docs/api/openrouter.md) — admin-only, same gate as the backend routes.
+  { key: 'openrouter', label: 'OpenRouter', icon: Globe, admin: true },
   { key: 'local', label: 'Local models', icon: HardDrive },
+  // OBJ-8 / Lote B1: MOD-05's measured local-model router
+  // (docs/api/model_router.md) — admin-only, same gate as the backend routes.
+  { key: 'model_router', label: 'Model router', icon: Route, admin: true },
   // SET-04: search, models, MCP, disk, queue and safe-mode in one card,
   // reusing /api/doctor, /api/safe-mode/status and the search-health probe
   // that already lived in the Search section — never a second store for the
@@ -124,7 +136,7 @@ const SECTIONS: { key: SectionKey; label: string; icon: typeof Bot; admin?: bool
 
 /* ── Models: endpoints ── */
 
-function ModelsSection({ endpoints, onChanged, say }: { endpoints: ModelEndpoint[] | null; onChanged: () => void; say: (t: string) => void }) {
+function ModelsSection({ endpoints, onChanged, say, onOpenOpenRouterPrefs }: { endpoints: ModelEndpoint[] | null; onChanged: () => void; say: (t: string) => void; onOpenOpenRouterPrefs: (endpointId: string) => void }) {
   const [adding, setAdding] = useState(false);
   // Copilot and a ChatGPT plan have no key to paste: they sign in the way a
   // TV app does, and the server makes the endpoint at the end.
@@ -232,6 +244,15 @@ function ModelsSection({ endpoints, onChanged, say }: { endpoints: ModelEndpoint
                 {ep.models.length > 0 && <span className="fs-set__ep-models">{ep.models.slice(0, 8).join(' · ')}{ep.models.length > 8 ? ` · +${ep.models.length - 8}` : ''}</span>}
               </div>
               <div className="fs-set__ep-actions">
+                {isOpenRouterEndpoint(ep.baseUrl) && (
+                  <IconButton
+                    icon={SlidersHorizontal}
+                    label={t('OpenRouter preferences')}
+                    size="sm"
+                    onClick={() => onOpenOpenRouterPrefs(ep.id)}
+                    testId={`ep-openrouter-prefs-${ep.id}`}
+                  />
+                )}
                 <IconButton
                   icon={RefreshCw}
                   label={t('Reload the models')}
@@ -1436,6 +1457,15 @@ export function SettingsScreen() {
   const [failedStatus, setFailedStatus] = useState<number | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [admin, setAdmin] = useState(false);
+  // OBJ-8 / Lote B1: which OpenRouter endpoint the "OpenRouter preferences"
+  // button on Models jumps to — read once by OpenRouterPrefsSection on
+  // arrival, not a controlled selection (the section owns its own tabs
+  // after that).
+  const [openRouterFocusId, setOpenRouterFocusId] = useState<string | null>(null);
+  const openOpenRouterPrefs = useCallback((id: string) => {
+    setOpenRouterFocusId(id);
+    setSection('openrouter');
+  }, []);
   const epReload = useRef(0);
   useEffect(() => {
     authStatus().then((st) => setAdmin(st.is_admin === true || st.auth_enabled === false)).catch(() => {});
@@ -1527,8 +1557,10 @@ export function SettingsScreen() {
         </nav>
         <div className="fs-set__body">
           {section === 'general' && <AppearanceSection say={say} />}
-          {section === 'models' && <ModelsSection endpoints={endpoints} onChanged={loadEps} say={say} />}
+          {section === 'models' && <ModelsSection endpoints={endpoints} onChanged={loadEps} say={say} onOpenOpenRouterPrefs={openOpenRouterPrefs} />}
+          {section === 'openrouter' && <OpenRouterPrefsSection endpoints={endpoints} focusEndpointId={openRouterFocusId} say={say} />}
           {section === 'local' && <LocalModelsSection admin={admin} say={say} />}
+          {section === 'model_router' && <ModelRouterSection say={say} />}
           {section === 'defaults' && <DefaultsSection settings={settings} endpoints={endpoints ?? []} onSave={onSave} say={say} />}
           {section === 'voice' && <VoiceSection settings={settings} endpoints={endpoints ?? []} onSave={onSave} say={say} />}
           {section === 'search' && <SearchSection settings={settings} onSave={onSave} say={say} />}

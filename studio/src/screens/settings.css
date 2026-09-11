@@ -1631,3 +1631,41 @@
 .fs-dialog[data-testid='chat-model-connections'] :is(.fs-btn, .fs-field) { min-block-size: 44px; }
 .fs-dialog[data-testid='chat-model-connections'] .fs-set__help { font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
 .fs-dialog[data-testid='chat-model-connections'] .fs-field { font-size: 16px; min-inline-size: 0; inline-size: 100%; }
+
+/* ── OBJ-8 / Lote B1: OpenRouter per-endpoint preferences + model router ──
+ * `data-tone='danger'` on `.fs-notice` is additive here the same way
+ * `source-control.css` already added it for its own screen — the shared
+ * component (`styles/components.css`) only ships the `warning` tone. */
+.fs-notice[data-tone='danger'] {
+  border-color: color-mix(in srgb, var(--fs-danger) 45%, var(--fs-border));
+  color: var(--fs-danger);
+}
+
+.fs-mr__table-wrap {
+  overflow-x: auto;
+}
+
+.fs-mr__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-label-size);
+}
+
+.fs-mr__table th,
+.fs-mr__table td {
+  padding: var(--fs-space-2) var(--fs-space-3);
+  text-align: start;
+  border-bottom: 1px solid var(--fs-border);
+  vertical-align: top;
+}
+
+.fs-mr__table th {
+  color: var(--fs-text-3);
+  font-weight: var(--fs-label-weight);
+  white-space: nowrap;
+}
+
+.fs-mr__table td:first-child {
+  font-family: var(--fs-font-code);
+  font-size: var(--fs-code-size);
+}

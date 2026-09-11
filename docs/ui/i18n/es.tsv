@@ -6551,3 +6551,120 @@ Duplicate#issue_status	Duplicada
 Blocks#issue_link_kind	Bloquea
 Link#issue_link_verb	Enlazar
 The board is empty#issue_board	El tablero está vacío
+Calls	Llamadas
+Cost (USD)	Coste (USD)
+Could not read the lint findings	No se pudieron leer los hallazgos del lint
+Download .mmd	Descargar .mmd
+Estimate cost	Estimar coste
+Estimated total: {range} · {calls} calls	Total estimado: {range} · {calls} llamadas
+Estimating the cost	Estimando el coste
+Legal-but-suspicious configurations — distinct from the schema errors the catalogue already refuses at registration. Nothing here blocks a run by itself.	Configuraciones legales pero sospechosas — distintas de los errores de esquema que el catálogo ya rechaza al registrarse. Nada de esto bloquea una ejecución por sí solo.
+Legal-but-suspicious profile and workflow configurations	Configuraciones de perfiles y workflows legales pero sospechosas
+Lint	Lint
+Loading lint findings	Cargando los hallazgos del lint
+Models without a price (contribute $0 to this estimate)	Modelos sin precio (aportan 0 $ a esta estimación)
+No diagram renderer is wired in yet — this is the Mermaid source. Paste it into a Mermaid live editor to see it drawn.	Todavía no hay un renderizador de diagramas conectado — esto es el código fuente Mermaid. Pégalo en un editor Mermaid en vivo para verlo dibujado.
+No finding matches that search.	Ningún hallazgo coincide con esa búsqueda.
+No findings	Sin hallazgos
+Node	Nodo
+Nothing legal-but-suspicious in the current catalogue.	Nada legal-pero-sospechoso en el catálogo actual.
+Only skill nodes are priced; every other node type is structural and costs nothing by itself.	Solo se valoran los nodos skill; cualquier otro tipo de nodo es estructural y no cuesta nada por sí mismo.
+Profile and workflow lint	Lint de perfiles y workflows
+Rendering the diagram	Generando el diagrama
+Search findings…	Buscar hallazgos…
+Search lint findings	Buscar hallazgos del lint
+The browser refused the clipboard — select the code and copy it by hand.	El navegador rechazó el portapapeles — selecciona el código y cópialo a mano.
+The server did not return a cost estimate.	El servidor no devolvió una estimación de coste.
+The server did not return a diagram.	El servidor no devolvió un diagrama.
+The server refused this request without saying why.	El servidor rechazó esta petición sin decir por qué.
+This run does not carry its definition — it may predate this build, or have been purged.	Esta ejecución no lleva su definición — puede ser anterior a esta versión, o haber sido purgada.
+Unbounded loops	Bucles no acotados
+View diagram	Ver diagrama
+Workflow cost estimate	Estimación de coste del workflow
+Workflow diagram	Diagrama del workflow
+assumed {n} iteration for the maximum	se asume {n} iteración para el máximo
+assumed {n} iterations for the maximum	se asumen {n} iteraciones para el máximo
+{n} warning	{n} aviso
+{n} warnings	{n} avisos
+A model missing any of these is never chosen, whatever its score.	A un modelo al que le falte alguna de estas nunca se le elige, sea cual sea su puntuación.
+Add an endpoint whose base URL is openrouter.ai under Models, then come back here.	Añade en Modelos un endpoint cuya URL base sea openrouter.ai y vuelve aquí.
+Allow	Permitir
+Allow fallback providers	Permitir proveedores de reserva
+Allow paid escalation	Permitir escalado a modelos de pago
+Avg. latency (s)	Latencia media (s)
+Candidates	Candidatos
+Chat turn integration: pending (MOD-05).	Integración con el turno de chat: pendiente (MOD-05).
+Chooses which LOCAL model answers a turn from evidence this installation has actually recorded — off by default, and it never switches to a paid model on its own.	Elige qué modelo LOCAL responde un turno a partir de evidencia que esta instalación ha registrado de verdad — apagado por defecto, y nunca pasa a un modelo de pago por su cuenta.
+Chosen	Elegido
+Comma-separated model names. Empty: every local model this installation has.	Nombres de modelo separados por comas. Vacío: todos los modelos locales de esta instalación.
+Comma-separated provider ids OpenRouter must never route to.	Ids de proveedor separados por comas a los que OpenRouter nunca debe enrutar.
+Comma-separated provider ids, tried in this order first.	Ids de proveedor separados por comas, probados primero en este orden.
+Comma-separated — what this device actually has right now.	Separados por comas — lo que este dispositivo tiene de verdad ahora mismo.
+Configuration	Configuración
+Could not read the router configuration.	No se pudo leer la configuración del router.
+Could not read these preferences.	No se pudieron leer estas preferencias.
+Could not restore the defaults.	No se pudieron restablecer los valores por defecto.
+Could not run the preview.	No se pudo ejecutar la prueba.
+Could not save the configuration.	No se pudo guardar la configuración.
+Could not save these preferences.	No se pudieron guardar estas preferencias.
+Data collection	Recopilación de datos
+Discard the saved preferences for this endpoint?	¿Descartar las preferencias guardadas de este endpoint?
+Empty: no limit.	Vacío: sin límite.
+Enable the router	Activar el router
+Enable web search	Activar la búsqueda web
+Escalated	Escalado
+Escalated — a paid model would be needed; nothing was chosen automatically.	Escalado — haría falta un modelo de pago; no se ha elegido nada automáticamente.
+Excluded providers	Proveedores excluidos
+Failures	Fallos
+GET /api/model-router/config failed.	GET /api/model-router/config falló.
+GET /api/openrouter/endpoints/{id}/prefs failed.	GET /api/openrouter/endpoints/{id}/prefs falló.
+How OpenRouter should rank providers before falling back to its own default.	Cómo debe ordenar OpenRouter los proveedores antes de recurrir a su propio criterio.
+Installed models	Modelos instalados
+It never switches to a paid model in silence: this only ever lets a decision report that escalation would be needed — a caller still has to read it and decide, every time.	Nunca pasa a un modelo de pago en silencio: esto solo permite que una decisión indique que haría falta escalar — quien la reciba tiene que leerlo y decidir, cada vez.
+Last error	Último error
+Let OpenRouter decide	Que decida OpenRouter
+Let OpenRouter itself retry on a fallback model list before Faustus's own retry logic ever sees the failure.	Deja que el propio OpenRouter reintente con una lista de modelos de reserva antes de que la lógica de reintento de Faustus llegue a ver el fallo.
+Loading OpenRouter preferences	Cargando preferencias de OpenRouter
+Log	Registro
+Max completion price ($/1M tokens)	Precio máximo de finalización ($/1M tokens)
+Max latency (seconds)	Latencia máxima (segundos)
+Max prompt price ($/1M tokens)	Precio máximo de prompt ($/1M tokens)
+Meets requirements	Cumple los requisitos
+Model router	Router de modelos
+Model router configuration saved.	Configuración del router de modelos guardada.
+Model router views	Vistas del router de modelos
+Native fallback models	Modelos de reserva nativos
+No OpenRouter endpoint yet	Aún no hay ningún endpoint de OpenRouter
+No decisions logged yet.	Aún no hay decisiones registradas.
+No history yet.	Aún no hay historial.
+No local model chosen	Ningún modelo local elegido
+OK	OK
+Off by default. While off, nothing in the rest of the system changes.	Apagado por defecto. Mientras esté apagado, nada más en el sistema cambia.
+Only route to providers contractually committed to not retaining your data.	Enrutar solo a proveedores comprometidos por contrato a no retener tus datos.
+OpenRouter	OpenRouter
+OpenRouter endpoint	Endpoint de OpenRouter
+OpenRouter preferences	Preferencias de OpenRouter
+OpenRouter preferences saved.	Preferencias de OpenRouter guardadas.
+Prefer local models	Preferir modelos locales
+Preferred providers (order)	Proveedores preferidos (orden)
+Price	Precio
+Reject a provider that would silently ignore a parameter this request sent.	Rechazar un proveedor que ignoraría en silencio un parámetro que envió esta petición.
+Requested	Solicitado
+Require every parameter to be honored	Exigir que se respete cada parámetro
+Required capabilities	Capacidades requeridas
+Reset to defaults	Restablecer valores por defecto
+Restored to defaults.	Restablecido a los valores por defecto.
+Routing, privacy and cost preferences OpenRouter applies to every request on one endpoint. Nothing here changes any other provider.	Preferencias de enrutado, privacidad y coste que OpenRouter aplica a cada petición de un endpoint. Nada de esto cambia ningún otro proveedor.
+Runs the router without recording anything in the log — see what it would choose before turning it on.	Ejecuta el router sin registrar nada en el log — mira qué elegiría antes de activarlo.
+Statistics	Estadísticas
+Test a decision	Probar decisión
+This account cannot change OpenRouter preferences.	Esta cuenta no puede cambiar las preferencias de OpenRouter.
+This account cannot see the model router.	Esta cuenta no puede ver el router de modelos.
+Throughput	Rendimiento
+Update Faustus before changing the model router.	Actualiza Faustus antes de cambiar el router de modelos.
+Update Faustus before changing these preferences.	Actualiza Faustus antes de cambiar estas preferencias.
+Updated	Actualizado
+Yes	Sí
+Zero Data Retention (ZDR)	Retención cero de datos (ZDR)
+auto = the project's privacy policy decides.	auto = lo decide la política de privacidad del proyecto.
+~$0.02 per request with 5 results; this never turns itself on — only this toggle, or a one-off request, enables it.	~0,02 $ por petición con 5 resultados; esto nunca se activa solo — solo lo activan este interruptor o una petición puntual.

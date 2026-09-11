@@ -14,6 +14,7 @@ export {
   type TraceStep,
 } from './ExecutionTrace';
 export { Toast } from './Toast';
+export { MermaidView, type MermaidViewProps } from './MermaidView';
 export {
   describeError,
   friendlyError,

@@ -123,6 +123,25 @@ export function workflowFrom(item: Record<string, unknown>): ActivityRun {
     workflow: { runId: item.id, recipe: str(item.workflow_id), projectId: str(item.project_id), nodes } };
 }
 
+/**
+ * B2 (OBJ-8): the activity feed's own `WorkflowDetail` (above) is built for
+ * the run-progress view — `workflowFrom` reads `nodes`/`status`, never the
+ * definition itself, because `GET /api/workflows/runs` (the list) does not
+ * carry it. The single-run route does: `GET /api/workflows/runs/{run_id}`
+ * already returns `"definition": loaded["definition"].to_dict()`
+ * (`routes/workflows_routes.py::get_run`) — an existing endpoint, not a new
+ * one — so "Ver diagrama"/"Estimar coste" (Activity.tsx) fetch it here
+ * before handing it to `adapters/topology.ts`'s `workflowMermaid`/
+ * `workflowEstimate`, which both expect that same shape.
+ */
+export async function getWorkflowRunDefinition(runId: string, signal?: AbortSignal): Promise<Record<string, unknown>> {
+  const body = await getJson<{ ok?: boolean; definition?: Record<string, unknown> }>(`/api/workflows/runs/${encodeURIComponent(runId)}`, signal);
+  if (!body.definition || typeof body.definition !== 'object') {
+    throw new ApiError(t('This run does not carry its definition — it may predate this build, or have been purged.'), 502);
+  }
+  return body.definition;
+}
+
 export async function changeWorkflow(runId: string, action: 'advance' | 'cancel', nodeId?: string): Promise<void> {
   const tail = nodeId ? `resume/${encodeURIComponent(nodeId)}` : action;
   const response = await fetch(`/api/workflows/runs/${encodeURIComponent(runId)}/${tail}`, {

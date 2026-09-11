@@ -744,6 +744,136 @@
   inline-size: min(880px, calc(100vw - var(--fs-space-5) * 2));
 }
 
+/* ── Lint (ProfileLint.tsx) ── */
+
+.fs-dialog:has(.fs-lint) {
+  inline-size: min(720px, calc(100vw - var(--fs-space-5) * 2));
+}
+
+.fs-lint {
+  display: grid;
+  gap: var(--fs-space-3);
+  min-inline-size: 0;
+}
+
+.fs-lint__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--fs-space-2);
+}
+
+.fs-lint__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fs-space-2);
+}
+
+.fs-lint__chip-n {
+  color: var(--fs-text-3);
+}
+
+.fs-lint__spacer {
+  flex: 1;
+}
+
+.fs-lint__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--fs-space-2);
+  max-block-size: 55vh;
+  overflow-y: auto;
+}
+
+.fs-lint__row {
+  display: flex;
+  gap: var(--fs-space-3);
+  align-items: flex-start;
+  padding: var(--fs-space-2) var(--fs-space-3);
+  border: 1px solid var(--fs-border);
+  border-inline-start-width: 3px;
+  border-radius: var(--fs-radius-control);
+  background: var(--fs-surface-1);
+}
+
+.fs-lint__row[data-severity='error'] {
+  border-inline-start-color: var(--fs-danger);
+}
+
+.fs-lint__row[data-severity='warn'] {
+  border-inline-start-color: var(--fs-warning);
+}
+
+.fs-lint__row[data-severity='info'] {
+  border-inline-start-color: var(--fs-info);
+}
+
+.fs-lint__sev {
+  margin-block-start: 2px;
+}
+
+.fs-lint__row[data-severity='error'] .fs-lint__sev {
+  color: var(--fs-danger);
+}
+
+.fs-lint__row[data-severity='warn'] .fs-lint__sev {
+  color: var(--fs-warning);
+}
+
+.fs-lint__row[data-severity='info'] .fs-lint__sev {
+  color: var(--fs-info);
+}
+
+.fs-lint__body {
+  display: grid;
+  gap: 2px;
+  min-inline-size: 0;
+  flex: 1;
+}
+
+.fs-lint__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--fs-space-2);
+}
+
+.fs-lint__code {
+  font-family: var(--fs-font-code);
+  font-size: 0.92em;
+  color: var(--fs-text-1);
+}
+
+.fs-lint__subject {
+  color: var(--fs-text-3);
+  font-size: var(--fs-label-size);
+}
+
+.fs-lint__message {
+  margin: 0;
+  color: var(--fs-text-1);
+}
+
+.fs-lint__hint {
+  margin: 0;
+  color: var(--fs-text-3);
+  font-size: var(--fs-label-size);
+}
+
+.fs-lint__summary {
+  margin: 0;
+  color: var(--fs-text-3);
+  font-size: var(--fs-label-size);
+}
+
+/* Chips/prose here are not the 65ch reading column; a message can be long. */
+.fs-lint__message,
+.fs-lint__hint {
+  max-inline-size: none;
+}
+
 .fs-def__effective {
   display: grid;
   gap: var(--fs-space-3);

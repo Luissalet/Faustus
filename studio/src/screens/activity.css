@@ -563,3 +563,53 @@
 .fs-act__trace-item strong {
   overflow-wrap: anywhere;
 }
+
+/* B2 (OBJ-8): "Estimar coste" — POST /api/workflows/estimate's Estimate,
+   opened from a workflow run's detail pane. */
+
+.fs-dialog:has(.fs-estimate) {
+  inline-size: min(760px, calc(100vw - var(--fs-space-5) * 2));
+}
+
+.fs-estimate {
+  display: grid;
+  gap: var(--fs-space-3);
+  min-inline-size: 0;
+}
+
+.fs-estimate__total {
+  margin: 0;
+  font-size: var(--fs-body-size, 14px);
+  font-weight: 600;
+  color: var(--fs-text-1);
+}
+
+.fs-estimate__table-wrap {
+  overflow-x: auto;
+}
+
+.fs-estimate__table {
+  inline-size: 100%;
+  min-inline-size: 480px;
+  border-collapse: collapse;
+  font-size: var(--fs-label-size);
+}
+
+.fs-estimate__table th {
+  padding: var(--fs-space-1) var(--fs-space-3) var(--fs-space-1) 0;
+  color: var(--fs-text-3);
+  font-weight: 600;
+  text-align: start;
+  border-block-end: 1px solid var(--fs-border);
+}
+
+.fs-estimate__table td {
+  padding: var(--fs-space-2) var(--fs-space-3) var(--fs-space-2) 0;
+  vertical-align: top;
+  border-block-end: 1px solid var(--fs-border);
+  color: var(--fs-text-1);
+}
+
+.fs-estimate__note {
+  color: var(--fs-text-3);
+}

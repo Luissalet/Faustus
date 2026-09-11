@@ -1,4 +1,4 @@
-import { Copy, RefreshCw, Search, SlidersHorizontal, Wrench } from 'lucide-react';
+import { Copy, RefreshCw, Search, ShieldAlert, SlidersHorizontal, Wrench } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button, Dialog, IconButton, Skeleton, Toast } from '../../components';
 import { delegateStatus, listDefs, MODE_HINT, SOURCE_HINT, type AgentDef, type DefCatalogue } from '../../adapters/workers';
@@ -9,6 +9,7 @@ import {
   type AgentProfile,
   type EffectiveConfig,
 } from '../../adapters/agents';
+import { ProfileLint } from './ProfileLint';
 import { t, tn } from '../../i18n';
 
 /**
@@ -146,6 +147,7 @@ export function Defs({ onUseAgent }: { onUseAgent: (slug: string) => void }) {
   const [toast, setToast] = useState<string | null>(null);
   const [effectiveFor, setEffectiveFor] = useState<string | null>(null);
   const [effective, setEffective] = useState<EffectiveConfig | null>(null);
+  const [lintOpen, setLintOpen] = useState(false);
 
   const flash = (msg: string) => {
     setToast(msg);
@@ -224,6 +226,15 @@ export function Defs({ onUseAgent }: { onUseAgent: (slug: string) => void }) {
           </span>
         )}
         <span className="fs-agents__spacer" />
+        <Button
+          variant="secondary"
+          size="sm"
+          icon={ShieldAlert}
+          label={t('Lint')}
+          title={t('Legal-but-suspicious profile and workflow configurations')}
+          onClick={() => setLintOpen(true)}
+          testId="def-lint-open"
+        />
         <Button variant="ghost" size="sm" icon={RefreshCw} label={t('Refresh')} onClick={() => void load()} />
       </div>
       {error && <div className="fs-wk__error">{t('Could not read the definitions')}: {error}</div>}
@@ -344,6 +355,7 @@ export function Defs({ onUseAgent }: { onUseAgent: (slug: string) => void }) {
         />
       )}
       {toast && <Toast>{toast}</Toast>}
+      {lintOpen && <ProfileLint onClose={() => setLintOpen(false)} />}
     </div>
   );
 }
