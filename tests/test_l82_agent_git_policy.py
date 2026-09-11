@@ -67,7 +67,7 @@ def _bare(path):
 def isolated(tmp_path_factory, monkeypatch):
     home = tmp_path_factory.mktemp("git_home")
     monkeypatch.setenv("HOME", str(home))
-    monkeypatch.setenv("USERPROFILE", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))  # Windows: expanduser ignores HOME
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(home / "gitconfig"))
     monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
     monkeypatch.setenv("GIT_CONFIG_SYSTEM", str(home / "no-such-system-gitconfig"))

@@ -42,7 +42,7 @@ def _bare(path):
 def isolated_git_identity(tmp_path_factory, monkeypatch):
     home = tmp_path_factory.mktemp("git_home")
     monkeypatch.setenv("HOME", str(home))
-    monkeypatch.setenv("USERPROFILE", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))  # Windows: expanduser ignores HOME
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(home / "gitconfig"))
     monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
     monkeypatch.setenv("GIT_CONFIG_SYSTEM", str(home / "no-such-system-gitconfig"))
@@ -312,6 +312,7 @@ def test_identity_delete_refuses_ssh_config_sourced(client, store, tmp_path, mon
         encoding="utf-8",
     )
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))  # Windows: expanduser ignores HOME
     cfg_id = git_identities.list_identities(OWNER)["identities"][0]["id"]
     resp = client.delete(f"/api/git/identities/{cfg_id}", headers=_hdr())
     assert resp.status_code == 400

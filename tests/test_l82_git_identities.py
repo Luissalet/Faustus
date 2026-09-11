@@ -68,7 +68,7 @@ def ssh_home(tmp_path, monkeypatch):
     )
 
     monkeypatch.setenv("HOME", str(home))
-    monkeypatch.setenv("USERPROFILE", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))  # Windows: expanduser ignores HOME
     monkeypatch.setattr(constants_mod, "DATA_DIR", str(tmp_path / "data"))
     git_identities._PROBE_CACHE.clear()
     yield ssh_dir
