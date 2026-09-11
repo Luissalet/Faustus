@@ -29,7 +29,7 @@ function RowGraph({ row, width }: { row: GraphRow; width: number }) {
   const x = laneX(row.lane);
 
   return (
-    <svg width={width} height={ROW_H} viewBox={`0 0 ${width} ${ROW_H}`} aria-hidden="true" className="fs-sc__graph-svg">
+    <svg width={width} height={ROW_H} viewBox={`0 0 ${width} ${ROW_H}`} aria-hidden="true" className="fs-sc__graph-svg" data-note="guard-ok: commit graph lanes are drawn data, not an icon">
       {row.passthrough.map((lane) => (
         <line key={`p-${lane}`} x1={laneX(lane)} y1={0} x2={laneX(lane)} y2={ROW_H} stroke={laneColor(lane)} strokeWidth={2} />
       ))}
