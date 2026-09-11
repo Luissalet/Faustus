@@ -3665,8 +3665,12 @@ aside.fs-panel { position: relative; }
    a Popover (SideThreadsPanel.tsx's own header comment says why a Popover
    rather than a SidePanel tab). Capped so it never blows out a ~400px
    viewport — the popover's own positioning keeps it on-screen. */
+/* The base `.fs-popover` caps `max-inline-size` at 320px (menus); this one is
+   a panel, so it lifts the cap the same way `.fs-media-recipes` does — seen
+   live: the content laid out at 400px and got clipped at 320. */
 .fs-st__popover {
-  inline-size: min(400px, calc(100vw - 32px));
+  inline-size: min(440px, calc(100vw - 32px));
+  max-inline-size: calc(100vw - 32px);
   max-block-size: min(70vh, 560px);
   overflow-y: auto;
   padding: var(--fs-space-3);
