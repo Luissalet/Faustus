@@ -274,6 +274,39 @@ def test_usage_bucket_ignores_malformed_cost(bad):
     assert "cost_usd" not in bucket
 
 
+# ADP-22 integration lote: `billing`/`network`/`fallback_scope`/
+# `route_reason` are the `src.provider_policy.RouteDecision` fields
+# `docs/api/model_router.md` asks `_usage_bucket` to accept -- persisted only
+# when a caller actually passes them, same "absent, not a default" rule as
+# `cost_usd`/`cached_tokens`/`reasoning_tokens` above. No caller wires a real
+# `RouteDecision` into `_usage_bucket` yet (see that function's own
+# docstring for why there is no short path today); this only proves the
+# kwargs exist and behave.
+
+def test_usage_bucket_without_route_fields_is_unchanged():
+    bucket = _bucket()
+    assert "billing" not in bucket
+    assert "network" not in bucket
+    assert "fallback_scope" not in bucket
+    assert "route_reason" not in bucket
+
+
+def test_usage_bucket_persists_route_fields_when_given():
+    bucket = _bucket(billing="subscription", network="local",
+                     fallback_scope="none", route_reason="local-only profile")
+    assert bucket["billing"] == "subscription"
+    assert bucket["network"] == "local"
+    assert bucket["fallback_scope"] == "none"
+    assert bucket["route_reason"] == "local-only profile"
+
+
+@pytest.mark.parametrize("field", ["billing", "network", "fallback_scope", "route_reason"])
+@pytest.mark.parametrize("bad", [None, "", "   ", True, 42])
+def test_usage_bucket_ignores_malformed_route_fields(field, bad):
+    bucket = _bucket(**{field: bad})
+    assert field not in bucket
+
+
 def test_usage_bucket_summary_omits_cost_total_when_no_bucket_has_one():
     summary = _usage_bucket_summary([_bucket(round_num=1), _bucket(round_num=2)])
     assert "cost_usd_total" not in summary

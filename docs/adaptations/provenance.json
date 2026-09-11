@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "id": "aigraphstudio-agent-profile-lint",
+      "source_repo": "https://github.com/gcjordi/aigraphstudio",
+      "commit": "unknown",
+      "path": "ARCHITECTURE.md, assets/js/analyzer.js",
+      "license": "MIT",
+      "notice_kept": true,
+      "destination": "src/agent_profile_lint.py",
+      "reason": "Adapted the static-analysis TECHNIQUE described in aigraphstudio's ARCHITECTURE.md and assets/js/analyzer.js (Tarjan SCC over the workflow graph, orphan-node detection, effect-node-without-human-approval bypass detection) to Faustus's own agent-profile catalogue and WorkflowDefinition graph.",
+      "modifications": "Reimplementation, not a port: no aigraphstudio source file is vendored or transliterated. Faustus's linter reads Faustus's own dataclasses (src.contracts.workflow.WorkflowDefinition/WorkflowNode, src.agent_profiles.catalog) and invents no field aigraphstudio's schema has but Faustus's does not -- see the module's own docstring: no max_iterations, no 'irreversible' flag, no loop-node type exist in this codebase, so those rules were simply not implemented rather than faked."
+    },
+    {
+      "id": "aigraphstudio-topology-mermaid-export",
+      "source_repo": "https://github.com/gcjordi/aigraphstudio",
+      "commit": "unknown",
+      "path": "ARCHITECTURE.md",
+      "license": "MIT",
+      "notice_kept": true,
+      "destination": "src/topology_export.py",
+      "reason": "Adapted the idea of exporting a workflow graph (and, for Faustus, a branching_futures tree) as a Mermaid diagram -- aigraphstudio's ARCHITECTURE.md documents exporters as part of its design -- to Faustus's own real WorkflowDefinition and branching_futures.service data instead of a separate drawing-only model.",
+      "modifications": "Reimplementation from scratch in Python against Faustus's own contracts; no JS/TS source from aigraphstudio is copied. Both exported functions (future_to_mermaid, workflow_to_mermaid) are pure -- no I/O, no randomness, no clock -- which is a property of this module, not asserted about the source."
+    },
+    {
+      "id": "aigraphstudio-workflow-cost-estimate",
+      "source_repo": "https://github.com/gcjordi/aigraphstudio",
+      "commit": "unknown",
+      "path": "ARCHITECTURE.md, assets/js/analyzer.js",
+      "license": "MIT",
+      "notice_kept": true,
+      "destination": "src/workflow_cost_estimate.py",
+      "reason": "Adapted aigraphstudio's cost-estimation SHAPE (executions x loop-iterations x per-model price, read from its ARCHITECTURE.md and assets/js/analyzer.js multiplier/heuristics logic) to Faustus's own WorkflowDefinition, model pricing and cycle detection (find_cycles, itself reused from src/agent_profile_lint.py rather than reimplemented a second time).",
+      "modifications": "Reimplementation, not a port. An unpriced model is reported as the explicit string 'unknown' and never defaulted to 0 (Faustus's own never-fabricate-a-price invariant, not something asserted about the source). Only 'skill' workflow nodes are priced; every other node type is $0 by construction because only a skill node can invoke a model in this schema -- a Faustus-specific fact, not carried over from aigraphstudio."
+    },
+    {
+      "id": "agent-desktop-semantic-contract",
+      "source_repo": "https://github.com/lahfir/agent-desktop",
+      "commit": "unknown",
+      "path": "README.md + crates/core/src/adapter_error.rs (contract only)",
+      "license": "Apache-2.0",
+      "notice_kept": true,
+      "destination": "src/desktop_semantics/",
+      "reason": "Adapted the CONTRACT VOCABULARY documented in agent-desktop's README and its adapter_error.rs error taxonomy -- snapshot/ref/precondition/delivery-disposition shape for driving a desktop UI safely -- to Faustus's own session/generation model. Its macOS-specific backend (the actual accessibility-tree implementation) was not ported; Faustus's own snapshot/resolve/act implementation is original, with an optional pywinauto-based Windows backend instead.",
+      "modifications": "Reimplementation, not a port: no Rust source from agent-desktop is vendored or transliterated. `Ref` is Faustus's own `f\"{session_id}:{generation}:{snapshot_id}:{n}\"` (never a bare index); `STALE_REF`/`AMBIGUOUS_TARGET`/`WRONG_SESSION` are typed Faustus errors distinct from agent-desktop's own error enum; the real backend (`windows_uia.py`) is built on the optional, lazily-imported `pywinauto` (BSD-3) rather than agent-desktop's macOS accessibility layer, and reports `available()=False` with a clear message off-Windows or without pywinauto installed."
+    },
+    {
+      "id": "aigraphstudio-workflow-interchange",
+      "source_repo": "https://github.com/gcjordi/aigraphstudio",
+      "commit": "unknown",
+      "path": "ARCHITECTURE.md (§6.2 import/export shape)",
+      "license": "MIT",
+      "notice_kept": true,
+      "destination": "src/workflows/interchange.py",
+      "reason": "Adapted aigraphstudio's workflow-graph import/export SHAPE (schemaVersion, typed nodes, layout coordinates) described in its ARCHITECTURE.md to Faustus's own WorkflowDefinition contract in `src/workflows/interchange.py`; `src/workflows/preflight.py` is the companion zero-effect preflight report added in the same lote over the same definitions but carries no aigraphstudio-derived shape itself (no import/export code), so it is not listed as a second destination here.",
+      "modifications": "Reimplementation, not a port: no aigraphstudio source file is vendored. The assumed aigraphstudio JSON shape (node types, schemaVersion field) was NOT fetched or verified against the actual exporter for this lote (no external research permitted) -- it is reconstructed from the INFORME's description alone, so `import_external`'s aigraphstudio-shape handling should be treated as unverified against a real aigraphstudio export until checked against real output. Only six node types map to a real, checked handler; every other type becomes `design_only`, and a cyclic or unknown-typed graph is never marked executable (see interchange.py's own module docstring)."
+    },
+    {
+      "id": "aider-repo-map-ranking",
+      "source_repo": "https://github.com/Aider-AI/aider",
+      "commit": "unknown",
+      "path": "aider/repomap.py (technique: definitions+references ranking, not copied)",
+      "license": "Apache-2.0",
+      "notice_kept": true,
+      "destination": "src/repo_map.py",
+      "reason": "Adapted the TECHNIQUE Aider's repo map uses -- ranking symbols by weighing definitions against how often they are referenced elsewhere, under a character budget -- to Faustus's own `code_index` symbol/edge store, for `symbols_for()`'s budgeted, per-file symbol listing.",
+      "modifications": "Reimplementation, not a port: no code from aider/repomap.py is copied or transliterated; no PageRank/graph-rank library is introduced. Faustus's ranking runs over `src/context_engine/code_index.py`'s own `Symbol`/`Edge` sqlite3 tables (definitions + reference counts already stored there) and Faustus's own budget/degradation vocabulary (`parser: regex` when tree-sitter is absent) rather than any aider-specific data structure."
+    }
+  ]
+}

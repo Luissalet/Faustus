@@ -29,6 +29,7 @@ bigger than a document ought to be.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import stat
@@ -202,6 +203,68 @@ def read_markdown(found: DiscoveredSkill) -> str:
     if len(data) > MAX_SKILL_BYTES:
         raise ValueError(f"skill is larger than {MAX_SKILL_BYTES} bytes; not loaded")
     return data.decode("utf-8", "replace")
+
+
+#: ADP-25: an approval pins a skill to exact bytes, so the digest that gets
+#: approved must cover more than the SKILL.md text — a script the manifest
+#: references, sitting in the same folder, is part of what was reviewed.
+#: Bounded the same way `read_markdown` bounds a single file, so a folder
+#: dressed up as a skill cannot make an approval check read arbitrarily much
+#: off disk.
+MAX_DIGEST_FILES = 512
+MAX_DIGEST_BYTES = 16 * 1024 * 1024
+
+
+def skill_digest(found: DiscoveredSkill) -> str:
+    """sha256 over every regular file in the skill's own folder (the
+    directory holding its `SKILL.md`), keyed by relative path so moving a
+    file within the folder changes the digest even if no byte did.
+
+    Symlinks and anything the walk cannot stat are skipped rather than
+    followed — the same reasoning as `_skill_files`: a link out of the
+    folder must not let an approval silently cover bytes that live
+    elsewhere. Exceeding the file/byte bound is reported as an `error:`
+    digest instead of raising, so a caller building a review page gets a
+    stable (if uninformative) string rather than a crash on an oversized
+    folder.
+    """
+    folder = os.path.dirname(found.path)
+    try:
+        root = os.path.realpath(folder)
+    except OSError:
+        return "error:unreadable-folder"
+    entries: List[Tuple[str, str]] = []
+    total = 0
+    count = 0
+    for base, dirs, files in os.walk(root, followlinks=False):
+        dirs[:] = sorted(d for d in dirs if not os.path.islink(os.path.join(base, d)))
+        for name in sorted(files):
+            path = os.path.join(base, name)
+            if os.path.islink(path):
+                continue
+            try:
+                resolved = os.path.realpath(path)
+                if os.path.commonpath([root, resolved]) != root:
+                    continue
+                st = os.stat(path)
+                if not stat.S_ISREG(st.st_mode):
+                    continue
+                count += 1
+                if count > MAX_DIGEST_FILES:
+                    return "error:too-many-files"
+                with open(path, "rb") as fh:
+                    data = fh.read(MAX_DIGEST_BYTES - total + 1)
+            except (OSError, ValueError):
+                continue
+            total += len(data)
+            if total > MAX_DIGEST_BYTES:
+                return "error:too-large"
+            rel = os.path.relpath(path, root).replace(os.sep, "/")
+            entries.append((rel, hashlib.sha256(data).hexdigest()))
+    digest = hashlib.sha256()
+    for rel, filehash in sorted(entries):
+        digest.update(f"{rel}:{filehash}\n".encode("utf-8"))
+    return digest.hexdigest()
 
 
 def load(found: DiscoveredSkill):

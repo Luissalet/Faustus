@@ -121,6 +121,42 @@
   white-space: nowrap;
 }
 
+/* ADP-11: the reason a run is in "Needs action" — same clamp behaviour as
+   .fs-run__detail (a long dependency label must not push the row taller
+   than its neighbours), one step quieter since it sits right below the
+   title/result line it explains. */
+.fs-act__attention-reason {
+  color: var(--fs-text-3);
+  font-size: var(--fs-label-size);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* A run needing attention that this user has not opened yet. Deliberately
+   just a dot next to the status badge, not a colour change on the whole
+   row — the row's own StatusBadge already carries the state; this only adds
+   "and you haven't seen it". */
+.fs-act__unread-dot {
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: var(--fs-radius-pill);
+  background: var(--fs-brand);
+  flex: 0 0 auto;
+  align-self: center;
+}
+
+.fs-act__unread-count {
+  margin-inline-start: var(--fs-space-1);
+  padding: 0 6px;
+  border-radius: var(--fs-radius-pill);
+  background: var(--fs-brand);
+  color: var(--fs-on-brand);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
 /* ── Lote X: a pane beside the list, rows you can open ── */
 
 .fs-act__lede {

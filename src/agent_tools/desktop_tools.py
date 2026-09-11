@@ -177,6 +177,17 @@ class DesktopBackend:
     def scroll(self, x: int, y: int, dy: int) -> None:
         raise DesktopError("mouse input unavailable")
 
+    def semantic(self):
+        """ADP-08 optional capability: a `desktop_semantics` backend
+        (`src/desktop_semantics/`) for THIS platform, or ``None`` when there
+        isn't one. The base class has none — every existing subclass keeps
+        working with zero semantic support until it opts in, and
+        `desktop_snapshot`/`desktop_find`/`desktop_act`
+        (`src/agent_tools/desktop_semantic_tools.py`) treat ``None`` as
+        "not available on this platform", never as an error to surface as a
+        crash."""
+        return None
+
 
 class UnsupportedBackend(DesktopBackend):
     name = "unsupported"
@@ -531,6 +542,17 @@ class WindowsBackend(DesktopBackend):
         events = [self._key_input(vk=vk) for vk in vks]
         events += [self._key_input(vk=vk, flags=KEYEVENTF_KEYUP) for vk in reversed(vks)]
         self._send(events)
+
+    def semantic(self):
+        # ADP-09: lazy — `windows_uia` only imports `pywinauto` inside its
+        # own methods, so building this object costs nothing when the
+        # optional dependency is missing; `available()` on the returned
+        # backend is what actually probes for it.
+        if getattr(self, "_semantic", None) is None:
+            from src.desktop_semantics.windows_uia import WindowsUiaSemanticBackend
+
+            self._semantic = WindowsUiaSemanticBackend()
+        return self._semantic
 
 
 def _utf16_units(ch: str) -> List[int]:

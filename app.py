@@ -1033,6 +1033,28 @@ app.include_router(setup_git_routes())
 from routes.board_routes import setup_board_routes
 app.include_router(setup_board_routes())
 
+# Versioned requirements (ADP-18/19/20): REQ-N ids with immutable revisions,
+# implements/tests/evidences/issue links, a linked/implemented/tested/
+# verified/stale coverage matrix, and a budgeted per-task projection
+# (src/requirements/).
+from routes.requirements_routes import setup_requirements_routes
+app.include_router(setup_requirements_routes())
+
+# Attention priority in Activity (W1-A / ADP-11): approval/question/queue/
+# disconnect/finished-unreviewed ranking + per-user read marks (src/attention.py).
+from routes.attention_routes import setup_attention_routes
+app.include_router(setup_attention_routes())
+
+# Wiki-links/backlinks between Documents (W1-E / ADP-06): [[Title]] /
+# [[doc:<id>]] parsing, reconstructible index (src/document_links.py).
+from routes.document_links_routes import setup_document_links_routes
+app.include_router(setup_document_links_routes())
+
+# Comments anchored to a quote+context inside a Document (W1-E / ADP-05):
+# relocate-on-save, accept-at-anchor only (src/document_comments.py).
+from routes.document_comments_routes import setup_document_comments_routes
+app.include_router(setup_document_comments_routes())
+
 # Per-endpoint OpenRouter options (OBJ-8 Lote A2): provider preferences,
 # opt-in web search, native model fallback (src/openrouter_options.py).
 from routes.openrouter_routes import setup_openrouter_routes

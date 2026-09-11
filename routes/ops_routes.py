@@ -13,6 +13,13 @@ this is spend across every user's remote runs, not one session's own data.
 ``src.chaos`` says the named fixture would inject and the result the real
 mechanism guarantees, never actually injecting anything. Admin-gated because
 naming these mechanisms in detail is itself operational information.
+
+``GET /api/ops/admission`` (ADP-32) is the read-only status door onto
+``src.resource_admission`` — every explicit pool defined so far, with its
+live in-use/foreground-waiting counters. Admin-gated like the rest of this
+module: pool membership names internal endpoints. Nothing here is wired to
+``src.llm_core``'s global local-model lock yet — see
+``docs/api/resource_admission.md`` for how it would connect.
 """
 from __future__ import annotations
 
@@ -41,5 +48,11 @@ def setup_ops_routes():
                 404,
                 f"no such chaos fixture: {fixture!r}; available: {sorted(chaos.FIXTURES)}",
             )
+
+    @router.get("/admission")
+    async def admission_status(request: Request):
+        require_admin(request)
+        from src import resource_admission
+        return resource_admission.status()
 
     return router

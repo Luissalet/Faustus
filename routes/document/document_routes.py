@@ -693,6 +693,21 @@ def setup_document_routes(session_manager, upload_handler=None) -> APIRouter:
             doc.current_content = incoming_content
             db.commit()
             db.refresh(doc)
+            # W1-E (ADP-06/ADP-05): keep the wiki-link index and anchored
+            # comments in step with every save. Both are reconstructible
+            # projections of `current_content` (see src/document_links.py
+            # and src/document_comments.py module docstrings), so a failure
+            # here is never allowed to fail the save itself — it just leaves
+            # that projection stale until the next save or an explicit
+            # rebuild/relocate.
+            try:
+                from src import document_links as _document_links
+                _document_links.rebuild_for_document(db, doc)
+                from src import document_comments as _document_comments
+                if _document_comments.relocate_comments_for_document(db, doc):
+                    db.commit()
+            except Exception:
+                logger.exception("document save hook (links/comments) failed for %s", doc.id)
             return _doc_to_dict(doc)
         except HTTPException:
             raise

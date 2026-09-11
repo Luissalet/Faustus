@@ -96,6 +96,14 @@ def run(node, context):
     if match is None:
         raise ValueError("script skill not found in this project's skill folders")
     found, manifest = match
+    from src import skill_import_review
+    review_digest = discovery.skill_digest(found)
+    review_status = skill_import_review.status_of(
+        manifest.id, digest=review_digest,
+        tools_required=skill_import_review.tools_required_of(manifest))
+    if review_status.state != "approved":
+        return {"status": "failed", "reason": f"skill needs review: {review_status.reason}",
+                "error_class": "skills.needs_review"}
     if node.config.get("version") and node.config["version"] != manifest.version:
         raise ValueError("installed skill version differs from the workflow's pinned version")
     from src.workflows import credentials

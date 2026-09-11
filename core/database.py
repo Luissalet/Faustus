@@ -338,6 +338,53 @@ class DocumentVersion(Base):
     document = relationship("Document", back_populates="versions")
 
 
+class DocumentComment(TimestampMixin, Base):
+    """A comment anchored to a quote+context inside a Document (ADP-05, W1-E).
+
+    Deliberately NOT a new state machine for documents: this table only
+    records where a comment points and what it proposes: it never mutates
+    `Document.current_content` on its own. `src/document_comments.py` owns
+    all anchoring/relocation/accept logic; this row is its storage.
+
+    `quote`/`before_ctx`/`after_ctx` are the anchor: relocation re-finds the
+    same span in the CURRENT content by that quote plus its immediate
+    surrounding text (never by a stored character offset, which would be
+    stale after the very next edit). `structural_pos` (index of the
+    markdown block the anchor last resolved into) is a cheap hint for the UI
+    to jump to roughly the right place — never the source of truth for
+    relocation or for what `accept` rewrites.
+
+    `base_version` is the `Document.version_count` the comment was created
+    or last successfully relocated against; `state` degrades to `orphan`
+    (never silently reattaches to a different paragraph) when the quote is
+    missing or the surrounding text no longer disambiguates a repeated
+    quote — see `document_comments.relocate`.
+    """
+    __tablename__ = "document_comments"
+
+    id            = Column(String, primary_key=True, index=True)
+    document_id   = Column(String, ForeignKey("documents.id", ondelete="CASCADE"), nullable=False, index=True)
+    owner         = Column(String, nullable=True, index=True)
+    base_version  = Column(Integer, nullable=False, default=1)
+    quote         = Column(Text, nullable=False)
+    before_ctx    = Column(Text, nullable=False, default="")
+    after_ctx     = Column(Text, nullable=False, default="")
+    structural_pos = Column(Integer, nullable=True)   # markdown block index, best-effort
+    body          = Column(Text, nullable=False, default="")
+    author        = Column(String, nullable=False, default="human")   # "human" | "model"
+    state         = Column(String, nullable=False, default="open")    # "open" | "resolved" | "orphan"
+    # Optional proposed edit, applied ONLY at this anchor's span on accept —
+    # never as a global first-occurrence `str.replace`.
+    proposal_find    = Column(Text, nullable=True)
+    proposal_replace = Column(Text, nullable=True)
+
+    document = relationship("Document", backref=backref("comments", cascade="all, delete-orphan"))
+
+    __table_args__ = (
+        Index('ix_document_comments_document_state', 'document_id', 'state'),
+    )
+
+
 class GalleryAlbum(TimestampMixin, Base):
     """A photo album/folder."""
     __tablename__ = "gallery_albums"

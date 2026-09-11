@@ -30,11 +30,12 @@ from .bridge import (  # noqa: F401
     manifest_from_skill, permissions_from_frontmatter, survey,
 )
 from .discovery import (  # noqa: F401
-    SKILL_DIR_NAMES, DiscoveredSkill, discover, load, roots_for, shadowed,
+    SKILL_DIR_NAMES, DiscoveredSkill, discover, load, roots_for, shadowed, skill_digest,
 )
 
 __all__ = [
     "manifest_from_markdown", "manifest_from_skill", "permissions_from_frontmatter",
     "survey", "SkillBridgeResult", "CAPABILITY_KEYS",
     "discover", "load", "roots_for", "shadowed", "DiscoveredSkill", "SKILL_DIR_NAMES",
+    "skill_digest",
 ]

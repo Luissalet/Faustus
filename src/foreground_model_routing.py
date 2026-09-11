@@ -1,8 +1,10 @@
 """Explicit foreground Chat and Agent model-routing policy."""
 
+import logging
 from dataclasses import dataclass
 from typing import Any, Collection, Dict, FrozenSet, Optional, Tuple
 
+from src import privacy_policy
 from src.endpoint_resolver import (
     endpoint_cost_tracked,
     resolve_fallback_entries,
@@ -11,7 +13,39 @@ from src.endpoint_resolver import (
     resolve_route_descriptor_by_id,
 )
 
+logger = logging.getLogger(__name__)
+
 _DEFAULT_FALLBACK_ENTRY_RESOLVER = resolve_fallback_entries
+
+
+def _drop_non_local_fallbacks_under_local_only(resolved_routes, owner):
+    """ADP-03/ADP-22 contract gap: a `local_only` session must never reach a
+    remote endpoint by FALLBACK (`tests/adaptations/test_contract_boundaries
+    .py`, guarantee a). `resolve_route()` (`src/provider_policy.py`) already
+    enforces this for the endpoint a turn actually SELECTS, but nothing
+    filtered the alternate candidates this policy hands back -- so a fallback
+    entry pointing off-machine was offered identically regardless of profile.
+
+    Each candidate is checked with `privacy_policy.assert_outbound` (the
+    same shared gate the embedding/rerank/OCR auxiliaries already use, per
+    that module's own docstring); a candidate it refuses is dropped here,
+    with a registered (logged) reason, and never reaches
+    `llm_call_async_with_route_fallback` -- it is not attempted, retried, or
+    silently swapped for the primary route.
+    """
+    kept = []
+    for candidate, descriptor in resolved_routes:
+        url = candidate[0] if candidate else ""
+        try:
+            privacy_policy.assert_outbound("foreground_model_fallback", url, owner=owner)
+        except privacy_policy.PrivacyPolicyError as exc:
+            logger.info(
+                "foreground_model_routing: dropped fallback candidate under "
+                "local_only profile (%s)", exc.error_info.message,
+            )
+            continue
+        kept.append((candidate, descriptor))
+    return kept
 
 
 FOREGROUND_FALLBACK_ENABLED_KEY = "foreground_fallback_enabled"
@@ -133,6 +167,7 @@ def resolve_foreground_model_policy(
             owner=owner,
             require_exact_model=True,
         )
+    resolved_routes = _drop_non_local_fallbacks_under_local_only(resolved_routes, owner)
     candidates = [candidate for candidate, _descriptor in resolved_routes]
     if not candidates:
         return ForegroundModelPolicy()

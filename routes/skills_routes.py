@@ -9,17 +9,20 @@ The on-disk format is SKILL.md (frontmatter + structured body) under
 
 import logging
 import re
-from typing import List, Optional
+from pathlib import Path as _Path
+from typing import Any, Dict, List, Optional
 
 import httpx
 
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from services.memory.skills import SkillsManager
-from src import skill_governance
+from src import skill_governance, skill_import_review
 from src.auth_helpers import get_current_user
 from src.prompt_security import untrusted_context_message
+from src.skills_runtime import bridge as skills_bridge, discovery as skills_discovery
 from core.middleware import require_admin
 
 logger = logging.getLogger(__name__)
@@ -67,6 +70,13 @@ class SkillAddRequest(BaseModel):
 
 class SkillImportUrlRequest(BaseModel):
     url: str = Field(..., min_length=8, max_length=2000)
+
+
+class SkillApproveRequest(BaseModel):
+    """ADP-25: which project's workspace to discover the skill in — the
+    same scoping `src/workflows/skills.py::run` uses, so an approval can
+    never be requested for a folder the caller does not own."""
+    project_id: str = Field(..., min_length=1, max_length=200)
 
 
 class SkillUpdateRequest(BaseModel):
@@ -1933,5 +1943,102 @@ def setup_skills_routes(skills_manager: SkillsManager) -> APIRouter:
         skills = skills_manager.load(owner=user)
         results = skills_manager.get_relevant_skills(query, skills, max_items=10)
         return {"skills": results, "query": query, "count": len(results)}
+
+    # -- ADP-25: manifest/hash/diff review for `.odysseus|.agents|.claude/
+    # skills` folder skills (src.skills_runtime), separate from the
+    # SkillsManager library above -- `{id}` here is a discovered
+    # SkillManifest.id ("category.name"), never a SkillsManager name, and is
+    # always resolved inside one project's workspace so an approval can
+    # never be requested for -- or reused from -- a folder the caller does
+    # not own. See docs/api/skills_review.md.
+    def _review_error(status: int, error_class: str, detail: Optional[str] = None,
+                      **extra: Any) -> JSONResponse:
+        body: Dict[str, Any] = {"error_class": error_class}
+        if detail is not None:
+            body["detail"] = detail
+        body.update(extra)
+        return JSONResponse(status_code=status, content=body)
+
+    def _workspace_for(project_id: str, owner: Optional[str]):
+        """The owner-scoped project's workspace folder, or `None` when the
+        project does not exist or is not this caller's -- `get()`'s own
+        owner filter, the same one `src/workflows/skills.py::run` relies on."""
+        from services.projects import get_store
+        project = get_store().get(project_id, owner=owner)
+        if not project or not project.get("workspace"):
+            return None
+        workspace = _Path(project["workspace"])
+        return workspace.resolve() if workspace.is_dir() else None
+
+    def _find_reviewable_skill(workspace, skill_id: str):
+        """`(DiscoveredSkill, SkillManifest, raw text)` for the manifest id
+        matching `skill_id` inside `workspace` -- mirrors the lookup in
+        `src/workflows/skills.py::run` (same discovery call, same
+        workspace-containment check) without importing that module, which
+        also builds and executes a bundle."""
+        for found in skills_discovery.discover(str(workspace)):
+            if found.error or not _Path(found.path).resolve().is_relative_to(workspace):
+                continue
+            try:
+                text = skills_discovery.read_markdown(found)
+                manifest = skills_bridge.manifest_from_markdown(text, source=found.path)
+            except Exception:
+                continue
+            if manifest.id == skill_id:
+                return found, manifest, text
+        return None
+
+    @router.get("/{id}/review")
+    async def review_import_skill(id: str, project_id: str, request: Request):
+        user = _owner(request)
+        workspace = _workspace_for(project_id, user)
+        if workspace is None:
+            return _review_error(404, "skills_review.project_not_found",
+                                 "Project not found or has no workspace")
+        match = _find_reviewable_skill(workspace, id)
+        if match is None:
+            return _review_error(404, "skills_review.not_found",
+                                 "No skill with this id in the project's skill folders")
+        found, manifest, text = match
+        digest = skills_discovery.skill_digest(found)
+        return skill_import_review.review(
+            skill_id=id, origin=found.origin, manifest=manifest,
+            manifest_text=text, digest=digest)
+
+    @router.post("/{id}/approve")
+    async def approve_import_skill(id: str, body: SkillApproveRequest, request: Request):
+        require_admin(request)
+        user = _owner(request)
+        workspace = _workspace_for(body.project_id, user)
+        if workspace is None:
+            return _review_error(404, "skills_review.project_not_found",
+                                 "Project not found or has no workspace")
+        match = _find_reviewable_skill(workspace, id)
+        if match is None:
+            return _review_error(404, "skills_review.not_found",
+                                 "No skill with this id in the project's skill folders")
+        found, manifest, text = match
+        digest = skills_discovery.skill_digest(found)
+        try:
+            entry = skill_import_review.approve(
+                skill_id=id, manifest=manifest, manifest_text=text,
+                digest=digest, by=user or "unknown")
+        except skill_import_review.SkillReviewError as e:
+            return _review_error(409, e.error_class, e.message)
+        return {"ok": True, "approval": entry}
+
+    @router.get("/{id}/diff")
+    async def diff_import_skill(id: str, project_id: str, request: Request):
+        user = _owner(request)
+        workspace = _workspace_for(project_id, user)
+        if workspace is None:
+            return _review_error(404, "skills_review.project_not_found",
+                                 "Project not found or has no workspace")
+        match = _find_reviewable_skill(workspace, id)
+        if match is None:
+            return _review_error(404, "skills_review.not_found",
+                                 "No skill with this id in the project's skill folders")
+        found, _manifest, text = match
+        return skill_import_review.diff(skill_id=id, manifest_text=text)
 
     return router

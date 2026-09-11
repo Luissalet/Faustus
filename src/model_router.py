@@ -42,12 +42,17 @@ the caller decide, so "nunca pasar a pago silenciosamente" holds by
 construction: nothing here can complete a turn on a paid model without a
 caller reading `escalated` and acting on it on purpose.
 
-Integration note (see this lote's report): wiring `choose()` into the actual
-per-turn model resolution in `routes/chat_routes.py` was judged too invasive
-for this lote's scope — `sess.model` is read directly, not only through the
-route-descriptor metadata this lote was scoped to touch, across thousands of
-lines of that streaming handler. `choose()`/`explain()` are ready to be
-called from there; nothing here assumes it is.
+Integration note (ADP-22, lote W1-F): `choose()` IS now cabled into the
+per-turn model resolution in `routes/chat_routes.py` --
+`_resolve_auto_model_route` there calls it when the turn's requested model
+is the "auto" sentinel (or empty) and this module is enabled; see
+`docs/api/model_router.md`'s "Integración con el turno" section for exactly
+where, and its "Límites" subsection for what was deliberately left for a
+later lote (a full route-classification field on `src.agent_loop`'s own
+`_usage_bucket`, the non-agent "chat" mode's own `record_outcome` hook, a
+Studio control that could ever set the literal "auto"). Nothing in THIS
+module assumes any of that wiring exists -- `choose()`/`explain()` remain
+usable standalone, exactly as before.
 """
 from __future__ import annotations
 
@@ -513,6 +518,21 @@ def explain(decision: Decision) -> str:
     if decision.escalated:
         return f"Sin modelo local adecuado — {decision.reason}"
     return f"Sin modelo disponible — {decision.reason}"
+
+
+def explain_event(decision: Decision, *, route: Optional[Any] = None) -> Dict[str, Any]:
+    """The payload for the SSE `model_router` event a wired caller emits
+    (`routes/chat_routes.py`, same `{'type': ..., 'data': ...}` envelope
+    `agent_git_policy`'s `git_policy` event already uses). `route` is an
+    optional `src.provider_policy.RouteDecision` for the connection this
+    `decision.model` ended up using -- ADP-22's "registro explícito de POR
+    QUÉ se eligió" -- included verbatim (`to_dict()`) when the caller has
+    one; MOD-05 itself never resolves a connection, only a model name, so it
+    cannot build that half on its own."""
+    payload: Dict[str, Any] = {"decision": decision.to_dict(), "explain": explain(decision)}
+    if route is not None:
+        payload["route"] = route.to_dict()
+    return payload
 
 
 # ── outcome history: DATA_DIR/model_router_stats.json ──────────────────────

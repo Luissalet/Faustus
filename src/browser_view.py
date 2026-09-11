@@ -225,6 +225,116 @@ def element_present(ref: Any, snapshot_text: Any) -> bool:
     return ref in str(snapshot_text or "")
 
 
+#: ADP-29: a subtree must come back genuinely smaller than the page — this
+#: is the hard stop for a snapshot whose indentation never returns to the
+#: root's level (a malformed or adversarial page), not a size any real
+#: subtree is expected to reach.
+MAX_SUBTREE_LINES = 4000
+
+#: ADP-29 acceptance: at most this many hits from `search()`, so "search the
+#: page" cannot become "dump the page under a different name".
+MAX_SEARCH_RESULTS = 200
+_DEFAULT_SEARCH_LIMIT = 20
+
+
+def subtree(snapshot: Any, ref: Any, depth: int = 2) -> str:
+    """The lines of `snapshot` rooted at the element whose ref matches
+    `ref` EXACTLY (the same identity rule `element_present` uses for WEB-04
+    — never a substring), plus up to `depth` further levels of descendants
+    by indentation.
+
+    Depth is counted generically from the indentation actually present —
+    not a hard-coded step size — by tracking, line by line, which prior
+    indent values are still open ancestors: a line whose indent is shallower
+    than the root's own ends the subtree; a line at or below the current
+    innermost open ancestor's indent closes that ancestor (sibling or
+    uncle) before its own level is computed. That lets this work on
+    real aria-snapshot output without assuming "2 spaces per level".
+
+    `depth=0` returns only the matched line, no children. A snapshot with no
+    indentation to derive children from (the flat, non-indented relay shape
+    `parse_snapshot_elements` also has to handle) degrades to the same
+    thing: there is no descendant to bound.
+
+    Returns `""` when `ref` is not present or the input is empty/not a
+    string — a caller must not be able to widen an absent ref into "the
+    whole page" by asking for it. Never raises.
+    """
+    if not isinstance(snapshot, str) or not snapshot:
+        return ""
+    ref = str(ref or "").strip()
+    if not ref:
+        return ""
+    try:
+        depth = max(0, int(depth))
+    except (TypeError, ValueError):
+        depth = 0
+    lines = snapshot.splitlines()
+    root_idx: Optional[int] = None
+    root_indent = 0
+    for i, raw in enumerate(lines):
+        if not raw.strip():
+            continue
+        stripped = raw.lstrip(" ")
+        m = _ELEMENT_REF_RE.search(stripped)
+        if m and m.group(1) == ref:
+            root_idx = i
+            root_indent = len(raw) - len(stripped)
+            break
+    if root_idx is None:
+        return ""
+
+    out = [lines[root_idx]]
+    ancestor_indents: List[int] = []       # open ancestor indents, shallow→deep
+    for raw in lines[root_idx + 1:]:
+        if not raw.strip():
+            continue
+        stripped = raw.lstrip(" ")
+        indent = len(raw) - len(stripped)
+        if indent <= root_indent:
+            break  # back to the root's own level or shallower: subtree ends
+        while ancestor_indents and indent <= ancestor_indents[-1]:
+            ancestor_indents.pop()
+        ancestor_indents.append(indent)
+        if len(ancestor_indents) <= depth:
+            out.append(raw)
+            if len(out) >= MAX_SUBTREE_LINES:
+                break
+    return "\n".join(out)
+
+
+def search(snapshot: Any, query: Any, limit: int = _DEFAULT_SEARCH_LIMIT) -> List[Dict[str, str]]:
+    """`{ref, role, name}` for every element in `snapshot` whose role or
+    name contains `query` (case-insensitive substring), in snapshot order,
+    capped at `limit`.
+
+    Built on `parse_snapshot_elements` — the same parser `element_present`
+    trusts for WEB-04 — so a hit here is guaranteed to be a real, freshly
+    parsed element, never a phrase the parser did not recognise as one
+    (prose, a URL/title header line). This and `subtree()` are ADP-29's
+    answer to "ask for a subtree or a search instead of the whole page":
+    a caller after one control does not need — and should not spend the
+    context budget on — the full snapshot dump.
+
+    Returns `[]` for an empty/blank query or empty input. Never raises.
+    """
+    if not isinstance(query, str) or not query.strip():
+        return []
+    needle = query.strip().lower()
+    try:
+        limit = int(limit)
+    except (TypeError, ValueError):
+        limit = _DEFAULT_SEARCH_LIMIT
+    limit = max(1, min(limit, MAX_SEARCH_RESULTS))
+    out: List[Dict[str, str]] = []
+    for element in parse_snapshot_elements(snapshot):
+        if needle in element["role"].lower() or needle in element["name"].lower():
+            out.append(element)
+            if len(out) >= limit:
+                break
+    return out
+
+
 def parse_tabs_current(text: Any) -> Tuple[str, str]:
     """(url, title) of the current tab from a `browser_tabs list` result."""
     if not isinstance(text, str) or not text:

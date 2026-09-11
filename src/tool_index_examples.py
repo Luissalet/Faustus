@@ -442,6 +442,24 @@ EXAMPLES: Dict[str, List[str]] = {
         "keep an audit log of everything you do on my desktop",
         "restringe qué ventanas puedes tocar",
     ],
+    # ── Semantic desktop control (ADP-08/09) ────────────────────────────────
+    "desktop_snapshot": [
+        "qué controles tiene esta ventana",
+        "read the controls in this app window",
+        "dime qué botones y campos hay en pantalla",
+        "list the buttons and fields in the active window",
+    ],
+    "desktop_find": [
+        "busca el botón de guardar en esta ventana",
+        "find the OK button by name, not by pixel",
+        "encuentra el campo de usuario en el formulario",
+    ],
+    "desktop_act": [
+        "pulsa el botón de guardar por su nombre",
+        "click the Save button, the real one, not a guessed pixel",
+        "rellena el campo de contraseña con este valor",
+        "select this option from the dropdown by name",
+    ],
     "ui_control": [
         "abre el panel de documentos",
         "turn off the shell tool",
@@ -751,5 +769,34 @@ EXAMPLES: Dict[str, List[str]] = {
         "me pongo yo con ese bug",
         "assign that task to me",
         "claim that issue, I'll handle it",
+    ],
+
+    # ── Versioned requirements (ADP-18/19/20) ──────────────────────────────
+    "req_list": [
+        "qué requisitos tenemos para este proyecto",
+        "what are the requirements we've agreed on",
+        "muéstrame los requisitos pendientes de aceptar",
+        "list the accepted requirements",
+    ],
+    "req_get": [
+        "enséñame el REQ-3 completo",
+        "what exactly does REQ-2 say",
+        "qué criterios de aceptación tiene ese requisito",
+    ],
+    "req_matrix": [
+        "está implementado el REQ-4",
+        "is REQ-1 actually tested and verified",
+        "qué requisitos están sin implementar todavía",
+        "show me the coverage for this project's requirements",
+    ],
+    "req_propose": [
+        "apunta esto como requisito: el login debe expirar a los 30 minutos",
+        "this should be a requirement, propose it",
+        "añade un requisito nuevo con estos criterios de aceptación",
+    ],
+    "req_link": [
+        "vincula el REQ-3 con este fichero",
+        "link this test as evidence for REQ-5",
+        "marca que este commit implementa ese requisito",
     ],
 }

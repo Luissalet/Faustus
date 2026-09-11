@@ -190,6 +190,13 @@ NON_ADMIN_BLOCKED_TOOLS = BUILTIN_EMAIL_TOOLS | {
     "desktop_type",
     "desktop_key",
     "desktop_scroll",
+    # ADP-08/09 semantic desktop tools (src/agent_tools/desktop_semantic_tools.py):
+    # same privilege class as the coordinate-based desktop_* above -- they
+    # read/drive the same owner desktop, just by control identity instead
+    # of pixels.
+    "desktop_snapshot",
+    "desktop_find",
+    "desktop_act",
     # Git tools (Lote 87): read a repo's content and, for the write/remote
     # ones, mutate it or a remote host — same privilege class as bash/
     # write_file/read_file above.

@@ -3,6 +3,7 @@ import { ApiError, asArray, getJson, responseReason } from './api';
 import { chatActivity, createSession, listModels, listSessions, sendTurn, type AskOption, type ChatActivity, type ChatSession, type RunActivityDetail } from './chat';
 import { sessionActivity } from '../lib/activity';
 import { t } from '../i18n';
+import type { AttentionRow } from './attention';
 
 /**
  * One shape for every kind of work (UI-050).
@@ -87,6 +88,10 @@ export interface ActivityRun {
   chat?: { sessionId: string; runId: string; model: string; progress?: RunActivityDetail };
   workflow?: WorkflowDetail;
   question?: QuestionDetail;
+  /** ADP-11: present only for a `chat`/`question` row `mergeAttention` matched
+   *  against `GET /api/attention` (or synthesized one for a finished, never-
+   *  otherwise-listed conversation — see that function). */
+  attention?: { kind: AttentionRow['kind']; reason: string; since: number | null; detail: string; unread: boolean; priority: number };
 }
 
 export interface WorkflowStep {
@@ -657,4 +662,45 @@ export async function prioritizeQueueItem(kind: QueueItem['kind'], id: string): 
   if (!response.ok) {
     throw new ApiError(await responseReason(response, '/api/queue', t('Could not change this item’s priority')), response.status);
   }
+}
+
+/**
+ * ADP-11: attach each `GET /api/attention` row to the run that already
+ * represents its session — a `chat` row's `chat.sessionId`, or a `question`
+ * row's `question.session` (both already come from `loadActivity`'s own
+ * sources; this never asks the server a second time for what a run IS, only
+ * for how urgently it needs a person).
+ *
+ * One case has nothing to attach to: `finished_unreviewed` is a session
+ * whose run is no longer running/awaiting/queued, and `conversationRuns()`
+ * only ever lists those three states (a finished chat simply is not in
+ * `runs` today). For that kind only, a minimal `chat` row is synthesized
+ * so the tray can show it at all — never for the other five kinds, which
+ * by construction always have a live match already.
+ */
+export function mergeAttention(runs: ActivityRun[], rows: AttentionRow[]): ActivityRun[] {
+  const bySession = new Map(rows.map((r) => [r.sessionId, r]));
+  const matched = new Set<string>();
+  const withAttention = runs.map((run) => {
+    const sid = run.kind === 'chat' ? run.chat?.sessionId : run.kind === 'question' ? run.question?.session : undefined;
+    const row = sid ? bySession.get(sid) : undefined;
+    if (!sid || !row) return run;
+    matched.add(sid);
+    return { ...run, attention: { kind: row.kind, reason: row.reason, since: row.since, detail: row.detail, unread: row.unread, priority: row.priority } };
+  });
+  const synthesized: ActivityRun[] = [];
+  for (const row of rows) {
+    if (row.kind !== 'finished_unreviewed' || matched.has(row.sessionId)) continue;
+    synthesized.push({
+      id: row.sessionId,
+      kind: 'chat',
+      title: row.label || t('Conversation'),
+      status: 'succeeded',
+      repeats: 1,
+      startedAt: row.since ? new Date(row.since * 1000).toISOString() : null,
+      attention: { kind: row.kind, reason: row.reason, since: row.since, detail: row.detail, unread: row.unread, priority: row.priority },
+      chat: { sessionId: row.sessionId, runId: '', model: '' },
+    });
+  }
+  return [...withAttention, ...synthesized];
 }

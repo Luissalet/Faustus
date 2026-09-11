@@ -1202,6 +1202,149 @@ def _reconcile_selected_route_from_request(
     return True
 
 
+class _AutoRouteResult:
+    """Bundles MOD-05's model pick (`src.model_router.Decision`) with
+    ADP-22's route classification (`src.provider_policy.RouteDecision`, when
+    one could be built) for one "auto" turn -- see
+    `_resolve_auto_model_route`. A plain attribute holder next to the other
+    private chat_routes helpers, not a dataclass, so this file's existing
+    style (no new module-level imports for a two-field bag) is unchanged."""
+
+    __slots__ = ("model_router_decision", "route_decision")
+
+    def __init__(self, model_router_decision, route_decision):
+        self.model_router_decision = model_router_decision
+        self.route_decision = route_decision
+
+
+def _resolve_auto_model_route(sess, session_id: str, owner: Optional[str] = None) -> Optional["_AutoRouteResult"]:
+    """ADP-22 §2: when `src.model_router` (MOD-05) is enabled and this
+    turn's requested model is the "auto" sentinel (or empty), let it pick an
+    installed local model and classify the resulting route
+    (`src.provider_policy.resolve_route`).
+
+    Returns `None` -- a complete no-op, `sess.model` left untouched -- when
+    any of these hold, so `RouterConfig.enabled=False` (the stored default)
+    never changes behavior for an existing session:
+      - the requested model isn't literally "auto" (case-insensitive) or
+        empty (an already-empty model is `_recover_empty_session_model`'s
+        job when the router is off; this only takes over when it is on,
+        and runs first -- see the call sites below);
+      - `model_router.get_router_config().enabled` is False;
+      - the session's current endpoint is not THIS install's own local
+        Ollama (`src.vram_admission.ollama_root`) -- MOD-05 only ever picks
+        among local models (docs/api/model_router.md); a session pointed at
+        a remote/API endpoint is left untouched rather than guessing a
+        different endpoint for it (see this lote's report for why that is
+        out of scope here);
+      - no local model is installed right now.
+
+    When the requested model was literally "auto" and no local model
+    qualified, `sess.model` is cleared to `""` rather than left as the
+    literal string "auto" -- so the existing empty-model 400 below fires
+    with its already-understood message instead of an upstream provider
+    error for a model literally named "auto".
+
+    See tests/test_adp22_provider_policy.py for the no-regression coverage
+    (`enabled=False`, non-"auto" model, non-local endpoint, no local models
+    installed, nothing qualifies) the contract asks every lote for.
+    """
+    requested = (getattr(sess, "model", "") or "").strip()
+    if requested.lower() != "auto" and requested != "":
+        return None
+
+    from src import model_router
+    config = model_router.get_router_config()
+    if not config.enabled:
+        return None
+
+    endpoint_url = (getattr(sess, "endpoint_url", "") or "").strip()
+    try:
+        from src.vram_admission import ollama_root
+        if not endpoint_url or not ollama_root(endpoint_url):
+            return None
+    except Exception:
+        logger.debug("model_router: could not classify session endpoint as local ollama", exc_info=True)
+        return None
+
+    installed = model_router.installed_local_models()
+    if not installed:
+        return None
+
+    decision = model_router.choose(
+        model_router.Requirements(),
+        installed=installed,
+        config=config,
+        requested=requested or "auto",
+        session_id=session_id,
+        owner=owner,
+    )
+
+    route_decision = None
+    if decision.model:
+        sess.model = decision.model
+        try:
+            db = SessionLocal()
+            try:
+                db_session = db.query(DBSession).filter(DBSession.id == session_id).first()
+                if db_session:
+                    db_session.model = decision.model
+                    db_session.updated_at = datetime.utcnow()
+                    db.commit()
+            finally:
+                db.close()
+        except Exception:
+            logger.warning(
+                "model_router: failed to persist auto-selected model for %s", session_id, exc_info=True,
+            )
+        try:
+            from src import provider_policy
+            route_decision = provider_policy.resolve_route(
+                requested_model=decision.model,
+                endpoint={"connection_id": None, "base_url": endpoint_url, "endpoint_kind": "local"},
+                session={"owner": owner},
+            )
+        except Exception:
+            # ADP-22's route classification explains the model pick above; a
+            # failure to classify is never a reason to fail a turn that
+            # already has a usable model (mirrors model_router.choose()'s
+            # own "logging must never break a decision" discipline for its
+            # log-append step).
+            logger.debug("provider_policy: resolve_route failed for auto turn", exc_info=True)
+    elif requested.lower() == "auto":
+        sess.model = ""
+
+    return _AutoRouteResult(model_router_decision=decision, route_decision=route_decision)
+
+
+def _record_model_router_outcome(
+    auto: Optional["_AutoRouteResult"],
+    *,
+    ok: bool,
+    latency_s: Optional[float] = None,
+    error_class: Optional[str] = None,
+) -> None:
+    """Fold this turn's outcome back into MOD-05's own history
+    (`model_router.record_outcome`) when -- and only when --
+    `_resolve_auto_model_route` actually substituted a model for this turn.
+    A no-op whenever `auto` is `None` or the router did not pick a model
+    (`auto.model_router_decision.model` falsy), so a turn that never touched
+    MOD-05 never writes to `model_router_stats.json`. Never raises: an
+    outcome-recording failure must not be the reason a turn's terminal event
+    fails to reach the client (mirrors `model_router.choose()`'s own
+    log-append discipline)."""
+    if auto is None:
+        return
+    decision = auto.model_router_decision
+    if not decision or not decision.model:
+        return
+    try:
+        from src import model_router
+        model_router.record_outcome(decision.model, ok=ok, latency_s=latency_s, error_class=error_class)
+    except Exception:
+        logger.debug("model_router: record_outcome failed", exc_info=True)
+
+
 def _set_user_time_from_request(request: Request) -> None:
     """Copy browser timezone headers into the per-request context.
 
@@ -1276,6 +1419,14 @@ def setup_chat_routes(
         owner = effective_user(request) or ""
         if _clear_orphaned_session_endpoint(sess, owner=owner):
             raise HTTPException(400, "Selected model endpoint was removed. Pick another model in Settings.")
+
+        # ADP-22 §2: "auto" (or an already-empty model, when the router is
+        # enabled) is MOD-05's cue to pick an installed local model, before
+        # the cache-based recovery below -- which otherwise fills an empty
+        # model first and leaves nothing for the router to act on. A
+        # complete no-op when the router is disabled (the stored default):
+        # see `_resolve_auto_model_route`'s own docstring.
+        _resolve_auto_model_route(sess, session, owner=owner)
 
         # Empty model + live endpoint = setup race (Issue #587). Repair from
         # the endpoint's cached model list before privilege checks, which
@@ -1863,6 +2014,17 @@ def setup_chat_routes(
             _reconcile_selected_route_from_request(request, sess, session, form_data, owner=owner)
             if _clear_orphaned_session_endpoint(sess, owner=owner):
                 raise HTTPException(400, "Selected model endpoint was removed. Pick another model in Settings.")
+            # ADP-22 §2: "auto" (or an already-empty model, when the router
+            # is enabled) is MOD-05's cue to pick an installed local model.
+            # Runs before the cache-based recovery below -- which otherwise
+            # fills an empty model first and leaves nothing for the router
+            # to act on -- and captured so `stream_with_save` below can emit
+            # the `model_router` SSE explain event and fold the eventual
+            # outcome back into MOD-05's own history. A complete no-op when
+            # the router is disabled (the stored default): see
+            # `_resolve_auto_model_route`'s own docstring and
+            # tests/test_adp22_provider_policy.py.
+            _model_router_auto = _resolve_auto_model_route(sess, session, owner=owner)
             # Issue #587: picker shows a model from the endpoint cache but
             # s.model never made it onto the DB row (first-send race after
             # endpoint setup, or a previous endpoint delete/recreate). Pull
@@ -2382,6 +2544,18 @@ def setup_chat_routes(
             # confinement that is not actually in effect.
             if workspace_rejected:
                 yield f"data: {json.dumps({'type': 'workspace_rejected', 'data': {'path': workspace_rejected}})}\n\n"
+
+            # ADP-22 §2: MOD-05 substituted the requested "auto" model for
+            # this turn (or explains why it could not) -- same envelope
+            # `agent_git_policy`'s `git_policy` event already uses. Absent
+            # entirely when `_resolve_auto_model_route` was a no-op (router
+            # disabled, model not "auto", non-local endpoint...), so an
+            # ordinary turn's event stream is byte-for-byte unchanged.
+            if _model_router_auto is not None:
+                from src import model_router as _model_router_mod
+                yield (
+                    f"data: {json.dumps({'type': 'model_router', 'data': _model_router_mod.explain_event(_model_router_auto.model_router_decision, route=_model_router_auto.route_decision)})}\n\n"
+                )
 
             if ctx.preprocessed.attachment_meta:
                 yield f"data: {json.dumps({'type': 'attachments', 'data': ctx.preprocessed.attachment_meta})}\n\n"
@@ -3375,6 +3549,16 @@ def setup_chat_routes(
                                         _terminal_saved = True
                                         accumulate_token_usage(session, terminal_metadata)
                                         _stream_set(session, status="error")
+                                        # ADP-22 §2: fold the failed outcome back into
+                                        # MOD-05's history -- no-op unless this turn's
+                                        # model came from `_resolve_auto_model_route`.
+                                        _record_model_router_outcome(
+                                            _model_router_auto,
+                                            ok=False,
+                                            error_class=(
+                                                f"http_{failure_status}" if failure_status is not None else "agent_terminal"
+                                            ),
+                                        )
                                         if _saved_id:
                                             yield f'data: {json.dumps({"type": "message_saved", "id": _saved_id})}\n\n'
                                     yield chunk
@@ -3389,6 +3573,12 @@ def setup_chat_routes(
                                         last_metrics["context_messages_after_trim"] = ctx.context_messages_after_trim
                                         last_metrics["context_tokens_before_trim"] = ctx.context_tokens_before_trim
                                         last_metrics["context_tokens_after_trim"] = ctx.context_tokens_after_trim
+                                    # ADP-22 §2: fold the successful outcome back into
+                                    # MOD-05's history -- no-op unless this turn's model
+                                    # came from `_resolve_auto_model_route`.
+                                    _record_model_router_outcome(
+                                        _model_router_auto, ok=True, latency_s=last_metrics.get("response_time"),
+                                    )
                                     _metrics_event = {"type": "metrics", "data": last_metrics}
                                     # Inline teacher escalation marks its
                                     # recursively emitted events at the SSE

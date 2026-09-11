@@ -4,7 +4,9 @@ from pathlib import Path
 import pytest
 
 from src import approval_store, artifact_store, capability_registry as registry, execution_router
+from src import skill_import_review
 from src.contracts import ExecutionResult
+from src.skills_runtime import bridge, discovery
 from src.workflows import WorkflowEngine
 from src.workflows.runtime import production_handlers
 from tests.test_workflow_handlers import store, wf  # noqa: F401
@@ -28,6 +30,23 @@ outputs: [report=artifact:document]
 Run report.py to write the report.
 """, encoding="utf-8")
     (folder / "report.py").write_text("from pathlib import Path\nPath('/artifacts/report.md').write_text('Verified report')\n")
+
+    # ADP-25: src/workflows/skills.py::run now gates on skill_import_review
+    # before building a bundle. Point the approvals store at a scratch dir
+    # (never the real DATA_DIR) and approve this fixture's own "report"
+    # skill up front, so this module's tests keep exercising the real
+    # execution/approval flow rather than the review gate itself (that gate
+    # is covered on its own in tests/test_adp25_skill_review.py).
+    monkeypatch.setattr(skill_import_review, "APPROVALS_FILE", str(tmp_path / "skill_approvals.json"))
+    monkeypatch.setattr(skill_import_review, "SNAPSHOT_DIR", str(tmp_path / "skill_approvals"))
+    found = discovery.DiscoveredSkill(
+        name="report", path=str(folder / "SKILL.md"), origin="agents",
+        root=str(workspace), distance=0)
+    manifest_text = (folder / "SKILL.md").read_text(encoding="utf-8")
+    manifest = bridge.manifest_from_markdown(manifest_text, source=found.path)
+    skill_import_review.approve(
+        skill_id=manifest.id, manifest=manifest, manifest_text=manifest_text,
+        digest=discovery.skill_digest(found), by="alice")
 
     class Projects:
         def get(self, project_id, owner=None):

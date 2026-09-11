@@ -22,6 +22,21 @@ The extractors are shared, not copied: `symbol_lines(text, lang)` returns the
 same symbols with the line each one starts on, which is what `src/read_plan.py`
 shows as the index of a file too big to return whole. One extractor per
 language, two renderings — a module summary here, a navigable outline there.
+
+ADP-28: `symbols_for()`, below, is where this module actually becomes a
+client of `context_engine.code_index` instead of a second index. `build()`
+keeps its own extraction on the hot path (this text is rebuilt on every chat
+turn; a sqlite round trip per candidate file there would be a latency
+regression, not a consolidation) — but `symbols_for()`, asked for a *named*
+handful of files, is served entirely from `code_index`'s incremental,
+hash-per-file store: a changed file's definitions are the only ones
+re-extracted, and a file `code_index`'s own walk excludes (secret name,
+unsupported extension, binary, oversized) never produces a symbol here
+either, because it was never asked to index it. Nothing about secret
+exclusion or hash-based invalidation is reimplemented in this module; both
+are read off `code_index`, once, in one place. Reused, not duplicated: the
+Aider-style "definitions + references" rank below reads `code_index`'s
+resolved call/import graph (`neighbors()`) rather than building a second one.
 """
 from __future__ import annotations
 
@@ -31,7 +46,7 @@ import os
 import re
 import threading
 import time
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -458,3 +473,145 @@ def invalidate(workspace: Optional[str] = None) -> None:
             _MAP_CACHE.pop(os.path.realpath(os.path.expanduser(workspace)), None)
         else:
             _MAP_CACHE.clear()
+
+
+# ---------------------------------------------------------------------------
+# symbols_for — ADP-28: served from code_index, ranked, budgeted
+# ---------------------------------------------------------------------------
+
+def parser_for(lang: str) -> str:
+    """Which extractor produced symbols for this language — never hidden.
+
+    Only Python gets a real parser (stdlib `ast`, via `code_index`'s own AST
+    pass); every other language here is line-start regex matching. No
+    tree-sitter dependency is added to change that (a decision `code_index`'s
+    module docstring already records) — this just makes the degradation a
+    field a caller can see instead of an implementation detail it has to
+    infer from which fields are empty."""
+    if lang == "py":
+        return "ast"
+    if lang in _LANG_RES:
+        return "regex"
+    return "none"
+
+
+def symbols_for(paths: Sequence[str], *, workspace: str, budget_chars: int = 4000) -> Dict[str, Any]:
+    """Definitions in `paths`, ranked by references and budgeted in characters.
+
+    Served entirely from `context_engine.code_index`: a targeted, incremental
+    `refresh()` for exactly these files (a file whose content hash matches
+    what is already stored is not reopened, let alone reparsed — the same
+    guarantee `code_index.refresh` gives every other caller), then each
+    file's `symbols_in()` and, per symbol, how many other symbols in the
+    workspace `calls`/`imports`/`tests` it (`code_index.neighbors`, incoming
+    edges only). Ranking is Aider's idea, not its code: a definition the rest
+    of the workspace actually references outranks one that merely exists, so
+    a tight budget still surfaces the function five other files call rather
+    than the first one alphabetically.
+
+    Never a silent drop. Returns
+    `{"files": [{"path", "parser", "symbols": [...]}], "omitted": [...],
+    "unknown": [...], "truncated": bool}` — `unknown` names a requested path
+    that was not indexed at all (outside the workspace, does not exist, or
+    excluded by `code_index`'s own walk: secret name, unsupported extension,
+    binary, oversized — never re-implemented here, only observed), `omitted`
+    names a `path:qualname` that was indexed but did not fit the budget.
+    Each symbol entry carries `references` (an int) and `line`/`end_line`, so
+    a caller can open exactly that range. Never raises."""
+    result: Dict[str, Any] = {"files": [], "omitted": [], "unknown": [], "truncated": False}
+    root = os.path.realpath(os.path.expanduser(workspace or ""))
+    if not root or not os.path.isdir(root):
+        result["unknown"] = [str(p) for p in (paths or ())]
+        return result
+    try:
+        budget = max(0, int(budget_chars if budget_chars is not None else DEFAULT_TOKENS * CHARS_PER_TOKEN))
+    except (TypeError, ValueError):
+        budget = DEFAULT_TOKENS * CHARS_PER_TOKEN
+
+    rels: List[str] = []
+    seen_rel: Set[str] = set()
+    for raw in paths or ():
+        rel = str(raw or "").replace("\\", "/").strip()
+        if os.path.isabs(rel):
+            try:
+                rel = os.path.relpath(os.path.realpath(rel), root).replace("\\", "/")
+            except OSError:
+                rel = ""
+        rel = rel.strip("/")
+        if not rel or rel.startswith("../") or rel == "..":
+            continue
+        if rel not in seen_rel:
+            seen_rel.add(rel)
+            rels.append(rel)
+    if not rels:
+        result["unknown"] = [str(p) for p in (paths or ())]
+        return result
+
+    try:
+        from src.context_engine import code_index
+    except Exception as e:  # noqa: BLE001 - the map degrades to "nothing found", never raises
+        logger.debug("[repo-map] symbols_for: code_index unavailable: %s", e)
+        result["unknown"] = list(rels)
+        return result
+
+    try:
+        code_index.refresh(root, paths=rels)
+    except Exception as e:  # noqa: BLE001
+        logger.debug("[repo-map] symbols_for: refresh failed: %s", e)
+
+    entries: List[Dict[str, Any]] = []
+    indexed_rel: Set[str] = set()
+    for rel in rels:
+        try:
+            symbols = code_index.symbols_in(rel, workspace=root)
+        except Exception as e:  # noqa: BLE001
+            logger.debug("[repo-map] symbols_for: symbols_in(%s) failed: %s", rel, e)
+            symbols = []
+        if not symbols:
+            continue  # never indexed: excluded, missing, or outside code_index's walk
+        indexed_rel.add(rel)
+        lang = lang_for_path(rel)
+        for sym in symbols:
+            if sym.kind == "module":
+                continue  # the module row names the file, not a definition in it
+            try:
+                hops = code_index.neighbors(sym.id, kinds=("calls", "imports", "tests"))
+            except Exception:  # noqa: BLE001
+                hops = []
+            refs = sum(1 for hop in hops if hop.get("direction") == "in")
+            rendered = f"{sym.qualname} ({sym.kind})" + (f" +{refs} refs" if refs else "") \
+                + f" L{sym.start_line}"
+            entries.append({
+                "path": rel, "lang": lang, "qualname": sym.qualname, "kind": sym.kind,
+                "signature": sym.signature, "line": sym.start_line, "end_line": sym.end_line,
+                "references": refs, "rendered": rendered,
+            })
+
+    result["unknown"] = [rel for rel in rels if rel not in indexed_rel]
+    entries.sort(key=lambda e: (-e["references"], e["path"], e["line"]))
+
+    used = 0
+    by_path: Dict[str, List[Dict[str, Any]]] = {}
+    omitted: List[str] = []
+    for e in entries:
+        cost = len(e["rendered"]) + 1
+        if used + cost > budget:
+            omitted.append(f"{e['path']}:{e['qualname']}")
+            continue
+        used += cost
+        by_path.setdefault(e["path"], []).append(e)
+
+    result["files"] = [
+        {
+            "path": rel, "parser": parser_for(lang_for_path(rel)),
+            "symbols": [
+                {"qualname": e["qualname"], "kind": e["kind"], "signature": e["signature"],
+                 "line": e["line"], "end_line": e["end_line"], "references": e["references"]}
+                for e in by_path.get(rel, [])
+            ],
+        }
+        for rel in rels if rel in indexed_rel
+    ]
+    result["omitted"] = omitted
+    result["truncated"] = bool(omitted)
+    return result

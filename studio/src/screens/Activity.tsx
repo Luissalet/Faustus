@@ -2,7 +2,8 @@ import { Activity as ActivityIcon, ArrowUpToLine, Calculator, Check, CircleStop,
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { Button, Dialog, EmptyState, friendlyError, MermaidView, Skeleton, StatusBadge, Toast, type RunStatus } from '../components';
-import { answerQuestion, artifactLinks, cancelRender, changeWorkflow, decideApproval, duration, getWorkflowRunDefinition, loadActivity, loadQueue, normaliseStatus, openRunInChat, prioritizeQueueItem, reportUrl, retainUnavailableRuns, type ActivityRun, type ArtifactLink, type QuestionDetail, type QueueItem } from '../adapters/activity';
+import { answerQuestion, artifactLinks, cancelRender, changeWorkflow, decideApproval, duration, getWorkflowRunDefinition, loadActivity, loadQueue, mergeAttention, normaliseStatus, openRunInChat, prioritizeQueueItem, reportUrl, retainUnavailableRuns, type ActivityRun, type ArtifactLink, type QuestionDetail, type QueueItem } from '../adapters/activity';
+import { loadAttention, markAttentionRead, type AttentionRow } from '../adapters/attention';
 import { CACHE_LABELS, clearAutomationCache, runAutomation, stopAutomation } from '../adapters/automations';
 import { relativeTime } from '../adapters/home';
 import { stopChat } from '../adapters/chat';
@@ -28,7 +29,13 @@ import { locale, t, tn } from '../i18n';
 
 const FILTERS: { id: string; label: string; match: (run: ActivityRun) => boolean }[] = [
   { id: 'todo', label: 'All', match: () => true },
-  { id: 'accion', label: 'Needs action', match: (run) => run.status === 'waiting' },
+  // ADP-11: `status === 'waiting'` alone (approval_store cards, open
+  // questions) is the ORIGINAL rule — kept so nothing that used to show up
+  // here stops. `!!run.attention` adds the four other real "needs a
+  // person" states `src/attention.py::classify` distinguishes (disconnected,
+  // queued, waiting on a dependency, finished-but-unreviewed), which used to
+  // have no home in this tray at all.
+  { id: 'accion', label: 'Needs action', match: (run) => run.status === 'waiting' || !!run.attention },
   { id: 'activo', label: 'In progress', match: (run) => run.status === 'running' || run.status === 'queued' },
   { id: 'fallido', label: 'Failed', match: (run) => run.status === 'failed' },
 ];
@@ -347,6 +354,14 @@ export function ActivityScreen() {
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [queueBusy, setQueueBusy] = useState<string | null>(null);
 
+  // ADP-11: priority/reason/unread per run session (src/attention.py),
+  // polled on its own cadence like the Queue section above — merged onto
+  // `runs` below (`merged`) rather than folded into the main poller, so a
+  // failed attention read degrades to "no reason shown" instead of blanking
+  // the whole screen.
+  const [attentionRows, setAttentionRows] = useState<AttentionRow[]>([]);
+  const [attentionUnread, setAttentionUnread] = useState(0);
+
   // B2 (OBJ-8): "Ver diagrama"/"Estimar coste" for a workflow run's detail
   // pane. Both need the run's definition, which the activity list never
   // carries (see getWorkflowRunDefinition's own comment) — fetched fresh
@@ -443,19 +458,34 @@ export function ActivityScreen() {
     clear: (id) => window.clearTimeout(id),
   }), []);
 
+  const attentionPoller = useMemo(() => createActivityPoller({
+    load: (signal) => loadAttention(50, signal),
+    live: (feed) => feed.rows.length > 0,
+    visible: () => document.visibilityState === 'visible',
+    data: (feed) => { setAttentionRows(feed.rows); setAttentionUnread(feed.unreadCount); },
+    error: () => {}, // supplementary, like ACT-05's queue: a failed poll leaves the last known reasons showing
+    refreshing: () => {},
+    schedule: (fn, delay) => window.setTimeout(fn, delay),
+    clear: (id) => window.clearTimeout(id),
+  }), []);
+
   useEffect(() => {
     poller.start();
     queuePoller.start();
+    attentionPoller.start();
     document.addEventListener('visibilitychange', poller.visibilityChanged);
     document.addEventListener('visibilitychange', queuePoller.visibilityChanged);
+    document.addEventListener('visibilitychange', attentionPoller.visibilityChanged);
     return () => {
       poller.dispose();
       queuePoller.dispose();
+      attentionPoller.dispose();
       if (noticeTimer.current) window.clearTimeout(noticeTimer.current);
       document.removeEventListener('visibilitychange', poller.visibilityChanged);
       document.removeEventListener('visibilitychange', queuePoller.visibilityChanged);
+      document.removeEventListener('visibilitychange', attentionPoller.visibilityChanged);
     };
-  }, [poller, queuePoller]);
+  }, [poller, queuePoller, attentionPoller]);
 
   const prioritizeQueued = useCallback(async (item: QueueItem) => {
     const key = `${item.kind}-${item.id}`;
@@ -470,22 +500,34 @@ export function ActivityScreen() {
     }
   }, [queuePoller, say]);
 
+  // ADP-11: `runs` stays exactly what `loadActivity` returned (the poller's
+  // own `data` callback above is untouched); `merged` is the one place
+  // attention rows are attached, so every consumer below sees the same
+  // reason/priority/unread a raw `runs` read never carried.
+  const merged = useMemo(() => (runs ? mergeAttention(runs, attentionRows) : null), [runs, attentionRows]);
+
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return (runs ?? []).filter((run) => {
-      if (!filter.match(run)) return false;
-      const isNotification = run.kind === 'task' && run.task?.outputTarget === 'notification';
-      if (q && !`${run.title} ${run.detail ?? ''} ${run.chat?.model ?? ''}`.toLowerCase().includes(q)) return false;
-      if (kind === 'notification') return isNotification;
-      if (isNotification && kind === 'all') return false;
-      if (kind !== 'all' && run.kind !== kind) return false;
-      return true;
-    });
-  }, [runs, filter, kind, query]);
+    return (merged ?? [])
+      .filter((run) => {
+        if (!filter.match(run)) return false;
+        const isNotification = run.kind === 'task' && run.task?.outputTarget === 'notification';
+        if (q && !`${run.title} ${run.detail ?? ''} ${run.chat?.model ?? ''}`.toLowerCase().includes(q)) return false;
+        if (kind === 'notification') return isNotification;
+        if (isNotification && kind === 'all') return false;
+        if (kind !== 'all' && run.kind !== kind) return false;
+        return true;
+      })
+      // ADP-11: within whatever the filter/search already kept, a run that
+      // needs a person sorts by how urgently (`classify`'s fixed priority);
+      // runs with no attention state (no `.attention`) keep their existing
+      // relative order (stable sort — Array.prototype.sort is one since ES2019).
+      .sort((a, b) => (a.attention?.priority ?? Number.MAX_SAFE_INTEGER) - (b.attention?.priority ?? Number.MAX_SAFE_INTEGER));
+  }, [merged, filter, kind, query]);
 
   const counts = useMemo(() => {
     const c = { all: 0, task: 0, render: 0, approval: 0, notification: 0, chat: 0, workflow: 0, question: 0 };
-    for (const run of runs ?? []) {
+    for (const run of merged ?? []) {
       if (run.kind === 'task' && run.task?.outputTarget === 'notification') c.notification++;
       else {
         c.all++;
@@ -493,10 +535,10 @@ export function ActivityScreen() {
       }
     }
     return c;
-  }, [runs]);
+  }, [merged]);
 
-  const waiting = useMemo(() => (runs ?? []).filter((run) => run.status === 'waiting').length, [runs]);
-  const current = useMemo(() => (currentId ? (runs ?? []).find((r) => `${r.kind}-${r.id}` === currentId) ?? null : null), [currentId, runs]);
+  const waiting = useMemo(() => (merged ?? []).filter((run) => run.status === 'waiting' || !!run.attention).length, [merged]);
+  const current = useMemo(() => (currentId ? (merged ?? []).find((r) => `${r.kind}-${r.id}` === currentId) ?? null : null), [currentId, merged]);
   const currentStale = failed || !!current?.stale;
 
   useEffect(() => {
@@ -510,6 +552,17 @@ export function ActivityScreen() {
   const open = (run: ActivityRun | null) => {
     if (window.matchMedia('(max-width: 899px)').matches) {
       focusAfterSelection.current = run ? 'detail' : currentId;
+    }
+    // ADP-11: opening a run marks it read — this only silences the unread
+    // badge (optimistic local update, confirmed by the next poll); it never
+    // resolves an approval or answers a question, which still go through
+    // the exact same routes they always did.
+    if (run?.attention) {
+      const sid = run.kind === 'chat' ? run.chat?.sessionId : run.kind === 'question' ? run.question?.session : undefined;
+      if (sid) {
+        void markAttentionRead([sid]);
+        setAttentionRows((prev) => prev.map((row) => (row.sessionId === sid ? { ...row, unread: false } : row)));
+      }
     }
     setReason('');
     setParams(
@@ -588,6 +641,13 @@ export function ActivityScreen() {
             }}
           >
             {t(entry.label)}
+            {/* ADP-11: the unread counter the ficha asks for, on the one tab
+                it actually describes — server-computed (`unread_count`,
+                `GET /api/attention`), not re-derived from `attentionRows`
+                here, so it matches whatever `mark_read` last settled. */}
+            {entry.id === 'accion' && attentionUnread > 0 && (
+              <span className="fs-act__unread-count" data-testid="activity-unread-count">{attentionUnread}</span>
+            )}
           </button>
         ))}
       </div>
@@ -648,9 +708,21 @@ export function ActivityScreen() {
                         {run.repeats > 1 && <span className="fs-act__repeats" title={tn(run.repeats, '{n} identical row', '{n} identical rows')}>×{run.repeats}</span>}
                       </span>
                       {run.detail && <span className="fs-run__detail">{run.detail}</span>}
+                      {/* ADP-11: the REASON this run is in "Needs action" — never
+                          just a status word. `detail` here is the extra, untranslated
+                          context classify() carried (a queue position, a dependency's
+                          name), shown as-is next to the translated reason. */}
+                      {run.attention?.reason && (
+                        <span className="fs-run__detail fs-act__attention-reason">
+                          {t(run.attention.reason)}
+                          {run.attention.detail ? ` · ${run.attention.detail}` : ''}
+                          {run.attention.since ? ` — ${relativeTime(run.attention.since)}` : ''}
+                        </span>
+                      )}
                       <span className="fs-row__meta">{[relativeTime(run.startedAt), duration(run.startedAt, run.finishedAt)].filter(Boolean).join(' · ')}</span>
                       {(failed || run.stale) && <span className="fs-row__meta">{t('Last known activity')}</span>}
                     </span>
+                    {run.attention?.unread && <span className="fs-act__unread-dot" aria-hidden="true" data-testid="activity-unread-dot" />}
                     <StatusBadge status={run.status as RunStatus} label={run.statusLabel} />
                   </button>
                 );

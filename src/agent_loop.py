@@ -4462,6 +4462,10 @@ def _usage_bucket(
     cost_usd: Optional[float] = None,
     cached_tokens: Optional[int] = None,
     reasoning_tokens: Optional[int] = None,
+    billing: Optional[str] = None,
+    network: Optional[str] = None,
+    fallback_scope: Optional[str] = None,
+    route_reason: Optional[str] = None,
 ) -> dict:
     """Build non-secret usage attribution for one concrete Agent round.
 
@@ -4472,6 +4476,24 @@ def _usage_bucket(
     non-negative number); every other provider simply never passes these
     kwargs, so the bucket stays exactly as small as it was before this field
     existed.
+
+    `billing`/`network`/`fallback_scope`/`route_reason` (ADP-22, lote W1-F ->
+    integration lote): the `src.provider_policy.RouteDecision` fields
+    `docs/api/model_router.md`'s "Integración con el turno" section asks this
+    function to accept. No caller in this repo currently has a
+    `RouteDecision` in hand at the point it calls `_usage_bucket` --
+    `routes/chat_routes.py`'s `_resolve_auto_model_route` classifies a route
+    only for the `model_router` SSE event and `model_router.record_outcome`,
+    not for the `route_descriptors`/`requested_route` dict this function
+    already reads from (`src.foreground_model_routing
+    .build_foreground_route_descriptors` / `src.endpoint_resolver
+    .resolve_route_descriptor`, ADP-22's *original*, separate fallback-chain
+    metadata, which carries only `endpoint_id`/`endpoint_label`/
+    `endpoint_cost_tracked`) -- so there is no short path to wire today
+    without adding new plumbing outside this file. Persisted ONLY when the
+    caller actually passes a non-empty string, same "absent, not a fabricated
+    default" rule as every other optional field here; every existing call
+    site is unaffected.
     """
 
     bucket = {
@@ -4493,6 +4515,14 @@ def _usage_bucket(
         bucket["cached_tokens"] = int(cached_tokens)
     if isinstance(reasoning_tokens, (int, float)) and not isinstance(reasoning_tokens, bool) and reasoning_tokens >= 0:
         bucket["reasoning_tokens"] = int(reasoning_tokens)
+    if isinstance(billing, str) and billing.strip():
+        bucket["billing"] = billing
+    if isinstance(network, str) and network.strip():
+        bucket["network"] = network
+    if isinstance(fallback_scope, str) and fallback_scope.strip():
+        bucket["fallback_scope"] = fallback_scope
+    if isinstance(route_reason, str) and route_reason.strip():
+        bucket["route_reason"] = route_reason
     return bucket
 
 

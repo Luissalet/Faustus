@@ -2482,8 +2482,28 @@ def llm_call_with_fallback(candidates, messages, **kwargs) -> str:
     raise last_err if last_err else HTTPException(503, "All fallback candidates failed")
 
 
+#: ADP-03 guarantee (d): a subscription-backed endpoint (chatgpt_subscription,
+#: copilot) must never silently fall back to a paid API candidate just
+#: because it returned 401/403 -- an auth failure is not "try the next one",
+#: it is "this credential is wrong/expired" and resending the exact same
+#: request against a DIFFERENT (possibly paid) provider is exactly the
+#: silent-cost-shift the masterplan forbids. Mirrors
+#: `src.foreground_model_routing.FOREGROUND_AVAILABILITY_STATUSES`'s own
+#: exclusion of 401/403 from its eligible-for-fallback set, so both the
+#: foreground and background/task fallback chains agree on this one status
+#: pair without importing each other.
+_NEVER_FALLBACK_STATUSES = frozenset({401, 403})
+
+
 async def llm_call_async_with_fallback(candidates, messages, **kwargs) -> str:
-    """Async variant of `llm_call_with_fallback` — same semantics."""
+    """Async variant of `llm_call_with_fallback` — same semantics.
+
+    Every candidate after the first is a FALLBACK, not a retry of the same
+    request against the same credential -- so a 401/403 (`_nonstream_error_status`,
+    the same status-extraction this module's route-fallback helper already
+    uses) is re-raised immediately instead of being treated like a transient
+    503: see `_NEVER_FALLBACK_STATUSES`.
+    """
     cands = dedupe_model_candidates(candidates)
     if not cands:
         raise HTTPException(503, "No model endpoint configured")
@@ -2492,6 +2512,12 @@ async def llm_call_async_with_fallback(candidates, messages, **kwargs) -> str:
         try:
             return await llm_call_async(url, model, messages, headers=headers, **kwargs)
         except Exception as e:
+            status = _nonstream_error_status(e)
+            if status in _NEVER_FALLBACK_STATUSES:
+                logger.warning(
+                    f"[fallback] {model} failed with {status}; refusing to fall "
+                    "back to a different candidate on an auth failure")
+                raise
             last_err = e
             tag = "primary" if i == 0 else "candidate"
             logger.warning(f"[fallback] {tag} {model} failed ({type(e).__name__}); trying next")

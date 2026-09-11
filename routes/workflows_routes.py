@@ -49,6 +49,27 @@ def _engine(store: WorkflowStore) -> WorkflowEngine:
     return WorkflowEngine(production_handlers(), store)
 
 
+def _prices_from_payload(payload: dict) -> dict:
+    """`prices: {model_id: {"prompt_usd_per_1k", "completion_usd_per_1k"}}`,
+    shared by `/estimate` and `/preflight` so the two never parse it
+    differently."""
+    from src.workflow_cost_estimate import ModelPrice
+    raw_prices = payload.get("prices")
+    prices: dict = {}
+    if isinstance(raw_prices, dict):
+        for model_id, raw_price in raw_prices.items():
+            if not isinstance(raw_price, dict):
+                continue
+            try:
+                prices[str(model_id)] = ModelPrice(
+                    prompt_usd_per_1k=float(raw_price.get("prompt_usd_per_1k", 0.0)),
+                    completion_usd_per_1k=float(raw_price.get("completion_usd_per_1k", 0.0)),
+                )
+            except (TypeError, ValueError):
+                raise HTTPException(status_code=400, detail=f"prices.{model_id}: expected numbers")
+    return prices
+
+
 def setup_workflows_routes():
     router = APIRouter(prefix="/api/workflows", tags=["workflows"])
     from routes.workflow_credentials_routes import setup_workflow_credentials_routes
@@ -108,23 +129,82 @@ def setup_workflows_routes():
         require_admin(request)
         payload = await _json_object(request)
         definition = _definition_or_400(payload.get("definition", payload))
-        from src.workflow_cost_estimate import ModelPrice
         from src.workflow_cost_estimate import estimate as compute_estimate
-        raw_prices = payload.get("prices")
-        prices: dict = {}
-        if isinstance(raw_prices, dict):
-            for model_id, raw_price in raw_prices.items():
-                if not isinstance(raw_price, dict):
-                    continue
-                try:
-                    prices[str(model_id)] = ModelPrice(
-                        prompt_usd_per_1k=float(raw_price.get("prompt_usd_per_1k", 0.0)),
-                        completion_usd_per_1k=float(raw_price.get("completion_usd_per_1k", 0.0)),
-                    )
-                except (TypeError, ValueError):
-                    raise HTTPException(status_code=400, detail=f"prices.{model_id}: expected numbers")
+        prices = _prices_from_payload(payload)
         result = compute_estimate(definition, prices=prices or None)
         return {"ok": True, "estimate": result.to_dict()}
+
+    @router.post("/preflight")
+    async def preflight_definition(request: Request):
+        """ADP-16: connections, tools, permissions, inputs, outputs, human
+        waits, a token estimate and a cost estimate for the definition — cero
+        LLM/scripts/descargas (see `src/workflows/preflight.py`'s module
+        docstring). Same `prices` shape as `/estimate`; `installed_models`,
+        when given, only annotates `token_estimate.per_node` and changes
+        nothing else."""
+        require_admin(request)
+        payload = await _json_object(request)
+        definition = _definition_or_400(payload.get("definition", payload))
+        from src.workflows.preflight import preflight as compute_preflight
+        prices = _prices_from_payload(payload)
+        raw_installed = payload.get("installed_models")
+        if raw_installed is not None and not (
+                isinstance(raw_installed, list) and all(isinstance(m, str) for m in raw_installed)):
+            raise HTTPException(status_code=400, detail="installed_models must be a list of strings")
+        result = compute_preflight(definition, prices=prices or None,
+                                   installed_models=raw_installed)
+        return {"ok": True, "preflight": result.to_dict()}
+
+    @router.post("/export")
+    async def export_definition(request: Request):
+        """ADP-17: the canonical, versioned envelope (`export_canonical`) for
+        a definition passed in the body — round-trips through `/import`
+        unchanged (see `docs/api/topology.md`). `layout`/`design_only`/
+        `provenance` are optional and purely informational."""
+        require_admin(request)
+        payload = await _json_object(request)
+        definition = _definition_or_400(payload.get("definition", payload))
+        from src.workflows.interchange import export_canonical
+        layout = payload.get("layout")
+        design_only = payload.get("design_only")
+        provenance = payload.get("provenance")
+        if layout is not None and not isinstance(layout, dict):
+            raise HTTPException(status_code=400, detail="layout must be an object")
+        if design_only is not None and not isinstance(design_only, list):
+            raise HTTPException(status_code=400, detail="design_only must be a list")
+        if provenance is not None and not isinstance(provenance, dict):
+            raise HTTPException(status_code=400, detail="provenance must be an object")
+        exported = export_canonical(definition, layout, design_only=design_only,
+                                    provenance=provenance)
+        return {"ok": True, "export": exported}
+
+    @router.get("/runs/{run_id}/export")
+    def export_run_definition(run_id: str, request: Request):
+        """ADP-17: the same canonical envelope, for the definition a stored
+        run actually ran under — the version pinned on the run, not whatever
+        the workflow's source looks like today (see `WorkflowRun`'s own
+        docstring on why the version is stored, not looked up)."""
+        require_admin(request)
+        loaded = store.get_run(run_id)
+        if loaded is None:
+            raise HTTPException(status_code=404, detail=f"no run {run_id}")
+        from src.workflows.interchange import export_canonical
+        return {"ok": True, "run_id": run_id, "export": export_canonical(loaded["definition"])}
+
+    @router.post("/import")
+    async def import_definition(request: Request):
+        """ADP-17: import a workflow drafted elsewhere — this module's own
+        canonical envelope, or an aigraphstudio-shaped payload (see
+        `src/workflows/interchange.py`'s module docstring for the accepted
+        shapes and the mapped/design-only node-type split). Always 200: an
+        unrecognized format, a cycle or an unsupported node type is a normal
+        outcome here (`executable: false`, same as `/validate` answering a
+        bad definition with `ok: false` rather than a 4xx), never a crash."""
+        require_admin(request)
+        payload = await _json_object(request)
+        from src.workflows.interchange import import_external
+        result = import_external(payload)
+        return {"ok": True, **result}
 
     @router.post("/runs")
     async def create_run(request: Request):

@@ -37,6 +37,7 @@ from .admin_tools import (
     do_manage_tokens, do_manage_settings,
 )
 from .desktop_tools import DESKTOP_TOOL_HANDLERS, DESKTOP_TOOLS, ManageDesktopControlTool
+from .desktop_semantic_tools import DESKTOP_SEMANTIC_TOOL_HANDLERS, SEMANTIC_TOOLS
 from .exec_tools import InstallDependenciesTool, ManageScriptsTool
 from .browser_tools import CaptureEvidenceTool, BrowserExtractTool
 from .spreadsheet_tools import ManageSpreadsheetTool
@@ -50,6 +51,10 @@ from .board_tools import (
     BoardListTool, BoardReadyTool, BoardGetTool,
     BoardCreateTool, BoardUpdateTool, BoardCommentTool,
     BoardLinkTool, BoardClaimTool,
+)
+from .requirement_tools import (
+    ReqListTool, ReqGetTool, ReqMatrixTool,
+    ReqProposeTool, ReqLinkTool,
 )
 
 TOOL_HANDLERS = {
@@ -120,11 +125,20 @@ TOOL_HANDLERS = {
     "board_comment": BoardCommentTool().execute,
     "board_link": BoardLinkTool().execute,
     "board_claim": BoardClaimTool().execute,
+    # Versioned requirements tools (ADP-18/19/20): thin executors over
+    # src.requirements. See src/agent_tools/requirement_tools.py.
+    "req_list": ReqListTool().execute,
+    "req_get": ReqGetTool().execute,
+    "req_matrix": ReqMatrixTool().execute,
+    "req_propose": ReqProposeTool().execute,
+    "req_link": ReqLinkTool().execute,
 }
 # Config/integration admin tools (manage_endpoints/mcp/webhooks/tokens/settings).
 TOOL_HANDLERS.update(ADMIN_TOOL_HANDLERS)
 # Desktop control (screenshot / windows / mouse / keyboard) — FAUSTUS.
 TOOL_HANDLERS.update(DESKTOP_TOOL_HANDLERS)
+# ADP-08/09 semantic desktop tools (snapshot/find/act by control identity).
+TOOL_HANDLERS.update(DESKTOP_SEMANTIC_TOOL_HANDLERS)
 
 # ---------------------------------------------------------------------------
 # Constants (re-exported for backward compatibility — single source of truth
@@ -197,7 +211,11 @@ TOOL_TAGS = {"bash", "python", "web_search", "web_fetch", "read_file", "inspect_
              # Project board tools (Lote 92, OBJ-6) -- src/agent_tools/board_tools.py.
              "board_list", "board_ready", "board_get",
              "board_create", "board_update", "board_comment",
-             "board_link", "board_claim"} | BUILTIN_EMAIL_TOOLS | DESKTOP_TOOLS
+             "board_link", "board_claim",
+             # Versioned requirements tools (ADP-18/19/20) --
+             # src/agent_tools/requirement_tools.py.
+             "req_list", "req_get", "req_matrix",
+             "req_propose", "req_link"} | BUILTIN_EMAIL_TOOLS | DESKTOP_TOOLS | SEMANTIC_TOOLS
 
 ToolBlock = namedtuple("ToolBlock", ["tool_type", "content"])
 

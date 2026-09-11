@@ -1045,6 +1045,59 @@ FUNCTION_TOOL_SCHEMAS = [
             }
         }
     },
+    # ── Semantic desktop control (ADP-08/09): name a control, not a pixel ──
+    {
+        "type": "function",
+        "function": {
+            "name": "desktop_snapshot",
+            "description": "Read the control tree of the user's active desktop window: a bounded list of controls (role, name, automation_id, enabled, value) each with a stable `ref`. Use this INSTEAD of guessing pixel coordinates from desktop_screenshot when you need to click/type into a specific named control. A `ref` is only valid for this session and only until the window/app changes (take a new desktop_snapshot after that). Falls back cleanly (an error) on platforms without a semantic backend yet (Windows UIA only) — use desktop_screenshot + desktop_click there instead.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "depth": {"type": "integer", "description": "Optional max tree depth to walk (backend default otherwise)."},
+                    "max_elements": {"type": "integer", "description": "Optional max number of controls to return (backend default otherwise)."}
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "desktop_find",
+            "description": "Search an ALREADY-TAKEN desktop_snapshot for controls matching `query` (matched against role/name/automation_id, case-insensitive) and/or an exact `role`. Takes no new snapshot — pure search over data you already have, returning fewer, more relevant `ref`s than the full desktop_snapshot dump. Without `snapshot_id`, searches the most recent desktop_snapshot for this session.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Substring to match against role/name/automation_id (case-insensitive). Omit to just filter by `role`."},
+                    "role": {"type": "string", "description": "Optional exact role filter, e.g. \"button\", \"edit\", \"MenuItem\" (backend-dependent casing)."},
+                    "snapshot_id": {"type": "string", "description": "Optional: search a specific prior desktop_snapshot instead of the latest one."},
+                    "limit": {"type": "integer", "description": "Max matches to return (default 20, max 100)."}
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "desktop_act",
+            "description": "Act on ONE control by its `ref` (from desktop_snapshot/desktop_find): `invoke` (click/press/activate), `select` (pick a value, e.g. in a list/combo — pass `value`), `set_value` (replace an edit control's text — pass `value`), `scroll`, or `focus`. Re-resolves the ref against a FRESH read right before acting — fails clearly (never guesses) if the control moved, was deleted, or is now ambiguous. Optional `precondition` ({attribute: expected_value}, e.g. {\"enabled\": true}) must hold on the re-resolved control or nothing is executed. Returns `delivery` ('delivered'|'not_delivered'|'unknown' — a timeout is 'unknown', never treated as failure or success) and `verified` (whether the result was actually re-checked) as SEPARATE facts. Requires user approval on every call, like desktop_click.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "ref": {"type": "string", "description": "A ref returned by desktop_snapshot or desktop_find."},
+                    "op": {"type": "string", "enum": ["invoke", "select", "set_value", "scroll", "focus"], "description": "The operation to perform on the resolved control."},
+                    "value": {"type": "string", "description": "For select/set_value: the value to apply."},
+                    "direction": {"type": "string", "description": "For scroll: e.g. \"down\"/\"up\" (backend-dependent)."},
+                    "amount": {"type": "string", "description": "For scroll: e.g. \"line\"/\"page\" (backend-dependent)."},
+                    "precondition": {"type": "object", "description": "Optional {attribute: expected_value} that must hold on the re-resolved control right before acting (e.g. {\"enabled\": true})."},
+                    "timeout": {"type": "number", "description": "Seconds to wait for the backend to confirm delivery before reporting delivery=\"unknown\" (default 5, max 30)."}
+                },
+                "required": ["ref", "op"]
+            }
+        }
+    },
     {
         "type": "function",
         "function": {
@@ -2273,6 +2326,88 @@ FUNCTION_TOOL_SCHEMAS = [
                     "assignee": {"type": "string", "description": "Who is claiming it (optional; defaults to 'agent')"}
                 },
                 "required": ["id"]
+            }
+        }
+    },
+    # ── Versioned requirements tools (ADP-18/19/20): the project's spec
+    # (REQ-N style ids, sequential per project) -- see
+    # src/agent_tools/requirement_tools.py. The project is always resolved
+    # from the current chat; none of these take a project id.
+    {
+        "type": "function",
+        "function": {
+            "name": "req_list",
+            "description": "List this project's requirements (REQ-N style ids), filtered by status/source and/or a text search `q` over title and text. Read-only. Use for 'what are the requirements', 'what did we decide about X'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "status": {"type": "string", "enum": ["proposed", "accepted", "rejected", "superseded"], "description": "Filter by exact status (optional)"},
+                    "source": {"type": "string", "enum": ["doc", "issue", "url", "human"], "description": "Filter by exact source (optional)"},
+                    "q": {"type": "string", "description": "Free-text search over title and text (optional)"}
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "req_get",
+            "description": "Full detail of one requirement: title, text, acceptance criteria, status, and its links (implements/tests/evidences/issue). Read-only.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "key": {"type": "string", "description": "Requirement key, e.g. 'REQ-3'"}
+                },
+                "required": ["key"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "req_matrix",
+            "description": "Coverage matrix for one requirement (give `key`) or every requirement of this project (omit `key`): four independent facts -- linked (any evidence at all), implemented (an `implements` link whose path/symbol still resolves), tested (same for a `tests` link), verified (an `evidences` link recorded against the requirement's CURRENT revision) -- plus `stale` when a link's target changed since it was recorded. Read-only.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "key": {"type": "string", "description": "Requirement key, e.g. 'REQ-3' (optional -- omit for the whole project)"}
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "req_propose",
+            "description": "File a new requirement as a MODEL PROPOSAL -- it always lands `status: proposed`, never `accepted`, no matter what is asked; only a human can accept or reject it later. Returns its key -- ALWAYS cite it back to the user ('Propuesto como REQ-4, pendiente de tu aceptación'), never invent one. Use when the user states a new requirement/constraint/acceptance criterion, or when you infer one that should be tracked and confirmed.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string", "description": "Short title"},
+                    "text": {"type": "string", "description": "Longer description (optional)"},
+                    "source": {"type": "string", "enum": ["doc", "issue", "url", "human"], "description": "Where this came from (default 'human')"},
+                    "acceptance": {"type": "array", "items": {"type": "string"}, "description": "Acceptance criteria, one per item (optional)"}
+                },
+                "required": ["title"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "req_link",
+            "description": "Attach evidence to a requirement: `implements` (a file, optionally `path@symbol`, that implements it), `tests` (a test file/id that exercises it), `evidences` (a run/test-result id that VERIFIES it against its current revision), or `issue` (a board issue key). A filesystem target outside this project's workspace is refused, never silently accepted.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "key": {"type": "string", "description": "Requirement key, e.g. 'REQ-3'"},
+                    "kind": {"type": "string", "enum": ["implements", "tests", "evidences", "issue"]},
+                    "target": {"type": "string", "description": "e.g. 'src/auth.py@login', 'tests/test_auth.py::test_login', 'run_abc123', or 'FAU-9'"},
+                    "revision": {"type": "string", "description": "Git sha the target was checked against (optional)"}
+                },
+                "required": ["key", "kind", "target"]
             }
         }
     },

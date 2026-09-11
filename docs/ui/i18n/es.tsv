@@ -6669,3 +6669,7 @@ Zero Data Retention (ZDR)	Retención cero de datos (ZDR)
 auto = the project's privacy policy decides.	auto = lo decide la política de privacidad del proyecto.
 ~$0.02 per request with 5 results; this never turns itself on — only this toggle, or a one-off request, enables it.	~0,02 $ por petición con 5 resultados; esto nunca se activa solo — solo lo activan este interruptor o una petición puntual.
 This permission request expired before it was answered — nothing was executed. Ask again to get a fresh card.	Esta petición de permiso caducó antes de responderse: no se ejecutó nada. Pídelo de nuevo para tener una tarjeta nueva.
+Finished — not reviewed yet	Terminado — sin revisar
+No recent events — is it disconnected?	Sin eventos recientes — ¿desconectado?
+Queued for its turn	En cola, esperando su turno
+Waiting on another run to finish	Esperando a que termine otra ejecución
