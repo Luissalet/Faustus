@@ -6904,3 +6904,5 @@ Reported by an external runtime Faustus does not run itself. Read-only: nothing 
 Runtime	Runtime
 Certainty	Certeza
 Signal age	Antigüedad de la señal
+Strategy profile: {label}	Perfil de estrategia: {label}
+Recipe: {label}	Receta: {label}

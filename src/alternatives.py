@@ -491,17 +491,22 @@ def run_tests(owner: str, exp_id: str, alt_id: str, command: str, *,
     command = (command or "").strip()
     if not command:
         raise AlternativesError("`command` is required", error_class="alternatives.invalid_request")
+    # POSIX splitting (shlex) eats the backslashes of a Windows path
+    # (`D:\venv\Scripts\python.exe` -> `D:venvScriptspython.exe`), so on
+    # Windows the string goes to CreateProcess as-is, which parses quotes the
+    # way the user's shell would; still never `shell=True` on either side.
     try:
-        argv = shlex.split(command)
+        argv = shlex.split(command, posix=(os.name != "nt"))
     except ValueError as exc:
         raise AlternativesError(f"could not parse command: {exc}", error_class="alternatives.invalid_request") from exc
     if not argv:
         raise AlternativesError("`command` is empty", error_class="alternatives.invalid_request")
+    to_run: Any = command if os.name == "nt" else argv
 
     started = time.time()
     try:
         proc = subprocess.run(
-            argv, cwd=alt["path"], capture_output=True, text=True, encoding="utf-8", errors="replace",
+            to_run, cwd=alt["path"], capture_output=True, text=True, encoding="utf-8", errors="replace",
             timeout=max(1.0, min(float(timeout or DEFAULT_TEST_TIMEOUT), 600.0)),
             env=native_host_environment(),
         )

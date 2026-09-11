@@ -880,3 +880,19 @@
   color: var(--fs-warning);
   border-color: color-mix(in srgb, var(--fs-warning) 45%, var(--fs-border));
 }
+
+/* Seen live (11-09): with the attention chip and the status badge trailing
+   the row, the title column was squeezed to a few characters at the default
+   list width. Let the main column claim a minimum and wrap the trailing
+   controls onto their own line when there is no room, instead of crushing
+   the title. */
+.fs-act__row {
+  flex-wrap: wrap;
+}
+.fs-act__row > .fs-run__main {
+  flex: 1 1 240px;
+  min-inline-size: 0;
+}
+.fs-act__row > .fs-act__next-action {
+  margin-inline-start: auto;
+}

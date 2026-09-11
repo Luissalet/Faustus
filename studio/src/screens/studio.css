@@ -3592,3 +3592,14 @@ aside.fs-panel { position: relative; }
     display: none;
   }
 }
+
+/* Seen live (11-09): the strategy-profile and recipe chips (CMP-09/12) made
+   the composer bar wrap Send under the "+" at the default stage width. Below
+   a wide stage they show only their icon (the label lives in the tooltip and
+   the aria-label); the popover still spells everything out. */
+.fs-studio__chip--compact .fs-studio__chip-label { max-inline-size: 12ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 1700px) {
+  .fs-studio__bar > .fs-studio__chip--compact .fs-studio__chip-label { display: none; }
+  .fs-studio__bar > .fs-studio__chip--compact { padding-inline: var(--fs-space-2); }
+}
+

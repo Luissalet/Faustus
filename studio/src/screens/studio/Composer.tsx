@@ -1054,8 +1054,8 @@ function StrategyProfileSelector({ profile, onPick }: { profile: StrategyProfile
       side="top"
       className="fs-studio__permission-menu"
       trigger={
-        <button type="button" className="fs-studio__chip" data-strategy-profile={profile} data-testid="studio-strategy-profile">
-          <Layers size={14} aria-hidden="true" /> {current.label}
+        <button type="button" className="fs-studio__chip fs-studio__chip--compact" data-strategy-profile={profile} data-testid="studio-strategy-profile" title={current.label} aria-label={t('Strategy profile: {label}', { label: current.label })}>
+          <Layers size={14} aria-hidden="true" /> <span className="fs-studio__chip-label">{current.label}</span>
         </button>
       }
     >
@@ -1091,8 +1091,8 @@ function RecipeSelector({
       side="top"
       className="fs-studio__permission-menu"
       trigger={
-        <button type="button" className="fs-studio__chip" data-recipe={recipeId ?? ''} data-testid="studio-recipe-selector">
-          <BookOpen size={14} aria-hidden="true" /> {current ? current.title : t('No recipe')}
+        <button type="button" className="fs-studio__chip fs-studio__chip--compact" data-recipe={recipeId ?? ''} data-testid="studio-recipe-selector" title={current ? current.title : t('No recipe')} aria-label={t('Recipe: {label}', { label: current ? current.title : t('No recipe') })}>
+          <BookOpen size={14} aria-hidden="true" /> <span className="fs-studio__chip-label">{current ? current.title : t('No recipe')}</span>
         </button>
       }
     >
