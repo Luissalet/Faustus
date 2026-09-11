@@ -5563,6 +5563,51 @@ async def _stream_agent_loop_body(
             _relevant_tools = set(ALWAYS_AVAILABLE)
         _relevant_tools.update({"read_file", "grep", "ls", "manage_documents"})
 
+    # Tools the user NAMED are offered (OBJ-4, seen live: "usa la herramienta
+    # git_status" got "no tengo git_status en esta sesión" because retrieval
+    # never ranked it). A literal tool name in the request is the strongest
+    # relevance signal there is; disabled_tools still has the last word.
+    if not guide_only and _relevant_tools is not None and _last_user:
+        try:
+            from src.agent_tools import TOOL_HANDLERS as _all_tool_names
+            _named = {tok for tok in re.findall(r"\b[a-z][a-z0-9_]{2,}\b", _last_user.lower())
+                      if "_" in tok and tok in _all_tool_names and tok not in disabled_tools}
+        except Exception:  # noqa: BLE001 - never let this block a turn
+            _named = set()
+        if _named - set(_relevant_tools):
+            logger.info("[tool-rag] tools named in the request offered: %s", sorted(_named - set(_relevant_tools)))
+            _relevant_tools.update(_named)
+
+    # A workspace that is (or contains) a git repository gets the read-only
+    # git tools; a request that talks about git/commits/branches/pushing gets
+    # the mutating ones too. Bash is not the way to drive git here: the git_*
+    # tools honour the repository policy and show in the Source control panel.
+    if not guide_only and _relevant_tools is not None and workspace and not disabled_tools.issuperset(
+            {"git_status", "git_log", "git_diff"}):
+        try:
+            from src.tool_execution import _GIT_TOOL_NAMES
+            _git_read = {"git_status", "git_log", "git_diff"}
+            _git_intent = bool(re.search(
+                r"\b(git|commit|commits|commitea|push|pull|fetch|rama|ramas|branch|branches|merge|"
+                r"stage|checkout|repositorio|repo)\b", _last_user or "", re.IGNORECASE))
+            import os as _os_git
+            _dot_git = _os_git.path.join(workspace, ".git")
+            _has_repo = _os_git.path.isdir(_dot_git) or _os_git.path.isfile(_dot_git)
+            if not _has_repo and _git_intent:
+                try:
+                    from src.git_panel import repo_toplevel
+                    _has_repo = repo_toplevel(workspace) is not None
+                except Exception:  # noqa: BLE001
+                    _has_repo = False
+            if _has_repo or _git_intent:
+                _git_add = set(_GIT_TOOL_NAMES) if _git_intent and not _low_signal_turn else _git_read
+                _git_add -= set(disabled_tools)
+                if _git_add - set(_relevant_tools):
+                    logger.info("[tool-floor] git tools offered: %s", sorted(_git_add - set(_relevant_tools)))
+                    _relevant_tools.update(_git_add)
+        except Exception as _git_floor_err:  # noqa: BLE001
+            logger.debug("[tool-floor] git floor skipped: %s", _git_floor_err)
+
     # Per-request forced tools are stronger than retrieval. Explicit search
     # settings make web tools visible even when tool RAG misses them;
     # route-level disabled_tools decides what remains allowed.
