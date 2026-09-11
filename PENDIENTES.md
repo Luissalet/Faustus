@@ -124,10 +124,18 @@ y `MAPA_P1.md`. Estado real tras este cierre:
 - **Mermaid en Studio.** Se muestra la fuente (copiar/descargar); render
   gráfico solo si se decide añadir la librería.
 - **OBJ-5 (nodos remotos por grupos)** aplazado hasta tener un segundo PC.
-- Verificación en vivo pendiente en el 7001: merge de rama desde el diálogo
-  del panel, tablero kanban, barra lateral nueva, y el tab de Chrome que
-  dejó de responder a la extensión durante un streaming largo (¿regresión de
-  rendimiento del Studio?).
+- Verificado en vivo en el 7001 (11-09, d360f4a): commit + merge
+  fast-forward de `pruebas` en `main` desde el diálogo Merge…, push, borrado
+  de la rama (todo contrastado con `git` a mano); tablero kanban (crear
+  LOC-1, arrastrar a «In progress»); barra lateral nueva; Ajustes → Router
+  de modelos («Probar decisión» ahora descubre los modelos de Ollama).
+- **Tab de Chrome colgado (una vez, no reproducido).** Un tab quedó en
+  «page still loading» durante horas tras un turno con tarjeta de
+  aprobación pendiente y un reinicio del 7001. Reproducir el corte de
+  stream con reinicio NO lo provoca (el turno cierra con «The connection to
+  the server dropped mid-turn»). Lo que sí era un bug y está arreglado: la
+  tarjeta de aprobación restaurada tras el reinicio con botones vivos y el
+  composer bloqueado (ahora se sirve `resolved: expired`).
 
 ## Última evidencia
 
