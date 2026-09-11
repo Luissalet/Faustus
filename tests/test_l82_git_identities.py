@@ -71,6 +71,11 @@ def ssh_home(tmp_path, monkeypatch):
     monkeypatch.setenv("USERPROFILE", str(home))  # Windows: expanduser ignores HOME
     monkeypatch.setattr(constants_mod, "DATA_DIR", str(tmp_path / "data"))
     git_identities._PROBE_CACHE.clear()
+    # A machine with a real `gh` logged in (Luis's Windows) would otherwise
+    # merge its accounts -- with their logins -- into every listing here.
+    from src import git_github
+    monkeypatch.setattr(git_github, "gh_accounts",
+                        lambda *a, **k: {"available": False, "version": None, "accounts": []})
     yield ssh_dir
     git_identities._PROBE_CACHE.clear()
 

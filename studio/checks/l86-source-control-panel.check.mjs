@@ -18,7 +18,7 @@ import { dirname, resolve, join } from 'node:path';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const path = (p) => join(root, p);
-const read = (p) => readFileSync(path(p), 'utf8');
+const read = (p) => readFileSync(path(p), 'utf8').replace(/\r\n/g, '\n'); // CRLF checkouts (Windows) must match the same slices
 
 // ── SourceControlPanel.tsx exists and exposes the exact contract props ──
 {
