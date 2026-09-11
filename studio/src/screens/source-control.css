@@ -22,13 +22,30 @@
   --fs-sc-lane-5: var(--fs-text-2);
 }
 
-/* ── Layout: repos | changes+graph | diff/detail ── */
+/* ── Lote 85: full-width, VS Code-style layout ──
+ * AppShell's per-route `data-screen` ternary (shell/AppShell.tsx, which
+ * this lot does not touch) does not know about `/source-control`, so
+ * `.fs-main__inner` still caps at the prose width (shell.css) every other
+ * un-registered screen gets. Nothing else on this screen wants that
+ * default, so widen it from here, scoped to this screen alone via
+ * `:has()` — the same escape hatch `.fs-mem:has(.fs-mem__check)` uses in
+ * memory.css — rather than touching shell.css or the route table. */
+.fs-main__inner:has(.fs-sc) {
+  max-inline-size: 1480px;
+}
+
+/* ── Layout: REPOSITORIES (280px) | CENTER (flexible) | DIFF (38%, only
+   while a file or commit is open — "colapsable" per CONTRATO_GIT_3.md) ── */
 .fs-sc__layout {
   display: grid;
-  grid-template-columns: minmax(220px, 260px) minmax(320px, 420px) minmax(0, 1fr);
+  grid-template-columns: 280px minmax(0, 1fr);
   gap: var(--fs-space-4);
   align-items: start;
   min-block-size: 50vh;
+}
+
+.fs-sc__layout[data-diff-open] {
+  grid-template-columns: 280px minmax(0, 1fr) minmax(320px, 38%);
 }
 
 .fs-sc__repos {
@@ -41,6 +58,7 @@
   min-inline-size: 0;
   display: grid;
   gap: var(--fs-space-4);
+  align-content: start;
 }
 
 .fs-sc__right {
@@ -59,7 +77,8 @@
 }
 
 @media (max-width: 1100px) {
-  .fs-sc__layout {
+  .fs-sc__layout,
+  .fs-sc__layout[data-diff-open] {
     grid-template-columns: minmax(200px, 240px) minmax(0, 1fr);
   }
   .fs-sc__right {
@@ -72,12 +91,35 @@
 }
 
 @media (max-width: 899px) {
-  .fs-sc__layout {
+  .fs-sc__layout,
+  .fs-sc__layout[data-diff-open] {
     grid-template-columns: minmax(0, 1fr);
   }
   .fs-sc__layout[data-detail] .fs-sc__repos {
     display: none;
   }
+}
+
+/* ── Lote 85: the center column's repo header + Fetch/Pull/Push/Sync/New
+   branch/Publish toolbar ── */
+.fs-sc__repo-ops {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--fs-space-1);
+  border-block-end: 1px solid var(--fs-border);
+  padding-block-end: var(--fs-space-3);
+}
+
+.fs-sc__diff-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--fs-space-2);
+}
+
+.fs-sc__diff-head .fs-sc__diff-title {
+  min-inline-size: 0;
 }
 
 /* ── Repo rail ── */
@@ -130,7 +172,18 @@
   align-items: center;
   gap: var(--fs-space-2);
   font-weight: var(--fs-label-weight);
-  overflow-wrap: anywhere;
+  min-inline-size: 0;
+}
+
+/* One line, ellipsized — the full name is still on `title` (RepoList.tsx)
+   and on hover/focus. A long name used to wrap onto a second line and
+   push every row below it down. */
+.fs-sc__repo-name-text {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .fs-sc__repo-dirty {
@@ -150,6 +203,9 @@
 .fs-sc__repo-project {
   color: var(--fs-text-3);
   font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .fs-sc__repo-actions {
@@ -417,19 +473,31 @@
   padding-block: 4px;
 }
 
+/* A commit message is one line, ellipsized — text-overflow does not
+   reliably clip a flex container's mixed text-and-chip children, so the
+   message gets its own ellipsizing span and the refs live beside it in
+   `.fs-sc__graph-message-row`, not inside it (`title` on the message
+   itself carries the full text). */
+.fs-sc__graph-message-row {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  min-inline-size: 0;
+}
+
 .fs-sc__graph-message {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  display: flex;
-  align-items: center;
-  gap: var(--fs-space-2);
+  min-inline-size: 0;
+  flex: 1 1 auto;
 }
 
 .fs-sc__graph-refs {
   display: inline-flex;
   gap: 4px;
-  flex: 0 1 auto;
+  flex: 0 0 auto;
+  max-inline-size: 45%;
   overflow: hidden;
 }
 
@@ -664,6 +732,23 @@
 .fs-sc__identity-row label {
   min-inline-size: 0;
   overflow-wrap: anywhere;
+}
+
+/* Lote 85: the `source: "gh"` icon next to a GitHub CLI identity, distinct
+   from the SSH-key identities' `KeyRound`. */
+.fs-sc__identity-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--fs-space-1);
+  flex-wrap: wrap;
+}
+
+/* Lote 85: "New repository" -> "Create on GitHub too" ── */
+.fs-sc__github-section {
+  display: grid;
+  gap: var(--fs-space-2);
+  border-block-start: 1px solid var(--fs-border);
+  padding-block-start: var(--fs-space-2);
 }
 
 .fs-sc__identity-confirm,

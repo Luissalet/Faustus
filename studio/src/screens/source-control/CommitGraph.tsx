@@ -109,8 +109,10 @@ export function CommitGraph({
             >
               {row && <RowGraph row={row} width={width} />}
               <span className="fs-sc__graph-main">
-                <span className="fs-sc__graph-message">
-                  {commit.message}
+                <span className="fs-sc__graph-message-row">
+                  <span className="fs-sc__graph-message" title={commit.message}>
+                    {commit.message}
+                  </span>
                   {refs.length > 0 && (
                     <span className="fs-sc__graph-refs">
                       {refs.map((chip, i) => (

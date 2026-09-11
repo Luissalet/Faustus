@@ -45,6 +45,9 @@ import os
 import re
 import shutil
 import subprocess
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
@@ -64,6 +67,16 @@ GIT_TIMEOUT_LONG = 120.0
 MAX_REPOS = 60
 MAX_DEPTH = 3
 _SKIP_DIR_NAMES = frozenset({"node_modules", ".venv", "venv", "__pycache__", "dist", "build"})
+
+# The filesystem WALK (finding `.git` dirs under an owner's linked folders)
+# is what actually costs seconds on a Windows box with 24 repos -- the live
+# git status of each repo found is never cached (see `repo_summary`), only
+# this. 30s per the contract; invalidated eagerly by `create_repo` so a
+# freshly created/cloned repo shows up without waiting out the TTL.
+_DISCOVERY_TTL = 30.0
+_DISCOVERY_LOCK = threading.Lock()
+# owner-key -> (monotonic timestamp, projects fingerprint, deduped repo list)
+_DISCOVERY_CACHE: Dict[str, Tuple[float, Tuple[Any, ...], List[Dict[str, Any]]]] = {}
 
 MAX_DIFF_BYTES = 200_000
 STDERR_SNIPPET_LIMIT = 2000
@@ -312,26 +325,30 @@ def _project_root_folders(project: Dict[str, Any]) -> List[str]:
     return out
 
 
-def discover_repos_for_owner(owner: Optional[str], project_id: str = "") -> Optional[List[Dict[str, Any]]]:
-    """Every repo (incl. nested) under the owner's linked project folders.
+def _owner_cache_key(owner: Optional[str]) -> str:
+    return str(owner or "").strip() or "_"
 
-    Returns `None` when `project_id` was given but does not resolve to a
-    project the owner can see (caller's cue to answer 404). Otherwise a list
-    of dicts: id/path/name/project_id/project_name/root_folder/parent_repo_id
-    -- everything discovery itself knows; live git fields are added by
-    `repo_summary`. Capped at MAX_REPOS total, across every project/folder.
-    """
-    from services.projects import get_store
 
-    store = get_store()
-    if project_id:
-        project = store.get(project_id, owner)
-        if not project:
-            return None
-        projects = [project]
-    else:
-        projects = store.list(owner)
+def invalidate_discovery_cache(owner: Optional[str] = None) -> None:
+    """Drop the cached filesystem walk -- for one owner, or (no argument)
+    every owner. Called after `create_repo` succeeds, so a just-created or
+    -cloned repo is visible on the very next list instead of waiting out
+    `_DISCOVERY_TTL`."""
+    with _DISCOVERY_LOCK:
+        if owner is None:
+            _DISCOVERY_CACHE.clear()
+        else:
+            _DISCOVERY_CACHE.pop(_owner_cache_key(owner), None)
 
+
+def _walk_projects(projects: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """The actual filesystem walk: every repo (incl. nested) under `projects`'
+    linked folders, as discovery records -- id/path/name/project_id/
+    project_name/root_folder/parent_repo_id. May contain duplicate paths
+    when two projects (or two links of one project) point at the same
+    folder; `_dedupe_repos` collapses those. Capped at MAX_REPOS entries
+    (pre-dedupe) across every project/folder -- this is the part real disk
+    I/O makes slow, so it is what gets cached."""
     out: List[Dict[str, Any]] = []
     for project in projects:
         if len(out) >= MAX_REPOS:
@@ -359,6 +376,95 @@ def discover_repos_for_owner(owner: Optional[str], project_id: str = "") -> Opti
     return out
 
 
+def _dedupe_repos(entries: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Collapse entries that share a normalized real path -- e.g. two
+    projects linking the same folder on disk -- into ONE row per repo. The
+    first occurrence wins for `project_id`/`project_name`/`root_folder`/
+    `parent_repo_id` (kept for callers that pre-date multi-project repos);
+    every project that surfaced this path is listed in `"projects"`."""
+    order: List[str] = []
+    by_key: Dict[str, Dict[str, Any]] = {}
+    for entry in entries:
+        try:
+            real = os.path.realpath(entry["path"])
+        except OSError:
+            real = entry["path"]
+        key = os.path.normcase(real)
+        base = by_key.get(key)
+        if base is None:
+            base = dict(entry)
+            base["projects"] = []
+            by_key[key] = base
+            order.append(key)
+        proj = {"id": entry.get("project_id"), "name": entry.get("project_name")}
+        if proj not in base["projects"]:
+            base["projects"].append(proj)
+    return [by_key[k] for k in order]
+
+
+def _projects_fingerprint(projects: Sequence[Dict[str, Any]]) -> Tuple[Any, ...]:
+    """A cheap signature of "what `store.list(owner)` returned" -- which
+    projects exist, and the parts of each that decide what discovery would
+    walk (`workspace`, and `updated_at`/`context_revision`, which bump
+    whenever a project's `folder` context links change). `store.list` itself
+    is just a JSON read, cheap to call on every request; comparing THIS is
+    what lets the cache skip the actual filesystem walk only when nothing
+    that walk depends on could have changed -- a project renamed, deleted,
+    (un)linked, or created invalidates the cache for free, no explicit
+    `invalidate_discovery_cache` needed for any of those."""
+    return tuple(
+        (p.get("id"), p.get("workspace"), p.get("updated_at"), p.get("context_revision"))
+        for p in projects
+    )
+
+
+def discover_repos_for_owner(owner: Optional[str], project_id: str = "", *,
+                             use_cache: bool = True) -> Optional[List[Dict[str, Any]]]:
+    """Every repo (incl. nested) under the owner's linked project folders,
+    deduped by real path (`"projects"` lists every project that links it).
+
+    Returns `None` when `project_id` was given but does not resolve to a
+    project the owner can see (caller's cue to answer 404). Otherwise a list
+    of dicts: id/path/name/project_id/project_name/projects/root_folder/
+    parent_repo_id -- everything discovery itself knows; live git fields are
+    added by `repo_summary`/`repo_summaries`.
+
+    The filesystem WALK for the whole-owner case (no `project_id`) is cached
+    30s per owner, keyed also on `_projects_fingerprint` (`use_cache=False`
+    bypasses it entirely -- e.g. right after a write a caller wants a
+    guaranteed-fresh read without waiting on `invalidate_discovery_cache`).
+    A `project_id`-scoped call is cheap enough (one project's folders, not
+    every project) that it always walks fresh -- simpler than reasoning
+    about a project-scoped cache key, and it keeps 404-on-unknown-project a
+    real-time check.
+    """
+    from services.projects import get_store
+
+    store = get_store()
+    if project_id:
+        project = store.get(project_id, owner)
+        if not project:
+            return None
+        return _dedupe_repos(_walk_projects([project]))
+
+    projects = store.list(owner)
+    key = _owner_cache_key(owner)
+    fingerprint = _projects_fingerprint(projects)
+    if use_cache:
+        with _DISCOVERY_LOCK:
+            hit = _DISCOVERY_CACHE.get(key)
+        if hit is not None:
+            ts, cached_fingerprint, cached_result = hit
+            if cached_fingerprint == fingerprint and (time.monotonic() - ts) < _DISCOVERY_TTL:
+                return cached_result
+
+    result = _dedupe_repos(_walk_projects(projects))
+    if use_cache:
+        with _DISCOVERY_LOCK:
+            _DISCOVERY_CACHE[key] = (time.monotonic(), fingerprint, result)
+    return result
+
+
 def find_repo_meta(repo_id: str, owner: Optional[str]) -> Optional[Dict[str, Any]]:
     """The discovery record for `repo_id` among the owner's repos, or None.
 
@@ -375,15 +481,22 @@ def find_repo_meta(repo_id: str, owner: Optional[str]) -> Optional[Dict[str, Any
 
 
 # ---------------------------------------------------------------------------
-# Status parsing (`git status --porcelain=v2 -z`)
+# Status parsing (`git status --porcelain=v2 -z [--branch]`)
 # ---------------------------------------------------------------------------
 def _map_status(code: str) -> str:
     return code if code in ("A", "M", "D", "R", "C") else "M"
 
 
-def parse_status_v2(text: str) -> Tuple[List[Dict[str, str]], List[Dict[str, str]], List[Dict[str, str]], List[Dict[str, str]]]:
-    """Parse `git status --porcelain=v2 -z` output into
-    (staged, unstaged, untracked, conflicts)."""
+def _tokenize_status_v2(text: str) -> Tuple[Dict[str, str], List[Dict[str, str]], List[Dict[str, str]],
+                                            List[Dict[str, str]], List[Dict[str, str]]]:
+    """Shared parser for `git status --porcelain=v2 -z` output, `--branch` or
+    not: with `-z`, the `# branch.*` header lines are ALSO NUL-terminated
+    (verified against a real `git status`, not assumed from the docs), so
+    they show up as ordinary tokens starting with `"# "` alongside the file
+    entries -- one pass picks out both. Returns
+    (branch_headers, staged, unstaged, untracked, conflicts); a caller that
+    only wants the four lists (no `--branch`) gets an empty headers dict."""
+    headers: Dict[str, str] = {}
     staged: List[Dict[str, str]] = []
     unstaged: List[Dict[str, str]] = []
     untracked: List[Dict[str, str]] = []
@@ -396,6 +509,10 @@ def parse_status_v2(text: str) -> Tuple[List[Dict[str, str]], List[Dict[str, str
         tok = tokens[i]
         i += 1
         if not tok:
+            continue
+        if tok.startswith("# branch."):
+            key, _, value = tok[len("# branch."):].partition(" ")
+            headers[key] = value
             continue
         kind = tok[0]
         if kind == "1":
@@ -429,7 +546,43 @@ def parse_status_v2(text: str) -> Tuple[List[Dict[str, str]], List[Dict[str, str
         elif kind == "?":
             untracked.append({"path": tok[2:]})
         # kind == "!" (ignored) is dropped -- not part of any contract list.
+    return headers, staged, unstaged, untracked, conflicts
+
+
+def parse_status_v2(text: str) -> Tuple[List[Dict[str, str]], List[Dict[str, str]], List[Dict[str, str]], List[Dict[str, str]]]:
+    """Parse `git status --porcelain=v2 -z` output into
+    (staged, unstaged, untracked, conflicts)."""
+    _headers, staged, unstaged, untracked, conflicts = _tokenize_status_v2(text)
     return staged, unstaged, untracked, conflicts
+
+
+_AB_RE = re.compile(r"\+(\d+)\s+-(\d+)")
+
+
+def parse_status_v2_branch(text: str) -> Dict[str, Any]:
+    """Parse `git status --porcelain=v2 -z --branch` output into everything
+    ONE such call can answer: branch/detached/head_sha/upstream/ahead/behind
+    plus the usual staged/unstaged/untracked/conflicts -- this single
+    command is what lets `repo_summary` do the whole "which branch, how far
+    from upstream, how dirty" question in one `git` process instead of the
+    four separate ones (`symbolic-ref`, `rev-parse --abbrev-ref @{u}`,
+    `rev-list --count`, `status`) the panel started with."""
+    headers, staged, unstaged, untracked, conflicts = _tokenize_status_v2(text)
+    head = headers.get("head") or ""
+    detached = head == "(detached)"
+    branch = None if (not head or detached) else head
+    oid = headers.get("oid") or ""
+    head_sha = None if (not oid or oid == "(initial)") else oid
+    upstream = headers.get("upstream") or None
+    ahead = behind = 0
+    m = _AB_RE.match(headers.get("ab") or "")
+    if m:
+        ahead, behind = int(m.group(1)), int(m.group(2))
+    return {
+        "branch": branch, "detached": detached, "head_sha": head_sha,
+        "upstream": upstream, "ahead": ahead, "behind": behind,
+        "staged": staged, "unstaged": unstaged, "untracked": untracked, "conflicts": conflicts,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -468,14 +621,29 @@ def _ahead_behind(repo_path: str, upstream: Optional[str]) -> Tuple[int, int]:
     return ahead, behind
 
 
+_USER_CONFIG_RE = re.compile(r"^user\.(name|email)$")
+
+
 def repo_user(repo_path: str) -> Dict[str, str]:
-    """The repo's EFFECTIVE (local overriding global) git identity."""
-    name_p = run_git(repo_path, "config", "user.name")
-    email_p = run_git(repo_path, "config", "user.email")
-    return {
-        "name": name_p.stdout.strip() if name_p.returncode == 0 else "",
-        "email": email_p.stdout.strip() if email_p.returncode == 0 else "",
-    }
+    """The repo's EFFECTIVE (local overriding global) git identity -- ONE
+    `git config --get-regexp` call instead of two separate `config
+    user.name`/`config user.email` ones. `--get-regexp` can print a matched
+    key more than once (once per config file it is set in, in increasing
+    priority -- system, then global, then local), so the LAST line for a key
+    wins here, same as a plain `git config <key>` already resolves to the
+    single effective value."""
+    proc = run_git(repo_path, "config", "--get-regexp", r"^user\.(name|email)$")
+    name = email = ""
+    if proc.returncode == 0:
+        for line in proc.stdout.splitlines():
+            key, sep, value = line.partition(" ")
+            if not sep or not _USER_CONFIG_RE.match(key):
+                continue
+            if key == "user.name":
+                name = value
+            else:
+                email = value
+    return {"name": name, "email": email}
 
 
 def repo_remotes(repo_path: str) -> List[Dict[str, Optional[str]]]:
@@ -503,35 +671,49 @@ def repo_remotes(repo_path: str) -> List[Dict[str, Optional[str]]]:
     return list(by_name.values())
 
 
-def repo_status(repo_path: str) -> Dict[str, Any]:
-    branch, detached = _current_branch(repo_path)
-    upstream = _upstream(repo_path)
-    ahead, behind = _ahead_behind(repo_path, upstream)
-    proc = run_git(repo_path, "status", "--porcelain=v2", "-z", "--untracked-files=all")
+def _status_branch(repo_path: str) -> Dict[str, Any]:
+    """`git status --porcelain=v2 -z --branch --untracked-files=all`, parsed
+    -- the ONE call `repo_status`/`repo_summary` build everything from."""
+    proc = run_git(repo_path, "status", "--porcelain=v2", "-z", "--branch", "--untracked-files=all")
     text = proc.stdout if proc.returncode == 0 else ""
-    staged, unstaged, untracked, conflicts = parse_status_v2(text)
-    return {
-        "branch": branch, "detached": detached, "ahead": ahead, "behind": behind,
-        "upstream": upstream, "staged": staged, "unstaged": unstaged,
-        "untracked": untracked, "conflicts": conflicts,
-    }
+    return parse_status_v2_branch(text)
+
+
+def repo_status(repo_path: str) -> Dict[str, Any]:
+    status = _status_branch(repo_path)
+    return {k: status[k] for k in (
+        "branch", "detached", "ahead", "behind", "upstream",
+        "staged", "unstaged", "untracked", "conflicts",
+    )}
 
 
 def repo_summary(path: str, *, project_id: Any, project_name: Any, root_folder: str,
-                  parent_repo_id: Optional[str]) -> Dict[str, Any]:
-    """The full `GET /api/git/repos/{id}` shape, freshly computed."""
-    status = repo_status(path)
-    return {
+                  parent_repo_id: Optional[str], projects: Optional[List[Dict[str, Any]]] = None,
+                  light: bool = False) -> Dict[str, Any]:
+    """The full `GET /api/git/repos/{id}` shape, freshly computed.
+
+    ONE `git` call in `light` mode (branch/ahead/behind/dirty only -- for
+    the polling adapter's `?light=1`), THREE in full mode (status, the
+    effective `user.*`, and `remote -v`) -- down from the eight separate
+    invocations (`symbolic-ref`, `rev-parse --abbrev-ref @{u}`, `rev-list
+    --count`, `status`, `rev-parse HEAD`, two `config user.*`, `remote -v`)
+    this used to make per repo, which is most of where 24 repos going from
+    9.5s to well under 2s on Windows comes from -- a `git.exe` process spawn
+    there costs far more than the git operation itself.
+    """
+    status = _status_branch(path)
+    row: Dict[str, Any] = {
         "id": compute_repo_id(path),
         "path": path,
         "name": os.path.basename(path.rstrip(os.sep)) or path,
         "project_id": project_id,
         "project_name": project_name,
+        "projects": projects if projects is not None else [{"id": project_id, "name": project_name}],
         "root_folder": root_folder,
         "parent_repo_id": parent_repo_id,
         "branch": status["branch"],
         "detached": status["detached"],
-        "head_sha": _head_sha(path),
+        "head_sha": status["head_sha"],
         "upstream": status["upstream"],
         "ahead": status["ahead"],
         "behind": status["behind"],
@@ -540,9 +722,35 @@ def repo_summary(path: str, *, project_id: Any, project_name: Any, root_folder: 
             "unstaged": len(status["unstaged"]),
             "untracked": len(status["untracked"]),
         },
-        "user": repo_user(path),
-        "remotes": repo_remotes(path),
     }
+    if light:
+        return row
+    row["user"] = repo_user(path)
+    row["remotes"] = repo_remotes(path)
+    return row
+
+
+def repo_summaries(metas: Sequence[Dict[str, Any]], *, light: bool = False,
+                   max_workers: int = 8) -> List[Dict[str, Any]]:
+    """`repo_summary` for every discovered repo, computed IN PARALLEL: each
+    repo's `git` calls run in their own worker thread (independent
+    subprocesses against independent working trees -- nothing shared, so
+    this is safe), which is the other half of the 24-repos-in-under-2s
+    budget on Windows: `ThreadPoolExecutor(max_workers=8)` overlaps the
+    process-spawn latency across repos instead of paying it serially."""
+    if not metas:
+        return []
+    workers = max(1, min(max_workers, len(metas)))
+
+    def _one(meta: Dict[str, Any]) -> Dict[str, Any]:
+        return repo_summary(
+            meta["path"], project_id=meta.get("project_id"), project_name=meta.get("project_name"),
+            root_folder=meta.get("root_folder"), parent_repo_id=meta.get("parent_repo_id"),
+            projects=meta.get("projects"), light=light,
+        )
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        return list(pool.map(_one, metas))
 
 
 # ---------------------------------------------------------------------------
@@ -941,6 +1149,15 @@ def push(repo_path: str, *, remote: Optional[str] = None, branch: Optional[str] 
     return (proc.stdout or "") + (proc.stderr or "")
 
 
+def add_remote(repo_path: str, name: str, url: str, *, timeout: float = GIT_TIMEOUT_DEFAULT) -> None:
+    """`git remote add <name> <url>` -- used once a GitHub repo has just been
+    created (Lote 84) to point `origin` at it."""
+    args = ["remote", "add", name, url]
+    proc = run_git(repo_path, *args, timeout=timeout)
+    if proc.returncode != 0:
+        raise GitCommandError(args, proc.returncode, proc.stdout, proc.stderr)
+
+
 def stage(repo_path: str, *, paths: Optional[List[str]] = None, all_: bool = False,
           timeout: float = GIT_TIMEOUT_DEFAULT) -> None:
     if all_ or not paths:
@@ -1176,4 +1393,8 @@ def create_repo(parent_folder: str, name: str, *, mode: str, owner: Optional[str
                 git_user_email = identity.get("git_user_email")
         init_repo(target, default_branch=default_branch, initial_commit=initial_commit,
                   repo_name=name, git_user_name=git_user_name, git_user_email=git_user_email)
+    # The cached filesystem walk (`discover_repos_for_owner`) doesn't know
+    # about `target` yet -- drop it so the very next list sees the new repo
+    # instead of waiting out `_DISCOVERY_TTL`.
+    invalidate_discovery_cache(owner)
     return target

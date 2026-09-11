@@ -45,7 +45,7 @@ export interface GitUser {
  * chip/selector, "New repository", branch-creation dialog and the agent's
  * git policy (global + per-repo), all additive to lote 81's shapes above.
  */
-export type GitIdentitySource = 'ssh_config' | 'manual';
+export type GitIdentitySource = 'ssh_config' | 'manual' | 'gh';
 
 export interface GitIdentity {
   id: string;
@@ -98,6 +98,31 @@ export interface GitFoldersResponse {
   folders: GitFolder[];
 }
 
+/**
+ * OBJ-4 / Lote 85 (CONTRATO_GIT_3.md) — GitHub via `gh`: account discovery,
+ * creating a fresh remote alongside a new local repo, and publishing an
+ * existing repo that has no `origin` yet.
+ */
+export interface GithubAccount {
+  login: string;
+  active: boolean;
+  protocol: string;
+  scopes: string[];
+}
+
+export interface GithubAccountsResponse {
+  available: boolean;
+  version: string | null;
+  accounts: GithubAccount[];
+}
+
+export interface GithubRepoResult {
+  full_name: string;
+  html_url: string;
+  ssh_url: string;
+  https_url: string;
+}
+
 /** `DATA_DIR/git_repo_policies.json` shape and the global default under
  *  `agent_git_policy` in `src/settings.py` — identical either way. */
 export interface AgentGitPolicy {
@@ -114,12 +139,25 @@ export interface RepoPolicyResponse {
   overridden: boolean;
 }
 
+/** A project that links this repo's folder — one repo can be reachable
+ *  from more than one linked project folder (nested links, a shared
+ *  parent). Lote 85: dedupe folds every such link into this list instead
+ *  of the repo appearing once per project. */
+export interface GitRepoProjectRef {
+  id: string | null;
+  name: string | null;
+}
+
 export interface GitRepo {
   id: string;
   path: string;
   name: string;
   project_id: string | null;
   project_name: string | null;
+  /** Every linked project this repo is reachable from. Optional — a
+   *  server predating lote 85 simply omits it, and `dedupeRepos` then
+   *  synthesizes a single-entry list from `project_id`/`project_name`. */
+  projects?: GitRepoProjectRef[];
   root_folder: string;
   parent_repo_id: string | null;
   branch: string | null;
@@ -343,8 +381,18 @@ function query(params: Record<string, string | number | boolean | undefined>): s
   return `?${parts.map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`).join('&')}`;
 }
 
-export function listRepos(projectId?: string): Promise<GitReposResponse> {
-  return getGit(`/api/git/repos${query({ project_id: projectId })}`);
+/**
+ * Lote 85 (CONTRATO_GIT_3.md, perf point 1): `?light=1` skips
+ * `remotes`/`user`/`identity`/`policy` server-side, for the 15s rail
+ * polling — everything the badges need (branch/ahead/behind/dirty) and
+ * nothing a full load already fetched. Either way, always dedupe: a repo
+ * reachable from two linked project folders must appear once.
+ */
+export function listRepos(projectId?: string, opts: { light?: boolean } = {}): Promise<GitReposResponse> {
+  return getGit<GitReposResponse>(`/api/git/repos${query({ project_id: projectId, light: opts.light ? 1 : undefined })}`).then((res) => ({
+    ...res,
+    repos: dedupeRepos(res.repos),
+  }));
 }
 
 export function getRepo(repoId: string): Promise<GitRepo> {
@@ -492,6 +540,17 @@ export function listFolders(): Promise<GitFoldersResponse> {
   return getGit('/api/git/folders');
 }
 
+/** The "Create on GitHub too" section of "New repository" (mode 'init'
+ *  only — a clone already has an `origin`). */
+export interface CreateRepoGithubOptions {
+  create: true;
+  login: string;
+  private?: boolean;
+  description?: string;
+  push?: boolean;
+  identityId?: string;
+}
+
 export interface CreateRepoOptions {
   mode: 'init' | 'clone';
   parentFolder: string;
@@ -500,10 +559,13 @@ export interface CreateRepoOptions {
   identityId?: string;
   initialCommit?: boolean;
   defaultBranch?: string;
+  github?: CreateRepoGithubOptions;
 }
 
 export interface CreateRepoResult {
   repo: GitRepo;
+  github?: GithubRepoResult;
+  push?: GitPullPushResult | null;
 }
 
 export function createRepo(opts: CreateRepoOptions): Promise<CreateRepoResult> {
@@ -515,6 +577,40 @@ export function createRepo(opts: CreateRepoOptions): Promise<CreateRepoResult> {
     identity_id: opts.identityId || undefined,
     initial_commit: opts.initialCommit ?? true,
     default_branch: opts.defaultBranch || 'main',
+    github: opts.github
+      ? {
+          create: true,
+          login: opts.github.login,
+          private: opts.github.private ?? true,
+          description: opts.github.description || undefined,
+          push: opts.github.push ?? true,
+          identity_id: opts.github.identityId || undefined,
+        }
+      : undefined,
+  });
+}
+
+export function getGithubAccounts(): Promise<GithubAccountsResponse> {
+  return getGit('/api/git/github/accounts');
+}
+
+export interface PublishToGithubOptions {
+  login: string;
+  private?: boolean;
+  name?: string;
+  identityId?: string;
+  push?: boolean;
+}
+
+/** For a repo with no `origin` yet — 409 `git.remote_exists` if it already
+ *  has one (surfaced as a `GitApiError`, same as every other mutation). */
+export function publishToGithub(repoId: string, opts: PublishToGithubOptions): Promise<CreateRepoResult> {
+  return postGit(`/api/git/repos/${encodeURIComponent(repoId)}/github/publish`, {
+    login: opts.login,
+    private: opts.private ?? true,
+    name: opts.name || undefined,
+    identity_id: opts.identityId || undefined,
+    push: opts.push ?? true,
   });
 }
 
@@ -764,6 +860,80 @@ export function rewriteRemoteToAlias(url: string, alias: string): string | null 
  */
 export function pushToggleDisabled(commit: boolean): boolean {
   return !commit;
+}
+
+/**
+ * Lote 85 (CONTRATO_GIT_3.md, point 2): a repo reachable from two linked
+ * project folders (two projects pointing at the same path, or an old
+ * backend that has not deduped server-side yet) collapses into one row
+ * here, grouped by its normalized `path`. The first repo seen for a path
+ * stays the base — so `id`/`project_id`/`project_name` keep meaning
+ * "the first one", the same compatibility rule the backend contract
+ * uses — and every project that named this path (its own `projects`
+ * list if the server already sent one, else its bare `project_id`/
+ * `project_name`) is folded into that base's `projects`, deduplicated.
+ */
+export function dedupeRepos(repos: GitRepo[]): GitRepo[] {
+  const order: string[] = [];
+  const bases = new Map<string, GitRepo>();
+  const projects = new Map<string, GitRepoProjectRef[]>();
+
+  for (const repo of repos) {
+    const key = repo.path;
+    if (!bases.has(key)) {
+      bases.set(key, repo);
+      projects.set(key, []);
+      order.push(key);
+    }
+    const own: GitRepoProjectRef[] =
+      repo.projects && repo.projects.length > 0 ? repo.projects : [{ id: repo.project_id, name: repo.project_name }];
+    const list = projects.get(key) as GitRepoProjectRef[];
+    for (const p of own) {
+      if (p.id === null && p.name === null) continue;
+      if (!list.some((x) => x.id === p.id && x.name === p.name)) list.push(p);
+    }
+  }
+
+  return order.map((key) => ({ ...(bases.get(key) as GitRepo), projects: projects.get(key) as GitRepoProjectRef[] }));
+}
+
+/** "LocalAI · Writer's Hoard" — every distinct project name this repo is
+ *  linked from, falling back to the single `project_name` a server that
+ *  predates `projects` (or a repo `dedupeRepos` never touched) still
+ *  sends. Empty string, never `null`/`undefined`, so callers can render
+ *  it unconditionally. */
+export function repoProjectsLabel(repo: Pick<GitRepo, 'projects' | 'project_name'>): string {
+  const names = (repo.projects ?? []).map((p) => p.name).filter((n): n is string => Boolean(n));
+  if (names.length > 0) return [...new Set(names)].join(' · ');
+  return repo.project_name ?? '';
+}
+
+/**
+ * Lote 85, point 3: fold a `?light=1` poll into the repos already on
+ * screen without a flicker — only the fields light mode actually refreshes
+ * (branch, ahead/behind, dirty counts, detached, head, upstream) change;
+ * `remotes`/`user`/`identity`/`policy` (light omits them) stay exactly
+ * what the last full load or mutation response set them to. A repo the
+ * light response does not name (not yet discovered, or a request that
+ * raced a `listRepos()` still in flight) is left untouched rather than
+ * dropped.
+ */
+export function mergeLightRepos(current: GitRepo[], light: GitRepo[]): GitRepo[] {
+  const byId = new Map(light.map((r) => [r.id, r]));
+  return current.map((repo) => {
+    const l = byId.get(repo.id);
+    if (!l) return repo;
+    return {
+      ...repo,
+      branch: l.branch,
+      detached: l.detached,
+      head_sha: l.head_sha,
+      upstream: l.upstream,
+      ahead: l.ahead,
+      behind: l.behind,
+      dirty: l.dirty,
+    };
+  });
 }
 
 /** `t()` key + values for the repo-header identity chip — the screen calls

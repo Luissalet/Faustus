@@ -2,11 +2,13 @@ import { useEffect, useState } from 'react';
 import { Button, Dialog } from '../../components';
 import {
   createRepo,
+  getGithubAccounts,
   GitApiError,
   isValidRepoName,
   listFolders,
   listIdentities,
   type GitFolder,
+  type GithubAccountsResponse,
   type GitIdentity,
   type GitRepo,
 } from '../../adapters/git';
@@ -44,6 +46,14 @@ export function NewRepositoryDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<{ message: string; detail?: string } | null>(null);
 
+  // Lote 85 (CONTRATO_GIT_3.md): "Create on GitHub too", only meaningful
+  // for mode 'init' — a clone already has an `origin`.
+  const [githubAccounts, setGithubAccounts] = useState<GithubAccountsResponse | null>(null);
+  const [githubEnabled, setGithubEnabled] = useState(false);
+  const [githubLogin, setGithubLogin] = useState('');
+  const [githubVisibility, setGithubVisibility] = useState<'private' | 'public'>('private');
+  const [githubPush, setGithubPush] = useState(true);
+
   useEffect(() => {
     if (!open) return;
     setError(null);
@@ -56,6 +66,12 @@ export function NewRepositoryDialog({
     listIdentities()
       .then((r) => setIdentities(r.identities))
       .catch(() => setIdentities([]));
+    getGithubAccounts()
+      .then((res) => {
+        setGithubAccounts(res);
+        setGithubLogin((cur) => cur || res.accounts.find((a) => a.active)?.login || res.accounts[0]?.login || '');
+      })
+      .catch(() => setGithubAccounts({ available: false, version: null, accounts: [] }));
   }, [open]);
 
   const reset = () => {
@@ -67,10 +83,19 @@ export function NewRepositoryDialog({
     setInitialCommit(true);
     setDefaultBranch('main');
     setError(null);
+    setGithubEnabled(false);
+    setGithubVisibility('private');
+    setGithubPush(true);
   };
 
   const nameValid = isValidRepoName(name);
-  const canSubmit = Boolean(parentFolder) && nameValid && (mode === 'init' || url.trim().length > 0) && !busy;
+  const githubReady = githubAccounts?.available === true;
+  const canSubmit =
+    Boolean(parentFolder) &&
+    nameValid &&
+    (mode === 'init' || url.trim().length > 0) &&
+    (mode === 'clone' || !githubEnabled || (githubReady && githubLogin.trim().length > 0)) &&
+    !busy;
 
   const submit = () => {
     if (!canSubmit) return;
@@ -85,6 +110,10 @@ export function NewRepositoryDialog({
       identityId: identityId || undefined,
       initialCommit: mode === 'init' ? initialCommit : undefined,
       defaultBranch: defaultBranch.trim() || 'main',
+      github:
+        mode === 'init' && githubEnabled
+          ? { create: true, login: githubLogin.trim(), private: githubVisibility === 'private', push: githubPush, identityId: identityId || undefined }
+          : undefined,
     })
       .then((res) => {
         onCreated(res.repo);
@@ -93,6 +122,12 @@ export function NewRepositoryDialog({
       })
       .catch((e: unknown) => {
         if (e instanceof GitApiError) {
+          // A GitHub failure after the local repo was already created
+          // (502 `github.failed`) still names that repo in the payload —
+          // keep it in the list instead of losing it because the second
+          // half of the request failed (CONTRATO_GIT_3.md).
+          const payloadRepo = e.payload.repo as GitRepo | undefined;
+          if (payloadRepo && typeof payloadRepo === 'object') onCreated(payloadRepo);
           setError({ message: e.message, detail: str(e.payload.stderr) || str(e.payload.detail) || undefined });
         } else {
           setError({ message: (e as Error).message });
@@ -179,6 +214,47 @@ export function NewRepositoryDialog({
       <Field label={t('Default branch')} htmlFor="new-repo-branch">
         <Text id="new-repo-branch" value={defaultBranch} onChange={setDefaultBranch} placeholder="main" />
       </Field>
+
+      {mode === 'init' && (
+        <div className="fs-sc__github-section" data-testid="new-repo-github-section">
+          <Toggle
+            id="new-repo-github-enabled"
+            checked={githubEnabled}
+            onChange={setGithubEnabled}
+            disabled={!githubReady}
+            label={t('Create on GitHub too')}
+          />
+          {githubAccounts && !githubReady && (
+            <p className="fs-set__help">
+              {t('GitHub CLI (gh) not found — install it and run `gh auth login` to create repositories from here.')}
+            </p>
+          )}
+          {githubEnabled && githubReady && (
+            <>
+              <Field label={t('GitHub account')} htmlFor="new-repo-github-login">
+                <Select
+                  id="new-repo-github-login"
+                  value={githubLogin}
+                  onChange={setGithubLogin}
+                  options={(githubAccounts?.accounts ?? []).map((a) => ({
+                    value: a.login,
+                    label: a.active ? t('{login} (active)', { login: a.login }) : a.login,
+                  }))}
+                />
+              </Field>
+              <div className="fs-seg" role="radiogroup" aria-label={t('Visibility')}>
+                <button type="button" role="radio" aria-checked={githubVisibility === 'private'} onClick={() => setGithubVisibility('private')} data-testid="new-repo-github-private">
+                  {t('Private')}
+                </button>
+                <button type="button" role="radio" aria-checked={githubVisibility === 'public'} onClick={() => setGithubVisibility('public')} data-testid="new-repo-github-public">
+                  {t('Public')}
+                </button>
+              </div>
+              <Toggle id="new-repo-github-push" checked={githubPush} onChange={setGithubPush} label={t('Push after creating')} />
+            </>
+          )}
+        </div>
+      )}
 
       {error && (
         <p className="fs-notice" data-tone="danger" role="alert" data-testid="new-repo-error">

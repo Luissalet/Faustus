@@ -1,4 +1,4 @@
-import { KeyRound, Plus, RefreshCw } from 'lucide-react';
+import { Github, KeyRound, Plus, RefreshCw } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Button, IconButton, Popover } from '../../components';
 import {
@@ -97,7 +97,15 @@ export function IdentityChip({ repo, onRepoUpdate }: { repo: GitRepo; onRepoUpda
 
   const confirmedIdentity = identities?.identities.find((i) => i.id === confirmId) ?? null;
   const beforeUrl = repoIdentity?.remote_url ?? '';
-  const afterUrl = confirmedIdentity ? rewriteRemoteToAlias(beforeUrl, confirmedIdentity.ssh_host ?? confirmedIdentity.label) : null;
+  // A `gh` identity has no ssh host alias of its own (CONTRATO_GIT_3.md:
+  // "ssh_host: null" — it rewrites straight onto `github.com`, never onto
+  // its login, which is what falling back to `.label` would wrongly do.
+  const previewAlias = confirmedIdentity
+    ? confirmedIdentity.source === 'gh'
+      ? 'github.com'
+      : confirmedIdentity.ssh_host ?? confirmedIdentity.label
+    : null;
+  const afterUrl = previewAlias ? rewriteRemoteToAlias(beforeUrl, previewAlias) : null;
 
   const apply = () => {
     if (!confirmId) return;
@@ -158,10 +166,13 @@ export function IdentityChip({ repo, onRepoUpdate }: { repo: GitRepo; onRepoUpda
                   onChange={() => setConfirmId(id.id)}
                   data-testid="identity-radio"
                 />
-                <span>
+                <span className="fs-sc__identity-label">
+                  {id.source === 'gh' ? <Github size={13} aria-hidden="true" /> : <KeyRound size={13} aria-hidden="true" />}
                   {id.label}
                   {id.github_login ? ` ${t('(login: {login})', { login: id.github_login })}` : ''}
-                  <span className="fs-sc__branch-tag">{id.source === 'ssh_config' ? t('ssh config') : t('manual')}</span>
+                  <span className="fs-sc__branch-tag">
+                    {id.source === 'gh' ? t('GitHub CLI') : id.source === 'ssh_config' ? t('ssh config') : t('manual')}
+                  </span>
                 </span>
               </label>
               <IconButton icon={RefreshCw} label={t('Refresh login for {label}', { label: id.label })} size="sm" disabled={probing === id.id} onClick={() => probe(id.id)} />

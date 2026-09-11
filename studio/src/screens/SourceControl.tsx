@@ -1,4 +1,4 @@
-import { Bot, GitBranch, Plus, RefreshCw } from 'lucide-react';
+import { ArrowDownToLine, ArrowUpFromLine, Bot, Download, Github, GitBranch, GitBranchPlus, Plus, RefreshCw, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { Button, EmptyState, IconButton, Toast } from '../components';
@@ -7,6 +7,7 @@ import {
   commit as commitRepo,
   discard as discardFiles,
   fetchRemote,
+  getBranches,
   getCommit,
   getCommitDiff,
   getLog,
@@ -14,11 +15,13 @@ import {
   getStatus,
   getWorkingDiff,
   listRepos,
+  mergeLightRepos,
   pull,
   push as pushRepo,
   stage as stageFiles,
   sync as syncRepo,
   unstage as unstageFiles,
+  type GitBranchesResponse,
   type GitCommit,
   type GitCommitDetail,
   type GitDiff,
@@ -32,8 +35,10 @@ import { ChangesPane, type WorkingFileSelection } from './source-control/Changes
 import { DiffPane } from './source-control/DiffPane';
 import { RepoList, RepoListError, type RepoMenuAction } from './source-control/RepoList';
 import { NewRepositoryDialog } from './source-control/NewRepositoryDialog';
+import { CreateBranchDialog } from './source-control/CreateBranchDialog';
 import { IdentityChip } from './source-control/IdentityChip';
 import { RepoPolicyDialog } from './source-control/RepoPolicyDialog';
+import { PublishToGithubDialog } from './source-control/PublishToGithubDialog';
 import './source-control.css';
 import { t } from '../i18n';
 
@@ -96,6 +101,13 @@ export function SourceControlScreen() {
   // every other mutation on this screen does (mergeRepo).
   const [newRepoOpen, setNewRepoOpen] = useState(false);
   const [policyDialogOpen, setPolicyDialogOpen] = useState(false);
+
+  // Lote 85: the center column's own "New branch" (its own branches fetch —
+  // BranchPopover's is per-row and lazy the same way, so this mirrors it
+  // rather than lifting that state up) and "Publish to GitHub".
+  const [newBranchOpen, setNewBranchOpen] = useState(false);
+  const [headerBranches, setHeaderBranches] = useState<GitBranchesResponse | null>(null);
+  const [publishOpen, setPublishOpen] = useState(false);
 
   const say = useCallback((text: string) => {
     setToast(text);
@@ -200,6 +212,38 @@ export function SourceControlScreen() {
       document.removeEventListener('visibilitychange', onVisible);
     };
   }, [selectedRepoId, refreshStatus, mergeRepo]);
+
+  // Lote 85 (CONTRATO_GIT_3.md, point 3): the whole REPOSITORIES rail
+  // polls too, not just the selected repo — `?light=1` so up to a few
+  // dozen repos cost one cheap call apiece instead of the full
+  // remotes/user/identity/policy lookup, merged in-place
+  // (`mergeLightRepos`) so `identity`/`policy`/`remotes` from the last
+  // full load never flicker away between ticks.
+  const reposLoaded = repos !== null;
+  useEffect(() => {
+    if (!reposLoaded) return;
+    const tick = () => {
+      if (document.visibilityState !== 'visible') return;
+      listRepos(projectId, { light: true })
+        .then((res) => setRepos((cur) => (cur ? mergeLightRepos(cur, res.repos) : cur)))
+        .catch(() => {});
+    };
+    const id = window.setInterval(tick, POLL_MS);
+    const onVisible = () => { if (document.visibilityState === 'visible') tick(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [reposLoaded, projectId]);
+
+  // The header's own "New branch" fetches its options only once opened —
+  // same reason BranchPopover's per-row fetch is lazy (up to dozens of
+  // repos on screen, nobody asked for their branches yet).
+  useEffect(() => {
+    if (!newBranchOpen || !selectedRepoId) return;
+    getBranches(selectedRepoId).then(setHeaderBranches).catch(() => setHeaderBranches(null));
+  }, [newBranchOpen, selectedRepoId]);
 
   // Whichever diff target is active — a working-tree file or a file inside
   // an open commit — fetch its diff. The two never overlap: picking one
@@ -365,20 +409,11 @@ export function SourceControlScreen() {
         </p>
       )}
 
-      {selectedRepo && (
-        <div className="fs-sc__repo-header">
-          <div className="fs-sc__repo-header-title">
-            <h2>{selectedRepo.name}</h2>
-            <p className="fs-muted">{selectedRepo.path}</p>
-          </div>
-          <div className="fs-sc__repo-header-actions">
-            <IdentityChip repo={selectedRepo} onRepoUpdate={mergeRepo} />
-            <Button variant="ghost" size="sm" icon={Bot} label={t('Agent & this repository')} onClick={() => setPolicyDialogOpen(true)} testId="repo-policy-open" />
-          </div>
-        </div>
-      )}
-
-      <div className="fs-sc__layout" data-detail={selectedRepoId ? '' : undefined}>
+      <div
+        className="fs-sc__layout"
+        data-detail={selectedRepoId ? '' : undefined}
+        data-diff-open={selectedRepo && (selectedCommitSha || selectedFile) ? '' : undefined}
+      >
         <aside className="fs-sc__repos" aria-label={t('Repositories')}>
           <div className="fs-sc__repos-head">
             <Button variant="ghost" size="sm" icon={Plus} label={t('New repository')} onClick={() => setNewRepoOpen(true)} testId="new-repo-open" />
@@ -402,6 +437,58 @@ export function SourceControlScreen() {
         {selectedRepo ? (
           <>
             <div className="fs-sc__middle">
+              <div className="fs-sc__repo-header">
+                <div className="fs-sc__repo-header-title">
+                  <h2 title={selectedRepo.name}>{selectedRepo.name}</h2>
+                  <p className="fs-muted" title={selectedRepo.path}>{selectedRepo.path}</p>
+                </div>
+                <div className="fs-sc__repo-header-actions">
+                  <IdentityChip repo={selectedRepo} onRepoUpdate={mergeRepo} />
+                  <Button variant="ghost" size="sm" icon={Bot} label={t('Agent & this repository')} onClick={() => setPolicyDialogOpen(true)} testId="repo-policy-open" />
+                </div>
+              </div>
+              <div className="fs-sc__repo-ops">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  icon={Download}
+                  label={t('Fetch')}
+                  loading={repoBusyId === selectedRepo.id}
+                  onClick={() => handleRepoMenuAction(selectedRepo, 'fetch')}
+                  testId="repo-header-fetch"
+                />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  icon={ArrowDownToLine}
+                  label={t('Pull')}
+                  loading={repoBusyId === selectedRepo.id}
+                  onClick={() => handleRepoMenuAction(selectedRepo, 'pull')}
+                  testId="repo-header-pull"
+                />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  icon={ArrowUpFromLine}
+                  label={t('Push')}
+                  loading={repoBusyId === selectedRepo.id}
+                  onClick={() => handleRepoMenuAction(selectedRepo, 'push')}
+                  testId="repo-header-push"
+                />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  icon={RefreshCw}
+                  label={t('Sync')}
+                  loading={repoBusyId === selectedRepo.id}
+                  onClick={() => handleSync(selectedRepo)}
+                  testId="repo-header-sync"
+                />
+                <Button variant="ghost" size="sm" icon={GitBranchPlus} label={t('New branch')} onClick={() => setNewBranchOpen(true)} testId="repo-header-new-branch" />
+                {!selectedRepo.remotes.some((r) => r.name === 'origin') && (
+                  <Button variant="ghost" size="sm" icon={Github} label={t('Publish to GitHub')} onClick={() => setPublishOpen(true)} testId="repo-header-publish" />
+                )}
+              </div>
               <ChangesPane
                 status={status}
                 loadingStatus={statusLoading}
@@ -432,30 +519,33 @@ export function SourceControlScreen() {
                 onLoadMore={loadMoreCommits}
               />
             </div>
-            <div className="fs-sc__right">
-              {selectedCommitSha ? (
-                <CommitDetail
-                  commit={selectedCommit}
-                  loading={commitLoading}
-                  selectedPath={selectedCommitPath}
-                  onSelectFile={setSelectedCommitPath}
-                  diff={diff}
-                  diffLoading={diffLoading}
-                  diffError={diffError}
-                  onClose={closeCommit}
-                  onCopySha={(sha) => { void navigator.clipboard?.writeText(sha).then(() => say(t('Copied'))); }}
-                />
-              ) : selectedFile ? (
-                <div className="fs-sc__working-diff">
-                  <p className="fs-sc__diff-title">
-                    {selectedFile.path} <span className="fs-muted">{selectedFile.staged ? t('(staged)') : t('(working tree)')}</span>
-                  </p>
-                  <DiffPane path={selectedFile.path} diff={diff} loading={diffLoading} error={diffError} />
-                </div>
-              ) : (
-                <EmptyState headingLevel={3} title={t('Nothing selected')} body={t('Pick a changed file or a commit to see its diff.')} />
-              )}
-            </div>
+            {(selectedCommitSha || selectedFile) && (
+              <div className="fs-sc__right">
+                {selectedCommitSha ? (
+                  <CommitDetail
+                    commit={selectedCommit}
+                    loading={commitLoading}
+                    selectedPath={selectedCommitPath}
+                    onSelectFile={setSelectedCommitPath}
+                    diff={diff}
+                    diffLoading={diffLoading}
+                    diffError={diffError}
+                    onClose={closeCommit}
+                    onCopySha={(sha) => { void navigator.clipboard?.writeText(sha).then(() => say(t('Copied'))); }}
+                  />
+                ) : selectedFile ? (
+                  <div className="fs-sc__working-diff">
+                    <div className="fs-sc__diff-head">
+                      <p className="fs-sc__diff-title">
+                        {selectedFile.path} <span className="fs-muted">{selectedFile.staged ? t('(staged)') : t('(working tree)')}</span>
+                      </p>
+                      <IconButton icon={X} label={t('Close diff')} size="sm" onClick={() => setSelectedFile(null)} testId="working-diff-close" />
+                    </div>
+                    <DiffPane path={selectedFile.path} diff={diff} loading={diffLoading} error={diffError} />
+                  </div>
+                ) : null}
+              </div>
+            )}
           </>
         ) : (
           <div className="fs-sc__blank">
@@ -478,6 +568,33 @@ export function SourceControlScreen() {
           onOpenChange={setPolicyDialogOpen}
           repo={selectedRepo}
           onPolicyChange={(policy) => mergeRepoPolicy(selectedRepo.id, policy)}
+        />
+      )}
+
+      {selectedRepo && (
+        <CreateBranchDialog
+          open={newBranchOpen}
+          onOpenChange={setNewBranchOpen}
+          repoId={selectedRepo.id}
+          branches={headerBranches}
+          onCreated={(updated) => {
+            mergeRepo(updated);
+            void refreshStatus(updated.id, true);
+            loadLog(updated.id);
+            say(t('Branch created.'));
+          }}
+        />
+      )}
+
+      {selectedRepo && (
+        <PublishToGithubDialog
+          open={publishOpen}
+          onOpenChange={setPublishOpen}
+          repo={selectedRepo}
+          onPublished={(updated) => {
+            mergeRepo(updated);
+            say(t('Published to GitHub.'));
+          }}
         />
       )}
     </div>

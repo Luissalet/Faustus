@@ -315,18 +315,51 @@ def _finalize(entry: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
+def _gh_source_identities() -> List[Dict[str, Any]]:
+    """The `gh` CLI's own logged-in accounts (Lote 84), as identities:
+    ``source: "gh"``, no ``ssh_host`` (there is no ssh alias to rewrite a
+    remote to -- ``set_repo_identity`` special-cases this source instead of
+    requiring one) and ``github_login`` filled in directly rather than
+    through the probe cache, since `gh` already tells us the login. Never
+    raises -- `gh` missing or erroring just means no `gh` identities, not a
+    broken identities list."""
+    from src import git_github  # lazy: avoid an import-time cycle
+
+    try:
+        info = git_github.gh_accounts()
+    except Exception:  # noqa: BLE001 - a `gh` hiccup must not break /identities
+        logger.debug("git_identities: gh_accounts() failed", exc_info=True)
+        return []
+    if not info.get("available"):
+        return []
+    out: List[Dict[str, Any]] = []
+    for acct in info.get("accounts", []):
+        login = acct.get("login")
+        if not login:
+            continue
+        out.append({
+            "id": f"gh:{login}", "label": login, "ssh_host": None,
+            "hostname": _DEFAULT_HOSTNAME, "identity_file": None,
+            "git_user_name": None, "git_user_email": None,
+            "github_login": login, "protocol": acct.get("protocol"),
+            "active": bool(acct.get("active")), "source": "gh",
+        })
+    return out
+
+
 def list_identities(owner: Optional[str], *, manual_path: Optional[str] = None,
                     ssh_config_path: Optional[str] = None) -> Dict[str, Any]:
-    """``GET /api/git/identities`` payload. Never probes the network --
-    `github_login` on each entry is whatever is currently cached, `null`
-    otherwise."""
+    """``GET /api/git/identities`` payload. Never probes ssh -- `github_login`
+    on a ``ssh_config``/``manual`` entry is whatever is currently cached,
+    `null` otherwise; a ``gh`` entry's `github_login` is always known (it IS
+    the `gh` account's login), no probe involved."""
     ssh_dir = _ssh_dir()
     cfg_path = ssh_config_path or os.path.join(ssh_dir, "config")
     cfg_identities = discover_ssh_config_identities(cfg_path)
     used_files = {i["identity_file"] for i in cfg_identities if i.get("identity_file")}
     loose = discover_loose_key_identities(ssh_dir, used_files)
     manual = _load_manual(owner, manual_path)
-    identities = [_finalize(e) for e in (*cfg_identities, *loose, *manual)]
+    identities = [_finalize(e) for e in (*cfg_identities, *loose, *manual)] + _gh_source_identities()
     return {"identities": identities, "ssh_config_path": cfg_path, "ssh_dir": ssh_dir}
 
 
@@ -410,6 +443,20 @@ def rewrite_remote_alias(url: str, alias: str) -> Optional[str]:
     return None
 
 
+def rewrite_remote_https(url: str) -> Optional[str]:
+    """`url` rewritten to ``https://github.com/<owner>/<repo>.git`` -- the
+    https-protocol counterpart of `rewrite_remote_alias`, used when a `gh`
+    identity's account has ``protocol: "https"`` (Lote 84)."""
+    url = (url or "").strip()
+    for rx in (_HTTPS_URL_RE, _SSH_SCHEME_URL_RE, _SSH_SCP_URL_RE):
+        m = rx.match(url)
+        if m:
+            path = m.group("path").strip("/")
+            if path:
+                return f"https://github.com/{path}.git"
+    return None
+
+
 def _alias_from_url(url: str) -> Optional[str]:
     url = (url or "").strip()
     if not url or url.startswith(("http://", "https://")):
@@ -418,14 +465,20 @@ def _alias_from_url(url: str) -> Optional[str]:
     return m.group(1) if m else None
 
 
-def active_identity_for_repo(repo_path: str, owner: Optional[str], *,
-                             remote: str = "origin") -> Optional[Dict[str, Any]]:
+def active_identity_for_repo(repo_path: str, owner: Optional[str], *, remote: str = "origin",
+                             remotes: Optional[List[Dict[str, Any]]] = None) -> Optional[Dict[str, Any]]:
     """The identity whose `ssh_host` matches `remote`'s host alias, or None
     (an https remote, or an alias with no matching identity). Never probes
-    -- only ever an alias match plus whatever login is already cached."""
+    -- only ever an alias match plus whatever login is already cached.
+
+    `remotes`, when given, is used INSTEAD of a fresh `git remote -v` --
+    `routes/git_routes.py` passes the ones `repo_summary` already fetched so
+    listing repos never runs `remote -v` twice per repo."""
     from src import git_panel
 
-    entry = next((r for r in git_panel.repo_remotes(repo_path) if r.get("name") == remote), None)
+    if remotes is None:
+        remotes = git_panel.repo_remotes(repo_path)
+    entry = next((r for r in remotes if r.get("name") == remote), None)
     if not entry:
         return None
     alias = _alias_from_url(entry.get("fetch_url") or entry.get("push_url") or "")
@@ -461,13 +514,24 @@ def _git_user_with_scope(repo_path: str) -> Dict[str, str]:
 
 
 def repo_identity_info(repo_path: str, owner: Optional[str], *, remote: str = "origin") -> Dict[str, Any]:
-    """``GET /api/git/repos/{id}/identity`` payload."""
+    """``GET /api/git/repos/{id}/identity`` payload.
+
+    Auto-probes the active identity's `github_login` when it isn't already
+    cached (Lote 84), bounded to `_PROBE_TIMEOUT` (8s) so the chip can show
+    "(login: X)" the first time this route is hit, without a human clicking
+    the separate probe button -- and without ever blocking longer than a
+    manual probe already would. A `source: "gh"` identity is skipped: its
+    login is already known directly from `gh`, no ssh probe needed."""
     from src import git_panel
 
     entry = next((r for r in git_panel.repo_remotes(repo_path) if r.get("name") == remote), None)
     remote_url = (entry.get("fetch_url") or entry.get("push_url") or "") if entry else ""
+    active = active_identity_for_repo(repo_path, owner, remote=remote)
+    if active and active.get("source") != "gh" and active.get("github_login") is None and active.get("id"):
+        probed = probe_identity(active)
+        active = {**active, "github_login": probed.get("github_login")}
     return {
-        "active": active_identity_for_repo(repo_path, owner, remote=remote),
+        "active": active,
         "remote": remote, "remote_url": remote_url,
         "git_user": _git_user_with_scope(repo_path),
     }
@@ -480,17 +544,29 @@ def set_repo_identity(repo_path: str, identity: Dict[str, Any], *, remote: str =
     `user.name`/`user.email` (never global). Returns the
     ``PUT /api/git/repos/{id}/identity`` payload (minus ``repo``, which the
     route layer adds -- it needs owner-scoped discovery this module doesn't
-    have)."""
+    have).
+
+    A ``source: "gh"`` identity (Lote 84) has no ssh alias -- it rewrites the
+    remote straight to plain ``github.com`` (ssh) or ``https://github.com``
+    (when the `gh` account's own protocol is https), and sets `user.name` to
+    the account's login ONLY when the repo doesn't already have one (never
+    overwrites an existing name, and never touches `user.email` -- a `gh`
+    account carries no email to set)."""
     from src import git_panel
 
+    is_gh = identity.get("source") == "gh"
     alias = identity.get("ssh_host")
-    if not alias:
+    if not alias and not is_gh:
         raise GitIdentityError("no_alias", "This identity has no ssh config alias to rewrite the remote to")
     entry = next((r for r in git_panel.repo_remotes(repo_path) if r.get("name") == remote), None)
     if not entry:
         raise GitIdentityError("no_remote", f"Repo has no remote named {remote!r}")
     before = entry.get("fetch_url") or entry.get("push_url") or ""
-    after = rewrite_remote_alias(before, alias)
+
+    if is_gh and identity.get("protocol") == "https":
+        after = rewrite_remote_https(before)
+    else:
+        after = rewrite_remote_alias(before, alias or _DEFAULT_HOSTNAME)
     if not after:
         raise GitIdentityError("unrecognized_url", f"Could not parse remote url: {before!r}")
 
@@ -501,6 +577,8 @@ def set_repo_identity(repo_path: str, identity: Dict[str, Any], *, remote: str =
     if set_git_user:
         if identity.get("git_user_name"):
             git_panel.run_git(repo_path, "config", "user.name", identity["git_user_name"])
+        elif is_gh and identity.get("github_login") and not git_panel.repo_user(repo_path)["name"]:
+            git_panel.run_git(repo_path, "config", "user.name", identity["github_login"])
         if identity.get("git_user_email"):
             git_panel.run_git(repo_path, "config", "user.email", identity["git_user_email"])
 

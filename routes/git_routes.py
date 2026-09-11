@@ -32,7 +32,7 @@ from pydantic import BaseModel, Field
 
 from core.middleware import require_human
 from src.auth_helpers import effective_user, require_user
-from src import agent_git_policy, git_identities, git_panel
+from src import agent_git_policy, git_github, git_identities, git_panel
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +100,15 @@ class RepoIdentityBody(BaseModel):
     set_git_user: bool = True
 
 
+class CreateRepoGithubBody(BaseModel):
+    create: bool = False
+    login: Optional[str] = None
+    private: bool = True
+    description: Optional[str] = None
+    push: bool = True
+    identity_id: Optional[str] = None
+
+
 class CreateRepoBody(BaseModel):
     mode: str = Field(..., pattern="^(init|clone)$")
     parent_folder: str = Field(..., min_length=1)
@@ -108,6 +117,16 @@ class CreateRepoBody(BaseModel):
     identity_id: Optional[str] = None
     initial_commit: bool = True
     default_branch: str = "main"
+    github: Optional[CreateRepoGithubBody] = None
+
+
+class GithubPublishBody(BaseModel):
+    login: str = Field(..., min_length=1)
+    private: bool = True
+    name: Optional[str] = None
+    identity_id: Optional[str] = None
+    push: bool = True
+    description: Optional[str] = None
 
 
 class PolicyBody(BaseModel):
@@ -167,15 +186,14 @@ def _repo_or_404(repo_id: str, owner: Optional[str]) -> Dict[str, Any]:
     return meta
 
 
-def _summary(meta: Dict[str, Any], owner: Optional[str] = None) -> Dict[str, Any]:
-    row = git_panel.repo_summary(
-        meta["path"], project_id=meta["project_id"], project_name=meta["project_name"],
-        root_folder=meta["root_folder"], parent_repo_id=meta["parent_repo_id"],
-    )
-    # Alias match only -- never probes ssh, so this never blocks a repo list
-    # on the network (that's what the dedicated identities/probe route is
-    # for). Login is whatever is already cached.
-    ident = git_identities.active_identity_for_repo(meta["path"], owner)
+def _attach_identity_policy(row: Dict[str, Any], owner: Optional[str]) -> Dict[str, Any]:
+    """`identity`/`policy` for a full (non-`light`) repo row. Passes the
+    `remotes` `repo_summary` already fetched into `active_identity_for_repo`
+    so this never runs a second `remote -v` per repo -- alias match only,
+    never probes ssh, so this never blocks a repo list on the network
+    (that's what the dedicated identities/probe route, and the auto-probe on
+    `GET .../identity`, are for). Login is whatever is already cached."""
+    ident = git_identities.active_identity_for_repo(row["path"], owner, remotes=row.get("remotes"))
     row["identity"] = (
         {"id": ident["id"], "label": ident["label"], "github_login": ident.get("github_login")}
         if ident else None
@@ -185,11 +203,82 @@ def _summary(meta: Dict[str, Any], owner: Optional[str] = None) -> Dict[str, Any
     return row
 
 
+def _summary(meta: Dict[str, Any], owner: Optional[str] = None, *, light: bool = False) -> Dict[str, Any]:
+    row = git_panel.repo_summary(
+        meta["path"], project_id=meta["project_id"], project_name=meta["project_name"],
+        root_folder=meta["root_folder"], parent_repo_id=meta["parent_repo_id"],
+        projects=meta.get("projects"), light=light,
+    )
+    if light:
+        return row
+    return _attach_identity_policy(row, owner)
+
+
 def _safe_path_or_404(meta: Dict[str, Any], path: str) -> str:
     rel = git_panel.safe_rel_path(meta["path"], path)
     if rel is None:
         raise HTTPException(404, "Path is outside the repository")
     return rel
+
+
+# ---------------------------------------------------------------------------
+# GitHub (Lote 84) -- shared by `POST /repos` (github.create) and
+# `POST /repos/{id}/github/publish`.
+# ---------------------------------------------------------------------------
+def _github_remote_url(login: str, name: str, *, owner: Optional[str], identity_id: Optional[str],
+                       created: Dict[str, Any]) -> str:
+    """The url `origin` should point at once `login/name` exists on GitHub:
+    an explicitly chosen identity's alias/protocol first (an ssh-config
+    alias, or the https form for a `gh`-source identity whose account uses
+    https), else the matching `gh` account's own protocol, else whatever
+    `create_github_repo` itself already resolved (its ssh form)."""
+    if identity_id:
+        identity = git_identities.find_identity(owner, identity_id)
+        if identity:
+            if identity.get("ssh_host"):
+                return f"git@{identity['ssh_host']}:{login}/{name}.git"
+            if identity.get("source") == "gh" and identity.get("protocol") == "https":
+                return created.get("https_url") or f"https://github.com/{login}/{name}.git"
+    accounts = git_github.gh_accounts().get("accounts", [])
+    acct = next((a for a in accounts if a.get("login") == login), None)
+    if acct and acct.get("protocol") == "https":
+        return created.get("https_url") or f"https://github.com/{login}/{name}.git"
+    return created.get("ssh_url") or f"git@github.com:{login}/{name}.git"
+
+
+def _do_github_create(meta: Dict[str, Any], owner: Optional[str], *, login: str, name: str,
+                      private: bool, description: str, identity_id: Optional[str],
+                      push: bool) -> Any:
+    """Create `login/name` on GitHub, point `origin` at it, and (`push`)
+    push the repo's current branch. Returns a `JSONResponse` to return
+    AS-IS on failure, or `(created, push_result)` on success -- the caller
+    (create-repo or publish) builds its own final response shape around
+    that."""
+    try:
+        created = git_github.create_github_repo(login, name, private=private, description=description)
+    except git_github.GhNotAvailableError:
+        return _error(503, "dependency.missing", git_github.GH_MISSING_DETAIL, repo=_summary(meta, owner))
+    except git_github.GitHubRepoExistsError as e:
+        return _error(409, "github.exists", str(e), repo=_summary(meta, owner))
+    except git_github.GitHubCommandError as e:
+        snippet = git_panel.stderr_snippet(e.stderr or e.stdout or "")
+        return _error(502, "github.failed", snippet, stderr=snippet, repo=_summary(meta, owner))
+
+    url = _github_remote_url(login, name, owner=owner, identity_id=identity_id, created=created)
+    try:
+        git_panel.add_remote(meta["path"], "origin", url)
+    except git_panel.GitCommandError as e:
+        return _command_failed(e, repo=_summary(meta, owner))
+
+    push_result: Optional[Dict[str, Any]] = None
+    if push:
+        branch = git_panel.current_branch(meta["path"])[0]
+        try:
+            output = git_panel.push(meta["path"], remote="origin", branch=branch, set_upstream=True)
+            push_result = {"ok": True, "output": output}
+        except git_panel.GitRejectedError as e:
+            push_result = {"ok": False, "error_class": "git.rejected", "stderr": git_panel.stderr_snippet(e.stderr)}
+    return created, push_result
 
 
 # ---------------------------------------------------------------------------
@@ -202,14 +291,24 @@ def setup_git_routes() -> APIRouter:
     # Discovery / repo facts (require_user)
     # ------------------------------------------------------------------
     @router.get("/repos")
-    def list_repos(request: Request, project_id: str = "", _u: str = Depends(require_user)) -> Any:
+    def list_repos(request: Request, project_id: str = "", light: int = 0,
+                   _u: str = Depends(require_user)) -> Any:
         owner = _owner(request)
         metas = git_panel.discover_repos_for_owner(owner, project_id=project_id)
         if metas is None:
             raise HTTPException(404, "Project not found")
         if not git_panel.git_available():
             return _git_missing()
-        return {"repos": [_summary(m, owner) for m in metas], "git_version": git_panel.git_version()}
+        # Each repo's summary is its own `git` subprocess round trip;
+        # `repo_summaries` overlaps them across a small thread pool instead
+        # of paying every process-spawn serially (most of the 9.5s -> <2s
+        # budget for 24 repos on Windows), and `?light=1` -- the polling
+        # adapter's shape -- skips remotes/user/identity/policy entirely.
+        is_light = bool(light)
+        rows = git_panel.repo_summaries(metas, light=is_light)
+        if not is_light:
+            rows = [_attach_identity_policy(row, owner) for row in rows]
+        return {"repos": rows, "git_version": git_panel.git_version()}
 
     @router.get("/repos/{repo_id}")
     def get_repo(repo_id: str, request: Request, _u: str = Depends(require_user)) -> Any:
@@ -579,7 +678,52 @@ def setup_git_routes() -> APIRouter:
             "project_id": project_id, "project_name": project_name,
             "root_folder": root_folder, "parent_repo_id": None,
         }
-        return JSONResponse(status_code=201, content={"repo": _summary(meta, owner)})
+
+        resp_body: Dict[str, Any] = {"repo": _summary(meta, owner), "github": None, "push": None}
+        # "clone no aplica" (contract): a cloned repo already has whatever
+        # `origin` its source pointed at, so `github.create` is a no-op for
+        # `mode: "clone"` even if the body asked for it.
+        if body.mode == "init" and body.github and body.github.create:
+            login = (body.github.login or "").strip()
+            if not login:
+                return _error(400, "github.login_required", "github.login is required to create on GitHub")
+            result = _do_github_create(
+                meta, owner, login=login, name=body.name, private=body.github.private,
+                description=body.github.description or "", identity_id=body.github.identity_id,
+                push=body.github.push,
+            )
+            if isinstance(result, JSONResponse):
+                return result
+            created, push_result = result
+            resp_body = {"repo": _summary(meta, owner), "github": created, "push": push_result}
+        return JSONResponse(status_code=201, content=resp_body)
+
+    @router.post("/repos/{repo_id}/github/publish")
+    def post_github_publish(repo_id: str, body: GithubPublishBody, request: Request,
+                            _h: None = Depends(require_human)) -> Any:
+        owner = _owner(request)
+        meta = _repo_or_404(repo_id, owner)
+        if not git_panel.git_available():
+            return _git_missing()
+        existing = next((r for r in git_panel.repo_remotes(meta["path"]) if r.get("name") == "origin"), None)
+        if existing:
+            return _error(409, "git.remote_exists", "This repository already has an 'origin' remote",
+                          repo=_summary(meta, owner))
+        name = (body.name or "").strip() or meta["name"]
+        result = _do_github_create(
+            meta, owner, login=body.login, name=name, private=body.private,
+            description=body.description or "", identity_id=body.identity_id, push=body.push,
+        )
+        if isinstance(result, JSONResponse):
+            return result
+        created, push_result = result
+        return JSONResponse(status_code=201, content={
+            "repo": _summary(meta, owner), "github": created, "push": push_result,
+        })
+
+    @router.get("/github/accounts")
+    def get_github_accounts(_u: str = Depends(require_user)) -> Any:
+        return git_github.gh_accounts()
 
     # ------------------------------------------------------------------
     # Agent git policy (Lote 82)

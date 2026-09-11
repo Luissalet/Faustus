@@ -6422,3 +6422,21 @@ Pushed {branch}	Push hecho de {branch}
 SSH: {label} (login: {login})	SSH: {label} (usuario: {login})
 SSH: {label}	SSH: {label}
 No SSH identity — using https/none	Sin identidad SSH — usando https/ninguna
+Sync	Sincronizar
+Close diff	Cerrar diferencia
+Create on GitHub too	Crear también en GitHub
+GitHub account	Cuenta de GitHub
+GitHub CLI	CLI de GitHub
+GitHub CLI (gh) not found — install it and run `gh auth login` to create repositories from here.	No se encontró la CLI de GitHub (gh) — instálala y ejecuta `gh auth login` para crear repositorios desde aquí.
+Private	Privado
+Public	Público
+Push after creating	Enviar después de crear
+Publish to GitHub	Publicar en GitHub
+Published to GitHub.	Publicado en GitHub.
+Published as {full_name}.	Publicado como {full_name}.
+Branch created.	Rama creada.
+Repository name	Nombre del repositorio
+Visibility	Visibilidad
+SSH identity (optional)	Identidad SSH (opcional)
+Create a GitHub repository for {name} and set it as origin.	Crear un repositorio en GitHub para {name} y ponerlo como origin.
+{login} (active)	{login} (activa)

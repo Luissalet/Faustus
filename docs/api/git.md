@@ -28,6 +28,61 @@ fichero — worktree/submódulo). Los repos anidados se listan también, con
 `parent_repo_id` apuntando al repo contenedor más cercano ya descubierto.
 Tope global: 60 repos.
 
+Cuando el mismo repo (misma ruta real, `realpath`+`normcase`) aparece bajo
+más de un proyecto — dos proyectos enlazando la misma carpeta — sale UNA sola
+vez: `project_id`/`project_name` se quedan con el PRIMER proyecto que lo
+enlazó (compatibilidad con clientes que solo leen esos dos campos), y
+`"projects": [{"id","name"}, ...]` lleva uno por cada proyecto que lo enlaza
+(`src/git_panel.py::_dedupe_repos`).
+
+### Rendimiento (Lote 84)
+
+`GET /api/git/repos` hace dos cosas para que 24 repos en Windows tarden
+< 2 s en vez de los 9,5 s que tardaba:
+
+* **El RECORRIDO del filesystem se cachea 30 s por owner**
+  (`git_panel._DISCOVERY_CACHE`, `_DISCOVERY_TTL`) — lo caro en Windows es el
+  `os.listdir` recursivo bajo cada carpeta enlazada, no el estado git de cada
+  repo. La caché queda invalidada de dos formas: automáticamente, si la
+  lista de proyectos del owner cambia (`_projects_fingerprint` compara
+  `id`/`workspace`/`updated_at`/`context_revision` de cada proyecto en cada
+  llamada — barato, es una lectura de JSON, no un recorrido de disco) — así
+  que crear/renombrar/(des)enlazar un proyecto invalida la caché sin que
+  nadie tenga que acordarse de llamarlo explícitamente; y explícitamente,
+  `POST /api/git/repos` llama `invalidate_discovery_cache(owner)` justo tras
+  crear/clonar, para que el repo nuevo aparezca en el siguiente listado sin
+  esperar los 30 s (una creación de repo no cambia ningún proyecto, así que
+  el fingerprint no lo detectaría solo). Un listado con `project_id`
+  siempre recorre fresco (un único proyecto es barato) — la caché es solo
+  para el listado de todos los proyectos del owner.
+* **El resumen de cada repo se calcula EN PARALELO**
+  (`git_panel.repo_summaries`, `ThreadPoolExecutor(max_workers=8)`) — cada
+  resumen es su propio proceso `git` (spawn), así que solapar 8 a la vez en
+  vez de esperarlos uno a uno es la otra mitad de la mejora.
+* **Cada resumen hace el mínimo de llamadas `git`**: una sola
+  `git status --porcelain=v2 -z --branch --untracked-files=all` da rama,
+  detached, sha de HEAD, upstream, ahead/behind y los tres contadores dirty
+  — todo lo que antes salía de `symbolic-ref` + `rev-parse --abbrev-ref @{u}`
+  + `rev-list --count` + `status` + `rev-parse HEAD` combinados (con `-z`,
+  las cabeceras `# branch.*` de v2 también terminan en NUL, así que un único
+  `split("\x00")` las separa de las entradas de fichero:
+  `git_panel.parse_status_v2_branch`). El `user.name`/`user.email` efectivo
+  sale de un único `git config --get-regexp '^user\.(name|email)$'` (antes,
+  dos `git config` sueltos). Con eso, un resumen completo hace **3**
+  llamadas `git` (status+branch, user, `remote -v`) en vez de las **8-9**
+  de antes (las 8 del propio resumen, más una `remote -v` repetida que
+  `routes/git_routes.py` disparaba aparte para calcular `identity` — ahora
+  reutiliza los `remotes` que `repo_summary` ya trajo,
+  `git_identities.active_identity_for_repo(..., remotes=row["remotes"])`).
+
+`GET /api/git/repos?light=1` (o el `project_id`-scoped) pasa `light=True` a
+`repo_summary`: **1** sola llamada `git` por repo — omite `remotes`, `user`,
+`identity` y `policy`, deja solo `branch`/`detached`/`head_sha`/`upstream`/
+`ahead`/`behind`/`dirty` (más `id`/`path`/`name`/`project_id`/`project_name`/
+`projects`/`root_folder`/`parent_repo_id`, que no cuestan `git`). Pensado
+para el polling del panel: la UI hace `?light=1` cada pocos segundos y
+conserva `identity`/`policy` del último listado completo.
+
 ## Autenticación y alcance
 
 - **Lectura** (`GET`): `require_user`.
@@ -73,7 +128,7 @@ committear silenciosamente como "Faustus" o similar.
 
 ## Rutas de lectura
 
-### `GET /api/git/repos?project_id=<opcional>`
+### `GET /api/git/repos?project_id=<opcional>&light=<0|1>`
 
 Lista los repos bajo las carpetas enlazadas del owner (o de un único
 proyecto, si se pasa `project_id`; un id que no exista o no sea del owner
@@ -83,13 +138,20 @@ responde 404).
 {
   "repos": [{
     "id": "a1b2c3d4e5f6", "path": "/home/luis/code/faustus", "name": "faustus",
-    "project_id": "p1", "project_name": "Faustus", "root_folder": "/home/luis/code/faustus",
+    "project_id": "p1", "project_name": "Faustus",
+    // uno por cada proyecto que enlaza esta misma ruta real -- normalmente
+    // uno solo; project_id/project_name arriba son siempre projects[0].
+    "projects": [{"id": "p1", "name": "Faustus"}],
+    "root_folder": "/home/luis/code/faustus",
     "parent_repo_id": null,
     "branch": "master", "detached": false, "head_sha": "abc123...",
     "upstream": "origin/master", "ahead": 0, "behind": 2,
     "dirty": {"staged": 1, "unstaged": 3, "untracked": 5},
+    // Los 4 campos siguientes -- ausentes con `?light=1` (ver Rendimiento arriba):
     "user": {"name": "Luis", "email": "luis@example.com"},
-    "remotes": [{"name": "origin", "fetch_url": "git@github.com:...", "push_url": "git@github.com:..."}]
+    "remotes": [{"name": "origin", "fetch_url": "git@github.com:...", "push_url": "git@github.com:..."}],
+    "identity": {"id": "sshcfg:...", "label": "Luissalet", "github_login": "Luissalet"},
+    "policy": {"effective": {"...": "..."}, "overridden": false}
   }],
   "git_version": "2.43.0"
 }
@@ -226,7 +288,7 @@ aparte.
 
 Una identidad: `{id, label, ssh_host (alias, o null), hostname, identity_file,
 git_user_name?, git_user_email?, github_login? (descubierto, o null),
-source: "ssh_config"|"manual"}`.
+source: "ssh_config"|"manual"|"gh"}`.
 
 - **`source: "ssh_config"`**: descubiertas, nunca escritas por esta API salvo
   con `write_ssh_config` (ver abajo). Dos formas:
@@ -239,13 +301,25 @@ source: "ssh_config"|"manual"}`.
 - **`source: "manual"`**: las que un humano da de alta por
   `POST /api/git/identities`, guardadas en `DATA_DIR/git_identities.json`
   (owner-scoped) -- nunca la clave privada en sí, solo su ruta.
-- **`github_login`**: descubierto, no configurado. `POST .../probe` corre
+- **`source: "gh"` (Lote 84)**: una por cada cuenta que `gh auth status`
+  reporta ya logueada (`src/git_github.py`) -- `id: "gh:<login>"`,
+  `identity_file: null`, `ssh_host: null` (no hay alias que deducir: el
+  contrato es explícito en que inferirlo vía `gh api user/keys` es
+  sobre-ingeniería), `github_login` = el login (siempre relleno, no viene de
+  una prueba ssh), más `protocol` (`"ssh"|"https"`, el que `gh auth status`
+  reporta para esa cuenta) y `active` (si es la cuenta activa de `gh`).
+  `gh_accounts()` se cachea 15 s, así que listar identidades no dispara
+  `gh auth status` en cada llamada. Ver "GitHub vía `gh`" más abajo.
+- **`github_login`**: para `ssh_config`/`manual`, descubierto, no
+  configurado. `POST .../probe` corre
   `ssh -T -o BatchMode=yes -o StrictHostKeyChecking=accept-new git@<alias>`
   (o `-i <identity_file> git@<hostname>` para una clave suelta sin alias) y
   parsea `"Hi <login>! You've successfully authenticated"` de stderr (rc 1
   es la respuesta normal de GitHub a `-T` -- no da shell a propósito).
   Timeout 8 s, cacheado 10 min por id; `GET /api/git/identities` nunca
-  prueba la red, solo devuelve lo que ya esté en caché.
+  prueba la red por sí sola, solo devuelve lo que ya esté en caché -- pero
+  `GET /repos/{id}/identity` sí, ver abajo. Una identidad `gh` nunca se
+  prueba por ssh: su login ya se conoce directamente.
 
 ```
 GET  /api/git/identities
@@ -271,18 +345,103 @@ POST /api/git/identities/{id}/probe
 GET  /api/git/repos/{repo_id}/identity?remote=origin
      → {"active": identidad|null, "remote": "origin", "remote_url",
         "git_user": {"name", "email", "scope": "local"|"global"|"none"}}
+     require_user. Si la identidad activa no es `source: "gh"` y su
+     `github_login` no está cacheado, esta ruta PRUEBA por su cuenta
+     (Lote 84) -- timeout 8 s (`probe_identity`, sin `force`, así que un
+     resultado ya cacheado -- incluso uno fallido -- no vuelve a probar) --
+     para que el chip pueda pintar "(login: X)" sin que un humano tenga que
+     pulsar el botón de prueba aparte. Nunca bloquea más de esos 8 s.
 
 PUT  /api/git/repos/{repo_id}/identity
      {"identity_id", "remote"="origin", "set_git_user": true}
-     → reescribe la URL del remoto al alias de la identidad
-     (`git@<alias>:<owner>/<repo>.git` -- entiende ssh scp-like, `ssh://` y
-     `https://` de entrada) y, si `set_git_user` y la identidad trae
-     name/email, hace `git config user.name`/`user.email` LOCAL del repo
-     (nunca global). require_human. 400 `git.no_alias` si la identidad no
-     tiene alias ssh (una clave suelta); 400 `git.unrecognized_url` si la
-     URL del remoto no se pudo parsear; 400 `git.no_remote` si el repo no
-     tiene ese remoto. Devuelve `{"remote", "remote_url_before",
-     "remote_url_after", "git_user", "repo"}`.
+     → reescribe la URL del remoto y, si `set_git_user`, ajusta la identidad
+     git local del repo. require_human. Para una identidad `ssh_config`/
+     `manual`: `git@<alias>:<owner>/<repo>.git` (entiende ssh scp-like,
+     `ssh://` y `https://` de entrada) y, si trae `git_user_name`/
+     `git_user_email`, los fija como `user.name`/`user.email` LOCAL (nunca
+     global) -- SIEMPRE los sobrescribe. 400 `git.no_alias` si la identidad
+     no tiene alias ssh (una clave suelta).
+     Para una identidad `source: "gh"` (Lote 84, sin `ssh_host`): reescribe
+     a `git@github.com:<owner>/<repo>.git` (o `https://github.com/<owner>/
+     <repo>.git` si el `protocol` de esa cuenta de `gh` es https) -- nunca
+     400 `git.no_alias`, esta fuente no lo necesita -- y, si `set_git_user`,
+     fija `user.name` = `github_login` SOLO cuando el repo no tiene ya un
+     nombre efectivo (local o global); nunca toca `user.email` (una cuenta
+     `gh` no trae uno).
+     400 `git.unrecognized_url` si la URL del remoto no se pudo parsear;
+     400 `git.no_remote` si el repo no tiene ese remoto. Devuelve
+     `{"remote", "remote_url_before", "remote_url_after", "git_user", "repo"}`.
+```
+
+## GitHub vía `gh` (`src/git_github.py`, Lote 84)
+
+Para "crear un repo y subir cosas" hace falta el lado GitHub del remoto antes
+de poder hacer `git push`. Esta pieza es un wrapper fino y testeable sobre
+tres subcomandos de la CLI `gh` -- nunca la API REST de GitHub directamente,
+nunca un token propio: usa la sesión de `gh` que Luis ya tiene autenticada
+(`gh auth status` → cuentas `Luissalet` (activa) y `Mlgpigeon`, protocolo
+ssh). Todo corre a través de un único punto de entrada inyectable,
+`git_github._run_gh` (nunca `shell=True`, argv real, `stdin=DEVNULL` para que
+un `gh` no interactivo jamás se quede esperando un prompt) -- los tests
+sustituyen esa función, nunca necesitan un `gh` real. En Windows, `gh` puede
+resolver como `gh.exe`; `shutil.which("gh")` ya lo encuentra vía `PATHEXT`
+sin nada especial.
+
+- **`gh_available()`**: comprobación de PATH, sin lanzar ningún proceso.
+- **`gh_version()`**: `gh --version`, parseado a `"2.40.1"`.
+- **`gh_accounts()`**: `gh auth status`, parseado a
+  `{"available", "version", "accounts": [{"login","active","protocol","scopes"}]}`
+  -- nunca el token, solo lo que `gh auth status` ya imprime en claro.
+  Cacheado 15 s (`gh_accounts(use_cache=False)` lo salta) porque tanto el
+  listado de identidades como la elección de URL de remoto lo consultan.
+- **`gh_token(login)`**: `gh auth token --user <login>` -- el token vive SOLO
+  en memoria, como `GH_TOKEN` en el entorno del proceso hijo que crea el
+  repo; nunca se loguea ni aparece en ninguna respuesta.
+- **`create_github_repo(login, name, private=True, description="")`**:
+  `gh repo create <login>/<name> --private|--public [--description ...]`,
+  ejecutado con `GH_TOKEN` de `login` en el entorno del hijo -- SIN cambiar
+  la cuenta activa global de `gh` (`gh auth switch`). No toca el working tree
+  local (sin `--source`/`--push`/`--remote`): solo crea el repo en GitHub;
+  `git_panel.add_remote`/`push` hacen el resto, igual que lo haría un humano
+  a mano. Tras crear, `gh repo view <login>/<name> --json
+  nameWithOwner,url,sshUrl` da las URLs exactas (no se parsea el stdout de
+  `repo create`, que cambia de formato entre versiones de `gh`). Devuelve
+  `{"full_name","html_url","ssh_url","https_url"}`. 409 `github.exists` si
+  el nombre ya existe bajo esa cuenta (stderr contiene "already exists");
+  502 `github.failed` con `stderr` para cualquier otro fallo de `gh`.
+
+```
+GET  /api/git/github/accounts
+     → {"available": bool, "version": str|null,
+        "accounts": [{"login","active","protocol","scopes":[...]}]}
+     require_user.
+
+POST /api/git/repos
+     {..., "github"?: {"create": bool, "login": str, "private": true,
+                        "description"?: str, "push": true, "identity_id"?: str}}
+     Solo tiene efecto con `mode: "init"` ("clone no aplica" -- un repo
+     clonado ya trae el `origin` de su fuente). Tras crear el repo local (y
+     su commit inicial, si aplica): crea `login/name` en GitHub, añade
+     `origin` (URL ssh de una `identity_id` explícita si se dio, si no la
+     del protocolo de la cuenta `login` en `gh_accounts()`, si no la ssh que
+     `create_github_repo` ya resolvió) y, si `push` (default true), hace
+     `git push -u origin <default_branch>`.
+     → 201 `{"repo", "github": {...}|null, "push": {"ok","output"}|
+       {"ok": false,"error_class","stderr"}|null}` -- `github`/`push` quedan
+       `null` cuando no se pidió `github.create`.
+     400 `github.login_required` si `github.create` es true sin `login`.
+     409 `github.exists` / 502 `github.failed` si `gh` falla -- el repo LOCAL
+     ya creado se conserva en ambos casos, y la respuesta incluye `"repo"`.
+
+POST /api/git/repos/{repo_id}/github/publish
+     {"login", "private"=true, "name"?: (por defecto el nombre del repo),
+      "identity_id"?, "push"=true, "description"?}
+     → para un repo que aún no tiene `origin`: crea `login/name` en GitHub,
+     añade `origin`, empuja (`push` default true). Misma respuesta que
+     arriba (siempre con `github`/`push`, nunca `null` aquí -- si `gh`
+     falla, el error se devuelve directamente en vez de `null`s). 409
+     `git.remote_exists` si el repo YA tiene `origin` (no se llama a `gh`
+     en absoluto). require_human.
 ```
 
 ## Crear / clonar repos
@@ -298,8 +457,9 @@ POST /api/git/repos
       subdirectorio suyo), "name": str (solo [A-Za-z0-9._-]),
       "url"?: str (clone), "identity_id"?: str,
       "initial_commit": true (init: crea README.md + commit "Initial commit"),
-      "default_branch": "main"}
-     → 201 {"repo": <objeto repo>}.
+      "default_branch": "main",
+      "github"?: {...}}  # ver "GitHub vía `gh`" más abajo
+     → 201 {"repo": <objeto repo>, "github": {...}|null, "push": {...}|null}.
 ```
 
 `parent_folder` fuera de las carpetas enlazadas del owner: 403

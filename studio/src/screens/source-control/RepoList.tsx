@@ -1,6 +1,6 @@
 import { CornerDownRight, MoreHorizontal, RefreshCw } from 'lucide-react';
 import { EmptyState, IconButton, Menu, Skeleton } from '../../components';
-import { aheadBehindLabel, type GitRepo } from '../../adapters/git';
+import { aheadBehindLabel, repoProjectsLabel, type GitRepo } from '../../adapters/git';
 import { BranchPopover } from './BranchPopover';
 import { t } from '../../i18n';
 
@@ -55,6 +55,7 @@ export function RepoList({
       {repos.map((repo) => {
         const dirtyTotal = repo.dirty.staged + repo.dirty.unstaged + repo.dirty.untracked;
         const ab = aheadBehindLabel(repo.ahead, repo.behind);
+        const projectsLabel = repoProjectsLabel(repo);
         return (
           <div
             key={repo.id}
@@ -72,14 +73,14 @@ export function RepoList({
               data-testid="repo-row"
             >
               <span className="fs-sc__repo-name">
-                {repo.name}
+                <span className="fs-sc__repo-name-text" title={repo.name}>{repo.name}</span>
                 {dirtyTotal > 0 && (
                   <span className="fs-sc__repo-dirty" data-testid="repo-dirty-count" aria-label={t('{n} pending changes', { n: dirtyTotal })}>
                     {dirtyTotal}
                   </span>
                 )}
               </span>
-              {repo.project_name && <span className="fs-sc__repo-project">{repo.project_name}</span>}
+              {projectsLabel && <span className="fs-sc__repo-project" title={projectsLabel}>{projectsLabel}</span>}
             </button>
             <div className="fs-sc__repo-actions">
               <BranchPopover repoId={repo.id} currentBranch={repo.branch} detached={repo.detached} onCheckedOut={onRepoUpdate} />
