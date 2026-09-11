@@ -556,6 +556,42 @@ def _idle_result(tool: str, idle_s: float, stdout: str, stderr: str) -> Dict:
         "stderr": _truncate(stderr, MAX_OUTPUT_CHARS),
     }
 
+_GIT_MUTATION_RE = re.compile(
+    r"(?:^|[;&|(]\s*|\bsudo\s+)git(?:\.exe)?\s+(?:-C\s+\S+\s+|-c\s+\S+\s+|--git-dir=\S+\s+|--work-tree=\S+\s+)*"
+    r"(?P<sub>commit|push|pull|fetch|checkout|switch|branch|merge|rebase|reset|revert|cherry-pick|"
+    r"tag|stash|add|rm|mv|restore|clean|remote|init|clone|am|apply)\b",
+    re.IGNORECASE,
+)
+_GIT_TOOL_FOR_SUBCOMMAND = {
+    "commit": "git_commit", "add": "git_commit (it stages the paths you name)",
+    "push": "git_push", "pull": "git_pull", "fetch": "git_fetch",
+    "checkout": "git_checkout", "switch": "git_checkout", "branch": "git_branch",
+}
+
+
+def git_mutation_routed_to_tools(command: str) -> Optional[dict]:
+    """A shell command that would CHANGE a git repository is refused with the
+    git_* tool to use instead (None for anything else, reads included).
+    `git status`/`log`/`diff`/`show`/`rev-parse` in bash are harmless and
+    stay allowed, so a script that merely inspects a repo keeps working."""
+    text = command or ""
+    m = _GIT_MUTATION_RE.search(text)
+    if not m:
+        return None
+    sub = m.group("sub").lower()
+    tool = _GIT_TOOL_FOR_SUBCOMMAND.get(sub)
+    hint = (f"use the {tool} tool" if tool
+            else "that operation is not offered as a git_* tool; ask the user to do it from the Source control panel")
+    return {
+        "error": (f"bash: `git {sub}` is not run from the shell here -- {hint}. The git_* tools "
+                  "respect the user's repository policy (separate branch / commits / push) and their "
+                  "work shows in the Source control panel; a shell git command would bypass both."),
+        "exit_code": 2,
+        "use_instead": tool.split(" ")[0] if tool else None,
+        "git_subcommand": sub,
+    }
+
+
 class BashTool:
     async def execute(self, content: str, ctx: dict) -> dict:
         from src.tool_execution import agent_cwd, _truncate
@@ -569,6 +605,16 @@ class BashTool:
         # byte-for-byte what it was. When it IS on and the container cannot
         # start, `run` returns a refusal rather than None — so there is no
         # arrangement of failures that puts the command back on the host.
+        # OBJ-4: git that CHANGES a repository goes through the git_* tools,
+        # never through the shell. Those tools honour the user's repository
+        # policy (branch / commit / push checkmarks) and show up in the Source
+        # control panel; a `git push` typed into bash would bypass both. Seen
+        # live: the model answered a git question with `bash: git ... status`
+        # even with git_status offered. Reads are let through (harmless) but
+        # a mutation is refused with the tool to use instead.
+        routed = git_mutation_routed_to_tools(content)
+        if routed is not None:
+            return routed
         sandboxed = await sandbox_exec.run("bash", content, ctx)
         if sandboxed is not None:
             if isinstance(sandboxed, dict):
