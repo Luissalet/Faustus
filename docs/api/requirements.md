@@ -132,6 +132,7 @@ un humano, no una decisión de base de datos por sí solos.
 | POST | `/requirements` | Crear |
 | PATCH | `/requirements/{key}` | Editar (crea revisión); `by: human\|model` |
 | POST | `/requirements/{key}/links` | Enlazar evidencia |
+| DELETE | `/requirements/{key}/links/{link_id}` | Quitar un enlace (404 si el enlace no es de ese requisito) |
 | POST | `/requirements/context` | `for_task` presupuestado |
 
 Owner-scoped en todas las rutas vía `require_user` + el mismo

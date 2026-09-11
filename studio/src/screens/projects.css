@@ -925,3 +925,323 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* ── W4-A: the Requirements tab ──
+ *
+ * A versioned spec (docs/api/requirements.md): REQ-N items with status,
+ * who proposed them, an immutable revision history, typed links, and an
+ * evidence matrix with four independent facts plus `stale` — never one
+ * score. Colour is a token throughout (`--fs-success`/`--fs-warning`/
+ * `--fs-danger`/`--fs-text-3`), the same tone vocabulary this file already
+ * uses for `.fs-pj__audit-badges span[data-tone]`.
+ */
+
+.fs-req__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--fs-space-2);
+  margin-block-end: var(--fs-space-3);
+}
+
+.fs-req__grow {
+  flex: 1 1 220px;
+  min-inline-size: 0;
+}
+
+.fs-req__create,
+.fs-req__context-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fs-space-2);
+}
+
+.fs-req__form-row,
+.fs-req__link-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--fs-space-2);
+}
+
+.fs-req__textarea {
+  resize: vertical;
+  font: inherit;
+}
+
+.fs-req__body {
+  display: grid;
+  grid-template-columns: minmax(220px, 340px) minmax(0, 1fr);
+  gap: var(--fs-space-4);
+  align-items: start;
+  margin-block-start: var(--fs-space-4);
+}
+
+@media (max-width: 900px) {
+  .fs-req__body {
+    grid-template-columns: 1fr;
+  }
+}
+
+.fs-req__list-panel,
+.fs-req__detail-panel {
+  min-inline-size: 0;
+}
+
+.fs-req__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--fs-space-1);
+}
+
+.fs-req__row {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  inline-size: 100%;
+  padding: var(--fs-space-2) var(--fs-space-3);
+  border-radius: var(--fs-radius-control);
+  border: 1px solid transparent;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.fs-req__row:hover,
+.fs-req__row:focus-visible {
+  background: var(--fs-surface-1);
+  border-color: var(--fs-border);
+}
+
+.fs-req__row[data-selected] {
+  background: var(--fs-surface-1);
+  border-color: var(--fs-brand);
+}
+
+.fs-req__row-key {
+  color: var(--fs-text-3);
+  font-size: 0.75rem;
+  flex-shrink: 0;
+}
+
+.fs-req__row-title {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fs-req__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px;
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-pill);
+  color: var(--fs-text-3);
+  font-size: 0.7rem;
+  white-space: nowrap;
+}
+
+.fs-req__badge[data-tone='ok'] {
+  border-color: color-mix(in srgb, var(--fs-success) 55%, var(--fs-border));
+  color: var(--fs-success);
+}
+
+.fs-req__badge[data-tone='bad'] {
+  border-color: color-mix(in srgb, var(--fs-danger) 55%, var(--fs-border));
+  color: var(--fs-danger);
+}
+
+.fs-req__badge[data-tone='warn'] {
+  border-color: color-mix(in srgb, var(--fs-warning) 55%, var(--fs-border));
+  color: var(--fs-warning);
+}
+
+.fs-req__badge[data-tone='neutral'] {
+  color: var(--fs-text-2);
+}
+
+.fs-req__by {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.7rem;
+  color: var(--fs-text-3);
+}
+
+.fs-req__by[data-by='model'] {
+  color: var(--fs-info);
+}
+
+.fs-req__muted {
+  color: var(--fs-text-3);
+  font-size: 0.78rem;
+}
+
+.fs-req__note {
+  color: var(--fs-text-2);
+  font-size: 0.82rem;
+}
+
+.fs-req__note[data-tone='warn'] {
+  color: var(--fs-warning);
+}
+
+.fs-req__badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--fs-space-2);
+  margin-block-start: var(--fs-space-1);
+}
+
+.fs-req__detail-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--fs-space-3);
+  flex-wrap: wrap;
+}
+
+.fs-req__decide {
+  display: flex;
+  gap: var(--fs-space-2);
+  flex-shrink: 0;
+}
+
+.fs-req__section {
+  margin-block-start: var(--fs-space-4);
+  padding-block-start: var(--fs-space-3);
+  border-block-start: 1px solid var(--fs-border);
+  display: flex;
+  flex-direction: column;
+  gap: var(--fs-space-2);
+}
+
+.fs-req__section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* The four independent coverage facts plus `stale` — dots, not a score. */
+.fs-req__matrix-dots {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.fs-req__matrix-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 20px;
+  block-size: 20px;
+  border-radius: var(--fs-radius-pill);
+  border: 1px solid var(--fs-border);
+  color: var(--fs-text-3);
+  font-size: 0.68rem;
+  font-weight: 600;
+}
+
+.fs-req__matrix-dot[data-on] {
+  border-color: color-mix(in srgb, var(--fs-success) 55%, var(--fs-border));
+  color: var(--fs-success);
+  background: color-mix(in srgb, var(--fs-success) 12%, transparent);
+}
+
+.fs-req__matrix-dot[data-tone='warn'] {
+  border-color: color-mix(in srgb, var(--fs-warning) 55%, var(--fs-border));
+  color: var(--fs-warning);
+}
+
+.fs-req__matrix-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--fs-space-2);
+}
+
+.fs-req__matrix-list li {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-3);
+}
+
+.fs-req__links {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--fs-space-1);
+}
+
+.fs-req__links li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--fs-space-2);
+  padding: var(--fs-space-1) 0;
+}
+
+.fs-req__links code {
+  font-family: var(--fs-font-code);
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
+.fs-req__revisions {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--fs-space-2);
+}
+
+.fs-req__revisions li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--fs-space-2);
+}
+
+.fs-req__rev-n {
+  font-weight: 600;
+  font-size: 0.8rem;
+}
+
+.fs-req__ctx-list {
+  list-style: none;
+  margin: 0 0 var(--fs-space-2);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.85rem;
+}
+
+.fs-req__sidecar-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--fs-space-2);
+}
+
+.fs-req__sidecar-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--fs-space-2);
+}

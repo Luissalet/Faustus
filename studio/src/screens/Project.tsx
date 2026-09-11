@@ -1,4 +1,4 @@
-import { Activity, AlertTriangle, Archive, ArchiveRestore, ArrowLeft, Brain, Check, Download, Eye, FileText, FolderOpen, FolderPlus, GitBranch, Image, Kanban, Layers, Link2, Lock, MessageSquare, PencilLine, Pin, PinOff, Plus, RefreshCw, Send, Settings2, Target, Trash2, Unlink, X } from 'lucide-react';
+import { Activity, AlertTriangle, Archive, ArchiveRestore, ArrowLeft, Brain, Check, ClipboardList, Download, Eye, FileText, FolderOpen, FolderPlus, GitBranch, Image, Kanban, Layers, Link2, Lock, MessageSquare, PencilLine, Pin, PinOff, Plus, RefreshCw, Send, Settings2, Target, Trash2, Unlink, X } from 'lucide-react';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { ActivityDot, Button, Dialog, EmptyState, Menu, Skeleton, Toast } from '../components';
@@ -53,6 +53,7 @@ import { SourceControlPanel } from './source-control/SourceControlPanel';
 import { ProjectAudit } from './project/Audit';
 import { ProjectMemoryFiles } from './project/Memory';
 import { ProjectObjectives } from './project/Objectives';
+import { ProjectRequirements } from './project/Requirements';
 import { ProjectSettings } from './project/Settings';
 import './projects.css';
 import './home.css';
@@ -65,6 +66,11 @@ const TABS = [
   // (FAU-12 style ids) — kanban + table over `/api/projects/{id}/board/*`.
   { id: 'board', label: 'Board', icon: Kanban },
   { id: 'objetivos', label: 'Objectives', icon: Target },
+  // W4-A: the project's versioned spec (`docs/api/requirements.md`) —
+  // REQ-N items, human-only accept/reject, an evidence matrix and the
+  // budgeted "context for a task" projection over `/api/projects/{id}
+  // /requirements/*`.
+  { id: 'requisitos', label: 'Requirements', icon: ClipboardList },
   { id: 'memoria', label: 'Memory', icon: Brain },
   { id: 'actividad', label: 'Agent activity', icon: Activity },
   { id: 'contexto', label: 'Context', icon: Eye },
@@ -1132,6 +1138,12 @@ export function ProjectScreen() {
       {tab === 'objetivos' && (
         <div className="fs-panel">
           <ProjectObjectives projectId={project.id} say={say} />
+        </div>
+      )}
+
+      {tab === 'requisitos' && (
+        <div className="fs-panel">
+          <ProjectRequirements projectId={project.id} say={say} />
         </div>
       )}
 

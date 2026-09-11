@@ -626,6 +626,19 @@ class Store:
             link_row = db.execute("SELECT * FROM requirement_links WHERE id=?", (link_id,)).fetchone()
         return self._decode_link(link_row)
 
+    def remove_link(self, project_id: str, key: str, link_id: str) -> bool:
+        """Drop one link of one requirement. Scoped by requirement so a link id
+        leaked from another project can never delete across the boundary. A
+        removed link is not a revision of the requirement (the requirement's
+        text did not change) -- it is a declaration withdrawn."""
+        req_id = f"{str(project_id or '').strip()}:{str(key or '').strip().upper()}"
+        with self._db(write=True) as db:
+            cur = db.execute(
+                "DELETE FROM requirement_links WHERE id=? AND req_id=?",
+                (str(link_id or ""), req_id),
+            )
+            return bool(cur.rowcount)
+
     def list_links(self, project_id: str, key: str) -> List[Dict[str, Any]]:
         req_id = f"{str(project_id or '').strip()}:{str(key or '').strip().upper()}"
         if not self.path.exists():
@@ -722,6 +735,10 @@ def add_link(project_id: str, key: str, **kwargs: Any) -> Dict[str, Any]:
 
 def list_links(project_id: str, key: str) -> List[Dict[str, Any]]:
     return Store().list_links(project_id, key)
+
+
+def remove_link(project_id: str, key: str, link_id: str) -> bool:
+    return Store().remove_link(project_id, key, link_id)
 
 
 def all_requirement_keys(project_id: str) -> List[str]:

@@ -6911,3 +6911,84 @@ Confirm apply	Confirmar aplicar
 What about this passage?	¿Qué pasa con este pasaje?
 Comment text	Texto del comentario
 Add comment	Añadir comentario
+(no title)	(sin título)
+A hand-written record in the project folder. Nothing here is imported automatically — pick what to turn into a real, tracked requirement.	Un registro escrito a mano en la carpeta del proyecto. Nada aquí se importa automáticamente: elige qué convertir en un requisito real y versionado.
+A human accepted this requirement.	Un humano aceptó este requisito.
+A human rejected this requirement.	Un humano rechazó este requisito.
+A versioned spec for this project: every requirement carries who proposed it, who — a human, always — accepted or rejected it, an immutable history, and typed evidence linking it to code, tests, and runs.	Una especificación versionada de este proyecto: cada requisito lleva quién lo propuso, quién —siempre un humano— lo aceptó o rechazó, un historial inmutable y evidencia tipada que lo enlaza con código, pruebas y ejecuciones.
+Acceptance criteria, one per line	Criterios de aceptación, uno por línea
+Accepted.	Aceptado.
+Add link	Añadir enlace
+Add requirement	Añadir requisito
+Add the first one above, or import one from the sidecar file below if this project has one.	Añade el primero arriba, o importa uno del fichero sidecar de abajo si este proyecto tiene uno.
+All statuses	Todos los estados
+Change note (optional)	Nota de cambio (opcional)
+Character budget	Presupuesto de caracteres
+Choose one from the list to see its text, evidence, links and history.	Elige uno de la lista para ver su texto, evidencia, enlaces e historial.
+Compute context	Calcular contexto
+Context for a task	Contexto para una tarea
+Coverage matrix — whole project	Matriz de cobertura — todo el proyecto
+Create as requirement	Crear como requisito
+Created as a real requirement.	Creado como requisito real.
+Evidence for this requirement	Evidencia de este requisito
+Files, one per line	Ficheros, uno por línea
+Filter by status	Filtrar por estado
+Hide context tool	Ocultar herramienta de contexto
+Hide coverage matrix	Ocultar matriz de cobertura
+Human	Humano
+Implemented	Implementado
+Kind of link	Tipo de enlace
+Link added.	Enlace añadido.
+Linked	Enlazado
+Loading the evidence	Cargando la evidencia
+Loading the matrix	Cargando la matriz
+Loading the requirement	Cargando el requisito
+Loading the requirements	Cargando los requisitos
+New requirement	Nuevo requisito
+No requirement selected	Ningún requisito seleccionado
+No requirements yet	Todavía no hay requisitos
+No requirements yet.	Todavía no hay requisitos.
+No revisions.	Sin revisiones.
+Nothing relevant fit the search.	Nada relevante encajó en la búsqueda.
+Omitted (did not fit the budget)	Omitidos (no cupieron en el presupuesto)
+One criterion per line	Un criterio por línea
+Proposed by a human	Propuesto por un humano
+Proposed by the model	Propuesto por el modelo
+Rejected.	Rechazado.
+Requirement created.	Requisito creado.
+Requirement ids, one per line	Identificadores de requisito, uno por línea
+Revision (optional)	Revisión (opcional)
+Revisions	Revisiones
+Saved — a new revision was recorded.	Guardado — se registró una revisión nueva.
+Search title or text…	Buscar título o texto…
+Show coverage matrix	Mostrar matriz de cobertura
+Show history	Mostrar historial
+Sidecar: .faustus/requirements.yaml	Sidecar: .faustus/requirements.yaml
+Stale — some evidence changed since it was recorded	Caducada — algo de la evidencia cambió desde que se registró
+Tested	Probado
+That path is outside the project workspace — it was not linked.	Esa ruta está fuera del workspace del proyecto — no se enlazó.
+The sidecar has no items.	El sidecar no tiene elementos.
+Unknown ids	Identificadores desconocidos
+What the agent would actually receive for a task touching these files or ids — budgeted, with every omission and unknown id named explicitly.	Lo que el agente recibiría realmente para una tarea que toca estos ficheros o identificadores — presupuestado, con cada omisión y cada identificador desconocido nombrado explícitamente.
+Why this change	Por qué este cambio
+path/to/file.py@symbol	ruta/al/fichero.py@símbolo
+rev {n}	rev {n}
+revision {n}	revisión {n}
+run id or issue key	id de ejecución o clave de issue
+{n} char	{n} carácter
+{n} line could not be parsed and was skipped.	{n} línea no se pudo analizar y se omitió.
+{n} lines could not be parsed and were skipped.	{n} líneas no se pudieron analizar y se omitieron.
+{n} requirement	{n} requisito
+{n} requirement included	{n} requisito incluido
+{n} requirements	{n} requisitos
+{n} requirements included	{n} requisitos incluidos
+{used} of {budget} characters used.	{used} de {budget} caracteres usados.
+Proposed	Propuesto
+Rejected	Rechazado
+Superseded	Sustituido
+Implements	Implementa
+Tests	Pruebas
+Evidences	Evidencia
+Needs review	Necesita revisión
+Stale	Caducado
+Link removed.	Enlace quitado.

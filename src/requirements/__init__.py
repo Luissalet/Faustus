@@ -32,6 +32,7 @@ from src.requirements.store import (  # noqa: F401
     update,
     add_link,
     list_links,
+    remove_link,
     all_requirement_keys,
     read_sidecar,
     parse_sidecar,

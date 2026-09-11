@@ -217,6 +217,17 @@ def setup_requirements_routes() -> APIRouter:
             return _req_error(e)
         return {"link": link}
 
+    @router.delete("/{key}/links/{link_id}")
+    def remove_link(
+        project_id: str, key: str, link_id: str, request: Request,
+        _u: str = Depends(require_user),
+    ) -> Any:
+        owner = effective_user(request)
+        _project_or_404(project_id, owner)
+        if not req.remove_link(project_id, key, link_id):
+            return _req_error(req.RequirementsError(f"link {link_id} not found on {key}", "requirements.not_found"))
+        return {"removed": True, "link_id": link_id}
+
     @router.get("/{key}/matrix")
     def requirement_matrix(
         project_id: str, key: str, request: Request, _u: str = Depends(require_user),

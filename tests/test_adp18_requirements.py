@@ -445,3 +445,17 @@ def test_req_tools_have_capabilities():
     from src.tool_capabilities import TOOL_CAPABILITIES
     for name in REQ_TOOL_NAMES:
         assert name in TOOL_CAPABILITIES, name
+
+
+def test_a_link_can_be_withdrawn_but_never_across_projects(store):
+    """Withdrawing a link is scoped to its requirement: a link id from project A
+    is not deletable through project B (W4-A follow-up: the Requirements tab
+    needed a DELETE the API did not have)."""
+    s = store
+    r = s.create("pA", title="t", text="x", source="human", proposed_by="human")
+    link = s.add_link("pA", r["key"], kind="implements", target="src/a.py")
+    assert s.remove_link("pB", r["key"], link["id"]) is False
+    assert [l["id"] for l in s.list_links("pA", r["key"])] == [link["id"]]
+    assert s.remove_link("pA", r["key"], link["id"]) is True
+    assert s.list_links("pA", r["key"]) == []
+
