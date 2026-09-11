@@ -3427,6 +3427,25 @@ aside.fs-panel { position: relative; }
   .fs-studio[data-panel][data-layout='review'][data-pane=hidden] {
     grid-template-columns: var(--fs-stage-col) var(--fs-side-col) minmax(280px, 360px);
   }
+  /* Seen live: with the conversation narrowed to a rail, the header's
+     nowrap row (title, health meter, model chip, layout switch, panel
+     toggle) ran under the document column and hid the very switch that
+     brings the conversation back. Let it wrap inside its own column. */
+  .fs-studio[data-panel][data-layout='document'] .fs-studio__head,
+  .fs-studio[data-panel][data-layout='review'] .fs-studio__head {
+    flex-wrap: wrap;
+    row-gap: var(--fs-space-2);
+    overflow: hidden;
+  }
+  .fs-studio[data-panel][data-layout='document'] .fs-studio__head-actions,
+  .fs-studio[data-panel][data-layout='review'] .fs-studio__head-actions {
+    flex-wrap: wrap;
+    min-inline-size: 0;
+  }
+  .fs-studio[data-panel][data-layout='document'] .fs-studio__title,
+  .fs-studio[data-panel][data-layout='review'] .fs-studio__title {
+    flex-basis: 100%;
+  }
 }
 @media (max-width: 1279px) { aside.fs-panel { inline-size: min(94vw,var(--fs-panel-width,520px)); } }
 @media (max-width: 600px) {
@@ -3598,8 +3617,12 @@ aside.fs-panel { position: relative; }
    a wide stage they show only their icon (the label lives in the tooltip and
    the aria-label); the popover still spells everything out. */
 .fs-studio__chip--compact .fs-studio__chip-label { max-inline-size: 12ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-@media (max-width: 1700px) {
-  .fs-studio__bar > .fs-studio__chip--compact .fs-studio__chip-label { display: none; }
-  .fs-studio__bar > .fs-studio__chip--compact { padding-inline: var(--fs-space-2); }
+/* The decision is the COMPOSER's width, not the viewport's: a 1920px window
+   still wrapped once the side panel and the conversation list took their
+   share. Container query on the bar itself. */
+.fs-studio__bar { container-type: inline-size; }
+@container (max-width: 1040px) {
+  .fs-studio__chip--compact .fs-studio__chip-label { display: none; }
+  .fs-studio__chip--compact { padding-inline: var(--fs-space-2); }
 }
 
