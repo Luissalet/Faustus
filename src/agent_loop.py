@@ -2247,6 +2247,28 @@ def _turn_targets_active_document(intent: Dict[str, object], last_user: str, act
     text = str(last_user or "").strip().lower()
     if not text:
         return False
+    # Naming a document tool, or the selection chip's own vocabulary
+    # ("fragmento seleccionado", "esta selección"), is as explicit as it
+    # gets — seen live: "Reescribe solo el fragmento seleccionado ... con
+    # suggest_document" was judged unrelated and the tool then failed with
+    # "no active document". Spanish edit verbs and text units count too;
+    # OBJ-7 made the rest of the tools bilingual, this gate had stayed
+    # English-only.
+    if re.search(
+        r"\b(?:suggest_document|edit_document|update_document|create_document)\b"
+        r"|\b(?:fragmento|selecci[oó]n|texto) seleccionad[oa]s?\b|\besta selecci[oó]n\b",
+        text,
+    ):
+        return True
+    if re.search(
+        r"\b(?:reescrib\w*|cambi\w*|corrig\w*|corregir|edit\w*|mejor\w*|sustitu\w*|reemplaz\w*|"
+        r"borr\w*|elimin\w*|a[ñn]ad\w*|inserta\w*|acorta\w*|alarga\w*|resum\w*|amplí\w*|ampli\w*|"
+        r"revis\w*|pul\w*|reformul\w*|traduc\w*)\b"
+        r".{0,80}\b(?:p[aá]rrafo|frase|fragmento|secci[oó]n|cap[ií]tulo|t[ií]tulo|l[ií]nea|l[ií]neas|"
+        r"texto|documento|borrador|apartado|encabezado|introducci[oó]n|conclusi[oó]n|tabla|fila|columna)\b",
+        text,
+    ):
+        return True
     if is_email_doc and re.search(
         r"\b("
         r"email|mail|reply|respond|response|draft|compose|send|"
@@ -4926,6 +4948,10 @@ async def _stream_agent_loop_body(
     relevant_tools: Optional[Set[str]] = None,
     fallbacks: Optional[List[tuple]] = None,
     route_descriptors: Optional[List[dict]] = None,
+    # CMP-03: the turn carries a selection from the active document
+    # (`doc_context` on /api/chat_stream). That is the user pointing at the
+    # document, so the relevance heuristic below never gets to drop it.
+    active_document_pinned: bool = False,
     fallback_statuses: Optional[Set[int]] = None,
     fallback_on_empty: bool = True,
     plan_mode: bool = False,
@@ -5226,7 +5252,8 @@ async def _stream_agent_loop_body(
     _low_signal_turn = bool(_intent.get("low_signal"))
     _casual_low_signal_turn = _is_casual_low_signal(_last_user)
     _existing_conversation = _user_turn_count(messages) > 1
-    _active_document_relevant = _turn_targets_active_document(_intent, _last_user, active_document)
+    _active_document_relevant = bool(active_document is not None and active_document_pinned) or \
+        _turn_targets_active_document(_intent, _last_user, active_document)
     _active_email_draft_relevant = _active_document_relevant and _is_email_document_obj(active_document)
     if _active_email_draft_relevant:
         _draft_off = {

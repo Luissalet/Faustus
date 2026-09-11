@@ -3493,6 +3493,10 @@ def setup_chat_routes(
                         max_rounds=_max_rounds,
                         context_length=_selected_context_length,
                         active_document=active_doc,
+                        active_document_pinned=bool(_doc_context_msgs) and any(
+                            str(e.get("doc_id") or "") == str(getattr(active_doc, "id", "") or "")
+                            for e in _parse_doc_context_payload(doc_context_raw)
+                        ),
                         active_email=active_email_ctx,
                         session_id=session,
                         history_session=sess,
