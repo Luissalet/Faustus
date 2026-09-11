@@ -420,6 +420,15 @@ def terminate_tree(
         logger.warning("Not killing %s while tearing down pid %s: %s",
                        describe(child), pid, why)
     signalled: List[int] = []
+    # Freeze the root before touching its children: a shell whose `sleep`
+    # dies under it wakes up and runs the NEXT command in the window between
+    # the leaf kill and its own (seen under the full suite as `echo never`
+    # slipping out after the idle watchdog fired). A suspended root cannot
+    # react; the kill below still lands on a stopped process.
+    try:
+        root.suspend()
+    except Exception as e:  # noqa: BLE001 - best effort, the kills follow anyway
+        logger.debug("suspend %s before tree kill failed: %s", pid, e)
     # Leaves first: killing the root first re-parents its children, and a
     # re-parented child is exactly the case this walk refuses to touch.
     for proc in reversed(accepted):

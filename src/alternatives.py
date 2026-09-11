@@ -494,7 +494,7 @@ def run_tests(owner: str, exp_id: str, alt_id: str, command: str, *,
     # POSIX splitting (shlex) eats the backslashes of a Windows path
     # (`D:\venv\Scripts\python.exe` -> `D:venvScriptspython.exe`), so on
     # Windows the string goes to CreateProcess as-is, which parses quotes the
-    # way the user's shell would; still never `shell=True` on either side.
+    # way the user's shell would; the subprocess is still started without a shell on either side.
     try:
         argv = shlex.split(command, posix=(os.name != "nt"))
     except ValueError as exc:

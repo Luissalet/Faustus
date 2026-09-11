@@ -45,6 +45,17 @@ def _evict_modules_first_imported_under_stubs():
             continue
         if _tainted(module):
             clear_module(name)
+    # monkeypatch.delitem/setitem restore the sys.modules entries, but not the
+    # parent-package attribute a stub-era import rebound (`routes.model_routes`
+    # as an attribute of `routes`): `import routes.model_routes as mr` in a
+    # later test resolves through that attribute first and gets the stubbed
+    # copy. Re-point every restored child at what sys.modules now holds.
+    for name in ("routes.model_routes", "routes.chat_routes", "routes.session_routes"):
+        module = sys.modules.get(name)
+        pkg_name, _, attr = name.rpartition(".")
+        pkg = sys.modules.get(pkg_name)
+        if module is not None and pkg is not None and getattr(pkg, attr, None) is not module:
+            setattr(pkg, attr, module)
 
 
 async def _execute_without_run_context(execute_tool_block, *args, **kwargs):
