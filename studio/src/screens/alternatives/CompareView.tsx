@@ -59,6 +59,7 @@ function AlternativeCard({
   onApply: (altId: string) => void;
   onSaveDoc: (altId: string, content: string) => void;
 }) {
+  const [confirming, setConfirming] = useState(false);
   const [command, setCommand] = useState('');
   const full = exp.alternatives.find((a) => a.id === alt.id);
   const [docDraft, setDocDraft] = useState(full?.content ?? '');
@@ -134,12 +135,29 @@ function AlternativeCard({
       <div className="fs-alt__row">
         <span className="fs-alt__muted">{t('cost: {cost}', { cost: api.costLabel(full?.cost ?? { known_usd: 'unknown', unestimable: [] }) })}</span>
         <span className="fs-spacer" />
-        <Button
-          variant="primary" size="sm" icon={GitMerge} label={t('Apply')}
-          loading={busy === `apply-${alt.id}`}
-          title={t('Merge this alternative into the main copy. A local edit made since the experiment started is respected, never overwritten.')}
-          onClick={() => onApply(alt.id)}
-        />
+        {/* Applying writes into the main copy: two steps, like the board's
+            destructive actions, so a stray click on a row never merges
+            anything (seen live: one click applied straight away). */}
+        {confirming ? (
+          <>
+            <span className="fs-alt__muted">{t('Merge "{label}" into the main copy?', { label: alt.label })}</span>
+            <Button size="sm" label={t('Cancel')} onClick={() => setConfirming(false)} />
+            <Button
+              variant="primary" size="sm" icon={GitMerge} label={t('Confirm apply')}
+              loading={busy === `apply-${alt.id}`}
+              onClick={() => { setConfirming(false); onApply(alt.id); }}
+              data-testid="alt-apply-confirm"
+            />
+          </>
+        ) : (
+          <Button
+            variant="primary" size="sm" icon={GitMerge} label={t('Apply')}
+            loading={busy === `apply-${alt.id}`}
+            title={t('Merge this alternative into the main copy. A local edit made since the experiment started is respected, never overwritten.')}
+            onClick={() => setConfirming(true)}
+            data-testid="alt-apply"
+          />
+        )}
       </div>
     </div>
   );
