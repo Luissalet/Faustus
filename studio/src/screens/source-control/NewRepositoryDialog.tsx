@@ -28,10 +28,16 @@ export function NewRepositoryDialog({
   open,
   onOpenChange,
   onCreated,
+  projectId,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onCreated: (repo: GitRepo) => void;
+  /** Lote 86: opened from a project's own "Repositories" section — the
+   *  parent-folder dropdown defaults to (and, while any exist, is scoped
+   *  to) that project's own linked folders, matching `GitFolder.project_id`.
+   *  A project with none yet still falls back to every linked folder. */
+  projectId?: string;
 }) {
   const [mode, setMode] = useState<'init' | 'clone'>('init');
   const [folders, setFolders] = useState<GitFolder[] | null>(null);
@@ -59,8 +65,10 @@ export function NewRepositoryDialog({
     setError(null);
     listFolders()
       .then((r) => {
-        setFolders(r.folders);
-        setParentFolder((cur) => cur || r.folders[0]?.path || '');
+        const scoped = projectId ? r.folders.filter((f) => f.project_id === projectId) : r.folders;
+        const options = scoped.length > 0 ? scoped : r.folders;
+        setFolders(options);
+        setParentFolder((cur) => cur || options[0]?.path || '');
       })
       .catch(() => setFolders([]));
     listIdentities()
@@ -72,7 +80,7 @@ export function NewRepositoryDialog({
         setGithubLogin((cur) => cur || res.accounts.find((a) => a.active)?.login || res.accounts[0]?.login || '');
       })
       .catch(() => setGithubAccounts({ available: false, version: null, accounts: [] }));
-  }, [open]);
+  }, [open, projectId]);
 
   const reset = () => {
     setMode('init');

@@ -54,6 +54,17 @@ class _NoToolSecurityContext:
 _MISSING_TOOL_SECURITY_CONTEXT = _MissingToolSecurityContext()
 NO_TOOL_SECURITY_CONTEXT = _NoToolSecurityContext()
 
+# Git tools (Lote 87, OBJ-4, src/agent_tools/git_tools.py) — dispatched with
+# owner + human_approved (agent git policy is owner+repo scoped, and a
+# policy-denied write needs to know whether a human already approved this
+# exact call), which the generic `dynamic_handlers` fallback below does not
+# pass through.
+_GIT_TOOL_NAMES = frozenset({
+    "git_status", "git_log", "git_diff",
+    "git_branch", "git_checkout", "git_commit",
+    "git_push", "git_pull", "git_fetch",
+})
+
 # Persistent working directory for agent subprocesses.
 # Resolves to <repo_root>/data, which is the bind-mounted volume in Docker
 # (/app/data) and the local data directory for manual installs.
@@ -803,6 +814,7 @@ async def _direct_fallback(
     progress_cb: Optional[Callable[[Dict], Awaitable[None]]] = None,
     session_id: Optional[str] = None,
     owner: Optional[str] = None,
+    human_approved: bool = False,
 ) -> Optional[Dict]:
     _subproc_env = {
         **os.environ,
@@ -822,6 +834,15 @@ async def _direct_fallback(
             "owner": owner,
             "gen_overrides": _turn_opts.get("gen_overrides"),
             "harness_options": _turn_opts.get("harness_options"),
+            # Lote 87: whether THIS exact call was already claimed against a
+            # sealed src.tool_approvals.PendingToolApproval — i.e. a human
+            # answered a real approval card for this exact tool+content (see
+            # execute_tool_block's `approval_claimed`). Additive and False by
+            # default for every tool that doesn't check it; today only
+            # src/agent_tools/git_tools.py reads it (see that module's
+            # `_human_approved`) to unlock a policy-denied git_commit/
+            # git_push/git_branch/git_checkout.
+            "human_approved": human_approved,
             # The run's project identity, surfaced as its own ctx key so a tool
             # does not have to know that the route packs it into the harness
             # knobs (services/projects.py::agent_options puts it there). Read
@@ -1233,6 +1254,7 @@ async def execute_tool_block(
                 if approval_claimed
                 else None
             ),
+            human_approved=approval_claimed,
         )
         # CALL-05: normalize the tool's own ad hoc result dict into the
         # typed ToolResult contract (src/tool_result.py), at THIS single
@@ -1318,12 +1340,20 @@ async def _execute_tool_block_impl(
     approved_document_id: Optional[str] = None,
     approved_document_version: Optional[int] = None,
     approved_document_digest: Optional[str] = None,
+    human_approved: bool = False,
 ) -> Tuple[str, Dict]:
     """Execute a single tool block. Returns (description, result_dict).
 
     `progress_cb` is forwarded to long-running subprocess tools
     (bash, python) so the agent loop can emit `tool_progress` SSE
     events while the command is in flight. Ignored by other tools.
+
+    `human_approved` (Lote 87): whether the caller's `exact_approval` was
+    claimed for THIS exact call — i.e. a human answered a real approval card
+    sealing this tool+content. Forwarded into ctx["human_approved"] for the
+    handful of tools (today: git_commit/git_push/git_branch/git_checkout)
+    that need to tell "a human explicitly approved this" from "nothing
+    stopped me".
     """
     from src.tool_implementations import (
         do_search_chats, do_manage_tasks,
@@ -1891,6 +1921,17 @@ async def _execute_tool_block_impl(
             result = {"error": "MCP manager not available", "exit_code": 1}
 
 
+    elif tool in _GIT_TOOL_NAMES:
+        # Lote 87: needs owner (agent git policy is owner+repo scoped) and
+        # human_approved (whether this exact call was already sealed and
+        # approved) — the generic dynamic_handlers branch below passes
+        # neither, so these get their own branch, same shape as
+        # manage_bg_jobs's above.
+        first_line = content.split(chr(10))[0][:80]
+        desc = f"{tool}: {first_line}" if first_line else tool
+        result = await _direct_fallback(
+            tool, content, session_id=session_id, owner=owner, human_approved=human_approved,
+        ) or {"error": f"{tool}: execution failed", "exit_code": 1}
     elif tool in dynamic_handlers:
         first_line = content.split(chr(10))[0][:80]
         desc = f"registry: {tool} {first_line}".strip()

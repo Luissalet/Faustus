@@ -857,6 +857,19 @@ details.fs-studio__step > summary:hover .fs-trace__label {
   border-color: color-mix(in srgb, var(--fs-danger) 45%, var(--fs-border));
 }
 
+/* Lote 86: a `git_policy` chip is a button once it opens the Source
+   control panel — same look, plus a pointer and a hover state. */
+button.fs-studio__git-chip {
+  cursor: pointer;
+  background: none;
+  font: inherit;
+}
+
+button.fs-studio__git-chip:hover {
+  border-color: var(--fs-brand);
+  color: var(--fs-text-1);
+}
+
 .fs-studio__image {
   max-inline-size: min(100%, 520px);
   border-radius: var(--fs-radius-preview);

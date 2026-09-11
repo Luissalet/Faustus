@@ -82,7 +82,12 @@ def test_new_studio_files_present_and_reuse_shared_components():
 
 
 def test_source_control_screen_wires_new_repo_identity_and_policy():
-    src = _read("studio/src/screens/SourceControl.tsx")
+    # Lote 86 (CONTRATO_GIT_4.md): the state and every handler that used to
+    # live directly in SourceControl.tsx moved into the reusable
+    # SourceControlPanel.tsx (mounted by the screen, by Project.tsx's own
+    # "Repositories" section, and by the chat's compact side panel) — the
+    # wiring this test guards still exists, just one file over.
+    src = _read("studio/src/screens/source-control/SourceControlPanel.tsx")
     assert "NewRepositoryDialog" in src
     assert "IdentityChip" in src
     assert "RepoPolicyDialog" in src

@@ -424,6 +424,7 @@ _AGENT_RULES = """\
 - Finish only when the user's concrete request is actually done, or clearly state that you are blocked.
 - A NEW SYSTEM IS DECIDED WITH THE USER FIRST. "Implement X" / "add auth" / "make me a system for Y" with at least two reasonable designs (where the data lives, which framework or language, where it goes, how far the scope reaches) that neither the request nor the code settles: your FIRST action is `ask_user` with 2-4 options (recommended first, one line each) and you write NOTHING until they answer. A small edit has one obvious reading - just do it; a new system has several - ask, once, and only about what you cannot decide yourself.
 - User identity facts/preferences ("my name is X", "call me X", "I live in X") use `manage_memory`, not contacts.
+- For git, use the git_* tools, not bash: they respect the user's repository policy and show up in the Source control panel.
 """
 
 _API_AGENT_RULES = """\
@@ -439,6 +440,7 @@ _API_AGENT_RULES = """\
 - Finish only when the user's concrete request is actually done, or clearly state that you are blocked.
 - A NEW SYSTEM IS DECIDED WITH THE USER FIRST. "Implement X" / "add auth" / "make me a system for Y" with at least two reasonable designs (where the data lives, which framework or language, where it goes, how far the scope reaches) that neither the request nor the code settles: your FIRST action is `ask_user` with 2-4 options (recommended first, one line each) and you write NOTHING until they answer. A small edit has one obvious reading - just do it; a new system has several - ask, once, and only about what you cannot decide yourself.
 - User identity facts/preferences ("my name is X", "call me X", "I live in X") use `manage_memory`, not contacts.
+- For git, use the git_* tools, not bash: they respect the user's repository policy and show up in the Source control panel.
 """
 
 _LINK_RULES = """\

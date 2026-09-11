@@ -1945,6 +1945,160 @@ FUNCTION_TOOL_SCHEMAS = [
             }
         }
     },
+    # ── Git tools (Lote 87, OBJ-4): "commit this and push", done through
+    # tools that respect the user's repository policy and show up in the
+    # Source control panel — see docs/api/git.md "Herramientas del agente".
+    {
+        "type": "function",
+        "function": {
+            "name": "git_status",
+            "description": "Git status of the repo at `path` (or the active workspace): current branch, ahead/behind its upstream, staged/unstaged/untracked/conflicted files, and the last `limit` commits. Read-only. `path` (and every git tool's `path`) is confined to this turn's workspace / the session's project folders; a repo outside that is refused.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Path inside the repo to inspect (optional; defaults to the active workspace)"},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 100, "description": "How many recent commits to include (default 10)"}
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "git_log",
+            "description": "Commit history for the repo at `path` (or the active workspace). Read-only.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Path inside the repo (optional; defaults to the active workspace)"},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 500, "description": "Commits to return (default 20)"},
+                    "ref": {"type": "string", "description": "Branch/ref to walk (default HEAD); 'all' walks every ref"},
+                    "cursor": {"type": "string", "description": "Page cursor from a prior call's `next_cursor` (optional)"}
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "git_diff",
+            "description": "Diff for the repo at `path`: the working tree (default), the index (`staged: true`), or one `commit`. Add `path_in_repo` to limit to one file. Text is clipped to 60 KB. Read-only.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Path inside the repo (optional; defaults to the active workspace)"},
+                    "path_in_repo": {"type": "string", "description": "Limit the diff to this one file, relative to the repo root (optional)"},
+                    "staged": {"type": "boolean", "description": "Diff the index against HEAD instead of the working tree against the index (ignored when `commit` is set)"},
+                    "commit": {"type": "string", "description": "Diff this commit against its parent instead of the working tree (a sha or ref)"}
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "git_branch",
+            "description": "Create a branch in the repo at `path` (checked out by default). Refused with a clear reason when the repo's git agent policy has use_branch=false, unless the user explicitly approved this exact call (see docs/api/git.md).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Path inside the repo (optional; defaults to the active workspace)"},
+                    "name": {"type": "string", "description": "New branch name"},
+                    "start_point": {"type": "string", "description": "Commit/branch to start from (optional; defaults to HEAD)"},
+                    "checkout": {"type": "boolean", "description": "Check out the new branch immediately (default true)"},
+                    "user_confirmed": {"type": "boolean", "description": "Set true ONLY after the user explicitly approved this exact action in this conversation (e.g. via ask_user) — required when the repo's policy would otherwise refuse it"}
+                },
+                "required": ["name"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "git_checkout",
+            "description": "Switch the repo at `path` to an existing `branch`. Refused with a clear reason when the repo's git agent policy has use_branch=false, unless the user explicitly approved this exact call.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Path inside the repo (optional; defaults to the active workspace)"},
+                    "branch": {"type": "string", "description": "Branch to check out"},
+                    "user_confirmed": {"type": "boolean", "description": "Set true ONLY after the user explicitly approved this exact action — required when the repo's policy would otherwise refuse it"}
+                },
+                "required": ["branch"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "git_commit",
+            "description": "Stage EXACTLY the files listed in `paths` (never everything) and commit them in the repo at `path`, using the repo's own configured author identity. Refused with a clear reason when the repo's git agent policy has commit=false, unless the user explicitly approved this exact call, or when the repo has no user.name/user.email configured.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Path inside the repo (optional; defaults to the active workspace)"},
+                    "message": {"type": "string", "description": "Commit message"},
+                    "paths": {"type": "array", "items": {"type": "string"}, "description": "Files to stage and commit, relative to the repo root or the active workspace. Required — never staged implicitly."},
+                    "amend": {"type": "boolean", "description": "Amend the previous commit instead of creating a new one (default false)"},
+                    "user_confirmed": {"type": "boolean", "description": "Set true ONLY after the user explicitly approved this exact action — required when the repo's policy would otherwise refuse it"}
+                },
+                "required": ["message", "paths"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "git_push",
+            "description": "Push the repo at `path` to a remote. Never force (there is no force option). Refused with a clear reason when the repo's git agent policy has push=false, unless the user explicitly approved this exact call.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Path inside the repo (optional; defaults to the active workspace)"},
+                    "remote": {"type": "string", "description": "Remote name (optional; defaults to origin)"},
+                    "branch": {"type": "string", "description": "Branch to push (optional; defaults to the current branch)"},
+                    "set_upstream": {"type": "boolean", "description": "Set the pushed branch's upstream (-u) (default false)"},
+                    "user_confirmed": {"type": "boolean", "description": "Set true ONLY after the user explicitly approved this exact action — required when the repo's policy would otherwise refuse it"}
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "git_pull",
+            "description": "Pull the repo at `path` from its remote, fast-forward only (never a merge). Fails with git.diverged if the local branch and its upstream have diverged.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Path inside the repo (optional; defaults to the active workspace)"},
+                    "remote": {"type": "string", "description": "Remote name (optional; defaults to origin)"},
+                    "branch": {"type": "string", "description": "Branch to pull (optional; defaults to the current branch's upstream)"}
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "git_fetch",
+            "description": "Fetch remote-tracking refs for the repo at `path`, without touching the working tree.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Path inside the repo (optional; defaults to the active workspace)"},
+                    "remote": {"type": "string", "description": "Remote name (optional; defaults to origin)"},
+                    "prune": {"type": "boolean", "description": "Remove remote-tracking refs deleted on the remote (default false)"}
+                },
+                "required": []
+            }
+        }
+    },
 ]
 
 

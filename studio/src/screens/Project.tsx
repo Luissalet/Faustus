@@ -48,6 +48,7 @@ import {
   type RetrievalPolicy,
 } from '../adapters/projects';
 import { EXPORT_FORMATS } from '../adapters/sessions';
+import { SourceControlPanel } from './source-control/SourceControlPanel';
 import { ProjectAudit } from './project/Audit';
 import { ProjectMemoryFiles } from './project/Memory';
 import { ProjectObjectives } from './project/Objectives';
@@ -63,6 +64,11 @@ const TABS = [
   { id: 'memoria', label: 'Memory', icon: Brain },
   { id: 'actividad', label: 'Agent activity', icon: Activity },
   { id: 'contexto', label: 'Context', icon: Eye },
+  // Lote 86 (CONTRATO_GIT_4.md): "es mejor que un proyecto específico te
+  // liste los repos específicos en las carpetas enlazadas a ESE proyecto" —
+  // replaces the plain "Source control" button (lote 81) with a real
+  // section, scoped to this project's own linked folders.
+  { id: 'repos', label: 'Repositories', icon: GitBranch },
   { id: 'ajustes', label: 'Settings', icon: Settings2 },
 ] as const;
 
@@ -742,15 +748,6 @@ export function ProjectScreen() {
           <Button
             variant="ghost"
             size="sm"
-            icon={GitBranch}
-            label={t('Source control')}
-            title={t('git repositories under this project’s linked folders')}
-            onClick={() => navigate(`/source-control?project=${encodeURIComponent(project.id)}`)}
-            testId="project-source-control"
-          />
-          <Button
-            variant="ghost"
-            size="sm"
             icon={FolderOpen}
             label={t('The folder has moved…')}
             title={t('Point this project at a new folder — refuses one that does not exist, and keeps its memories and relations.')}
@@ -1004,6 +1001,24 @@ export function ProjectScreen() {
           ) : (
             <EmptyState icon={Eye} title={t('No context block')} body={t('This project prepends nothing yet. As soon as it has a folder, instructions or memory, it will appear here exactly as the model reads it.')} />
           )}
+        </div>
+      )}
+
+      {tab === 'repos' && (
+        <div className="fs-pj__brief">
+          <div className="fs-pj__card-head">
+            <h3>{t('Repositories')}</h3>
+            <Link
+              to={`/source-control?project=${encodeURIComponent(project.id)}`}
+              className="fs-btn"
+              data-size="sm"
+              title={t('git repositories under this project’s linked folders')}
+              data-testid="project-source-control-full"
+            >
+              <span>{t('Open full screen')}</span>
+            </Link>
+          </div>
+          <SourceControlPanel projectId={project.id} />
         </div>
       )}
 

@@ -764,3 +764,60 @@
   font-family: var(--fs-font-code);
   overflow-wrap: anywhere;
 }
+
+/* ── Lote 86: compact mode — the chat's side panel. No repo rail, no
+   diff/commit-detail column: one narrow column, the same shared classes
+   the full layout uses wherever they already fit (`.fs-sc__repo-header`,
+   `.fs-sc__changes`…), plus this handful for what compact adds. ── */
+.fs-sc--compact {
+  display: grid;
+  gap: var(--fs-space-3);
+  min-block-size: 0;
+}
+
+.fs-sc--compact .fs-sc__repo-header {
+  margin-block-end: 0;
+  align-items: center;
+}
+
+.fs-sc--compact .fs-sc__repo-header-title {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  flex-wrap: wrap;
+  min-inline-size: 0;
+}
+
+.fs-sc__compact-log {
+  display: grid;
+  gap: var(--fs-space-2);
+}
+
+.fs-sc__compact-commits {
+  display: grid;
+  gap: var(--fs-space-1);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.fs-sc__compact-commits li {
+  display: flex;
+  align-items: baseline;
+  gap: var(--fs-space-2);
+  font-size: 12px;
+}
+
+.fs-sc__compact-commits code {
+  font-family: var(--fs-font-code);
+  color: var(--fs-text-3);
+  flex: 0 0 auto;
+}
+
+.fs-sc__compact-commit-message {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

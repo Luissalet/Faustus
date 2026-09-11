@@ -418,6 +418,42 @@ _register(
     ToolEffect.READ_WORKSPACE, ToolEffect.WRITE_WORKSPACE,
     result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED,
 )
+# Git tools (Lote 87, OBJ-4, src/agent_tools/git_tools.py) — thin executors
+# over src.git_panel, workspace-confined the same way read_file/grep are.
+# Contract's own split: reads -> READ_WORKSPACE (same class as grep/glob/ls:
+# a repo's committed content, including commit messages and diffs, can be
+# attacker-planted); branch/checkout/commit -> WRITE_WORKSPACE (same class
+# as apply_patch/edit_file); push/pull/fetch -> a REMOTE class -- there is no
+# literal ToolEffect.REMOTE in this enum, so it is built from what IS here:
+# NETWORK_EGRESS on all three (talks to a remote host) plus WRITE_WORKSPACE
+# on pull/fetch (they advance local refs / the working tree) or
+# EXTERNAL_SIDE_EFFECT on push (it changes a remote repository this process
+# does not own, same class as send_email) -- every one of those effects is
+# already in POST_EXTERNAL_BLOCKED_EFFECTS below, so the existing
+# post-external-context approval gate covers them exactly like bash/
+# write_file/send_email already are, per rule 4 (no new gate invented here).
+_register(
+    {"git_status", "git_log", "git_diff"},
+    ToolEffect.READ_WORKSPACE,
+    result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED,
+)
+_register(
+    {"git_branch", "git_checkout", "git_commit"},
+    ToolEffect.WRITE_WORKSPACE,
+    result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED,
+)
+_register(
+    {"git_pull", "git_fetch"},
+    ToolEffect.NETWORK_EGRESS, ToolEffect.WRITE_WORKSPACE,
+    # A pulled/fetched commit's content (message, diff) is remote-authored,
+    # same untrusted class as a fetched web page.
+    result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
+)
+_register(
+    {"git_push"},
+    ToolEffect.NETWORK_EGRESS, ToolEffect.EXTERNAL_SIDE_EFFECT,
+    result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
+)
 
 
 TOOL_CAPABILITIES: Mapping[str, ToolCapabilities] = MappingProxyType(dict(_REGISTRY))

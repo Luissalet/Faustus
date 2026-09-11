@@ -1,4 +1,4 @@
-import { FolderKanban, MessageSquare, PanelRight, X } from 'lucide-react';
+import { FolderKanban, GitBranch, MessageSquare, PanelRight, X } from 'lucide-react';
 import {withImageReferences} from '../lib/image-references';
 import {MessageNavigator} from './studio/MessageNavigator';
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
@@ -737,6 +737,17 @@ export function StudioScreen() {
     next.delete('doc');
     setParams(next, { replace: true });
   }, [params, setParams]);
+
+  /* Lote 86: the command palette's "Source control" lands here the same
+     way — ?panel=git opens the git tab of the side panel. */
+  useEffect(() => {
+    if (!params.has('panel')) return;
+    const value = params.get('panel');
+    const next = new URLSearchParams(params);
+    next.delete('panel');
+    setParams(next, { replace: true });
+    if (value === 'git') panelDispatch({ type: 'open', tab: 'git' });
+  }, [params, setParams, panelDispatch]);
 
   /* Inicio's quick starts arrive with the sentence begun: ?draft=…
      Notas adds &mode=agent&send=1&note=<id>: run it now, in agent mode, and
@@ -2400,6 +2411,18 @@ export function StudioScreen() {
           )}
           <Vitals busy={busy} />
           <div className="fs-studio__head-actions">
+            {/* Lote 86 (CONTRATO_GIT_4.md, OBJ-4): "gestionarlo en vivo con
+                el modelo" — a repo only exists to manage once there is a
+                workspace or a project's linked folders to find one in. */}
+            {(workspace || project) && (
+              <IconButton
+                icon={GitBranch}
+                label={t('Source control')}
+                size="sm"
+                onClick={() => panelDispatch({ type: 'open', tab: 'git' })}
+                testId="studio-open-source-control"
+              />
+            )}
             <IconButton
               icon={PanelRight}
               label={panel.open ? t('Close the side panel') : t('Side panel: browser, document, file')}
@@ -2483,6 +2506,7 @@ export function StudioScreen() {
               onRerun={rerunWorker}
               onFork={knobs.incognito ? undefined : (turn) => void forkFrom(turn)}
               onQuote={quote}
+              onOpenSourceControl={() => panelDispatch({ type: 'open', tab: 'git' })}
             />
           )}
         </div>

@@ -62,7 +62,11 @@ def test_new_studio_files_present():
 
 
 def test_source_control_screen_wires_full_width_and_github():
-    src = _read("studio/src/screens/SourceControl.tsx")
+    # Lote 86 (CONTRATO_GIT_4.md): this wiring now lives in the reusable
+    # SourceControlPanel.tsx — SourceControl.tsx became a thin wrapper that
+    # mounts it full width (see test_l86_source_control_panel_js.py for the
+    # wrapper's own, narrower contract).
+    src = _read("studio/src/screens/source-control/SourceControlPanel.tsx")
     assert "PublishToGithubDialog" in src
     assert "CreateBranchDialog" in src
     assert "mergeLightRepos" in src, "the repos rail must merge its own light poll"

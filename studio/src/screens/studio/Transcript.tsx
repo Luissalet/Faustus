@@ -110,6 +110,8 @@ export interface TranscriptProps {
   onFork?: (turn: Turn) => void;
   /** Selected text from a reply, quoted into the composer. */
   onQuote?: (text: string) => void;
+  /** Lote 86: a `git_policy` chip opens the Source control panel. */
+  onOpenSourceControl?: () => void;
 }
 
 /** Read a reply aloud; the button flips to stop while it plays. */
@@ -1049,6 +1051,7 @@ function AssistantTurn({
   onOpenEvidence,
   onRerun,
   onFork,
+  onOpenSourceControl,
 }: {
   turn: Turn;
   busy: boolean;
@@ -1066,6 +1069,7 @@ function AssistantTurn({
   onOpenEvidence?: TranscriptProps['onOpenEvidence'];
   onRerun?: TranscriptProps['onRerun'];
   onFork?: () => void;
+  onOpenSourceControl?: TranscriptProps['onOpenSourceControl'];
 }) {
   // PERF-01/UX-05: while streaming, repaint this card at most once per
   // frame — see `useFrameBatched`'s doc comment. A settled turn (most of a
@@ -1174,7 +1178,19 @@ function AssistantTurn({
                   : ev.action === 'commit'
                     ? t('Committed {sha} on {branch}', { sha: short, branch: ev.branch ?? '' })
                     : t('Pushed {branch}', { branch: ev.branch ?? '' });
-              return (
+              return onOpenSourceControl ? (
+                <button
+                  key={i}
+                  type="button"
+                  className="fs-studio__git-chip"
+                  data-ok={ev.ok}
+                  data-testid="git-policy-chip"
+                  onClick={onOpenSourceControl}
+                  title={t('Open Source control')}
+                >
+                  <Icon size={12} aria-hidden="true" /> {label}
+                </button>
+              ) : (
                 <span key={i} className="fs-studio__git-chip" data-ok={ev.ok} data-testid="git-policy-chip">
                   <Icon size={12} aria-hidden="true" /> {label}
                 </span>
@@ -1396,7 +1412,7 @@ const ESTIMATED_TURN_HEIGHT = 180;
  *  means without the two files sharing state. */
 const BOTTOM_THRESHOLD = 80;
 
-export function Transcript({ turns, busy, sessionId, onApproval, onAnswer, onEdit, onRegenerate, onDelete, onNotice, onOpenFile, onOpenDoc, onOpenEvidence, onRerun, onFork, onQuote }: TranscriptProps) {
+export function Transcript({ turns, busy, sessionId, onApproval, onAnswer, onEdit, onRegenerate, onDelete, onNotice, onOpenFile, onOpenDoc, onOpenEvidence, onRerun, onFork, onQuote, onOpenSourceControl }: TranscriptProps) {
   const quote = useQuoteSelection(onQuote);
 
   // PERF-01/QA-37: Studio.tsx owns the actual scrolling element
@@ -1503,6 +1519,7 @@ export function Transcript({ turns, busy, sessionId, onApproval, onAnswer, onEdi
                 onOpenEvidence={onOpenEvidence}
                 onRerun={onRerun}
                 onFork={onFork ? () => onFork(turn) : undefined}
+                onOpenSourceControl={onOpenSourceControl}
               />
             )}
           </div>

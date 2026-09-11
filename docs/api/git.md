@@ -534,3 +534,116 @@ Cada acción emite un evento SSE `git_policy`:
 `{"action": "branch"|"commit"|"push", "ok": bool, "branch"?, "sha"?,
 "detail"?, "skipped"?}`, que Studio pinta como un chip discreto en el
 transcript.
+
+## Herramientas del agente (Lote 87)
+
+Además de la política automática de arriba, el modelo puede llamar a git
+explícitamente dentro de un turno — "haz commit de esto y push" — a través
+de nueve tools de function-calling, en vez de `bash`. Implementación:
+`src/agent_tools/git_tools.py`; cada una es un ejecutor fino sobre
+`src.git_panel` (el mismo runner de `git` endurecido — sin `shell=True`,
+`-c core.fsmonitor=`, `--no-ext-diff` — que ya usa el panel), así que su
+vocabulario de errores es el mismo que documentan las rutas de arriba.
+
+```
+git_status    lectura   rama, ahead/behind, staged/unstaged/untracked, últimos N commits
+git_log       lectura   historial de commits (limit, ref)
+git_diff      lectura   diff de árbol de trabajo / staged / de un commit, recortado a 60 KB
+git_branch    escritura crea (y por defecto hace checkout de) una rama
+git_checkout  escritura cambia de rama
+git_commit    escritura stage de paths EXPLÍCITOS (nunca `-A`) + commit con la identidad propia del repo
+git_push      remoto    push (nunca --force -- git_panel.push no tiene esa opción)
+git_pull      remoto    pull --ff-only (nunca merge/rebase)
+git_fetch     remoto    fetch
+```
+
+Las nueve aceptan un `path` opcional (por defecto, el workspace activo del
+turno); las de solo lectura devuelven además datos estructurados (`branch`,
+`commits`, `diff`, ...) junto al `output` de texto.
+
+### Confinamiento al workspace del turno
+
+Todo `path` se resuelve con `src.tool_execution._resolve_tool_path` — el
+MISMO allowlist que ya usan `read_file`/`write_file`/`manage_spreadsheet`
+(el workspace del turno, más cualquier carpeta enlazada al proyecto de la
+sesión). Un `path` que se sale de esas raíces, o un workspace sin repo git
+en él o por encima, se rehúsa ANTES de lanzar ningún proceso `git`:
+
+- `error_class: "git.outside_workspace"` — el path (o el workspace activo,
+  si se omitió `path`) no está dentro de las raíces confinadas del turno.
+- `error_class: "git.not_a_repo"` — el path confinado no tiene ningún
+  `.git` en él ni por encima.
+
+El resto de errores reutiliza, byte a byte, el vocabulario que ya usan las
+rutas del panel: `git.dirty`, `git.diverged`, `git.rejected`,
+`git.no_identity`, `git.nothing_to_commit`, `git.command_failed`,
+`dependency.missing` (git no está instalado en el host).
+
+### Política de git del agente y aprobación humana
+
+`git_branch`/`git_checkout` (`policy.use_branch`), `git_commit`
+(`policy.commit`) y `git_push` (`policy.push`) consultan la política
+EFECTIVA del repo destino (`agent_git_policy.effective_policy` — la misma
+función que usan `GET /api/git/repos/{id}/policy` y los hooks
+before_turn/after_turn de arriba) antes de tocar nada. Si el campo relevante
+es `false`, la llamada se rehúsa con
+`{"error": ..., "policy": "git_agent_policy", "git_policy_field": "commit"|"push"|"use_branch"}`
+— salvo que un humano haya aprobado explícitamente ESA llamada exacta.
+`git_pull`/`git_fetch` no llevan gate de política: solo leen del remoto y
+hacen fast-forward de refs locales, la misma clase de riesgo que los
+botones de Fetch/Pull siempre activos del panel.
+
+Cómo una tool sabe si su llamada fue aprobada por un humano — dos vías,
+ambas comprobadas por `git_tools._human_approved(ctx, args)`:
+
+1. **`ctx["human_approved"]`** — puesto por
+   `src.tool_execution.execute_tool_block` a partir de si el contenido de
+   ESTA llamada coincidió, byte a byte, con una `PendingToolApproval`
+   sellada que el usuario respondió en una tarjeta de aprobación
+   (`src.tool_approvals.ExactToolApproval.claim`). Es el MISMO mecanismo que
+   ya usan el resto de tools con aprobación (entrada de escritorio, un
+   veredicto del guard de comandos destructivos, una escritura tras
+   contexto externo) — ningún subsistema de aprobación nuevo. Se activa
+   cuando el turno ya necesitaba una tarjeta por otro motivo (una página
+   externa leída antes, un comando marcado por el guard, ...) y el usuario
+   también aprobó esta llamada de git.
+2. **`args["user_confirmed"]`** — el propio modelo deja constancia de que
+   preguntó al usuario (vía `ask_user`) si quiere saltarse la política del
+   repo, el usuario dijo que sí, y reintenta la MISMA llamada con el flag a
+   `true`. Es la misma forma "pregunta, y reintenta con un flag explícito"
+   que ya usa `install_dependencies`
+   (`src/agent_tools/exec_tools.py`) para un plan que necesita un sí humano
+   sin que haya ninguna tarjeta sellada de por medio — un turno normal, sin
+   contexto contaminado ("comitea esto y haz push"), no crea tarjeta porque
+   ningún gate la habría bloqueado antes.
+
+Un modelo corriendo desatendido (una tarea programada, sin turno humano que
+relaye una respuesta) no tiene ninguna de las dos: `ctx["human_approved"]`
+es falso porque nunca se selló una tarjeta, y nada le indica poner
+`user_confirmed`. Es deliberado: en modo autónomo sin aprobación, no.
+
+`git_commit` exige siempre `paths` (una lista no vacía de ficheros a
+stagear) — nunca hace `git add -A` implícito. No hay, hoy, forma de que la
+tool sepa qué ficheros tocó el propio turno del agente sin que
+`src/agent_loop.py` se lo pase explícitamente (ver "Cambios necesarios en
+ficheros ajenos" en el informe de cierre del Lote 87); mientras eso no
+exista, el modelo debe nombrar los ficheros exactos.
+
+### Esquemas y catálogo
+
+Las nueve están declaradas en `src/tool_schemas.py::FUNCTION_TOOL_SCHEMAS`
+(function-calling nativo), registradas en `src/agent_tools/__init__.py`
+(`TOOL_HANDLERS`/`TOOL_TAGS`, para el fencing XML de los modelos sin tool
+calling nativo) y clasificadas en `src/tool_capabilities.py`: las de lectura
+como `READ_WORKSPACE`; `git_branch`/`git_checkout`/`git_commit` como
+`WRITE_WORKSPACE`; `git_pull`/`git_fetch` como `NETWORK_EGRESS` +
+`WRITE_WORKSPACE`; `git_push` como `NETWORK_EGRESS` +
+`EXTERNAL_SIDE_EFFECT` (no existe un `ToolEffect.REMOTE` literal — se
+componen a partir de los efectos existentes, todos ya dentro de
+`POST_EXTERNAL_BLOCKED_EFFECTS`). `src/tool_registry.py` deriva su catálogo
+automáticamente de esas tres fuentes — ninguna entrada manual adicional.
+Las nueve están además en `NON_ADMIN_BLOCKED_TOOLS`
+(`src/tool_security.py`) — misma clase de privilegio que `bash`/
+`read_file`/`write_file`: tocan el disco (y, para push/pull/fetch, un host
+remoto) del owner, nunca de un usuario público — y las de solo lectura en
+`PLAN_MODE_READONLY_TOOLS`.

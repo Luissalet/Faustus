@@ -190,6 +190,18 @@ NON_ADMIN_BLOCKED_TOOLS = BUILTIN_EMAIL_TOOLS | {
     "desktop_type",
     "desktop_key",
     "desktop_scroll",
+    # Git tools (Lote 87): read a repo's content and, for the write/remote
+    # ones, mutate it or a remote host — same privilege class as bash/
+    # write_file/read_file above.
+    "git_status",
+    "git_log",
+    "git_diff",
+    "git_branch",
+    "git_checkout",
+    "git_commit",
+    "git_push",
+    "git_pull",
+    "git_fetch",
 }
 
 
@@ -246,6 +258,10 @@ PLAN_MODE_READONLY_TOOLS = {
     "resolve_contact",
     "chat_with_model",
     "ask_teacher",
+    # Git read tools (Lote 87): inspection only, same class as grep/glob/ls.
+    "git_status",
+    "git_log",
+    "git_diff",
 }
 
 
@@ -286,6 +302,10 @@ _PLAN_MODE_KNOWN_MUTATORS = {
     "bash", "python",
     # Controls shell processes (kill); plan mode can't run bash anyway.
     "manage_bg_jobs",
+    # Git write/remote tools (Lote 87): plan mode investigates and never
+    # changes anything — a branch/checkout/commit/push/pull/fetch is exactly
+    # the kind of durable change plan mode exists to defer.
+    "git_branch", "git_checkout", "git_commit", "git_push", "git_pull", "git_fetch",
 }
 
 

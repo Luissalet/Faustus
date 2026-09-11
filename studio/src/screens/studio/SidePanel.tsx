@@ -1,4 +1,4 @@
-import { Archive, Check, Copy, FileText, Globe, History, Monitor, Save, SkipForward, X, Users, Paperclip, Files } from 'lucide-react';
+import { Archive, Check, Copy, FileText, GitBranch, Globe, History, Monitor, Save, SkipForward, X, Users, Paperclip, Files } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router';
 import { Button, IconButton, Skeleton } from '../../components';
@@ -10,6 +10,7 @@ import { Rich } from '../rich';
 import { autoOpenEnabled, setAutoOpen, fileKey,docKey,type PanelDraft,type DocState, type PanelAction, type PanelState, type PanelTab } from './panel';
 import {WorkbenchResources} from './WorkbenchResources';
 import SubagentBoard from './SubagentBoard';
+import { SourceControlPanel } from '../source-control/SourceControlPanel';
 import FrameSelection, {type VisualSelection} from './FrameSelection';
 import { aggregateFileChanges } from '../../adapters/workbenchChanges';
 import { isInsecureRemoteAccess } from '../../adapters/remoteAccess';
@@ -41,6 +42,9 @@ const TABS: { id: PanelTab; label: string; icon: typeof Globe }[] = [
   { id: 'browser', label: 'Browser', icon: Globe },
   { id: 'doc', label: 'Document', icon: FileText },
   { id: 'file', label: 'File', icon: Monitor },
+  // Lote 86 (CONTRATO_GIT_4.md): only meaningful once there is a workspace
+  // or project to find a repo in — see the `tabs` filter below.
+  { id: 'git', label: 'Source control', icon: GitBranch },
 ];
 
 /* ── Browser ── */
@@ -488,7 +492,11 @@ function PlanAndChanges({ turns }: { turns: Turn[] }) {
 export default function SidePanel({ state, dispatch, onNotice,turns,workspace,project,busy,onRerun,onVisualSelection }: SidePanelProps) {
   const tabStrip=useRef<HTMLDivElement>(null);
   useEffect(()=>{tabStrip.current?.querySelector('[aria-selected=true]')?.scrollIntoView({block:'nearest',inline:'nearest'});},[state.tab]);
-  const tabs=TABS.filter(tab=>tab.id!=='doc'&&tab.id!=='file'||tab.id==='doc'&&state.doc||tab.id==='file'&&state.file);
+  const tabs=TABS.filter(tab=>
+    (tab.id!=='doc'||state.doc) &&
+    (tab.id!=='file'||state.file) &&
+    (tab.id!=='git'||Boolean(workspace||project)),
+  );
   const workers=[...new Map(turns.flatMap(turn=>turn.workers).map(worker=>[worker.id,worker])).values()];
   return (
     <aside className="fs-panel" data-testid="studio-panel" aria-label={t('Side panel')}>
@@ -530,6 +538,11 @@ export default function SidePanel({ state, dispatch, onNotice,turns,workspace,pr
       {state.tab === 'browser' && <BrowserTab state={state} dispatch={dispatch} onVisualSelection={onVisualSelection} />}
       {state.tab === 'doc' && <DocTab key={state.doc?.id||'streaming'} doc={state.doc} draft={state.doc?state.drafts[docKey(state.doc)]:undefined} dispatch={dispatch} onNotice={onNotice} />}
       {state.tab === 'file' && <FileTab key={state.file?fileKey(state.file):'none'} file={state.file} draft={state.file?state.drafts[fileKey(state.file)]:undefined} dispatch={dispatch} onNotice={onNotice} />}
+      {state.tab === 'git' && (workspace || project) && (
+        <div className="fs-panel__body">
+          <SourceControlPanel compact projectId={project?.id} workspace={workspace} />
+        </div>
+      )}
       </div>
     </aside>
   );

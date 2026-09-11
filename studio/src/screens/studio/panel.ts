@@ -1,13 +1,15 @@
 import type { BrowserFrame, ChatEvent, DocSuggestion } from '../../adapters/chat';
+import { pingGitRefresh } from '../../adapters/git';
 import { t } from '../../i18n';
 
 /**
  * The side panel next to the transcript: what the agent sees (browser and
- * desktop frames), the document it is writing, and a file from the
- * workspace. State and reducer only; SidePanel.tsx paints it.
+ * desktop frames), the document it is writing, a file from the workspace,
+ * and (Lote 86) the workspace's git repository, live. State and reducer
+ * only; SidePanel.tsx paints it.
  */
 
-export type PanelTab = 'outputs' | 'sources' | 'agents' | 'browser' | 'doc' | 'file';
+export type PanelTab = 'outputs' | 'sources' | 'agents' | 'browser' | 'doc' | 'file' | 'git';
 export interface PanelDraft {text:string; base:string; revision?:string}
 
 export interface DocState {
@@ -186,6 +188,11 @@ function reducePanel(state: PanelState, action: PanelAction): PanelState {
 export const fileKey=(file:{workspace:string;path:string})=>'file:'+JSON.stringify([file.workspace,file.path]);
 export const docKey=(doc:DocState)=>'doc:'+(doc.id || 'streaming');
 export function panelReducer(state:PanelState,action:PanelAction):PanelState {
+  // Lote 86: "the panel refreshes as the turn ends" (a `git_policy` event, or
+  // the turn's own end) — a UI-only DOM ping, not part of the state shape,
+  // so `SourceControlPanel` (fixed props: no room for a dedicated signal
+  // prop) can refetch status live wherever it happens to be mounted.
+  if(action.type==='turn-end'||(action.type==='event'&&action.event.type==='git_policy')) pingGitRefresh();
   if(action.type==='suggestions' && action.docId !== undefined) {
     const update=(doc:DocState)=>doc.id===action.docId?{...doc,suggestions:action.suggestions}:doc;
     return {...state,documents:state.documents.map(update),doc:state.doc?update(state.doc):null};

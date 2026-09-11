@@ -40,6 +40,11 @@ from .desktop_tools import DESKTOP_TOOL_HANDLERS, DESKTOP_TOOLS, ManageDesktopCo
 from .exec_tools import InstallDependenciesTool, ManageScriptsTool
 from .browser_tools import CaptureEvidenceTool, BrowserExtractTool
 from .spreadsheet_tools import ManageSpreadsheetTool
+from .git_tools import (
+    GitStatusTool, GitLogTool, GitDiffTool,
+    GitBranchTool, GitCheckoutTool, GitCommitTool,
+    GitPushTool, GitPullTool, GitFetchTool,
+)
 
 TOOL_HANDLERS = {
     "bash": BashTool().execute,
@@ -84,6 +89,19 @@ TOOL_HANDLERS = {
     "list_sessions": ListSessionsTool().execute,
     "send_to_session": SendToSessionTool().execute,
     "manage_session": ManageSessionTool().execute,
+    # Git tools (Lote 87, OBJ-4): "gestionarlo en vivo con el modelo" --
+    # thin executors over src.git_panel, same runner the Source Control
+    # panel uses. See src/agent_tools/git_tools.py for workspace confinement
+    # and the agent git policy gate.
+    "git_status": GitStatusTool().execute,
+    "git_log": GitLogTool().execute,
+    "git_diff": GitDiffTool().execute,
+    "git_branch": GitBranchTool().execute,
+    "git_checkout": GitCheckoutTool().execute,
+    "git_commit": GitCommitTool().execute,
+    "git_push": GitPushTool().execute,
+    "git_pull": GitPullTool().execute,
+    "git_fetch": GitFetchTool().execute,
 }
 # Config/integration admin tools (manage_endpoints/mcp/webhooks/tokens/settings).
 TOOL_HANDLERS.update(ADMIN_TOOL_HANDLERS)
@@ -151,7 +169,11 @@ TOOL_TAGS = {"bash", "python", "web_search", "web_fetch", "read_file", "inspect_
              # Generic loopback to any UI-button endpoint (cookbook,
              # gallery, email folders, etc.) — agent uses this when
              # there's no named tool wrapper for the action.
-             "app_api"} | BUILTIN_EMAIL_TOOLS | DESKTOP_TOOLS
+             "app_api",
+             # Git tools (Lote 87, OBJ-4) — src/agent_tools/git_tools.py.
+             "git_status", "git_log", "git_diff",
+             "git_branch", "git_checkout", "git_commit",
+             "git_push", "git_pull", "git_fetch"} | BUILTIN_EMAIL_TOOLS | DESKTOP_TOOLS
 
 ToolBlock = namedtuple("ToolBlock", ["tool_type", "content"])
 

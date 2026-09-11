@@ -82,6 +82,16 @@ export function CommandPalette() {
           >
             {t('Search conversations')}
           </Command.Item>
+          {/* Lote 86 (CONTRATO_GIT_4.md): opens the live git panel inside
+              the current chat — distinct from the "Source control" entry
+              under Tools above, which goes to the standalone full screen. */}
+          <Command.Item
+            value={`${t('Source control')} ${t('panel')}`}
+            onSelect={() => go('/studio?panel=git')}
+            className="fs-palette__item"
+          >
+            {t('Source control')}
+          </Command.Item>
           <Command.Item value={`${t('Settings')} ${t('configuration')}`} onSelect={() => go('/settings')} className="fs-palette__item">
             {t('Settings')}
           </Command.Item>

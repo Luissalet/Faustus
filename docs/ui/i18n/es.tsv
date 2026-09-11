@@ -6440,3 +6440,10 @@ Visibility	Visibilidad
 SSH identity (optional)	Identidad SSH (opcional)
 Create a GitHub repository for {name} and set it as origin.	Crear un repositorio en GitHub para {name} y ponerlo como origin.
 {login} (active)	{login} (activa)
+Loading the commit history	Cargando el historial de commits
+No git repository here	No hay ningún repositorio git aquí
+Link a project folder that contains a git repository to manage it from this chat.	Enlaza una carpeta del proyecto que contenga un repositorio git para gestionarlo desde este chat.
+Recent commits	Commits recientes
+Open full screen	Abrir a pantalla completa
+Open Source control	Abrir Control de versiones
+panel	panel

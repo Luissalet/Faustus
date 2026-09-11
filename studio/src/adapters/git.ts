@@ -936,6 +936,20 @@ export function mergeLightRepos(current: GitRepo[], light: GitRepo[]): GitRepo[]
   });
 }
 
+/**
+ * Lote 86: a UI-only signal, no payload — something in a repo's git state
+ * may have changed because of an agent turn (a `git_policy` event, or the
+ * turn simply ending). `SourceControlPanel` listens for this on `window`
+ * to refetch status live, wherever it is mounted (full screen, embedded in
+ * a project, or the compact chat panel) without a dedicated prop for it —
+ * the panel's props are fixed to `{projectId, repoId, compact, workspace}`.
+ */
+export const GIT_REFRESH_EVENT = 'faustus:git-refresh';
+
+export function pingGitRefresh(): void {
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event(GIT_REFRESH_EVENT));
+}
+
 /** `t()` key + values for the repo-header identity chip — the screen calls
  *  `t(result.key, result.values)` so this stays a plain function the check
  *  can call without a translation table. */
