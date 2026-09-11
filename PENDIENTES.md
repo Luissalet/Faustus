@@ -108,6 +108,27 @@ y `MAPA_P1.md`. Estado real tras este cierre:
   ninguna reproducible sin acceso directo a esa máquina. Ver "Comprobaciones
   pendientes" arriba.
 
+## OBJ-4/6/7/8 (11-09-2026)
+
+- OBJ-4 (panel git), OBJ-6 (tablero) y OBJ-7 (lenguaje natural) cerrados
+  y verificados en vivo; OBJ-8 tanda 1 hecha (`FAUSTUS.md` §69-71).
+- **MOD-05, cableado al turno.** `src/model_router.choose()` existe y se
+  puede probar desde Ajustes → Router de modelos, pero el turno de chat
+  sigue usando `sess.model` tal cual: cablearlo exige auditar los usos de
+  `sess.model` en `routes/chat_routes.py` (caché, métricas, estado de
+  sesión). Es el siguiente paso natural de OBJ-8.
+- **`endpoint_id` real en `apply_openrouter_payload`.** Los tres sitios de
+  `llm_core` que la llaman no conocen el `endpoint_id` (solo url/modelo), así
+  que las preferencias por endpoint solo aplican cuando un caller superior lo
+  pase; `usage.include` y `cache_control` aplican siempre.
+- **Mermaid en Studio.** Se muestra la fuente (copiar/descargar); render
+  gráfico solo si se decide añadir la librería.
+- **OBJ-5 (nodos remotos por grupos)** aplazado hasta tener un segundo PC.
+- Verificación en vivo pendiente en el 7001: merge de rama desde el diálogo
+  del panel, tablero kanban, barra lateral nueva, y el tab de Chrome que
+  dejó de responder a la extensión durante un streaming largo (¿regresión de
+  rendimiento del Studio?).
+
 ## Última evidencia
 
 - **11-09-2026, cierre completo (lotes 71-72, suite y pantalla).** Lote 71

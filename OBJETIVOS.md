@@ -295,9 +295,26 @@ el cierre de lotes 60-70 de 2026-09-11 resolvió TASK-05, el Playwright por
 sesión y ocho de los nueve IDs "parcial" — ver "Estado final (11-09-2026...)"
 más arriba y `docs/spec/v2/MAPA_P1.md` para el detalle fila a fila.)
 
-## OBJ-4 · Panel de control de versiones en Studio
+## OBJ-4 · Panel de control de versiones en Studio — CERRADO (11-09-2026)
 
 Pedido por Luis, 2026-09-10 — estilo VS Code.
+
+### Estado final (11-09-2026) — CERRADO
+
+Todo lo de abajo existe y está verificado en vivo en el 7001 de Luis
+(commits 61cd184…ae76060 y b5f2707): descubrimiento de repos por carpeta
+enlazada (subrepos incluidos, una sola llamada `status --porcelain=v2`,
+caché 30 s, 0,5 s para 24 repos), rama/ramas/log/diff/cambios, identidad
+git visible con selector (identidades de `~/.ssh/config`, manuales y
+cuentas `gh`), crear repo (`init`/`clone`) y publicarlo en GitHub con un
+botón, crear/mergear/borrar rama con diálogos, push que fija el upstream
+solo, pull/fetch/sync, política por repo de lo que el agente puede hacer
+(rama aparte / commit / push) que las tools `git_*` del agente respetan, y
+el mismo panel dentro de cada proyecto (pestaña Repositorios) y del chat
+(pestaña git del panel lateral, con borde arrastrable — sin sliders).
+Los seis criterios de aceptación se cumplen; el 5 (pull con conflicto) se
+prueba con un remoto bare en `tests/test_l89_git_merge.py`. Detalle en
+`FAUSTUS.md` §69 y `docs/api/git.md`.
 
 **Qué falta hoy.** Faustus no tiene ninguna vista de control de versiones.
 Un usuario que trabaja sobre un repo git enlazado a un proyecto no tiene
@@ -345,3 +362,61 @@ un proyecto:
 
 Sin fecha de lote asignada todavía; queda para que Luis lo priorice frente
 al resto de PENDIENTES.md.
+
+## OBJ-5 · Nodos remotos con emparejamiento por grupos (HW-06) — APLAZADO
+
+Pedido por Luis, 2026-09-11: «Si quiero. No tengo un segundo PC ahora
+mismo, pero sería útil. Lo más fácil para unirlos serían grupos de
+seguridad como en Brave». La primitiva (`src/remote_worker_registry.py`)
+existe y está probada; lo que falta es el emparejamiento tipo Brave Sync:
+un grupo con código/QR, dispositivos que se unen al grupo, y el criterio
+de «implementado» que hoy `DECLARATIONS["remote_worker"]` mantiene en
+`False`. Se acomete cuando haya un segundo equipo con el que verificarlo
+de verdad; sin hardware no se marca como hecho.
+
+## OBJ-6 · Tablero tipo Jira por proyecto — CERRADO (11-09-2026)
+
+Pedido por Luis, 2026-09-11: «un tablero tipo Jira … que por proyecto
+pueda ser consultado y manipulado por los agentes o el usuario … bugs …
+ideas, features … identificadores como P1-noseque». Hecho en b5f2707:
+`src/project_board.py` (SQLite `DATA_DIR/board.sqlite3`; incidencias
+`CLAVE-N` con clave por proyecto, tipos bug/feature/idea/task, estados,
+prioridad, asignado, comentarios, eventos, enlaces entre incidencias y a
+commits — «fixes/closes/cierra/arregla CLAVE-N» en un mensaje de commit
+mueve la incidencia sola), `routes/board_routes.py`, tools del agente
+`board_*` (listar, «lo que está listo», crear, actualizar, comentar,
+enlazar, reclamar), bloque de tablero en el prompt del proyecto, pantalla
+kanban con arrastrar-y-soltar en el proyecto y panel compacto en el chat,
+y los `CLAVE-N` del transcript convertidos en enlaces. `docs/api/board.md`,
+`tests/test_l91_*`–`test_l94_*`.
+
+## OBJ-7 · Lenguaje natural para todas las tools — CERRADO (11-09-2026)
+
+Pedido por Luis, 2026-09-11: «que no tenga que ser todo tan explícito …
+un usuario no debería saberse de memoria todas las tools de Faustus»,
+y «no me refiero solo para git, me refiero para todas las tools». Hecho
+en b5f2707: ejemplos en español e inglés por tool
+(`src/tool_index_examples.py`) que alimentan la recuperación de tools,
+sinónimos por dominio en `src/action_intents.py` (media, tablero, git,
+ficheros, web…), las tools que el usuario nombra o insinúa se ofrecen
+siempre, y un banco de 121 frases naturales
+(`tests/test_l91_natural_language_tools.py`, 100 % resueltas a la tool
+correcta). Regla de oro: «dime X para el proyecto Y» tiene que bastar.
+
+## OBJ-8 · Copiar lo que interesa de otros proyectos — EN CURSO
+
+Pedido por Luis, 2026-09-11: investigar aigraphstudio y OpenRouterTeam
+«e implementa todo lo que pueda ser interesante»; después amplió la lista
+(agent-desktop, open-knowledge, herdr-studio) y dijo que la investigación
+la hará él con ChatGPT y traerá los hallazgos. Tanda 1 hecha (0017b70 y
+d534de0), ver `FAUSTUS.md` §71: contabilidad de coste real de OpenRouter,
+preferencias de proveedor por endpoint ligadas a la política de privacidad,
+web search `:online` solo explícito, fallback nativo `models[]`,
+`cache_control` para Claude vía OpenRouter, router medido de modelos
+locales (MOD-05, sin cablear aún al turno de chat), Mermaid de
+workflows/futures, linter de perfiles de agente (Tarjan) y estimador de
+coste de workflows. Descartado a propósito: el editor visual de canvas
+de aigraphstudio (un segundo formato de proyecto desconectado de los
+datos reales), `openrouter/auto` y BYOK (van contra «nunca pasar a pago
+en silencio» y «una sola autoridad sobre privacidad»).
+
