@@ -566,6 +566,9 @@ _GIT_TOOL_FOR_SUBCOMMAND = {
     "commit": "git_commit", "add": "git_commit (it stages the paths you name)",
     "push": "git_push", "pull": "git_pull", "fetch": "git_fetch",
     "checkout": "git_checkout", "switch": "git_checkout", "branch": "git_branch",
+    "merge": "git_merge",  # Lote 89 — `branch -d/-D` still routes to git_branch
+    # (the hint tool that exists, not necessarily the delete one); a human
+    # deleting via the shell should use git_delete_branch or the panel.
 }
 
 

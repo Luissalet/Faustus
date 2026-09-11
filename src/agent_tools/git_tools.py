@@ -12,6 +12,8 @@ panel itself uses — see that module's docstring) — no subprocess of our own:
     git_branch    write  create (+ optionally checkout) a branch
     git_checkout  write  switch branches
     git_commit    write  stage explicit paths and commit with the repo's OWN identity
+    git_merge     write  merge a branch into the current one (Lote 89; conflicts always abort)
+    git_delete_branch write delete a local branch (Lote 89)
     git_push      remote push (never force — git_panel.push has no force flag at all)
     git_pull      remote pull --ff-only
     git_fetch     remote fetch
@@ -152,6 +154,16 @@ def _git_error(tool: str, exc: Exception) -> Dict[str, Any]:
     if isinstance(exc, git_panel.GitNothingToCommitError):
         return {"error": f"{tool}: nothing to commit (empty message, or nothing staged)", "exit_code": 1,
                 "error_class": "git.nothing_to_commit"}
+    if isinstance(exc, git_panel.GitMergeConflictError):
+        return {"error": f"{tool}: merge produced conflicts (aborted automatically): {', '.join(exc.conflicts)}",
+                "exit_code": 1, "error_class": "git.merge_conflict",
+                "conflicts": exc.conflicts, "aborted": exc.aborted}
+    if isinstance(exc, git_panel.GitBranchIsCurrentError):
+        return {"error": f"{tool}: cannot delete the current branch {exc.name!r}", "exit_code": 1,
+                "error_class": "git.branch_is_current"}
+    if isinstance(exc, git_panel.GitBranchUnmergedError):
+        return {"error": f"{tool}: branch {exc.name!r} is not fully merged -- pass \"force\": true to delete it anyway",
+                "exit_code": 1, "error_class": "git.branch_unmerged"}
     if isinstance(exc, git_panel.GitCommandError):
         return {"error": f"{tool}: {git_panel.stderr_snippet(exc.stderr or exc.stdout)}", "exit_code": 1,
                 "error_class": "git.command_failed"}
@@ -444,6 +456,77 @@ class GitCommitTool:
             "sha": result["sha"], "short": result["short"], "repo_root": repo_root,
             "paths": rel_paths,
         }
+
+
+class GitMergeTool:
+    """`git_merge`: merge `branch` into the current branch of the repo at
+    `path` (Lote 89). Gated by `policy.use_branch` -- Luis's own spec: "con
+    la misma política/aprobación que git_checkout" (this changes which
+    commits the current branch points at, the same class of surprise
+    `use_branch` already gates for branch/checkout).
+
+    Conflicts are never left for the model to sort out mid-turn: this always
+    calls `git_panel.merge` with `keep_conflicts=False` (the default), so a
+    conflicting merge is rolled back automatically and reported --
+    `error_class` `git.merge_conflict` with the conflicting paths -- for a
+    human to resolve from the Source control panel (which CAN leave the
+    conflict in place, via its own `keep_conflicts` option)."""
+
+    async def execute(self, content: str, ctx: dict) -> dict:
+        args = _args(content)
+        try:
+            repo_root = _repo_root(str(args.get("path") or ""))
+        except (_OutsideWorkspace, _NotARepo) as exc:
+            return _repo_error("git_merge", exc)
+        policy = _effective_policy(_owner(ctx), repo_root)
+        denial = _policy_denied("git_merge", "use_branch", ctx, args, allowed=bool(policy.get("use_branch")))
+        if denial:
+            return denial
+        branch = str(args.get("branch") or "").strip()
+        if not branch:
+            return {"error": "git_merge: `branch` is required", "exit_code": 1}
+        ff = str(args.get("ff") or "auto").strip() or "auto"
+        if ff not in ("auto", "only", "no"):
+            return {"error": "git_merge: `ff` must be one of 'auto', 'only', 'no'", "exit_code": 1}
+        message = str(args.get("message") or "").strip() or None
+        try:
+            result = git_panel.merge(repo_root, branch, ff=ff, message=message)
+        except (git_panel.GitDirtyCheckoutError, git_panel.GitMergeConflictError,
+                git_panel.GitCommandError, git_panel.GitNotFoundError) as exc:
+            return _git_error("git_merge", exc)
+        kind = "fast-forward" if result["fast_forward"] else "merge commit"
+        return {
+            "output": f"Merged {branch!r} into the current branch ({kind} {result['sha'][:12]})",
+            "exit_code": 0, "sha": result["sha"], "fast_forward": result["fast_forward"], "repo_root": repo_root,
+        }
+
+
+class GitDeleteBranchTool:
+    """`git_delete_branch`: delete local branch `name` in the repo at `path`
+    (Lote 89). Gated by `policy.use_branch`, same as `git_merge` above.
+    Refuses the currently checked out branch outright, and -- without
+    `force` -- a branch not fully merged (`git.branch_unmerged`)."""
+
+    async def execute(self, content: str, ctx: dict) -> dict:
+        args = _args(content)
+        try:
+            repo_root = _repo_root(str(args.get("path") or ""))
+        except (_OutsideWorkspace, _NotARepo) as exc:
+            return _repo_error("git_delete_branch", exc)
+        policy = _effective_policy(_owner(ctx), repo_root)
+        denial = _policy_denied("git_delete_branch", "use_branch", ctx, args, allowed=bool(policy.get("use_branch")))
+        if denial:
+            return denial
+        name = str(args.get("name") or "").strip()
+        if not name:
+            return {"error": "git_delete_branch: `name` is required", "exit_code": 1}
+        force = bool(args.get("force"))
+        try:
+            git_panel.delete_branch(repo_root, name, force=force)
+        except (git_panel.GitBranchIsCurrentError, git_panel.GitBranchUnmergedError,
+                git_panel.GitCommandError, git_panel.GitNotFoundError) as exc:
+            return _git_error("git_delete_branch", exc)
+        return {"output": f"Deleted branch {name!r}", "exit_code": 0, "repo_root": repo_root, "name": name}
 
 
 # ---------------------------------------------------------------------------

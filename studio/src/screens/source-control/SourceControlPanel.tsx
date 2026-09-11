@@ -1,4 +1,4 @@
-import { ArrowDownToLine, ArrowUpFromLine, Bot, Download, Github, GitBranch, GitBranchPlus, Plus, RefreshCw, X } from 'lucide-react';
+import { ArrowDownToLine, ArrowUpFromLine, Bot, Download, Github, GitBranch, GitBranchPlus, GitMerge, Plus, RefreshCw, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { Button, EmptyState, IconButton, Skeleton, Toast } from '../../components';
@@ -18,6 +18,7 @@ import {
   getWorkingDiff,
   GIT_REFRESH_EVENT,
   listRepos,
+  mergeAbort,
   mergeLightRepos,
   pull,
   push as pushRepo,
@@ -39,6 +40,7 @@ import { DiffPane } from './DiffPane';
 import { RepoList, RepoListError, type RepoMenuAction } from './RepoList';
 import { NewRepositoryDialog } from './NewRepositoryDialog';
 import { CreateBranchDialog } from './CreateBranchDialog';
+import { MergeDialog } from './MergeDialog';
 import { IdentityChip } from './IdentityChip';
 import { RepoPolicyDialog } from './RepoPolicyDialog';
 import { PublishToGithubDialog } from './PublishToGithubDialog';
@@ -144,6 +146,8 @@ export function SourceControlPanel({ projectId, repoId, compact = false, workspa
   const [newBranchOpen, setNewBranchOpen] = useState(false);
   const [headerBranches, setHeaderBranches] = useState<GitBranchesResponse | null>(null);
   const [publishOpen, setPublishOpen] = useState(false);
+  const [mergeOpen, setMergeOpen] = useState(false);
+  const [abortingMerge, setAbortingMerge] = useState(false);
 
   const say = useCallback((text: string) => {
     setToast(text);
@@ -292,13 +296,14 @@ export function SourceControlPanel({ projectId, repoId, compact = false, workspa
     };
   }, [compact, reposLoaded, effectiveProjectId]);
 
-  // The header's own "New branch" fetches its options only once opened —
-  // same reason BranchPopover's per-row fetch is lazy (up to dozens of
-  // repos on screen, nobody asked for their branches yet). Full mode only.
+  // The header's own "New branch"/"Merge…" fetch their options only once
+  // opened — same reason BranchPopover's per-row fetch is lazy (up to
+  // dozens of repos on screen, nobody asked for their branches yet). Full
+  // mode only.
   useEffect(() => {
-    if (compact || !newBranchOpen || !selectedRepoId) return;
+    if (compact || !(newBranchOpen || mergeOpen) || !selectedRepoId) return;
     getBranches(selectedRepoId).then(setHeaderBranches).catch(() => setHeaderBranches(null));
-  }, [compact, newBranchOpen, selectedRepoId]);
+  }, [compact, newBranchOpen, mergeOpen, selectedRepoId]);
 
   // Whichever diff target is active — a working-tree file or a file inside
   // an open commit — fetch its diff. The two never overlap: picking one
@@ -439,6 +444,34 @@ export function SourceControlPanel({ projectId, repoId, compact = false, workspa
       .finally(() => setRepoBusyId(null));
   };
 
+  const onAbortMerge = () => {
+    if (!selectedRepoId) return;
+    setAbortingMerge(true);
+    setActionError(null);
+    mergeAbort(selectedRepoId)
+      .then((result) => {
+        mergeRepo(result.repo);
+        say(t('Merge aborted.'));
+        return refreshStatus(selectedRepoId, true);
+      })
+      .catch((e: unknown) => setActionError((e as Error).message))
+      .finally(() => setAbortingMerge(false));
+  };
+
+  const onMerged = (updated: GitRepo, sha: string, mergedBranch: string) => {
+    if (!selectedRepoId) return;
+    mergeRepo(updated);
+    say(t('Merged {branch} into {into} ({sha})', { branch: mergedBranch, into: updated.branch ?? '?', sha: sha.slice(0, 12) }));
+    void refreshStatus(selectedRepoId, true);
+    loadLog(selectedRepoId);
+  };
+
+  const onConflictKept = () => {
+    if (!selectedRepoId) return;
+    void refreshStatus(selectedRepoId, true);
+    getRepo(selectedRepoId).then(mergeRepo).catch(() => {});
+  };
+
   const commitDisabled = !status || !canCommit(message, status.staged.length) || committing;
 
   const onRepoCreated = (repo: GitRepo) => {
@@ -499,6 +532,8 @@ export function SourceControlPanel({ projectId, repoId, compact = false, workspa
               actionBusy={actionBusy}
               actionError={actionError}
               user={selectedRepo.user}
+              onAbortMerge={onAbortMerge}
+              abortingMerge={abortingMerge}
             />
             <div className="fs-sc__compact-log">
               <h3 className="fs-panel__label">{t('Recent commits')}</h3>
@@ -612,6 +647,7 @@ export function SourceControlPanel({ projectId, repoId, compact = false, workspa
                   testId="repo-header-sync"
                 />
                 <Button variant="ghost" size="sm" icon={GitBranchPlus} label={t('New branch')} onClick={() => setNewBranchOpen(true)} testId="repo-header-new-branch" />
+                <Button variant="ghost" size="sm" icon={GitMerge} label={t('Merge…')} onClick={() => setMergeOpen(true)} testId="repo-header-merge" />
                 {!selectedRepo.remotes.some((r) => r.name === 'origin') && (
                   <Button variant="ghost" size="sm" icon={Github} label={t('Publish to GitHub')} onClick={() => setPublishOpen(true)} testId="repo-header-publish" />
                 )}
@@ -634,6 +670,8 @@ export function SourceControlPanel({ projectId, repoId, compact = false, workspa
                 actionBusy={actionBusy}
                 actionError={actionError}
                 user={selectedRepo.user}
+                onAbortMerge={onAbortMerge}
+                abortingMerge={abortingMerge}
               />
               <CommitGraph
                 commits={commits}
@@ -710,6 +748,18 @@ export function SourceControlPanel({ projectId, repoId, compact = false, workspa
             loadLog(updated.id);
             say(t('Branch created.'));
           }}
+        />
+      )}
+
+      {selectedRepo && (
+        <MergeDialog
+          open={mergeOpen}
+          onOpenChange={setMergeOpen}
+          repoId={selectedRepo.id}
+          currentBranch={selectedRepo.branch}
+          branches={headerBranches}
+          onMerged={onMerged}
+          onConflictKept={onConflictKept}
         />
       )}
 

@@ -2034,6 +2034,41 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "git_merge",
+            "description": "Merge `branch` into the current branch of the repo at `path`. `ff` controls fast-forwarding: 'auto' (default — fast-forward when possible, else a merge commit), 'only' (refuse unless fast-forwardable), 'no' (always create a merge commit, even when a fast-forward would do). On conflict the merge is aborted automatically and reported (error_class git.merge_conflict, with the conflicting paths) — conflicts are never left for the model to resolve; point the user at the Source control panel instead. Refused with a clear reason when the repo's git agent policy has use_branch=false, unless the user explicitly approved this exact call.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Path inside the repo (optional; defaults to the active workspace)"},
+                    "branch": {"type": "string", "description": "Branch (or ref) to merge into the current branch"},
+                    "ff": {"type": "string", "enum": ["auto", "only", "no"], "description": "Fast-forward mode (default 'auto')"},
+                    "message": {"type": "string", "description": "Merge commit message (optional; used only when a merge commit is created)"},
+                    "user_confirmed": {"type": "boolean", "description": "Set true ONLY after the user explicitly approved this exact action — required when the repo's policy would otherwise refuse it"}
+                },
+                "required": ["branch"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "git_delete_branch",
+            "description": "Delete local branch `name` in the repo at `path`. Refuses to delete the currently checked out branch. Without `force`, refuses (error_class git.branch_unmerged) when the branch is not fully merged. Refused with a clear reason when the repo's git agent policy has use_branch=false, unless the user explicitly approved this exact call.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Path inside the repo (optional; defaults to the active workspace)"},
+                    "name": {"type": "string", "description": "Branch to delete"},
+                    "force": {"type": "boolean", "description": "Delete even if not fully merged (default false)"},
+                    "user_confirmed": {"type": "boolean", "description": "Set true ONLY after the user explicitly approved this exact action — required when the repo's policy would otherwise refuse it"}
+                },
+                "required": ["name"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "git_commit",
             "description": "Stage EXACTLY the files listed in `paths` (never everything) and commit them in the repo at `path`, using the repo's own configured author identity. Refused with a clear reason when the repo's git agent policy has commit=false, unless the user explicitly approved this exact call, or when the repo has no user.name/user.email configured.",
             "parameters": {

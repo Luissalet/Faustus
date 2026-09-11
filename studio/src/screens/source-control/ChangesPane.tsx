@@ -1,4 +1,4 @@
-import { Minus, Plus, Trash2 } from 'lucide-react';
+import { Minus, Plus, Trash2, XCircle } from 'lucide-react';
 import { useState, type KeyboardEvent, type ReactNode } from 'react';
 import { Button, Dialog, EmptyState, IconButton, Skeleton } from '../../components';
 import { fileStatusLabel, type GitStatus, type GitStatusFile, type GitUnstagedFile, type GitUser, type GitUntrackedFile } from '../../adapters/git';
@@ -105,6 +105,8 @@ export function ChangesPane({
   actionBusy,
   actionError,
   user,
+  onAbortMerge,
+  abortingMerge = false,
 }: {
   status: GitStatus | null;
   loadingStatus: boolean;
@@ -123,6 +125,12 @@ export function ChangesPane({
   actionBusy: boolean;
   actionError: string | null;
   user: GitUser;
+  /** Lote 89: rolls a merge paused with conflicts (`keepConflicts: true`
+   *  from `MergeDialog`) all the way back. Optional so older callers of
+   *  this pane keep compiling — the button only renders when both this and
+   *  `status.conflicts` are present. */
+  onAbortMerge?: () => void;
+  abortingMerge?: boolean;
 }) {
   const [discardTarget, setDiscardTarget] = useState<string | null>(null);
 
@@ -190,7 +198,14 @@ export function ChangesPane({
         <EmptyState headingLevel={3} title={t('No changes')} body={t('The working tree is clean — nothing to stage or commit.')} />
       )}
 
-      <Section title={t('Merge Conflicts')} count={status.conflicts.length} busy={actionBusy}>
+      <Section
+        title={t('Merge Conflicts')}
+        count={status.conflicts.length}
+        bulkIcon={onAbortMerge ? XCircle : undefined}
+        bulkLabel={onAbortMerge ? t('Abort merge') : undefined}
+        onBulk={onAbortMerge}
+        busy={actionBusy || abortingMerge}
+      >
         {status.conflicts.map((f: GitUntrackedFile) => (
           <div role="listitem" className="fs-sc__file-row" key={f.path}>
             <span className="fs-sc__file-status" data-status="conflict">!</span>

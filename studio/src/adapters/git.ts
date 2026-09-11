@@ -309,6 +309,30 @@ export interface GitCommitResult extends GitMutationResult {
   message: string;
 }
 
+/** OBJ-4 / Lote 89 — merge a branch into the current one, and delete a
+ *  local (optionally also remote) branch. `ff`: 'auto' (fast-forward when
+ *  possible, else a merge commit — git's own default), 'only' (refuse
+ *  unless fast-forwardable), 'no' (always a merge commit). */
+export type GitMergeFf = 'auto' | 'only' | 'no';
+
+export interface GitMergeResult extends GitMutationResult {
+  sha: string;
+  fast_forward: boolean;
+  conflicts: string[];
+}
+
+/** 409 `git.merge_conflict` payload shape, read off `GitApiError.payload`. */
+export interface GitMergeConflictPayload {
+  conflicts: string[];
+  aborted: boolean;
+}
+
+export interface GitDeleteBranchResult extends GitMutationResult {
+  deleted: string;
+  remote_deleted?: boolean;
+  remote_error?: string;
+}
+
 /**
  * A mutation error's whole JSON body, kept alongside the message a plain
  * `ApiError` would show — the caller needs `error_class` to pick the right
@@ -474,6 +498,44 @@ export function discard(repoId: string, paths: string[]): Promise<GitMutationRes
 
 export function commit(repoId: string, message: string, amend = false): Promise<GitCommitResult> {
   return postGit(`/api/git/repos/${encodeURIComponent(repoId)}/commit`, { message, amend });
+}
+
+/** Lote 89 — "prueba también a mergear la rama desde ahí, no solo
+ *  crearla": merge `branch` into the repo's current branch. A conflict
+ *  comes back as a `GitApiError` with `errorClass === 'git.merge_conflict'`
+ *  and `payload` shaped like {@link GitMergeConflictPayload}. */
+export function merge(
+  repoId: string,
+  opts: { branch: string; ff?: GitMergeFf; message?: string; keepConflicts?: boolean },
+): Promise<GitMergeResult> {
+  return postGit(`/api/git/repos/${encodeURIComponent(repoId)}/merge`, {
+    branch: opts.branch,
+    ff: opts.ff ?? 'auto',
+    message: opts.message || undefined,
+    keep_conflicts: opts.keepConflicts ?? false,
+  });
+}
+
+/** Rolls a merge left in progress (`keepConflicts: true`, or the panel's
+ *  own "Abort merge" once conflicts are showing) all the way back. */
+export function mergeAbort(repoId: string): Promise<GitMutationResult> {
+  return postGit(`/api/git/repos/${encodeURIComponent(repoId)}/merge/abort`);
+}
+
+/** Delete a local branch — 409 `git.branch_unmerged` without `force`, 409
+ *  `git.branch_is_current` for the checked-out branch. `remote: true` also
+ *  deletes it on `origin`; a failure there still leaves the local delete in
+ *  place (`remote_deleted: false` + `remote_error`, never a thrown error). */
+export function deleteBranch(
+  repoId: string,
+  name: string,
+  opts: { force?: boolean; remote?: boolean } = {},
+): Promise<GitDeleteBranchResult> {
+  const params = query({ force: opts.force ? 1 : undefined, remote: opts.remote ? 1 : undefined });
+  return request<GitDeleteBranchResult>(
+    `/api/git/repos/${encodeURIComponent(repoId)}/branches/${encodeURIComponent(name)}${params}`,
+    { method: 'DELETE' },
+  );
 }
 
 /* ────────────────── Identities, folders, create/clone, policy ──────────────────

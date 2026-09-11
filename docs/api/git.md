@@ -107,6 +107,14 @@ conserva `identity`/`policy` del último listado completo.
     secret scanning, ...); el cuerpo incluye `"stderr"`.
   - `git.no_identity` — el repo no tiene `user.name`/`user.email`
     configurados para el commit.
+  - `git.merge_conflict` (Lote 89) — un `merge` produjo conflictos; el cuerpo
+    incluye `"conflicts": [rutas]` y `"aborted": bool` (`true` cuando se
+    abortó automáticamente -- el caso por defecto --, `false` cuando se dejó
+    el árbol en conflicto para resolver a mano, ver `POST .../merge` abajo).
+  - `git.branch_unmerged` (Lote 89) — `DELETE .../branches/{name}` sin
+    `force=1` sobre una rama no fusionada del todo.
+  - `git.branch_is_current` (Lote 89) — `DELETE .../branches/{name}` sobre
+    la rama actualmente activa; nunca se borra por esta API.
 - `git.nothing_to_commit` (`400`) — mensaje vacío, o nada en stage y no es
   `amend`.
 
@@ -255,6 +263,41 @@ Todas devuelven, además de lo indicado, `"repo"` (ver arriba).
   stage (y no es `amend`); 409 `git.no_identity` si el repo no tiene
   `user.name`/`user.email` configurados. Usa siempre la identidad del repo,
   nunca la sobrescribe.
+- `POST .../merge {"branch", "ff": "auto"|"only"|"no", "message"?, "keep_conflicts": false}`
+  (Lote 89 -- Luis: "prueba también a mergear la rama desde ahí, no solo
+  crearla") → `{"ok": true, "sha", "fast_forward": bool, "conflicts": []}`.
+  `ff`: `"auto"` (por defecto -- fast-forward cuando se puede, si no un
+  commit de merge, el comportamiento nativo de `git merge`), `"only"`
+  (`--ff-only`, falla si no se puede avanzar rápido), `"no"` (`--no-ff`,
+  siempre crea un commit de merge aunque el fast-forward fuera posible).
+  Sin `message` y con `ff` distinto de `"only"` se añade `--no-edit`, para
+  que nunca se bloquee esperando un editor sin tty. 409 `git.dirty` si hay
+  cambios sin commitear que el merge pisaría (el mismo aviso nativo de git
+  "would be overwritten by merge", capturado por el mismo
+  `_parse_would_be_overwritten` que ya usa `checkout`). Con conflictos: por
+  defecto (`keep_conflicts` ausente o `false`) el merge se ABORTA
+  automáticamente (`git merge --abort`) y responde 409 `git.merge_conflict`
+  con `"aborted": true`; con `"keep_conflicts": true` el árbol se deja tal
+  cual lo dejó git -- para resolver a mano en el editor -- y responde el
+  mismo 409 `git.merge_conflict` pero con `"aborted": false` (el `status` ya
+  expone esos mismos conflictos desde entonces, ver `GET .../status`
+  arriba).
+- `POST .../merge/abort` → `{"ok": true}`. Revierte un merge en curso
+  (`keep_conflicts: true` de la ruta anterior, o cualquier otro motivo) a su
+  estado previo. 400 `git.command_failed` si no hay ningún merge en curso
+  (el propio rechazo de git, sin clasificar más).
+- `DELETE .../branches/{name}?force=0|1&remote=0|1` (Lote 89) → `{"ok": true,
+  "deleted": name, "repo", "remote_deleted"?: bool, "remote_error"?: str}`.
+  `{name}` acepta `/` (ruta `:path` de FastAPI, p. ej. `feature/x` tanto
+  literal como `%2F`-escapado). Nunca borra la rama que está activa (409
+  `git.branch_is_current`, comprobado ANTES de lanzar ningún proceso `git`).
+  Sin `force=1`, una rama no fusionada del todo responde 409
+  `git.branch_unmerged` (`git branch -d`'s propio rechazo); `force=1` usa
+  `-D`. `remote=1` además borra la rama en `origin`
+  (`git push origin --delete <name>`) DESPUÉS de que el borrado local haya
+  tenido éxito -- un fallo ahí (p. ej. la rama nunca se empujó) no deshace
+  el borrado local ya hecho: queda como `"remote_deleted": false` +
+  `"remote_error"`, nunca como un error de la respuesta entera.
 
 El objeto repo de `GET /api/git/repos` (y de cualquier respuesta de
 mutación) gana además dos campos, calculados por `routes/git_routes.py`
@@ -535,31 +578,43 @@ Cada acción emite un evento SSE `git_policy`:
 "detail"?, "skipped"?}`, que Studio pinta como un chip discreto en el
 transcript.
 
-## Herramientas del agente (Lote 87)
+## Herramientas del agente (Lote 87; `git_merge`/`git_delete_branch` Lote 89)
 
 Además de la política automática de arriba, el modelo puede llamar a git
 explícitamente dentro de un turno — "haz commit de esto y push" — a través
-de nueve tools de function-calling, en vez de `bash`. Implementación:
+de once tools de function-calling, en vez de `bash`. Implementación:
 `src/agent_tools/git_tools.py`; cada una es un ejecutor fino sobre
 `src.git_panel` (el mismo runner de `git` endurecido — sin `shell=True`,
 `-c core.fsmonitor=`, `--no-ext-diff` — que ya usa el panel), así que su
 vocabulario de errores es el mismo que documentan las rutas de arriba.
 
 ```
-git_status    lectura   rama, ahead/behind, staged/unstaged/untracked, últimos N commits
-git_log       lectura   historial de commits (limit, ref)
-git_diff      lectura   diff de árbol de trabajo / staged / de un commit, recortado a 60 KB
-git_branch    escritura crea (y por defecto hace checkout de) una rama
-git_checkout  escritura cambia de rama
-git_commit    escritura stage de paths EXPLÍCITOS (nunca `-A`) + commit con la identidad propia del repo
-git_push      remoto    push (nunca --force -- git_panel.push no tiene esa opción)
-git_pull      remoto    pull --ff-only (nunca merge/rebase)
-git_fetch     remoto    fetch
+git_status        lectura   rama, ahead/behind, staged/unstaged/untracked, últimos N commits
+git_log           lectura   historial de commits (limit, ref)
+git_diff          lectura   diff de árbol de trabajo / staged / de un commit, recortado a 60 KB
+git_branch        escritura crea (y por defecto hace checkout de) una rama
+git_checkout      escritura cambia de rama
+git_merge         escritura funde `branch` en la rama actual (Lote 89, ff auto/only/no)
+git_delete_branch escritura borra una rama local (Lote 89)
+git_commit        escritura stage de paths EXPLÍCITOS (nunca `-A`) + commit con la identidad propia del repo
+git_push          remoto    push (nunca --force -- git_panel.push no tiene esa opción)
+git_pull          remoto    pull --ff-only (nunca merge/rebase)
+git_fetch         remoto    fetch
 ```
 
-Las nueve aceptan un `path` opcional (por defecto, el workspace activo del
+Las once aceptan un `path` opcional (por defecto, el workspace activo del
 turno); las de solo lectura devuelven además datos estructurados (`branch`,
 `commits`, `diff`, ...) junto al `output` de texto.
+
+`git_merge` SIEMPRE llama a `git_panel.merge` con `keep_conflicts=False` --
+nunca deja un conflicto a medio resolver para que el modelo lo arregle
+dentro del turno: un conflicto se aborta automáticamente y se informa
+(`error_class` `git.merge_conflict`, con `conflicts`/`aborted`) para que un
+humano lo resuelva desde el panel (que sí puede dejar el conflicto en pie,
+vía su propio `keep_conflicts`). `git_delete_branch` rehúsa la rama
+actualmente activa (`git.branch_is_current`) y, sin `force`, una rama no
+fusionada del todo (`git.branch_unmerged`) -- mismo vocabulario que
+`DELETE /repos/{id}/branches/{name}` arriba.
 
 ### Confinamiento al workspace del turno
 
@@ -581,7 +636,9 @@ rutas del panel: `git.dirty`, `git.diverged`, `git.rejected`,
 
 ### Política de git del agente y aprobación humana
 
-`git_branch`/`git_checkout` (`policy.use_branch`), `git_commit`
+`git_branch`/`git_checkout`/`git_merge`/`git_delete_branch` (`policy.use_branch`
+-- Lote 89 pone `git_merge`/`git_delete_branch` bajo la misma política y
+aprobación que `git_checkout`), `git_commit`
 (`policy.commit`) y `git_push` (`policy.push`) consultan la política
 EFECTIVA del repo destino (`agent_git_policy.effective_policy` — la misma
 función que usan `GET /api/git/repos/{id}/policy` y los hooks
@@ -631,19 +688,27 @@ exista, el modelo debe nombrar los ficheros exactos.
 
 ### Esquemas y catálogo
 
-Las nueve están declaradas en `src/tool_schemas.py::FUNCTION_TOOL_SCHEMAS`
+Las once están declaradas en `src/tool_schemas.py::FUNCTION_TOOL_SCHEMAS`
 (function-calling nativo), registradas en `src/agent_tools/__init__.py`
 (`TOOL_HANDLERS`/`TOOL_TAGS`, para el fencing XML de los modelos sin tool
 calling nativo) y clasificadas en `src/tool_capabilities.py`: las de lectura
-como `READ_WORKSPACE`; `git_branch`/`git_checkout`/`git_commit` como
-`WRITE_WORKSPACE`; `git_pull`/`git_fetch` como `NETWORK_EGRESS` +
-`WRITE_WORKSPACE`; `git_push` como `NETWORK_EGRESS` +
+como `READ_WORKSPACE`; `git_branch`/`git_checkout`/`git_commit`/`git_merge`/
+`git_delete_branch` como `WRITE_WORKSPACE`; `git_pull`/`git_fetch` como
+`NETWORK_EGRESS` + `WRITE_WORKSPACE`; `git_push` como `NETWORK_EGRESS` +
 `EXTERNAL_SIDE_EFFECT` (no existe un `ToolEffect.REMOTE` literal — se
 componen a partir de los efectos existentes, todos ya dentro de
 `POST_EXTERNAL_BLOCKED_EFFECTS`). `src/tool_registry.py` deriva su catálogo
 automáticamente de esas tres fuentes — ninguna entrada manual adicional.
-Las nueve están además en `NON_ADMIN_BLOCKED_TOOLS`
+Las once están además en `NON_ADMIN_BLOCKED_TOOLS`
 (`src/tool_security.py`) — misma clase de privilegio que `bash`/
 `read_file`/`write_file`: tocan el disco (y, para push/pull/fetch, un host
 remoto) del owner, nunca de un usuario público — y las de solo lectura en
-`PLAN_MODE_READONLY_TOOLS`.
+`PLAN_MODE_READONLY_TOOLS` (`git_merge`/`git_delete_branch`, como el resto
+de las de escritura, están en `_PLAN_MODE_KNOWN_MUTATORS`, el respaldo
+estático que mantiene el modo plan cerrado incluso si el import de los
+esquemas fallara). También están en `_GIT_TOOL_NAMES`
+(`src/tool_execution.py`), la rama de despacho que pasa `owner`/
+`human_approved` a estas tools -- sin eso el gate de política no sabría
+quién llama ni si ya se aprobó la llamada -- y por tanto en el "suelo" de
+tools que `src/agent_loop.py` ofrece cuando el turno habla de git
+(`_GIT_TOOL_NAMES` es la única fuente, así que entrar ahí ya es suficiente).

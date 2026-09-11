@@ -6449,3 +6449,26 @@ Open Source control	Abrir Control de versiones
 panel	panel
 Resize the panel	Cambiar el tamaño del panel
 Drag to resize	Arrastra para cambiar el tamaño
+Abort	Abortar
+Also delete on origin	También borrar en origin
+Always create a merge commit	Crear siempre un commit de merge
+Choose a branch…	Elige una rama…
+Delete anyway	Borrar de todos modos
+Delete branch {branch}?	¿Borrar la rama {branch}?
+Keep the conflicts to resolve them	Mantener los conflictos para resolverlos
+Merge	Fusionar
+Merge branch	Rama a fusionar
+Merge commit message	Mensaje del commit de merge
+Merge into {branch}	Fusionar en {branch}
+Merging {branch} produced conflicts.	Fusionar {branch} produjo conflictos.
+Message (optional)	Mensaje (opcional)
+The merge was aborted automatically — nothing changed. "Keep the conflicts" pauses the merge instead so you can resolve them yourself.	El merge se abortó automáticamente: no cambió nada. "Mantener los conflictos" pausa el merge en su lugar para que los resuelvas tú mismo.
+This branch is not fully merged into the current one — deleting it may lose commits.	Esta rama no está completamente fusionada en la actual: borrarla puede perder commits.
+This removes the local branch. It cannot be undone.	Esto elimina la rama local. No se puede deshacer.
+current branch	rama actual
+Abort merge	Abortar merge
+Delete {branch}	Borrar {branch}
+Merge {branch} into current…	Fusionar {branch} en la actual…
+Merged {branch} into {into} ({sha})	Se fusionó {branch} en {into} ({sha})
+Merge…	Fusionar…
+Merge aborted.	Merge abortado.

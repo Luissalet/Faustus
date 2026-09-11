@@ -84,6 +84,13 @@ class CommitBody(BaseModel):
     amend: bool = False
 
 
+class MergeBody(BaseModel):
+    branch: str = Field(..., min_length=1)
+    ff: str = Field("auto", pattern="^(auto|only|no)$")
+    message: Optional[str] = None
+    keep_conflicts: bool = False
+
+
 class IdentityCreateBody(BaseModel):
     label: str = Field(..., min_length=1)
     ssh_host: Optional[str] = None
@@ -554,6 +561,75 @@ def setup_git_routes() -> APIRouter:
             return _command_failed(e, repo=_summary(_repo_or_404(repo_id, owner), owner))
         return {"ok": True, "sha": result["sha"], "short": result["short"], "message": result["message"],
                 "repo": _summary(_repo_or_404(repo_id, owner), owner)}
+
+    @router.post("/repos/{repo_id}/merge")
+    def post_merge(repo_id: str, body: MergeBody, request: Request,
+                   _h: None = Depends(require_human)) -> Any:
+        owner = _owner(request)
+        meta = _repo_or_404(repo_id, owner)
+        if not git_panel.git_available():
+            return _git_missing()
+        try:
+            result = git_panel.merge(
+                meta["path"], body.branch, ff=body.ff, message=body.message,
+                keep_conflicts=body.keep_conflicts,
+            )
+        except git_panel.GitDirtyCheckoutError as e:
+            return _error(409, "git.dirty", "Local changes would be overwritten by merge",
+                          dirty=e.paths, repo=_summary(_repo_or_404(repo_id, owner), owner))
+        except git_panel.GitMergeConflictError as e:
+            detail = (
+                "The merge produced conflicts and was aborted automatically; nothing changed."
+                if e.aborted else
+                "The merge is paused with unresolved conflicts; resolve them in your editor and "
+                "commit, or call merge/abort."
+            )
+            return _error(409, "git.merge_conflict", detail, conflicts=e.conflicts, aborted=e.aborted,
+                          repo=_summary(_repo_or_404(repo_id, owner), owner))
+        except git_panel.GitCommandError as e:
+            return _command_failed(e, repo=_summary(_repo_or_404(repo_id, owner), owner))
+        return {"ok": True, "sha": result["sha"], "fast_forward": result["fast_forward"],
+                "conflicts": result["conflicts"], "repo": _summary(_repo_or_404(repo_id, owner), owner)}
+
+    @router.post("/repos/{repo_id}/merge/abort")
+    def post_merge_abort(repo_id: str, request: Request, _h: None = Depends(require_human)) -> Any:
+        owner = _owner(request)
+        meta = _repo_or_404(repo_id, owner)
+        if not git_panel.git_available():
+            return _git_missing()
+        try:
+            git_panel.merge_abort(meta["path"])
+        except git_panel.GitCommandError as e:
+            return _command_failed(e, repo=_summary(_repo_or_404(repo_id, owner), owner))
+        return {"ok": True, "repo": _summary(_repo_or_404(repo_id, owner), owner)}
+
+    @router.delete("/repos/{repo_id}/branches/{name:path}")
+    def delete_branch_route(repo_id: str, name: str, request: Request, force: int = 0, remote: int = 0,
+                            _h: None = Depends(require_human)) -> Any:
+        owner = _owner(request)
+        meta = _repo_or_404(repo_id, owner)
+        if not git_panel.git_available():
+            return _git_missing()
+        try:
+            git_panel.delete_branch(meta["path"], name, force=bool(force))
+        except git_panel.GitBranchIsCurrentError:
+            return _error(409, "git.branch_is_current", "Cannot delete the currently checked out branch",
+                          repo=_summary(_repo_or_404(repo_id, owner), owner))
+        except git_panel.GitBranchUnmergedError:
+            return _error(409, "git.branch_unmerged",
+                          f"Branch {name!r} is not fully merged; pass force=1 to delete it anyway",
+                          repo=_summary(_repo_or_404(repo_id, owner), owner))
+        except git_panel.GitCommandError as e:
+            return _command_failed(e, repo=_summary(_repo_or_404(repo_id, owner), owner))
+        resp: Dict[str, Any] = {"ok": True, "deleted": name, "repo": _summary(_repo_or_404(repo_id, owner), owner)}
+        if remote:
+            try:
+                git_panel.delete_remote_branch(meta["path"], "origin", name)
+                resp["remote_deleted"] = True
+            except git_panel.GitCommandError as e:
+                resp["remote_deleted"] = False
+                resp["remote_error"] = git_panel.stderr_snippet(e.stderr or e.stdout)
+        return resp
 
     # ------------------------------------------------------------------
     # SSH identities (Lote 82) -- read is require_user, everything that

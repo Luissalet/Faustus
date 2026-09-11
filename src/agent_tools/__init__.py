@@ -43,6 +43,7 @@ from .spreadsheet_tools import ManageSpreadsheetTool
 from .git_tools import (
     GitStatusTool, GitLogTool, GitDiffTool,
     GitBranchTool, GitCheckoutTool, GitCommitTool,
+    GitMergeTool, GitDeleteBranchTool,
     GitPushTool, GitPullTool, GitFetchTool,
 )
 
@@ -99,6 +100,8 @@ TOOL_HANDLERS = {
     "git_branch": GitBranchTool().execute,
     "git_checkout": GitCheckoutTool().execute,
     "git_commit": GitCommitTool().execute,
+    "git_merge": GitMergeTool().execute,
+    "git_delete_branch": GitDeleteBranchTool().execute,
     "git_push": GitPushTool().execute,
     "git_pull": GitPullTool().execute,
     "git_fetch": GitFetchTool().execute,
@@ -170,9 +173,11 @@ TOOL_TAGS = {"bash", "python", "web_search", "web_fetch", "read_file", "inspect_
              # gallery, email folders, etc.) — agent uses this when
              # there's no named tool wrapper for the action.
              "app_api",
-             # Git tools (Lote 87, OBJ-4) — src/agent_tools/git_tools.py.
+             # Git tools (Lote 87, OBJ-4; git_merge/git_delete_branch Lote 89) —
+             # src/agent_tools/git_tools.py.
              "git_status", "git_log", "git_diff",
              "git_branch", "git_checkout", "git_commit",
+             "git_merge", "git_delete_branch",
              "git_push", "git_pull", "git_fetch"} | BUILTIN_EMAIL_TOOLS | DESKTOP_TOOLS
 
 ToolBlock = namedtuple("ToolBlock", ["tool_type", "content"])

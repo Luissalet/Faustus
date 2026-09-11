@@ -438,7 +438,11 @@ _register(
     result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED,
 )
 _register(
-    {"git_branch", "git_checkout", "git_commit"},
+    # git_merge/git_delete_branch (Lote 89): same class as branch/checkout/
+    # commit above — a merge rewrites what the current branch points at
+    # (and can create a commit), a branch deletion removes a ref, neither
+    # touches a remote.
+    {"git_branch", "git_checkout", "git_commit", "git_merge", "git_delete_branch"},
     ToolEffect.WRITE_WORKSPACE,
     result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED,
 )

@@ -1,15 +1,18 @@
-import { GitBranch, Plus, Search } from 'lucide-react';
+import { GitBranch, GitMerge, Plus, Search, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { Button, Popover } from '../../components';
+import { Button, IconButton, Popover } from '../../components';
 import {
   checkout,
   filterBranches,
   getBranches,
   GitApiError,
+  pingGitRefresh,
   type GitBranchesResponse,
   type GitRepo,
 } from '../../adapters/git';
 import { CreateBranchDialog } from './CreateBranchDialog';
+import { MergeDialog } from './MergeDialog';
+import { DeleteBranchDialog } from './DeleteBranchDialog';
 import { t } from '../../i18n';
 
 /**
@@ -44,6 +47,8 @@ export function BranchPopover({
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<{ message: string; dirty: string[] } | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [mergeTarget, setMergeTarget] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -139,35 +144,65 @@ export function BranchPopover({
       {!loading && branches && (
         <div className="fs-sc__branch-list" role="list" aria-label={t('Branches')}>
           {local.map((b) => (
-            <button
-              key={`local-${b.name}`}
-              type="button"
-              role="listitem"
-              className="fs-sc__branch-row"
-              data-current={b.is_current || undefined}
-              disabled={busy !== null || b.is_current}
-              onClick={() => void doCheckout(b.name)}
-              data-testid="branch-row-local"
-            >
-              <GitBranch size={13} aria-hidden="true" />
-              <span>{b.name}</span>
-              {b.is_current && <span className="fs-sc__branch-tag">{t('current')}</span>}
-            </button>
+            <div key={`local-${b.name}`} role="listitem" className="fs-sc__branch-row-wrap">
+              <button
+                type="button"
+                className="fs-sc__branch-row"
+                data-current={b.is_current || undefined}
+                disabled={busy !== null || b.is_current}
+                onClick={() => void doCheckout(b.name)}
+                data-testid="branch-row-local"
+              >
+                <GitBranch size={13} aria-hidden="true" />
+                <span>{b.name}</span>
+                {b.is_current && <span className="fs-sc__branch-tag">{t('current')}</span>}
+              </button>
+              {!b.is_current && (
+                <span className="fs-sc__branch-row-actions">
+                  <IconButton
+                    icon={GitMerge}
+                    label={t('Merge {branch} into current…', { branch: b.name })}
+                    size="sm"
+                    disabled={busy !== null}
+                    onClick={() => setMergeTarget(b.name)}
+                    testId="branch-row-merge"
+                  />
+                  <IconButton
+                    icon={Trash2}
+                    label={t('Delete {branch}', { branch: b.name })}
+                    size="sm"
+                    disabled={busy !== null}
+                    onClick={() => setDeleteTarget(b.name)}
+                    testId="branch-row-delete"
+                  />
+                </span>
+              )}
+            </div>
           ))}
           {remote.map((b) => (
-            <button
-              key={`remote-${b.name}`}
-              type="button"
-              role="listitem"
-              className="fs-sc__branch-row"
-              disabled={busy !== null}
-              onClick={() => void doCheckout(b.name.replace(/^[^/]+\//, ''), true, b.name)}
-              data-testid="branch-row-remote"
-            >
-              <GitBranch size={13} aria-hidden="true" />
-              <span>{b.name}</span>
-              <span className="fs-sc__branch-tag">{t('remote')}</span>
-            </button>
+            <div key={`remote-${b.name}`} role="listitem" className="fs-sc__branch-row-wrap">
+              <button
+                type="button"
+                className="fs-sc__branch-row"
+                disabled={busy !== null}
+                onClick={() => void doCheckout(b.name.replace(/^[^/]+\//, ''), true, b.name)}
+                data-testid="branch-row-remote"
+              >
+                <GitBranch size={13} aria-hidden="true" />
+                <span>{b.name}</span>
+                <span className="fs-sc__branch-tag">{t('remote')}</span>
+              </button>
+              <span className="fs-sc__branch-row-actions">
+                <IconButton
+                  icon={GitMerge}
+                  label={t('Merge {branch} into current…', { branch: b.name })}
+                  size="sm"
+                  disabled={busy !== null}
+                  onClick={() => setMergeTarget(b.name)}
+                  testId="branch-row-merge"
+                />
+              </span>
+            </div>
           ))}
           {noMatches && <p className="fs-muted">{t('No branches match “{query}”.', { query: search })}</p>}
         </div>
@@ -185,6 +220,35 @@ export function BranchPopover({
         onCreated={(updated) => {
           onCheckedOut(updated);
           reset();
+        }}
+      />
+
+      <MergeDialog
+        open={mergeTarget !== null}
+        onOpenChange={(next) => { if (!next) setMergeTarget(null); }}
+        repoId={repoId}
+        currentBranch={currentBranch}
+        branches={branches}
+        initialBranch={mergeTarget ?? undefined}
+        onMerged={(updated) => {
+          onCheckedOut(updated);
+          pingGitRefresh();
+          setMergeTarget(null);
+          reset();
+        }}
+        onConflictKept={() => pingGitRefresh()}
+      />
+
+      <DeleteBranchDialog
+        open={deleteTarget !== null}
+        onOpenChange={(next) => { if (!next) setDeleteTarget(null); }}
+        repoId={repoId}
+        branchName={deleteTarget}
+        onDeleted={(updated) => {
+          onCheckedOut(updated);
+          pingGitRefresh();
+          setDeleteTarget(null);
+          getBranches(repoId).then(setBranches).catch(() => {});
         }}
       />
     </Popover>

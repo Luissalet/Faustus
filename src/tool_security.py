@@ -199,6 +199,8 @@ NON_ADMIN_BLOCKED_TOOLS = BUILTIN_EMAIL_TOOLS | {
     "git_branch",
     "git_checkout",
     "git_commit",
+    "git_merge",
+    "git_delete_branch",
     "git_push",
     "git_pull",
     "git_fetch",
@@ -302,10 +304,12 @@ _PLAN_MODE_KNOWN_MUTATORS = {
     "bash", "python",
     # Controls shell processes (kill); plan mode can't run bash anyway.
     "manage_bg_jobs",
-    # Git write/remote tools (Lote 87): plan mode investigates and never
-    # changes anything — a branch/checkout/commit/push/pull/fetch is exactly
-    # the kind of durable change plan mode exists to defer.
-    "git_branch", "git_checkout", "git_commit", "git_push", "git_pull", "git_fetch",
+    # Git write/remote tools (Lote 87; git_merge/git_delete_branch Lote 89):
+    # plan mode investigates and never changes anything — a branch/checkout/
+    # commit/merge/delete_branch/push/pull/fetch is exactly the kind of
+    # durable change plan mode exists to defer.
+    "git_branch", "git_checkout", "git_commit", "git_merge", "git_delete_branch",
+    "git_push", "git_pull", "git_fetch",
 }
 
 

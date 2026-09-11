@@ -280,6 +280,28 @@
   background: var(--fs-ember-faint);
 }
 
+/* Lote 89: each row is now the checkout button plus, for non-current
+   branches, a couple of trailing action icons (Merge into current…,
+   Delete) — the wrapper keeps the button growing to fill the row while the
+   icons stay a fixed size at the end. */
+.fs-sc__branch-row-wrap {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-1);
+}
+
+.fs-sc__branch-row-wrap .fs-sc__branch-row {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+}
+
+.fs-sc__branch-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+}
+
 .fs-sc__branch-tag {
   font-size: 10px;
   color: var(--fs-text-3);

@@ -140,6 +140,36 @@ class GitNothingToCommitError(Exception):
     """Empty message, or nothing staged (and not an --amend)."""
 
 
+class GitMergeConflictError(Exception):
+    """A merge produced conflicts. `aborted=True` when the merge was rolled
+    back automatically (`keep_conflicts=False`, the default -- `merge()`
+    already ran `git merge --abort`); `aborted=False` when the conflicted
+    tree was left in place for manual resolution (`keep_conflicts=True`) --
+    `repo_status()`'s own `conflicts` list shows the same paths from then
+    on."""
+
+    def __init__(self, conflicts: List[str], *, aborted: bool):
+        self.conflicts = conflicts
+        self.aborted = aborted
+        super().__init__("merge produced conflicts" + (" (aborted)" if aborted else " (left unresolved)"))
+
+
+class GitBranchIsCurrentError(Exception):
+    """Refused to delete the currently checked out branch."""
+
+    def __init__(self, name: str):
+        self.name = name
+        super().__init__(f"cannot delete the current branch {name!r}")
+
+
+class GitBranchUnmergedError(Exception):
+    """`git branch -d` refused `name` because it is not fully merged (no `force`)."""
+
+    def __init__(self, name: str):
+        self.name = name
+        super().__init__(f"branch {name!r} is not fully merged")
+
+
 def stderr_snippet(text: str, limit: int = STDERR_SNIPPET_LIMIT) -> str:
     return (text or "").strip()[:limit]
 
@@ -1219,6 +1249,108 @@ def commit(repo_path: str, message: str, *, amend: bool = False,
     sha = run_git(repo_path, "rev-parse", "HEAD").stdout.strip()
     short = run_git(repo_path, "rev-parse", "--short", "HEAD").stdout.strip()
     return {"sha": sha, "short": short, "message": message}
+
+
+def merge(repo_path: str, branch: str, *, ff: str = "auto", message: Optional[str] = None,
+          keep_conflicts: bool = False, timeout: float = GIT_TIMEOUT_DEFAULT) -> Dict[str, Any]:
+    """`git merge <branch>` into the checked-out branch (Lote 89).
+
+    `ff`: ``"auto"`` (default -- fast-forward when possible, else a merge
+    commit, git's own default), ``"only"`` (``--ff-only``: refuse unless
+    fast-forwardable), ``"no"`` (``--no-ff``: always create a merge commit,
+    even when a fast-forward would do). Whenever a commit could be created
+    and no explicit `message` was given, ``--no-edit`` is added so this can
+    never block on a text editor with no tty attached.
+
+    Local changes the merge would clobber raise `GitDirtyCheckoutError` --
+    git's own "would be overwritten by merge" refusal is already one of the
+    two markers `_parse_would_be_overwritten` recognises (the other is
+    checkout's), so this is the SAME exception class `checkout_branch`
+    raises, since both map to the one contract error `git.dirty`.
+
+    On conflict: by default (`keep_conflicts=False`) the merge is rolled
+    back with `git merge --abort` and `GitMergeConflictError` is raised with
+    `aborted=True`; with `keep_conflicts=True` the conflicted tree is left
+    exactly as git left it, for manual resolution (`repo_status()`'s
+    `conflicts` already exposes the same paths from then on), and the same
+    exception is raised with `aborted=False`. Either way the conflicting
+    paths come from `repo_status`, the one source the panel's own `.../status`
+    route already reads conflicts from.
+    """
+    args = ["merge"]
+    if ff == "only":
+        args.append("--ff-only")
+    elif ff == "no":
+        args.append("--no-ff")
+    if message:
+        args += ["-m", message]
+    elif ff != "only":
+        args.append("--no-edit")
+    args.append(branch)
+
+    proc = run_git(repo_path, *args, timeout=timeout)
+    if proc.returncode != 0:
+        dirty = _parse_would_be_overwritten(proc.stderr or "")
+        if dirty:
+            raise GitDirtyCheckoutError(dirty)
+        status = repo_status(repo_path)
+        if status["conflicts"]:
+            conflicts = [c["path"] for c in status["conflicts"]]
+            if keep_conflicts:
+                raise GitMergeConflictError(conflicts, aborted=False)
+            run_git(repo_path, "merge", "--abort", timeout=timeout)
+            raise GitMergeConflictError(conflicts, aborted=True)
+        raise GitCommandError(args, proc.returncode, proc.stdout, proc.stderr)
+
+    sha = _head_sha(repo_path) or ""
+    parents_proc = run_git(repo_path, "show", "-s", "--format=%P", "HEAD", timeout=timeout)
+    parent_count = len((parents_proc.stdout or "").split())
+    return {"ok": True, "sha": sha, "fast_forward": parent_count <= 1, "conflicts": []}
+
+
+def merge_abort(repo_path: str, *, timeout: float = GIT_TIMEOUT_DEFAULT) -> None:
+    """`git merge --abort` -- rolls a conflicted (or otherwise in-progress)
+    merge back to the pre-merge state. Raises `GitCommandError` (git's own
+    refusal, nothing else to classify) when there is no merge in progress."""
+    args = ["merge", "--abort"]
+    proc = run_git(repo_path, *args, timeout=timeout)
+    if proc.returncode != 0:
+        raise GitCommandError(args, proc.returncode, proc.stdout, proc.stderr)
+
+
+def delete_branch(repo_path: str, name: str, *, force: bool = False,
+                   timeout: float = GIT_TIMEOUT_DEFAULT) -> None:
+    """`git branch -d|-D <name>` (Lote 89).
+
+    Refuses up front -- no `git` process run at all -- when `name` is the
+    checked-out branch (`GitBranchIsCurrentError`): this app has no worktree
+    concept, so there is no scenario where deleting the current branch would
+    make sense, and refusing it ourselves is simpler than relying on
+    whatever text git's own refusal happens to use. Without `force`, a
+    branch not fully merged raises `GitBranchUnmergedError` (git's `-d`
+    refusal; `-D` never raises it -- that is the whole point of `-D`).
+    """
+    current, detached = _current_branch(repo_path)
+    if not detached and current == name:
+        raise GitBranchIsCurrentError(name)
+    args = ["branch", "-D" if force else "-d", name]
+    proc = run_git(repo_path, *args, timeout=timeout)
+    if proc.returncode != 0:
+        stderr_l = (proc.stderr or "").lower()
+        if not force and "not fully merged" in stderr_l:
+            raise GitBranchUnmergedError(name)
+        raise GitCommandError(args, proc.returncode, proc.stdout, proc.stderr)
+
+
+def delete_remote_branch(repo_path: str, remote: str, name: str, *,
+                          timeout: float = GIT_TIMEOUT_LONG) -> str:
+    """`git push <remote> --delete <name>` -- deletes the actual branch on
+    the remote, not just this repo's remote-tracking ref of it (Lote 89)."""
+    args = ["push", remote, "--delete", name]
+    proc = run_git(repo_path, *args, timeout=timeout)
+    if proc.returncode != 0:
+        raise GitCommandError(args, proc.returncode, proc.stdout, proc.stderr)
+    return (proc.stdout or "") + (proc.stderr or "")
 
 
 # ---------------------------------------------------------------------------
