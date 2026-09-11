@@ -3379,8 +3379,11 @@ aside.fs-panel {
 .fs-panel__tabs { overflow-x: auto; min-inline-size: 0; }
 .fs-workbench-content { display: flex; flex-direction: column; flex: 1; min-block-size: 0; overflow: hidden; }
 .fs-panel__tab { flex-shrink: 0; min-block-size: 40px; }
-.fs-panel__resize { display: flex; align-items: center; gap: var(--fs-space-3); padding: var(--fs-space-2) var(--fs-space-4); color: var(--fs-text-2); font-size: var(--fs-text-xs); }
-.fs-panel__resize input { min-inline-size: 0; flex: 1; accent-color: var(--fs-accent); }
+/* The panel is resized by dragging its left edge (a split-view grip), never
+   by a slider. 6px wide, invisible until hovered/focused. */
+aside.fs-panel { position: relative; }
+.fs-panel__grip { position: absolute; inset-block: 0; inset-inline-start: -3px; inline-size: 6px; cursor: col-resize; touch-action: none; z-index: 2; background: transparent; transition: background var(--fs-duration-fast) var(--fs-ease-out); }
+.fs-panel__grip:hover, .fs-panel__grip:focus-visible { background: var(--fs-accent); }
 .fs-workbench-open { display: flex; overflow: auto; flex-shrink: 0; gap: var(--fs-space-2); padding: var(--fs-space-2) var(--fs-space-4); border-block-end: 1px solid var(--fs-border); }
 .fs-workbench-open > span { display: flex; flex-shrink: 0; max-inline-size: 260px; }
 .fs-workbench-open button { color: var(--fs-text-2); background: transparent; border: 0; padding: var(--fs-space-2); min-block-size: 36px; cursor: pointer; }
@@ -3406,7 +3409,7 @@ aside.fs-panel {
 @media (max-width: 600px) {
   .fs-chat-team__editor { inset-inline: 12px; inset-block-end: 110px; inline-size: auto; max-block-size: 65dvh; }
   aside.fs-panel { inline-size: 100%; }
-  .fs-panel__resize { display: none; }
+  .fs-panel__grip { display: none; }
   .fs-panel__tab, .fs-workbench-open button { min-block-size: 44px; }
   .fs-workbench-open button { min-inline-size: 44px; }
   .fs-chat-team__editor input:not([type=checkbox]), .fs-chat-team__editor select,

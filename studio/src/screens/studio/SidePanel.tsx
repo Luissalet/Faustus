@@ -500,6 +500,45 @@ export default function SidePanel({ state, dispatch, onNotice,turns,workspace,pr
   const workers=[...new Map(turns.flatMap(turn=>turn.workers).map(worker=>[worker.id,worker])).values()];
   return (
     <aside className="fs-panel" data-testid="studio-panel" aria-label={t('Side panel')}>
+      <div
+        className="fs-panel__grip"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label={t('Resize the panel')}
+        aria-valuemin={320}
+        aria-valuemax={900}
+        aria-valuenow={state.width}
+        tabIndex={0}
+        title={t('Drag to resize')}
+        onPointerDown={(e) => {
+          // Drag the panel's left edge, like any split view. Pointer capture
+          // keeps the drag alive when the cursor leaves the 6px grip.
+          e.preventDefault();
+          const startX = e.clientX;
+          const startW = state.width;
+          const target = e.currentTarget;
+          target.setPointerCapture(e.pointerId);
+          const move = (ev: PointerEvent) => {
+            const next = Math.min(900, Math.max(320, Math.round(startW + (startX - ev.clientX))));
+            dispatch({ type: 'width', width: next });
+          };
+          const up = () => {
+            target.releasePointerCapture(e.pointerId);
+            target.removeEventListener('pointermove', move);
+            target.removeEventListener('pointerup', up);
+            target.removeEventListener('pointercancel', up);
+          };
+          target.addEventListener('pointermove', move);
+          target.addEventListener('pointerup', up);
+          target.addEventListener('pointercancel', up);
+        }}
+        onKeyDown={(e) => {
+          // Keyboard users resize with the arrows (the grip is a separator).
+          const step = e.shiftKey ? 80 : 20;
+          if (e.key === 'ArrowLeft') { e.preventDefault(); dispatch({ type: 'width', width: Math.min(900, state.width + step) }); }
+          if (e.key === 'ArrowRight') { e.preventDefault(); dispatch({ type: 'width', width: Math.max(320, state.width - step) }); }
+        }}
+      />
       <header className="fs-panel__head">
         <div className="fs-panel__tabs" role="tablist" ref={tabStrip}>
           {tabs.map((tab) => (
@@ -527,7 +566,6 @@ export default function SidePanel({ state, dispatch, onNotice,turns,workspace,pr
       {typeof location!=='undefined'&&isInsecureRemoteAccess(location.hostname,location.protocol)&&(
         <p className="fs-notice" data-tone="warning" role="alert">{t('This page is reachable over plain HTTP from outside this machine — set up HTTPS or a tunnel before using it remotely.')}</p>
       )}
-      <label className="fs-panel__resize">{t('Panel width')}<input type="range" min={320} max={900} step={20} value={state.width} onChange={e=>dispatch({type:'width',width:Number(e.target.value)})}/></label>
       {(state.documents.length>0||state.files.length>0)&&<div className="fs-workbench-open" aria-label={t('Open results')}>
         {state.documents.map(doc=><span key={docKey(doc)}><button type="button" aria-pressed={state.tab==='doc'&&state.doc?.id===doc.id} onClick={()=>dispatch({type:'doc',doc})}>{doc.title||t('Document')}{state.drafts[docKey(doc)]?' •':''}</button><button type="button" aria-label={t('Close {name}',{name:doc.title})} disabled={Boolean(state.drafts[docKey(doc)])} onClick={()=>dispatch({type:'forget',key:docKey(doc)})}><X size={13}/></button></span>)}
         {state.files.map(file=><span key={fileKey(file)}><button type="button" aria-pressed={state.tab==='file'&&state.file?.path===file.path} onClick={()=>dispatch({type:'file',...file})}>{file.path.split(/[\\/]/).pop()}{state.drafts[fileKey(file)]?' •':''}</button><button type="button" aria-label={t('Close {name}',{name:file.path})} disabled={Boolean(state.drafts[fileKey(file)])} onClick={()=>dispatch({type:'forget',key:fileKey(file)})}><X size={13}/></button></span>)}
