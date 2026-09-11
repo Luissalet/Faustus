@@ -670,3 +670,24 @@ def test_git_missing_returns_503(client, store, tmp_path, monkeypatch):
     body = resp.json()
     assert body["error_class"] == "dependency.missing"
     assert "detail" in body
+
+
+def test_plain_push_publishes_a_branch_that_has_no_upstream_yet(tmp_path):
+    """Seen live: Push on a freshly created branch showed git's raw
+    "no upstream branch" fatal. The panel's Push now sets `-u origin <branch>`
+    on its own the first time, like the CLI's own suggested command."""
+    bare = tmp_path / "remote.git"
+    _run(["init", "--bare", str(bare)], cwd=tmp_path)
+    work = tmp_path / "work"
+    work.mkdir()
+    _run(["init", "-b", "main"], cwd=work)
+    (work / "a.txt").write_text("a\n", encoding="utf-8")
+    _run(["add", "a.txt"], cwd=work)
+    _run(["-c", "user.name=T", "-c", "user.email=t@e.com", "commit", "-m", "init"], cwd=work)
+    _run(["remote", "add", "origin", str(bare)], cwd=work)
+    _run(["push", "-u", "origin", "main"], cwd=work)
+    _run(["checkout", "-b", "feature"], cwd=work)
+    assert git_panel.upstream_ref(str(work)) is None
+    git_panel.push(str(work))  # no remote/branch/set_upstream given
+    assert git_panel.upstream_ref(str(work)) == "origin/feature"
+    assert "feature" in _run(["branch", "--list"], cwd=bare).stdout

@@ -1131,6 +1131,17 @@ def pull(repo_path: str, *, remote: Optional[str] = None, branch: Optional[str] 
 def push(repo_path: str, *, remote: Optional[str] = None, branch: Optional[str] = None,
          set_upstream: bool = False, timeout: float = GIT_TIMEOUT_LONG) -> str:
     args = ["push"]
+    if not set_upstream and not remote and not branch:
+        # A branch that was just created has no upstream yet. Nobody should
+        # have to read "fatal: The current branch X has no upstream branch"
+        # and go type `git push --set-upstream origin X` in a terminal: the
+        # panel's Push publishes the branch on `origin` the first time, the
+        # same thing the git CLI's own suggested command does.
+        try:
+            if _upstream(repo_path) is None and any(r.get("name") == "origin" for r in repo_remotes(repo_path)):
+                set_upstream = True
+        except Exception:  # noqa: BLE001 - fall through to the plain push
+            pass
     if set_upstream:
         args.append("-u")
         # `-u` needs an explicit remote+branch on a branch that has none yet
