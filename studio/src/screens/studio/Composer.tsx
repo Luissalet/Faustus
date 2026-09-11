@@ -830,7 +830,7 @@ const AttachmentList = memo(function AttachmentList({
         </li>
       ))}
       {attachments.map((a) => (
-        <li key={a.id} className="fs-studio__attachment" data-image={isImage(a.mime)||undefined} data-testid="studio-attachment">
+        <li key={a.id} className="fs-studio__attachment" data-image={isImage(a.mime)||undefined} data-partial={a.partial||undefined} data-testid="studio-attachment">
           {isImage(a.mime) ? (
             <a href={`/library/edit?attachment=${encodeURIComponent(a.id)}&name=${encodeURIComponent(a.name)}${sessionId ? `&chat=${encodeURIComponent(sessionId)}` : ''}`} target="_blank" rel="noopener noreferrer"
               className="fs-studio__attachment-edit" aria-label={t('Edit image and masks: {name}', {name:a.name})}
@@ -842,6 +842,13 @@ const AttachmentList = memo(function AttachmentList({
           )}
           <span className="fs-studio__attachment-info">
             <span className="fs-studio__attachment-name" title={a.name}>{a.name}</span>
+            {a.partial && (
+              <span className="fs-studio__attachment-status" data-testid="studio-attachment-partial">
+                {a.partialReason === 'scanned' ? t('Scanned PDF — only the pages, not searchable text, were extracted.')
+                  : a.partialReason === 'cover_only' ? t('Only the cover page could be extracted.')
+                  : t('Only partially extracted.')}
+              </span>
+            )}
             {isImage(a.mime) && <select className="fs-studio__reference-role"
               aria-label={t('Reference role for {name}', {name:a.name})}
               title={t('Adds visible guidance to your message. The image model determines how closely it can follow it.')}

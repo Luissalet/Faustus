@@ -1,36 +1,32 @@
 """SEC-04 · audit of OCR/TTS/STT network egress against
 `src/privacy_policy.py::assert_outbound`.
 
-`src/privacy_policy.py`'s own module docstring already names the auxiliaries
-it is wired into (the embedding lane, ChromaDB, the compaction summarizer,
-the reranker — each verified by its own test) and the ones that still are
-not: OCR and telemetry. This file is the audit `SEC-04` asks for: it finds
-every remaining outbound point by name and pins whether it calls the gate.
+`src/privacy_policy.py`'s own module docstring names the auxiliaries it is
+wired into (the embedding lane, ChromaDB, the compaction summarizer, the
+reranker, and — as of lote 70a — OCR/vision, TTS and STT). This file is the
+audit `SEC-04` asked for: it finds every remaining outbound point by name and
+pins whether it calls the gate.
 
 Telemetry (`src/scorecard.py`) turns out to have no network egress to gate at
 all — it only ever reads/writes a local JSONL file (see
 `test_local_telemetry_has_no_network_egress_to_gate` below), so there is
-nothing left to wire there.
+nothing to wire there.
 
 OCR's egress point is `src/document_processor.py::analyze_image_with_vl_
 result` (base64-encodes the image and POSTs it to whatever vision endpoint
-is configured — admin-set or auto-detected, local or remote). Two more of
-the same shape turned up in the audit that the ID text also names: remote
+is configured — admin-set or auto-detected, local or remote), which now
+calls `assert_outbound("ocr_vision", ...)` per candidate endpoint before
+`llm_call`. Two more of the same shape, named by the same ID text: remote
 TTS/STT (`services/tts/tts_service.py::_synthesize_api`,
-`services/stt/stt_service.py::_transcribe_api`, both an `httpx.post` to a
-configurable `base_url`).
+`services/stt/stt_service.py::_transcribe_api`), each now calling
+`assert_outbound("tts"/"stt", base_url)` before its `httpx.post`.
 
-None of those three files are in this lot's PROPIOS list (document_processor
-belongs to lot 66; the tts/stt services belong to neither this lot nor any
-other named in this wave), so the gate cannot be called from here — see the
-lot report's "Cambios necesarios en ficheros ajenos" for the exact diff each
-needs (one `privacy_policy.assert_outbound(...)` call before the existing
-`llm_call`/`httpx.post`). The tests below are the audit's receipt: they read
-each function's SOURCE (not its behaviour — none of these are cheap to drive
-end-to-end without a real vision/TTS/STT endpoint) and go red the moment
-someone adds the call, which is exactly the signal whoever closes the
-ajeno-file gap needs — delete or update the corresponding test then, don't
-leave it stale.
+Lote 70a closed the gap this file used to document (see the "Cambios
+necesarios en ficheros ajenos" note in its own batch reports) — the three
+"does not yet consult" tests below now assert the OPPOSITE of their old
+name: that the call IS present. Kept as source-inspection tests (not
+end-to-end — none of these are cheap to drive without a real vision/TTS/STT
+endpoint), same style as before.
 """
 from __future__ import annotations
 
@@ -69,58 +65,49 @@ def test_local_telemetry_has_no_network_egress_to_gate():
 # OCR — src/document_processor.py::analyze_image_with_vl_result
 # ---------------------------------------------------------------------------
 
-def test_ocr_vision_egress_does_not_yet_consult_the_privacy_gate():
-    """Documents the real, current gap: the OCR/vision HTTP call is made
-    with no call to privacy_policy.assert_outbound first, so `local_only`
-    does not yet cover it. See the lot report for the exact fix — this file
-    is not in this lot's PROPIOS list, so the wiring cannot be added here."""
+def test_ocr_vision_egress_now_consults_the_privacy_gate():
+    """Lote 70a: the OCR/vision HTTP call now asks
+    `privacy_policy.assert_outbound("ocr_vision", ...)` before it reaches
+    `llm_call`, so `local_only` covers it."""
     from src.document_processor import analyze_image_with_vl_result
 
     source = _source_of(analyze_image_with_vl_result)
     assert "llm_call(" in source, "the egress point moved; re-audit this function"
-    assert "assert_outbound" not in source and "privacy_policy" not in source, (
-        "src/document_processor.py::analyze_image_with_vl_result now calls "
-        "the privacy gate — this audit test is satisfied and should be "
-        "deleted (the gap it documents is closed)."
-    )
+    assert "assert_outbound(\"ocr_vision\"" in source
+    # The call must run BEFORE llm_call, not after — a gate that only
+    # fires once the request already left would be too late to matter.
+    assert source.index("assert_outbound(\"ocr_vision\"") < source.index("llm_call(")
 
 
 # ---------------------------------------------------------------------------
 # TTS — services/tts/tts_service.py::TTSService._synthesize_api
 # ---------------------------------------------------------------------------
 
-def test_remote_tts_egress_does_not_yet_consult_the_privacy_gate():
+def test_remote_tts_egress_now_consults_the_privacy_gate():
     from services.tts.tts_service import TTSService
 
     source = _source_of(TTSService._synthesize_api)
     assert "httpx.post(" in source, "the egress point moved; re-audit this method"
-    assert "assert_outbound" not in source and "privacy_policy" not in source, (
-        "services/tts/tts_service.py::TTSService._synthesize_api now calls "
-        "the privacy gate — this audit test is satisfied and should be "
-        "deleted (the gap it documents is closed)."
-    )
+    assert "assert_outbound(\"tts\"" in source
+    assert source.index("assert_outbound(\"tts\"") < source.index("httpx.post(")
 
 
 # ---------------------------------------------------------------------------
 # STT — services/stt/stt_service.py::STTService._transcribe_api
 # ---------------------------------------------------------------------------
 
-def test_remote_stt_egress_does_not_yet_consult_the_privacy_gate():
+def test_remote_stt_egress_now_consults_the_privacy_gate():
     from services.stt.stt_service import STTService
 
     source = _source_of(STTService._transcribe_api)
     assert "httpx.post(" in source, "the egress point moved; re-audit this method"
-    assert "assert_outbound" not in source and "privacy_policy" not in source, (
-        "services/stt/stt_service.py::STTService._transcribe_api now calls "
-        "the privacy gate — this audit test is satisfied and should be "
-        "deleted (the gap it documents is closed)."
-    )
+    assert "assert_outbound(\"stt\"" in source
+    assert source.index("assert_outbound(\"stt\"") < source.index("httpx.post(")
 
 
 # ---------------------------------------------------------------------------
-# The gate itself works for the "ocr_vision"/"tts"/"stt" component names the
-# ajeno-file diffs in the lot report use, so the fix is a one-line call away
-# once someone can touch those files.
+# The gate itself, for the "ocr_vision"/"tts"/"stt" component names the three
+# call sites above now use — verified independently of any real endpoint.
 # ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize("component", ["ocr_vision", "tts", "stt"])

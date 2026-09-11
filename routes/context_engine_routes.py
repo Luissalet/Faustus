@@ -362,6 +362,55 @@ def setup_context_engine_routes():
                      "evicted. Recompile the request to see it again."),
         }
 
+    @router.get("/packets/{packet_id}/items/{item_id}/fragment")
+    async def get_manifest_item_fragment(packet_id: str, item_id: str, request: Request):
+        """CTX-03: the exact fragment ONE manifest row cites, reopened live —
+        Context.tsx's ManifestPane "Ver fragmento" button.
+
+        Looks `item_id` up in the same cached manifest `GET .../manifest`
+        already serves (so the same `retained: false` honesty applies: an
+        evicted packet has no rows left to look one up in), then resolves
+        its `source_ref` through the SAME adapter registry `POST
+        /sources/fetch` uses (`context_engine.candidates.fetch_ref`) —
+        `file:` via the files adapter (itself backed by `src/read_plan.py`),
+        `doc:...#chunk` via the documents adapter, `session:...#idx` via the
+        sessions adapter, `mem:` via the memory adapter. No second, ad-hoc
+        per-prefix resolver: one fragment-reopening path for the whole
+        server, this route just starts it from an item_id instead of a raw
+        ref the caller already has to have."""
+        owner = _owner(request)
+        row = _compiler().get_packet_row(packet_id)
+        if row is None or not _mine(row.get("owner"), owner):
+            raise HTTPException(status_code=404, detail="No such packet")
+        cached = _recall_manifest(packet_id, str(row.get("owner") or ""))
+        if cached is None:
+            return {"ok": True, "packet_id": packet_id, "item_id": item_id,
+                    "resolvable": False, "text": "",
+                    "note": ("the ledger keeps counts, not rows: the per-item "
+                             "manifest lives in the working set and this "
+                             "packet's has been evicted.")}
+        item = next(
+            (it for it in (cached.get("manifest") or [])
+             if str(it.get("context_item_id") or "") == item_id),
+            None,
+        )
+        if item is None:
+            raise HTTPException(status_code=404, detail="No such manifest item")
+        source_ref = str(item.get("source_ref") or "").strip()
+        if not source_ref:
+            return {"ok": True, "packet_id": packet_id, "item_id": item_id,
+                    "resolvable": False, "text": ""}
+        from src.context_engine import candidates as _candidates
+        ctx_request = _context_request({}, owner)
+        retrieval = _candidates.RetrievalRequest(request=ctx_request,
+                                                 explicit_refs=(source_ref,))
+        candidate = await _candidates.fetch_ref(source_ref, retrieval)
+        if candidate is None or (candidate.owner and not _mine(candidate.owner, owner)):
+            return {"ok": True, "packet_id": packet_id, "item_id": item_id,
+                    "resolvable": False, "text": ""}
+        return {"ok": True, "packet_id": packet_id, "item_id": item_id,
+                "resolvable": True, "text": candidate.body}
+
     @router.post("/receipts")
     async def post_receipt(request: Request):
         """What happened to a packet after it was delivered (§1.5).

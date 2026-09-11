@@ -213,6 +213,17 @@ export interface Attachment {
   height?: number;
   /** Explicit user guidance, serialized into the visible message when sent. */
   referenceRole?: 'subject' | 'style' | 'composition';
+  /** IDX-04: what `save_upload` (`src/upload_handler.py`) made of this file —
+   *  "extracting" only ever means the ingestion signal itself errored (the
+   *  file is usable, its readability just wasn't checked); a PDF otherwise
+   *  comes back "ready" or "partial" in the same response as the upload
+   *  itself, never a later transition. Absent on an older server. */
+  status?: 'extracting' | 'ready' | 'partial';
+  partial?: boolean;
+  /** `"scanned"` (no extractable text layer) or `"cover_only"` (only the
+   *  first page yielded text) — `document_processor.py::pdf_ingestion_signal`'s
+   *  two reasons for `partial`. */
+  partialReason?: string | null;
 }
 
 export function attachmentUrl(id: string): string {
@@ -250,6 +261,9 @@ export async function uploadFiles(files: File[], sessionId?: string | null, sign
     size: typeof f.size === 'number' ? f.size : 0,
     width: typeof f.width === 'number' ? f.width : undefined,
     height: typeof f.height === 'number' ? f.height : undefined,
+    status: f.status === 'extracting' || f.status === 'ready' || f.status === 'partial' ? f.status : undefined,
+    partial: f.partial === true,
+    partialReason: typeof f.partial_reason === 'string' ? f.partial_reason : undefined,
   }));
 }
 

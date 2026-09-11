@@ -14,7 +14,7 @@ import {
   Unlink,
   X,
 } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { Button, Dialog, EmptyState, IconButton, Skeleton } from '../components';
 import { ApiError } from '../adapters/api';
@@ -41,6 +41,7 @@ import {
   loadExperiences,
   loadFindings,
   loadManifest,
+  loadManifestItemFragment,
   loadPackets,
   loadSelectionControls,
   oldestPacket,
@@ -704,6 +705,24 @@ function ManifestPane({ packet, onClose }: { packet: PacketRow; onClose: () => v
     if (!data) return [];
     return needle ? data.items.filter((item) => manifestItemMatches(item, needle)) : data.items;
   }, [data, needle]);
+  // CTX-03: the exact fragment behind one row, reopened live on demand — at
+  // most one open at a time (a second click on another row replaces it, the
+  // same row's own click closes it), so this never has to reconcile more
+  // than one in-flight fetch against a table that can re-filter mid-request.
+  const [fragment, setFragment] = useState<{
+    itemId: string; loading: boolean; resolvable?: boolean; text?: string; note?: string; error?: string;
+  } | null>(null);
+  const toggleFragment = async (item: ManifestItem) => {
+    if (fragment?.itemId === item.itemId) { setFragment(null); return; }
+    setFragment({ itemId: item.itemId, loading: true });
+    try {
+      const frag = await loadManifestItemFragment(packet.id, item.itemId);
+      setFragment((cur) => (cur?.itemId === item.itemId ? { itemId: item.itemId, loading: false, ...frag } : cur));
+    } catch (e) {
+      const message = e instanceof ApiError ? e.message : t('The fragment could not be read');
+      setFragment((cur) => (cur?.itemId === item.itemId ? { itemId: item.itemId, loading: false, error: message } : cur));
+    }
+  };
 
   return (
     <aside className="fs-ctx__pane" aria-labelledby="fs-ctx-manifest" data-testid="context-manifest">
@@ -779,24 +798,55 @@ function ManifestPane({ packet, onClose }: { packet: PacketRow; onClose: () => v
             </thead>
             <tbody>
               {items.map((item) => (
-                <tr key={item.itemId} data-testid="context-manifest-item">
-                  <td>{item.section}</td>
-                  <td>{item.sourceType}</td>
-                  <td className="fs-ctx__ref">
-                    <code>{item.sourceRef || '—'}</code>
-                  </td>
-                  <td>{item.lanes.join(', ') || '—'}</td>
-                  <td>
-                    {item.transformation}
-                    {item.generated && (
-                      <span className="fs-ctx__flag" data-tone="warning" title={t('A model wrote this text; it is not the source')}>
-                        {t('generated')}
-                      </span>
-                    )}
-                  </td>
-                  <td className="fs-ctx__num">{item.tokens}</td>
-                  <td className="fs-ctx__detail-cell">{item.reason || '—'}</td>
-                </tr>
+                <Fragment key={item.itemId}>
+                  <tr data-testid="context-manifest-item">
+                    <td>{item.section}</td>
+                    <td>{item.sourceType}</td>
+                    <td className="fs-ctx__ref">
+                      <code>{item.sourceRef || '—'}</code>
+                      {item.sourceRef && (
+                        <button
+                          type="button"
+                          className="fs-link"
+                          onClick={() => void toggleFragment(item)}
+                          data-testid="context-manifest-fragment-btn"
+                          aria-expanded={fragment?.itemId === item.itemId}
+                        >
+                          {t('View fragment')}
+                        </button>
+                      )}
+                    </td>
+                    <td>{item.lanes.join(', ') || '—'}</td>
+                    <td>
+                      {item.transformation}
+                      {item.generated && (
+                        <span className="fs-ctx__flag" data-tone="warning" title={t('A model wrote this text; it is not the source')}>
+                          {t('generated')}
+                        </span>
+                      )}
+                    </td>
+                    <td className="fs-ctx__num">{item.tokens}</td>
+                    <td className="fs-ctx__detail-cell">{item.reason || '—'}</td>
+                  </tr>
+                  {fragment?.itemId === item.itemId && (
+                    <tr data-testid="context-manifest-fragment">
+                      <td colSpan={7} className="fs-ctx__fragment-cell">
+                        {fragment.loading && <Skeleton label={t('Reading the fragment')} count={1} height="24px" />}
+                        {!fragment.loading && fragment.error && (
+                          <p className="fs-notice" data-tone="danger">{fragment.error}</p>
+                        )}
+                        {!fragment.loading && !fragment.error && fragment.resolvable === false && (
+                          <p className="fs-muted" data-testid="context-manifest-fragment-unresolvable">
+                            {fragment.note || t('This source could not be reopened — it may have moved or been removed since this packet was compiled.')}
+                          </p>
+                        )}
+                        {!fragment.loading && !fragment.error && fragment.resolvable && (
+                          <pre className="fs-ctx__fragment-text">{fragment.text}</pre>
+                        )}
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
               ))}
               {data.items.length === 0 && (
                 <tr>

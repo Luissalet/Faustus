@@ -1001,7 +1001,7 @@ function PrivacyProfileCard({ settings, onSave, say }: { settings: Settings | nu
   return (
     <div className="fs-set__card">
       <h3 className="fs-set__card-title">{t('Privacy profile')}</h3>
-      <p className="fs-set__help">{t('What every auxiliary component (not just the main chat model) is allowed to send off this machine. Wired: the custom/HTTP embedding lane, the ChromaDB vector store, the remote compaction summarizer and the reranker. OCR and telemetry call sites have not been audited against this profile yet.')}</p>
+      <p className="fs-set__help">{t('What every auxiliary component (not just the main chat model) is allowed to send off this machine. Wired: the custom/HTTP embedding lane, the ChromaDB vector store, the remote compaction summarizer, the reranker, OCR/vision, and remote TTS/STT. Telemetry has no network egress to gate.')}</p>
       <Field label={t('Active profile')} htmlFor="privacy-profile">
         <Select id="privacy-profile" value={str(draft.privacy_profile, 'local_preferred')} onChange={(v) => set('privacy_profile', v)} options={PRIVACY_PROFILE.map((o) => ({ ...o, label: t(o.label) }))} />
       </Field>

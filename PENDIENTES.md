@@ -44,67 +44,82 @@ Las carencias de backend del índice anterior están implementadas; se ha elimin
 Las ampliaciones acordadas viven en OBJETIVOS.md; ahora mismo, OBJ-1 (puerta de admisión de VRAM). Eliminados los índices de UI resueltos; se pueden recuperar del historial Git.
 No contar planes de inspiración o notas de implementación como otra cola de tareas.
 
-## Spec v2 · M1 (rama `feat/spec-v2-m1`)
+## Spec v2 (cierre lotes 60-70 — 2026-09-11, master cfaa30d)
 
-- **Fusionar a master** cuando Luis lo vea: suite entera en Windows **13.517
-  correctas, 7 fallos**, todos preexistentes (docker, marca, compare_stop,
-  workspace_confine, suite_collects, tls_overrides, doblaje real con la GPU
-  ocupada); en la nube 13.571 correctas y los mismos 9 preexistentes.
+Ya no es una rama aparte: `feat/spec-v2-m1` está fusionada a master, y los
+lotes 60-70 cierran el resto del paquete P0/P1 auditado en `MAPA_REUTILIZACION.md`
+y `MAPA_P1.md`. Estado real tras este cierre:
+
+- **P0** (`docs/spec/v2/MAPA_REUTILIZACION.md`): 99 IDs P0 propios de ese
+  fichero, **97 existente, 2 parcial** (PLAN-01, PLAN-03 — ver su resumen
+  para el detalle; ninguno de los lotes 60-70 los tocó, se detectaron al
+  recontar contra `backlog.json` en este cierre).
+- **P1/P2/LAB** (`docs/spec/v2/MAPA_P1.md`): 84 IDs, **83 existente, 1
+  parcial** (HW-06, decisión de producto — ver abajo).
 - `FAUSTUS_TOOL_ARG_VALIDATION` nace en `strict`. Si un modelo local empieza
   a ver «INVALID ARGUMENTS» donde antes la herramienta se apañaba, bajar a
-  `warn` y anotar la forma que envía para añadirla a la reparación.
-- El `ask_user` de historial y el de vivo comparten datos, pero `Studio.tsx`
-  aún no manda `revision` de la pregunta (el store la acepta): pendiente para
-  «revisar en el sitio».
+  `warn` y anotar la forma que envía para añadirla a la reparación
+  (`src/tool_schemas.py::repair_tool_arguments`).
 - `question_store` y `chat_outbox` son SQLite propios en `DATA_DIR`; entran
   en el backup por defecto, sin credenciales. Purga: 24 h terminadas / 12 h
   aceptadas (outbox).
-- `qwen3.5:9b` ya no está en Ollama (404 al usarlo) pero sigue en la lista
-  del selector como modelo por defecto de sesiones viejas: el selector
-  debería marcar «no instalado».
+- Cerrado en este cierre (ya no son pendientes): el `ask_user` de vivo ya
+  manda `revision` (`agent_loop.py:9303`); el selector de modelo marca «not
+  installed» cuando el modelo por defecto de una sesión vieja ya no está en
+  las rutas (`studio/src/lib/model-label.ts::isInstalled` +
+  `ModelPicker.tsx`); Playwright ya corre por sesión, no con el perfil
+  global (WEB-03, Lote 63); `budget_for` ya se integra en
+  `_trim_route_request_messages` (CTX-01, Lote 60, `agent_loop.py:5923`);
+  EXEC-01/DESK-02 ya tienen UI/journey real (Lotes 65/68).
 
-## Spec v2 · P1 (lotes 45-55, `docs/spec/v2/MAPA_P1.md`)
+### Abiertos — lo que sigue genuinamente pendiente
 
-Estado real (Lote 55, cruzado 1:1 contra `docs/spec/v2/backlog.json`): **84
-IDs P1/P2/LAB, 74 existentes, 9 parciales, 1 ausente.** Lo que sigue
-genuinamente abierto, sin fingir que está cerrado por tener una fila
-"existente" en alguna parte:
-
-- **TASK-05 (ausente)** — steering y cambios del usuario: nadie invalida los
-  pasos de un plan en curso cuando llega una restricción nueva. El steering
-  de UX-04 (`agent_runs.queue_steer`) cubre "encolar y aplicar en un punto
-  seguro"; la mitad de "invalidar pasos afectados" no tiene ningún caller.
-  Exigiría tocar `agent_loop.py`/`src/plan_state.py`.
-- **Proceso Playwright MCP por sesión (arquitectónico, WEB-03)** —
-  `src/builtin_mcp.py` sigue lanzando el navegador con el perfil global; una
-  sesión de agente no tiene su propio proceso Playwright aislado. Sin
-  cambios desde el Lote 44 que lo dejó anotado.
-- **QA manual pendiente**: voz física en español e inglés (ver
-  "Comprobaciones pendientes" arriba) y los tres huecos intermitentes de
-  QA-44 (dialog/diff en viewport a 200%, Escape que flaquea) — ninguno tiene
-  evidencia de ser un bug de UI real y no de temporización del entorno de
-  pruebas, pero ninguno se ha investigado a fondo tampoco.
-- **Los 9 IDs "parcial" de `MAPA_P1.md`** (primitiva real y probada, sin el
-  último cableado a un caller de producción, o con alcance más estrecho que
-  el ID original): OPS-06 (`openapi_version_extension`/
-  `client_adaptation_notice` sin cablear a ninguna ruta de `app.py`), OPS-07
-  (`remote_cost_report()` siempre "unknown_period": ningún caller escribe
-  todavía el evento de coste), DESK-02 (el runner de recorridos de
-  navegador solo se probó con fixtures falsas; falta un dev server +
-  Playwright real), TOOL-05 (sampling MCP nunca llega a invocar un modelo
-  real — sin contexto owner/turno alcanzable desde un callback de
-  conexión), TOOL-06 (gobernanza de skills sin caller real; el vocabulario
-  `obsolete`/`deprecated`/`superseded` no existe aún en `Skill.status`),
-  SEC-08 (política de seguridad/consentimiento sin caller real al
-  instalar/actualizar un plugin o servidor MCP), UX-06 (compositor rápido:
-  el Lote 55 cerró menciones/comandos/adjuntos bajo 16 ms/pulsación;
-  formato rico, atajos y el backend de adjuntos con MIME/dedupe siguen sin
-  auditar), MEDIA-05 (subtítulos: solo exportación de lo ya transcrito, sin
-  UI de descarga en Studio), HW-06 (nodos remotos: `DECLARATIONS
-  ["remote_worker"].implemented` en `False` a propósito — cuatro tests
-  ajenos lo afirman explícitamente, cambiarlo los rompería).
+- **HW-06 — decisión de producto.** La primitiva de nodos remotos
+  (`src/remote_worker_registry.py`) está construida y probada;
+  `DECLARATIONS["remote_worker"].implemented` sigue en `False` a propósito
+  porque 4 ficheros de test ajenos afirman `implemented is False`
+  explícitamente. Activarlo exige que Luis fije el criterio de
+  fiabilidad/soporte bajo el que un nodo remoto pasa a "implementado" — no
+  es una tarea de código. QA-27 ya está verde por otra vía (`reconcile`
+  nunca reporta éxito falso), así que esto no bloquea nada más.
+- **HW-07 (LAB)** — banco Spark+PC+eGPU: exige el rig físico real para
+  validar los 5 criterios de aceptación con hardware de verdad; fuera de
+  alcance sin ese hardware, por diseño (es lo que "LAB" significa aquí).
+- **QA-41 (manual)** — voz física en español e inglés: micrófono/altavoz
+  reales, permisos de navegador interactivos. No activar grabación ni
+  permisos para cerrar esta casilla sin intervención del usuario.
+- **QA-44, hueco 3** — "Escape closes the dialog" flaquea de forma
+  intermitente (100%/200% según la corrida) en el entorno sandboxeado
+  (Playwright + servidor real bajo carga); sin evidencia de ser un bug de UI
+  real y no de temporización del entorno. Los huecos 1 y 2 del mismo
+  escenario ya se cerraron en Studio (Lote 65).
+- **Docker Desktop / puente MCP en la máquina de Luis** — arranque lanzado a
+  través del puente falla con `unable to get 'ProgramData'` (PowerShell
+  entregado sin `ProgramData`/`ALLUSERSPROFILE`); cuatro vías probadas,
+  ninguna reproducible sin acceso directo a esa máquina. Ver "Comprobaciones
+  pendientes" arriba.
 
 ## Última evidencia
+
+- **11-09-2026, cierre lotes 60-70 (master cfaa30d).** Los 16 cableados de
+  ficheros ajenos pendientes de la integración de los lotes 60-69b se
+  aplicaron (revision en `ask_user` en vivo, `execution_target`/
+  `command_preview` en tool_output/tool_approvals, `tests_status` en
+  `review_state.init`, `duplicate_of`/`stale`/`age_days` en research,
+  `bg_jobs.acquire_cpu_heavy` en `DeepResearcher.research()`,
+  `privacy_policy.assert_outbound` en OCR/TTS/STT con sus tests-tripwire
+  actualizados, VER-04 rechazando dobles literales en el export, verificación
+  de artefactos en el export por lotes, umbral de degradación MCP por
+  servidor, selector de modelo con chip "not installed", enlace "Ver traza"
+  en la tarjeta de tool, estados extracting/ready/partial de adjuntos,
+  borrador persistente server-side, fragmento exacto de contexto con botón
+  "Ver fragmento", comentario desactualizado en el test de WEB-02
+  actualizado). `docs/spec/v2/MAPA_REUTILIZACION.md` y `docs/spec/v2/MAPA_P1.md`
+  resincronizados: solo quedan PLAN-01/PLAN-03 (P0) y HW-06 (P1) como
+  "parcial", cero "ausente". `docs/spec/v2/QA_ESTADO.md`: 46 verde (QA-10 y
+  QA-27 pasaron a verde), 1 xfail (QA-44, solo el hueco 3), 1 manual
+  (QA-41); `tests/test_qa_index.py` en verde (50 passed).
+
 
 - 10-09: Lote 55 — integración de la ola 8 (MEDIA-03/CONN-01/ACT-05
   cableados en `app.py`; UX-06 con `frameBatcher` reusado de PERF-01 +

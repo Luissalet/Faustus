@@ -36,12 +36,17 @@ as plain dicts in `data/projects.json`, so this reads an optional field on
 that row rather than adding a new column or a second config store — see
 `get_privacy_profile`'s docstring for exactly what is and is not wired).
 
-Components wired to call `assert_outbound` as of this change: the custom/HTTP
-embedding lane (`src/embedding_lanes.py`), the ChromaDB vector store
-connection (`src/chroma_client.py`), and the remote compaction summarizer
-(`src/context_compactor.py`). See this lote's final report for the ones that
-still need a call site added in a file outside this lote's scope (the
-cross-encoder reranker in `src/rerank.py`, OCR, telemetry).
+Components wired to call `assert_outbound`: the custom/HTTP embedding lane
+(`src/embedding_lanes.py`), the ChromaDB vector store connection
+(`src/chroma_client.py`), the remote compaction summarizer
+(`src/context_compactor.py`), the cross-encoder reranker (`src/rerank.py`),
+OCR/vision (`src/document_processor.py::analyze_image_with_vl_result`,
+component `"ocr_vision"`), and remote TTS/STT
+(`services/tts/tts_service.py::_synthesize_api`,
+`services/stt/stt_service.py::_transcribe_api`, components `"tts"`/`"stt"`).
+Telemetry (`src/scorecard.py`) has no network egress to gate at all — see
+`tests/test_l68_sec04_ocr_tts_stt_egress_audit.py`, the audit that closed
+this list.
 """
 from __future__ import annotations
 

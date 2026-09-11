@@ -75,20 +75,17 @@ def test_tests_status_is_echoed_separately_from_human_approval(tmp_path, monkeyp
     assert "a.py" in payload["accepted"], "a human can still accept a file whose tests failed"
 
 
-def test_hueco_chat_routes_never_passes_tests_status(monkeypatch):
-    """Documents the real remaining gap (see batch report): the only caller
-    of review_state.init in the product, routes/chat_routes.py, never
-    supplies tests_status — so the UI's "Automatic tests" badge always reads
-    "not run" today even on a turn whose tests did run. Not this lot's file
-    to fix (routes/chat_routes.py is outside studio/); recorded here so a
-    regression (or a future fix) shows up as a behavior change, not silence."""
+def test_chat_routes_now_passes_tests_status(monkeypatch):
+    """Lote 70a, punto A.4 closed the gap this test used to document (see
+    tests/test_l70_a04_review_tests_status_wired.py for the end-to-end
+    proof): routes/chat_routes.py::_record_turn_side_effects now forwards
+    hz["tests"] into review_state.init(tests_status=...), so the UI's
+    "Automatic tests" badge reflects a turn's real test outcome instead of
+    always reading "not run"."""
     import inspect
 
     import routes.chat_routes as chat_routes
     src = inspect.getsource(chat_routes._record_turn_side_effects)
-    assert "review_state.init(" in src
-    call = src.split("review_state.init(", 1)[1].split(")", 1)[0]
-    assert "tests_status" not in call, (
-        "routes/chat_routes.py now passes tests_status to review_state.init — "
-        "delete this xfail-style assertion and the note in the batch report"
-    )
+    call = src.split("review_state.init(", 1)[1]
+    call = call[: call.index("\n\n") if "\n\n" in call else len(call)]
+    assert "tests_status=hz.get(\"tests\")" in call

@@ -308,6 +308,11 @@ export type ChatEvent =
        *  defensively either way: absent until that one-line addition lands,
        *  populated the moment it does, no further change needed here. */
       executionTarget?: { kind: string; cwd?: string; shell?: string };
+      /** OBS-01: this call's id (`src/agent_loop.py`'s `_call_id`), already
+       *  on the wire's `tool_output` event — lets a tool card offer a
+       *  "Ver traza" deep link to `/activity?trace=<call_id>` without a
+       *  second lookup (`src/agent_runs.py::trace_for_call`, lote 61). */
+      callId?: string;
     }
   | { type: 'subagent'; payload: SubagentPayload }
   | { type: 'frame'; frame: BrowserFrame }
@@ -910,6 +915,9 @@ export interface HistoryToolEvent {
   /** The decision that closed the gate (`approve`, `approve_task`, `deny`). */
   askDecision?: string;
   subagents: SubagentPayload[];
+  /** OBS-01: same `call_id` as the live `tool_output` event — see that
+   *  `ChatEvent` variant's doc comment. Persisted alongside it since lote 70a. */
+  callId?: string;
 }
 
 export function toolEventsFrom(meta: Record<string, unknown>): HistoryToolEvent[] {
@@ -938,6 +946,7 @@ export function toolEventsFrom(meta: Record<string, unknown>): HistoryToolEvent[
       askResolved: Boolean(askRaw?.resolved) || Boolean(ev.approved),
       askDecision: typeof askRaw?.resolved === 'string' ? askRaw.resolved : undefined,
       subagents: asArray<SubagentPayload>(ev.subagents),
+      callId: str(ev.call_id) || undefined,
     };
   });
 }
@@ -990,6 +999,7 @@ export function decode(raw: Record<string, unknown>, sseEvent: string | null): C
         repairs: repairsFrom(raw.repairs),
         evidenceRefs: evidenceRefsFrom(raw.evidence_refs),
         executionTarget: executionTargetFrom(raw.execution_target),
+        callId: str(raw.call_id) || undefined,
       };
     case 'browser_view': {
       const frame = frameFrom(raw);

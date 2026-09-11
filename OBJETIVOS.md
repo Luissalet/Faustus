@@ -160,7 +160,43 @@ edición de una línea fue `read_file` → `write_file` sin pregunta.
 - Comprobar en vivo con qwen3.8 27B que la USA cuando toca: pedirle algo
   ambiguo («impleméntame auth») y ver si pregunta o se lanza.
 
-## OBJ-3 · La spec v2: hacer de Faustus el harness definitivo para modelos abiertos
+## OBJ-3 · La spec v2: hacer de Faustus el harness definitivo para modelos abiertos — CERRADO (11-09-2026)
+
+### Estado final (11-09-2026, cierre lotes 60-70, master cfaa30d) — CERRADO
+
+Los 187 requisitos del paquete de Luis (100 P0 + 84 P1/P2/LAB) están
+auditados fila a fila contra el código real, con evidencia verificada por
+grep en este mismo commit:
+
+- **P0** (`docs/spec/v2/MAPA_REUTILIZACION.md`): 99 IDs propios del
+  fichero — **97 existente, 2 parcial** (PLAN-01, PLAN-03 — plan corto
+  expandible en Studio y visibilidad de propiedad de recursos entre
+  subagentes; ninguno bloquea el resto del paquete).
+- **P1/P2/LAB** (`docs/spec/v2/MAPA_P1.md`): 84 IDs — **83 existente, 1
+  parcial** (HW-06 — nodos remotos, decisión de producto explícita, no
+  hueco de código: ver su fila).
+- **QA** (`docs/spec/v2/QA_ESTADO.md`): 46 verde, 1 xfail (QA-44, solo el
+  hueco de temporización intermitente en Escape), 1 manual (QA-41, voz
+  física — exige hardware e intervención humana).
+- Nuevo en el cierre 60-70, operativo para quien use Faustus a diario:
+  trazabilidad de extremo a extremo por `call_id`
+  (`GET /api/observability/trace/{call_id}`), caos en dry-run desde Studio,
+  coste de workers remotos, perfil de privacidad elegible con OCR/TTS/STT
+  auditados, concesiones activas revocables, carpetas recientes de
+  proyecto, ventana de trabajo con búsqueda de fragmento exacto, resumen de
+  compactación inspeccionable, export verificado antes de servir el enlace,
+  y una cabecera de versión que rechaza a un cliente demasiado viejo en
+  cualquier `/api/*`. Ver `FAUSTUS.md` §68 para el detalle operativo
+  completo.
+
+M0 y M1 (contratos tipados, `ToolResult`, ensamblador de tool-calls robusto,
+plan estructurado, `ask_user` con `question_id`, idempotencia de chat,
+`/api/version` con build) quedaron cerrados como quedan descritos arriba;
+las ocho olas de P1 (Lotes 45-55) y los lotes 60-70 completan el resto. Los
+dos huecos de código que quedan (PLAN-01/PLAN-03) y la única decisión de
+producto pendiente (HW-06) están documentados con su propia fila y no
+requieren un lote de cierre adicional para OBJ-3 — se seguirán como
+entradas sueltas en `PENDIENTES.md` si Luis decide abordarlas.
 
 Luis, 10-09-2026: entregó `Faustus_Paquete_Completo.zip` (187 requisitos, 192
 contratos de herramienta, 48 escenarios QA, 8 JSON Schemas) con tres reglas:
@@ -254,3 +290,58 @@ arquitectónico; los tres huecos intermitentes de QA-44 (dialog/diff a
 caller de producción, o con menos alcance que el título del ID). Ver
 PENDIENTES.md › «Spec v2 · P1» para la lista completa con evidencia.
 
+(Nota histórica: el párrafo anterior es el estado tal como lo dejó el Lote 55;
+el cierre de lotes 60-70 de 2026-09-11 resolvió TASK-05, el Playwright por
+sesión y ocho de los nueve IDs "parcial" — ver "Estado final (11-09-2026...)"
+más arriba y `docs/spec/v2/MAPA_P1.md` para el detalle fila a fila.)
+
+## OBJ-4 · Panel de control de versiones en Studio
+
+Pedido por Luis, 2026-09-10 — estilo VS Code.
+
+**Qué falta hoy.** Faustus no tiene ninguna vista de control de versiones.
+Un usuario que trabaja sobre un repo git enlazado a un proyecto no tiene
+forma de ver, desde Studio, en qué rama está, qué ha cambiado, quién hizo
+el último commit ni si hay algo sin confirmar — tiene que salir a una
+terminal o a otra herramienta.
+
+**Qué tiene que pasar.** Un panel nuevo (candidato: `studio/src/screens/VersionControl.tsx`,
+o una pestaña dentro de `Project.tsx`) que, para las carpetas enlazadas de
+un proyecto:
+
+- Detecta cada repo git presente (incluidos subrepos/submódulos anidados
+  dentro de las carpetas enlazadas, no solo la raíz).
+- Por repo: rama actual, lista de ramas locales, el último commit de cada
+  una (hash corto, autor, fecha, mensaje de una línea).
+- Cambios pendientes: ficheros modificados/añadidos/borrados/sin seguimiento,
+  con recuento y, al abrir un fichero, el diff.
+- Usuario git configurado para ese repo (`user.name`/`user.email`, local y
+  global si difieren).
+- Acciones básicas **seguras**: cambiar de rama (bloqueado si hay cambios
+  sin confirmar que la ratón entrañaría perder — mismo criterio de
+  "conflicto recuperable, no pérdida de trabajo" que EDIT-01), confirmar un
+  commit con mensaje, hacer pull/push (con aviso previo si hay commits
+  divergentes, nunca un force silencioso). Nada destructivo (reset --hard,
+  descartar cambios, borrar rama) sin una confirmación explícita y reversible
+  donde sea posible.
+
+### Criterios de aceptación
+
+1. Con una carpeta enlazada que contiene un repo git y dos subrepos, el
+   panel lista los tres, cada uno con su rama y su HEAD real — verificado
+   contra `git status`/`git log` ejecutados a mano en la misma carpeta.
+2. Modificar un fichero fuera de Studio (editor externo) y refrescar el
+   panel muestra ese fichero como cambio pendiente, sin falsos positivos
+   para ficheros sin tocar.
+3. Cambiar de rama con cambios sin confirmar pendientes se bloquea o pide
+   confirmación explícita — nunca pierde trabajo en silencio.
+4. El usuario git mostrado coincide exactamente con `git config user.name`/
+   `user.email` para ese repo (local antes que global).
+5. Una acción de pull con conflicto real no dice "hecho" — muestra el
+   conflicto y no deja el repo a medio fusionar sin decirlo.
+6. Una carpeta enlazada sin ningún repo git no muestra el panel como roto
+   ni como "cargando" para siempre — un estado vacío claro (reusar
+   `EmptyState.tsx`, ACT-06).
+
+Sin fecha de lote asignada todavía; queda para que Luis lo priorice frente
+al resto de PENDIENTES.md.

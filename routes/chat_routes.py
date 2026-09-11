@@ -813,7 +813,7 @@ def _record_turn_side_effects(session_id: str, message_id: Any, metrics: Dict[st
         try:
             from services import review_state
             review_state.init(message_id, session_id=session_id, workspace=workspace, files=files,
-                              checkpoint=hz.get("checkpoint"))
+                              checkpoint=hz.get("checkpoint"), tests_status=hz.get("tests"))
         except Exception as e:  # noqa: BLE001
             logger.debug("review state init failed: %s", e)
 

@@ -923,6 +923,17 @@ class ResearchHandler:
                 og_img = f.get("og_image", "")
                 if og_img:
                     entry["image"] = og_img
+                # WEB-02: duplicate/stale signals `deep_research.py::
+                # _stamp_duplicate`/staleness_from_headers already stamp on
+                # the finding — studio/src/adapters/research.ts::sourceFrom
+                # is already wired to read them, only the passthrough was
+                # missing.
+                if f.get("duplicate_of"):
+                    entry["duplicate_of"] = f["duplicate_of"]
+                if "stale" in f:
+                    entry["stale"] = bool(f["stale"])
+                if f.get("age_days") is not None:
+                    entry["age_days"] = f["age_days"]
                 sources.append(entry)
         return sources
 
@@ -940,7 +951,15 @@ class ResearchHandler:
                 evidence = f.get("evidence", "")
                 content = summary if summary else (evidence[:2000] if evidence else "")
                 if url and content and not is_low_quality(content):
-                    items.append({"url": url, "title": title, "summary": content})
+                    item = {"url": url, "title": title, "summary": content}
+                    # WEB-02: same passthrough as _extract_sources above.
+                    if f.get("duplicate_of"):
+                        item["duplicate_of"] = f["duplicate_of"]
+                    if "stale" in f:
+                        item["stale"] = bool(f["stale"])
+                    if f.get("age_days") is not None:
+                        item["age_days"] = f["age_days"]
+                    items.append(item)
             return items
         except Exception as e:
             logger.warning(f"Failed to extract raw findings: {e}")
@@ -1315,6 +1334,7 @@ class ResearchHandler:
                 checkpoint_callback=checkpoint_callback,
                 search_provider=search_provider,
                 category=category,
+                owner=str((_task_entry or {}).get("owner") or ""),
             )
             if _task_entry is not None:
                 _task_entry["researcher"] = researcher

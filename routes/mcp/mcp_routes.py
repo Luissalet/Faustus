@@ -646,6 +646,73 @@ def setup_mcp_routes(mcp_manager: McpManager):
             "tail": read_stderr_tail(server_id, capped),
         }
 
+    @router.get("/servers/{server_id}/degraded-threshold")
+    def get_degraded_threshold(server_id: str, request: Request):
+        """TOOL-03: the effective degradation thresholds for one server —
+        `McpManager._DEGRADED_*` class defaults, overridden by (in
+        increasing priority) the persisted `mcp_degraded_thresholds`
+        setting and then any in-process override — exactly the resolution
+        `McpManager.degraded_threshold_for` already applies when deciding
+        whether a CONNECTED server reads as "degraded"."""
+        require_admin(request)
+        db = SessionLocal()
+        try:
+            srv = db.query(McpServer).filter(McpServer.id == server_id).first()
+            if not srv and not mcp_manager.is_builtin(server_id):
+                raise HTTPException(404, "Server not found")
+        finally:
+            db.close()
+        return {"id": server_id, "thresholds": mcp_manager.degraded_threshold_for(server_id)}
+
+    @router.put("/servers/{server_id}/degraded-threshold")
+    async def put_degraded_threshold(server_id: str, request: Request):
+        """TOOL-03: set a per-server override of the degradation thresholds.
+
+        Persisted in the `mcp_degraded_thresholds` setting (keyed by
+        server_id, survives a restart) and applied to this process
+        immediately via `McpManager.set_degraded_threshold` — otherwise a
+        saved override would only take effect after the next restart, the
+        exact gap this route closes. Body: a JSON object with any subset of
+        `error_window_s`, `error_threshold`, `latency_threshold_s`,
+        `latency_samples`; an omitted field keeps whatever this server
+        already had (class default or an earlier override)."""
+        require_admin(request)
+        db = SessionLocal()
+        try:
+            srv = db.query(McpServer).filter(McpServer.id == server_id).first()
+            if not srv and not mcp_manager.is_builtin(server_id):
+                raise HTTPException(404, "Server not found")
+        finally:
+            db.close()
+
+        body = await request.json()
+        if not isinstance(body, dict):
+            raise HTTPException(400, "Body must be a JSON object")
+        allowed = ("error_window_s", "error_threshold", "latency_threshold_s", "latency_samples")
+        kwargs = {}
+        for key in allowed:
+            if key in body and body[key] is not None:
+                try:
+                    kwargs[key] = float(body[key])
+                except (TypeError, ValueError):
+                    raise HTTPException(400, f"{key} must be a number")
+        if not kwargs:
+            raise HTTPException(400, "No known threshold field given: " + ", ".join(allowed))
+
+        effective = mcp_manager.set_degraded_threshold(server_id, **kwargs)
+
+        from src import settings as settings_mod
+        persisted = dict(settings_mod.get_setting("mcp_degraded_thresholds", {}) or {})
+        per_server = dict(persisted.get(server_id) or {})
+        per_server.update(kwargs)
+        persisted[server_id] = per_server
+        try:
+            settings_mod.update_settings({"mcp_degraded_thresholds": persisted})
+        except settings_mod.SettingsError as e:
+            raise HTTPException(400, str(e))
+
+        return {"id": server_id, "thresholds": effective}
+
     @router.delete("/servers/{server_id}")
     async def delete_server(server_id: str, request: Request):
         """Remove an MCP server."""

@@ -619,6 +619,11 @@ def analyze_image_with_vl_result(image_path: str, owner: str | None = None) -> d
         last_err = None
         for i, (_url, _model, _headers) in enumerate([c for c in _vl_candidates if c and c[0] and c[1]]):
             try:
+                # SEC-04: OCR/vision is an auxiliary like the reranker or the
+                # compaction summarizer — the active privacy profile gets a
+                # say before this candidate's endpoint is actually reached.
+                from src.privacy_policy import assert_outbound
+                assert_outbound("ocr_vision", _url, owner=owner)
                 description = llm_call(_url, _model, vl_messages, headers=_headers, timeout=120)
                 logger.info("VL analysis complete with model %s", _model)
                 return {"text": description, "model": _model}

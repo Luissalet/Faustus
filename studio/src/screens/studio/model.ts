@@ -57,6 +57,10 @@ export interface Step {
    *  comment in adapters/chat.ts for why it stays undefined until
    *  agent_loop.py forwards it. */
   executionTarget?: { kind: string; cwd?: string; shell?: string };
+  /** OBS-01: this call's id, forwarded from `ChatEvent['tool_output'].callId`
+   *  (live) or the persisted `tool_events[i].call_id` (history) — lets the
+   *  tool card offer a "Ver traza" link to `/activity?trace=<callId>`. */
+  callId?: string;
 }
 
 /** RES-01: one subquestion's coverage, from `DeepResearcher._coverage_snapshot`
@@ -751,6 +755,7 @@ export function apply(turn: Turn, event: ChatEvent): Turn {
         docId: event.docId,
         evidenceRefs: event.evidenceRefs ?? (index === -1 ? undefined : turn.steps[index].evidenceRefs),
         executionTarget: event.executionTarget ?? (index === -1 ? undefined : turn.steps[index].executionTarget),
+        callId: event.callId ?? (index === -1 ? undefined : turn.steps[index].callId),
       };
       const steps = turn.steps.slice();
       if (index === -1) steps.push(finished);
@@ -984,6 +989,7 @@ export function restoreFromMetadata(turn: Turn, meta: Record<string, unknown>): 
       argumentErrors: repairFields.argumentErrors,
       repairs: repairFields.repairs,
       evidenceRefs: repairFields.evidenceRefs,
+      callId: ev.callId,
     });
     rounds = Math.max(rounds, ev.round);
     ev.subagents.forEach((sa, i) => workers.push(workerFromPersisted(sa, i)));

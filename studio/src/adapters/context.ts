@@ -951,6 +951,26 @@ export async function loadManifest(packetId: string, signal?: AbortSignal): Prom
   return manifestFrom(data);
 }
 
+/** CTX-03: the exact fragment one manifest row cites, reopened live —
+ *  `ManifestPane`'s "Ver fragmento" button. `resolvable: false` (a source
+ *  that moved, an evicted manifest, a row with no source_ref at all) is a
+ *  clean miss, not a thrown error — `text`/`note` are read either way. */
+export interface ManifestFragment {
+  resolvable: boolean;
+  text: string;
+  note?: string;
+}
+
+export async function loadManifestItemFragment(
+  packetId: string, itemId: string, signal?: AbortSignal,
+): Promise<ManifestFragment> {
+  const data = await getJson<unknown>(
+    `${BASE}/packets/${encodeURIComponent(packetId)}/items/${encodeURIComponent(itemId)}/fragment`, signal,
+  );
+  const row = obj(data);
+  return { resolvable: row.resolvable === true, text: str(row.text), note: str(row.note) || undefined };
+}
+
 export async function loadBlocks(
   projectId: string,
   type: string,

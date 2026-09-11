@@ -63,6 +63,31 @@ class _Unavailable(RuntimeError):
     pass
 
 
+def _export_bytes(fmt: str, name: str) -> bytes:
+    """VER-04 (`src/output_oracle.py::verify_artifact`) reopens whatever a
+    render produces the way the format's own reader would, so this double's
+    output has to survive that for every format the route actually serves —
+    a literal `b"<pdf:...>"` no longer passes for pdf/docx.
+
+    pdf: any non-empty content starting with the `%PDF-` signature.
+    docx: a real zip with a non-empty `word/document.xml` member.
+    Every other format keeps the old literal text — `_reopen_text` only asks
+    for non-empty, non-whitespace content, which the literal already is.
+    """
+    if fmt == "pdf":
+        return b"%PDF-1.4\n%mock\n%%EOF"
+    if fmt == "docx":
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as zf:
+            zf.writestr(
+                "word/document.xml",
+                f'<?xml version="1.0"?><w:document><w:body><w:p>{name}</w:p>'
+                "</w:body></w:document>",
+            )
+        return buf.getvalue()
+    return f"<{fmt}:{name}>".encode("utf-8")
+
+
 def _make_export_double(**overrides):
     """A stand-in for ``src.chat_export`` with the published interface."""
     mod = types.ModuleType("src.chat_export")
@@ -83,7 +108,7 @@ def _make_export_double(**overrides):
         mod.calls.append(("render", transcript.session_id, fmt, filename))
         name = filename or f"{transcript.name or 'conversation'}.{fmt}"
         return _Result(
-            content=f"<{fmt}:{transcript.name}>".encode("utf-8"),
+            content=_export_bytes(fmt, transcript.name),
             media_type=MEDIA[fmt],
             filename=name,
         )
@@ -185,7 +210,7 @@ def test_every_supported_format_is_served_with_its_media_type(harness, fmt):
     r = harness.client.get(f"/api/session/{sid}/export", params={"fmt": fmt})
     assert r.status_code == 200, r.text
     assert r.headers["content-type"].startswith(MEDIA[fmt].split(";")[0])
-    assert r.content == f"<{fmt}:Roadmap>".encode("utf-8")
+    assert r.content == _export_bytes(fmt, "Roadmap")
     assert r.headers["content-disposition"].startswith("attachment;")
     assert f"Roadmap.{fmt}" in r.headers["content-disposition"]
 
@@ -458,7 +483,10 @@ def test_batch_over_the_byte_cap_is_a_clear_400(monkeypatch, harness):
     monkeypatch.setattr(sr, "EXPORT_BATCH_MAX_BYTES", 1024)
 
     def fat(transcript, fmt, filename=""):
-        return _Result(b"x" * 700, MEDIA[fmt], f"{transcript.name}.{fmt}")
+        # VER-04 (point A.9): a batch member now has to reopen as its
+        # declared format too — pad AFTER a real %PDF- signature so this
+        # stays about the byte cap, not about verification.
+        return _Result(b"%PDF-1.4\n" + b"x" * 700, MEDIA[fmt], f"{transcript.name}.{fmt}")
 
     monkeypatch.setattr(harness.export, "render", fat)
     for i in range(4):
@@ -480,7 +508,10 @@ def test_one_broken_chat_becomes_an_error_txt_and_the_batch_continues(monkeypatc
     def flaky(transcript, fmt, filename=""):
         if transcript.session_id == bad:
             raise ValueError("table cell exploded")
-        return _Result(b"ok", MEDIA[fmt], f"{transcript.name}.{fmt}")
+        # VER-04 (point A.9): a real %PDF- signature so the "good" chats
+        # pass verification — this test is about the renderer exception
+        # path, not about verification.
+        return _Result(b"%PDF-1.4\nok", MEDIA[fmt], f"{transcript.name}.{fmt}")
 
     monkeypatch.setattr(harness.export, "render", flaky)
     zf = _zip_of(harness.client.get("/api/sessions/export",

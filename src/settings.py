@@ -743,6 +743,14 @@ DEFAULT_SETTINGS = {
     # A project row's own "privacy_profile" field overrides this globally-set
     # default (src.privacy_policy.get_privacy_profile).
     "privacy_profile": "local_preferred",
+    # TOOL-03: per-server MCP degradation-threshold overrides, keyed by
+    # server_id -> {error_window_s, error_threshold, latency_threshold_s,
+    # latency_samples} (any subset). Read by
+    # src/mcp_manager.py::degraded_threshold_for, written by
+    # PUT /api/mcp/servers/{server_id}/degraded-threshold
+    # (routes/mcp/mcp_routes.py). Empty for every server nobody has
+    # configured — McpManager's own class defaults apply then.
+    "mcp_degraded_thresholds": {},
     # Keyboard shortcuts (action: key combination)
     "keybinds": {
         "search": "ctrl+k",

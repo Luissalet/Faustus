@@ -159,6 +159,10 @@ class STTService:
             data["language"] = language
 
         try:
+            # SEC-04: same shared gate the reranker/compaction/embedding
+            # lanes already ask before an outbound call (src/privacy_policy.py).
+            from src.privacy_policy import assert_outbound
+            assert_outbound("stt", base_url)
             r = httpx.post(url, headers=headers, files=files, data=data, timeout=60)
             r.raise_for_status()
             result = r.json()

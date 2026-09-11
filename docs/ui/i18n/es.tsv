@@ -6095,3 +6095,176 @@ test attached	prueba adjunta
 {n} cached entry was forgotten.	{n} entrada cacheada se olvidó.
 {n} occurrence	{n} ocurrencia
 {n} occurrences	{n} ocurrencias
+Coverage map	Mapa de cobertura
+Uncertain outcome, checking…	Resultado incierto, comprobando…
+Switched from {from} to {to}: lost {lost}.	Cambiado de {from} a {to}: se perdió {lost}.
+runs on {target}	se ejecuta en {target}
+Windows	Windows
+WSL	WSL
+Linux/macOS	Linux/macOS
+sandboxed container	contenedor aislado
+a remote worker	un worker remoto
+What was compacted	Qué se compactó
+Checking…	Comprobando…
+Could not read the compaction log.	No se pudo leer el registro de compactación.
+The last pass folded {n} earlier messages into a summary, keeping {refs} evidence reference(s) to the originals.	La última pasada resumió {n} mensajes anteriores, conservando {refs} referencia(s) de evidencia a los originales.
+Nothing has been folded away for this conversation yet.	Todavía no se ha resumido nada en esta conversación.
+Compaction has not run for this conversation yet.	La compactación aún no se ha ejecutado en esta conversación.
+{n} pinned fragment(s) were kept untouched.	{n} fragmento(s) fijado(s) se mantuvieron intactos.
+Pinning…	Fijando…
+Retry pin	Reintentar fijar
+Pin this message	Fijar este mensaje
+Keeps this exact message out of future compaction passes.	Mantiene este mensaje exacto fuera de futuras compactaciones.
+Search in this conversation…	Buscar en esta conversación…
+Search in this conversation	Buscar en esta conversación
+Previous match	Coincidencia anterior
+Next match	Coincidencia siguiente
+Close search	Cerrar búsqueda
+{name} is too large ({size} MB) to attach.	{name} es demasiado grande ({size} MB) para adjuntar.
+{name} is audio, but no transcription backend is installed — it would not be usable.	{name} es audio, pero no hay ningún backend de transcripción instalado; no sería utilizable.
+{name} is video, but ffmpeg is not installed — it would not be usable.	{name} es vídeo, pero ffmpeg no está instalado; no sería utilizable.
+The agent's file tools (read, write, edit) are confined to this folder. Its terminal is NOT sandboxed and can reach anywhere the Faustus process can.	Las herramientas de archivos del agente (leer, escribir, editar) están confinadas a esta carpeta. Su terminal NO está aislado y puede alcanzar cualquier lugar al que llegue el proceso de Faustus.
+Chaos fixture (dry run)	Fixture de caos (simulación)
+Ask what a chaos fixture would inject and what a correct system does about it — dry run only, this card never injects a real failure.	Pregunta qué inyectaría un fixture de caos y qué debería hacer un sistema correcto ante ello — solo simulación, esta tarjeta nunca inyecta un fallo real.
+fixture name	nombre del fixture
+Dry run	Simular
+POST /api/ops/chaos/{fixture} does not exist on this server yet — this card is ready for it.	POST /api/ops/chaos/{fixture} todavía no existe en este servidor — esta tarjeta está lista para cuando exista.
+Would inject	Inyectaría
+Expected	Se espera
+New permissions requested — review before approving	Nuevos permisos solicitados — revisa antes de aprobar
+Added: {list}	Añadidos: {list}
+Removed: {list}	Quitados: {list}
+Review later	Revisar más tarde
+Environment	Entorno
+Inherits this whole process's environment, including every provider key and the internal token — the widest access a server can have.	Hereda todo el entorno de este proceso, incluida cada clave de proveedor y el token interno — el acceso más amplio que puede tener un servidor.
+Minimal environment: only what this server was explicitly configured with.	Entorno mínimo: solo lo que se configuró explícitamente para este servidor.
+Environment mode saved.	Modo de entorno guardado.
+network access	acceso a red
+file access	acceso a archivos
+secrets (provider keys, internal token)	secretos (claves de proveedor, token interno)
+reload	recarga
+{fields} only takes effect on the next load — this requires a reload.	{fields} solo tiene efecto en la próxima carga — esto exige una recarga.
+{model} is loaded right now; it will unload and reload with the new value the next time this scope uses it, interrupting anything using it mid-request.	{model} está cargado ahora mismo; se descargará y recargará con el nuevo valor la próxima vez que este ámbito lo use, interrumpiendo lo que esté en marcha.
+{model} is not loaded right now; the new value applies the next time this scope loads it.	{model} no está cargado ahora mismo; el nuevo valor se aplicará la próxima vez que este ámbito lo cargue.
+Save anyway?	¿Guardar de todas formas?
+num_ctx, num_gpu and main_gpu only take effect the next time this scope loads the model; keep_alive applies to the model as it already sits loaded. Ollama-only values (the extra field above) that name a llama-server flag are rejected with the reason, not sent as an Ollama option.	num_ctx, num_gpu y main_gpu solo tienen efecto la próxima vez que este ámbito cargue el modelo; keep_alive se aplica al modelo tal como ya está cargado. Los valores del campo «extra» que nombren un flag de llama-server se rechazan con el motivo, no se envían como opción de Ollama.
+Privacy profile	Perfil de privacidad
+What every auxiliary component (not just the main chat model) is allowed to send off this machine. Wired: the custom/HTTP embedding lane, the ChromaDB vector store, the remote compaction summarizer and the reranker. OCR and telemetry call sites have not been audited against this profile yet.	Qué puede enviar fuera de esta máquina cada componente auxiliar (no solo el modelo de chat principal). Cableado: la vía de embeddings HTTP/personalizada, la conexión ChromaDB, el resumidor remoto de compactación y el reranker. Los puntos de OCR y telemetría aún no se han auditado contra este perfil.
+Active profile	Perfil activo
+Local only — every auxiliary (embeddings, the reranker, compaction) is blocked from reaching a non-local endpoint	Solo local — se bloquea a cada auxiliar (embeddings, reranker, compactación) el acceso a un destino no local
+Local preferred (default) — nothing blocked here; per-request safety checks still apply	Local preferido (por defecto) — nada se bloquea aquí; las comprobaciones de seguridad por petición siguen aplicando
+Cloud allowed — remote auxiliaries are explicitly acceptable	Nube permitida — los auxiliares remotos son explícitamente aceptables
+Active concessions	Concesiones activas
+Every standing yes a model or a document could currently point to and say "I have permission" — independent of what it claims, since nothing here reads its own request as authority.	Cada «sí» vigente al que un modelo o un documento podría señalar ahora mismo y decir «tengo permiso» — independiente de lo que afirme, porque nada aquí lee su propia petición como autoridad.
+Nothing standing right now.	No hay nada vigente ahora mismo.
+Revoke this concession now? {action} will need a fresh approval next time.	¿Revocar esta concesión ahora? {action} necesitará una nueva aprobación la próxima vez.
+granted by {who} · {n} use(s) left	concedido por {who} · quedan {n} uso(s)
+expires {when}	caduca {when}
+Command guard allowlist	Lista blanca del guardián de comandos
+A command matching one of these entries skips command-guard classification entirely — a standing authority downgrade, so keep this short-lived and specific.	Un comando que coincida con una de estas entradas se salta por completo la clasificación del guardián de comandos — una rebaja de autoridad permanente, así que mantenla breve y específica.
+command or prefix	comando o prefijo
+reason	motivo
+hours (blank = never expires)	horas (vacío = nunca caduca)
+Reason	Motivo
+TTL hours	Horas de caducidad
+The allowlist is empty.	La lista blanca está vacía.
+Remove "{pattern}" from the allowlist? Faustus will classify it normally again.	¿Quitar «{pattern}» de la lista blanca? Faustus volverá a clasificarlo con normalidad.
+Added to the allowlist.	Añadido a la lista blanca.
+Exact command	Comando exacto
+Authority a model or a document can currently claim — visible and revocable independent of what it says: the privacy profile, standing approvals and the command-guard allowlist.	Autoridad que un modelo o un documento puede reclamar ahora mismo — visible y revocable con independencia de lo que diga: el perfil de privacidad, las aprobaciones vigentes y la lista blanca del guardián de comandos.
+Sign in as an administrator to see and change the settings.	Inicia sesión como administrador para ver y cambiar los ajustes.
+This client is older than the server supports. Update it before continuing.	Este cliente es más antiguo de lo que el servidor admite. Actualízalo antes de continuar.
+/api/auth/settings answered {status}.	/api/auth/settings respondió {status}.
+Could not read the tools.	No se pudieron leer las herramientas.
+GET /api/tools failed.	GET /api/tools falló.
+This client is out of date	Este cliente está desactualizado
+Update Faustus before changing the tools.	Actualiza Faustus antes de cambiar las herramientas.
+Could not read the tool catalog.	No se pudo leer el catálogo de herramientas.
+GET /api/tools/catalog failed.	GET /api/tools/catalog falló.
+Update Faustus before browsing the tool catalog.	Actualiza Faustus antes de explorar el catálogo de herramientas.
+Could not read the users.	No se pudieron leer los usuarios.
+GET /api/auth/users failed.	GET /api/auth/users falló.
+Update Faustus before managing users.	Actualiza Faustus antes de gestionar usuarios.
+This account cannot see the local models.	Esta cuenta no puede ver los modelos locales.
+Update Faustus before managing local models.	Actualiza Faustus antes de gestionar los modelos locales.
+Trace a tool call	Trazar una llamada a herramienta
+Call ID	ID de llamada
+Paste a call_id…	Pega un call_id…
+Session ID (optional — narrows the search to a session you own)	ID de sesión (opcional — acota la búsqueda a una sesión tuya)
+Look up	Buscar
+Nothing on record under this call ID — check it was copied in full, or that this session had access to it.	No hay nada registrado con este ID de llamada — comprueba que lo copiaste completo, o que esta sesión tenía acceso a él.
+SHA-256	SHA-256
+Generator	Generador
+Permission receipt	Recibo de permiso
+Found this call ID, but it has no events, artifacts or receipt on record.	Se encontró este ID de llamada, pero no tiene eventos, artefactos ni recibo registrados.
+Search within this packet…	Buscar dentro de este paquete…
+Search within this packet	Buscar dentro de este paquete
+Nothing in this packet matches "{query}".	Nada en este paquete coincide con «{query}».
+duplicate content	contenido duplicado
+stale · {n}d old	desactualizado · {n}d
+Coverage of the brief	Cobertura del encargo
+{covered} covered, {thin} thin, {pending} not yet	{covered} cubiertos, {thin} insuficientes, {pending} pendientes
+Covered	Cubierto
+Thin — one source so far	Insuficiente — solo una fuente por ahora
+Not touched yet	Aún sin tocar
+Accepted ({n})	Aceptados ({n})
+Pending ({n})	Pendientes ({n})
+Rejected ({n})	Rechazados ({n})
+Automatic tests: passed	Tests automáticos: superados
+Automatic tests: failed	Tests automáticos: fallidos
+Automatic tests: inconclusive	Tests automáticos: sin conclusión
+Automatic tests: not run for this turn	Tests automáticos: no se ejecutaron en este turno
+Review this turn's changes	Revisar los cambios de este turno
+Loading the review	Cargando la revisión
+There is nothing to review for this message — it changed no files, or review mode was off.	No hay nada que revisar para este mensaje — no cambió ficheros, o el modo revisión estaba apagado.
+No files in this turn.	Ningún fichero en este turno.
+Before this turn	Antes de este turno
+View diff	Ver diferencia
+Re-accept	Volver a aceptar
+Changed since approval — approval no longer covers this content	Cambió desde la aprobación — la aprobación ya no cubre este contenido
+This document changed elsewhere. Your edits are kept here — choose how to continue.	Este documento cambió en otro sitio. Tus cambios se conservan aquí — elige cómo continuar.
+View differences	Ver diferencias
+Reload their version	Recargar su versión
+Force-save mine	Forzar guardar la mía
+Someone else saved this document while you were editing (now v{n}). Nothing was overwritten.	Otra persona guardó este documento mientras editabas (ahora v{n}). No se sobrescribió nada.
+Reloaded. Your edits were discarded.	Recargado. Tus cambios se descartaron.
+Your changes	Tus cambios
+Their version (v{n})	Su versión (v{n})
+This looks like binary content — line-by-line differences would not be meaningful.	Esto parece contenido binario — las diferencias línea a línea no tendrían sentido.
+Ignore formatting	Ignorar formato
+{n} formatting-only change	{n} cambio solo de formato
+{n} formatting-only changes	{n} cambios solo de formato
+{n} formatting-only line hidden (whitespace/EOL)	{n} línea solo de formato oculta (espacios/fin de línea)
+{n} formatting-only lines hidden (whitespace/EOL)	{n} líneas solo de formato ocultas (espacios/fin de línea)
+Loading the difference	Cargando la diferencia
+{old}: {a} · {new}: {b}	{old}: {a} · {new}: {b}
+Relocate this project's folder	Reubicar la carpeta de este proyecto
+Recent folders	Carpetas recientes
+No system dialog is available for this browser — pick a recent folder below, or type the path.	No hay diálogo del sistema disponible en este navegador — elige una carpeta reciente abajo, o escribe la ruta.
+{path} ({project})	{path} ({project})
+Forget (never let this text come back on its own)	Olvidar (que este texto nunca vuelva por su cuenta)
+Forgotten — it will not come back through a later reindex or import.	Olvidado — no volverá por una reindexación o importación posterior.
+Could not forget the rule.	No se pudo olvidar la regla.
+Never leaves this owner/project scope regardless of retrieval settings	Nunca sale de este owner/proyecto, sin importar los ajustes de recuperación
+secret	secreto
+sensitive	sensible
+reverted	revertido
+Merged; save to keep it.	Fusionado; guarda para conservarlo.
+View trace	Ver traza
+View fragment	Ver fragmento
+Reading the fragment	Leyendo el fragmento
+This source could not be reopened — it may have moved or been removed since this packet was compiled.	No se pudo reabrir esta fuente — puede haberse movido o eliminado desde que se compiló este paquete.
+The fragment could not be read	No se pudo leer el fragmento
+Scanned PDF — only the pages, not searchable text, were extracted.	PDF escaneado — solo se extrajeron las páginas, no texto buscable.
+Only the cover page could be extracted.	Solo se extrajo la portada.
+Only partially extracted.	Solo se extrajo parcialmente.
+What every auxiliary component (not just the main chat model) is allowed to send off this machine. Wired: the custom/HTTP embedding lane, the ChromaDB vector store, the remote compaction summarizer, the reranker, OCR/vision, and remote TTS/STT. Telemetry has no network egress to gate.	Qué puede enviar fuera de esta máquina cada componente auxiliar (no solo el modelo de chat principal). Cableado: la vía de embeddings HTTP/personalizada, la conexión ChromaDB, el resumidor remoto de compactación, el reranker, OCR/visión y TTS/STT remotos. La telemetría no tiene salida de red que auditar.
+How sure Faustus is this still holds — confirmed by a human, only inferred so far, or retired	Cuánta seguridad tiene Faustus de que esto sigue siendo cierto — confirmado por una persona, solo inferido por ahora, o retirado
+Relocate this project’s folder	Reubicar la carpeta de este proyecto
+Review this turn’s changes	Revisar los cambios de este turno
+Revoked.	Revocado.
+another model	otro modelo
+num_ctx takes effect on the next load of the model (requires reload).	num_ctx tiene efecto en la próxima carga del modelo (requiere recarga).
+report: {written}/{total} sections written	informe: {written}/{total} secciones redactadas
+the previous model	el modelo anterior
+{covered} covered, {thin} thin, {pending} pending	{covered} cubiertos, {thin} insuficientes, {pending} pendientes

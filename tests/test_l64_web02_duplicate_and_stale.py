@@ -8,10 +8,11 @@ different URL). `src/deep_research.py` wires the duplicate signal end to end
 — a finding whose content already arrived this run under another URL is
 stamped `duplicate_of` in `_search_and_extract`.
 
-Integration note (see the batch report): staleness is not wired into
-`deep_research.py` because `services/search/content.py::fetch_webpage_content`
-(not in this lot's file list) does not surface response headers to its
-caller today — `staleness_from_headers` is ready for that one-line addition.
+Integration note (lote 67 closed this): `services/search/content.py::
+fetch_webpage_content` now surfaces the response's own headers in its
+result (a plain, JSON-serializable dict under `"headers"`), and
+`deep_research.py` reads them to call `staleness_from_headers` — the
+one-line addition this docstring used to say was still missing.
 """
 import asyncio
 import time

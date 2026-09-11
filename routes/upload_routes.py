@@ -306,7 +306,14 @@ def setup_upload_routes(upload_handler):
                     "created_at": meta.get("created_at") or meta["uploaded_at"],
                     "width": meta.get("width"),
                     "height": meta.get("height"),
-                    "is_duplicate": meta.get("is_duplicate", False)
+                    "is_duplicate": meta.get("is_duplicate", False),
+                    # IDX-04: save_upload() already computes this (pdf_ingestion_signal
+                    # for a PDF, "ready" for anything else) — it just never reached the
+                    # client, so Composer.tsx had no way to tell a scanned/cover-only
+                    # PDF apart from a normally-read one.
+                    "status": meta.get("status", "ready"),
+                    "partial": meta.get("partial", False),
+                    "partial_reason": meta.get("partial_reason"),
                 }
                 if gallery_id:
                     item["gallery_id"] = gallery_id
@@ -404,6 +411,10 @@ def setup_upload_routes(upload_handler):
             "id": meta["id"], "name": meta["name"], "mime": meta["mime"], "size": meta["size"],
             "hash": meta["hash"], "checksum_sha256": meta.get("checksum_sha256") or meta["hash"],
             "uploaded_at": meta["uploaded_at"], "is_duplicate": meta.get("is_duplicate", False),
+            # IDX-04: same fields as the single-POST /api/upload response, above.
+            "status": meta.get("status", "ready"),
+            "partial": meta.get("partial", False),
+            "partial_reason": meta.get("partial_reason"),
         }
 
     @router.delete("/chunked/{session_id}")

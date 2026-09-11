@@ -1,5 +1,6 @@
 import { ArrowDown, Check, ChevronDown, Copy, FileText, GitFork, Pencil, Quote, RefreshCw, Telescope, Trash2, Volume2, VolumeX, X } from 'lucide-react';
 import { useVirtualizer } from '@tanstack/react-virtual';
+import { Link } from 'react-router';
 import { Fragment, lazy, Suspense, useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 import { Button, describeError, friendlyError, IconButton } from '../../components';
 import { fetchCompactionEvent, pinCompactionFragment, type AskUser, type CompactionEvent, type ContextLedger, type DelegationTask } from '../../adapters/chat';
@@ -313,7 +314,7 @@ function ArgumentRepairs({ step }: { step: Step }) {
   );
 }
 
-function ToolRail({ steps, live, onOpenFile, onOpenDoc, onOpenEvidence }: { steps: Step[]; live: boolean; onOpenFile?: (path: string) => void; onOpenDoc?: (docId: string) => void; onOpenEvidence?: (ref: EvidenceRef) => void }) {
+function ToolRail({ steps, live, sessionId, onOpenFile, onOpenDoc, onOpenEvidence }: { steps: Step[]; live: boolean; sessionId?: string | null; onOpenFile?: (path: string) => void; onOpenDoc?: (docId: string) => void; onOpenEvidence?: (ref: EvidenceRef) => void }) {
   const [expanded, setExpanded] = useState(false);
   const leadingDone = steps.findIndex((s) => s.state !== 'succeeded');
   const doneCount = leadingDone === -1 ? steps.length : leadingDone;
@@ -410,6 +411,16 @@ function ToolRail({ steps, live, onOpenFile, onOpenDoc, onOpenEvidence }: { step
                 ))}
               </p>
             ) : null}
+            {step.callId && (
+              <p className="fs-studio__step-links" data-testid="tool-trace-link">
+                <Link
+                  className="fs-link"
+                  to={`/activity?trace=${encodeURIComponent(step.callId)}${sessionId ? `&session=${encodeURIComponent(sessionId)}` : ''}`}
+                >
+                  {t('View trace')}
+                </Link>
+              </p>
+            )}
             {step.output && <pre className="fs-studio__out">{step.output.slice(0, 6000)}</pre>}
             {step.screenshot && <img className="fs-studio__shot" src={step.screenshot} alt={t('Tool screenshot')} loading="lazy" />}
           </details>
@@ -1051,7 +1062,7 @@ function AssistantTurn({
         {turn.planSteps && turn.planSteps.length > 0 && (
           <PlanStepsCard steps={turn.planSteps} revision={turn.planRevision} warnings={turn.planWarnings} />
         )}
-        {turn.steps.length > 0 && <ToolRail steps={turn.steps} live={turn.streaming} onOpenFile={onOpenFile} onOpenDoc={onOpenDoc} onOpenEvidence={onOpenEvidence} />}
+        {turn.steps.length > 0 && <ToolRail steps={turn.steps} live={turn.streaming} sessionId={sessionId} onOpenFile={onOpenFile} onOpenDoc={onOpenDoc} onOpenEvidence={onOpenEvidence} />}
         {turn.workers.length > 0 && (
           <Suspense fallback={null}>
             <SubagentBoard workers={turn.workers} live={turn.streaming} onRerun={onRerun ?? (() => undefined)} onNotice={onNotice} />

@@ -232,18 +232,43 @@ class PendingToolApproval:
                     "description": "Do not execute the proposed action.",
                 },
             ],
-            "action": {
-                "tool": self.tool_name,
-                # Show the complete sealed input so approval never hides
-                # trailing lines.  This is not read back as authority.
-                "content": self.content,
-                "digest": self.digest[:16],
-                "effects": list(self.effects),
-                "workspace": self.workspace or None,
-                "document_id": self.document_id or None,
-                "document_version": self.document_version,
-            },
+            "action": self._action_payload(),
         }
+
+    def _action_payload(self) -> dict[str, Any]:
+        action: dict[str, Any] = {
+            "tool": self.tool_name,
+            # Show the complete sealed input so approval never hides
+            # trailing lines.  This is not read back as authority.
+            "content": self.content,
+            "digest": self.digest[:16],
+            "effects": list(self.effects),
+            "workspace": self.workspace or None,
+            "document_id": self.document_id or None,
+            "document_version": self.document_version,
+        }
+        # EXEC-02: the same secret-masked preview a tool result carries — an
+        # approval card is the FIRST look the user gets at a shell command,
+        # so it must never be the one place a raw secret shows up verbatim.
+        try:
+            from src import command_guard
+            action["command_preview"] = command_guard.command_preview(self.content)
+        except Exception:  # noqa: BLE001 - never block an approval card on this
+            pass
+        # EXEC-01: where this would run, for the tools that actually reach a
+        # shell — best-effort (the sandbox decision itself is made at
+        # execution time), but "sandboxed container vs. this host" is known
+        # before that, from the same setting subprocess_tools reads.
+        if self.tool_name in ("bash", "python"):
+            try:
+                from src.agent_tools.subprocess_tools import _execution_target
+                from src import sandbox_exec
+                action["execution_target"] = _execution_target(
+                    sandboxed=sandbox_exec.enabled(), cwd=self.workspace or "", shell="",
+                )
+            except Exception:  # noqa: BLE001 - never block an approval card on this
+                pass
+        return action
 
 
 @dataclass

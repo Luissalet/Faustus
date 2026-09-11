@@ -5137,7 +5137,7 @@ async def _stream_agent_loop_body(
                 # history reload see this question too.
                 try:
                     from src import question_store
-                    question_store.open_question(
+                    _dqrow = question_store.open_question(
                         _direct_ask_user_payload.get("question", ""),
                         session_id=session_id, owner=owner or "",
                         options=_direct_ask_user_payload.get("options") or [],
@@ -5147,6 +5147,10 @@ async def _stream_agent_loop_body(
                         ),
                         question_id=_direct_ask_user_payload.get("question_id"),
                     )
+                    # A1: same as the round-based path below — carry `revision`
+                    # so the direct (single-shot) response's ask_user card can
+                    # be answered without a stale-revision mismatch.
+                    _direct_ask_user_payload["revision"] = _dqrow["revision"]
                 except Exception as _dq_err:  # noqa: BLE001 - never cost the turn
                     logger.debug(
                         "[agent] direct-path question_store.open skipped: %s", _dq_err
@@ -9285,12 +9289,18 @@ async def _stream_agent_loop_body(
                 # truth for the live chat either way.
                 try:
                     from src import question_store
-                    question_store.open_question(
+                    _qrow = question_store.open_question(
                         _auq_q, session_id=session_id, owner=owner or "",
                         options=_auq.get("options") or [], multi=bool(_auq.get("multi")),
                         allow_free_text=bool(_auq.get("allow_free_text", True)),
                         question_id=_auq.get("question_id"),
                     )
+                    # A1: the SSE `ask_user` card is the live copy the client
+                    # renders — it needs the same `revision` a page reload
+                    # would get from GET /api/questions, so an answer sent
+                    # against this card round-trips a revision the server
+                    # can actually check (see chat.ts's `AskUser.revision`).
+                    _auq["revision"] = _qrow["revision"]
                 except Exception as _qerr:  # noqa: BLE001 - never cost a turn
                     logger.debug("[agent] question_store.open skipped: %s", _qerr)
                 _pending_ask_user_event = _auq
@@ -9366,6 +9376,11 @@ async def _stream_agent_loop_body(
                 tool_output_data["argument_errors"] = result["argument_errors"]
             if result.get("repairs"):
                 tool_output_data["repairs"] = result["repairs"]
+            # EXEC-01: where this actually ran (subprocess_tools._execution_target)
+            # — chat.ts already decodes `execution_target` on tool_output into
+            # `executionTarget`, it just never arrived on the wire.
+            if result.get("execution_target"):
+                tool_output_data["execution_target"] = result["execution_target"]
             if is_doc_tool and "action" in result:
                 tool_output_data.update({
                     "doc_id": result.get("doc_id"),
@@ -9599,6 +9614,10 @@ async def _stream_agent_loop_body(
                 tool_event["argument_errors"] = result["argument_errors"]
             if result.get("repairs"):
                 tool_event["repairs"] = result["repairs"]
+            # EXEC-01: persist the same execution_target the live tool_output
+            # carried, so a history reload shows where a bash/python call ran.
+            if result.get("execution_target"):
+                tool_event["execution_target"] = result["execution_target"]
             if result.get("image_url"):
                 for ik in ("image_url", "image_prompt", "image_model", "image_size", "image_quality"):
                     if result.get(ik):

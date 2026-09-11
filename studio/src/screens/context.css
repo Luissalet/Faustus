@@ -185,6 +185,22 @@
   text-align: center;
 }
 
+/* CTX-03: the reopened fragment behind one manifest row ("Ver fragmento"). */
+.fs-ctx__fragment-cell {
+  background: var(--fs-surface-2);
+  padding: var(--fs-space-3);
+}
+
+.fs-ctx__fragment-text {
+  margin: 0;
+  max-block-size: 40vh;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--fs-font-code);
+  font-size: var(--fs-code-size);
+}
+
 .fs-ctx__sub {
   color: var(--fs-text-3);
   font-size: var(--fs-label-size);

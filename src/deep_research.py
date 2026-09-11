@@ -28,6 +28,7 @@ from src.research_citations import (
     implication_label,
 )
 from src.contracts.errors import ErrorInfo
+from src import bg_jobs
 
 logger = logging.getLogger(__name__)
 
@@ -803,8 +804,13 @@ class DeepResearcher:
         search_provider: Optional[str] = None,
         category: Optional[str] = None,
         quality_profile: Optional[str] = None,
+        owner: str = "",
     ):
         self.llm_endpoint = llm_endpoint
+        # EXEC-04: whose cpu_heavy budget a run this class starts draws from
+        # (see `research()`'s bg_jobs.acquire_cpu_heavy below) — best effort,
+        # never required for a caller that has no owner to give.
+        self.owner = owner or ""
         self.llm_model = llm_model
         self.llm_headers = llm_headers
         self.search_provider_override = search_provider
@@ -908,7 +914,35 @@ class DeepResearcher:
             prior_report_parts: Final-report parts already written by an
                 earlier attempt on this same question — reused verbatim
                 instead of regenerated (see `_final_report_in_parts`).
+
+        EXEC-04: a research run is CPU-heavy (repeated extraction/synthesis
+        LLM calls, often local) — this holds one `cpu_heavy` slot
+        (`src/bg_jobs.py`) for the run's whole lifetime so it counts against
+        the same shared budget `#!bg` jobs and `project_tests.run_tests`
+        already draw from, instead of an unbounded number of research runs
+        stacking on top of everything else. `_research_impl` below is the
+        unchanged original body.
         """
+        ticket = await bg_jobs.acquire_cpu_heavy("research", owner=self.owner)
+        try:
+            return await self._research_impl(
+                question, prior_report=prior_report, prior_findings=prior_findings,
+                prior_urls=prior_urls, prior_citations=prior_citations,
+                prior_queries=prior_queries, prior_report_parts=prior_report_parts,
+            )
+        finally:
+            bg_jobs.release_cpu_heavy(ticket)
+
+    async def _research_impl(
+        self,
+        question: str,
+        prior_report: str = "",
+        prior_findings: Optional[List[Dict]] = None,
+        prior_urls: Optional[Set[str]] = None,
+        prior_citations: Optional[Dict] = None,
+        prior_queries: Optional[Set[str]] = None,
+        prior_report_parts: Optional[List[str]] = None,
+    ) -> str:
         self._start_time = time.time()
         self.report_language = detect_language(question)
         self.subquestions = self._extract_subquestions(question)

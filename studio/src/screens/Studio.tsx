@@ -56,6 +56,7 @@ import {
   type ExportFormat,
   EXPORT_FORMATS,
 } from '../adapters/sessions';
+import { loadSessionDraft, saveSessionDraft } from '../adapters/session-draft';
 import { relativeTime } from '../adapters/home';
 import { getKeybinds, KEYBIND_LABELS, matchesCombo } from '../adapters/settings';
 import { listCheckpoints } from '../adapters/workspace';
@@ -184,10 +185,33 @@ function readDraftFor(sessionId: string | null): string {
   }
 }
 
+/* UX-01: a companion timestamp per slot, so a server draft arriving from
+   another device/browser (src/session_draft.py, below) can be compared
+   against what's on screen and only win when it is actually newer —
+   "most recent wins" needs something to compare against, and the plain-text
+   slot above never had one. */
+function draftAtKeyFor(sessionId: string | null): string {
+  return `${DRAFT_PREFIX}at:${sessionId ?? 'new'}`;
+}
+
+function readDraftUpdatedAtFor(sessionId: string | null): number {
+  try {
+    const raw = Number(localStorage.getItem(draftAtKeyFor(sessionId)));
+    return Number.isFinite(raw) ? raw : 0;
+  } catch {
+    return 0;
+  }
+}
+
 function writeDraftFor(sessionId: string | null, text: string) {
   try {
-    if (text.trim()) localStorage.setItem(draftKeyFor(sessionId), text);
-    else localStorage.removeItem(draftKeyFor(sessionId));
+    if (text.trim()) {
+      localStorage.setItem(draftKeyFor(sessionId), text);
+      localStorage.setItem(draftAtKeyFor(sessionId), String(Date.now()));
+    } else {
+      localStorage.removeItem(draftKeyFor(sessionId));
+      localStorage.removeItem(draftAtKeyFor(sessionId));
+    }
   } catch {
     /* private mode: the draft lives only as long as the screen */
   }
@@ -306,8 +330,23 @@ export function StudioScreen() {
   useEffect(() => {
     if (draftSession.current === sessionId) return;
     draftSession.current = sessionId;
-    setDraft(readDraftFor(sessionId));
-  }, [sessionId]);
+    const local = readDraftFor(sessionId);
+    setDraft(local);
+    // UX-01: merge with the server's copy of this draft (src/session_draft.py)
+    // — only meaningful for a saved conversation, and never for Nobody mode,
+    // whose whole point is that nothing about the chat outlives the tab.
+    // "Most recent wins": the server record only overwrites what's on screen
+    // when it is actually newer than the last local write.
+    if (!sessionId || knobs.incognito) return;
+    const localAt = readDraftUpdatedAtFor(sessionId);
+    const mySession = sessionId;
+    void loadSessionDraft(mySession).then((remote) => {
+      // Stale by the time this resolved (switched sessions again, or Nobody
+      // mode turned on meanwhile) — never clobber what's on screen now.
+      if (draftSession.current !== mySession) return;
+      if (remote.updatedAt * 1000 > localAt && remote.text !== local) setDraft(remote.text);
+    }).catch(() => undefined); // no server draft yet, or this session isn't ours — the local copy stands
+  }, [sessionId, knobs.incognito]);
   useEffect(() => {
     // Only once the draft on screen belongs to this session — the swap above
     // runs in this same commit, and writing the previous chat's text under
@@ -325,6 +364,18 @@ export function StudioScreen() {
     if (draftSession.current !== sessionId) return;
     writeAttachmentsFor(sessionId, attachments, knobs.incognito);
   }, [attachments, sessionId, knobs.incognito]);
+  useEffect(() => {
+    // UX-01: debounced 1s round trip to the server's copy of this draft
+    // (src/session_draft.py) — only for a saved conversation, and never for
+    // Nobody mode. Same session-boundary guard as the two effects above.
+    if (draftSession.current !== sessionId) return;
+    if (!sessionId || knobs.incognito) return;
+    const mySession = sessionId;
+    const timer = setTimeout(() => {
+      void saveSessionDraft(mySession, draft, attachments.map((a) => a.id)).catch(() => undefined);
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [draft, sessionId, knobs.incognito, attachments]);
   const sendingMessage = useRef(false);
   const [preparingMessage, setPreparingMessage] = useState(false);
   const [busy, setBusy] = useState(false);

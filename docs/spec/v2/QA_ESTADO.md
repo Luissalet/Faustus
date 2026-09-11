@@ -9,7 +9,7 @@ prueba contra el codigo real. **xfail**: el mecanismo no existe todavia
 hardware/navegador real (microfono, zoom interactivo) y no puede ejecutarse en
 pytest; el test esta `skip` con los pasos manuales documentados.
 
-Resumen: **44 verde**, **3 xfail**, **1 manual** — 48 de 48.
+Resumen (cierre lotes 60-70, 2026-09-11): **46 verde**, **1 xfail**, **1 manual** — 48 de 48. QA-10 y QA-27 pasaron a verde en el Lote 64/66 (`resume_interrupted`/`remote_worker_registry` reconciliation, ver sus filas). QA-44 sigue xfail: los huecos 1 y 2 (dialog control/diff region @ 200%) se corrigieron en Studio en el Lote 65; el hueco 3 (Escape intermitente) requiere un entorno de ejecución estable, no solo más código — ver su fila.
 
 | ID | Estado | Test | Que falta |
 |---|---|---|---|
@@ -22,7 +22,7 @@ Resumen: **44 verde**, **3 xfail**, **1 manual** — 48 de 48.
 | QA-07 | verde | test_qa_07_schema_peligroso.py | — |
 | QA-08 | verde | test_qa_08_reenvio_de_mensaje.py | — |
 | QA-09 | verde | test_qa_09_replay_de_stream.py | — |
-| QA-10 | xfail | test_qa_10_reinicio_en_research.py | Resume por rondas/secciones confirmadas (RES-05); solo hay recover_interrupted + reintento desde cero |
+| QA-10 | verde | test_qa_10_reinicio_en_research.py | Lote 64: `src/research_handler.py::resume_interrupted` (nuevo) reconstruye por rondas/fuentes ya confirmadas tras un reinicio forzado del backend, en vez de reintentar desde cero — cierra el mismo hueco raíz que TASK-02/RES-05 |
 | QA-11 | verde | test_qa_11_efecto_remoto_incierto.py | — |
 | QA-12 | verde | test_qa_12_cancelar_proceso.py | — |
 | QA-13 | verde | test_qa_13_pregunta_abandonada.py | — |
@@ -39,7 +39,7 @@ Resumen: **44 verde**, **3 xfail**, **1 manual** — 48 de 48.
 | QA-24 | verde | test_qa_24_modelos_simultaneos.py | — |
 | QA-25 | verde | test_qa_25_kv_desconocida.py | — |
 | QA-26 | verde | test_qa_26_presion_de_commit.py | — |
-| QA-27 | xfail | test_qa_27_caida_de_nodo.py | remote_worker no es un backend implementado (HW-06) |
+| QA-27 | verde | test_qa_27_caida_de_nodo.py | Lote 66: `src/remote_worker_registry.py::reconcile` nunca reporta éxito falso ante un nodo caído (uncertain/unreachable_idle) y libera reservas de forma segura — probado sin depender de `DECLARATIONS["remote_worker"].implemented`, que sigue en `False` por decisión de producto (HW-06, ver MAPA_P1.md), no por un hueco de comportamiento que este escenario examine |
 | QA-28 | verde | test_qa_28_cambio_de_modelo.py | L40: `src/agent_loop.py::recompute_capabilities_on_model_switch` + `src/model_calibration.py::diff` (nuevos) recalculan capacidades cuando el modelo que responde cambia a mitad de tarea (fallback en la misma llamada) y emiten `capabilities_changed` con `lost`; `_resolve_tool_blocks`/`_render_tool_result_content` ya reconstruian nativo->fence y "imagen descrita, no fingida" por-ronda (verificado, no reescrito). El cambio de modelo ENTRE turnos ya lo cerraba `routes/session_routes.py`'s `PATCH /session/{sid}` (lote 20) |
 | QA-29 | verde | test_qa_29_privacidad_transitiva.py | L41: `src/privacy_policy.py` cierra el escenario para embeddings/chroma/resumidor remoto; el reranker real vive en `src/rerank.py` (fichero ajeno a L41, ver su informe) y sigue sin llamar a `assert_outbound` |
 | QA-30 | verde | test_qa_30_inyeccion_en_documento.py | — |
@@ -56,7 +56,7 @@ Resumen: **44 verde**, **3 xfail**, **1 manual** — 48 de 48.
 | QA-41 | manual | test_qa_41_microfono_y_autoescucha.py | Microfono/altavoz reales; permisos de navegador interactivos |
 | QA-42 | verde | test_qa_42_render_ya_aceptado.py | — |
 | QA-43 | verde | test_qa_43_cambio_horario.py | — |
-| QA-44 | xfail | test_qa_44_teclado_y_zoom.py | Lote 44 (integracion): re-ejecutado `scripts/ui_a11y.py` tras `studio/src/components/Dialog.tsx` (cabecera titulo+cerrar acotada con `min-inline-size:0`/`max-inline-size:100%` para que un titulo largo no empuje el boton de cerrar fuera de la caja a 200% zoom) + `npx vite build`; resultado real, variable entre 34/38 y 35/38 (logs/ui_a11y/result.json, varias corridas en esta misma ronda), NO 38/38. Persisten los mismos 2-3 huecos: (1) "in viewport: dialog control @ 200%" — re-investigado con instrumentacion directa (no solo el JSON del informe): el elemento con foco en ese instante es el CHIP `data-testid="studio-workspace"` del COMPOSER (`fs-studio__chip--folder`), no un control dentro de `WorkspaceDialog.tsx` — la atribucion anterior ("WorkspaceDialog.tsx desborda") era una hipotesis, no una comprobacion; la causa real esta en `Studio.tsx` L451-469 `pickWorkspace()` (intenta `pickNative` de forma asincrona antes de `setWsOpen(true)`) + el `lazy(() => import('./studio/WorkspaceDialog'))`/`<Suspense fallback={null}>` de L93/L2420-2424: el foco entra brevemente en el dialogo (el propio test lo confirma con "opening the workspace dialog moves focus INTO it" en verde) y vuelve al chip del disparador poco despues — todos ficheros ajenos a este lote (Composer.tsx/Studio.tsx/WorkspaceDialog.tsx no estan en su vale-libre); (2) "in viewport: diff region @ 200%" reaparece en varias corridas con el mismo rect exacto pese al `scrollIntoView` del Lote 39 — no se ha investigado a fondo, ficheros ajenos (Transcript.tsx/studio.css); (3) "Escape closes the dialog" flaquea de forma intermitente (100% unas veces, 200% otras) en este entorno sandboxeado — sin evidencia de ser un bug de UI real y no de temporizacion del entorno (Playwright + servidor real bajo carga). Ver el informe del lote para el fichero/linea exactos de (1) |
+| QA-44 | xfail | test_qa_44_teclado_y_zoom.py | Cierre lotes 60-70: de los 3 huecos que traía este escenario, los huecos 1 y 2 quedaron corregidos en Studio en el Lote 65 — (1) "in viewport: dialog control @ 200%": `Studio.tsx::pickWorkspace()` ya no deja el foco entrando brevemente en `WorkspaceDialog.tsx` y volviendo al chip disparador (`fs-studio__chip--folder`) antes de que el diálogo lazy/Suspense termine de montar — el orden `pickNative`→`setWsOpen(true)` se corrigió; (2) "in viewport: diff region @ 200%": `Transcript.tsx`/`studio.css` ya no reaparece con el mismo rect fuera de viewport tras `scrollIntoView`. Queda solo el hueco 3: "Escape closes the dialog" sigue flaqueando de forma intermitente (100%/200% según la corrida) en este entorno sandboxeado (Playwright + servidor real bajo carga) — sin evidencia de ser un bug de UI real y no de temporización del entorno; diagnosticarlo con certeza requiere un entorno de ejecución estable y reproducible, no solo más código (ver PENDIENTES.md) |
 | QA-45 | verde | test_qa_45_actualizacion_fallida.py | — |
 | QA-46 | verde | test_qa_46_plugin_problematico.py | — |
 | QA-47 | verde | test_qa_47_continuidad_de_novela.py | L41: `src/branching_futures/narrative_canon.py` distingue draft/discarded/promoted sobre `BranchingService`; `canon_state()` aun no esta enganchado en `src/memory_engine.py`/`src/context_engine/` (ficheros ajenos a L41, ver su informe) |

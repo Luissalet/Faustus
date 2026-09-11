@@ -426,7 +426,41 @@ def setup_session_routes(
             return chat_team.save(sid, effective_user(request), team, body['revision'])
         except (ValueError, KeyError, TypeError) as exc:
             raise HTTPException(409, str(exc)) from exc
-    
+
+    @router.get("/sessions/{sid}/draft")
+    def get_session_draft(request: Request, sid: str):
+        """UX-01: the unsent composer text for this chat, if any device
+        saved one — see src/session_draft.py for why this exists alongside
+        Studio's own localStorage draft."""
+        _verify_session_owner(request, sid, session_manager)
+        from src import session_draft
+        return session_draft.load(sid, effective_user(request))
+
+    @router.put("/sessions/{sid}/draft")
+    async def put_session_draft(request: Request, sid: str):
+        """UX-01: save (or, given empty text and no attachments, clear) the
+        unsent composer text for this chat."""
+        _verify_session_owner(request, sid, session_manager)
+        from routes.workspace_routes import _reject_cross_origin
+        from src import session_draft
+        _reject_cross_origin(request)
+        raw = await request.body()
+        # Slack over session_draft.MAX_TEXT_CHARS for JSON framing and the
+        # attachment_ids array — the module itself is the real cap on the
+        # text field.
+        if len(raw) > 80_000:
+            raise HTTPException(413, "Draft is too large")
+        try:
+            body = json.loads(raw)
+            if not isinstance(body, dict):
+                raise ValueError("Body must be a JSON object")
+            return session_draft.save(
+                sid, effective_user(request),
+                body.get("text", ""), body.get("attachment_ids", []),
+            )
+        except (ValueError, KeyError, TypeError) as exc:
+            raise HTTPException(409, str(exc)) from exc
+
     @router.get("/sessions")
     def list_sessions(request: Request):
         user = effective_user(request)
@@ -1320,6 +1354,23 @@ def setup_session_routes(
                         f"{title}\n\nThis conversation could not be exported as "
                         f"{fmt}.\n\n{error}\n"
                     ).encode("utf-8")
+                else:
+                    # VER-04: the same reopen-and-validate gate export_session
+                    # applies to a single download — a batch member that fails
+                    # it must degrade to an error note like any other renderer
+                    # failure above, not get zipped as if it succeeded.
+                    verdict = output_oracle.verify_artifact(fmt, payload)
+                    if not verdict.ok:
+                        logger.warning(
+                            "Batch export: session %s failed verification as %s: %s",
+                            row.id, fmt, verdict.reason,
+                        )
+                        error = f"verification failed: {verdict.reason}"
+                        member = _unique_zip_name(f"{title}.error.txt", taken)
+                        payload = (
+                            f"{title}\n\nThis conversation could not be exported as "
+                            f"{fmt}.\n\n{error}\n"
+                        ).encode("utf-8")
 
                 total_bytes += len(payload)
                 if total_bytes > EXPORT_BATCH_MAX_BYTES:

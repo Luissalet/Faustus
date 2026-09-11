@@ -1364,6 +1364,8 @@ details.fs-studio__step > summary:hover .fs-trace__label {
 .fs-studio__attachment[data-state='failed'] .fs-studio__attachment-x { justify-self: end; }
 .fs-studio__attachment[data-state='failed'] .fs-studio__attachment-x:first-of-type { grid-column: 2; }
 .fs-studio__attachment[data-state='failed'] .fs-studio__attachment-status { color: var(--fs-danger); }
+.fs-studio__attachment[data-partial='true'] { border-color: var(--fs-warning); }
+.fs-studio__attachment[data-partial='true'] .fs-studio__attachment-status { color: var(--fs-warning); }
 .fs-studio__paste-hint { margin: 0; color: var(--fs-text-3); font-size: var(--fs-label-size); }
 
 @media (max-width: 899px) {
@@ -3412,6 +3414,13 @@ aside.fs-panel {
 .fs-studio__permission-menu [role="radio"]:hover { background: var(--fs-surface-3); }
 .fs-studio__permission-menu [aria-checked="true"] { border-color: var(--fs-focus); background: var(--fs-surface-2); }
 .fs-studio__chip[data-permission="full"] { color: var(--fs-warning); }
+.fs-studio__chip--model[data-not-installed="true"] { border-color: var(--fs-warning); color: var(--fs-warning); }
+.fs-studio__chip--model[data-not-installed="true"] span[data-testid="studio-model-not-installed"] {
+  font-family: var(--fs-font-sans, inherit);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
 @media (max-width: 600px) { .fs-studio__bar { flex-wrap: wrap; } .fs-studio__permission-menu [role="radio"], .fs-studio__add-options > .fs-studio__chip { min-block-size: 44px; } }
 
 :root .fs-popover.fs-studio__add-menu,

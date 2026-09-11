@@ -2,7 +2,7 @@ import { t } from '../i18n';
 import { ChevronDown, Cpu } from 'lucide-react';
 import { lazy, Suspense, useEffect, useState } from 'react';
 import type { ModelRoute } from '../adapters/chat';
-import { modelLabel } from '../lib/model-label';
+import { isInstalled, modelLabel } from '../lib/model-label';
 
 const ModelPalette = lazy(() => import('./ModelPalette'));
 const ModelConnections = lazy(() => import('./ModelConnections'));
@@ -42,6 +42,11 @@ export function ModelPicker({
     }
   }, [openSignal]);
 
+  /* Once the live routes are in, a current model that no longer resolves
+     against them (unloaded, disconnected, renamed) gets flagged instead of
+     silently showing a label for a route that isn't there anymore. */
+  const notInstalled = !!current && routes.length > 0 && !isInstalled(current, routes);
+
   return (
     <>
       <button
@@ -49,6 +54,8 @@ export function ModelPicker({
         className="fs-studio__chip fs-studio__chip--model"
         aria-haspopup="dialog"
         aria-expanded={open}
+        data-not-installed={notInstalled ? 'true' : undefined}
+        title={notInstalled ? t('not installed') : undefined}
         onClick={() => {
           setLoaded(true);
           setOpen(true);
@@ -57,6 +64,7 @@ export function ModelPicker({
       >
         <Cpu size={13} aria-hidden="true" />
         <span>{current ? modelLabel(current, routes) : routes.length ? t('Choose model') : t('No models')}</span>
+        {notInstalled && <span data-testid="studio-model-not-installed">{t('not installed')}</span>}
         <ChevronDown size={12} aria-hidden="true" />
       </button>
       {loaded && (

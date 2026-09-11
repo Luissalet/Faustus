@@ -188,6 +188,10 @@ class TTSService:
         }
 
         try:
+            # SEC-04: same shared gate the reranker/compaction/embedding
+            # lanes already ask before an outbound call (src/privacy_policy.py).
+            from src.privacy_policy import assert_outbound
+            assert_outbound("tts", base_url)
             r = httpx.post(url, json=payload, headers=headers, timeout=60)
             r.raise_for_status()
             logger.info(f"API TTS: {len(r.content)} bytes from {base_url}")
