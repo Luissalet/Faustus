@@ -141,7 +141,7 @@ def _set_policy(**patch):
 # ---------------------------------------------------------------------------
 def test_git_status_reports_branch_and_last_commit(ws):
     result = _run_async(GitStatusTool().execute("{}", {"owner": OWNER}))
-    assert result["exit_code"] == 0
+    assert result["exit_code"] == 0, result
     assert result["branch"] == "master"
     assert result["ahead"] == 0 and result["behind"] == 0
     assert len(result["commits"]) == 1

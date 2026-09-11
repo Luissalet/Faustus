@@ -59,6 +59,10 @@ RETIRED_SETTING_KEYS = frozenset({"default_model_fallbacks"})
 _CACHE_TTL = 2.0
 _settings_cache: tuple[float, dict, int] | None = None
 _features_cache: tuple[float, dict] | None = None
+# Which file the settings cache was read from: a test that repoints
+# SETTINGS_FILE (every git/board suite does) must never be served the
+# previous file's document for up to _CACHE_TTL seconds.
+_settings_cache_path: str | None = None
 
 def _invalidate_caches():
     global _settings_cache, _features_cache
@@ -839,13 +843,15 @@ def _merge(saved: dict) -> tuple[dict, int]:
 def _current() -> tuple[dict, int]:
     """The cached (settings, revision). The dict is the CACHE'S — never
     returned to a caller without copying first."""
-    global _settings_cache
+    global _settings_cache, _settings_cache_path
     with _WRITE_LOCK:
         now = time.monotonic()
-        if _settings_cache and (now - _settings_cache[0]) < _CACHE_TTL:
+        if (_settings_cache and (now - _settings_cache[0]) < _CACHE_TTL
+                and _settings_cache_path == str(SETTINGS_FILE)):
             return _settings_cache[1], _settings_cache[2]
         merged, revision = _merge(_read_raw())
         _settings_cache = (now, merged, revision)
+        _settings_cache_path = str(SETTINGS_FILE)
         return merged, revision
 
 

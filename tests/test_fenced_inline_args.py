@@ -8,8 +8,16 @@ language hint, not a "python" tool call with content "3\n...".
 import sys
 from unittest.mock import MagicMock
 
+# Evict only *stubbed* copies of the agent-tool stack (a MagicMock left by
+# another module has no __file__). Popping the REAL src.tool_execution and
+# re-importing it rebinds `src.tool_execution` to a new module object while
+# already-imported submodules (src.agent_tools.git_tools, ...) keep resolving
+# the old one -- tests that monkeypatch `te` then silently patch the wrong
+# module (tests/test_l87_git_tools.py failed only under full collection).
 for mod in ['src.agent_tools', 'src.tool_parsing', 'src.tool_schemas', 'src.tool_execution']:
-    sys.modules.pop(mod, None)
+    _m = sys.modules.get(mod)
+    if _m is not None and not getattr(_m, "__file__", None):
+        sys.modules.pop(mod, None)
 for mod in [
     'sqlalchemy', 'sqlalchemy.orm', 'sqlalchemy.ext', 'sqlalchemy.ext.declarative',
     'sqlalchemy.ext.hybrid', 'sqlalchemy.sql', 'sqlalchemy.sql.expression',
