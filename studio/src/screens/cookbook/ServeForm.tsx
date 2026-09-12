@@ -1,8 +1,8 @@
 import { CalendarClock, Play, Save, Sparkles } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Button, Skeleton } from '../../components';
-import { listGpus, modelArchitecture, serveCtx, serveProfiles, updateState, useCookbookState, type CachedModel, type Gpu, type Preset, type Server, type ServeProfile } from '../../adapters/cookbook';
-import { BACKEND_LABEL, backendChoices, remoteWindowsDiffusers, buildServeCmd, DEFAULT_PORT, detectBackend, detectModelOptimizations, detectReasoningParser, detectToolParser, ggufFileExpr, ggufFindExpr, ggufQuant, nextFreePort, portOf, projectorGguf, runnableGguf, bytesLabel, type Backend, type ModelArchitecture, type ServeCmdReceipt, type ServeCtx, type ServeFields } from '../../lib/cookbook/serve';
+import { assessServe, listGpus, modelArchitecture, ServeIncompatibleError, serveCtx, serveProfiles, updateState, useCookbookState, type CachedModel, type CapabilityAssessment, type Gpu, type Preset, type Server, type ServeProfile } from '../../adapters/cookbook';
+import { BACKEND_LABEL, backendChoices, remoteWindowsDiffusers, buildServeCmd, buildServePlan, DEFAULT_PORT, detectBackend, detectModelOptimizations, detectReasoningParser, detectToolParser, ggufFileExpr, ggufFindExpr, ggufQuant, nextFreePort, portOf, projectorGguf, runnableGguf, bytesLabel, type Backend, type ModelArchitecture, type ServeCmdReceipt, type ServeCtx, type ServeFields } from '../../lib/cookbook/serve';
 import { t, tn } from '../../i18n';
 import { launchServe, targetFor } from './actions';
 import { CopyButton, Field, Switch } from './parts';
@@ -123,6 +123,8 @@ export function ServeForm({ model, server, hwBackend, initial, replaceTaskId, fo
   const usedPorts = state.tasks.filter((x) => x.type === 'serve' && (x.status === 'running' || x.status === 'ready') && (x.remoteHost || '') === (server && server.host ? server.host : '')).map((x) => portOf(x.payload?._cmd || '')).filter(Boolean);
   const port = String(f.port || '') || nextFreePort(usedPorts, Number(DEFAULT_PORT[backend]));
 
+  const modelArg = useMemo(() => String(f.model_path || '').trim() || (model.is_local_dir && model.path ? `${model.path}/${repo}` : repo), [f.model_path, model, repo]);
+
   const built = useMemo(() => {
     const fields: ServeFields = { ...f, port };
     if (backend === 'llamacpp') {
@@ -131,11 +133,10 @@ export function ServeForm({ model, server, hwBackend, initial, replaceTaskId, fo
       fields._mmproj_path = projectors[0] ? ggufFileExpr(model, repo, projectors[0].rel_path) : '';
     }
     if (f.reasoning_parser === true) fields.reasoning_parser = detectReasoningParser(repo) || '';
-    const modelArg = String(f.model_path || '').trim() || (model.is_local_dir && model.path ? `${model.path}/${repo}` : repo);
     const receipt = buildServeCmd(fields, modelArg, backend, ctxWithArch);
     if (String(f.extra || '').trim()) receipt.cmd += ' ' + String(f.extra).trim();
     return receipt;
-  }, [f, port, backend, ggufs, projectors, model, repo, ctxWithArch]);
+  }, [f, port, backend, ggufs, projectors, model, repo, modelArg, ctxWithArch]);
   const cmd = cmdOverride ?? built.cmd;
   // A hand-edited command is never re-verified against the receipt above —
   // it is exactly as manual and unverified as typing it fresh (§C).
@@ -143,15 +144,55 @@ export function ServeForm({ model, server, hwBackend, initial, replaceTaskId, fo
   const archUnverifiedMoe = arch?.kind !== 'moe';
   const archUnverifiedMtp = arch?.mtp !== true;
 
+  // INF-02 §07: the structured plan this launch would be assessed/authorized
+  // against — `null` for a hand-edited command (as manual/unverified as
+  // typing one fresh, never re-assessed against stale form fields) or a
+  // target `buildServePlan` has no manifest coverage for (image backends).
+  const plan = useMemo(() => (receipt.manual ? null : buildServePlan(f, modelArg, receipt, arch)), [receipt, f, modelArg, arch]);
+  const [assessment, setAssessment] = useState<{ assessments: CapabilityAssessment[]; blockers: CapabilityAssessment[] } | null>(null);
+  const [assessing, setAssessing] = useState(false);
+  const [forceManual, setForceManual] = useState(false);
+
+  // §06: assessed on every option change (debounced, abortable) — never
+  // trusted on its own to authorize a launch, since `POST /api/model/serve`
+  // re-runs the identical check server-side before it launches anything.
+  useEffect(() => {
+    setForceManual(false);
+    if (!plan) {
+      setAssessment(null);
+      setAssessing(false);
+      return;
+    }
+    const ac = new AbortController();
+    setAssessing(true);
+    const timer = window.setTimeout(() => {
+      void assessServe({ implementation: plan.implementation, model: plan.model, options: plan.options, arch: (plan.arch as unknown as Record<string, unknown>) ?? null, gpus: gpus ? gpus.map((g) => g.index) : null }, ac.signal)
+        .then((r) => setAssessment(r))
+        .catch((e) => {
+          if ((e as Error).name !== 'AbortError') setAssessment(null);
+        })
+        .finally(() => setAssessing(false));
+    }, 400);
+    return () => {
+      window.clearTimeout(timer);
+      ac.abort();
+      setAssessing(false);
+    };
+  }, [plan, gpus]);
+  const blockers = assessment?.blockers ?? [];
+
   const launch = async () => {
     setBusy(true);
     try {
       const target = targetFor(state.env, server);
       updateState((s) => ({ ...s, serveState: { _byRepo: { ...(s.serveState?._byRepo ?? {}), [repo]: { ...f, port } } } }), { push: true });
-      await launchServe({ shortName: repo.split('/').pop() || repo, repo, cmd, fields: { ...f, port, backend }, target, hwBackend, replaceTaskId });
+      await launchServe({ shortName: repo.split('/').pop() || repo, repo, cmd, fields: { ...f, port, backend }, target, hwBackend, replaceTaskId, plan, forceManual });
       say(t('Serving {name}…', { name: repo.split('/').pop() || repo }));
       onLaunched();
     } catch (e) {
+      if (e instanceof ServeIncompatibleError) {
+        setAssessment({ assessments: e.assessments, blockers: e.assessments.filter((a) => a.support === 'unsupported') });
+      }
       say((e as Error).message);
     } finally {
       setBusy(false);
@@ -451,8 +492,38 @@ export function ServeForm({ model, server, hwBackend, initial, replaceTaskId, fo
         )}
       </div>
 
+      {plan && (
+        <div className="fs-ck__assessments" data-testid="serve-assessments">
+          <span className="fs-ck__label">{t('Capabilities')}</span>
+          {assessing && !assessment && <p className="fs-muted">{t('Checking…')}</p>}
+          {assessment && assessment.assessments.length === 0 && <p className="fs-muted">{t('No options to assess for this launch.')}</p>}
+          {assessment && assessment.assessments.length > 0 && (
+            <ul>
+              {assessment.assessments.map((a) => (
+                <li key={a.option} data-support={a.support}>
+                  <code>{a.option}</code>
+                  <span className="fs-ck__support" data-tone={a.support === 'unsupported' ? 'danger' : a.support === 'unknown' ? 'warning' : 'ok'}>
+                    {a.support === 'unsupported' ? t('Unsupported') : a.support === 'unknown' ? t('Unknown') : t('Supported')}
+                  </span>
+                  {a.reasons.length > 0 && <span className="fs-muted"> — {a.reasons.join(' · ')}</span>}
+                </li>
+              ))}
+            </ul>
+          )}
+          {blockers.length > 0 && (
+            <div className="fs-ck__blockers" role="alert">
+              <p className="fs-muted">{tn(blockers.length, '{n} option is unsupported for this implementation.', '{n} options are unsupported for this implementation.')}</p>
+              <label className="fs-ck__force-manual">
+                <input type="checkbox" checked={forceManual} onChange={(e) => setForceManual(e.target.checked)} data-testid="serve-force-manual" />
+                {t('Launch anyway (manual, unverified)')}
+              </label>
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="fs-ck__serve-actions">
-        <Button variant="primary" icon={Play} label={replaceTaskId ? t('Relaunch') : t('Launch')} loading={busy} onClick={() => void launch()} testId="serve-launch" />
+        <Button variant="primary" icon={Play} label={replaceTaskId ? t('Relaunch') : t('Launch')} loading={busy} disabled={blockers.length > 0 && !forceManual} onClick={() => void launch()} testId="serve-launch" />
         <Button variant="ghost" size="sm" icon={CalendarClock} label={t('Schedule…')} onClick={() => onSchedule(repo)} />
         <span className="fs-spacer" />
         <input className="fs-field" value={presetName} onChange={(e) => setPresetName(e.target.value)} placeholder={t('Preset name')} aria-label={t('Preset name')} style={{ inlineSize: '180px' }} />

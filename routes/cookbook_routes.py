@@ -15,9 +15,12 @@ import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request, Depends
+from fastapi.responses import JSONResponse
 
 from src.auth_helpers import require_user
 from src.constants import COOKBOOK_STATE_FILE
+from src import inference_capabilities, launch_receipts
+from src.contracts.inference import EngineIdentity, ModelDescriptor
 from pydantic import BaseModel
 
 from core.middleware import require_admin, require_human
@@ -590,6 +593,45 @@ def _append_local_ollama_download_command_lines(
         lines.append(f"  printf '%s\\n' {hint}; exit 127")
     lines.append('fi')
     lines.append('if [ -z "$ODYSSEUS_OLLAMA_PULL_CMD" ]; then echo "ERROR: Ollama not found on this server. Install Ollama or start an ollama-rocm/ollama-test container."; exit 127; fi')
+
+
+# INF-02 §07: which implementation actually ran, for the `LaunchReceipt`'s
+# `EngineIdentity`. Deliberately shallow (a handful of substring checks on
+# the already-normalized command) rather than a reimplementation of
+# serve.ts's own per-backend command construction — the spec is explicit
+# that TypeScript and Python must not carry two divergent rule sets for the
+# same question, and this only answers "which binary", not "which flags are
+# valid for it" (that question is `assess_options`'s, from the manifest).
+_ENGINE_PORT_RE = re.compile(r"(?:--port|-p)\s+(\d{2,5})\b")
+
+
+def _infer_engine_implementation(cmd: str) -> str:
+    if not cmd:
+        return "unknown"
+    if "llama_cpp.server" in cmd:
+        return "llama_cpp.server"
+    if "llama-server" in cmd:
+        return "llama-server"
+    if re.search(r"\bvllm\b", cmd):
+        return "vllm"
+    if re.search(r"\bsglang\b", cmd):
+        return "sglang"
+    if re.search(r"\bollama\s+serve\b", cmd):
+        return "ollama"
+    if "mlx_lm" in cmd or "mlx-lm" in cmd or "mlx_image_server.py" in cmd:
+        return "mlx"
+    return "unknown"
+
+
+def _infer_engine_port(cmd: str) -> int | None:
+    match = _ENGINE_PORT_RE.search(cmd or "")
+    if not match:
+        return None
+    try:
+        port = int(match.group(1))
+    except ValueError:
+        return None
+    return port if 1 <= port <= 65535 else None
 
 
 def setup_cookbook_routes() -> APIRouter:
@@ -2347,6 +2389,46 @@ def setup_cookbook_routes() -> APIRouter:
         req.gpus = _validate_gpus(req.gpus)
         req.hf_token = req.hf_token or _load_stored_hf_token()
         _validate_token(req.hf_token)
+
+        # INF-02 §07: "a plan authorized, not a surprising command" —
+        # validate BEFORE building/launching anything, against the same
+        # manifest `POST /api/model/serve/assess` already showed the UI, so
+        # Python is the one authority (never a second, divergent set of
+        # rules from what TypeScript already checked). `req.plan` is
+        # optional: a client that predates INF-02, or a hand-pasted manual
+        # command, has none, and that is a legitimate (if less-verified)
+        # case, not an error.
+        plan_assessments: list = []
+        plan_for_receipt: dict = {"manual": True}
+        if req.plan:
+            plan = req.plan if isinstance(req.plan, dict) else {}
+            plan_implementation = str(plan.get("implementation") or "").strip()
+            plan_options = plan.get("options") if isinstance(plan.get("options"), dict) else {}
+            plan_arch = plan.get("arch") if isinstance(plan.get("arch"), dict) else None
+            plan_gpus = plan.get("gpus") if isinstance(plan.get("gpus"), list) else None
+            try:
+                plan_assessments = inference_capabilities.assess_options(
+                    plan_implementation, plan_options, arch=plan_arch, gpus=plan_gpus,
+                )
+            except Exception as e:
+                # A malformed plan cannot block a launch the same way an
+                # actually-incompatible option does — that would let a
+                # client-side bug silently deny every serve. Log and treat
+                # as "nothing could be assessed" instead.
+                logger.warning(f"Serve plan assessment failed, treating as unassessed: {e}")
+                plan_assessments = []
+            blockers = inference_capabilities.hard_blockers(plan_assessments)
+            if blockers and not req.force_manual:
+                return JSONResponse(
+                    status_code=409,
+                    content={
+                        "error": "one or more requested options are unsupported for this implementation",
+                        "error_class": "serve.incompatible",
+                        "assessments": [a.to_dict() for a in plan_assessments],
+                    },
+                )
+            plan_for_receipt = dict(plan)
+
         # INF-01 §D: the command exactly as it arrived, before any
         # server-side normalization, and the ledger of every step that
         # changed it on the way to the runner. `rewrites` stays `[]` when
@@ -3274,11 +3356,56 @@ def setup_cookbook_routes() -> APIRouter:
         except Exception:
             pass
 
+        # INF-02 §07: file the launch receipt for this session — always,
+        # `plan`/`assessments` empty for a manual/legacy launch, populated
+        # when a structured `plan` was validated above. `managed: "faustus"`
+        # because this endpoint is the one that just started the process.
+        try:
+            plan_implementation = str((req.plan or {}).get("implementation") or "") if req.plan else ""
+            engine = EngineIdentity(
+                implementation=plan_implementation if plan_implementation in (
+                    "llama-server", "llama_cpp.server", "vllm", "sglang", "ollama", "mlx",
+                ) else _infer_engine_implementation(req.cmd),
+                platform="windows" if is_windows else (req.platform or None),
+                host=remote or "local",
+                port=_infer_engine_port(req.cmd),
+                managed="faustus",
+                session_id=session_id,
+            )
+            model_descriptor = None
+            if not is_pip_install:
+                plan_arch = (req.plan or {}).get("arch") if isinstance((req.plan or {}).get("arch"), dict) else {}
+                model_descriptor = ModelDescriptor(
+                    artifact_id=req.repo_id,
+                    architecture=(plan_arch.get("architectures") or [None])[0] if isinstance(plan_arch.get("architectures"), list) else None,
+                    kind=plan_arch.get("kind") if plan_arch.get("kind") in ("dense", "moe", "unknown") else "unknown",
+                    mtp=plan_arch.get("mtp") if isinstance(plan_arch.get("mtp"), bool) else None,
+                    digest=plan_arch.get("digest") if isinstance(plan_arch.get("digest"), str) else None,
+                )
+            receipt = launch_receipts.record(
+                session_id,
+                engine=engine,
+                model=model_descriptor,
+                requested_cmd=requested_cmd,
+                final_cmd=req.cmd,
+                rewrites=rewrites,
+                plan=plan_for_receipt,
+                assessments=plan_assessments,
+            )
+            receipt_dict = receipt.to_dict()
+        except Exception as e:
+            logger.warning(f"Failed to record launch receipt for {session_id}: {e}")
+            receipt_dict = None
+
         return {"ok": True, "session_id": session_id, "remote": remote or "local",
                 "endpoint_id": endpoint_id,
                 # INF-01 §D: what the runner actually launched, versus what
                 # the client asked for — see `_track_rewrite` above.
-                "requested_cmd": requested_cmd, "final_cmd": req.cmd, "rewrites": rewrites}
+                "requested_cmd": requested_cmd, "final_cmd": req.cmd, "rewrites": rewrites,
+                # INF-02 §07: requested -> translated -> accepted -> observed;
+                # `receipt["verify_state"]` starts "pending" until a client
+                # calls `POST /api/model/serve/{session_id}/verify`.
+                "receipt": receipt_dict}
 
     # ── Server setup (install deps on remote) ──
 

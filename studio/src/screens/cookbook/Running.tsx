@@ -9,6 +9,7 @@ import { captureCmd, downloadBadge, forceKillCmd, gracefulKillCmd, onHostCmd, st
 import { t, tn } from '../../i18n';
 import { launchPip, launchServe, processQueue, startDownload, targetFor } from './actions';
 import { CopyButton, Uptime } from './parts';
+import { ReceiptPanel } from './ReceiptPanel';
 
 /**
  * Running: every session the Cookbook started (or found), grouped by the
@@ -332,6 +333,7 @@ function TaskCard({ task, open, onToggle, onStop, onKill, onRemove, onRestart, o
               ))}
             </details>
           )}
+          {task.type === 'serve' && <ReceiptPanel task={task} say={say} />}
           <p className="fs-muted">
             {task.sessionId} · {task.remoteHost ? task.remoteHost : t('local')}
             {task.type === 'serve' && port ? ` · http://${host}:${port}/v1` : ''}

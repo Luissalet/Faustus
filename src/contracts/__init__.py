@@ -68,6 +68,15 @@ from .task import (  # noqa: F401
     PlanRevision, PlanStep, QuestionOption, QuestionRequest, TaskState,
     assert_transition,
 )
+from .inference import (  # noqa: F401
+    ASSESSMENT_SCOPES, BENEFIT_STATES, CHECK_STATES, EFFECTIVE_STATES,
+    EVIDENCE_KINDS, IDENTITY_STATES, IMPLEMENTATIONS, MANAGED_KINDS,
+    METRIC_SCOPES, METRIC_SOURCES, MODEL_KINDS, SUPPORT_STATES,
+    TOPOLOGY_STATES, VERIFY_STATES,
+    Benefit, Check, CapabilityAssessment, Difference, EngineIdentity,
+    Effective, Evidence, ExecutionMetrics, GpuInfo, HardwareSnapshot,
+    LaunchReceipt, MetricValue, ModelDescriptor, Phases, RewriteStep, Tokens,
+)
 
 __all__ = [
     "SCHEMA_VERSION", "ContractError", "fingerprint", "now_iso",
@@ -99,4 +108,12 @@ __all__ = [
     "TASK_TERMINAL", "PLAN_STEP_STATES", "ACCEPTANCE_STATES",
     "QUESTION_EXPIRY_POLICIES", "APPROVAL_REQUEST_STATES",
     "APPROVAL_DECISION_SCOPES", "EVENT_ENVELOPE_TYPES", "EVENT_ENVELOPE_VISIBILITY",
+    "EngineIdentity", "ModelDescriptor", "HardwareSnapshot", "GpuInfo",
+    "CapabilityAssessment", "Effective", "Benefit", "Evidence",
+    "LaunchReceipt", "RewriteStep", "Difference", "Check",
+    "ExecutionMetrics", "MetricValue", "Phases", "Tokens",
+    "IMPLEMENTATIONS", "MANAGED_KINDS", "MODEL_KINDS", "IDENTITY_STATES",
+    "TOPOLOGY_STATES", "SUPPORT_STATES", "ASSESSMENT_SCOPES",
+    "EFFECTIVE_STATES", "BENEFIT_STATES", "EVIDENCE_KINDS", "CHECK_STATES",
+    "VERIFY_STATES", "METRIC_SOURCES", "METRIC_SCOPES",
 ]

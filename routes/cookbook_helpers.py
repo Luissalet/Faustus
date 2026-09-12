@@ -1085,6 +1085,18 @@ class ServeRequest(BaseModel):
     hf_token: str | None = None
     gpus: str | None = None
     platform: str | None = None    # "linux", "termux", or "windows"
+    # INF-02 §07: the normalized plan the UI derived/obtained from the same
+    # contract the backend validates against — `{implementation, model,
+    # options, arch}` — so a launch is never a surprise translation of raw
+    # form fields. `None` means a client that predates INF-02, or a manual
+    # command pasted in directly; both keep working, just without a
+    # capability assessment or a populated `assessments` list on the receipt.
+    plan: dict | None = None
+    # Explicit override to launch anyway when `plan` has a hard blocker
+    # (an option `assess_options` found unsupported). Requires the caller to
+    # ask for it on *this* request — an old approval never authorizes a new
+    # plan (§07 "Un plan autorizado, no un comando sorprendente").
+    force_manual: bool = False
 
 
 def _parse_serve_phase(snapshot: str, task_type: str = "serve") -> dict:

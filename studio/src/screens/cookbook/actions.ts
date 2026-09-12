@@ -4,7 +4,7 @@
  * follows. Ported flows from cookbookRunning.js / cookbookDownload.js.
  */
 import { addTask, downloadModel, getCookbookState, isLocal, removeTask, selectedServer, serveCtx, serveModel, serverKey, serverLabel, shellExec, type CookbookEnv, type Server } from '../../adapters/cookbook';
-import { activationPrefix, ggufQuant, portOf, psQuote, venvPython, type Backend, type ModelLike, type ServeFields } from '../../lib/cookbook/serve';
+import { activationPrefix, ggufQuant, portOf, psQuote, venvPython, type Backend, type ModelLike, type ServeFields, type ServePlan } from '../../lib/cookbook/serve';
 import { gracefulKillCmd, type Task, type TaskPayload } from '../../lib/cookbook/tasks';
 
 export interface Target {
@@ -35,7 +35,7 @@ function ctxFor(env: CookbookEnv, target: Target, hwBackend: string) {
 }
 
 /** Launch a serve command as a task. Kills any task already on that port on the same host. */
-export async function launchServe(input: { shortName: string; repo: string; cmd: string; fields?: ServeFields; target: Target; hwBackend: string; replaceTaskId?: string; dep?: boolean }): Promise<Task> {
+export async function launchServe(input: { shortName: string; repo: string; cmd: string; fields?: ServeFields; target: Target; hwBackend: string; replaceTaskId?: string; dep?: boolean; plan?: ServePlan | null; forceManual?: boolean }): Promise<Task> {
   const { env } = getCookbookState();
   const { target } = input;
   const ctx = ctxFor(env, target, input.hwBackend);
@@ -64,6 +64,12 @@ export async function launchServe(input: { shortName: string; repo: string; cmd:
     env_prefix: activationPrefix({ ...ctx, env: target.env, envPath: target.envPath }) || undefined,
     gpus: env.gpus || undefined,
     platform: target.platform || undefined,
+    // INF-02 §07: the structured plan this launch was assessed against, and
+    // the explicit override once `assessServe` found a hard blocker —
+    // `undefined` for a relaunch/fix path that never built one (still a
+    // legitimate "manual, unverified" launch, not an error).
+    plan: input.plan ?? undefined,
+    force_manual: input.forceManual,
   });
   // INF-01 §D: keep what the server actually ran alongside what this client
   // asked for, so the task card can show "rewritten by the server" instead

@@ -7085,3 +7085,22 @@ Not applied on this target	No aplicado en este destino
 Not verified for this model's architecture	No verificado para la arquitectura de este modelo
 manual, unverified	manual, sin verificar
 remote Windows	Windows remoto
+Capabilities	Capacidades
+Confirm probe	Confirmar sonda
+Confirmed	Confirmado
+Launch anyway (manual, unverified)	Lanzar de todas formas (manual, sin verificar)
+Mismatch: requested {requested}, observed {observed}	Discrepancia: solicitado {requested}, observado {observed}
+No options to assess for this launch.	No hay opciones que evaluar para este lanzamiento.
+No structured plan was recorded for this launch.	No se registró un plan estructurado para este lanzamiento.
+Not applicable	No aplicable
+Observed	Observado
+Option	Opción
+Requested vs applied	Solicitado frente a aplicado
+Run authorized probe (one token)	Ejecutar sonda autorizada (un token)
+Sends a single real request (max_tokens: 1) to the running model. Continue?	Envía una única petición real (max_tokens: 1) al modelo en ejecución. ¿Continuar?
+Supported	Compatible
+Unsupported	No compatible
+Verify now	Verificar ahora
+engine does not expose this	el motor no expone esto
+{n} option is unsupported for this implementation.	{n} opción no es compatible con esta implementación.
+{n} options are unsupported for this implementation.	{n} opciones no son compatibles con esta implementación.

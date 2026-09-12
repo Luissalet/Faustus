@@ -1,0 +1,272 @@
+{
+  "manifest_version": "1.0.0",
+  "reviewed_at": "2026-09-12T00:00:00Z",
+  "llama-server": {
+    "doc": "https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md",
+    "options": {
+      "ctx": {
+        "scope": "server_start",
+        "since": null,
+        "flag": "--ctx-size",
+        "requires": [],
+        "note": "Context length in tokens. Minimum llama-server version supporting this exact flag name is not verified against a changelog; the flag has existed for a long time under this name."
+      },
+      "ngl": {
+        "scope": "server_start",
+        "since": null,
+        "flag": "--n-gpu-layers",
+        "requires": [],
+        "note": "Number of model layers offloaded to GPU. Version floor not verified."
+      },
+      "tensor_split": {
+        "scope": "server_start",
+        "since": null,
+        "flag": "--tensor-split",
+        "requires": ["gpus>=2"],
+        "note": "Only meaningful for splitting a model across more than one GPU."
+      },
+      "split_mode": {
+        "scope": "server_start",
+        "since": null,
+        "flag": "--split-mode",
+        "requires": ["gpus>=2"],
+        "note": "Layer/row split strategy across GPUs; meaningless with a single device."
+      },
+      "main_gpu": {
+        "scope": "server_start",
+        "since": null,
+        "flag": "--main-gpu",
+        "requires": [],
+        "note": "Selects the primary GPU for scratch buffers; accepted with any GPU count."
+      },
+      "parallel": {
+        "scope": "server_start",
+        "since": null,
+        "flag": "--parallel",
+        "requires": [],
+        "note": "Number of concurrent decode slots."
+      },
+      "batch_size": {
+        "scope": "server_start",
+        "since": null,
+        "flag": "--batch-size",
+        "requires": [],
+        "note": "Logical batch size for prompt processing."
+      },
+      "ubatch_size": {
+        "scope": "server_start",
+        "since": null,
+        "flag": "--ubatch-size",
+        "requires": [],
+        "note": "Physical (micro) batch size."
+      },
+      "flash_attn": {
+        "scope": "server_start",
+        "since": null,
+        "flag": "--flash-attn",
+        "requires": [],
+        "note": "Enables the flash-attention kernel path."
+      },
+      "cache_type_k": {
+        "scope": "server_start",
+        "since": null,
+        "flag": "--cache-type-k",
+        "requires": ["option:flash_attn==on"],
+        "note": "KV-cache quantization for K requires flash attention in llama.cpp; a value other than f16/f32 without flash_attn enabled is rejected by the server itself."
+      },
+      "cache_type_v": {
+        "scope": "server_start",
+        "since": null,
+        "flag": "--cache-type-v",
+        "requires": ["option:flash_attn==on"],
+        "note": "Same requirement as cache_type_k, for V."
+      },
+      "mtp": {
+        "scope": "server_start",
+        "since": null,
+        "flag": "--spec-type",
+        "requires": ["arch.mtp==true"],
+        "note": "Multi-token-prediction speculative decoding; only meaningful when the served model documents an MTP head. since is unverified because the flag name has moved between llama.cpp releases."
+      },
+      "fit": {
+        "scope": "server_start",
+        "since": null,
+        "flag": "--fit",
+        "requires": [],
+        "note": "Automatic memory-fit heuristic; not present in every llama.cpp fork/build, minimum version not verified."
+      },
+      "no_mmap": {
+        "scope": "server_start",
+        "since": null,
+        "flag": "--no-mmap",
+        "requires": [],
+        "note": "Disables mmap'd weight loading."
+      },
+      "no_warmup": {
+        "scope": "server_start",
+        "since": null,
+        "flag": "--no-warmup",
+        "requires": [],
+        "note": "Skips the warmup forward pass."
+      },
+      "n_cpu_moe": {
+        "scope": "server_start",
+        "since": null,
+        "flag": "--n-cpu-moe",
+        "requires": ["arch.kind==moe"],
+        "note": "Offloads the given number of MoE expert tensors to CPU; only meaningful for a mixture-of-experts architecture. llama.cpp does not have a vLLM/SGLang-style 'expert parallel' flag — this is the equivalent MoE-specific control for this implementation."
+      }
+    }
+  },
+  "llama_cpp.server": {
+    "doc": "https://github.com/abetlen/llama-cpp-python#openai-compatible-web-server",
+    "options": {
+      "ctx": {
+        "scope": "server_start",
+        "since": null,
+        "flag": "--n_ctx",
+        "requires": [],
+        "note": "Context length. Version floor not verified."
+      },
+      "ngl": {
+        "scope": "server_start",
+        "since": null,
+        "flag": "--n_gpu_layers",
+        "requires": [],
+        "note": "GPU-offloaded layer count."
+      },
+      "cache_type_k": {
+        "scope": "server_start",
+        "since": null,
+        "flag": "--type_k",
+        "requires": [],
+        "note": "llama-cpp-python exposes this as an integer ggml type enum rather than llama.cpp's string names; Faustus's own request normalizer (_normalize_llama_cpp_python_cache_types) does that mapping before launch. Unlike llama-server, this wrapper does not gate the flag behind flash attention support being requested, because it has no --flash-attn flag to gate against in the first place."
+      },
+      "cache_type_v": {
+        "scope": "server_start",
+        "since": null,
+        "flag": "--type_v",
+        "requires": [],
+        "note": "Same mapping as cache_type_k, for V."
+      }
+    }
+  },
+  "vllm": {
+    "doc": "https://docs.vllm.ai/en/latest/serving/engine_args.html",
+    "options": {
+      "ctx": {
+        "scope": "server_start",
+        "since": null,
+        "flag": "--max-model-len",
+        "requires": [],
+        "note": "Maximum served context length. Version floor not verified."
+      },
+      "dtype": {
+        "scope": "server_start",
+        "since": null,
+        "flag": "--dtype",
+        "requires": [],
+        "note": "Compute dtype (e.g. bfloat16/float16/auto)."
+      },
+      "gpu_mem": {
+        "scope": "server_start",
+        "since": null,
+        "flag": "--gpu-memory-utilization",
+        "requires": [],
+        "note": "Fraction of device memory vLLM is allowed to pre-allocate for KV cache."
+      },
+      "expert_parallel": {
+        "scope": "server_start",
+        "since": null,
+        "flag": "--enable-expert-parallel",
+        "requires": ["arch.kind==moe"],
+        "note": "Only meaningful for a mixture-of-experts model."
+      },
+      "moe_env": {
+        "scope": "server_start",
+        "since": null,
+        "flag": "VLLM_USE_DEEP_GEMM / VLLM_USE_FLASHINFER_MOE_FP16 / family-specific vars (environment)",
+        "requires": ["arch.kind==moe"],
+        "note": "Faustus's own MoE-optimization environment-variable bundle for vLLM launches (see detectModelOptimizations); a real vLLM setting only in the sense that it sets vLLM's own env-controlled feature flags, gated the same way as expert_parallel."
+      }
+    }
+  },
+  "sglang": {
+    "doc": "https://docs.sglang.ai/backend/server_arguments.html",
+    "options": {
+      "ctx": {
+        "scope": "server_start",
+        "since": null,
+        "flag": "--context-length",
+        "requires": [],
+        "note": "Maximum served context length. Version floor not verified."
+      },
+      "dtype": {
+        "scope": "server_start",
+        "since": null,
+        "flag": "--dtype",
+        "requires": [],
+        "note": "Compute dtype."
+      },
+      "gpu_mem": {
+        "scope": "server_start",
+        "since": null,
+        "flag": "--mem-fraction-static",
+        "requires": [],
+        "note": "Static GPU memory fraction reserved for weights/KV cache."
+      },
+      "expert_parallel": {
+        "scope": "server_start",
+        "since": null,
+        "flag": "--enable-ep-moe",
+        "requires": ["arch.kind==moe"],
+        "note": "Only meaningful for a mixture-of-experts model."
+      }
+    }
+  },
+  "ollama": {
+    "doc": "https://github.com/ollama/ollama/blob/main/docs/faq.md",
+    "options": {
+      "num_ctx": {
+        "scope": "request",
+        "since": null,
+        "flag": "num_ctx (request option)",
+        "requires": [],
+        "note": "Per-request context window; documented in Ollama's FAQ as a request-scoped option, not a server flag."
+      },
+      "keep_alive": {
+        "scope": "request",
+        "since": null,
+        "flag": "keep_alive (request option)",
+        "requires": [],
+        "note": "Per-request idle-unload timer; request-scoped per Ollama's FAQ."
+      },
+      "flash_attn": {
+        "scope": "global",
+        "since": null,
+        "flag": "OLLAMA_FLASH_ATTENTION (environment)",
+        "requires": [],
+        "note": "Server-global environment toggle; cannot be set per conversation/request."
+      },
+      "kv_cache_type": {
+        "scope": "global",
+        "since": null,
+        "flag": "OLLAMA_KV_CACHE_TYPE (environment)",
+        "requires": ["option:flash_attn==on"],
+        "note": "Server-global KV-cache quantization; Ollama's FAQ documents this as requiring flash attention to be enabled, same dependency as llama.cpp's own cache_type_k/v."
+      }
+    }
+  },
+  "mlx": {
+    "doc": "https://github.com/ml-explore/mlx-lm",
+    "options": {
+      "ctx": {
+        "scope": "server_start",
+        "since": null,
+        "flag": "--max-tokens (server-dependent)",
+        "requires": [],
+        "note": "MLX serving wrappers vary by fork; the exact flag and its minimum supporting version are not verified here."
+      }
+    }
+  }
+}

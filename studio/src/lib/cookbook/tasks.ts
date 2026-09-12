@@ -65,6 +65,10 @@ export interface Task {
   platform?: string;
   exit_code?: number | null;
   _serveReady?: boolean;
+  /** INF-02 §07/T19: set once this task's automatic (unauthorized) verify
+   *  has fired for its first `ready` — never re-fires on a later render,
+   *  remount, or reconnection once this is set. */
+  _receiptAutoVerified?: boolean;
   _endpointAdded?: boolean;
   _adoptedExternally?: boolean;
   _backendDiagnosis?: { message?: string } | null;

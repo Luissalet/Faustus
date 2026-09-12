@@ -687,6 +687,153 @@
   vertical-align: middle;
 }
 
+/* INF-02: Capabilities list (assess) + the force-manual override */
+
+.fs-ck__assessments {
+  display: grid;
+  gap: var(--fs-space-2);
+}
+
+.fs-ck__assessments ul {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fs-ck__assessments li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fs-space-2);
+  align-items: baseline;
+  font-size: var(--fs-label-size);
+}
+
+.fs-ck__support {
+  padding: 0 6px;
+  border-radius: var(--fs-radius-pill);
+  background: var(--fs-surface-3);
+  color: var(--fs-text-2);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.fs-ck__support[data-tone='ok'] {
+  background: color-mix(in srgb, var(--fs-success) 18%, transparent);
+  color: var(--fs-success);
+}
+.fs-ck__support[data-tone='warning'] {
+  background: color-mix(in srgb, var(--fs-warning) 18%, transparent);
+  color: var(--fs-warning);
+}
+.fs-ck__support[data-tone='danger'] {
+  background: color-mix(in srgb, var(--fs-danger) 18%, transparent);
+  color: var(--fs-danger);
+}
+
+.fs-ck__blockers {
+  display: grid;
+  gap: var(--fs-space-2);
+  padding: var(--fs-space-3);
+  border: 1px solid color-mix(in srgb, var(--fs-danger) 45%, var(--fs-border));
+  border-radius: var(--fs-radius-control);
+  background: color-mix(in srgb, var(--fs-danger) 8%, transparent);
+}
+
+.fs-ck__blockers .fs-muted {
+  margin: 0;
+}
+
+.fs-ck__force-manual {
+  display: flex;
+  gap: var(--fs-space-2);
+  align-items: center;
+  font-size: var(--fs-label-size);
+}
+
+/* INF-02: the "Requested vs applied" receipt panel on a serve task card */
+
+.fs-ck__receipt {
+  display: grid;
+  gap: var(--fs-space-3);
+  padding: var(--fs-space-3);
+  border: 1px solid var(--fs-border);
+  border-inline-start: 3px solid var(--fs-text-3);
+  border-radius: var(--fs-radius-control);
+  background: var(--fs-surface-2);
+}
+
+.fs-ck__receipt[data-tone='ok'] {
+  border-inline-start-color: var(--fs-success);
+}
+.fs-ck__receipt[data-tone='warning'] {
+  border-inline-start-color: var(--fs-warning);
+}
+.fs-ck__receipt[data-tone='danger'] {
+  border-inline-start-color: var(--fs-danger);
+}
+
+.fs-ck__receipt-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fs-space-2);
+  align-items: center;
+  justify-content: space-between;
+}
+
+.fs-ck__receipt-verify-state {
+  padding: 0 6px;
+  border-radius: var(--fs-radius-pill);
+  background: var(--fs-surface-3);
+  color: var(--fs-text-2);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.fs-ck__receipt-verify-state[data-tone='ok'] {
+  background: color-mix(in srgb, var(--fs-success) 18%, transparent);
+  color: var(--fs-success);
+}
+.fs-ck__receipt-verify-state[data-tone='warning'] {
+  background: color-mix(in srgb, var(--fs-warning) 18%, transparent);
+  color: var(--fs-warning);
+}
+.fs-ck__receipt-verify-state[data-tone='danger'] {
+  background: color-mix(in srgb, var(--fs-danger) 18%, transparent);
+  color: var(--fs-danger);
+}
+
+.fs-ck__receipt-checks {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-label-size);
+  color: var(--fs-text-2);
+}
+
+.fs-ck__receipt-checks li[data-state='failed'] {
+  color: var(--fs-danger);
+}
+
+.fs-ck__eff {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  white-space: normal;
+}
+
+.fs-ck__eff[data-state='confirmed'] {
+  color: var(--fs-success);
+}
+.fs-ck__eff[data-state='mismatch'] {
+  color: var(--fs-danger);
+}
+
 /* A note beside the engine picker: why a choice is missing for this target. */
 .fs-ck__note {
   flex-basis: 100%;

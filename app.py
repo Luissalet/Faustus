@@ -1044,6 +1044,13 @@ app.include_router(setup_board_routes())
 from routes.model_architecture_routes import setup_model_architecture_routes
 app.include_router(setup_model_architecture_routes())
 
+# Capability assessment and per-session launch receipts (INF-02 §06/§07):
+# POST /api/model/serve/assess, GET/POST /api/model/serve/{id}/receipt|verify
+# -- support/effective/benefit kept as three separate axes, never collapsed
+# into a boolean (src/inference_capabilities.py, src/launch_receipts.py).
+from routes.inference_routes import setup_inference_routes
+app.include_router(setup_inference_routes())
+
 # Excursos (side threads, CONTRATO_EXCURSOS Lote A + CONTRATO_CABLES2 F1/F2
 # Lote A): side-thread creation, wiring panel data, thought-map, context
 # preview, reference cables, wired document/note materials, and per-turn

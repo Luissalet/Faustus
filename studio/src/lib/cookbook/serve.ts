@@ -436,6 +436,18 @@ const LLAMA_CPP_PYTHON_NO_EQUIVALENT: OmittedOption[] = [
   { option: '--flash-attn', reason: 'python -m llama_cpp.server has no equivalent flag' },
 ];
 
+/** llama.cpp's `-ngl`, resolved from the Inference mode radio the same way
+ *  `buildServeCmd` computes it inline — pulled out so `buildServePlan` (INF-02
+ *  §07) reports the exact value the command uses, never a re-guess of it. */
+function llamaNgl(f: ServeFields): string {
+  const s = (k: string) => String(f[k] ?? '').trim();
+  const mode = s('llama_mode').toLowerCase();
+  let ngl = s('ngl');
+  if (mode === 'cpu') ngl = '0';
+  else if (['gpu', 'unified'].includes(mode) && (!ngl || ngl === '0')) ngl = '99';
+  return ngl;
+}
+
 /**
  * The serve command for a backend, and the translation receipt for it
  * (INF-01 §C/§D). `f` is the form (strings and booleans keyed like the
@@ -533,11 +545,9 @@ export function buildServeCmd(f: ServeFields, modelName: string, backend: Backen
     const localWindows = win && !ctx.remoteHost;
     const py = win ? 'python' : 'python3';
     const mode = s('llama_mode').toLowerCase();
-    let ngl = s('ngl');
+    let ngl = llamaNgl(f);
     let unified = b('unified_mem');
     if (mode === 'unified') unified = true;
-    if (mode === 'cpu') ngl = '0';
-    else if (['gpu', 'unified'].includes(mode) && (!ngl || ngl === '0')) ngl = '99';
     const cpuOnly = ngl.trim() === '0';
     const cudaTarget = ctx.hwBackend.toLowerCase() === 'cuda';
     let lcPrefix = '';
@@ -668,6 +678,107 @@ export function buildServeCmd(f: ServeFields, modelName: string, backend: Backen
 /** `buildServeCmd(...).cmd`, for callers that only want the string. */
 export function buildServeCmdString(f: ServeFields, modelName: string, backend: Backend, ctx: ServeCtx): string {
   return buildServeCmd(f, modelName, backend, ctx).cmd;
+}
+
+/**
+ * INF-02 §07: the structured plan a launch is authorized against —
+ * `{implementation, model, options, arch}`, `options` keyed by the SAME
+ * canonical names `config/inference_capabilities.json` uses (`ctx`, `ngl`,
+ * `cache_type_k`/`_v`, `expert_parallel`, ...), never the form's own field
+ * names (`llama_batch_size`, `moe_env`, ...). `POST /api/model/serve/assess`
+ * and `POST /api/model/serve` both read this shape; a form field that has no
+ * canonical option (the family/parser detectors, `extra`, ...) simply never
+ * appears here — nothing invents a manifest entry for it.
+ */
+export interface ServePlan {
+  implementation: string;
+  model: string;
+  options: Record<string, unknown>;
+  arch: ModelArchitecture | null;
+}
+
+const NUM = (v: string): string => (/^\d+$/.test(v) ? v : '');
+const CSV = (v: string): string => {
+  const x = v.replace(/\s+/g, '');
+  return /^\d+(?:\.\d+)?(?:,\d+(?:\.\d+)?)*$/.test(x) ? x : '';
+};
+
+/** llama-server / llama_cpp.server share one option vocabulary in the
+ *  manifest — which of the two is actually running decides what
+ *  `assess_options` does with each entry (H04: e.g. `parallel` is
+ *  `unsupported` for the Python wrapper), not what gets sent here. */
+function planOptionsForLlamaCpp(f: ServeFields): Record<string, unknown> {
+  const s = (k: string) => String(f[k] ?? '').trim();
+  const b = (k: string) => Boolean(f[k]);
+  const options: Record<string, unknown> = {
+    ctx: Number(s('ctx') || '8192'),
+    ngl: Number(llamaNgl(f) || '99'),
+    flash_attn: b('flash_attn'),
+  };
+  const kv = s('cache_type');
+  if (kv) {
+    options.cache_type_k = kv;
+    options.cache_type_v = kv;
+  }
+  const ncm = s('n_cpu_moe');
+  if (ncm !== '' && Number(ncm) > 0) options.n_cpu_moe = Number(ncm);
+  if (['on', 'off'].includes(s('llama_fit'))) options.fit = s('llama_fit');
+  if (b('llama_no_mmap')) options.no_mmap = true;
+  if (b('llama_no_warmup')) options.no_warmup = true;
+  if (['none', 'layer', 'row', 'tensor'].includes(s('llama_split_mode'))) options.split_mode = s('llama_split_mode');
+  if (CSV(s('llama_tensor_split'))) options.tensor_split = CSV(s('llama_tensor_split'));
+  if (NUM(s('llama_main_gpu'))) options.main_gpu = Number(s('llama_main_gpu'));
+  if (NUM(s('llama_parallel'))) options.parallel = Number(s('llama_parallel'));
+  if (NUM(s('llama_batch_size'))) options.batch_size = Number(s('llama_batch_size'));
+  if (NUM(s('llama_ubatch_size'))) options.ubatch_size = Number(s('llama_ubatch_size'));
+  if (b('llama_speculative_mtp')) options.mtp = true;
+  return options;
+}
+
+function planOptionsForVllm(f: ServeFields): Record<string, unknown> {
+  const s = (k: string) => String(f[k] ?? '').trim();
+  const b = (k: string) => Boolean(f[k]);
+  const options: Record<string, unknown> = {
+    ctx: Number(s('ctx') || '8192'),
+    dtype: s('dtype') || 'auto',
+    gpu_mem: Number(s('gpu_mem') || '0.90'),
+  };
+  if (b('expert_parallel')) options.expert_parallel = true;
+  if (b('moe_env')) options.moe_env = true;
+  return options;
+}
+
+function planOptionsForSglang(f: ServeFields): Record<string, unknown> {
+  const s = (k: string) => String(f[k] ?? '').trim();
+  const b = (k: string) => Boolean(f[k]);
+  const options: Record<string, unknown> = {};
+  if (s('ctx')) options.ctx = Number(s('ctx'));
+  if (s('dtype') && s('dtype') !== 'auto') options.dtype = s('dtype');
+  if (s('gpu_mem') && s('gpu_mem') !== '0.90') options.gpu_mem = Number(s('gpu_mem'));
+  if (b('expert_parallel')) options.expert_parallel = true;
+  return options;
+}
+
+/**
+ * The plan for `receipt.implementation` (INF-02 §07). `null` when the
+ * implementation is not one this contract's manifest covers at all
+ * (`mlx_image`, `diffusers` — image generators, out of scope for
+ * `config/inference_capabilities.json`) — a caller sees that as "no
+ * structured plan for this launch", the same legitimate case as a hand-typed
+ * manual command, never an error.
+ */
+export function buildServePlan(f: ServeFields, modelName: string, receipt: ServeCmdReceipt, arch?: ModelArchitecture | null): ServePlan | null {
+  const implementation = receipt.implementation;
+  let options: Record<string, unknown>;
+  if (implementation === 'llama-server' || implementation === 'llama_cpp.server') options = planOptionsForLlamaCpp(f);
+  else if (implementation === 'vllm') options = planOptionsForVllm(f);
+  else if (implementation === 'sglang') options = planOptionsForSglang(f);
+  else if (implementation === 'ollama') options = {}; // launch-time options only; num_ctx/keep_alive are per-request (manifest scope: "request")
+  else if (implementation === 'mlx') {
+    const s = (k: string) => String(f[k] ?? '').trim();
+    options = /^\d+$/.test(s('ctx')) ? { ctx: Number(s('ctx')) } : {};
+  } else return null;
+  return { implementation, model: modelName, options, arch: arch ?? null };
 }
 
 /** Default port per engine (the form's placeholder). */

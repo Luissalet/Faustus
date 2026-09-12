@@ -14,7 +14,7 @@ import { useSyncExternalStore } from 'react';
 import { ApiError, asArray, getJson } from './api';
 import { listEndpoints, type ModelEndpoint } from './settings';
 import { redactTask, type CmdRewrite, type LiveStatus, type Task, type TaskPayload, type TaskType } from '../lib/cookbook/tasks';
-import type { ModelArchitecture, ServeCtx, ServeFields } from '../lib/cookbook/serve';
+import { portOf, type ModelArchitecture, type ServeCtx, type ServeFields, type ServePlan } from '../lib/cookbook/serve';
 
 /* ── shapes ── */
 
@@ -348,6 +348,290 @@ async function postJson(path: string, body: unknown): Promise<Record<string, unk
   return data;
 }
 
+/* ── INF-02: capability assessments & launch receipts ──────────────────────
+ * `src/contracts/inference.py`'s wire shapes, read defensively (a field this
+ * client doesn't recognise falls back to the same "nothing established yet"
+ * value the contract itself defaults to — never to `false`/`0`/[]  standing
+ * in for "unknown"). */
+
+export type SupportState = 'supported' | 'unsupported' | 'unknown';
+export type EffectiveState = 'confirmed' | 'mismatch' | 'unconfirmed' | 'not_applicable';
+export type BenefitState = 'not_evaluated' | 'observed_gain' | 'no_gain' | 'regression';
+export type EvidenceKind = 'versioned_manifest' | 'engine_probe' | 'none';
+export type CheckState = 'passed' | 'failed' | 'skipped';
+export type VerifyState = 'pending' | 'verified' | 'failed' | 'stale';
+
+export interface CapabilityAssessment {
+  option: string;
+  requested: unknown;
+  support: SupportState;
+  scope: 'server_start' | 'request' | 'global';
+  requirements: string[];
+  effective: { value: unknown; state: EffectiveState };
+  benefit: { state: BenefitState; benchmark_id: string | null };
+  evidence: { kind: EvidenceKind; observed_at: string | null };
+  reasons: string[];
+}
+
+export interface EngineIdentity {
+  implementation: string;
+  version: string | null;
+  build: string | null;
+  platform: string | null;
+  host: string | null;
+  port: number | null;
+  managed: 'faustus' | 'external' | 'remote';
+  generation: number;
+  session_id: string | null;
+}
+
+export interface ModelDescriptor {
+  artifact_id: string;
+  revision: string | null;
+  digest: string | null;
+  architecture: string | null;
+  kind: 'dense' | 'moe' | 'unknown';
+  quantization: string | null;
+  total_params: number | null;
+  active_params: number | null;
+  mtp: boolean | null;
+  identity_state: 'confirmed' | 'provisional';
+}
+
+export interface ReceiptCheck {
+  name: string;
+  state: CheckState;
+  detail: string;
+}
+
+export interface ReceiptDifference {
+  option: string;
+  requested: unknown;
+  observed: unknown;
+  state: EffectiveState;
+}
+
+export interface LaunchReceipt {
+  session_id: string;
+  engine: EngineIdentity;
+  model: ModelDescriptor | null;
+  requested_cmd: string;
+  final_cmd: string;
+  rewrites: CmdRewrite[];
+  plan: Record<string, unknown>;
+  assessments: CapabilityAssessment[];
+  observed: Record<string, unknown>;
+  differences: ReceiptDifference[];
+  checks: ReceiptCheck[];
+  created_at: string;
+  verified_at: string | null;
+  verify_state: VerifyState;
+}
+
+function asAssessment(raw: unknown): CapabilityAssessment {
+  const r = isObj(raw) ? raw : {};
+  const eff = isObj(r.effective) ? r.effective : {};
+  const ben = isObj(r.benefit) ? r.benefit : {};
+  const evi = isObj(r.evidence) ? r.evidence : {};
+  return {
+    option: str(r.option),
+    requested: r.requested ?? null,
+    support: (r.support as SupportState) || 'unknown',
+    scope: (r.scope as CapabilityAssessment['scope']) || 'server_start',
+    requirements: Array.isArray(r.requirements) ? r.requirements.map(str) : [],
+    effective: { value: eff.value ?? null, state: (eff.state as EffectiveState) || 'unconfirmed' },
+    benefit: { state: (ben.state as BenefitState) || 'not_evaluated', benchmark_id: ben.benchmark_id ? str(ben.benchmark_id) : null },
+    evidence: { kind: (evi.kind as EvidenceKind) || 'none', observed_at: evi.observed_at ? str(evi.observed_at) : null },
+    reasons: Array.isArray(r.reasons) ? r.reasons.map(str) : [],
+  };
+}
+
+function asEngine(raw: unknown): EngineIdentity {
+  const r = isObj(raw) ? raw : {};
+  return {
+    implementation: str(r.implementation) || 'unknown',
+    version: r.version ? str(r.version) : null,
+    build: r.build ? str(r.build) : null,
+    platform: r.platform ? str(r.platform) : null,
+    host: r.host ? str(r.host) : null,
+    port: typeof r.port === 'number' ? r.port : null,
+    managed: (r.managed as EngineIdentity['managed']) || 'faustus',
+    generation: typeof r.generation === 'number' ? r.generation : 1,
+    session_id: r.session_id ? str(r.session_id) : null,
+  };
+}
+
+function asModel(raw: unknown): ModelDescriptor | null {
+  if (!isObj(raw)) return null;
+  return {
+    artifact_id: str(raw.artifact_id),
+    revision: raw.revision ? str(raw.revision) : null,
+    digest: raw.digest ? str(raw.digest) : null,
+    architecture: raw.architecture ? str(raw.architecture) : null,
+    kind: (raw.kind as ModelDescriptor['kind']) || 'unknown',
+    quantization: raw.quantization ? str(raw.quantization) : null,
+    total_params: typeof raw.total_params === 'number' ? raw.total_params : null,
+    active_params: typeof raw.active_params === 'number' ? raw.active_params : null,
+    mtp: typeof raw.mtp === 'boolean' ? raw.mtp : null,
+    identity_state: (raw.identity_state as ModelDescriptor['identity_state']) || 'provisional',
+  };
+}
+
+/** `LaunchReceipt.to_dict()`, parsed defensively — see the module note above. */
+export function parseLaunchReceipt(raw: unknown): LaunchReceipt {
+  const r = isObj(raw) ? raw : {};
+  return {
+    session_id: str(r.session_id),
+    engine: asEngine(r.engine),
+    model: asModel(r.model),
+    requested_cmd: str(r.requested_cmd),
+    final_cmd: str(r.final_cmd),
+    rewrites: asArray<CmdRewrite>(r.rewrites),
+    plan: isObj(r.plan) ? r.plan : {},
+    assessments: asArray<Record<string, unknown>>(r.assessments).map(asAssessment),
+    observed: isObj(r.observed) ? r.observed : {},
+    differences: asArray<Record<string, unknown>>(r.differences).map((d) => ({
+      option: str(d.option),
+      requested: d.requested ?? null,
+      observed: d.observed ?? null,
+      state: (d.state as EffectiveState) || 'unconfirmed',
+    })),
+    checks: asArray<Record<string, unknown>>(r.checks).map((c) => ({
+      name: str(c.name),
+      state: (c.state as CheckState) || 'skipped',
+      detail: str(c.detail),
+    })),
+    created_at: str(r.created_at),
+    verified_at: r.verified_at ? str(r.verified_at) : null,
+    verify_state: (r.verify_state as VerifyState) || 'pending',
+  };
+}
+
+/**
+ * "3 confirmed · 1 mismatch · 2 unconfirmed" — the receipt's Capabilities
+ * table condensed to one line. Counts are read straight off
+ * `assessments[].effective.state`; an assessment this receipt never probed
+ * (still the pre-launch `unconfirmed` default) counts the same as one a
+ * probe genuinely could not answer — both are honestly "not confirmed",
+ * never silently dropped from the total.
+ */
+export function summarizeReceipt(receipt: Pick<LaunchReceipt, 'assessments'>): string {
+  const counts = { confirmed: 0, mismatch: 0, unconfirmed: 0, not_applicable: 0 };
+  for (const a of receipt.assessments) counts[a.effective.state] += 1;
+  const parts: string[] = [];
+  if (counts.confirmed) parts.push(`${counts.confirmed} confirmed`);
+  if (counts.mismatch) parts.push(`${counts.mismatch} mismatch`);
+  if (counts.unconfirmed) parts.push(`${counts.unconfirmed} unconfirmed`);
+  if (counts.not_applicable) parts.push(`${counts.not_applicable} not applicable`);
+  return parts.length ? parts.join(' · ') : 'nothing assessed';
+}
+
+/**
+ * A coarse tone for the receipt card: `danger` once verification failed
+ * outright or a probe caught a genuine mismatch, `warning` while nothing has
+ * been verified yet (or every probe came back `unconfirmed` — that is "we
+ * don't know", not "it's fine"), `ok` only once something was actually
+ * confirmed and nothing contradicts it.
+ */
+export function receiptTone(receipt: Pick<LaunchReceipt, 'verify_state' | 'assessments'>): 'ok' | 'warning' | 'danger' {
+  if (receipt.verify_state === 'failed') return 'danger';
+  if (receipt.assessments.some((a) => a.effective.state === 'mismatch')) return 'danger';
+  if (receipt.verify_state === 'pending' || receipt.verify_state === 'stale') return 'warning';
+  if (!receipt.assessments.some((a) => a.effective.state === 'confirmed')) return 'warning';
+  return 'ok';
+}
+
+/**
+ * The base URL a serve command implies, read straight out of its text —
+ * mirrors `_infer_base_url` in `routes/inference_routes.py` (Ollama's
+ * `OLLAMA_HOST=host:port` first, else a `--port`/`-p` flag) so the panel can
+ * show what "Verify now" is about to probe, and pass it explicitly rather
+ * than relying on the server to re-derive the same thing. `null` — never a
+ * guessed default port — when the command names none.
+ */
+export function baseUrlFromCmd(cmd: string): string | null {
+  if (!cmd) return null;
+  const ollama = cmd.match(/(?:^|\s)OLLAMA_HOST=(\S+)/);
+  if (ollama) {
+    const value = ollama[1].replace(/^['"]|['"]$/g, '');
+    const bind = value.match(/^\[([^\]]+)\]:(\d+)$/) || value.match(/^([^:]+):(\d+)$/);
+    if (!bind) return 'http://127.0.0.1:11434';
+    const host = bind[1] === '0.0.0.0' || !bind[1] ? '127.0.0.1' : bind[1];
+    return `http://${host}:${bind[2]}`;
+  }
+  // Bare `ollama serve` (or `ollama show <tag>`, already-pulled) with no
+  // `OLLAMA_HOST` — Ollama's own documented default, the same one
+  // `_ollama_bind_from_cmd` falls back to server-side; not a guess this
+  // function invents for anything else.
+  if (/(?:^|\s)ollama\b/.test(cmd)) return 'http://127.0.0.1:11434';
+  const port = portOf(cmd);
+  return port ? `http://127.0.0.1:${port}` : null;
+}
+
+/** `POST /api/model/serve` reporting `{"error_class": "serve.incompatible"}`
+ *  (§07): one or more requested options are `unsupported`, and the launch
+ *  never ran. Carries the assessments that caused it so the caller can show
+ *  exactly the same Capabilities list `assess` would have, without a second
+ *  round-trip. */
+export class ServeIncompatibleError extends ApiError {
+  constructor(
+    message: string,
+    readonly assessments: CapabilityAssessment[],
+  ) {
+    super(message, 409);
+    this.name = 'ServeIncompatibleError';
+  }
+}
+
+async function postJsonReceipt(path: string, body: unknown, signal?: AbortSignal): Promise<{ ok: boolean; status: number; data: Record<string, unknown> }> {
+  const res = await fetch(path, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal });
+  const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+  return { ok: res.ok, status: res.status, data };
+}
+
+/** `POST /api/model/serve/assess` (§06): pure, no launch — the same check
+ *  `POST /api/model/serve` re-runs server-side before it launches anything. */
+export async function assessServe(
+  plan: { implementation: string; model?: unknown; options: Record<string, unknown>; arch?: Record<string, unknown> | null; engine_version?: string | null; gpus?: unknown[] | null },
+  signal?: AbortSignal,
+): Promise<{ assessments: CapabilityAssessment[]; blockers: CapabilityAssessment[] }> {
+  const { ok, status, data } = await postJsonReceipt('/api/model/serve/assess', plan, signal);
+  if (!ok) throw new ApiError(str(data.error) || `/api/model/serve/assess responded ${status}`, status);
+  return {
+    assessments: asArray<Record<string, unknown>>(data.assessments).map(asAssessment),
+    blockers: asArray<Record<string, unknown>>(data.blockers).map(asAssessment),
+  };
+}
+
+/** The receipt `POST /api/model/serve` filed for `sessionId`, or `null` for
+ *  a session that never got one (§07 `404 serve.receipt_not_found` — a
+ *  session adopted from an existing process, or one launched before INF-02). */
+export async function getServeReceipt(sessionId: string, signal?: AbortSignal): Promise<LaunchReceipt | null> {
+  const res = await fetch(`/api/model/serve/${encodeURIComponent(sessionId)}/receipt`, {
+    credentials: 'same-origin',
+    headers: { Accept: 'application/json' },
+    signal,
+  });
+  const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+  if (!res.ok) {
+    if (res.status === 404) return null;
+    throw new ApiError(str(data.error) || `serve receipt responded ${res.status}`, res.status);
+  }
+  return isObj(data.receipt) ? parseLaunchReceipt(data.receipt) : null;
+}
+
+/** `POST /api/model/serve/{id}/verify` (§06): passive probes only, never a
+ *  side effect — `authorizedProbe` defaults to `false` on every single call,
+ *  same as the route itself never remembering a prior authorization. */
+export async function verifyServeReceipt(sessionId: string, opts: { baseUrl?: string | null; authorizedProbe?: boolean } = {}): Promise<LaunchReceipt> {
+  const { ok, status, data } = await postJsonReceipt(`/api/model/serve/${encodeURIComponent(sessionId)}/verify`, {
+    base_url: opts.baseUrl || undefined,
+    authorized_probe: opts.authorizedProbe ?? false,
+  });
+  if (!ok) throw new ApiError(str(data.error) || `serve verify responded ${status}`, status);
+  return parseLaunchReceipt(data.receipt);
+}
+
 /* ── launching ── */
 
 export interface ServeRequest {
@@ -359,10 +643,22 @@ export interface ServeRequest {
   hf_token?: string;
   gpus?: string;
   platform?: string;
+  // INF-02 §07: the structured plan this launch is authorized against, and
+  // the explicit override to launch anyway once `assessServe` found a hard
+  // blocker. `undefined`/`null` plan is the legitimate "manual, unverified"
+  // case (a hand-edited command, or a target `buildServePlan` doesn't cover).
+  plan?: ServePlan | null;
+  force_manual?: boolean;
 }
 
-export async function serveModel(body: ServeRequest): Promise<{ sessionId: string; endpointId: string | null; requestedCmd: string; finalCmd: string; rewrites: CmdRewrite[] }> {
-  const data = await postJson('/api/model/serve', body);
+export async function serveModel(body: ServeRequest): Promise<{ sessionId: string; endpointId: string | null; requestedCmd: string; finalCmd: string; rewrites: CmdRewrite[]; receipt: LaunchReceipt | null }> {
+  const { ok, status, data } = await postJsonReceipt('/api/model/serve', body);
+  if (!ok) {
+    if (data.error_class === 'serve.incompatible') {
+      throw new ServeIncompatibleError(str(data.error) || 'one or more requested options are unsupported', asArray<Record<string, unknown>>(data.assessments).map(asAssessment));
+    }
+    throw new ApiError(str(data.detail || data.error) || `/api/model/serve responded ${status}`, status);
+  }
   if (data.ok === false) throw new ApiError(str(data.error || data.detail) || 'Launch failed', 400);
   return {
     sessionId: str(data.session_id),
@@ -372,6 +668,9 @@ export async function serveModel(body: ServeRequest): Promise<{ sessionId: strin
     requestedCmd: typeof data.requested_cmd === 'string' ? data.requested_cmd : '',
     finalCmd: typeof data.final_cmd === 'string' ? data.final_cmd : '',
     rewrites: asArray<CmdRewrite>(data.rewrites),
+    // INF-02 §07: filed alongside the launch itself; `null` only for a
+    // backend that predates this endpoint's `"receipt"` field.
+    receipt: isObj(data.receipt) ? parseLaunchReceipt(data.receipt) : null,
   };
 }
 
