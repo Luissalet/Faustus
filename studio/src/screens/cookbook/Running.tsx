@@ -316,6 +316,22 @@ function TaskCard({ task, open, onToggle, onStop, onKill, onRemove, onRestart, o
               <CopyButton text={task.payload._cmd} say={say} />
             </p>
           )}
+          {task.payload?.rewrites && task.payload.rewrites.length > 0 && (
+            <details className="fs-ck__rewrites" data-testid="serve-rewrites">
+              <summary>{t('Command rewritten by the server ({n} steps)', { n: String(task.payload.rewrites.length) })}</summary>
+              {task.payload.rewrites.map((r, i) => (
+                <div key={`${r.step}-${i}`} className="fs-ck__rewrite-step">
+                  <strong>{r.step}</strong>
+                  <pre className="fs-ck__rewrite-diff">
+                    {'- '}
+                    {r.before}
+                    {'\n+ '}
+                    {r.after}
+                  </pre>
+                </div>
+              ))}
+            </details>
+          )}
           <p className="fs-muted">
             {task.sessionId} · {task.remoteHost ? task.remoteHost : t('local')}
             {task.type === 'serve' && port ? ` · http://${host}:${port}/v1` : ''}

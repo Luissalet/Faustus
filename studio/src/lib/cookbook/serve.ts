@@ -35,6 +35,32 @@ export interface ServeCtx {
   hwBackend: string;
   /** The local host's platform, for a serve that targets this machine. */
   hostPlatform: string;
+  /** `GET /api/models/architecture`'s answer for the model being served, or
+   *  `null`/absent when it hasn't resolved (or failed) yet — `buildServeCmd`
+   *  treats absence exactly like `kind: 'unknown'` (INF-01 §A/§C): never
+   *  MoE/MTP flags from the name alone. */
+  arch?: ModelArchitecture | null;
+}
+
+/**
+ * `GET /api/models/architecture`'s response shape (see
+ * `docs/api/model_architecture.md` and `src/model_architecture.py`).
+ * Absence of a field is a real "unknown", never coerced to a falsy default:
+ * `mtp: null` means "not established", not "no". A caller that already has
+ * this from the network passes it into `detectModelOptimizations`/
+ * `buildServeCmd` via `ServeCtx.arch`.
+ */
+export interface ModelArchitecture {
+  repo: string;
+  kind: 'dense' | 'moe' | 'unknown';
+  total_params: number | null;
+  active_params: number | null;
+  num_experts: number | null;
+  mtp: boolean | null;
+  architectures: string[] | null;
+  source: 'hf_config' | 'ollama_show' | 'llamacpp_props' | 'none';
+  observed_at: string | null;
+  note: string | null;
 }
 
 export type ServeFields = Record<string, string | boolean | undefined | null>;
@@ -134,50 +160,107 @@ export interface ModelOptimizations {
   envVars: string[];
   flags: string[];
   tips: string[];
+  /**
+   * Name-based family guesses that never became a flag/env var (INF-01 §A):
+   * "this looks like family X, which is often MoE/MTP" without metadata
+   * confirming it for THIS repo. Purely informational.
+   */
+  hints: string[];
   kvCacheDtype?: string;
   spec?: { method: string; tokens: number };
 }
 
-/** MoE env vars, expert parallel, reasoning parser and speculative decoding per family. */
-export function detectModelOptimizations(modelName: string): ModelOptimizations {
+/**
+ * MoE env vars, expert parallel and speculative decoding per family —
+ * gated on verified architecture, never on the model's name alone (H01/H03).
+ *
+ * `arch` is `GET /api/models/architecture`'s answer for `modelName` (or
+ * `null`/absent when unknown/not yet resolved). The model's name still
+ * decides WHICH family-specific settings would apply if this repo turns out
+ * to be MoE/MTP — but the name never gets to answer "is it, though": that
+ * question is answered exactly once, by `arch.kind`/`arch.mtp`. A name that
+ * only suggests a family without confirmed metadata surfaces as `hints`,
+ * never as a `flags`/`envVars` entry — the previous implementation matched
+ * `qwen3.5` in the name and reached `Qwen3.5-27B`, a dense model, with MoE
+ * flags it does not want.
+ */
+export function detectModelOptimizations(modelName: string, arch?: ModelArchitecture | null): ModelOptimizations {
   const n = (modelName || '').toLowerCase();
-  const opts: ModelOptimizations = { envVars: [], flags: [], tips: [] };
+  const opts: ModelOptimizations = { envVars: [], flags: [], tips: [], hints: [] };
+  const verifiedMoe = arch?.kind === 'moe';
+  const verifiedMtp = arch?.mtp === true;
+  let notedUnverified = false;
+  const noteUnverified = () => {
+    if (notedUnverified) return;
+    notedUnverified = true;
+    opts.tips.push('Architecture not verified from metadata — MoE/MTP options are not suggested from the name');
+  };
+
+  type MoeFamily = { hint: string; envVars: string[]; flags: string[]; tips: string[]; kvCacheDtype?: string };
+  let fam: MoeFamily | null = null;
   if (isStepFun(n)) {
-    opts.flags.push('--enable-expert-parallel');
-    opts.tips.push('StepFun Step-3 MoE: expert parallel', 'StepFun parser: step3p5 for native tool calls and reasoning tags');
+    fam = { hint: 'name suggests StepFun Step-3 (documented as MoE)', envVars: [], flags: ['--enable-expert-parallel'], tips: ['StepFun Step-3 MoE: expert parallel', 'StepFun parser: step3p5 for native tool calls and reasoning tags'] };
   } else if (n.includes('qwen3.5') || (n.includes('qwen3-') && (n.includes('a10b') || n.includes('a22b') || n.includes('a3b')))) {
-    opts.envVars.push('VLLM_USE_DEEP_GEMM=0', 'VLLM_USE_FLASHINFER_MOE_FP16=1', 'VLLM_USE_FLASHINFER_SAMPLER=0', 'OMP_NUM_THREADS=4');
-    opts.flags.push('--enable-expert-parallel');
-    opts.tips.push('MoE optimizations: expert parallel + flashinfer MoE kernels');
+    fam = { hint: 'name suggests a Qwen3(.5) MoE-labelled variant (the family also ships dense variants, e.g. Qwen3.5-27B)', envVars: ['VLLM_USE_DEEP_GEMM=0', 'VLLM_USE_FLASHINFER_MOE_FP16=1', 'VLLM_USE_FLASHINFER_SAMPLER=0', 'OMP_NUM_THREADS=4'], flags: ['--enable-expert-parallel'], tips: ['MoE optimizations: expert parallel + flashinfer MoE kernels'] };
   } else if (n.includes('qwen3') && (n.includes('a10b') || n.includes('a22b') || n.includes('a3b'))) {
-    opts.envVars.push('VLLM_USE_DEEP_GEMM=0', 'VLLM_USE_FLASHINFER_MOE_FP16=1');
-    opts.flags.push('--enable-expert-parallel');
-    opts.tips.push('MoE optimizations: expert parallel');
+    fam = { hint: 'name suggests a Qwen3 MoE-labelled variant', envVars: ['VLLM_USE_DEEP_GEMM=0', 'VLLM_USE_FLASHINFER_MOE_FP16=1'], flags: ['--enable-expert-parallel'], tips: ['MoE optimizations: expert parallel'] };
   } else if (n.includes('deepseek') && /\b(v[3-9]|v\d{2,}|r[1-9])\b/.test(n)) {
-    opts.flags.push('--enable-expert-parallel');
-    opts.tips.push('MoE expert parallel for DeepSeek');
-    opts.kvCacheDtype = 'fp8';
-    opts.tips.push('fp8 KV cache required — bf16 OOMs at usable context');
+    fam = { hint: 'name suggests a DeepSeek V3+/R1 family model (typically MoE)', envVars: [], flags: ['--enable-expert-parallel'], tips: ['MoE expert parallel for DeepSeek', 'fp8 KV cache required — bf16 OOMs at usable context'], kvCacheDtype: 'fp8' };
   } else if (n.includes('minimax')) {
-    opts.flags.push('--enable-expert-parallel');
-    opts.tips.push('MoE expert parallel for MiniMax');
-    if (/\bm3\b/.test(n)) {
-      opts.kvCacheDtype = 'fp8';
-      opts.tips.push('MiniMax M3 defaults: fp8 KV cache, block-size 128, TRITON attention');
+    const tips = ['MoE expert parallel for MiniMax'];
+    const m3 = /\bm3\b/.test(n);
+    if (m3) tips.push('MiniMax M3 defaults: fp8 KV cache, block-size 128, TRITON attention');
+    fam = { hint: 'name suggests a MiniMax family model (typically MoE)', envVars: [], flags: ['--enable-expert-parallel'], tips, kvCacheDtype: m3 ? 'fp8' : undefined };
+  }
+  if (fam) {
+    opts.hints.push(fam.hint);
+    if (verifiedMoe) {
+      opts.envVars.push(...fam.envVars);
+      opts.flags.push(...fam.flags);
+      opts.tips.push(...fam.tips);
+      if (fam.kvCacheDtype) opts.kvCacheDtype = fam.kvCacheDtype;
+    } else {
+      noteUnverified();
     }
   }
+
   const rp = detectReasoningParser(modelName);
   if (rp) {
     opts.flags.push(`--reasoning-parser ${rp}`);
     opts.tips.push(`Reasoning parser (${rp}): splits <think> tokens into a separate channel`);
   }
+
+  // MTP candidate, by name — never by a list of active-param labels
+  // (H03: A17B documents MTP too and no substring list can stay complete).
   let spec: ModelOptimizations['spec'] | null = null;
-  if (n.includes('qwen3-next') || (n.includes('qwen3.5') && (n.includes('a10b') || n.includes('a22b')))) spec = { method: 'qwen3_next_mtp', tokens: 2 };
-  else if ((n.includes('deepseek') && /\b(v[3-9]|v\d{2,}|r[1-9])\b/.test(n)) || n.includes('kimi-k2') || n.includes('kimi_k2') || n.includes('glm-4.5') || n.includes('glm4.5') || n.includes('minimax-m1') || n.includes('minimax_m1')) spec = { method: 'mtp', tokens: 3 };
+  let specHint = '';
+  if (n.includes('qwen3-next')) {
+    spec = { method: 'qwen3_next_mtp', tokens: 2 };
+    specHint = 'name suggests Qwen3-Next (documents MTP)';
+  } else if (n.includes('deepseek') && /\b(v[3-9]|v\d{2,}|r[1-9])\b/.test(n)) {
+    spec = { method: 'mtp', tokens: 3 };
+    specHint = 'name suggests DeepSeek V3+/R1 (documents MTP)';
+  } else if (n.includes('kimi-k2') || n.includes('kimi_k2')) {
+    spec = { method: 'mtp', tokens: 3 };
+    specHint = 'name suggests Kimi K2 (documents MTP)';
+  } else if (n.includes('glm-4.5') || n.includes('glm4.5')) {
+    spec = { method: 'mtp', tokens: 3 };
+    specHint = 'name suggests GLM-4.5 (documents MTP)';
+  } else if (n.includes('minimax-m1') || n.includes('minimax_m1')) {
+    spec = { method: 'mtp', tokens: 3 };
+    specHint = 'name suggests MiniMax M1 (documents MTP)';
+  }
   if (spec) {
-    opts.spec = spec;
-    opts.flags.push(`--speculative-config '{"method":"${spec.method}","num_speculative_tokens":${spec.tokens}}'`);
-    opts.tips.push(`Speculative decoding (${spec.method}, ${spec.tokens} tokens): ~1.5-2x faster generation`);
+    opts.hints.push(specHint);
+    if (verifiedMtp) {
+      opts.spec = spec;
+      opts.flags.push(`--speculative-config '{"method":"${spec.method}","num_speculative_tokens":${spec.tokens}}'`);
+      // H02: no unmeasured speedup claim — compatibility only, until a
+      // benchmark on this machine says otherwise.
+      opts.tips.push(`Speculative decoding (${spec.method}, ${spec.tokens} tokens) is available for this engine; benefit not measured on this machine`);
+    } else {
+      noteUnverified();
+    }
   }
   return opts;
 }
@@ -310,12 +393,56 @@ export function venvPython(ctx: ServeCtx): string {
 
 /* ── the command ── */
 
+/** A single option that did not survive translation to the target
+ *  implementation — shown, never silently dropped (INF-01 §C/H04). */
+export interface OmittedOption {
+  option: string;
+  reason: string;
+}
+
 /**
- * The serve command for a backend. `f` is the form (strings and booleans
- * keyed like the previous interface's panel fields); the target facts come
- * from `ctx`.
+ * `buildServeCmd`'s translation receipt: the command string plus what it
+ * actually means for THIS target. `implementation` is the real process
+ * that ends up running — never conflated with the wire protocol it happens
+ * to share (H04: `llama-server` and `python -m llama_cpp.server` are both
+ * "llama.cpp", but are not the same binary and do not accept the same
+ * flags). `omitted` lists every option the form exposes that this
+ * `implementation` has no equivalent for, so a value the user set (or a
+ * saved preset carries) that quietly stopped applying is visible, not
+ * silently dropped. `manual` is always `false` here — a caller presenting
+ * a hand-edited command (Cookbook's `cmdOverride`) sets it `true` itself
+ * when building the receipt it shows the user; this function never knows
+ * about that edit.
  */
-export function buildServeCmd(f: ServeFields, modelName: string, backend: Backend, ctx: ServeCtx): string {
+export interface ServeCmdReceipt {
+  cmd: string;
+  implementation: 'vllm' | 'sglang' | 'llama-server' | 'llama_cpp.server' | 'ollama' | 'mlx' | 'mlx_image' | 'diffusers';
+  applied: string[];
+  omitted: OmittedOption[];
+  manual: boolean;
+}
+
+const LLAMA_CPP_PYTHON_NO_EQUIVALENT: OmittedOption[] = [
+  { option: '--fit', reason: 'python -m llama_cpp.server has no equivalent flag' },
+  { option: '--no-mmap', reason: 'python -m llama_cpp.server has no equivalent flag' },
+  { option: '--no-warmup', reason: 'python -m llama_cpp.server has no equivalent flag' },
+  { option: '--split-mode', reason: 'python -m llama_cpp.server has no equivalent flag' },
+  { option: '--tensor-split', reason: 'python -m llama_cpp.server has no equivalent flag' },
+  { option: '--main-gpu', reason: 'python -m llama_cpp.server has no equivalent flag' },
+  { option: '--parallel', reason: 'python -m llama_cpp.server has no equivalent flag' },
+  { option: '--batch-size', reason: 'python -m llama_cpp.server has no equivalent flag' },
+  { option: '--ubatch-size', reason: 'python -m llama_cpp.server has no equivalent flag' },
+  { option: '--spec-type (MTP)', reason: 'python -m llama_cpp.server has no equivalent flag' },
+  { option: '--flash-attn', reason: 'python -m llama_cpp.server has no equivalent flag' },
+];
+
+/**
+ * The serve command for a backend, and the translation receipt for it
+ * (INF-01 §C/§D). `f` is the form (strings and booleans keyed like the
+ * previous interface's panel fields); the target facts come from `ctx`.
+ * Callers that only want the string can use `buildServeCmdString`.
+ */
+export function buildServeCmd(f: ServeFields, modelName: string, backend: Backend, ctx: ServeCtx): ServeCmdReceipt {
   const s = (k: string) => String(f[k] ?? '').trim();
   const b = (k: string) => Boolean(f[k]);
   let formVenv = s('venv');
@@ -326,11 +453,18 @@ export function buildServeCmd(f: ServeFields, modelName: string, backend: Backen
   const py3 = venvBin ? `${venvBin}python3` : 'python3';
   const win = isWindows(ctx);
   let cmd = '';
+  let implementation: ServeCmdReceipt['implementation'] = backend === 'llamacpp' ? 'llama-server' : (backend as ServeCmdReceipt['implementation']);
+  let omitted: OmittedOption[] = [];
 
   if (backend === 'vllm') {
     cmd += gpuEnvPrefix(ctx, s('gpus') || s('gpu_id'));
-    if (b('moe_env')) {
-      const o = detectModelOptimizations(modelName);
+    // The form disables this switch until architecture is verified as MoE
+    // (ServeForm.tsx), but a stale saved preset can still carry `moe_env:
+    // true` for a model this session hasn't verified — H01 applies here
+    // exactly as it does to the name-based branch: no MoE env vars, family
+    // vars or the generic fallback, without `arch.kind === 'moe'`.
+    if (b('moe_env') && ctx.arch?.kind === 'moe') {
+      const o = detectModelOptimizations(modelName, ctx.arch);
       cmd += o.envVars.length ? o.envVars.join(' ') + ' ' : 'VLLM_USE_DEEP_GEMM=0 VLLM_USE_FLASHINFER_MOE_FP16=1 OMP_NUM_THREADS=4 ';
     }
     const extraEnv = s('extra_env').replace(/\s+/g, ' ').trim();
@@ -455,7 +589,14 @@ export function buildServeCmd(f: ServeFields, modelName: string, backend: Backen
     const ctxLen = s('ctx') || '8192';
     const server = `${lcPrefix}llama-server --model ${modelArg} --host 0.0.0.0 --port ${port} -ngl ${ngl || '99'} -c ${ctxLen}${lc}`;
     const pyServer = `${lcPrefix}${py} -m llama_cpp.server --model ${modelArg} --host 0.0.0.0 --port ${port} --n_gpu_layers ${ngl || '99'} --n_ctx ${ctxLen}${lcp}`;
-    cmd += localWindows ? server : win ? pyServer : server;
+    // H04: on Windows this only picks the Python wrapper when the target is
+    // remote — a local Windows serve still gets the native binary. Whichever
+    // process actually runs is `implementation`; the wrapper's missing
+    // flags are `omitted`, never dropped without a trace.
+    const usesPyServer = win && !localWindows;
+    implementation = usesPyServer ? 'llama_cpp.server' : 'llama-server';
+    omitted = usesPyServer ? LLAMA_CPP_PYTHON_NO_EQUIVALENT : [];
+    cmd += usesPyServer ? pyServer : server;
     if (needsPrelude) cmd = `MODEL_FILE=${ggufPath} && { [ -n "$MODEL_FILE" ] && [ -f "$MODEL_FILE" ]; } || { echo "ERROR: No GGUF found on this host"; exit 1; } && ${cmd}`;
   } else if (backend === 'ollama') {
     const port = s('port') || '11434';
@@ -517,7 +658,16 @@ export function buildServeCmd(f: ServeFields, modelName: string, backend: Backen
     if (/minimax|mini-max/i.test(modelName)) cmd += ` --temp 0.7 --top-p 0.9 --max-tokens ${max || '2048'}`;
     else if (/^\d+$/.test(max)) cmd += ` --max-tokens ${max}`;
   }
-  return cmd;
+  // `applied` is read straight off the built command rather than
+  // re-derived from the form, so it can never claim an option landed when
+  // it didn't (or omit one that did).
+  const applied = Array.from(new Set(cmd.match(/--[A-Za-z][\w-]*/g) || []));
+  return { cmd, implementation, applied, omitted, manual: false };
+}
+
+/** `buildServeCmd(...).cmd`, for callers that only want the string. */
+export function buildServeCmdString(f: ServeFields, modelName: string, backend: Backend, ctx: ServeCtx): string {
+  return buildServeCmd(f, modelName, backend, ctx).cmd;
 }
 
 /** Default port per engine (the form's placeholder). */

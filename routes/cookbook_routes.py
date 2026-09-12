@@ -2347,6 +2347,19 @@ def setup_cookbook_routes() -> APIRouter:
         req.gpus = _validate_gpus(req.gpus)
         req.hf_token = req.hf_token or _load_stored_hf_token()
         _validate_token(req.hf_token)
+        # INF-01 §D: the command exactly as it arrived, before any
+        # server-side normalization, and the ledger of every step that
+        # changed it on the way to the runner. `rewrites` stays `[]` when
+        # nothing was rewritten — a launch's requested/final command and
+        # this ledger are returned below so a client never has to guess
+        # whether (or how) the server altered what it asked for.
+        requested_cmd = req.cmd or ""
+        rewrites: list[dict[str, str]] = []
+
+        def _track_rewrite(step: str, before: str, after: str) -> None:
+            if before != after:
+                rewrites.append({"step": step, "before": before, "after": after})
+
         # Cookbook emits two fixed Docker exec forms for its Ollama sidecars.
         # Keep Docker out of the general allowlist: only these parsed shapes may
         # proceed to the target-aware Docker availability/opt-in preflight.
@@ -2358,20 +2371,31 @@ def setup_cookbook_routes() -> APIRouter:
             # written into the runner script and used for engine auto-detection.
             # `_validate_serve_cmd` returns None for empty input; coerce to "" so
             # downstream `"engine" in req.cmd` checks cannot raise TypeError.
+            _before = req.cmd
             req.cmd = _validate_serve_cmd(req.cmd) or ""
+            _track_rewrite("normalize_line_continuations", _before, req.cmd)
+        _before = req.cmd
         req.cmd = _normalize_llama_cpp_python_cache_types(req.cmd) or ""
+        _track_rewrite("normalize_llama_cpp_python_cache_types", _before, req.cmd)
+        _before = req.cmd
         req.cmd = _normalize_minimax_m3_vllm_cmd(req.cmd)
+        _track_rewrite("normalize_minimax_m3_vllm_cmd", _before, req.cmd)
+        _before = req.cmd
         req.cmd = _normalize_deepseek_v4_sglang_cmd(req.cmd)
+        _track_rewrite("normalize_deepseek_v4_sglang_cmd", _before, req.cmd)
+        _before = req.cmd
         req.cmd = _venv_safe_local_pip_install_cmd(
             req.cmd,
             local=not bool(req.remote_host),
             in_venv=sys.prefix != sys.base_prefix,
         )
+        _track_rewrite("venv_safe_local_pip_install", _before, req.cmd)
         is_pip_install = bool(req.cmd and "pip install" in req.cmd)
         if is_pip_install:
             # Keep big dependency wheel builds (vLLM, …) off the home filesystem's
             # pip cache so they don't fail mid-build with "No space left" (#1219)
             # and leave the dep installed-but-unusable (#1459).
+            _before = req.cmd
             req.cmd = _pip_install_no_cache(req.cmd)
             # Accept common aliases and enforce server extras for llama-cpp so
             # `python -m llama_cpp.server` has all runtime dependencies.
@@ -2387,6 +2411,7 @@ def setup_cookbook_routes() -> APIRouter:
             req.cmd = re.sub(r"(?<![A-Za-z0-9_.\-/])llama-cpp-python(?![\[/])", "llama-cpp-python[server]", req.cmd)
             if "llama-cpp-python" in req.cmd and "--extra-index-url" not in req.cmd:
                 req.cmd += " --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu"
+            _track_rewrite("pip_rewrite", _before, req.cmd)
             # PEP-508-style package spec — letters, digits, `.-_` for the
             # name; `[` `]` for extras; `<>=!~,` for version specifiers.
             # v2 review HIGH-14: tightened from the previous regex which
@@ -2420,6 +2445,7 @@ def setup_cookbook_routes() -> APIRouter:
         # `docker exec ollama-test ollama-import …` get wrapped as if they
         # were native `ollama serve`, prepending OLLAMA_HOST=… and then
         # running the ollama-not-found preflight which exits 127.
+        _before = req.cmd
         if re.search(r"\bollama\s+serve\b", req.cmd) and "OLLAMA_HOST=" not in req.cmd:
             _ollama_bind_host = "0.0.0.0" if remote else "127.0.0.1"
             _ollama_chosen_port = _pick_free_port_for_ollama(
@@ -2427,6 +2453,7 @@ def setup_cookbook_routes() -> APIRouter:
             )
             if _ollama_chosen_port:
                 req.cmd = f"OLLAMA_HOST={_ollama_bind_host}:{_ollama_chosen_port} {req.cmd}"
+        _track_rewrite("ollama_host_port", _before, req.cmd)
         # LOCAL execution on a native-Windows host never uses tmux (detached
         # process path below), regardless of the UI-supplied platform.
         local_windows = IS_WINDOWS and not remote
@@ -3248,7 +3275,10 @@ def setup_cookbook_routes() -> APIRouter:
             pass
 
         return {"ok": True, "session_id": session_id, "remote": remote or "local",
-                "endpoint_id": endpoint_id}
+                "endpoint_id": endpoint_id,
+                # INF-01 §D: what the runner actually launched, versus what
+                # the client asked for — see `_track_rewrite` above.
+                "requested_cmd": requested_cmd, "final_cmd": req.cmd, "rewrites": rewrites}
 
     # ── Server setup (install deps on remote) ──
 

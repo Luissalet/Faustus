@@ -9,6 +9,15 @@ import type { ServeFields } from './serve';
 export type TaskType = 'serve' | 'download';
 export type TaskStatus = 'queued' | 'running' | 'ready' | 'done' | 'error' | 'crashed' | 'stopped' | string;
 
+/** One step of `/api/model/serve`'s normalization pipeline that actually
+ *  changed the command (INF-01 §D) — `before`/`after` are the full command
+ *  text at that step, so the task card can show a plain textual diff. */
+export interface CmdRewrite {
+  step: string;
+  before: string;
+  after: string;
+}
+
 export interface TaskPayload {
   repo_id?: string;
   remote_host?: string;
@@ -27,6 +36,15 @@ export interface TaskPayload {
   _gpus?: string;
   _dep?: boolean;
   env_path?: string;
+  /** The command exactly as this client sent it — before the server
+   *  normalized it into `_cmd`/`final_cmd`. Absent for tasks launched
+   *  before INF-01, or for a session adopted from an existing tmux pane. */
+  requested_cmd?: string;
+  /** What the runner actually launched, after every normalization step. */
+  final_cmd?: string;
+  /** Every normalization step that changed the command; `[]` when the
+   *  server wrote exactly what was requested. */
+  rewrites?: CmdRewrite[];
   [k: string]: unknown;
 }
 

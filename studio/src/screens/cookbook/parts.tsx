@@ -66,10 +66,13 @@ export function Field({ label, hint, children, wide = false }: { label: string; 
   );
 }
 
-export function Switch({ label, checked, onChange, hint }: { label: string; checked: boolean; onChange: (v: boolean) => void; hint?: string }) {
+/** `disabled` never hides the switch or clears its value (INF-01 §A/§C: an
+ *  incompatible or unverified option stays visible, with why) — it only
+ *  stops NEW toggling; `disabledReason` becomes the tooltip. */
+export function Switch({ label, checked, onChange, hint, disabled, disabledReason }: { label: string; checked: boolean; onChange: (v: boolean) => void; hint?: string; disabled?: boolean; disabledReason?: string }) {
   return (
-    <label className="fs-switch" title={hint}>
-      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+    <label className="fs-switch" title={disabled ? disabledReason || hint : hint} data-disabled={disabled || undefined}>
+      <input type="checkbox" checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
       <span>{label}</span>
     </label>
   );

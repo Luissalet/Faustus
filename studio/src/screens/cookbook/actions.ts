@@ -56,7 +56,7 @@ export async function launchServe(input: { shortName: string; repo: string; cmd:
       }
     }
   }
-  const { sessionId } = await serveModel({
+  const { sessionId, requestedCmd, finalCmd, rewrites } = await serveModel({
     repo_id: input.repo,
     cmd: input.cmd,
     remote_host: target.host || undefined,
@@ -65,7 +65,25 @@ export async function launchServe(input: { shortName: string; repo: string; cmd:
     gpus: env.gpus || undefined,
     platform: target.platform || undefined,
   });
-  const payload: TaskPayload = { repo_id: input.repo, remote_host: target.host || undefined, remote_server_key: target.key, remote_server_name: target.name, ssh_port: target.sshPort, _cmd: input.cmd, _fields: input.fields, _env: target.env, _envPath: target.envPath, _gpus: env.gpus, _dep: input.dep || undefined };
+  // INF-01 §D: keep what the server actually ran alongside what this client
+  // asked for, so the task card can show "rewritten by the server" instead
+  // of silently trusting `input.cmd` still describes the live process.
+  const payload: TaskPayload = {
+    repo_id: input.repo,
+    remote_host: target.host || undefined,
+    remote_server_key: target.key,
+    remote_server_name: target.name,
+    ssh_port: target.sshPort,
+    _cmd: input.cmd,
+    _fields: input.fields,
+    _env: target.env,
+    _envPath: target.envPath,
+    _gpus: env.gpus,
+    _dep: input.dep || undefined,
+    requested_cmd: requestedCmd || input.cmd,
+    final_cmd: finalCmd || input.cmd,
+    rewrites,
+  };
   return addTask(sessionId, input.shortName, input.dep ? 'download' : 'serve', payload, { host: target.host, serverKey: target.key, serverName: target.name, sshPort: target.sshPort, platform: target.platform });
 }
 

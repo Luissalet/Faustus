@@ -13,8 +13,8 @@
 import { useSyncExternalStore } from 'react';
 import { ApiError, asArray, getJson } from './api';
 import { listEndpoints, type ModelEndpoint } from './settings';
-import { redactTask, type LiveStatus, type Task, type TaskPayload, type TaskType } from '../lib/cookbook/tasks';
-import type { ServeCtx, ServeFields } from '../lib/cookbook/serve';
+import { redactTask, type CmdRewrite, type LiveStatus, type Task, type TaskPayload, type TaskType } from '../lib/cookbook/tasks';
+import type { ModelArchitecture, ServeCtx, ServeFields } from '../lib/cookbook/serve';
 
 /* ── shapes ── */
 
@@ -361,10 +361,18 @@ export interface ServeRequest {
   platform?: string;
 }
 
-export async function serveModel(body: ServeRequest): Promise<{ sessionId: string; endpointId: string | null }> {
+export async function serveModel(body: ServeRequest): Promise<{ sessionId: string; endpointId: string | null; requestedCmd: string; finalCmd: string; rewrites: CmdRewrite[] }> {
   const data = await postJson('/api/model/serve', body);
   if (data.ok === false) throw new ApiError(str(data.error || data.detail) || 'Launch failed', 400);
-  return { sessionId: str(data.session_id), endpointId: data.endpoint_id ? str(data.endpoint_id) : null };
+  return {
+    sessionId: str(data.session_id),
+    endpointId: data.endpoint_id ? str(data.endpoint_id) : null,
+    // INF-01 §D: what the server actually launched versus what was asked
+    // for; '' / [] when the backend predates this (older server build).
+    requestedCmd: typeof data.requested_cmd === 'string' ? data.requested_cmd : '',
+    finalCmd: typeof data.final_cmd === 'string' ? data.final_cmd : '',
+    rewrites: asArray<CmdRewrite>(data.rewrites),
+  };
 }
 
 export interface DownloadRequest {
@@ -629,6 +637,15 @@ export async function serveProfiles(model: string, server: Server | null, opts: 
   if (opts.quant) p.set('serve_quant', opts.quant);
   const raw = await getJson<{ system: HwSystem; profiles?: unknown }>(`/api/hwfit/profiles?${p.toString()}`, signal);
   return { system: raw.system, profiles: asArray<ServeProfile>(raw.profiles) };
+}
+
+/**
+ * `GET /api/models/architecture` (INF-01 §A): metadata-derived kind/MoE/MTP
+ * for `repo`, never a guess from its name. Passive — never loads a model.
+ */
+export async function modelArchitecture(repo: string, source: 'auto' | 'hf' | 'ollama' | 'llamacpp' = 'auto', signal?: AbortSignal): Promise<ModelArchitecture> {
+  const p = new URLSearchParams({ repo, source });
+  return getJson<ModelArchitecture>(`/api/models/architecture?${p.toString()}`, signal);
 }
 
 /* ── catalogues ── */

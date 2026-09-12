@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import subprocess
@@ -6,7 +7,9 @@ from pathlib import Path
 
 import pytest
 from fastapi import HTTPException
+from starlette.requests import Request
 
+import routes.cookbook_routes as cookbook_routes
 from routes.cookbook_helpers import (
     _cached_model_scan_script,
     _append_llama_cpp_linux_accel_build_lines,
@@ -31,6 +34,7 @@ from routes.cookbook_helpers import (
     _validate_serve_model_id,
     _shell_path,
     run_ssh_command_async,
+    ServeRequest,
 )
 
 
@@ -1031,3 +1035,107 @@ def test_validate_serve_cmd_rejects_unrelated_subshell_pipelines():
     ]:
         with pytest.raises(HTTPException):
             _validate_serve_cmd(cmd)
+
+
+# ── INF-01 §D: requested_cmd / final_cmd / rewrites on /api/model/serve ──────
+#
+# `model_serve` normalizes `req.cmd` through several server-side steps
+# before it ever reaches the runner (pip cache flag, llama_cpp.server KV
+# cache aliasing, ...). These tests prove the response never leaves that
+# silent: a command that gets rewritten reports exactly what changed and at
+# which step, and a command the server did not touch reports an empty
+# ledger and `final_cmd == requested_cmd`.
+
+class _InfFakeStream:
+    async def read(self, n: int = -1) -> bytes:
+        return b""
+
+
+class _InfFakeProc:
+    def __init__(self, returncode: int = 0):
+        self.returncode = returncode
+        self.stdout = _InfFakeStream()
+        self.stderr = _InfFakeStream()
+
+    async def wait(self) -> int:
+        return self.returncode
+
+
+def _inf01_serve_endpoint():
+    router = cookbook_routes.setup_cookbook_routes()
+    for route in router.routes:
+        if route.path == "/api/model/serve" and "POST" in route.methods:
+            return route.endpoint
+    raise AssertionError("POST /api/model/serve route not found")
+
+
+def _inf01_admin_request() -> Request:
+    request = Request({"type": "http", "method": "POST", "path": "/api/model/serve", "headers": [], "state": {}})
+    request.state.current_user = "admin"
+    return request
+
+
+@pytest.fixture
+def _inf01_serve_harness(monkeypatch, tmp_path):
+    monkeypatch.setattr(cookbook_routes, "require_admin", lambda request: None)
+    monkeypatch.setattr(cookbook_routes, "IS_WINDOWS", False)
+    monkeypatch.setattr(cookbook_routes, "TMUX_LOG_DIR", tmp_path / "odysseus-tmux")
+    monkeypatch.setattr(cookbook_routes, "_staging_dirs_restricted", set(), raising=False)
+
+    async def _available(*_args, **_kwargs):
+        return True
+
+    async def _fake_shell(cmd, **kwargs):
+        return _InfFakeProc(0)
+
+    monkeypatch.setattr(cookbook_routes, "_binary_available", _available)
+    monkeypatch.setattr(asyncio, "create_subprocess_shell", _fake_shell)
+
+
+@pytest.mark.asyncio
+async def test_model_serve_reports_a_pip_rewrite_and_the_before_after_diff(_inf01_serve_harness):
+    requested = "python -m pip install huggingface-hub"
+    body = await _inf01_serve_endpoint()(
+        _inf01_admin_request(),
+        ServeRequest(repo_id="huggingface-hub", cmd=requested),
+    )
+
+    assert body["ok"] is True
+    assert body["requested_cmd"] == requested
+    assert "--no-cache-dir" in body["final_cmd"]
+    assert body["final_cmd"] != body["requested_cmd"]
+
+    steps = [r["step"] for r in body["rewrites"]]
+    assert "pip_rewrite" in steps
+    pip_step = next(r for r in body["rewrites"] if r["step"] == "pip_rewrite")
+    assert pip_step["before"] == requested
+    assert pip_step["after"] == body["final_cmd"]
+
+
+@pytest.mark.asyncio
+async def test_model_serve_reports_no_rewrites_for_an_already_clean_command(_inf01_serve_harness):
+    clean_cmd = "llama-server --model model.gguf --host 0.0.0.0 --port 8081 -ngl 99 -c 8192"
+    body = await _inf01_serve_endpoint()(
+        _inf01_admin_request(),
+        ServeRequest(repo_id="acme/model", cmd=clean_cmd),
+    )
+
+    assert body["ok"] is True
+    assert body["requested_cmd"] == clean_cmd
+    assert body["final_cmd"] == clean_cmd
+    assert body["rewrites"] == []
+
+
+@pytest.mark.asyncio
+async def test_model_serve_reports_the_ollama_host_port_rewrite(_inf01_serve_harness):
+    body = await _inf01_serve_endpoint()(
+        _inf01_admin_request(),
+        ServeRequest(repo_id="ollama-serve", cmd="ollama serve"),
+    )
+
+    assert body["ok"] is True
+    assert body["requested_cmd"] == "ollama serve"
+    assert body["final_cmd"].startswith("OLLAMA_HOST=127.0.0.1:")
+    assert body["final_cmd"].endswith("ollama serve")
+    steps = [r["step"] for r in body["rewrites"]]
+    assert steps == ["ollama_host_port"]

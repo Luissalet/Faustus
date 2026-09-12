@@ -1,11 +1,33 @@
 import { CalendarClock, Play, Save, Sparkles } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Button, Skeleton } from '../../components';
-import { listGpus, serveCtx, serveProfiles, updateState, useCookbookState, type CachedModel, type Gpu, type Preset, type Server, type ServeProfile } from '../../adapters/cookbook';
-import { BACKEND_LABEL, backendChoices, remoteWindowsDiffusers, buildServeCmd, DEFAULT_PORT, detectBackend, detectModelOptimizations, detectReasoningParser, detectToolParser, ggufFileExpr, ggufFindExpr, ggufQuant, nextFreePort, portOf, projectorGguf, runnableGguf, bytesLabel, type Backend, type ServeFields } from '../../lib/cookbook/serve';
+import { listGpus, modelArchitecture, serveCtx, serveProfiles, updateState, useCookbookState, type CachedModel, type Gpu, type Preset, type Server, type ServeProfile } from '../../adapters/cookbook';
+import { BACKEND_LABEL, backendChoices, remoteWindowsDiffusers, buildServeCmd, DEFAULT_PORT, detectBackend, detectModelOptimizations, detectReasoningParser, detectToolParser, ggufFileExpr, ggufFindExpr, ggufQuant, nextFreePort, portOf, projectorGguf, runnableGguf, bytesLabel, type Backend, type ModelArchitecture, type ServeCmdReceipt, type ServeCtx, type ServeFields } from '../../lib/cookbook/serve';
 import { t, tn } from '../../i18n';
 import { launchServe, targetFor } from './actions';
 import { CopyButton, Field, Switch } from './parts';
+
+/** "Architecture: dense · 27B · source hf_config" / "unknown (metadata
+ *  unavailable)" — the chip's text, kept out of the JSX for readability. */
+function archChipLabel(arch: ModelArchitecture | null, loading: boolean): string {
+  if (loading) return t('Checking architecture…');
+  if (!arch || arch.kind === 'unknown') return t('Architecture: unknown (metadata unavailable)');
+  const params = arch.total_params ? `${Math.round(arch.total_params / 1e9)}B` : '?';
+  return t('Architecture: {kind} · {params} · source {source}', { kind: arch.kind, params, source: arch.source });
+}
+
+const UNVERIFIED_ARCH_REASON = () => t("Not verified for this model's architecture");
+
+/** "Implementation: python -m llama_cpp.server (remote Windows)" — the real
+ *  process behind the command, never just the protocol it shares with a
+ *  sibling implementation (H04). */
+function implementationLabel(receipt: ServeCmdReceipt, ctx: ServeCtx): string {
+  if (receipt.implementation === 'llama_cpp.server') {
+    const remoteWindows = ctx.platform.toLowerCase() === 'windows' && Boolean(ctx.remoteHost);
+    return `python -m llama_cpp.server${remoteWindows ? ` (${t('remote Windows')})` : ''}`;
+  }
+  return receipt.implementation;
+}
 
 /**
  * The launch form for one model: engine, the knobs that engine takes,
@@ -71,7 +93,31 @@ export function ServeForm({ model, server, hwBackend, initial, replaceTaskId, fo
     el?.focus();
   }, [focus]);
 
-  const opts = useMemo(() => detectModelOptimizations(repo), [repo]);
+  // INF-01 §A: architecture comes from metadata, never from `repo`'s
+  // spelling. Debounced and abortable so switching models quickly never
+  // queues stale answers, and it never blocks the form — `arch` just stays
+  // `null` (rendered as "unknown") until it resolves, if it ever does.
+  const [arch, setArch] = useState<ModelArchitecture | null>(null);
+  const [archLoading, setArchLoading] = useState(false);
+  useEffect(() => {
+    setArch(null);
+    setArchLoading(true);
+    const ac = new AbortController();
+    const timer = window.setTimeout(() => {
+      void modelArchitecture(repo, 'auto', ac.signal)
+        .then((a) => setArch(a))
+        .catch(() => setArch(null))
+        .finally(() => setArchLoading(false));
+    }, 400);
+    return () => {
+      window.clearTimeout(timer);
+      ac.abort();
+      setArchLoading(false);
+    };
+  }, [repo]);
+  const ctxWithArch = useMemo(() => ({ ...ctx, arch }), [ctx, arch]);
+
+  const opts = useMemo(() => detectModelOptimizations(repo, arch), [repo, arch]);
   const ggufs = useMemo(() => runnableGguf(model.gguf_files), [model.gguf_files]);
   const projectors = useMemo(() => projectorGguf(model.gguf_files), [model.gguf_files]);
   const usedPorts = state.tasks.filter((x) => x.type === 'serve' && (x.status === 'running' || x.status === 'ready') && (x.remoteHost || '') === (server && server.host ? server.host : '')).map((x) => portOf(x.payload?._cmd || '')).filter(Boolean);
@@ -86,11 +132,16 @@ export function ServeForm({ model, server, hwBackend, initial, replaceTaskId, fo
     }
     if (f.reasoning_parser === true) fields.reasoning_parser = detectReasoningParser(repo) || '';
     const modelArg = String(f.model_path || '').trim() || (model.is_local_dir && model.path ? `${model.path}/${repo}` : repo);
-    let cmd = buildServeCmd(fields, modelArg, backend, ctx);
-    if (String(f.extra || '').trim()) cmd += ' ' + String(f.extra).trim();
-    return cmd;
-  }, [f, port, backend, ggufs, projectors, model, repo, ctx]);
-  const cmd = cmdOverride ?? built;
+    const receipt = buildServeCmd(fields, modelArg, backend, ctxWithArch);
+    if (String(f.extra || '').trim()) receipt.cmd += ' ' + String(f.extra).trim();
+    return receipt;
+  }, [f, port, backend, ggufs, projectors, model, repo, ctxWithArch]);
+  const cmd = cmdOverride ?? built.cmd;
+  // A hand-edited command is never re-verified against the receipt above —
+  // it is exactly as manual and unverified as typing it fresh (§C).
+  const receipt: ServeCmdReceipt = cmdOverride !== null ? { ...built, cmd: cmdOverride, manual: true } : built;
+  const archUnverifiedMoe = arch?.kind !== 'moe';
+  const archUnverifiedMtp = arch?.mtp !== true;
 
   const launch = async () => {
     setBusy(true);
@@ -148,7 +199,7 @@ export function ServeForm({ model, server, hwBackend, initial, replaceTaskId, fo
       ))}
     </select>
   );
-  const sw = (k: string, label: string, hint?: string) => <Switch label={label} checked={Boolean(f[k])} onChange={(v) => set(k, v)} hint={hint} />;
+  const sw = (k: string, label: string, hint?: string, disabledReason?: string) => <Switch label={label} checked={Boolean(f[k])} onChange={(v) => set(k, v)} hint={hint} disabled={Boolean(disabledReason)} disabledReason={disabledReason} />;
 
   return (
     <div className="fs-ck__serve" data-testid="serve-form">
@@ -161,6 +212,9 @@ export function ServeForm({ model, server, hwBackend, initial, replaceTaskId, fo
             </button>
           ))}
         </div>
+        <span className="fs-chip" data-testid="arch-chip" title={arch?.note || undefined}>
+          {archChipLabel(arch, archLoading)}
+        </span>
         {image && remoteWindowsDiffusers(ctx) && (
           <p className="fs-ck__note">{t('Diffusers does not serve on a remote Windows machine yet, so only llama.cpp is offered for this target.')}</p>
         )}
@@ -234,10 +288,10 @@ export function ServeForm({ model, server, hwBackend, initial, replaceTaskId, fo
               {sw('auto_tool', t('Auto tool choice'), `--tool-call-parser ${detectToolParser(repo)}`)}
               {sw('prefix_cache', t('Prefix caching'))}
               {sw('enforce_eager', backend === 'vllm' ? t('Enforce eager') : t('No CUDA graph'))}
-              {sw('expert_parallel', t('Expert parallel'), opts.tips.join(' · ') || undefined)}
+              {sw('expert_parallel', t('Expert parallel'), opts.tips.join(' · ') || undefined, archUnverifiedMoe ? UNVERIFIED_ARCH_REASON() : undefined)}
               {sw('reasoning_parser', t('Reasoning parser'), detectReasoningParser(repo) ? `--reasoning-parser ${detectReasoningParser(repo)}` : t('No parser known for this family'))}
-              {backend === 'vllm' && sw('moe_env', t('MoE env vars'), opts.envVars.join(' ') || 'VLLM_USE_DEEP_GEMM=0 VLLM_USE_FLASHINFER_MOE_FP16=1')}
-              {backend === 'vllm' && sw('speculative', t('Speculative decoding'), opts.spec ? `${opts.spec.method} × ${opts.spec.tokens}` : undefined)}
+              {backend === 'vllm' && sw('moe_env', t('MoE env vars'), opts.envVars.join(' ') || 'VLLM_USE_DEEP_GEMM=0 VLLM_USE_FLASHINFER_MOE_FP16=1', archUnverifiedMoe ? UNVERIFIED_ARCH_REASON() : undefined)}
+              {backend === 'vllm' && sw('speculative', t('Speculative decoding'), opts.spec ? `${opts.spec.method} × ${opts.spec.tokens}` : undefined, archUnverifiedMtp ? UNVERIFIED_ARCH_REASON() : undefined)}
               {backend === 'vllm' && sw('language_model_only', t('Language model only'))}
               {backend === 'vllm' && sw('disable_custom_all_reduce', t('Disable custom all-reduce'))}
             </div>
@@ -292,7 +346,7 @@ export function ServeForm({ model, server, hwBackend, initial, replaceTaskId, fo
               {sw('flash_attn', t('Flash attention'))}
               {sw('llama_no_mmap', t('No mmap'))}
               {sw('llama_no_warmup', t('No warmup'))}
-              {sw('llama_speculative_mtp', t('Speculative MTP'))}
+              {sw('llama_speculative_mtp', t('Speculative MTP'), undefined, archUnverifiedMtp ? UNVERIFIED_ARCH_REASON() : undefined)}
               {projectors.length > 0 && sw('vision', t('Vision (mmproj)'), projectors[0].rel_path)}
             </div>
             {f.llama_speculative_mtp && <Field label={t('Draft tokens')}>{text('llama_spec_tokens', { placeholder: '3', inputMode: 'numeric' })}</Field>}
@@ -372,6 +426,29 @@ export function ServeForm({ model, server, hwBackend, initial, replaceTaskId, fo
           {cmdOverride !== null && <Button variant="ghost" size="sm" label={t('Back to the generated command')} onClick={() => setCmdOverride(null)} />}
           <CopyButton text={cmd} say={say} />
         </div>
+        <p className="fs-muted" data-testid="serve-implementation">
+          {t('Implementation: {impl}', { impl: implementationLabel(receipt, ctx) })}
+          {receipt.manual ? ` · ${t('manual, unverified')}` : ''}
+        </p>
+        {receipt.omitted.length > 0 && (
+          <div className="fs-ck__omitted" data-testid="serve-omitted">
+            <span className="fs-ck__label">{t('Not applied on this target')}</span>
+            <ul>
+              {receipt.omitted.map((o) => {
+                const id = `serve-omit-${o.option.replace(/[^a-z0-9]+/gi, '-')}`;
+                return (
+                  <li key={o.option}>
+                    <code aria-describedby={id}>{o.option}</code>
+                    <span id={id} className="fs-muted">
+                      {' '}
+                      — {o.reason}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
       </div>
 
       <div className="fs-ck__serve-actions">

@@ -7076,3 +7076,12 @@ withdrawn	retirado
 {n} rows	{n} filas
 {rows} · ~{before} tok → ~{after} tok	{rows} · ~{before} tok → ~{after} tok
 Expand the original turns	Desplegar los turnos originales
+Architecture: unknown (metadata unavailable)	Arquitectura: desconocida (metadatos no disponibles)
+Architecture: {kind} · {params} · source {source}	Arquitectura: {kind} · {params} · fuente {source}
+Checking architecture…	Comprobando arquitectura…
+Command rewritten by the server ({n} steps)	Comando reescrito por el servidor ({n} pasos)
+Implementation: {impl}	Implementación: {impl}
+Not applied on this target	No aplicado en este destino
+Not verified for this model's architecture	No verificado para la arquitectura de este modelo
+manual, unverified	manual, sin verificar
+remote Windows	Windows remoto

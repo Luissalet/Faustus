@@ -1038,6 +1038,12 @@ app.include_router(setup_git_routes())
 from routes.board_routes import setup_board_routes
 app.include_router(setup_board_routes())
 
+# Model architecture from metadata, not from a model's name (INF-01 §A):
+# GET /api/models/architecture -- dense/moe/unknown, MoE, MTP, source and
+# provenance (src/model_architecture.py).
+from routes.model_architecture_routes import setup_model_architecture_routes
+app.include_router(setup_model_architecture_routes())
+
 # Excursos (side threads, CONTRATO_EXCURSOS Lote A + CONTRATO_CABLES2 F1/F2
 # Lote A): side-thread creation, wiring panel data, thought-map, context
 # preview, reference cables, wired document/note materials, and per-turn
