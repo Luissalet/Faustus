@@ -1096,10 +1096,15 @@ function BehaviorModeSelector({
 }: { modes: BehaviorMode[]; activeId: string | null; onPick: (id: string) => void }) {
   const lang = useLang();
   const active = modes.find((m) => m.id === activeId) ?? null;
+  // Controlled so a pick closes the menu (seen live: it stayed open over the
+  // composer after choosing, and the next click landed on another option).
+  const [open, setOpen] = useState(false);
   return (
     <Popover
       side="top"
-      className="fs-studio__permission-menu"
+      className="fs-studio__permission-menu fs-studio__mode-menu"
+      open={open}
+      onOpenChange={setOpen}
       trigger={
         <button
           type="button"
@@ -1121,7 +1126,7 @@ function BehaviorModeSelector({
             type="button"
             role="radio"
             aria-checked={activeId === mode.id}
-            onClick={() => onPick(mode.id)}
+            onClick={() => { onPick(mode.id); setOpen(false); }}
             data-testid={`behavior-mode-option-${mode.id}`}
           >
             <strong>{modeLabel(mode, lang)}</strong>

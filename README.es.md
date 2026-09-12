@@ -84,6 +84,8 @@ Las tareas programadas necesitan un servidor Faustus en marcha y el ordenador de
 - Cada turno muestra la estrategia que eligió el agente (edición directa, planificar y ejecutar, investigación, revisión especializada, explorar alternativas) y por qué; un turno que merece repetirse puede guardarse como receta con sus entradas reales.
 - Buscar y navegar con **Ctrl+K**. Usar español o inglés, temas, controles de densidad, tamaño de texto ajustable y movimiento reducido.
 
+- Elige un **modo de comportamiento**: una postura conversacional con nombre (adversarial, socrático, escueto, mentor, equipo rojo, observador externo, editor, o uno escrito por ti) que cambia cómo argumenta Faustus, nunca lo que puede hacer; entra en el prompt después del preset de tarea y estrictamente antes de la política de contenido no fiable, también en modo agente e Incógnito ([API de modos](docs/api/behavior_modes.md)).
+
 ### Excursos y cables de contexto
 
 Lo que el modelo ve a continuación es exactamente lo que está conectado a la conversación: una regla tomada de [ThoughtDAG](https://github.com/chenxiachan/thoughtdag) y aplicada a chats lineales normales. El humano dibuja el grafo; ningún agente crea cables por su cuenta.

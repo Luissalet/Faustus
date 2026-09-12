@@ -4053,3 +4053,8 @@ aside.fs-panel { position: relative; }
   }
 }
 
+
+/* The behaviour-mode menu lists eight modes with a description each: cap it
+   to the viewport and scroll inside (seen live: the top of the list was cut
+   off above the window on a 750px-high viewport). */
+.fs-popover.fs-studio__mode-menu { max-block-size: min(72vh, 640px); overflow-y: auto; }

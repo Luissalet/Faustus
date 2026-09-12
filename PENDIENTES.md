@@ -257,35 +257,20 @@ deep-link de workflows, recetas desde un run real) ya no aparece aquí.
   bloque de memoria (visto una vez con qwen3.8 27B): ver
   `src/reply_language.py` si se repite.
 
-## Modos de comportamiento (pedido de Luis, 12-09, POR HACER — siguiente tras INF-05)
+## Modos de comportamiento (12-09) — HECHO
 
-- Luis: «Mete modos a cómo se comporta Faustus, así los usuarios pueden
-  personalizar contra quién hablan; por ejemplo, un modo *adversarial*».
-  Ejemplo entregado (captura): «No eres mi asistente, eres mi asesor y eres
-  más listo que yo: 1) nunca empieces dando la razón — la primera frase
-  cuestiona mi supuesto, señala lo que me falta o hace una pregunta que
-  exponga un hueco; 2) etiqueta la confianza de cada afirmación
-  [Certain]/[Likely]/[Guessing] y si casi todo es *Guessing*, dilo primero;
-  3) prohibidas «Great question», «You're absolutely right», «That makes a
-  lot of sense», «Absolutely», «Definitely»».
-- Lo que YA existe y hay que reutilizar, no duplicar: `src/preset_manager.py`
-  (presets `code_analyze`, `brainstorm`, `reason`… con `system_prompt`,
-  `temperature`, `max_tokens`) y `preset_system_prompt` en
-  `chat_processor.build_context_preface` (entra como system antes de la
-  política de seguridad). Un «modo» es un preset de COMPORTAMIENTO, no de
-  tarea: se combina con cualquier tarea y con el modo agente.
-- Diseño previsto: catálogo `config/behavior_modes/*.json` (`adversarial`,
-  `neutral`, `socratic`, `terse`, …; editables/creables por el usuario en
-  Ajustes), selector en el compositor (chip junto a Chat/Agent) y por
-  sesión (`session.behavior_mode`), inyección como bloque system propio
-  después de las reglas del agente y ANTES de la política de contenido no
-  fiable (las reglas de seguridad ganan siempre: un modo nunca desactiva
-  `UNTRUSTED_CONTEXT_POLICY` ni los permisos), etiqueta del modo en cada
-  respuesta (`metadata.behavior_mode`) y en la línea de métricas, i18n ES/EN,
-  y un check de que las frases prohibidas no aparecen en las respuestas del
-  modo adversarial (test con modelo falso + comprobación en vivo). Coste:
-  el bloque cuenta en el prompt; con modelos locales pequeños hay que medir
-  si obedecen el etiquetado [Certain]/[Likely]/[Guessing].
+- Implementado y visto en vivo (FAUSTUS.md §79): ocho modos integrados
+  (`default`, `adversarial` con el prompt de Luis, `socratic`, `terse`,
+  `mentor`, `red_team`, `observer`, `editor`), modos propios, chip en el
+  compositor, `/mode`, chip y aviso «Mode not fully honoured» en cada
+  respuesta, Ajustes › Behaviour modes. El 27B q8 siguió `adversarial` y
+  `terse` a la primera.
+- Queda por ver con modelos pequeños (9B y menos) si respetan las etiquetas
+  [Certain]/[Likely]/[Guessing]: `mode_check` lo dirá por turno; si fallan
+  sistemáticamente, un modo «adversarial-lite» sin etiquetas.
+- El chip y el aviso aparecen al refrescar el historial tras el turno (no
+  hay evento SSE en vivo para `behavior_mode`/`mode_check`); si molesta,
+  emitirlos en el evento `metrics`.
 
 ## Última evidencia
 
