@@ -71,12 +71,38 @@ _STOPWORDS = frozenset(
     "don doesn didn won wouldn couldn shouldn wasn weren isn aren haven hasn "
     "don't doesn't didn't won't wouldn't couldn't shouldn't "
     "it's i'm i've i'll i'd you're you've you'll he's she's we're we've they're they've "
-    "that's there's here's what's who's how's let's can't".split()
+    "that's there's here's what's who's how's let's can't "
+    # Spanish function words (FAUSTUS, 12-09-2026): the app is bilingual and a
+    # three-word Spanish prompt ("Di solo: seis") was pulling in an unrelated
+    # memory because "solo" scored as a rare content token. Same class of
+    # words as the English list above: articles, prepositions, pronouns,
+    # auxiliaries, common adverbs and courtesy fillers.
+    "el la los las un una unos unas lo al del de a en con sin por para sobre "
+    "entre hacia hasta desde tras segun según contra durante mediante "
+    "y e o u ni pero sino aunque porque pues como cuando donde dónde mientras "
+    "que qué quien quién quienes cual cuál cuales cuáles cuanto cuánto cuanta "
+    "yo tu tú el ella ello nosotros nosotras vosotros vosotras ellos ellas "
+    "me te se nos os le les mi mis tus su sus nuestro nuestra nuestros "
+    "nuestras vuestro vuestra este esta esto estos estas ese esa eso esos "
+    "esas aquel aquella aquello aquellos aquellas "
+    "es son era eran fue fueron ser sido siendo soy eres somos sois "
+    "esta está estan están estaba estaban estar estoy "
+    "hay ha han he has hemos habia había habian habían haber "
+    "no si sí ya solo sólo solamente tambien también tampoco muy mas más "
+    "menos tan tanto poco mucho muchos muchas algo nada alguien nadie "
+    "todo toda todos todas otro otra otros otras mismo misma "
+    "aqui aquí ahi ahí alli allí ahora luego antes despues después siempre "
+    "nunca bien mal asi así entonces ademas además incluso aun aún casi "
+    "hola gracias vale bueno buena claro favor perdon perdón dime di "
+    "puede pueden puedo podria podría quiero quiere hacer hace hacen tener "
+    "tiene tienen decir dice dicen ver dar ir voy va van".split()
 )
 
 def _content_tokens(text: str) -> list:
     """Extract meaningful content words: no stopwords, min 3 chars, lowercase."""
-    words = re.findall(r'[a-z0-9]+(?:[-_][a-z0-9]+)*', text.lower())
+    # `\w` rather than `[a-z0-9]`: an accented letter used to END a token, so
+    # "café" indexed as "caf" and "mañana" as "ma" + "ana". (FAUSTUS)
+    words = re.findall(r'[^\W_]+(?:[-_][^\W_]+)*', text.lower())
     return [w for w in words if len(w) >= 3 and w not in _STOPWORDS]
 
 
