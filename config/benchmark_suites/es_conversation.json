@@ -1,6 +1,6 @@
 {
   "id": "es_conversation",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "objective": "interactive",
   "cases": [
     {
@@ -91,9 +91,6 @@
       "suite": "es_conversation",
       "prompt": "En español: ¿cuántas letras tiene la palabra \"gato\"? Responde solo con el número, en cifras.",
       "checks": [
-        {
-          "kind": "language_es"
-        },
         {
           "kind": "regex",
           "arg": "\\b4\\b"

@@ -134,3 +134,20 @@ def test_all_check_kinds_are_exercised_above():
     exercised = {"contains", "regex", "json_valid", "json_has_keys", "max_words",
                  "language_es", "no_tool_leak"}
     assert exercised == set(CHECK_KINDS)
+
+
+def test_language_es_accepts_a_short_correct_spanish_reply_and_rejects_short_english():
+    """Third real run (12-09-2026): "Isósceles" and "Manzana, banana, uva" were
+    failing a stopword ratio that only means something for prose."""
+    case = _case([{"kind": "language_es"}])
+    assert suites.run_checks(case, "Isósceles")["passed"] is True
+    assert suites.run_checks(case, "Manzana, banana, uva")["passed"] is True
+    assert suites.run_checks(case, "It is an apple")["passed"] is False
+    assert suites.run_checks(case, "")["passed"] is False
+
+
+def test_contains_is_case_insensitive_but_keeps_accents():
+    case = _case([{"kind": "contains", "arg": "isósceles"}])
+    assert suites.run_checks(case, "Isósceles")["passed"] is True
+    assert suites.run_checks(case, "ISÓSCELES.")["passed"] is True
+    assert suites.run_checks(case, "isosceles")["passed"] is False

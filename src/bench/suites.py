@@ -182,10 +182,28 @@ _WORD_RE = re.compile(r"[^\W\d_]+", re.UNICODE)
 _ES_STOPWORD_RATIO_MIN = 0.15
 
 
+#: English function words a short non-Spanish reply would carry — the only
+#: thing a reply too short for the ratio check can be caught on.
+_EN_STOPWORDS = frozenset({
+    "the", "a", "an", "is", "are", "of", "and", "to", "in", "on", "it", "this", "that",
+    "with", "for", "was", "were", "be", "as", "at", "by", "from", "or", "not", "but",
+})
+#: A reply this short cannot be judged by stopword ratio at all.
+_SHORT_REPLY_WORDS = 4
+
+
 def _looks_like_spanish(output: str) -> bool:
+    """Heuristic: (a) a reply of up to `_SHORT_REPLY_WORDS` words — "Isósceles",
+    "Manzana, banana, uva" — passes unless it carries an English function
+    word (the third real run, 12-09-2026: correct one-word Spanish answers
+    were failing a ratio that needs prose to mean anything); (b) longer text
+    needs `_ES_STOPWORD_RATIO_MIN` of its words to be Spanish function words.
+    Still a heuristic, never a language identifier."""
     words = [w.lower() for w in _WORD_RE.findall(output or "")]
-    if len(words) < 3:
+    if not words:
         return False
+    if len(words) <= _SHORT_REPLY_WORDS:
+        return not any(w in _EN_STOPWORDS for w in words)
     hits = sum(1 for w in words if w in _ES_STOPWORDS)
     return (hits / len(words)) >= _ES_STOPWORD_RATIO_MIN
 
@@ -216,7 +234,9 @@ def _check_one(kind: str, arg: Any, output: str) -> bool:
     ran and succeeded."""
     text = output or ""
     if kind == "contains":
-        return isinstance(arg, str) and arg in text
+        # Case-insensitive (`casefold`): "Isósceles" answers a case that asks
+        # for "isósceles" — accents are kept, capitalisation is not the test.
+        return isinstance(arg, str) and arg.casefold() in text.casefold()
     if kind == "regex":
         if not isinstance(arg, str):
             return False
