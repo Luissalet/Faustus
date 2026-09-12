@@ -37,7 +37,7 @@ def _three_gpu_csv() -> str:
         # Narrow observed link (x4) on a card whose NAME says "AORUS" — the
         # heuristic must fire because of the link, never because of the name.
         _row(2, "NVIDIA GeForce RTX 5060 Ti (AORUS enclosure)", "GPU-cccc", "0000:03:00.0",
-             16311, 0, "535.129.03", 4, 4, 4, 16),
+             16311, 0, "535.129.03", 4, 4, 4, 4),
     ]
     return "\n".join(rows) + "\n"
 
@@ -60,7 +60,7 @@ def test_parse_topology_query_three_gpu_fixture():
     assert g1.transport is None
 
     g2 = gpus[2]
-    assert g2.link == LinkInfo(gen_current=4, width_current=4, gen_max=4, width_max=16, source="observed")
+    assert g2.link == LinkInfo(gen_current=4, width_current=4, gen_max=4, width_max=4, source="observed")
     assert g2.transport is not None
     assert g2.transport.kind == "unknown"
     assert g2.transport.source == "heuristic"
@@ -249,3 +249,16 @@ def test_annotate_transport_rejects_bad_kind(monkeypatch, tmp_path):
     from src.contracts.base import ContractError
     with pytest.raises(ContractError):
         gt.annotate_transport("prof-x", "uuid:GPU-a", "usb3", "", "")
+
+
+def test_heuristic_transport_uses_the_maximum_width_not_the_idle_one():
+    """Seen live (12-09-2026): a 4070 Ti idles at Gen1 x16 and two AORUS eGPUs
+    sit at Gen4 x4 with x4 as their maximum. A card whose CURRENT width sagged
+    to x4 but can do x16 is not an external enclosure candidate."""
+    sagging = GpuInfo(index=0, name="x", link=LinkInfo(
+        gen_current=1, width_current=4, gen_max=4, width_max=16, source="observed"))
+    assert gt.heuristic_transport(sagging) is None
+    structurally_narrow = GpuInfo(index=1, name="y", link=LinkInfo(
+        gen_current=4, width_current=4, gen_max=4, width_max=4, source="observed"))
+    hint = gt.heuristic_transport(structurally_narrow)
+    assert hint is not None and hint.source == "heuristic" and "x4" in hint.note

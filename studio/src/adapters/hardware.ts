@@ -567,9 +567,19 @@ export function transportTone(transport: TransportInfo | null): 'ok' | 'warning'
 export function linkLabel(gpu: Pick<GpuInfo, 'link' | 'transport'>): string {
   const link = gpu.link;
   if (!link || link.source === 'absent' || link.gen_current == null || link.width_current == null) return t('not reported');
-  const base = t('Gen{gen} x{width} ({source})', {
-    gen: String(link.gen_current), width: String(link.width_current), source: sourceLabel(link.source),
-  });
+  // The current generation sags at idle (a 4070 Ti reports Gen1 x16 while
+  // idle and Gen4 x16 under load), so the maximum the driver reports is
+  // shown next to it whenever it differs — otherwise "Gen1" reads as a fault.
+  const hasMax = link.gen_max != null && link.width_max != null;
+  const differs = hasMax && (link.gen_max !== link.gen_current || link.width_max !== link.width_current);
+  const base = differs
+    ? t('Gen{gen} x{width} now · up to Gen{genMax} x{widthMax} ({source})', {
+        gen: String(link.gen_current), width: String(link.width_current),
+        genMax: String(link.gen_max), widthMax: String(link.width_max), source: sourceLabel(link.source),
+      })
+    : t('Gen{gen} x{width} ({source})', {
+        gen: String(link.gen_current), width: String(link.width_current), source: sourceLabel(link.source),
+      });
   if (gpu.transport && gpu.transport.source === 'heuristic') {
     return t('{base} — narrow: may be an external enclosure, verify manually (heuristic)', { base });
   }

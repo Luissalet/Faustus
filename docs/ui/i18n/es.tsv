@@ -7191,6 +7191,7 @@ GPU {key} is still index {idx}	GPU {key} sigue siendo el índice {idx}
 GPU {key} was index {prev}, now missing	GPU {key} era el índice {prev}, ahora falta
 GPU {key} was index {prev}, now {curr} (moved)	GPU {key} era el índice {prev}, ahora {curr} (se movió)
 Gen{gen} x{width} ({source})	Gen{gen} x{width} ({source})
+Gen{gen} x{width} now · up to Gen{genMax} x{widthMax} ({source})	Gen{gen} x{width} ahora · hasta Gen{genMax} x{widthMax} ({source})
 Index	Índice
 KV cache	Caché KV
 Margin	Margen

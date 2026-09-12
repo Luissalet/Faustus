@@ -76,6 +76,27 @@ def _residents_and_placement(endpoint: str):
     else (a llama.cpp/vLLM/remote endpoint, or none given at all). Never
     raises: an unreachable Ollama just means no residents to attribute."""
     root = vram_admission.ollama_root(endpoint) if endpoint else None
+    if not root and not endpoint:
+        # Servers › Physical GPUs asks with no endpoint at all: attribute the
+        # residents of every Ollama declared for THIS machine (seen live
+        # 12-09-2026: with no endpoint the resident 27B landed in "other
+        # processes (observed)", which is both wrong and mislabelled).
+        try:
+            from routes.local_models_routes import list_ollama_endpoints
+            roots = [ep["root"] for ep in list_ollama_endpoints() if ep.get("same_machine")]
+        except Exception as e:  # noqa: BLE001
+            logger.debug("hardware_routes: endpoint discovery failed: %s", e)
+            roots = []
+        residents_all: list = []
+        placement_all: dict = {}
+        first_root = None
+        for r in roots:
+            res, pl, _ = _residents_and_placement(r + "/v1")
+            if res:
+                first_root = first_root or r
+                residents_all.extend(res)
+                placement_all.update(pl)
+        return residents_all, placement_all, first_root
     if not root:
         return [], {}, root
     try:

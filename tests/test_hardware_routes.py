@@ -234,3 +234,30 @@ def test_context_limits_evaluated_from_bench_runs(monkeypatch):
     assert limits["evaluated"]["min"] == 4096
     assert limits["evaluated"]["max"] == 4096
     assert limits["evaluated"]["source"] == "bench_runs"
+
+
+def test_budget_without_endpoint_attributes_every_local_ollama(monkeypatch):
+    """Servers › Physical GPUs asks with no endpoint: the residents of every
+    same-machine Ollama declared must still be attributed (seen live: the
+    resident 27B showed up as 'other processes (observed)')."""
+    import routes.hardware_routes as hr
+    import routes.local_models_routes as lmr
+
+    monkeypatch.setattr(lmr, "list_ollama_endpoints", lambda *a, **k: [
+        {"root": "http://127.0.0.1:11434", "same_machine": True},
+        {"root": "http://10.0.0.9:11434", "same_machine": False},
+    ])
+    seen = []
+
+    def fake_get(root, path, timeout):
+        seen.append((root, path))
+        return {"models": [{"name": "qwen:27b", "size_vram": 10}]}
+
+    monkeypatch.setattr(hr.vram_admission, "_get", fake_get)
+    monkeypatch.setattr(hr.gpu_shared_memory, "vram_snapshot", lambda: {"supported": False, "reason": "test"})
+    monkeypatch.setattr(hr.gpu_placement, "placement", lambda root, residents, gpus: {"qwen:27b": {"per_gpu": [{"index": 0, "bytes": None}], "pid": None}})
+    residents, placement, root = hr._residents_and_placement("")
+    assert [r["name"] for r in residents] == ["qwen:27b"]
+    assert "qwen:27b" in placement
+    assert root == "http://127.0.0.1:11434"
+    assert all(r == "http://127.0.0.1:11434" for r, _ in seen)  # the remote one is never probed

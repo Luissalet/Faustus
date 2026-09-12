@@ -2105,6 +2105,7 @@ export const es: Record<string, string> = {
   "Generation, tok/s (median · p95 · n)": "Generación, tok/s (mediana · p95 · n)",
   "Generator": "Generador",
   "Gen{gen} x{width} ({source})": "Gen{gen} x{width} ({source})",
+  "Gen{gen} x{width} now · up to Gen{genMax} x{widthMax} ({source})": "Gen{gen} x{width} ahora · hasta Gen{genMax} x{widthMax} ({source})",
   "Get": "Traer",
   "Get a key from {provider}": "Obtener una clave de {provider}",
   "Get plan": "Obtener plan",

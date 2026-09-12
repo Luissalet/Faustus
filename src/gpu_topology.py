@@ -93,11 +93,16 @@ def heuristic_transport(gpu: GpuInfo) -> Optional[TransportInfo]:
         return None
     if link.gen_current is None or link.width_current is None:
         return None
-    if link.width_current > _NARROW_WIDTH:
+    # The CURRENT width can sag under power management; the link's MAXIMUM
+    # width is the structural fact when the driver reports it (seen live
+    # 12-09-2026: a 4070 Ti idling at Gen1 x16 is not "narrow", two AORUS
+    # eGPUs at Gen4 x4 with x4 maximum are).
+    width = link.width_max if link.width_max is not None else link.width_current
+    if width > _NARROW_WIDTH:
         return None
     return TransportInfo(
         kind="unknown", source="heuristic",
-        note="narrow link (x4): may be an external enclosure; verify manually",
+        note=f"narrow link (x{width}): may be an external enclosure; verify manually",
         observed_at=None,
     )
 
