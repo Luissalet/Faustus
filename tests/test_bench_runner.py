@@ -345,3 +345,28 @@ def test_compare_different_model_is_not_comparable():
 def test_compare_missing_run_raises_not_found():
     with pytest.raises(runner.RunNotFound):
         runner.compare("does-not-exist", "also-missing")
+
+
+# ── thinking deltas are not the answer (first real run, 12-09-2026) ─────────
+
+@pytest.mark.asyncio
+async def test_thinking_deltas_are_set_aside_and_an_excerpt_is_kept(fake_suite, admit_calls, monkeypatch):
+    async def _stream(url, model, messages, **kwargs):
+        yield 'data: ' + json.dumps({"delta": "Okay, the user asks for the capital of France, so ", "thinking": True}) + '\n\n'
+        yield 'data: ' + json.dumps({"delta": "I should answer briefly in Spanish.", "thinking": True}) + '\n\n'
+        yield 'data: ' + json.dumps({"delta": "La capital de Francia es "}) + '\n\n'
+        yield 'data: ' + json.dumps({"delta": "París."}) + '\n\n'
+        yield 'data: ' + json.dumps({"type": "usage", "data": {"input_tokens": 10, "output_tokens": 8}}) + '\n\n'
+        yield 'data: [DONE]\n\n'
+    monkeypatch.setattr("src.llm_core.stream_llm", _stream)
+
+    run = runner.plan(_profile(), "fake_suite", {"repeats": 1, "max_cases": 1}, "alice")
+    result = await runner.start(run.id)
+    sample = result.samples[0]
+    assert sample.output_excerpt == "La capital de Francia es París."
+    assert sample.output_chars == len("La capital de Francia es París.")
+    assert sample.thinking_chars == len("Okay, the user asks for the capital of France, so I should answer briefly in Spanish.")
+    # round-trips through the persisted contract
+    from src.contracts.inference import RunSample
+    again = RunSample.parse(sample.to_dict(), "sample")
+    assert again.output_excerpt == sample.output_excerpt and again.thinking_chars == sample.thinking_chars

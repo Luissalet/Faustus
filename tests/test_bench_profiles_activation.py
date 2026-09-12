@@ -223,3 +223,19 @@ def test_activations_bookkeeping_never_appears_in_list_profiles(declared_endpoin
     listed_ids = {p.id for p in profiles.list_profiles()}
     assert listed_ids == {profile.id}
     assert profiles.get_profile(profiles._ACTIVATIONS_KEY) is None
+
+
+def test_current_profile_names_an_external_ollama_by_its_url(monkeypatch):
+    """First real run (12-09-2026): the resident Ollama at 127.0.0.1:11434 came
+    out `implementation: unknown, managed: faustus` — nothing Faustus did not
+    launch is managed by it, and an Ollama URL is recognisable on its own."""
+    from src import launch_receipts
+    from src.bench import profiles
+    monkeypatch.setattr(launch_receipts, "identity_for_endpoint", lambda url, **k: None)
+    monkeypatch.setattr(launch_receipts, "find_by_endpoint", lambda host, port: None)
+    p = profiles.current_profile("http://127.0.0.1:11434/v1", "qwen:27b", "alice")
+    assert p.engine.implementation == "ollama"
+    assert p.engine.managed == "external"
+    assert (p.engine.host, p.engine.port) == ("127.0.0.1", 11434)
+    q = profiles.current_profile("http://10.0.0.5:8080/v1", "x", "alice")
+    assert q.engine.implementation == "unknown" and q.engine.managed == "external"

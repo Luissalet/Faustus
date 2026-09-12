@@ -990,3 +990,14 @@
   background: var(--fs-surface-1);
 }
 .fs-ssh-trust p { font-size: 14px; line-height: 1.5; }
+
+/* INF-04: what the suite's checks actually judged, under a failed case. */
+.fs-ck__excerpt {
+  margin: 4px 0 6px;
+  padding: 6px 10px;
+  border-inline-start: 2px solid var(--fs-border, #444);
+  color: var(--fs-fg-muted, #bbb);
+  font-size: 0.85rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

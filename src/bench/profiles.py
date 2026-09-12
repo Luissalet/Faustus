@@ -161,7 +161,14 @@ def current_profile(
         # itself named are still known and are what `src/bench/runner.py`
         # needs to reach this endpoint again later; losing them here would
         # make every profile built from an unrecognised engine unrunnable.
-        engine = EngineIdentity(implementation="unknown", host=host, port=port)
+        # An Ollama this machine can gate is recognisable by its URL alone
+        # (`vram_admission.ollama_root`: port 11434 or an "ollama" host) —
+        # the same hint INF-03's chat path uses — and nothing Faustus did not
+        # launch is "managed: faustus" (seen on the first real run,
+        # 12-09-2026: the resident Ollama came out `unknown`/`faustus`).
+        from src import vram_admission
+        implementation = "ollama" if vram_admission.ollama_root(endpoint_url or "") else "unknown"
+        engine = EngineIdentity(implementation=implementation, host=host, port=port, managed="external")
 
     options: Dict[str, Any] = {}
     try:

@@ -69,7 +69,7 @@ from src.contracts.inference import (
     BenchmarkRun, Comparison, ComparisonDeltas, InferenceProfile,
     RunBudget, RunConditions, RunInterruption, RunSample, RunStat,
     RunSummary, SampleQuality, SampleSizes,
-    RUN_STATES_IN_FLIGHT, RUN_STATES_TERMINAL,
+    RUN_STATES_IN_FLIGHT, RUN_STATES_TERMINAL, OUTPUT_EXCERPT_CHARS,
 )
 from src.execution_metrics import build_execution_metrics
 
@@ -384,6 +384,7 @@ async def _run_one_case(
     started_monotonic = time.monotonic()
     first_token_monotonic: Optional[float] = None
     parts: List[str] = []
+    thinking_parts: List[str] = []
     usage_payload: Dict[str, Any] = {}
     error_text: Optional[str] = None
 
@@ -404,7 +405,15 @@ async def _run_one_case(
                         # unlike chat_routes.py's bound background task).
                         if heartbeat_task is not None and not heartbeat_task.done():
                             heartbeat_task.cancel()
-                    parts.append(str(event.get("delta") or ""))
+                    # A reasoning model's thinking streams as deltas flagged
+                    # `thinking: True` (`src/llm_core.py`). It is not the
+                    # answer the suite's checks judge — seen on the first real
+                    # run (12-09-2026): qwen3.8's English reasoning made every
+                    # Spanish case "fail" language_es and max_words.
+                    if event.get("thinking"):
+                        thinking_parts.append(str(event.get("delta") or ""))
+                    else:
+                        parts.append(str(event.get("delta") or ""))
             if _is_cancelled(run_id):
                 # §09/A3: the in-flight case is cancelled through stream_llm's
                 # OWN generator-close path, not by aborting the HTTP call out
@@ -419,6 +428,7 @@ async def _run_one_case(
     finished_monotonic = time.monotonic()
 
     output = "".join(parts)
+    thinking_chars = len("".join(thinking_parts))
     engine_timings = usage_payload.get("engine_timings") if isinstance(usage_payload, dict) else None
     usage_tokens: Optional[Dict[str, Any]] = None
     generated_count = 0
@@ -451,6 +461,8 @@ async def _run_one_case(
     sample = RunSample(
         case_id=case.id, repeat=repeat, metrics=metrics, quality=quality,
         output_chars=len(output), error=error_text,
+        output_excerpt=output[:OUTPUT_EXCERPT_CHARS] if output else None,
+        thinking_chars=thinking_chars,
     )
     return sample, generated_count
 

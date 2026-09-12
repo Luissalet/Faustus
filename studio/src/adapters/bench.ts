@@ -177,6 +177,11 @@ export interface RunSample {
   quality: SampleQuality;
   output_chars: number | null;
   error: string | null;
+  /** First 400 characters of what the checks actually judged (the answer,
+   *  never the model's thinking) — `null` when the backend predates it. */
+  output_excerpt: string | null;
+  /** Characters of reasoning set aside before judging; `null` = unknown. */
+  thinking_chars: number | null;
 }
 
 export interface RunStat {

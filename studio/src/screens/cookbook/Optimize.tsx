@@ -145,6 +145,15 @@ function SampleRow({ sample }: { sample: RunSample }) {
           </p>
         ) : null}
         {sample.quality.failed_checks.length > 0 && <p className="fs-muted">{t('Failed checks')}: {sample.quality.failed_checks.join(', ')}</p>}
+        {typeof sample.output_excerpt === 'string' && sample.output_excerpt.length > 0 && (
+          <blockquote className="fs-ck__excerpt" data-testid={`bench-sample-excerpt-${sample.case_id}-${sample.repeat}`}>
+            {sample.output_excerpt}
+            {sample.output_chars != null && sample.output_chars > sample.output_excerpt.length ? '…' : ''}
+          </blockquote>
+        )}
+        {typeof sample.thinking_chars === 'number' && sample.thinking_chars > 0 && (
+          <p className="fs-muted">{t('{n} characters of thinking were set aside before judging', { n: String(sample.thinking_chars) })}</p>
+        )}
         {execution && <ExecutionTimeline execution={execution} variant="compact" testId={`bench-sample-timeline-${sample.case_id}-${sample.repeat}`} />}
       </div>
     </li>

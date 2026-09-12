@@ -6923,6 +6923,7 @@ export const es: Record<string, string> = {
   "{n} char": "{n} carácter",
   "{n} character": "{n} carácter",
   "{n} characters": "{n} caracteres",
+  "{n} characters of thinking were set aside before judging": "{n} caracteres de razonamiento se apartaron antes de evaluar",
   "{n} chars": "{n} caracteres",
   "{n} chat": "{n} chat",
   "{n} chat deleted": "{n} chat borrado",

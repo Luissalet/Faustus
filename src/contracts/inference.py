@@ -1215,6 +1215,11 @@ class SampleQuality:
         return {"passed": self.passed, "failed_checks": list(self.failed_checks)}
 
 
+#: Bound on `RunSample.output_excerpt` — enough to see why a check failed,
+#: never a transcript.
+OUTPUT_EXCERPT_CHARS = 400
+
+
 @dataclass(frozen=True)
 class RunSample:
     case_id: str
@@ -1223,8 +1228,16 @@ class RunSample:
     quality: SampleQuality = field(default_factory=SampleQuality)
     output_chars: Optional[int] = None
     error: Optional[str] = None
+    # First real run (12-09-2026): every case "failed" language_es/max_words
+    # and nobody could tell why from `output_chars` alone — the model's
+    # thinking had been judged as its answer. A bounded excerpt of what was
+    # actually checked, and how much thinking was set aside, are diagnosis,
+    # not telemetry: suite prompts are fixtures of this repo, never a user's.
+    output_excerpt: Optional[str] = None
+    thinking_chars: Optional[int] = None
 
-    _KEYS = ("case_id", "repeat", "metrics", "quality", "output_chars", "error")
+    _KEYS = ("case_id", "repeat", "metrics", "quality", "output_chars", "error",
+             "output_excerpt", "thinking_chars")
 
     @classmethod
     def parse(cls, raw: Any, path: str) -> "RunSample":
@@ -1238,6 +1251,9 @@ class RunSample:
             quality=SampleQuality.parse(data.get("quality"), f"{path}.quality"),
             output_chars=whole(data, "output_chars", path, minimum=0),
             error=text(data, "error", path, required=False, default=None, allow_blank=False) or None,
+            output_excerpt=text(data, "output_excerpt", path, required=False, default=None,
+                                allow_blank=True, max_len=OUTPUT_EXCERPT_CHARS) or None,
+            thinking_chars=whole(data, "thinking_chars", path, minimum=0),
         )
 
     def to_dict(self) -> Dict[str, Any]:
@@ -1248,6 +1264,8 @@ class RunSample:
             "quality": self.quality.to_dict(),
             "output_chars": self.output_chars,
             "error": self.error,
+            "output_excerpt": self.output_excerpt,
+            "thinking_chars": self.thinking_chars,
         }
 
 
