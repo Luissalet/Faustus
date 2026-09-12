@@ -58,7 +58,7 @@ from routes.cookbook_helpers import (
     _validate_local_dir, _validate_gpus, _shell_path,
     _ps_squote, _bash_squote, _validate_serve_cmd, _parse_serve_phase, OLLAMA_MISSING_HINT,
     _safe_env_prefix, _local_windows_bash_env_prefix, _local_tooling_path_export, _append_serve_preflight_exit_lines,
-    _append_serve_exit_code_lines, _append_llama_cpp_linux_accel_build_lines, _cached_model_scan_script,
+    _append_serve_exit_code_lines, _append_llama_cpp_linux_accel_build_lines, _cached_model_scan_script, _write_scan_script,
     load_stored_hf_token,
     _append_vllm_linux_preflight_lines, _ollama_bind_from_cmd, _pip_install_fallback_chain,
     _pip_install_no_cache, _user_shell_path_bootstrap, _venv_safe_local_pip_install_cmd,
@@ -1837,8 +1837,10 @@ def setup_cookbook_routes() -> APIRouter:
                     model_dirs.append(d)
         paths_code = _cached_model_scan_script(model_dirs)
 
-        scan_py = TMUX_LOG_DIR / "scan_cache.py"
-        scan_py.write_text(paths_code, encoding="utf-8")
+        try:
+            scan_py = _write_scan_script(paths_code, TMUX_LOG_DIR)
+        except OSError as exc:
+            return {"models": [], "host": host or "local", "error": f"cannot write the scanner script: {exc}"}
 
         async def _run_cached_scan_once():
             if host:
@@ -1875,18 +1877,24 @@ def setup_cookbook_routes() -> APIRouter:
                 )
             return await asyncio.wait_for(proc.communicate(), timeout=60), proc.returncode
 
-        (stdout_b, stderr_b), returncode = await _run_cached_scan_once()
-        stderr_txt = stderr_b.decode(errors="replace").strip()
-        stdout_txt = stdout_b.decode(errors="replace").strip()
-        if host and returncode != 0 and _ssh_host_key_changed(stderr_txt):
-            ok, detail = await _repair_cookbook_known_host(host, ssh_port)
-            if ok:
-                logger.info("Repaired Cookbook known_hosts for %s after host-key-change scan failure", host)
-                (stdout_b, stderr_b), returncode = await _run_cached_scan_once()
-                stderr_txt = stderr_b.decode(errors="replace").strip()
-                stdout_txt = stdout_b.decode(errors="replace").strip()
-            else:
-                logger.warning("Failed to repair Cookbook known_hosts for %s: %s", host, detail[:300])
+        try:
+            (stdout_b, stderr_b), returncode = await _run_cached_scan_once()
+            stderr_txt = stderr_b.decode(errors="replace").strip()
+            stdout_txt = stdout_b.decode(errors="replace").strip()
+            if host and returncode != 0 and _ssh_host_key_changed(stderr_txt):
+                ok, detail = await _repair_cookbook_known_host(host, ssh_port)
+                if ok:
+                    logger.info("Repaired Cookbook known_hosts for %s after host-key-change scan failure", host)
+                    (stdout_b, stderr_b), returncode = await _run_cached_scan_once()
+                    stderr_txt = stderr_b.decode(errors="replace").strip()
+                    stdout_txt = stdout_b.decode(errors="replace").strip()
+                else:
+                    logger.warning("Failed to repair Cookbook known_hosts for %s: %s", host, detail[:300])
+        finally:
+            try:
+                scan_py.unlink()
+            except OSError:
+                pass
         if returncode != 0:
             msg = stderr_txt or f"Cached model scan failed with exit code {returncode}"
             logger.warning(f"Cached model scan failed host={host or 'local'} rc={returncode}: {msg[:500]}")

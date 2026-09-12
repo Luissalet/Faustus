@@ -1145,3 +1145,50 @@ async def test_model_serve_reports_the_ollama_host_port_rewrite(_inf01_serve_har
     assert body["final_cmd"].endswith("ollama serve")
     steps = [r["step"] for r in body["rewrites"]]
     assert steps == ["ollama_host_port"]
+
+
+# ── /api/model/cached scanner file (seen live on Windows, 12-09-2026) ────────
+
+def test_write_scan_script_uses_a_fresh_name_per_call(tmp_path):
+    from routes.cookbook_helpers import _write_scan_script
+
+    a = _write_scan_script("print(1)", tmp_path)
+    b = _write_scan_script("print(2)", tmp_path)
+    assert a != b and a.parent == tmp_path == b.parent
+    assert a.name.startswith("scan_cache_") and a.suffix == ".py"
+    assert a.read_text(encoding="utf-8") == "print(1)"
+    assert b.read_text(encoding="utf-8") == "print(2)"
+
+
+def test_write_scan_script_falls_back_when_preferred_dir_is_unwritable(tmp_path, monkeypatch):
+    """A stale, non-writable `scan_cache.py` (or an unwritable log dir) must
+    not turn the whole Models tab into a 500."""
+    import tempfile
+    from routes.cookbook_helpers import _write_scan_script
+
+    fallback = tmp_path / "fallback"
+    fallback.mkdir()
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(fallback))
+    blocked = tmp_path / "blocked.txt"
+    blocked.write_text("not a directory", encoding="utf-8")
+
+    out = _write_scan_script("print(3)", blocked)  # mkdir on a file → OSError
+    assert out.parent == fallback
+    assert out.read_text(encoding="utf-8") == "print(3)"
+
+
+def test_model_cached_reports_an_unwritable_scanner_instead_of_500(monkeypatch, tmp_path):
+    from routes import cookbook_helpers
+
+    def boom(code, preferred_dir):
+        raise OSError("Permission denied: scan_cache.py")
+
+    monkeypatch.setattr(cookbook_routes, "_write_scan_script", boom)
+    monkeypatch.setattr(cookbook_routes, "require_admin", lambda request: None)
+    router = cookbook_routes.setup_cookbook_routes() if hasattr(cookbook_routes, "setup_cookbook_routes") else None
+    assert router is not None
+    route = next(r for r in router.routes if getattr(r, "path", "") == "/api/model/cached")
+    scope = {"type": "http", "method": "GET", "path": "/api/model/cached", "headers": [], "query_string": b""}
+    result = asyncio.run(route.endpoint(Request(scope), host=None, model_dir=None, ssh_port=None, platform=None))
+    assert result["models"] == []
+    assert "cannot write the scanner script" in result["error"]

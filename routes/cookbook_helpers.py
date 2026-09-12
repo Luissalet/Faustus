@@ -372,6 +372,31 @@ def _user_shell_path_bootstrap() -> list[str]:
     ]
 
 
+def _write_scan_script(code: str, preferred_dir: Path) -> Path:
+    """Write the cached-model scanner to a fresh, uniquely named file and
+    return its path. Seen live on Windows (12-09-2026): a fixed
+    `scan_cache.py` left behind by an earlier, differently-privileged run
+    was not writable by the server process, so every `/api/model/cached`
+    call died with `PermissionError` and the Models tab showed "responded
+    500". A per-call name also removes the race between two concurrent
+    scans (local + SSH host) rewriting the same file under each other.
+    Falls back to the system temp dir when `preferred_dir` cannot be written.
+    The caller deletes the file when the scan finishes."""
+    import tempfile
+    import uuid as _uuid
+
+    name = f"scan_cache_{os.getpid()}_{_uuid.uuid4().hex[:8]}.py"
+    for base in (preferred_dir, Path(tempfile.gettempdir())):
+        try:
+            base.mkdir(parents=True, exist_ok=True)
+            target = base / name
+            target.write_text(code, encoding="utf-8")
+            return target
+        except OSError as exc:
+            logger.warning("cannot write cached-model scanner under %s: %s", base, exc)
+    raise OSError("no writable location for the cached-model scanner")
+
+
 def _cached_model_scan_script(model_dirs: list[str] | None = None, add_hf_cache: str | None = None) -> str:
     """Build the standalone Python scanner used by /api/model/cached.
     Allows for an additional HuggingFace cache path to be scanned (i.e. Windows HF cache for local WSL envs.)
