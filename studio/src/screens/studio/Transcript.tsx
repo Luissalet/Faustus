@@ -1,7 +1,7 @@
-import { ArrowDown, BookmarkPlus, Check, ChevronDown, Copy, Expand, FileText, FoldVertical, GitBranch, GitBranchPlus, GitCommit, GitFork, Pencil, Quote, RefreshCw, Telescope, Trash2, UploadCloud, Volume2, VolumeX, X } from 'lucide-react';
+import { AlertTriangle, ArrowDown, BookmarkPlus, Check, ChevronDown, Copy, Expand, FileText, FoldVertical, GitBranch, GitBranchPlus, GitCommit, GitFork, Pencil, Quote, RefreshCw, Telescope, Theater, Trash2, UploadCloud, Volume2, VolumeX, X } from 'lucide-react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Link } from 'react-router';
-import { Fragment, lazy, Suspense, useCallback, useEffect, useRef, useState, type RefObject } from 'react';
+import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { Button, describeError, ExecutionTimeline, friendlyError, IconButton } from '../../components';
 import { fetchCompactionEvent, pinCompactionFragment, type AskUser, type CompactionEvent, type ContextLedger, type ContextReceipt, type DelegationTask } from '../../adapters/chat';
 import { createRecipeFromRun } from '../../adapters/strategy';
@@ -15,9 +15,10 @@ import { safeExternal } from '../../lib/markdown';
 import { stripExecutedFences, toolFenceRegex } from '../../lib/fences';
 import { frameBatcher } from '../../lib/frame-batch';
 import { formatMetrics, liveTps, type CoverageItem, type LiveRate, type PlanStepView, type Step, type Turn, type TurnStrategy } from './model';
-import { t, tn } from '../../i18n';
+import { t, tn, useLang } from '../../i18n';
 import { getDisplay } from '../../shell/display';
 import { nextStreamAnnouncement } from '../../adapters/streamAnnounce';
+import { listModes, modeLabel, violationsLabel, type BehaviorMode } from '../../adapters/behaviorModes';
 
 /**
  * A11Y-02 — a `polite` live region fed grouped chunks
@@ -1280,6 +1281,7 @@ function AssistantTurn({
   onOpenSourceControl,
   boardKey,
   projectId,
+  modeName,
 }: {
   turn: Turn;
   busy: boolean;
@@ -1305,6 +1307,12 @@ function AssistantTurn({
   onOpenSourceControl?: TranscriptProps['onOpenSourceControl'];
   boardKey?: TranscriptProps['boardKey'];
   projectId?: TranscriptProps['projectId'];
+  /** CONTRATO_MODOS Lote B: this turn's own `behaviorMode` id, already
+   *  resolved to a display name by `Transcript` (the catalog fetch lives up
+   *  there, once, not per turn). Undefined for the vast majority of turns —
+   *  `metadata.behavior_mode` is only ever stamped for a non-`"default"`
+   *  mode. */
+  modeName?: string;
 }) {
   // PERF-01/UX-05: while streaming, repaint this card at most once per
   // frame — see `useFrameBatched`'s doc comment. A settled turn (most of a
@@ -1494,12 +1502,32 @@ function AssistantTurn({
         {turn.streaming && turn.live && !(turn.research && !turn.research.done) && <LiveLine live={turn.live} contextTokens={turn.ledger?.total} />}
         {!turn.streaming && (
           <div className="fs-turn__foot">
-            {turn.metrics && (
-              <span className="fs-turn__metrics">
-                {formatMetrics(turn.metrics)}
-                {turn.rounds > 1 ? ` · ${tn(turn.rounds, '{n} round', '{n} rounds')}` : ''}
-              </span>
-            )}
+            <span className="fs-turn__foot-left">
+              {turn.metrics && (
+                <span className="fs-turn__metrics">
+                  {formatMetrics(turn.metrics)}
+                  {turn.rounds > 1 ? ` · ${tn(turn.rounds, '{n} round', '{n} rounds')}` : ''}
+                </span>
+              )}
+              {/* CONTRATO_MODOS Lote B: only for a turn that used anything
+                  other than "default" (`metadata.behavior_mode`) — the vast
+                  majority of turns show neither this chip nor the badge
+                  below it. Text, not just an icon/colour (accessibility). */}
+              {modeName && (
+                <span className="fs-turn__mode" data-testid="turn-mode" title={t('Behaviour mode: {name}', { name: modeName })}>
+                  <Theater size={11} aria-hidden="true" /> {modeName}
+                </span>
+              )}
+              {turn.modeCheck && turn.modeCheck.violations.length > 0 && (
+                <span
+                  className="fs-turn__mode-warning"
+                  data-testid="turn-mode-warning"
+                  title={violationsLabel(turn.modeCheck)}
+                >
+                  <AlertTriangle size={11} aria-hidden="true" /> {t('Mode not fully honoured')}
+                </span>
+              )}
+            </span>
             <span className="fs-turn__actions" data-testid="turn-actions">
               {turn.text && <CopyButton text={turn.text} label={t('Copy reply')} />}
               {turn.text && <SpeakButton text={turn.text} />}
@@ -1700,6 +1728,20 @@ const BOTTOM_THRESHOLD = 80;
 export function Transcript({ turns, busy, sessionId, onApproval, onAnswer, onEdit, onRegenerate, onDelete, onNotice, onOpenFile, onOpenDoc, onOpenEvidence, onRerun, onFork, onQuote, onExplore, onCondense, onExpandCondensed, onOpenSourceControl, boardKey, projectId, onOpenBoardIssue }: TranscriptProps) {
   const quote = useQuoteSelection(onQuote, Boolean(onExplore));
 
+  // CONTRATO_MODOS Lote B: fetched once, read-only — the mode CATALOG is
+  // needed only to turn a turn's own `behaviorMode` id (already on the
+  // restored turn — model.ts's `restoreFromMetadata`) into a display name.
+  const modeLang = useLang();
+  const [modeCatalog, setModeCatalog] = useState<BehaviorMode[]>([]);
+  useEffect(() => {
+    listModes().then((r) => setModeCatalog(r.modes)).catch(() => undefined);
+  }, []);
+  const modeNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const m of modeCatalog) map.set(m.id, modeLabel(m, modeLang));
+    return map;
+  }, [modeCatalog, modeLang]);
+
   // PERF-01/QA-37: Studio.tsx owns the actual scrolling element
   // (`.fs-studio__scroll`) and is off-limits to this lote, so it is found
   // from here instead of threaded down as a prop — this root node is
@@ -1841,6 +1883,7 @@ export function Transcript({ turns, busy, sessionId, onApproval, onAnswer, onEdi
                 onOpenSourceControl={onOpenSourceControl}
                 boardKey={boardKey}
                 projectId={projectId}
+                modeName={turn.behaviorMode ? (modeNameById.get(turn.behaviorMode) ?? turn.behaviorMode) : undefined}
               />
             )}
           </div>

@@ -93,8 +93,9 @@ import { Vitals } from './studio/Vitals';
 import './projects.css';
 import './home.css';
 import './studio.css';
-import { locale, t, tn } from '../i18n';
+import { locale, t, tn, useLang } from '../i18n';
 import { useDisplay } from '../shell/display';
+import { getSessionMode, listModes, modeLabel, resolveModeCommand, setSessionMode, type BehaviorMode } from '../adapters/behaviorModes';
 
 /* Rare, and the eager bundle has a budget: the folder picker and the side
    panel (browser frames, document editor, file viewer) arrive when opened. */
@@ -383,6 +384,15 @@ export function StudioScreen() {
   });
   const [refreshingModels, setRefreshingModels] = useState(false);
   const [presetSignal, setPresetSignal] = useState(0);
+  /* CONTRATO_MODOS Lote B: behaviour modes — see the block right after
+   *  `say`/`report` below (it needs both). `modeCatalog` is fetched once;
+   *  `sessionModeId` is this session's own EFFECTIVE mode (re-fetched, read
+   *  only, whenever `sessionId` changes); `pendingModeId` is a pick made
+   *  before any session exists yet, applied by `send()` to the very first
+   *  turn and then persisted the moment the new session id is known. */
+  const [modeCatalog, setModeCatalog] = useState<{ modes: BehaviorMode[]; default: string }>({ modes: [], default: 'default' });
+  const [sessionModeId, setSessionModeIdState] = useState<string | null>(null);
+  const [pendingModeId, setPendingModeId] = useState<string | null>(null);
   /* Commands that need handlers declared further down (fork, tts): the
      handlers are stored here after they exist, and read at call time. */
   const extrasRef = useRef<{ fork: () => void; tts: () => void }>({ fork: () => undefined, tts: () => undefined });
@@ -453,6 +463,7 @@ export function StudioScreen() {
   const [preparingMessage, setPreparingMessage] = useState(false);
   const [busy, setBusy] = useState(false);
   const display = useDisplay();
+  const lang = useLang();
   const [loadError, setLoadError] = useState<string | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
   // The VRAM ticket already answered in this screen: its dialog must not
@@ -562,6 +573,54 @@ export function StudioScreen() {
       }
     },
     [report, say],
+  );
+
+  /* CONTRATO_MODOS Lote B: the catalog (every mode this owner can pick,
+     "Default" first — src/behavior_modes.py::list_modes's own order) is
+     read once; nothing here ever writes it back. */
+  useEffect(() => {
+    listModes().then(setModeCatalog).catch(() => undefined);
+  }, []);
+  /* This session's own EFFECTIVE mode — a plain read (GET), never a write:
+     the guard this lote's check greps for is about setSessionMode, and this
+     effect never calls it. Switching to "New conversation" (sessionId ->
+     null) clears both the fetched value and any earlier pending pick, so a
+     fresh composer never inherits a stranger's mode. */
+  useEffect(() => {
+    if (!sessionId) {
+      setSessionModeIdState(null);
+      setPendingModeId(null);
+      return;
+    }
+    let alive = true;
+    getSessionMode(sessionId)
+      .then((r) => { if (alive) setSessionModeIdState(r.effective); })
+      .catch(() => { if (alive) setSessionModeIdState(null); });
+    return () => { alive = false; };
+  }, [sessionId]);
+  /* Display id: this session's own resolved mode once it has one, else
+     whatever was picked before the session existed, else the catalog's own
+     global default (so the chip never just says nothing while it waits). */
+  const activeModeId = sessionId ? (sessionModeId ?? modeCatalog.default) : (pendingModeId ?? modeCatalog.default);
+  /** The ONLY place that ever calls `setSessionMode` from this screen — an
+   *  explicit pick (the chip's popover, or `/mode`), never a `useEffect`.
+   *  With no session yet this only updates the pending pick; `send()` below
+   *  is what turns that into a persisted session mode, the moment there
+   *  is a session to persist it to. */
+  const pickBehaviorMode = useCallback(
+    async (id: string) => {
+      if (!sessionId) {
+        setPendingModeId(id);
+        return;
+      }
+      setSessionModeIdState(id);
+      try {
+        await setSessionMode(sessionId, id);
+      } catch (error) {
+        say(`${t('Could not set the behaviour mode.')} ${(error as Error).message}`, 'danger');
+      }
+    },
+    [sessionId, say],
   );
 
   const setKnobs = useCallback(
@@ -994,6 +1053,14 @@ export function StudioScreen() {
               historyIndex: theirs.historyIndex,
               edited: theirs.edited,
               attachments: mine.attachments.length ? mine.attachments : theirs.attachments,
+              // CONTRATO_MODOS Lote B: `behavior_mode`/`mode_check` are
+              // stamped onto the SAVED message strictly after the live
+              // stream's own `metrics` event already went out (see
+              // `model.ts`'s `modeFieldsFrom` doc comment) — this history
+              // re-read, already run after every send, is what actually
+              // shows the mode chip on the turn that just finished.
+              behaviorMode: theirs.behaviorMode ?? mine.behaviorMode,
+              modeCheck: theirs.modeCheck ?? mine.modeCheck,
             };
           }
           return out;
@@ -1020,6 +1087,10 @@ export function StudioScreen() {
         /** PENDIENTES.md M1 / this lote: `turn.ask?.revision` from the card
          *  being answered — see `SendOptions.revision`'s doc comment. */
         revision?: number;
+        /** CONTRATO_MODOS Lote B: only `send()` ever sets this, and only for
+         *  a session's very first turn — see `SendOptions.behaviorMode`'s
+         *  own doc comment for why every later turn omits it. */
+        behaviorMode?: string;
       } = {},
     ) => {
       if (route?.missing) {
@@ -1077,6 +1148,7 @@ export function StudioScreen() {
           autonomyPreset: knobs.autonomyPreset,
           docContext: knobs.docContext,
           presetId: preset?.id,
+          behaviorMode: options.behaviorMode,
           activeDocId: panel.doc && !panel.doc.streaming ? panel.doc.id ?? undefined : undefined,
           onRunId: (id) => {
             if (controller.signal.aborted || controllerRef.current !== controller) return;
@@ -1526,6 +1598,20 @@ export function StudioScreen() {
           } catch (error) {
             say(`${t('Could not read the presets')}: ${(error as Error).message}`, 'danger');
           }
+          return true;
+        }
+        case 'mode': {
+          // CONTRATO_MODOS Lote B: the pure half (list/set/off/unknown)
+          // lives in adapters/behaviorModes.ts so studio/checks/
+          // behavior_modes.check.mjs can exercise it without a DOM; this
+          // case only supplies the session I/O, exactly like `/model`
+          // above supplies routing for `resolveCommand`'s parse.
+          const result = resolveModeCommand(modeCatalog.modes, activeModeId, args, lang);
+          if (result.kind === 'list') { report(result.markdown ?? ''); return true; }
+          if (result.kind === 'unknown') { say(result.markdown ?? '', 'warning'); return true; }
+          await pickBehaviorMode(result.id!);
+          const picked = modeCatalog.modes.find((m) => m.id === result.id);
+          say(t('Behaviour mode: {name}', { name: picked ? modeLabel(picked, lang) : result.id! }));
           return true;
         }
         case 'chats.fork':
@@ -2125,6 +2211,10 @@ export function StudioScreen() {
       setKnobs,
       panel.open,
       panel.tab,
+      modeCatalog,
+      activeModeId,
+      lang,
+      pickBehaviorMode,
     ],
   );
 
@@ -2260,6 +2350,11 @@ export function StudioScreen() {
       setPreparingMessage(true);
       try {
         const sent = attachments;
+        // CONTRATO_MODOS Lote B: read BEFORE ensureSession, which may create
+        // a session and asynchronously update the `sessionId` prop — this is
+        // the one moment that reliably tells "no session existed yet" apart
+        // from "one already did".
+        const isNewSession = !sessionId;
         const sid = await ensureSession(message || sent.map((a) => a.name).join(', '));
         if (!sid) return; // Keep the draft and attachments available for retry.
         setDraft(current => current.trim() === message ? '' : current);
@@ -2269,13 +2364,19 @@ export function StudioScreen() {
         const sentIds = new Set(sent.map(item => item.id));
         setAttachments(list => list.filter(item => !sentIds.has(item.id)));
         setNotice(null);
-        void run(sid, withImageReferences(message, sent), { attachments: sent });
+        // A mode picked before this session existed: persist it now that
+        // there is finally a session id to persist it to (fire-and-forget —
+        // the turn itself already carries the same id in its own body,
+        // `run()`'s `behaviorMode` below, so a slow or failed persist never
+        // costs this first reply the mode it was sent with).
+        if (isNewSession && pendingModeId) void setSessionMode(sid, pendingModeId).catch(() => undefined);
+        void run(sid, withImageReferences(message, sent), { attachments: sent, behaviorMode: isNewSession ? pendingModeId ?? undefined : undefined });
       } finally {
         sendingMessage.current = false;
         setPreparingMessage(false);
       }
     },
-    [attachments, busy, runCommand, ensureSession, run, sessionId],
+    [attachments, busy, runCommand, ensureSession, run, sessionId, pendingModeId],
   );
 
   /* Notas → "Resolver con el agente": sends as soon as a route is known and
@@ -2896,6 +2997,9 @@ export function StudioScreen() {
           voiceActive={Boolean(voiceSession)}
           onNotice={say}
           modelPicker={<ModelPicker routes={routes} current={route} onPick={(r) => setRouteId(r.id)} onRefresh={refreshModels} refreshing={refreshingModels} openSignal={modelSignal} />}
+          behaviorModes={modeCatalog.modes}
+          behaviorModeId={activeModeId}
+          onPickBehaviorMode={pickBehaviorMode}
           presetChip={<><PresetPicker current={preset} onPick={(p) => setPreset(p ? { id: p.id, name: p.name } : null)} onNotice={say} openSignal={presetSignal} />{!knobs.incognito&&<ChatTeam sessionId={sessionId} routes={routes} coordinator={route} busy={busy} ensureSession={()=>ensureSession(t('Conversation'))} onEnabled={setTeamEnabled}/>}</>}
           lastSent={lastSent}
           extraControls={<><LocalVideo/><StyleLab key={'style:'+sessionId} model={route?route.model+'@'+route.endpointName:''} onSaved={saved=>setPreset({id:saved.id,name:saved.name})}/>{project&&!knobs.incognito?<ProjectVisualReferences key={sessionId||project.id} projectId={project.id} onUse={async(file,referenceRole)=>{

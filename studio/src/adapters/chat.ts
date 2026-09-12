@@ -1090,6 +1090,14 @@ export interface SendOptions {
    *  below. Omitted exactly like `questionId` when there is nothing to
    *  check (a plain send, or a server that never put one on the card). */
   revision?: number;
+  /** CONTRATO_MODOS Lote B: a behaviour mode id for THIS turn only — sent
+   *  only for the very first message of a session that does not exist yet
+   *  (Studio.tsx's `send()`), since the request body is the only place that
+   *  id can travel before `setSessionMode` has anywhere to persist it to.
+   *  Every later turn in that same session relies on the server's own
+   *  session-level resolution (`src/behavior_modes.py::resolve`) instead —
+   *  see `docs/api/behavior_modes.md`'s precedence. */
+  behaviorMode?: string;
 }
 
 export interface DelegationTask {
@@ -1709,6 +1717,7 @@ export async function* sendTurn(options: SendOptions): AsyncGenerator<ChatEvent>
   if (options.noSkills) fd.set('no_skills', 'true');
   if (options.inputTokenBudget != null) fd.set('input_token_budget', String(options.inputTokenBudget));
   if (options.presetId) fd.append('preset_id', options.presetId);
+  if (options.behaviorMode) fd.append('behavior_mode', options.behaviorMode);
   if (options.activeDocId) fd.append('active_doc_id', options.activeDocId);
   if (options.compare) {
     fd.append('compare_mode', 'true');

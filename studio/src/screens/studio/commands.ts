@@ -82,6 +82,10 @@ export const COMMANDS: SlashCommand[] = [
   { name: 'tts', category: 'Chat', usage: '/tts', help: 'Reads the last reply aloud.' },
   { name: 'find', aliases: ['search-history'], category: 'Chat', usage: '/find text', help: 'Searches every conversation.' },
   { name: 'search', aliases: ['websearch'], category: 'Chat', usage: '/search question', help: 'Asks with web search on, whatever the chip says.' },
+  // CONTRATO_MODOS: a behaviour mode is a conversational stance ("how
+  // Faustus argues"), never a change to what it can do — orthogonal to
+  // Chat/Agent mode, task presets, the model and the skills.
+  { name: 'mode', aliases: ['modo'], category: 'Chat', usage: '/mode [id|name|off]', help: 'Behaviour mode for this conversation — how Faustus argues, never what it can do. Bare lists them; "off" returns to Default.' },
 
   /* ── Agent ── */
   {

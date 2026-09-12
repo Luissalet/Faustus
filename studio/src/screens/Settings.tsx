@@ -26,6 +26,7 @@ import {
   SlidersHorizontal,
   Sparkles,
   Stethoscope,
+  Theater,
   Trash2,
   X,
 } from 'lucide-react';
@@ -68,6 +69,7 @@ import { EffectiveConfigSection } from './settings/EffectiveConfig';
 import { IntegrationsSection } from './settings/Integrations';
 import { LocalModelsSection } from './settings/LocalModels';
 import { AppearanceSection } from './settings/Appearance';
+import { BehaviorModesSection } from './settings/BehaviorModes';
 import { authStatus } from '../adapters/account';
 import { listActiveApprovals, revokeApproval, type Approval } from '../adapters/approvals';
 import { addCommandAllowlistEntry, listCommandAllowlist, removeCommandAllowlistEntry, type AllowlistEntry } from '../adapters/commandGuard';
@@ -91,7 +93,7 @@ import { t, tn } from '../i18n';
  * there at their tab.
  */
 
-type SectionKey = 'general' | 'models' | 'openrouter' | 'local' | 'model_router' | 'defaults' | 'voice' | 'search' | 'reminders' | 'integrations' | 'agent' | 'repositories' | 'tools' | 'effective_config' | 'shortcuts' | 'account' | 'users' | 'system' | 'health' | 'security';
+type SectionKey = 'general' | 'models' | 'openrouter' | 'local' | 'model_router' | 'defaults' | 'voice' | 'search' | 'reminders' | 'integrations' | 'agent' | 'repositories' | 'tools' | 'modes' | 'effective_config' | 'shortcuts' | 'account' | 'users' | 'system' | 'health' | 'security';
 
 const SECTIONS: { key: SectionKey; label: string; icon: typeof Bot; admin?: boolean }[] = [
   { key: 'general', label: 'Appearance', icon: Palette },
@@ -114,6 +116,11 @@ const SECTIONS: { key: SectionKey; label: string; icon: typeof Bot; admin?: bool
   { key: 'reminders', label: 'Reminders', icon: Check },
   { key: 'integrations', label: 'Integrations', icon: Plug },
   { key: 'agent', label: 'Agent', icon: Bot },
+  // CONTRATO_MODOS: a conversational stance ("how Faustus argues"), never
+  // what it may do — visible (and creatable) to any signed-in user; only
+  // "Set as default" (the global fallback) is admin-gated, inside the
+  // section itself, not at this nav level.
+  { key: 'modes', label: 'Behaviour modes', icon: Theater },
   // OBJ-4 / Lote 83: the agent's default git policy (branch/commit/push),
   // overridable per repository from Source control's own header card.
   { key: 'repositories', label: 'Repositories', icon: GitBranch },
@@ -1566,6 +1573,7 @@ export function SettingsScreen() {
           {section === 'search' && <SearchSection settings={settings} onSave={onSave} say={say} />}
           {section === 'reminders' && <RemindersSection settings={settings} onSave={onSave} say={say} />}
           {section === 'agent' && <AgentSection settings={settings} onSave={onSave} say={say} />}
+          {section === 'modes' && <BehaviorModesSection say={say} admin={admin} />}
           {section === 'repositories' && <RepositoriesSection say={say} />}
           {section === 'integrations' && <IntegrationsSection say={say} />}
           {section === 'tools' && <ToolsSection say={say} />}

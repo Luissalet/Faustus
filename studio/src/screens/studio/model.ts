@@ -18,6 +18,7 @@ import {
 import type { EvidenceRef } from '../../adapters/evidence';
 import type { Attachment } from '../../adapters/composer';
 import type { VramBlocked } from '../../adapters/vramAdmission';
+import type { ModeCheckResult } from '../../adapters/behaviorModes';
 import { t } from '../../i18n';
 
 /**
@@ -289,6 +290,19 @@ export interface Turn {
   /** Sub-agents of this turn's delegate_agents calls, in arrival order. */
   workers: Worker[];
   streaming: boolean;
+  /** CONTRATO_MODOS Lote B: `metadata.behavior_mode` — set only when the
+   *  turn used anything other than `"default"` (`stamp_behavior_mode_
+   *  metadata`, routes/chat_helpers.py). Only ever populated from history
+   *  restore today (see `restoreFromMetadata`'s doc comment below for why
+   *  there is no live SSE event for it yet), same fallback story as
+   *  `errorClass` above. */
+  behaviorMode?: string;
+  /** `metadata.mode_check` — `src/behavior_modes.py::check_response`'s own
+   *  result against this turn's saved text, present only when at least one
+   *  check actually ran. A heuristic DETECTOR, never a judge: an empty
+   *  `violations` list means nothing FLAGGED, not a guarantee the mode was
+   *  followed. */
+  modeCheck?: ModeCheckResult;
 }
 
 /* ── What the turn is doing right now, and how fast ── */
@@ -1027,11 +1041,47 @@ function strategyFromMeta(meta: Record<string, unknown>): TurnStrategy | undefin
  * harness card (`harness`), web sources and an approval still pending.
  * The legacy renderer rebuilds the same things from the same fields.
  */
+/** CONTRATO_MODOS Lote B: `meta.behavior_mode`/`meta.mode_check` into the
+ *  mirrored shape, or `undefined` for a turn with neither (the vast
+ *  majority — `stamp_behavior_mode_metadata` only ever writes them for a
+ *  non-`"default"` mode). There is no live SSE event for either field
+ *  today: `routes/chat_routes.py` stamps them onto the SAVED copy of a
+ *  turn's metadata strictly AFTER the `metrics` SSE event already went out,
+ *  so a live turn only ever picks this up once something re-reads history
+ *  (`Studio.tsx`'s `syncIds`, already run after every send) — same gap
+ *  `TurnMetrics.execution`'s doc comment names for a different field. */
+function modeFieldsFrom(meta: Record<string, unknown>): { behaviorMode?: string; modeCheck?: ModeCheckResult } {
+  const behaviorMode = typeof meta.behavior_mode === 'string' && meta.behavior_mode ? meta.behavior_mode : undefined;
+  const raw = meta.mode_check;
+  if (!raw || typeof raw !== 'object') return { behaviorMode };
+  const r = raw as Record<string, unknown>;
+  const checked = Array.isArray(r.checked) ? r.checked.map(String) : [];
+  const violations = Array.isArray(r.violations)
+    ? (r.violations as unknown[])
+        .map((v) => (v && typeof v === 'object' ? (v as Record<string, unknown>) : null))
+        .filter((v): v is Record<string, unknown> => v !== null)
+        .map((v) => ({ rule: s(v.rule), detail: s(v.detail) }))
+        .filter((v) => v.rule || v.detail)
+    : [];
+  return { behaviorMode, modeCheck: { checked, violations } };
+}
+
 export function restoreFromMetadata(turn: Turn, meta: Record<string, unknown>): Turn {
   const events = toolEventsFrom(meta);
   const planUpdate = planUpdateFromMeta(meta);
   const speaker = typeof meta.group_model === 'string' && meta.group_model ? meta.group_model : undefined;
-  if (!events.length && !meta.harness && !meta.web_sources && !meta.research_sources && !meta.context_receipts && !meta.strategy) return speaker ? { ...turn, speaker } : turn;
+  const modeFields = modeFieldsFrom(meta);
+  if (
+    !events.length &&
+    !meta.harness &&
+    !meta.web_sources &&
+    !meta.research_sources &&
+    !meta.context_receipts &&
+    !meta.strategy &&
+    !modeFields.behaviorMode
+  ) {
+    return speaker ? { ...turn, speaker } : turn;
+  }
   // CALL-03: `toolEventsFrom` (adapters/chat.ts) strips `argument_errors`/
   // `repairs` down to nothing, the same way it used to strip `plan_update`
   // before `planUpdateFromMeta` started reading it straight off the raw
@@ -1105,6 +1155,8 @@ export function restoreFromMetadata(turn: Turn, meta: Record<string, unknown>): 
     planSteps: planUpdate?.steps ?? turn.planSteps,
     planRevision: planUpdate?.revision ?? turn.planRevision,
     planWarnings: planUpdate?.warnings ?? turn.planWarnings,
+    behaviorMode: modeFields.behaviorMode ?? turn.behaviorMode,
+    modeCheck: modeFields.modeCheck ?? turn.modeCheck,
   };
 }
 

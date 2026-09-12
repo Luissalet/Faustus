@@ -1516,6 +1516,38 @@ button.fs-studio__git-chip:hover {
   flex-wrap: wrap;
 }
 
+/* CONTRATO_MODOS Lote B: metrics + the mode chip/warning share the foot's
+   left side (only `.fs-turn__actions` sits on the right) — a plain wrapper
+   so `space-between` above still only ever splits the row in two. */
+.fs-turn__foot-left {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--fs-space-2);
+}
+
+.fs-turn__mode {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px var(--fs-space-2);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-pill);
+  color: var(--fs-text-3);
+  font-size: 11px;
+}
+
+.fs-turn__mode-warning {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px var(--fs-space-2);
+  border: 1px solid color-mix(in srgb, var(--fs-warning) 55%, var(--fs-border));
+  border-radius: var(--fs-radius-pill);
+  color: var(--fs-warning);
+  font-size: 11px;
+}
+
 .fs-turn__edited {
   margin-inline-start: var(--fs-space-2);
   font-size: 11px;
@@ -3509,6 +3541,20 @@ aside.fs-panel { position: relative; }
   letter-spacing: 0.04em;
 }
 @media (max-width: 600px) { .fs-studio__bar { flex-wrap: wrap; } .fs-studio__permission-menu [role="radio"], .fs-studio__add-options > .fs-studio__chip { min-block-size: 44px; } }
+
+/* CONTRATO_MODOS Lote B: the "Manage modes…" link at the foot of the
+   behaviour-mode popover — same look as `.fs-mail__link` (email.css), a
+   plain <a> styled as a link rather than a button, from tokens only. */
+.fs-studio__permission-link {
+  display: inline-flex;
+  margin-block-start: var(--fs-space-2);
+  color: var(--fs-brand);
+  font-size: var(--fs-label-size);
+  text-decoration: none;
+}
+.fs-studio__permission-link:hover {
+  text-decoration: underline;
+}
 
 :root .fs-popover.fs-studio__add-menu,
 :root .fs-popover.fs-studio__permission-menu { background: var(--fs-surface-2); backdrop-filter: none; }

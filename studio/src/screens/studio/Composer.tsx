@@ -1,5 +1,6 @@
 import { getSettings, saveSettings } from '../../adapters/settings';
-import { t } from '../../i18n';
+import { t, useLang } from '../../i18n';
+import { Link } from 'react-router';
 import {
   ArrowUp,
   AudioLines,
@@ -26,6 +27,7 @@ import {
   SlidersHorizontal,
   Square,
   Terminal,
+  Theater,
   X,
 } from 'lucide-react';
 import type { Dictation } from '../../adapters/speech';
@@ -74,6 +76,7 @@ import type { ContextOverrides, DocContextRef } from '../../adapters/chat';
 import { ContextPanel, pruneOverrides } from './ContextPanel';
 import { COMPOSER_CONTEXT_EVENT, type ComposerContextDetail } from '../../lib/docSession';
 import { addMaterial } from '../../adapters/sideThreads';
+import { modeDescription, modeLabel, type BehaviorMode } from '../../adapters/behaviorModes';
 
 export type Mode = 'chat' | 'agent';
 
@@ -140,6 +143,17 @@ export interface ComposerProps {
   voiceActive?: boolean;
   onNotice: (text: string, tone?: 'info' | 'warning' | 'danger') => void;
   modelPicker: ReactNode;
+  /** CONTRATO_MODOS Lote B: the catalog (Studio.tsx fetches it once,
+   *  "Default" first — `src/behavior_modes.py::list_modes`'s own order) and
+   *  this conversation's own active id — `null` only while it has not
+   *  loaded yet. Picking one calls `onPickBehaviorMode`; Studio.tsx owns
+   *  what that actually does (`setSessionMode` for an existing session, a
+   *  pending pick applied to the very first turn otherwise) — this
+   *  component never touches the session's mode on its own, in a
+   *  `useEffect` or anywhere else. */
+  behaviorModes: BehaviorMode[];
+  behaviorModeId: string | null;
+  onPickBehaviorMode: (id: string) => void;
   /** The preset chip (picker + clear), rendered by the screen. */
   presetChip?: ReactNode;
   extraControls?: ReactNode;
@@ -248,6 +262,9 @@ export function Composer({
   voiceActive,
   onNotice,
   modelPicker,
+  behaviorModes,
+  behaviorModeId,
+  onPickBehaviorMode,
   presetChip,
   extraControls,
   lastSent,
@@ -901,6 +918,7 @@ export function Composer({
             onPick={(value) => setKnobs((k) => ({ ...k, autonomyPreset: value }))}
           />
         )}
+        <BehaviorModeSelector modes={behaviorModes} activeId={behaviorModeId} onPick={onPickBehaviorMode} />
         <ApprovalSelector disabled={busy} onNotice={onNotice} />
         <StrategyProfileSelector profile={strategyProfile} onPick={pickStrategyProfile} />
         <RecipeSelector recipeId={activeRecipeId} recipes={recipes} onPick={pickRecipe} />
@@ -1062,6 +1080,58 @@ function AutonomyPresetSelector({ preset, onPick }: { preset: AutonomyPreset; on
           </button>
         ))}
       </div>
+    </Popover>
+  );
+}
+
+// CONTRATO_MODOS Lote B: the behaviour-mode chip. `activeId` is `null` only
+// while Studio.tsx has not fetched anything yet — the trigger falls back to
+// `t('Default')` for that split second rather than an empty chip. Picking a
+// row only ever calls `onPick`; this component never calls `setSessionMode`
+// (or anything else that persists a mode) on its own, and never from a
+// `useEffect` — see `behaviorModeChip`'s `data-testid` for what the check
+// script anchors the "never changes on its own" grep to.
+function BehaviorModeSelector({
+  modes, activeId, onPick,
+}: { modes: BehaviorMode[]; activeId: string | null; onPick: (id: string) => void }) {
+  const lang = useLang();
+  const active = modes.find((m) => m.id === activeId) ?? null;
+  return (
+    <Popover
+      side="top"
+      className="fs-studio__permission-menu"
+      trigger={
+        <button
+          type="button"
+          className="fs-studio__chip fs-studio__chip--compact"
+          data-mode={activeId ?? ''}
+          data-testid="behavior-mode-chip"
+          title={t('Behaviour mode: {label}', { label: modeLabel(active, lang) })}
+          aria-label={t('Behaviour mode: {label}', { label: modeLabel(active, lang) })}
+        >
+          <Theater size={14} aria-hidden="true" /> <span className="fs-studio__chip-label">{modeLabel(active, lang)}</span>
+        </button>
+      }
+    >
+      <p>{t('How Faustus argues in this conversation — never what it is allowed to do. The content policy, the agent rules and your own instructions always win.')}</p>
+      <div role="radiogroup" aria-label={t('Behaviour mode')} data-testid="behavior-mode-options">
+        {modes.map((mode) => (
+          <button
+            key={mode.id}
+            type="button"
+            role="radio"
+            aria-checked={activeId === mode.id}
+            onClick={() => onPick(mode.id)}
+            data-testid={`behavior-mode-option-${mode.id}`}
+          >
+            <strong>{modeLabel(mode, lang)}</strong>
+            <span>{modeDescription(mode, lang)}</span>
+          </button>
+        ))}
+      </div>
+      <Link to="/settings?s=modes" className="fs-studio__permission-link">
+        {t('Manage modes…')}
+      </Link>
     </Popover>
   );
 }

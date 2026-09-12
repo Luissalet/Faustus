@@ -7259,3 +7259,43 @@ unknown device	dispositivo desconocido
 {lower}–{upper} GB	{lower}–{upper} GB
 ≥ {lower} GB (incomplete: {reason})	≥ {lower} GB (incompleto: {reason})
 {n} characters of thinking were set aside before judging	{n} caracteres de razonamiento se apartaron antes de evaluar
+A behaviour mode changes HOW Faustus argues — never what it is allowed to do. The content policy, the agent rules and your own instructions in the chat always win.	Un modo de comportamiento cambia CÓMO argumenta Faustus — nunca lo que puede hacer. La política de contenido, las reglas del agente y tus propias instrucciones en el chat siempre ganan.
+Behaviour mode	Modo de comportamiento
+Behaviour mode: {label}	Modo de comportamiento: {label}
+Behaviour mode: {name}	Modo de comportamiento: {name}
+Behaviour modes	Modos de comportamiento
+Checks (heuristic — a detector, not a judge)	Comprobaciones (heurísticas — un detector, no un juez)
+Could not read the behaviour modes.	No se pudieron leer los modos de comportamiento.
+Could not set the behaviour mode.	No se pudo fijar el modo de comportamiento.
+Default behaviour mode: {name}	Modo de comportamiento por defecto: {name}
+Delete for good?	¿Borrar definitivamente?
+Description (EN)	Descripción (EN)
+Description (ES)	Descripción (ES)
+Edit mode	Editar modo
+Every configured check passed.	Todas las comprobaciones configuradas se cumplieron.
+First sentence must not open with agreement	La primera frase no debe empezar dando la razón
+Forbidden phrases (one per line)	Frases prohibidas (una por línea)
+GET /api/behavior-modes failed.	GET /api/behavior-modes falló.
+How Faustus argues in this conversation — never what it is allowed to do. The content policy, the agent rules and your own instructions always win.	Cómo argumenta Faustus en esta conversación — nunca lo que puede hacer. La política de contenido, las reglas del agente y tus propias instrucciones siempre ganan.
+Id (slug, e.g. "socratic")	Id (slug, p. ej. «socratic»)
+Manage modes…	Gestionar modos…
+Max questions (empty = no limit)	Máximo de preguntas (vacío = sin límite)
+Max words (empty = no limit)	Máximo de palabras (vacío = sin límite)
+Mode deleted.	Modo borrado.
+Mode not fully honoured	El modo no se siguió del todo
+Mode saved.	Modo guardado.
+Must end with a question	Debe terminar con una pregunta
+Name (EN)	Nombre (EN)
+Name (EN) and Name (ES) are both required.	El nombre (EN) y el nombre (ES) son obligatorios.
+Name (ES)	Nombre (ES)
+New mode	Nuevo modo
+No mode called "{q}". /mode on its own lists them.	No hay ningún modo llamado «{q}». /mode solo los lista.
+Paste a reply to check it against this mode…	Pega una respuesta para comprobarla contra este modo…
+Prompt (in English, for the model — empty means no extra block at all)	Prompt (en inglés, para el modelo — vacío significa sin bloque adicional)
+Require a confidence tag ([Certain]/[Likely]/[Guessing])	Exigir una etiqueta de confianza ([Certain]/[Likely]/[Guessing])
+Set as default	Fijar como por defecto
+Text to check	Texto a comprobar
+The id must start with a letter and use only lowercase letters, digits and _ (2-32 characters).	El id debe empezar por una letra y usar solo minúsculas, dígitos y _ (2-32 caracteres).
+This mode has no checks configured.	Este modo no tiene comprobaciones configuradas.
+Try it	Probarlo
+global default	por defecto global
