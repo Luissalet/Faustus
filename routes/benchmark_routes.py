@@ -175,6 +175,16 @@ def setup_benchmark_routes() -> APIRouter:
                 profile = InferenceProfile.parse(raw)
         except ContractError as e:
             return _error(400, str(e), "bench.invalid_plan")
+        # The same running configuration planned twice is ONE profile, not
+        # two (seen live 12-09-2026: three identical "Current: … baseline"
+        # rows after three plans). A saved profile with this exact
+        # fingerprint and objective is reused — its evidence trail
+        # (`last_run_id`, evaluation) stays attached to it.
+        for saved in profiles.list_profiles():
+            if (saved.fingerprint and saved.fingerprint == profile.fingerprint
+                    and saved.objective == profile.objective and saved.source == profile.source):
+                profile = saved
+                break
         try:
             run = runner.plan(profile, req.suite_id, req.budget, owner, endpoint_url=req.endpoint_url)
             # A profile a run was planned against must be addressable later:

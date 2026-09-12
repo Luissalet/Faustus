@@ -227,3 +227,26 @@ def test_no_gate_queue_wait_absent_vs_measured_zero_wait():
     assert absent.phases.queue_wait_ms.value is None
     assert measured_zero.phases.queue_wait_ms.source == "observed_client"
     assert measured_zero.phases.queue_wait_ms.value == 0.0
+
+
+def test_a_large_gap_between_client_total_and_engine_phases_is_named_not_hidden():
+    """Seen live (12-09-2026): the engine reported 3 s of work, the client
+    waited 230 s because another client's request held Ollama's only slot."""
+    from src.execution_metrics import build_execution_metrics
+    m = build_execution_metrics(
+        started_monotonic=0.0, first_token_monotonic=227.0, finished_monotonic=230.0,
+        queue_wait_s=0.2, tool_events=None,
+        engine_timings={"load_ms": 2.0, "prompt_ms": 240.0, "predicted_ms": 3000.0,
+                        "prompt_n": 46, "predicted_n": 66, "source": "ollama"},
+        usage_tokens=None, engine=None,
+    )
+    assert m.phases.generation_ms.value == 3000.0 and m.phases.generation_ms.source == "reported_engine"
+    assert any("unaccounted" in n for n in m.notes)
+    ok = build_execution_metrics(
+        started_monotonic=0.0, first_token_monotonic=0.3, finished_monotonic=3.4,
+        queue_wait_s=0.2, tool_events=None,
+        engine_timings={"load_ms": 2.0, "prompt_ms": 240.0, "predicted_ms": 3000.0,
+                        "prompt_n": 46, "predicted_n": 66, "source": "ollama"},
+        usage_tokens=None, engine=None,
+    )
+    assert not any("unaccounted" in n for n in ok.notes)

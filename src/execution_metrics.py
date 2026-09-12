@@ -28,6 +28,10 @@ from src.contracts.inference import (
 #: Guards against float rounding on the overlap check flagging phases that
 #: sum to within a millisecond of `total_ms` — not a real double-count.
 _OVERLAP_EPSILON_MS = 1.0
+#: A gap this large between the client's clock and the engine's phases is
+#: named (both thresholds must be exceeded: absolute and relative).
+_UNACCOUNTED_MIN_MS = 2000.0
+_UNACCOUNTED_FRACTION = 0.25
 
 
 def _finite(value: Any) -> Optional[float]:
@@ -123,6 +127,19 @@ def _coherence_notes(phases: Phases) -> list:
     phase_sum = sum(p.value for p in parts if p.source != "absent" and p.value is not None)
     if phase_sum > phases.total_ms.value + _OVERLAP_EPSILON_MS:
         return ["phases overlap: engine and client clocks are not additive"]
+    # The opposite disagreement (seen live 12-09-2026): the engine reports
+    # 3 s of work while the client waited 230 s — another client's request
+    # held the engine's only slot first. That wait is nobody's phase here
+    # (it is not OUR admission queue, and the engine does not report it), so
+    # it is named as unaccounted time rather than folded into "generation".
+    accounted = phase_sum
+    for extra in (phases.queue_wait_ms, phases.load_ms):
+        if extra.source != "absent" and extra.value is not None:
+            accounted += extra.value
+    gap = phases.total_ms.value - accounted
+    if phase_sum > 0 and gap > max(_UNACCOUNTED_MIN_MS, _UNACCOUNTED_FRACTION * phases.total_ms.value):
+        return [f"{gap / 1000:.1f} s unaccounted: the engine served something else first "
+                "(shared slot) or the transport stalled — not part of this turn's phases"]
     return []
 
 

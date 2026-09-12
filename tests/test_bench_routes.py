@@ -423,3 +423,17 @@ def test_deactivate_route_restores_previous_options(client, monkeypatch):
         "endpoint": "http://127.0.0.1:11434", "model": "qwen3.5:9b",
     })
     assert active.json()["profile_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_planning_the_same_running_configuration_twice_reuses_one_profile(fake_suite, fake_model):
+    """Seen live (12-09-2026): three plans of the same running configuration
+    left three identical 'Current: … baseline' rows."""
+    from src.bench import profiles as bench_profiles
+    router = benchmark_routes.setup_benchmark_routes()
+    plan_ep = _endpoint(router, "/api/bench/plan")
+    first = await plan_ep(_request("/api/bench/plan"), benchmark_routes.PlanRequest(**_plan_body()))
+    second = await plan_ep(_request("/api/bench/plan"), benchmark_routes.PlanRequest(**_plan_body()))
+    assert first["run"]["profile"]["id"] == second["run"]["profile"]["id"]
+    fp = first["run"]["profile"]["fingerprint"]
+    assert len([p for p in bench_profiles.list_profiles() if p.fingerprint == fp]) == 1

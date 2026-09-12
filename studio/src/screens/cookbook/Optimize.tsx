@@ -741,7 +741,7 @@ export function Optimize({ say }: OptimizeProps) {
             {isRunInFlight(run.state) && (
               <div className="fs-ck__serve-actions">
                 <p className="fs-muted" data-testid="bench-progress">
-                  {t('{done} of {total} cases so far', { done: run.summary.cases_run, total: run.summary.cases_planned })}
+                  {t('{done} of {total} cases so far', { done: Math.max(run.summary.cases_run, run.samples.length), total: run.summary.cases_planned })}
                 </p>
                 <Button label={t('Cancel')} icon={StopCircle} variant="danger" onClick={() => void handleCancel()} loading={cancelling} testId="bench-cancel" />
               </div>
