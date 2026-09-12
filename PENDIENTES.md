@@ -205,8 +205,39 @@ deep-link de workflows, recetas desde un run real) ya no aparece aquí.
   el **fork clásico** sigue copiando mensajes — podría pasar a ser un
   excurso sin pasaje si nadie echa en falta la copia.
 
+## Inferencia local (spec INF, 12-09)
+
+- Hecho: INF-00 auditoría, INF-01 veracidad, INF-02 evidencia, INF-03
+  visibilidad, INF-04 banco explícito y perfiles (FAUSTUS.md §77). Todo
+  probado **solo con fixtures y motores falsos**: ninguna prueba arranca un
+  modelo real. Falta verlo en vivo en el 7001 (chip de arquitectura y
+  «Capabilities» en el formulario de serve, `ReceiptPanel` en una tarea,
+  cronología bajo una respuesta, pestaña «Optimize for my machine»).
+- **No se ha ejecutado ningún benchmark real** (§01: sin cargas pesadas sin
+  autorización). Un primer run con un modelo pequeño confirmará que
+  `engine_timings` llega con la forma esperada; hasta entonces las fuentes
+  `reported_engine` de llama-server (`/props`, `/slots`, `timings`) están
+  verificadas contra fixtures, no contra una versión concreta del servidor.
+- `activate_profile` (que el chat USE un perfil guardado) no existe a
+  propósito: guardar y activar son decisiones distintas y activar necesita
+  decidir qué pasa con una sesión en vuelo. Va con INF-05.
+- Cookbook `model_serve` **no pasa por `vram_admission`**: arrancar un
+  segundo servidor mientras otro modelo grande responde sigue siendo
+  posible por esa vía. Es lo primero de INF-05 (topología, presupuesto de
+  memoria, admisión reconciliada), junto con candidatos que requieren
+  reinicio del motor.
+- INF-06/07 (laboratorio: especulación, reparto entre GPUs, comparación
+  de motores) solo después de INF-05 y con autorización explícita para cada
+  tanda de medidas.
+- El comparador usa `p95−mediana` como proxy de dispersión y `n ≥ 3`; el
+  doc lo dice: no es un test estadístico. Si se quiere rigor, hay que subir
+  repeticiones, no cambiar el umbral.
+
 ## Última evidencia
 
+- **12-09-2026, INF-00…04 (master `e2b5995`).** Suite nube entera tras
+  INF-04: 17.228 correctas, 49 saltadas, 0 fallos (9 min 19 s). Nada de
+  esto verificado aún en el 7001 de Luis; ningún benchmark real ejecutado.
 - **11-09-2026, QA en vivo de las olas ADP/CMP/W3 + W4-A (master
   `e075293`, Windows `2da388a`+).** Suite nube tras los arreglos de
   entorno: 16.913 correctas, 0 fallos (antes: fallos preexistentes en

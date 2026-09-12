@@ -186,6 +186,8 @@ ComfyUI is a separate service; model weights, custom nodes and their licences ar
 - Organize notes, tasks and calendars; connect email with IMAP/SMTP and calendars through CalDAV.
 - Compare models, run expert reviews and inspect provenance and learned rules.
 - Monitor local model memory, GPU placement, fit estimates, downloads and service health through Cookbook.
+- Launch local servers with a verified configuration: model architecture (dense/MoE, multi-token prediction) is read from metadata rather than the model name, each launch option is checked against a per-implementation capability manifest before the command is built, and a launch receipt shows what was requested, what was applied and what the server confirmed. Every reply carries measured phases (queue, load, prefill, generation, tools) with their source under "Why did it take this long?" — a phase the engine does not report is shown as absent, never as zero.
+- Benchmark a running configuration on your own machine from Cookbook → *Optimize for my machine*: explicit plan and budget before anything runs, one model at a time, deterministic quality checks (no LLM judge), and a comparator that only marks a profile as recommended when speed improves beyond the observed noise without losing quality.
 
 ### Durable workflows
 

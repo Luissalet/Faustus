@@ -469,3 +469,36 @@ persistir workflows).
 documento) cablea los puntos que las tandas 2 y 3 dejaron documentados
 como pendientes de un lote posterior; no cierra OBJ-8 todavía.
 
+
+## OBJ-9 · Inferencia local honesta: veracidad, evidencia, visibilidad y banco — EN CURSO
+
+Pedido por Luis, 2026-09-12, con `Faustus_Especificacion_Claude_Inferencia_
+Local.md` como única fuente («aquí tienes tus siguientes pasos cuando acabes
+con el readme»). El principio: **soporte**, **aplicación efectiva** y
+**beneficio medido** son tres ejes distintos que nunca se colapsan en un
+«optimizado»; lo no observado es `unknown`/`absent`, nunca cero; sondas
+pasivas por defecto; benchmarks solo explícitos con plan y presupuesto; un
+solo modelo grande a la vez; ascenso de un perfil únicamente por evidencia.
+
+**Hecho (12-09, commits `99dbe3a`, `7a54923`, `017cc6c`, `e2b5995`; FAUSTUS
+§77).** INF-00 auditoría del código real (MoE/MTP deducidos del nombre,
+promesas de velocidad sin medir, opciones perdidas en silencio, timings del
+motor descartados). INF-01: arquitectura desde metadatos con `unknown` como
+resultado, recibo de traducción del comando (`applied/omitted/manual`),
+reescrituras del servidor visibles. INF-02: contratos, manifiesto de
+capacidades por implementación, evaluación antes del comando, recibo de
+arranque solicitado → aplicado → confirmado por sondas pasivas. INF-03:
+fases medidas con su fuente, «¿por qué ha tardado tanto?» bajo cada
+respuesta, Scorecard con motor. INF-04: tres suites deterministas sin juez
+LLM, runner secuencial por la puerta de admisión con presupuesto y parciales,
+comparador con `inconclusive` honesto, perfiles con ascenso solo por
+`improvement`, pestaña «Optimize for my machine».
+
+**Queda.** Verificación en vivo en el 7001 y un primer benchmark real con un
+modelo pequeño (autorizado por Luis); INF-05 (topología, presupuesto de
+memoria, admisión reconciliada — Cookbook serve aún no pasa por
+`vram_admission` —, candidatos con reinicio, `activate_profile`); INF-06/07
+laboratorio (especulación, reparto entre GPUs, comparación de motores) solo
+con autorización por tanda. Después, el documento de investigación de
+memoria/contexto (F01 laboratorio de memoria y F04 atlas piloto primero,
+según su propia secuencia).

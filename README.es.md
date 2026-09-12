@@ -186,6 +186,8 @@ ComfyUI es un servicio separado; los pesos de los modelos, los nodos personaliza
 - Organizar notas, tareas y calendarios; conectar correo con IMAP/SMTP y calendarios mediante CalDAV.
 - Comparar modelos, ejecutar revisiones de expertos y consultar procedencia y reglas aprendidas.
 - Vigilar la memoria de los modelos locales, la colocación en GPU, las estimaciones de capacidad, las descargas y la salud de los servicios desde Cookbook.
+- Arrancar servidores locales con una configuración verificada: la arquitectura del modelo (denso/MoE, predicción multi-token) se lee de los metadatos y no del nombre, cada opción de arranque se comprueba contra un manifiesto de capacidades por implementación antes de construir el comando, y un recibo de arranque muestra lo solicitado, lo aplicado y lo que el servidor confirmó. Cada respuesta lleva sus fases medidas (cola, carga, prefill, generación, herramientas) con su fuente bajo «¿Por qué ha tardado tanto?»; una fase que el motor no reporta aparece como ausente, nunca como cero.
+- Medir una configuración en marcha en tu propio equipo desde Cookbook → *Optimizar para mi equipo*: plan y presupuesto explícitos antes de ejecutar nada, un solo modelo a la vez, comprobaciones de calidad deterministas (sin juez LLM) y un comparador que solo marca un perfil como recomendado cuando la velocidad mejora por encima del ruido observado sin perder calidad.
 
 ### Flujos de trabajo duraderos
 
