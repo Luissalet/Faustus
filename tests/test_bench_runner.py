@@ -64,13 +64,20 @@ def admit_calls(monkeypatch):
     calls = []
 
     async def _fake_admit(endpoint_url, model, *, owner="", on_progress=None,
-                          mode=None, timeout=None, waited_out=None):
+                          mode=None, timeout=None, waited_out=None, grant_out=None):
         calls.append((endpoint_url, model, owner))
         if waited_out is not None:
             waited_out["waited_s"] = 0.0
         return "proceed"
 
+    def _fake_assess(root, model):
+        # INF-05 B2: `_run_one_case`'s pinned/in-use pre-check calls
+        # `assess()` once before `admit()` — no real Ollama/nvidia-smi here,
+        # same "never a real network call in tests" rule as `admit` itself.
+        return {"fits": True, "residents": [], "suggestion": [], "suggestion_protected_used": []}
+
     monkeypatch.setattr(vram_admission, "admit", _fake_admit)
+    monkeypatch.setattr(vram_admission, "assess", _fake_assess)
     return calls
 
 

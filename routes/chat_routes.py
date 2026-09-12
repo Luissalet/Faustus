@@ -98,6 +98,19 @@ async def _vram_admission_events(endpoint_url: str, model: str, owner: str,
     docstring) â€” the turn's `queue_wait_ms`. Left absent for the early
     returns just below (no local Ollama endpoint at all): there was no door,
     so that must read as `absent`, not a measured zero-second wait.
+
+    INF-05 B1/T12: when `admit()` actually reserved room for this load
+    (`grant_out["reservation_id"]`), this generator marks it `loading` and
+    starts `vram_admission.heartbeat_while_loading` as a background task
+    before it returns — that keeps the reservation's clock alive (and, past
+    `HARD_CAP_SECONDS`, its hard-cap grace) through the rest of the turn,
+    including the actual generation this function's caller runs AFTER this
+    generator is done. The task is self-terminating (it stops on its own
+    once the model is confirmed resident, or after its own bound) precisely
+    because this function has no reach into "when did the first token
+    arrive" further down `chat_stream`'s loop â€” see the module's own
+    docstring in `src/vram_admission.py::heartbeat_while_loading` for why a
+    caller that CAN see that moment (src/bench/runner.py) cancels sooner.
     """
     try:
         from src.model_context import is_local_endpoint
@@ -117,8 +130,10 @@ async def _vram_admission_events(endpoint_url: str, model: str, owner: str,
             pass
 
     _waited_out: Dict[str, Any] = {}
+    _grant_out: Dict[str, Any] = {}
     task = asyncio.create_task(
-        admit(endpoint_url, model, owner=owner or "", on_progress=_on_progress, waited_out=_waited_out)
+        admit(endpoint_url, model, owner=owner or "", on_progress=_on_progress,
+             waited_out=_waited_out, grant_out=_grant_out)
     )
     try:
         while True:
@@ -145,6 +160,11 @@ async def _vram_admission_events(endpoint_url: str, model: str, owner: str,
     finally:
         if not task.done():
             task.cancel()
+    reservation_id = _grant_out.get("reservation_id")
+    if reservation_id and outcome.get("ok"):
+        from src import vram_admission
+        vram_admission.mark_loading(reservation_id)
+        asyncio.create_task(vram_admission.heartbeat_while_loading(reservation_id))
 
 
 def _chat_execution_metrics(

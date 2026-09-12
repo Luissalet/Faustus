@@ -26,7 +26,7 @@ import threading
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Sequence, Union
 from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
@@ -63,33 +63,98 @@ UNLOAD_WAIT_SECONDS = 120
 # budget they already compute at that granularity.
 RESERVATION_TTL_SECONDS = 180.0
 
+# INF-05 B1/T12: "una reserva marcada loading nunca caduca antes del hard
+# cap" — a 27B model loading over PCIe can take well past the ordinary TTL.
+# Once `mark_loading()` flips a reservation's `loading` flag, it survives
+# past `ttl` unconditionally until this many seconds since it was CREATED —
+# only past that does `_expire_reservations_locked` give up on it (with a
+# warning: this is the last-resort path, not the normal one).
+HARD_CAP_SECONDS = 900.0
+
 _RES_LOCK = threading.Lock()
 _RESERVATIONS: Dict[str, Dict[str, Any]] = {}
 
 
-def _reservation_key(root: str, device: Optional[int]) -> str:
-    return f"{root}|{'pool' if device is None else f'gpu{device}'}"
+def _canonical_root(root: str) -> str:
+    """T14: `localhost`/`127.0.0.1`/`::1`/`0.0.0.0` (and the other aliases
+    `ollama_root` already recognizes) all name the SAME loopback Ollama —
+    collapse them to one string so a reservation or pin made against one
+    alias also protects/applies against another. This is a private
+    normalization used only for the reservation/pin/last-active BOOKKEEPING
+    below; `ollama_root()` itself keeps returning whatever alias the
+    caller's endpoint URL actually used (existing callers key off that
+    verbatim string), so nothing about its public return value changes.
+    Falls back to the raw string, unparsed, for anything that is not an
+    http(s) URL at all (defensive — every real caller passes an
+    `ollama_root()` result)."""
+    raw = str(root or "")
+    try:
+        p = urlparse(raw)
+    except ValueError:
+        return raw
+    host = (p.hostname or "").lower()
+    if not host:
+        return raw
+    if host in _LOCAL_HOSTS:
+        host = "127.0.0.1"
+    scheme = p.scheme or "http"
+    return f"{scheme}://{host}:{p.port}" if p.port else f"{scheme}://{host}"
+
+
+def _reservation_key(root: str, device: Optional[Union[int, str]]) -> str:
+    croot = _canonical_root(root)
+    return f"{croot}|{'pool' if device is None else f'gpu{device}'}"
 
 
 def _expire_reservations_locked(now: float) -> None:
-    dead = [rid for rid, r in _RESERVATIONS.items() if now - r["created"] > r["ttl"]]
-    for rid in dead:
+    dead: List[tuple] = []
+    for rid, r in _RESERVATIONS.items():
+        last_heartbeat = r.get("last_heartbeat", r["created"])
+        if r.get("loading"):
+            if now - r["created"] <= HARD_CAP_SECONDS:
+                continue  # a live load never expires before the hard cap
+            dead.append((rid, "hard_cap"))
+            continue
+        if now - last_heartbeat > r["ttl"]:
+            dead.append((rid, "ttl"))
+    for rid, why in dead:
         stale = _RESERVATIONS.pop(rid, None)
-        if stale:
+        if not stale:
+            continue
+        if why == "hard_cap":
+            logger.warning(
+                "vram admission: reservation %s for %s was still marked loading past the "
+                "%.0fs hard cap with no confirmation it finished — releasing it anyway",
+                rid, stale["model"], HARD_CAP_SECONDS)
+        else:
             logger.info("vram admission: reservation %s for %s expired after %.0fs unclaimed",
                         rid, stale["model"], stale["ttl"])
 
 
-def reserved_bytes(root: str, *, device: Optional[int] = None) -> int:
-    """Bytes currently set aside against `root`'s pool (or one GPU of it)."""
+def reserved_bytes(root: str, *, device: Optional[Union[int, str]] = None,
+                    include_devices: bool = False) -> int:
+    """Bytes currently set aside against `root`'s pool (or one GPU of it).
+
+    `include_devices=True` (opt-in; default False so nothing changes for
+    current callers) additionally folds in every per-device reservation
+    under the same root when asking about the pool (`device=None`) — a
+    device-scoped reservation eats into the same physical capacity the pool
+    figure describes, even though it is bucketed separately for the plain
+    per-device query."""
+    croot = _canonical_root(root)
     key = _reservation_key(root, device)
     with _RES_LOCK:
         _expire_reservations_locked(time.time())
-        return sum(r["bytes"] for r in _RESERVATIONS.values() if r["key"] == key)
+        total = sum(r["bytes"] for r in _RESERVATIONS.values() if r["key"] == key)
+        if device is None and include_devices:
+            total += sum(r["bytes"] for r in _RESERVATIONS.values()
+                        if r["key"] != key and r["key"].startswith(f"{croot}|gpu"))
+        return total
 
 
 def try_reserve(root: str, model: str, bytes_needed: int, budget_bytes: int, *,
-                device: Optional[int] = None, ttl: float = RESERVATION_TTL_SECONDS) -> Optional[str]:
+                device: Optional[Union[int, str]] = None,
+                ttl: float = RESERVATION_TTL_SECONDS) -> Optional[str]:
     """Atomic test-and-set: reserve `bytes_needed` against `budget_bytes` only
     if what is already reserved leaves room for it. Returns the reservation id
     on success, None when another reservation already claims that room — the
@@ -100,6 +165,11 @@ def try_reserve(root: str, model: str, bytes_needed: int, budget_bytes: int, *,
     under one lock, which is the whole fix for QA-24: `assess()` alone can
     only ever report a snapshot, and two snapshots taken microseconds apart
     can both be true at the moment they were taken.
+
+    `device` (T14) accepts either an index (today's usage) or a physical
+    identity string (a GPU uuid) — both are just opaque key material here,
+    `src/memory_budget.py`/`src/gpu_topology.py` decide which one is the
+    right identity to reserve against for a given caller.
     """
     key = _reservation_key(root, device)
     now = time.time()
@@ -111,7 +181,8 @@ def try_reserve(root: str, model: str, bytes_needed: int, budget_bytes: int, *,
         rid = f"rsv-{uuid.uuid4().hex[:12]}"
         _RESERVATIONS[rid] = {"key": key, "root": root, "model": model,
                               "bytes": max(0, int(bytes_needed)), "device": device,
-                              "created": now, "ttl": float(ttl)}
+                              "created": now, "ttl": float(ttl),
+                              "last_heartbeat": now, "loading": False}
         return rid
 
 
@@ -122,10 +193,69 @@ def release_reservation(reservation_id: Optional[str]) -> None:
         _RESERVATIONS.pop(reservation_id, None)
 
 
+def heartbeat(reservation_id: Optional[str]) -> bool:
+    """Renew a reservation's clock while its load is actually in flight.
+    Returns False when the reservation is already gone (expired, force-
+    capped past `HARD_CAP_SECONDS`, or released because the model was
+    observed resident) — the caller then knows its protection is gone and
+    must not assume the memory is still spoken for."""
+    if not reservation_id:
+        return False
+    now = time.time()
+    with _RES_LOCK:
+        _expire_reservations_locked(now)
+        r = _RESERVATIONS.get(reservation_id)
+        if r is None:
+            return False
+        r["last_heartbeat"] = now
+        return True
+
+
+def mark_loading(reservation_id: Optional[str]) -> bool:
+    """§12/T12: from this call on, `reservation_id` protects a load that is
+    ACTIVELY in flight — `_expire_reservations_locked` will not sweep it on
+    TTL alone before `HARD_CAP_SECONDS` has passed since it was created,
+    regardless of whether anything calls `heartbeat()`. Returns False if the
+    reservation is already gone."""
+    if not reservation_id:
+        return False
+    now = time.time()
+    with _RES_LOCK:
+        _expire_reservations_locked(now)
+        r = _RESERVATIONS.get(reservation_id)
+        if r is None:
+            return False
+        r["loading"] = True
+        r["last_heartbeat"] = now
+        return True
+
+
+async def heartbeat_while_loading(reservation_id: Optional[str], *, interval: float = 25.0,
+                                  max_seconds: float = HARD_CAP_SECONDS - 30.0) -> None:
+    """Fire-and-forget background renewal for a `loading=True` reservation —
+    `asyncio.create_task(heartbeat_while_loading(rid))` right after
+    `mark_loading(rid)` and forget it: it is self-terminating, stopping the
+    moment `heartbeat()` reports the reservation is gone (released once the
+    model is observed resident, or force-expired past the hard cap) or
+    after `max_seconds` of wall-clock time, whichever comes first — never an
+    unbounded task. A caller that CAN pinpoint the exact moment loading
+    ended (e.g. `src/bench/runner.py` sees the first streamed token) should
+    still cancel the task there instead of waiting for the bound."""
+    if not reservation_id:
+        return
+    elapsed = 0.0
+    while elapsed < max_seconds:
+        await asyncio.sleep(interval)
+        elapsed += interval
+        if not heartbeat(reservation_id):
+            return
+
+
 def _release_for_model_locked(root: str, model: str) -> None:
     want = str(model).strip().lower()
+    croot = _canonical_root(root)
     dead = [rid for rid, r in _RESERVATIONS.items()
-            if r["root"] == root and str(r["model"]).strip().lower() == want]
+            if _canonical_root(r["root"]) == croot and str(r["model"]).strip().lower() == want]
     for rid in dead:
         _RESERVATIONS.pop(rid, None)
 
@@ -177,7 +307,7 @@ _LAST_ACTIVE: Dict[str, float] = {}  # "root|model" -> time.time()
 
 
 def _active_key(root: str, name: str) -> str:
-    return f"{root}|{str(name or '').strip().lower()}"
+    return f"{_canonical_root(root)}|{str(name or '').strip().lower()}"
 
 
 def _note_active(root: str, name: str) -> None:
@@ -196,33 +326,36 @@ def _seconds_since_active(root: str, name: str, *, now: Optional[float] = None) 
 
 
 def pin_model(root: str, model: str) -> None:
-    """Keep `model` out of eviction suggestions on `root` until unpinned."""
+    """Keep `model` out of eviction suggestions on `root` until unpinned.
+    T14: keyed by the CANONICAL root, so pinning via one loopback alias
+    protects the model no matter which alias later asks."""
     name = str(model or "").strip()
     if not name:
         raise ValueError("model is required")
     with _PIN_LOCK:
-        _PINS.setdefault(root, set()).add(name.lower())
+        _PINS.setdefault(_canonical_root(root), set()).add(name.lower())
 
 
 def unpin_model(root: str, model: str) -> None:
     name = str(model or "").strip().lower()
+    croot = _canonical_root(root)
     with _PIN_LOCK:
-        pins = _PINS.get(root)
+        pins = _PINS.get(croot)
         if pins:
             pins.discard(name)
             if not pins:
-                _PINS.pop(root, None)
+                _PINS.pop(croot, None)
 
 
 def is_pinned(root: str, model: str) -> bool:
     name = str(model or "").strip().lower()
     with _PIN_LOCK:
-        return name in _PINS.get(root, set())
+        return name in _PINS.get(_canonical_root(root), set())
 
 
 def pinned_models(root: str) -> List[str]:
     with _PIN_LOCK:
-        return sorted(_PINS.get(root, set()))
+        return sorted(_PINS.get(_canonical_root(root), set()))
 
 
 def residency_status(root: str, residents: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -527,19 +660,25 @@ class Ticket:
     created: float = field(default_factory=time.time)
     event: asyncio.Event = field(default_factory=asyncio.Event)
     decision: Optional[Dict[str, Any]] = None
+    # INF-05 B2: "load" is a chat/research/Load-button ticket (`assess()`
+    # against one Ollama model); "serve" is `admit_bytes`'s engine-agnostic
+    # gate for Cookbook. Both resolve through the exact same route/click —
+    # `kind` is metadata for the caller/UI, never branched on here.
+    kind: str = "load"
 
     def public(self) -> Dict[str, Any]:
         return {"id": self.id, "model": self.model, "owner": self.owner,
                 "created": self.created, "resolved": self.decision is not None,
-                "decision": self.decision, **self.assessment}
+                "decision": self.decision, "kind": self.kind, **self.assessment}
 
 
 _PENDING: Dict[str, Ticket] = {}
 
 
-def open_ticket(root: str, model: str, assessment: Dict[str, Any], *, owner: str = "") -> Ticket:
+def open_ticket(root: str, model: str, assessment: Dict[str, Any], *, owner: str = "",
+                kind: str = "load") -> Ticket:
     t = Ticket(id=f"va-{uuid.uuid4().hex[:12]}", model=model, root=root, owner=owner or "",
-               assessment=assessment)
+               assessment=assessment, kind=kind)
     _PENDING[t.id] = t
     return t
 
@@ -640,13 +779,24 @@ def _timeout() -> float:
 async def admit(endpoint_url: str, model: str, *, owner: str = "",
                 on_progress: Optional[Callable[[Dict[str, Any]], None]] = None,
                 mode: Optional[str] = None, timeout: Optional[float] = None,
-                waited_out: Optional[Dict[str, Any]] = None) -> str:
+                waited_out: Optional[Dict[str, Any]] = None,
+                grant_out: Optional[Dict[str, Any]] = None) -> str:
     """Clear the way for `model` on `endpoint_url`, or refuse.
 
     Returns "proceed" when the caller may load. Raises AdmissionCancelled when
     it may not â€” the person said cancel, or nobody answered in time. Silence
     never loads a model that would not fit: that is the one rule that would
     have kept the machine up on 08-09.
+
+    INF-05 B1/T12: when a reservation is actually made (the `fits=True`
+    branch below), `grant_out["reservation_id"]` is filled in with its id —
+    the caller then owns keeping it alive for as long as the load is really
+    running: `mark_loading(reservation_id)` once it starts, and either
+    `heartbeat_while_loading(reservation_id)` as a background task or its
+    own precise `heartbeat()` calls once it knows exactly when the load
+    ends (first streamed token, typically). Left untouched (not even set to
+    `{}`) when no reservation was made — an absent key, not a `None` value,
+    is the caller's signal there is nothing to keep alive.
 
     INF-03: when `waited_out` is given, this fills in `waited_out["waited_s"]`
     (a monotonic duration) on every return/raise past the point this gate
@@ -690,6 +840,8 @@ async def admit(endpoint_url: str, model: str, *, owner: str = "",
         if reservation_id is not None:
             # Held until assess() next sees `model` resident or RESERVATION_TTL_SECONDS
             # passes (release_reservations_for_model / _expire_reservations_locked).
+            if grant_out is not None:
+                grant_out["reservation_id"] = reservation_id
             _mark_wait()
             return "proceed"
         # QA-24: this read of "it fits" was true a moment ago; another admit()
@@ -749,3 +901,293 @@ async def admit(endpoint_url: str, model: str, *, owner: str = "",
         return "proceed"
     finally:
         _forget(t.id)
+
+
+# ── admit_bytes: the engine-agnostic gate (INF-05 B2) ───────────────────────
+#
+# `admit()`/`assess()` above answer "does THIS OLLAMA MODEL fit" — they need
+# a model name to ask Ollama's own /api/ps and /api/tags. Cookbook `serve`
+# has neither: it launches an arbitrary engine (llama-server, vllm, ...)
+# against a weights-bytes figure the client already knows (`size_bytes` off
+# the catalogue) and a set of GPU indices, not an Ollama root. §12 is
+# explicit that this does not earn an exemption — "un benchmark no recibe
+# permiso para saltarse la puerta porque sea interno", and neither does a
+# serve. `admit_bytes` is the SAME authority (same reservation table, same
+# ticket table) reached through a byte count and a physical GPU set instead
+# of a model name.
+
+def _physical_budget_for(gpu_indices: Sequence[int]) -> Dict[str, Any]:
+    """Real per-GPU capacity for `admit_bytes`, built from INF-05 Lote A's
+    own authorities — `gpu_topology.snapshot()` (physical identity) and
+    `src.memory_budget.physical_budgets()` (the desegregated per-GPU
+    reading) — rather than a second implementation of the same budget
+    arithmetic. This module stays the only CALLER that decides admission;
+    A3 stays the only place that turns raw readings into a `MemoryBudget`.
+
+    Returns `{budget_bytes, total_bytes, used_bytes, stale, source,
+    gpu_count, gpu_name, reason}`, aggregated over `gpu_indices` (every
+    physical GPU this reading covers when `gpu_indices` is empty — the
+    pool). `source == "absent"` (with `stale=True` and a `reason`) for
+    anything this cannot honestly answer: no `nvidia-smi`, no reading for
+    the requested indices, or a budget module that failed to import —
+    never a fabricated number standing in for "unknown".
+    """
+    def _absent(reason: str) -> Dict[str, Any]:
+        return {"budget_bytes": 0, "total_bytes": None, "used_bytes": None,
+               "stale": True, "source": "absent", "gpu_count": 0, "gpu_name": "",
+               "reason": reason}
+
+    try:
+        from src import gpu_topology
+        from src import gpu_shared_memory
+        from src import memory_budget as mb
+    except Exception as e:  # noqa: BLE001
+        return _absent(f"budget modules unavailable: {e}")
+    try:
+        snap = gpu_topology.snapshot()
+    except Exception as e:  # noqa: BLE001
+        return _absent(f"topology reading failed: {e}")
+    try:
+        vram = gpu_shared_memory.vram_snapshot()
+    except Exception as e:  # noqa: BLE001
+        return _absent(f"vram reading failed: {e}")
+    if not vram or not vram.get("supported"):
+        return _absent(str((vram or {}).get("reason") or "no GPU reading"))
+    try:
+        budgets = mb.physical_budgets(snapshot=snap, vram=vram)
+    except Exception as e:  # noqa: BLE001
+        return _absent(f"budget computation failed: {e}")
+    if not budgets:
+        return _absent("no GPU budget rows")
+    wanted = {int(i) for i in (gpu_indices or ())}
+    rows = [b for b in budgets.values() if not wanted or b.gpu_index in wanted]
+    if not rows:
+        return _absent(f"GPU indices {sorted(wanted)} were not observed in this reading")
+    total_known = all(r.total_bytes is not None for r in rows)
+    free_known = all(r.components.free.bytes is not None for r in rows)
+    if not total_known or not free_known:
+        return _absent("VRAM total/free was not observed for one or more of the requested GPUs")
+    total = sum(int(r.total_bytes) for r in rows)
+    free = sum(int(r.components.free.bytes) for r in rows)
+    used = max(0, total - free)
+    stale = any(r.stale for r in rows)
+    return {"budget_bytes": max(0, free), "total_bytes": total, "used_bytes": used,
+           "stale": stale, "source": "observed", "gpu_count": len(rows),
+           "gpu_name": rows[0].gpu_name, "reason": ""}
+
+
+def _physical_reservation_root(gpu_indices: Sequence[int]) -> str:
+    """A dedicated reservation namespace for `admit_bytes`, separate from
+    any Ollama root's `root|pool`/`root|gpuN` keys — a serve candidate and
+    an Ollama load are different consumers of the same physical card, and
+    each has its own bytes to reserve, so they must not collide on the same
+    key by accident. Same GPU SET -> same key, regardless of order."""
+    idx = sorted({int(i) for i in (gpu_indices or ())})
+    return "physical:" + (",".join(str(i) for i in idx) if idx else "pool")
+
+
+def _ollama_suggestion_candidates(
+    ollama_roots: Sequence[str], gpu_indices: Sequence[int], shortfall: int,
+) -> "tuple[List[str], int, List[Dict[str, Any]]]":
+    """§12: the ONLY eviction candidates `admit_bytes` ever offers are
+    Ollama models resident on the requested physical GPUs — never a foreign
+    process (a browser, ComfyUI, someone else's job): those stay folded
+    into the budget's own "used" figure, reported, never acted on. Returns
+    `(suggestion_names_biggest_first, bytes_freed, residents)`; `residents`
+    carries each candidate's `root` so a later `resolve(..., action=
+    "unload")` knows which Ollama server to actually call."""
+    wanted = {int(i) for i in (gpu_indices or ())}
+    residents: List[Dict[str, Any]] = []
+    candidates: List[Dict[str, Any]] = []
+    if not ollama_roots:
+        return [], 0, []
+    from src import gpu_placement, gpu_shared_memory
+    for root in ollama_roots:
+        try:
+            loaded = _get(root, "/api/ps", 2.5).get("models") or []
+        except Exception as e:  # noqa: BLE001
+            logger.debug("admit_bytes: /api/ps failed for %s: %s", root, e)
+            continue
+        try:
+            vram = gpu_shared_memory.vram_snapshot()
+            gpus = vram.get("gpus") if vram.get("supported") else None
+        except Exception:  # noqa: BLE001
+            gpus = None
+        try:
+            placements = gpu_placement.placement(root, loaded, gpus)
+        except Exception:  # noqa: BLE001
+            placements = {}
+        for m in loaded:
+            name = str(m.get("name") or m.get("model") or "")
+            if not name:
+                continue
+            in_vram = int(m.get("size_vram") or 0)
+            info = placements.get(name) or {}
+            idxs = {int(i) for i in (info.get("gpus") or [])}
+            if wanted and not (idxs & wanted):
+                continue  # resident on a different card than the one requested
+            row = {"name": name, "root": root, "in_vram_bytes": in_vram, "gpus": sorted(idxs)}
+            residents.append(row)
+            candidates.append(row)
+    # Biggest first: one large model freed beats several small ones (same
+    # arithmetic reasoning as `assess()`'s own suggestion builder).
+    candidates.sort(key=lambda c: c["in_vram_bytes"], reverse=True)
+    picked: List[str] = []
+    freed = 0
+    for c in candidates:
+        if freed >= shortfall:
+            break
+        picked.append(c["name"])
+        freed += c["in_vram_bytes"]
+    return picked, freed, residents
+
+
+async def admit_bytes(*, label: str, bytes_needed: Optional[int], gpu_indices: Sequence[int],
+                      owner: str = "", mode: Optional[str] = None, timeout: Optional[float] = None,
+                      ollama_roots: Sequence[str] = ()) -> Dict[str, Any]:
+    """The capacity gate for a Cookbook `serve` launch (§12: a serve gets no
+    exemption from the single capacity authority any more than a benchmark
+    does). Returns `{decision, reservation_id, ticket, assessment}`:
+
+      decision == "proceed"  the caller may launch; `reservation_id` (when
+                             set) must be kept alive the same way `admit()`
+                             callers do: `mark_loading()` + either
+                             `heartbeat_while_loading()` or precise
+                             `heartbeat()` calls until the launch is
+                             confirmed resident.
+      decision == "blocked"  does not fit; `ticket` names a pending
+                             `Ticket` the caller's route returns as a 409
+                             for the Studio's `VramAdmissionDialog` to
+                             resolve (`POST /api/local-models/admission/
+                             {ticket}`) — mirrors `admit()`'s `mode="ask"`
+                             path, but NEVER awaits a person here (`ask` and
+                             any shortfall this cannot auto-clear both take
+                             this branch): a serve request is one HTTP call,
+                             not a held-open stream a ticket can block
+                             inside of the way `admit()` does for chat.
+      decision == "unknown"  no reliable reading to judge against — either
+                             `bytes_needed is None` (nothing was given to
+                             check) or the physical budget reading is
+                             stale/absent (`assessment.reason` says which)
+                             — never treated as a block; ignorance does not
+                             stop a launch, it is reported on the receipt
+                             instead (§12: "lo que no se observa es absent/
+                             unknown ... pero la ignorancia nunca bloquea").
+      decision == "off"      admission is disabled; nothing was checked.
+
+    Deadlock note (T16, §12 "evitar deadlocks de delegación"): this
+    coroutine never imports or touches `routes.cookbook_routes.
+    _LOCAL_MODEL_LOCK` (or any other cross-request lock) and its only
+    `await`s are `asyncio.to_thread` for the budget/placement reads and,
+    in `mode="auto"`, `unload_and_wait` for Ollama residents it is itself
+    unloading — nothing here can hold a lock a child run would need to
+    finish and then wait on that same child. The parent/child *scheduling*
+    question (should a parent yield capacity to a blocked child at all) is
+    the subagent orchestrator's decision, out of this lote's scope.
+    """
+    mode = mode or _mode()
+    root_for_ticket = (ollama_roots[0] if ollama_roots else None) or "physical"
+    gpu_indices = list(gpu_indices or ())
+
+    if bytes_needed is None:
+        # §12: ignorance never blocks, but it is reported, not silently
+        # treated as a checked "proceed" — the caller (`model_serve`)
+        # continues the launch either way, and records `decision: "unknown"`
+        # on the receipt rather than pretending a check happened.
+        return {"decision": "unknown", "reservation_id": None, "ticket": None,
+               "assessment": {"model": label, "root": root_for_ticket, "fits": None,
+                              "reason": "weights size unknown: nothing to check against",
+                              "kind": "serve", "gpu_indices": gpu_indices}}
+    if mode == "off":
+        return {"decision": "off", "reservation_id": None, "ticket": None,
+               "assessment": {"model": label, "root": root_for_ticket, "fits": None,
+                              "reason": "vram admission is off", "kind": "serve",
+                              "gpu_indices": gpu_indices}}
+
+    budget = await asyncio.to_thread(_physical_budget_for, gpu_indices)
+    if budget["source"] == "absent" or budget["stale"]:
+        return {"decision": "unknown", "reservation_id": None, "ticket": None,
+               "assessment": {"model": label, "root": root_for_ticket, "fits": None,
+                              "reason": budget.get("reason") or "no reliable GPU reading",
+                              "stale": bool(budget["stale"]), "kind": "serve",
+                              "gpu_indices": gpu_indices}}
+
+    phys_key = _physical_reservation_root(gpu_indices)
+    reserved = reserved_bytes(phys_key)
+    total = int(budget["total_bytes"])
+    used = int(budget["used_bytes"])
+    budget_alongside = max(0, total - used - reserved)
+    headroom = HEADROOM_MEASURED
+    need = int(bytes_needed) + headroom
+    shortfall = max(0, need - budget_alongside)
+
+    suggestion, suggestion_frees, residents = await asyncio.to_thread(
+        _ollama_suggestion_candidates, tuple(ollama_roots), gpu_indices, shortfall)
+
+    assessment: Dict[str, Any] = {
+        "model": label, "root": root_for_ticket, "fits": shortfall == 0,
+        "residents": residents, "suggestion": suggestion, "measured": True,
+        "estimate": "measured", "size_bytes": int(bytes_needed), "kv_bytes": 0, "kv_ctx": 0,
+        "footprint_bytes": int(bytes_needed), "headroom_bytes": headroom, "need_bytes": need,
+        "budget_alongside_bytes": budget_alongside, "budget_if_unloaded_bytes": max(0, total - used),
+        "reserved_bytes": reserved, "held_by_runner_bytes": 0, "others_bytes": used,
+        "vram_total_bytes": total, "gpu_count": len(gpu_indices) or int(budget.get("gpu_count") or 1),
+        "gpu_name": budget.get("gpu_name") or "", "shortfall_bytes": shortfall,
+        "suggestion_frees_bytes": suggestion_frees, "suggestion_enough": suggestion_frees >= shortfall,
+        "suggestion_protected_used": [], "kind": "serve", "gpu_indices": gpu_indices,
+    }
+
+    if shortfall == 0:
+        reservation_id = try_reserve(phys_key, label, need, budget_alongside + reserved)
+        if reservation_id is not None:
+            return {"decision": "proceed", "reservation_id": reservation_id, "ticket": None,
+                   "assessment": assessment}
+        # QA-24/T13: fit a moment ago, another admit_bytes just reserved the
+        # room — the same race admit() guards against, handled the same way.
+        assessment = dict(assessment, fits=False,
+                          reason=f"{label} would fit, but another admission just reserved that room")
+
+    if mode == "auto" and suggestion and suggestion_frees >= shortfall:
+        # Only ever unloads what `_ollama_suggestion_candidates` already
+        # restricted to Ollama residents on these exact GPUs — never a
+        # foreign process, never a model this reading could not attribute.
+        by_root: Dict[str, List[str]] = {}
+        for r in residents:
+            if r["name"] in suggestion:
+                by_root.setdefault(r["root"], []).append(r["name"])
+        still_resident: List[str] = []
+        for root, names in by_root.items():
+            still_resident.extend(await unload_and_wait(root, names))
+        if not still_resident:
+            reservation_id = try_reserve(phys_key, label, need, need)
+            return {"decision": "proceed", "reservation_id": reservation_id, "ticket": None,
+                   "assessment": assessment}
+        assessment = dict(assessment, reason=f"could not unload {', '.join(still_resident)}")
+
+    t = open_ticket(root_for_ticket, label, assessment, owner=owner, kind="serve")
+    return {"decision": "blocked", "reservation_id": None, "ticket": t.id, "assessment": assessment}
+
+
+def reconcile_on_start() -> Dict[str, Any]:
+    """INF-05 B1/T12: called once from `app.py`'s startup reconciliation
+    pass, next to `src.bench.runner.reconcile_on_start` and
+    `src.launch_receipts.reconcile_on_start`. Reservations
+    (`_RESERVATIONS`), pending tickets (`_PENDING`) and pins/last-active are
+    all in-memory only — a restart already loses them, so this is
+    bookkeeping, not recovery: it clears them explicitly and logs what it
+    found rather than leaving stale entries from a process that no longer
+    exists. It does NOT re-derive a budget from nvidia-smi itself — any
+    process that survived the restart (an already-running Ollama, an
+    externally-managed server) shows up as `used` VRAM the moment the next
+    `assess()`/`admit_bytes()` call reads the card fresh, so no ghost
+    capacity is silently handed back either way."""
+    with _RES_LOCK:
+        cleared = len(_RESERVATIONS)
+        _RESERVATIONS.clear()
+    pending_cleared = len(_PENDING)
+    _PENDING.clear()
+    if cleared:
+        logger.info("vram admission: reconcile_on_start cleared %d in-memory reservation(s)", cleared)
+    if pending_cleared:
+        logger.info("vram admission: reconcile_on_start cleared %d pending ticket(s)", pending_cleared)
+    return {"cleared": cleared, "pending_cleared": pending_cleared}

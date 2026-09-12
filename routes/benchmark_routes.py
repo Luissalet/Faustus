@@ -254,4 +254,42 @@ def setup_benchmark_routes() -> APIRouter:
             return _error(409, str(e), "bench.not_comparable")
         return {"profile": profile.to_dict()}
 
+    # ── activation (INF-05 B3, §13 "política de activación") ────────────────
+
+    @router.post("/api/bench/profiles/{profile_id}/activate")
+    async def activate_profile_route(request: Request, profile_id: str):
+        require_admin(request)
+        owner = get_current_user(request) or ""
+        try:
+            result = profiles.activate_profile(profile_id, owner=owner)
+        except profiles.ProfileNotFound:
+            return _error(404, f"no such profile: {profile_id!r}", "bench.not_found")
+        except profiles.ActivationRefused as e:
+            return _error(409, str(e), "bench.not_activatable")
+        return result
+
+    @router.post("/api/bench/profiles/{profile_id}/deactivate")
+    async def deactivate_profile_route(request: Request, profile_id: str):
+        require_admin(request)
+        try:
+            result = profiles.deactivate_profile(profile_id)
+        except profiles.ProfileNotFound:
+            return _error(404, f"no active profile to deactivate: {profile_id!r}", "bench.not_found")
+        return result
+
+    @router.get("/api/bench/profiles/active")
+    async def active_profile_route(request: Request, endpoint: str = "", model: str = ""):
+        require_admin(request)
+        if not endpoint or not model:
+            return {"profile_id": None}
+        return {"profile_id": profiles.active_profile_for(endpoint, model)}
+
+    @router.get("/api/bench/profiles/{profile_id}/rollback-proposal")
+    async def rollback_proposal_route(request: Request, profile_id: str):
+        require_admin(request)
+        try:
+            return profiles.rollback_proposal(profile_id)
+        except profiles.ProfileNotFound:
+            return _error(404, f"no such profile: {profile_id!r}", "bench.not_found")
+
     return router

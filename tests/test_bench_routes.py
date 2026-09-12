@@ -64,12 +64,18 @@ def fake_suite(monkeypatch):
 @pytest.fixture
 def fake_model(monkeypatch):
     async def _fake_admit(endpoint_url, model, *, owner="", on_progress=None,
-                          mode=None, timeout=None, waited_out=None):
+                          mode=None, timeout=None, waited_out=None, grant_out=None):
         if waited_out is not None:
             waited_out["waited_s"] = 0.0
         return "proceed"
 
+    def _fake_assess(root, model):
+        # INF-05 B2: the pinned/in-use pre-check `_run_one_case` runs before
+        # `admit()` — no real network here either.
+        return {"fits": True, "residents": [], "suggestion": [], "suggestion_protected_used": []}
+
     monkeypatch.setattr(vram_admission, "admit", _fake_admit)
+    monkeypatch.setattr(vram_admission, "assess", _fake_assess)
 
     async def _fake_stream(url, model, messages, **kwargs):
         yield "data: " + json.dumps({"delta": "hola"}) + "\n\n"
@@ -328,3 +334,92 @@ async def test_plan_saves_its_profile_so_promote_can_find_it(fake_suite, fake_mo
     # but the route found it and answered with the profile, not a 404
     assert "profile" in body, body
     assert body["profile"]["evaluation"] != "recommended"
+
+
+# ── activation (INF-05 B3) ───────────────────────────────────────────────────
+#
+# `activate_profile`/`deactivate_profile` write through `model_load_options`
+# to `src.settings` — a DIFFERENT file than `inference_profiles.json`
+# (`_data_dir` above only isolates the latter, via `src.constants.DATA_DIR`,
+# which `src.settings.SETTINGS_FILE` does NOT re-derive at call time). Same
+# isolation `tests/test_model_load_options.py` uses for the same reason.
+
+@pytest.fixture(autouse=True)
+def _isolate_settings_file(tmp_path, monkeypatch):
+    from src import settings as settings_mod
+    from src import model_load_options as mlo
+    monkeypatch.setattr(settings_mod, "SETTINGS_FILE", str(tmp_path / "settings.json"))
+    settings_mod._invalidate_caches()
+    mlo.reset_endpoint_cache()
+    yield
+    settings_mod._invalidate_caches()
+    mlo.reset_endpoint_cache()
+
+
+def _saved_ollama_profile(monkeypatch, *, label="p1", model="qwen3.5:9b", options=None):
+    from src.bench import profiles as bench_profiles
+    from src.contracts.inference import InferenceProfile
+    from src.contracts.base import now_iso
+    profile = InferenceProfile.parse({
+        "id": f"profile-{label}", "label": label, "model": {"artifact_id": model},
+        "engine": {"implementation": "ollama", "host": "127.0.0.1", "port": 11434},
+        "hardware_id": None, "options": options or {}, "objective": "interactive",
+        "created_at": now_iso(),
+    })
+    bench_profiles.save_profile(profile)
+    return profile
+
+
+def _declare_ollama_endpoint(monkeypatch):
+    import routes.local_models_routes as lmr
+    monkeypatch.setattr(lmr, "list_ollama_endpoints", lambda **kw: [
+        {"id": "local-ollama", "name": "Ollama", "root": "http://127.0.0.1:11434",
+         "base_url": "http://127.0.0.1:11434/v1", "same_machine": True},
+    ])
+
+
+def test_activate_route_applies_ollama_options_and_reports_active(client, monkeypatch):
+    _declare_ollama_endpoint(monkeypatch)
+    profile = _saved_ollama_profile(monkeypatch, options={"num_ctx": 16384})
+    resp = client.post(f"/api/bench/profiles/{profile.id}/activate")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["scope"] == "next_request"
+    assert body["applied"]["options"] == {"num_ctx": 16384}
+
+    active = client.get("/api/bench/profiles/active", params={
+        "endpoint": "http://127.0.0.1:11434", "model": profile.model.artifact_id,
+    })
+    assert active.json()["profile_id"] == profile.id
+
+
+def test_activate_route_404_for_unknown_profile(client):
+    resp = client.post("/api/bench/profiles/does-not-exist/activate")
+    assert resp.status_code == 404
+    assert resp.json()["error_class"] == "bench.not_found"
+
+
+def test_activate_route_409_when_no_endpoint_is_declared(client, monkeypatch):
+    import routes.local_models_routes as lmr
+    monkeypatch.setattr(lmr, "list_ollama_endpoints", lambda **kw: [])
+    profile = _saved_ollama_profile(monkeypatch, label="p2")
+    resp = client.post(f"/api/bench/profiles/{profile.id}/activate")
+    assert resp.status_code == 409
+    assert resp.json()["error_class"] == "bench.not_activatable"
+
+
+def test_deactivate_route_restores_previous_options(client, monkeypatch):
+    from src import model_load_options as mlo
+    _declare_ollama_endpoint(monkeypatch)
+    mlo.set_options("local-ollama", "qwen3.5:9b", {"num_ctx": 4096})
+    profile = _saved_ollama_profile(monkeypatch, label="p3", options={"num_ctx": 32768})
+    client.post(f"/api/bench/profiles/{profile.id}/activate")
+    assert mlo.get_options("local-ollama", "qwen3.5:9b")["num_ctx"] == 32768
+
+    resp = client.post(f"/api/bench/profiles/{profile.id}/deactivate")
+    assert resp.status_code == 200
+    assert mlo.get_options("local-ollama", "qwen3.5:9b")["num_ctx"] == 4096
+    active = client.get("/api/bench/profiles/active", params={
+        "endpoint": "http://127.0.0.1:11434", "model": "qwen3.5:9b",
+    })
+    assert active.json()["profile_id"] is None

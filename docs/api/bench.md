@@ -38,6 +38,26 @@ recuperación de un dato exacto situado al principio, en medio y al final de
 un documento de ~3-4k tokens embebido en el propio caso, sin ficheros
 externos).
 
+## La puerta de admisión dentro de `start()` (§12, INF-05 Lote B)
+
+Cada caso pasa por la MISMA autoridad de capacidad que un chat
+(`src.vram_admission`), nunca una excepción "es un benchmark interno":
+
+- **Antes de `admit()`**, `_run_one_case` pregunta `assess()` una vez: si
+  el candidato solo cabe descargando un residente **pinneado** o **recién
+  activo** (`suggestion_protected_used`), el run entero termina
+  `"failed"` con `interruptions: [{reason: "blocked_by_pinned"}]` — nada
+  se descarga, ningún caso se ejecuta con esa memoria robada (T09/§12 "no
+  descargar un modelo pinneado o en uso para probar un candidato").
+- Una reserva concedida (`admit(..., grant_out=)`) se marca `loading` y se
+  mantiene viva con `heartbeat_while_loading` hasta el primer token
+  streameado (momento exacto: `_run_one_case` lo ve en su propio bucle de
+  `stream_llm`) — igual que la garantía de `vram_admission.py` para
+  cualquier otro cargador (ver `docs/api/vram_admission.md`).
+- `start()` no mantiene ningún lock de `llm_core`/Cookbook mientras espera
+  dentro de `admit()` (T16) — el deadlock padre/hijo por delegación de
+  subagentes es responsabilidad del orquestador, no de esta puerta.
+
 ## Qué NO demuestra un resultado de este banco
 
 - **Una muestra pequeña no prueba equivalencia de calidad.** El punto de
@@ -84,11 +104,59 @@ externos).
    registra como `regression` y queda como una propuesta de volver al
    perfil anterior, nunca como un cambio automático a mitad de turno.
 3. Guardar un perfil (`save_profile`) y activarlo (que el chat lo use
-   realmente) son decisiones distintas: `activate_profile` queda fuera de
-   este lote a propósito — ver el docstring de `src/bench/profiles.py` para
-   el porqué y qué necesitaría el siguiente lote.
+   realmente) son decisiones distintas — ver "Activación" más abajo (INF-05
+   Lote B).
 4. Una comparación no comparable (`comparable=False`) nunca promueve ni
    degrada nada: no hay evidencia aplicable a ese perfil concreto.
+
+## Activación (§13 «política de activación», INF-05 Lote B)
+
+`src/bench/profiles.py::activate_profile(profile_id, *, owner)` es la
+decisión distinta de "guardar" que el punto 3 de arriba diferencia:
+cambiar lo que un chat/serve *va a usar a continuación*, sin tocar nunca un
+proceso en marcha ni reiniciar nada sin permiso.
+
+- **Motor `ollama`**: `profile.options` se filtra a lo que
+  `model_load_options.ALLOWED_KEYS` acepta (`num_ctx`, `num_gpu`,
+  `keep_alive`, `main_gpu`, `extra`) y se **fusiona** (nunca reemplaza del
+  todo) sobre lo que ya hubiera guardado para ese `(endpoint_id, model)`,
+  vía `set_options`. `llm_core` resuelve estas opciones **en cada
+  petición** (`resolve_for_request`) — por eso `scope: "next_request"` es
+  literal, no una promesa: no hace falta tocar el proceso porque nada de
+  esto vive en el proceso. El resto de las opciones del perfil (las que no
+  están en la lista blanca: `flash_attn`, `kv_cache_type`, `parallel`, ...)
+  son globales al servidor — van a `deferred` con `scope:
+  "requires_restart"` y una nota explícita; `activate_profile` ni siquiera
+  comprueba si el servidor en marcha ya las tiene puestas.
+- **Cualquier otro motor** (`llama-server`, `llama_cpp.server`, `vllm`,
+  `sglang`, ...): el perfil entero queda `deferred`, con un `plan`
+  (`{implementation, model, options}`) listo para que Cookbook ofrezca
+  «Relaunch with this profile» — esta función nunca lanza ese relanzamiento
+  por su cuenta.
+- **Sin endpoint declarado** para el `host:port` del motor Ollama del
+  perfil: `ActivationRefused` → ruta `409 bench.not_activatable`. No hay
+  nada contra lo que aplicar las opciones.
+- `active_profile_for(endpoint_url, model)` es la lectura inversa — qué
+  perfil está activo ahora mismo para ese endpoint+modelo (también
+  anotado en `RunConditions.sampling["active_profile_id"]` de cada run que
+  se lanza contra ese mismo endpoint+modelo).
+- `deactivate_profile(profile_id)`: restaura exactamente lo que
+  `model_load_options` tenía ANTES de activar (si había algo), o borra
+  solo las claves que la activación puso (si no había nada antes) — nunca
+  toca una opción que otra vía distinta hubiera puesto para ese modelo
+  mientras tanto.
+- `rollback_proposal(profile_id)`: ante una `regression` (§13 "una
+  regresión puede proponer volver al perfil anterior"), devuelve
+  `{previous_profile_id, reason}` como **propuesta**, nunca como reversión
+  automática — activar el anterior sigue siendo un clic explícito
+  (`bench-rollback` en el Studio).
+
+Rutas: `POST /api/bench/profiles/{id}/activate`,
+`POST /api/bench/profiles/{id}/deactivate`,
+`GET /api/bench/profiles/active?endpoint=&model=`,
+`GET /api/bench/profiles/{id}/rollback-proposal`. Errores
+`bench.not_found` (perfil inexistente) y `bench.not_activatable` (Ollama
+sin endpoint declarado).
 
 ## Por qué no hay juez LLM
 
@@ -118,10 +186,7 @@ queda fuera del alcance de "optimizar para mi equipo".
   que §11/§12: la topología puede orientar candidatos, pero una
   recomendación de reparto necesita su propia medición y su propio
   conjunto de casos de aceptación.
-- **`activate_profile`.** Cambiar lo que un chat en curso realmente usa es
-  una decisión de producto distinta de guardar/evaluar un perfil — ver
-  arriba.
-- **La pantalla "Optimize for my machine" en Cookbook (Lote B/Studio).**
-  Este documento cubre solo el backend; la interfaz que confirma el plan y
-  el presupuesto antes de pulsar *Start benchmark* es un lote aparte sobre
-  el mismo contrato.
+- **La pantalla "Optimize for my machine" en Cookbook (Lote C/Studio).**
+  Este documento cubre solo el backend; la interfaz que confirma el plan,
+  el presupuesto y el botón «Activate»/«Deactivate»/«Rollback» antes de
+  pulsar *Start benchmark* es un lote aparte sobre el mismo contrato.

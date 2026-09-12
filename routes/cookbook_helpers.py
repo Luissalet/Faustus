@@ -1116,12 +1116,27 @@ class ServeRequest(BaseModel):
     # form fields. `None` means a client that predates INF-02, or a manual
     # command pasted in directly; both keep working, just without a
     # capability assessment or a populated `assessments` list on the receipt.
+    # INF-05 B2: `plan` may also carry `weights_bytes` (int, the catalogue's
+    # `size_bytes`), `ctx` and `slots` — inputs to the VRAM admission gate
+    # (`src.vram_admission.admit_bytes`), not part of INF-02's launch
+    # contract itself, so they stay loose keys on this already-loose dict
+    # rather than new top-level fields duplicating what `plan` already is.
     plan: dict | None = None
     # Explicit override to launch anyway when `plan` has a hard blocker
     # (an option `assess_options` found unsupported). Requires the caller to
     # ask for it on *this* request — an old approval never authorizes a new
     # plan (§07 "Un plan autorizado, no un comando sorprendente").
     force_manual: bool = False
+    # INF-05 B2: weights size when `plan` is absent (a manual/legacy launch)
+    # — the admission gate's only other source for "how many bytes does
+    # this need". `None` (the default) means "unknown", not zero.
+    weights_bytes: int | None = None
+    # A `va.Ticket.id` the caller already resolved via
+    # `POST /api/local-models/admission/{ticket}` (kind="serve") after a
+    # previous call to this endpoint returned 409 `serve.vram_blocked` — the
+    # second call is not re-assessed, it trusts that resolved decision (the
+    # ticket table is the source of truth for what was actually decided).
+    admission_ticket: str | None = None
 
 
 def _parse_serve_phase(snapshot: str, task_type: str = "serve") -> dict:

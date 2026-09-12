@@ -163,6 +163,43 @@ Sin `base_url` explícito, el endpoint lo deriva del puerto en
 Ollama); si no puede, **`400`** `{"error_class": "serve.base_url_required"}`
 — nunca asume un puerto por defecto.
 
+## Admission before launch (§12, INF-05 Lote B)
+
+`POST /api/model/serve` pasa, antes de construir el runner, por la misma
+autoridad de capacidad que un chat o un benchmark — `src.vram_admission`,
+ahora también engine-agnóstica (`admit_bytes`), porque §12 es explícito:
+"un benchmark no recibe permiso para saltarse la puerta porque sea
+interno" — tampoco un serve.
+
+- El cliente manda `plan.weights_bytes` (opcional; también `plan.ctx`,
+  `plan.slots`) o `req.weights_bytes` — típicamente `size_bytes` del
+  catálogo. Sin ninguno de los dos, la puerta no bloquea nunca (`decision:
+  "unknown"`, §12 "la ignorancia nunca bloquea") pero lo dice en el recibo.
+- **Bloqueado**: `409 {"error", "error_class": "serve.vram_blocked",
+  "ticket", ...las mismas claves que `assess()` devuelve...}` — el mismo
+  diálogo de Studio (`VramAdmissionDialog`/`vramBlockedFrom`) que ya sabe
+  pintar un bloqueo de chat, sin cambios, porque el `assessment` usa
+  exactamente las mismas claves.
+- El cliente resuelve el ticket con `POST /api/local-models/admission/
+  {ticket}` (acepta tickets `kind: "serve"` igual que los de chat); una
+  resolución `"unload"` descarga ahí mismo los modelos Ollama nombrados
+  (nunca un proceso ajeno) antes de que la segunda llamada a
+  `POST /api/model/serve` siquiera se mande.
+- Esa segunda llamada repite el mismo cuerpo más `admission_ticket:
+  <ticket_id>` — no se vuelve a evaluar contra un presupuesto que ya se
+  movió; confía en la decisión ya registrada en el ticket
+  (`"cancel"` → rechaza igual con `409 serve.vram_blocked`).
+- El recibo SIEMPRE dice por qué se permitió el lanzamiento
+  (`plan.admission = {decision, ticket?, bytes_needed, budget_bytes}` —
+  `decision` ∈ `proceed | unload | unknown | off`), nunca solo "se lanzó".
+- Modo `off` (`vram_admission` desactivado en ajustes): `plan.admission =
+  {"decision": "off"}` — nada se comprobó, y lo dice.
+- Una tarea `pip install` no tiene pesos de modelo que comprobar: la puerta
+  se salta enteramente para ella (no aparece `plan.admission`).
+
+Ver `docs/api/vram_admission.md` para la autoridad completa (reservas,
+alias de endpoint, dispositivos físicos, qué nunca hace).
+
 ## Lo que un recibo NO demuestra
 
 - Que una opción `supported` mejore nada de la tarea — eso es `benefit`, y

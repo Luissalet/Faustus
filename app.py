@@ -1870,6 +1870,20 @@ async def _startup_event():
             logger.warning("Launch receipt reconciliation skipped: %s", _receipts_reconciled["error"])
     except Exception as e:
         logger.warning(f"Launch receipt reconciliation skipped: {e}")
+    # INF-05 B1/T12: reservations are in-memory only — a restart already
+    # loses them, so this is bookkeeping/logging, not recovery: it says so,
+    # and nothing here re-reserves anything. The real budget is re-read
+    # fresh from nvidia-smi on the next `assess()`/`admit_bytes()` call —
+    # any process that survived the restart already shows up there as
+    # `used`, so no ghost capacity is handed out either way.
+    try:
+        from src import vram_admission as _vram_admission
+        _vram_reconciled = await asyncio.to_thread(_vram_admission.reconcile_on_start)
+        if _vram_reconciled.get("cleared"):
+            logger.info("VRAM admission: cleared %d in-memory reservation(s) from the previous process",
+                       _vram_reconciled["cleared"])
+    except Exception as e:
+        logger.warning(f"VRAM admission reconciliation skipped: {e}")
     # Every long-lived task started below belongs to the supervisor: it holds
     # the strong reference asyncio does not (a create_task'd loop can otherwise
     # be collected mid-flight) AND it is what shutdown consults to cancel them.

@@ -51,6 +51,7 @@ neither one measures.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -107,6 +108,15 @@ class RunError(Exception):
 
 class RunStateError(ValueError):
     """An operation was asked for on a run in the wrong state to allow it."""
+
+
+class PinnedResidentBlocked(RuntimeError):
+    """§12 planning policy: "no descargar un modelo pinneado o en uso para
+    probar un candidato" — a case whose only path to fitting is unloading a
+    pinned or just-active (`vram_admission.RESIDENCY_GRACE_SECONDS`)
+    resident is refused outright, before anything is unloaded, and the run
+    ends `"failed"` rather than silently evicting someone's in-use model to
+    chase a benchmark number."""
 
 
 def _validate_run_id(run_id: str) -> str:
@@ -331,14 +341,36 @@ async def _run_one_case(
     max_tokens = case.max_tokens or 512
     gen_overrides = _ollama_gen_overrides(profile)
 
+    # §12 planning policy: check BEFORE `admit()` whether fitting this
+    # candidate would need unloading a pinned or just-active resident — if
+    # so, refuse outright (the run ends `failed`, T09/§12), never let
+    # `admit()`'s own auto/ask negotiation evict it to chase a number.
+    root = vram_admission.ollama_root(endpoint_url)
+    if root:
+        try:
+            pre = await asyncio.to_thread(vram_admission.assess, root, model)
+        except Exception as e:  # noqa: BLE001 - a failed pre-check must not itself authorize an eviction; fall through to admit()'s own assessment
+            logger.debug("bench: pinned pre-check failed for %s: %s", model, e)
+            pre = {}
+        if pre.get("fits") is False and pre.get("suggestion_protected_used"):
+            raise PinnedResidentBlocked(
+                f"{model} would require unloading pinned/in-use resident(s) "
+                f"{', '.join(pre['suggestion_protected_used'])} to fit — refused; nothing was unloaded")
+
     waited_out: Dict[str, Any] = {}
+    grant_out: Dict[str, Any] = {}
     try:
-        await vram_admission.admit(endpoint_url, model, owner=owner, waited_out=waited_out)
+        await vram_admission.admit(endpoint_url, model, owner=owner, waited_out=waited_out, grant_out=grant_out)
     except vram_admission.AdmissionCancelled as e:
         return RunSample(
             case_id=case.id, repeat=repeat, metrics=None, quality=SampleQuality(),
             output_chars=None, error=f"admission refused: {e}",
         ), 0
+    reservation_id = grant_out.get("reservation_id")
+    heartbeat_task: Optional[asyncio.Task] = None
+    if reservation_id:
+        vram_admission.mark_loading(reservation_id)
+        heartbeat_task = asyncio.create_task(vram_admission.heartbeat_while_loading(reservation_id))
 
     kwargs: Dict[str, Any] = {"max_tokens": max_tokens, "workload": "background"}
     if conditions.temperature is not None:
@@ -366,6 +398,12 @@ async def _run_one_case(
                 elif "delta" in event:
                     if first_token_monotonic is None:
                         first_token_monotonic = time.monotonic()
+                        # B1/T12: the load is confirmed under way now — no
+                        # further need to keep the reservation's clock
+                        # renewed against the TTL (it is precise here,
+                        # unlike chat_routes.py's bound background task).
+                        if heartbeat_task is not None and not heartbeat_task.done():
+                            heartbeat_task.cancel()
                     parts.append(str(event.get("delta") or ""))
             if _is_cancelled(run_id):
                 # §09/A3: the in-flight case is cancelled through stream_llm's
@@ -376,6 +414,8 @@ async def _run_one_case(
                 break
     finally:
         await agen.aclose()
+        if heartbeat_task is not None and not heartbeat_task.done():
+            heartbeat_task.cancel()
     finished_monotonic = time.monotonic()
 
     output = "".join(parts)
@@ -495,6 +535,23 @@ async def start(run_id: str) -> BenchmarkRun:
     if run.budget.max_cases is not None:
         expanded = expanded[:run.budget.max_cases]
 
+    # B3: which saved profile (if any) is currently ACTIVE for this run's
+    # own endpoint+model — free-form (`RunConditions.sampling` is the one
+    # extensible field the contract gives this dataclass; `active_profile_id`
+    # is not one of `RunConditions`'s own named fields and this lote does
+    # not touch `src/contracts/inference.py` to add one).
+    try:
+        from src.bench import profiles as _profiles
+        active = _profiles.active_profile_for(
+            f"http://{run.profile.engine.host}:{run.profile.engine.port}", run.profile.model.artifact_id,
+        )
+    except Exception:  # noqa: BLE001 - annotation only, must never block a run
+        active = None
+    if active:
+        run = replace(run, conditions=replace(
+            run.conditions, sampling={**run.conditions.sampling, "active_profile_id": active},
+        ))
+
     run = replace(run, state="preparing", started_at=now_iso())
     _save(run, owner=owner)
     run = replace(run, state="running")
@@ -506,6 +563,7 @@ async def start(run_id: str) -> BenchmarkRun:
     total_generated_tokens = 0
     started_monotonic = time.monotonic()
     cut_short = False
+    pinned_block_reason: Optional[str] = None
 
     try:
         for case, repeat in expanded:
@@ -522,7 +580,14 @@ async def start(run_id: str) -> BenchmarkRun:
                 cut_short = True
                 break
 
-            sample, generated = await _run_one_case(run_id, run.profile, run.conditions, case, repeat, owner)
+            try:
+                sample, generated = await _run_one_case(run_id, run.profile, run.conditions, case, repeat, owner)
+            except PinnedResidentBlocked as e:
+                # §12: refused before anything was unloaded — the run ends
+                # here, `failed`, not as a sample-level error on one case.
+                interruptions.append(RunInterruption(at=now_iso(), reason="blocked_by_pinned"))
+                pinned_block_reason = str(e)
+                break
             samples.append(sample)
             total_generated_tokens += generated
             run = replace(run, samples=tuple(samples), interruptions=tuple(interruptions))
@@ -536,6 +601,14 @@ async def start(run_id: str) -> BenchmarkRun:
                 break
     finally:
         _cancel_requested.pop(run_id, None)
+
+    if pinned_block_reason is not None:
+        run = replace(
+            run, samples=tuple(samples), interruptions=tuple(interruptions),
+            state="failed", finished_at=now_iso(), notes=run.notes + (pinned_block_reason,),
+        )
+        _save(run, owner=owner)
+        return run
 
     run = replace(run, state="evaluating")
     _save(run, owner=owner)

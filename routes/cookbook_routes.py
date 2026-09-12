@@ -2514,6 +2514,79 @@ def setup_cookbook_routes() -> APIRouter:
                 raise HTTPException(400, "Invalid pip package name")
         else:
             _validate_serve_model_id(req.repo_id)
+
+        # INF-05 B2, §12: "un benchmark no recibe permiso para saltarse la
+        # puerta porque sea interno" — tampoco un serve. The SAME capacity
+        # authority chat/research/bench already go through
+        # (`src.vram_admission`), reached here through bytes + physical GPU
+        # indices instead of an Ollama model name (`admit_bytes`, engine-
+        # agnostic on purpose: this launches vllm/llama-server/mlx just as
+        # often as Ollama). Skipped for a pip-install task — there is no
+        # model weights figure to check a pip install against.
+        if not is_pip_install:
+            from src import vram_admission
+
+            weights_bytes = None
+            if isinstance(req.plan, dict) and isinstance(req.plan.get("weights_bytes"), (int, float)) \
+                    and not isinstance(req.plan.get("weights_bytes"), bool):
+                weights_bytes = int(req.plan["weights_bytes"])
+            elif isinstance(req.weights_bytes, (int, float)) and not isinstance(req.weights_bytes, bool):
+                weights_bytes = int(req.weights_bytes)
+            gpu_indices = [int(x) for x in (req.gpus or "").split(",") if x.strip().lstrip("-").isdigit()]
+
+            resolved_ticket = vram_admission.get_ticket(req.admission_ticket) if req.admission_ticket else None
+            if resolved_ticket is not None and resolved_ticket.decision is not None:
+                # A previous call to this endpoint already came back 409
+                # `serve.vram_blocked`, and the Studio resolved that ticket
+                # (`POST /api/local-models/admission/{ticket}`, which does
+                # the actual unload for `action: "unload"` before this
+                # request is even sent) — trust that recorded decision
+                # rather than re-assessing (the budget has moved on by now,
+                # that is the whole point of the unload having happened).
+                _decided = resolved_ticket.decision.get("action")
+                if _decided == "cancel":
+                    return JSONResponse(status_code=409, content={
+                        "error": f"Launch of {req.repo_id} cancelled: it does not fit in VRAM.",
+                        "error_class": "serve.vram_blocked",
+                        "ticket": resolved_ticket.id, **resolved_ticket.assessment,
+                    })
+                plan_for_receipt["admission"] = {
+                    "decision": "proceed" if _decided == "proceed" else "unload",
+                    "ticket": resolved_ticket.id, "bytes_needed": weights_bytes,
+                    "budget_bytes": resolved_ticket.assessment.get("budget_alongside_bytes"),
+                }
+            else:
+                try:
+                    from src.auth_helpers import get_current_user
+                    _owner = get_current_user(request) or ""
+                except Exception:  # noqa: BLE001
+                    _owner = ""
+                try:
+                    from routes.local_models_routes import list_ollama_endpoints
+                    _ollama_roots = [
+                        e["root"] for e in list_ollama_endpoints(owner=_owner, is_admin=True)
+                        if e.get("same_machine") and e.get("root")
+                    ]
+                except Exception as e:  # noqa: BLE001
+                    logger.debug("serve admission: could not list Ollama endpoints: %s", e)
+                    _ollama_roots = []
+                admission = await vram_admission.admit_bytes(
+                    label=req.repo_id, bytes_needed=weights_bytes, gpu_indices=gpu_indices,
+                    owner=_owner, ollama_roots=_ollama_roots,
+                )
+                if admission["decision"] == "blocked":
+                    return JSONResponse(status_code=409, content={
+                        "error": f"{req.repo_id} does not fit in VRAM",
+                        "error_class": "serve.vram_blocked",
+                        "ticket": admission["ticket"], **admission["assessment"],
+                    })
+                plan_for_receipt["admission"] = {
+                    "decision": admission["decision"],
+                    "reason": admission["assessment"].get("reason", ""),
+                    "bytes_needed": weights_bytes,
+                    "budget_bytes": admission["assessment"].get("budget_alongside_bytes"),
+                }
+
         _staging_dir()
         _sweep_stale_hf_grants()
         session_id = f"serve-{uuid.uuid4().hex[:8]}"

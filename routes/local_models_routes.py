@@ -1038,6 +1038,7 @@ def setup_local_models_routes() -> APIRouter:
         # fit next to what is resident is not loaded behind your back. The
         # screen gets the assessment (residents, GB, what is short) and asks;
         # `force` is the answer "load anyway" or "I unloaded, go".
+        reservation_id = None
         if not body.get("force") and vram_admission_root(ep["root"]):
             from src import vram_admission
             try:
@@ -1054,9 +1055,11 @@ def setup_local_models_routes() -> APIRouter:
             if verdict.get("fits") is True and not verdict.get("already_resident"):
                 need = int(verdict.get("need_bytes") or verdict.get("footprint_bytes") or 0)
                 budget = int(verdict.get("budget_alongside_bytes") or 0)
-                if need > 0 and vram_admission.try_reserve(ep["root"], name, need, budget) is None:
-                    verdict = dict(verdict, fits=False,
-                                   reason="another load just reserved this VRAM")
+                if need > 0:
+                    reservation_id = vram_admission.try_reserve(ep["root"], name, need, budget)
+                    if reservation_id is None:
+                        verdict = dict(verdict, fits=False,
+                                       reason="another load just reserved this VRAM")
             if verdict.get("fits") is False:
                 raise HTTPException(409, {
                     "message": f"{name} does not fit in VRAM next to what is loaded",
@@ -1073,7 +1076,20 @@ def setup_local_models_routes() -> APIRouter:
                     saved["main_gpu"] = idx
             except Exception as e:  # noqa: BLE001
                 logger.debug("gpu policy for load: %s", e)
-        result = await asyncio.to_thread(_set_keep_alive, ep["root"], name, keep_alive, is_embedding, saved)
+        # B1/T12: `_set_keep_alive`'s POST can sit open for minutes on a big
+        # model (`_LOAD_TIMEOUT` = 600s > the reservation's 180s TTL) — mark
+        # the reservation as a live load and keep its clock renewed for the
+        # duration of that call, same discipline chat/bench use.
+        heartbeat_task = None
+        if reservation_id:
+            from src import vram_admission
+            vram_admission.mark_loading(reservation_id)
+            heartbeat_task = asyncio.create_task(vram_admission.heartbeat_while_loading(reservation_id))
+        try:
+            result = await asyncio.to_thread(_set_keep_alive, ep["root"], name, keep_alive, is_embedding, saved)
+        finally:
+            if heartbeat_task is not None and not heartbeat_task.done():
+                heartbeat_task.cancel()
         result["keep_alive"] = keep_alive
         if saved.get("main_gpu") is not None:
             result["main_gpu"] = saved["main_gpu"]
@@ -1126,7 +1142,21 @@ def setup_local_models_routes() -> APIRouter:
 
     @router.post("/admission/{ticket_id}")
     async def api_admission_resolve(ticket_id: str, request: Request):
-        """`{"action": "unload"|"proceed"|"cancel", "names": [...]}`."""
+        """`{"action": "unload"|"proceed"|"cancel", "names": [...]}`.
+
+        INF-05 B2: this now also accepts tickets `kind: "serve"` — the
+        `admit_bytes` gate for Cookbook, same table, same click. A "load"
+        ticket's actual unload still happens where it always has, inside
+        `admit()`'s own waiting coroutine (this route only records the
+        decision for it, exactly as before); a "serve" ticket has no such
+        waiting coroutine (`admit_bytes` never blocks a request open), so
+        for `kind: "serve"` an `"unload"` decision is carried out RIGHT
+        HERE — only the Ollama models named in `names`, resolved to each
+        one's own root from the assessment's `residents` (a serve ticket
+        can span more than one Ollama endpoint), via the same
+        `unload_and_wait` every other unload in this codebase uses. The
+        second call to `POST /api/model/serve` (with `admission_ticket`)
+        can then trust the ticket's decision without redoing the wait."""
         from src import vram_admission
         user, t = _ticket_for(request, ticket_id)
         body = await _body(request)
@@ -1141,7 +1171,22 @@ def setup_local_models_routes() -> APIRouter:
             raise HTTPException(400, str(e))
         if not ok:
             raise HTTPException(409, "That question was already answered")
-        return {"ok": True, "ticket": t.id, "action": action, "names": t.decision.get("names", [])}
+        resolved_names = t.decision.get("names", [])
+        unload_left: list[str] = []
+        if t.kind == "serve" and action == "unload" and resolved_names:
+            root_for_name: dict[str, str] = {}
+            for r in (t.assessment.get("residents") or []):
+                if isinstance(r, dict) and r.get("name"):
+                    root_for_name.setdefault(str(r["name"]), str(r.get("root") or t.root))
+            by_root: dict[str, list[str]] = {}
+            for n in resolved_names:
+                by_root.setdefault(root_for_name.get(n, t.root), []).append(n)
+            for root, root_names in by_root.items():
+                unload_left.extend(await vram_admission.unload_and_wait(root, root_names))
+        out = {"ok": True, "ticket": t.id, "action": action, "names": resolved_names}
+        if unload_left:
+            out["unload_left"] = unload_left
+        return out
 
     @router.get("/residency")
     async def api_residency(request: Request, endpoint_id: Optional[str] = Query(None)):
