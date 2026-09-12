@@ -213,11 +213,27 @@ deep-link de workflows, recetas desde un run real) ya no aparece aquí.
   modelo real. Falta verlo en vivo en el 7001 (chip de arquitectura y
   «Capabilities» en el formulario de serve, `ReceiptPanel` en una tarea,
   cronología bajo una respuesta, pestaña «Optimize for my machine»).
-- **No se ha ejecutado ningún benchmark real** (§01: sin cargas pesadas sin
-  autorización). Un primer run con un modelo pequeño confirmará que
-  `engine_timings` llega con la forma esperada; hasta entonces las fuentes
-  `reported_engine` de llama-server (`/props`, `/slots`, `timings`) están
-  verificadas contra fixtures, no contra una versión concreta del servidor.
+- **Primeros benchmarks reales (12-09, autorizados por Luis: «quédalo
+  resuelto»)**: cinco runs de `es_conversation` contra el qwen3.8 27B ya
+  residente (nada nuevo cargado, sin descargas). `engine_timings` de Ollama
+  llega con la forma esperada (prefill/generación `reported_engine`, carga,
+  tokens). Cinco cosas salieron SOLO al correrlo de verdad y están
+  arregladas: el razonamiento del modelo se evaluaba como respuesta; el
+  runner iba por `host:port` (API nativa, thinking activado) en vez de por
+  la URL `/v1` del chat (thinking suprimido) — ahora el plan guarda la URL;
+  un caso cuyo presupuesto se va entero en pensar es `error`, no respuesta
+  fallida; `language_es` con respuestas de una palabra y `contains` con
+  mayúsculas; cada plan guardaba un perfil «Current» nuevo. Resultado
+  final: 7/7 casos, 100 % calidad, 20,4 tok/s mediana, TTFT 242 ms;
+  comparador con dos runs comparables → `no_change` (−2,0 %). Lo que sigue
+  sin poder verse con fixtures: llama-server (`/props`, `/slots`, `timings`)
+  contra una versión concreta del servidor.
+- **El único slot de Ollama es compartido**: durante el run 5 otra petición
+  (14k tokens, no era del 7001) ocupó el slot 3 min 47 s y el caso 7 esperó
+  detrás. Ahora `ExecutionMetrics.notes` lo nombra («N s unaccounted: the
+  engine served something else first») y no se funde con la generación;
+  el comparador lo ve como dispersión. Regla práctica: no lanzar un
+  benchmark mientras otro cliente usa el mismo Ollama.
 - INF-05 hecho (FAUSTUS.md §78): identidad física, presupuesto por GPU,
   admisión con latido y puerta para Cookbook serve, `activate_profile`.
   Sólo con fixtures; queda ver en vivo Servers › Physical GPUs (¿uuid y
