@@ -36,6 +36,13 @@ def _patch_common(monkeypatch, settings=None, tool_exec=None):
     monkeypatch.setattr(al, "get_mcp_manager", lambda: None, raising=False)
     monkeypatch.setattr(al, "estimate_tokens", lambda *a, **k: 10, raising=False)
     monkeypatch.setattr(al, "blocked_tools_for_owner", lambda owner: set(), raising=False)
+    # VER-03 turns "same" into a DIFFERENT reviewer whenever the real
+    # `model_endpoints` table lists another model — and under xdist another
+    # worker can be mid-test with an endpoint whose cached_models says
+    # `acme/model`. These tests assert on the reviewer's identity, so the
+    # candidate list must be empty here, not whatever the shared DB holds.
+    from src import auto_review as _auto_review
+    monkeypatch.setattr(_auto_review, "available_models_for_review", lambda owner: [], raising=False)
 
     async def _fake_exec(block, *a, **k):
         if tool_exec is not None:

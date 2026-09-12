@@ -1,0 +1,156 @@
+{
+  "id": "es_conversation",
+  "version": "1.0.0",
+  "objective": "interactive",
+  "cases": [
+    {
+      "id": "es_conv_capital_francia",
+      "suite": "es_conversation",
+      "prompt": "Responde en español, en una sola frase corta: ¿cuál es la capital de Francia?",
+      "checks": [
+        {
+          "kind": "language_es",
+          "arg": null
+        },
+        {
+          "kind": "contains",
+          "arg": "París"
+        },
+        {
+          "kind": "max_words",
+          "arg": 15
+        }
+      ],
+      "max_tokens": 60,
+      "tags": [
+        "geografia",
+        "instruccion-simple"
+      ]
+    },
+    {
+      "id": "es_conv_lista_frutas",
+      "suite": "es_conversation",
+      "prompt": "En español, enumera exactamente tres frutas separadas por comas y nada más (sin frase introductoria).",
+      "checks": [
+        {
+          "kind": "language_es"
+        },
+        {
+          "kind": "max_words",
+          "arg": 12
+        }
+      ],
+      "max_tokens": 40,
+      "tags": [
+        "instruccion-formato"
+      ]
+    },
+    {
+      "id": "es_conv_negacion",
+      "suite": "es_conversation",
+      "prompt": "En español: si un triángulo tiene tres lados iguales se llama equilátero. ¿Cómo se llama un triángulo con dos lados iguales? Responde solo con la palabra.",
+      "checks": [
+        {
+          "kind": "language_es"
+        },
+        {
+          "kind": "contains",
+          "arg": "isósceles"
+        },
+        {
+          "kind": "max_words",
+          "arg": 6
+        }
+      ],
+      "max_tokens": 30,
+      "tags": [
+        "conocimiento-general",
+        "instruccion-formato"
+      ]
+    },
+    {
+      "id": "es_conv_resumen_corto",
+      "suite": "es_conversation",
+      "prompt": "Resume en español, en no más de 25 palabras, qué es la fotosíntesis.",
+      "checks": [
+        {
+          "kind": "language_es"
+        },
+        {
+          "kind": "max_words",
+          "arg": 25
+        }
+      ],
+      "max_tokens": 80,
+      "tags": [
+        "resumen"
+      ]
+    },
+    {
+      "id": "es_conv_conteo",
+      "suite": "es_conversation",
+      "prompt": "En español: ¿cuántas letras tiene la palabra \"gato\"? Responde solo con el número, en cifras.",
+      "checks": [
+        {
+          "kind": "language_es"
+        },
+        {
+          "kind": "regex",
+          "arg": "\\b4\\b"
+        },
+        {
+          "kind": "max_words",
+          "arg": 5
+        }
+      ],
+      "max_tokens": 20,
+      "tags": [
+        "instruccion-formato"
+      ]
+    },
+    {
+      "id": "es_conv_educado_rechazo",
+      "suite": "es_conversation",
+      "prompt": "En español, en una frase: explica por qué el cielo se ve azul durante el día.",
+      "checks": [
+        {
+          "kind": "language_es"
+        },
+        {
+          "kind": "max_words",
+          "arg": 40
+        }
+      ],
+      "max_tokens": 100,
+      "tags": [
+        "conocimiento-general"
+      ]
+    },
+    {
+      "id": "es_conv_formato_lista_numerada",
+      "suite": "es_conversation",
+      "prompt": "En español, dame una lista numerada (1. 2. 3.) con tres consejos breves para dormir mejor. No añadas introducción ni conclusión.",
+      "checks": [
+        {
+          "kind": "language_es"
+        },
+        {
+          "kind": "regex",
+          "arg": "1\\."
+        },
+        {
+          "kind": "regex",
+          "arg": "2\\."
+        },
+        {
+          "kind": "regex",
+          "arg": "3\\."
+        }
+      ],
+      "max_tokens": 120,
+      "tags": [
+        "instruccion-formato"
+      ]
+    }
+  ]
+}

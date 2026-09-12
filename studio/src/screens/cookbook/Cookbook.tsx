@@ -8,6 +8,7 @@ import { Dependencies } from './Dependencies';
 import { Download } from './Download';
 import { Fit } from './Fit';
 import { Models } from './Models';
+import { Optimize } from './Optimize';
 import { useTaskMonitor } from './monitor';
 import { Notice, ServerPicker, useSay, useSelectedServer } from './parts';
 import { Running } from './Running';
@@ -28,12 +29,13 @@ import '../cookbook.css';
  * monitor runs while the screen is open.
  */
 
-type Tab = 'fit' | 'models' | 'download' | 'running' | 'deps' | 'servers';
+type Tab = 'fit' | 'models' | 'download' | 'running' | 'optimize' | 'deps' | 'servers';
 const TABS: { key: Tab; label: string; hint: string }[] = [
   { key: 'fit', label: 'Fit', hint: 'The catalogue ranked against this hardware' },
   { key: 'models', label: 'Models', hint: 'What is cached here, ready to launch' },
   { key: 'download', label: 'Download', hint: 'Pull a repo, a GGUF or an Ollama tag' },
   { key: 'running', label: 'Running', hint: 'Every session, its output and what went wrong' },
+  { key: 'optimize', label: 'Optimize', hint: 'Benchmark an installed model against your own suites, on a plan and a budget you confirm first' },
   { key: 'deps', label: 'Dependencies', hint: 'What each engine needs on this server' },
   { key: 'servers', label: 'Servers', hint: 'This machine and the SSH boxes' },
 ];
@@ -125,6 +127,7 @@ export function CookbookScreen() {
         )}
         {tab === 'download' && <Download server={server} say={say} prefill={params.get('repo')} onStarted={() => go('running')} />}
         {tab === 'running' && <Running say={say} hwBackend={hwBackend} onEdit={editTask} onDeps={(pkg) => go('deps', { pkg })} />}
+        {tab === 'optimize' && <Optimize say={say} />}
         {tab === 'deps' && <Dependencies server={server} hwBackend={hwBackend} say={say} highlight={params.get('pkg')} onTask={() => go('running')} />}
         {tab === 'servers' && <Servers say={say} />}
       </div>

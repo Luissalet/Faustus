@@ -1,0 +1,152 @@
+{
+  "id": "tools_json",
+  "version": "1.0.0",
+  "objective": "coding_agent",
+  "cases": [
+    {
+      "id": "tools_json_person",
+      "suite": "tools_json",
+      "prompt": "Devuelve Únicamente un objeto JSON (sin texto adicional, sin bloque de código, sin explicación) con las claves \"name\" y \"age\" para una persona llamada Ana de 30 años.",
+      "checks": [
+        {
+          "kind": "json_valid"
+        },
+        {
+          "kind": "json_has_keys",
+          "arg": [
+            "name",
+            "age"
+          ]
+        },
+        {
+          "kind": "no_tool_leak"
+        }
+      ],
+      "max_tokens": 60,
+      "tags": [
+        "json-estricto"
+      ]
+    },
+    {
+      "id": "tools_json_coordenadas",
+      "suite": "tools_json",
+      "prompt": "Devuelve solo un JSON con las claves \"lat\" y \"lon\" para las coordenadas aproximadas de Madrid (números, no texto). Nada más que el JSON.",
+      "checks": [
+        {
+          "kind": "json_valid"
+        },
+        {
+          "kind": "json_has_keys",
+          "arg": [
+            "lat",
+            "lon"
+          ]
+        },
+        {
+          "kind": "no_tool_leak"
+        }
+      ],
+      "max_tokens": 60,
+      "tags": [
+        "json-estricto"
+      ]
+    },
+    {
+      "id": "tools_json_lista_tareas",
+      "suite": "tools_json",
+      "prompt": "Devuelve solo un JSON con una clave \"tasks\" cuyo valor sea una lista de exactamente dos strings: \"comprar pan\" y \"pasear al perro\". Ningún texto fuera del JSON.",
+      "checks": [
+        {
+          "kind": "json_valid"
+        },
+        {
+          "kind": "json_has_keys",
+          "arg": [
+            "tasks"
+          ]
+        },
+        {
+          "kind": "no_tool_leak"
+        }
+      ],
+      "max_tokens": 80,
+      "tags": [
+        "json-estricto",
+        "estructura-anidada"
+      ]
+    },
+    {
+      "id": "tools_json_booleano",
+      "suite": "tools_json",
+      "prompt": "Devuelve solo un JSON con las claves \"even\" (booleano) y \"value\" (número) para el número 42. \"even\" debe ser true porque 42 es par.",
+      "checks": [
+        {
+          "kind": "json_valid"
+        },
+        {
+          "kind": "json_has_keys",
+          "arg": [
+            "even",
+            "value"
+          ]
+        },
+        {
+          "kind": "no_tool_leak"
+        }
+      ],
+      "max_tokens": 60,
+      "tags": [
+        "json-estricto"
+      ]
+    },
+    {
+      "id": "tools_json_error_recuperable",
+      "suite": "tools_json",
+      "prompt": "Devuelve solo un JSON con las claves \"status\" (el string \"error\") y \"message\" (una breve explicación en español) describiendo que el archivo solicitado no existe. Nada fuera del JSON.",
+      "checks": [
+        {
+          "kind": "json_valid"
+        },
+        {
+          "kind": "json_has_keys",
+          "arg": [
+            "status",
+            "message"
+          ]
+        },
+        {
+          "kind": "no_tool_leak"
+        }
+      ],
+      "max_tokens": 80,
+      "tags": [
+        "json-estricto",
+        "recuperacion-errores"
+      ]
+    },
+    {
+      "id": "tools_json_claves_anidadas",
+      "suite": "tools_json",
+      "prompt": "Devuelve solo un JSON con la clave \"address\" cuyo valor sea un objeto con las claves \"city\" (\"Sevilla\") y \"country\" (\"España\"). Nada fuera del JSON.",
+      "checks": [
+        {
+          "kind": "json_valid"
+        },
+        {
+          "kind": "json_has_keys",
+          "arg": [
+            "address"
+          ]
+        },
+        {
+          "kind": "no_tool_leak"
+        }
+      ],
+      "max_tokens": 80,
+      "tags": [
+        "json-estricto",
+        "estructura-anidada"
+      ]
+    }
+  ]
+}

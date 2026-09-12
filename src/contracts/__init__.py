@@ -76,6 +76,13 @@ from .inference import (  # noqa: F401
     Benefit, Check, CapabilityAssessment, Difference, EngineIdentity,
     Effective, Evidence, ExecutionMetrics, GpuInfo, HardwareSnapshot,
     LaunchReceipt, MetricValue, ModelDescriptor, Phases, RewriteStep, Tokens,
+    CHECK_KINDS, COMPARISON_VERDICTS, PROFILE_EVALUATIONS,
+    PROFILE_OBJECTIVES, PROFILE_SOURCES, RUN_STATES, RUN_STATES_IN_FLIGHT,
+    RUN_STATES_TERMINAL,
+    BenchmarkCase, BenchmarkRun, CaseCheck, Comparison, ComparisonDeltas,
+    InferenceProfile, RunBudget, RunConditions, RunInterruption, RunSample,
+    RunStat, RunSummary, SampleQuality, SampleSizes,
+    compute_profile_fingerprint,
 )
 
 __all__ = [
@@ -116,4 +123,11 @@ __all__ = [
     "TOPOLOGY_STATES", "SUPPORT_STATES", "ASSESSMENT_SCOPES",
     "EFFECTIVE_STATES", "BENEFIT_STATES", "EVIDENCE_KINDS", "CHECK_STATES",
     "VERIFY_STATES", "METRIC_SOURCES", "METRIC_SCOPES",
+    "InferenceProfile", "BenchmarkCase", "CaseCheck", "BenchmarkRun",
+    "RunBudget", "RunConditions", "RunSample", "SampleQuality", "RunStat",
+    "RunSummary", "RunInterruption", "Comparison", "ComparisonDeltas",
+    "SampleSizes", "compute_profile_fingerprint",
+    "PROFILE_OBJECTIVES", "PROFILE_EVALUATIONS", "PROFILE_SOURCES",
+    "CHECK_KINDS", "RUN_STATES", "RUN_STATES_IN_FLIGHT", "RUN_STATES_TERMINAL",
+    "COMPARISON_VERDICTS",
 ]

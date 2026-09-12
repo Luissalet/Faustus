@@ -7117,3 +7117,54 @@ Why did it take this long?	¿Por qué ha tardado tanto?
 engine	motor
 {n} ms	{n} ms
 {n} s	{n} s
+"{label}" marked as recommended	«{label}» marcado como recomendado
+1. What to measure	1. Qué medir
+2. Budget and run	2. Presupuesto y ejecución
+3 is the exploratory starting point this bench is built around	3 es el punto de partida exploratorio para el que está pensado este banco
+3. Compare against a baseline	3. Comparar con una base
+At least one of max cases, max seconds or max generated tokens is required.	Se requiere al menos uno de: casos máximos, segundos máximos o tokens generados máximos.
+Baseline kept — nothing was changed.	Base conservada: no se ha cambiado nada.
+Baseline run	Ejecución base
+Candidate run	Ejecución candidata
+Cases planned	Casos planificados
+Cases run	Casos ejecutados
+Estimated duration	Duración estimada
+Failed checks	Comprobaciones fallidas
+Generation tok/s, median change	Generación tok/s, cambio de mediana
+Generation, tok/s (median · p95 · n)	Generación, tok/s (mediana · p95 · n)
+Get plan	Obtener plan
+Keep baseline	Conservar base
+Leave blank for every case in the suite (times repeats)	Déjalo en blanco para usar todos los casos de la suite (por repeticiones)
+Mark as recommended	Marcar como recomendado
+Max cases	Casos máximos
+Max generated tokens	Tokens generados máximos
+Max seconds	Segundos máximos
+Measure a configuration that is already running, on the suites below, before deciding anything. Opening this screen never starts a benchmark by itself — only "Start benchmark" does, after you have seen the plan.	Mide una configuración que ya está en marcha, con las suites de abajo, antes de decidir nada. Abrir esta pantalla nunca inicia un banco de pruebas por sí sola: solo lo hace «Start benchmark», después de ver el plan.
+No installed models to benchmark	No hay modelos instalados para medir
+Objective	Objetivo
+Only available when the candidate is a measured improvement	Solo disponible cuando el candidato es una mejora medida
+Processes affected	Procesos afectados
+Quality pass rate	Tasa de aciertos de calidad
+Quality pass rate change	Cambio en la tasa de aciertos de calidad
+Refresh runs	Actualizar ejecuciones
+Repeats per case	Repeticiones por caso
+Sample sizes (baseline · candidate)	Tamaños de muestra (base · candidata)
+Serve a model from Models or Fit first — this bench only measures configurations that are already installed and running, never a download.	Primero sirve un modelo desde Models o Fit — este banco solo mide configuraciones ya instaladas y en marcha, nunca una descarga.
+Start benchmark	Iniciar banco de pruebas
+Start over	Empezar de nuevo
+Suite	Suite
+These two runs are not comparable	Estas dos ejecuciones no son comparables
+Time to first token (median · p95 · n)	Tiempo hasta el primer token (mediana · p95 · n)
+Time to first token, median change	Tiempo hasta el primer token, cambio de mediana
+n/a	n/d
+none: measures the running configuration	ninguno: mide la configuración en marcha
+not evaluated yet	aún sin evaluar
+the budget ran out before every case finished; this is a partial result, never presented as a completed optimisation.	el presupuesto se agotó antes de terminar todos los casos; es un resultado parcial, nunca se presenta como una optimización completada.
+under a second	menos de un segundo
+unknown until a first run	desconocido hasta una primera ejecución
+{done} of {total} cases so far	{done} de {total} casos por ahora
+{n} case	{n} caso
+{n} cases	{n} casos
+~{n} h	~{n} h
+~{n} min	~{n} min
+~{n}s	~{n}s

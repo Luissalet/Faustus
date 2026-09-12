@@ -330,3 +330,157 @@ def test_execution_metrics_notes_default_empty_and_round_trip():
     with_notes = inf.ExecutionMetrics.parse(raw)
     assert with_notes.notes == ("phases overlap: engine and client clocks are not additive",)
     assert inf.ExecutionMetrics.parse(with_notes.to_dict()) == with_notes
+
+
+# ── InferenceProfile / BenchmarkCase / BenchmarkRun / Comparison (INF-04) ───
+
+_MODEL = {"artifact_id": "org/model"}
+_ENGINE = {"implementation": "ollama"}
+
+
+def _profile_raw(**overrides):
+    raw = {
+        "id": "profile-1", "label": "My profile", "model": _MODEL, "engine": _ENGINE,
+        "hardware_id": None, "options": {"num_ctx": 8192}, "objective": "interactive",
+        "created_at": "2026-09-12T00:00:00Z",
+    }
+    raw.update(overrides)
+    return raw
+
+
+def test_inference_profile_round_trips_and_derives_fingerprint():
+    profile = inf.InferenceProfile.parse(_profile_raw())
+    assert profile.evaluation == "not_evaluated"  # default
+    assert profile.source == "manual"  # default
+    assert profile.fingerprint  # computed, never blank
+    again = inf.InferenceProfile.parse(profile.to_dict())
+    assert again == profile
+
+
+def test_inference_profile_fingerprint_changes_with_options_not_with_label():
+    a = inf.InferenceProfile.parse(_profile_raw(id="a"))
+    b = inf.InferenceProfile.parse(_profile_raw(id="b", label="Different label"))
+    c = inf.InferenceProfile.parse(_profile_raw(id="c", options={"num_ctx": 4096}))
+    assert a.fingerprint == b.fingerprint  # label/id are not part of the identity
+    assert a.fingerprint != c.fingerprint  # options are
+
+
+def test_inference_profile_rejects_bad_objective():
+    with pytest.raises(ContractError):
+        inf.InferenceProfile.parse(_profile_raw(objective="fast"))
+
+
+def test_inference_profile_rejects_unknown_key():
+    with pytest.raises(ContractError):
+        inf.InferenceProfile.parse(_profile_raw(bogus=1))
+
+
+def test_benchmark_case_round_trips_with_prompt():
+    raw = {
+        "id": "case-1", "suite": "es_conversation",
+        "prompt": "¿Cuál es la capital de Francia?",
+        "checks": [{"kind": "contains", "arg": "París"}, {"kind": "max_words", "arg": 10}],
+        "max_tokens": 60, "tags": ["geografia"],
+    }
+    case = inf.BenchmarkCase.parse(raw)
+    assert case.messages is None
+    assert case.checks[0].kind == "contains"
+    assert inf.BenchmarkCase.parse(case.to_dict()) == case
+
+
+def test_benchmark_case_requires_prompt_or_messages():
+    with pytest.raises(ContractError):
+        inf.BenchmarkCase.parse({"id": "c", "suite": "s"})
+
+
+def test_benchmark_case_rejects_both_prompt_and_messages():
+    with pytest.raises(ContractError):
+        inf.BenchmarkCase.parse({
+            "id": "c", "suite": "s", "prompt": "hi",
+            "messages": [{"role": "user", "content": "hi"}],
+        })
+
+
+def test_benchmark_case_rejects_bad_check_kind():
+    with pytest.raises(ContractError):
+        inf.BenchmarkCase.parse({
+            "id": "c", "suite": "s", "prompt": "hi",
+            "checks": [{"kind": "vibes"}],
+        })
+
+
+def _run_raw(**overrides):
+    raw = {
+        "id": "run-1", "suite_id": "es_conversation", "suite_version": "1.0.0",
+        "profile": _profile_raw(), "baseline_run_id": None, "state": "planned",
+        "budget": {"max_cases": 8, "max_seconds": 120, "max_generated_tokens": None, "repeats": 1},
+        "conditions": {}, "samples": [], "summary": {}, "interruptions": [],
+        "started_at": None, "finished_at": None,
+    }
+    raw.update(overrides)
+    return raw
+
+
+def test_benchmark_run_round_trips_with_samples():
+    raw = _run_raw(
+        state="completed",
+        samples=[{
+            "case_id": "case-1", "repeat": 1,
+            "metrics": None,
+            "quality": {"passed": True, "failed_checks": []},
+            "output_chars": 12, "error": None,
+        }],
+        summary={"cases_run": 1, "cases_planned": 1, "quality_pass_rate": 1.0,
+                 "gen_tps": {"median": 30.0, "p95": 32.0, "n": 3},
+                 "ttft_ms": {"median": 200.0, "p95": 250.0, "n": 3}, "total_ms": 1000.0},
+    )
+    run = inf.BenchmarkRun.parse(raw)
+    assert run.state == "completed"
+    assert run.samples[0].quality.passed is True
+    assert run.summary.gen_tps.n == 3
+    assert inf.BenchmarkRun.parse(run.to_dict()) == run
+
+
+def test_benchmark_run_rejects_bad_state():
+    with pytest.raises(ContractError):
+        inf.BenchmarkRun.parse(_run_raw(state="optimized"))
+
+
+def test_benchmark_run_interruption_round_trips():
+    raw = _run_raw(state="partial", interruptions=[
+        {"at": "2026-09-12T00:05:00Z", "reason": "budget_seconds"},
+    ])
+    run = inf.BenchmarkRun.parse(raw)
+    assert run.interruptions[0].reason == "budget_seconds"
+    assert inf.BenchmarkRun.parse(run.to_dict()) == run
+
+
+def _comparison_raw(**overrides):
+    raw = {
+        "baseline_run_id": "run-a", "candidate_run_id": "run-b",
+        "verdict": "inconclusive", "reasons": ["n < 3 in candidate"],
+        "deltas": {}, "sample_sizes": {"baseline": 3, "candidate": 2},
+        "comparable": True,
+    }
+    raw.update(overrides)
+    return raw
+
+
+def test_comparison_round_trips():
+    comparison = inf.Comparison.parse(_comparison_raw())
+    assert comparison.verdict == "inconclusive"
+    assert comparison.comparable is True
+    assert inf.Comparison.parse(comparison.to_dict()) == comparison
+
+
+def test_comparison_rejects_bad_verdict():
+    with pytest.raises(ContractError):
+        inf.Comparison.parse(_comparison_raw(verdict="better"))
+
+
+def test_comparison_not_comparable_still_requires_reasons_field_present():
+    comparison = inf.Comparison.parse(_comparison_raw(
+        comparable=False, verdict="inconclusive", reasons=["different suite_id"],
+    ))
+    assert comparison.comparable is False
+    assert comparison.reasons == ("different suite_id",)

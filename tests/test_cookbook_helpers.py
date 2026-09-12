@@ -1081,6 +1081,12 @@ def _inf01_serve_harness(monkeypatch, tmp_path):
     monkeypatch.setattr(cookbook_routes, "IS_WINDOWS", False)
     monkeypatch.setattr(cookbook_routes, "TMUX_LOG_DIR", tmp_path / "odysseus-tmux")
     monkeypatch.setattr(cookbook_routes, "_staging_dirs_restricted", set(), raising=False)
+    # INF-02: model_serve files a launch receipt; keep it out of the real
+    # DATA_DIR (27 stray receipts from earlier runs, and a receipt at
+    # localhost:8081 is exactly what identity_for_endpoint matches for
+    # any other test talking to that port).
+    from src import launch_receipts as _lr
+    monkeypatch.setattr(_lr, "RECEIPTS_DIR", str(tmp_path / "launch_receipts"))
 
     async def _available(*_args, **_kwargs):
         return True

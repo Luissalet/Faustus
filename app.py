@@ -1051,6 +1051,13 @@ app.include_router(setup_model_architecture_routes())
 from routes.inference_routes import setup_inference_routes
 app.include_router(setup_inference_routes())
 
+# "Optimize for my machine" benchmark (INF-04 §09/§10): plan/start/cancel a
+# deterministic, budgeted benchmark run against installed models only (no
+# downloads/installs/engine restarts), and compare two runs against the
+# activation policy of §13 (src/bench/{suites,runner,profiles}.py).
+from routes.benchmark_routes import setup_benchmark_routes
+app.include_router(setup_benchmark_routes())
+
 # Excursos (side threads, CONTRATO_EXCURSOS Lote A + CONTRATO_CABLES2 F1/F2
 # Lote A): side-thread creation, wiring panel data, thought-map, context
 # preview, reference cables, wired document/note materials, and per-turn
@@ -1828,6 +1835,21 @@ async def _startup_event():
             logger.warning("Crash recovery: %s", _crash.get("reason"))
     except Exception as e:
         logger.warning(f"Crash-recovery scan skipped: {e}")
+    # INF-04 T12: a benchmark run still `running`/`preparing`/`evaluating`/
+    # `waiting_resources` on disk can only mean the previous process died
+    # mid-run -- its cases execute inside this process, so there is no
+    # detached job to reconcile against (unlike agent_runs/media_runs above).
+    # Unconditionally moved to `interrupted`; never resumed automatically.
+    try:
+        from src.bench import runner as _bench_runner
+        _bench_reconciled = await asyncio.to_thread(_bench_runner.reconcile_on_start)
+        if _bench_reconciled.get("interrupted"):
+            logger.warning(
+                "Marked %d benchmark run(s) interrupted from the previous process",
+                len(_bench_reconciled["interrupted"]),
+            )
+    except Exception as e:
+        logger.warning(f"Benchmark run reconciliation skipped: {e}")
     # Every long-lived task started below belongs to the supervisor: it holds
     # the strong reference asyncio does not (a create_task'd loop can otherwise
     # be collected mid-flight) AND it is what shutdown consults to cancel them.
