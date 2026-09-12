@@ -232,12 +232,39 @@ deep-link de workflows, recetas desde un run real) ya no aparece aquí.
 - El comparador usa `p95−mediana` como proxy de dispersión y `n ≥ 3`; el
   doc lo dice: no es un test estadístico. Si se quiere rigor, hay que subir
   repeticiones, no cambiar el umbral.
+- Arquitectura de un repo GGUF (sin `config.json` en HF): hoy `unknown`.
+  Leer la cabecera GGUF del fichero cacheado (`general.architecture`,
+  `*.expert_count`) daría `dense|moe` sin red; pendiente, con su test.
+- Respuesta en italiano a un prompt en español cuando el prompt trae un
+  bloque de memoria (visto una vez con qwen3.8 27B): ver
+  `src/reply_language.py` si se repite.
 
 ## Última evidencia
 
-- **12-09-2026, INF-00…04 (master `e2b5995`).** Suite nube entera tras
-  INF-04: 17.228 correctas, 49 saltadas, 0 fallos (9 min 19 s). Nada de
-  esto verificado aún en el 7001 de Luis; ningún benchmark real ejecutado.
+- **12-09-2026, INF-00…04 (master `3a405f2`, Windows igual).** Suite nube
+  entera tras INF-04: 17.228 correctas, 49 saltadas, 0 fallos (9 min 19 s).
+  Visto en vivo en el 7001 (Chrome): pestaña Optimize (endpoint Ollama →
+  modelos instalados, suite filtrada por objetivo, plan «3 casos ·
+  estimación unknown until a first run · procesos afectados: none»; el
+  botón Start NO se pulsó: ningún benchmark real ejecutado, §01), formulario
+  de serve con «Architecture: unknown (metadata unavailable)» para un repo
+  GGUF sin `config.json` (honesto, pero mejorable leyendo la cabecera GGUF),
+  «Implementation: llama-server» y lista Capabilities (ctx/ngl/flash_attn
+  supported con su nota), y «Why did it take this long?» bajo una respuesta
+  real de qwen3.8 27B: cola 293 ms observed, carga 3 ms engine, prefill
+  1,0 s engine, generación 5,1 s engine, total 7,3 s observed, tools «the
+  engine does not expose this metric», tokens 545/118 engine. Vistos y
+  arreglados: `/api/model/cached` daba 500 por un `scan_cache.py` viejo no
+  escribible (ahora fichero único por llamada + fallback a temp); un test
+  INF-02 lanzaba un proceso real en Windows (`IS_WINDOWS` fijado); «Di
+  solo: seis» recuperaba la memoria «…café solo por la mañana» por la
+  palabra «solo» y el modelo contestó (en italiano) sobre el bloque de
+  memoria en vez de decir «seis» — stopwords en español y tokens con
+  acentos; tras el arreglo: «Seis.». Al aplicar w39 se borró
+  `D:\LocalAI\odysseus\data\settings.json` (el `data/` del repo, no el
+  `odysseus-dev-data` del 7001): si ese fichero importaba, está en los
+  backups de `backups/` anteriores al 12-09; los scripts de transferencia ya
+  no lo tocan.
 - **11-09-2026, QA en vivo de las olas ADP/CMP/W3 + W4-A (master
   `e075293`, Windows `2da388a`+).** Suite nube tras los arreglos de
   entorno: 16.913 correctas, 0 fallos (antes: fallos preexistentes en
