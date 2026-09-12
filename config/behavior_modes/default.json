@@ -1,0 +1,15 @@
+{
+  "id": "default",
+  "builtin": true,
+  "version": 1,
+  "name": {
+    "en": "Default",
+    "es": "Por defecto"
+  },
+  "description": {
+    "en": "Faustus as it is: no extra stance.",
+    "es": "Faustus tal cual: sin postura añadida."
+  },
+  "prompt": "",
+  "checks": {}
+}
