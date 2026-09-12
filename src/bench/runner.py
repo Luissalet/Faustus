@@ -213,7 +213,7 @@ def _estimate_seconds(profile: InferenceProfile, cases: Sequence[Any], cases_pla
 
 def plan(
     profile: InferenceProfile, suite_id: str, budget: Any, owner: str, *,
-    baseline_run_id: Optional[str] = None,
+    baseline_run_id: Optional[str] = None, endpoint_url: Optional[str] = None,
 ) -> BenchmarkRun:
     """A3: build a `BenchmarkRun` in state `"planned"`. Loads the suite (so
     a bad `suite_id` fails HERE, not on `start()`), resolves the budget into
@@ -238,7 +238,7 @@ def plan(
         "baseline_run_id": baseline_run_id,
         "state": "planned",
         "budget": parsed_budget.to_dict(),
-        "conditions": {},
+        "conditions": {"endpoint_url": str(endpoint_url).strip() or None} if endpoint_url else {},
         "samples": [],
         "summary": {"cases_planned": cases_planned, "estimate_seconds": estimate_seconds},
         "interruptions": [],
@@ -335,7 +335,10 @@ async def _run_one_case(
             output_chars=None, error="profile has no known endpoint (engine.host/engine.port are absent)",
         ), 0
 
-    endpoint_url = f"http://{engine.host}:{engine.port}"
+    # The chat's own URL form when the plan recorded it (an Ollama's `/v1`
+    # surface carries the chat's thinking suppression and per-model
+    # defaults); the bare host:port only as a fallback for older runs.
+    endpoint_url = conditions.endpoint_url or f"http://{engine.host}:{engine.port}"
     model = profile.model.artifact_id
     messages = _case_messages(case)
     max_tokens = case.max_tokens or 512
@@ -452,6 +455,13 @@ async def _run_one_case(
         tool_events=None, engine_timings=engine_timings, usage_tokens=usage_tokens, engine=engine,
     )
 
+    if not error_text and not output and thinking_chars > 0:
+        # The whole generation budget went to reasoning and no answer was ever
+        # written (seen on the second real run: 30-40 token cases against a
+        # thinking model). That is a fact about the configuration under test,
+        # recorded as the sample's error — never judged as a wrong answer.
+        error_text = (f"no answer: the generation budget ({max_tokens} tokens) was spent on "
+                      f"thinking ({thinking_chars} chars)")
     if error_text:
         quality = SampleQuality()  # not evaluated: a cut/erroring sample proves nothing about quality
     else:

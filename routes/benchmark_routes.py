@@ -176,7 +176,7 @@ def setup_benchmark_routes() -> APIRouter:
         except ContractError as e:
             return _error(400, str(e), "bench.invalid_plan")
         try:
-            run = runner.plan(profile, req.suite_id, req.budget, owner)
+            run = runner.plan(profile, req.suite_id, req.budget, owner, endpoint_url=req.endpoint_url)
             # A profile a run was planned against must be addressable later:
             # `POST /profiles/{id}/promote` looks it up by id, and the Studio
             # sends the candidate run's own profile id. Saving is not

@@ -370,3 +370,32 @@ async def test_thinking_deltas_are_set_aside_and_an_excerpt_is_kept(fake_suite, 
     from src.contracts.inference import RunSample
     again = RunSample.parse(sample.to_dict(), "sample")
     assert again.output_excerpt == sample.output_excerpt and again.thinking_chars == sample.thinking_chars
+
+
+@pytest.mark.asyncio
+async def test_start_calls_the_model_through_the_planned_endpoint_url(fake_suite, admit_calls, monkeypatch):
+    """The chat's URL form (`.../v1`) is what the plan recorded; the case must
+    go out through it, not through a bare host:port the chat never uses."""
+    call_log = []
+    stream_fn, _ = _make_stream_llm(call_log=call_log)
+    monkeypatch.setattr("src.llm_core.stream_llm", stream_fn)
+    run = runner.plan(_profile(), "fake_suite", {"repeats": 1, "max_cases": 1}, "alice",
+                      endpoint_url="http://127.0.0.1:11434/v1")
+    assert run.conditions.endpoint_url == "http://127.0.0.1:11434/v1"
+    await runner.start(run.id)
+    assert call_log[0]["url"] == "http://127.0.0.1:11434/v1"
+
+
+@pytest.mark.asyncio
+async def test_a_case_whose_budget_went_entirely_to_thinking_is_an_error_not_a_wrong_answer(fake_suite, admit_calls, monkeypatch):
+    async def _stream(url, model, messages, **kwargs):
+        yield 'data: ' + json.dumps({"delta": "Hmm, the user wants three fruits, let me think about", "thinking": True}) + '\n\n'
+        yield 'data: ' + json.dumps({"type": "usage", "data": {"input_tokens": 10, "output_tokens": 40}}) + '\n\n'
+        yield 'data: [DONE]\n\n'
+    monkeypatch.setattr("src.llm_core.stream_llm", _stream)
+    run = runner.plan(_profile(), "fake_suite", {"repeats": 1, "max_cases": 1}, "alice")
+    result = await runner.start(run.id)
+    sample = result.samples[0]
+    assert sample.output_chars == 0 and sample.thinking_chars > 0
+    assert sample.error and "spent on thinking" in sample.error
+    assert sample.quality.passed is None  # not evaluated, never "failed"

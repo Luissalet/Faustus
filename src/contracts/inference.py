@@ -1161,8 +1161,15 @@ class RunConditions:
     seed: Optional[int] = None
     temperature: Optional[float] = None
     sampling: Dict[str, Any] = field(default_factory=dict)
+    # The endpoint URL exactly as the chat would use it (`.../v1` for an
+    # Ollama declared through its OpenAI surface) — the same real path
+    # `llm_core` routes for a chat turn, thinking suppression and per-model
+    # defaults included. Second real run (12-09-2026): a bare host:port went
+    # to the native API, thinking stayed on, and two cases exhausted their
+    # 30-40 token budget before writing a single answer character.
+    endpoint_url: Optional[str] = None
 
-    _KEYS = ("cold_start", "resident", "prefix_cache", "seed", "temperature", "sampling")
+    _KEYS = ("cold_start", "resident", "prefix_cache", "seed", "temperature", "sampling", "endpoint_url")
 
     @classmethod
     def parse(cls, raw: Any, path: str) -> "RunConditions":
@@ -1181,6 +1188,7 @@ class RunConditions:
             seed=whole(data, "seed", path),
             temperature=_number(data, "temperature", path),
             sampling=_dict_field(data, "sampling", path),
+            endpoint_url=text(data, "endpoint_url", path, required=False, default=None, allow_blank=False) or None,
         )
 
     def to_dict(self) -> Dict[str, Any]:
@@ -1188,6 +1196,7 @@ class RunConditions:
             "cold_start": self.cold_start, "resident": self.resident,
             "prefix_cache": self.prefix_cache, "seed": self.seed,
             "temperature": self.temperature, "sampling": self.sampling,
+            "endpoint_url": self.endpoint_url,
         }
 
 
