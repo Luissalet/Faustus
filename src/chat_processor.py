@@ -300,6 +300,7 @@ class ChatProcessor:
         agent_mode: bool = False,
         incognito: bool = False,
         use_skills: bool = True,
+        behavior_mode_block: Optional[str] = None,
     ) -> Tuple[List[Dict[str, str]], List[Dict[str, Any]], List[Dict[str, str]]]:
         """Build the context preface for LLM calls.
 
@@ -328,6 +329,20 @@ class ChatProcessor:
                 "role": "system",
                 "content": preset_system_prompt
             })
+
+        # CONTRATO_MODOS: the behaviour-mode block (a conversational stance,
+        # e.g. "adversarial") sits AFTER the project/preset prompt and BEFORE
+        # UNTRUSTED_CONTEXT_POLICY — never after it. The policy is the last
+        # word on what Faustus is allowed to do; a mode only ever changes how
+        # it talks, and this ordering is what makes that structural rather
+        # than a promise the mode's own text has to keep on its own. Neither
+        # agent mode nor incognito suppress this — it is a stance, not memory.
+        if behavior_mode_block:
+            preface.append({
+                "role": "system",
+                "content": behavior_mode_block,
+            })
+
         preface.append({
             "role": "system",
             "content": UNTRUSTED_CONTEXT_POLICY,

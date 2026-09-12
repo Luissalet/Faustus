@@ -12,6 +12,9 @@ from typing import Any, Optional
 from core.models import ChatMessage
 from core.database import SessionLocal
 from core.database import Session as DBSession, ModelEndpoint
+from core.database import get_session_behavior_mode
+from src import behavior_modes
+from src.settings import get_setting
 from src.llm_core import normalize_model_id
 from src.endpoint_resolver import normalize_base
 from src.context_compactor import annotate_history_positions, maybe_compact, trim_for_context
@@ -162,6 +165,11 @@ class ChatContext:
     # site can stamp it onto the saved reply without re-deriving it. `None`
     # (not `[]`) when side threads were never consulted at all (incognito).
     side_thread_wires: Optional[list] = None
+    # CONTRATO_MODOS: the id of the behaviour mode this turn was actually
+    # built with (`src.behavior_modes.resolve`'s result) — carried the same
+    # way `side_thread_wires` is, so `save_assistant_response` can stamp
+    # `metadata["behavior_mode"]` without re-resolving it a second time.
+    behavior_mode: Optional[str] = None
 
 
 # ── Helpers ────────────────────────────────────────────────────────────── #
@@ -654,6 +662,7 @@ async def build_chat_context(
     defer_context_shaping: bool = False,
     continuation_context_message: str | None = None,
     persist_user_message: bool = True,
+    behavior_mode: str | None = None,
 ) -> ChatContext:
     """Build the full context (preface + messages) for an LLM call.
 
@@ -747,6 +756,18 @@ async def build_chat_context(
             else preprocessed.text_for_context
         )
     )
+    # CONTRATO_MODOS: resolve the behaviour mode for this turn — request
+    # override > session's own persisted mode > global `behavior_mode_default`
+    # setting > "default". An unknown id at any of those levels falls through
+    # (never raises) inside `resolve` itself, so a stale/typo'd mode id can
+    # never break the turn. Applied in agent mode and incognito alike — a
+    # mode is a stance, not memory, so neither suppresses it.
+    _resolved_mode = behavior_modes.resolve(
+        requested=behavior_mode,
+        session_mode=get_session_behavior_mode(session_id),
+        default_setting=get_setting("behavior_mode_default"),
+        owner=user,
+    )
     _preface_kwargs = dict(
         message=_ctx_msg,
         session=sess,
@@ -759,6 +780,7 @@ async def build_chat_context(
         agent_mode=agent_mode,
         incognito=incognito,
         use_skills=skills_enabled,
+        behavior_mode_block=behavior_modes.system_block(_resolved_mode),
     )
     if use_rag is not None or is_research_spinoff or casual_low_signal:
         _preface_kwargs["use_rag"] = use_rag_val
@@ -909,6 +931,7 @@ async def build_chat_context(
         uploaded_files=uploaded_files,
         route_messages=route_messages,
         side_thread_wires=_side_thread_wires,
+        behavior_mode=_resolved_mode.id,
     )
 
 
@@ -1066,6 +1089,32 @@ def clean_thinking_for_save(content: str, metadata: dict | None = None) -> tuple
     return content, md
 
 
+def stamp_behavior_mode_metadata(md: dict, behavior_mode: Optional[str], content: str, owner: Optional[str]) -> None:
+    """Shared by `save_assistant_response` and the non-streaming `/api/chat`
+    route (which builds its own metadata dict instead of going through that
+    helper) so the two paths can't drift on what gets stamped.
+
+    Mutates `md` in place: `metadata["behavior_mode"] = id` when the turn
+    used anything other than `"default"`, and `metadata["mode_check"]` on
+    top of that when the mode declares checks AND at least one was actually
+    run (`check_response(...)["checked"]` non-empty) — a mode with no
+    `checks` never gets a hollow `{"checked": [], "violations": []}` stamped
+    onto every reply. Best-effort: a lookup/check failure is logged and
+    swallowed, never raised — a bad mode id must not break a saved turn.
+    """
+    if not behavior_mode or behavior_mode == "default":
+        return
+    md["behavior_mode"] = behavior_mode
+    try:
+        mode = behavior_modes.get_mode(behavior_mode, owner=owner)
+        if mode is not None:
+            mode_check = behavior_modes.check_response(mode, content)
+            if mode_check.get("checked"):
+                md["mode_check"] = mode_check
+    except Exception:
+        logger.debug("behavior_modes.check_response failed for mode %r", behavior_mode, exc_info=True)
+
+
 def save_assistant_response(
     sess,
     session_manager,
@@ -1082,6 +1131,7 @@ def save_assistant_response(
     tool_events: list = None,
     incognito: bool = False,
     wires: list | None = None,
+    behavior_mode: str | None = None,
 ):
     """Add assistant response to session history.
 
@@ -1098,6 +1148,16 @@ def save_assistant_response(
     apart from "already fresh" — and `src.side_threads.note_wires_used`
     advances each wire's own `source_fingerprint` to match, so `stale`
     resets right after a response that actually used the current version.
+
+    `behavior_mode` (CONTRATO_MODOS) is `ChatContext.behavior_mode` — the id
+    `src.behavior_modes.resolve` picked for this turn. When it is anything
+    other than `"default"` it is stamped as `metadata["behavior_mode"]`, and
+    `src.behavior_modes.check_response` is run against the saved text and
+    stamped as `metadata["mode_check"]` — but only when that mode actually
+    declares checks to run (`check_response(...)["checked"]` non-empty), so
+    a mode with no `checks` (like most built-ins) never adds a hollow
+    `{"checked": [], "violations": []}` to every one of its replies.
+    `check_response` is a detector: it never changes `full_response` itself.
     """
     md = dict(last_metrics) if last_metrics else {}
     def _model_value(value) -> str:
@@ -1140,6 +1200,9 @@ def save_assistant_response(
         _content = _think_info["reply"]
     else:
         _content = full_response
+
+    stamp_behavior_mode_metadata(md, behavior_mode, _content, getattr(sess, "owner", None))
+
     if incognito:
         _append_incognito_message(session_id, "assistant", _content, md)
         return None

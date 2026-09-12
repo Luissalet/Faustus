@@ -47,6 +47,9 @@ from src.auth_helpers import effective_user, get_current_user
 from routes.session_routes import _verify_session_owner
 from routes.document_helpers import _owner_session_filter
 from core.database import SessionLocal, get_session_mode, set_session_mode
+from core.database import get_session_behavior_mode
+from src import behavior_modes
+from src.settings import get_setting
 from core.database import Session as DBSession, ChatMessage as DBChatMessage
 from core.database import Document as DBDocument, ModelEndpoint
 from core.log_safety import redact_url
@@ -56,6 +59,7 @@ from routes.chat_helpers import (
     resolve_session_auth,
     build_chat_context,
     save_assistant_response,
+    stamp_behavior_mode_metadata,
     run_post_response_tasks,
     accumulate_token_usage,
     clean_thinking_for_save,
@@ -1575,6 +1579,12 @@ def setup_chat_routes(
         except Exception:
             _raw_body = {}
         client_message_id = str((_raw_body or {}).get("client_message_id") or "").strip()[:128]
+        # CONTRATO_MODOS: one-turn behaviour-mode override — same "not a
+        # ChatRequest field, read off the raw body" posture as
+        # client_message_id right above. Absent/empty means "use whatever
+        # the session/global default resolve to", exactly as before this
+        # existed.
+        behavior_mode = str((_raw_body or {}).get("behavior_mode") or "").strip() or None
 
         # Verify the caller owns this session before loading it.
         # Without this, any authenticated user can post into another user's chat.
@@ -1676,6 +1686,7 @@ def setup_chat_routes(
                 webhook_manager=webhook_manager,
                 allow_tool_preprocessing=allow_tool_preprocessing,
                 defer_context_shaping=foreground_policy.enabled,
+                behavior_mode=behavior_mode,
             )
 
             # Research injection
@@ -1774,6 +1785,10 @@ def setup_chat_routes(
             _side_thread_wires = getattr(ctx, "side_thread_wires", None)
             if _side_thread_wires:
                 _clean_md["side_thread_wires"] = _side_thread_wires
+            stamp_behavior_mode_metadata(
+                _clean_md, getattr(ctx, "behavior_mode", None), _clean_reply,
+                getattr(sess, "owner", None),
+            )
             sess.add_message(ChatMessage("assistant", _clean_reply, metadata=_clean_md))
 
             from core.database import update_session_last_accessed
@@ -2323,6 +2338,11 @@ def setup_chat_routes(
 
         image_generation_session = _is_image_generation_session(sess, owner=effective_user(request))
         no_memory = str(form_data.get("no_memory", "")).lower() == "true"
+        # CONTRATO_MODOS: one-turn behaviour-mode override, same form/JSON
+        # dual-read posture every other per-turn field on this route uses.
+        behavior_mode = str(
+            form_data.get("behavior_mode") or (body or {}).get("behavior_mode") or ""
+        ).strip() or None
         if image_generation_session:
             no_memory = True
             use_rag = "false"
@@ -2464,6 +2484,7 @@ def setup_chat_routes(
                 else None
             ),
             persist_user_message=not tool_approval_continuation,
+            behavior_mode=behavior_mode,
         )
 
         # W3-INT (CONTRATO_CMP_W2.md § W2-A1/CMP-03): doc_context chips —
@@ -3365,6 +3386,7 @@ def setup_chat_routes(
                                     character_name=ctx.preset.character_name,
                                     incognito=incognito,
                                     wires=getattr(ctx, "side_thread_wires", None),
+                                    behavior_mode=getattr(ctx, "behavior_mode", None),
                                 )
                                 accumulate_token_usage(session, _terminal_metrics)
                                 _chat_terminal_saved = True
@@ -3453,6 +3475,7 @@ def setup_chat_routes(
                                     do_research=effective_do_research,
                                     incognito=incognito,
                                     wires=getattr(ctx, "side_thread_wires", None),
+                                    behavior_mode=getattr(ctx, "behavior_mode", None),
                                 )
                                 if _saved_id:
                                     yield f'data: {json.dumps({"type": "message_saved", "id": _saved_id})}\n\n'
@@ -3809,6 +3832,7 @@ def setup_chat_routes(
                                             used_memories=ctx.used_memories,
                                             incognito=incognito,
                                             wires=getattr(ctx, "side_thread_wires", None),
+                                            behavior_mode=getattr(ctx, "behavior_mode", None),
                                         )
                                         _terminal_saved = True
                                         accumulate_token_usage(session, terminal_metadata)
@@ -3872,6 +3896,7 @@ def setup_chat_routes(
                                     used_memories=ctx.used_memories,
                                     incognito=incognito,
                                     wires=getattr(ctx, "side_thread_wires", None),
+                                    behavior_mode=getattr(ctx, "behavior_mode", None),
                                 )
                                 if _saved_id:
                                     yield f'data: {json.dumps({"type": "message_saved", "id": _saved_id})}\n\n'
@@ -4281,7 +4306,23 @@ def setup_chat_routes(
             logger.debug("side_threads.inherited_context_with_snapshot failed for regenerate", exc_info=True)
             _inherited, _wires_snapshot = [], []
 
-        messages = list(_inherited) + [
+        # CONTRATO_MODOS: regenerate keeps the SESSION's own behaviour mode —
+        # this route takes no per-request override, it only ever redoes the
+        # same turn under whatever mode is already persisted (or the global
+        # default if none is). Resolved the same way `build_chat_context`
+        # resolves it, just without a `requested` candidate.
+        _regen_mode = behavior_modes.resolve(
+            requested=None,
+            session_mode=get_session_behavior_mode(sid),
+            default_setting=get_setting("behavior_mode_default"),
+            owner=owner,
+        )
+        _regen_mode_block = behavior_modes.system_block(_regen_mode)
+
+        messages = list(_inherited)
+        if _regen_mode_block:
+            messages.append({"role": "system", "content": _regen_mode_block})
+        messages += [
             {"role": m.role, "content": m.content}
             for m in history[:trigger_idx + 1]
             if (m.metadata or {}).get("source") != "slash"
@@ -4318,6 +4359,7 @@ def setup_chat_routes(
                     sess, session_manager, sid,
                     full_response.strip() or "Done.", metrics_to_save,
                     wires=_wires_snapshot,
+                    behavior_mode=_regen_mode.id,
                 )
                 if saved_id:
                     yield f'data: {json.dumps({"type": "message_saved", "id": saved_id})}\n\n'

@@ -83,6 +83,7 @@ Scheduled work requires a running Faustus server and an awake computer. Use web 
 - Move to another conversation while the server keeps the current turn running. See queue position, current activity, tool use and permission requests; reconnect to the existing work. An approval card whose permission died with a restart says so instead of offering dead buttons.
 - Every turn shows the strategy the agent chose (direct edit, plan then execute, research, specialised review, explore alternatives) and why; a turn worth repeating can be saved as a recipe with its real inputs.
 - Search and navigate with **Ctrl+K**. Use English or Spanish, themes, density controls, adjustable text and reduced motion.
+- Pick a **behaviour mode** — a named conversational stance (adversarial, socratic, terse, mentor, red team, outside observer, editor, or one you write yourself) that changes how Faustus argues, never what it is allowed to do; it sits after the task preset and strictly before the untrusted-content policy in every turn's prompt, agent mode and Incognito included ([Behaviour modes API](docs/api/behavior_modes.md)).
 
 ### Side threads and context wires
 

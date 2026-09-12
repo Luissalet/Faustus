@@ -134,6 +134,11 @@ DEFAULT_SETTINGS = {
     # Public base URL used to build clickable deep-links in outgoing alerts
     # (e.g., urgency alert email). Example: "https://chat.example.com"
     "app_public_url": "",
+    # CONTRATO_MODOS: global fallback behaviour-mode id (src/behavior_modes.py)
+    # used when a turn has no per-request override and its session has no
+    # override of its own. "default" == no extra stance, Faustus as it always
+    # was — an admin changes this to make e.g. "adversarial" the house style.
+    "behavior_mode_default": "default",
     "tts_enabled": True,
     "tts_provider": "disabled",
     "tts_model": "tts-1",

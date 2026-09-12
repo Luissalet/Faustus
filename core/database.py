@@ -230,6 +230,12 @@ class Session(TimestampMixin, Base):
     total_output_tokens = Column(Integer, default=0)
     mode = Column(String, nullable=True)  # 'agent', 'chat', or 'research'
     crew_member_id = Column(String, nullable=True)  # links to crew_members.id
+    # CONTRATO_MODOS: this session's behaviour-mode override (an id from
+    # `src.behavior_modes`), or NULL to defer to the `behavior_mode_default`
+    # setting. Deliberately separate from `mode` above — that is Chat/Agent/
+    # research (WHAT the session can do); this is HOW it talks, and the two
+    # are picked independently.
+    behavior_mode = Column(String, nullable=True)
 
     # Relationship to chat messages
     messages = relationship("ChatMessage", back_populates="session", cascade="all, delete-orphan")
@@ -1576,6 +1582,31 @@ def _migrate_add_session_wire_material_columns():
             logging.getLogger(__name__).info("Migrated: added material columns to session_wires")
     except Exception as e:
         logging.getLogger(__name__).warning(f"session_wires material columns migration: {e}")
+
+
+def _migrate_add_session_behavior_mode():
+    """Add `behavior_mode` to sessions (CONTRATO_MODOS Lote A).
+
+    Same idempotency story as `_migrate_add_session_wire_material_columns`
+    right above: `create_all` only creates missing TABLES, so an install
+    whose `sessions` table predates this column needs it ALTERed in once;
+    a fresh install already has it from today's model and this is a no-op.
+    Purely additive — NULL means "no per-session override", which is
+    exactly how `get_session_behavior_mode` already reads a session that
+    was never given one, so nothing downstream has to distinguish "old
+    row" from "row that explicitly cleared its mode".
+    """
+    try:
+        with engine.connect() as conn:
+            cols = [r[1] for r in conn.execute(text("PRAGMA table_info(sessions)"))]
+            if not cols:
+                return
+            if "behavior_mode" not in cols:
+                conn.execute(text("ALTER TABLE sessions ADD COLUMN behavior_mode TEXT"))
+                conn.commit()
+                logging.getLogger(__name__).info("Migrated: added 'behavior_mode' to sessions")
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"sessions.behavior_mode migration failed: {e}")
 
 
 def _migrate_add_owner_column():
@@ -3075,6 +3106,7 @@ def _formal_migration_steps() -> "list[tuple[str, object]]":
         ("create_artifact_identity_tables", _migrate_create_artifact_identity_tables),
         ("add_session_project_id_column", _migrate_add_session_project_id_column),
         ("add_session_wire_material_columns", _migrate_add_session_wire_material_columns),
+        ("add_session_behavior_mode", _migrate_add_session_behavior_mode),
     ]
 
 
@@ -3748,6 +3780,34 @@ def set_session_mode(session_id: str, mode: str) -> bool:
         return True
     except Exception:
         logger.warning("Failed to persist mode %r for session %s", mode, session_id)
+        return False
+
+def get_session_behavior_mode(session_id: str):
+    """Return a session's persisted `behavior_mode`, or None if unset/unknown.
+
+    Same best-effort contract as `get_session_mode`: never raises (returns
+    None on any DB error), so `behavior_modes.resolve` can call this on the
+    hot chat path without a try/except of its own."""
+    try:
+        with get_db_session() as db:
+            return db.query(Session.behavior_mode).filter(Session.id == session_id).scalar()
+    except Exception:
+        logger.warning("Failed to read behavior_mode for session %s", session_id)
+        return None
+
+def set_session_behavior_mode(session_id: str, mode_id) -> bool:
+    """Persist a session's `behavior_mode` (or clear it with `None`).
+
+    Best-effort: never raises, returns success — same posture as
+    `set_session_mode`, so a write failure degrades to "this turn's request
+    override still worked, next turn falls back to the global default"
+    rather than a 500."""
+    try:
+        with get_db_session() as db:
+            db.query(Session).filter(Session.id == session_id).update({"behavior_mode": mode_id})
+        return True
+    except Exception:
+        logger.warning("Failed to persist behavior_mode %r for session %s", mode_id, session_id)
         return False
 
 def get_session_by_id(session_id: str):

@@ -1073,6 +1073,12 @@ app.include_router(setup_hardware_routes())
 from routes.side_thread_routes import setup_side_thread_routes
 app.include_router(setup_side_thread_routes(session_manager))
 
+# Behaviour modes (CONTRATO_MODOS Lote A): the conversational-stance catalog
+# (built-in + user-created), per-session override, global default setting,
+# and the check-a-sample-reply preview endpoint (src/behavior_modes.py).
+from routes.behavior_mode_routes import setup_behavior_mode_routes
+app.include_router(setup_behavior_mode_routes(session_manager))
+
 # Manual condense of a turn range (CONTRATO_CABLES2 F3 Lote A): preview,
 # condense, expand — a user-requested one-time collapse of settled history,
 # distinct from the automatic context-window compaction in
