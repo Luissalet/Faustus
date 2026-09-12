@@ -289,6 +289,10 @@ deep-link de workflows, recetas desde un run real) ya no aparece aquí.
 
 ## Última evidencia
 
+- **12-09-2026 noche, INF-05 + benchmarks reales (master `4a9d21d`,
+  Windows `e1efe93`+).** Suite nube entera: 17.367 correctas, 49 saltadas,
+  0 fallos (11 min 8 s). Visto en vivo: Physical GPUs, presupuesto por GPU,
+  cinco runs de banco y el comparador con datos reales (§78).
 - **12-09-2026, INF-00…04 (master `3a405f2`, Windows igual).** Suite nube
   entera tras INF-04: 17.228 correctas, 49 saltadas, 0 fallos (9 min 19 s).
   Visto en vivo en el 7001 (Chrome): pestaña Optimize (endpoint Ollama →
