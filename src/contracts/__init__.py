@@ -83,6 +83,13 @@ from .inference import (  # noqa: F401
     InferenceProfile, RunBudget, RunConditions, RunInterruption, RunSample,
     RunStat, RunSummary, SampleQuality, SampleSizes,
     compute_profile_fingerprint,
+    LINK_SOURCES, TRANSPORT_KINDS, TRANSPORT_SOURCES, RECONCILIATION_STATES,
+    MEMORY_COMPONENT_SOURCES, CONSUMER_KINDS, CANDIDATE_BASES,
+    CONTEXT_NATIVE_SOURCES, CONTEXT_CONFIGURED_SOURCES, CONTEXT_EVALUATED_SOURCES,
+    LinkInfo, TransportInfo, identity_key, IndexReconciliation, reconcile_indices,
+    MemoryComponent, MemoryComponents, MemoryConsumer, MemoryBudget,
+    EstimateValidity, CandidateEstimate,
+    NativeContextLimit, ConfiguredContextLimit, EvaluatedContextLimit, ContextLimits,
 )
 
 __all__ = [
@@ -130,4 +137,11 @@ __all__ = [
     "PROFILE_OBJECTIVES", "PROFILE_EVALUATIONS", "PROFILE_SOURCES",
     "CHECK_KINDS", "RUN_STATES", "RUN_STATES_IN_FLIGHT", "RUN_STATES_TERMINAL",
     "COMPARISON_VERDICTS",
+    "LINK_SOURCES", "TRANSPORT_KINDS", "TRANSPORT_SOURCES", "RECONCILIATION_STATES",
+    "MEMORY_COMPONENT_SOURCES", "CONSUMER_KINDS", "CANDIDATE_BASES",
+    "CONTEXT_NATIVE_SOURCES", "CONTEXT_CONFIGURED_SOURCES", "CONTEXT_EVALUATED_SOURCES",
+    "LinkInfo", "TransportInfo", "identity_key", "IndexReconciliation", "reconcile_indices",
+    "MemoryComponent", "MemoryComponents", "MemoryConsumer", "MemoryBudget",
+    "EstimateValidity", "CandidateEstimate",
+    "NativeContextLimit", "ConfiguredContextLimit", "EvaluatedContextLimit", "ContextLimits",
 ]

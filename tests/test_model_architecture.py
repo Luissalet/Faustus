@@ -269,4 +269,46 @@ def test_a_failed_lookup_is_not_cached_so_the_next_call_retries(monkeypatch):
 
 def test_response_has_every_contract_field_even_when_unknown():
     result = ma.get_model_architecture("", source="hf")
-    assert set(result) == {"repo", "kind", "total_params", "active_params", "num_experts", "mtp", "architectures", "source", "observed_at", "note"}
+    assert set(result) == {"repo", "kind", "total_params", "active_params", "num_experts", "mtp",
+                           "architectures", "native_context", "context_note", "source", "observed_at", "note"}
+
+
+# ── INF-05 A4: native_context / context_note (§14 "tres límites de contexto") ─
+
+def test_classify_native_context_from_max_position_embeddings():
+    cfg = {"model_type": "qwen3", "architectures": ["Qwen3ForCausalLM"], "max_position_embeddings": 32768}
+    info = ma.classify_hf_config(cfg)
+    assert info["native_context"] == 32768
+    assert info["context_note"] is None
+
+
+def test_classify_native_context_is_the_rope_original_not_the_extended_value():
+    # The Qwen-shaped case §14 cites: config states BOTH the extended window
+    # and the original one under rope_scaling — native must be the ORIGINAL.
+    cfg = {
+        "model_type": "qwen3", "architectures": ["Qwen3ForCausalLM"],
+        "max_position_embeddings": 131072,
+        "rope_scaling": {"type": "yarn", "factor": 4.0, "original_max_position_embeddings": 32768},
+    }
+    info = ma.classify_hf_config(cfg)
+    assert info["native_context"] == 32768  # the original, never the extended 131072
+    assert "extended by rope_scaling (yarn) to 131072" in info["context_note"]
+    assert "not a quality guarantee" in info["context_note"]
+
+
+def test_classify_no_context_fields_leaves_native_context_absent():
+    cfg = {"model_type": "x", "architectures": ["X"]}
+    info = ma.classify_hf_config(cfg)
+    assert info["native_context"] is None
+    assert info["context_note"] is None
+
+
+def test_ollama_show_native_context_from_model_info_context_length(monkeypatch):
+    payload = {
+        "model_info": {"general.architecture": "qwen3", "qwen3.context_length": 40960},
+        "details": {"parameter_size": "8B"},
+    }
+    monkeypatch.setattr(ma.httpx, "Client", _mock_client(lambda req: httpx.Response(200, json=payload)))
+    result = ma.get_model_architecture("qwen3:8b", source="ollama")
+    assert result["native_context"] == 40960
+    assert result["context_note"] is None

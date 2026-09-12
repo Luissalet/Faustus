@@ -389,3 +389,91 @@ def test_identity_for_endpoint_none_for_unverifiable_llamacpp_hint():
 
 def test_identity_for_endpoint_none_for_cloud_provider_with_no_hint():
     assert lr.identity_for_endpoint("https://api.openai.com/v1") is None
+
+
+# ── INF-05 A3b: local_pid / live_receipts / reconcile_on_start ─────────────
+
+def test_local_pid_reads_the_tmux_pid_file(monkeypatch, tmp_path):
+    from routes import shell_routes
+    tmux_dir = tmp_path / "tmux"
+    tmux_dir.mkdir()
+    monkeypatch.setattr(shell_routes, "TMUX_LOG_DIR", tmux_dir)
+    (tmux_dir / "serve-aaaaaaaa.pid").write_text("12345", encoding="utf-8")
+
+    assert lr.local_pid("serve-aaaaaaaa") == 12345
+    # No pid file at all -- "not locally tracked", not an error.
+    assert lr.local_pid("serve-bbbbbbbb") is None
+
+
+def test_live_receipts_filters_dead_pids_and_marks_them_stale_leaves_untracked_alone(monkeypatch, tmp_path):
+    from routes import shell_routes
+    tmux_dir = tmp_path / "tmux"
+    tmux_dir.mkdir()
+    monkeypatch.setattr(shell_routes, "TMUX_LOG_DIR", tmux_dir)
+
+    engine = EngineIdentity(implementation="llama-server")
+    for sid in ("serve-alive001", "serve-dead0001", "serve-notrack1"):
+        lr.record(sid, engine=engine, model=None, requested_cmd="c", final_cmd="c",
+                 rewrites=[], plan={}, assessments=[])
+    (tmux_dir / "serve-alive001.pid").write_text("111", encoding="utf-8")
+    (tmux_dir / "serve-dead0001.pid").write_text("222", encoding="utf-8")
+    # "serve-notrack1" never wrote a .pid file (e.g. an Ollama-managed
+    # session) -- it must be left out of `live_receipts()` but NOT stale'd.
+
+    import psutil
+    monkeypatch.setattr(psutil, "pid_exists", lambda pid: pid == 111)
+
+    live = lr.live_receipts()
+    assert {r.session_id for r in live} == {"serve-alive001"}
+
+    assert lr.get("serve-dead0001").verify_state == "stale"
+    assert lr.get("serve-notrack1").verify_state == "pending"
+
+
+def test_live_receipts_does_not_re_stale_an_already_stale_receipt(monkeypatch, tmp_path):
+    from routes import shell_routes
+    tmux_dir = tmp_path / "tmux"
+    tmux_dir.mkdir()
+    monkeypatch.setattr(shell_routes, "TMUX_LOG_DIR", tmux_dir)
+
+    engine = EngineIdentity(implementation="llama-server")
+    lr.record("serve-already1", engine=engine, model=None, requested_cmd="c", final_cmd="c",
+             rewrites=[], plan={}, assessments=[])
+    lr.mark_stale("serve-already1", "manually staled before this sweep")
+    (tmux_dir / "serve-already1.pid").write_text("999", encoding="utf-8")
+
+    import psutil
+    monkeypatch.setattr(psutil, "pid_exists", lambda pid: False)
+
+    calls = []
+    real_mark_stale = lr.mark_stale
+    def spy_mark_stale(session_id, reason):
+        calls.append(session_id)
+        return real_mark_stale(session_id, reason)
+    monkeypatch.setattr(lr, "mark_stale", spy_mark_stale)
+
+    lr.live_receipts()
+    assert calls == []  # already stale: mark_stale is not called again
+
+
+def test_reconcile_on_start_reports_checked_and_live_session_ids(monkeypatch, tmp_path):
+    from routes import shell_routes
+    tmux_dir = tmp_path / "tmux"
+    tmux_dir.mkdir()
+    monkeypatch.setattr(shell_routes, "TMUX_LOG_DIR", tmux_dir)
+
+    engine = EngineIdentity(implementation="llama-server")
+    lr.record("serve-live00001", engine=engine, model=None, requested_cmd="c", final_cmd="c",
+             rewrites=[], plan={}, assessments=[])
+    lr.record("serve-gone00001", engine=engine, model=None, requested_cmd="c", final_cmd="c",
+             rewrites=[], plan={}, assessments=[])
+    (tmux_dir / "serve-live00001.pid").write_text("111", encoding="utf-8")
+    (tmux_dir / "serve-gone00001.pid").write_text("222", encoding="utf-8")
+
+    import psutil
+    monkeypatch.setattr(psutil, "pid_exists", lambda pid: pid == 111)
+
+    result = lr.reconcile_on_start()
+    assert result["checked"] == 2
+    assert result["live"] == ["serve-live00001"]
+    assert lr.get("serve-gone00001").verify_state == "stale"

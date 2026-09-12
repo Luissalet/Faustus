@@ -180,6 +180,85 @@ def identity_for_endpoint(
     return EngineIdentity(implementation="ollama", host=host, port=port, managed="external")
 
 
+def local_pid(session_id: str) -> Optional[int]:
+    """The pid a local (tmux/detached) launch wrote to
+    `TMUX_LOG_DIR/<session_id>.pid` for liveness — the same file `GET /api/
+    cookbook/task/{id}` already reads (`routes/cookbook_routes.py` around
+    l.5017). Lazily imported so this module never pulls in the whole route
+    layer just to read one path constant (INF-05 A3b). `None` for a session
+    that was never a locally-tracked process (e.g. it talks to an already-
+    running Ollama) — that is not "dead", it is "not ours to judge"."""
+    _validate_session_id(session_id)
+    from routes.shell_routes import TMUX_LOG_DIR
+    pid_path = TMUX_LOG_DIR / f"{session_id}.pid"
+    try:
+        return int(pid_path.read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        return None
+
+
+def _all_session_ids() -> List[str]:
+    try:
+        names = [n for n in os.listdir(RECEIPTS_DIR) if n.endswith(".json")]
+    except OSError:
+        return []
+    return [n[: -len(".json")] for n in names]
+
+
+def live_receipts() -> List[LaunchReceipt]:
+    """Every receipt whose managed process is confirmed alive
+    (`local_pid` + `psutil.pid_exists`). A session with no recorded pid is
+    left out of the result but NOT marked stale — a receipt for an already-
+    running Ollama was never going to have a pid file, and that absence is
+    not evidence the process died. A session whose recorded pid IS gone is
+    marked `stale` right here (via the existing `mark_stale`) unless it
+    already was — a dead process is not a live consumer of anything (§11).
+    Best-effort: an unreadable receipt is skipped, same as
+    `find_by_endpoint`.
+    """
+    try:
+        import psutil
+    except Exception:  # pragma: no cover - psutil is a hard dep in practice
+        psutil = None  # type: ignore[assignment]
+    out: List[LaunchReceipt] = []
+    for session_id in _all_session_ids():
+        try:
+            receipt = get(session_id)
+        except LaunchReceiptError:
+            continue
+        if receipt is None:
+            continue
+        pid = local_pid(session_id)
+        if pid is None:
+            continue
+        alive = bool(psutil is not None and psutil.pid_exists(pid))
+        if alive:
+            out.append(receipt)
+            continue
+        if receipt.verify_state != "stale":
+            try:
+                mark_stale(session_id, "managed process is no longer running (pid gone)")
+            except Exception as e:  # noqa: BLE001 - a bookkeeping miss must not break the sweep
+                logger.debug("launch_receipts: could not mark %s stale: %s", session_id, e)
+    return out
+
+
+def reconcile_on_start() -> Dict[str, Any]:
+    """Called once from `app.py`'s startup reconciliation pass, next to
+    `src.bench.runner.reconcile_on_start` (INF-04 T12). A restart means
+    every locally-tracked pid from the PREVIOUS process is either still
+    running (survived the restart — genuinely still a live consumer) or
+    gone (its receipt should say so). This never resumes anything and never
+    touches a process; `live_receipts()` already does the marking, this
+    just runs it once at boot and reports what it found."""
+    try:
+        live = live_receipts()
+    except Exception as e:  # noqa: BLE001 - a reconciliation miss must never fail startup
+        logger.warning("launch_receipts: reconcile_on_start failed: %s", e)
+        return {"checked": 0, "live": [], "error": str(e)[:200]}
+    return {"checked": len(_all_session_ids()), "live": [r.session_id for r in live]}
+
+
 def record(
     session_id: str,
     *,

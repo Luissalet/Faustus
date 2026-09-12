@@ -103,6 +103,8 @@ def _unknown(repo: str, source: str, note: Optional[str]) -> Dict[str, Any]:
         "num_experts": None,
         "mtp": None,
         "architectures": None,
+        "native_context": None,
+        "context_note": None,
         "source": source,
         "observed_at": _now_iso() if source != "none" else None,
         "note": note,
@@ -168,7 +170,8 @@ _MTP_LAYERS_KEYS = ("num_nextn_predict_layers", "mtp_num_hidden_layers")
 
 
 def classify_hf_config(cfg: Optional[Dict[str, Any]]) -> Dict[str, Any]:
-    """kind/mtp/num_experts/architectures out of a raw HF `config.json`.
+    """kind/mtp/num_experts/architectures/native_context out of a raw HF
+    `config.json`.
 
     `kind`: `"moe"` when an expert-count field is > 1 or `moe_intermediate_size`
     is set; `"dense"` when the config is otherwise recognizable
@@ -180,9 +183,20 @@ def classify_hf_config(cfg: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     positive, or a `use_mtp`-style flag is truthy. Absence of every such
     field leaves it `None` — never `False`: this function cannot prove a
     model does NOT do MTP, only that the field wasn't there to read.
+
+    `native_context`/`context_note` (INF-05 A4, §14 "tres límites de
+    contexto"): `max_position_embeddings` IS the native context — UNLESS
+    `rope_scaling.original_max_position_embeddings` is also present, in
+    which case that original value is native and `max_position_embeddings`
+    is the RoPE/YaRN-extended one; a model config that only states the
+    extended number without an `original_max_position_embeddings` gives no
+    way to recover the native figure, so `native_context` stays that
+    extended number with no note — this function never guesses at a
+    "native" value the config itself does not distinguish.
     """
     if not isinstance(cfg, dict) or not cfg:
-        return {"kind": "unknown", "mtp": None, "num_experts": None, "architectures": None, "note": "config.json missing or empty"}
+        return {"kind": "unknown", "mtp": None, "num_experts": None, "architectures": None,
+                "note": "config.json missing or empty", "native_context": None, "context_note": None}
 
     num_experts: Optional[int] = None
     for key in _MOE_EXPERT_KEYS:
@@ -217,7 +231,28 @@ def classify_hf_config(cfg: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     if mtp is None and cfg.get("use_mtp"):
         mtp = True
 
-    return {"kind": kind, "mtp": mtp, "num_experts": num_experts, "architectures": architectures, "note": note}
+    native_context: Optional[int] = None
+    context_note: Optional[str] = None
+    max_pos = cfg.get("max_position_embeddings")
+    if isinstance(max_pos, (int, float)) and not isinstance(max_pos, bool) and max_pos > 0:
+        native_context = int(max_pos)
+    rope_scaling = cfg.get("rope_scaling")
+    if isinstance(rope_scaling, dict):
+        original = rope_scaling.get("original_max_position_embeddings")
+        if isinstance(original, (int, float)) and not isinstance(original, bool) and original > 0:
+            rope_kind = rope_scaling.get("type") or rope_scaling.get("rope_type") or "rope_scaling"
+            extended_to = native_context  # config's own max_position_embeddings IS the extended value
+            native_context = int(original)
+            context_note = (
+                f"extended by rope_scaling ({rope_kind}) to {extended_to}: not a quality guarantee"
+                if extended_to else
+                f"extended by rope_scaling ({rope_kind}): not a quality guarantee"
+            )
+
+    return {
+        "kind": kind, "mtp": mtp, "num_experts": num_experts, "architectures": architectures,
+        "note": note, "native_context": native_context, "context_note": context_note,
+    }
 
 
 def _try_hf(repo: str, *, owner: str, project: Optional[Dict[str, Any]], profile: Optional[str]) -> Dict[str, Any]:
@@ -237,6 +272,8 @@ def _try_hf(repo: str, *, owner: str, project: Optional[Dict[str, Any]], profile
         "num_experts": info["num_experts"],
         "mtp": info["mtp"],
         "architectures": info["architectures"],
+        "native_context": info["native_context"],
+        "context_note": info["context_note"],
         "source": "hf_config",
         "observed_at": _now_iso(),
         "note": info["note"],
@@ -307,6 +344,12 @@ def _try_ollama(repo: str) -> Dict[str, Any]:
     model_info = payload.get("model_info") if isinstance(payload.get("model_info"), dict) else {}
     details = payload.get("details") if isinstance(payload.get("details"), dict) else {}
     expert_count = _int_by_suffix(model_info, "expert_count")
+    # INF-05 A4: `<arch>.context_length` is Ollama's own name for the
+    # figure it loaded the GGUF's metadata with — the native window as
+    # reported by the engine, not an extended one (Ollama's `model_info`
+    # does not expose a separate RoPE-original field the way an HF
+    # `config.json` can), so no `context_note` is derived here.
+    native_context = _int_by_suffix(model_info, "context_length")
     arch_name = str(model_info.get("general.architecture") or "").strip() or None
     if expert_count is not None and expert_count > 1:
         kind = "moe"
@@ -323,6 +366,8 @@ def _try_ollama(repo: str) -> Dict[str, Any]:
         # /api/show does not report MTP support; absence is unknown, not "no".
         "mtp": None,
         "architectures": [arch_name] if arch_name else None,
+        "native_context": native_context,
+        "context_note": None,
         "source": "ollama_show",
         "observed_at": _now_iso(),
         "note": None if kind != "unknown" else "ollama /api/show did not report a recognizable architecture",

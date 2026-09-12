@@ -1058,6 +1058,14 @@ app.include_router(setup_inference_routes())
 from routes.benchmark_routes import setup_benchmark_routes
 app.include_router(setup_benchmark_routes())
 
+# Physical GPU topology, per-GPU memory budgets, manual transport
+# annotations and the three separately-tracked context limits (INF-05
+# §11/§14 Lote A): GET /api/hardware/topology|budget|context-limits,
+# POST /api/hardware/topology/annotate (src/gpu_topology.py,
+# src/memory_budget.py).
+from routes.hardware_routes import setup_hardware_routes
+app.include_router(setup_hardware_routes())
+
 # Excursos (side threads, CONTRATO_EXCURSOS Lote A + CONTRATO_CABLES2 F1/F2
 # Lote A): side-thread creation, wiring panel data, thought-map, context
 # preview, reference cables, wired document/note materials, and per-turn
@@ -1850,6 +1858,18 @@ async def _startup_event():
             )
     except Exception as e:
         logger.warning(f"Benchmark run reconciliation skipped: {e}")
+    # INF-05 A3b: a launch receipt for a locally-tracked process (tmux/
+    # detached, `TMUX_LOG_DIR/<sid>.pid`) whose pid did not survive the
+    # restart is marked `stale` here, once, at boot — never resumed, never
+    # a reason to touch the process. Mirrors the benchmark-run reconciler
+    # immediately above it.
+    try:
+        from src import launch_receipts as _launch_receipts
+        _receipts_reconciled = await asyncio.to_thread(_launch_receipts.reconcile_on_start)
+        if _receipts_reconciled.get("error"):
+            logger.warning("Launch receipt reconciliation skipped: %s", _receipts_reconciled["error"])
+    except Exception as e:
+        logger.warning(f"Launch receipt reconciliation skipped: {e}")
     # Every long-lived task started below belongs to the supervisor: it holds
     # the strong reference asyncio does not (a create_task'd loop can otherwise
     # be collected mid-flight) AND it is what shutdown consults to cancel them.

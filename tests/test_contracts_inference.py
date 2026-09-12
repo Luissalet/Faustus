@@ -484,3 +484,216 @@ def test_comparison_not_comparable_still_requires_reasons_field_present():
     ))
     assert comparison.comparable is False
     assert comparison.reasons == ("different suite_id",)
+
+
+# ── INF-05 A1: GpuInfo extensions, identity_key, reconcile_indices ──────────
+
+def test_gpu_info_old_data_without_link_transport_driver_still_parses():
+    # A GpuInfo dict as INF-02 wrote it, before this lote added anything.
+    old_raw = {"index": 0, "name": "RTX 4090", "uuid": "GPU-1", "bus_id": "0000:01:00.0",
+              "vram_bytes": 25757220864, "provenance": "nvidia-smi"}
+    gpu = inf.GpuInfo.parse(old_raw, "gpu")
+    assert gpu.driver is None
+    assert gpu.link is None
+    assert gpu.transport is None
+
+
+def test_gpu_info_round_trips_with_link_and_transport():
+    raw = {
+        "index": 0, "name": "RTX 4070 Ti", "uuid": "GPU-1", "bus_id": "0000:01:00.0",
+        "vram_bytes": 12878610432, "provenance": "nvidia-smi", "driver": "535.129.03",
+        "link": {"gen_current": 4, "width_current": 16, "gen_max": 4, "width_max": 16, "source": "observed"},
+        "transport": {"kind": "pcie", "source": "observed", "note": "", "observed_at": None},
+    }
+    gpu = inf.GpuInfo.parse(raw, "gpu")
+    assert gpu.link.width_current == 16
+    assert gpu.transport.kind == "pcie"
+    assert inf.GpuInfo.parse(gpu.to_dict(), "gpu") == gpu
+
+
+def test_gpu_info_rejects_bad_transport_kind():
+    with pytest.raises(ContractError):
+        inf.GpuInfo.parse({"index": 0, "name": "x", "transport": {"kind": "wifi"}}, "gpu")
+
+
+def test_hardware_snapshot_old_data_without_link_transport_on_gpus_still_parses():
+    old_raw = {"host": "box", "gpus": [{"index": 0, "name": "x"}], "topology": "known"}
+    snap = inf.HardwareSnapshot.parse(old_raw)
+    assert snap.gpus[0].link is None
+    assert snap.gpus[0].transport is None
+
+
+def test_identity_key_prefers_uuid_then_bus_id_then_none():
+    assert inf.identity_key(inf.GpuInfo(index=0, name="x", uuid="u1", bus_id="b1")) == "uuid:u1"
+    assert inf.identity_key(inf.GpuInfo(index=0, name="x", bus_id="b1")) == "bus:b1"
+    assert inf.identity_key(inf.GpuInfo(index=0, name="x")) is None
+
+
+def _hw(*gpus):
+    return inf.HardwareSnapshot(host="box", gpus=tuple(gpus), topology="known")
+
+
+def test_reconcile_indices_uuid_moved():
+    previous = _hw(inf.GpuInfo(index=0, name="A", uuid="GPU-a"))
+    current = _hw(inf.GpuInfo(index=1, name="A", uuid="GPU-a"))
+    result = inf.reconcile_indices(previous, current)
+    assert len(result) == 1
+    assert result[0].state == "moved"
+    assert result[0].previous_index == 0
+    assert result[0].current_index == 1
+
+
+def test_reconcile_indices_missing_and_new():
+    previous = _hw(inf.GpuInfo(index=0, name="A", uuid="GPU-a"))
+    current = _hw(inf.GpuInfo(index=0, name="B", uuid="GPU-b"))
+    result = {r.key: r.state for r in inf.reconcile_indices(previous, current)}
+    assert result["uuid:GPU-a"] == "missing"
+    assert result["uuid:GPU-b"] == "new"
+
+
+def test_reconcile_indices_no_identity_is_unidentifiable_never_same():
+    previous = _hw(inf.GpuInfo(index=0, name="A"))  # no uuid, no bus_id
+    current = _hw(inf.GpuInfo(index=0, name="A"))    # same index, still no identity
+    result = inf.reconcile_indices(previous, current)
+    assert len(result) == 2  # one "unidentifiable" per side, never merged into "same"
+    assert all(r.state == "unidentifiable" for r in result)
+    assert all(r.key is None for r in result)
+
+
+def test_index_reconciliation_round_trips():
+    r = inf.IndexReconciliation(key="uuid:x", previous_index=0, current_index=1, state="moved")
+    assert inf.IndexReconciliation.parse(r.to_dict(), "r") == r
+
+
+# ── INF-05 A1: MemoryComponent / MemoryBudget / CandidateEstimate ──────────
+
+def test_memory_component_absent_never_zero():
+    c = inf.MemoryComponent.parse({}, "c")
+    assert c.bytes is None
+    assert c.source == "absent"
+    assert inf.MemoryComponent.parse(c.to_dict(), "c") == c
+
+
+def test_memory_component_rejects_bad_source():
+    with pytest.raises(ContractError):
+        inf.MemoryComponent.parse({"bytes": 10, "source": "guessed"}, "c")
+
+
+def _budget_raw(**overrides):
+    raw = {
+        "gpu_key": "uuid:GPU-a", "gpu_index": 0, "gpu_name": "RTX 4070 Ti",
+        "total_bytes": 12878610432, "observed_at": "2026-09-12T00:00:00Z",
+        "components": {
+            "weights_resident": {"bytes": 8000000000, "source": "observed", "note": ""},
+            "kv_state": {"bytes": None, "source": "absent", "note": ""},
+            "buffers_runtime": {"bytes": None, "source": "absent", "note": ""},
+            "auxiliary_models": {"bytes": None, "source": "absent", "note": ""},
+            "other_processes": {"bytes": 500000000, "source": "observed", "note": ""},
+            "system_margin": {"bytes": 838860800, "source": "estimated", "note": ""},
+            "free": {"bytes": 2000000000, "source": "observed", "note": ""},
+        },
+        "consumers": [
+            {"kind": "ollama", "label": "qwen3.5:9b", "pid": 111, "bytes": 8000000000, "source": "observed"},
+        ],
+        "shared_spill": {"bytes": None, "source": "absent", "note": ""},
+        "stale": False,
+    }
+    raw.update(overrides)
+    return raw
+
+
+def test_memory_budget_round_trips():
+    b = inf.MemoryBudget.parse(_budget_raw())
+    assert b.consumers[0].kind == "ollama"
+    assert b.components.weights_resident.bytes == 8000000000
+    assert inf.MemoryBudget.parse(b.to_dict()) == b
+
+
+def test_memory_budget_two_consumers_one_budget_t14():
+    raw = _budget_raw(consumers=[
+        {"kind": "ollama", "label": "qwen3.5:9b", "pid": 111, "bytes": 8000000000, "source": "observed"},
+        {"kind": "faustus_serve", "label": "faustus serve · serve-x", "pid": None, "bytes": None, "source": "absent"},
+    ])
+    b = inf.MemoryBudget.parse(raw)
+    assert len(b.consumers) == 2
+    assert {c.kind for c in b.consumers} == {"ollama", "faustus_serve"}
+
+
+def test_memory_budget_rejects_bad_consumer_kind():
+    raw = _budget_raw(consumers=[{"kind": "browser", "label": "x", "pid": None, "bytes": None, "source": "absent"}])
+    with pytest.raises(ContractError):
+        inf.MemoryBudget.parse(raw)
+
+
+def _estimate_raw(**overrides):
+    raw = {
+        "weights": {"bytes": 8000000000, "source": "observed", "note": ""},
+        "kv_state": {"bytes": 500000000, "source": "observed", "note": "observed overhead in this configuration (ctx 8192)"},
+        "buffers": {"bytes": None, "source": "absent", "note": ""},
+        "margin": {"bytes": 838860800, "source": "estimated", "note": ""},
+        "total_lower": 9338860800, "total_upper": 9338860800,
+        "complete": True, "basis": "single_observation",
+        "validity": {"ctx_min": 8192, "ctx_max": 8192, "slots": 1},
+        "notes": [],
+    }
+    raw.update(overrides)
+    return raw
+
+
+def test_candidate_estimate_round_trips():
+    e = inf.CandidateEstimate.parse(_estimate_raw())
+    assert e.basis == "single_observation"
+    assert e.complete is True
+    assert inf.CandidateEstimate.parse(e.to_dict()) == e
+
+
+def test_candidate_estimate_incomplete_has_no_total_upper():
+    raw = _estimate_raw(
+        kv_state={"bytes": None, "source": "absent", "note": "no KV observation"},
+        complete=False, basis="incomplete", validity=None,
+        total_lower=8838860800, total_upper=None,
+    )
+    e = inf.CandidateEstimate.parse(raw)
+    assert e.complete is False
+    assert e.total_upper is None
+    assert e.validity is None
+
+
+def test_candidate_estimate_rejects_bad_basis():
+    with pytest.raises(ContractError):
+        inf.CandidateEstimate.parse(_estimate_raw(basis="guessed"))
+
+
+def test_candidate_estimate_requires_complete_as_explicit_bool():
+    raw = _estimate_raw()
+    del raw["complete"]
+    with pytest.raises(ContractError):
+        inf.CandidateEstimate.parse(raw)
+
+
+# ── INF-05 A1: ContextLimits — three separate limits ────────────────────────
+
+def test_context_limits_round_trips_all_three_separate():
+    raw = {
+        "native": {"value": 8192, "source": "hf_config",
+                  "note": "extended by rope_scaling (yarn) to 32768: not a quality guarantee"},
+        "configured": {"value": 32768, "source": "receipt", "note": ""},
+        "evaluated": {"min": 4096, "max": 16384, "source": "bench_runs", "note": "3 runs"},
+    }
+    limits = inf.ContextLimits.parse(raw)
+    assert limits.native.value == 8192
+    assert limits.configured.value == 32768
+    assert limits.evaluated.max == 16384
+    assert inf.ContextLimits.parse(limits.to_dict()) == limits
+
+
+def test_context_limits_default_all_absent():
+    limits = inf.ContextLimits.parse({})
+    assert limits.native.value is None and limits.native.source == "absent"
+    assert limits.configured.value is None and limits.configured.source == "absent"
+    assert limits.evaluated.min is None and limits.evaluated.source == "absent"
+
+
+def test_context_limits_rejects_bad_native_source():
+    with pytest.raises(ContractError):
+        inf.ContextLimits.parse({"native": {"value": 1, "source": "guessed"}})

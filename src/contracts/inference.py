@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from typing import Any, Dict, Mapping, Optional, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 from .base import (
     ContractError, SCHEMA_VERSION, as_mapping, fingerprint, one_of,
@@ -256,6 +256,85 @@ class ModelDescriptor:
 
 
 # ── HardwareSnapshot ─────────────────────────────────────────────────────────
+#
+# INF-05 §11 "Inventario físico frente a nombres de conexión": a `GpuInfo`'s
+# `index` is a runtime slot number, not identity — reconnecting an AORUS eGPU
+# or letting the driver enumerate cards in a different order changes which
+# card is "index 1" without changing which physical card it is. `link` and
+# `transport` are optional, additive fields so a `GpuInfo` built before this
+# lote (no `link`/`transport` in its dict) still parses — `parse()` treats a
+# missing key exactly like an explicit `null`.
+
+LINK_SOURCES = ("observed", "manual", "absent")
+TRANSPORT_KINDS = ("pcie", "thunderbolt", "oculink", "usb4", "unknown")
+TRANSPORT_SOURCES = ("observed", "manual", "heuristic")
+
+
+@dataclass(frozen=True)
+class LinkInfo:
+    """PCIe link state as `nvidia-smi` reports it (`pcie.link.*`). Any field
+    can be `None` — a `[N/A]`/`[Not Supported]` cell, never coerced to 0 —
+    and `source` says whether the whole reading came from the driver
+    (`observed`) or a person typed it in (`manual`; `apply_annotations`
+    never lets `manual` win over `observed`, only over the default
+    `absent`)."""
+
+    gen_current: Optional[int] = None
+    width_current: Optional[int] = None
+    gen_max: Optional[int] = None
+    width_max: Optional[int] = None
+    source: str = "absent"
+
+    _KEYS = ("gen_current", "width_current", "gen_max", "width_max", "source")
+
+    @classmethod
+    def parse(cls, raw: Any, path: str) -> "LinkInfo":
+        data = as_mapping(raw if raw is not None else {}, path)
+        reject_unknown(data, cls._KEYS, path)
+        return cls(
+            gen_current=whole(data, "gen_current", path, minimum=1),
+            width_current=whole(data, "width_current", path, minimum=1),
+            gen_max=whole(data, "gen_max", path, minimum=1),
+            width_max=whole(data, "width_max", path, minimum=1),
+            source=one_of(data, "source", path, choices=LINK_SOURCES, required=False, default="absent"),
+        )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "gen_current": self.gen_current, "width_current": self.width_current,
+            "gen_max": self.gen_max, "width_max": self.width_max, "source": self.source,
+        }
+
+
+@dataclass(frozen=True)
+class TransportInfo:
+    """What physical interface carries the link. `heuristic` is a narrow,
+    explicit guess (`gpu_topology.heuristic_transport`: a link observed
+    unusually narrow) — never derived from a GPU's commercial name (§11:
+    "no deducir ancho de banda útil de una etiqueta comercial"). `manual`
+    is a person's annotation, kept distinguishable from both."""
+
+    kind: str = "unknown"
+    source: str = "observed"
+    note: str = ""
+    observed_at: Optional[str] = None
+
+    _KEYS = ("kind", "source", "note", "observed_at")
+
+    @classmethod
+    def parse(cls, raw: Any, path: str) -> "TransportInfo":
+        data = as_mapping(raw if raw is not None else {}, path)
+        reject_unknown(data, cls._KEYS, path)
+        return cls(
+            kind=one_of(data, "kind", path, choices=TRANSPORT_KINDS, required=False, default="unknown"),
+            source=one_of(data, "source", path, choices=TRANSPORT_SOURCES, required=False, default="observed"),
+            note=text(data, "note", path, required=False, default="", allow_blank=True, max_len=500),
+            observed_at=timestamp(data, "observed_at", path),
+        )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {"kind": self.kind, "source": self.source, "note": self.note, "observed_at": self.observed_at}
+
 
 @dataclass(frozen=True)
 class GpuInfo:
@@ -265,13 +344,19 @@ class GpuInfo:
     bus_id: Optional[str] = None
     vram_bytes: Optional[int] = None
     provenance: str = ""
+    driver: Optional[str] = None
+    link: Optional[LinkInfo] = None
+    transport: Optional[TransportInfo] = None
 
-    _KEYS = ("index", "name", "uuid", "bus_id", "vram_bytes", "provenance")
+    _KEYS = ("index", "name", "uuid", "bus_id", "vram_bytes", "provenance",
+              "driver", "link", "transport")
 
     @classmethod
     def parse(cls, raw: Any, path: str) -> "GpuInfo":
         data = as_mapping(raw, path)
         reject_unknown(data, cls._KEYS, path)
+        link_raw = data.get("link")
+        transport_raw = data.get("transport")
         return cls(
             index=whole(data, "index", path, required=True, minimum=0),
             name=text(data, "name", path, max_len=256),
@@ -279,13 +364,18 @@ class GpuInfo:
             bus_id=text(data, "bus_id", path, required=False, default=None, allow_blank=False) or None,
             vram_bytes=whole(data, "vram_bytes", path, minimum=0),
             provenance=text(data, "provenance", path, required=False, default="", allow_blank=True),
+            driver=text(data, "driver", path, required=False, default=None, allow_blank=False) or None,
+            link=LinkInfo.parse(link_raw, f"{path}.link") if link_raw is not None else None,
+            transport=TransportInfo.parse(transport_raw, f"{path}.transport") if transport_raw is not None else None,
         )
 
     def to_dict(self) -> Dict[str, Any]:
         return {
             "index": self.index, "name": self.name, "uuid": self.uuid,
             "bus_id": self.bus_id, "vram_bytes": self.vram_bytes,
-            "provenance": self.provenance,
+            "provenance": self.provenance, "driver": self.driver,
+            "link": self.link.to_dict() if self.link is not None else None,
+            "transport": self.transport.to_dict() if self.transport is not None else None,
         }
 
 
@@ -341,6 +431,86 @@ class HardwareSnapshot:
             "topology": self.topology,
             "provenance": self.provenance,
         }
+
+
+def identity_key(gpu: GpuInfo) -> Optional[str]:
+    """The physical identity `reconcile_indices`/`MemoryBudget` key on:
+    `uuid` when the driver reports one, else `bus_id`, else `None` — an
+    `index` is NEVER identity (§11 T15: "GPU 1" is not the same device after
+    a reconnect). Prefixed (`uuid:...`/`bus:...`) so a uuid string and a bus
+    id string can never collide in the same key space."""
+    if gpu.uuid:
+        return f"uuid:{gpu.uuid}"
+    if gpu.bus_id:
+        return f"bus:{gpu.bus_id}"
+    return None
+
+
+RECONCILIATION_STATES = ("same", "moved", "missing", "new", "unidentifiable")
+
+
+@dataclass(frozen=True)
+class IndexReconciliation:
+    key: Optional[str]
+    previous_index: Optional[int]
+    current_index: Optional[int]
+    state: str
+
+    _KEYS = ("key", "previous_index", "current_index", "state")
+
+    @classmethod
+    def parse(cls, raw: Any, path: str) -> "IndexReconciliation":
+        data = as_mapping(raw, path)
+        reject_unknown(data, cls._KEYS, path)
+        return cls(
+            key=text(data, "key", path, required=False, default=None, allow_blank=False) or None,
+            previous_index=whole(data, "previous_index", path, minimum=0),
+            current_index=whole(data, "current_index", path, minimum=0),
+            state=one_of(data, "state", path, choices=RECONCILIATION_STATES),
+        )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "key": self.key, "previous_index": self.previous_index,
+            "current_index": self.current_index, "state": self.state,
+        }
+
+
+def reconcile_indices(
+    previous: HardwareSnapshot, current: HardwareSnapshot,
+) -> Tuple[IndexReconciliation, ...]:
+    """Match `previous`'s GPUs to `current`'s by `identity_key`, never by
+    `index` alone (§11 T15). A GPU with no uuid/bus_id on either side is
+    always `unidentifiable` — it is never reported `same` just because its
+    index did not change, since nothing here actually re-identified it."""
+    prev_by_key: Dict[str, GpuInfo] = {}
+    prev_unidentified: List[GpuInfo] = []
+    for g in previous.gpus:
+        key = identity_key(g)
+        (prev_unidentified.append(g) if key is None else prev_by_key.__setitem__(key, g))
+    cur_by_key: Dict[str, GpuInfo] = {}
+    cur_unidentified: List[GpuInfo] = []
+    for g in current.gpus:
+        key = identity_key(g)
+        (cur_unidentified.append(g) if key is None else cur_by_key.__setitem__(key, g))
+
+    out: List[IndexReconciliation] = []
+    for key, pg in prev_by_key.items():
+        cg = cur_by_key.get(key)
+        if cg is None:
+            out.append(IndexReconciliation(key=key, previous_index=pg.index, current_index=None, state="missing"))
+        elif cg.index == pg.index:
+            out.append(IndexReconciliation(key=key, previous_index=pg.index, current_index=cg.index, state="same"))
+        else:
+            out.append(IndexReconciliation(key=key, previous_index=pg.index, current_index=cg.index, state="moved"))
+    for key, cg in cur_by_key.items():
+        if key not in prev_by_key:
+            out.append(IndexReconciliation(key=key, previous_index=None, current_index=cg.index, state="new"))
+    for g in prev_unidentified:
+        out.append(IndexReconciliation(key=None, previous_index=g.index, current_index=None, state="unidentifiable"))
+    for g in cur_unidentified:
+        out.append(IndexReconciliation(key=None, previous_index=None, current_index=g.index, state="unidentifiable"))
+    return tuple(out)
 
 
 # ── CapabilityAssessment ─────────────────────────────────────────────────────
@@ -1333,4 +1503,366 @@ class Comparison:
             "deltas": self.deltas.to_dict(),
             "sample_sizes": self.sample_sizes.to_dict(),
             "comparable": self.comparable,
+        }
+
+
+# ── MemoryBudget / CandidateEstimate / ContextLimits (INF-05 §11/§14) ───────
+#
+# CONTRATO_INF05 Lote A: a per-GPU memory budget split into named components
+# (never one opaque "used" number), a candidate-load estimate that says
+# explicitly when it is incomplete rather than guessing, and the three
+# separately-tracked context limits §14 insists on (native / configured /
+# evaluated — a RoPE/YaRN extension is never reported as if it were native).
+# `src/memory_budget.py` is the only producer; this module only defines and
+# validates the shape, same division of labor as every other contract here.
+
+MEMORY_COMPONENT_SOURCES = ("observed", "reported_engine", "estimated", "manual", "absent")
+
+
+@dataclass(frozen=True)
+class MemoryComponent:
+    """One named slice of a `MemoryBudget`/`CandidateEstimate` — never a
+    bare number. `bytes=None` is "not observed", and it is never read as
+    zero by a caller (§11: "lo que no se observa es absent/unknown, nunca
+    0")."""
+
+    bytes: Optional[int] = None
+    source: str = "absent"
+    note: str = ""
+
+    _KEYS = ("bytes", "source", "note")
+
+    @classmethod
+    def parse(cls, raw: Any, path: str) -> "MemoryComponent":
+        data = as_mapping(raw if raw is not None else {}, path)
+        reject_unknown(data, cls._KEYS, path)
+        return cls(
+            bytes=whole(data, "bytes", path, minimum=0),
+            source=one_of(data, "source", path, choices=MEMORY_COMPONENT_SOURCES, required=False, default="absent"),
+            note=text(data, "note", path, required=False, default="", allow_blank=True, max_len=500),
+        )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {"bytes": self.bytes, "source": self.source, "note": self.note}
+
+
+_MEMORY_COMPONENT_NAMES = (
+    "weights_resident", "kv_state", "buffers_runtime", "auxiliary_models",
+    "other_processes", "system_margin", "free",
+)
+
+
+@dataclass(frozen=True)
+class MemoryComponents:
+    weights_resident: MemoryComponent = field(default_factory=MemoryComponent)
+    kv_state: MemoryComponent = field(default_factory=MemoryComponent)
+    buffers_runtime: MemoryComponent = field(default_factory=MemoryComponent)
+    auxiliary_models: MemoryComponent = field(default_factory=MemoryComponent)
+    other_processes: MemoryComponent = field(default_factory=MemoryComponent)
+    system_margin: MemoryComponent = field(default_factory=MemoryComponent)
+    free: MemoryComponent = field(default_factory=MemoryComponent)
+
+    @classmethod
+    def parse(cls, raw: Any, path: str) -> "MemoryComponents":
+        data = as_mapping(raw if raw is not None else {}, path)
+        reject_unknown(data, _MEMORY_COMPONENT_NAMES, path)
+        return cls(**{
+            key: MemoryComponent.parse(data.get(key), f"{path}.{key}") for key in _MEMORY_COMPONENT_NAMES
+        })
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {key: getattr(self, key).to_dict() for key in _MEMORY_COMPONENT_NAMES}
+
+
+CONSUMER_KINDS = ("ollama", "faustus_serve", "other_process")
+
+
+@dataclass(frozen=True)
+class MemoryConsumer:
+    """One process/model attributed to a `MemoryBudget` — §11 T14: two
+    endpoints on the same physical GPU are two consumers of ONE budget, not
+    two budgets."""
+
+    kind: str
+    label: str
+    pid: Optional[int] = None
+    bytes: Optional[int] = None
+    source: str = "absent"
+
+    _KEYS = ("kind", "label", "pid", "bytes", "source")
+
+    @classmethod
+    def parse(cls, raw: Any, path: str) -> "MemoryConsumer":
+        data = as_mapping(raw, path)
+        reject_unknown(data, cls._KEYS, path)
+        return cls(
+            kind=one_of(data, "kind", path, choices=CONSUMER_KINDS),
+            label=text(data, "label", path, max_len=256),
+            pid=whole(data, "pid", path, minimum=0),
+            bytes=whole(data, "bytes", path, minimum=0),
+            source=one_of(data, "source", path, choices=MEMORY_COMPONENT_SOURCES, required=False, default="absent"),
+        )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {"kind": self.kind, "label": self.label, "pid": self.pid,
+                "bytes": self.bytes, "source": self.source}
+
+
+@dataclass(frozen=True)
+class MemoryBudget:
+    """The desegregated memory picture for ONE physical GPU (`gpu_key` from
+    `identity_key`, never an index). `stale=True` means `observed_at` is
+    older than the caller's freshness window — a stale budget is never a
+    reason to say a load fits (§11: "una lectura obsoleta no autoriza una
+    carga arriesgada"; enforced by `memory_budget.admissible`, not here)."""
+
+    gpu_key: Optional[str]
+    gpu_index: Optional[int]
+    gpu_name: str
+    total_bytes: Optional[int]
+    observed_at: Optional[str]
+    components: MemoryComponents
+    consumers: Tuple[MemoryConsumer, ...]
+    shared_spill: MemoryComponent
+    stale: bool = False
+    schema_version: int = SCHEMA_VERSION
+
+    _KEYS = ("gpu_key", "gpu_index", "gpu_name", "total_bytes", "observed_at",
+              "components", "consumers", "shared_spill", "stale", "schema_version")
+
+    @classmethod
+    def parse(cls, raw: Any, path: str = "budget") -> "MemoryBudget":
+        data = as_mapping(raw, path)
+        reject_unknown(data, cls._KEYS, path)
+        consumers_raw = data.get("consumers") or []
+        if not isinstance(consumers_raw, (list, tuple)):
+            raise ContractError(f"{path}.consumers", "expected a list", got=consumers_raw)
+        stale_raw = data.get("stale")
+        if stale_raw is not None and not isinstance(stale_raw, bool):
+            raise ContractError(f"{path}.stale", "expected true or false", got=stale_raw)
+        return cls(
+            gpu_key=text(data, "gpu_key", path, required=False, default=None, allow_blank=False) or None,
+            gpu_index=whole(data, "gpu_index", path, minimum=0),
+            gpu_name=text(data, "gpu_name", path, required=False, default="", allow_blank=True, max_len=256),
+            total_bytes=whole(data, "total_bytes", path, minimum=0),
+            observed_at=timestamp(data, "observed_at", path),
+            components=MemoryComponents.parse(data.get("components"), f"{path}.components"),
+            consumers=tuple(MemoryConsumer.parse(c, f"{path}.consumers[{i}]") for i, c in enumerate(consumers_raw)),
+            shared_spill=MemoryComponent.parse(data.get("shared_spill"), f"{path}.shared_spill"),
+            stale=bool(stale_raw) if stale_raw is not None else False,
+            schema_version=whole(data, "schema_version", path, default=SCHEMA_VERSION, minimum=1),
+        )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "schema_version": self.schema_version,
+            "gpu_key": self.gpu_key,
+            "gpu_index": self.gpu_index,
+            "gpu_name": self.gpu_name,
+            "total_bytes": self.total_bytes,
+            "observed_at": self.observed_at,
+            "components": self.components.to_dict(),
+            "consumers": [c.to_dict() for c in self.consumers],
+            "shared_spill": self.shared_spill.to_dict(),
+            "stale": self.stale,
+        }
+
+
+# ── CandidateEstimate (§11 "presupuesto de memoria desglosado") ────────────
+
+CANDIDATE_BASES = ("single_observation", "fitted", "metadata", "incomplete")
+
+
+@dataclass(frozen=True)
+class EstimateValidity:
+    """The domain a `CandidateEstimate` is actually valid over — a
+    `single_observation`'s `ctx_min == ctx_max` is the one context it was
+    measured at; a `fitted` estimate's wider range is the span of the
+    observations the fit came from. `None` on the estimate itself means
+    "no stated domain" (e.g. `basis: incomplete`)."""
+
+    ctx_min: Optional[int] = None
+    ctx_max: Optional[int] = None
+    slots: Optional[int] = None
+
+    _KEYS = ("ctx_min", "ctx_max", "slots")
+
+    @classmethod
+    def parse(cls, raw: Any, path: str) -> "EstimateValidity":
+        data = as_mapping(raw if raw is not None else {}, path)
+        reject_unknown(data, cls._KEYS, path)
+        return cls(
+            ctx_min=whole(data, "ctx_min", path, minimum=0),
+            ctx_max=whole(data, "ctx_max", path, minimum=0),
+            slots=whole(data, "slots", path, minimum=1),
+        )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {"ctx_min": self.ctx_min, "ctx_max": self.ctx_max, "slots": self.slots}
+
+
+@dataclass(frozen=True)
+class CandidateEstimate:
+    """§11: "una arquitectura desconocida produce una estimación INCOMPLETA,
+    no falsa precisión" — `complete=False` + `basis="incomplete"` is the
+    honest answer for an unknown architecture with no measured KV
+    observation, not a number dressed up as a measurement."""
+
+    weights: MemoryComponent
+    kv_state: MemoryComponent
+    buffers: MemoryComponent
+    margin: MemoryComponent
+    total_lower: Optional[int]
+    total_upper: Optional[int]
+    complete: bool
+    basis: str
+    validity: Optional[EstimateValidity] = None
+    notes: Tuple[str, ...] = ()
+    schema_version: int = SCHEMA_VERSION
+
+    _KEYS = ("weights", "kv_state", "buffers", "margin", "total_lower", "total_upper",
+              "complete", "basis", "validity", "notes", "schema_version")
+
+    @classmethod
+    def parse(cls, raw: Any, path: str = "estimate") -> "CandidateEstimate":
+        data = as_mapping(raw, path)
+        reject_unknown(data, cls._KEYS, path)
+        complete_raw = data.get("complete")
+        if not isinstance(complete_raw, bool):
+            raise ContractError(f"{path}.complete", "expected true or false", got=complete_raw)
+        validity_raw = data.get("validity")
+        return cls(
+            weights=MemoryComponent.parse(data.get("weights"), f"{path}.weights"),
+            kv_state=MemoryComponent.parse(data.get("kv_state"), f"{path}.kv_state"),
+            buffers=MemoryComponent.parse(data.get("buffers"), f"{path}.buffers"),
+            margin=MemoryComponent.parse(data.get("margin"), f"{path}.margin"),
+            total_lower=whole(data, "total_lower", path, minimum=0),
+            total_upper=whole(data, "total_upper", path, minimum=0),
+            complete=complete_raw,
+            basis=one_of(data, "basis", path, choices=CANDIDATE_BASES),
+            validity=EstimateValidity.parse(validity_raw, f"{path}.validity") if validity_raw is not None else None,
+            notes=text_list(data, "notes", path, max_items=16, max_len=500, unique=False),
+            schema_version=whole(data, "schema_version", path, default=SCHEMA_VERSION, minimum=1),
+        )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "schema_version": self.schema_version,
+            "weights": self.weights.to_dict(),
+            "kv_state": self.kv_state.to_dict(),
+            "buffers": self.buffers.to_dict(),
+            "margin": self.margin.to_dict(),
+            "total_lower": self.total_lower,
+            "total_upper": self.total_upper,
+            "complete": self.complete,
+            "basis": self.basis,
+            "validity": self.validity.to_dict() if self.validity is not None else None,
+            "notes": list(self.notes),
+        }
+
+
+# ── ContextLimits (§14 "tres límites de contexto") ──────────────────────────
+#
+# Three numbers that must never collapse into one: what the model was
+# TRAINED with (`native` — the ORIGINAL max_position_embeddings when RoPE/
+# YaRN extends it further; extension is annotated, never presented as
+# native), what the running engine is currently SET to (`configured`), and
+# the largest prompt a benchmark run has actually EXERCISED (`evaluated`).
+
+CONTEXT_NATIVE_SOURCES = ("hf_config", "ollama_show", "absent")
+CONTEXT_CONFIGURED_SOURCES = ("receipt", "load_options", "absent")
+CONTEXT_EVALUATED_SOURCES = ("bench_runs", "absent")
+
+
+@dataclass(frozen=True)
+class NativeContextLimit:
+    value: Optional[int] = None
+    source: str = "absent"
+    note: str = ""
+
+    _KEYS = ("value", "source", "note")
+
+    @classmethod
+    def parse(cls, raw: Any, path: str) -> "NativeContextLimit":
+        data = as_mapping(raw if raw is not None else {}, path)
+        reject_unknown(data, cls._KEYS, path)
+        return cls(
+            value=whole(data, "value", path, minimum=0),
+            source=one_of(data, "source", path, choices=CONTEXT_NATIVE_SOURCES, required=False, default="absent"),
+            note=text(data, "note", path, required=False, default="", allow_blank=True, max_len=500),
+        )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {"value": self.value, "source": self.source, "note": self.note}
+
+
+@dataclass(frozen=True)
+class ConfiguredContextLimit:
+    value: Optional[int] = None
+    source: str = "absent"
+    note: str = ""
+
+    _KEYS = ("value", "source", "note")
+
+    @classmethod
+    def parse(cls, raw: Any, path: str) -> "ConfiguredContextLimit":
+        data = as_mapping(raw if raw is not None else {}, path)
+        reject_unknown(data, cls._KEYS, path)
+        return cls(
+            value=whole(data, "value", path, minimum=0),
+            source=one_of(data, "source", path, choices=CONTEXT_CONFIGURED_SOURCES, required=False, default="absent"),
+            note=text(data, "note", path, required=False, default="", allow_blank=True, max_len=500),
+        )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {"value": self.value, "source": self.source, "note": self.note}
+
+
+@dataclass(frozen=True)
+class EvaluatedContextLimit:
+    min: Optional[int] = None
+    max: Optional[int] = None
+    source: str = "absent"
+    note: str = ""
+
+    _KEYS = ("min", "max", "source", "note")
+
+    @classmethod
+    def parse(cls, raw: Any, path: str) -> "EvaluatedContextLimit":
+        data = as_mapping(raw if raw is not None else {}, path)
+        reject_unknown(data, cls._KEYS, path)
+        return cls(
+            min=whole(data, "min", path, minimum=0),
+            max=whole(data, "max", path, minimum=0),
+            source=one_of(data, "source", path, choices=CONTEXT_EVALUATED_SOURCES, required=False, default="absent"),
+            note=text(data, "note", path, required=False, default="", allow_blank=True, max_len=500),
+        )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {"min": self.min, "max": self.max, "source": self.source, "note": self.note}
+
+
+@dataclass(frozen=True)
+class ContextLimits:
+    native: NativeContextLimit = field(default_factory=NativeContextLimit)
+    configured: ConfiguredContextLimit = field(default_factory=ConfiguredContextLimit)
+    evaluated: EvaluatedContextLimit = field(default_factory=EvaluatedContextLimit)
+
+    _KEYS = ("native", "configured", "evaluated")
+
+    @classmethod
+    def parse(cls, raw: Any, path: str = "context_limits") -> "ContextLimits":
+        data = as_mapping(raw if raw is not None else {}, path)
+        reject_unknown(data, cls._KEYS, path)
+        return cls(
+            native=NativeContextLimit.parse(data.get("native"), f"{path}.native"),
+            configured=ConfiguredContextLimit.parse(data.get("configured"), f"{path}.configured"),
+            evaluated=EvaluatedContextLimit.parse(data.get("evaluated"), f"{path}.evaluated"),
+        )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "native": self.native.to_dict(),
+            "configured": self.configured.to_dict(),
+            "evaluated": self.evaluated.to_dict(),
         }

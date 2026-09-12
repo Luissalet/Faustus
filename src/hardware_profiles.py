@@ -97,21 +97,53 @@ def collect_profile(*, host: str = "", ssh_port: str = "", label: str = "") -> D
     """This machine's measured profile. `host`/`ssh_port` build one for a
     REMOTE machine the exact same way the hwfit picker already can — no
     second detector, no code path here that touches the network beyond what
-    ``detect_system`` already does (and caches)."""
+    ``detect_system`` already does (and caches).
+
+    INF-05 §11: `topology` is `gpu_topology.snapshot()`'s reading —
+    identity (uuid/bus_id), not just an index — stored PASSIVE, same as
+    everything else this function aggregates: it costs one (cached)
+    `nvidia-smi` invocation, never a probe of its own."""
     from services.hwfit.hardware import detect_system
+    from src import gpu_topology
     system = detect_system(host=host, ssh_port=ssh_port)
+    topology = gpu_topology.snapshot(host=host, ssh_port=ssh_port)
     return {
         "id": uuid.uuid4().hex[:12],
         "label": label or (host or "this machine"),
         "host": host or None,
         "captured_at": time.time(),
         "system": system,
+        "topology": topology.to_dict(),
         # Per-model speed/KV figures are per-process knowledge, meaningless
         # for a machine this process never ran a model on.
         "disk": _disk_snapshot() if not host else None,
         "model_speeds": _measured_model_speeds() if not host else [],
         "kv_rates": _measured_kv_rates() if not host else [],
     }
+
+
+def reconciliation_against(profile: Optional[Dict[str, Any]], current_snapshot: Any) -> List[Dict[str, Any]]:
+    """`gpu_topology.reconcile_indices` between `profile`'s CAPTURED topology
+    and `current_snapshot` (a `HardwareSnapshot` or its `to_dict()`) — never
+    guesses "same device" from an unchanged index alone (§11 T15). Returns
+    `[]` when `profile` carries no `topology` (an old profile, captured
+    before this lote) rather than fabricating a reconciliation against
+    nothing."""
+    from src.contracts.inference import HardwareSnapshot, reconcile_indices
+
+    prev_raw = (profile or {}).get("topology")
+    if not prev_raw:
+        return []
+    try:
+        previous = HardwareSnapshot.parse(prev_raw)
+        current = (
+            current_snapshot if isinstance(current_snapshot, HardwareSnapshot)
+            else HardwareSnapshot.parse(current_snapshot)
+        )
+    except Exception as e:  # noqa: BLE001 - a stale/foreign shape is "no reconciliation", not a crash
+        logger.debug("hardware_profiles: reconciliation_against failed: %s", e)
+        return []
+    return [r.to_dict() for r in reconcile_indices(previous, current)]
 
 
 # ── storage: one small JSON file, same shape as src/scorecard.py's log ─────
