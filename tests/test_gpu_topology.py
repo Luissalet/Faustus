@@ -251,14 +251,16 @@ def test_annotate_transport_rejects_bad_kind(monkeypatch, tmp_path):
         gt.annotate_transport("prof-x", "uuid:GPU-a", "usb3", "", "")
 
 
-def test_heuristic_transport_uses_the_maximum_width_not_the_idle_one():
-    """Seen live (12-09-2026): a 4070 Ti idles at Gen1 x16 and two AORUS eGPUs
-    sit at Gen4 x4 with x4 as their maximum. A card whose CURRENT width sagged
-    to x4 but can do x16 is not an external enclosure candidate."""
-    sagging = GpuInfo(index=0, name="x", link=LinkInfo(
-        gen_current=1, width_current=4, gen_max=4, width_max=16, source="observed"))
-    assert gt.heuristic_transport(sagging) is None
-    structurally_narrow = GpuInfo(index=1, name="y", link=LinkInfo(
-        gen_current=4, width_current=4, gen_max=4, width_max=4, source="observed"))
-    hint = gt.heuristic_transport(structurally_narrow)
-    assert hint is not None and hint.source == "heuristic" and "x4" in hint.note
+def test_heuristic_transport_judges_the_current_width_and_names_the_card_maximum():
+    """Seen live (12-09-2026): power management sags the generation at idle
+    (4070 Ti at Gen1 x16), never the width, and `width_max` is the card's own
+    lane count (a 5060 Ti in an AORUS enclosure reports x4 now, x8 max). The
+    current width is the link; the maximum only enriches the note."""
+    idle_wide = GpuInfo(index=0, name="x", link=LinkInfo(
+        gen_current=1, width_current=16, gen_max=4, width_max=16, source="observed"))
+    assert gt.heuristic_transport(idle_wide) is None
+    enclosure = GpuInfo(index=1, name="y", link=LinkInfo(
+        gen_current=4, width_current=4, gen_max=4, width_max=8, source="observed"))
+    hint = gt.heuristic_transport(enclosure)
+    assert hint is not None and hint.source == "heuristic"
+    assert "x4 now, the card supports x8" in hint.note
