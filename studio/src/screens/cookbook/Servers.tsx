@@ -1,7 +1,14 @@
-import { Check, Key, Plus, Server as ServerIcon, Trash2, Wrench } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { Check, Key, Plus, RefreshCw, Server as ServerIcon, Trash2, Wrench } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
 import { Button, Dialog, IconButton } from '../../components';
 import { generateSshKey, isLocal, serverKey, setHfToken, setupServer, sshKey, testSsh, updateState, useCookbookState, type Server } from '../../adapters/cookbook';
+import {
+  annotateTopology, budgetBarSummary, componentLabel, consumerLabel, gbLabel, getBudget, getTopology,
+  gpuIdentityFull, gpuIdentityKey, gpuIdentityShort, linkLabel, MEMORY_COMPONENT_NAMES, memoryComponentLabel,
+  reconciliationLabel, reconciliationTone, sharedSpillLabel, sourceTone, staleLabel, transportKindLabel,
+  transportLabel, transportTone, TRANSPORT_KINDS,
+  type GpuInfo, type MemoryBudget, type SystemMemory, type TopologyResult, type TransportKind,
+} from '../../adapters/hardware';
 import { t, tn } from '../../i18n';
 import { SERVER_COLORS as COLORS } from '../../lib/cookbook/colors';
 import { CopyButton, Field, Switch } from './parts';
@@ -32,6 +39,73 @@ export function Servers({ say }: { say: (m: string) => void }) {
   useEffect(() => {
     sshKey().then(setKey).catch(() => setKey({ public_key: '', exists: false }));
   }, []);
+
+  // ── INF-05 §11/§14: physical GPU topology + reconciliation + the
+  // desegregated per-GPU memory budget for THIS machine. Read-only except
+  // "Annotate…", which only ever fires from that dialog's Save button —
+  // never from a useEffect (tests/test_inf05_hardware_js.py greps for
+  // exactly that, the same T19 discipline Optimize.tsx's startBench
+  // follows). The 30s interval below only ever calls `refreshHardware`
+  // (a GET), capped and gated on tab visibility per CONTRATO_INF05 Lote C
+  // ("sin auto-refresco agresivo").
+  const [topology, setTopology] = useState<TopologyResult | null>(null);
+  const [budgets, setBudgets] = useState<Record<string, MemoryBudget>>({});
+  const [systemMemory, setSystemMemory] = useState<SystemMemory | null>(null);
+  const [hwLoading, setHwLoading] = useState(false);
+  const [hwError, setHwError] = useState<string | null>(null);
+  const [annotateFor, setAnnotateFor] = useState<string | null>(null);
+  const [annotateKind, setAnnotateKind] = useState<TransportKind>('pcie');
+  const [annotateNote, setAnnotateNote] = useState('');
+  const [annotateBusy, setAnnotateBusy] = useState(false);
+
+  const refreshHardware = useCallback(async () => {
+    setHwLoading(true);
+    setHwError(null);
+    try {
+      const [topo, budgetResult] = await Promise.all([getTopology(), getBudget({})]);
+      setTopology(topo);
+      setBudgets(budgetResult.budgets);
+      setSystemMemory(budgetResult.system_memory);
+    } catch (e) {
+      setHwError((e as Error).message);
+    } finally {
+      setHwLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshHardware();
+  }, [refreshHardware]);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void refreshHardware();
+    }, 30000);
+    return () => window.clearInterval(interval);
+  }, [refreshHardware]);
+
+  const openAnnotate = (gpu: GpuInfo) => {
+    const key = gpuIdentityKey(gpu);
+    if (!key) return;
+    setAnnotateFor(key);
+    setAnnotateKind(gpu.transport?.kind ?? 'pcie');
+    setAnnotateNote('');
+  };
+
+  const submitAnnotate = async () => {
+    if (!annotateFor) return;
+    setAnnotateBusy(true);
+    try {
+      await annotateTopology({ gpuKey: annotateFor, kind: annotateKind, note: annotateNote, profileId: topology?.profile_id ?? undefined });
+      say(t('Annotation saved'));
+      setAnnotateFor(null);
+      await refreshHardware();
+    } catch (e) {
+      say((e as Error).message);
+    } finally {
+      setAnnotateBusy(false);
+    }
+  };
 
   const draftOf = (s: Server): Server => drafts[serverKey(s)] ?? s;
   const edit = (s: Server, patch: Partial<Server>) => setDrafts((d) => ({ ...d, [serverKey(s)]: { ...draftOf(s), ...patch } }));
@@ -222,6 +296,167 @@ export function Servers({ say }: { say: (m: string) => void }) {
         {adding && card(adding, true)}
       </ul>
       {!adding && <Button variant="secondary" icon={Plus} label={t('Add an SSH server')} onClick={() => setAdding({ host: '', env: 'none', envPath: '', platform: '', modelDirs: [DEFAULT_DIR] })} testId="server-new" />}
+
+      <section className="fs-ck__panel fs-ck__hw" data-testid="hw-topology">
+        <div className="fs-ck__item-row">
+          <h3 className="fs-ck__h">{t('Physical GPUs')}</h3>
+          <span className="fs-spacer" />
+          <Button size="sm" variant="ghost" icon={RefreshCw} label={t('Refresh')} loading={hwLoading} onClick={() => void refreshHardware()} testId="hw-refresh" />
+        </div>
+        <p className="fs-prose">
+          {t('Physical identity (uuid/bus id), never an index — an index is only a runtime slot, and can point at a different card after a reconnect.')}
+        </p>
+        {hwError && (
+          <p className="fs-ck__note" role="alert">
+            {hwError}
+          </p>
+        )}
+        {topology && topology.snapshot.topology === 'unknown' && !hwError && (
+          <p className="fs-muted">{t('No GPU reading available on this machine.')}</p>
+        )}
+        {topology && topology.snapshot.gpus.length > 0 && (
+          <div className="fs-ck__hw-table-wrap">
+            <table className="fs-ck__hw-table">
+              <thead>
+                <tr>
+                  <th scope="col">{t('Index')}</th>
+                  <th scope="col">{t('Name')}</th>
+                  <th scope="col">{t('Identity')}</th>
+                  <th scope="col">{t('Link')}</th>
+                  <th scope="col">{t('Transport')}</th>
+                  <th scope="col">{t('Actions')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {topology.snapshot.gpus.map((gpu) => {
+                  const gkey = gpuIdentityKey(gpu);
+                  return (
+                    <tr key={`${gpu.index}-${gkey ?? 'noid'}`}>
+                      <td>{gpu.index}</td>
+                      <td>{gpu.name || t('unknown')}</td>
+                      <td title={gpuIdentityFull(gpu)}>{gpuIdentityShort(gpu)}</td>
+                      <td>{linkLabel(gpu)}</td>
+                      <td>
+                        <span className="fs-ck__badge" data-tone={transportTone(gpu.transport)}>
+                          {transportLabel(gpu.transport)}
+                        </span>
+                      </td>
+                      <td>
+                        {gkey && (
+                          <Button size="sm" variant="ghost" label={t('Annotate…')} onClick={() => openAnnotate(gpu)} />
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {topology && topology.reconciliation.filter((r) => r.state !== 'same').length > 0 && (
+          <ul className="fs-ck__list" data-testid="hw-reconcile">
+            {topology.reconciliation
+              .filter((r) => r.state !== 'same')
+              .map((r, i) => (
+                <li key={i} className="fs-ck__note">
+                  <span className="fs-ck__badge" data-tone={reconciliationTone(r.state)}>
+                    {reconciliationLabel(r)}
+                  </span>
+                </li>
+              ))}
+          </ul>
+        )}
+      </section>
+
+      <section className="fs-ck__panel fs-ck__hw" data-testid="hw-budget">
+        <h3 className="fs-ck__h">{t('Memory budget per GPU')}</h3>
+        {Object.keys(budgets).length === 0 && <p className="fs-muted">{t('No physical GPU reading available.')}</p>}
+        {Object.entries(budgets).map(([bkey, budget]) => (
+          <div key={bkey} className="fs-ck__hw-budget-card">
+            <div className="fs-ck__item-row">
+              <span className="fs-ck__item-name">{budget.gpu_name || t('GPU {idx}', { idx: String(budget.gpu_index ?? '?') })}</span>
+              <span className="fs-muted">{gbLabel(budget.total_bytes)}</span>
+            </div>
+            <div className="fs-ck__hw-bar" role="img" aria-label={budgetBarSummary(budget)}>
+              {MEMORY_COMPONENT_NAMES.map((name) => {
+                const c = budget.components[name];
+                if (!c.bytes || !budget.total_bytes) return null;
+                return (
+                  <span
+                    key={name}
+                    className="fs-ck__hw-bar-seg"
+                    data-part={name}
+                    style={{ inlineSize: `${Math.min(100, (c.bytes / budget.total_bytes) * 100)}%` }}
+                    title={`${memoryComponentLabel(name)}: ${componentLabel(c)}`}
+                  />
+                );
+              })}
+            </div>
+            <ul className="fs-ck__hw-components">
+              {MEMORY_COMPONENT_NAMES.map((name) => (
+                <li key={name}>
+                  <span className="fs-ck__badge" data-tone={sourceTone(budget.components[name].source)}>
+                    {memoryComponentLabel(name)}
+                  </span>{' '}
+                  {componentLabel(budget.components[name])}
+                </li>
+              ))}
+            </ul>
+            {budget.consumers.length > 0 && (
+              <ul className="fs-ck__list">
+                {budget.consumers.map((c, i) => (
+                  <li key={i} className="fs-muted">
+                    {consumerLabel(c)}
+                  </li>
+                ))}
+              </ul>
+            )}
+            {sharedSpillLabel(budget.shared_spill) && <p className="fs-ck__note">{sharedSpillLabel(budget.shared_spill)}</p>}
+            {staleLabel(budget) && (
+              <p className="fs-ck__note" role="alert">
+                {staleLabel(budget)} <Button size="sm" variant="ghost" label={t('Refresh')} onClick={() => void refreshHardware()} />
+              </p>
+            )}
+          </div>
+        ))}
+        {systemMemory && (systemMemory.ram_total !== null || systemMemory.ram_available !== null) && (
+          <p className="fs-muted">
+            {t('System RAM: {avail} available of {total}', { avail: gbLabel(systemMemory.ram_available), total: gbLabel(systemMemory.ram_total) })}
+          </p>
+        )}
+      </section>
+
+      {annotateFor && (
+        <Dialog
+          open
+          onOpenChange={(o) => {
+            if (!o) setAnnotateFor(null);
+          }}
+          title={t('Annotate transport')}
+          testId="hw-annotate"
+          footer={
+            <>
+              <Button variant="ghost" size="sm" label={t('Cancel')} onClick={() => setAnnotateFor(null)} />
+              <Button variant="primary" size="sm" label={t('Save')} loading={annotateBusy} onClick={() => void submitAnnotate()} testId="hw-annotate-save" />
+            </>
+          }
+        >
+          <div className="fs-ck__grid">
+            <Field label={t('Transport kind')}>
+              <select className="fs-field" value={annotateKind} onChange={(e) => setAnnotateKind(e.target.value as TransportKind)}>
+                {TRANSPORT_KINDS.map((k) => (
+                  <option key={k} value={k}>
+                    {transportKindLabel(k)}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label={t('Note')} wide>
+              <input className="fs-field" value={annotateNote} onChange={(e) => setAnnotateNote(e.target.value)} placeholder={t('e.g. external enclosure over Thunderbolt 4')} />
+            </Field>
+          </div>
+        </Dialog>
+      )}
 
       <section className="fs-ck__panel">
         <h3 className="fs-ck__h">

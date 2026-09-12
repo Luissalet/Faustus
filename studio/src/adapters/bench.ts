@@ -440,3 +440,75 @@ export function verdictTone(verdict: ComparisonVerdict): 'ok' | 'warning' | 'dan
 export function canPromote(comparison: Pick<Comparison, 'verdict' | 'comparable'> | null): boolean {
   return Boolean(comparison && comparison.comparable && comparison.verdict === 'improvement');
 }
+
+// ── activation (INF-05 B3, §13 "política de activación") ───────────────────
+//
+// `activateProfile`/`deactivateProfile` are only ever wired to an explicit
+// "Activate"/"Deactivate" click in `Optimize.tsx` — never from a
+// `useEffect` (the same T19 discipline `startBench` already answers to;
+// `tests/test_inf05_hardware_js.py` greps for it the same way
+// `tests/test_inf04_bench_js.py` does for `startBench`). `getActiveProfile`/
+// `getRollbackProposal` are plain reads and may be called on mount/refresh
+// like `getProfiles`/`getRun` already are.
+
+export interface ActivationResult {
+  profile_id: string;
+  scope: 'next_request' | 'requires_restart';
+  applied: Record<string, unknown>;
+  deferred: Record<string, unknown>;
+  previous_profile_id: string | null;
+  activated_at: string;
+  /** The server's own plain-English explanation of what just happened
+   *  ("Applies to the next request on 127.0.0.1:11434 · qwen3.8" /
+   *  "Server-scoped: needs a relaunch — open Cookbook › Running to
+   *  relaunch with this profile") — shown verbatim, never re-derived. */
+  note: string;
+}
+
+/** `POST /api/bench/profiles/{id}/activate` — 409 `bench.not_activatable`
+ *  when the engine is Ollama but no configured endpoint answers at its
+ *  host:port (surfaces as a `BenchApiError`, same as every other route
+ *  here). Never touches a process, never restarts a server (§13). */
+export function activateProfile(profileId: string): Promise<ActivationResult> {
+  return post<ActivationResult>(`/api/bench/profiles/${encodeURIComponent(profileId)}/activate`);
+}
+
+/** `POST /api/bench/profiles/{id}/deactivate` — restores whatever
+ *  `model_load_options` held before the activation (or removes exactly the
+ *  keys activation added). 404 `bench.not_found` when this profile was
+ *  never activated. */
+export function deactivateProfile(profileId: string): Promise<{ profile_id: string; deactivated: boolean }> {
+  return post<{ profile_id: string; deactivated: boolean }>(`/api/bench/profiles/${encodeURIComponent(profileId)}/deactivate`);
+}
+
+/** `GET /api/bench/profiles/active?endpoint=&model=` — `null` when nothing
+ *  is activated for this (endpoint, model), never a guess. */
+export function getActiveProfile(endpoint: string, model: string, signal?: AbortSignal): Promise<string | null> {
+  const p = new URLSearchParams({ endpoint, model });
+  return get<{ profile_id: string | null }>(`/api/bench/profiles/active?${p.toString()}`, signal).then((d) => d.profile_id);
+}
+
+export interface RollbackProposal {
+  previous_profile_id: string | null;
+  reason: string;
+}
+
+/** `GET /api/bench/profiles/{id}/rollback-proposal` — a SUGGESTION only
+ *  (§13): never reverts anything by itself. `Optimize.tsx` still requires
+ *  an explicit "Roll back" click, which is just another `activateProfile`
+ *  call against `previous_profile_id`. */
+export function getRollbackProposal(profileId: string, signal?: AbortSignal): Promise<RollbackProposal> {
+  return get<RollbackProposal>(`/api/bench/profiles/${encodeURIComponent(profileId)}/rollback-proposal`, signal);
+}
+
+/** §13: only a profile that has actually been measured (`evaluated`) or
+ *  already marked `recommended` may be activated — never a bare
+ *  `not_evaluated` plan, and never a `regression` (that one gets the
+ *  rollback proposal instead, not an "Activate" button of its own). */
+export function canActivate(profile: Pick<InferenceProfile, 'evaluation'>): boolean {
+  return profile.evaluation === 'evaluated' || profile.evaluation === 'recommended';
+}
+
+export function activationScopeTone(scope: 'next_request' | 'requires_restart'): 'ok' | 'warning' {
+  return scope === 'next_request' ? 'ok' : 'warning';
+}

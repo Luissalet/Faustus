@@ -1,8 +1,15 @@
 import { CalendarClock, Play, Save, Sparkles } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Button, Skeleton } from '../../components';
-import { assessServe, listGpus, modelArchitecture, ServeIncompatibleError, serveCtx, serveProfiles, updateState, useCookbookState, type CachedModel, type CapabilityAssessment, type Gpu, type Preset, type Server, type ServeProfile } from '../../adapters/cookbook';
-import { BACKEND_LABEL, backendChoices, remoteWindowsDiffusers, buildServeCmd, buildServePlan, DEFAULT_PORT, detectBackend, detectModelOptimizations, detectReasoningParser, detectToolParser, ggufFileExpr, ggufFindExpr, ggufQuant, nextFreePort, portOf, projectorGguf, runnableGguf, bytesLabel, type Backend, type ModelArchitecture, type ServeCmdReceipt, type ServeCtx, type ServeFields } from '../../lib/cookbook/serve';
+import { addTask, assessServe, baseUrlFromCmd, listGpus, modelArchitecture, serveModel, ServeIncompatibleError, ServeVramBlockedError, serveCtx, serveProfiles, updateState, useCookbookState, type CachedModel, type CapabilityAssessment, type Gpu, type Preset, type Server, type ServeProfile } from '../../adapters/cookbook';
+import { BACKEND_LABEL, backendChoices, remoteWindowsDiffusers, buildServeCmd, buildServePlan, DEFAULT_PORT, detectBackend, detectModelOptimizations, detectReasoningParser, detectToolParser, ggufFileExpr, ggufFindExpr, ggufQuant, nextFreePort, portOf, projectorGguf, runnableGguf, bytesLabel, activationPrefix, type Backend, type ModelArchitecture, type ServeCmdReceipt, type ServeCtx, type ServeFields } from '../../lib/cookbook/serve';
+import type { TaskPayload } from '../../lib/cookbook/tasks';
+import {
+  basisLabel, componentLabel, contextLimitsLine, estimateRangeLabel, getBudget, getContextLimits, verdictLabel, verdictTone,
+  ABSENT_MEMORY_COMPONENT, type BudgetResult, type ContextLimits,
+} from '../../adapters/hardware';
+import { resolveAdmission, vramBlockedFromServeError, type VramBlocked } from '../../adapters/vramAdmission';
+import { VramAdmissionDialog } from '../VramAdmissionDialog';
 import { t, tn } from '../../i18n';
 import { launchServe, targetFor } from './actions';
 import { CopyButton, Field, Switch } from './parts';
@@ -153,6 +160,118 @@ export function ServeForm({ model, server, hwBackend, initial, replaceTaskId, fo
   const [assessing, setAssessing] = useState(false);
   const [forceManual, setForceManual] = useState(false);
 
+  // INF-05 B2: `plan.weights_bytes/ctx/slots` — inputs to the VRAM
+  // admission gate (`src.vram_admission.admit_bytes`), read from the
+  // catalogue's own `size_bytes` and this form's own ctx/parallel-slots
+  // fields. `weights_bytes`/`ctx`/`slots` are additive, optional keys on
+  // top of `plan` (never re-typed as a new top-level field): the server
+  // reads them off `req.plan`, `adapters/cookbook.ts::ServeRequest.plan`'s
+  // own type already carries them. Assigned to a plain `const` (no type
+  // annotation) so passing it on to `launchServe`'s `ServePlan | null`
+  // parameter — and, for the retry below, to `serveModel` directly — is a
+  // variable reference, not a fresh object literal: TypeScript's excess
+  // -property check never runs on those, only assignability, which extra
+  // OPTIONAL properties always satisfy.
+  const planForWire = useMemo(() => {
+    if (!plan) return null;
+    const extra: { weights_bytes?: number; ctx?: number; slots?: number } = {};
+    if (typeof model.size_bytes === 'number' && model.size_bytes > 0) extra.weights_bytes = model.size_bytes;
+    const ctxNum = Number(f.ctx);
+    if (Number.isFinite(ctxNum) && ctxNum > 0) extra.ctx = ctxNum;
+    const slotsNum = Number(f.llama_parallel);
+    if (backend === 'llamacpp' && Number.isFinite(slotsNum) && slotsNum > 1) extra.slots = slotsNum;
+    return { ...plan, ...extra };
+  }, [plan, model.size_bytes, f.ctx, f.llama_parallel, backend]);
+
+  // INF-05 §11/§14: a live read of the physical memory budget and the
+  // three context limits for THIS candidate (weights from the catalogue,
+  // ctx/slots from the form) — debounced 400ms on ctx/slots/GPU-pin
+  // changes, same discipline the capability assessment effect above
+  // follows. Never on its own authorizes or blocks anything: the actual
+  // gate is server-side, in `POST /api/model/serve` itself (§12 "una sola
+  // autoridad de capacidad") — this is read-only, informational.
+  const [budget, setBudget] = useState<BudgetResult | null>(null);
+  const [budgetLoading, setBudgetLoading] = useState(false);
+  const [contextLimits, setContextLimits] = useState<ContextLimits | null>(null);
+  useEffect(() => {
+    if (image) {
+      setBudget(null);
+      setContextLimits(null);
+      return;
+    }
+    const ac = new AbortController();
+    setBudgetLoading(true);
+    const endpoint = backend === 'ollama' ? baseUrlFromCmd(cmd) || '' : '';
+    const ctxNum = Number(f.ctx) || undefined;
+    const slotsNum = backend === 'llamacpp' ? Number(f.llama_parallel || '1') || 1 : undefined;
+    const weightsBytes = typeof model.size_bytes === 'number' && model.size_bytes > 0 ? model.size_bytes : undefined;
+    const timer = window.setTimeout(() => {
+      void Promise.all([
+        getBudget({ endpoint, model: repo, ctx: ctxNum, slots: slotsNum, weightsBytes }, ac.signal).catch(() => null),
+        getContextLimits({ endpoint, model: repo }, ac.signal).catch(() => null),
+      ])
+        .then(([b, c]) => {
+          setBudget(b);
+          setContextLimits(c);
+        })
+        .finally(() => setBudgetLoading(false));
+    }, 400);
+    return () => {
+      window.clearTimeout(timer);
+      ac.abort();
+      setBudgetLoading(false);
+    };
+  }, [image, backend, cmd, repo, f.ctx, f.llama_parallel, f.gpus, model.size_bytes]);
+
+  // INF-05 B2: the server answered 409 `serve.vram_blocked` — the SAME
+  // dialog `VramAdmissionDialog` chat/Local-models already use, never a
+  // forked one.
+  const [blocked, setBlocked] = useState<VramBlocked | null>(null);
+
+  /** The retry after a person answered the admission dialog: contract's
+   *  own words (CONTRATO_INF05 Lote C) are "reenvía serveModel({...body,
+   *  admission_ticket: ticket})" — called directly rather than through
+   *  `launchServe` (which has no `admission_ticket` parameter of its own),
+   *  replicating just the tail of what it does (the request, then
+   *  `addTask` so Running still picks the session up). The port/replace
+   *  -task kill `launchServe` does BEFORE calling `serveModel` already ran
+   *  on the first attempt — nothing left to redo here. */
+  const directServe = async (ticket: string) => {
+    const target = targetFor(state.env, server);
+    const targetCtx = serveCtx(state.env, hwBackend, target.host ? target.server : null);
+    const envPrefix = activationPrefix({ ...targetCtx, env: target.env, envPath: target.envPath }) || undefined;
+    const { sessionId, requestedCmd, finalCmd, rewrites } = await serveModel({
+      repo_id: repo,
+      cmd,
+      remote_host: target.host || undefined,
+      ssh_port: target.sshPort || undefined,
+      env_prefix: envPrefix,
+      gpus: state.env.gpus || undefined,
+      platform: target.platform || undefined,
+      plan: planForWire,
+      force_manual: forceManual,
+      admission_ticket: ticket,
+    });
+    const payload: TaskPayload = {
+      repo_id: repo,
+      remote_host: target.host || undefined,
+      remote_server_key: target.key,
+      remote_server_name: target.name,
+      ssh_port: target.sshPort,
+      _cmd: cmd,
+      _fields: { ...f, port, backend },
+      _env: target.env,
+      _envPath: target.envPath,
+      _gpus: state.env.gpus,
+      requested_cmd: requestedCmd || cmd,
+      final_cmd: finalCmd || cmd,
+      rewrites,
+    };
+    addTask(sessionId, repo.split('/').pop() || repo, 'serve', payload, {
+      host: target.host, serverKey: target.key, serverName: target.name, sshPort: target.sshPort, platform: target.platform,
+    });
+  };
+
   // §06: assessed on every option change (debounced, abortable) — never
   // trusted on its own to authorize a launch, since `POST /api/model/serve`
   // re-runs the identical check server-side before it launches anything.
@@ -186,10 +305,17 @@ export function ServeForm({ model, server, hwBackend, initial, replaceTaskId, fo
     try {
       const target = targetFor(state.env, server);
       updateState((s) => ({ ...s, serveState: { _byRepo: { ...(s.serveState?._byRepo ?? {}), [repo]: { ...f, port } } } }), { push: true });
-      await launchServe({ shortName: repo.split('/').pop() || repo, repo, cmd, fields: { ...f, port, backend }, target, hwBackend, replaceTaskId, plan, forceManual });
+      await launchServe({ shortName: repo.split('/').pop() || repo, repo, cmd, fields: { ...f, port, backend }, target, hwBackend, replaceTaskId, plan: planForWire, forceManual });
       say(t('Serving {name}…', { name: repo.split('/').pop() || repo }));
       onLaunched();
     } catch (e) {
+      if (e instanceof ServeVramBlockedError) {
+        const b = vramBlockedFromServeError(e.raw);
+        if (b) {
+          setBlocked(b);
+          return;
+        }
+      }
       if (e instanceof ServeIncompatibleError) {
         setAssessment({ assessments: e.assessments, blockers: e.assessments.filter((a) => a.support === 'unsupported') });
       }
@@ -460,6 +586,58 @@ export function ServeForm({ model, server, hwBackend, initial, replaceTaskId, fo
         </Field>
       </div>
 
+      {!image && (
+        <div className="fs-ck__hw-estimate" data-testid="serve-estimate">
+          <span className="fs-ck__label">{t('Memory estimate')}</span>
+          {budgetLoading && !budget && <p className="fs-muted">{t('Reading hardware…')}</p>}
+          {budget && (
+            <>
+              <dl className="fs-ck__opt-stats">
+                <div>
+                  <dt>{t('Weights')}</dt>
+                  <dd>{componentLabel(budget.estimate?.weights ?? ABSENT_MEMORY_COMPONENT)}</dd>
+                </div>
+                <div>
+                  <dt>{t('KV cache')}</dt>
+                  <dd>{componentLabel(budget.estimate?.kv_state ?? ABSENT_MEMORY_COMPONENT)}</dd>
+                </div>
+                <div>
+                  <dt>{t('Buffers')}</dt>
+                  <dd>{componentLabel(budget.estimate?.buffers ?? ABSENT_MEMORY_COMPONENT)}</dd>
+                </div>
+                <div>
+                  <dt>{t('Margin')}</dt>
+                  <dd>{componentLabel(budget.estimate?.margin ?? ABSENT_MEMORY_COMPONENT)}</dd>
+                </div>
+                <div>
+                  <dt>{t('Total')}</dt>
+                  <dd data-testid="serve-estimate-total">{estimateRangeLabel(budget.estimate)}</dd>
+                </div>
+                <div>
+                  <dt>{t('Basis')}</dt>
+                  <dd>{budget.estimate ? basisLabel(budget.estimate) : t('unknown')}</dd>
+                </div>
+              </dl>
+              {budget.estimate && budget.estimate.notes.length > 0 && (
+                <ul className="fs-ck__hw-notes">
+                  {budget.estimate.notes.map((note, i) => (
+                    <li key={i}>{note}</li>
+                  ))}
+                </ul>
+              )}
+              <span className="fs-ck__badge" data-tone={verdictTone(budget.verdict.verdict)} data-testid="serve-estimate-verdict">
+                {verdictLabel(budget.verdict)}
+              </span>
+            </>
+          )}
+          {contextLimits && (
+            <p className="fs-muted" data-testid="serve-context-limits">
+              {contextLimitsLine(contextLimits)}
+            </p>
+          )}
+        </div>
+      )}
+
       <div className="fs-ck__cmd-box">
         <span className="fs-ck__label">{t('Command')}</span>
         <textarea className="fs-field fs-ck__cmd-edit" rows={3} value={cmd} onChange={(e) => setCmdOverride(e.target.value)} spellCheck={false} data-testid="serve-cmd" />
@@ -529,6 +707,21 @@ export function ServeForm({ model, server, hwBackend, initial, replaceTaskId, fo
         <input className="fs-field" value={presetName} onChange={(e) => setPresetName(e.target.value)} placeholder={t('Preset name')} aria-label={t('Preset name')} style={{ inlineSize: '180px' }} />
         <Button variant="ghost" size="sm" icon={Save} label={t('Save preset')} onClick={savePreset} />
       </div>
+
+      <VramAdmissionDialog
+        blocked={blocked}
+        onDone={() => setBlocked(null)}
+        say={say}
+        onDecide={async (action, names) => {
+          if (!blocked) return;
+          await resolveAdmission(blocked.ticket, action, names);
+          if (action !== 'cancel') {
+            await directServe(blocked.ticket);
+            say(t('Serving {name}…', { name: repo.split('/').pop() || repo }));
+            onLaunched();
+          }
+        }}
+      />
     </div>
   );
 }

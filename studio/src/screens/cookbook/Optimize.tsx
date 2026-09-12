@@ -5,12 +5,19 @@ import { executionMetricsFrom } from '../../adapters/chat';
 import { endpointsFor } from '../../adapters/cookbook';
 import type { ModelEndpoint } from '../../adapters/settings';
 import {
+  activateProfile,
+  activationScopeTone,
   BenchApiError,
+  canActivate,
   canPromote,
   cancelRun,
   compareRuns,
+  deactivateProfile,
   estimateLabel,
   formatDelta,
+  getActiveProfile,
+  getProfiles,
+  getRollbackProposal,
   getRun,
   isRunInFlight,
   listRuns,
@@ -21,9 +28,13 @@ import {
   runStateTone,
   startBench,
   verdictTone,
+  type ActivationResult,
   type BenchmarkRun,
   type Comparison,
+  type InferenceProfile,
   type ProfileObjective,
+  type ProfilesFor,
+  type RollbackProposal,
   type RunSample,
   type Suite,
 } from '../../adapters/bench';
@@ -84,6 +95,15 @@ function errorMessage(e: unknown): string {
 function msLabel(ms: number | null): string {
   if (ms === null || !Number.isFinite(ms)) return t('not observed');
   return ms >= 1000 ? t('{n} s', { n: (ms / 1000).toFixed(1) }) : t('{n} ms', { n: String(Math.round(ms)) });
+}
+
+/** `ActivationResult.applied`/`.deferred`'s own `options` sub-dict keys —
+ *  the actual option NAMES a person would recognise (`num_ctx`,
+ *  `keep_alive`…), not the wrapper object's own top-level keys
+ *  (`endpoint_id`/`model`/`scope`/`note`). */
+function optionKeys(obj: Record<string, unknown>): string[] {
+  const options = obj.options;
+  return options && typeof options === 'object' ? Object.keys(options as Record<string, unknown>) : [];
 }
 
 function pctLabel(v: number | null): string {
@@ -178,6 +198,52 @@ function RunResult({ run }: { run: BenchmarkRun }) {
   );
 }
 
+/** One saved profile's row: its evaluation state, an "Active" chip when
+ *  `GET /api/bench/profiles/active` names it, and "Activate"/"Deactivate" —
+ *  §13's own gate (`canActivate`) applied here, not re-derived: only
+ *  `evaluated`/`recommended` ever get an enabled "Activate" button, never
+ *  `regression` (that one gets the comparator's rollback proposal instead,
+ *  see `bench-rollback` below). */
+function ProfileRow({
+  profile, active, busy, onActivate, onDeactivate,
+}: {
+  profile: InferenceProfile;
+  active: boolean;
+  busy: boolean;
+  onActivate: () => void;
+  onDeactivate: () => void;
+}) {
+  return (
+    <li className="fs-ck__item" data-testid={`bench-profile-${profile.id}`}>
+      <div className="fs-ck__item-row">
+        <span className="fs-ck__item-main">
+          <span className="fs-ck__item-name">{profile.label}</span>
+          <span className="fs-muted">{profile.evaluation}</span>
+        </span>
+        {active && (
+          <span className="fs-ck__badge" data-tone="ok" data-testid="bench-active-chip">
+            {t('Active')}
+          </span>
+        )}
+        {active ? (
+          <Button size="sm" variant="ghost" label={t('Deactivate')} loading={busy} onClick={onDeactivate} testId="bench-deactivate" />
+        ) : (
+          <Button
+            size="sm"
+            variant="secondary"
+            label={t('Activate')}
+            loading={busy}
+            disabled={!canActivate(profile)}
+            title={canActivate(profile) ? undefined : t('Only a measured (evaluated or recommended) profile can be activated')}
+            onClick={onActivate}
+            testId="bench-activate"
+          />
+        )}
+      </div>
+    </li>
+  );
+}
+
 export interface OptimizeProps {
   say: (m: string) => void;
 }
@@ -217,6 +283,75 @@ export function Optimize({ say }: OptimizeProps) {
       if (!stillValid) setSuiteId(suites.find((s) => s.objective === next)?.id ?? '');
     },
     [suites, suiteId],
+  );
+
+  // ── activation (INF-05 B3, §13) ──────────────────────────────────────────
+  // `refreshProfiles` is a plain read (GET `/api/bench/profiles`+`/active`)
+  // and may run from the effect below like every other reconnect/refresh in
+  // this file; `handleActivate`/`handleDeactivate` are the only calls to
+  // `activateProfile`/`deactivateProfile` anywhere in this file, and both
+  // are wired only to an explicit button `onClick` — never to a `useEffect`
+  // (tests/test_inf05_hardware_js.py greps this file for exactly that, the
+  // same T19 discipline `startBench` above already follows).
+  const [profilesFor, setProfilesFor] = useState<ProfilesFor | null>(null);
+  const [activeProfileId, setActiveProfileId] = useState<string | null>(null);
+  const [activatingId, setActivatingId] = useState<string | null>(null);
+  const [lastActivation, setLastActivation] = useState<ActivationResult | null>(null);
+
+  const refreshProfiles = useCallback(() => {
+    if (!endpoint || !model) {
+      setProfilesFor(null);
+      setActiveProfileId(null);
+      return;
+    }
+    getProfiles(endpoint.baseUrl, model)
+      .then(setProfilesFor)
+      .catch(() => setProfilesFor(null));
+    getActiveProfile(endpoint.baseUrl, model)
+      .then(setActiveProfileId)
+      .catch(() => setActiveProfileId(null));
+  }, [endpoint, model]);
+
+  useEffect(() => {
+    refreshProfiles();
+  }, [refreshProfiles]);
+
+  const handleActivate = useCallback(
+    async (profileId: string) => {
+      setActivatingId(profileId);
+      try {
+        const result = await activateProfile(profileId);
+        setLastActivation(result);
+        say(result.note || t('Activated.'));
+        refreshProfiles();
+      } catch (e) {
+        say(errorMessage(e));
+      } finally {
+        setActivatingId(null);
+      }
+    },
+    [say, refreshProfiles],
+  );
+
+  const handleDeactivate = useCallback(
+    async (profileId: string) => {
+      setActivatingId(profileId);
+      try {
+        await deactivateProfile(profileId);
+        say(t('Deactivated — the previous options are restored.'));
+        refreshProfiles();
+      } catch (e) {
+        say(errorMessage(e));
+      } finally {
+        setActivatingId(null);
+      }
+    },
+    [say, refreshProfiles],
+  );
+
+  const savedForModel = useMemo(
+    () => (model ? (profilesFor?.saved ?? []).filter((p) => p.model.artifact_id === model) : []),
+    [profilesFor, model],
   );
 
   // ── step 2: budget, plan, run ────────────────────────────────────────────
@@ -370,6 +505,33 @@ export function Optimize({ say }: OptimizeProps) {
 
   const candidateRun = useMemo(() => runHistory.find((r) => r.id === candidateId) ?? null, [runHistory, candidateId]);
 
+  // §13: a measured `regression` may PROPOSE returning to the previous
+  // profile — a read, refreshed automatically whenever the comparator
+  // finds one; `bench-rollback` below is the only thing that ever acts on
+  // it, and only on an explicit click.
+  const [rollback, setRollback] = useState<RollbackProposal | null>(null);
+  useEffect(() => {
+    if (!comparison || comparison.verdict !== 'regression' || !candidateRun) {
+      setRollback(null);
+      return;
+    }
+    let alive = true;
+    getRollbackProposal(candidateRun.profile.id)
+      .then((r) => {
+        if (alive) setRollback(r);
+      })
+      .catch(() => setRollback(null));
+    return () => {
+      alive = false;
+    };
+  }, [comparison, candidateRun]);
+
+  const rollbackLabel = useMemo(() => {
+    if (!rollback?.previous_profile_id) return null;
+    const prev = savedForModel.find((p) => p.id === rollback.previous_profile_id);
+    return prev?.label ?? rollback.previous_profile_id;
+  }, [rollback, savedForModel]);
+
   const handleCompare = useCallback(async () => {
     if (!baselineId || !candidateId) return;
     setComparing(true);
@@ -474,6 +636,36 @@ export function Optimize({ say }: OptimizeProps) {
           </div>
         )}
       </section>
+
+      {savedForModel.length > 0 && (
+        <section className="fs-ck__group" aria-labelledby="bench-h-profiles">
+          <h2 className="fs-ck__h" id="bench-h-profiles">
+            {t('Saved profiles for this target')}
+          </h2>
+          <ul className="fs-ck__list" data-testid="bench-profiles">
+            {savedForModel.map((p) => (
+              <ProfileRow
+                key={p.id}
+                profile={p}
+                active={activeProfileId === p.id}
+                busy={activatingId === p.id}
+                onActivate={() => void handleActivate(p.id)}
+                onDeactivate={() => void handleDeactivate(p.id)}
+              />
+            ))}
+          </ul>
+          {lastActivation && (
+            <p className="fs-ck__note" data-testid="bench-activation-result">
+              <span className="fs-ck__badge" data-tone={activationScopeTone(lastActivation.scope)}>
+                {lastActivation.scope === 'next_request' ? t('Applies now') : t('Needs a relaunch')}
+              </span>{' '}
+              {lastActivation.note}
+              {optionKeys(lastActivation.applied).length > 0 && ` · ${t('Applied: {keys}', { keys: optionKeys(lastActivation.applied).join(', ') })}`}
+              {optionKeys(lastActivation.deferred).length > 0 && ` · ${t('Deferred: {keys}', { keys: optionKeys(lastActivation.deferred).join(', ') })}`}
+            </p>
+          )}
+        </section>
+      )}
 
       <section className="fs-ck__group" aria-labelledby="bench-h2">
         <h2 className="fs-ck__h" id="bench-h2">
@@ -640,7 +832,31 @@ export function Optimize({ say }: OptimizeProps) {
                 testId="bench-promote"
               />
               <Button label={t('Keep baseline')} icon={Undo2} variant="ghost" onClick={handleKeepBaseline} testId="bench-keep-baseline" />
+              {candidateRun && activeProfileId !== candidateRun.profile.id && (
+                <Button
+                  label={t('Activate candidate')}
+                  variant="secondary"
+                  loading={activatingId === candidateRun.profile.id}
+                  disabled={!canActivate(candidateRun.profile)}
+                  title={canActivate(candidateRun.profile) ? undefined : t('Only a measured (evaluated or recommended) profile can be activated')}
+                  onClick={() => void handleActivate(candidateRun.profile.id)}
+                  testId="bench-activate"
+                />
+              )}
             </div>
+            {comparison.verdict === 'regression' && rollback?.previous_profile_id && (
+              <p className="fs-ck__note" data-testid="bench-rollback-note">
+                {t('Proposal: return to {label}', { label: rollbackLabel ?? rollback.previous_profile_id })}{' '}
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  label={t('Roll back')}
+                  loading={activatingId === rollback.previous_profile_id}
+                  onClick={() => rollback.previous_profile_id && void handleActivate(rollback.previous_profile_id)}
+                  testId="bench-rollback"
+                />
+              </p>
+            )}
           </div>
         )}
       </section>

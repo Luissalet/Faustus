@@ -7168,3 +7168,92 @@ unknown until a first run	desconocido hasta una primera ejecución
 ~{n} h	~{n} h
 ~{n} min	~{n} min
 ~{n}s	~{n}s
+A GPU without a stable identity cannot be reconciled (index {idx})	Una GPU sin identidad estable no se puede reconciliar (índice {idx})
+Activate	Activar
+Activate candidate	Activar candidato
+Activated.	Activado.
+Annotate transport	Anotar transporte
+Annotate…	Anotar…
+Annotation saved	Anotación guardada
+Applied: {keys}	Aplicado: {keys}
+Applies now	Se aplica ahora
+Auxiliary models	Modelos auxiliares
+Basis	Base
+Buffers	Búferes
+Context: {native} · {configured} · {evaluated}	Contexto: {native} · {configured} · {evaluated}
+Deactivate	Desactivar
+Deactivated — the previous options are restored.	Desactivado — se restauran las opciones anteriores.
+Deferred: {keys}	Diferido: {keys}
+Free	Libre
+GPU {idx}	GPU {idx}
+GPU {key} is new at index {curr}	GPU {key} es nueva en el índice {curr}
+GPU {key} is still index {idx}	GPU {key} sigue siendo el índice {idx}
+GPU {key} was index {prev}, now missing	GPU {key} era el índice {prev}, ahora falta
+GPU {key} was index {prev}, now {curr} (moved)	GPU {key} era el índice {prev}, ahora {curr} (se movió)
+Gen{gen} x{width} ({source})	Gen{gen} x{width} ({source})
+Index	Índice
+KV cache	Caché KV
+Margin	Margen
+Memory budget per GPU	Presupuesto de memoria por GPU
+Memory estimate	Estimación de memoria
+Needs a relaunch	Necesita relanzar
+No GPU reading available on this machine.	No hay lectura de GPU disponible en esta máquina.
+No physical GPU reading available.	No hay lectura de GPU física disponible.
+OCuLink	OCuLink
+Only a measured (evaluated or recommended) profile can be activated	Solo se puede activar un perfil medido (evaluado o recomendado)
+Other processes	Otros procesos
+PCIe	PCIe
+Physical GPUs	GPU físicas
+Physical identity (uuid/bus id), never an index — an index is only a runtime slot, and can point at a different card after a reconnect.	Identidad física (uuid/bus id), nunca un índice — un índice es solo una ranura en tiempo de ejecución y puede apuntar a otra tarjeta tras reconectar.
+Proposal: return to {label}	Propuesta: volver a {label}
+Reading hardware…	Leyendo hardware…
+Reading is stale — refresh	La lectura está desactualizada — actualiza
+Reading is {n} s old — refresh	La lectura tiene {n} s de antigüedad — actualiza
+Roll back	Revertir
+Runtime buffers	Búferes en tiempo de ejecución
+Saved profiles for this target	Perfiles guardados para este objetivo
+Shared system memory (spill): {n} — not VRAM	Memoria compartida del sistema (desborde): {n} — no es VRAM
+System RAM: {avail} available of {total}	RAM del sistema: {avail} disponible de {total}
+System margin	Margen del sistema
+Thunderbolt	Thunderbolt
+Transport kind	Tipo de transporte
+USB4	USB4
+Weights	Pesos
+Weights (resident)	Pesos (residentes)
+Windows API	API de Windows
+architecture unknown	arquitectura desconocida
+benchmark runs	ejecuciones de benchmark
+configured {n} ({detail})	configurado {n} ({detail})
+configured: not reported	configurado: no reportado
+does not fit	no cabe
+does not fit (short by {n})	no cabe (faltan {n})
+e.g. external enclosure over Thunderbolt 4	p. ej. caja externa por Thunderbolt 4
+evaluated up to {n} ({detail})	evaluado hasta {n} ({detail})
+evaluated: not reported	evaluado: no reportado
+faustus serve	faustus serve
+fitted over the observed range	ajustado sobre el rango observado
+fitted over {min}–{max}	ajustado sobre {min}–{max}
+from metadata	desde metadatos
+heuristic	heurística
+hf config	config de hf
+native {n} ({detail})	nativo {n} ({detail})
+native: not reported	nativo: no reportado
+no stable identity	sin identidad estable
+not reported	no reportado
+observed overhead at ctx {ctx}	sobrecoste observado en ctx {ctx}
+observed overhead in this configuration	sobrecoste observado en esta configuración
+ollama	ollama
+other process	otro proceso
+pid {pid}	pid {pid}
+psutil	psutil
+reason not given	motivo no indicado
+receipt	recibo
+reported by the engine	reportado por el motor
+saved options	opciones guardadas
+unknown ({reason})	desconocido ({reason})
+unknown device	dispositivo desconocido
+{base} — narrow: may be an external enclosure, verify manually (heuristic)	{base} — estrecho: puede ser una caja externa, verifica manualmente (heurística)
+{bytes} ({source})	{bytes} ({source})
+{kind} ({source})	{kind} ({source})
+{lower}–{upper} GB	{lower}–{upper} GB
+≥ {lower} GB (incomplete: {reason})	≥ {lower} GB (incompleto: {reason})

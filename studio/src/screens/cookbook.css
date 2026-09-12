@@ -878,4 +878,115 @@
   color: var(--fs-text-1);
   font-size: 14px;
 }
+
+/* ── Physical hardware (INF-05 Lote C): topology, reconciliation, the
+   per-GPU memory budget, and ServeForm's own memory-estimate block. ── */
+
+.fs-ck__hw + .fs-ck__hw {
+  margin-block-start: var(--fs-space-4);
+}
+
+.fs-ck__hw-table-wrap {
+  overflow-x: auto;
+  margin-block-start: var(--fs-space-3);
+}
+
+.fs-ck__hw-table {
+  inline-size: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-label-size);
+}
+
+.fs-ck__hw-table th,
+.fs-ck__hw-table td {
+  padding: var(--fs-space-2) var(--fs-space-3);
+  border-block-end: 1px solid var(--fs-border);
+  text-align: start;
+  white-space: nowrap;
+}
+
+.fs-ck__hw-table th {
+  color: var(--fs-text-3);
+  font-size: 11px;
+  font-weight: var(--fs-label-weight);
+  letter-spacing: var(--fs-label-tracking);
+  text-transform: uppercase;
+}
+
+.fs-ck__hw-table td {
+  color: var(--fs-text-1);
+}
+
+.fs-ck__hw-budget-card {
+  display: grid;
+  gap: var(--fs-space-2);
+  padding: var(--fs-space-3) 0;
+  border-block-start: 1px solid var(--fs-border);
+}
+
+.fs-ck__hw-budget-card:first-of-type {
+  border-block-start: 0;
+  padding-block-start: var(--fs-space-2);
+}
+
+.fs-ck__hw-bar {
+  display: flex;
+  overflow: hidden;
+  block-size: 10px;
+  border-radius: var(--fs-radius-pill);
+  background: color-mix(in srgb, var(--fs-text-3) 18%, transparent);
+}
+
+.fs-ck__hw-bar-seg {
+  display: block;
+  block-size: 100%;
+}
+.fs-ck__hw-bar-seg[data-part='weights_resident'] {
+  background: var(--fs-brand);
+}
+.fs-ck__hw-bar-seg[data-part='kv_state'] {
+  background: var(--fs-info);
+}
+.fs-ck__hw-bar-seg[data-part='buffers_runtime'] {
+  background: var(--fs-warning);
+}
+.fs-ck__hw-bar-seg[data-part='auxiliary_models'] {
+  background: color-mix(in srgb, var(--fs-brand) 45%, var(--fs-text-3));
+}
+.fs-ck__hw-bar-seg[data-part='other_processes'] {
+  background: var(--fs-text-3);
+}
+.fs-ck__hw-bar-seg[data-part='system_margin'] {
+  background: color-mix(in srgb, var(--fs-text-3) 60%, transparent);
+}
+.fs-ck__hw-bar-seg[data-part='free'] {
+  background: transparent;
+}
+
+.fs-ck__hw-components {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--fs-text-2);
+  font-size: var(--fs-label-size);
+}
+
+.fs-ck__hw-notes {
+  margin: var(--fs-space-2) 0 0;
+  padding: 0 0 0 var(--fs-space-4);
+  color: var(--fs-text-3);
+  font-size: var(--fs-label-size);
+  line-height: 1.45;
+}
+
+.fs-ck__hw-estimate {
+  display: grid;
+  gap: var(--fs-space-2);
+  padding: var(--fs-space-3) var(--fs-space-4);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-panel);
+  background: var(--fs-surface-1);
+}
 .fs-ssh-trust p { font-size: 14px; line-height: 1.5; }

@@ -583,6 +583,24 @@ export class ServeIncompatibleError extends ApiError {
   }
 }
 
+/** `POST /api/model/serve` reporting `{"error_class": "serve.vram_blocked"}`
+ *  (INF-05 B2, §12: "un serve no recibe permiso para saltarse la puerta
+ *  porque sea interno" — the SAME `src.vram_admission` authority chat/bench
+ *  already go through). Carries the raw 409 body (`ticket` plus the same
+ *  `assess()`-shaped keys `admit_bytes` publishes) so the caller can build a
+ *  `VramBlocked` via `adapters/vramAdmission.ts::vramBlockedFromServeError`
+ *  without a second round-trip, and reuse the existing
+ *  `VramAdmissionDialog` rather than forking it. */
+export class ServeVramBlockedError extends ApiError {
+  constructor(
+    message: string,
+    readonly raw: Record<string, unknown>,
+  ) {
+    super(message, 409);
+    this.name = 'ServeVramBlockedError';
+  }
+}
+
 async function postJsonReceipt(path: string, body: unknown, signal?: AbortSignal): Promise<{ ok: boolean; status: number; data: Record<string, unknown> }> {
   const res = await fetch(path, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal });
   const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
@@ -647,8 +665,21 @@ export interface ServeRequest {
   // the explicit override to launch anyway once `assessServe` found a hard
   // blocker. `undefined`/`null` plan is the legitimate "manual, unverified"
   // case (a hand-edited command, or a target `buildServePlan` doesn't cover).
-  plan?: ServePlan | null;
+  // INF-05 B2: `plan` may also carry `weights_bytes`/`ctx`/`slots` — inputs
+  // to the VRAM admission gate (`src.vram_admission.admit_bytes`), not part
+  // of INF-02's own launch contract, so they stay loose optional keys here
+  // rather than new fields duplicating what `plan` already is.
+  plan?: (ServePlan & { weights_bytes?: number; ctx?: number; slots?: number }) | null;
   force_manual?: boolean;
+  // INF-05 B2: weights size when `plan` is absent (a manual/legacy launch)
+  // — the admission gate's only other source for "how many bytes does this
+  // need". `undefined` means "unknown", not zero.
+  weights_bytes?: number;
+  // A ticket already resolved via `POST /api/local-models/admission/{ticket}`
+  // (kind="serve") after a previous call to this endpoint returned 409
+  // `serve.vram_blocked` — the retry is not re-assessed, it trusts that
+  // resolved decision.
+  admission_ticket?: string;
 }
 
 export async function serveModel(body: ServeRequest): Promise<{ sessionId: string; endpointId: string | null; requestedCmd: string; finalCmd: string; rewrites: CmdRewrite[]; receipt: LaunchReceipt | null }> {
@@ -656,6 +687,9 @@ export async function serveModel(body: ServeRequest): Promise<{ sessionId: strin
   if (!ok) {
     if (data.error_class === 'serve.incompatible') {
       throw new ServeIncompatibleError(str(data.error) || 'one or more requested options are unsupported', asArray<Record<string, unknown>>(data.assessments).map(asAssessment));
+    }
+    if (data.error_class === 'serve.vram_blocked') {
+      throw new ServeVramBlockedError(str(data.error) || 'this model does not fit in VRAM', data);
     }
     throw new ApiError(str(data.detail || data.error) || `/api/model/serve responded ${status}`, status);
   }

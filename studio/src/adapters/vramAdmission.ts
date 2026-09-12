@@ -78,6 +78,23 @@ export function vramBlockedFrom(raw: Record<string, unknown>): VramBlocked | und
   };
 }
 
+/**
+ * `POST /api/model/serve`'s 409 `serve.vram_blocked` body — `{"error",
+ * "error_class": "serve.vram_blocked", "ticket", ...assessment}`, the SAME
+ * `assess()`-shaped keys as a loader's own `vram_blocked` progress event
+ * (INF-05 B2's `admit_bytes`: "un assessment que tenga las MISMAS claves
+ * que assess() devuelve … para que VramAdmissionDialog/vramBlockedFrom lo
+ * pinte sin cambios"), just without the `phase` tag `vramBlockedFrom`
+ * otherwise requires. Reuses `vramBlockedFrom` exactly the way
+ * `adapters/localModels.ts::loadModel` already does for the Local models
+ * "Load" button's own 409 (`{...detail.admission, phase: 'vram_blocked'}`)
+ * — never a second parser for the same shape.
+ */
+export function vramBlockedFromServeError(raw: Record<string, unknown>): VramBlocked | undefined {
+  if (raw.error_class !== 'serve.vram_blocked' || typeof raw.ticket !== 'string' || !raw.ticket) return undefined;
+  return vramBlockedFrom({ ...raw, phase: 'vram_blocked' });
+}
+
 export async function resolveAdmission(ticket: string, action: AdmissionAction, names: string[] = []): Promise<void> {
   const res = await fetch(`/api/local-models/admission/${encodeURIComponent(ticket)}`, {
     method: 'POST',
