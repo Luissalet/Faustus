@@ -218,17 +218,19 @@ deep-link de workflows, recetas desde un run real) ya no aparece aquí.
   `engine_timings` llega con la forma esperada; hasta entonces las fuentes
   `reported_engine` de llama-server (`/props`, `/slots`, `timings`) están
   verificadas contra fixtures, no contra una versión concreta del servidor.
-- `activate_profile` (que el chat USE un perfil guardado) no existe a
-  propósito: guardar y activar son decisiones distintas y activar necesita
-  decidir qué pasa con una sesión en vuelo. Va con INF-05.
-- Cookbook `model_serve` **no pasa por `vram_admission`**: arrancar un
-  segundo servidor mientras otro modelo grande responde sigue siendo
-  posible por esa vía. Es lo primero de INF-05 (topología, presupuesto de
-  memoria, admisión reconciliada), junto con candidatos que requieren
-  reinicio del motor.
+- INF-05 hecho (FAUSTUS.md §78): identidad física, presupuesto por GPU,
+  admisión con latido y puerta para Cookbook serve, `activate_profile`.
+  Sólo con fixtures; queda ver en vivo Servers › Physical GPUs (¿uuid y
+  enlace de las tres tarjetas? ¿la 5060 Ti externa sale como enlace
+  estrecho?), el bloque «Memory estimate» del formulario de serve y un
+  `serve.vram_blocked` real con el diálogo. `KV_RATES` guarda una sola
+  observación por modelo: el ajuste `fitted` no se disparará hasta que
+  acumule varias (cambio pequeño en `vram_fit.remember_kv_rate`, pendiente).
+- Candidatos que requieren reinicio del motor: `activate_profile` ya
+  prepara el plan de relanzamiento (`deferred`, `requires_restart`); el
+  botón «Relaunch with this profile» en Cookbook › Running NO existe aún.
 - INF-06/07 (laboratorio: especulación, reparto entre GPUs, comparación
-  de motores) solo después de INF-05 y con autorización explícita para cada
-  tanda de medidas.
+  de motores) solo con autorización explícita para cada tanda de medidas.
 - El comparador usa `p95−mediana` como proxy de dispersión y `n ≥ 3`; el
   doc lo dice: no es un test estadístico. Si se quiere rigor, hay que subir
   repeticiones, no cambiar el umbral.
@@ -238,6 +240,36 @@ deep-link de workflows, recetas desde un run real) ya no aparece aquí.
 - Respuesta en italiano a un prompt en español cuando el prompt trae un
   bloque de memoria (visto una vez con qwen3.8 27B): ver
   `src/reply_language.py` si se repite.
+
+## Modos de comportamiento (pedido de Luis, 12-09, POR HACER — siguiente tras INF-05)
+
+- Luis: «Mete modos a cómo se comporta Faustus, así los usuarios pueden
+  personalizar contra quién hablan; por ejemplo, un modo *adversarial*».
+  Ejemplo entregado (captura): «No eres mi asistente, eres mi asesor y eres
+  más listo que yo: 1) nunca empieces dando la razón — la primera frase
+  cuestiona mi supuesto, señala lo que me falta o hace una pregunta que
+  exponga un hueco; 2) etiqueta la confianza de cada afirmación
+  [Certain]/[Likely]/[Guessing] y si casi todo es *Guessing*, dilo primero;
+  3) prohibidas «Great question», «You're absolutely right», «That makes a
+  lot of sense», «Absolutely», «Definitely»».
+- Lo que YA existe y hay que reutilizar, no duplicar: `src/preset_manager.py`
+  (presets `code_analyze`, `brainstorm`, `reason`… con `system_prompt`,
+  `temperature`, `max_tokens`) y `preset_system_prompt` en
+  `chat_processor.build_context_preface` (entra como system antes de la
+  política de seguridad). Un «modo» es un preset de COMPORTAMIENTO, no de
+  tarea: se combina con cualquier tarea y con el modo agente.
+- Diseño previsto: catálogo `config/behavior_modes/*.json` (`adversarial`,
+  `neutral`, `socratic`, `terse`, …; editables/creables por el usuario en
+  Ajustes), selector en el compositor (chip junto a Chat/Agent) y por
+  sesión (`session.behavior_mode`), inyección como bloque system propio
+  después de las reglas del agente y ANTES de la política de contenido no
+  fiable (las reglas de seguridad ganan siempre: un modo nunca desactiva
+  `UNTRUSTED_CONTEXT_POLICY` ni los permisos), etiqueta del modo en cada
+  respuesta (`metadata.behavior_mode`) y en la línea de métricas, i18n ES/EN,
+  y un check de que las frases prohibidas no aparecen en las respuestas del
+  modo adversarial (test con modelo falso + comprobación en vivo). Coste:
+  el bloque cuenta en el prompt; con modelos locales pequeños hay que medir
+  si obedecen el etiquetado [Certain]/[Likely]/[Guessing].
 
 ## Última evidencia
 
