@@ -995,8 +995,8 @@
 .fs-ck__excerpt {
   margin: 4px 0 6px;
   padding: 6px 10px;
-  border-inline-start: 2px solid var(--fs-border, #444);
-  color: var(--fs-fg-muted, #bbb);
+  border-inline-start: 2px solid var(--fs-border);
+  color: var(--fs-text-2);
   font-size: 0.85rem;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
