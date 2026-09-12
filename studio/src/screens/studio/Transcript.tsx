@@ -2,7 +2,7 @@ import { ArrowDown, BookmarkPlus, Check, ChevronDown, Copy, Expand, FileText, Fo
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Link } from 'react-router';
 import { Fragment, lazy, Suspense, useCallback, useEffect, useRef, useState, type RefObject } from 'react';
-import { Button, describeError, friendlyError, IconButton } from '../../components';
+import { Button, describeError, ExecutionTimeline, friendlyError, IconButton } from '../../components';
 import { fetchCompactionEvent, pinCompactionFragment, type AskUser, type CompactionEvent, type ContextLedger, type ContextReceipt, type DelegationTask } from '../../adapters/chat';
 import { createRecipeFromRun } from '../../adapters/strategy';
 import type { EvidenceRef } from '../../adapters/evidence';
@@ -1525,6 +1525,7 @@ function AssistantTurn({
             </span>
           </div>
         )}
+        {!turn.streaming && turn.metrics?.execution && <ExecutionTimeline execution={turn.metrics.execution} />}
       </div>
     </article>
   );

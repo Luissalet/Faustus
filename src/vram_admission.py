@@ -639,14 +639,29 @@ def _timeout() -> float:
 
 async def admit(endpoint_url: str, model: str, *, owner: str = "",
                 on_progress: Optional[Callable[[Dict[str, Any]], None]] = None,
-                mode: Optional[str] = None, timeout: Optional[float] = None) -> str:
+                mode: Optional[str] = None, timeout: Optional[float] = None,
+                waited_out: Optional[Dict[str, Any]] = None) -> str:
     """Clear the way for `model` on `endpoint_url`, or refuse.
 
     Returns "proceed" when the caller may load. Raises AdmissionCancelled when
     it may not â€” the person said cancel, or nobody answered in time. Silence
     never loads a model that would not fit: that is the one rule that would
     have kept the machine up on 08-09.
+
+    INF-03: when `waited_out` is given, this fills in `waited_out["waited_s"]`
+    (a monotonic duration) on every return/raise past the point this gate
+    actually engaged â€” a real door, even one that opened immediately (`fits`,
+    already resident, `mode="auto"`). The two early returns above this
+    comment (no local Ollama endpoint at all; admission turned `off`) leave
+    it untouched: there was no door, so the caller's execution metrics must
+    read this as `absent`, not a measured zero-second wait.
     """
+    _gate_t0 = time.monotonic()
+
+    def _mark_wait() -> None:
+        if waited_out is not None:
+            waited_out["waited_s"] = round(max(0.0, time.monotonic() - _gate_t0), 3)
+
     def say(event: Dict[str, Any]) -> None:
         if on_progress:
             try:
@@ -663,16 +678,19 @@ async def admit(endpoint_url: str, model: str, *, owner: str = "",
 
     a = await asyncio.to_thread(assess, root, model)
     if a.get("fits") is None or a.get("already_resident"):
+        _mark_wait()
         return "proceed"  # unknowable, or already using the memory it would ask for
     if a.get("fits") is True:
         need = int(a.get("need_bytes") or a.get("footprint_bytes") or 0)
         budget = int(a.get("budget_alongside_bytes") or 0)
         if need <= 0:
+            _mark_wait()
             return "proceed"  # nothing to reserve for (e.g. a zero-footprint reading)
         reservation_id = try_reserve(root, model, need, budget)
         if reservation_id is not None:
             # Held until assess() next sees `model` resident or RESERVATION_TTL_SECONDS
             # passes (release_reservations_for_model / _expire_reservations_locked).
+            _mark_wait()
             return "proceed"
         # QA-24: this read of "it fits" was true a moment ago; another admit()
         # reserved the room in between. Treat it exactly like "does not fit"
@@ -688,10 +706,12 @@ async def admit(endpoint_url: str, model: str, *, owner: str = "",
         names = list(a.get("suggestion") or [])
         if not names:
             say({"phase": "warning", "message": f"{model} does not fit and nothing can be unloaded to make room."})
+            _mark_wait()
             return "proceed"
         left = await unload_and_wait(root, names, on_progress=on_progress)
         if left:
             say({"phase": "warning", "message": f"Still resident after unload: {', '.join(left)}"})
+        _mark_wait()
         return "proceed"
 
     # mode == "ask": the person decides.
@@ -702,6 +722,7 @@ async def admit(endpoint_url: str, model: str, *, owner: str = "",
             await asyncio.wait_for(t.event.wait(), timeout=timeout or _timeout())
         except asyncio.TimeoutError:
             say({"phase": "error", "message": f"No answer about VRAM for {model}; the load was cancelled."})
+            _mark_wait()
             raise AdmissionCancelled(
                 f"{model} does not fit in VRAM next to what is loaded, and nobody chose what "
                 "to unload in time. Nothing was loaded.")
@@ -709,18 +730,22 @@ async def admit(endpoint_url: str, model: str, *, owner: str = "",
         action = d.get("action")
         if action == "cancel":
             say({"phase": "error", "message": f"Load of {model} cancelled: it does not fit in VRAM."})
+            _mark_wait()
             raise AdmissionCancelled(f"Load of {model} cancelled by {d.get('by') or 'the user'}: "
                                      "it does not fit in VRAM next to what is loaded.")
         if action == "proceed":
             say({"phase": "warning", "message": f"Loading {model} anyway â€” expect it to spill to CPU/PCIe."})
+            _mark_wait()
             return "proceed"
         # unload: the new model waits until the chosen ones are really gone.
         names = list(d.get("names") or [])
         left = await unload_and_wait(root, names, on_progress=on_progress)
         if left:
             say({"phase": "error", "message": f"Could not unload {', '.join(left)}; the load was cancelled."})
+            _mark_wait()
             raise AdmissionCancelled(f"{', '.join(left)} stayed resident after the unload; "
                                      f"{model} was not loaded.")
+        _mark_wait()
         return "proceed"
     finally:
         _forget(t.id)

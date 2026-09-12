@@ -12,7 +12,7 @@ import os
 import math
 from contextlib import asynccontextmanager
 from fastapi import HTTPException
-from typing import Optional, Dict, List, Tuple, Callable, Mapping
+from typing import Any, Optional, Dict, List, Tuple, Callable, Mapping
 from src.model_context import get_context_length, DEFAULT_CONTEXT, is_local_endpoint
 from src.tool_call_assembler import ToolCallAssembler
 from src.retry_policy import (
@@ -128,6 +128,79 @@ def _ollama_rate(count, duration_ns) -> Optional[float]:
     if count <= 0 or duration_ns <= 0:
         return None
     return round(count / (duration_ns / 1_000_000_000), 2)
+
+
+def _finite_number(value: Any) -> Optional[float]:
+    """A plain finite number, or `None` — never coerces a bool, string or
+    NaN/inf into a metric. Shared by the ms/count readers below so a
+    malformed engine field becomes absent instead of a wrong number."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    if not math.isfinite(value):
+        return None
+    return float(value)
+
+
+def _ms_from_ns(value: Any) -> Optional[float]:
+    """Nanoseconds to milliseconds, or `None` for a missing/non-numeric
+    field. Ollama's `done` message reports load/prompt/eval durations in ns
+    (INF-03 §08); a field Ollama did not send must stay `None` (absent),
+    never become 0."""
+    value = _finite_number(value)
+    return round(value / 1_000_000.0, 3) if value is not None else None
+
+
+def _finite_ms(value: Any) -> Optional[float]:
+    """Same numeric guard as `_ms_from_ns`, without the ns→ms conversion —
+    llama.cpp's `timings` block already reports milliseconds."""
+    value = _finite_number(value)
+    return round(value, 3) if value is not None else None
+
+
+def _safe_count(value: Any) -> Optional[int]:
+    """An integral token/eval count, or `None` — a float that is not a
+    whole number (or any non-numeric/bool value) is treated as absent
+    rather than truncated into a wrong count."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    if isinstance(value, float) and (not math.isfinite(value) or not value.is_integer()):
+        return None
+    return int(value)
+
+
+def _ollama_engine_timings(j: dict) -> Dict[str, Any]:
+    """INF-03: Ollama's own per-request phase durations, converted from the
+    nanoseconds `done` reports to milliseconds. `load_duration` and
+    `total_duration` were already on `j` but thrown away — only
+    `eval_count`/`eval_duration`/`prompt_eval_count`/`prompt_eval_duration`
+    were read (for `_ollama_rate` above). This keeps the raw phase
+    breakdown so a client can show *why* a turn took as long as it did, not
+    just its overall throughput. A field Ollama omits stays `None` (absent),
+    never 0 — `_ms_from_ns`/`_safe_count` enforce that."""
+    return {
+        "load_ms": _ms_from_ns(j.get("load_duration")),
+        "prompt_ms": _ms_from_ns(j.get("prompt_eval_duration")),
+        "predicted_ms": _ms_from_ns(j.get("eval_duration")),
+        "total_ms": _ms_from_ns(j.get("total_duration")),
+        "prompt_n": _safe_count(j.get("prompt_eval_count")),
+        "predicted_n": _safe_count(j.get("eval_count")),
+        "source": "ollama",
+    }
+
+
+def _llamacpp_engine_timings(tm: dict) -> Dict[str, Any]:
+    """INF-03: llama.cpp's `timings` block, kept in the same shape as
+    `_ollama_engine_timings` so a client reads one field name regardless of
+    backend. llama.cpp does not report load time per request — `load_ms`
+    stays `None` here always, never guessed from some other figure."""
+    return {
+        "load_ms": None,
+        "prompt_ms": _finite_ms(tm.get("prompt_ms")),
+        "predicted_ms": _finite_ms(tm.get("predicted_ms")),
+        "prompt_n": _safe_count(tm.get("prompt_n")),
+        "predicted_n": _safe_count(tm.get("predicted_n")),
+        "source": "llamacpp",
+    }
 
 
 # What each local model really decodes at, learned from Ollama's own
@@ -4054,6 +4127,14 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                                 )
                                 if _pre_tps:
                                     normalized_usage["prefill_tps"] = _pre_tps
+                                # INF-03: the phase breakdown a "why did it
+                                # take this long" view needs — load/prefill/
+                                # generation in ms, not just the tok/s two
+                                # ratios above already threw away the
+                                # numerator/denominator for. Always present
+                                # once Ollama sent counters at all; any one
+                                # field Ollama omitted stays `None`.
+                                normalized_usage["engine_timings"] = _ollama_engine_timings(j)
                                 _annotate_usage_model(
                                     normalized_usage,
                                     model,
@@ -4703,6 +4784,13 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                                             _usage_data["gen_tps"] = round(_tm["predicted_per_second"], 2)
                                         if _tm.get("prompt_per_second"):
                                             _usage_data["prefill_tps"] = round(_tm["prompt_per_second"], 2)
+                                        # INF-03: the same phase breakdown as the
+                                        # Ollama branch above, from llama.cpp's own
+                                        # `prompt_ms`/`predicted_ms`/`*_n` — these were
+                                        # also being thrown away next to the two rates.
+                                        # `load_ms` stays null: llama.cpp does not
+                                        # report load time per request.
+                                        _usage_data["engine_timings"] = _llamacpp_engine_timings(_tm)
                                     if _actual_model:
                                         _usage_data["model"] = _actual_model
                                         if not _same_model_identity(_actual_model, model):

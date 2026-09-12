@@ -37,6 +37,7 @@ import os
 import re
 from dataclasses import replace
 from typing import Any, Dict, List, Mapping, Optional, Sequence
+from urllib.parse import urlparse
 
 import httpx
 
@@ -110,6 +111,73 @@ def get(session_id: str) -> Optional[LaunchReceipt]:
     if receipt_raw is None:
         return None
     return LaunchReceipt.parse(receipt_raw, "receipt")
+
+
+def find_by_endpoint(host: Optional[str], port: Optional[int]) -> Optional[LaunchReceipt]:
+    """The newest receipt whose `engine.host`/`engine.port` match, or `None`
+    if no managed launch ever recorded one for this endpoint.
+
+    Receipts are stored one file per `session_id`, not indexed by endpoint —
+    INF-03 needs "was THIS host:port launched by Faustus" for a turn's
+    `EngineIdentity` (`managed="faustus"` plus the confirmed implementation,
+    versus an unverified `"external"` guess), and that is rare/cheap enough
+    (a handful of concurrent local launches, not thousands) that a directory
+    scan beats maintaining a second index that could drift from the receipt
+    files themselves. Best-effort: an unreadable receipt is skipped, never
+    raised — this is a courtesy lookup for a metrics label, not a source of
+    truth callers depend on being complete."""
+    if not host or not port:
+        return None
+    try:
+        names = [n for n in os.listdir(RECEIPTS_DIR) if n.endswith(".json")]
+    except OSError:
+        return None
+    best: Optional[LaunchReceipt] = None
+    for name in names:
+        session_id = name[:-len(".json")]
+        try:
+            receipt = get(session_id)
+        except LaunchReceiptError:
+            continue
+        if receipt is None or receipt.engine.host != host or receipt.engine.port != port:
+            continue
+        if best is None or (receipt.created_at or "") > (best.created_at or ""):
+            best = receipt
+    return best
+
+
+def identity_for_endpoint(
+    endpoint_url: str, *, implementation_hint: Optional[str] = None,
+) -> Optional[EngineIdentity]:
+    """`EngineIdentity` for a turn's execution metrics (INF-03).
+
+    A Faustus-managed launch's receipt, matched by host:port, wins outright
+    — it carries the confirmed implementation/version/session_id INF-01/02
+    already verified, not a guess. Failing that, `implementation_hint` (what
+    the SSE stream itself told the caller — currently only `"ollama"`, from
+    `engine_timings["source"]` in `src/llm_core.py`) becomes an `"external"`
+    identity. Any other hint — including `"llamacpp"`, which cannot
+    distinguish the native `llama-server` binary from the `llama_cpp.server`
+    Python wrapper without a receipt (§06 H04) — returns `None` rather than
+    guess at one of `IMPLEMENTATIONS`'s two llama.cpp entries; so does a
+    cloud OpenAI-compatible endpoint, which has no vocabulary entry at all.
+    """
+    try:
+        parsed = urlparse(endpoint_url or "")
+    except ValueError:
+        return None
+    host = parsed.hostname or None
+    port = parsed.port
+    if host and port:
+        try:
+            receipt = find_by_endpoint(host, port)
+        except Exception:  # noqa: BLE001 - a metrics label must never break a turn
+            receipt = None
+        if receipt is not None:
+            return receipt.engine
+    if implementation_hint != "ollama":
+        return None
+    return EngineIdentity(implementation="ollama", host=host, port=port, managed="external")
 
 
 def record(

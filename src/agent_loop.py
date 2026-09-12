@@ -4487,6 +4487,12 @@ def _compute_final_metrics(
     prep_timings: Optional[Dict[str, float]] = None,
     backend_gen_tps: float = 0,
     backend_prefill_tps: float = 0,
+    started_monotonic: Optional[float] = None,
+    first_token_monotonic: Optional[float] = None,
+    finished_monotonic: Optional[float] = None,
+    queue_wait_s: Optional[float] = None,
+    engine_timings: Optional[Dict[str, Any]] = None,
+    engine: Optional["EngineIdentity"] = None,
 ) -> dict:
     """Compute token counts, TPS, and build the final metrics dict."""
     if has_real_usage:
@@ -4554,6 +4560,31 @@ def _compute_final_metrics(
         metrics["round_models"] = list(round_models or [])
         metrics["round_endpoint_ids"] = list(round_endpoint_ids or [])
         metrics["round_endpoint_labels"] = list(round_endpoint_labels or [])
+    # INF-03: the "why did it take this long" breakdown, built from the
+    # SAME clock readings/usage the fields above already used — never a
+    # second, possibly-disagreeing measurement. Only attempted when the
+    # caller actually supplied monotonic timestamps (a direct call from a
+    # test, or any future caller that skips them, simply gets no `execution`
+    # key at all — additive, never a required field).
+    if started_monotonic is not None and finished_monotonic is not None:
+        try:
+            from src.execution_metrics import build_execution_metrics
+            metrics["execution"] = build_execution_metrics(
+                started_monotonic=started_monotonic,
+                first_token_monotonic=first_token_monotonic,
+                finished_monotonic=finished_monotonic,
+                queue_wait_s=queue_wait_s,
+                tool_events=tool_events,
+                engine_timings=engine_timings,
+                usage_tokens={
+                    "prompt": input_tokens,
+                    "generated": output_tokens,
+                    "source": "reported_engine" if has_real_usage else "computed",
+                },
+                engine=engine,
+            ).to_dict()
+        except Exception:  # noqa: BLE001 - a metrics breakdown must never cost the turn
+            logger.debug("[execution-metrics] agent-loop build failed", exc_info=True)
     return metrics
 
 
@@ -6658,7 +6689,10 @@ async def _stream_agent_loop_body(
 
     full_response = ""
     total_start = time.time()
+    total_start_monotonic = time.monotonic()  # INF-03: execution metrics' clock
     time_to_first_token = None
+    first_token_monotonic = None  # INF-03: mirrors time_to_first_token, monotonic
+    _last_engine_timings: Optional[Dict[str, Any]] = None  # INF-03: from the latest `usage` event
     first_token_received = False
     tool_events = []   # Persist tool executions for history reload
     round_texts = []   # Cleaned text per round for history reload
@@ -7034,6 +7068,8 @@ async def _stream_agent_loop_body(
         async def _push_approved_progress(payload):
             await approved_progress_q.put(payload)
 
+        _approved_tool_t0 = time.monotonic()
+
         async def _run_approved_tool():
             try:
                 return await execute_tool_block(
@@ -7078,6 +7114,7 @@ async def _stream_agent_loop_body(
                     + "\n\n"
                 )
             desc, approved_result = await approved_tool_task
+            _approved_tool_duration_ms = round(max(0.0, (time.monotonic() - _approved_tool_t0) * 1000.0), 1)
             # Destructive command guard: the user approved this sealed
             # DANGEROUS/CRITICAL command, so stamp the verdict (and the
             # checkpoint that preceded it) into the result metadata and the
@@ -7240,6 +7277,8 @@ async def _stream_agent_loop_body(
             "approved": True,
             "approval_digest": approved.digest[:16],
             "call_id": _approved_call_id,
+            # INF-03: this call's own observed wall-clock duration.
+            "duration_ms": _approved_tool_duration_ms,
         }
         for key in (
             "image_url",
@@ -8039,6 +8078,12 @@ async def _stream_agent_loop_body(
                             backend_gen_tps = u["gen_tps"]
                         if u.get("prefill_tps"):
                             backend_prefill_tps = u["prefill_tps"]
+                        # INF-03: the engine's own phase breakdown, when it
+                        # sent one (src/llm_core.py). Keep the last round's —
+                        # same "last round's value" convention as the two
+                        # rates just above.
+                        if isinstance(u.get("engine_timings"), dict):
+                            _last_engine_timings = u["engine_timings"]
                     elif data.get("type") == "fallback":
                         # The selected model failed and another answered; surface
                         # the notice so a misconfigured provider isn't masked.
@@ -8180,6 +8225,7 @@ async def _stream_agent_loop_body(
                             yield f'data: {json.dumps({"type": "compacted", "context_length": _last_route_context_length})}\n\n'
                         if not first_token_received:
                             time_to_first_token = time.time() - total_start
+                            first_token_monotonic = time.monotonic()
                             first_token_received = True
                         if not _round_first_token_logged:
                             _round_first_token_logged = True
@@ -9330,6 +9376,13 @@ async def _stream_agent_loop_body(
         # and every other per-tool code path (approval, checkpoint, ledger,
         # SSE events) are unaffected.
         _prefetched: Dict[int, Tuple[str, Dict[str, Any]]] = {}
+        # INF-03: each prefetched call's own observed wall-clock duration,
+        # keyed the same way — `execute_tool_block`'s returned dict is a
+        # frozen contract (CALL-05: byte-for-byte what the tool itself
+        # returned, tests/test_l62_call05_tool_result.py), so the timing
+        # rides beside it here instead of inside it, and is folded onto the
+        # persisted `tool_event` below once this call's index is served.
+        _prefetched_duration_ms: Dict[int, float] = {}
         try:
             _parallel_cap = int(get_setting("agent_parallel_read_group_size", 4) or 0)
         except (TypeError, ValueError):
@@ -9366,7 +9419,8 @@ async def _stream_agent_loop_body(
             if len(_group_idx) >= 2:
                 async def _run_prefetched(idx: int):
                     _blk = tool_blocks[idx]
-                    return idx, await execute_tool_block(
+                    _pt0 = time.monotonic()
+                    _pres = await execute_tool_block(
                         _blk,
                         session_id=session_id,
                         disabled_tools=disabled_tools,
@@ -9383,6 +9437,8 @@ async def _stream_agent_loop_body(
                             "turn_id": _context_turn_id,
                         },
                     )
+                    _prefetched_duration_ms[idx] = round(max(0.0, (time.monotonic() - _pt0) * 1000.0), 1)
+                    return idx, _pres
                 logger.info(
                     "[agent] round %s: %d independent read(s) run in parallel: %s",
                     round_num, len(_group_idx),
@@ -9401,6 +9457,12 @@ async def _stream_agent_loop_body(
             # native id, so the two never disagree about what a call is called.
             _native_tc = converted_calls[i] if i < len(converted_calls) and isinstance(converted_calls[i], dict) else None
             _call_id = str((_native_tc or {}).get("id") or f"call_{round_num}_{i}")
+            # INF-03: this call's observed wall-clock duration, when one of
+            # the branches below actually executes a tool (reset every
+            # iteration — a denied/blocked/approval-pending call must never
+            # inherit a previous call's timing just because this variable
+            # name is shared across the loop body).
+            _tool_duration_ms: Optional[float] = None
             # --- Tool budget check ---
             if max_tool_calls > 0 and total_tool_calls >= max_tool_calls:
                 yield f'data: {json.dumps({"type": "budget_exceeded", "limit": max_tool_calls, "used": total_tool_calls})}\n\n'
@@ -9629,7 +9691,9 @@ async def _stream_agent_loop_body(
                     # result it would have gotten here; just no per-tool
                     # progress stream for it (reads don't emit one anyway).
                     desc, result = _prefetched.pop(i)
+                    _tool_duration_ms = _prefetched_duration_ms.pop(i, None)
                 else:
+                    _tool_call_t0 = time.monotonic()
                     # Streaming progress for long-running tools (bash, python).
                     # The bash/python branches inside _direct_fallback emit
                     # periodic {elapsed_s, tail} payloads via this callback;
@@ -9674,6 +9738,7 @@ async def _stream_agent_loop_body(
                                 f'data: {json.dumps({"type": "tool_progress", "tool": block.tool_type, "round": round_num, "call_id": _call_id, **evt})}\n\n'
                             )
                         desc, result = await _tool_task
+                        _tool_duration_ms = round(max(0.0, (time.monotonic() - _tool_call_t0) * 1000.0), 1)
                     finally:
                         # If the SSE client disconnects (or this generator is
                         # otherwise closed) while we're awaiting a progress event
@@ -10208,6 +10273,12 @@ async def _stream_agent_loop_body(
                 # produced it.
                 "call_id": _call_id,
             }
+            # INF-03: the call's own observed wall-clock duration, when this
+            # iteration actually ran a tool (absent — no key at all — for a
+            # denied/blocked/approval-pending call, which never executed
+            # anything to time).
+            if _tool_duration_ms is not None:
+                tool_event["duration_ms"] = _tool_duration_ms
             # CALL-02/CALL-03: persist the same argument-check annotation the
             # live tool_output carried, so a history reload shows it too.
             if result.get("argument_errors"):
@@ -10607,7 +10678,24 @@ async def _stream_agent_loop_body(
 
     # --- Final metrics ---
     total_duration = time.time() - total_start
+    finished_monotonic = time.monotonic()
     final_context_tokens = estimate_tokens(messages)
+    # INF-03: EngineIdentity for the execution breakdown below — a
+    # Faustus-managed launch's receipt if one matches this host:port,
+    # otherwise an "external" guess from what the usage event itself said
+    # (only "ollama" is ever asserted this way; see identity_for_endpoint's
+    # docstring for why llama.cpp and cloud endpoints are left `None`).
+    _turn_engine_identity = None
+    try:
+        from src import launch_receipts as _launch_receipts
+        _turn_engine_identity = _launch_receipts.identity_for_endpoint(
+            endpoint_url,
+            implementation_hint=(
+                "ollama" if (_last_engine_timings or {}).get("source") == "ollama" else None
+            ),
+        )
+    except Exception:
+        logger.debug("[execution-metrics] engine identity lookup failed", exc_info=True)
     metrics = _compute_final_metrics(
         _last_route_request_messages, full_response, total_duration, time_to_first_token,
         _last_route_context_length, real_input_tokens, real_output_tokens,
@@ -10620,6 +10708,16 @@ async def _stream_agent_loop_body(
         prep_timings=prep_timings,
         backend_gen_tps=backend_gen_tps,
         backend_prefill_tps=backend_prefill_tps,
+        started_monotonic=total_start_monotonic,
+        first_token_monotonic=first_token_monotonic,
+        finished_monotonic=finished_monotonic,
+        # No admission gate is wired into the agent-tool path today (only
+        # routes/chat_routes.py's plain-chat stream calls vram_admission.admit)
+        # — absent, never a fabricated zero wait. See this lote's report for
+        # the gap this leaves.
+        queue_wait_s=None,
+        engine_timings=_last_engine_timings,
+        engine=_turn_engine_identity,
     )
     metrics["requested_model"] = requested_model
     metrics["endpoint_id"] = actual_endpoint_id
@@ -10675,6 +10773,8 @@ async def _stream_agent_loop_body(
         if _harness_enabled and not _is_teacher_run and (workspace or _ledger.events):
             try:
                 from src import scorecard as _scorecard
+                _turn_execution = metrics.get("execution") or {}
+                _turn_engine_dict = _turn_execution.get("engine")
                 _scorecard.record(_scorecard.build_entry(
                     session_id=session_id, model=str(actual_model or model),
                     endpoint_label=actual_endpoint_label, workspace=workspace or None,
@@ -10683,6 +10783,12 @@ async def _stream_agent_loop_body(
                     tokens_per_second=metrics.get("tokens_per_second"),
                     output_tokens=metrics.get("output_tokens"),
                     asked_user=bool(_hsum.get("asked_user")), task_tag=_hopts.get("task_tag"),
+                    # INF-03: link this row to the engine/launch/phase
+                    # breakdown the same turn's `execution` metrics already
+                    # established, instead of a second measurement.
+                    engine=_turn_engine_dict,
+                    serve_session_id=(_turn_engine_dict or {}).get("session_id"),
+                    phases=_turn_execution.get("phases"),
                 ))
             except Exception as _sc_err:
                 logger.debug("[scorecard] record failed: %s", _sc_err)

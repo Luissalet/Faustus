@@ -7104,3 +7104,16 @@ Verify now	Verificar ahora
 engine does not expose this	el motor no expone esto
 {n} option is unsupported for this implementation.	{n} opción no es compatible con esta implementación.
 {n} options are unsupported for this implementation.	{n} opciones no son compatibles con esta implementación.
+Generated tokens	Tokens generados
+Generation	Generación
+Loading the model	Cargando el modelo
+Model load	Carga del modelo
+Prefill	Prefill
+Prompt tokens	Tokens del prompt
+Queue wait	Espera en cola
+The engine does not expose this metric	El motor no expone esta métrica
+Waiting for capacity	Esperando capacidad
+Why did it take this long?	¿Por qué ha tardado tanto?
+engine	motor
+{n} ms	{n} ms
+{n} s	{n} s

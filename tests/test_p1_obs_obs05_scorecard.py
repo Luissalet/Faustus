@@ -78,6 +78,87 @@ def test_aggregate_by_default_key_matches_plain_aggregate_when_one_endpoint():
     assert grouped == plain
 
 
+# ── INF-03: engine / serve_session_id / hardware_profile_id / phases ───────
+
+def test_build_entry_stores_engine_as_a_flat_implementation_string():
+    e = sc.build_entry(
+        session_id="s1", model="qwen3.5:9b", endpoint_label="local",
+        workspace="/tmp/ws", user_text="fix it", duration_s=1.0, rounds=1,
+        harness={"stop_reason": "complete", "tool_calls": 1, "failed_calls": 0, "mutations": []},
+        engine={"implementation": "ollama", "version": "0.5.1", "host": "127.0.0.1"},
+        serve_session_id="serve-aaaaaaaa",
+        phases={"total_ms": {"value": 900.0, "source": "observed_client"}},
+    )
+    assert e["engine"] == "ollama"
+    assert e["engine_version"] == "0.5.1"
+    assert e["serve_session_id"] == "serve-aaaaaaaa"
+    assert e["phases"]["total_ms"]["value"] == 900.0
+
+
+def test_build_entry_omits_the_new_fields_when_not_given():
+    e = sc.build_entry(
+        session_id="s1", model="qwen3.5:9b", endpoint_label="local",
+        workspace="/tmp/ws", user_text="fix it", duration_s=1.0, rounds=1,
+        harness={"stop_reason": "complete", "tool_calls": 1, "failed_calls": 0, "mutations": []},
+    )
+    assert "engine" not in e
+    assert "engine_version" not in e
+    assert "serve_session_id" not in e
+    assert "hardware_profile_id" not in e
+    assert "phases" not in e
+
+
+def test_old_entries_without_the_new_fields_still_load_and_aggregate(data_dir):
+    # An entry written before INF-03 existed -- exactly build_entry's own
+    # shape minus the new optional keys, never a hand-rolled dict standing
+    # in for one that predates this lote.
+    old = _entry("qwen3.5:9b", endpoint="local")
+    assert "engine" not in old
+    sc.record(old)
+    loaded = sc.load()
+    assert len(loaded) == 1
+    rows = sc.aggregate(loaded)
+    assert rows[0]["turns"] == 1
+
+
+def test_aggregate_by_engine_groups_rows_by_implementation():
+    entries = [
+        _entry("qwen3.5:9b", duration=2.0),
+        _entry("qwen3.5:9b", duration=2.0),
+        _entry("qwen3.5:9b", duration=8.0),
+    ]
+    entries[0]["engine"] = "ollama"
+    entries[1]["engine"] = "ollama"
+    entries[2]["engine"] = "llama-server"
+    rows = sc.aggregate_by(entries, key_fields=("model", "engine"))
+    by_engine = {r["engine"]: r for r in rows}
+    assert set(by_engine) == {"ollama", "llama-server"}
+    assert by_engine["ollama"]["avg_duration_s"] == 2.0
+    assert by_engine["llama-server"]["avg_duration_s"] == 8.0
+
+
+def test_aggregate_by_engine_groups_entries_missing_it_under_unknown():
+    entries = [_entry("qwen3.5:9b"), _entry("qwen3.5:9b")]
+    entries[0]["engine"] = "ollama"
+    # entries[1] has no "engine" at all -- a pre-INF-03 row.
+    rows = sc.aggregate_by(entries, key_fields=("model", "engine"))
+    by_engine = {r["engine"]: r for r in rows}
+    assert set(by_engine) == {"ollama", "?"}
+
+
+def test_aggregate_by_serve_session_id_splits_restarts_of_the_same_endpoint():
+    entries = [
+        _entry("qwen3.5:9b", duration=3.0),
+        _entry("qwen3.5:9b", duration=9.0),
+    ]
+    entries[0]["serve_session_id"] = "serve-aaaaaaaa"
+    entries[1]["serve_session_id"] = "serve-bbbbbbbb"
+    rows = sc.aggregate_by(entries, key_fields=("model", "serve_session_id"))
+    by_session = {r["serve_session_id"]: r for r in rows}
+    assert by_session["serve-aaaaaaaa"]["avg_duration_s"] == 3.0
+    assert by_session["serve-bbbbbbbb"]["avg_duration_s"] == 9.0
+
+
 # ── regression_flags ─────────────────────────────────────────────────────
 
 

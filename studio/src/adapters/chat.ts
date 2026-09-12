@@ -118,6 +118,65 @@ export interface HistoryMessage {
   index: number;
 }
 
+/**
+ * INF-03: mirrors `src/contracts/inference.py`'s `ExecutionMetrics` wire
+ * shape exactly (`docs/api/execution_metrics.md`). Every phase and token
+ * count is a `MetricValue`, never a bare number: the whole point is that a
+ * reader can tell "the engine reported 900ms" (`reported_engine`) apart
+ * from "Faustus guessed 900ms from two of its own timestamps" (`computed`)
+ * apart from "nobody knows" (`absent`, `value: null`) — collapsing any of
+ * those into a plain number is exactly the ambiguity this contract exists
+ * to remove. See `metricsFrom`/`executionMetricsFrom` below for parsing and
+ * `timelineBars` for the pure view-model a timeline draws from.
+ */
+export type MetricSource = 'observed_client' | 'reported_engine' | 'computed' | 'inferred' | 'absent';
+
+export interface MetricValue {
+  value: number | null;
+  source: MetricSource;
+}
+
+export type PhaseKey = 'queue_wait_ms' | 'load_ms' | 'prefill_ms' | 'generation_ms' | 'tools_ms' | 'total_ms';
+
+export interface ExecutionPhases {
+  queueWaitMs: MetricValue;
+  loadMs: MetricValue;
+  prefillMs: MetricValue;
+  generationMs: MetricValue;
+  toolsMs: MetricValue;
+  totalMs: MetricValue;
+}
+
+export interface ExecutionTokens {
+  prompt: MetricValue;
+  generated: MetricValue;
+}
+
+export interface EngineIdentity {
+  implementation: string;
+  version?: string;
+  build?: string;
+  platform?: string;
+  host?: string;
+  port?: number;
+  managed: string;
+  generation: number;
+  sessionId?: string;
+}
+
+export interface ExecutionMetrics {
+  schemaVersion: number;
+  phases: ExecutionPhases;
+  tokens: ExecutionTokens;
+  scope: string;
+  engine: EngineIdentity | null;
+  observedAt: string | null;
+  /** Free-text caveats, e.g. "phases overlap: engine and client clocks are
+   *  not additive" — always shown verbatim, never re-derived from the
+   *  phase values (see `docs/api/execution_metrics.md`). */
+  notes: string[];
+}
+
 export interface TurnMetrics {
   model?: string;
   responseTime?: number;
@@ -128,6 +187,12 @@ export interface TurnMetrics {
    *  turn's wall clock, which also divides by prefill and tool time. */
   tpsSource?: 'backend' | 'computed';
   contextPercent?: number;
+  /** INF-03: `metrics.execution` — the per-phase "why did it take this
+   *  long" breakdown, same key on the `metrics` SSE event's `data` and on
+   *  a saved response's `metadata` (`_compute_final_metrics` stamps both
+   *  from the same dict). Undefined on any turn built before this lote, or
+   *  any call site that never supplied the clocks it needs. */
+  execution?: ExecutionMetrics;
 }
 
 export interface AskOption {
@@ -503,6 +568,79 @@ function errorTraceFields(raw: Record<string, unknown>): {
   };
 }
 
+const METRIC_SOURCES = new Set<MetricSource>(['observed_client', 'reported_engine', 'computed', 'inferred', 'absent']);
+
+/**
+ * One `{"value": number|null, "source"}` off the wire. Defensive beyond
+ * what the server already guarantees (`src/contracts/inference.py`): an
+ * unrecognised or missing `source`, or a non-finite `value`, degrades to
+ * `absent` rather than being trusted half-parsed — and `value` is forced
+ * back to `null` whenever `source` ends up `absent`, so nothing downstream
+ * can end up drawing a bar for a value that was never actually observed.
+ */
+function metricValueFrom(raw: unknown): MetricValue {
+  const r = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+  const value = typeof r.value === 'number' && Number.isFinite(r.value) ? r.value : null;
+  const rawSource = typeof r.source === 'string' ? r.source : 'absent';
+  const source: MetricSource = METRIC_SOURCES.has(rawSource as MetricSource) ? (rawSource as MetricSource) : 'absent';
+  return source === 'absent' || value === null ? { value: null, source: 'absent' } : { value, source };
+}
+
+function phasesFrom(raw: unknown): ExecutionPhases {
+  const r = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+  return {
+    queueWaitMs: metricValueFrom(r.queue_wait_ms),
+    loadMs: metricValueFrom(r.load_ms),
+    prefillMs: metricValueFrom(r.prefill_ms),
+    generationMs: metricValueFrom(r.generation_ms),
+    toolsMs: metricValueFrom(r.tools_ms),
+    totalMs: metricValueFrom(r.total_ms),
+  };
+}
+
+function tokensFrom(raw: unknown): ExecutionTokens {
+  const r = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+  return { prompt: metricValueFrom(r.prompt), generated: metricValueFrom(r.generated) };
+}
+
+function engineIdentityFrom(raw: unknown): EngineIdentity | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  const implementation = str(r.implementation);
+  if (!implementation) return null;
+  return {
+    implementation,
+    version: str(r.version) || undefined,
+    build: str(r.build) || undefined,
+    platform: str(r.platform) || undefined,
+    host: str(r.host) || undefined,
+    port: num(r.port),
+    managed: str(r.managed, 'faustus'),
+    generation: num(r.generation) ?? 1,
+    sessionId: str(r.session_id) || undefined,
+  };
+}
+
+/**
+ * `meta.execution` (the SSE `metrics` event's `data.execution`, or the same
+ * key on a saved response's `metadata` — same dict, see `TurnMetrics.
+ * execution`'s doc comment) into the mirrored `ExecutionMetrics` shape.
+ * `undefined` for anything older or malformed — additive, never required.
+ */
+export function executionMetricsFrom(raw: unknown): ExecutionMetrics | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const r = raw as Record<string, unknown>;
+  return {
+    schemaVersion: num(r.schema_version) ?? 1,
+    phases: phasesFrom(r.phases),
+    tokens: tokensFrom(r.tokens),
+    scope: str(r.scope),
+    engine: engineIdentityFrom(r.engine),
+    observedAt: str(r.observed_at) || null,
+    notes: asArray<unknown>(r.notes).map(String).filter(Boolean),
+  };
+}
+
 export function metricsFrom(meta: Record<string, unknown>): TurnMetrics {
   return {
     model: str(meta.model) || undefined,
@@ -512,7 +650,95 @@ export function metricsFrom(meta: Record<string, unknown>): TurnMetrics {
     tokensPerSecond: num(meta.tokens_per_second),
     tpsSource: meta.tps_source === 'backend' ? 'backend' : meta.tps_source === 'computed' ? 'computed' : undefined,
     contextPercent: num(meta.context_percent),
+    execution: executionMetricsFrom(meta.execution),
   };
+}
+
+const PHASE_DEFS: ReadonlyArray<{ phase: PhaseKey; get: (p: ExecutionPhases) => MetricValue }> = [
+  { phase: 'queue_wait_ms', get: (p) => p.queueWaitMs },
+  { phase: 'load_ms', get: (p) => p.loadMs },
+  { phase: 'prefill_ms', get: (p) => p.prefillMs },
+  { phase: 'generation_ms', get: (p) => p.generationMs },
+  { phase: 'tools_ms', get: (p) => p.toolsMs },
+  { phase: 'total_ms', get: (p) => p.totalMs },
+];
+
+/** Every phase whose duration can, in principle, overlap another rather
+ *  than run strictly after it (`docs/api/execution_metrics.md` — the same
+ *  three `_coherence_notes` in `src/execution_metrics.py` sums). */
+const OVERLAPPING_PHASES: readonly PhaseKey[] = ['prefill_ms', 'generation_ms', 'tools_ms'];
+
+/** Guards against float rounding flagging phases that sum to within a
+ *  millisecond of `total_ms` — mirrors `src/execution_metrics.py`'s own
+ *  `_OVERLAP_EPSILON_MS`, not a second, independently-tuned threshold. */
+const OVERLAP_EPSILON_MS = 1;
+
+export interface TimelineBar {
+  phase: PhaseKey;
+  valueMs: number;
+  /** Never `absent` — a phase with that source never becomes a bar; see
+   *  `absentPhases` instead. */
+  source: 'observed_client' | 'reported_engine' | 'computed' | 'inferred';
+  /** Relative to `total_ms`, NOT clamped to 100 — a phase that legitimately
+   *  overlapped another (see `overlap`) can read over 100%, and rescaling
+   *  it down to fit would quietly invent a precision the clocks do not
+   *  have. A renderer may cap the drawn box's width for layout sanity, but
+   *  must keep showing the true `valueMs` and must not use this field to
+   *  "correct" that number. */
+  widthPercent: number;
+}
+
+export interface Timeline {
+  bars: TimelineBar[];
+  /** Phase keys with no bar, in the same fixed order as `bars` would use —
+   *  `absent` never draws, not even a zero-length one (see `MetricValue`'s
+   *  doc comment: a zero-width bar reads as "0ms", which is a different,
+   *  false claim from "not observed"). */
+  absentPhases: PhaseKey[];
+  /** `prefill + generation + tools` exceeds `total` (by more than
+   *  `OVERLAP_EPSILON_MS`) — the phases are not additive, never corrected
+   *  by shrinking one to fit. Independent of `notes`: this is recomputed
+   *  from the same phases a caller already has, not merely a check for
+   *  whether the server's own note string is present. */
+  overlap: boolean;
+  notes: string[];
+  tokens: ExecutionTokens;
+  engine: EngineIdentity | null;
+}
+
+/**
+ * `ExecutionMetrics` → the pure view-model a "why did it take this long"
+ * timeline draws from: one bar per non-`absent` phase (width scaled to
+ * `total_ms`), the phases that have no bar at all, and whether the
+ * observed phases overlap. No `t()`/formatting here — this stays a plain
+ * adapter helper (`studio/checks/execution_timeline.check.mjs`,
+ * `tests/test_inf03_timeline_js.py`) so a component can test its labels and
+ * this can be tested without one.
+ */
+export function timelineBars(execution: ExecutionMetrics): Timeline {
+  const { phases } = execution;
+  const totalMv = phases.totalMs;
+  const totalValue = totalMv.value ?? 0;
+
+  const bars: TimelineBar[] = [];
+  const absentPhases: PhaseKey[] = [];
+  for (const { phase, get } of PHASE_DEFS) {
+    const mv = get(phases);
+    if (mv.source === 'absent' || mv.value === null) {
+      absentPhases.push(phase);
+      continue;
+    }
+    const widthPercent = totalValue > 0 ? (mv.value / totalValue) * 100 : mv.value > 0 ? 100 : 0;
+    bars.push({ phase, valueMs: mv.value, source: mv.source, widthPercent });
+  }
+
+  const summed = OVERLAPPING_PHASES.reduce((acc, phase) => {
+    const mv = PHASE_DEFS.find((d) => d.phase === phase)!.get(phases);
+    return mv.source === 'absent' || mv.value === null ? acc : acc + mv.value;
+  }, 0);
+  const overlap = totalMv.source !== 'absent' && totalMv.value !== null && summed > totalMv.value + OVERLAP_EPSILON_MS;
+
+  return { bars, absentPhases, overlap, notes: execution.notes, tokens: execution.tokens, engine: execution.engine };
 }
 
 /* ── Sessions ── */

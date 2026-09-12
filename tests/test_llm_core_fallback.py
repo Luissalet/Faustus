@@ -930,7 +930,7 @@ def test_provider_adapters_ignore_absurd_usage_without_losing_output(
 
 
 @pytest.mark.parametrize(
-    ("url", "reported_model", "lines"),
+    ("url", "reported_model", "lines", "expected_extra"),
     [
         (
             "https://chatgpt.com/backend-api/codex/responses",
@@ -952,6 +952,7 @@ def test_provider_adapters_ignore_absurd_usage_without_losing_output(
                     },
                 }),
             ],
+            {},
         ),
         (
             "http://localhost:11434/api/chat",
@@ -963,6 +964,16 @@ def test_provider_adapters_ignore_absurd_usage_without_losing_output(
                 "prompt_eval_count": 4,
                 "eval_count": 1,
             })],
+            # INF-03: Ollama's `done` always carries `engine_timings` once it
+            # reported any counters at all — every duration field this fake
+            # `done` omitted (load/prompt/eval durations) stays `None`
+            # (absent), never 0; `prompt_n`/`predicted_n` mirror the counts
+            # above.
+            {"engine_timings": {
+                "load_ms": None, "prompt_ms": None, "predicted_ms": None,
+                "total_ms": None, "prompt_n": 4, "predicted_n": 1,
+                "source": "ollama",
+            }},
         ),
         (
             "https://api.anthropic.com/v1/messages",
@@ -985,6 +996,7 @@ def test_provider_adapters_ignore_absurd_usage_without_losing_output(
                 }),
                 "data: " + json.dumps({"type": "message_stop"}),
             ],
+            {},
         ),
     ],
 )
@@ -993,6 +1005,7 @@ def test_native_stream_adapters_report_actual_model_and_usage(
     url,
     reported_model,
     lines,
+    expected_extra,
 ):
     chunks = _run_provider_stream(monkeypatch, url, lines)
     model_events = [
@@ -1016,6 +1029,7 @@ def test_native_stream_adapters_report_actual_model_and_usage(
         "output_tokens": 1,
         "model": reported_model,
         "requested_model": "configured-model",
+        **expected_extra,
     }]
     assert any('"delta": "ok"' in chunk for chunk in chunks)
     assert "data: [DONE]\n\n" in chunks

@@ -13,6 +13,10 @@ export {
   type ExecutionTraceProps,
   type TraceStep,
 } from './ExecutionTrace';
+export {
+  ExecutionTimeline,
+  type ExecutionTimelineProps,
+} from './ExecutionTimeline';
 export { Toast } from './Toast';
 export { MermaidView, type MermaidViewProps } from './MermaidView';
 export {

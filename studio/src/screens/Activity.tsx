@@ -1055,6 +1055,13 @@ export function ActivityScreen() {
 
               {current.kind === 'chat' && current.chat && (
                 <>
+                  {/* INF-03: no `ExecutionTimeline` here — `current.chat.progress`
+                      is a live run's in-flight phase, never a finished turn's
+                      `metrics.execution`; see `adapters/activity.ts`'s doc
+                      comment on `ActivityRun.chat` for why (no listing this
+                      screen reads returns that per-turn metadata today). The
+                      "why did it take this long?" breakdown lives on the turn
+                      itself, in Studio's own transcript. */}
                   <p className="fs-act__chat-phase" role="status">{current.detail}</p>
                   <p className="fs-prose">{current.status === 'waiting'
                     ? t('Open this conversation to review and answer its permission request.')

@@ -1068,3 +1068,136 @@
   max-block-size: 50vh;
   overflow-y: auto;
 }
+
+/* ══ ExecutionTimeline — INF-03 "why did it take this long?" ═══════════
+   One row per phase, a track/badge pair per row, same grid shape as the
+   Context ledger's own bars (studio.css .fs-ctx) so the two disclosures
+   read as one family. `absent` phases get no track at all (see the
+   component's own doc comment on why a zero-length bar would lie). */
+
+.fs-timeline {
+  padding: var(--fs-space-2) var(--fs-space-3);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-panel);
+  background: color-mix(in srgb, var(--fs-surface-1) 55%, transparent);
+  font-size: var(--fs-label-size);
+}
+
+.fs-timeline[data-overlap] {
+  border-color: color-mix(in srgb, var(--fs-warning) 45%, var(--fs-border));
+}
+
+.fs-timeline > summary {
+  display: flex;
+  align-items: baseline;
+  gap: var(--fs-space-2);
+  cursor: pointer;
+  list-style: none;
+  color: var(--fs-text-2);
+}
+
+.fs-timeline > summary::-webkit-details-marker {
+  display: none;
+}
+
+.fs-timeline__title {
+  font-weight: var(--fs-label-weight);
+  letter-spacing: 0.02em;
+}
+
+.fs-timeline__rows {
+  display: grid;
+  gap: var(--fs-space-1);
+  margin: var(--fs-space-2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fs-timeline--compact .fs-timeline__rows {
+  margin-block-start: 0;
+}
+
+.fs-timeline__rows li {
+  display: grid;
+  grid-template-columns: minmax(0, 10em) minmax(48px, 1fr) 4.2em auto;
+  align-items: center;
+  gap: var(--fs-space-2);
+  color: var(--fs-text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.fs-timeline__rows li.fs-timeline__row--absent {
+  grid-template-columns: minmax(0, 10em) 1fr;
+  color: var(--fs-text-3);
+}
+
+.fs-timeline__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fs-timeline__track {
+  display: block;
+  block-size: 5px;
+  border-radius: var(--fs-radius-pill);
+  background: color-mix(in srgb, var(--fs-text-3) 22%, transparent);
+  overflow: hidden;
+}
+
+.fs-timeline__track > span {
+  display: block;
+  block-size: 100%;
+  border-radius: inherit;
+  background: var(--fs-brand);
+}
+
+.fs-timeline__value {
+  text-align: end;
+}
+
+.fs-timeline__badge {
+  padding-inline: var(--fs-space-2);
+  border-radius: var(--fs-radius-pill);
+  background: var(--fs-surface-3);
+  color: var(--fs-text-3);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.fs-timeline__absent {
+  font-style: italic;
+}
+
+.fs-timeline__notes {
+  margin: var(--fs-space-2) 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--fs-warning);
+  line-height: 1.45;
+}
+
+.fs-timeline__tokens {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fs-space-2) var(--fs-space-4);
+  margin: var(--fs-space-2) 0 0;
+  color: var(--fs-text-3);
+}
+
+.fs-timeline__tokens > div {
+  display: flex;
+  gap: var(--fs-space-1);
+}
+
+.fs-timeline__tokens dt::after {
+  content: ':';
+}
+
+.fs-timeline__tokens dt,
+.fs-timeline__tokens dd {
+  margin: 0;
+}

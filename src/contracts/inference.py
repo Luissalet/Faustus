@@ -682,9 +682,16 @@ class ExecutionMetrics:
     scope: str
     engine: Optional[EngineIdentity] = None
     observed_at: Optional[str] = None
+    #: Free-text caveats a caller could not express as a `MetricValue.source`
+    #: — e.g. "phases overlap: engine and client clocks are not additive"
+    #: when prefill+generation+tools exceeds total (never silently corrected),
+    #: or why a phase was marked `inferred` rather than `computed`. Empty by
+    #: far the common case; never inferred back out of the phase values by a
+    #: reader — if a caller has a reason, it belongs here explicitly.
+    notes: Tuple[str, ...] = ()
     schema_version: int = SCHEMA_VERSION
 
-    _KEYS = ("phases", "tokens", "scope", "engine", "observed_at", "schema_version")
+    _KEYS = ("phases", "tokens", "scope", "engine", "observed_at", "notes", "schema_version")
 
     @classmethod
     def parse(cls, raw: Any, path: str = "metrics") -> "ExecutionMetrics":
@@ -697,6 +704,7 @@ class ExecutionMetrics:
             scope=one_of(data, "scope", path, choices=METRIC_SCOPES),
             engine=EngineIdentity.parse(engine_raw, f"{path}.engine") if engine_raw is not None else None,
             observed_at=timestamp(data, "observed_at", path),
+            notes=text_list(data, "notes", path, max_items=16, max_len=500, unique=False),
             schema_version=whole(data, "schema_version", path, default=SCHEMA_VERSION, minimum=1),
         )
 
@@ -708,4 +716,5 @@ class ExecutionMetrics:
             "scope": self.scope,
             "engine": self.engine.to_dict() if self.engine is not None else None,
             "observed_at": self.observed_at,
+            "notes": list(self.notes),
         }

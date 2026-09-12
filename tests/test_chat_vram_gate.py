@@ -80,6 +80,40 @@ def test_a_broken_gate_never_costs_the_turn(monkeypatch):
     assert outcome["ok"]
 
 
+# ── INF-03: waited_s reaches the chat caller ─────────────────────────────
+
+def test_waited_s_reaches_the_outcome_when_the_gate_measured_a_wait(monkeypatch):
+    async def _admit(url, model, *, owner="", on_progress=None, waited_out=None, **k):
+        if waited_out is not None:
+            waited_out["waited_s"] = 1.5
+        return "proceed"
+    monkeypatch.setattr("src.vram_admission.admit", _admit)
+    outcome = {"ok": True, "error": ""}
+    _events(chat_routes._vram_admission_events(LOCAL, "qwen3.8:27b-q4_K_M", "luis", outcome))
+    assert outcome["waited_s"] == 1.5
+
+
+def test_waited_s_absent_from_outcome_when_the_gate_never_filled_it_in(monkeypatch):
+    async def _admit(url, model, *, owner="", on_progress=None, waited_out=None, **k):
+        return "proceed"  # e.g. mode="off": no door, nothing measured
+    monkeypatch.setattr("src.vram_admission.admit", _admit)
+    outcome = {"ok": True, "error": ""}
+    _events(chat_routes._vram_admission_events(LOCAL, "qwen3.8:27b-q4_K_M", "luis", outcome))
+    assert "waited_s" not in outcome
+
+
+def test_waited_s_recorded_even_when_the_load_is_cancelled(monkeypatch):
+    async def _admit(url, model, *, owner="", on_progress=None, waited_out=None, **k):
+        if waited_out is not None:
+            waited_out["waited_s"] = 3.2
+        raise AdmissionCancelled(f"Load of {model} cancelled by luis: it does not fit in VRAM.")
+    monkeypatch.setattr("src.vram_admission.admit", _admit)
+    outcome = {"ok": True, "error": ""}
+    _events(chat_routes._vram_admission_events(LOCAL, "qwen3.8:27b-q4_K_M", "luis", outcome))
+    assert outcome["ok"] is False
+    assert outcome["waited_s"] == 3.2
+
+
 # ── the heartbeat says what the model is doing ──────────────────────────────
 
 class _Resp:

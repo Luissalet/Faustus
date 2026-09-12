@@ -269,3 +269,66 @@ def test_load_anyway_is_judged_against_free_ram_too(monkeypatch):
     fake_psutil.virtual_memory = lambda: types.SimpleNamespace(available=100 * GIB, total=128 * GIB)
     a = va.assess(ROOT, Q4["name"])
     assert a["forced_load_dangerous"] is False
+
+
+# â”€â”€ waited_out: INF-03's queue-wait reading â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+def test_waited_out_untouched_when_there_is_no_door_at_all():
+    # A remote/non-Ollama endpoint never engages the gate: no measured wait,
+    # ever â€” the caller must read this as absent, not a fabricated zero.
+    out = {}
+    assert asyncio.run(va.admit("http://192.168.1.20:11434/v1", Q4["name"], waited_out=out)) == "proceed"
+    assert out == {}
+
+
+def test_waited_out_untouched_when_admission_is_off(monkeypatch):
+    def _boom(*a, **k):
+        raise AssertionError("assess() must not run when the gate is off")
+    monkeypatch.setattr(va, "assess", _boom)
+    out = {}
+    assert asyncio.run(va.admit(EP, Q4["name"], mode="off", waited_out=out)) == "proceed"
+    assert out == {}
+
+
+def test_waited_out_measured_when_a_model_fits_immediately(monkeypatch):
+    _ollama(monkeypatch, tags=[Q4, SMALL], ps=[], vram=_card(28, 0.5))
+    out = {}
+    assert asyncio.run(va.admit(EP, SMALL["name"], mode="ask", waited_out=out)) == "proceed"
+    assert "waited_s" in out
+    assert isinstance(out["waited_s"], float)
+    assert out["waited_s"] >= 0.0
+
+
+def test_waited_out_measured_in_auto_mode(blocked):
+    out = {}
+    assert asyncio.run(va.admit(EP, Q4["name"], mode="auto", waited_out=out)) == "proceed"
+    assert out.get("waited_s") is not None
+    assert out["waited_s"] >= 0.0
+
+
+def test_waited_out_measured_through_an_ask_and_unload_round_trip(blocked):
+    out = {}
+
+    async def run():
+        gate = asyncio.create_task(va.admit(EP, Q4["name"], owner="luis", mode="ask", timeout=5,
+                                            waited_out=out))
+        await _answer_later("unload", [Q8["name"]])
+        return await gate
+
+    assert asyncio.run(run()) == "proceed"
+    assert out.get("waited_s") is not None
+    assert out["waited_s"] >= 0.0
+
+
+def test_waited_out_measured_even_when_cancelled(blocked):
+    out = {}
+
+    async def run():
+        gate = asyncio.create_task(va.admit(EP, Q4["name"], mode="ask", timeout=5, waited_out=out))
+        await _answer_later("cancel")
+        return await gate
+
+    with pytest.raises(va.AdmissionCancelled):
+        asyncio.run(run())
+    assert out.get("waited_s") is not None
+    assert out["waited_s"] >= 0.0

@@ -299,3 +299,93 @@ async def test_chat_probe_runs_when_authorized(monkeypatch):
 async def test_verify_raises_for_missing_session(monkeypatch):
     with pytest.raises(lr.LaunchReceiptError):
         await lr.verify("serve-missing", base_url="http://127.0.0.1:8080")
+
+
+# ── find_by_endpoint() / identity_for_endpoint() — INF-03 ───────────────────
+
+def test_find_by_endpoint_matches_host_and_port():
+    engine = EngineIdentity(implementation="llama-server", host="127.0.0.1", port=8090)
+    lr.record(
+        "serve-kkkkkkkk", engine=engine, model=None,
+        requested_cmd="cmd", final_cmd="cmd",
+        rewrites=[], plan={}, assessments=[],
+    )
+    found = lr.find_by_endpoint("127.0.0.1", 8090)
+    assert found is not None
+    assert found.session_id == "serve-kkkkkkkk"
+    assert found.engine.implementation == "llama-server"
+
+
+def test_find_by_endpoint_none_for_unmatched_host_or_port():
+    engine = EngineIdentity(implementation="llama-server", host="127.0.0.1", port=8090)
+    lr.record(
+        "serve-llllllll", engine=engine, model=None,
+        requested_cmd="cmd", final_cmd="cmd",
+        rewrites=[], plan={}, assessments=[],
+    )
+    assert lr.find_by_endpoint("127.0.0.1", 9999) is None
+    assert lr.find_by_endpoint("10.0.0.5", 8090) is None
+    assert lr.find_by_endpoint(None, 8090) is None
+    assert lr.find_by_endpoint("127.0.0.1", None) is None
+
+
+def test_find_by_endpoint_picks_newest_generation_across_sessions(monkeypatch):
+    # `created_at` has only second precision (contracts/base.now_iso) — pin
+    # it explicitly instead of racing the wall clock within one test.
+    monkeypatch.setattr(lr, "now_iso", lambda: "2026-01-01T00:00:00Z")
+    older = EngineIdentity(implementation="llama-server", host="127.0.0.1", port=8091)
+    lr.record(
+        "serve-mmmmmmmm", engine=older, model=None,
+        requested_cmd="cmd", final_cmd="cmd",
+        rewrites=[], plan={}, assessments=[],
+    )
+    monkeypatch.setattr(lr, "now_iso", lambda: "2026-01-01T00:00:05Z")
+    newer = EngineIdentity(implementation="vllm", host="127.0.0.1", port=8091)
+    lr.record(
+        "serve-nnnnnnnn", engine=newer, model=None,
+        requested_cmd="cmd", final_cmd="cmd",
+        rewrites=[], plan={}, assessments=[],
+    )
+    found = lr.find_by_endpoint("127.0.0.1", 8091)
+    assert found is not None
+    assert found.session_id == "serve-nnnnnnnn"
+    assert found.engine.implementation == "vllm"
+
+
+def test_identity_for_endpoint_prefers_a_matching_receipt():
+    engine = EngineIdentity(implementation="llama-server", host="127.0.0.1", port=8092, version="b1234")
+    lr.record(
+        "serve-oooooooo", engine=engine, model=None,
+        requested_cmd="cmd", final_cmd="cmd",
+        rewrites=[], plan={}, assessments=[],
+    )
+    identity = lr.identity_for_endpoint("http://127.0.0.1:8092/v1/chat/completions")
+    assert identity is not None
+    assert identity.implementation == "llama-server"
+    assert identity.managed == "faustus"
+    assert identity.version == "b1234"
+    assert identity.session_id == "serve-oooooooo"
+
+
+def test_identity_for_endpoint_falls_back_to_ollama_hint_as_external():
+    identity = lr.identity_for_endpoint(
+        "http://localhost:11434/api/chat", implementation_hint="ollama",
+    )
+    assert identity is not None
+    assert identity.implementation == "ollama"
+    assert identity.managed == "external"
+    assert identity.host == "localhost"
+    assert identity.port == 11434
+
+
+def test_identity_for_endpoint_none_for_unverifiable_llamacpp_hint():
+    # No receipt, and "llamacpp" cannot tell native binary from Python
+    # wrapper apart (§06 H04) — never guess one of IMPLEMENTATIONS's two
+    # llama.cpp entries.
+    assert lr.identity_for_endpoint(
+        "http://127.0.0.1:8099/v1", implementation_hint="llamacpp",
+    ) is None
+
+
+def test_identity_for_endpoint_none_for_cloud_provider_with_no_hint():
+    assert lr.identity_for_endpoint("https://api.openai.com/v1") is None

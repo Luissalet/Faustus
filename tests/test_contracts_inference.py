@@ -313,3 +313,20 @@ def test_execution_metrics_rejects_bad_metric_source():
             "phases": {"queue_wait_ms": {"value": 1, "source": "guessed"}},
             "tokens": {}, "scope": "request",
         })
+
+
+def test_execution_metrics_notes_default_empty_and_round_trip():
+    # No `notes` key at all: defaults to an empty tuple, not None/absent-field.
+    m = inf.ExecutionMetrics.parse({"phases": {}, "tokens": {}, "scope": "request"})
+    assert m.notes == ()
+    assert m.to_dict()["notes"] == []
+
+    # INF-03's overlap caveat: a phase caveat text survives a round trip
+    # unchanged, same as every other field on this contract.
+    raw = {
+        "phases": {}, "tokens": {}, "scope": "request",
+        "notes": ["phases overlap: engine and client clocks are not additive"],
+    }
+    with_notes = inf.ExecutionMetrics.parse(raw)
+    assert with_notes.notes == ("phases overlap: engine and client clocks are not additive",)
+    assert inf.ExecutionMetrics.parse(with_notes.to_dict()) == with_notes

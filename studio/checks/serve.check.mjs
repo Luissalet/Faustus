@@ -37,7 +37,7 @@ const ctx = (over = {}) => ({
   hostPlatform: 'linux',
   ...over,
 });
-const cmd = (fields, model, backend, over) => s.buildServeCmd(fields, model, backend, ctx(over));
+const cmd = (fields, model, backend, over) => s.buildServeCmdString(fields, model, backend, ctx(over));
 
 // ── CPU-only drops every GPU-only flag ──
 {

@@ -78,6 +78,10 @@ def build_entry(
     asked_user: bool = False,
     task_tag: Optional[str] = None,
     cancelled: bool = False,
+    engine: Optional[Dict[str, Any]] = None,
+    serve_session_id: Optional[str] = None,
+    hardware_profile_id: Optional[str] = None,
+    phases: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     stop = str(harness.get("stop_reason") or "complete")
     mutations = list(harness.get("mutations") or [])
@@ -124,6 +128,23 @@ def build_entry(
         entry["review"] = review.get("verdict")
         entry["review_errors"] = len([f for f in (review.get("findings") or []) if f.get("severity") == "error"])
         entry["review_model"] = review.get("model")
+    # INF-03: link a turn to WHICH engine answered it, not just which
+    # endpoint label was configured — `aggregate_by(..., key_fields=("engine",
+    # ...))` groups on this flat string, so it is the implementation name
+    # (`"ollama"`, `"llama-server"`, â€¦), not the whole EngineIdentity dict;
+    # the version rides beside it for a reader, never used for grouping.
+    # `engine` is `src.contracts.inference.EngineIdentity.to_dict()` (or
+    # `None`) â€” whatever this turn's `metrics["execution"]["engine"]` was.
+    if engine and engine.get("implementation"):
+        entry["engine"] = engine["implementation"]
+        if engine.get("version"):
+            entry["engine_version"] = engine["version"]
+    if serve_session_id:
+        entry["serve_session_id"] = serve_session_id
+    if hardware_profile_id:
+        entry["hardware_profile_id"] = hardware_profile_id
+    if phases:
+        entry["phases"] = phases
     return entry
 
 
@@ -348,7 +369,15 @@ def aggregate_by(
     already recorded, it does not join against that profile). Comparing a
     27B-on-a-4070-Ti row against the same model on a bare-metal A100 as if
     they were one workload is exactly the "do not compare different
-    workloads as equal" mistake this splits apart."""
+    workloads as equal" mistake this splits apart.
+
+    INF-03: `key_fields` also accepts `"engine"` (the implementation string
+    `build_entry` stamped from `metrics["execution"]["engine"]` — grouping is
+    a flat `str(e.get(f) or "?")` lookup, generic to any field a row carries)
+    and `"serve_session_id"` (one Faustus-managed launch, narrower than
+    "endpoint": a restart bumps the launch's generation but keeps the same
+    endpoint label). A row from before either field existed groups under
+    `"?"`, same as any other missing key here."""
     def key(e: Dict[str, Any]) -> tuple:
         return tuple(str(e.get(f) or "?") for f in key_fields)
 

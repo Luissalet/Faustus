@@ -92,6 +92,12 @@ async def _vram_admission_events(endpoint_url: str, model: str, owner: str,
     pass straight through. `outcome["ok"]` is False when the load was
     cancelled (by the person, or by the timeout with nobody answering) and
     `outcome["error"]` says so; the gate never raises into the turn.
+
+    INF-03: when this gate actually ran, `outcome["waited_s"]` is filled in
+    with the monotonic seconds `admit()` spent behind it (`vram_admission.py`
+    docstring) â€” the turn's `queue_wait_ms`. Left absent for the early
+    returns just below (no local Ollama endpoint at all): there was no door,
+    so that must read as `absent`, not a measured zero-second wait.
     """
     try:
         from src.model_context import is_local_endpoint
@@ -110,7 +116,10 @@ async def _vram_admission_events(endpoint_url: str, model: str, owner: str,
         except Exception:
             pass
 
-    task = asyncio.create_task(admit(endpoint_url, model, owner=owner or "", on_progress=_on_progress))
+    _waited_out: Dict[str, Any] = {}
+    task = asyncio.create_task(
+        admit(endpoint_url, model, owner=owner or "", on_progress=_on_progress, waited_out=_waited_out)
+    )
     try:
         while True:
             if task.done() and queue.empty():
@@ -130,9 +139,50 @@ async def _vram_admission_events(endpoint_url: str, model: str, owner: str,
             outcome["error"] = str(e) or f"Loading {model} was cancelled: no room in VRAM."
         except Exception as e:  # noqa: BLE001 - the gate is advisory, never a reason to lose a turn
             logger.warning("VRAM admission skipped for %s: %s", model, e)
+        finally:
+            if "waited_s" in _waited_out:
+                outcome["waited_s"] = _waited_out["waited_s"]
     finally:
         if not task.done():
             task.cancel()
+
+
+def _chat_execution_metrics(
+    *, started_monotonic: float, finished_monotonic: float,
+    queue_wait_s: Optional[float], engine_timings: Optional[Dict[str, Any]],
+    usage_tokens: Optional[Dict[str, Any]], endpoint_url: str,
+) -> Optional[Dict[str, Any]]:
+    """INF-03: the plain-chat stream's per-turn `ExecutionMetrics` dict,
+    mirroring what `src/agent_loop.py::_compute_final_metrics` builds for
+    tool-using turns (`src/execution_metrics.py` is the one place either
+    caller decides what counts as `computed` vs `inferred` vs `absent`).
+
+    This path never tracks a first-token timestamp — chat_routes.py's delta-
+    handling loop predates INF-03, and adding that tracking here would be a
+    materially larger change than this lote's scope. So `prefill_ms`/
+    `generation_ms` come only from the engine's own report
+    (`engine_timings`) or stay `absent`; they are never `computed` here,
+    unlike the agent path. Best-effort: a failure here must never cost the
+    turn its real metrics, only the `execution` breakdown of them.
+    """
+    try:
+        from src.execution_metrics import build_execution_metrics
+        from src import launch_receipts
+        implementation_hint = "ollama" if (engine_timings or {}).get("source") == "ollama" else None
+        engine = launch_receipts.identity_for_endpoint(endpoint_url, implementation_hint=implementation_hint)
+        return build_execution_metrics(
+            started_monotonic=started_monotonic,
+            finished_monotonic=finished_monotonic,
+            first_token_monotonic=None,
+            queue_wait_s=queue_wait_s,
+            tool_events=None,
+            engine_timings=engine_timings,
+            usage_tokens=usage_tokens,
+            engine=engine,
+        ).to_dict()
+    except Exception:
+        logger.debug("[execution-metrics] chat path build failed", exc_info=True)
+        return None
 
 
 def _stream_failure_status(chunk: str) -> Optional[int]:
@@ -3028,6 +3078,7 @@ def setup_chat_routes(
                 return
             elif chat_mode == "chat":
                 _chat_start = time.time()
+                _chat_start_monotonic = time.monotonic()  # INF-03: execution metrics' clock
                 _answered_by = None  # set if the selected model failed and a fallback answered
                 _requested_model = sess.model
                 _actual_model = None
@@ -3172,6 +3223,20 @@ def setup_chat_routes(
                                         last_metrics["tps_source"] = "backend"
                                     # Wall-clock response time for the stats popup ("Time").
                                     last_metrics.setdefault("response_time", round(time.time() - _chat_start, 2))
+                                    _exec = _chat_execution_metrics(
+                                        started_monotonic=_chat_start_monotonic,
+                                        finished_monotonic=time.monotonic(),
+                                        queue_wait_s=(locals().get("_admission") or {}).get("waited_s"),
+                                        engine_timings=last_metrics.get("engine_timings"),
+                                        usage_tokens={
+                                            "prompt": last_metrics.get("input_tokens"),
+                                            "generated": last_metrics.get("output_tokens"),
+                                            "source": "reported_engine",
+                                        },
+                                        endpoint_url=sess.endpoint_url,
+                                    )
+                                    if _exec is not None:
+                                        last_metrics["execution"] = _exec
                                     yield f'data: {json.dumps({"type": "metrics", "data": last_metrics})}\n\n'
                             except json.JSONDecodeError:
                                 yield chunk
@@ -3251,6 +3316,25 @@ def setup_chat_routes(
                                     )
                                 if thinking_response.strip():
                                     _terminal_metrics["thinking"] = thinking_response.strip()
+                                # INF-03/T07: a stream cut mid-turn. Whatever
+                                # phases the engine reported before the cut
+                                # (if any `usage` event ever arrived) still
+                                # count; an estimated token count is `computed`,
+                                # never disguised as `reported_engine`.
+                                _exec = _chat_execution_metrics(
+                                    started_monotonic=_chat_start_monotonic,
+                                    finished_monotonic=time.monotonic(),
+                                    queue_wait_s=(locals().get("_admission") or {}).get("waited_s"),
+                                    engine_timings=_terminal_metrics.get("engine_timings"),
+                                    usage_tokens={
+                                        "prompt": _terminal_metrics.get("input_tokens"),
+                                        "generated": _terminal_metrics.get("output_tokens"),
+                                        "source": "reported_engine" if _had_terminal_usage else "computed",
+                                    },
+                                    endpoint_url=sess.endpoint_url,
+                                )
+                                if _exec is not None:
+                                    _terminal_metrics["execution"] = _exec
                                 _commit_chat_compaction(_actual_candidate_index)
                                 _saved_id = save_assistant_response(
                                     sess,
@@ -3316,6 +3400,23 @@ def setup_chat_routes(
                                     last_metrics["endpoint_cost_tracked"] = _actual_route.get(
                                         "endpoint_cost_tracked"
                                     )
+                                # INF-03: this whole branch only runs when the
+                                # engine never sent a `usage` event at all —
+                                # every token count above is `computed` (an
+                                # estimate), never `reported_engine`.
+                                _exec = _chat_execution_metrics(
+                                    started_monotonic=_chat_start_monotonic,
+                                    finished_monotonic=time.monotonic(),
+                                    queue_wait_s=(locals().get("_admission") or {}).get("waited_s"),
+                                    engine_timings=None,
+                                    usage_tokens={
+                                        "prompt": _est_in, "generated": _est_out,
+                                        "source": "computed",
+                                    },
+                                    endpoint_url=sess.endpoint_url,
+                                )
+                                if _exec is not None:
+                                    last_metrics["execution"] = _exec
                                 yield f'data: {json.dumps({"type": "metrics", "data": last_metrics})}\n\n'
                             if full_response:
                                 _commit_chat_compaction(_actual_candidate_index)

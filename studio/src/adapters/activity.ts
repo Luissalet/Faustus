@@ -86,6 +86,15 @@ export interface ActivityRun {
   task?: TaskRunDetail;
   approval?: ApprovalDetail;
   render?: RenderDetail;
+  /** `progress` is a live run's own server-reported phase (`RunActivityDetail`
+   *  below) — it never carries a finished turn's `metrics`/`metrics.execution`
+   *  (INF-03, `adapters/chat.ts`). `GET /api/activity` (`chatActivity`) and the
+   *  task-run listing this file also reads from neither return that per-turn
+   *  metadata today, so no `ActivityRun` kind has anywhere to hang an
+   *  `ExecutionTimeline` (`components/ExecutionTimeline.tsx`) from without a
+   *  backend/route change — out of scope for INF-03's Studio lote, which
+   *  touches neither. Studio's own transcript (`screens/studio/Transcript.tsx`)
+   *  is the one place `execution` is actually wired up; see that file. */
   chat?: { sessionId: string; runId: string; model: string; progress?: RunActivityDetail };
   workflow?: WorkflowDetail;
   question?: QuestionDetail;
