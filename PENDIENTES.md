@@ -332,6 +332,13 @@ deep-link de workflows, recetas desde un run real) ya no aparece aquí.
 
 ## Última evidencia
 
+- **13-09-2026 tarde, correo + Google Calendar (master `9dd3a8c`+ = Windows).**
+  Suite nube entera tras los lotes G1/G2: 17.558 correctas, 49 saltadas,
+  0 fallos (9 min 41 s). En vivo en el 7001: Integrations › Add › Calendar
+  → selector Google · iCloud · Nextcloud · CalDAV; sin cliente OAuth en el
+  `.env` el formulario de Google lo dice y el botón Connect queda
+  deshabilitado (estado honesto, no probado más allá hasta que Luis cree
+  el cliente).
 - **13-09-2026, conectores (FAUSTUS §80; master `a3b68b4`+ = Windows).** Suite
   nube entera tras integrar F1–F4: 17.525 correctas, 49 saltadas, 0 fallos
   (10 min 7 s). En vivo en el 7001: `/connectors` con el preset Jobhunter,

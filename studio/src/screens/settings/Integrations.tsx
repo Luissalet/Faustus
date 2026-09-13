@@ -334,8 +334,9 @@ export function IntegrationsSection({ say }: { say: (t: string) => void }) {
               key={p.key}
               type="button"
               className="fs-chip"
-              disabled={p.key === 'google' && !googleConfigured}
-              title={p.key === 'google' && !googleConfigured ? t('Set GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET in .env') : undefined}
+              // Always clickable: with no OAuth client the form itself says
+              // what to set in .env — a disabled chip with a tooltip looks
+              // like a chip that simply does nothing.
               data-testid={`intg-calendar-provider-${p.key}`}
               onClick={() => {
                 setPickingCalendar(false);
