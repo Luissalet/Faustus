@@ -40,11 +40,12 @@ function form(fields: Record<string, string | undefined>): FormData {
   return fd;
 }
 
-export type IntegrationKind = 'api' | 'caldav' | 'contacts' | 'carddav' | 'email' | 'mcp' | 'codex' | 'claude' | 'vault';
+export type IntegrationKind = 'api' | 'caldav' | 'google_calendar' | 'contacts' | 'carddav' | 'email' | 'mcp' | 'codex' | 'claude' | 'vault';
 
 export const KIND_LABEL: Record<IntegrationKind, string> = {
   api: 'API',
   caldav: 'CalDAV',
+  google_calendar: 'Google Calendar',
   contacts: 'Contacts',
   carddav: 'CardDAV',
   email: 'Mail',
@@ -108,6 +109,46 @@ export async function testCalDav(body: { url: string; username: string; password
   const r = await fetch('/api/calendar/test', { method: 'POST', credentials: 'same-origin', headers: JSON_HEADERS, body: JSON.stringify(body) });
   const d = (await r.json().catch(() => ({}))) as { ok?: boolean; success?: boolean; message?: string; error?: string; detail?: string; calendars?: unknown[] };
   return { ...d, ok: r.ok && (d.ok ?? d.success ?? true), message: d.message ?? d.error ?? d.detail };
+}
+
+/* ── Google Calendar accounts (G1: routes/calendar_routes.py, OAuth2 + Calendar API v3) ── */
+
+export interface GoogleCalendarAccount {
+  id: string;
+  label?: string;
+  email: string;
+  status: 'ok' | 'needs_reauth';
+  last_sync_at?: string | null;
+  selected_calendars?: string[] | null;
+}
+export interface GoogleCalendarConfig {
+  configured: boolean;
+  accounts: GoogleCalendarAccount[];
+}
+/** Degrades to `{configured: false, accounts: []}` — via the caller's
+ *  `safe()` wrapper in fetchAll() — when G1's route is not present yet or
+ *  does not answer, rather than throwing into the unified list. */
+export async function listGoogleCalendar(): Promise<GoogleCalendarConfig> {
+  return getJson<GoogleCalendarConfig>('/api/calendar/config/google');
+}
+/** Full navigation (`window.location.assign`), never fetch: Google's consent
+ *  screen is not an XHR target. `accountId` present means reconnect. */
+export function googleCalendarAuthorizeUrl(accountId?: string): string {
+  return accountId ? `/api/calendar/oauth/google/authorize?account_id=${encodeURIComponent(accountId)}` : '/api/calendar/oauth/google/authorize';
+}
+export const deleteGoogleCalendar = (id: string) => del(`/api/calendar/config/google/${id}`, 'google calendar');
+export interface GoogleCalendarListItem {
+  id: string;
+  summary: string;
+  primary?: boolean;
+}
+export async function testGoogleCalendar(id: string): Promise<{ ok: boolean; calendars: GoogleCalendarListItem[]; message?: string }> {
+  const r = await fetch(`/api/calendar/config/google/${encodeURIComponent(id)}/test`, { method: 'POST', credentials: 'same-origin' });
+  const d = (await r.json().catch(() => ({}))) as { ok?: boolean; calendars?: GoogleCalendarListItem[]; message?: string; error?: string; detail?: string };
+  return { ok: r.ok && d.ok !== false, calendars: d.calendars ?? [], message: d.message ?? d.error ?? d.detail };
+}
+export function saveGoogleCalendar(id: string, body: { label?: string; selected_calendars?: string[] | null }) {
+  return put(`/api/calendar/config/google/${id}`, body, 'google calendar');
 }
 
 /* ── contacts ── */
