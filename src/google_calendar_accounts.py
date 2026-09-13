@@ -22,7 +22,6 @@ for the established pattern this follows).
 """
 
 import logging
-import os
 import time
 from typing import Optional
 
@@ -32,10 +31,12 @@ _PUBLIC_FIELDS = ("id", "label", "email", "status", "last_sync_at", "selected_ca
 
 
 def client_configured() -> bool:
-    """Whether a Google OAuth client (shared with the email OAuth flow) is set."""
-    return bool(os.environ.get("GOOGLE_OAUTH_CLIENT_ID")) and bool(
-        os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET")
-    )
+    """Whether a Google OAuth client (shared with the email OAuth flow, G3.1)
+    is set — stored via Settings › Integrations › Google, or the
+    `GOOGLE_OAUTH_CLIENT_ID`/`SECRET` environment variables."""
+    from src.google_oauth_client import configured as _configured
+
+    return _configured()
 
 
 def _load_accounts_raw(owner: str) -> list:
@@ -156,15 +157,18 @@ def access_token_for(owner: str, account_id: str, *, force_refresh: bool = False
             except (TypeError, ValueError):
                 pass
 
-    if not client_configured():
+    from src.google_oauth_client import get_client
+
+    client = get_client()
+    client_id = client["client_id"] or ""
+    client_secret = client["client_secret"] or ""
+    if not client_id or not client_secret:
         return None
 
     refresh_token = _dec(account.get("refresh_token") or "")
     if not refresh_token:
         return None
 
-    client_id = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "")
-    client_secret = os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET", "")
     try:
         import httpx
 

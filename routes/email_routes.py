@@ -6317,13 +6317,12 @@ def setup_email_routes():
     async def google_oauth_authorize(account_id: str = Query(...), request: Request = None, owner: str = Depends(require_user)):
         import urllib.parse
         _assert_owns_account(account_id, owner)
-        client_id = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "")
+        from src.google_oauth_client import NOT_CONFIGURED_MESSAGE, get_client, redirect_uris
+        client = get_client()
+        client_id = client["client_id"] or ""
         if not client_id:
-            raise HTTPException(400, "GOOGLE_OAUTH_CLIENT_ID not set — add it to .env")
-        redirect_uri = (
-            os.environ.get("GOOGLE_OAUTH_REDIRECT_URI")
-            or f"{request.url.scheme}://{request.headers.get('host', 'localhost:7000')}/api/email/oauth/google/callback"
-        )
+            raise HTTPException(400, NOT_CONFIGURED_MESSAGE)
+        redirect_uri = redirect_uris(request)["email"]
         state = make_oauth_state(account_id, owner)
         params = urllib.parse.urlencode({
             "client_id": client_id,
@@ -6355,12 +6354,11 @@ def setup_email_routes():
             return _RR("/?section=integrations&email_oauth_error=invalid_state")
         account_id = state_data.get("a", "")
         owner = state_data.get("o", "")
-        client_id = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "")
-        client_secret = os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET", "")
-        redirect_uri = (
-            os.environ.get("GOOGLE_OAUTH_REDIRECT_URI")
-            or f"{request.url.scheme}://{request.headers.get('host', 'localhost:7000')}/api/email/oauth/google/callback"
-        )
+        from src.google_oauth_client import get_client, redirect_uris
+        client = get_client()
+        client_id = client["client_id"] or ""
+        client_secret = client["client_secret"] or ""
+        redirect_uri = redirect_uris(request)["email"]
         import httpx as _httpx
         try:
             resp = _httpx.post("https://oauth2.googleapis.com/token", data={

@@ -1067,22 +1067,13 @@ def setup_calendar_routes(upload_handler=None) -> APIRouter:
     # the two token sets stay independent even though the client is shared.
 
     def _google_calendar_redirect_uri(request: Request) -> str:
-        """Prefer an explicit GOOGLE_CALENDAR_OAUTH_REDIRECT_URI; else derive
-        one from GOOGLE_OAUTH_REDIRECT_URI (the email OAuth redirect) by
-        swapping its *path* — never guessed by string-replacing "/email/"
-        with "/calendar/", since nothing guarantees that substring is there;
-        else infer scheme+host from the request, exactly like the email flow
-        (routes/email_routes.py's google_oauth_authorize/_callback)."""
-        explicit = (_os.environ.get("GOOGLE_CALENDAR_OAUTH_REDIRECT_URI") or "").strip()
-        if explicit:
-            return explicit
-        email_uri = (_os.environ.get("GOOGLE_OAUTH_REDIRECT_URI") or "").strip()
-        if email_uri:
-            from urllib.parse import urlparse, urlunparse
-            parsed = urlparse(email_uri)
-            return urlunparse(parsed._replace(path="/api/calendar/oauth/google/callback"))
-        host = request.headers.get("host", "localhost:7000")
-        return f"{request.url.scheme}://{host}/api/calendar/oauth/google/callback"
+        """The calendar OAuth callback URL for the request Faustus is being
+        reached at right now — centralized in `src/google_oauth_client.py`
+        (G3.1) so this route and `routes/email_routes.py` resolve it the
+        same way."""
+        from src.google_oauth_client import redirect_uris
+
+        return redirect_uris(request)["calendar"]
 
     # The Studio's real Integrations route: studio/src/screens/Settings.tsx's
     # SECTIONS table keys it 'integrations' and the screen reads/writes it as
@@ -1101,13 +1092,15 @@ def setup_calendar_routes(upload_handler=None) -> APIRouter:
         from routes.email_helpers import make_oauth_state
 
         owner = _require_user(request)
-        from src.google_calendar_accounts import client_configured, get_account
-        if not client_configured():
-            raise HTTPException(400, "GOOGLE_OAUTH_CLIENT_ID/GOOGLE_OAUTH_CLIENT_SECRET not set — add them to .env")
+        from src.google_calendar_accounts import get_account
+        from src.google_oauth_client import NOT_CONFIGURED_MESSAGE, get_client
+        client = get_client()
+        client_id = client["client_id"] or ""
+        if not client_id or not client["client_secret"]:
+            raise HTTPException(400, NOT_CONFIGURED_MESSAGE)
         if account_id and not get_account(owner, account_id):
             raise HTTPException(404, "Account not found")
 
-        client_id = _os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "")
         redirect_uri = _google_calendar_redirect_uri(request)
         # The state's "a" field carries "calendar" for a new account, or the
         # account_id being reconnected — mirrors email's account_id/"a" use,
@@ -1151,8 +1144,10 @@ def setup_calendar_routes(upload_handler=None) -> APIRouter:
         owner = state_data.get("o", "")
         is_reconnect = bool(target_account_id) and target_account_id != "calendar"
 
-        client_id = _os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "")
-        client_secret = _os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET", "")
+        from src.google_oauth_client import get_client
+        client = get_client()
+        client_id = client["client_id"] or ""
+        client_secret = client["client_secret"] or ""
         if not client_id or not client_secret:
             return _err("not_configured")
         redirect_uri = _google_calendar_redirect_uri(request)

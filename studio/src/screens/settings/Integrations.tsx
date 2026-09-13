@@ -33,10 +33,12 @@ import {
   type ApiToken,
   type VaultConfig,
 } from '../../adapters/integrations';
+import { deleteGoogleOAuthClient, getGoogleOAuthClient, type GoogleOAuthClientStatus } from '../../adapters/google';
 import { t, tn } from '../../i18n';
 import { useSearchParams } from 'react-router';
 import { ApiForm, CalDavForm, CALDAV_PRESETS, VaultForm, AgentForm } from './IntegrationForms';
 import { ContactsPanel, EmailForm, GoogleCalendarForm, McpPanel } from './IntegrationsMore';
+import { GoogleOAuthSetup } from './GoogleOAuthSetup';
 
 /**
  * Integrations: every external connection in one list, the way the previous
@@ -170,13 +172,15 @@ export type Editing = { kind: IntegrationKind; id: string | null } | null;
 
 async function fetchAll(): Promise<{ items: Item[]; googleConfigured: boolean }> {
   const safe = <T,>(p: Promise<T>, fallback: T) => p.catch(() => fallback);
-  const [api, cal, gcal, cardCfg, contacts, mail, mcp, vault, tokens] = await Promise.all([
+  const [api, cal, gcal, goauth, cardCfg, contacts, mail, mcp, vault, tokens] = await Promise.all([
     safe(listApiIntegrations(), [] as ApiIntegration[]),
     safe(listCalDav(), [] as CalDavAccount[]),
     // G1's route (routes/calendar_routes.py, CONTRATO_GOOGLE_CALENDAR) may
     // not exist in this checkout yet — degrades to "not configured, no
     // accounts" instead of breaking the whole unified list.
     safe(listGoogleCalendar(), { configured: false, accounts: [] as GoogleCalendarAccount[] }),
+    // G3.2's route — same degrade-gracefully rule.
+    safe(getGoogleOAuthClient(), null as GoogleOAuthClientStatus | null),
     safe(contactsConfig(), {}),
     safe(listContacts(), { contacts: [], count: 0 }),
     safe(listEmailAccounts(), [] as EmailAccount[]),
@@ -190,6 +194,10 @@ async function fetchAll(): Promise<{ items: Item[]; googleConfigured: boolean }>
   for (const a of gcal.accounts) {
     const detail = a.status === 'needs_reauth' ? `${a.email} · ${t('needs reconnecting')}` : a.email;
     items.push({ kind: 'google_calendar', id: a.id, name: a.label || t('Google Calendar'), detail, enabled: a.status !== 'needs_reauth', data: a });
+  }
+  if (goauth?.configured) {
+    const detail = goauth.source === 'stored' ? t('Configured (saved here)') : t('Configured (from .env)');
+    items.push({ kind: 'google_oauth_client', id: '__google_oauth_client__', name: t(KIND_LABEL.google_oauth_client), detail, enabled: true, data: goauth });
   }
   if (contacts.count > 0) items.push({ kind: 'contacts', id: '__contacts__', name: t('Contacts'), detail: tn(contacts.count, '{n} contact', '{n} contacts'), enabled: true, data: contacts });
   const cardUrl = cardCfg.url ?? cardCfg.carddav_url;
@@ -269,6 +277,7 @@ export function IntegrationsSection({ say }: { say: (t: string) => void }) {
       if (item.kind === 'api') await deleteApiIntegration(item.id);
       else if (item.kind === 'caldav') await deleteCalDav(item.id);
       else if (item.kind === 'google_calendar') await deleteGoogleCalendar(item.id);
+      else if (item.kind === 'google_oauth_client') await deleteGoogleOAuthClient();
       else if (item.kind === 'contacts') await clearContacts();
       else if (item.kind === 'carddav') await saveCardDav({ carddav_url: '', carddav_username: '', carddav_password: '' });
       else if (item.kind === 'email') await deleteEmailAccount(item.id);
@@ -424,6 +433,8 @@ function Form({ editing, items, caldavPreset, googleConfigured, onClose, onChang
       return <CalDavForm existing={current?.data as CalDavAccount | undefined} preset={current ? undefined : caldavPreset} onClose={onClose} onChanged={onChanged} say={say} />;
     case 'google_calendar':
       return <GoogleCalendarForm existing={current?.data as GoogleCalendarAccount | undefined} configured={googleConfigured} onClose={onClose} onChanged={onChanged} say={say} />;
+    case 'google_oauth_client':
+      return <GoogleOAuthSetup onSaved={onChanged} onClose={onClose} say={say} />;
     case 'contacts':
     case 'carddav':
       return <ContactsPanel onClose={onClose} onChanged={onChanged} say={say} />;

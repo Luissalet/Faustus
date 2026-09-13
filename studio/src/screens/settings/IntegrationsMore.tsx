@@ -39,8 +39,10 @@ import {
 } from '../../adapters/integrations';
 import { MCP_PRESETS, fieldsFor, oauthFilePayload, presetByName, withProvider } from '../../lib/mcpPresets';
 import { locale, t, tn } from '../../i18n';
+import { getGoogleOAuthClient } from '../../adapters/google';
 import { Field, Select, Toggle } from './fields';
 import { FormFoot, useMsg } from './IntegrationForms';
+import { GoogleOAuthSetup } from './GoogleOAuthSetup';
 
 /* ── mail account ── */
 
@@ -78,9 +80,23 @@ export function EmailForm({ existing, onClose, onChanged, say }: { existing?: Em
   });
   const set = (k: keyof typeof f, v: string | boolean) => setF((c) => ({ ...c, [k]: v }));
   const [busy, setBusy] = useState(false);
+  const [googleConfigured, setGoogleConfigured] = useState<boolean | null>(null);
+  const [showGoogleSetup, setShowGoogleSetup] = useState(false);
   const m = useMsg();
   const p = EMAIL_PROVIDERS[provider];
   const oauth = !!p?.oauth;
+
+  // G3.3: this form's own OAuth client status — if there isn't one yet, the
+  // "Connect with Google" button below becomes a link to the setup wizard
+  // instead of a doomed OAuth round-trip.
+  useEffect(() => {
+    if (!oauth) return;
+    let live = true;
+    getGoogleOAuthClient()
+      .then((s) => { if (live) setGoogleConfigured(s.configured); })
+      .catch(() => { if (live) setGoogleConfigured(null); });
+    return () => { live = false; };
+  }, [oauth]);
 
   const applyProvider = (k: string) => {
     setProvider(k);
@@ -164,8 +180,15 @@ export function EmailForm({ existing, onClose, onChanged, say }: { existing?: Em
       {oauth && (
         <div className="fs-intg__oauth">
           <span className="fs-set__help">{existing?.oauth_provider === 'google' ? t('Connected through Google OAuth.') : t('Not connected: the account is saved first, then Google asks for consent.')}</span>
-          <Button size="sm" variant="secondary" label={existing?.oauth_provider === 'google' ? t('Reconnect with Google') : t('Connect with Google')} loading={busy} onClick={() => void save(true)} />
+          {googleConfigured === false ? (
+            <Button size="sm" variant="ghost" label={t('Configure Google first')} onClick={() => setShowGoogleSetup((v) => !v)} testId="email-google-setup-link" />
+          ) : (
+            <Button size="sm" variant="secondary" label={existing?.oauth_provider === 'google' ? t('Reconnect with Google') : t('Connect with Google')} loading={busy} onClick={() => void save(true)} />
+          )}
         </div>
+      )}
+      {oauth && googleConfigured === false && showGoogleSetup && (
+        <GoogleOAuthSetup onSaved={() => { setGoogleConfigured(true); setShowGoogleSetup(false); }} say={say} />
       )}
       <h4 className="fs-users__h">IMAP</h4>
       <div className="fs-set__grid2">
@@ -320,14 +343,14 @@ export function GoogleCalendarForm({ existing, configured, onClose, onChanged, s
       <>
         <h3 className="fs-set__card-title">{t('Google Calendar')}</h3>
         <p className="fs-set__help">{t('Google rejects a plain username and password for CalDAV; this connects the same way Faustus already connects Gmail — OAuth, with Google asking you for consent.')}</p>
-        {!configured && (
-          <p className="fs-set__help fs-intg__note" data-tone="warn">
-            {t('Set GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET in .env')} — <code className="fs-tools__id">docs/api/google_calendar.md</code>
-          </p>
-        )}
+        {/* G3.3: no OAuth client yet — the setup wizard replaces the old
+            "edit .env" notice. Saving it calls onChanged(), which reloads
+            this screen's `configured` flag with no page refresh, and
+            "Connect with Google" appears right below, already enabled. */}
+        {!configured && <GoogleOAuthSetup onSaved={onChanged} say={say} />}
         <FormFoot msg={m.msg} tone={m.tone}>
           <Button size="sm" variant="ghost" label={t('Close')} onClick={onClose} />
-          <Button size="sm" variant="primary" icon={CalendarDays} label={t('Connect with Google')} disabled={!configured} onClick={connect} testId="gcal-connect" />
+          {configured && <Button size="sm" variant="primary" icon={CalendarDays} label={t('Connect with Google')} onClick={connect} testId="gcal-connect" />}
         </FormFoot>
       </>
     );

@@ -11,7 +11,15 @@ The account model is a `source="google"` calendar sitting next to
 tables, same write-back dispatch (`routes/calendar_routes.py`), same
 `/api/calendar/sync` endpoint.
 
-## Setup (Google Cloud)
+## Setup
+
+As of G3 (`src/google_oauth_client.py`), `.env` is optional: **Settings ›
+Integrations › Google** is an in-app wizard that shows the exact Google
+Cloud steps, your redirect URIs with a Copy button, and accepts either the
+pasted `client_id`/`client_secret` or the `client_secret_*.json` file
+Google offers to download — saved encrypted, live immediately, no restart.
+Full walkthrough (with the Google Cloud menu names in English and Spanish):
+`docs/guides/google-oauth.md`. The short version:
 
 1. In [console.cloud.google.com](https://console.cloud.google.com) → APIs &
    Services → Library, enable the **Google Calendar API** for your project.
@@ -24,14 +32,16 @@ tables, same write-back dispatch (`routes/calendar_routes.py`), same
    (replace host/port for a hosted install; see below).
 3. If your OAuth consent screen has an explicit scope allowlist, add
    `https://www.googleapis.com/auth/calendar`.
-4. `GOOGLE_OAUTH_CLIENT_ID`/`GOOGLE_OAUTH_CLIENT_SECRET` in `.env` — reused
-   as-is from the email OAuth setup (`docs/api/google_calendar.md` doesn't
-   need its own client, only its own redirect URI).
+4. Paste the client ID and secret into Settings › Integrations › Google —
+   or, for Docker/CI deployments, `GOOGLE_OAUTH_CLIENT_ID`/
+   `GOOGLE_OAUTH_CLIENT_SECRET` in `.env` still work exactly as before and
+   take priority when nothing is saved in-app.
 
 ## Redirect URI resolution
 
-`GET /api/calendar/oauth/google/authorize` and the callback both build the
-redirect URI the same way, checked in this order:
+Centralized in `src/google_oauth_client.py::redirect_uris` (G3.1) — both
+`GET /api/calendar/oauth/google/authorize`/its callback and the equivalent
+email routes call the same function, checked in this order:
 
 1. `GOOGLE_CALENDAR_OAUTH_REDIRECT_URI`, if set — used verbatim.
 2. Else, if `GOOGLE_OAUTH_REDIRECT_URI` (the email OAuth redirect) is set,
@@ -39,10 +49,16 @@ redirect URI the same way, checked in this order:
    keeping its scheme and host. This is a deliberate substitution, not a
    string-replace of `/email/` → `/calendar/` — nothing guarantees that
    substring is present.
-3. Else, inferred from the incoming request's scheme + `Host` header
-   (matches `routes/email_routes.py`'s email OAuth behavior) — fine for a
-   plain local/LAN install, wrong behind most reverse proxies, where you
-   need (1) or (2).
+3. Else, inferred from the incoming request — `X-Forwarded-Proto`/
+   `X-Forwarded-Host` when present (reverse proxy), else the request's own
+   scheme and `Host` header. Fine behind a correctly configured proxy or a
+   plain local/LAN install; pin (1)/(2) when it isn't.
+
+The same function returns the `origin` (`scheme://host`) the Settings ›
+Integrations › Google wizard shows the redirect URIs against, with a note
+that Google matches a redirect URI letter-for-letter — `localhost` and
+`127.0.0.1` are different origins to Google even though both reach the
+same machine.
 
 ## Routes (`routes/calendar_routes.py`, prefix `/api/calendar`)
 
@@ -61,6 +77,13 @@ Error codes on the callback redirect (`calendar_oauth_error=<code>`):
 `token_exchange_failed`, `identity_verification_failed` (reconnect with a
 different Google account than the one already on file),
 `account_not_found`.
+
+## The OAuth client itself (G3)
+
+`src/google_oauth_client.py` / `routes/google_oauth_routes.py` — see
+`docs/guides/google-oauth.md`. Not specific to Calendar: the same client
+also backs Gmail OAuth (`routes/email_routes.py`), one scope and redirect
+URI added per feature.
 
 ## Storage (`src/google_calendar_accounts.py`)
 

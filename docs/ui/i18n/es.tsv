@@ -7404,3 +7404,31 @@ https://<your-nextcloud-host>/remote.php/dav	https://<tu-servidor-nextcloud>/rem
 iCloud	iCloud
 needs reconnecting	necesita reconectar
 {name} needs to reconnect with Google before it can sync.	{name} necesita reconectar con Google antes de poder sincronizar.
+A client secret is required.	Es necesario un secreto de cliente.
+APIs & Services → Library → enable the Google Calendar API (and the Gmail API too, if you also want to connect email).	APIs y servicios → Biblioteca → habilita la Google Calendar API (y también la Gmail API, si además quieres conectar el correo).
+APIs & Services → OAuth consent screen → User Type: External.	APIs y servicios → Pantalla de consentimiento OAuth → Tipo de usuario: Externo.
+Calendar redirect URI	URI de redirección del calendario
+Choose a file…	Elegir un archivo…
+Client ID	ID de cliente
+Client ID and secret	ID de cliente y secreto
+Client secret	Secreto de cliente
+Configure Google	Configurar Google
+Configure Google first	Configurar Google primero
+Configured (from .env)	Configurado (desde .env)
+Configured (from .env).	Configurado (desde .env).
+Configured (saved here)	Configurado (guardado aquí)
+Configured (saved here).	Configurado (guardado aquí).
+Copy the Client ID and Client secret back here — or drop the client_secret_*.json file Google offers to download.	Copia aquí el ID de cliente y el secreto de cliente — o suelta el archivo client_secret_*.json que Google ofrece descargar.
+Could not copy — select it and copy by hand.	No se pudo copiar — selecciónalo y cópialo a mano.
+Credentials → Create Credentials → OAuth client ID → Application type: Web application. Paste the redirect URIs below into Authorized redirect URIs.	Credenciales → Crear credenciales → ID de cliente de OAuth → Tipo de aplicación: Aplicación web. Pega las URI de redirección de abajo en URI de redirección autorizados.
+Email redirect URI	URI de redirección del correo
+Google OAuth client removed.	Cliente OAuth de Google eliminado.
+Google OAuth client saved.	Cliente OAuth de Google guardado.
+Google matches the redirect URI letter by letter — register the origin you actually use ({host}).	Google compara la URI de redirección letra por letra — registra el origen que realmente usas ({host}).
+Not configured yet.	Aún no configurado.
+Open Google Cloud Console and create (or pick) a project.	Abre Google Cloud Console y crea (o elige) un proyecto.
+Open Google Cloud Console	Abrir Google Cloud Console
+Or drop / paste the client_secret_*.json file Google gave you	O suelta/pega el archivo client_secret_*.json que te dio Google
+Paste the Client ID and secret, or the client_secret JSON file.	Pega el ID de cliente y el secreto, o el archivo JSON client_secret.
+Publishing status: Testing, then add your own Google account under Test users. Testing refresh tokens expire after 7 days — publishing without verification is fine for personal use.	Estado de publicación: Prueba, y añade tu propia cuenta de Google en Usuarios de prueba. En modo Prueba, el refresh token caduca a los 7 días — publicar sin verificación está bien para uso personal.
+Remove for good?	¿Eliminar definitivamente?
