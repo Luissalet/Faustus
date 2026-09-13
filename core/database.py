@@ -2608,6 +2608,11 @@ class CalendarEvent(TimestampMixin, Base):
     remote_href = Column(String, nullable=True)        # CalDAV object URL for updates/deletes
     remote_etag = Column(String, nullable=True)        # Last seen CalDAV ETag, when available
     caldav_sync_pending = Column(String, nullable=True) # create | update | delete retry marker
+    # F4.1: caller-supplied idempotency key (e.g. "jobhunter:{job_id}:{message_id}").
+    # A POST /events carrying one that already exists for this owner returns the
+    # existing event with created=false instead of duplicating it — lets a
+    # recipe (or any other automation) re-run safely after a partial failure.
+    external_ref = Column(String, nullable=True, index=True)
 
     calendar = relationship("CalendarCal", back_populates="events")
 
@@ -3107,6 +3112,7 @@ def _formal_migration_steps() -> "list[tuple[str, object]]":
         ("add_session_project_id_column", _migrate_add_session_project_id_column),
         ("add_session_wire_material_columns", _migrate_add_session_wire_material_columns),
         ("add_session_behavior_mode", _migrate_add_session_behavior_mode),
+        ("add_calendar_external_ref", _migrate_add_calendar_external_ref),
     ]
 
 
@@ -3656,6 +3662,33 @@ def _migrate_add_calendar_recurrence_exdates():
             conn.close()
         except Exception:
             pass
+
+def _migrate_add_calendar_external_ref():
+    """Add `external_ref` to calendar_events (F4.1: calendar idempotency).
+
+    Same idempotency story as the other calendar_events ALTERs above:
+    `create_all` only creates missing TABLES, so an install whose table
+    predates this column needs it ALTERed in once; a fresh install already
+    has it from today's model and this is a no-op. Purely additive — NULL
+    means "no idempotency key", exactly how a plain calendar-UI event
+    should read.
+    """
+    try:
+        with engine.connect() as conn:
+            cols = [r[1] for r in conn.execute(text("PRAGMA table_info(calendar_events)"))]
+            if not cols:
+                return
+            if "external_ref" not in cols:
+                conn.execute(text("ALTER TABLE calendar_events ADD COLUMN external_ref TEXT"))
+                conn.execute(text(
+                    "CREATE INDEX IF NOT EXISTS ix_calendar_events_external_ref "
+                    "ON calendar_events(external_ref)"
+                ))
+                conn.commit()
+                logging.getLogger(__name__).info("Migrated: added 'external_ref' to calendar_events")
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"calendar_events.external_ref migration failed: {e}")
+
 
 def get_db():
     """
