@@ -1,13 +1,13 @@
-# Acceptance runner (TrueForge parity)
+# Acceptance runner (acceptance parity)
 
 `scripts/acceptance_run.py` is PR1's acceptance executor (see
-`docs/spec/trueforge/README.md`): it runs every test marked
+`docs/spec/paridad/README.md`): it runs every test marked
 `@pytest.mark.acceptance("A0N")`
 under `tests/` and writes one machine-readable JSONL line **per case** from
-`docs/spec/trueforge/acceptance_cases.json` — all 36 by default, including
+`docs/spec/paridad/acceptance_cases.json` — all 36 by default, including
 the ones with no test yet, which get `outcome: "NOT_EXECUTED"` instead of
 being silently missing from the file. It never decides a case is closed —
-that's `docs/spec/trueforge/ESTADO_ACEPTACION.md`'s job, kept honest by
+that's `docs/spec/paridad/ESTADO_ACEPTACION.md`'s job, kept honest by
 `tests/test_acceptance_index.py`. This script only reports what actually ran
 and what its actual outcome was.
 
@@ -25,7 +25,7 @@ python3 scripts/acceptance_run.py --case A07
 Other flags: `--target DIR` (default `tests`) restricts where pytest looks
 for acceptance-marked tests — used by `tests/test_acceptance_run.py` to
 point the runner at a throwaway test tree instead of the real suite;
-`--cases-path FILE` (default `docs/spec/trueforge/acceptance_cases.json`)
+`--cases-path FILE` (default `docs/spec/paridad/acceptance_cases.json`)
 overrides the case-id list, for the same reason; `--out FILE` overrides the
 JSONL destination; `--system NAME` overrides the `system` field (default
 `faustus`, so the same JSONL shape can later hold a comparison run against
@@ -79,9 +79,9 @@ model every other acceptance test uses today.
 ## What this script does NOT do
 
 It does not decide whether a case is closed (that's the `verde`/`xfail`/
-`pendiente` state in `docs/spec/trueforge/ESTADO_ACEPTACION.md`, checked
+`pendiente` state in `docs/spec/paridad/ESTADO_ACEPTACION.md`, checked
 against the real markers by `tests/test_acceptance_index.py`), and it does
 not compare against a baseline or another system — `TF01`/`TF24` (the
 comparable-benchmark and full-ledger backlog items,
-`docs/spec/trueforge/backlog.csv`) are still open. It is the first, honest
+`docs/spec/paridad/backlog.csv`) are still open. It is the first, honest
 half of "measure": a real, per-case, evidence-linked run record.

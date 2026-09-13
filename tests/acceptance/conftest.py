@@ -1,12 +1,12 @@
 """Shared helper for tests/acceptance/*.
 
-Acceptance tests (docs/spec/trueforge/) exercise real Faustus code end to
+Acceptance tests (docs/spec/paridad/) exercise real Faustus code end to
 end - TestClient against real routes, real agent_runs/approval_store/
 tool_approvals/workflows, fakes only for the LLM and for external processes
 - never a mock of the module under test. Each test function carries exactly
 one ``@pytest.mark.acceptance("A0N")`` (see pyproject.toml for the marker's
 registration and tests/test_acceptance_index.py for what cross-checks it
-against docs/spec/trueforge/ESTADO_ACEPTACION.md).
+against docs/spec/paridad/ESTADO_ACEPTACION.md).
 
 Case A03 predates this directory and stays where it lives
 (tests/test_tool_approvals.py::test_dispatcher_rejects_modified_approved_action);

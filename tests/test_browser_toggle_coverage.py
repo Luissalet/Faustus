@@ -83,7 +83,7 @@ def test_chat_route_privilege_gate_uses_the_prefix_denylist():
     from pathlib import Path
 
     source = (Path(__file__).resolve().parent.parent / "routes" / "chat_routes.py").read_text(encoding="utf-8")
-    # A01 (docs/spec/trueforge/): this statement now lives one level deeper,
+    # A01 (docs/spec/paridad/): this statement now lives one level deeper,
     # inside chat_stream's `async with _session_admission_lock(session):` —
     # match on the statement pair regardless of its exact indentation rather
     # than re-hardcoding column counts every time that wrapping shifts.

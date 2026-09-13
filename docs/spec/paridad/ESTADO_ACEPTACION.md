@@ -1,13 +1,13 @@
-# Estado de los 36 casos de aceptación de paridad TrueForge (A01-A36)
+# Estado de los 36 casos de aceptación de paridad de aceptación (A01-A36)
 
-Generado a mano (Lote T1, PR1) a partir de `docs/spec/trueforge/acceptance_cases.json`
+Generado a mano (Lote T1, PR1) a partir de `docs/spec/paridad/acceptance_cases.json`
 (copia sin cambios de `evidence/acceptance_cases.json` del paquete de
 auditoría) y coherente con el marker `acceptance(case_id)` que cada test
 declara (`pyproject.toml [tool.pytest.ini_options].markers`) —
 `tests/test_acceptance_index.py` lee ese marker de todo `tests/*.py` y falla
 si esta tabla se desincroniza con lo que realmente encuentra.
 
-Regla del encargo (ver `docs/spec/trueforge/README.md`): **ninguna fila pasa
+Regla del encargo (ver `docs/spec/paridad/README.md`): **ninguna fila pasa
 a `verde` porque exista una clase o un test simulado del mecanismo**. Solo
 cierra una fila un test que ejercita código real de Faustus (TestClient +
 rutas reales, `agent_runs`/`approval_store`/`tool_approvals`/workflows
@@ -24,7 +24,7 @@ columna `Test` de esa fila.
 
 Resumen tras fusionar T1+T2+T3 (2026-09-13): **7 verde** (A01–A07), 29 `pendiente`. En la entrega de T1 (PR1) era **1 verde** (A03),
 **0 xfail**, **35 pendiente**. De las 35 pendientes, 6 están asignadas por
-`CONTRATO_TRUEFORGE_1.md` a los lotes T2 (A01, A04, A07) y T3 (A02, A05,
+`CONTRATO_PARIDAD_1.md` a los lotes T2 (A01, A04, A07) y T3 (A02, A05,
 A06) de este mismo encargo; las 29 restantes (A08-A36 salvo las listadas)
 quedan fuera del alcance de T1/T2/T3 y abiertas para un PR posterior.
 
@@ -37,7 +37,7 @@ quedan fuera del alcance de T1/T2/T3 y abiertas para un PR posterior.
 | A05 | recovery | verde | `tests/acceptance/test_a05_unknown_effect.py` | — (T3: evento `tool_effect` `pending|confirmed|failed` por `call_id` con flush inmediato para tool-calls no `read`; `recover_interrupted_runs` marca `unknown_effects` en el parcial y en la nota; el siguiente turno recibe un bloque de sistema que prohíbe repetirlas sin comprobar) |
 | A06 | recovery | verde | `tests/acceptance/test_a06_lease_fencing.py` | — (T3: `lease_generation` en `scheduled_tasks` y `workflow_node_runs` con migración idempotente; `still_owner` antes de cada efecto en el scheduler → estado `fenced`; handlers de workflow con `_check_fenced` — devuelve `failed` + `fenced: True` porque el engine solo admite cuatro estados de handler) |
 | A07 | cancel | verde | `tests/acceptance/test_a07_cancel_cascade.py` | — (T2: `stop_workers_of_parent_by_level` transitivo; `chat_stop` retira aprobaciones de toda la jerarquía y cancela sus preguntas; `cleanup.workers_stopped` por nivel y `cleanup.approvals_retired`) |
-| A08 | tools | pendiente | — | Fuera del alcance de T1/T2/T3 de este contrato (`CONTRATO_TRUEFORGE_1.md` cubre solo A01-A07) |
+| A08 | tools | pendiente | — | Fuera del alcance de T1/T2/T3 de este contrato (`CONTRATO_PARIDAD_1.md` cubre solo A01-A07) |
 | A09 | tools | pendiente | — | Fuera del alcance de T1/T2/T3 |
 | A10 | code_mode | pendiente | — | Fuera del alcance de T1/T2/T3; sin puente Code Mode↔`tool_execution` encontrado en el árbol auditado (ver `MATRIZ_PARIDAD.md` fila 10) |
 | A11 | code_mode | pendiente | — | Fuera del alcance de T1/T2/T3 |

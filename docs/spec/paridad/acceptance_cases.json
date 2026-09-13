@@ -36,7 +36,7 @@
     {"id":"A31","area":"budget","trigger":"Parallel children and reviewer consume remaining shared budget","expect":"Reservations prevent uncontrolled overspend; actual usage reconciled"},
     {"id":"A32","area":"benchmark","trigger":"Failed paid attempt followed by success or all attempts fail","expect":"All known costs included; unknown cost reported as unknown instead of zero"},
     {"id":"A33","area":"benchmark","trigger":"Missing matrix cell or stale judge verdict","expect":"Incomplete report and no denominator reduction or stale pass"},
-    {"id":"A34","area":"migration","trigger":"Import TrueForge project with unsupported resource and external credentials","expect":"Preview supported mapping and losses; credentials reauthorized; no silent omission"},
+    {"id":"A34","area":"migration","trigger":"Import a reference-harness project with unsupported resource and external credentials","expect":"Preview supported mapping and losses; credentials reauthorized; no silent omission"},
     {"id":"A35","area":"distribution","trigger":"Clean install upgrade backup restore and uninstall on target platform","expect":"Reproducible documented lifecycle; preserved user data according to explicit choice"},
     {"id":"A36","area":"product","trigger":"Edit retry branch export or share session through documented surface","expect":"Supported semantics mapped explicitly; unavailable operations remain open gaps"}
   ]

@@ -1,6 +1,6 @@
-"""A02 — TrueForge parity acceptance case.
+"""A02 — acceptance-parity case.
 
-Contract (`docs/spec/trueforge/acceptance_cases.json`, A02): the SAME
+Contract (`docs/spec/paridad/acceptance_cases.json`, A02): the SAME
 decision, submitted by two concurrent clients against a SINGLE pending
 approval, must leave exactly one row decided and give the loser a coherent
 receipt — never a corrupted card, never two different "truths" about who

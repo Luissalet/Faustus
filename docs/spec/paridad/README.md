@@ -1,17 +1,17 @@
-# Paridad TrueForge — manifiesto (PR1 / Lote T1)
+# Paridad de aceptación — manifiesto (PR1 / Lote T1)
 
 ## Qué es este paquete
 
 Este directorio recoge, dentro del árbol de Faustus, el resultado del primer
 incremento de un encargo mayor: cerrar la brecha de producto entre Faustus y
-[TrueForge](https://github.com/truefoundry/trueforge) sin adoptar TrueForge
-como motor. La fuente es el paquete de auditoría
-`Faustus_vs_TrueForge_ContinualHarness_2026-09-13_V2` (copia de trabajo en
-`/tmp/.../scratchpad/trueforge/` durante la sesión que generó este lote; no
+un harness de agentes de referencia (no se nombra aquí a propósito) sin
+adoptarlo como motor. La fuente es el dictamen externo del 13-09-2026
+(copia de trabajo en
+`/tmp/.../scratchpad/paridad/` durante la sesión que generó este lote; no
 forma parte del árbol de Faustus). Documentos citados en esta carpeta:
 
 - `04_COMPARATIVA_Y_DECISION.md` — la matriz de 22 razones para elegir
-  TrueForge y el dictamen de que Faustus conserva su núcleo y cierra paridad
+  el harness de referencia y el dictamen de que Faustus conserva su núcleo y cierra paridad
   de producto, no al revés.
 - `16_BLUEPRINT_IMPLEMENTACION_V2.md` §9 — la secuencia de PRs (PR1..PR9);
   este lote es PR1.
@@ -21,7 +21,7 @@ forma parte del árbol de Faustus). Documentos citados en esta carpeta:
 - `09_BACKLOG.csv` — el backlog TF01–TF26, copiado con una columna
   `estado_2026-09-13` reauditada en `backlog.csv` de esta carpeta.
 - `10_LICENCIA_Y_ADOPCION.md` — la decisión de licencia (AGPL-3.0-or-later
-  de Faustus frente a MIT de TrueForge), que queda **abierta — decisión del
+  de Faustus frente a MIT del harness de referencia), que queda **abierta — decisión del
   propietario** en la matriz (fila TF17). Ningún fichero de licencia se ha
   tocado en este lote.
 
@@ -31,7 +31,7 @@ forma parte del árbol de Faustus). Documentos citados en esta carpeta:
   `lot/T1` en el worktree `/home/claude/faustus-T1`.
 - Commit base de la reauditoría de A01–A07 y de las citas de código de esta
   carpeta: `5b72467` (`master`), según lo fijado en
-  `CONTRATO_TRUEFORGE_1.md`.
+  `CONTRATO_PARIDAD_1.md`.
 - El baseline general de capacidades (`01_FAUSTUS_BASELINE.md` del paquete)
   fue auditado contra un checkout distinto (commit `98b9f17...`, ruta
   `D:/LocalAI/odysseus`); sus citas de fichero:línea se han vuelto a

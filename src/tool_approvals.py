@@ -576,7 +576,7 @@ class ToolApprovalStore:
         * ``"invalid_decision"`` — the card WAS this caller's to consume and
           IS now consumed (no re-consuming it), but `decision` did not map to
           a known scope (`scope_for_decision`), so there is no `approval` to
-          return. Not one of the four TrueForge-parity reasons the contract
+          return. Not one of the four acceptance-parity reasons the contract
           names, but real and distinct from all of them.
         """
         now = time.time()
@@ -672,7 +672,7 @@ class ToolApprovalStore:
         return carried_taint
 
     def retire_for_session_ids(self, *, owner: Any, session_id: Any) -> tuple[list[str], bool]:
-        """A07 (docs/spec/trueforge/): same retirement as `retire_for_session`,
+        """A07 (docs/spec/paridad/): same retirement as `retire_for_session`,
         plus the approval_ids actually retired -- `chat_stop`'s cleanup report
         needs to say WHICH approvals it retired for the cancelled turn and its
         stopped workers, not just whether any carried external provenance."""

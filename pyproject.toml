@@ -19,9 +19,9 @@ markers = [
     # taxonomy. The fast lane runs `not slow`; mark a test slow only with
     # duration evidence (see tests/run_focus.py --durations and tests/README.md).
     "slow: opt-in marker for known-slow tests; excluded by the fast lane (not slow)",
-    # TrueForge parity acceptance cases (docs/spec/trueforge/acceptance_cases.json,
+    # acceptance-parity cases (docs/spec/paridad/acceptance_cases.json,
     # A01-A36). tests/test_acceptance_index.py cross-checks every use of this
-    # marker against docs/spec/trueforge/ESTADO_ACEPTACION.md; scripts/acceptance_run.py
+    # marker against docs/spec/paridad/ESTADO_ACEPTACION.md; scripts/acceptance_run.py
     # runs everything marked with it and writes one evidence row per case.
-    "acceptance(case_id): TrueForge parity acceptance case (docs/spec/trueforge)",
+    "acceptance(case_id): acceptance-parity case (docs/spec/paridad)",
 ]

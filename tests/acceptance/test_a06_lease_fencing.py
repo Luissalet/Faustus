@@ -1,6 +1,6 @@
-"""A06 — TrueForge parity acceptance case.
+"""A06 — acceptance-parity case.
 
-Contract (`docs/spec/trueforge/acceptance_cases.json`, A06): a lease that
+Contract (`docs/spec/paridad/acceptance_cases.json`, A06): a lease that
 expired and was taken over by a second worker must stop the FIRST worker
 from producing an effect or writing a result once it wakes up — a plain
 owner-string lease says "not mine anymore" just as well right up until the

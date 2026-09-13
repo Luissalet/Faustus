@@ -1,4 +1,4 @@
-"""A07 (docs/spec/trueforge/, Lote T2): `POST /api/chat/stop?scope=task`
+"""A07 (docs/spec/paridad/, Lote T2): `POST /api/chat/stop?scope=task`
 cancellation must be TRANSITIVE (parent -> child -> grandchild, not just
 direct children) and must retire every pending tool_approval_store card and
 cancel every open question_store question anywhere in the stopped

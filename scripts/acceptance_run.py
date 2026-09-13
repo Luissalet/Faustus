@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""acceptance_run.py — PR1's acceptance executor for TrueForge parity.
+"""acceptance_run.py — PR1's acceptance executor for acceptance parity.
 
 Runs every test marked ``@pytest.mark.acceptance("A0N")`` under ``tests/``
-(real code, real routes — see docs/spec/trueforge/README.md's rule that
+(real code, real routes — see docs/spec/paridad/README.md's rule that
 nothing closes by existing or by a mock of the module under test), and
-writes one JSONL line PER CASE from docs/spec/trueforge/acceptance_cases.json
+writes one JSONL line PER CASE from docs/spec/paridad/acceptance_cases.json
 — all 36 by default, even the ones with no test yet, which get
 ``outcome: "NOT_EXECUTED"`` instead of being silently absent from the file.
 
@@ -18,7 +18,7 @@ writes one JSONL line PER CASE from docs/spec/trueforge/acceptance_cases.json
         A07 has no test yet).
 
 Each JSONL line has exactly the fields
-docs/spec/trueforge/acceptance_cases.json's ``required_run_fields`` lists:
+docs/spec/paridad/acceptance_cases.json's ``required_run_fields`` lists:
 case_id, system, commit, config_hash, model, run_id, attempts, outcome,
 evidence_refs, cost_status, total_cost, latency_ms. See
 docs/api/acceptance_runner.md for the field semantics and
@@ -40,7 +40,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
-DEFAULT_CASES_PATH = REPO_ROOT / "docs" / "spec" / "trueforge" / "acceptance_cases.json"
+DEFAULT_CASES_PATH = REPO_ROOT / "docs" / "spec" / "paridad" / "acceptance_cases.json"
 DEFAULT_OUT_DIR = REPO_ROOT / "data" / "acceptance"
 
 # Precedence used to reduce several test functions sharing one case_id (e.g.

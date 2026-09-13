@@ -1,6 +1,6 @@
-"""A05 — TrueForge parity acceptance case.
+"""A05 — acceptance-parity case.
 
-Contract (`docs/spec/trueforge/acceptance_cases.json`, A05): a tool call
+Contract (`docs/spec/paridad/acceptance_cases.json`, A05): a tool call
 whose `effect_class` is not `"read"` must record `pending` BEFORE dispatch
 and `confirmed`/`failed` after — through the real `execute_tool_block`, not
 a simulation of it — so that a process death between those two writes (the

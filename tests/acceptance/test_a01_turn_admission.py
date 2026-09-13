@@ -1,6 +1,6 @@
-"""A01 (docs/spec/trueforge/, Lote T2): turn admission.
+"""A01 (docs/spec/paridad/, Lote T2): turn admission.
 
-Two invariants from the reauditoria (CONTRATO_TRUEFORGE_1.md):
+Two invariants from the reauditoria (CONTRATO_PARIDAD_1.md):
 
 1. Full request validation completes, and can therefore reject the request
    with a plain 4xx, WITHOUT ever touching a predecessor run already in

@@ -332,9 +332,9 @@ deep-link de workflows, recetas desde un run real) ya no aparece aquí.
   contra Google («Check»). Luis solo tiene que crear el cliente en Google
   Cloud (guía `docs/api/google_oauth_setup.md`) y pegarlo.
 
-## Paridad TrueForge (13-09, noche) — PR1 + A01–A07 HECHO; el resto abierto
+## Paridad de aceptación (13-09, noche) — PR1 + A01–A07 HECHO; el resto abierto
 
-- Paquete de Luis en el scratchpad de la sesión y en `docs/spec/trueforge/`
+- Paquete de Luis en el scratchpad de la sesión y en `docs/spec/paridad/`
   (manifiesto, 36 recetas, estado, backlog). Ejecutor:
   `python3 scripts/acceptance_run.py` → `data/acceptance/<run_id>.jsonl`
   (hoy `passed=7, NOT_EXECUTED=29`).
@@ -351,7 +351,7 @@ deep-link de workflows, recetas desde un run real) ya no aparece aquí.
 
 ## Última evidencia
 
-- **13-09-2026 noche, paridad TrueForge incremento 1 (master `c7df980`+ =
+- **13-09-2026 noche, paridad de aceptación incremento 1 (master `c7df980`+ =
   Windows).** Suite nube entera tras fusionar T1–T3: 17.659 correctas, 49
   saltadas, 0 fallos (11 min 39 s). `scripts/acceptance_run.py`:
   `passed=7` (A01–A07), `NOT_EXECUTED=29`.

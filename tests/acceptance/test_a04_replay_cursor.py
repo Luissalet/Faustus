@@ -1,4 +1,4 @@
-"""A04 (docs/spec/trueforge/, Lote T2): resumable replay by cursor, end to
+"""A04 (docs/spec/paridad/, Lote T2): resumable replay by cursor, end to
 end through the REAL `GET /api/chat/resume/{session_id}` route, a REAL
 `src.agent_runs` detached run started by the REAL `POST /api/chat_stream`
 route, and a fake (but call-counted) model stream.

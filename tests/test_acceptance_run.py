@@ -30,7 +30,7 @@ from scripts.acceptance_run import (
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 RUNNER = REPO_ROOT / "scripts" / "acceptance_run.py"
-REAL_CASES_PATH = REPO_ROOT / "docs" / "spec" / "trueforge" / "acceptance_cases.json"
+REAL_CASES_PATH = REPO_ROOT / "docs" / "spec" / "paridad" / "acceptance_cases.json"
 
 
 class _FakePytestMain:

@@ -1,10 +1,10 @@
-"""Lote T1 — every TrueForge parity acceptance case (A01-A36) is accounted
+"""Lote T1 — every acceptance-parity case (A01-A36) is accounted
 for, and no one can quietly flip a case's declared state without also
 wiring (or removing) the test behind it.
 
 This mirrors tests/test_qa_index.py's approach for docs/spec/v2/QA_ESTADO.md,
 adapted to a different shape: unlike the 48 QA scenarios (one dedicated file
-each, always), most of the 36 TrueForge cases have NO test yet ("pendiente"
+each, always), most of the 36 acceptance cases have NO test yet ("pendiente"
 is the default and expected state for this lot), and the one case that does
 have a test (A03) lives inside a pre-existing file
 (tests/test_tool_approvals.py) alongside many unrelated tests, not in its
@@ -12,7 +12,7 @@ own tests/acceptance/test_a03_*.py module. So instead of requiring one file
 per id, this index walks every test_*.py under tests/ (recursively,
 including tests/acceptance/), finds every test function/method carrying
 ``@pytest.mark.acceptance("A0N")``, and cross-checks that against
-docs/spec/trueforge/ESTADO_ACEPTACION.md:
+docs/spec/paridad/ESTADO_ACEPTACION.md:
 
   - "pendiente": no test anywhere may carry that case's marker yet (once one
     does, the row must be flipped to verde/xfail in the same change).
@@ -36,8 +36,8 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 TESTS_DIR = Path(__file__).resolve().parent
-CASES_PATH = REPO_ROOT / "docs" / "spec" / "trueforge" / "acceptance_cases.json"
-STATUS_DOC = REPO_ROOT / "docs" / "spec" / "trueforge" / "ESTADO_ACEPTACION.md"
+CASES_PATH = REPO_ROOT / "docs" / "spec" / "paridad" / "acceptance_cases.json"
+STATUS_DOC = REPO_ROOT / "docs" / "spec" / "paridad" / "ESTADO_ACEPTACION.md"
 PYPROJECT = REPO_ROOT / "pyproject.toml"
 
 VALID_STATES = ("verde", "xfail", "pendiente")
@@ -126,12 +126,12 @@ def test_every_case_id_used_in_code_is_a_real_case():
     unknown = sorted(set(by_case) - ids)
     assert not unknown, (
         f"test(s) carry @pytest.mark.acceptance(...) for unknown case id(s): {unknown} "
-        f"(typo, or docs/spec/trueforge/acceptance_cases.json is stale)"
+        f"(typo, or docs/spec/paridad/acceptance_cases.json is stale)"
     )
 
 
 def test_acceptance_estado_doc_lists_every_case_with_a_valid_state():
-    assert STATUS_DOC.exists(), "docs/spec/trueforge/ESTADO_ACEPTACION.md is missing"
+    assert STATUS_DOC.exists(), "docs/spec/paridad/ESTADO_ACEPTACION.md is missing"
     ids = _case_ids()
     assert len(ids) == 36, f"expected 36 acceptance cases in acceptance_cases.json, found {len(ids)}"
     rows = _doc_rows()

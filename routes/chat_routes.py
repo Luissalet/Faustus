@@ -86,7 +86,7 @@ logger = logging.getLogger(__name__)
 _active_streams: Dict[str, dict] = {}
 
 # ---------------------------------------------------------------------------
-# A01 (turn admission race, docs/spec/trueforge/): a bounded per-session
+# A01 (turn admission race, docs/spec/paridad/): a bounded per-session
 # asyncio.Lock serializing only the MUTATING part of turn admission -- from
 # persisting the user's message (build_chat_context(persist_user_message=True)
 # in chat_stream below) through agent_runs.start(), the single point that
@@ -4202,7 +4202,7 @@ def setup_chat_routes(
         what_ran_before = agent_runs.tools_ran(session_id)
         stopped = agent_runs.stop(session_id, _expected_run_id)
         from src.agent_tools.subagent_tools import stop_workers_of_parent_by_level
-        # A07 (docs/spec/trueforge/): TRANSITIVE — parent -> child -> grandchild
+        # A07 (docs/spec/paridad/): TRANSITIVE — parent -> child -> grandchild
         # -> ... — not just the direct children the original implementation
         # stopped. `workers_stopped` keeps the per-level shape (level 0 = this
         # turn's direct workers, level 1 = their own workers, ...);
