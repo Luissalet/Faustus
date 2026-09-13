@@ -60,6 +60,18 @@ class ProjectUpdateRequest(BaseModel):
     run_tests: Optional[bool] = None
     test_command: Optional[str] = Field(None, max_length=400)
     review_model: Optional[str] = Field(None, max_length=200)
+    # CONTRATO_CONECTORES F2.2: this project's connector allowlist
+    # (`McpServer.id` values). Omitted = leave unchanged. `[]` = "this
+    # project allows zero MCP connectors" (kept as-is, never upgraded to
+    # "unrestricted" — see `services.projects._sanitize_connector_ids`).
+    # KNOWN GAP: because this model is read with `model_dump(exclude_none=
+    # True)` below (true for every field here, not special-cased for this
+    # one), there is currently no way to send an explicit `null` to clear a
+    # previously-set list back to "no project-level restriction" through
+    # this endpoint — only to `[]` or to a concrete list. Documented in
+    # docs/api/tool_selection.md §Decisions rather than changing
+    # `exclude_none` for every other field in this model to fix one.
+    connectors: Optional[List[str]] = None
 
 
 class MemoryWriteRequest(BaseModel):
@@ -163,6 +175,22 @@ def setup_project_routes() -> APIRouter:
             raise HTTPException(404, "Project not found")
         return project
 
+    def _with_effective_connectors(project: Dict[str, Any]) -> Dict[str, Any]:
+        """CONTRATO_CONECTORES F2.2: annotate a project response with its
+        effective connector set + where it came from, same shape as the
+        session/task connector endpoints (`connector_ids`, `effective`,
+        `source`). A project has no tier above it besides "every enabled
+        connector", so `source` here is only ever "project" or "all"."""
+        from src.connector_policy import resolve_allowed_servers
+
+        stored = project.get("connectors")
+        effective = resolve_allowed_servers(project=stored if isinstance(stored, list) else None)
+        out = dict(project)
+        out["connector_ids"] = stored if isinstance(stored, list) else None
+        out["effective"] = sorted(effective) if effective is not None else None
+        out["source"] = "project" if isinstance(stored, list) else "all"
+        return out
+
     # ------------------------------------------------------------------
     # CRUD
     # ------------------------------------------------------------------
@@ -207,7 +235,8 @@ def setup_project_routes() -> APIRouter:
         request: Request,
         _admin: None = Depends(require_admin),
     ) -> Dict[str, Any]:
-        return _get_or_404(project_id, effective_user(request))
+        project = _get_or_404(project_id, effective_user(request))
+        return _with_effective_connectors(project)
 
     @router.patch("/{project_id}")
     def update_project(
@@ -225,7 +254,7 @@ def setup_project_routes() -> APIRouter:
             raise HTTPException(400, str(e))
         if not updated:
             raise HTTPException(404, "Project not found")
-        return updated
+        return _with_effective_connectors(updated)
 
     @router.delete("/{project_id}")
     def delete_project(

@@ -237,6 +237,18 @@ class Session(TimestampMixin, Base):
     # are picked independently.
     behavior_mode = Column(String, nullable=True)
 
+    # CONTRATO_CONECTORES F2.2: this session's own connector allowlist —
+    # JSON array of `McpServer.id` strings, or NULL. NULL means "no explicit
+    # per-session override": `src.connector_policy.resolve_allowed_servers`
+    # then falls through to the session's project (if any) and, failing
+    # that, to today's behavior (every enabled connector, unrestricted).
+    # An explicit `[]` is NOT the same as NULL — it is "this chat may call
+    # zero MCP connectors" and is honoured as such. Stored as TEXT (not the
+    # JSON column type) so the idempotent ALTER TABLE migration below is a
+    # plain `ADD COLUMN ... TEXT`, same as every other JSON-in-TEXT column
+    # in this file (see `McpServer.disabled_tools` right above its class).
+    connector_ids = Column(Text, nullable=True)
+
     # Relationship to chat messages
     messages = relationship("ChatMessage", back_populates="session", cascade="all, delete-orphan")
     
@@ -1607,6 +1619,30 @@ def _migrate_add_session_behavior_mode():
                 logging.getLogger(__name__).info("Migrated: added 'behavior_mode' to sessions")
     except Exception as e:
         logging.getLogger(__name__).warning(f"sessions.behavior_mode migration failed: {e}")
+
+
+def _migrate_add_session_connector_ids():
+    """Add `connector_ids` to sessions (CONTRATO_CONECTORES Lote F2).
+
+    Same idempotency story as `_migrate_add_session_behavior_mode` right
+    above: `create_all` only creates missing TABLES, so an install whose
+    `sessions` table predates this column needs it ALTERed in once; a fresh
+    install already has it from today's model and this is a no-op. Purely
+    additive — NULL means "no per-session connector override", which is
+    exactly how `get_session_connector_ids` already reads a session that
+    was never given one.
+    """
+    try:
+        with engine.connect() as conn:
+            cols = [r[1] for r in conn.execute(text("PRAGMA table_info(sessions)"))]
+            if not cols:
+                return
+            if "connector_ids" not in cols:
+                conn.execute(text("ALTER TABLE sessions ADD COLUMN connector_ids TEXT"))
+                conn.commit()
+                logging.getLogger(__name__).info("Migrated: added 'connector_ids' to sessions")
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"sessions.connector_ids migration failed: {e}")
 
 
 def _migrate_add_owner_column():
@@ -3107,6 +3143,7 @@ def _formal_migration_steps() -> "list[tuple[str, object]]":
         ("add_session_project_id_column", _migrate_add_session_project_id_column),
         ("add_session_wire_material_columns", _migrate_add_session_wire_material_columns),
         ("add_session_behavior_mode", _migrate_add_session_behavior_mode),
+        ("add_session_connector_ids", _migrate_add_session_connector_ids),
     ]
 
 
@@ -3808,6 +3845,44 @@ def set_session_behavior_mode(session_id: str, mode_id) -> bool:
         return True
     except Exception:
         logger.warning("Failed to persist behavior_mode %r for session %s", mode_id, session_id)
+        return False
+
+def get_session_connector_ids(session_id: str):
+    """Return a session's persisted connector allowlist (CONTRATO_CONECTORES
+    F2.2), or None if unset/unknown.
+
+    `None` means "no per-session override" (`src.connector_policy` then
+    falls through to the project tier, then to unrestricted — today's
+    behavior). An empty list is a real, different answer: "this chat may
+    call zero MCP connectors" — returned as `[]`, not upgraded to None.
+    Same best-effort contract as `get_session_behavior_mode`: never raises."""
+    import json as _json
+    try:
+        with get_db_session() as db:
+            raw = db.query(Session.connector_ids).filter(Session.id == session_id).scalar()
+        if raw is None:
+            return None
+        parsed = _json.loads(raw)
+        return [str(x) for x in parsed] if isinstance(parsed, list) else None
+    except Exception:
+        logger.warning("Failed to read connector_ids for session %s", session_id)
+        return None
+
+def set_session_connector_ids(session_id: str, connector_ids) -> bool:
+    """Persist a session's connector allowlist (or clear it with `None`).
+
+    `connector_ids=None` clears the override (back to "inherit"); any other
+    iterable is stored as a JSON array of strings (`[]` included, and kept
+    as `[]` — never coerced to None). Best-effort: never raises, same
+    posture as `set_session_behavior_mode`."""
+    import json as _json
+    try:
+        value = None if connector_ids is None else _json.dumps([str(x) for x in connector_ids])
+        with get_db_session() as db:
+            db.query(Session).filter(Session.id == session_id).update({"connector_ids": value})
+        return True
+    except Exception:
+        logger.warning("Failed to persist connector_ids %r for session %s", connector_ids, session_id)
         return False
 
 def get_session_by_id(session_id: str):
