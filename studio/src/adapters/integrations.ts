@@ -40,12 +40,15 @@ function form(fields: Record<string, string | undefined>): FormData {
   return fd;
 }
 
-export type IntegrationKind = 'api' | 'caldav' | 'google_calendar' | 'contacts' | 'carddav' | 'email' | 'mcp' | 'codex' | 'claude' | 'vault';
+export type IntegrationKind = 'api' | 'caldav' | 'google_calendar' | 'google_oauth_client' | 'contacts' | 'carddav' | 'email' | 'mcp' | 'codex' | 'claude' | 'vault';
 
 export const KIND_LABEL: Record<IntegrationKind, string> = {
   api: 'API',
   caldav: 'CalDAV',
   google_calendar: 'Google Calendar',
+  // G3.3: the shared OAuth client Google Calendar and Gmail OAuth both use
+  // (studio/src/adapters/google.ts, routes/google_oauth_routes.py).
+  google_oauth_client: 'Google (OAuth client)',
   contacts: 'Contacts',
   carddav: 'CardDAV',
   email: 'Mail',
