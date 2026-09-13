@@ -353,6 +353,7 @@ async def test_missing_sealed_document_does_not_fall_back_to_another(monkeypatch
 
 
 @pytest.mark.asyncio
+@pytest.mark.acceptance("A03")
 async def test_dispatcher_rejects_modified_approved_action(monkeypatch):
     import src.tool_execution as tool_execution
 
