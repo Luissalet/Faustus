@@ -7379,3 +7379,28 @@ Always show images from {sender}	Mostrar siempre las imágenes de {sender}
 Load remote images in every mail	Cargar las imágenes remotas en todos los correos
 Off, a mail shows its pictures only when you ask — loading them tells the sender you opened it.	Apagado, un correo enseña sus imágenes solo cuando lo pides: cargarlas le dice al remitente que lo has abierto.
 Show them this time	Mostrarlas esta vez
+All calendars	Todos los calendarios
+All calendars sync when none is ticked.	Se sincronizan todos los calendarios cuando no se marca ninguno.
+An app-specific password from appleid.apple.com — not your Apple ID password.	Una contraseña específica de aplicación de appleid.apple.com, no tu contraseña de Apple ID.
+CalDAV (other)	CalDAV (otro)
+Calendar provider	Proveedor de calendario
+Calendars to sync	Calendarios a sincronizar
+Check calendars	Comprobar calendarios
+Could not connect Google Calendar: {reason}	No se pudo conectar Google Calendar: {reason}
+Each one's name and colour; export or import .ics. Google and CalDAV accounts are set up in Settings → Integrations.	El nombre y color de cada uno; exporta o importa .ics. Las cuentas de Google y CalDAV se configuran en Ajustes → Integraciones.
+Google Calendar	Google Calendar
+Google Calendar account removed.	Cuenta de Google Calendar eliminada.
+Google Calendar connected.	Google Calendar conectado.
+Google rejects a plain username and password for CalDAV; this connects the same way Faustus already connects Gmail — OAuth, with Google asking you for consent.	Google rechaza un usuario y contraseña simples para CalDAV; esto conecta igual que Faustus ya conecta Gmail — OAuth, con Google pidiendo tu consentimiento.
+Google revoked or expired this connection — sync is paused until it reconnects.	Google revocó o caducó esta conexión — la sincronización está en pausa hasta que se reconecte.
+Last synced {when}.	Última sincronización {when}.
+New {provider} account	Nueva cuenta de {provider}
+Nextcloud	Nextcloud
+Not synced yet.	Aún sin sincronizar.
+Save selection	Guardar selección
+Set GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET in .env	Define GOOGLE_OAUTH_CLIENT_ID y GOOGLE_OAUTH_CLIENT_SECRET en .env
+Sync remote calendars	Sincronizar calendarios remotos
+https://<your-nextcloud-host>/remote.php/dav	https://<tu-servidor-nextcloud>/remote.php/dav
+iCloud	iCloud
+needs reconnecting	necesita reconectar
+{name} needs to reconnect with Google before it can sync.	{name} necesita reconectar con Google antes de poder sincronizar.
