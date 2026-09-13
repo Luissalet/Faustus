@@ -534,3 +534,11 @@ pendientes/variantes; Writer's Hoard necesita otro puerto que el 8766 de
 Relief Studio (`WH_AIBRIDGE_PORT`); credenciales de correo/calendario en
 los formularios existentes antes de la receta real; prueba de navegador
 aparte (el MCP de Jobhunter no navega).
+
+## OBJ-11 · Paridad con TrueForge y ventaja medida — EN CURSO (13-09-2026)
+
+Pedido por Luis con el paquete `Faustus_vs_TrueForge_ContinualHarness_2026-09-13_V2` (análisis de ChatGPT, 17 documentos, 36 recetas de aceptación propuestas). Objetivo del propietario: que no quede un motivo funcional ni práctico para elegir TrueForge; ventaja solo con evidencia. Reglas que se respetan: un solo núcleo (nada de segundo runtime ni segundo motor de memoria); ninguna fila se cierra por existir una clase; cada cierre enlaza un test que ejercita código real; lo no cerrado se declara abierto; la licencia (AGPL vs MIT) es decisión de Luis.
+
+**Hecho (FAUSTUS.md §83).** PR1: manifiesto de paridad (`docs/spec/trueforge/MATRIZ_PARIDAD.md`), estado de aceptación, ejecutor con los doce campos por run. PR3 parcial: A01–A07 en verde (admisión por sesión, aprobaciones con recibo consistente, replay con cursor probado de verdad, `tool_effect`/`unknown_effects` para tool-calls de chat, `lease_generation` + fencing antes del efecto, cancelación transitiva con retirada de aprobaciones y preguntas).
+
+**Queda, en el orden del blueprint (16 §9).** PR2 SDK mínimo TS (create/subscribe/cancel) con consumidor externo real (A20); PR4 artefactos duraderos y carga diferida de herramientas (A08, A09, A12, A13); PR5 puente Code Mode con la misma puerta de política y presupuesto padre+hijos (A10, A11, A31); PR6 UI embebible (A21); PR7 OIDC/identidad de servicio/perfil Team (A22, A23); PR8 evolución candidata con evaluación reservada y rollback reutilizando experiencias/Teach/governance (A26–A30); PR9 migración desde TrueForge y benchmark pareado con coste total (A32–A34); distribución (A35) y semántica de sesión (A36). Compacción: solo el shaping intra-turno de `_build_route_request_state` y la señal durante el resumen (A14, A15). Cada PR con su caso de aceptación y evidencia en `ESTADO_ACEPTACION.md`.

@@ -332,8 +332,29 @@ deep-link de workflows, recetas desde un run real) ya no aparece aquí.
   contra Google («Check»). Luis solo tiene que crear el cliente en Google
   Cloud (guía `docs/api/google_oauth_setup.md`) y pegarlo.
 
+## Paridad TrueForge (13-09, noche) — PR1 + A01–A07 HECHO; el resto abierto
+
+- Paquete de Luis en el scratchpad de la sesión y en `docs/spec/trueforge/`
+  (manifiesto, 36 recetas, estado, backlog). Ejecutor:
+  `python3 scripts/acceptance_run.py` → `data/acceptance/<run_id>.jsonl`
+  (hoy `passed=7, NOT_EXECUTED=29`).
+- Siguiente por el blueprint: PR2 SDK TS mínimo + consumidor externo (A20),
+  PR4 artefactos/carga diferida (A08/A09/A12/A13), PR5 Code Mode (A10/A11/
+  A31), PR6 UI embebible (A21), PR7 OIDC/Team (A22/A23), PR8 evolución con
+  rollback (A26–A30), PR9 migración/benchmark (A32–A34). Compacción
+  intra-turno (A14/A15). Licencia TF17: decisión de Luis.
+- Trampas de este lote: `consume_with_reason` lo escribieron T2 y T3 a la
+  vez (se quedó la forma `(reason, approval)` de T3 + `retire_for_session_ids`
+  de T2); el engine de workflows solo admite cuatro estados de handler, por
+  eso `fenced` viaja como `failed` + `fenced: True` en nodos (en tareas
+  programadas sí es un estado propio).
+
 ## Última evidencia
 
+- **13-09-2026 noche, paridad TrueForge incremento 1 (master `c7df980`+ =
+  Windows).** Suite nube entera tras fusionar T1–T3: 17.659 correctas, 49
+  saltadas, 0 fallos (11 min 39 s). `scripts/acceptance_run.py`:
+  `passed=7` (A01–A07), `NOT_EXECUTED=29`.
 - **13-09-2026 noche, cliente OAuth de Google desde la app (master `ead8879`+ =
   Windows).** Suite nube entera tras G3: 17.593 correctas, 49 saltadas, 1
   fallo que era la guía en `docs/guides/` (la guarda de docs solo admite
