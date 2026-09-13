@@ -17,6 +17,8 @@ import type {
   OpenQuestion,
   ServerVersion,
   Session,
+  SessionExportOptions,
+  SessionExportResult,
   SessionSummary,
   SessionUpdatePatch,
   SessionUpdateResult,
@@ -211,6 +213,11 @@ export class FaustusClient {
     list(): Promise<SessionSummary[]>;
     update(id: string, patch: SessionUpdatePatch): Promise<SessionUpdateResult>;
     remove(id: string): Promise<void>;
+    /** `GET /api/session/{id}/export` — the rendered conversation's bytes.
+     *  The server also records this as an artifact (see
+     *  `docs/api/sdk_surface.md`'s export row), so a caller after this
+     *  resolves can find it with `client.artifacts.list({sessionId: id})`. */
+    export(id: string, opts?: SessionExportOptions): Promise<SessionExportResult>;
   };
 
   readonly turns: {
@@ -246,6 +253,7 @@ export class FaustusClient {
       list: () => http.listSessions(),
       update: (id, patch) => http.updateSession(id, sessionUpdateForm(patch)),
       remove: (id) => http.removeSession(id),
+      export: (id, opts) => http.exportSession(id, opts?.fmt ?? 'md', opts?.filename ?? ''),
     };
 
     this.turns = {

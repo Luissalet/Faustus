@@ -54,6 +54,7 @@ console.log('\n', (await turn.done).reason); // 'done'
 | `client.sessions.list()` | `GET /api/sessions` | bare array |
 | `client.sessions.update(id, patch)` | `PATCH /api/session/{id}` | see "Deviations" below |
 | `client.sessions.remove(id)` | `DELETE /api/session/{id}` | |
+| `client.sessions.export(id, {fmt, filename}?)` | `GET /api/session/{id}/export` | `fmt` defaults to `'md'`; returns `{content: Uint8Array, filename, mediaType}` — also recorded server-side as an artifact, so `artifacts.list({sessionId: id})` finds it right after |
 | `client.turns.create(sid, input, opts?)` | `POST /api/chat_stream` | returns a `Turn` once headers arrive |
 | `client.turns.resume(sid, {cursor}?)` | `GET /api/chat/resume/{sid}` | throws `RunNotActiveError` on 404 |
 | `client.turns.stop(sid, {runId, scope}?)` | `POST /api/chat/stop/{sid}` | standalone stop, no `Turn` needed |
@@ -158,6 +159,23 @@ policy — in short: an unversioned client is always accepted, a client
 below the server's floor gets 426 (`UpgradeRequiredError`), and a
 supported-but-older client gets a soft `client_adaptation_notice` back
 from `GET /api/version` instead of a hard failure.
+
+## Verified example (A20)
+
+`examples/esm` and `examples/cjs` are exercised — installed from a real
+`npm pack` tarball into two clean Node projects, no other network access —
+against a real running server (auth on, a real minted token) by the test
+below. It walks the full lifecycle this README documents: create a session,
+send a turn with `workspace`, answer an in-turn `tool_approval`, follow the
+turn to `done`, `sessions.export()` the conversation, then confirm
+`artifacts.list/get/download` finds it with a matching `sha256`; plus a
+`turn.cancel('task')` + `turns.resume()` → `RunNotActiveError`, and a
+`sessions`-scopeless token getting a 403 `FaustusApiError` on
+`sessions.create()`. Reproduce with (from the main repository):
+
+```sh
+python3 -m pytest tests/acceptance/test_a20_external_sdk_consumer.py -q -p no:cacheprovider
+```
 
 ## A deliberate deviation
 

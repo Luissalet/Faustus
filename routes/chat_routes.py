@@ -648,6 +648,16 @@ def _resolve_request_workspace(request, raw_value) -> tuple:
     and no event: otherwise the presence/absence of workspace_rejected would
     let a non-admin chat caller probe which host paths exist.
 
+    The privilege check reads ``effective_user`` (S1.1's ownership seam),
+    never the raw authenticated principal: a bearer ``ody_`` token's raw
+    principal is always the sandboxed pseudo-user "api"
+    (src/auth_helpers.py::effective_user), so gating on ``get_current_user``
+    here silently dropped every token-driven ``workspace`` — even the
+    session's own admin owner's — turning agent-mode file/shell tools into a
+    default-allowlist-only sandbox for every paired SDK client. Reading
+    ``effective_user`` instead resolves to the token's real owner, exactly
+    like every other owner-scoped decision on this route already does.
+
     vet_workspace rejects non-directories, sensitive roots (.ssh, .gnupg,
     ...), and filesystem roots; on rejection there is no confinement and the
     default tool-path allowlist applies. The rejected value is surfaced so the
@@ -658,7 +668,7 @@ def _resolve_request_workspace(request, raw_value) -> tuple:
     if not requested:
         return "", ""
     from src.tool_security import owner_is_admin_or_single_user
-    if not owner_is_admin_or_single_user(get_current_user(request)):
+    if not owner_is_admin_or_single_user(effective_user(request)):
         return "", ""
     from src.tool_execution import vet_workspace
     workspace = vet_workspace(requested) or ""

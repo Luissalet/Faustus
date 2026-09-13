@@ -7,7 +7,14 @@
  * request_failed` enforces there). CONTRATO_SDK_S2.md § S2.1/S2.2.
  */
 import { FaustusApiError, UpgradeRequiredError } from './errors.js';
-import type { ClientOptions, ServerVersion, Session, SessionSummary, SessionUpdateResult } from './types.js';
+import type {
+  ClientOptions,
+  ServerVersion,
+  Session,
+  SessionExportResult,
+  SessionSummary,
+  SessionUpdateResult,
+} from './types.js';
 import { str } from './util.js';
 
 export const CLIENT_API_VERSION = '2.0';
@@ -67,6 +74,27 @@ export async function describeFailure(
   }
   if (!message) message = `HTTP ${response.status}`;
   return { message, detail: message, errorClass, body };
+}
+
+/** Reads a `Content-Disposition: attachment; filename="…"; filename*=UTF-8''…`
+ *  header (RFC 6266 — `routes/session_routes.py::_content_disposition` is
+ *  the server side of this) into the real name: the `filename*` form when
+ *  present (accents/CJK survive its percent-encoding intact), else the
+ *  plain quoted `filename=`, else `''` when the header is missing or
+ *  unparseable — never thrown over a cosmetic mismatch. */
+export function parseContentDispositionFilename(header: string | null): string {
+  if (!header) return '';
+  const extended = header.match(/filename\*\s*=\s*UTF-8''([^;]+)/i);
+  if (extended) {
+    try {
+      return decodeURIComponent(extended[1] ?? '');
+    } catch {
+      /* fall through to the plain form below */
+    }
+  }
+  const plain = header.match(/filename\s*=\s*"([^"]*)"|filename\s*=\s*([^;]+)/i);
+  if (plain) return (plain[1] ?? plain[2] ?? '').trim();
+  return '';
 }
 
 export class HttpContext {
@@ -156,5 +184,34 @@ export class HttpContext {
 
   async removeSession(id: string, signal?: AbortSignal): Promise<void> {
     await this.requestJson<unknown>(`/api/session/${encodeURIComponent(id)}`, { method: 'DELETE' }, signal);
+  }
+
+  /** `GET /api/session/{id}/export` — a file download, not JSON, so this
+   *  reads the raw `Response` directly (`request()`, not `requestJson()`)
+   *  the same way `client.artifacts.download()` does. */
+  async exportSession(id: string, fmt: string, filename: string, signal?: AbortSignal): Promise<SessionExportResult> {
+    const p = new URLSearchParams();
+    if (fmt) p.set('fmt', fmt);
+    if (filename) p.set('filename', filename);
+    const qs = p.toString();
+    const response = await this.request(
+      `/api/session/${encodeURIComponent(id)}/export${qs ? `?${qs}` : ''}`,
+      {},
+      signal,
+    );
+    if (response.status === 426) {
+      const { detail, body } = await describeFailure(response);
+      throw new UpgradeRequiredError(detail, body);
+    }
+    if (!response.ok) {
+      const { message, detail, errorClass, body } = await describeFailure(response);
+      throw new FaustusApiError(message, response.status, { detail, errorClass, body });
+    }
+    const content = new Uint8Array(await response.arrayBuffer());
+    return {
+      content,
+      filename: parseContentDispositionFilename(response.headers.get('Content-Disposition')),
+      mediaType: response.headers.get('Content-Type') ?? 'application/octet-stream',
+    };
   }
 }

@@ -96,6 +96,34 @@ export interface SessionUpdatePatch {
   endpointId?: string;
 }
 
+/** `GET /api/session/{sid}/export`'s query — `fmt` defaults to `'md'` on
+ *  the wire when omitted (`routes/session_routes.py::_resolve_fmt`); this
+ *  library sends `'md'` explicitly rather than relying on that default. */
+export interface SessionExportOptions {
+  /** One of `src/chat_export.py`'s `SUPPORTED_FORMATS` (`md`, `txt`, `json`,
+   *  `html`, `pdf`, `docx`, …). Default `'md'`. */
+  fmt?: string;
+  /** Caller-suggested filename; the server sanitises it and may still
+   *  derive its own from the chat title (see `filename` on the result). */
+  filename?: string;
+}
+
+/** `GET /api/session/{sid}/export`'s response: the rendered file's raw
+ *  bytes plus what the server actually named and typed it
+ *  (`Content-Disposition`/`Content-Type`) — never JSON, so this is read off
+ *  `HttpContext.request()` directly rather than `requestJson`. The export
+ *  is also recorded as an artifact server-side (`session_id` set), so
+ *  `client.artifacts.list({sessionId})` finds it right after this call
+ *  returns; this result carries only the download itself. */
+export interface SessionExportResult {
+  content: Uint8Array;
+  /** The server's `Content-Disposition` filename — the RFC 5987
+   *  `filename*` value when present (accents/CJK intact), else the plain
+   *  `filename=` fallback, else `''` if the header was missing entirely. */
+  filename: string;
+  mediaType: string;
+}
+
 /**
  * `PATCH /api/session/{sid}`'s response — an echo of the fields that were
  * actually set, not a full `Session` (`routes/session_routes.py::

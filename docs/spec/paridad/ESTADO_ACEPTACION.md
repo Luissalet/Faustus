@@ -22,7 +22,7 @@ columna `Test` de esa fila.
   (PR1 solo entrega el manifiesto y el ejecutor, no los mecanismos de
   A01-A36); no implica que el caso esté descartado.
 
-Resumen tras fusionar T1+T2+T3 (2026-09-13): **7 verde** (A01–A07), 29 `pendiente`. En la entrega de T1 (PR1) era **1 verde** (A03),
+Resumen tras fusionar T1+T2+T3+S3 (2026-09-13): **8 verde** (A01–A07, A20), 28 `pendiente`. En la entrega de T1 (PR1) era **1 verde** (A03),
 **0 xfail**, **35 pendiente**. De las 35 pendientes, 6 están asignadas por
 `CONTRATO_PARIDAD_1.md` a los lotes T2 (A01, A04, A07) y T3 (A02, A05,
 A06) de este mismo encargo; las 29 restantes (A08-A36 salvo las listadas)
@@ -49,7 +49,7 @@ quedan fuera del alcance de T1/T2/T3 y abiertas para un PR posterior.
 | A17 | sandbox | pendiente | — | Fuera del alcance de T1/T2/T3 |
 | A18 | mcp | pendiente | — | Fuera del alcance de T1/T2/T3 |
 | A19 | mcp | pendiente | — | Fuera del alcance de T1/T2/T3 |
-| A20 | sdk | pendiente | — | Fuera del alcance de T1/T2/T3; sin SDK publicado en el árbol (ver `MATRIZ_PARIDAD.md` fila 2) |
+| A20 | sdk | verde | `tests/acceptance/test_a20_external_sdk_consumer.py` | — (S3: `npm pack` + `npm install --offline` en dos proyectos limpios, ESM y CommonJS, contra un servidor real con auth activada y un token `ody_…` real de perfil `sdk`; turno de agente con `workspace`, aprobación `tool_approval` real vía `approve_task`, edición que llega a disco, `sessions.export()` + `artifacts.list/get/download` con `sha256` verificado, `turn.cancel('task')` + `turns.resume()` → `RunNotActiveError`, y un token sin scope `sessions` rechazado con 403 al crear sesión; de paso corrigió un bug real en `routes/chat_routes.py::_resolve_request_workspace` que descartaba `workspace` en toda llamada autenticada por token — ver `MATRIZ_PARIDAD.md` fila 2 para las reservas honestas sobre el propio paquete) |
 | A21 | embed | pendiente | — | Fuera del alcance de T1/T2/T3; sin UI embebible en el árbol (ver `MATRIZ_PARIDAD.md` fila 3) |
 | A22 | auth | pendiente | — | Fuera del alcance de T1/T2/T3; sin OIDC de aplicación (ver `MATRIZ_PARIDAD.md` fila 7) |
 | A23 | machine_auth | pendiente | — | Fuera del alcance de T1/T2/T3 |

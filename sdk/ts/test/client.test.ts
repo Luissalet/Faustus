@@ -178,6 +178,54 @@ test('questions.list() reads the "questions" array', async () => {
   assert.equal(questions[0]?.question_id, 'q1');
 });
 
+test('sessions.export() reads the raw bytes and the Content-Disposition filename', async () => {
+  const { fetch, calls } = fakeFetch((call) => {
+    assert.equal(call.method, 'GET');
+    assert.ok(call.url.endsWith('/api/session/s1/export?fmt=md'));
+    return new Response(new TextEncoder().encode('# chat\n'), {
+      status: 200,
+      headers: {
+        'Content-Type': 'text/markdown',
+        'Content-Disposition': "attachment; filename=\"chat.md\"; filename*=UTF-8''Informe%202026.md",
+      },
+    });
+  });
+  const client = new FaustusClient({ baseUrl: 'http://sdk-test', fetch });
+  const result = await client.sessions.export('s1', { fmt: 'md' });
+  assert.equal(new TextDecoder().decode(result.content), '# chat\n');
+  assert.equal(result.filename, 'Informe 2026.md');
+  assert.equal(result.mediaType, 'text/markdown');
+  assert.equal(calls.length, 1);
+});
+
+test('sessions.export() defaults fmt to "md" and falls back to the plain filename when there is no filename*', async () => {
+  const { fetch } = fakeFetch((call) => {
+    assert.ok(call.url.endsWith('/api/session/s1/export?fmt=md'));
+    return new Response(new Uint8Array([1, 2, 3]), {
+      status: 200,
+      headers: { 'Content-Disposition': 'attachment; filename="export.md"' },
+    });
+  });
+  const client = new FaustusClient({ baseUrl: 'http://sdk-test', fetch });
+  const result = await client.sessions.export('s1');
+  assert.deepEqual(Array.from(result.content), [1, 2, 3]);
+  assert.equal(result.filename, 'export.md');
+});
+
+test('sessions.export() surfaces a non-2xx as FaustusApiError, same as artifacts.download()', async () => {
+  const { fetch } = fakeFetch(() => jsonResponse({ detail: 'Session not found' }, { status: 404 }));
+  const client = new FaustusClient({ baseUrl: 'http://sdk-test', fetch });
+  await assert.rejects(
+    () => client.sessions.export('gone'),
+    (err: unknown) => {
+      assert.ok(err instanceof FaustusApiError);
+      assert.equal(err.status, 404);
+      assert.equal(err.detail, 'Session not found');
+      return true;
+    },
+  );
+});
+
 test('turns.status() returns null on a 404 rather than throwing', async () => {
   const { fetch } = fakeFetch(() => emptyResponse(404));
   const client = new FaustusClient({ baseUrl: 'http://sdk-test', fetch });
