@@ -880,8 +880,14 @@ def setup_task_routes(task_scheduler) -> APIRouter:
 
             db.commit()
             db.refresh(task)
-            if req.connector_ids is not None:
-                set_task_policy(task.id, connector_ids=req.connector_ids)
+            # An explicit `"connector_ids": null` in the PUT body clears the
+            # task-level override (back to "inherit"); an omitted field leaves
+            # it alone. `model_fields_set` is what tells the two apart.
+            if "connector_ids" in req.model_fields_set:
+                if req.connector_ids is None:
+                    set_task_policy(task.id, _clear_connector_ids=True)
+                else:
+                    set_task_policy(task.id, connector_ids=req.connector_ids)
             return _task_to_dict(task)
         finally:
             db.close()

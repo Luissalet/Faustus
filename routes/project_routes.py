@@ -64,13 +64,10 @@ class ProjectUpdateRequest(BaseModel):
     # (`McpServer.id` values). Omitted = leave unchanged. `[]` = "this
     # project allows zero MCP connectors" (kept as-is, never upgraded to
     # "unrestricted" — see `services.projects._sanitize_connector_ids`).
-    # KNOWN GAP: because this model is read with `model_dump(exclude_none=
-    # True)` below (true for every field here, not special-cased for this
-    # one), there is currently no way to send an explicit `null` to clear a
-    # previously-set list back to "no project-level restriction" through
-    # this endpoint — only to `[]` or to a concrete list. Documented in
-    # docs/api/tool_selection.md §Decisions rather than changing
-    # `exclude_none` for every other field in this model to fix one.
+    # An explicit `null` clears a previously-set list back to "no
+    # project-level restriction" (the PATCH handler reads
+    # `model_fields_set` for this one field, so `exclude_none` stays as it
+    # is for every other field).
     connectors: Optional[List[str]] = None
 
 
@@ -248,6 +245,11 @@ def setup_project_routes() -> APIRouter:
         owner = effective_user(request)
         _get_or_404(project_id, owner)
         updates = payload.model_dump(exclude_none=True)
+        # `"connectors": null` sent explicitly means "drop the project-level
+        # restriction" (inherit "every enabled connector" again); the
+        # exclude_none dump above cannot see it, `model_fields_set` can.
+        if "connectors" in payload.model_fields_set and payload.connectors is None:
+            updates["connectors"] = None
         try:
             updated = get_store().update(project_id, updates, owner)
         except ProjectError as e:

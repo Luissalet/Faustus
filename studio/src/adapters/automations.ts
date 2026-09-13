@@ -121,8 +121,18 @@ const post = (path: string, body?: unknown): Promise<Response> =>
 
 const enc = (id: string) => encodeURIComponent(id);
 
+/** The task routes report the connector selection as a nested
+ *  `connectors: {connector_ids, effective, source}` block (F2); the
+ *  screens read the flat `connector_ids`, so lift it here once. */
+function withConnectorIds(a: Automation): Automation {
+  if (a.connector_ids !== undefined) return a;
+  const nested = (a as unknown as { connectors?: { connector_ids?: unknown } }).connectors;
+  const ids = nested && Array.isArray(nested.connector_ids) ? nested.connector_ids.map(String) : null;
+  return { ...a, connector_ids: ids };
+}
+
 export function listAutomations(signal?: AbortSignal): Promise<Automation[]> {
-  return getJson<unknown>('/api/tasks', signal).then((value) => asArray<Automation>(value, 'tasks'));
+  return getJson<unknown>('/api/tasks', signal).then((value) => asArray<Automation>(value, 'tasks').map(withConnectorIds));
 }
 
 export async function createAutomation(input: TaskInput): Promise<Automation> {

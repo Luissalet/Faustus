@@ -379,7 +379,8 @@ def setup_connector_routes(mcp_manager: McpManager) -> APIRouter:
         if profile_id:
             profile = launch_profiles.get_profile(profile_id)
             if profile and profile.get("kind") == "open_exe":
-                return await launch_profiles.launch(profile_id, request_client_host=client_host)
+                result = await launch_profiles.launch(profile_id, request_client_host=client_host)
+                return {**result, "kind": "exe"}
         raise HTTPException(400, "This connector has no UI URL or open_exe launch profile")
 
     # ── Launch profiles: CRUD only through authenticated HTTP routes, never

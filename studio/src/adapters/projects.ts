@@ -142,12 +142,22 @@ const jsonInit = (method: string, body?: unknown): RequestInit => ({
 
 const base = (id: string) => `/api/projects/${encodeURIComponent(id)}`;
 
+/** `GET /api/projects` returns the stored row (`connectors`), while
+ *  `GET /api/projects/{id}` and PATCH annotate `connector_ids`; the screens
+ *  read `connector_ids`, so lift the stored field when the annotation is
+ *  missing. */
+function withConnectorIds(p: Project): Project {
+  if (p.connector_ids !== undefined) return p;
+  const stored = (p as unknown as { connectors?: unknown }).connectors;
+  return { ...p, connector_ids: Array.isArray(stored) ? stored.map(String) : null };
+}
+
 export function listProjects(signal?: AbortSignal): Promise<Project[]> {
-  return getJson<unknown>('/api/projects', signal).then((value) => asArray<Project>(value, 'projects'));
+  return getJson<unknown>('/api/projects', signal).then((value) => asArray<Project>(value, 'projects').map(withConnectorIds));
 }
 
 export function getProject(id: string, signal?: AbortSignal): Promise<Project> {
-  return getJson<Project>(base(id), signal);
+  return getJson<Project>(base(id), signal).then(withConnectorIds);
 }
 
 export interface ProjectInput {
@@ -171,7 +181,9 @@ export interface ProjectInput {
  *  form, the same way the board key does (`adapters/board.ts::setBoardKey`) —
  *  a picker click should not require the whole "Save changes" flow. */
 export async function setProjectConnectors(id: string, connectorIds: string[] | null): Promise<Project> {
-  return updateProject(id, { connector_ids: connectorIds });
+  // The PATCH body field is `connectors` (services/projects.py); the
+  // response annotates `connector_ids`/`effective`/`source`.
+  return updateProject(id, { connectors: connectorIds } as unknown as ProjectInput);
 }
 
 export async function createProject(input: { name: string; folder: string; workspace: string; instructions: string }): Promise<Project> {

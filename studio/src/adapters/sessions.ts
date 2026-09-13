@@ -273,8 +273,8 @@ export async function autoSortSessions(skipLlm: boolean): Promise<AutoSortResult
  *
  * `connector_ids: null` means "inherit" (project, then every enabled
  * connector — F2's own precedence). This adapter is written against the
- * F2 contract; the route does not exist yet in THIS worktree, so a screen
- * that calls it should degrade on a 404 rather than throw unhandled.
+ * routes F2 built: `GET|PATCH /api/session/{sid}/connectors` and
+ * `GET /api/session/{sid}/tool-support`.
  */
 
 export interface ConnectorSelection {
@@ -292,13 +292,13 @@ function readSelection(d: Record<string, unknown>): ConnectorSelection {
 }
 
 export async function getSessionConnectors(id: string): Promise<ConnectorSelection> {
-  const response = await check(await fetch(`/api/sessions/${sid(id)}`, { credentials: 'same-origin' }), 'session connectors');
+  const response = await check(await fetch(`/api/session/${sid(id)}/connectors`, { credentials: 'same-origin' }), 'session connectors');
   return readSelection((await response.json()) as Record<string, unknown>);
 }
 
 export async function setSessionConnectors(id: string, connectorIds: string[] | null): Promise<ConnectorSelection> {
   const response = await check(
-    await fetch(`/api/sessions/${sid(id)}`, {
+    await fetch(`/api/session/${sid(id)}/connectors`, {
       method: 'PATCH',
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
@@ -319,7 +319,7 @@ export interface ToolSupport {
  *  at all — never used to silently switch endpoint or model, only to show
  *  a notice next to the connector picker. */
 export async function getSessionToolSupport(id: string): Promise<ToolSupport> {
-  const response = await check(await fetch(`/api/sessions/${sid(id)}/tool-support`, { credentials: 'same-origin' }), 'tool-support');
+  const response = await check(await fetch(`/api/session/${sid(id)}/tool-support`, { credentials: 'same-origin' }), 'tool-support');
   const d = (await response.json()) as Record<string, unknown>;
   const supported = d.supported === true ? true : d.supported === false ? false : 'unknown';
   return { supported, mode: String(d.mode ?? ''), reason: String(d.reason ?? '') };
