@@ -301,6 +301,7 @@ class ChatProcessor:
         incognito: bool = False,
         use_skills: bool = True,
         behavior_mode_block: Optional[str] = None,
+        unknown_effects_block: Optional[str] = None,
     ) -> Tuple[List[Dict[str, str]], List[Dict[str, Any]], List[Dict[str, str]]]:
         """Build the context preface for LLM calls.
 
@@ -341,6 +342,21 @@ class ChatProcessor:
             preface.append({
                 "role": "system",
                 "content": behavior_mode_block,
+            })
+
+        # A05: the previous turn's unresolved tool effects, when there are
+        # any (src.agent_runs.unknown_effects_system_block) — same slot as
+        # behavior_mode_block, for the same structural reason (before the
+        # untrusted-context policy, part of what Faustus is told to do, not
+        # retrieved evidence). This one DOES violate the KV-cache-prefix
+        # note above — it changes turn to turn — but it exists for exactly
+        # one turn, right after a restart left a write/exec/send call's
+        # outcome unknown, and a stale local-model KV cache is a much
+        # smaller cost than repeating an action that may have already run.
+        if unknown_effects_block:
+            preface.append({
+                "role": "system",
+                "content": unknown_effects_block,
             })
 
         preface.append({

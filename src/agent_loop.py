@@ -7106,6 +7106,7 @@ async def _stream_agent_loop_body(
                     workspace_roots=workspace_roots,
                     security_context=run_security,
                     exact_approval=exact_approval,
+                    call_id=_approved_call_id,
                     turn_options={
                         "gen_overrides": gen_overrides,
                         "harness_options": _hopts,
@@ -9738,6 +9739,7 @@ async def _stream_agent_loop_body(
                                 workspace=workspace,
                                 workspace_roots=workspace_roots,
                                 security_context=run_security,
+                                call_id=_call_id,
                                 turn_options={
                                     "gen_overrides": gen_overrides,
                                     "harness_options": _hopts,

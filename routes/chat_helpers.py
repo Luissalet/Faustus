@@ -13,6 +13,7 @@ from core.models import ChatMessage
 from core.database import SessionLocal
 from core.database import Session as DBSession, ModelEndpoint
 from core.database import get_session_behavior_mode
+from src import agent_runs
 from src import behavior_modes
 from src.settings import get_setting
 from src.llm_core import normalize_model_id
@@ -781,6 +782,10 @@ async def build_chat_context(
         incognito=incognito,
         use_skills=skills_enabled,
         behavior_mode_block=behavior_modes.system_block(_resolved_mode),
+        # A05: only present for the turn right after a restart recovered
+        # this session's run with a tool_effect stuck at "pending" — see
+        # src.agent_runs.unknown_effects_system_block / recover_interrupted_runs.
+        unknown_effects_block=agent_runs.unknown_effects_system_block(sess),
     )
     if use_rag is not None or is_research_spinoff or casual_low_signal:
         _preface_kwargs["use_rag"] = use_rag_val
