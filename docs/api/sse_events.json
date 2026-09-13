@@ -65,6 +65,31 @@
     {"type": "doc_stream_open", "stability": "extended", "fields": {}},
     {"type": "doc_stream_delta", "stability": "extended", "fields": {}},
     {"type": "doc_update", "stability": "extended", "fields": {}},
-    {"type": "doc_suggestions", "stability": "extended", "fields": {}}
+    {"type": "doc_suggestions", "stability": "extended", "fields": {}},
+
+    {"type": "model_info", "stability": "extended", "fields": {}, "note": "which model actually answered (research/model-switch banners)"},
+    {"type": "round_info", "stability": "extended", "fields": {}, "note": "per-round provider instrumentation (finish_reason, token counts, sampling settings)"},
+    {"type": "rounds_exhausted", "stability": "extended", "fields": {}, "note": "the agent loop hit its round budget"},
+    {"type": "budget_exceeded", "stability": "extended", "fields": {}, "note": "the tool-call budget for this turn was hit"},
+    {"type": "budget_exhausted", "stability": "extended", "fields": {}},
+    {"type": "completion_decision", "stability": "extended", "fields": {}, "note": "the completion engine's stop/continue decision for this round"},
+    {"type": "context_packet", "stability": "extended", "fields": {}},
+    {"type": "context_shadow", "stability": "extended", "fields": {}},
+    {"type": "intent_nudge_exhausted", "stability": "extended", "fields": {}},
+    {"type": "loop_breaker_triggered", "stability": "extended", "fields": {}, "note": "repeated tool calls without progress forced the agent to stop using tools"},
+    {"type": "plan_coverage_gap", "stability": "extended", "fields": {}},
+    {"type": "ui_control", "stability": "extended", "fields": {}},
+    {"type": "escalation_failed", "stability": "extended", "fields": {}, "note": "teacher-escalation (src/teacher_escalation.py) could not run or did not fix the failure"},
+    {"type": "teacher_takeover", "stability": "extended", "fields": {}, "note": "a stronger model is retrying inline after the turn's own model failed Tier 1/2 evaluation"},
+    {"type": "skill_save_failed", "stability": "extended", "fields": {}},
+    {"type": "finish", "stability": "extended", "fields": {}, "note": "raw provider stream frame (src/llm_core.py), forwarded verbatim in chat (non-agent) mode"},
+    {"type": "model_actual", "stability": "extended", "fields": {}, "note": "raw provider stream frame: which model a routed/fallback request actually reached"},
+    {"type": "tool_calls", "stability": "extended", "fields": {}, "note": "raw provider stream frame: accumulated native tool calls"},
+    {"type": "tool_call_delta", "stability": "extended", "fields": {}, "note": "raw provider stream frame: a streamed native tool-call argument fragment"},
+    {"type": "usage", "stability": "extended", "fields": {}, "note": "raw provider stream frame: token usage for the round"},
+    {"type": "agent_prep", "stability": "extended", "fields": {}, "note": "timing breakdown of the turn's pre-round setup"},
+    {"type": "workspace_rejected", "stability": "extended", "fields": {}},
+    {"type": "model_router", "stability": "extended", "fields": {}, "note": "explains an automatic model-routing decision for this turn"},
+    {"type": "attachments", "stability": "extended", "fields": {}}
   ]
 }

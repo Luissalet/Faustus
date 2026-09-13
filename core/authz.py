@@ -29,6 +29,11 @@ from typing import Dict, FrozenSet, Iterable, Optional, Tuple
 #: in production).
 KNOWN_SCOPES: FrozenSet[str] = frozenset({
     "chat",
+    # sessions: drive chat sessions end to end — create sessions, stream
+    # turns, answer questions and in-turn approvals, stop, resume, read
+    # artifacts. See docs/api/sdk_surface.md for the exact table this scope
+    # opens and the "sdk" token profile (["chat", "sessions"]) that mints it.
+    "sessions",
     "todos:read", "todos:write",
     "documents:read", "documents:write",
     "email:read", "email:draft", "email:send",
@@ -145,6 +150,55 @@ API_TOKEN_RULES: Tuple[Rule, ...] = (
          effect="external", note="starts real work on this machine"),
     _read("/api/changesets/from-dispatch/", "agents:dispatch", prefix=True,
           note="the diff a dispatched job produced, for the coordinator that asked for it"),
+
+    # S1.1: the `sessions` surface an external SDK client drives a chat
+    # session through end to end — create, stream a turn (including in-turn
+    # tool-approval answers), stop, resume, read history/artifacts. Exact
+    # methods, no prefix matching: a route this list does not name stays
+    # closed to tokens even if it lives under the same path family. See
+    # docs/api/sdk_surface.md for the human-readable table and ownership
+    # rule (all of this is scoped to the token's own owner, never "api").
+    Rule(frozenset({"POST"}), "/api/session", ("sessions",), effect="reversible",
+         note="create a session owned by the token's owner"),
+    _read("/api/sessions", "sessions", note="list the token owner's own sessions"),
+    Rule(frozenset({"PATCH"}), "/api/session/{sid}", ("sessions",), effect="reversible",
+         note="rename/re-home/switch-model an owned session"),
+    Rule(frozenset({"DELETE"}), "/api/session/{sid}", ("sessions",), effect="reversible",
+         note="delete an owned session"),
+    _read("/api/session/{sid}/connectors", "sessions", note="an owned session's connector allowlist"),
+    Rule(frozenset({"PATCH"}), "/api/session/{sid}/connectors", ("sessions",), effect="reversible",
+         note="change an owned session's connector allowlist"),
+    _read("/api/session/{sid}/tool-support", "sessions",
+          note="whether an owned session's model/endpoint can use tools"),
+    _read("/api/session/{session_id}/context_info", "sessions",
+          note="an owned session's real model context length"),
+    _read("/api/history/{session_id}", "sessions",
+          note="an owned session's message history (the route the Studio itself loads a chat from)"),
+    Rule(frozenset({"POST"}), "/api/chat_stream", ("sessions",), effect="external",
+         note="run a turn (including in-turn tool-approval answers) — executes tools"),
+    _read("/api/chat/resume/{session_id}", "sessions",
+          note="reattach to an owned session's in-flight turn"),
+    _read("/api/chat/stream_status/{session_id}", "sessions",
+          note="whether an owned session has an active stream"),
+    _read("/api/chat/activity", "sessions", note="the token owner's own running/queued turns"),
+    Rule(frozenset({"POST"}), "/api/chat/stop/{session_id}", ("sessions",), effect="reversible",
+         note="cancel an owned session's turn"),
+    Rule(frozenset({"POST"}), "/api/chat/pause/{session_id}", ("sessions",), effect="reversible",
+         note="pause an owned session's generation"),
+    Rule(frozenset({"POST"}), "/api/chat/steer/{session_id}", ("sessions",), effect="reversible",
+         note="steer/queue a message into an owned session's live turn"),
+    _read("/api/questions", "sessions", note="the token owner's own open ask_user questions"),
+    _read("/api/approvals/pending", "sessions",
+          note="the token owner's own pending approval cards (never another owner's)"),
+    _read("/api/approvals/active", "sessions",
+          note="the token owner's own active approval cards (never another owner's); "
+               "granting/denying/revoking a card stays require_human — not opened here"),
+    _read("/api/artifacts", "sessions", note="the token owner's own artifacts"),
+    _read("/api/artifacts/{artifact_id}", "sessions", note="one owned artifact's metadata"),
+    _read("/api/artifacts/{artifact_id}/download", "sessions", note="download one owned artifact"),
+    _read("/api/artifacts/{artifact_id}/manifest", "sessions", note="one owned artifact's version chain"),
+    _read("/api/artifacts/{artifact_id}/provenance", "sessions", note="one owned artifact's provenance"),
+    _read("/openapi.json", "sessions", note="generate client types against the real app"),
 )
 
 
@@ -165,7 +219,7 @@ def api_token_allowed(method: str, path: str, scopes: Iterable[str]) -> Tuple[bo
     rule = api_rule_for(method, path)
     if rule is None:
         return False, ("this route is not part of the API-token surface: tokens reach only "
-                       "the chat, codex-skill and dispatch routes")
+                       "the chat, session, codex-skill and dispatch routes")
     held = {str(s).strip() for s in (scopes or ()) if str(s).strip()}
     missing = set(rule.requires) - held
     if missing:

@@ -14,6 +14,11 @@ MAX_NAME_LEN = 100
 DEFAULT_SCOPES = "chat"
 ALLOWED_SCOPES = {
     "chat",
+    # Drive a chat session end to end from outside the app: create sessions,
+    # stream turns, answer questions and in-turn tool approvals, stop,
+    # resume, read history/artifacts. Everything it opens is attributed to
+    # and scoped to the token's own owner (core/authz.py, docs/api/sdk_surface.md).
+    "sessions",
     "todos:read",
     "todos:write",
     "documents:read",
@@ -33,6 +38,10 @@ ALLOWED_SCOPES = {
 }
 TOKEN_PROFILES = {
     "chat": ["chat"],
+    # A paired external client that drives the full session lifecycle
+    # (create session -> stream a turn over SSE -> in-turn approval ->
+    # stop/resume -> read artifacts). See docs/api/sdk_surface.md.
+    "sdk": ["chat", "sessions"],
     "codex_todos": ["todos:read", "todos:write"],
     "codex_documents": ["documents:read", "documents:write"],
     "codex_email_drafts": ["email:read", "email:draft", "documents:read", "documents:write"],

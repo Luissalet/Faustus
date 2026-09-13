@@ -32,6 +32,34 @@ def test_the_reachable_surface_is_exactly_this():
         "GET|HEAD|OPTIONS /api/models": ("chat",),
         "DELETE|GET|HEAD|OPTIONS|PATCH|POST|PUT /api/dispatch*": ("agents:dispatch",),
         "GET|HEAD|OPTIONS /api/changesets/from-dispatch/*": ("agents:dispatch",),
+        # S1.1: the `sessions` surface — an external SDK client driving a
+        # chat session end to end. See core/authz.py and
+        # docs/api/sdk_surface.md for the full table and its ownership rule.
+        "POST /api/session": ("sessions",),
+        "GET|HEAD|OPTIONS /api/sessions": ("sessions",),
+        "PATCH /api/session/{sid}": ("sessions",),
+        "DELETE /api/session/{sid}": ("sessions",),
+        "GET|HEAD|OPTIONS /api/session/{sid}/connectors": ("sessions",),
+        "PATCH /api/session/{sid}/connectors": ("sessions",),
+        "GET|HEAD|OPTIONS /api/session/{sid}/tool-support": ("sessions",),
+        "GET|HEAD|OPTIONS /api/session/{session_id}/context_info": ("sessions",),
+        "GET|HEAD|OPTIONS /api/history/{session_id}": ("sessions",),
+        "POST /api/chat_stream": ("sessions",),
+        "GET|HEAD|OPTIONS /api/chat/resume/{session_id}": ("sessions",),
+        "GET|HEAD|OPTIONS /api/chat/stream_status/{session_id}": ("sessions",),
+        "GET|HEAD|OPTIONS /api/chat/activity": ("sessions",),
+        "POST /api/chat/stop/{session_id}": ("sessions",),
+        "POST /api/chat/pause/{session_id}": ("sessions",),
+        "POST /api/chat/steer/{session_id}": ("sessions",),
+        "GET|HEAD|OPTIONS /api/questions": ("sessions",),
+        "GET|HEAD|OPTIONS /api/approvals/pending": ("sessions",),
+        "GET|HEAD|OPTIONS /api/approvals/active": ("sessions",),
+        "GET|HEAD|OPTIONS /api/artifacts": ("sessions",),
+        "GET|HEAD|OPTIONS /api/artifacts/{artifact_id}": ("sessions",),
+        "GET|HEAD|OPTIONS /api/artifacts/{artifact_id}/download": ("sessions",),
+        "GET|HEAD|OPTIONS /api/artifacts/{artifact_id}/manifest": ("sessions",),
+        "GET|HEAD|OPTIONS /api/artifacts/{artifact_id}/provenance": ("sessions",),
+        "GET|HEAD|OPTIONS /openapi.json": ("sessions",),
     }
     assert {key for key in surface if '/api/codex/' in key} == {
         *("GET|HEAD|OPTIONS /api/codex/" + path for path in (

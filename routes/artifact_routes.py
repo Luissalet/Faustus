@@ -10,9 +10,19 @@ from src import artifact_catalog
 def _owner(request):
     # Authentication middleware supplies the principal. Reading one's own
     # output is not an administrative capability.
+    #
+    # S1.1: a bearer `ody_` token authenticates as the sandboxed pseudo-user
+    # "api" (`request.state.current_user`), not as its real owner — using
+    # that raw value here made every artifact route 401 for a token, since
+    # "api" is a reserved sentinel `effective_storage_owner` refuses to
+    # treat as a real bucket. `effective_user` resolves a token request to
+    # `request.state.api_token_owner` instead, so a paired SDK client reads
+    # (and, via a bearer's ownership everywhere else, writes) the SAME
+    # artifacts the token owner's own desktop session sees.
     from core import middleware
+    from src.auth_helpers import effective_user
     from src.owner_identity import effective_storage_owner
-    owner = effective_storage_owner(getattr(request.state, 'current_user', None),
+    owner = effective_storage_owner(effective_user(request),
                                     auth_is_disabled=middleware.auth_disabled())
     if not owner:
         raise HTTPException(401, 'An authenticated artifact owner is required')
