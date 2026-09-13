@@ -433,16 +433,51 @@ def stop_workers_of_parent(parent_session_id: str, reason: str = "task_cancelled
     """TASK-04: propagate a `scope=task`/`work` cancellation of the COORDINATOR
     turn to every worker it delegated. Returns the child session ids actually
     stopped (a worker that had already finished is silently skipped, same as
-    `stop_worker`'s own False return)."""
+    `stop_worker`'s own False return), flattened across every generation —
+    see `stop_workers_of_parent_by_level` for the transitive, level-by-level
+    shape this wraps."""
+    return [sid for level in stop_workers_of_parent_by_level(parent_session_id, reason=reason) for sid in level]
+
+
+def stop_workers_of_parent_by_level(
+    parent_session_id: str, reason: str = "task_cancelled",
+) -> List[List[str]]:
+    """A07: TRANSITIVE cancellation. A worker can itself be a coordinator that
+    delegated further (`delegate_agents` nests) — a grandchild's
+    `parent_session_id` is its immediate parent worker's `session_id`, not the
+    top-level turn's. Stopping only direct children (the original
+    implementation) left grandchildren running after Stop. BFS over
+    `_WORKER_RUNS` by `parent_session_id`, one level at a time; a session id
+    is stopped at most once even if the registry ever contained a cycle (it
+    shouldn't, a worker cannot be its own ancestor, but the frontier tracks
+    `seen` regardless so a bug here fails to "did nothing more" rather than
+    an infinite loop).
+
+    Returns one list per BFS level: `[direct_children, grandchildren, ...]`,
+    each entry the child session ids actually stopped at that level (same
+    "already finished" skip `stop_worker` has always had). An empty return
+    means no worker was still running under this parent at any depth.
+    """
     if not parent_session_id:
         return []
-    stopped: List[str] = []
-    for child_sid, run in list(_WORKER_RUNS.items()):
-        if run.parent_session_id != parent_session_id:
-            continue
-        if stop_worker(child_sid, reason=reason):
-            stopped.append(child_sid)
-    return stopped
+    levels: List[List[str]] = []
+    seen: set = {str(parent_session_id)}
+    frontier = [str(parent_session_id)]
+    while frontier:
+        this_level: List[str] = []
+        next_frontier: List[str] = []
+        for parent in frontier:
+            for child_sid, run in list(_WORKER_RUNS.items()):
+                if child_sid in seen or run.parent_session_id != parent:
+                    continue
+                seen.add(child_sid)
+                next_frontier.append(child_sid)
+                if stop_worker(child_sid, reason=reason):
+                    this_level.append(child_sid)
+        if this_level:
+            levels.append(this_level)
+        frontier = next_frontier
+    return levels
 
 
 def active_worker_ids() -> List[str]:

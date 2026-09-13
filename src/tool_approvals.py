@@ -663,12 +663,24 @@ class ToolApprovalStore:
         Returns whether any retired action carried external provenance, so the
         caller can preserve that security state without treating the new user
         message as an approval continuation.
+
+        Thin wrapper over `retire_for_session_ids` for every caller that only
+        ever needed the taint bool -- same signature, same return value, byte
+        for byte, as before that method existed.
         """
+        _ids, carried_taint = self.retire_for_session_ids(owner=owner, session_id=session_id)
+        return carried_taint
+
+    def retire_for_session_ids(self, *, owner: Any, session_id: Any) -> tuple[list[str], bool]:
+        """A07 (docs/spec/trueforge/): same retirement as `retire_for_session`,
+        plus the approval_ids actually retired -- `chat_stop`'s cleanup report
+        needs to say WHICH approvals it retired for the cancelled turn and its
+        stopped workers, not just whether any carried external provenance."""
         now = time.time()
         normalized_owner = _normalized_owner(owner)
         normalized_session = str(session_id or "")
         if not normalized_session:
-            return False
+            return [], False
         with self._lock:
             self._purge_expired_locked(now)
             retired_ids = [
@@ -685,7 +697,7 @@ class ToolApprovalStore:
             )
             for approval_id in retired_ids:
                 self._pending.pop(approval_id, None)
-        return carried_taint
+        return retired_ids, carried_taint
 
 
 tool_approval_store = ToolApprovalStore()
