@@ -11,7 +11,11 @@ export interface Calendar {
   id: string;
   name: string;
   color: string;
-  source: 'local' | 'caldav' | string;
+  /** CONTRATO_GOOGLE_CALENDAR: `'google'` sits beside `'caldav'` as a second
+   *  remote source (G1, `src/google_calendar_sync.py`) — kept a plain
+   *  string too so an unrecognised future source still renders as local
+   *  rather than breaking the type. */
+  source: 'local' | 'caldav' | 'google' | string;
 }
 
 export interface CalEvent {

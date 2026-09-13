@@ -364,7 +364,7 @@ function CalendarsDialog({ calendars, onClose, onChanged, say }: { calendars: Ca
         if (!o) onClose();
       }}
       title={t('Calendars')}
-      description={t('Each one\'s name and colour; export or import .ics. CalDAV accounts are set up in the previous interface\'s settings.')}
+      description={t('Each one\'s name and colour; export or import .ics. Google and CalDAV accounts are set up in Settings → Integrations.')}
       footer={<Button variant="ghost" size="sm" label={t('Close')} onClick={onClose} />}
     >
       <div className="fs-cal-cals">
@@ -372,7 +372,7 @@ function CalendarsDialog({ calendars, onClose, onChanged, say }: { calendars: Ca
           <div key={row.id} className="fs-cal-cals__row">
             <input type="color" value={row.color} onChange={(e) => setRows((r) => r.map((x) => (x.id === row.id ? { ...x, color: e.target.value } : x)))} onBlur={() => void saveRow(row)} aria-label={t('Colour')} />
             <input type="text" className="fs-field" value={row.name} onChange={(e) => setRows((r) => r.map((x) => (x.id === row.id ? { ...x, name: e.target.value } : x)))} onBlur={() => void saveRow(row)} aria-label={t('Name')} />
-            <span className="fs-cal-cals__source">{row.source === 'caldav' ? 'CalDAV' : t('local')}</span>
+            <span className="fs-cal-cals__source">{row.source === 'google' ? 'Google' : row.source === 'caldav' ? 'CalDAV' : t('local')}</span>
             <a className="fs-btn" data-size="sm" data-variant="ghost" href={exportUrl(row.id)} download title={t('Export .ics')}>
               <Download size={13} aria-hidden="true" />
             </a>
@@ -770,7 +770,7 @@ export function CalendarScreen() {
     );
   }
 
-  const hasCaldav = (calendars ?? []).some((c) => c.source === 'caldav');
+  const hasRemote = (calendars ?? []).some((c) => c.source === 'caldav' || c.source === 'google');
   const dayEvents = byDay.get(selectedDay) ?? [];
 
   return (
@@ -784,7 +784,7 @@ export function CalendarScreen() {
         </div>
         <div className="fs-cal__tools">
           <IconButton icon={Search} label={t('Search events')} size="sm" data-on={searching || undefined} onClick={() => { setSearching((v) => !v); if (searching) setQuery(''); }} testId="cal-search-toggle" />
-          {hasCaldav && <IconButton icon={RefreshCw} label={t('Sync with CalDAV')} size="sm" onClick={() => void sync()} disabled={syncing} />}
+          {hasRemote && <IconButton icon={RefreshCw} label={t('Sync remote calendars')} size="sm" onClick={() => void sync()} disabled={syncing} />}
           <IconButton icon={Settings2} label={t('Calendars')} size="sm" onClick={() => setCalsOpen(true)} />
           <Button variant="primary" size="sm" icon={Plus} label={t('New')} onClick={() => setDialog({ event: null, day: selectedDay })} testId="cal-new" />
         </div>
