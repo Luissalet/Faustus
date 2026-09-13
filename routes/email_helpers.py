@@ -109,8 +109,10 @@ def _refresh_google_token(account_id: str) -> str | None:
     import httpx
     from core.database import SessionLocal as _SL, EmailAccount as _EA
     from src.secret_storage import encrypt as _enc, decrypt as _dec
-    client_id = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "")
-    client_secret = os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET", "")
+    from src.google_oauth_client import get_client
+    client = get_client()
+    client_id = client["client_id"] or ""
+    client_secret = client["client_secret"] or ""
     if not client_id or not client_secret:
         return None
     db = _SL()

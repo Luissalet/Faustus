@@ -147,7 +147,10 @@ async def test_authorize_without_client_configured_returns_400(monkeypatch):
     with pytest.raises(HTTPException) as exc:
         await authorize(request=_FakeRequest(), account_id="")
     assert exc.value.status_code == 400
-    assert "GOOGLE_OAUTH_CLIENT_ID" in exc.value.detail
+    # G3.1: the message points at the in-app setup wizard now, not a raw
+    # env var name — see src/google_oauth_client.py::NOT_CONFIGURED_MESSAGE.
+    assert "Settings" in exc.value.detail
+    assert "Integrations" in exc.value.detail
 
 
 async def test_authorize_builds_url_with_scopes_and_valid_state():

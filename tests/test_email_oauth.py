@@ -521,6 +521,10 @@ async def test_authorize_redirect_uri_follows_the_request_scheme(scheme, monkeyp
 
     monkeypatch.delenv("GOOGLE_OAUTH_REDIRECT_URI", raising=False)
     monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_ID", "client-id.apps.googleusercontent.com")
+    # G3.1: get_client() reports "configured" only with BOTH id and secret
+    # present (the callback needs both anyway) — a tightening from the old
+    # per-route check, which only looked at client_id here.
+    monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_SECRET", "client-secret")
 
     authorize = _authorize_endpoint()
     resp = await authorize(
