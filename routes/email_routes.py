@@ -5807,6 +5807,9 @@ def setup_email_routes():
         # should not trigger reader-side auto-translation from Settings.
         cfg["email_auto_translate"] = False
         cfg["email_translate_language"] = settings.get("email_translate_language", "English")
+        # Remote (http) images in a mail body are held back by default — loading
+        # them tells the sender the mail was opened. Off unless the user says so.
+        cfg["email_remote_images"] = bool(settings.get("email_remote_images", False))
         return cfg
 
     @router.put("/config")
@@ -5830,6 +5833,7 @@ def setup_email_routes():
         settings = _load_settings()
         bool_keys = [
             "email_auto_summarize", "email_auto_tag", "email_auto_spam", "email_auto_calendar",
+            "email_remote_images",
         ]
         for key in bool_keys:
             if key in data:

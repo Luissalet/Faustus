@@ -184,8 +184,13 @@ function sanitizeOnce(html: string, o: SanitizeOptions, counter: { held: number 
         }
       }
       el.setAttribute('loading', 'lazy');
-      el.removeAttribute('width');
-      el.removeAttribute('height');
+      // A held image keeps its declared box so the mail's layout does not
+      // collapse into a row of alt-text pills; a loaded one is sized by
+      // the stylesheet (max-inline-size: 100%).
+      if (!el.hasAttribute('data-held')) {
+        el.removeAttribute('width');
+        el.removeAttribute('height');
+      }
     }
   });
   marked.forEach((el) => {
@@ -200,13 +205,19 @@ function sanitizeOnce(html: string, o: SanitizeOptions, counter: { held: number 
 export function sanitizeMailHtml(html: string, o: SanitizeOptions = {}): SanitizedHtml {
   let out = String(html ?? '');
   const counter = { held: 0 };
+  // Remote images are only *seen* (and held) on the first pass — after it
+  // they have no `src` any more — so the count is the maximum over passes,
+  // never the last pass's (which is 0 and used to hide the "Show remote
+  // images" button entirely).
+  let held = 0;
   for (let i = 0; i < 4; i++) {
     counter.held = 0;
     const next = sanitizeOnce(out, o, counter);
+    held = Math.max(held, counter.held);
     if (next === out) break;
     out = next;
   }
-  return { html: out, heldImages: counter.held };
+  return { html: out, heldImages: held };
 }
 
 /** Plain text → safe HTML with clickable links and addresses. */

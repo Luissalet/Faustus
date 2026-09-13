@@ -7375,3 +7375,7 @@ responds	responde
 Launch profile	Perfil de arranque
 Saved: {name}	Guardado: {name}
 What "Start the app" and "Open the app" run. Create profiles under "Launch profiles".	Lo que ejecutan «Iniciar la app» y «Abrir la app». Crea perfiles en «Perfiles de arranque».
+Always show images from {sender}	Mostrar siempre las imágenes de {sender}
+Load remote images in every mail	Cargar las imágenes remotas en todos los correos
+Off, a mail shows its pictures only when you ask — loading them tells the sender you opened it.	Apagado, un correo enseña sus imágenes solo cuando lo pides: cargarlas le dice al remitente que lo has abierto.
+Show them this time	Mostrarlas esta vez

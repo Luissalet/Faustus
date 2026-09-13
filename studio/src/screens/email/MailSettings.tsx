@@ -179,6 +179,11 @@ export function MailSettingsDialog({ accounts, accountId, onClose, onSaved, say 
                 <input type="checkbox" checked={cfg.autoCalendar} onChange={(e) => set({ autoCalendar: e.target.checked })} />
                 <span>{t('Put appointments in the calendar')}</span>
               </label>
+              <label className="fs-switch">
+                <input type="checkbox" checked={cfg.remoteImages} onChange={(e) => set({ remoteImages: e.target.checked })} />
+                <span>{t('Load remote images in every mail')}</span>
+              </label>
+              <p className="fs-muted">{t('Off, a mail shows its pictures only when you ask — loading them tells the sender you opened it.')}</p>
               <p className="fs-muted">{t('Translations default to {language}.', { language: cfg.translateLanguage })}</p>
             </section>
           </>

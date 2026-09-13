@@ -769,6 +769,7 @@ export function EmailScreen() {
                 </div>
               ))}
 
+              {emails && emails.length > 0 && <p className="fs-mail__keys fs-mail__keys--list">{t('j/k move · Enter opens · e archives · # deletes · s stars · d done · c composes · / searches')}</p>}
               {!results && emails && total > PAGE && (
                 <div className="fs-mail__pager">
                   <Button variant="ghost" size="sm" label={t('Previous')} disabled={offset === 0} onClick={() => setOffset((o) => Math.max(0, o - PAGE))} />
@@ -815,6 +816,7 @@ export function EmailScreen() {
               ctx={ctx}
               urgency={urgency.get(current.uid)}
               translateLanguage={cfg?.translateLanguage || 'English'}
+              remoteImages={Boolean(cfg?.remoteImages)}
               onBack={() => setCurrent(null)}
               onChanged={changed}
               onCompose={(seed) => setCompose(seed)}

@@ -441,6 +441,9 @@ export interface MailConfig {
   autoSpam: boolean;
   autoCalendar: boolean;
   translateLanguage: string;
+  /** Load remote (http) images in every mail without asking. Off by default:
+   *  a loaded image tells the sender the mail was opened. */
+  remoteImages: boolean;
 }
 
 export const DEFAULT_AWAY_SUBJECT = '(Away) {subject}';
@@ -463,6 +466,7 @@ export async function getMailConfig(accountId: string | null): Promise<MailConfi
     autoSpam: Boolean(c.email_auto_spam),
     autoCalendar: Boolean(c.email_auto_calendar),
     translateLanguage: s('email_translate_language', 'English'),
+    remoteImages: Boolean(c.email_remote_images),
   };
 }
 
@@ -483,6 +487,7 @@ export async function saveMailConfig(accountId: string | null, cfg: MailConfig):
     email_auto_spam: cfg.autoSpam,
     email_auto_calendar: cfg.autoCalendar,
     email_translate_language: cfg.translateLanguage,
+    email_remote_images: cfg.remoteImages,
   };
   must(await putJson<{ success?: boolean; error?: string }>(`/api/email/config${q({ account_id: accountId })}`, body, 'email/config'), t('Could not save.'));
 }

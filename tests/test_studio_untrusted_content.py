@@ -102,3 +102,18 @@ def test_email_html_is_sanitised_to_a_fixpoint():
 def test_a_signature_is_a_raster_or_it_is_nothing():
     account = _read("adapters/account.ts")
     assert "safeDataImage" in account
+
+
+def test_held_remote_images_are_counted_on_the_pass_that_held_them():
+    """Remote images lose their `src` on the first sanitiser pass, so a later
+    pass sees none; the count reported must be the maximum over passes, not
+    the last pass's zero — that zero hid the "Show N remote images" button
+    and left the reader with a row of alt-text pills and no way to load
+    them (seen live, 13-09-2026)."""
+    mail = _read("lib/mail.ts")
+    body = mail[mail.index("export function sanitizeMailHtml"):]
+    assert "Math.max(held, counter.held)" in body
+    assert "heldImages: held" in body
+    # A held image keeps its declared box (width/height) so the layout does
+    # not collapse; only loaded images are re-sized by the stylesheet.
+    assert "if (!el.hasAttribute('data-held'))" in mail

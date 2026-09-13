@@ -305,6 +305,26 @@ deep-link de workflows, recetas desde un run real) ya no aparece aquí.
   `GET /api/connectors` no filtra por owner porque `/api/mcp/servers`
   tampoco lo hace (McpServer no tiene owner).
 
+## Correo (13-09, tarde) — HECHO en nube, pendiente ver en el 7001
+
+- Luis: «el side panel de pick a message debería aparecer cuando abres un
+  correo; la lista es demasiado estrecha» y «no se carga ninguna imagen y
+  se ve de culo». Lista a ancho completo hasta que abres un mensaje o el
+  compositor (entonces tres columnas: carril · lista 300–420 px · lector);
+  la pista de teclas pasa al pie de la lista. Imágenes: el sanitizador
+  corría hasta punto fijo y reiniciaba el contador en cada pasada → el
+  botón «Show N remote images» no salía nunca (las imágenes se retienen en
+  la primera pasada y en la segunda ya no hay `src`); ahora cuenta el
+  máximo, las retenidas conservan su caja (width/height) y no pintan el
+  alt como píldora. Botón con menú «esta vez» / «siempre de este
+  remitente» (localStorage) y ajuste global «Load remote images in every
+  mail» (`email_remote_images`, apagado por defecto: cargar imágenes avisa
+  al remitente de que has abierto el correo).
+- Google Calendar: ya se sincroniza por CalDAV (Integrations › Calendar
+  (CalDAV), URL `…/caldav/v2/<correo>/user`, contraseña de aplicación);
+  se lo he explicado a Luis, no hay nada que implementar salvo que quiera
+  OAuth.
+
 ## Última evidencia
 
 - **13-09-2026, conectores (FAUSTUS §80; master `a3b68b4`+ = Windows).** Suite

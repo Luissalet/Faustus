@@ -27,9 +27,20 @@
 
 .fs-mail__layout {
   display: grid;
-  grid-template-columns: 200px minmax(320px, 440px) minmax(0, 1fr);
+  grid-template-columns: 200px minmax(0, 1fr);
   gap: var(--fs-space-3);
   min-block-size: 60vh;
+}
+
+/* Nothing open: the list is the screen. A message or the composer opens a
+   third column beside it — the reader is a side panel, not a permanent
+   "Pick a message" placeholder squeezing the list. */
+.fs-mail:not([data-reading]) .fs-mail__read {
+  display: none;
+}
+
+.fs-mail[data-reading] .fs-mail__layout {
+  grid-template-columns: 200px minmax(300px, 420px) minmax(0, 1fr);
 }
 
 .fs-mail__link {
@@ -620,6 +631,17 @@
   font-size: var(--fs-label-size);
 }
 
+.fs-mail__keys--list {
+  display: none;
+}
+
+@media (min-width: 1280px) {
+  .fs-mail:not([data-reading]) .fs-mail__keys--list {
+    display: block;
+    text-align: center;
+  }
+}
+
 .fs-mail__keys {
   margin: 0;
   color: var(--fs-text-3);
@@ -884,8 +906,14 @@
   display: inline-block;
   min-inline-size: 48px;
   min-block-size: 24px;
+  max-inline-size: 100%;
   border: 1px dashed var(--fs-border-strong);
   background: var(--fs-surface-2);
+  /* The browser paints the alt text inside the box; a row of "Co", "Pen"
+     pills is not a picture, so hide it — the toolbar button says what is
+     held and how many. */
+  color: transparent;
+  font-size: 0;
 }
 
 .fs-mail__body a {

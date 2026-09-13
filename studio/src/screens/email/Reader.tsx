@@ -75,6 +75,8 @@ interface ReaderProps {
   ctx: Ctx;
   urgency?: UrgencyVerdict;
   translateLanguage: string;
+  /** Settings › Mail: load remote images in every mail without asking. */
+  remoteImages?: boolean;
   onBack: () => void;
   onChanged: (patch: Partial<EmailSummary> | 'gone') => void;
   onCompose: (seed: ComposeSeed) => void;
@@ -88,6 +90,30 @@ const LANGUAGES = ['English', 'Spanish', 'French', 'German', 'Italian', 'Portugu
 
 function aiTarget(mail: EmailFull, ctx: Ctx): AiTarget {
   return { uid: mail.uid, folder: mail.folder || ctx.folder, accountId: ctx.accountId, messageId: mail.messageId, subject: mail.subject, from: mail.fromName ? `${mail.fromName} <${mail.fromAddress}>` : mail.fromAddress, body: mail.body };
+}
+
+/* ── Remote images per sender (this browser only) ── */
+
+const SENDER_IMAGES_KEY = 'fs.mail.remoteImagesFrom';
+
+function senderImagesAllowed(address: string): boolean {
+  try {
+    const list = JSON.parse(localStorage.getItem(SENDER_IMAGES_KEY) || '[]') as unknown;
+    return Array.isArray(list) && list.includes(address.toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
+function rememberSenderImages(address: string): void {
+  try {
+    const list = JSON.parse(localStorage.getItem(SENDER_IMAGES_KEY) || '[]') as unknown;
+    const next = new Set(Array.isArray(list) ? list.map(String) : []);
+    next.add(address.toLowerCase());
+    localStorage.setItem(SENDER_IMAGES_KEY, JSON.stringify([...next]));
+  } catch {
+    /* storage unavailable: the choice lasts this mail only */
+  }
 }
 
 /* ── Body ── */
@@ -235,11 +261,13 @@ function RemindMenu({ mail, ctx, say }: { mail: EmailFull; ctx: Ctx; say: Say })
 
 /* ── Reader ── */
 
-export function Reader({ mail, account, folders, ctx, urgency, translateLanguage, onBack, onChanged, onCompose, onFilterTag, onFilterFrom, onAttachments, say }: ReaderProps) {
+export function Reader({ mail, account, folders, ctx, urgency, translateLanguage, remoteImages = false, onBack, onChanged, onCompose, onFilterTag, onFilterFrom, onAttachments, say }: ReaderProps) {
   const navigate = useNavigate();
   const [busy, setBusy] = useState<string | null>(null);
   const [view, setView] = useState<'reader' | 'original'>('reader');
-  const [allowRemote, setAllowRemote] = useState(false);
+  // Remote images: the global setting, or a sender the user said "always"
+  // for (kept in this browser only), else held until asked.
+  const [allowRemote, setAllowRemote] = useState(() => remoteImages || senderImagesAllowed(mail.fromAddress));
   const [showDetails, setShowDetails] = useState(false);
   const [summary, setSummary] = useState<{ text: string | null; busy: boolean; model: string } | null>(mail.cachedSummary ? { text: mail.cachedSummary, busy: false, model: '' } : null);
   const [translation, setTranslation] = useState<{ text: string | null; busy: boolean; model: string; language: string } | null>(null);
@@ -250,11 +278,12 @@ export function Reader({ mail, account, folders, ctx, urgency, translateLanguage
 
   useEffect(() => {
     setView('reader');
-    setAllowRemote(false);
+    setAllowRemote(remoteImages || senderImagesAllowed(mail.fromAddress));
     setShowDetails(false);
     setSummary(mail.cachedSummary ? { text: mail.cachedSummary, busy: false, model: '' } : null);
     setTranslation(null);
-  }, [mail.uid, mail.cachedSummary]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mail.uid, mail.cachedSummary, remoteImages]);
 
   useEffect(() => {
     if (!mail.attachmentsDeferred) return;
@@ -541,7 +570,20 @@ export function Reader({ mail, account, folders, ctx, urgency, translateLanguage
         )}
         <span className="fs-spacer" />
         {rendered.held > 0 && !allowRemote && (
-          <Button variant="ghost" size="sm" icon={ImageIcon} label={t('Show {n} remote images', { n: rendered.held })} onClick={() => setAllowRemote(true)} />
+          <Menu
+            trigger={<Button variant="ghost" size="sm" icon={ImageIcon} label={t('Show {n} remote images', { n: rendered.held })} testId="mail-remote-images" />}
+            align="end"
+            items={[
+              { label: t('Show them this time'), onSelect: () => setAllowRemote(true) },
+              {
+                label: t('Always show images from {sender}', { sender: mail.fromAddress }),
+                onSelect: () => {
+                  rememberSenderImages(mail.fromAddress);
+                  setAllowRemote(true);
+                },
+              },
+            ]}
+          />
         )}
         <span className="fs-mail__keys-btn">
           <Popover trigger={<Button variant="ghost" size="sm" icon={Keyboard} label={t('Keys')} />} align="end">
