@@ -1438,6 +1438,34 @@ async def _execute_tool_block_impl(
         logger.warning("Tool policy blocked tool=%s", tool)
         return desc, result
 
+    # CONTRATO_CONECTORES F2.3: the real enforcement point — a whitelist
+    # hidden only in the prompt (src/agent_loop.py::_build_system_prompt)
+    # is not enforcement, it is a suggestion. This catches a call to
+    # `mcp__<server>__<tool>` by name even when that schema was never
+    # offered this turn (a model that remembers a tool name from an
+    # earlier turn, or one that never needed the schema to guess it).
+    # Resolved fresh from `session_id` (not threaded in from the caller) so
+    # a chat, a resumed background run and a scheduled task's own session
+    # all go through the same check — see
+    # `src.connector_policy.resolve_allowed_servers_for_session`'s
+    # docstring for why that is enough to cover every path without a new
+    # parameter on every function between here and the agent loop.
+    if session_id and str(tool).startswith("mcp__"):
+        try:
+            from src.connector_policy import resolve_allowed_servers_for_session, is_tool_allowed
+            _allowed_connectors = resolve_allowed_servers_for_session(session_id, owner)
+            if not is_tool_allowed(tool, _allowed_connectors):
+                _server_id = tool.split("__", 2)[1] if tool.count("__") >= 2 else tool
+                desc = f"{tool}: BLOCKED"
+                result = {
+                    "error": f"Connector {_server_id} is not enabled for this task",
+                    "exit_code": 1,
+                }
+                logger.warning("Connector policy blocked tool=%s (server=%s)", tool, _server_id)
+                return desc, result
+        except Exception:
+            logger.warning("connector policy check failed for tool=%s session=%s", tool, session_id, exc_info=True)
+
     if tool in _ADMIN_TOOLS and not _owner_is_admin(owner):
         desc = f"{tool}: BLOCKED"
         result = {"error": f"Tool '{tool}' requires an admin user.", "exit_code": 1}

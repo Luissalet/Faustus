@@ -3080,6 +3080,29 @@ def _build_system_prompt(
     mcp_schemas = []
     if mcp_mgr:
         mcp_schemas = mcp_mgr.get_all_openai_schemas(mcp_disabled_map or {})
+        # CONTRATO_CONECTORES F2.3: drop schemas for any MCP server this
+        # session/project/task's connector allowlist does not cover, BEFORE
+        # the tool-RAG/budget selection below ever sees them — a connector a
+        # turn may not call should not spend prompt tokens either. This is
+        # the schema-visibility half of enforcement; `execute_tool_block` /
+        # `_call_mcp_tool` (src/tool_execution.py) is the other half, and
+        # covers a call "by name" even when a schema was never offered.
+        try:
+            from src.connector_policy import resolve_allowed_servers_for_session, is_tool_allowed
+            _allowed_connectors = resolve_allowed_servers_for_session(session_id, owner)
+            if _allowed_connectors is not None:
+                mcp_schemas = [
+                    s for s in mcp_schemas
+                    if is_tool_allowed(
+                        (s.get("function") or {}).get("name") or s.get("name") or "",
+                        _allowed_connectors,
+                    )
+                ]
+        except Exception:
+            logger.warning(
+                "connector policy filtering failed for session=%s; leaving MCP schemas unfiltered",
+                session_id, exc_info=True,
+            )
 
     set_active_model(model)
 
