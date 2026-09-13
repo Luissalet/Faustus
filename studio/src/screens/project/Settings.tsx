@@ -2,9 +2,10 @@ import { FolderOpen, Save, Sparkles, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Button } from '../../components';
 import { pickNative } from '../../adapters/composer';
-import { AGENT_FLAGS, createProject, draftAgentsMd, flagOn, updateProject, type Project } from '../../adapters/projects';
+import { AGENT_FLAGS, createProject, draftAgentsMd, flagOn, setProjectConnectors, updateProject, type Project } from '../../adapters/projects';
 import { getSummary, isValidBoardKey, setBoardKey as setBoardKeyApi } from '../../adapters/board';
 import { getLang, t } from '../../i18n';
+import { ConnectorPicker } from '../connectors/ConnectorPicker';
 
 /**
  * The project's settings: name, folders, instructions and the agent's
@@ -31,6 +32,14 @@ export function ProjectSettings({ project, onSaved, onCancel, say }: { project: 
   const [boardKey, setBoardKeyValue] = useState('');
   const [boardKeySaving, setBoardKeySaving] = useState(false);
   const [boardKeyError, setBoardKeyError] = useState<string | null>(null);
+
+  // CONTRATO_CONECTORES F2.2: saves independently, the same way the board
+  // key does — a picker click should not require the whole form's "Save".
+  const [connectorIds, setConnectorIds] = useState<string[] | null>(project?.connector_ids ?? null);
+  const [connectorSaving, setConnectorSaving] = useState(false);
+  useEffect(() => {
+    setConnectorIds(project?.connector_ids ?? null);
+  }, [project?.id, project?.connector_ids]);
   useEffect(() => {
     if (!project?.id) return;
     let live = true;
@@ -206,6 +215,24 @@ export function ProjectSettings({ project, onSaved, onCancel, say }: { project: 
           </span>
           {boardKeyError && <p className="fs-pj__error" role="alert">{boardKeyError}</p>}
         </label>
+      )}
+
+      {project && (
+        <div className="fs-pj__field">
+          <ConnectorPicker
+            value={connectorIds}
+            inheritLabel={t('All enabled')}
+            disabled={connectorSaving}
+            onChange={(next) => {
+              setConnectorIds(next);
+              setConnectorSaving(true);
+              setProjectConnectors(project.id, next)
+                .then((p) => say(t('Connectors saved for {name}.', { name: p.name })))
+                .catch((e: Error) => say(e.message))
+                .finally(() => setConnectorSaving(false));
+            }}
+          />
+        </div>
       )}
 
       {error && <p className="fs-pj__error" role="alert">{error}</p>}

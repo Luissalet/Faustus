@@ -1,5 +1,5 @@
 import { getSettings, saveSettings } from '../../adapters/settings';
-import { t, useLang } from '../../i18n';
+import { t, tn, useLang } from '../../i18n';
 import { Link } from 'react-router';
 import {
   ArrowUp,
@@ -21,6 +21,7 @@ import {
   MicOff,
   Paperclip,
   Pin,
+  Plug,
   Plus,
   Shield,
   RefreshCw,
@@ -77,6 +78,8 @@ import { ContextPanel, pruneOverrides } from './ContextPanel';
 import { COMPOSER_CONTEXT_EVENT, type ComposerContextDetail } from '../../lib/docSession';
 import { addMaterial } from '../../adapters/sideThreads';
 import { modeDescription, modeLabel, type BehaviorMode } from '../../adapters/behaviorModes';
+import { getSessionConnectors, getSessionToolSupport, setSessionConnectors, type ConnectorSelection, type ToolSupport } from '../../adapters/sessions';
+import { ConnectorPicker } from '../connectors/ConnectorPicker';
 
 export type Mode = 'chat' | 'agent';
 
@@ -919,6 +922,7 @@ export function Composer({
           />
         )}
         <BehaviorModeSelector modes={behaviorModes} activeId={behaviorModeId} onPick={onPickBehaviorMode} />
+        <SessionConnectorsSelector sessionId={sessionId} />
         <ApprovalSelector disabled={busy} onNotice={onNotice} />
         <StrategyProfileSelector profile={strategyProfile} onPick={pickStrategyProfile} />
         <RecipeSelector recipeId={activeRecipeId} recipes={recipes} onPick={pickRecipe} />
@@ -1136,6 +1140,75 @@ function BehaviorModeSelector({
       </div>
       <Link to="/settings?s=modes" className="fs-studio__permission-link">
         {t('Manage modes…')}
+      </Link>
+    </Popover>
+  );
+}
+
+// CONTRATO_CONECTORES Lote F3: which connectors (F2's `connector_ids`) this
+// conversation may use. There is nothing to persist to before the first
+// message creates a session — `sessionId === null` hides the chip rather
+// than faking a selection that has nowhere to be saved yet, the same way
+// the picker in the composer bar for a brand-new chat simply is not shown
+// for anything else that needs a session id.
+function SessionConnectorsSelector({ sessionId }: { sessionId: string | null }) {
+  const [selection, setSelection] = useState<ConnectorSelection | null>(null);
+  const [toolSupport, setToolSupport] = useState<ToolSupport | null>(null);
+  const [open, setOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!sessionId) {
+      setSelection(null);
+      setToolSupport(null);
+      return;
+    }
+    let live = true;
+    getSessionConnectors(sessionId).then((s) => { if (live) setSelection(s); }).catch(() => { if (live) setSelection(null); });
+    getSessionToolSupport(sessionId).then((s) => { if (live) setToolSupport(s); }).catch(() => { if (live) setToolSupport(null); });
+    return () => { live = false; };
+  }, [sessionId]);
+
+  if (!sessionId) return null;
+
+  const count = selection?.connector_ids ? selection.connector_ids.length : null;
+  const label = count === null ? t('All connectors') : count === 0 ? t('No connectors') : tn(count, '{n} connector', '{n} connectors');
+
+  return (
+    <Popover
+      side="top"
+      className="fs-studio__permission-menu"
+      open={open}
+      onOpenChange={setOpen}
+      trigger={
+        <button
+          type="button"
+          className="fs-studio__chip fs-studio__chip--compact"
+          data-testid="session-connectors-chip"
+          title={t('Connectors for this conversation')}
+          aria-label={t('Connectors for this conversation')}
+        >
+          <Plug size={14} aria-hidden="true" /> <span className="fs-studio__chip-label">{label}</span>
+        </button>
+      }
+    >
+      <ConnectorPicker
+        value={selection?.connector_ids ?? null}
+        effective={selection?.effective}
+        source={selection?.source}
+        toolSupport={toolSupport}
+        disabled={saving}
+        inheritLabel={t('Inherit from project')}
+        onChange={(next) => {
+          setSaving(true);
+          setSessionConnectors(sessionId, next)
+            .then(setSelection)
+            .catch(() => undefined)
+            .finally(() => setSaving(false));
+        }}
+      />
+      <Link to="/connectors" className="fs-studio__permission-link">
+        {t('Manage connectors…')}
       </Link>
     </Popover>
   );
