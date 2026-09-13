@@ -1481,6 +1481,12 @@ async def serve_source_control(request: Request):
     """Studio Source control panel (OBJ-4)."""
     return await serve_index(request)
 
+@app.get("/connectors")
+async def serve_connectors(request: Request):
+    """Studio Connectors (CONTRATO_CONECTORES Lote F3): the Hoard presets
+    and every other MCP server, unified over /api/connectors (Lote F1)."""
+    return await serve_index(request)
+
 @app.get("/library/edit")
 async def serve_library_editor(request: Request):
     """Studio image editor (lot Z2): `?img=<id>`, `?draft=<id>` or `?new=WxH`."""

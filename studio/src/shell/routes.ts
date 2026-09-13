@@ -15,6 +15,7 @@ import {
   ListChecks,
   Mail,
   Network,
+  Plug,
   Sparkles,
   StickyNote,
   Zap,
@@ -65,6 +66,9 @@ export interface Tool {
 }
 
 export const TOOLS: Tool[] = [
+  // CONTRATO_CONECTORES Lote F3: the Hoard presets (Jobhunter, Writer…) and
+  // every other MCP server, unified — /api/connectors, not a second store.
+  { path: '/connectors', label: 'Connectors', icon: Plug },
   { path: '/notes', label: 'Notes', icon: StickyNote },
   { path: '/source-control', label: 'Source control', icon: GitBranch },
   { path: '/calendar', label: 'Calendar', icon: CalendarDays },
@@ -102,6 +106,7 @@ export const SERVER_ROUTES = [
   '/activity',
   '/notes',
   '/source-control',
+  '/connectors',
   '/memory',
   '/calendar',
   '/email',
