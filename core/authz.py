@@ -198,6 +198,15 @@ API_TOKEN_RULES: Tuple[Rule, ...] = (
     _read("/api/artifacts/{artifact_id}/download", "sessions", note="download one owned artifact"),
     _read("/api/artifacts/{artifact_id}/manifest", "sessions", note="one owned artifact's version chain"),
     _read("/api/artifacts/{artifact_id}/provenance", "sessions", note="one owned artifact's provenance"),
+    # S3.1: an owned session's own conversation export (md/txt/json/html/
+    # pdf/docx — `src/chat_export.py`'s SUPPORTED_FORMATS). Honest note: the
+    # route (`routes/session_routes.py::export_session`) already resolves
+    # ownership and artifact attribution through `effective_user`, exactly
+    # the seam the rest of this surface relies on — this rule only opens the
+    # route to a bearer token at all, it changes nothing about the route
+    # itself.
+    _read("/api/session/{sid}/export", "sessions",
+          note="download one owned session's export (also recorded as an artifact)"),
     _read("/openapi.json", "sessions", note="generate client types against the real app"),
 )
 

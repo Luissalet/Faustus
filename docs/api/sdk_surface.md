@@ -66,6 +66,7 @@ reaches any route below at all — the 403 names the missing scope.
 | GET | `/api/session/{sid}/tool-support` | `sessions` | read | Whether an owned session's current model/endpoint can use tools at all. |
 | GET | `/api/session/{session_id}/context_info` | `sessions` | read | An owned session's real model context length. |
 | GET | `/api/history/{session_id}` | `sessions` | read | An owned session's message history — the same route the desktop app itself loads a chat from. |
+| GET | `/api/session/{sid}/export` | `sessions` | read | Download one owned session's rendered conversation (`?fmt=md\|txt\|json\|html\|pdf\|docx`). The bytes are also recorded as an artifact (`session_id` set), so `client.artifacts.list({sessionId})` finds it right after. |
 | POST | `/api/chat_stream` | `sessions` | external (executes tools) | Run a turn: send a message, or answer an in-turn `ask_user`/`tool_approval`. Streams the events `docs/api/sse_events.json` catalogues. |
 | GET | `/api/chat/resume/{session_id}` | `sessions` | read | Reattach to an owned session's in-flight turn (replays from `?cursor=`). |
 | GET | `/api/chat/stream_status/{session_id}` | `sessions` | read | Whether an owned session has an active stream right now. |
@@ -122,6 +123,25 @@ client, makes that call.
   (`POST /api/artifacts/{id}/review`, `DELETE /api/artifacts/{id}`) — only
   reading is opened in this lot; the SDK's own job is reading what a turn
   produced, not curating the library.
+
+## Ejemplo verificado (A20)
+
+`tests/acceptance/test_a20_external_sdk_consumer.py` es la evidencia de que
+esta superficie funciona de punta a punta contra un servidor real: arranca
+Faustus real (`uvicorn`, `AUTH_ENABLED=true`) en un subproceso, mintea un
+token `sdk` real por `POST /api/tokens`, empaqueta `sdk/ts` con `npm pack` e
+instala el `.tgz` resultante en dos proyectos Node limpios (uno ESM, uno
+CommonJS, sin acceso a red — `sdk/ts/examples/esm` y `.../examples/cjs`), y
+ejecuta ese consumidor instalado contra el servidor: crear sesión, mandar un
+turno con `workspace`, aprobar un `tool_approval` en curso, seguir el turno
+hasta `[DONE]`, exportar la sesión (`client.sessions.export`) y verificar
+`artifacts.list/get/download` con el `sha256` real; más una cancelación
+(`turn.cancel('task')` + `turns.resume()` lanzando `RunNotActiveError`) y un
+token sin scope `sessions` recibiendo 403. Reproducir:
+
+```
+python3 -m pytest tests/acceptance/test_a20_external_sdk_consumer.py -q -p no:cacheprovider
+```
 
 ## See also
 

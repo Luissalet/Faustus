@@ -52,6 +52,7 @@ SESSIONS_ROUTES = [
     ("GET", "/api/session/{sid}/tool-support"),
     ("GET", "/api/session/{session_id}/context_info"),
     ("GET", "/api/history/{session_id}"),
+    ("GET", "/api/session/{sid}/export"),
     ("POST", "/api/chat_stream"),
     ("GET", "/api/chat/resume/{session_id}"),
     ("GET", "/api/chat/stream_status/{session_id}"),

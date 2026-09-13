@@ -58,6 +58,8 @@ export type {
   SessionSummary,
   SessionUpdatePatch,
   SessionUpdateResult,
+  SessionExportOptions,
+  SessionExportResult,
   AutonomyPreset,
   ToolApprovalDecision,
   StopScope,

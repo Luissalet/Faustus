@@ -683,7 +683,11 @@ def test_request_workspace_gate(ws, monkeypatch):
     workspace_rejected signal would otherwise reveal which host paths exist."""
     import routes.chat_routes as cr
 
-    monkeypatch.setattr(cr, "get_current_user", lambda req: "bob")
+    # S3.1: the privilege check reads effective_user (the token-ownership
+    # seam), not the raw get_current_user principal — see
+    # _resolve_request_workspace's own docstring for why. Patch that seam
+    # directly; the plain object() request below is never touched by it.
+    monkeypatch.setattr(cr, "effective_user", lambda req: "bob")
     vet_calls = []
     import src.tool_execution as te
     real_vet = te.vet_workspace
