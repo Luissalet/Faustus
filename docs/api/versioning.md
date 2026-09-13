@@ -47,4 +47,38 @@ new event type a client must not silently skip.
 `x-min-client-version`, `x-api-version-header`, `x-client-version-header`
 and `x-deprecations` fields, merged into the generated OpenAPI document's
 `info` object by `app.py`'s `app.openapi` override (Lote 61) — visible at
-`GET /openapi.json`.
+`GET /openapi.json`. `scripts/export_openapi.py` writes that same document
+to a file for a client generator to read offline (S1.3).
+
+## SSE event catalogue
+
+`docs/api/sse_events.json` is the versioned list of every `type` that can
+arrive as a server-sent event on `POST /api/chat_stream` and
+`GET /api/chat/resume/{session_id}` — the machine-readable half of the wire
+contract this document describes in prose. `src/sse_catalog.py` reads it
+back at runtime (`load_catalog()`, `event_types()`, `core_event_types()`);
+`tests/test_sse_catalog.py` is the guard that fails the build the moment a
+source file emits a `type` the JSON does not know about.
+
+- **`schema_version`** is the same string every SSE envelope stamps as its
+  own `schema_version` field (`src/agent_runs.py`'s `_observability_fields`)
+  and always equals `API_VERSION` above — `src/sse_catalog.py` asserts this
+  at import time, so the two cannot drift apart silently.
+- **`stability: "core"`** events are the ones a generated client types
+  explicitly. Stability rule: a core event's `type` and `fields` never
+  change in a way an old client cannot safely ignore without a
+  `MIN_CLIENT_VERSION` bump, same as any other breaking change above — a
+  new field on a core event is additive and fine; renaming or repurposing
+  one is not. A core event is never *removed* without first being announced
+  as deprecated (`deprecations.md`).
+- **`stability: "extended"`** events (research/document-streaming/harness
+  internals, and the raw provider-stream passthrough frames a "chat"-mode
+  turn forwards verbatim from `src/llm_core.py`) may change shape or
+  disappear between minor versions. A generated client types these as one
+  `UnknownEvent` catch-all it passes through rather than parses.
+- **The envelope, `[DONE]`, and the framing block** (`sequence`, `trace_id`,
+  `step_id`, `stream_id`, `schema_version`; the `data: <json>\n\n` line
+  shape; the literal terminator frame `data: [DONE]`; the named SSE events;
+  the heartbeat) are part of the contract exactly as `core` events are —
+  the catalogue's own `envelope`/`framing` blocks are the source of truth
+  for their shape, not this prose.

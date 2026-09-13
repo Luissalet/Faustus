@@ -51,6 +51,30 @@ def _current_user(request: Request) -> str:
     return str(getattr(request.state, "current_user", "") or "").strip()
 
 
+def _read_owner(request: Request, owner_param: str) -> str:
+    """Resolve the `owner` GET /pending and /active read with.
+
+    Cookie sessions keep the original design unchanged: `require_admin`
+    (opens to the in-process tool token too) and the caller's own `owner`
+    query param, because a human reviewing cards is meant to see across
+    owners. A bearer `ody_` token is not that admin console: `require_admin`
+    would 403 it anyway (it authenticates as the sandboxed pseudo-user "api",
+    never a real admin username), and S1.1 does not want a `sessions`-scoped
+    token to gain admin-wide visibility even if it could. So a token reads
+    only ITS OWN owner's cards — the `owner` query param, if any, is ignored
+    for tokens rather than trusted."""
+    if getattr(request.state, "api_token", False):
+        scopes = set(getattr(request.state, "api_token_scopes", []) or [])
+        if "sessions" not in scopes:
+            raise HTTPException(403, "API token missing required scope: sessions")
+        token_owner = getattr(request.state, "api_token_owner", None)
+        if not token_owner:
+            raise HTTPException(403, "API token has no owner")
+        return token_owner
+    require_admin(request)
+    return owner_param
+
+
 def _decision_response(result: dict):
     """A02: the losing side of two concurrent grant/deny calls on the SAME
     card gets a 409, not a quiet 200 — but the body still carries the
@@ -68,7 +92,7 @@ def setup_approvals_routes():
 
     @router.get("/pending")
     def list_pending(request: Request, owner: str = "", limit: int = 50):
-        require_admin(request)
+        owner = _read_owner(request, owner)
         approval_store.expire_stale()
         cards = approval_store.pending(owner=owner, limit=max(1, min(limit, 200)))
         return {"checked_at": now_iso(),
@@ -81,7 +105,7 @@ def setup_approvals_routes():
         expired, with uses left. What a human reviews to see everything a
         model or document could currently claim as "I have permission",
         and revoke from with DELETE /{approval_id}."""
-        require_admin(request)
+        owner = _read_owner(request, owner)
         cards = approval_store.active(owner=owner, limit=limit)
         return {"checked_at": now_iso(),
                 "active": [c.to_dict() for c in cards],
