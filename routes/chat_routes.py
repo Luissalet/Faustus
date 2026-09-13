@@ -1,6 +1,7 @@
 """Chat routes — /api/chat, /api/chat_stream, /api/inject_context, /api/search."""
 
 import asyncio
+import contextlib
 import json
 import os
 import re
@@ -83,6 +84,60 @@ logger = logging.getLogger(__name__)
 
 # Track active streams for partial-save safety net
 _active_streams: Dict[str, dict] = {}
+
+# ---------------------------------------------------------------------------
+# A01 (turn admission race, docs/spec/trueforge/): a bounded per-session
+# asyncio.Lock serializing only the MUTATING part of turn admission -- from
+# persisting the user's message (build_chat_context(persist_user_message=True)
+# in chat_stream below) through agent_runs.start(), the single point that
+# cancels a running predecessor (src/agent_runs.py::start). Full request
+# validation (client version, JSON body, session ownership, model exists,
+# tool_approval_id is current, ...) already completes BEFORE this point and
+# is therefore NEVER inside the lock: an invalid second POST cannot block or
+# corrupt a valid run in flight -- it never reaches agent_runs.start(), so it
+# can never cancel anything.
+#
+# Streaming itself is NOT under this lock: the wrapped generator is merely
+# CONSTRUCTED while the lock is held (agent_runs.start() schedules it as a
+# background task and returns immediately, before it runs its first
+# instruction); actual token generation happens after the lock is released.
+# Two genuinely concurrent valid POSTs for the same session are serialized
+# through admission so exactly one ends up the active run at a time and the
+# other's replacement is one well-ordered agent_runs.start() call rather than
+# a race between two concurrent ones.
+#
+# Bounded and self-cleaning: a lock is created for a session on first use and
+# the entry is dropped again once nobody holds or is waiting on it, so this
+# registry never grows past the number of sessions with an admission
+# in flight right now -- unlike `_active_streams` above, it never accumulates
+# one entry per session ever seen.
+_admission_locks: Dict[str, asyncio.Lock] = {}
+_admission_lock_waiters: Dict[str, int] = {}
+
+
+@contextlib.asynccontextmanager
+async def _session_admission_lock(session_id: str):
+    """Serialize turn admission for one session_id. See module comment above."""
+    key = str(session_id or "")
+    lock = _admission_locks.setdefault(key, asyncio.Lock())
+    _admission_lock_waiters[key] = _admission_lock_waiters.get(key, 0) + 1
+    try:
+        async with lock:
+            yield
+    finally:
+        remaining = _admission_lock_waiters.get(key, 1) - 1
+        if remaining <= 0:
+            _admission_lock_waiters.pop(key, None)
+            # Safe even if a fresh waiter raced in between: `lock` here is a
+            # local binding, not necessarily the dict's current entry, so a
+            # `setdefault` immediately after this pop is still correct — it
+            # would recreate the entry, never resurrect this exact lock while
+            # someone still holds it (this branch only runs once the last
+            # holder/waiter for `key` has released).
+            if _admission_locks.get(key) is lock:
+                _admission_locks.pop(key, None)
+        else:
+            _admission_lock_waiters[key] = remaining
 
 
 async def _vram_admission_events(endpoint_url: str, model: str, owner: str,
@@ -2454,773 +2509,988 @@ def setup_chat_routes(
             # writes the "result after" half once the turn actually ends.
             chat_outbox.record_intent(owner=owner, session_id=session, client_message_id=client_message_id)
 
-        # Build shared context (stream path uses enhanced_message for context preface)
-        ctx = await build_chat_context(
-            sess, request, chat_handler, chat_processor,
-            message=message,
-            session_id=session,
-            preset_id=preset_id,
-            att_ids=att_ids,
-            use_web=use_web,
-            use_rag=use_rag,
-            time_filter=time_filter,
-            incognito=incognito,
-            no_memory=no_memory,
-            search_context=search_context,
-            compare_mode=compare_mode,
-            webhook_manager=webhook_manager,
-            use_enhanced_message=True,
-            # Skills index only ships when the model can actually call
-            # manage_skills (agent mode). In plain chat or incognito the
-            # index would be useless / unwanted noise.
-            agent_mode=(chat_mode == "agent"),
-            allow_tool_preprocessing=allow_tool_preprocessing,
-            defer_context_shaping=foreground_policy.enabled,
-            continuation_context_message=(
-                pending_tool_approval.continuation_query
-                if exact_tool_approval
-                and pending_tool_approval
-                and pending_tool_approval.continuation_query
-                else None
-            ),
-            persist_user_message=not tool_approval_continuation,
-            behavior_mode=behavior_mode,
-        )
+        async with _session_admission_lock(session):
+            # Build shared context (stream path uses enhanced_message for context preface)
+            ctx = await build_chat_context(
+                sess, request, chat_handler, chat_processor,
+                message=message,
+                session_id=session,
+                preset_id=preset_id,
+                att_ids=att_ids,
+                use_web=use_web,
+                use_rag=use_rag,
+                time_filter=time_filter,
+                incognito=incognito,
+                no_memory=no_memory,
+                search_context=search_context,
+                compare_mode=compare_mode,
+                webhook_manager=webhook_manager,
+                use_enhanced_message=True,
+                # Skills index only ships when the model can actually call
+                # manage_skills (agent mode). In plain chat or incognito the
+                # index would be useless / unwanted noise.
+                agent_mode=(chat_mode == "agent"),
+                allow_tool_preprocessing=allow_tool_preprocessing,
+                defer_context_shaping=foreground_policy.enabled,
+                continuation_context_message=(
+                    pending_tool_approval.continuation_query
+                    if exact_tool_approval
+                    and pending_tool_approval
+                    and pending_tool_approval.continuation_query
+                    else None
+                ),
+                persist_user_message=not tool_approval_continuation,
+                behavior_mode=behavior_mode,
+            )
 
-        # W3-INT (CONTRATO_CMP_W2.md § W2-A1/CMP-03): doc_context chips —
-        # owner-checked (`_doc_context_messages`) and inserted right before
-        # the turn's own message (mirrored into `route_messages` exactly
-        # like the research-clarification system message above does) so the
-        # model reads the selected fragment as context for THIS turn, never
-        # as though the user had typed it.
-        _doc_context_msgs = _doc_context_messages(_parse_doc_context_payload(doc_context_raw), ctx.user)
-        if _doc_context_msgs:
-            _insert_at = max(0, len(ctx.messages) - 1)
-            ctx.messages[_insert_at:_insert_at] = _doc_context_msgs
-            if foreground_policy.enabled:
-                _route_messages = getattr(ctx, "route_messages", ctx.messages)
-                _route_insert_at = max(0, len(_route_messages) - 1)
-                _route_messages[_route_insert_at:_route_insert_at] = [dict(m) for m in _doc_context_msgs]
+            # W3-INT (CONTRATO_CMP_W2.md § W2-A1/CMP-03): doc_context chips —
+            # owner-checked (`_doc_context_messages`) and inserted right before
+            # the turn's own message (mirrored into `route_messages` exactly
+            # like the research-clarification system message above does) so the
+            # model reads the selected fragment as context for THIS turn, never
+            # as though the user had typed it.
+            _doc_context_msgs = _doc_context_messages(_parse_doc_context_payload(doc_context_raw), ctx.user)
+            if _doc_context_msgs:
+                _insert_at = max(0, len(ctx.messages) - 1)
+                ctx.messages[_insert_at:_insert_at] = _doc_context_msgs
+                if foreground_policy.enabled:
+                    _route_messages = getattr(ctx, "route_messages", ctx.messages)
+                    _route_insert_at = max(0, len(_route_messages) - 1)
+                    _route_messages[_route_insert_at:_route_insert_at] = [dict(m) for m in _doc_context_msgs]
 
-        # Per-session generation overrides from the chat model controls
-        # (temperature, max_tokens, top_p, think, ...). Validated here; the
-        # sampling extras are forwarded to llm_core as gen_overrides.
-        _delegate_tasks = _parse_delegate_tasks(
-            form_data.get("delegate_tasks") or (body or {}).get("delegate_tasks")
-        )
-        _gen_overrides = _parse_gen_overrides(
-            form_data.get("gen_overrides") or (body or {}).get("gen_overrides")
-        )
-        _temperature_explicit = False
-        if _gen_overrides:
-            if "temperature" in _gen_overrides:
-                ctx.preset.temperature = _gen_overrides.pop("temperature")
-                _temperature_explicit = True
-            if "max_tokens" in _gen_overrides:
-                ctx.preset.max_tokens = _gen_overrides.pop("max_tokens")
-            logger.info("[gen-overrides] session=%s temperature=%s max_tokens=%s extra=%s",
-                        session, ctx.preset.temperature, ctx.preset.max_tokens, _gen_overrides)
+            # Per-session generation overrides from the chat model controls
+            # (temperature, max_tokens, top_p, think, ...). Validated here; the
+            # sampling extras are forwarded to llm_core as gen_overrides.
+            _delegate_tasks = _parse_delegate_tasks(
+                form_data.get("delegate_tasks") or (body or {}).get("delegate_tasks")
+            )
+            _gen_overrides = _parse_gen_overrides(
+                form_data.get("gen_overrides") or (body or {}).get("gen_overrides")
+            )
+            _temperature_explicit = False
+            if _gen_overrides:
+                if "temperature" in _gen_overrides:
+                    ctx.preset.temperature = _gen_overrides.pop("temperature")
+                    _temperature_explicit = True
+                if "max_tokens" in _gen_overrides:
+                    ctx.preset.max_tokens = _gen_overrides.pop("max_tokens")
+                logger.info("[gen-overrides] session=%s temperature=%s max_tokens=%s extra=%s",
+                            session, ctx.preset.temperature, ctx.preset.max_tokens, _gen_overrides)
 
-        _research_flags = {"do": do_research}  # Mutable container for generator scope
+            _research_flags = {"do": do_research}  # Mutable container for generator scope
 
-        # Query active document — prefer explicit ID from frontend, fall back to session lookup
-        active_doc = None
-        _doc_db = SessionLocal()
-        try:
-            if active_doc_id:
-                logger.info(f"[doc-inject] active_doc_id from frontend: {active_doc_id}")
-                # Scope to the caller's documents. The session and in-memory
-                # fallbacks below are already owner/session-bound; this
-                # explicit-id path looked up by id alone, so a user could
-                # inject another user's document by passing its id.
-                _doc_q = _doc_db.query(DBDocument).filter(DBDocument.id == active_doc_id)
-                active_doc = _owner_session_filter(_doc_q, ctx.user).first()
-                if active_doc:
-                    doc_session = active_doc.session_id
-                    doc_owner = getattr(active_doc, "owner", None)
-                    if doc_owner and ctx.user and doc_owner != ctx.user:
-                        logger.warning(
-                            "[doc-inject] ignoring active_doc_id %s owned by another user",
-                            active_doc_id,
-                        )
-                        active_doc = None
-                    else:
-                        # NOTE: previously dropped the doc when doc.session_id
-                        # != current chat session — but that broke the common
-                        # case of "open an email draft from one chat, ask a
-                        # different chat to write into it". The frontend only
-                        # sends active_doc_id for docs currently visible in
-                        # the UI, and we already owner-checked above, so trust
-                        # the explicit signal. We just log the mismatch and
-                        # re-bind the doc to the current session so future
-                        # turns find it via the session-fallback path too.
-                        if doc_session and doc_session != session:
-                            logger.info(
-                                "[doc-inject] cross-session active_doc_id %s (was session %s, now %s) — accepting and rebinding",
-                                active_doc_id, doc_session, session,
+            # Query active document — prefer explicit ID from frontend, fall back to session lookup
+            active_doc = None
+            _doc_db = SessionLocal()
+            try:
+                if active_doc_id:
+                    logger.info(f"[doc-inject] active_doc_id from frontend: {active_doc_id}")
+                    # Scope to the caller's documents. The session and in-memory
+                    # fallbacks below are already owner/session-bound; this
+                    # explicit-id path looked up by id alone, so a user could
+                    # inject another user's document by passing its id.
+                    _doc_q = _doc_db.query(DBDocument).filter(DBDocument.id == active_doc_id)
+                    active_doc = _owner_session_filter(_doc_q, ctx.user).first()
+                    if active_doc:
+                        doc_session = active_doc.session_id
+                        doc_owner = getattr(active_doc, "owner", None)
+                        if doc_owner and ctx.user and doc_owner != ctx.user:
+                            logger.warning(
+                                "[doc-inject] ignoring active_doc_id %s owned by another user",
+                                active_doc_id,
                             )
-                            try:
-                                active_doc.session_id = session
-                                _doc_db.commit()
-                            except Exception as _e:
-                                _doc_db.rollback()
-                                logger.warning(f"[doc-inject] session rebind failed: {_e}")
-                        logger.info(f"[doc-inject] found by ID: title={active_doc.title!r}, lang={active_doc.language!r}, is_active={active_doc.is_active}, content_len={len(active_doc.current_content or '')}")
-                else:
-                    logger.warning(f"[doc-inject] NOT FOUND by ID {active_doc_id}")
-            if not active_doc:
-                _email_doc_q = _doc_db.query(DBDocument).filter(
-                    DBDocument.session_id == session,
-                    DBDocument.is_active == True,
-                    DBDocument.language == "email",
-                )
-                active_doc = _owner_session_filter(_email_doc_q, ctx.user).order_by(DBDocument.updated_at.desc()).first()
-                if active_doc:
-                    logger.info(f"[doc-inject] found email draft by session fallback: title={active_doc.title!r}")
-            if not active_doc:
-                _session_doc_q = _doc_db.query(DBDocument).filter(
-                    DBDocument.session_id == session,
-                    DBDocument.is_active == True
-                )
-                active_doc = _owner_session_filter(_session_doc_q, ctx.user).order_by(DBDocument.updated_at.desc()).first()
-                if active_doc:
-                    logger.info(f"[doc-inject] found by session fallback: title={active_doc.title!r}")
-            # Last resort: the document the agent itself just created/edited
-            # (tracked in-memory by the tool layer). This rescues docs that
-            # got orphaned from their session (session_id NULL) — otherwise
-            # neither lookup above can associate them with this conversation,
-            # so the agent never sees what it just wrote. Guarded so we never
-            # leak a doc that belongs to a DIFFERENT session.
-            if not active_doc:
-                try:
-                    from src.agent_tools.document_tools import get_active_document
-                    _mem_id = get_active_document()
-                    if _mem_id:
-                        _mem_q = _doc_db.query(DBDocument).filter(DBDocument.id == _mem_id)
-                        cand = _owner_session_filter(_mem_q, ctx.user).first()
-                        if cand and (not cand.session_id or cand.session_id == session):
-                            active_doc = cand
-                            logger.info(f"[doc-inject] found by in-memory active id: title={active_doc.title!r} (session_id={cand.session_id!r})")
-                except Exception as _e:
-                    logger.debug(f"[doc-inject] in-memory fallback failed: {_e}")
-            if not active_doc:
-                logger.info(f"[doc-inject] no active doc for session {session}")
-            if active_doc:
-                _doc_db.expunge(active_doc)
-        except Exception as e:
-            logger.warning(f"Failed to query active document: {e}")
-        finally:
-            _doc_db.close()
-
-        # Build disabled-tools set from frontend toggles + user privileges
-        disabled_tools = set()
-        # Only disable bash when the caller *explicitly* set it to a falsy
-        # value. When unset (None), defer to per-user privilege checks below.
-        # Web search is per-turn opt-in: either the chat pre-search setting
-        # (`use_web=true`) or agent web toggle (`allow_web_search=true`) must
-        # explicitly enable it.
-        if allow_bash is not None and str(allow_bash).lower() != "true":
-            disabled_tools.add("bash")
-        _explicit_web_intent = _explicit_web_intent or bool(_tool_intent and _tool_intent.category == "web")
-        if is_web_search_explicitly_denied(allow_web_search) or not _search_enabled:
-            disabled_tools.update(WEB_TOOL_NAMES)
-        if _explicit_web_intent:
-            # A direct lookup/search request should not drift into personal
-            # tools or shell fallbacks. It can only use web_search/web_fetch
-            # when the request's explicit web setting enabled them.
-            disabled_tools.update({
-                "bash", "python",
-                "search_chats", "manage_skills", "manage_memory",
-                "read_file", "write_file", "edit_file",
-                "create_document", "edit_document", "update_document",
-                "send_email", "reply_to_email",
-                "manage_notes", "manage_calendar", "manage_tasks",
-                "api_call",
-            })
-            if _search_enabled:
-                disabled_tools.difference_update(WEB_TOOL_NAMES)
-            else:
-                disabled_tools.update(WEB_TOOL_NAMES)
-        elif _search_enabled:
-            disabled_tools.difference_update(WEB_TOOL_NAMES)
-
-        # Nobody/incognito mode: deny tools that would expose the user's
-        # persistent memory, past chats, or other identity-linked data.
-        if incognito:
-            disabled_tools.update({
-                "manage_memory",      # persistent memory store
-                "search_chats",       # past chat history
-                "manage_skills",      # skill presets tied to user
-                "create_session",
-                "list_sessions",
-                "manage_session",
-                "send_to_session",
-                "chat_with_model",
-            })
-
-        # Active email reader open → strip the tools that let the agent drift
-        # away from the visible email or skip review. The only allowed compose
-        # path is ui_control open_email_reply, which opens the same draft editor
-        # as the Reply button with the generated body pre-filled. This prevents
-        # the model from falling back to direct SMTP when it botches a draft
-        # call, and prevents fake email-shaped documents.
-        if active_email_ctx and active_email_ctx.get("uid"):
-            disabled_tools.update({
-                "create_document",
-                "send_email",
-                "reply_to_email",
-                "mcp__email__send_email",
-                "mcp__email__reply_to_email",
-            })
-
-        # Enforce per-user privileges
-        _privs = {}
-        _user = ctx.user
-        if _user and hasattr(request.app.state, 'auth_manager') and request.app.state.auth_manager:
-            _privs = request.app.state.auth_manager.get_privileges(_user)
-        if _privs:
-            if not _privs.get("can_use_bash", True):
-                disabled_tools.update({"bash", "python", "read_file", "write_file"})
-            if not _privs.get("can_use_browser", True):
-                disabled_tools.update(_browser_mcp_denylist())
-            if not _privs.get("can_use_documents", True):
-                disabled_tools.update({"create_document", "edit_document", "update_document", "suggest_document"})
-            if not _privs.get("can_generate_images", True):
-                disabled_tools.add("generate_image")
-            if not _privs.get("can_manage_memory", True):
-                disabled_tools.update({"manage_memory", "manage_skills"})
-            if not _privs.get("can_use_research", True):
-                _research_flags["do"] = False
-            if not _privs.get("can_use_agent", True):
-                _effective_mode = 'chat'
-                chat_mode = 'chat'
-        # Global admin disabled tools
-        from src.settings import get_setting
-        _global_disabled = get_setting("disabled_tools", [])
-        if _global_disabled and isinstance(_global_disabled, list):
-            disabled_tools.update(_global_disabled)
-
-        # Light auto-escalation: the user is in chat mode and just expressed a
-        # notes/calendar/email intent. Grant the relevant managers but withhold
-        # the heavy "do things on the computer" tools — otherwise the model
-        # tries to shell out for a request that never needed it, then fails
-        # (and looks broken when the shell is disabled).
-        if auto_escalated and not _workspace_agent_intent:
-            disabled_tools.update({
-                "bash", "python", "read_file", "write_file",
-            })
-            if not _allow_browser_for_web_turn:
-                disabled_tools.update(_BROWSER_MCP_TOOLS)
-
-        # Disable document tools in compare sessions — they break the pane UI
-        if sess.name and sess.name.startswith("[CMP]"):
-            disabled_tools.update({"create_document", "edit_document", "update_document"})
-
-        # Compare mode: disable tools based on compare type
-        if compare_mode:
-            _compare_strip = {
-                "create_document", "edit_document", "update_document",
-                "chat_with_model", "create_session", "list_sessions",
-                "send_to_session",
-                "pipeline", "manage_session", "manage_memory", "list_models",
-                "generate_image", "ui_control",
-            }
-            disabled_tools.update(_compare_strip)
-            # In chat mode compare, disable ALL agent tools (no bash, python, file ops)
-            if chat_mode == 'chat':
-                disabled_tools.update({"bash", "python", "read_file", "write_file", "web_search", "web_fetch", "search_chats", "manage_tasks"})
-
-        # Plan mode: investigate read-only, propose a plan, don't mutate. Block
-        # every tool not on the read-only allowlist. (stream_agent_loop enforces
-        # this again + drops MCP, so this is belt-and-suspenders.)
-        if plan_mode:
-            from src.tool_security import plan_mode_disabled_tools
-            disabled_tools.update(plan_mode_disabled_tools())
-
-        tool_policy = build_effective_tool_policy(
-            disabled_tools=disabled_tools,
-            last_user_message=message,
-        )
-        disabled_tools = tool_policy.all_disabled_names()
-        research_blocked_by_policy = bool(
-            tool_policy.blocks("trigger_research")
-            or tool_policy.blocks("manage_research")
-        )
-        effective_do_research = bool(
-            do_research and _research_flags["do"] and not research_blocked_by_policy
-        )
-
-        # Persist session mode after policy/privilege gates so blocked research
-        # turns remain ordinary chat/agent streams and saved messages.
-        _effective_mode = 'research' if effective_do_research else (chat_mode or 'chat')
-        if _effective_mode in ('agent', 'research', 'chat'):
-            set_session_mode(session, _effective_mode)
-
-        async def stream_with_save() -> AsyncGenerator[str, None]:
-            # _effective_mode is read-only here; closure captures it from
-            # the outer scope. (Was `nonlocal` but never reassigned.)
-            research_sources = None
-            web_sources = ctx.web_sources
-
-            # Register active stream for partial-save safety net
-            _active_streams[session] = {"status": "streaming", "partial": "", "query": message, "is_research": effective_do_research, "mode": _effective_mode}
-
-            # The client sent a workspace the server refused to bind (deleted
-            # folder, file path, sensitive dir, filesystem root). Tell it up
-            # front so the UI can clear the pill instead of displaying a
-            # confinement that is not actually in effect.
-            if workspace_rejected:
-                yield f"data: {json.dumps({'type': 'workspace_rejected', 'data': {'path': workspace_rejected}})}\n\n"
-
-            # ADP-22 §2: MOD-05 substituted the requested "auto" model for
-            # this turn (or explains why it could not) -- same envelope
-            # `agent_git_policy`'s `git_policy` event already uses. Absent
-            # entirely when `_resolve_auto_model_route` was a no-op (router
-            # disabled, model not "auto", non-local endpoint...), so an
-            # ordinary turn's event stream is byte-for-byte unchanged.
-            if _model_router_auto is not None:
-                from src import model_router as _model_router_mod
-                yield (
-                    f"data: {json.dumps({'type': 'model_router', 'data': _model_router_mod.explain_event(_model_router_auto.model_router_decision, route=_model_router_auto.route_decision)})}\n\n"
-                )
-
-            if ctx.preprocessed.attachment_meta:
-                yield f"data: {json.dumps({'type': 'attachments', 'data': ctx.preprocessed.attachment_meta})}\n\n"
-
-            # Announce any docs auto-created during preprocess (e.g. fillable
-            # PDF → editable markdown) so the editor pane switches to them
-            # before the model starts streaming.
-            for _opened in ctx.auto_opened_docs:
-                yield (
-                    f'data: {json.dumps({"type": "doc_update", **_opened})}\n\n'
-                )
-
-            if ctx.rag_sources:
-                yield f"data: {json.dumps({'type': 'rag_sources', 'data': ctx.rag_sources})}\n\n"
-
-            if web_sources:
-                yield f"data: {json.dumps({'type': 'web_sources', 'data': web_sources})}\n\n"
-
-            # Emit which memories were injected into context (captured before stream)
-            if ctx.used_memories:
-                yield f"data: {json.dumps({'type': 'memories_used', 'data': ctx.used_memories})}\n\n"
-
-            # Run research as a background task (survives page refresh)
-            if effective_do_research:
-                _r_ep, _r_model, _r_headers = _resolve_research_endpoint(sess)
-                _auth_keys = list(_r_headers.keys()) if _r_headers else []
-                logger.info(f"Research endpoint resolved: model={_r_model}, endpoint={redact_url(_r_ep)}, auth_keys={_auth_keys}, sess_headers_keys={list(sess.headers.keys()) if isinstance(sess.headers, dict) else type(sess.headers)}")
-
-                # Clarification round: only for very short/vague queries on first research message.
-                # Skip in compare mode — each pane is a fresh session, so every one would
-                # ask clarifying questions and the user would have to answer each pane
-                # separately, breaking the parallel comparison.
-                _prior_json = research_handler._get_session_json(session)
-                _history_len = len(sess.history) if hasattr(sess, 'history') else 0
-                _is_first_research = not _prior_json and _history_len <= 2 and not compare_mode
-
-                if _is_first_research:
-                    logger.info(f"First research message — asking clarifying questions for: {message[:60]}")
-                    yield f'data: {json.dumps({"type": "model_info", "model": sess.model, "suffix": "Research"})}\n\n'
-                    # Set DB mode to research_pending so the NEXT message auto-triggers research
-                    set_session_mode(session, "research_pending")
-                    ctx.messages.insert(0, {"role": "system", "content":
-                        "The user wants to start deep web research. Before searching, ask 2-3 brief "
-                        "clarifying questions to understand exactly what they want to know. For example: "
-                        "what aspects matter most, are they comparing to something, what's their context "
-                        "(moving, traveling, curiosity). Be conversational. Keep it short."
-                    })
-                    if foreground_policy.enabled:
-                        getattr(ctx, "route_messages", ctx.messages).insert(0, dict(ctx.messages[0]))
-                    _skip_research = True
-                else:
-                    _skip_research = False
-
-                if not _skip_research:
-                    # Phase 2: Start actual research
-                    def _on_research_done(_sid, _result, _sources, _findings):
-                        """Persist research to DB when background task finishes."""
-                        if incognito:
-                            return
-                        try:
-                            _s = session_manager.get_session(_sid)
-                            if not _s:
-                                logger.warning(f"Session {_sid} expired before research completed")
-                                return
-                            _md = {"research": True, "model": _s.model}
-                            if _sources:
-                                _md["research_sources"] = _sources
-                            if _findings:
-                                _md["research_findings"] = _findings
-                            _clean_res, _md = clean_thinking_for_save(_result, _md)
-                            _s.add_message(ChatMessage("assistant", _clean_res, metadata=_md))
-                            session_manager.save_sessions()
-                            logger.info(f"Research result persisted to DB for session {_sid}")
-                        except Exception as _e:
-                            logger.error(f"Failed to persist research to DB: {_e}")
-
-                    # Check for prior research to continue from
-                    _prior_report = ""
-                    _prior_findings = None
-                    _prior_urls = None
-                    _prior_citations = None
-                    _prior_json = research_handler._get_session_json(session, owner=_user or "")
-                    if _prior_json:
-                        _prior_report = _prior_json.get("raw_report", "")
-                        _prior_findings = _prior_json.get("raw_findings")
-                        _prior_citations = _prior_json.get("citation_registry")
-                        _src_urls = {s.get("url", "") for s in (_prior_json.get("sources") or []) if s.get("url")}
-                        _prior_urls = _src_urls if _src_urls else None
-                        if _prior_report:
-                            logger.info(f"Continuing research for session {session} with {len(_src_urls)} prior URLs")
-
-                    # Synthesize conversation into a focused research query
-                    _research_query = await research_handler.synthesize_query(
-                        sess, message, _r_ep, _r_model, _r_headers,
-                    )
-                    logger.info(f"Research query: {_research_query[:120]}")
-
-                    research_handler.start_research(
-                        session, _research_query, _r_ep, _r_model,
-                        llm_headers=_r_headers,
-                        prior_report=_prior_report,
-                        prior_findings=_prior_findings,
-                        prior_urls=_prior_urls,
-                        prior_citations=_prior_citations,
-                        on_complete=_on_research_done,
-                        owner=_user,
-                    )
-
-                    _heartbeat_counter = 0
-                    _last_progress = {}
-                    _sent_avg = False
-                    while True:
-                        status = research_handler.get_status(session)
-                        if not status or status["status"] != "running":
-                            break
-                        progress = status.get("progress", {})
-                        if progress and progress != _last_progress:
-                            _last_progress = progress
-                            if not _sent_avg:
-                                _sent_avg = True
-                                progress = dict(progress)
-                                progress["started_at"] = status.get("started_at")
-                                avg = status.get("avg_duration")
-                                if avg:
-                                    progress["avg_duration"] = avg
-                            yield f"data: {json.dumps({'type': 'research_progress', 'data': progress})}\n\n"
-                            _heartbeat_counter = 0
+                            active_doc = None
                         else:
-                            _heartbeat_counter += 1
-                            yield f": heartbeat {_heartbeat_counter}\n\n"
-                        await asyncio.sleep(1.0)
-
-                    research_sources = research_handler.get_sources(session)
-                    if research_sources:
-                        yield f"data: {json.dumps({'type': 'research_sources', 'data': research_sources})}\n\n"
-
-                    research_findings = research_handler.get_raw_findings(session)
-                    if research_findings:
-                        yield f"data: {json.dumps({'type': 'research_findings', 'data': research_findings})}\n\n"
-
-                    # Signal frontend to fetch and render the research result
-                    yield f"data: {json.dumps({'type': 'research_done', 'data': {'session_id': session}})}\n\n"
-                    yield "data: [DONE]\n\n"
-                    research_handler.clear_result(session)
-                    _stream_set(session, status="done")
-                    _active_streams.pop(session, None)
-                    return
-
-            context_source = (
-                getattr(ctx, "route_messages", ctx.messages)
-                if foreground_policy.enabled
-                else ctx.messages
-            )
-            messages = (
-                list(context_source)
-                if tool_approval_continuation
-                else _ensure_current_request_is_latest_user(
-                    context_source, message, getattr(ctx, "context_length", 0) or 0
-                )
-            )
-
-            # Auto-compact notification
-            if ctx.was_compacted:
-                yield f"data: {json.dumps({'type': 'compacted', 'context_length': ctx.context_length})}\n\n"
-            if ctx.context_trimmed and not ctx.was_compacted:
-                yield f"data: {json.dumps({'type': 'context_trimmed', 'data': {'context_length': ctx.context_length, 'messages_before': ctx.context_messages_before_trim, 'messages_after': ctx.context_messages_after_trim, 'tokens_before': ctx.context_tokens_before_trim, 'tokens_after': ctx.context_tokens_after_trim}})}\n\n"
-
-            full_response = ""
-            thinking_response = ""
-            last_metrics = None
-
-            # Foreground Chat and Agent requests share one explicit owner-aware
-            # policy. Strict mode is the default; legacy values are unrelated.
-            _foreground_policy = foreground_policy
-            _foreground_candidates = build_foreground_model_candidates(
-                sess.endpoint_url,
-                sess.model,
-                sess.headers,
-                owner=_user,
-                policy=_foreground_policy,
-            )
-            _foreground_route_descriptors = build_foreground_route_descriptors(
-                sess.endpoint_url,
-                sess.model,
-                sess.headers,
-                owner=_user,
-                policy=_foreground_policy,
-                selected_endpoint_id=selected_endpoint_id,
-            )
-            _chat_request_factory = None
-            _selected_context_length = getattr(ctx, "context_length", 0)
-            _chat_request_state = {
-                "context_lengths": {0: _selected_context_length},
-                "requests": {0: messages},
-                "trim_stats": {},
-            }
-            if _foreground_policy.enabled:
-                _chat_request_factory, _chat_request_state = _chat_candidate_request_factory(
-                    messages,
-                    _selected_context_length,
-                    session=sess,
-                    owner=_user,
-                )
-
-            # Send model name early so the frontend can show it during streaming
-            _model_suffix = "Research" if effective_do_research else None
-            _selected_route = _foreground_route_descriptors[0]
-            _model_info = {
-                "type": "model_info",
-                "model": sess.model,
-                "endpoint_id": _selected_route.get("endpoint_id"),
-                "endpoint_label": _selected_route.get("endpoint_label"),
-            }
-            if _model_suffix:
-                _model_info["suffix"] = _model_suffix
-            if ctx.preset.character_name:
-                _model_info["character_name"] = ctx.preset.character_name
-            yield f'data: {json.dumps(_model_info)}\n\n'
-
-            # OBJ-1, the chat side: before the turn's first call, a local model
-            # that does not fit next to what is already resident asks what to
-            # unload — the same gate research and the Load button use
-            # (src/vram_admission). Ollama itself never says no: it spills to
-            # CPU/PCIe and the only symptom is a turn ten times slower, which
-            # is how the two 27Bs ended up stacked on 08-09-2026.
-            if not _is_image_generation_session(sess, owner=_user):
-                _admission = {"ok": True, "error": ""}
-                async for _adm_ev in _vram_admission_events(sess.endpoint_url, sess.model, _user, _admission):
-                    yield _adm_ev
-                if not _admission["ok"]:
-                    yield f'data: {json.dumps({"type": "error", "error": _admission["error"]})}\n\n'
-                    yield "data: [DONE]\n\n"
-                    _active_streams.pop(session, None)
-                    return
-
-            _terminal_saved = False
-            if _is_image_generation_session(sess, owner=_user):
-                from src.settings import get_setting
-                if tool_policy.blocks("generate_image"):
-                    _blocked_msg = tool_policy.reason_for("generate_image")
-                    yield f'data: {json.dumps({"delta": _blocked_msg})}\n\n'
-                    yield "data: [DONE]\n\n"
-                    _active_streams.pop(session, None)
-                    return
-                if not get_setting("image_gen_enabled", True):
-                    yield f'data: {json.dumps({"delta": "Image generation is disabled by the administrator."})}\n\n'
-                    yield "data: [DONE]\n\n"
-                    _active_streams.pop(session, None)
-                    return
-                from src.ai_interaction import do_edit_image, do_generate_image
-                _user_msg = message or ""
-                _image_upload = _first_image_attachment(chat_handler, att_ids, owner=_user)
-                _image_tool_name = "edit_image" if _image_upload else "generate_image"
-                yield f'data: {json.dumps({"type": "tool_start", "tool": _image_tool_name, "command": _user_msg[:100]})}\n\n'
-                yield ": heartbeat\n\n"
-                _progress_queue: asyncio.Queue = asyncio.Queue()
-
-                async def _image_progress_callback(progress: Dict[str, Any]):
+                            # NOTE: previously dropped the doc when doc.session_id
+                            # != current chat session — but that broke the common
+                            # case of "open an email draft from one chat, ask a
+                            # different chat to write into it". The frontend only
+                            # sends active_doc_id for docs currently visible in
+                            # the UI, and we already owner-checked above, so trust
+                            # the explicit signal. We just log the mismatch and
+                            # re-bind the doc to the current session so future
+                            # turns find it via the session-fallback path too.
+                            if doc_session and doc_session != session:
+                                logger.info(
+                                    "[doc-inject] cross-session active_doc_id %s (was session %s, now %s) — accepting and rebinding",
+                                    active_doc_id, doc_session, session,
+                                )
+                                try:
+                                    active_doc.session_id = session
+                                    _doc_db.commit()
+                                except Exception as _e:
+                                    _doc_db.rollback()
+                                    logger.warning(f"[doc-inject] session rebind failed: {_e}")
+                            logger.info(f"[doc-inject] found by ID: title={active_doc.title!r}, lang={active_doc.language!r}, is_active={active_doc.is_active}, content_len={len(active_doc.current_content or '')}")
+                    else:
+                        logger.warning(f"[doc-inject] NOT FOUND by ID {active_doc_id}")
+                if not active_doc:
+                    _email_doc_q = _doc_db.query(DBDocument).filter(
+                        DBDocument.session_id == session,
+                        DBDocument.is_active == True,
+                        DBDocument.language == "email",
+                    )
+                    active_doc = _owner_session_filter(_email_doc_q, ctx.user).order_by(DBDocument.updated_at.desc()).first()
+                    if active_doc:
+                        logger.info(f"[doc-inject] found email draft by session fallback: title={active_doc.title!r}")
+                if not active_doc:
+                    _session_doc_q = _doc_db.query(DBDocument).filter(
+                        DBDocument.session_id == session,
+                        DBDocument.is_active == True
+                    )
+                    active_doc = _owner_session_filter(_session_doc_q, ctx.user).order_by(DBDocument.updated_at.desc()).first()
+                    if active_doc:
+                        logger.info(f"[doc-inject] found by session fallback: title={active_doc.title!r}")
+                # Last resort: the document the agent itself just created/edited
+                # (tracked in-memory by the tool layer). This rescues docs that
+                # got orphaned from their session (session_id NULL) — otherwise
+                # neither lookup above can associate them with this conversation,
+                # so the agent never sees what it just wrote. Guarded so we never
+                # leak a doc that belongs to a DIFFERENT session.
+                if not active_doc:
                     try:
-                        _progress_queue.put_nowait(progress)
-                    except Exception:
-                        pass
+                        from src.agent_tools.document_tools import get_active_document
+                        _mem_id = get_active_document()
+                        if _mem_id:
+                            _mem_q = _doc_db.query(DBDocument).filter(DBDocument.id == _mem_id)
+                            cand = _owner_session_filter(_mem_q, ctx.user).first()
+                            if cand and (not cand.session_id or cand.session_id == session):
+                                active_doc = cand
+                                logger.info(f"[doc-inject] found by in-memory active id: title={active_doc.title!r} (session_id={cand.session_id!r})")
+                    except Exception as _e:
+                        logger.debug(f"[doc-inject] in-memory fallback failed: {_e}")
+                if not active_doc:
+                    logger.info(f"[doc-inject] no active doc for session {session}")
+                if active_doc:
+                    _doc_db.expunge(active_doc)
+            except Exception as e:
+                logger.warning(f"Failed to query active document: {e}")
+            finally:
+                _doc_db.close()
 
-                if _image_upload:
-                    _img_task = asyncio.create_task(do_edit_image(
-                        _user_msg,
-                        _image_upload.get("path", ""),
-                        model_spec=sess.model,
-                        session_id=session,
-                        owner=_user,
-                        size="1024x1024",
-                        progress_callback=_image_progress_callback,
-                    ))
+            # Build disabled-tools set from frontend toggles + user privileges
+            disabled_tools = set()
+            # Only disable bash when the caller *explicitly* set it to a falsy
+            # value. When unset (None), defer to per-user privilege checks below.
+            # Web search is per-turn opt-in: either the chat pre-search setting
+            # (`use_web=true`) or agent web toggle (`allow_web_search=true`) must
+            # explicitly enable it.
+            if allow_bash is not None and str(allow_bash).lower() != "true":
+                disabled_tools.add("bash")
+            _explicit_web_intent = _explicit_web_intent or bool(_tool_intent and _tool_intent.category == "web")
+            if is_web_search_explicitly_denied(allow_web_search) or not _search_enabled:
+                disabled_tools.update(WEB_TOOL_NAMES)
+            if _explicit_web_intent:
+                # A direct lookup/search request should not drift into personal
+                # tools or shell fallbacks. It can only use web_search/web_fetch
+                # when the request's explicit web setting enabled them.
+                disabled_tools.update({
+                    "bash", "python",
+                    "search_chats", "manage_skills", "manage_memory",
+                    "read_file", "write_file", "edit_file",
+                    "create_document", "edit_document", "update_document",
+                    "send_email", "reply_to_email",
+                    "manage_notes", "manage_calendar", "manage_tasks",
+                    "api_call",
+                })
+                if _search_enabled:
+                    disabled_tools.difference_update(WEB_TOOL_NAMES)
                 else:
-                    _img_task = asyncio.create_task(do_generate_image(f"{_user_msg}\n{sess.model}\n512x512", session, owner=_user))
-                _img_started = time.time()
-                _img_tick = 0
-                while not _img_task.done():
-                    try:
-                        _progress = await asyncio.wait_for(_progress_queue.get(), timeout=2.0)
-                    except asyncio.TimeoutError:
-                        _progress = None
-                    _img_tick += 1
-                    _elapsed = int(time.time() - _img_started)
-                    _label = "Editing image" if _image_upload else "Generating image"
-                    yield ": image generation still running\n\n"
-                    _progress_data = {"type": "tool_progress", "tool": _image_tool_name, "message": f"{_label}… {_elapsed}s", "elapsed": _elapsed, "tick": _img_tick}
-                    if isinstance(_progress, dict) and _progress.get("total"):
-                        _step = int(_progress.get("step") or 0)
-                        _total = int(_progress.get("total") or 0)
-                        _percent = _progress.get("percent")
-                        _progress_data.update({
-                            "step": _step,
-                            "total": _total,
-                            "percent": _percent,
-                            "message": f"{_label}… {_step}/{_total}",
-                        })
-                    yield f'data: {json.dumps(_progress_data)}\n\n'
-                _img_result = await _img_task
-                _img_output = _img_result.get("results", _img_result.get("error", ""))
-                _img_tool_data = {"type": "tool_output", "tool": _image_tool_name, "command": _user_msg[:100], "output": _img_output, "exit_code": 0 if "error" not in _img_result else 1}
-                for _k in ("image_url", "image_id", "image_prompt", "image_model", "image_size", "image_quality"):
-                    if _k in _img_result:
-                        _img_tool_data[_k] = _img_result[_k]
-                if _image_upload:
-                    _img_tool_data["source_image"] = {
-                        "id": _image_upload.get("id"),
-                        "name": _image_upload.get("name") or _image_upload.get("original_name"),
-                    }
-                yield f'data: {json.dumps(_img_tool_data)}\n\n'
-                if _img_result.get("image_url"):
-                    _img_event = {"type": "generated_image", "url": _img_result.get("image_url")}
-                    for _k in ("image_url", "image_id", "image_prompt", "image_model", "image_size", "image_quality"):
-                        if _img_result.get(_k):
-                            _img_event[_k] = _img_result[_k]
-                    yield f'data: {json.dumps(_img_event)}\n\n'
-                _desc = _img_result.get("results", _img_result.get("error", "Image generation complete"))
-                full_response = _desc
-                yield f'data: {json.dumps({"delta": _desc})}\n\n'
-                # Save to session history
-                if not incognito:
-                    _ev = {"round": 1, "tool": _image_tool_name, "command": _user_msg[:100], "output": _img_output, "exit_code": 0 if "error" not in _img_result else 1}
-                    for _ek in ("image_url", "image_id", "image_prompt", "image_model", "image_size", "image_quality"):
-                        if _img_result.get(_ek):
-                            _ev[_ek] = _img_result[_ek]
-                    if _image_upload:
-                        _ev["source_image_id"] = _image_upload.get("id")
-                        _ev["source_image_name"] = _image_upload.get("name") or _image_upload.get("original_name")
-                    sess.add_message(ChatMessage("assistant", full_response, metadata={"tool_events": [_ev], "model": sess.model}))
-                    session_manager.save_sessions()
-                yield f'data: {json.dumps({"type": "metrics", "data": {"total_time": 0}})}\n\n'
-                yield "data: [DONE]\n\n"
-                _active_streams.pop(session, None)
-                return
-            elif chat_mode == "chat":
-                _chat_start = time.time()
-                _chat_start_monotonic = time.monotonic()  # INF-03: execution metrics' clock
-                _answered_by = None  # set if the selected model failed and a fallback answered
-                _requested_model = sess.model
-                _actual_model = None
-                _requested_route = _foreground_route_descriptors[0]
-                _actual_route = _requested_route
-                _actual_candidate_index = 0
-                _chat_terminal_saved = False
-                def _commit_chat_compaction(candidate_index: int) -> bool:
-                    return apply_compaction_state(
-                        sess,
-                        _chat_request_state.get("compactions", {}).get(candidate_index),
+                    disabled_tools.update(WEB_TOOL_NAMES)
+            elif _search_enabled:
+                disabled_tools.difference_update(WEB_TOOL_NAMES)
+
+            # Nobody/incognito mode: deny tools that would expose the user's
+            # persistent memory, past chats, or other identity-linked data.
+            if incognito:
+                disabled_tools.update({
+                    "manage_memory",      # persistent memory store
+                    "search_chats",       # past chat history
+                    "manage_skills",      # skill presets tied to user
+                    "create_session",
+                    "list_sessions",
+                    "manage_session",
+                    "send_to_session",
+                    "chat_with_model",
+                })
+
+            # Active email reader open → strip the tools that let the agent drift
+            # away from the visible email or skip review. The only allowed compose
+            # path is ui_control open_email_reply, which opens the same draft editor
+            # as the Reply button with the generated body pre-filled. This prevents
+            # the model from falling back to direct SMTP when it botches a draft
+            # call, and prevents fake email-shaped documents.
+            if active_email_ctx and active_email_ctx.get("uid"):
+                disabled_tools.update({
+                    "create_document",
+                    "send_email",
+                    "reply_to_email",
+                    "mcp__email__send_email",
+                    "mcp__email__reply_to_email",
+                })
+
+            # Enforce per-user privileges
+            _privs = {}
+            _user = ctx.user
+            if _user and hasattr(request.app.state, 'auth_manager') and request.app.state.auth_manager:
+                _privs = request.app.state.auth_manager.get_privileges(_user)
+            if _privs:
+                if not _privs.get("can_use_bash", True):
+                    disabled_tools.update({"bash", "python", "read_file", "write_file"})
+                if not _privs.get("can_use_browser", True):
+                    disabled_tools.update(_browser_mcp_denylist())
+                if not _privs.get("can_use_documents", True):
+                    disabled_tools.update({"create_document", "edit_document", "update_document", "suggest_document"})
+                if not _privs.get("can_generate_images", True):
+                    disabled_tools.add("generate_image")
+                if not _privs.get("can_manage_memory", True):
+                    disabled_tools.update({"manage_memory", "manage_skills"})
+                if not _privs.get("can_use_research", True):
+                    _research_flags["do"] = False
+                if not _privs.get("can_use_agent", True):
+                    _effective_mode = 'chat'
+                    chat_mode = 'chat'
+            # Global admin disabled tools
+            from src.settings import get_setting
+            _global_disabled = get_setting("disabled_tools", [])
+            if _global_disabled and isinstance(_global_disabled, list):
+                disabled_tools.update(_global_disabled)
+
+            # Light auto-escalation: the user is in chat mode and just expressed a
+            # notes/calendar/email intent. Grant the relevant managers but withhold
+            # the heavy "do things on the computer" tools — otherwise the model
+            # tries to shell out for a request that never needed it, then fails
+            # (and looks broken when the shell is disabled).
+            if auto_escalated and not _workspace_agent_intent:
+                disabled_tools.update({
+                    "bash", "python", "read_file", "write_file",
+                })
+                if not _allow_browser_for_web_turn:
+                    disabled_tools.update(_BROWSER_MCP_TOOLS)
+
+            # Disable document tools in compare sessions — they break the pane UI
+            if sess.name and sess.name.startswith("[CMP]"):
+                disabled_tools.update({"create_document", "edit_document", "update_document"})
+
+            # Compare mode: disable tools based on compare type
+            if compare_mode:
+                _compare_strip = {
+                    "create_document", "edit_document", "update_document",
+                    "chat_with_model", "create_session", "list_sessions",
+                    "send_to_session",
+                    "pipeline", "manage_session", "manage_memory", "list_models",
+                    "generate_image", "ui_control",
+                }
+                disabled_tools.update(_compare_strip)
+                # In chat mode compare, disable ALL agent tools (no bash, python, file ops)
+                if chat_mode == 'chat':
+                    disabled_tools.update({"bash", "python", "read_file", "write_file", "web_search", "web_fetch", "search_chats", "manage_tasks"})
+
+            # Plan mode: investigate read-only, propose a plan, don't mutate. Block
+            # every tool not on the read-only allowlist. (stream_agent_loop enforces
+            # this again + drops MCP, so this is belt-and-suspenders.)
+            if plan_mode:
+                from src.tool_security import plan_mode_disabled_tools
+                disabled_tools.update(plan_mode_disabled_tools())
+
+            tool_policy = build_effective_tool_policy(
+                disabled_tools=disabled_tools,
+                last_user_message=message,
+            )
+            disabled_tools = tool_policy.all_disabled_names()
+            research_blocked_by_policy = bool(
+                tool_policy.blocks("trigger_research")
+                or tool_policy.blocks("manage_research")
+            )
+            effective_do_research = bool(
+                do_research and _research_flags["do"] and not research_blocked_by_policy
+            )
+
+            # Persist session mode after policy/privilege gates so blocked research
+            # turns remain ordinary chat/agent streams and saved messages.
+            _effective_mode = 'research' if effective_do_research else (chat_mode or 'chat')
+            if _effective_mode in ('agent', 'research', 'chat'):
+                set_session_mode(session, _effective_mode)
+
+            async def stream_with_save() -> AsyncGenerator[str, None]:
+                # _effective_mode is read-only here; closure captures it from
+                # the outer scope. (Was `nonlocal` but never reassigned.)
+                research_sources = None
+                web_sources = ctx.web_sources
+
+                # Register active stream for partial-save safety net
+                _active_streams[session] = {"status": "streaming", "partial": "", "query": message, "is_research": effective_do_research, "mode": _effective_mode}
+
+                # The client sent a workspace the server refused to bind (deleted
+                # folder, file path, sensitive dir, filesystem root). Tell it up
+                # front so the UI can clear the pill instead of displaying a
+                # confinement that is not actually in effect.
+                if workspace_rejected:
+                    yield f"data: {json.dumps({'type': 'workspace_rejected', 'data': {'path': workspace_rejected}})}\n\n"
+
+                # ADP-22 §2: MOD-05 substituted the requested "auto" model for
+                # this turn (or explains why it could not) -- same envelope
+                # `agent_git_policy`'s `git_policy` event already uses. Absent
+                # entirely when `_resolve_auto_model_route` was a no-op (router
+                # disabled, model not "auto", non-local endpoint...), so an
+                # ordinary turn's event stream is byte-for-byte unchanged.
+                if _model_router_auto is not None:
+                    from src import model_router as _model_router_mod
+                    yield (
+                        f"data: {json.dumps({'type': 'model_router', 'data': _model_router_mod.explain_event(_model_router_auto.model_router_decision, route=_model_router_auto.route_decision)})}\n\n"
                     )
 
-                # ── Chat mode: call stream_llm directly, NO tools, NO document access ──
-                try:
-                    async for chunk in stream_llm_with_fallback(
-                        _foreground_candidates,
-                        messages,
-                        temperature=ctx.preset.temperature,
-                        # Respect the preset; 0/unset = let the server decide (no
-                        # cap), matching agent mode. The old hard 4096 fallback
-                        # truncated reasoning models mid-<think> — they'd burn the
-                        # whole budget thinking and never emit the answer (seen in
-                        # Compare on heavy generation prompts).
-                        max_tokens=ctx.preset.max_tokens,
-                        prompt_type=preset_id,
-                        tools=None,
-                        session_id=session,
-                        fallback_statuses=_foreground_policy.eligible_statuses,
-                        fallback_on_empty=_foreground_policy.fallback_on_empty,
-                        candidate_request_factory=_chat_request_factory,
-                        candidate_route_descriptors=_foreground_route_descriptors,
-                        gen_overrides=_gen_overrides or None,
-                    ):
-                        if chunk.startswith("data: ") and not chunk.startswith("data: [DONE]"):
+                if ctx.preprocessed.attachment_meta:
+                    yield f"data: {json.dumps({'type': 'attachments', 'data': ctx.preprocessed.attachment_meta})}\n\n"
+
+                # Announce any docs auto-created during preprocess (e.g. fillable
+                # PDF → editable markdown) so the editor pane switches to them
+                # before the model starts streaming.
+                for _opened in ctx.auto_opened_docs:
+                    yield (
+                        f'data: {json.dumps({"type": "doc_update", **_opened})}\n\n'
+                    )
+
+                if ctx.rag_sources:
+                    yield f"data: {json.dumps({'type': 'rag_sources', 'data': ctx.rag_sources})}\n\n"
+
+                if web_sources:
+                    yield f"data: {json.dumps({'type': 'web_sources', 'data': web_sources})}\n\n"
+
+                # Emit which memories were injected into context (captured before stream)
+                if ctx.used_memories:
+                    yield f"data: {json.dumps({'type': 'memories_used', 'data': ctx.used_memories})}\n\n"
+
+                # Run research as a background task (survives page refresh)
+                if effective_do_research:
+                    _r_ep, _r_model, _r_headers = _resolve_research_endpoint(sess)
+                    _auth_keys = list(_r_headers.keys()) if _r_headers else []
+                    logger.info(f"Research endpoint resolved: model={_r_model}, endpoint={redact_url(_r_ep)}, auth_keys={_auth_keys}, sess_headers_keys={list(sess.headers.keys()) if isinstance(sess.headers, dict) else type(sess.headers)}")
+
+                    # Clarification round: only for very short/vague queries on first research message.
+                    # Skip in compare mode — each pane is a fresh session, so every one would
+                    # ask clarifying questions and the user would have to answer each pane
+                    # separately, breaking the parallel comparison.
+                    _prior_json = research_handler._get_session_json(session)
+                    _history_len = len(sess.history) if hasattr(sess, 'history') else 0
+                    _is_first_research = not _prior_json and _history_len <= 2 and not compare_mode
+
+                    if _is_first_research:
+                        logger.info(f"First research message — asking clarifying questions for: {message[:60]}")
+                        yield f'data: {json.dumps({"type": "model_info", "model": sess.model, "suffix": "Research"})}\n\n'
+                        # Set DB mode to research_pending so the NEXT message auto-triggers research
+                        set_session_mode(session, "research_pending")
+                        ctx.messages.insert(0, {"role": "system", "content":
+                            "The user wants to start deep web research. Before searching, ask 2-3 brief "
+                            "clarifying questions to understand exactly what they want to know. For example: "
+                            "what aspects matter most, are they comparing to something, what's their context "
+                            "(moving, traveling, curiosity). Be conversational. Keep it short."
+                        })
+                        if foreground_policy.enabled:
+                            getattr(ctx, "route_messages", ctx.messages).insert(0, dict(ctx.messages[0]))
+                        _skip_research = True
+                    else:
+                        _skip_research = False
+
+                    if not _skip_research:
+                        # Phase 2: Start actual research
+                        def _on_research_done(_sid, _result, _sources, _findings):
+                            """Persist research to DB when background task finishes."""
+                            if incognito:
+                                return
                             try:
-                                data = json.loads(chunk[6:])
-                                if "delta" in data:
-                                    if _commit_chat_compaction(_actual_candidate_index):
-                                        _compacted_length = _chat_request_state["context_lengths"].get(
-                                            _actual_candidate_index,
+                                _s = session_manager.get_session(_sid)
+                                if not _s:
+                                    logger.warning(f"Session {_sid} expired before research completed")
+                                    return
+                                _md = {"research": True, "model": _s.model}
+                                if _sources:
+                                    _md["research_sources"] = _sources
+                                if _findings:
+                                    _md["research_findings"] = _findings
+                                _clean_res, _md = clean_thinking_for_save(_result, _md)
+                                _s.add_message(ChatMessage("assistant", _clean_res, metadata=_md))
+                                session_manager.save_sessions()
+                                logger.info(f"Research result persisted to DB for session {_sid}")
+                            except Exception as _e:
+                                logger.error(f"Failed to persist research to DB: {_e}")
+
+                        # Check for prior research to continue from
+                        _prior_report = ""
+                        _prior_findings = None
+                        _prior_urls = None
+                        _prior_citations = None
+                        _prior_json = research_handler._get_session_json(session, owner=_user or "")
+                        if _prior_json:
+                            _prior_report = _prior_json.get("raw_report", "")
+                            _prior_findings = _prior_json.get("raw_findings")
+                            _prior_citations = _prior_json.get("citation_registry")
+                            _src_urls = {s.get("url", "") for s in (_prior_json.get("sources") or []) if s.get("url")}
+                            _prior_urls = _src_urls if _src_urls else None
+                            if _prior_report:
+                                logger.info(f"Continuing research for session {session} with {len(_src_urls)} prior URLs")
+
+                        # Synthesize conversation into a focused research query
+                        _research_query = await research_handler.synthesize_query(
+                            sess, message, _r_ep, _r_model, _r_headers,
+                        )
+                        logger.info(f"Research query: {_research_query[:120]}")
+
+                        research_handler.start_research(
+                            session, _research_query, _r_ep, _r_model,
+                            llm_headers=_r_headers,
+                            prior_report=_prior_report,
+                            prior_findings=_prior_findings,
+                            prior_urls=_prior_urls,
+                            prior_citations=_prior_citations,
+                            on_complete=_on_research_done,
+                            owner=_user,
+                        )
+
+                        _heartbeat_counter = 0
+                        _last_progress = {}
+                        _sent_avg = False
+                        while True:
+                            status = research_handler.get_status(session)
+                            if not status or status["status"] != "running":
+                                break
+                            progress = status.get("progress", {})
+                            if progress and progress != _last_progress:
+                                _last_progress = progress
+                                if not _sent_avg:
+                                    _sent_avg = True
+                                    progress = dict(progress)
+                                    progress["started_at"] = status.get("started_at")
+                                    avg = status.get("avg_duration")
+                                    if avg:
+                                        progress["avg_duration"] = avg
+                                yield f"data: {json.dumps({'type': 'research_progress', 'data': progress})}\n\n"
+                                _heartbeat_counter = 0
+                            else:
+                                _heartbeat_counter += 1
+                                yield f": heartbeat {_heartbeat_counter}\n\n"
+                            await asyncio.sleep(1.0)
+
+                        research_sources = research_handler.get_sources(session)
+                        if research_sources:
+                            yield f"data: {json.dumps({'type': 'research_sources', 'data': research_sources})}\n\n"
+
+                        research_findings = research_handler.get_raw_findings(session)
+                        if research_findings:
+                            yield f"data: {json.dumps({'type': 'research_findings', 'data': research_findings})}\n\n"
+
+                        # Signal frontend to fetch and render the research result
+                        yield f"data: {json.dumps({'type': 'research_done', 'data': {'session_id': session}})}\n\n"
+                        yield "data: [DONE]\n\n"
+                        research_handler.clear_result(session)
+                        _stream_set(session, status="done")
+                        _active_streams.pop(session, None)
+                        return
+
+                context_source = (
+                    getattr(ctx, "route_messages", ctx.messages)
+                    if foreground_policy.enabled
+                    else ctx.messages
+                )
+                messages = (
+                    list(context_source)
+                    if tool_approval_continuation
+                    else _ensure_current_request_is_latest_user(
+                        context_source, message, getattr(ctx, "context_length", 0) or 0
+                    )
+                )
+
+                # Auto-compact notification
+                if ctx.was_compacted:
+                    yield f"data: {json.dumps({'type': 'compacted', 'context_length': ctx.context_length})}\n\n"
+                if ctx.context_trimmed and not ctx.was_compacted:
+                    yield f"data: {json.dumps({'type': 'context_trimmed', 'data': {'context_length': ctx.context_length, 'messages_before': ctx.context_messages_before_trim, 'messages_after': ctx.context_messages_after_trim, 'tokens_before': ctx.context_tokens_before_trim, 'tokens_after': ctx.context_tokens_after_trim}})}\n\n"
+
+                full_response = ""
+                thinking_response = ""
+                last_metrics = None
+
+                # Foreground Chat and Agent requests share one explicit owner-aware
+                # policy. Strict mode is the default; legacy values are unrelated.
+                _foreground_policy = foreground_policy
+                _foreground_candidates = build_foreground_model_candidates(
+                    sess.endpoint_url,
+                    sess.model,
+                    sess.headers,
+                    owner=_user,
+                    policy=_foreground_policy,
+                )
+                _foreground_route_descriptors = build_foreground_route_descriptors(
+                    sess.endpoint_url,
+                    sess.model,
+                    sess.headers,
+                    owner=_user,
+                    policy=_foreground_policy,
+                    selected_endpoint_id=selected_endpoint_id,
+                )
+                _chat_request_factory = None
+                _selected_context_length = getattr(ctx, "context_length", 0)
+                _chat_request_state = {
+                    "context_lengths": {0: _selected_context_length},
+                    "requests": {0: messages},
+                    "trim_stats": {},
+                }
+                if _foreground_policy.enabled:
+                    _chat_request_factory, _chat_request_state = _chat_candidate_request_factory(
+                        messages,
+                        _selected_context_length,
+                        session=sess,
+                        owner=_user,
+                    )
+
+                # Send model name early so the frontend can show it during streaming
+                _model_suffix = "Research" if effective_do_research else None
+                _selected_route = _foreground_route_descriptors[0]
+                _model_info = {
+                    "type": "model_info",
+                    "model": sess.model,
+                    "endpoint_id": _selected_route.get("endpoint_id"),
+                    "endpoint_label": _selected_route.get("endpoint_label"),
+                }
+                if _model_suffix:
+                    _model_info["suffix"] = _model_suffix
+                if ctx.preset.character_name:
+                    _model_info["character_name"] = ctx.preset.character_name
+                yield f'data: {json.dumps(_model_info)}\n\n'
+
+                # OBJ-1, the chat side: before the turn's first call, a local model
+                # that does not fit next to what is already resident asks what to
+                # unload — the same gate research and the Load button use
+                # (src/vram_admission). Ollama itself never says no: it spills to
+                # CPU/PCIe and the only symptom is a turn ten times slower, which
+                # is how the two 27Bs ended up stacked on 08-09-2026.
+                if not _is_image_generation_session(sess, owner=_user):
+                    _admission = {"ok": True, "error": ""}
+                    async for _adm_ev in _vram_admission_events(sess.endpoint_url, sess.model, _user, _admission):
+                        yield _adm_ev
+                    if not _admission["ok"]:
+                        yield f'data: {json.dumps({"type": "error", "error": _admission["error"]})}\n\n'
+                        yield "data: [DONE]\n\n"
+                        _active_streams.pop(session, None)
+                        return
+
+                _terminal_saved = False
+                if _is_image_generation_session(sess, owner=_user):
+                    from src.settings import get_setting
+                    if tool_policy.blocks("generate_image"):
+                        _blocked_msg = tool_policy.reason_for("generate_image")
+                        yield f'data: {json.dumps({"delta": _blocked_msg})}\n\n'
+                        yield "data: [DONE]\n\n"
+                        _active_streams.pop(session, None)
+                        return
+                    if not get_setting("image_gen_enabled", True):
+                        yield f'data: {json.dumps({"delta": "Image generation is disabled by the administrator."})}\n\n'
+                        yield "data: [DONE]\n\n"
+                        _active_streams.pop(session, None)
+                        return
+                    from src.ai_interaction import do_edit_image, do_generate_image
+                    _user_msg = message or ""
+                    _image_upload = _first_image_attachment(chat_handler, att_ids, owner=_user)
+                    _image_tool_name = "edit_image" if _image_upload else "generate_image"
+                    yield f'data: {json.dumps({"type": "tool_start", "tool": _image_tool_name, "command": _user_msg[:100]})}\n\n'
+                    yield ": heartbeat\n\n"
+                    _progress_queue: asyncio.Queue = asyncio.Queue()
+
+                    async def _image_progress_callback(progress: Dict[str, Any]):
+                        try:
+                            _progress_queue.put_nowait(progress)
+                        except Exception:
+                            pass
+
+                    if _image_upload:
+                        _img_task = asyncio.create_task(do_edit_image(
+                            _user_msg,
+                            _image_upload.get("path", ""),
+                            model_spec=sess.model,
+                            session_id=session,
+                            owner=_user,
+                            size="1024x1024",
+                            progress_callback=_image_progress_callback,
+                        ))
+                    else:
+                        _img_task = asyncio.create_task(do_generate_image(f"{_user_msg}\n{sess.model}\n512x512", session, owner=_user))
+                    _img_started = time.time()
+                    _img_tick = 0
+                    while not _img_task.done():
+                        try:
+                            _progress = await asyncio.wait_for(_progress_queue.get(), timeout=2.0)
+                        except asyncio.TimeoutError:
+                            _progress = None
+                        _img_tick += 1
+                        _elapsed = int(time.time() - _img_started)
+                        _label = "Editing image" if _image_upload else "Generating image"
+                        yield ": image generation still running\n\n"
+                        _progress_data = {"type": "tool_progress", "tool": _image_tool_name, "message": f"{_label}… {_elapsed}s", "elapsed": _elapsed, "tick": _img_tick}
+                        if isinstance(_progress, dict) and _progress.get("total"):
+                            _step = int(_progress.get("step") or 0)
+                            _total = int(_progress.get("total") or 0)
+                            _percent = _progress.get("percent")
+                            _progress_data.update({
+                                "step": _step,
+                                "total": _total,
+                                "percent": _percent,
+                                "message": f"{_label}… {_step}/{_total}",
+                            })
+                        yield f'data: {json.dumps(_progress_data)}\n\n'
+                    _img_result = await _img_task
+                    _img_output = _img_result.get("results", _img_result.get("error", ""))
+                    _img_tool_data = {"type": "tool_output", "tool": _image_tool_name, "command": _user_msg[:100], "output": _img_output, "exit_code": 0 if "error" not in _img_result else 1}
+                    for _k in ("image_url", "image_id", "image_prompt", "image_model", "image_size", "image_quality"):
+                        if _k in _img_result:
+                            _img_tool_data[_k] = _img_result[_k]
+                    if _image_upload:
+                        _img_tool_data["source_image"] = {
+                            "id": _image_upload.get("id"),
+                            "name": _image_upload.get("name") or _image_upload.get("original_name"),
+                        }
+                    yield f'data: {json.dumps(_img_tool_data)}\n\n'
+                    if _img_result.get("image_url"):
+                        _img_event = {"type": "generated_image", "url": _img_result.get("image_url")}
+                        for _k in ("image_url", "image_id", "image_prompt", "image_model", "image_size", "image_quality"):
+                            if _img_result.get(_k):
+                                _img_event[_k] = _img_result[_k]
+                        yield f'data: {json.dumps(_img_event)}\n\n'
+                    _desc = _img_result.get("results", _img_result.get("error", "Image generation complete"))
+                    full_response = _desc
+                    yield f'data: {json.dumps({"delta": _desc})}\n\n'
+                    # Save to session history
+                    if not incognito:
+                        _ev = {"round": 1, "tool": _image_tool_name, "command": _user_msg[:100], "output": _img_output, "exit_code": 0 if "error" not in _img_result else 1}
+                        for _ek in ("image_url", "image_id", "image_prompt", "image_model", "image_size", "image_quality"):
+                            if _img_result.get(_ek):
+                                _ev[_ek] = _img_result[_ek]
+                        if _image_upload:
+                            _ev["source_image_id"] = _image_upload.get("id")
+                            _ev["source_image_name"] = _image_upload.get("name") or _image_upload.get("original_name")
+                        sess.add_message(ChatMessage("assistant", full_response, metadata={"tool_events": [_ev], "model": sess.model}))
+                        session_manager.save_sessions()
+                    yield f'data: {json.dumps({"type": "metrics", "data": {"total_time": 0}})}\n\n'
+                    yield "data: [DONE]\n\n"
+                    _active_streams.pop(session, None)
+                    return
+                elif chat_mode == "chat":
+                    _chat_start = time.time()
+                    _chat_start_monotonic = time.monotonic()  # INF-03: execution metrics' clock
+                    _answered_by = None  # set if the selected model failed and a fallback answered
+                    _requested_model = sess.model
+                    _actual_model = None
+                    _requested_route = _foreground_route_descriptors[0]
+                    _actual_route = _requested_route
+                    _actual_candidate_index = 0
+                    _chat_terminal_saved = False
+                    def _commit_chat_compaction(candidate_index: int) -> bool:
+                        return apply_compaction_state(
+                            sess,
+                            _chat_request_state.get("compactions", {}).get(candidate_index),
+                        )
+
+                    # ── Chat mode: call stream_llm directly, NO tools, NO document access ──
+                    try:
+                        async for chunk in stream_llm_with_fallback(
+                            _foreground_candidates,
+                            messages,
+                            temperature=ctx.preset.temperature,
+                            # Respect the preset; 0/unset = let the server decide (no
+                            # cap), matching agent mode. The old hard 4096 fallback
+                            # truncated reasoning models mid-<think> — they'd burn the
+                            # whole budget thinking and never emit the answer (seen in
+                            # Compare on heavy generation prompts).
+                            max_tokens=ctx.preset.max_tokens,
+                            prompt_type=preset_id,
+                            tools=None,
+                            session_id=session,
+                            fallback_statuses=_foreground_policy.eligible_statuses,
+                            fallback_on_empty=_foreground_policy.fallback_on_empty,
+                            candidate_request_factory=_chat_request_factory,
+                            candidate_route_descriptors=_foreground_route_descriptors,
+                            gen_overrides=_gen_overrides or None,
+                        ):
+                            if chunk.startswith("data: ") and not chunk.startswith("data: [DONE]"):
+                                try:
+                                    data = json.loads(chunk[6:])
+                                    if "delta" in data:
+                                        if _commit_chat_compaction(_actual_candidate_index):
+                                            _compacted_length = _chat_request_state["context_lengths"].get(
+                                                _actual_candidate_index,
+                                                _selected_context_length,
+                                            )
+                                            yield f'data: {json.dumps({"type": "compacted", "context_length": _compacted_length})}\n\n'
+                                        # Reasoning tokens arrive flagged thinking:true.
+                                        # Forward them so the client can show a thinking
+                                        # indicator, but don't fold them into the saved
+                                        # reply (mirrors the rewrite path below).
+                                        if data.get("thinking"):
+                                            thinking_response += data["delta"]
+                                        else:
+                                            full_response += data["delta"]
+                                            _stream_set(session, partial=full_response)
+                                        yield chunk
+                                    elif data.get("type") == "fallback":
+                                        # Selected model failed; a fallback answered.
+                                        # Forward the notice and remember the real model.
+                                        _answered_by = data.get("answered_by") or _answered_by
+                                        _actual_model = _actual_model or _answered_by
+                                        _actual_candidate_index = data.get("candidate_index", 0)
+                                        if not isinstance(_actual_candidate_index, int):
+                                            _actual_candidate_index = 0
+                                        if 0 <= _actual_candidate_index < len(_foreground_route_descriptors):
+                                            _actual_route = _foreground_route_descriptors[_actual_candidate_index]
+                                        if _commit_chat_compaction(_actual_candidate_index):
+                                            _compacted_length = _chat_request_state["context_lengths"].get(
+                                                _actual_candidate_index,
+                                                _selected_context_length,
+                                            )
+                                            yield f'data: {json.dumps({"type": "compacted", "context_length": _compacted_length})}\n\n'
+                                        data["selected_model"] = data.get("selected_model") or _requested_model
+                                        yield f'data: {json.dumps(data)}\n\n'
+                                    elif data.get("type") == "model_actual":
+                                        if _commit_chat_compaction(_actual_candidate_index):
+                                            _compacted_length = _chat_request_state["context_lengths"].get(
+                                                _actual_candidate_index,
+                                                _selected_context_length,
+                                            )
+                                            yield f'data: {json.dumps({"type": "compacted", "context_length": _compacted_length})}\n\n'
+                                        _actual_model = data.get("model") or _actual_model
+                                        data["requested_model"] = _requested_model
+                                        data["requested_endpoint_id"] = _requested_route.get("endpoint_id")
+                                        data["requested_endpoint_label"] = _requested_route.get("endpoint_label")
+                                        data["endpoint_id"] = _actual_route.get("endpoint_id")
+                                        data["endpoint_label"] = _actual_route.get("endpoint_label")
+                                        yield f'data: {json.dumps(data)}\n\n'
+                                    elif data.get("type") == "usage":
+                                        if _commit_chat_compaction(_actual_candidate_index):
+                                            _compacted_length = _chat_request_state["context_lengths"].get(
+                                                _actual_candidate_index,
+                                                _selected_context_length,
+                                            )
+                                            yield f'data: {json.dumps({"type": "compacted", "context_length": _compacted_length})}\n\n'
+                                        last_metrics = data.get("data", {})
+                                        _reported_model = last_metrics.get("model")
+                                        last_metrics["requested_model"] = _requested_model
+                                        last_metrics["model"] = _reported_model or _actual_model or _answered_by or _requested_model
+                                        last_metrics["requested_endpoint_id"] = _requested_route.get("endpoint_id")
+                                        last_metrics["requested_endpoint_label"] = _requested_route.get("endpoint_label")
+                                        last_metrics["endpoint_id"] = _actual_route.get("endpoint_id")
+                                        last_metrics["endpoint_label"] = _actual_route.get("endpoint_label")
+                                        if isinstance(
+                                            _actual_route.get("endpoint_cost_tracked"),
+                                            bool,
+                                        ):
+                                            last_metrics["endpoint_cost_tracked"] = _actual_route.get(
+                                                "endpoint_cost_tracked"
+                                            )
+                                        _actual_context_length = _chat_request_state["context_lengths"].get(
+                                        _actual_candidate_index,
                                             _selected_context_length,
                                         )
-                                        yield f'data: {json.dumps({"type": "compacted", "context_length": _compacted_length})}\n\n'
-                                    # Reasoning tokens arrive flagged thinking:true.
-                                    # Forward them so the client can show a thinking
-                                    # indicator, but don't fold them into the saved
-                                    # reply (mirrors the rewrite path below).
-                                    if data.get("thinking"):
-                                        thinking_response += data["delta"]
-                                    else:
-                                        full_response += data["delta"]
-                                        _stream_set(session, partial=full_response)
+                                        _route_trim = _chat_request_state.get("trim_stats", {}).get(
+                                            _actual_candidate_index,
+                                            {},
+                                        )
+                                        if _route_trim and (
+                                            _route_trim.get("messages_after") < _route_trim.get("messages_before")
+                                            or _route_trim.get("tokens_after") < _route_trim.get("tokens_before")
+                                        ):
+                                            last_metrics["context_trimmed"] = True
+                                            last_metrics["context_messages_before_trim"] = _route_trim.get("messages_before")
+                                            last_metrics["context_messages_after_trim"] = _route_trim.get("messages_after")
+                                            last_metrics["context_tokens_before_trim"] = _route_trim.get("tokens_before")
+                                            last_metrics["context_tokens_after_trim"] = _route_trim.get("tokens_after")
+                                        elif ctx.context_trimmed:
+                                            last_metrics["context_trimmed"] = True
+                                            last_metrics["context_messages_before_trim"] = ctx.context_messages_before_trim
+                                            last_metrics["context_messages_after_trim"] = ctx.context_messages_after_trim
+                                            last_metrics["context_tokens_before_trim"] = ctx.context_tokens_before_trim
+                                            last_metrics["context_tokens_after_trim"] = ctx.context_tokens_after_trim
+                                        if _actual_context_length and last_metrics.get("input_tokens"):
+                                            pct = min(round((last_metrics["input_tokens"] / _actual_context_length) * 100, 1), 100.0)
+                                            last_metrics["context_percent"] = pct
+                                            last_metrics["context_length"] = _actual_context_length
+                                        # The frontend reads `tokens_per_second`; the raw usage event
+                                        # carries the backend's true gen speed as `gen_tps` (llama.cpp
+                                        # timings). Map it through so this direct-chat path shows real
+                                        # t/s instead of "n/a" → falling back to a bare token count.
+                                        if last_metrics.get("gen_tps") and not last_metrics.get("tokens_per_second"):
+                                            last_metrics["tokens_per_second"] = last_metrics["gen_tps"]
+                                            last_metrics["tps_source"] = "backend"
+                                        # Wall-clock response time for the stats popup ("Time").
+                                        last_metrics.setdefault("response_time", round(time.time() - _chat_start, 2))
+                                        _exec = _chat_execution_metrics(
+                                            started_monotonic=_chat_start_monotonic,
+                                            finished_monotonic=time.monotonic(),
+                                            queue_wait_s=(locals().get("_admission") or {}).get("waited_s"),
+                                            engine_timings=last_metrics.get("engine_timings"),
+                                            usage_tokens={
+                                                "prompt": last_metrics.get("input_tokens"),
+                                                "generated": last_metrics.get("output_tokens"),
+                                                "source": "reported_engine",
+                                            },
+                                            endpoint_url=sess.endpoint_url,
+                                        )
+                                        if _exec is not None:
+                                            last_metrics["execution"] = _exec
+                                        yield f'data: {json.dumps({"type": "metrics", "data": last_metrics})}\n\n'
+                                except json.JSONDecodeError:
                                     yield chunk
-                                elif data.get("type") == "fallback":
-                                    # Selected model failed; a fallback answered.
-                                    # Forward the notice and remember the real model.
-                                    _answered_by = data.get("answered_by") or _answered_by
-                                    _actual_model = _actual_model or _answered_by
-                                    _actual_candidate_index = data.get("candidate_index", 0)
-                                    if not isinstance(_actual_candidate_index, int):
-                                        _actual_candidate_index = 0
-                                    if 0 <= _actual_candidate_index < len(_foreground_route_descriptors):
-                                        _actual_route = _foreground_route_descriptors[_actual_candidate_index]
-                                    if _commit_chat_compaction(_actual_candidate_index):
-                                        _compacted_length = _chat_request_state["context_lengths"].get(
+                            elif chunk.startswith("event: error"):
+                                logger.warning(f"Stream error for {sess.model} on {sess.endpoint_url}: {chunk!r}")
+                                if (
+                                    not _chat_terminal_saved
+                                    and (full_response.strip() or thinking_response.strip())
+                                ):
+                                    _failure_status = _stream_failure_status(chunk)
+                                    _failure_message = (
+                                        f"Model request failed (HTTP {_failure_status})"
+                                        if _failure_status is not None
+                                        else "Model request failed"
+                                    )
+                                    _terminal_content = full_response.strip()
+                                    _failure_note = f"[Response stopped: {_failure_message}]"
+                                    _terminal_content = (
+                                        f"{_terminal_content}\n\n{_failure_note}"
+                                        if _terminal_content
+                                        else _failure_note
+                                    )
+                                    _had_terminal_usage = bool(last_metrics)
+                                    _terminal_metrics = dict(last_metrics or {})
+                                    if not _had_terminal_usage:
+                                        _actual_request_messages = _chat_request_state["requests"].get(
+                                            _actual_candidate_index,
+                                            messages,
+                                        )
+                                        _actual_context_length = _chat_request_state["context_lengths"].get(
                                             _actual_candidate_index,
                                             _selected_context_length,
                                         )
-                                        yield f'data: {json.dumps({"type": "compacted", "context_length": _compacted_length})}\n\n'
-                                    data["selected_model"] = data.get("selected_model") or _requested_model
-                                    yield f'data: {json.dumps(data)}\n\n'
-                                elif data.get("type") == "model_actual":
-                                    if _commit_chat_compaction(_actual_candidate_index):
-                                        _compacted_length = _chat_request_state["context_lengths"].get(
-                                            _actual_candidate_index,
-                                            _selected_context_length,
+                                        _estimated_input = estimate_tokens(_actual_request_messages)
+                                        _estimated_output = max(
+                                            len(full_response + thinking_response) // 4,
+                                            0,
                                         )
-                                        yield f'data: {json.dumps({"type": "compacted", "context_length": _compacted_length})}\n\n'
-                                    _actual_model = data.get("model") or _actual_model
-                                    data["requested_model"] = _requested_model
-                                    data["requested_endpoint_id"] = _requested_route.get("endpoint_id")
-                                    data["requested_endpoint_label"] = _requested_route.get("endpoint_label")
-                                    data["endpoint_id"] = _actual_route.get("endpoint_id")
-                                    data["endpoint_label"] = _actual_route.get("endpoint_label")
-                                    yield f'data: {json.dumps(data)}\n\n'
-                                elif data.get("type") == "usage":
-                                    if _commit_chat_compaction(_actual_candidate_index):
-                                        _compacted_length = _chat_request_state["context_lengths"].get(
-                                            _actual_candidate_index,
-                                            _selected_context_length,
+                                        _terminal_metrics.update({
+                                            "input_tokens": _estimated_input,
+                                            "output_tokens": _estimated_output,
+                                            "total_tokens": _estimated_input + _estimated_output,
+                                            "usage_source": "estimated",
+                                            "response_time": round(time.time() - _chat_start, 2),
+                                            "context_length": _actual_context_length,
+                                            "context_percent": (
+                                                min(
+                                                    round(
+                                                        (_estimated_input / _actual_context_length) * 100,
+                                                        1,
+                                                    ),
+                                                    100.0,
+                                                )
+                                                if _actual_context_length
+                                                else 0
+                                            ),
+                                        })
+                                    _terminal_metrics.update({
+                                        "failed": True,
+                                        "failure": {
+                                            "status": _failure_status,
+                                            "message": _failure_message,
+                                        },
+                                        "model": _actual_model or _answered_by or _requested_model,
+                                        "requested_model": _requested_model,
+                                        "endpoint_id": _actual_route.get("endpoint_id"),
+                                        "endpoint_label": _actual_route.get("endpoint_label"),
+                                        "requested_endpoint_id": _requested_route.get("endpoint_id"),
+                                        "requested_endpoint_label": _requested_route.get("endpoint_label"),
+                                    })
+                                    if isinstance(
+                                        _actual_route.get("endpoint_cost_tracked"),
+                                        bool,
+                                    ):
+                                        _terminal_metrics["endpoint_cost_tracked"] = _actual_route.get(
+                                            "endpoint_cost_tracked"
                                         )
-                                        yield f'data: {json.dumps({"type": "compacted", "context_length": _compacted_length})}\n\n'
-                                    last_metrics = data.get("data", {})
-                                    _reported_model = last_metrics.get("model")
-                                    last_metrics["requested_model"] = _requested_model
-                                    last_metrics["model"] = _reported_model or _actual_model or _answered_by or _requested_model
-                                    last_metrics["requested_endpoint_id"] = _requested_route.get("endpoint_id")
-                                    last_metrics["requested_endpoint_label"] = _requested_route.get("endpoint_label")
-                                    last_metrics["endpoint_id"] = _actual_route.get("endpoint_id")
-                                    last_metrics["endpoint_label"] = _actual_route.get("endpoint_label")
+                                    if thinking_response.strip():
+                                        _terminal_metrics["thinking"] = thinking_response.strip()
+                                    # INF-03/T07: a stream cut mid-turn. Whatever
+                                    # phases the engine reported before the cut
+                                    # (if any `usage` event ever arrived) still
+                                    # count; an estimated token count is `computed`,
+                                    # never disguised as `reported_engine`.
+                                    _exec = _chat_execution_metrics(
+                                        started_monotonic=_chat_start_monotonic,
+                                        finished_monotonic=time.monotonic(),
+                                        queue_wait_s=(locals().get("_admission") or {}).get("waited_s"),
+                                        engine_timings=_terminal_metrics.get("engine_timings"),
+                                        usage_tokens={
+                                            "prompt": _terminal_metrics.get("input_tokens"),
+                                            "generated": _terminal_metrics.get("output_tokens"),
+                                            "source": "reported_engine" if _had_terminal_usage else "computed",
+                                        },
+                                        endpoint_url=sess.endpoint_url,
+                                    )
+                                    if _exec is not None:
+                                        _terminal_metrics["execution"] = _exec
+                                    _commit_chat_compaction(_actual_candidate_index)
+                                    _saved_id = save_assistant_response(
+                                        sess,
+                                        session_manager,
+                                        session,
+                                        _terminal_content,
+                                        _terminal_metrics,
+                                        character_name=ctx.preset.character_name,
+                                        incognito=incognito,
+                                        wires=getattr(ctx, "side_thread_wires", None),
+                                        behavior_mode=getattr(ctx, "behavior_mode", None),
+                                    )
+                                    accumulate_token_usage(session, _terminal_metrics)
+                                    _chat_terminal_saved = True
+                                    _stream_set(session, status="error")
+                                    if _saved_id:
+                                        yield f'data: {json.dumps({"type": "message_saved", "id": _saved_id})}\n\n'
+                                    yield f'data: {json.dumps({"type": "chat_terminal", "data": _terminal_metrics})}\n\n'
+                                yield chunk
+                            elif chunk.startswith("event: "):
+                                yield chunk
+                            elif chunk == "data: [DONE]\n\n":
+                                if _chat_terminal_saved:
+                                    # Some providers append DONE after a terminal
+                                    # error.  The failed partial is already saved;
+                                    # never re-save/post-process it as a success or
+                                    # advertise successful completion to the client.
+                                    continue
+                                # Generate fallback metrics if LLM didn't send usage
+                                if not last_metrics and full_response:
+                                    _elapsed = time.time() - _chat_start
+                                    _est_out = len(full_response) // 4
+                                    _tps = round(_est_out / _elapsed, 2) if _elapsed > 0 else 0
+                                    _actual_context_length = _chat_request_state["context_lengths"].get(
+                                        _actual_candidate_index,
+                                        _selected_context_length,
+                                    )
+                                    _actual_request_messages = _chat_request_state["requests"].get(
+                                        _actual_candidate_index,
+                                        messages,
+                                    )
+                                    _est_in = estimate_tokens(_actual_request_messages)
+                                    _ctx_pct = min(round((_est_in / _actual_context_length) * 100, 1), 100.0) if _actual_context_length else 0
+                                    last_metrics = {
+                                        "response_time": round(_elapsed, 2),
+                                        "input_tokens": _est_in,
+                                        "output_tokens": _est_out,
+                                        "tokens_per_second": _tps,
+                                        "request_context_tokens": _est_in,
+                                        "context_percent": _ctx_pct,
+                                        "context_length": _actual_context_length,
+                                        "model": _actual_model or _answered_by or _requested_model,
+                                        "requested_model": _requested_model,
+                                        "requested_endpoint_id": _requested_route.get("endpoint_id"),
+                                        "requested_endpoint_label": _requested_route.get("endpoint_label"),
+                                        "endpoint_id": _actual_route.get("endpoint_id"),
+                                        "endpoint_label": _actual_route.get("endpoint_label"),
+                                        "usage_source": "estimated",
+                                    }
                                     if isinstance(
                                         _actual_route.get("endpoint_cost_tracked"),
                                         bool,
@@ -3228,845 +3498,631 @@ def setup_chat_routes(
                                         last_metrics["endpoint_cost_tracked"] = _actual_route.get(
                                             "endpoint_cost_tracked"
                                         )
-                                    _actual_context_length = _chat_request_state["context_lengths"].get(
-                                    _actual_candidate_index,
-                                        _selected_context_length,
-                                    )
-                                    _route_trim = _chat_request_state.get("trim_stats", {}).get(
-                                        _actual_candidate_index,
-                                        {},
-                                    )
-                                    if _route_trim and (
-                                        _route_trim.get("messages_after") < _route_trim.get("messages_before")
-                                        or _route_trim.get("tokens_after") < _route_trim.get("tokens_before")
-                                    ):
-                                        last_metrics["context_trimmed"] = True
-                                        last_metrics["context_messages_before_trim"] = _route_trim.get("messages_before")
-                                        last_metrics["context_messages_after_trim"] = _route_trim.get("messages_after")
-                                        last_metrics["context_tokens_before_trim"] = _route_trim.get("tokens_before")
-                                        last_metrics["context_tokens_after_trim"] = _route_trim.get("tokens_after")
-                                    elif ctx.context_trimmed:
-                                        last_metrics["context_trimmed"] = True
-                                        last_metrics["context_messages_before_trim"] = ctx.context_messages_before_trim
-                                        last_metrics["context_messages_after_trim"] = ctx.context_messages_after_trim
-                                        last_metrics["context_tokens_before_trim"] = ctx.context_tokens_before_trim
-                                        last_metrics["context_tokens_after_trim"] = ctx.context_tokens_after_trim
-                                    if _actual_context_length and last_metrics.get("input_tokens"):
-                                        pct = min(round((last_metrics["input_tokens"] / _actual_context_length) * 100, 1), 100.0)
-                                        last_metrics["context_percent"] = pct
-                                        last_metrics["context_length"] = _actual_context_length
-                                    # The frontend reads `tokens_per_second`; the raw usage event
-                                    # carries the backend's true gen speed as `gen_tps` (llama.cpp
-                                    # timings). Map it through so this direct-chat path shows real
-                                    # t/s instead of "n/a" → falling back to a bare token count.
-                                    if last_metrics.get("gen_tps") and not last_metrics.get("tokens_per_second"):
-                                        last_metrics["tokens_per_second"] = last_metrics["gen_tps"]
-                                        last_metrics["tps_source"] = "backend"
-                                    # Wall-clock response time for the stats popup ("Time").
-                                    last_metrics.setdefault("response_time", round(time.time() - _chat_start, 2))
+                                    # INF-03: this whole branch only runs when the
+                                    # engine never sent a `usage` event at all —
+                                    # every token count above is `computed` (an
+                                    # estimate), never `reported_engine`.
                                     _exec = _chat_execution_metrics(
                                         started_monotonic=_chat_start_monotonic,
                                         finished_monotonic=time.monotonic(),
                                         queue_wait_s=(locals().get("_admission") or {}).get("waited_s"),
-                                        engine_timings=last_metrics.get("engine_timings"),
+                                        engine_timings=None,
                                         usage_tokens={
-                                            "prompt": last_metrics.get("input_tokens"),
-                                            "generated": last_metrics.get("output_tokens"),
-                                            "source": "reported_engine",
+                                            "prompt": _est_in, "generated": _est_out,
+                                            "source": "computed",
                                         },
                                         endpoint_url=sess.endpoint_url,
                                     )
                                     if _exec is not None:
                                         last_metrics["execution"] = _exec
                                     yield f'data: {json.dumps({"type": "metrics", "data": last_metrics})}\n\n'
-                            except json.JSONDecodeError:
-                                yield chunk
-                        elif chunk.startswith("event: error"):
-                            logger.warning(f"Stream error for {sess.model} on {sess.endpoint_url}: {chunk!r}")
-                            if (
-                                not _chat_terminal_saved
-                                and (full_response.strip() or thinking_response.strip())
-                            ):
-                                _failure_status = _stream_failure_status(chunk)
-                                _failure_message = (
-                                    f"Model request failed (HTTP {_failure_status})"
-                                    if _failure_status is not None
-                                    else "Model request failed"
-                                )
-                                _terminal_content = full_response.strip()
-                                _failure_note = f"[Response stopped: {_failure_message}]"
-                                _terminal_content = (
-                                    f"{_terminal_content}\n\n{_failure_note}"
-                                    if _terminal_content
-                                    else _failure_note
-                                )
-                                _had_terminal_usage = bool(last_metrics)
-                                _terminal_metrics = dict(last_metrics or {})
-                                if not _had_terminal_usage:
-                                    _actual_request_messages = _chat_request_state["requests"].get(
-                                        _actual_candidate_index,
-                                        messages,
+                                if full_response:
+                                    _commit_chat_compaction(_actual_candidate_index)
+                                    _metrics_to_save = dict(last_metrics or {})
+                                    if thinking_response.strip() and not _metrics_to_save.get("thinking"):
+                                        _metrics_to_save["thinking"] = thinking_response.strip()
+                                    _saved_id = save_assistant_response(
+                                        sess, session_manager, session, full_response, _metrics_to_save,
+                                        character_name=ctx.preset.character_name,
+                                        web_sources=web_sources,
+                                        rag_sources=ctx.rag_sources,
+                                        research_sources=research_sources,
+                                        used_memories=ctx.used_memories,
+                                        do_research=effective_do_research,
+                                        incognito=incognito,
+                                        wires=getattr(ctx, "side_thread_wires", None),
+                                        behavior_mode=getattr(ctx, "behavior_mode", None),
                                     )
-                                    _actual_context_length = _chat_request_state["context_lengths"].get(
-                                        _actual_candidate_index,
-                                        _selected_context_length,
-                                    )
-                                    _estimated_input = estimate_tokens(_actual_request_messages)
-                                    _estimated_output = max(
-                                        len(full_response + thinking_response) // 4,
-                                        0,
-                                    )
-                                    _terminal_metrics.update({
-                                        "input_tokens": _estimated_input,
-                                        "output_tokens": _estimated_output,
-                                        "total_tokens": _estimated_input + _estimated_output,
-                                        "usage_source": "estimated",
-                                        "response_time": round(time.time() - _chat_start, 2),
-                                        "context_length": _actual_context_length,
-                                        "context_percent": (
-                                            min(
-                                                round(
-                                                    (_estimated_input / _actual_context_length) * 100,
-                                                    1,
-                                                ),
-                                                100.0,
-                                            )
-                                            if _actual_context_length
-                                            else 0
+                                    if _saved_id:
+                                        yield f'data: {json.dumps({"type": "message_saved", "id": _saved_id})}\n\n'
+                                    run_post_response_tasks(
+                                        sess, session_manager, session, message, full_response,
+                                        _metrics_to_save, ctx.uprefs, memory_manager, memory_vector, webhook_manager,
+                                        incognito=incognito, compare_mode=compare_mode,
+                                        character_name=ctx.preset.character_name,
+                                        owner=_user,
+                                        allow_background_extraction=(
+                                            not tool_policy.block_all_tool_calls
+                                            and not tool_approval_continuation
                                         ),
-                                    })
-                                _terminal_metrics.update({
-                                    "failed": True,
-                                    "failure": {
-                                        "status": _failure_status,
-                                        "message": _failure_message,
-                                    },
-                                    "model": _actual_model or _answered_by or _requested_model,
-                                    "requested_model": _requested_model,
-                                    "endpoint_id": _actual_route.get("endpoint_id"),
-                                    "endpoint_label": _actual_route.get("endpoint_label"),
-                                    "requested_endpoint_id": _requested_route.get("endpoint_id"),
-                                    "requested_endpoint_label": _requested_route.get("endpoint_label"),
-                                })
-                                if isinstance(
-                                    _actual_route.get("endpoint_cost_tracked"),
-                                    bool,
-                                ):
-                                    _terminal_metrics["endpoint_cost_tracked"] = _actual_route.get(
-                                        "endpoint_cost_tracked"
                                     )
-                                if thinking_response.strip():
-                                    _terminal_metrics["thinking"] = thinking_response.strip()
-                                # INF-03/T07: a stream cut mid-turn. Whatever
-                                # phases the engine reported before the cut
-                                # (if any `usage` event ever arrived) still
-                                # count; an estimated token count is `computed`,
-                                # never disguised as `reported_engine`.
-                                _exec = _chat_execution_metrics(
-                                    started_monotonic=_chat_start_monotonic,
-                                    finished_monotonic=time.monotonic(),
-                                    queue_wait_s=(locals().get("_admission") or {}).get("waited_s"),
-                                    engine_timings=_terminal_metrics.get("engine_timings"),
-                                    usage_tokens={
-                                        "prompt": _terminal_metrics.get("input_tokens"),
-                                        "generated": _terminal_metrics.get("output_tokens"),
-                                        "source": "reported_engine" if _had_terminal_usage else "computed",
-                                    },
-                                    endpoint_url=sess.endpoint_url,
-                                )
-                                if _exec is not None:
-                                    _terminal_metrics["execution"] = _exec
-                                _commit_chat_compaction(_actual_candidate_index)
-                                _saved_id = save_assistant_response(
-                                    sess,
-                                    session_manager,
-                                    session,
-                                    _terminal_content,
-                                    _terminal_metrics,
-                                    character_name=ctx.preset.character_name,
-                                    incognito=incognito,
-                                    wires=getattr(ctx, "side_thread_wires", None),
-                                    behavior_mode=getattr(ctx, "behavior_mode", None),
-                                )
-                                accumulate_token_usage(session, _terminal_metrics)
-                                _chat_terminal_saved = True
-                                _stream_set(session, status="error")
-                                if _saved_id:
-                                    yield f'data: {json.dumps({"type": "message_saved", "id": _saved_id})}\n\n'
-                                yield f'data: {json.dumps({"type": "chat_terminal", "data": _terminal_metrics})}\n\n'
-                            yield chunk
-                        elif chunk.startswith("event: "):
-                            yield chunk
-                        elif chunk == "data: [DONE]\n\n":
-                            if _chat_terminal_saved:
-                                # Some providers append DONE after a terminal
-                                # error.  The failed partial is already saved;
-                                # never re-save/post-process it as a success or
-                                # advertise successful completion to the client.
-                                continue
-                            # Generate fallback metrics if LLM didn't send usage
-                            if not last_metrics and full_response:
-                                _elapsed = time.time() - _chat_start
-                                _est_out = len(full_response) // 4
-                                _tps = round(_est_out / _elapsed, 2) if _elapsed > 0 else 0
-                                _actual_context_length = _chat_request_state["context_lengths"].get(
-                                    _actual_candidate_index,
-                                    _selected_context_length,
-                                )
-                                _actual_request_messages = _chat_request_state["requests"].get(
-                                    _actual_candidate_index,
-                                    messages,
-                                )
-                                _est_in = estimate_tokens(_actual_request_messages)
-                                _ctx_pct = min(round((_est_in / _actual_context_length) * 100, 1), 100.0) if _actual_context_length else 0
-                                last_metrics = {
-                                    "response_time": round(_elapsed, 2),
-                                    "input_tokens": _est_in,
-                                    "output_tokens": _est_out,
-                                    "tokens_per_second": _tps,
-                                    "request_context_tokens": _est_in,
-                                    "context_percent": _ctx_pct,
-                                    "context_length": _actual_context_length,
-                                    "model": _actual_model or _answered_by or _requested_model,
-                                    "requested_model": _requested_model,
-                                    "requested_endpoint_id": _requested_route.get("endpoint_id"),
-                                    "requested_endpoint_label": _requested_route.get("endpoint_label"),
-                                    "endpoint_id": _actual_route.get("endpoint_id"),
-                                    "endpoint_label": _actual_route.get("endpoint_label"),
-                                    "usage_source": "estimated",
-                                }
-                                if isinstance(
-                                    _actual_route.get("endpoint_cost_tracked"),
-                                    bool,
-                                ):
-                                    last_metrics["endpoint_cost_tracked"] = _actual_route.get(
-                                        "endpoint_cost_tracked"
-                                    )
-                                # INF-03: this whole branch only runs when the
-                                # engine never sent a `usage` event at all —
-                                # every token count above is `computed` (an
-                                # estimate), never `reported_engine`.
-                                _exec = _chat_execution_metrics(
-                                    started_monotonic=_chat_start_monotonic,
-                                    finished_monotonic=time.monotonic(),
-                                    queue_wait_s=(locals().get("_admission") or {}).get("waited_s"),
-                                    engine_timings=None,
-                                    usage_tokens={
-                                        "prompt": _est_in, "generated": _est_out,
-                                        "source": "computed",
-                                    },
-                                    endpoint_url=sess.endpoint_url,
-                                )
-                                if _exec is not None:
-                                    last_metrics["execution"] = _exec
-                                yield f'data: {json.dumps({"type": "metrics", "data": last_metrics})}\n\n'
-                            if full_response:
-                                _commit_chat_compaction(_actual_candidate_index)
-                                _metrics_to_save = dict(last_metrics or {})
-                                if thinking_response.strip() and not _metrics_to_save.get("thinking"):
-                                    _metrics_to_save["thinking"] = thinking_response.strip()
-                                _saved_id = save_assistant_response(
-                                    sess, session_manager, session, full_response, _metrics_to_save,
-                                    character_name=ctx.preset.character_name,
-                                    web_sources=web_sources,
-                                    rag_sources=ctx.rag_sources,
-                                    research_sources=research_sources,
-                                    used_memories=ctx.used_memories,
-                                    do_research=effective_do_research,
-                                    incognito=incognito,
-                                    wires=getattr(ctx, "side_thread_wires", None),
-                                    behavior_mode=getattr(ctx, "behavior_mode", None),
-                                )
-                                if _saved_id:
-                                    yield f'data: {json.dumps({"type": "message_saved", "id": _saved_id})}\n\n'
-                                run_post_response_tasks(
-                                    sess, session_manager, session, message, full_response,
-                                    _metrics_to_save, ctx.uprefs, memory_manager, memory_vector, webhook_manager,
-                                    incognito=incognito, compare_mode=compare_mode,
-                                    character_name=ctx.preset.character_name,
-                                    owner=_user,
-                                    allow_background_extraction=(
-                                        not tool_policy.block_all_tool_calls
-                                        and not tool_approval_continuation
-                                    ),
-                                )
-                            _stream_set(session, status="done")
-                            yield chunk
-                except (asyncio.CancelledError, GeneratorExit):
-                    if full_response and not incognito:
-                        logger.info("Client disconnected mid-stream (chat mode) for session %s, saving partial (%d chars)", session, len(full_response))
-                        _stopped_content, _stopped_md = clean_thinking_for_save(
-                            full_response,
-                            {
-                                "stopped": True,
-                                "model": _actual_model or _answered_by or _requested_model,
-                                "requested_model": _requested_model,
-                                "endpoint_id": _actual_route.get("endpoint_id"),
-                                "endpoint_label": _actual_route.get("endpoint_label"),
-                                "requested_endpoint_id": _requested_route.get("endpoint_id"),
-                                "requested_endpoint_label": _requested_route.get("endpoint_label"),
-                            },
-                        )
-                        sess.add_message(ChatMessage("assistant", _stopped_content, metadata=_stopped_md))
-                        session_manager.save_sessions()
-                    raise
-                finally:
-                    _active_streams.pop(session, None)
-            else:
-                # ── Agent mode: full agent loop with tools ──
-                _agent_rounds = 0
-                _agent_tool_calls = 0
-                _answered_by = None  # set if the selected model failed and a fallback answered
-                _requested_model = sess.model
-                _actual_model = None
-                _agent_requested_route = _foreground_route_descriptors[0]
-                _agent_actual_endpoint_id = _agent_requested_route.get("endpoint_id")
-                _agent_actual_endpoint_label = _agent_requested_route.get("endpoint_label")
-                _agent_round_models = {1: _requested_model}
-                _agent_round_endpoint_ids = {1: _agent_actual_endpoint_id}
-                _agent_round_endpoint_labels = {1: _agent_actual_endpoint_label}
-                try:
-                    from src.settings import get_setting
-                    from src.agent_tools import MAX_AGENT_ROUNDS as _DEFAULT_ROUNDS
-                    # Per-message tool budget from settings; guard defensively in
-                    # case settings.json was hand-edited to a non-numeric value
-                    # (the HTTP admin endpoint validates, but direct edits bypass
-                    # it). 0 = unlimited, matching auth_routes set_settings().
-                    try:
-                        _tool_budget = int(get_setting("agent_max_tool_calls", 0))
-                    except (TypeError, ValueError):
-                        _tool_budget = 0
-                    # Per-message round cap from settings; clamp defensively in
-                    # case settings.json was hand-edited to a bad value.
-                    try:
-                        _max_rounds = int(get_setting("agent_max_rounds", _DEFAULT_ROUNDS) or _DEFAULT_ROUNDS)
-                    except (TypeError, ValueError):
-                        _max_rounds = _DEFAULT_ROUNDS
-                    _max_rounds = max(1, min(_max_rounds, 200))
-
-                    _forced_tools = None
-                    if _search_enabled:
-                        _forced_tools = set(WEB_TOOL_NAMES)
-                        if _explicit_browser_intent:
-                            _forced_tools |= set(_BROWSER_MCP_TOOLS)
-                    elif _explicit_browser_intent:
-                        _forced_tools = set(_BROWSER_MCP_TOOLS)
-
-                    try:
-                        from services.projects import project_for_session
-                        if project_for_session(session, _user):
-                            _forced_tools = set(_forced_tools or set())
-                            _forced_tools.update({
-                                "project_context", "search_project_chats",
-                                # "add this to the project" is a phrase RAG
-                                # over tool descriptions retrieves badly, and
-                                # the tool is unusable outside a project
-                                # anyway — so force it exactly when there IS
-                                # one, mirroring tool_preflight.PROJECT_TOOLS.
-                                "manage_project_context",
-                                # Objectives are project state, not prose.  If
-                                # the user explicitly says "add this to the
-                                # objectives", the capability must not depend
-                                # on semantic tool retrieval guessing right.
-                                "project_objectives",
-                            })
-                    except Exception:
-                        pass
-                    # /agents (multi-agent delegation) names the tool explicitly;
-                    # make sure retrieval cannot drop it.
-                    if isinstance(message, str) and "delegate_agents" in message:
-                        _forced_tools = set(_forced_tools or set())
-                        _forced_tools.add("delegate_agents")
-                    if _delegate_tasks and not tool_approval_continuation:
-                        _forced_tools = set(_forced_tools or set())
-                        _forced_tools.add("delegate_agents")
-                        # The user dictated this delegation: the one
-                        # delegate_agents call with these exact instructions
-                        # passes the post-external-context gate (workers keep
-                        # their own gates).
-                        # NB: a new name — assigning to `_harness_options`
-                        # here would make it a local of this closure and
-                        # unbind it for the rest of the function (seen live:
-                        # "cannot access local variable '_harness_options'").
-                        _loop_harness_options = dict(_harness_options) if isinstance(_harness_options, dict) else {}
-                        _loop_harness_options["user_delegation"] = _delegate_tasks
-                        # The user saw (and history keeps) the compact line; the
-                        # model gets the explicit delegation instruction.
-                        _instr = _delegation_instruction(_delegate_tasks)
-                        messages = list(messages)
-                        for _mi in range(len(messages) - 1, -1, -1):
-                            if messages[_mi].get("role") == "user":
-                                messages[_mi] = dict(messages[_mi])
-                                messages[_mi]["content"] = _instr
-                                break
-                    else:
-                        _loop_harness_options = _harness_options
-
-                    # Privacy is a property of this turn, not of the project.
-                    # The Context Engine consumes this per-turn bag, so carry
-                    # incognito explicitly and never mutate the request-wide
-                    # project options object shared by the rest of the route.
-                    _loop_harness_options = dict(_loop_harness_options or {})
-                    _loop_harness_options["incognito"] = bool(incognito)
-                    _loop_harness_options["no_memory"] = bool(no_memory)
-                    _loop_harness_options["no_skills"] = bool(no_skills)
-                    if turn_input_budget is not None:
-                        _loop_harness_options["input_token_budget"] = turn_input_budget
-
-                    from src import chat_team
-                    _team = _chat_team
-                    if _team and _team['enabled']:
-                        _loop_harness_options['chat_team'] = _team
-                        _forced_tools = set(_forced_tools or ()) | {'delegate_agents'}
-                        messages = [*messages, {'role': 'system', 'content': chat_team.instruction(_team)}]
-
-                    # OBJ-4 (Lote 82): the agent's own git policy for this
-                    # turn's workspace -- before ANY tool runs, so a
-                    # "work on a separate branch" policy has already
-                    # switched HEAD by the time the model's first write
-                    # lands. Idempotent (see src/agent_git_policy.py's
-                    # module docstring): a later turn in the same session
-                    # finds HEAD already on the agent branch and no-ops.
-                    if workspace:
-                        try:
-                            from src import agent_git_policy
-                            _git_policy_before = agent_git_policy.before_turn(workspace, session, _user)
-                        except Exception as _gp_err:
-                            logger.debug("agent_git_policy.before_turn failed: %s", _gp_err)
-                            _git_policy_before = None
-                        if _git_policy_before:
-                            yield f"data: {json.dumps({'type': 'git_policy', 'data': _git_policy_before})}\n\n"
-
-                    async for chunk in stream_agent_loop(
-                        sess.endpoint_url,
-                        sess.model,
-                        messages,
-                        headers=sess.headers,
-                        temperature=ctx.preset.temperature,
-                        max_tokens=ctx.preset.max_tokens,
-                        prompt_type=preset_id,
-                        max_tool_calls=_tool_budget,
-                        max_rounds=_max_rounds,
-                        context_length=_selected_context_length,
-                        active_document=active_doc,
-                        active_document_pinned=bool(_doc_context_msgs) and any(
-                            str(e.get("doc_id") or "") == str(getattr(active_doc, "id", "") or "")
-                            for e in _parse_doc_context_payload(doc_context_raw)
-                        ),
-                        active_email=active_email_ctx,
-                        session_id=session,
-                        history_session=sess,
-                        disabled_tools=disabled_tools if disabled_tools else None,
-                        tool_policy=tool_policy,
-                        owner=_user,
-                        fallbacks=_foreground_candidates[1:],
-                        route_descriptors=_foreground_route_descriptors,
-                        fallback_statuses=_foreground_policy.eligible_statuses,
-                        fallback_on_empty=_foreground_policy.fallback_on_empty,
-                        plan_mode=plan_mode,
-                        approved_plan=approved_plan or None,
-                        workspace=workspace or None,
-                        workspace_roots=_project_roots or None,
-                        relevant_tools=(
-                            set(pending_tool_approval.selected_tools)
-                            if exact_tool_approval
-                            and pending_tool_approval
-                            and pending_tool_approval.selected_tools
-                            else None
-                        ),
-                        forced_tools=_forced_tools,
-                        uploaded_files=ctx.uploaded_files,
-                        defer_context_shaping=_foreground_policy.enabled,
-                        external_untrusted_context_seen=external_untrusted_context_seen,
-                        exact_approval=exact_tool_approval,
-                        temperature_explicit=_temperature_explicit,
-                        gen_overrides=_gen_overrides or None,
-                        harness_options=_loop_harness_options or None,
-                        autonomy_preset=autonomy_preset or None,
-                        # UX-04: main-session pause/steer, drained from the
-                        # SAME run this turn registers under `session` in
-                        # agent_runs (see chat_pause / chat_steer below).
-                        pending_user_messages=lambda: agent_runs.take_steers(session),
-                        pending_pause=lambda: agent_runs.take_pause_request(session),
-                    ):
-                        if chunk.startswith("data: ") and not chunk.startswith("data: [DONE]"):
-                            try:
-                                data = json.loads(chunk[6:])
-                                if "delta" in data:
-                                    # Reasoning tokens arrive flagged thinking:true.
-                                    # Forward them for the live indicator, but keep
-                                    # them out of the saved reply (same as chat mode).
-                                    if data.get("thinking"):
-                                        thinking_response += data["delta"]
-                                    else:
-                                        full_response += data["delta"]
-                                        _stream_set(session, partial=full_response)
-                                    yield chunk
-                                elif data.get("type") == "web_sources":
-                                    web_sources = data.get("data", [])
-                                    yield chunk
-                                elif data.get("type") in (
-                                    "tool_start", "tool_output", "agent_step",
-                                    # live progress of a running tool: bash/python
-                                    # stdout tail, image steps and the sub-agent
-                                    # worker board (delegate_agents). The agent
-                                    # loop emits these while the tool is in
-                                    # flight; without this entry they were
-                                    # silently dropped here and the UI never saw
-                                    # them (board stayed empty, tails stayed blind).
-                                    "tool_progress",
-                                    # live browser frame after each browser
-                                    # action (src/browser_view.py → Browser panel)
-                                    "browser_view",
-                                    "doc_stream_open", "doc_stream_delta",
-                                    "doc_update", "doc_suggestions", "ui_control",
-                                    "rounds_exhausted", "budget_exceeded",
-                                    "budget_exhausted",
-                                    "loop_breaker_triggered",
-                                    "intent_nudge_exhausted",
-                                    "ask_user",
-                                    "plan_update",
-                                    # reliability harness (src/agent_harness.py)
-                                    "round_info", "harness_check", "harness_summary",
-                                    "progress_update",
-                                    # context ledger (src/context_ledger.py)
-                                    "context_ledger",
-                                    # context engine, shadow mode: the packet
-                                    # the engine would have compiled, beside
-                                    # the prompt we really sent. Observation
-                                    # only (src/context_engine/wiring.py).
-                                    "context_shadow",
-                                    # live packet actually delivered to this
-                                    # provider call.
-                                    "context_packet",
-                                    # multi-agent delegation
-                                    "subagent_event",
-                                    # MOD-06/QA-28 (Lote 40): a mid-task fallback
-                                    # switched to a model that does not announce
-                                    # every capability the previous one did
-                                    # (src/agent_loop.py's `_cap_switch` block).
-                                    # Without this entry the event was computed
-                                    # and yielded by the loop but silently
-                                    # dropped right here, never reaching the UI.
-                                    "capabilities_changed",
-                                ):
-                                    if data.get("type") == "agent_step":
-                                        _event_round = data.get("round", 1)
-                                        _agent_rounds = max(_agent_rounds, _event_round)
-                                        _agent_round_models.setdefault(
-                                            _event_round,
-                                            _actual_model or _answered_by or _requested_model,
-                                        )
-                                        _agent_round_endpoint_ids.setdefault(
-                                            _event_round,
-                                            _agent_actual_endpoint_id,
-                                        )
-                                        _agent_round_endpoint_labels.setdefault(
-                                            _event_round,
-                                            _agent_actual_endpoint_label,
-                                        )
-                                    elif data.get("type") == "tool_start":
-                                        _agent_tool_calls += 1
-                                    yield chunk
-                                elif data.get("type") == "fallback":
-                                    # Selected model failed; a fallback answered.
-                                    # Forward the notice and remember the real
-                                    # model so metrics reflect it, not the masked
-                                    # selected model.
-                                    _answered_by = data.get("answered_by") or _answered_by
-                                    _actual_model = _answered_by or _actual_model
-                                    if "answered_by_endpoint_id" in data:
-                                        _agent_actual_endpoint_id = data.get("answered_by_endpoint_id")
-                                    if data.get("answered_by_endpoint_label"):
-                                        _agent_actual_endpoint_label = data.get("answered_by_endpoint_label")
-                                    _event_round = data.get("round") or max(_agent_rounds, 1)
-                                    _agent_round_models[_event_round] = _answered_by or _requested_model
-                                    _agent_round_endpoint_ids[_event_round] = _agent_actual_endpoint_id
-                                    _agent_round_endpoint_labels[_event_round] = _agent_actual_endpoint_label
-                                    data["selected_model"] = data.get("selected_model") or _requested_model
-                                    yield chunk
-                                elif data.get("type") == "model_actual":
-                                    _actual_model = data.get("model") or _actual_model
-                                    if "endpoint_id" in data:
-                                        _agent_actual_endpoint_id = data.get("endpoint_id")
-                                    if data.get("endpoint_label"):
-                                        _agent_actual_endpoint_label = data.get("endpoint_label")
-                                    _event_round = data.get("round") or max(_agent_rounds, 1)
-                                    _agent_round_models[_event_round] = _actual_model or _requested_model
-                                    _agent_round_endpoint_ids[_event_round] = _agent_actual_endpoint_id
-                                    _agent_round_endpoint_labels[_event_round] = _agent_actual_endpoint_label
-                                    data["requested_model"] = _requested_model
-                                    yield f'data: {json.dumps(data)}\n\n'
-                                elif data.get("type") == "agent_terminal":
-                                    terminal_metadata = dict(data.get("data") or {})
-                                    last_metrics = terminal_metadata
-                                    failure = terminal_metadata.get("failure") or {}
-                                    failure_status = _normalize_http_status(
-                                        failure.get("status")
-                                    )
-                                    failure_message = (
-                                        f"Model request failed (HTTP {failure_status})"
-                                        if failure_status is not None
-                                        else "Model request failed"
-                                    )
-                                    terminal_metadata["failure"] = {
-                                        "status": failure_status,
-                                        "message": failure_message,
-                                    }
-                                    terminal_content = full_response.strip()
-                                    failure_note = f"[Agent stopped: {failure_message}]"
-                                    if terminal_content:
-                                        terminal_content = f"{terminal_content}\n\n{failure_note}"
-                                    else:
-                                        terminal_content = failure_note
-                                    if not _terminal_saved:
-                                        _saved_id = save_assistant_response(
-                                            sess,
-                                            session_manager,
-                                            session,
-                                            terminal_content,
-                                            terminal_metadata,
-                                            character_name=ctx.preset.character_name,
-                                            web_sources=web_sources,
-                                            rag_sources=ctx.rag_sources,
-                                            used_memories=ctx.used_memories,
-                                            incognito=incognito,
-                                            wires=getattr(ctx, "side_thread_wires", None),
-                                            behavior_mode=getattr(ctx, "behavior_mode", None),
-                                        )
-                                        _terminal_saved = True
-                                        accumulate_token_usage(session, terminal_metadata)
-                                        _stream_set(session, status="error")
-                                        # ADP-22 §2: fold the failed outcome back into
-                                        # MOD-05's history -- no-op unless this turn's
-                                        # model came from `_resolve_auto_model_route`.
-                                        _record_model_router_outcome(
-                                            _model_router_auto,
-                                            ok=False,
-                                            error_class=(
-                                                f"http_{failure_status}" if failure_status is not None else "agent_terminal"
-                                            ),
-                                        )
-                                        if _saved_id:
-                                            yield f'data: {json.dumps({"type": "message_saved", "id": _saved_id})}\n\n'
-                                    yield chunk
-                                elif data.get("type") == "metrics":
-                                    last_metrics = data.get("data", {})
-                                    _reported_model = last_metrics.get("model")
-                                    last_metrics["requested_model"] = last_metrics.get("requested_model") or _requested_model
-                                    last_metrics["model"] = _reported_model or _actual_model or _answered_by or _requested_model
-                                    if ctx.context_trimmed:
-                                        last_metrics["context_trimmed"] = True
-                                        last_metrics["context_messages_before_trim"] = ctx.context_messages_before_trim
-                                        last_metrics["context_messages_after_trim"] = ctx.context_messages_after_trim
-                                        last_metrics["context_tokens_before_trim"] = ctx.context_tokens_before_trim
-                                        last_metrics["context_tokens_after_trim"] = ctx.context_tokens_after_trim
-                                    # ADP-22 §2: fold the successful outcome back into
-                                    # MOD-05's history -- no-op unless this turn's model
-                                    # came from `_resolve_auto_model_route`.
-                                    _record_model_router_outcome(
-                                        _model_router_auto, ok=True, latency_s=last_metrics.get("response_time"),
-                                    )
-                                    _metrics_event = {"type": "metrics", "data": last_metrics}
-                                    # Inline teacher escalation marks its
-                                    # recursively emitted events at the SSE
-                                    # envelope. Preserve that non-secret marker
-                                    # when normalizing metrics so the browser's
-                                    # replay-stable ledger keeps primary and
-                                    # teacher segments distinct.
-                                    if data.get("teacher") is True:
-                                        _metrics_event["teacher"] = True
-                                    yield f'data: {json.dumps(_metrics_event)}\n\n'
-                            except json.JSONDecodeError:
+                                _stream_set(session, status="done")
                                 yield chunk
-                        elif chunk.startswith("event: "):
-                            yield chunk
-                        elif chunk == "data: [DONE]\n\n":
-                            _has_tool_events = bool((last_metrics or {}).get("tool_events"))
-                            if full_response or _has_tool_events:
-                                _response_to_save = full_response or "Done."
-                                _metrics_to_save = dict(last_metrics or {})
-                                if thinking_response.strip() and not _metrics_to_save.get("thinking"):
-                                    _metrics_to_save["thinking"] = thinking_response.strip()
-                                _saved_id = save_assistant_response(
-                                    sess, session_manager, session, _response_to_save, _metrics_to_save,
-                                    character_name=ctx.preset.character_name,
-                                    web_sources=web_sources,
-                                    rag_sources=ctx.rag_sources,
-                                    used_memories=ctx.used_memories,
-                                    incognito=incognito,
-                                    wires=getattr(ctx, "side_thread_wires", None),
-                                    behavior_mode=getattr(ctx, "behavior_mode", None),
-                                )
-                                if _saved_id:
-                                    yield f'data: {json.dumps({"type": "message_saved", "id": _saved_id})}\n\n'
-                                    # Project audit trail + review-mode state for
-                                    # a turn that changed files (linked to this
-                                    # saved message so the UI can jump to it).
-                                    _git_policy_after: List[Dict[str, Any]] = []
-                                    try:
-                                        _git_policy_after = _record_turn_side_effects(
-                                            session, _saved_id, _metrics_to_save, message,
-                                            _harness_options if isinstance(_harness_options, dict) else {},
-                                            owner=_user,
-                                        )
-                                    except Exception as _se_err:
-                                        logger.debug("turn side effects failed: %s", _se_err)
-                                    for _gpe in _git_policy_after:
-                                        yield f"data: {json.dumps({'type': 'git_policy', 'data': _gpe})}\n\n"
-                                run_post_response_tasks(
-                                    sess, session_manager, session, message, _response_to_save,
-                                    _metrics_to_save, ctx.uprefs, memory_manager, memory_vector, webhook_manager,
-                                    incognito=incognito, compare_mode=compare_mode,
-                                    character_name=ctx.preset.character_name,
-                                                            agent_rounds=_agent_rounds,
-                                    agent_tool_calls=_agent_tool_calls,
-                                    skills_manager=skills_manager,
-                                    owner=_user,
-                                    extract_skills=(
-                                        user_requested_agent
-                                        and not tool_approval_continuation
-                                    ),
-                                    allow_background_extraction=(
-                                        not tool_policy.block_all_tool_calls
-                                        and not tool_approval_continuation
-                                    ),
-                                )
-                            _stream_set(session, status="done")
-                            yield chunk
-                except (asyncio.CancelledError, GeneratorExit):
-                    # Client disconnected — save partial response. Wrap
-                    # the save in its own try so an exception inside
-                    # add_message / save_sessions doesn't mask the
-                    # original CancelledError (which prevented the
-                    # outer finally from running and left _active_streams
-                    # with a stale entry).
-                    try:
+                    except (asyncio.CancelledError, GeneratorExit):
                         if full_response and not incognito:
-                            logger.info("Client disconnected mid-stream for session %s, saving partial response (%d chars)", session, len(full_response))
-                            _stopped_content2, _stopped_md2 = clean_thinking_for_save(
+                            logger.info("Client disconnected mid-stream (chat mode) for session %s, saving partial (%d chars)", session, len(full_response))
+                            _stopped_content, _stopped_md = clean_thinking_for_save(
                                 full_response,
                                 {
                                     "stopped": True,
                                     "model": _actual_model or _answered_by or _requested_model,
                                     "requested_model": _requested_model,
-                                    "endpoint_id": _agent_actual_endpoint_id,
-                                    "endpoint_label": _agent_actual_endpoint_label,
-                                    "requested_endpoint_id": _agent_requested_route.get("endpoint_id"),
-                                    "requested_endpoint_label": _agent_requested_route.get("endpoint_label"),
-                                    "round_models": [
-                                        _agent_round_models.get(i, _actual_model or _requested_model)
-                                        for i in range(1, max(_agent_round_models, default=1) + 1)
-                                    ],
-                                    "round_endpoint_ids": [
-                                        _agent_round_endpoint_ids.get(i)
-                                        for i in range(1, max(_agent_round_models, default=1) + 1)
-                                    ],
-                                    "round_endpoint_labels": [
-                                        _agent_round_endpoint_labels.get(i)
-                                        for i in range(1, max(_agent_round_models, default=1) + 1)
-                                    ],
+                                    "endpoint_id": _actual_route.get("endpoint_id"),
+                                    "endpoint_label": _actual_route.get("endpoint_label"),
+                                    "requested_endpoint_id": _requested_route.get("endpoint_id"),
+                                    "requested_endpoint_label": _requested_route.get("endpoint_label"),
                                 },
                             )
-                            sess.add_message(ChatMessage("assistant", _stopped_content2, metadata=_stopped_md2))
+                            sess.add_message(ChatMessage("assistant", _stopped_content, metadata=_stopped_md))
                             session_manager.save_sessions()
-                    except Exception:
-                        logger.exception("Failed to save partial response on disconnect (session %s)", session)
-                    raise
+                        raise
+                    finally:
+                        _active_streams.pop(session, None)
+                else:
+                    # ── Agent mode: full agent loop with tools ──
+                    _agent_rounds = 0
+                    _agent_tool_calls = 0
+                    _answered_by = None  # set if the selected model failed and a fallback answered
+                    _requested_model = sess.model
+                    _actual_model = None
+                    _agent_requested_route = _foreground_route_descriptors[0]
+                    _agent_actual_endpoint_id = _agent_requested_route.get("endpoint_id")
+                    _agent_actual_endpoint_label = _agent_requested_route.get("endpoint_label")
+                    _agent_round_models = {1: _requested_model}
+                    _agent_round_endpoint_ids = {1: _agent_actual_endpoint_id}
+                    _agent_round_endpoint_labels = {1: _agent_actual_endpoint_label}
+                    try:
+                        from src.settings import get_setting
+                        from src.agent_tools import MAX_AGENT_ROUNDS as _DEFAULT_ROUNDS
+                        # Per-message tool budget from settings; guard defensively in
+                        # case settings.json was hand-edited to a non-numeric value
+                        # (the HTTP admin endpoint validates, but direct edits bypass
+                        # it). 0 = unlimited, matching auth_routes set_settings().
+                        try:
+                            _tool_budget = int(get_setting("agent_max_tool_calls", 0))
+                        except (TypeError, ValueError):
+                            _tool_budget = 0
+                        # Per-message round cap from settings; clamp defensively in
+                        # case settings.json was hand-edited to a bad value.
+                        try:
+                            _max_rounds = int(get_setting("agent_max_rounds", _DEFAULT_ROUNDS) or _DEFAULT_ROUNDS)
+                        except (TypeError, ValueError):
+                            _max_rounds = _DEFAULT_ROUNDS
+                        _max_rounds = max(1, min(_max_rounds, 200))
+
+                        _forced_tools = None
+                        if _search_enabled:
+                            _forced_tools = set(WEB_TOOL_NAMES)
+                            if _explicit_browser_intent:
+                                _forced_tools |= set(_BROWSER_MCP_TOOLS)
+                        elif _explicit_browser_intent:
+                            _forced_tools = set(_BROWSER_MCP_TOOLS)
+
+                        try:
+                            from services.projects import project_for_session
+                            if project_for_session(session, _user):
+                                _forced_tools = set(_forced_tools or set())
+                                _forced_tools.update({
+                                    "project_context", "search_project_chats",
+                                    # "add this to the project" is a phrase RAG
+                                    # over tool descriptions retrieves badly, and
+                                    # the tool is unusable outside a project
+                                    # anyway — so force it exactly when there IS
+                                    # one, mirroring tool_preflight.PROJECT_TOOLS.
+                                    "manage_project_context",
+                                    # Objectives are project state, not prose.  If
+                                    # the user explicitly says "add this to the
+                                    # objectives", the capability must not depend
+                                    # on semantic tool retrieval guessing right.
+                                    "project_objectives",
+                                })
+                        except Exception:
+                            pass
+                        # /agents (multi-agent delegation) names the tool explicitly;
+                        # make sure retrieval cannot drop it.
+                        if isinstance(message, str) and "delegate_agents" in message:
+                            _forced_tools = set(_forced_tools or set())
+                            _forced_tools.add("delegate_agents")
+                        if _delegate_tasks and not tool_approval_continuation:
+                            _forced_tools = set(_forced_tools or set())
+                            _forced_tools.add("delegate_agents")
+                            # The user dictated this delegation: the one
+                            # delegate_agents call with these exact instructions
+                            # passes the post-external-context gate (workers keep
+                            # their own gates).
+                            # NB: a new name — assigning to `_harness_options`
+                            # here would make it a local of this closure and
+                            # unbind it for the rest of the function (seen live:
+                            # "cannot access local variable '_harness_options'").
+                            _loop_harness_options = dict(_harness_options) if isinstance(_harness_options, dict) else {}
+                            _loop_harness_options["user_delegation"] = _delegate_tasks
+                            # The user saw (and history keeps) the compact line; the
+                            # model gets the explicit delegation instruction.
+                            _instr = _delegation_instruction(_delegate_tasks)
+                            messages = list(messages)
+                            for _mi in range(len(messages) - 1, -1, -1):
+                                if messages[_mi].get("role") == "user":
+                                    messages[_mi] = dict(messages[_mi])
+                                    messages[_mi]["content"] = _instr
+                                    break
+                        else:
+                            _loop_harness_options = _harness_options
+
+                        # Privacy is a property of this turn, not of the project.
+                        # The Context Engine consumes this per-turn bag, so carry
+                        # incognito explicitly and never mutate the request-wide
+                        # project options object shared by the rest of the route.
+                        _loop_harness_options = dict(_loop_harness_options or {})
+                        _loop_harness_options["incognito"] = bool(incognito)
+                        _loop_harness_options["no_memory"] = bool(no_memory)
+                        _loop_harness_options["no_skills"] = bool(no_skills)
+                        if turn_input_budget is not None:
+                            _loop_harness_options["input_token_budget"] = turn_input_budget
+
+                        from src import chat_team
+                        _team = _chat_team
+                        if _team and _team['enabled']:
+                            _loop_harness_options['chat_team'] = _team
+                            _forced_tools = set(_forced_tools or ()) | {'delegate_agents'}
+                            messages = [*messages, {'role': 'system', 'content': chat_team.instruction(_team)}]
+
+                        # OBJ-4 (Lote 82): the agent's own git policy for this
+                        # turn's workspace -- before ANY tool runs, so a
+                        # "work on a separate branch" policy has already
+                        # switched HEAD by the time the model's first write
+                        # lands. Idempotent (see src/agent_git_policy.py's
+                        # module docstring): a later turn in the same session
+                        # finds HEAD already on the agent branch and no-ops.
+                        if workspace:
+                            try:
+                                from src import agent_git_policy
+                                _git_policy_before = agent_git_policy.before_turn(workspace, session, _user)
+                            except Exception as _gp_err:
+                                logger.debug("agent_git_policy.before_turn failed: %s", _gp_err)
+                                _git_policy_before = None
+                            if _git_policy_before:
+                                yield f"data: {json.dumps({'type': 'git_policy', 'data': _git_policy_before})}\n\n"
+
+                        async for chunk in stream_agent_loop(
+                            sess.endpoint_url,
+                            sess.model,
+                            messages,
+                            headers=sess.headers,
+                            temperature=ctx.preset.temperature,
+                            max_tokens=ctx.preset.max_tokens,
+                            prompt_type=preset_id,
+                            max_tool_calls=_tool_budget,
+                            max_rounds=_max_rounds,
+                            context_length=_selected_context_length,
+                            active_document=active_doc,
+                            active_document_pinned=bool(_doc_context_msgs) and any(
+                                str(e.get("doc_id") or "") == str(getattr(active_doc, "id", "") or "")
+                                for e in _parse_doc_context_payload(doc_context_raw)
+                            ),
+                            active_email=active_email_ctx,
+                            session_id=session,
+                            history_session=sess,
+                            disabled_tools=disabled_tools if disabled_tools else None,
+                            tool_policy=tool_policy,
+                            owner=_user,
+                            fallbacks=_foreground_candidates[1:],
+                            route_descriptors=_foreground_route_descriptors,
+                            fallback_statuses=_foreground_policy.eligible_statuses,
+                            fallback_on_empty=_foreground_policy.fallback_on_empty,
+                            plan_mode=plan_mode,
+                            approved_plan=approved_plan or None,
+                            workspace=workspace or None,
+                            workspace_roots=_project_roots or None,
+                            relevant_tools=(
+                                set(pending_tool_approval.selected_tools)
+                                if exact_tool_approval
+                                and pending_tool_approval
+                                and pending_tool_approval.selected_tools
+                                else None
+                            ),
+                            forced_tools=_forced_tools,
+                            uploaded_files=ctx.uploaded_files,
+                            defer_context_shaping=_foreground_policy.enabled,
+                            external_untrusted_context_seen=external_untrusted_context_seen,
+                            exact_approval=exact_tool_approval,
+                            temperature_explicit=_temperature_explicit,
+                            gen_overrides=_gen_overrides or None,
+                            harness_options=_loop_harness_options or None,
+                            autonomy_preset=autonomy_preset or None,
+                            # UX-04: main-session pause/steer, drained from the
+                            # SAME run this turn registers under `session` in
+                            # agent_runs (see chat_pause / chat_steer below).
+                            pending_user_messages=lambda: agent_runs.take_steers(session),
+                            pending_pause=lambda: agent_runs.take_pause_request(session),
+                        ):
+                            if chunk.startswith("data: ") and not chunk.startswith("data: [DONE]"):
+                                try:
+                                    data = json.loads(chunk[6:])
+                                    if "delta" in data:
+                                        # Reasoning tokens arrive flagged thinking:true.
+                                        # Forward them for the live indicator, but keep
+                                        # them out of the saved reply (same as chat mode).
+                                        if data.get("thinking"):
+                                            thinking_response += data["delta"]
+                                        else:
+                                            full_response += data["delta"]
+                                            _stream_set(session, partial=full_response)
+                                        yield chunk
+                                    elif data.get("type") == "web_sources":
+                                        web_sources = data.get("data", [])
+                                        yield chunk
+                                    elif data.get("type") in (
+                                        "tool_start", "tool_output", "agent_step",
+                                        # live progress of a running tool: bash/python
+                                        # stdout tail, image steps and the sub-agent
+                                        # worker board (delegate_agents). The agent
+                                        # loop emits these while the tool is in
+                                        # flight; without this entry they were
+                                        # silently dropped here and the UI never saw
+                                        # them (board stayed empty, tails stayed blind).
+                                        "tool_progress",
+                                        # live browser frame after each browser
+                                        # action (src/browser_view.py → Browser panel)
+                                        "browser_view",
+                                        "doc_stream_open", "doc_stream_delta",
+                                        "doc_update", "doc_suggestions", "ui_control",
+                                        "rounds_exhausted", "budget_exceeded",
+                                        "budget_exhausted",
+                                        "loop_breaker_triggered",
+                                        "intent_nudge_exhausted",
+                                        "ask_user",
+                                        "plan_update",
+                                        # reliability harness (src/agent_harness.py)
+                                        "round_info", "harness_check", "harness_summary",
+                                        "progress_update",
+                                        # context ledger (src/context_ledger.py)
+                                        "context_ledger",
+                                        # context engine, shadow mode: the packet
+                                        # the engine would have compiled, beside
+                                        # the prompt we really sent. Observation
+                                        # only (src/context_engine/wiring.py).
+                                        "context_shadow",
+                                        # live packet actually delivered to this
+                                        # provider call.
+                                        "context_packet",
+                                        # multi-agent delegation
+                                        "subagent_event",
+                                        # MOD-06/QA-28 (Lote 40): a mid-task fallback
+                                        # switched to a model that does not announce
+                                        # every capability the previous one did
+                                        # (src/agent_loop.py's `_cap_switch` block).
+                                        # Without this entry the event was computed
+                                        # and yielded by the loop but silently
+                                        # dropped right here, never reaching the UI.
+                                        "capabilities_changed",
+                                    ):
+                                        if data.get("type") == "agent_step":
+                                            _event_round = data.get("round", 1)
+                                            _agent_rounds = max(_agent_rounds, _event_round)
+                                            _agent_round_models.setdefault(
+                                                _event_round,
+                                                _actual_model or _answered_by or _requested_model,
+                                            )
+                                            _agent_round_endpoint_ids.setdefault(
+                                                _event_round,
+                                                _agent_actual_endpoint_id,
+                                            )
+                                            _agent_round_endpoint_labels.setdefault(
+                                                _event_round,
+                                                _agent_actual_endpoint_label,
+                                            )
+                                        elif data.get("type") == "tool_start":
+                                            _agent_tool_calls += 1
+                                        yield chunk
+                                    elif data.get("type") == "fallback":
+                                        # Selected model failed; a fallback answered.
+                                        # Forward the notice and remember the real
+                                        # model so metrics reflect it, not the masked
+                                        # selected model.
+                                        _answered_by = data.get("answered_by") or _answered_by
+                                        _actual_model = _answered_by or _actual_model
+                                        if "answered_by_endpoint_id" in data:
+                                            _agent_actual_endpoint_id = data.get("answered_by_endpoint_id")
+                                        if data.get("answered_by_endpoint_label"):
+                                            _agent_actual_endpoint_label = data.get("answered_by_endpoint_label")
+                                        _event_round = data.get("round") or max(_agent_rounds, 1)
+                                        _agent_round_models[_event_round] = _answered_by or _requested_model
+                                        _agent_round_endpoint_ids[_event_round] = _agent_actual_endpoint_id
+                                        _agent_round_endpoint_labels[_event_round] = _agent_actual_endpoint_label
+                                        data["selected_model"] = data.get("selected_model") or _requested_model
+                                        yield chunk
+                                    elif data.get("type") == "model_actual":
+                                        _actual_model = data.get("model") or _actual_model
+                                        if "endpoint_id" in data:
+                                            _agent_actual_endpoint_id = data.get("endpoint_id")
+                                        if data.get("endpoint_label"):
+                                            _agent_actual_endpoint_label = data.get("endpoint_label")
+                                        _event_round = data.get("round") or max(_agent_rounds, 1)
+                                        _agent_round_models[_event_round] = _actual_model or _requested_model
+                                        _agent_round_endpoint_ids[_event_round] = _agent_actual_endpoint_id
+                                        _agent_round_endpoint_labels[_event_round] = _agent_actual_endpoint_label
+                                        data["requested_model"] = _requested_model
+                                        yield f'data: {json.dumps(data)}\n\n'
+                                    elif data.get("type") == "agent_terminal":
+                                        terminal_metadata = dict(data.get("data") or {})
+                                        last_metrics = terminal_metadata
+                                        failure = terminal_metadata.get("failure") or {}
+                                        failure_status = _normalize_http_status(
+                                            failure.get("status")
+                                        )
+                                        failure_message = (
+                                            f"Model request failed (HTTP {failure_status})"
+                                            if failure_status is not None
+                                            else "Model request failed"
+                                        )
+                                        terminal_metadata["failure"] = {
+                                            "status": failure_status,
+                                            "message": failure_message,
+                                        }
+                                        terminal_content = full_response.strip()
+                                        failure_note = f"[Agent stopped: {failure_message}]"
+                                        if terminal_content:
+                                            terminal_content = f"{terminal_content}\n\n{failure_note}"
+                                        else:
+                                            terminal_content = failure_note
+                                        if not _terminal_saved:
+                                            _saved_id = save_assistant_response(
+                                                sess,
+                                                session_manager,
+                                                session,
+                                                terminal_content,
+                                                terminal_metadata,
+                                                character_name=ctx.preset.character_name,
+                                                web_sources=web_sources,
+                                                rag_sources=ctx.rag_sources,
+                                                used_memories=ctx.used_memories,
+                                                incognito=incognito,
+                                                wires=getattr(ctx, "side_thread_wires", None),
+                                                behavior_mode=getattr(ctx, "behavior_mode", None),
+                                            )
+                                            _terminal_saved = True
+                                            accumulate_token_usage(session, terminal_metadata)
+                                            _stream_set(session, status="error")
+                                            # ADP-22 §2: fold the failed outcome back into
+                                            # MOD-05's history -- no-op unless this turn's
+                                            # model came from `_resolve_auto_model_route`.
+                                            _record_model_router_outcome(
+                                                _model_router_auto,
+                                                ok=False,
+                                                error_class=(
+                                                    f"http_{failure_status}" if failure_status is not None else "agent_terminal"
+                                                ),
+                                            )
+                                            if _saved_id:
+                                                yield f'data: {json.dumps({"type": "message_saved", "id": _saved_id})}\n\n'
+                                        yield chunk
+                                    elif data.get("type") == "metrics":
+                                        last_metrics = data.get("data", {})
+                                        _reported_model = last_metrics.get("model")
+                                        last_metrics["requested_model"] = last_metrics.get("requested_model") or _requested_model
+                                        last_metrics["model"] = _reported_model or _actual_model or _answered_by or _requested_model
+                                        if ctx.context_trimmed:
+                                            last_metrics["context_trimmed"] = True
+                                            last_metrics["context_messages_before_trim"] = ctx.context_messages_before_trim
+                                            last_metrics["context_messages_after_trim"] = ctx.context_messages_after_trim
+                                            last_metrics["context_tokens_before_trim"] = ctx.context_tokens_before_trim
+                                            last_metrics["context_tokens_after_trim"] = ctx.context_tokens_after_trim
+                                        # ADP-22 §2: fold the successful outcome back into
+                                        # MOD-05's history -- no-op unless this turn's model
+                                        # came from `_resolve_auto_model_route`.
+                                        _record_model_router_outcome(
+                                            _model_router_auto, ok=True, latency_s=last_metrics.get("response_time"),
+                                        )
+                                        _metrics_event = {"type": "metrics", "data": last_metrics}
+                                        # Inline teacher escalation marks its
+                                        # recursively emitted events at the SSE
+                                        # envelope. Preserve that non-secret marker
+                                        # when normalizing metrics so the browser's
+                                        # replay-stable ledger keeps primary and
+                                        # teacher segments distinct.
+                                        if data.get("teacher") is True:
+                                            _metrics_event["teacher"] = True
+                                        yield f'data: {json.dumps(_metrics_event)}\n\n'
+                                except json.JSONDecodeError:
+                                    yield chunk
+                            elif chunk.startswith("event: "):
+                                yield chunk
+                            elif chunk == "data: [DONE]\n\n":
+                                _has_tool_events = bool((last_metrics or {}).get("tool_events"))
+                                if full_response or _has_tool_events:
+                                    _response_to_save = full_response or "Done."
+                                    _metrics_to_save = dict(last_metrics or {})
+                                    if thinking_response.strip() and not _metrics_to_save.get("thinking"):
+                                        _metrics_to_save["thinking"] = thinking_response.strip()
+                                    _saved_id = save_assistant_response(
+                                        sess, session_manager, session, _response_to_save, _metrics_to_save,
+                                        character_name=ctx.preset.character_name,
+                                        web_sources=web_sources,
+                                        rag_sources=ctx.rag_sources,
+                                        used_memories=ctx.used_memories,
+                                        incognito=incognito,
+                                        wires=getattr(ctx, "side_thread_wires", None),
+                                        behavior_mode=getattr(ctx, "behavior_mode", None),
+                                    )
+                                    if _saved_id:
+                                        yield f'data: {json.dumps({"type": "message_saved", "id": _saved_id})}\n\n'
+                                        # Project audit trail + review-mode state for
+                                        # a turn that changed files (linked to this
+                                        # saved message so the UI can jump to it).
+                                        _git_policy_after: List[Dict[str, Any]] = []
+                                        try:
+                                            _git_policy_after = _record_turn_side_effects(
+                                                session, _saved_id, _metrics_to_save, message,
+                                                _harness_options if isinstance(_harness_options, dict) else {},
+                                                owner=_user,
+                                            )
+                                        except Exception as _se_err:
+                                            logger.debug("turn side effects failed: %s", _se_err)
+                                        for _gpe in _git_policy_after:
+                                            yield f"data: {json.dumps({'type': 'git_policy', 'data': _gpe})}\n\n"
+                                    run_post_response_tasks(
+                                        sess, session_manager, session, message, _response_to_save,
+                                        _metrics_to_save, ctx.uprefs, memory_manager, memory_vector, webhook_manager,
+                                        incognito=incognito, compare_mode=compare_mode,
+                                        character_name=ctx.preset.character_name,
+                                                                agent_rounds=_agent_rounds,
+                                        agent_tool_calls=_agent_tool_calls,
+                                        skills_manager=skills_manager,
+                                        owner=_user,
+                                        extract_skills=(
+                                            user_requested_agent
+                                            and not tool_approval_continuation
+                                        ),
+                                        allow_background_extraction=(
+                                            not tool_policy.block_all_tool_calls
+                                            and not tool_approval_continuation
+                                        ),
+                                    )
+                                _stream_set(session, status="done")
+                                yield chunk
+                    except (asyncio.CancelledError, GeneratorExit):
+                        # Client disconnected — save partial response. Wrap
+                        # the save in its own try so an exception inside
+                        # add_message / save_sessions doesn't mask the
+                        # original CancelledError (which prevented the
+                        # outer finally from running and left _active_streams
+                        # with a stale entry).
+                        try:
+                            if full_response and not incognito:
+                                logger.info("Client disconnected mid-stream for session %s, saving partial response (%d chars)", session, len(full_response))
+                                _stopped_content2, _stopped_md2 = clean_thinking_for_save(
+                                    full_response,
+                                    {
+                                        "stopped": True,
+                                        "model": _actual_model or _answered_by or _requested_model,
+                                        "requested_model": _requested_model,
+                                        "endpoint_id": _agent_actual_endpoint_id,
+                                        "endpoint_label": _agent_actual_endpoint_label,
+                                        "requested_endpoint_id": _agent_requested_route.get("endpoint_id"),
+                                        "requested_endpoint_label": _agent_requested_route.get("endpoint_label"),
+                                        "round_models": [
+                                            _agent_round_models.get(i, _actual_model or _requested_model)
+                                            for i in range(1, max(_agent_round_models, default=1) + 1)
+                                        ],
+                                        "round_endpoint_ids": [
+                                            _agent_round_endpoint_ids.get(i)
+                                            for i in range(1, max(_agent_round_models, default=1) + 1)
+                                        ],
+                                        "round_endpoint_labels": [
+                                            _agent_round_endpoint_labels.get(i)
+                                            for i in range(1, max(_agent_round_models, default=1) + 1)
+                                        ],
+                                    },
+                                )
+                                sess.add_message(ChatMessage("assistant", _stopped_content2, metadata=_stopped_md2))
+                                session_manager.save_sessions()
+                        except Exception:
+                            logger.exception("Failed to save partial response on disconnect (session %s)", session)
+                        raise
+                    finally:
+                        _active_streams.pop(session, None)
+
+            async def _safe_stream() -> AsyncGenerator[str, None]:
+                """Wrapper that guarantees _active_streams cleanup even if stream_with_save
+                raises before reaching a mode-specific finally block."""
+                # Each mode branch below pops `_active_streams[session]` in its OWN
+                # finally as soon as its generator is exhausted -- which happens
+                # while THIS async for is asking it for its next item, strictly
+                # before this wrapper's own finally runs. So the entry is already
+                # gone by the time this function's finally could read it; the
+                # status has to be captured chunk by chunk, on the way through,
+                # instead. `_stream_set(session, status=...)` always runs just
+                # before the chunk that follows it is yielded, so the value seen
+                # here on the last chunk is the same one that finally would have
+                # read, had it still been there to read.
+                _final_stream_status = None
+                try:
+                    async for chunk in stream_with_save():
+                        _rec = _active_streams.get(session)
+                        if _rec is not None and _rec.get("status"):
+                            _final_stream_status = _rec["status"]
+                        yield chunk
                 finally:
                     _active_streams.pop(session, None)
+                    # Result after intent, the other half of TASK-03. Runs exactly
+                    # once per turn regardless of how it ends (this generator is
+                    # what agent_runs drains in the background — see `start()`
+                    # below — so a client disconnecting does not skip this).
+                    if client_message_id and not tool_approval_id:
+                        try:
+                            chat_outbox.mark_finished(
+                                owner=owner, session_id=session, client_message_id=client_message_id,
+                                status="finished" if _final_stream_status == "done" else "failed",
+                            )
+                        except Exception:
+                            logger.debug(
+                                "chat_outbox: could not close out client_message_id=%s",
+                                client_message_id,
+                            )
 
-        async def _safe_stream() -> AsyncGenerator[str, None]:
-            """Wrapper that guarantees _active_streams cleanup even if stream_with_save
-            raises before reaching a mode-specific finally block."""
-            # Each mode branch below pops `_active_streams[session]` in its OWN
-            # finally as soon as its generator is exhausted -- which happens
-            # while THIS async for is asking it for its next item, strictly
-            # before this wrapper's own finally runs. So the entry is already
-            # gone by the time this function's finally could read it; the
-            # status has to be captured chunk by chunk, on the way through,
-            # instead. `_stream_set(session, status=...)` always runs just
-            # before the chunk that follows it is yielded, so the value seen
-            # here on the last chunk is the same one that finally would have
-            # read, had it still been there to read.
-            _final_stream_status = None
-            try:
-                async for chunk in stream_with_save():
-                    _rec = _active_streams.get(session)
-                    if _rec is not None and _rec.get("status"):
-                        _final_stream_status = _rec["status"]
-                    yield chunk
-            finally:
-                _active_streams.pop(session, None)
-                # Result after intent, the other half of TASK-03. Runs exactly
-                # once per turn regardless of how it ends (this generator is
-                # what agent_runs drains in the background — see `start()`
-                # below — so a client disconnecting does not skip this).
-                if client_message_id and not tool_approval_id:
-                    try:
-                        chat_outbox.mark_finished(
-                            owner=owner, session_id=session, client_message_id=client_message_id,
-                            status="finished" if _final_stream_status == "done" else "failed",
-                        )
-                    except Exception:
-                        logger.debug(
-                            "chat_outbox: could not close out client_message_id=%s",
-                            client_message_id,
-                        )
-
-        # Compare panes are short-lived, single-shot generations whose sessions
-        # exist only to drive that one pane — there's nothing to "resume" and
-        # the user expects the pane's Stop button (which aborts the fetch,
-        # closing this SSE) to promptly cancel the upstream LLM call. Detaching
-        # them would keep burning upstream tokens/compute after the pane is
-        # stopped or the comparison is abandoned, and would surface a stale
-        # "still streaming" /resume target for a session nobody will revisit.
-        #
-        # So: stream them directly (no agent_runs wrapping). Starlette cancels
-        # the underlying async generator (raising CancelledError/GeneratorExit
-        # inside it) as soon as it notices the client disconnected — which the
-        # mode-specific except blocks above already handle by saving the
-        # partial response exactly once. This stops the upstream call promptly
-        # without waiting on the next streamed chunk.
-        #
-        # Normal chat/agent streams keep the DETACHED behavior below: they
-        # survive the client closing the tab / navigating away. The SSE response just subscribes (replay
-        # buffered output + live); dropping the SSE only removes a subscriber —
-        # the run keeps going and saves the assistant message on completion
-        # regardless. Reconnect via /api/chat/resume.
-        if compare_mode:
-            return StreamingResponse(
-                _safe_stream(), media_type="text/event-stream",
-                headers={api_version.API_VERSION_HEADER: api_version.API_VERSION},
-            )
-
-        # Task queue: runs on a local endpoint share one lane (one GPU, one
-        # generation at a time by default); API endpoints run immediately
-        # unless agent_queue_api_concurrency is set. Queued runs stream a live
-        # `queue_status` position and start on their own when the lane frees.
-        _lane = None
-        try:
-            from src.model_context import is_local_endpoint as _is_local_ep
-            if _is_local_ep(sess.endpoint_url):
-                _lane = "local"
-            else:
-                from src.settings import get_setting as _gs_queue
-                if int(_gs_queue("agent_queue_api_concurrency", 0) or 0) > 0:
-                    _lane = "api"
-        except Exception:
-            _lane = None
-        _run_label = (getattr(sess, "name", "") or "").strip() or " ".join(str(message or "").split())[:60]
-        _detached_run = agent_runs.start(session, _safe_stream(), lane=_lane, label=_run_label[:80],
-                                         model=str(getattr(sess, "model", "") or ""),
-                                         endpoint_url=str(getattr(sess, "endpoint_url", "") or ""))
-        if client_message_id and not tool_approval_id:
-            try:
-                chat_outbox.mark_running(
-                    owner=owner, session_id=session, client_message_id=client_message_id,
-                    run_id=_detached_run.run_id,
+            # Compare panes are short-lived, single-shot generations whose sessions
+            # exist only to drive that one pane — there's nothing to "resume" and
+            # the user expects the pane's Stop button (which aborts the fetch,
+            # closing this SSE) to promptly cancel the upstream LLM call. Detaching
+            # them would keep burning upstream tokens/compute after the pane is
+            # stopped or the comparison is abandoned, and would surface a stale
+            # "still streaming" /resume target for a session nobody will revisit.
+            #
+            # So: stream them directly (no agent_runs wrapping). Starlette cancels
+            # the underlying async generator (raising CancelledError/GeneratorExit
+            # inside it) as soon as it notices the client disconnected — which the
+            # mode-specific except blocks above already handle by saving the
+            # partial response exactly once. This stops the upstream call promptly
+            # without waiting on the next streamed chunk.
+            #
+            # Normal chat/agent streams keep the DETACHED behavior below: they
+            # survive the client closing the tab / navigating away. The SSE response just subscribes (replay
+            # buffered output + live); dropping the SSE only removes a subscriber —
+            # the run keeps going and saves the assistant message on completion
+            # regardless. Reconnect via /api/chat/resume.
+            if compare_mode:
+                return StreamingResponse(
+                    _safe_stream(), media_type="text/event-stream",
+                    headers={api_version.API_VERSION_HEADER: api_version.API_VERSION},
                 )
+
+            # Task queue: runs on a local endpoint share one lane (one GPU, one
+            # generation at a time by default); API endpoints run immediately
+            # unless agent_queue_api_concurrency is set. Queued runs stream a live
+            # `queue_status` position and start on their own when the lane frees.
+            _lane = None
+            try:
+                from src.model_context import is_local_endpoint as _is_local_ep
+                if _is_local_ep(sess.endpoint_url):
+                    _lane = "local"
+                else:
+                    from src.settings import get_setting as _gs_queue
+                    if int(_gs_queue("agent_queue_api_concurrency", 0) or 0) > 0:
+                        _lane = "api"
             except Exception:
-                logger.debug("chat_outbox: could not mark client_message_id=%s running", client_message_id)
+                _lane = None
+            _run_label = (getattr(sess, "name", "") or "").strip() or " ".join(str(message or "").split())[:60]
+            _detached_run = agent_runs.start(session, _safe_stream(), lane=_lane, label=_run_label[:80],
+                                             model=str(getattr(sess, "model", "") or ""),
+                                             endpoint_url=str(getattr(sess, "endpoint_url", "") or ""))
+            if client_message_id and not tool_approval_id:
+                try:
+                    chat_outbox.mark_running(
+                        owner=owner, session_id=session, client_message_id=client_message_id,
+                        run_id=_detached_run.run_id,
+                    )
+                except Exception:
+                    logger.debug("chat_outbox: could not mark client_message_id=%s running", client_message_id)
         return StreamingResponse(
             agent_runs.subscribe(session, _detached_run),
             media_type="text/event-stream",
@@ -4145,21 +4201,38 @@ def setup_chat_routes(
         # the cancel.
         what_ran_before = agent_runs.tools_ran(session_id)
         stopped = agent_runs.stop(session_id, _expected_run_id)
-        from src.agent_tools.subagent_tools import stop_workers_of_parent
-        subagents_stopped = stop_workers_of_parent(session_id, reason="task_cancelled")
+        from src.agent_tools.subagent_tools import stop_workers_of_parent_by_level
+        # A07 (docs/spec/trueforge/): TRANSITIVE — parent -> child -> grandchild
+        # -> ... — not just the direct children the original implementation
+        # stopped. `workers_stopped` keeps the per-level shape (level 0 = this
+        # turn's direct workers, level 1 = their own workers, ...);
+        # `subagents_stopped` stays the flat list every caller from before
+        # this lot already reads, unchanged.
+        workers_stopped_by_level = stop_workers_of_parent_by_level(session_id, reason="task_cancelled")
+        subagents_stopped = [sid for level in workers_stopped_by_level for sid in level]
+        # Every session_id in this turn's hierarchy — the parent plus every
+        # worker actually stopped at any depth — is in scope for the two
+        # cleanups below (questions, approvals). A question or a pending
+        # approval belonging to a STOPPED worker is exactly as stale as one
+        # belonging to the parent turn itself once the whole subtree is torn
+        # down; leaving either behind would let a late answer or a late
+        # approval click reach code that no longer runs.
+        _hierarchy_session_ids = [session_id] + subagents_stopped
         # TASK-04 acceptance: "a late answer to a cancelled turn's question
         # must not wake anything". A cancelled TURN does not by itself
         # cancel a question it asked — question_store has no run/session
-        # cancellation hook of its own — so an ask_user this turn is still
-        # sitting `open` unless something closes it here. `list_open` is
-        # owner-scoped, not session-scoped, so the session match is filtered
-        # in Python; question_store.py itself is untouched (see report).
+        # cancellation hook of its own — so an ask_user this turn (or one of
+        # its now-stopped workers) is still sitting `open` unless something
+        # closes it here. `list_open` is owner-scoped, not session-scoped, so
+        # the session match is filtered in Python; question_store.py itself
+        # is untouched (see report).
         _owner = effective_user(request)
         cancelled_questions: List[str] = []
         try:
             from src import question_store
+            _hierarchy_set = set(_hierarchy_session_ids)
             for _q in question_store.list_open(owner=_owner):
-                if _q.get("session_id") != session_id:
+                if _q.get("session_id") not in _hierarchy_set:
                     continue
                 _outcome = question_store.cancel_question(
                     str(_q.get("question_id") or ""), reason="task_cancelled", owner=_owner,
@@ -4168,13 +4241,27 @@ def setup_chat_routes(
                     cancelled_questions.append(str(_q.get("question_id")))
         except Exception:
             logger.debug("[chat-stop] could not cancel open questions for %s", session_id, exc_info=True)
+        # A07: retire every pending tool_approval_store card anywhere in this
+        # turn's hierarchy — same reasoning as the questions cleanup above. A
+        # card left pending for a stopped worker's session would still be
+        # answerable (and, if answered "allow for this chat session", would
+        # silently widen a session that no longer has a run to apply it to).
+        approvals_retired: List[str] = []
+        try:
+            for _sid in _hierarchy_session_ids:
+                _ids, _taint = tool_approval_store.retire_for_session_ids(owner=_owner, session_id=_sid)
+                approvals_retired.extend(_ids)
+        except Exception:
+            logger.debug("[chat-stop] could not retire pending approvals for %s", session_id, exc_info=True)
         cleanup: Dict[str, Any] = {
             "own_process_tree": (
                 "turn task cancelled — kills the currently-running subprocess "
                 "tree, if any, and never signals a process Faustus did not start"
             ),
             "subagents_stopped": subagents_stopped,
+            "workers_stopped": workers_stopped_by_level,
             "questions_cancelled": cancelled_questions,
+            "approvals_retired": approvals_retired,
         }
         if _scope == "work":
             from src import bg_jobs

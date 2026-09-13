@@ -83,7 +83,14 @@ def test_chat_route_privilege_gate_uses_the_prefix_denylist():
     from pathlib import Path
 
     source = (Path(__file__).resolve().parent.parent / "routes" / "chat_routes.py").read_text(encoding="utf-8")
-    assert 'if not _privs.get("can_use_browser", True):\n                disabled_tools.update(_browser_mcp_denylist())' in source
+    # A01 (docs/spec/trueforge/): this statement now lives one level deeper,
+    # inside chat_stream's `async with _session_admission_lock(session):` —
+    # match on the statement pair regardless of its exact indentation rather
+    # than re-hardcoding column counts every time that wrapping shifts.
+    assert 'if not _privs.get("can_use_browser", True):' in source
+    lines = source.splitlines()
+    idx = next(i for i, l in enumerate(lines) if 'if not _privs.get("can_use_browser", True):' in l)
+    assert lines[idx + 1].strip() == "disabled_tools.update(_browser_mcp_denylist())"
 
 
 # ── admin toggle: manage_settings disable_tool browser ────────────────────
