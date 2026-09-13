@@ -87,7 +87,11 @@ function ConnectorRow({
   const [busy, setBusy] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
   const c = connector;
-  const connected = c.status.state === 'available';
+  // The toggle is about the ADAPTER (the MCP session), not the whole
+  // connector: with the app off the adapter can still be connected (a stdio
+  // bridge answers tools/list on its own), and the honest label then is
+  // "Disconnect", not an invitation to connect what already is.
+  const connected = c.status.adapter.mcp_status === 'connected' || c.server.status === 'connected';
 
   const run = async (key: string, fn: () => Promise<unknown>) => {
     setBusy(key);

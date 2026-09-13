@@ -65,7 +65,7 @@ async def _fetch_health(app_url: str, health_path: str) -> Dict[str, Any]:
         return {
             "reachable": False, "checked_at": now_iso(), "latency_ms": None,
             "status_code": None, "body": None,
-            "detail": f"connection refused or timed out: {exc}",
+            "detail": ("connection refused or timed out" + (f": {exc}" if str(exc).strip() else "")),
         }
     except Exception as exc:  # noqa: BLE001 - a probe must never raise into the caller
         return {

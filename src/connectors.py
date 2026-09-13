@@ -75,7 +75,7 @@ PRESETS: Dict[str, ConnectorPreset] = {
         args=["{JOBHUNT_DIR}/server/mcp.js"],
         env={
             "JOBHUNT_URL": "{APP_URL}",
-            "JOBHUNT_TOKEN_FILE": "{JOBHUNT_DIR}/data/mcp-token",
+            "JOBHUNT_TOKEN_FILE": "{TOKEN_FILE}",
         },
         app_url_default="http://127.0.0.1:5178",
         health_path="/api/health",
@@ -85,7 +85,10 @@ PRESETS: Dict[str, ConnectorPreset] = {
         # satisfied by any JSON (or lack of it), which is exactly that rule.
         health_expect={},
         ui_url_default=None,  # resolved as "= app_url" (see resolve_preset_values)
-        placeholders=["JOBHUNT_DIR", "APP_URL"],
+        # TOKEN_FILE defaults to the token the app writes next to its own
+        # data; a Jobhunter started with another JOBHUNT_DATA_DIR (a test
+        # instance) writes its token there, so the value is editable.
+        placeholders=["JOBHUNT_DIR", "APP_URL", "TOKEN_FILE"],
         launch_profile_hint={
             "kind": "process",
             "executable": "node",
@@ -93,7 +96,7 @@ PRESETS: Dict[str, ConnectorPreset] = {
             "cwd": "{JOBHUNT_DIR}",
             "readiness": {"url": "{APP_URL}/api/health", "timeout_s": 20},
         },
-        defaults={"APP_URL": "http://127.0.0.1:5178"},
+        defaults={"APP_URL": "http://127.0.0.1:5178", "TOKEN_FILE": "{JOBHUNT_DIR}/data/mcp-token"},
     ),
     "writer": ConnectorPreset(
         id="writer",
@@ -190,6 +193,9 @@ def resolve_preset_values(preset: ConnectorPreset, values: Optional[Dict[str, st
     values = {k: str(v) for k, v in (values or {}).items() if v is not None and str(v).strip()}
     merged = dict(preset.defaults)
     merged.update(values)
+    # A default may itself name another placeholder ("{JOBHUNT_DIR}/data/
+    # mcp-token"); resolve those against the user's values first.
+    merged = {k: _substitute(v, merged) for k, v in merged.items()}
 
     missing = [p for p in preset.placeholders if not merged.get(p)]
     if missing:

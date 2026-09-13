@@ -368,3 +368,20 @@ def test_list_presets_carries_the_defaults_the_form_prefills():
     for preset in by_id.values():
         for key in preset["defaults"]:
             assert key in preset["placeholders"]
+
+
+def test_jobhunter_token_file_defaults_next_to_the_app_data_and_is_overridable(tmp_path):
+    """`TOKEN_FILE` defaults to `{JOBHUNT_DIR}/data/mcp-token` (a default that
+    names another placeholder, resolved against the user's JOBHUNT_DIR), and
+    a test instance started with its own JOBHUNT_DATA_DIR can point the
+    bridge at the token that instance wrote."""
+    (tmp_path / "server").mkdir()
+    (tmp_path / "server" / "mcp.js").write_text("// bridge")
+    preset = connectors.get_preset("jobhunter")
+    resolved = connectors.resolve_preset_values(preset, {"JOBHUNT_DIR": str(tmp_path)})
+    assert resolved["ok"], resolved
+    assert resolved["env"]["JOBHUNT_TOKEN_FILE"] == str(tmp_path) + "/data/mcp-token"
+    assert "{" not in resolved["env"]["JOBHUNT_TOKEN_FILE"]
+    other = tmp_path / "elsewhere" / "mcp-token"
+    resolved = connectors.resolve_preset_values(preset, {"JOBHUNT_DIR": str(tmp_path), "TOKEN_FILE": str(other)})
+    assert resolved["env"]["JOBHUNT_TOKEN_FILE"] == str(other)
