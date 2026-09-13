@@ -34,6 +34,12 @@ export interface Project {
   test_command?: string | null;
   review_model?: string | null;
   context_items?: ContextItem[];
+  /** CONTRATO_CONECTORES F2.2: which connectors (`McpServer.id`) a chat in
+   *  this project may use; `null`/absent means "every enabled connector"
+   *  (today's behaviour, unchanged). Unknown ids are dropped server-side
+   *  with a warning, never an error — this field only ever reflects what
+   *  the server actually kept. */
+  connector_ids?: string[] | null;
   created_at?: number | null;
   updated_at?: number | null;
 }
@@ -158,6 +164,14 @@ export interface ProjectInput {
   run_tests?: boolean;
   test_command?: string;
   review_model?: string;
+  connector_ids?: string[] | null;
+}
+
+/** CONTRATO_CONECTORES F2.2: saves independently of the rest of the settings
+ *  form, the same way the board key does (`adapters/board.ts::setBoardKey`) —
+ *  a picker click should not require the whole "Save changes" flow. */
+export async function setProjectConnectors(id: string, connectorIds: string[] | null): Promise<Project> {
+  return updateProject(id, { connector_ids: connectorIds });
 }
 
 export async function createProject(input: { name: string; folder: string; workspace: string; instructions: string }): Promise<Project> {

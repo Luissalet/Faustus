@@ -269,6 +269,62 @@ export async function autoSortSessions(skipLlm: boolean): Promise<AutoSortResult
   };
 }
 
+/* ── Connectors per session (CONTRATO_CONECTORES F2.2) ──
+ *
+ * `connector_ids: null` means "inherit" (project, then every enabled
+ * connector — F2's own precedence). This adapter is written against the
+ * F2 contract; the route does not exist yet in THIS worktree, so a screen
+ * that calls it should degrade on a 404 rather than throw unhandled.
+ */
+
+export interface ConnectorSelection {
+  connector_ids: string[] | null;
+  effective: string[];
+  source: 'session' | 'project' | 'all';
+}
+
+function readSelection(d: Record<string, unknown>): ConnectorSelection {
+  return {
+    connector_ids: Array.isArray(d.connector_ids) ? d.connector_ids.map(String) : null,
+    effective: Array.isArray(d.effective) ? d.effective.map(String) : [],
+    source: d.source === 'session' || d.source === 'project' ? d.source : 'all',
+  };
+}
+
+export async function getSessionConnectors(id: string): Promise<ConnectorSelection> {
+  const response = await check(await fetch(`/api/sessions/${sid(id)}`, { credentials: 'same-origin' }), 'session connectors');
+  return readSelection((await response.json()) as Record<string, unknown>);
+}
+
+export async function setSessionConnectors(id: string, connectorIds: string[] | null): Promise<ConnectorSelection> {
+  const response = await check(
+    await fetch(`/api/sessions/${sid(id)}`, {
+      method: 'PATCH',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ connector_ids: connectorIds }),
+    }),
+    'session connectors',
+  );
+  return readSelection((await response.json()) as Record<string, unknown>);
+}
+
+export interface ToolSupport {
+  supported: boolean | 'unknown';
+  mode: string;
+  reason: string;
+}
+
+/** F2.4: whether the current session's model/endpoint supports tool calls
+ *  at all — never used to silently switch endpoint or model, only to show
+ *  a notice next to the connector picker. */
+export async function getSessionToolSupport(id: string): Promise<ToolSupport> {
+  const response = await check(await fetch(`/api/sessions/${sid(id)}/tool-support`, { credentials: 'same-origin' }), 'tool-support');
+  const d = (await response.json()) as Record<string, unknown>;
+  const supported = d.supported === true ? true : d.supported === false ? false : 'unknown';
+  return { supported, mode: String(d.mode ?? ''), reason: String(d.reason ?? '') };
+}
+
 /** One zip with one file per conversation (ids, or a whole folder). */
 export function exportZipUrl(fmt: ExportFormat, opts: { ids?: string[]; folder?: string }): string {
   const q = new URLSearchParams({ fmt });
