@@ -281,15 +281,24 @@ deep-link de workflows, recetas desde un run real) ya no aparece aquí.
   «Revisar respuestas de candidaturas» con fixtures; en Jobhunter (rama
   `claude/conectores`) health, biblioteca de respuestas con ids/revisión,
   recuperación con backup y `record_employer_response`.
-- En su máquina, en este orden: (1) aplicar el bundle de Jobhunter y
-  `npm test`; (2) copia manual de `data/` de Jobhunter; (3) parar el 5178
-  viejo y `npm start`; (4) en Faustus, alta del preset Jobhunter con
-  `JOBHUNT_DIR` y `APP_URL`, Comprobar → `available`; (5) chat con un Qwen
-  local y solo el conector Jobhunter permitido: `list_contexts`,
-  `list_jobs`, `remember_answer` en un contexto de prueba — nada de
-  `start_application`; (6) «Recuperar de borradores» desde la UI de
-  Jobhunter y revisar pendientes/variantes. Writer: puerto distinto del
-  8766 (`WH_AIBRIDGE_PORT`), nunca cerrar Relief Studio.
+- HECHO el 13-09 por la tarde con el Jobhunter REAL (Luis arrancó el 5178
+  con el código nuevo; `claude/conectores` `947b7c6`): el conector de
+  Faustus apunta al 5178 real → «Available · 15 tools»; «Abrir la app»
+  desde Faustus abre Jobhunter (su guarda `sec-fetch-site` rechaza la
+  navegación de la extensión de Chrome pero acepta el `window.open` desde
+  el 7001, que es same-site). `dist/` estaba sin reconstruir (el
+  `npm run build` del script de aplicación no llegó a ejecutarse) →
+  reconstruido a mano. «Recuperar de borradores» sobre sus datos: 1
+  contexto, 81 ofertas, 30 borradores con datos → **76 respuestas nuevas,
+  24 ya existían, 0 borradas repuestas**, copia previa
+  `data/db.json.bak-2026-09-13T10-40-41-732Z`; ahora 121 respuestas, 1
+  pendiente, variantes agrupadas (p. ej. 6 de una misma pregunta de
+  idioma). Visto: las 45 respuestas antiguas salían como «Candidatura»
+  porque no tenían `scope` → la migración de arranque las marca `profile`
+  (efectivo cuando Luis reinicie su 5178). Quedan: revisar pendientes y
+  variantes a mano; probar `remember_answer` en un contexto de prueba con
+  el Qwen; Writer en un puerto distinto del 8766 (`WH_AIBRIDGE_PORT`),
+  nunca cerrar Relief Studio.
 - Límites conocidos y documentados: `external_ref` es check-then-insert
   (sin UNIQUE porque `CalendarEvent` no tiene owner); la política gobierna
   solo `mcp__<server>__<tool>` (las built-in de correo quedan fuera);
