@@ -36,8 +36,11 @@ export function LaunchProfilesPanel({ onClose }: { onClose: () => void }) {
     void reload();
   }, []);
 
+  // Two-step inline confirmation (as Settings › Behaviour modes does), never
+  // window.confirm: a native dialog blocks the whole tab.
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const remove = async (id: string) => {
-    if (!window.confirm(t('Delete this launch profile?'))) return;
+    setConfirmDelete(null);
     try {
       await deleteLaunchProfile(id);
       await reload();
@@ -65,8 +68,18 @@ export function LaunchProfilesPanel({ onClose }: { onClose: () => void }) {
                 </span>
               </span>
               <span className="fs-users__actions">
-                <IconButton icon={Pencil} label={t('Edit')} size="sm" onClick={() => setEditing(p)} />
-                <IconButton icon={Trash2} label={t('Delete')} size="sm" onClick={() => void remove(p.id)} />
+                {confirmDelete === p.id ? (
+                  <span className="fs-modes__confirm">
+                    <span className="fs-set__help" data-tone="bad">{t('Delete this launch profile?')}</span>
+                    <Button variant="danger-solid" size="sm" label={t('Delete')} onClick={() => void remove(p.id)} />
+                    <Button variant="ghost" size="sm" label={t('Cancel')} onClick={() => setConfirmDelete(null)} />
+                  </span>
+                ) : (
+                  <>
+                    <IconButton icon={Pencil} label={t('Edit')} size="sm" onClick={() => setEditing(p)} />
+                    <IconButton icon={Trash2} label={t('Delete')} size="sm" onClick={() => setConfirmDelete(p.id)} />
+                  </>
+                )}
               </span>
             </li>
           ))}

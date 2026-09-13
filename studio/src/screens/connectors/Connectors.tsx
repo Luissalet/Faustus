@@ -86,6 +86,9 @@ function ConnectorRow({
 }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
+  // Two-step removal inline (the pattern Settings › Behaviour modes uses)
+  // instead of window.confirm: a native dialog blocks the whole tab.
+  const [confirmingRemove, setConfirmingRemove] = useState(false);
   const c = connector;
   // The toggle is about the ADAPTER (the MCP session), not the whole
   // connector: with the app off the adapter can still be connected (a stdio
@@ -187,13 +190,17 @@ function ConnectorRow({
               label: t('Remove'),
               variant: 'danger',
               disabled: !!busy,
-              onSelect: () => {
-                if (!window.confirm(t('Remove "{name}"?', { name: c.server.name }))) return;
-                void run('delete', () => deleteConnector(c.id));
-              },
+              onSelect: () => setConfirmingRemove(true),
             },
           ]}
         />
+        {confirmingRemove && (
+          <span className="fs-modes__confirm" data-testid="connector-remove-confirm">
+            {t('Remove "{name}"?', { name: c.server.name })}
+            <Button size="sm" variant="danger" label={t('Remove')} loading={busy === 'delete'} onClick={() => void run('delete', () => deleteConnector(c.id))} />
+            <Button size="sm" variant="ghost" label={t('Cancel')} disabled={!!busy} onClick={() => setConfirmingRemove(false)} />
+          </span>
+        )}
       </div>
     </li>
   );
