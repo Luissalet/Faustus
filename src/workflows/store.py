@@ -418,6 +418,7 @@ class WorkflowStore:
                 # two passes can both have selected this row, and the one whose
                 # UPDATE matches nothing has lost and must go and read the
                 # winner instead of writing over the claim it lost.
+                from sqlalchemy import func as _func
                 taken = (db.query(NodeRunRow)
                          .filter(NodeRunRow.id == reopened.id,
                                  NodeRunRow.idempotency_key.is_(None),
@@ -428,12 +429,20 @@ class WorkflowStore:
                                   "ended_at": None,
                                   "lease_owner": owner,
                                   "lease_expires_at": expires,
-                                  "lease_heartbeat_at": now},
+                                  "lease_heartbeat_at": now,
+                                  # A06: bumped on every claim of this row,
+                                  # fresh or reopened — see the module-level
+                                  # comment on NodeRunRow.lease_generation.
+                                  "lease_generation": _func.coalesce(
+                                      NodeRunRow.lease_generation, 0) + 1},
                                  synchronize_session=False))
                 db.commit()
                 if taken:
                     fault("after_claim", run_id=run_id, node_id=node.id, key=key)
-                    return {**claim, "reason": "reclaimed"}
+                    generation = (db.query(NodeRunRow.lease_generation)
+                                  .filter(NodeRunRow.id == reopened.id).scalar())
+                    return {**claim, "reason": "reclaimed",
+                            "lease_generation": int(generation or 0)}
                 winner = (db.query(NodeRunRow)
                           .filter(NodeRunRow.idempotency_key == key).first())
                 if winner is not None:
@@ -450,10 +459,11 @@ class WorkflowStore:
                 result_json="{}", schema_version=1,
                 lease_owner=owner, lease_expires_at=expires,
                 lease_heartbeat_at=now, effect_state="none",
+                lease_generation=1,
             ))
             db.commit()
             fault("after_claim", run_id=run_id, node_id=node.id, key=key)
-            return {**claim, "reason": "claimed"}
+            return {**claim, "reason": "claimed", "lease_generation": 1}
         except IntegrityError:
             db.rollback()
             winner = (db.query(NodeRunRow)
@@ -859,18 +869,34 @@ class WorkflowStore:
         finally:
             db.close()
 
-    def claim_active(self, run_id: str, node_id: str, *, worker_id: str, attempt: int) -> bool:
-        """Whether this exact attempt may keep executing, without renewing it."""
+    def claim_active(self, run_id: str, node_id: str, *, worker_id: str, attempt: int,
+                     generation: Optional[int] = None) -> bool:
+        """Whether this exact attempt may keep executing, without renewing it.
+
+        A06: `generation` — when passed, the `lease_generation` `start_node`
+        handed this attempt in its claim dict — is checked in ADDITION to
+        `worker_id`/`attempt`/liveness, not instead of them. `worker_id` is
+        already a fresh random id per attempt (`_run_node` in engine.py mints
+        one every call), so a takeover already changes it; `generation` is
+        the same guarantee `ScheduledTask.lease_generation` gives the task
+        scheduler, kept parallel across both lease tables per the contract.
+        Omitted (None, the default) by every EXISTING caller of this method
+        (`context["cancel_requested"]` in engine.py already passes it; a
+        caller that predates this parameter is simply not checking the extra
+        guard, not broken by it)."""
         from core.database import NodeRunRow, SessionLocal, WorkflowRunRow
         with SessionLocal() as db:
-            return db.query(NodeRunRow.id).join(
+            query = db.query(NodeRunRow.id).join(
                 WorkflowRunRow, WorkflowRunRow.id == NodeRunRow.workflow_run_id
             ).filter(
                 WorkflowRunRow.id == run_id, WorkflowRunRow.status == "running",
                 NodeRunRow.node_id == node_id, NodeRunRow.status == "running",
                 NodeRunRow.attempt == attempt, NodeRunRow.lease_owner == worker_id,
                 NodeRunRow.lease_expires_at >= now_iso(),
-            ).first() is not None
+            )
+            if generation is not None:
+                query = query.filter(NodeRunRow.lease_generation == generation)
+            return query.first() is not None
 
     def effect_state(self, run_id: str, node_id: str, attempt: int) -> str:
         """Read one attempt's effect without confusing it with a newer worker."""

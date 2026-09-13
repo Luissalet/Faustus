@@ -864,6 +864,12 @@ class NodeRunRow(TimestampMixin, Base):
     lease_owner = Column(String, nullable=True, index=True)
     lease_expires_at = Column(String, nullable=True)
     lease_heartbeat_at = Column(String, nullable=True)
+    # A06: same fencing generation as ScheduledTask.lease_generation —
+    # bumped on every successful claim_active(), never reset by a release.
+    # A node handler compares the generation start_node/claim_active handed
+    # it against this column right before its own external effect, via
+    # WorkflowStore.claim_active's own return value or a fresh read.
+    lease_generation = Column(Integer, nullable=False, default=0)
 
     #: What is known about the node's side effect, which is NOT what is known
     #: about the attempt. A node that reaches outside and whose worker died
@@ -1354,6 +1360,13 @@ class ScheduledTask(TimestampMixin, Base):
     lease_heartbeat_at = Column(DateTime, nullable=True)
     lease_attempt  = Column(Integer, default=0)
     lease_key      = Column(String, nullable=True)
+    # A06: bumped by every successful claim (_claim_due_task), fresh or
+    # taken over from an expired lease; never reset by a clean release. A
+    # zombie attempt that lost the lease to a takeover mid-run compares the
+    # generation it was handed against this column (TaskScheduler.
+    # still_owner) right before producing an external effect or writing its
+    # result, and aborts (`fenced`) instead of racing the new owner.
+    lease_generation = Column(Integer, nullable=False, default=0)
 
     session = relationship("Session", backref=backref("scheduled_tasks", cascade="save-update, merge"))
     then_task = relationship("ScheduledTask", remote_side=[id], foreign_keys=[then_task_id])
@@ -3150,6 +3163,7 @@ def _formal_migration_steps() -> "list[tuple[str, object]]":
         ("add_session_behavior_mode", _migrate_add_session_behavior_mode),
         ("add_session_connector_ids", _migrate_add_session_connector_ids),
         ("add_calendar_external_ref", _migrate_add_calendar_external_ref),
+        ("add_lease_generation_columns", _migrate_add_lease_generation_columns),
     ]
 
 
@@ -3631,6 +3645,49 @@ def _migrate_add_node_run_lease_columns():
         conn.commit()
     except Exception as e:
         logging.getLogger(__name__).warning(f"workflow_node_runs lease migration failed: {e}")
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def _migrate_add_lease_generation_columns():
+    """A06: add the fencing generation counter to both lease tables.
+
+    Additive and idempotent, same pattern as `_migrate_add_node_run_lease_
+    columns`/`_migrate_add_task_lease_columns` next to it. Backfilled to 0
+    (not left NULL) so `still_owner`'s `int(current_generation or 0)` reads
+    the same on a freshly migrated row as on one a claim has since bumped —
+    and so a row with a NULL lease_owner (never leased) compares generation
+    0 against 0 for a caller with no recorded claim, which `_still_owner_or_
+    fenced`/`still_owner` never actually calls in that case (a task_id with
+    no entry in `TaskScheduler._lease_generation` short-circuits to "nothing
+    to fence against" before reading the column at all).
+    """
+    import sqlite3
+    db_path = DATABASE_URL.replace("sqlite:///", "")
+    if not os.path.exists(db_path):
+        return
+    conn = None
+    try:
+        conn = sqlite3.connect(db_path)
+        for table in ("scheduled_tasks", "workflow_node_runs"):
+            columns = [row[1] for row in
+                       conn.execute(f"PRAGMA table_info({table})").fetchall()]
+            if not columns:
+                continue
+            if "lease_generation" not in columns:
+                conn.execute(
+                    f"ALTER TABLE {table} ADD COLUMN lease_generation INTEGER "
+                    "NOT NULL DEFAULT 0"
+                )
+            conn.execute(
+                f"UPDATE {table} SET lease_generation = 0 WHERE lease_generation IS NULL"
+            )
+        conn.commit()
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"lease_generation migration failed: {e}")
     finally:
         try:
             conn.close()
