@@ -1,0 +1,10 @@
+{
+  "message_id": "<interview-001@mail.beta.example>",
+  "in_reply_to": "",
+  "references": "",
+  "external_id": "",
+  "from": "Beta Talent Team <talent@beta.example>",
+  "subject": "Entrevista - Data Engineer en Beta",
+  "received_at": "2026-09-10T08:00:00+02:00",
+  "body": "Hola,\n\nNos gustaría invitarte a una entrevista para el puesto de Data Engineer el 20 de septiembre de 2026 a las 10:30 (CEST), zona Europe/Madrid, por videollamada.\n\nPor favor confirma tu disponibilidad respondiendo a este correo.\n\nUn saludo,\nEquipo de Talento de Beta"
+}

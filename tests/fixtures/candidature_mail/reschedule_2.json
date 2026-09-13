@@ -1,0 +1,10 @@
+{
+  "message_id": "<reschedule-002@mail.delta.example>",
+  "in_reply_to": "<reschedule-001@mail.delta.example>",
+  "references": "<reschedule-001@mail.delta.example>",
+  "external_id": "",
+  "from": "Delta People Ops <peopleops@delta.example>",
+  "subject": "RE: Entrevista - Platform Engineer en Delta",
+  "received_at": "2026-09-13T09:00:00+02:00",
+  "body": "Hola de nuevo,\n\nTenemos que reprogramar tu entrevista para el puesto de Platform Engineer. La nueva fecha es el 18 de septiembre de 2026 a las 11:00 (CEST), zona Europe/Madrid. Disculpa las molestias.\n\nUn saludo,\nDelta People Ops"
+}

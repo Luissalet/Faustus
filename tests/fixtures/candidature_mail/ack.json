@@ -1,0 +1,10 @@
+{
+  "message_id": "<ack-001@mail.acme.example>",
+  "in_reply_to": "",
+  "references": "",
+  "external_id": "",
+  "from": "Acme Recruiting <rrhh@acme.example>",
+  "subject": "Hemos recibido tu candidatura - Backend Engineer",
+  "received_at": "2026-09-01T10:00:00+02:00",
+  "body": "Hola,\n\nGracias por tu interés en el puesto de Backend Engineer en Acme. Hemos recibido tu candidatura y la revisaremos en los próximos días. Si tu perfil encaja con lo que buscamos, nos pondremos en contacto contigo para los siguientes pasos.\n\nUn saludo,\nEquipo de RRHH de Acme"
+}

@@ -1,0 +1,52 @@
+{
+  "jobs": [
+    {
+      "job_id": "job-acme-backend",
+      "company": "acme",
+      "title": "backend engineer",
+      "external_id": "jh-1001",
+      "url": "",
+      "thread_message_ids": ["<ack-001@mail.acme.example>", "<rejection-001@mail.acme.example>"]
+    },
+    {
+      "job_id": "job-beta-data",
+      "company": "beta",
+      "title": "data engineer",
+      "external_id": "jh-1002",
+      "url": "",
+      "thread_message_ids": ["<interview-001@mail.beta.example>"]
+    },
+    {
+      "job_id": "job-gamma-sre",
+      "company": "gamma",
+      "title": "site reliability engineer",
+      "external_id": "jh-1003",
+      "url": "",
+      "thread_message_ids": ["<ambiguous-time-001@mail.gamma.example>"]
+    },
+    {
+      "job_id": "job-delta-platform",
+      "company": "delta",
+      "title": "platform engineer",
+      "external_id": "jh-1004",
+      "url": "",
+      "thread_message_ids": ["<reschedule-001@mail.delta.example>", "<reschedule-002@mail.delta.example>"]
+    },
+    {
+      "job_id": "job-acme-support-1",
+      "company": "acme",
+      "title": "",
+      "external_id": "jh-1005",
+      "url": "",
+      "thread_message_ids": []
+    },
+    {
+      "job_id": "job-acme-support-2",
+      "company": "acme",
+      "title": "",
+      "external_id": "jh-1006",
+      "url": "",
+      "thread_message_ids": []
+    }
+  ]
+}
