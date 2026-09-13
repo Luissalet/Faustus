@@ -180,18 +180,45 @@ def _policy_connect():
         )
     """)
     conn.commit()
+    # CONTRATO_CONECTORES F2.2: `connector_ids TEXT NULL`, added the same
+    # idempotent way `core.database._migrate_add_session_behavior_mode`
+    # adds a column to a table `CREATE TABLE IF NOT EXISTS` alone cannot
+    # reach once the table already exists on disk from before this column
+    # did. NULL (the default for every pre-existing row and every task that
+    # never declares one) means "no task-level override" — unchanged
+    # behavior, exactly like every other undeclared policy field here.
+    try:
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(task_policies)")]
+        if "connector_ids" not in cols:
+            conn.execute("ALTER TABLE task_policies ADD COLUMN connector_ids TEXT")
+            conn.commit()
+    except Exception:
+        logger.warning("task_policies.connector_ids migration failed", exc_info=True)
     return conn
 
 
 def set_task_policy(task_id: str, *, dst_ambiguity_policy: str | None = None,
                     misfire_policy: str | None = None, budget_preset: str | None = None,
-                    permissions: list[str] | None = None) -> dict:
-    """Declare (or update) one task's budget and permission set.
+                    permissions: list[str] | None = None,
+                    connector_ids: list[str] | None = None,
+                    _clear_connector_ids: bool = False) -> dict:
+    """Declare (or update) one task's budget, permission set and connector
+    allowlist.
 
     Every execution of this task is bound to what is declared HERE — the
     agent loop's tool offer is clamped to `permissions` (never widened) and
     checked against `budget_preset`'s `autonomy_budget.Budget` every pass
-    (never exceeded); see `TaskScheduler._execute_llm_task`.
+    (never exceeded); see `TaskScheduler._execute_llm_task`. `connector_ids`
+    (CONTRATO_CONECTORES F2.2) is read by
+    `src.connector_policy.resolve_allowed_servers_for_session` — `None`
+    here (the default, same as every other field) means "keep whatever this
+    task already had", not "clear it"; pass `_clear_connector_ids=True`
+    (routes only — see `routes/task/task_routes.py`) to explicitly reset it
+    to "no task-level override" without touching any other field, since a
+    plain `None` cannot distinguish "the caller didn't mention connectors"
+    from "the caller wants them cleared" — same ambiguity every other
+    Optional field here has, resolved by every one of them meaning "leave
+    it alone" when omitted.
     """
     if dst_ambiguity_policy is not None and dst_ambiguity_policy not in DST_AMBIGUITY_POLICIES:
         raise ValueError(f"dst_ambiguity_policy must be one of {DST_AMBIGUITY_POLICIES}")
@@ -200,22 +227,32 @@ def set_task_policy(task_id: str, *, dst_ambiguity_policy: str | None = None,
     if budget_preset is not None and budget_preset not in _BUDGET_PRESETS:
         raise ValueError(f"budget_preset must be one of {_BUDGET_PRESETS}")
     current = get_task_policy(task_id)
+    if _clear_connector_ids:
+        _connector_ids = None
+    elif connector_ids is not None:
+        _connector_ids = [str(x) for x in connector_ids]
+    else:
+        _connector_ids = current["connector_ids"]
     merged = {
         "dst_ambiguity_policy": dst_ambiguity_policy if dst_ambiguity_policy is not None else current["dst_ambiguity_policy"],
         "misfire_policy": misfire_policy if misfire_policy is not None else current["misfire_policy"],
         "budget_preset": budget_preset if budget_preset is not None else current["budget_preset"],
         "permissions": list(permissions) if permissions is not None else current["permissions"],
+        "connector_ids": _connector_ids,
     }
     conn = _policy_connect()
     try:
         conn.execute(
             "INSERT INTO task_policies (task_id, dst_ambiguity_policy, misfire_policy, "
-            "budget_preset, permissions_json, updated_at) VALUES (?,?,?,?,?,?) "
+            "budget_preset, permissions_json, connector_ids, updated_at) VALUES (?,?,?,?,?,?,?) "
             "ON CONFLICT(task_id) DO UPDATE SET dst_ambiguity_policy=excluded.dst_ambiguity_policy, "
             "misfire_policy=excluded.misfire_policy, budget_preset=excluded.budget_preset, "
-            "permissions_json=excluded.permissions_json, updated_at=excluded.updated_at",
+            "permissions_json=excluded.permissions_json, connector_ids=excluded.connector_ids, "
+            "updated_at=excluded.updated_at",
             (task_id, merged["dst_ambiguity_policy"], merged["misfire_policy"],
-             merged["budget_preset"], json.dumps(merged["permissions"]), _utcnow().isoformat()),
+             merged["budget_preset"], json.dumps(merged["permissions"]),
+             json.dumps(merged["connector_ids"]) if merged["connector_ids"] is not None else None,
+             _utcnow().isoformat()),
         )
         conn.commit()
     finally:
@@ -226,7 +263,8 @@ def set_task_policy(task_id: str, *, dst_ambiguity_policy: str | None = None,
 def get_task_policy(task_id: str) -> dict:
     """A task's declared policy, defaulted so an undeclared task behaves
     exactly as it always did (`fire_immediately`, `run_once`, no permission
-    restriction beyond what admin/global settings already impose, and the
+    restriction beyond what admin/global settings already impose, no
+    connector restriction beyond the session/project it runs in, and the
     `supervised` budget preset — see `src/autonomy_budget.py`)."""
     conn = _policy_connect()
     try:
@@ -236,12 +274,15 @@ def get_task_policy(task_id: str) -> dict:
     if row is None:
         return {"dst_ambiguity_policy": DEFAULT_DST_AMBIGUITY_POLICY,
                 "misfire_policy": DEFAULT_MISFIRE_POLICY,
-                "budget_preset": _DEFAULT_BUDGET_PRESET, "permissions": None}
+                "budget_preset": _DEFAULT_BUDGET_PRESET, "permissions": None,
+                "connector_ids": None}
+    _raw_connector_ids = row["connector_ids"] if "connector_ids" in row.keys() else None
     return {
         "dst_ambiguity_policy": row["dst_ambiguity_policy"] or DEFAULT_DST_AMBIGUITY_POLICY,
         "misfire_policy": row["misfire_policy"] or DEFAULT_MISFIRE_POLICY,
         "budget_preset": row["budget_preset"] or _DEFAULT_BUDGET_PRESET,
         "permissions": json.loads(row["permissions_json"]) if row["permissions_json"] else None,
+        "connector_ids": json.loads(_raw_connector_ids) if _raw_connector_ids else None,
     }
 
 
