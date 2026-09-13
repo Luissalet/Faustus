@@ -1537,6 +1537,63 @@ def _identity_match_score(query: str, name: str) -> float:
     return 0.0
 
 
+def _parse_since_until(value: str | None, param_name: str) -> "datetime | None":
+    """Parse an optional `/list` `since`/`until` bound.
+
+    F4.2: an explicit timezone is required (a trailing `Z` or a numeric
+    offset) so a recipe's day math is never silently reinterpreted against
+    the server's local clock. Returns None when the value is absent/blank;
+    raises 400 for anything present but unparsable or naive.
+    """
+    if value is None:
+        return None
+    raw = value.strip()
+    if not raw:
+        return None
+    from datetime import timezone as _tz
+    try:
+        s2 = raw[:-1] + "+00:00" if raw.endswith("Z") else raw
+        dt = datetime.fromisoformat(s2)
+    except ValueError:
+        raise HTTPException(400, f"{param_name} must be ISO 8601 with an explicit timezone")
+    if dt.tzinfo is None:
+        raise HTTPException(400, f"{param_name} must include a timezone (e.g. 'Z' or '+02:00')")
+    return dt.astimezone(_tz.utc)
+
+
+def _apply_email_list_window(resp: dict, since_dt, until_dt, unread_only: bool) -> dict:
+    """Post-filter a `/list` response by receipt window and/or unread state.
+
+    Applied uniformly over every source `/list` can answer from (fixture,
+    local index, in-memory cache, live IMAP) so none of those response
+    shapes need their own copy of this logic. This filters the page that
+    already came back rather than pushing the bound into the IMAP SEARCH —
+    IMAP's SINCE/BEFORE keywords are day-granular, not to-the-second, and
+    each source builds its own search criteria differently — so `total`
+    here describes matches within THIS page, not a folder-wide count.
+    Callers that need every matching message across a wide window should
+    pass a generous `limit` (this never marks anything read or otherwise
+    mutates provider state).
+    """
+    if since_dt is None and until_dt is None and not unread_only:
+        return resp
+    emails = resp.get("emails") or []
+    kept = []
+    for e in emails:
+        if unread_only and e.get("is_read"):
+            continue
+        epoch = e.get("date_epoch") or 0
+        if since_dt is not None and epoch < since_dt.timestamp():
+            continue
+        if until_dt is not None and epoch > until_dt.timestamp():
+            continue
+        kept.append(e)
+    out = dict(resp)
+    out["emails"] = kept
+    out["total"] = len(kept)
+    return out
+
+
 def setup_email_routes():
     _start_poller()
     router = APIRouter(prefix="/api/email", tags=["email"])
@@ -2361,21 +2418,38 @@ def setup_email_routes():
         has_attachments: int = Query(0),
         cached_only: int = Query(0),
         cache_bust: str | None = Query(None, alias="_"),
+        since: str | None = Query(None),
+        until: str | None = Query(None),
+        unread_only: bool = Query(False),
         owner: str = Depends(require_owner),
     ):
         """List emails. Uses an 8s in-memory cache + offloads blocking IMAP
-        calls to a worker thread so the event loop never stalls."""
+        calls to a worker thread so the event loop never stalls.
+
+        `since`/`until` (ISO 8601, explicit timezone required) and
+        `unread_only` are applied as a post-filter over whichever source
+        answered (fixture, index cache, memory cache or live IMAP) — see
+        `_apply_email_list_window` for why it's a page-level filter rather
+        than pushed into the IMAP SEARCH. None of them mutate provider
+        state and none of them mark anything read.
+        """
+        since_dt = _parse_since_until(since, "since")
+        until_dt = _parse_since_until(until, "until")
+
+        def _windowed(resp):
+            return _apply_email_list_window(resp, since_dt, until_dt, unread_only)
+
         started_at = _time.monotonic()
         fixture_result = _fixture_email_list(folder, limit, offset, filter, from_addr, owner)
         if fixture_result is not None:
-            return fixture_result
+            return _windowed(fixture_result)
         if cached_only and not from_addr:
             indexed_emails, indexed_total, indexed_at = _email_index_list(
                 owner, account_id, folder, filter, limit, offset, bool(has_attachments),
             )
             if indexed_total:
                 _hide_unlinked_calendar_tags(indexed_emails)
-                return {
+                return _windowed({
                     "emails": indexed_emails,
                     "total": indexed_total,
                     "folder": folder,
@@ -2386,14 +2460,14 @@ def setup_email_routes():
                         "updated_at": indexed_at,
                         "cached_only": True,
                     },
-                }
-            return {
+                })
+            return _windowed({
                 "emails": [],
                 "total": 0,
                 "folder": folder,
                 "offset": offset,
                 "sync": {"source": "index", "cached_only": True},
-            }
+            })
         _deferred = getattr(_start_poller, '_deferred', None)
         if _deferred:
             await _deferred()
@@ -2414,7 +2488,7 @@ def setup_email_routes():
                         "email list cache hit slow owner=%s account=%s folder=%s filter=%s limit=%s offset=%s total=%sms",
                         owner, account_id or "", folder, filter, limit, offset, elapsed_ms,
                     )
-                return cached
+                return _windowed(cached)
         result = await _asyncio.to_thread(
             _list_emails_sync, folder, limit, offset, filter, account_id, from_addr,
             bool(has_attachments), owner,
@@ -2431,7 +2505,7 @@ def setup_email_routes():
                 owner, account_id or "", folder, filter, limit, offset, bool(cache_bust),
                 len((result or {}).get("emails") or []), (result or {}).get("total"), elapsed_ms,
             )
-        return result
+        return _windowed(result)
 
     @router.get("/unread-state")
     async def unread_state(
