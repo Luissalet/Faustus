@@ -122,6 +122,44 @@ AGENT_OPTION_DEFAULTS: Dict[str, Any] = {
 }
 
 
+def _sanitize_connector_ids(ids: Any) -> List[str]:
+    """CONTRATO_CONECTORES F2.2: a project's `connectors` field is a list of
+    `McpServer.id` values. An id nobody recognises (deleted server, typo,
+    stale export) is DROPPED with a warning — never raised — matching the
+    contract's own rule for this field ("ids desconocidos se descartan con
+    warning, nunca error"): a project must never fail to save because one
+    connector reference in it went stale.
+    """
+    if not isinstance(ids, list):
+        return []
+    candidates = [str(x).strip() for x in ids if str(x or "").strip()]
+    if not candidates:
+        return []
+    try:
+        from core.database import SessionLocal, McpServer
+        db = SessionLocal()
+        try:
+            known = {row[0] for row in db.query(McpServer.id).all()}
+        finally:
+            db.close()
+    except Exception:
+        logger.warning("Could not verify connector ids against McpServer; keeping them unfiltered", exc_info=True)
+        # Deduplicate while preserving order even in this degraded path.
+        seen: set = set()
+        return [c for c in candidates if not (c in seen or seen.add(c))]
+    kept: List[str] = []
+    seen = set()
+    for cid in candidates:
+        if cid in seen:
+            continue
+        if cid not in known:
+            logger.warning("Project connectors: dropping unknown connector id %r", cid)
+            continue
+        seen.add(cid)
+        kept.append(cid)
+    return kept
+
+
 def agent_options(project: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     """The project's agent knobs with defaults filled in ({} for no project)."""
     if not project:
@@ -508,6 +546,18 @@ class ProjectStore:
                         if len(text) > 400:
                             raise ProjectError(f"{key} is too long (max 400 chars)")
                         new_row[key] = text
+                # CONTRATO_CONECTORES F2.2: connector allowlist. Absent key =
+                # leave untouched (same convention as every AGENT_OPTION_FIELDS
+                # knob above); explicit `null`/`None` clears it back to "no
+                # project-level restriction"; explicit `[]` is kept as `[]`
+                # ("this project allows zero connectors"), never upgraded to
+                # None — `_sanitize_connector_ids` only drops individually
+                # unknown ids, it never collapses the whole list.
+                if "connectors" in updates:
+                    _raw_connectors = updates["connectors"]
+                    new_row["connectors"] = (
+                        None if _raw_connectors is None else _sanitize_connector_ids(_raw_connectors)
+                    )
                 if "enabled" in updates:
                     new_row["enabled"] = bool(updates["enabled"])
                 if "archived" in updates:
