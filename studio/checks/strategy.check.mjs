@@ -64,7 +64,7 @@ const read = (p) => readFileSync(path(p), 'utf8').replace(/\r\n/g, '\n');
 {
   const dir = 'docs/recipes';
   assert.ok(existsSync(path(dir)), `missing ${dir}`);
-  const expectedIds = ['review-changes', 'sources-to-report', 'design-function-and-tests', 'edit-passage-keep-tone'];
+  const expectedIds = ['review-changes', 'sources-to-report', 'design-function-and-tests', 'edit-passage-keep-tone', 'review-candidature-responses'];
   const { readdirSync } = await import('node:fs');
   const files = readdirSync(path(dir)).filter((f) => f.endsWith('.json'));
   const recipes = files.map((f) => JSON.parse(read(join(dir, f))));

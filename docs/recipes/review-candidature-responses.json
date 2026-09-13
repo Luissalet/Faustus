@@ -1,5 +1,5 @@
 {
-  "id": "review_candidature_responses",
+  "id": "review-candidature-responses",
   "title": "Revisar respuestas de candidaturas",
   "inputs": [
     "period_start",

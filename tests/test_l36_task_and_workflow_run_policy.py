@@ -90,6 +90,7 @@ def test_create_task_declares_policy_when_fields_are_sent(task_client):
         "misfire_policy": "skip",
         "budget_preset": "bounded_autonomous",
         "permissions": ["web_search", "read_file"],
+        "connector_ids": None,
     }
     # And it actually landed in the real policy store `TaskScheduler.
     # _execute_llm_task` reads from — not just echoed back in the response.

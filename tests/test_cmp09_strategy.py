@@ -210,12 +210,12 @@ def test_four_builtin_recipes_are_present_and_well_formed():
     built_ins = recipes.list_recipes()
     ids = {r.id for r in built_ins}
     # F4.4 (CONTRATO_CONECTORES.md) added a fifth built-in,
-    # "review_candidature_responses" — this test's name predates it and is
+    # "review-candidature-responses" — this test's name predates it and is
     # kept rather than renamed, since it still checks "the built-ins are
     # present and well-formed", just with one more of them now.
     assert ids == {
         "review-changes", "sources-to-report", "design-function-and-tests",
-        "edit-passage-keep-tone", "review_candidature_responses",
+        "edit-passage-keep-tone", "review-candidature-responses",
     }
     for recipe in built_ins:
         assert recipe.status == "published"

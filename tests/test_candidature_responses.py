@@ -269,7 +269,7 @@ def test_terminal_status_is_preserved_against_a_later_ack():
 # ---------------------------------------------------------------------------
 
 async def _run_recipe_pass(messages, jobs, jobhunter, create_event, request):
-    """Mirrors the recipe's steps (src/recipes.py `review_candidature_responses`):
+    """Mirrors the recipe's steps (src/recipes.py `review-candidature-responses`):
     classify -> match job -> (if a confidently-timed interview) create the
     calendar event with `external_ref = jobhunter:{job_id}:{message_id}` ->
     record the employer response, attaching `calendarEventId` when one was

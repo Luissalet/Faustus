@@ -3,7 +3,7 @@
 CONTRATO_CONECTORES.md, Lote F4 (Fase F, lado Faustus). Implementación:
 `src/candidature_responses.py` (clasificador determinista + matching de
 candidatura, sin FastAPI, sin LLM), `docs/recipes/review-candidature-responses.json`
-(la receta, id `review_candidature_responses`, cargada por `src/recipes.py`),
+(la receta, id `review-candidature-responses`, cargada por `src/recipes.py`),
 `routes/calendar_routes.py` (idempotencia por `external_ref`, F4.1) y
 `routes/email_routes.py` (filtros `since`/`until`/`unread_only` en `GET /list`,
 F4.2). No hay ruta ni módulo nuevo que "ejecute" la receta: una receta es un
@@ -119,7 +119,7 @@ candidatos de la misma empresa, devuelve `job_id=None` y
 `ambiguous=[job_id, ...]` — nunca actualiza "otra candidatura del mismo
 empleador" a ciegas.
 
-## F4.4 — La receta (`review_candidature_responses`)
+## F4.4 — La receta (`review-candidature-responses`)
 
 `inputs`: `period_start`, `period_end`, `timezone`, `accounts/folders`,
 `jobhunter_context_id`. `tools`: `email.list`, `email.read`,

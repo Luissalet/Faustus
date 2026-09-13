@@ -84,6 +84,7 @@ Scheduled work requires a running Faustus server and an awake computer. Use web 
 - Every turn shows the strategy the agent chose (direct edit, plan then execute, research, specialised review, explore alternatives) and why; a turn worth repeating can be saved as a recipe with its real inputs.
 - Search and navigate with **Ctrl+K**. Use English or Spanish, themes, density controls, adjustable text and reduced motion.
 - Pick a **behaviour mode** — a named conversational stance (adversarial, socratic, terse, mentor, red team, outside observer, editor, or one you write yourself) that changes how Faustus argues, never what it is allowed to do; it sits after the task preset and strictly before the untrusted-content policy in every turn's prompt, agent mode and Incognito included ([Behaviour modes API](docs/api/behavior_modes.md)).
+- Plug in your **own local apps as connectors** — a `/connectors` screen over the existing MCP manager with presets for Jubhunter's Hoard and Writer's Hoard, real states that keep "the app is off" apart from "the adapter failed its handshake", user-configured launch profiles (structured argv, no shell, readiness, idempotent), and a per-chat / per-project / per-scheduled-task connector allowlist that the tool dispatcher enforces rather than merely hides ([Connectors API](docs/api/connectors.md), [tool selection](docs/api/tool_selection.md), [candidature recipe](docs/api/candidature_recipe.md)).
 
 ### Side threads and context wires
 

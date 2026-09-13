@@ -272,6 +272,30 @@ deep-link de workflows, recetas desde un run real) ya no aparece aquí.
   hay evento SSE en vivo para `behavior_mode`/`mode_check`); si molesta,
   emitirlos en el evento `metrics`.
 
+## Conectores Hoard (13-09) — HECHO en nube, pendiente en vivo
+
+- Implementado (FAUSTUS.md §80, OBJ-10): `/connectors`, presets Jobhunter y
+  Writer, sidecar, estados reales, perfiles de arranque, `connector_ids`
+  por sesión/proyecto/tarea cumplidos en el despachador, `tool-support`,
+  `external_ref` en calendario, filtros de correo, clasificador + receta
+  «Revisar respuestas de candidaturas» con fixtures; en Jobhunter (rama
+  `claude/conectores`) health, biblioteca de respuestas con ids/revisión,
+  recuperación con backup y `record_employer_response`.
+- En su máquina, en este orden: (1) aplicar el bundle de Jobhunter y
+  `npm test`; (2) copia manual de `data/` de Jobhunter; (3) parar el 5178
+  viejo y `npm start`; (4) en Faustus, alta del preset Jobhunter con
+  `JOBHUNT_DIR` y `APP_URL`, Comprobar → `available`; (5) chat con un Qwen
+  local y solo el conector Jobhunter permitido: `list_contexts`,
+  `list_jobs`, `remember_answer` en un contexto de prueba — nada de
+  `start_application`; (6) «Recuperar de borradores» desde la UI de
+  Jobhunter y revisar pendientes/variantes. Writer: puerto distinto del
+  8766 (`WH_AIBRIDGE_PORT`), nunca cerrar Relief Studio.
+- Límites conocidos y documentados: `external_ref` es check-then-insert
+  (sin UNIQUE porque `CalendarEvent` no tiene owner); la política gobierna
+  solo `mcp__<server>__<tool>` (las built-in de correo quedan fuera);
+  `GET /api/connectors` no filtra por owner porque `/api/mcp/servers`
+  tampoco lo hace (McpServer no tiene owner).
+
 ## Última evidencia
 
 - **12-09-2026 noche, INF-05 + benchmarks reales (master `4a9d21d`,

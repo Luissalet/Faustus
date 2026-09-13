@@ -85,6 +85,7 @@ Las tareas programadas necesitan un servidor Faustus en marcha y el ordenador de
 - Buscar y navegar con **Ctrl+K**. Usar español o inglés, temas, controles de densidad, tamaño de texto ajustable y movimiento reducido.
 
 - Elige un **modo de comportamiento**: una postura conversacional con nombre (adversarial, socrático, escueto, mentor, equipo rojo, observador externo, editor, o uno escrito por ti) que cambia cómo argumenta Faustus, nunca lo que puede hacer; entra en el prompt después del preset de tarea y estrictamente antes de la política de contenido no fiable, también en modo agente e Incógnito ([API de modos](docs/api/behavior_modes.md)).
+- Enchufa **tus propias apps locales como conectores**: una pantalla `/connectors` sobre el gestor MCP existente con presets para Jubhunter's Hoard y Writer's Hoard, estados reales que separan «la app está apagada» de «el adaptador falló el handshake», perfiles de arranque configurados por el usuario (argv estructurado, sin shell, readiness, idempotentes) y una lista de conectores permitidos por chat / proyecto / tarea programada que el despachador de herramientas hace cumplir en vez de solo ocultar ([API de conectores](docs/api/connectors.md), [selección de herramientas](docs/api/tool_selection.md), [receta de candidaturas](docs/api/candidature_recipe.md)).
 
 ### Excursos y cables de contexto
 

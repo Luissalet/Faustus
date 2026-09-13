@@ -502,3 +502,35 @@ laboratorio (especulación, reparto entre GPUs, comparación de motores) solo
 con autorización por tanda. Después, el documento de investigación de
 memoria/contexto (F01 laboratorio de memoria y F04 atlas piloto primero,
 según su propia secuencia).
+
+## OBJ-10 · Conectores Hoard y memoria de candidaturas — EN CURSO (13-09-2026)
+
+Pedido por Luis con `PLAN_MAESTRO_CONECTORES_HOARD.md` (13-09) y ampliado
+después a Jubhunter's Hoard («puedes mejorar Jobhunter y tocarlo como
+necesites»). Principios del plan que se respetan tal cual: reutilizar el
+MCP existente sin agregador propio; catálogo sin secretos; salud de la app
+separada del handshake del adaptador; arranque solo por perfiles del
+usuario (argv, sin shell, readiness, idempotente, sin matar procesos
+ajenos); conectores persistentes pero **cumplidos por tarea** en el
+despachador; sin fallback silencioso a API de pago; ack ≠ aceptación;
+eventos idempotentes con referencia externa; los datos reales de Jobhunter
+no se leen ni se migran desde aquí.
+
+**Hecho (FAUSTUS.md §80).** Fases B (Jobhunter), C, D, E y F-Faustus:
+catálogo y presets, sidecar, siete estados reales, perfiles de arranque,
+`/connectors`, `connector_ids` por sesión/proyecto/tarea con enforcement en
+`execute_tool_block` y filtrado antes del tool-RAG, `tool-support` sin
+fallback, `external_ref` en calendario, filtros de correo, clasificador y
+receta con fixtures, `record_employer_response` y biblioteca de respuestas
+con ids/revisión/backup en Jobhunter.
+
+**Queda (Fase G y lo que solo se puede hacer en su máquina).** Ver en vivo
+en el 7001; conectar Jobhunter real (arrancar su servidor con el código
+nuevo, preset con `JOBHUNT_DIR`, comprobar `available`) y probar con un
+Qwen local: listar contexto y ofertas, leer una respuesta, registrar una
+pregunta en un contexto de prueba; ejecutar «Recuperar de borradores» desde
+la UI de Jobhunter (backup automático + el manual que haga Luis) y revisar
+pendientes/variantes; Writer's Hoard necesita otro puerto que el 8766 de
+Relief Studio (`WH_AIBRIDGE_PORT`); credenciales de correo/calendario en
+los formularios existentes antes de la receta real; prueba de navegador
+aparte (el MCP de Jobhunter no navega).

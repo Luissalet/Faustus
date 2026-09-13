@@ -158,6 +158,7 @@ def test_get_task_policy_defaults_for_an_undeclared_task():
         "misfire_policy": "fire_immediately",
         "budget_preset": "supervised",
         "permissions": None,
+        "connector_ids": None,
     }
 
 
@@ -169,6 +170,7 @@ def test_set_task_policy_round_trips_and_partial_updates_preserve_the_rest():
     assert full == {
         "dst_ambiguity_policy": "skip", "misfire_policy": "skip",
         "budget_preset": "read_only", "permissions": ["bash", "web_search"],
+        "connector_ids": None,
     }
     # Updating just one field leaves the others exactly as they were.
     set_task_policy(tid, misfire_policy="fire_immediately")
