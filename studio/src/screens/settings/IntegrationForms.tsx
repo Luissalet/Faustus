@@ -154,9 +154,21 @@ export function ApiForm({ existing, onClose, onChanged, say }: { existing?: ApiI
 
 /* ── CalDAV ── */
 
-export function CalDavForm({ existing, onClose, onChanged, say }: { existing?: CalDavAccount; onClose: () => void; onChanged: () => void; say: (t: string) => void }) {
+/**
+ * G2 (CONTRATO_GOOGLE_CALENDAR): the three non-Google providers Integrations'
+ * "Add → Calendar" picker offers — same `kind: 'caldav'` form, only the URL
+ * prefill and the help text differ. `other` is the form as it always was.
+ */
+export const CALDAV_PRESETS: Record<string, { label: string; url: string; help: string }> = {
+  icloud: { label: 'iCloud', url: 'https://caldav.icloud.com', help: 'An app-specific password from appleid.apple.com — not your Apple ID password.' },
+  nextcloud: { label: 'Nextcloud', url: '', help: 'https://<your-nextcloud-host>/remote.php/dav' },
+  other: { label: 'CalDAV (other)', url: '', help: '' },
+};
+
+export function CalDavForm({ existing, preset, onClose, onChanged, say }: { existing?: CalDavAccount; preset?: string; onClose: () => void; onChanged: () => void; say: (t: string) => void }) {
+  const p = !existing ? CALDAV_PRESETS[preset ?? ''] : undefined;
   const [label, setLabel] = useState(existing?.label ?? '');
-  const [url, setUrl] = useState(existing?.url ?? '');
+  const [url, setUrl] = useState(existing?.url ?? p?.url ?? '');
   const [user, setUser] = useState(existing?.username ?? '');
   const [pw, setPw] = useState('');
   const [busy, setBusy] = useState(false);
@@ -189,7 +201,8 @@ export function CalDavForm({ existing, onClose, onChanged, say }: { existing?: C
   };
   return (
     <>
-      <h3 className="fs-set__card-title">{existing ? t('CalDAV account') : t('New CalDAV account')}</h3>
+      <h3 className="fs-set__card-title">{existing ? t('CalDAV account') : preset && preset !== 'other' && p ? t('New {provider} account', { provider: p.label }) : t('New CalDAV account')}</h3>
+      {p?.help && <p className="fs-set__help fs-intg__note">{t(p.help)}</p>}
       <div className="fs-set__grid2">
         <Field label={t('Label')} htmlFor="cd-label">
           <input id="cd-label" className="fs-field" value={label} onChange={(e) => setLabel(e.target.value)} placeholder={t('e.g. Work, Personal')} />

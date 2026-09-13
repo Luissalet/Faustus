@@ -9,13 +9,16 @@ import {
   deleteApiIntegration,
   deleteCalDav,
   deleteEmailAccount,
+  deleteGoogleCalendar,
   deleteMcpServer,
   deleteToken,
+  googleCalendarAuthorizeUrl,
   KIND_LABEL,
   listApiIntegrations,
   listCalDav,
   listContacts,
   listEmailAccounts,
+  listGoogleCalendar,
   listMcpServers,
   listTokens,
   saveCardDav,
@@ -24,14 +27,16 @@ import {
   type ApiIntegration,
   type CalDavAccount,
   type EmailAccount,
+  type GoogleCalendarAccount,
   type IntegrationKind,
   type McpServer,
   type ApiToken,
   type VaultConfig,
 } from '../../adapters/integrations';
 import { t, tn } from '../../i18n';
-import { ApiForm, CalDavForm, VaultForm, AgentForm } from './IntegrationForms';
-import { ContactsPanel, EmailForm, McpPanel } from './IntegrationsMore';
+import { useSearchParams } from 'react-router';
+import { ApiForm, CalDavForm, CALDAV_PRESETS, VaultForm, AgentForm } from './IntegrationForms';
+import { ContactsPanel, EmailForm, GoogleCalendarForm, McpPanel } from './IntegrationsMore';
 
 /**
  * Integrations: every external connection in one list, the way the previous
@@ -163,11 +168,15 @@ export interface Item {
 
 export type Editing = { kind: IntegrationKind; id: string | null } | null;
 
-async function fetchAll(): Promise<Item[]> {
+async function fetchAll(): Promise<{ items: Item[]; googleConfigured: boolean }> {
   const safe = <T,>(p: Promise<T>, fallback: T) => p.catch(() => fallback);
-  const [api, cal, cardCfg, contacts, mail, mcp, vault, tokens] = await Promise.all([
+  const [api, cal, gcal, cardCfg, contacts, mail, mcp, vault, tokens] = await Promise.all([
     safe(listApiIntegrations(), [] as ApiIntegration[]),
     safe(listCalDav(), [] as CalDavAccount[]),
+    // G1's route (routes/calendar_routes.py, CONTRATO_GOOGLE_CALENDAR) may
+    // not exist in this checkout yet — degrades to "not configured, no
+    // accounts" instead of breaking the whole unified list.
+    safe(listGoogleCalendar(), { configured: false, accounts: [] as GoogleCalendarAccount[] }),
     safe(contactsConfig(), {}),
     safe(listContacts(), { contacts: [], count: 0 }),
     safe(listEmailAccounts(), [] as EmailAccount[]),
@@ -178,6 +187,10 @@ async function fetchAll(): Promise<Item[]> {
   const items: Item[] = [];
   for (const i of api) items.push({ kind: 'api', id: i.id, name: i.name || t('Unnamed'), detail: i.base_url ?? '', enabled: i.enabled !== false, data: i });
   for (const a of cal) items.push({ kind: 'caldav', id: a.id, name: a.label || t('Calendar (CalDAV)'), detail: a.url, enabled: true, data: a });
+  for (const a of gcal.accounts) {
+    const detail = a.status === 'needs_reauth' ? `${a.email} · ${t('needs reconnecting')}` : a.email;
+    items.push({ kind: 'google_calendar', id: a.id, name: a.label || t('Google Calendar'), detail, enabled: a.status !== 'needs_reauth', data: a });
+  }
   if (contacts.count > 0) items.push({ kind: 'contacts', id: '__contacts__', name: t('Contacts'), detail: tn(contacts.count, '{n} contact', '{n} contacts'), enabled: true, data: contacts });
   const cardUrl = cardCfg.url ?? cardCfg.carddav_url;
   if (cardUrl) items.push({ kind: 'carddav', id: '__carddav__', name: t('Contacts (CardDAV)'), detail: cardUrl, enabled: true, data: cardCfg });
@@ -202,26 +215,60 @@ async function fetchAll(): Promise<Item[]> {
     items.push({ kind, id: tok.id, name: tok.name || KIND_LABEL[kind], detail: `${tok.token_prefix ?? 'token'}… · ${(tok.scopes ?? []).join(', ') || 'chat'}`, enabled: true, data: tok });
   }
   if (vault && (vault.server_url || vault.email || vault.logged_in || vault.unlocked)) items.push({ kind: 'vault', id: '__vault__', name: t('Vault (Bitwarden)'), detail: `${vault.email ?? ''} ${vault.unlocked ? `· ${t('unlocked')}` : `· ${t('locked')}`}`, enabled: !!vault.unlocked, data: vault });
-  return items;
+  return { items, googleConfigured: gcal.configured };
 }
 
-const ADDABLE: IntegrationKind[] = ['api', 'email', 'caldav', 'contacts', 'mcp', 'codex', 'claude', 'vault'];
+/** `'calendar'` is not a real `Item.kind` — it opens the provider picker
+ *  below instead of a form directly, the same "Calendar" entry point the
+ *  previous interface offered before Google needed its own OAuth flow. */
+const ADDABLE: (IntegrationKind | 'calendar')[] = ['api', 'email', 'calendar', 'contacts', 'mcp', 'codex', 'claude', 'vault'];
+const ADD_LABEL: Record<string, string> = { calendar: 'Calendar' };
+
+/** CONTRATO_GOOGLE_CALENDAR G2: the four providers behind "Add → Calendar" —
+ *  Google (OAuth, its own form) and three CalDAV presets sharing CalDavForm. */
+const CALENDAR_PROVIDERS: { key: string; label: string }[] = [
+  { key: 'google', label: 'Google Calendar' },
+  { key: 'icloud', label: CALDAV_PRESETS.icloud.label },
+  { key: 'nextcloud', label: CALDAV_PRESETS.nextcloud.label },
+  { key: 'other', label: CALDAV_PRESETS.other.label },
+];
 
 export function IntegrationsSection({ say }: { say: (t: string) => void }) {
   const [items, setItems] = useState<Item[] | null>(null);
+  const [googleConfigured, setGoogleConfigured] = useState(false);
   const [editing, setEditing] = useState<Editing>(null);
+  const [caldavPreset, setCaldavPreset] = useState<string | undefined>(undefined);
   const [adding, setAdding] = useState(false);
+  const [pickingCalendar, setPickingCalendar] = useState(false);
+  const [params, setParams] = useSearchParams();
 
-  const reload = useCallback(() => fetchAll().then(setItems), []);
+  const reload = useCallback(() => fetchAll().then(({ items: its, googleConfigured: gc }) => { setItems(its); setGoogleConfigured(gc); }), []);
   useEffect(() => {
     void reload();
   }, [reload]);
+
+  // CONTRATO_GOOGLE_CALENDAR G2: the callback (routes/calendar_routes.py in
+  // G1) returns here with `?calendar_oauth=ok` or `&calendar_oauth_error=
+  // <code>` — a banner, then the params are dropped so a reload does not
+  // replay it.
+  useEffect(() => {
+    const ok = params.get('calendar_oauth');
+    const err = params.get('calendar_oauth_error');
+    if (!ok && !err) return;
+    say(ok ? t('Google Calendar connected.') : t('Could not connect Google Calendar: {reason}', { reason: err ?? '' }));
+    const next = new URLSearchParams(params);
+    next.delete('calendar_oauth');
+    next.delete('calendar_oauth_error');
+    setParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params]);
 
   const remove = async (item: Item) => {
     if (!window.confirm(t('Remove "{name}"?', { name: item.name }))) return;
     try {
       if (item.kind === 'api') await deleteApiIntegration(item.id);
       else if (item.kind === 'caldav') await deleteCalDav(item.id);
+      else if (item.kind === 'google_calendar') await deleteGoogleCalendar(item.id);
       else if (item.kind === 'contacts') await clearContacts();
       else if (item.kind === 'carddav') await saveCardDav({ carddav_url: '', carddav_username: '', carddav_password: '' });
       else if (item.kind === 'email') await deleteEmailAccount(item.id);
@@ -238,7 +285,9 @@ export function IntegrationsSection({ say }: { say: (t: string) => void }) {
 
   const close = () => {
     setEditing(null);
+    setCaldavPreset(undefined);
     setAdding(false);
+    setPickingCalendar(false);
     void reload();
   };
 
@@ -251,31 +300,62 @@ export function IntegrationsSection({ say }: { say: (t: string) => void }) {
         </div>
         <div className="fs-set__row-actions">
           <IconButton icon={RefreshCw} label={t('Refresh')} size="sm" onClick={() => void reload()} />
-          <Button size="sm" variant="primary" icon={Plus} label={t('Add')} onClick={() => setAdding((a) => !a)} testId="intg-add" />
+          <Button size="sm" variant="primary" icon={Plus} label={t('Add')} onClick={() => { setAdding((a) => !a); setPickingCalendar(false); }} testId="intg-add" />
         </div>
       </header>
 
-      {adding && (
+      {adding && !pickingCalendar && (
         <div className="fs-intg__kinds" role="group" aria-label={t('What to add')}>
           {ADDABLE.map((k) => (
             <button
               key={k}
               type="button"
               className="fs-chip"
+              data-testid={k === 'calendar' ? 'intg-add-calendar' : undefined}
               onClick={() => {
+                if (k === 'calendar') {
+                  setPickingCalendar(true);
+                  return;
+                }
                 setAdding(false);
                 setEditing({ kind: k, id: null });
               }}
             >
-              {t(KIND_LABEL[k])}
+              {t(ADD_LABEL[k] ?? KIND_LABEL[k as IntegrationKind])}
             </button>
           ))}
         </div>
       )}
 
+      {pickingCalendar && (
+        <div className="fs-intg__kinds" role="group" aria-label={t('Calendar provider')} data-testid="intg-calendar-providers">
+          {CALENDAR_PROVIDERS.map((p) => (
+            <button
+              key={p.key}
+              type="button"
+              className="fs-chip"
+              disabled={p.key === 'google' && !googleConfigured}
+              title={p.key === 'google' && !googleConfigured ? t('Set GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET in .env') : undefined}
+              data-testid={`intg-calendar-provider-${p.key}`}
+              onClick={() => {
+                setPickingCalendar(false);
+                if (p.key === 'google') setEditing({ kind: 'google_calendar', id: null });
+                else {
+                  setCaldavPreset(p.key);
+                  setEditing({ kind: 'caldav', id: null });
+                }
+              }}
+            >
+              {t(p.label)}
+            </button>
+          ))}
+          <Button size="sm" variant="ghost" label={t('Back')} onClick={() => setPickingCalendar(false)} />
+        </div>
+      )}
+
       {editing && (
         <div className="fs-set__card fs-intg__form" data-testid="intg-form">
-          <Form editing={editing} items={items ?? []} onClose={close} onChanged={() => void reload()} say={say} />
+          <Form editing={editing} items={items ?? []} caldavPreset={caldavPreset} googleConfigured={googleConfigured} onClose={close} onChanged={() => void reload()} say={say} />
         </div>
       )}
 
@@ -287,8 +367,10 @@ export function IntegrationsSection({ say }: { say: (t: string) => void }) {
         <ul className="fs-intg">
           {items.map((item) => {
             const mcp = item.kind === 'mcp' ? (item.data as McpServerManifest) : null;
+            const gcal = item.kind === 'google_calendar' ? (item.data as GoogleCalendarAccount) : null;
+            const needsReauth = gcal?.status === 'needs_reauth';
             return (
-            <li key={`${item.kind}-${item.id}`} className="fs-intg__row" data-testid={`intg-${item.kind}`} style={(mcp?.manifest_pending_approval || (item.kind === 'mcp' && mcp?.status === 'connected')) ? { display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: '4px' } : undefined}>
+            <li key={`${item.kind}-${item.id}`} className="fs-intg__row" data-testid={`intg-${item.kind}`} style={(mcp?.manifest_pending_approval || (item.kind === 'mcp' && mcp?.status === 'connected') || needsReauth) ? { display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: '4px' } : undefined}>
               <div className="fs-intg__row-main" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
                 <button type="button" className="fs-intg__main" onClick={() => setEditing({ kind: item.kind, id: item.id })} title={t('Open')}>
                   <span className="fs-intg__kind">{t(KIND_LABEL[item.kind])}</span>
@@ -315,6 +397,13 @@ export function IntegrationsSection({ say }: { say: (t: string) => void }) {
                   />
                 </div>
               )}
+              {needsReauth && gcal && (
+                <div className="fs-notice" data-tone="warning" role="alert" data-testid="gcal-row-reauth">
+                  <AlertTriangle size={14} aria-hidden="true" />
+                  {t('{name} needs to reconnect with Google before it can sync.', { name: item.name })}
+                  <Button size="sm" variant="ghost" label={t('Reconnect with Google')} onClick={() => window.location.assign(googleCalendarAuthorizeUrl(gcal.id))} />
+                </div>
+              )}
               {item.kind === 'mcp' && mcp?.status === 'connected' && <McpToolsPage serverId={item.id} />}
             </li>
             );
@@ -325,13 +414,15 @@ export function IntegrationsSection({ say }: { say: (t: string) => void }) {
   );
 }
 
-function Form({ editing, items, onClose, onChanged, say }: { editing: NonNullable<Editing>; items: Item[]; onClose: () => void; onChanged: () => void; say: (t: string) => void }) {
+function Form({ editing, items, caldavPreset, googleConfigured, onClose, onChanged, say }: { editing: NonNullable<Editing>; items: Item[]; caldavPreset?: string; googleConfigured: boolean; onClose: () => void; onChanged: () => void; say: (t: string) => void }) {
   const current = items.find((i) => i.kind === editing.kind && i.id === editing.id) ?? null;
   switch (editing.kind) {
     case 'api':
       return <ApiForm existing={current?.data as ApiIntegration | undefined} onClose={onClose} onChanged={onChanged} say={say} />;
     case 'caldav':
-      return <CalDavForm existing={current?.data as CalDavAccount | undefined} onClose={onClose} onChanged={onChanged} say={say} />;
+      return <CalDavForm existing={current?.data as CalDavAccount | undefined} preset={current ? undefined : caldavPreset} onClose={onClose} onChanged={onChanged} say={say} />;
+    case 'google_calendar':
+      return <GoogleCalendarForm existing={current?.data as GoogleCalendarAccount | undefined} configured={googleConfigured} onClose={onClose} onChanged={onChanged} say={say} />;
     case 'contacts':
     case 'carddav':
       return <ContactsPanel onClose={onClose} onChanged={onChanged} say={say} />;

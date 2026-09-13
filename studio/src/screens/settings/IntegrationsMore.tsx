@@ -1,4 +1,4 @@
-import { AlertTriangle, Download, Pencil, Plus, Trash2, Upload } from 'lucide-react';
+import { AlertTriangle, CalendarDays, Download, Pencil, Plus, RefreshCw, Trash2, Upload } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Button, IconButton, Skeleton } from '../../components';
 import {
@@ -7,8 +7,10 @@ import {
   approveMcpManifest,
   contactsConfig,
   deleteContact,
+  deleteGoogleCalendar,
   EMAIL_PROVIDERS,
   exportContacts,
+  googleCalendarAuthorizeUrl,
   googleOAuthUrl,
   importContacts,
   listContacts,
@@ -19,20 +21,24 @@ import {
   reconnectMcpServer,
   saveCardDav,
   saveEmailAccount,
+  saveGoogleCalendar,
   setMcpDisabledTools,
   setMcpEnvMode,
   testEmailAccount,
+  testGoogleCalendar,
   toggleMcpServer,
   updateContact,
   type Contact,
   type EmailAccount,
   type EmailBody,
+  type GoogleCalendarAccount,
+  type GoogleCalendarListItem,
   type McpGovernance,
   type McpServer,
   type McpTool,
 } from '../../adapters/integrations';
 import { MCP_PRESETS, fieldsFor, oauthFilePayload, presetByName, withProvider } from '../../lib/mcpPresets';
-import { t, tn } from '../../i18n';
+import { locale, t, tn } from '../../i18n';
 import { Field, Select, Toggle } from './fields';
 import { FormFoot, useMsg } from './IntegrationForms';
 
@@ -213,6 +219,170 @@ export function EmailForm({ existing, onClose, onChanged, say }: { existing?: Em
         <Button size="sm" variant="ghost" label={t('Close')} onClick={onClose} />
         <Button size="sm" variant="secondary" label={t('Test')} disabled={busy} onClick={() => void test()} />
         <Button size="sm" variant="primary" label={t('Save')} loading={busy} onClick={() => void save()} />
+      </FormFoot>
+    </>
+  );
+}
+
+/* ── Google Calendar (CONTRATO_GOOGLE_CALENDAR, lote G2) ── */
+
+/**
+ * Consumes the API G1 (`/home/claude/faustus-G1`, branch `lot/G1`) defines:
+ * `GET /api/calendar/config/google`, `GET /api/calendar/oauth/google/
+ * authorize[?account_id=]` (full navigation, never fetched), `DELETE`/`PUT
+ * /api/calendar/config/google/{id}`, `POST .../{id}/test`. None of it exists
+ * in this worktree yet — `listGoogleCalendar()`'s `safe()` wrapper in
+ * `Integrations.tsx::fetchAll` degrades to `{configured:false, accounts:[]}`
+ * rather than breaking the unified list, and this form's own calls surface
+ * whatever `Error` the adapter throws (HTTP status or "not json") through
+ * `useMsg()`, the same as every other panel here.
+ */
+export function GoogleCalendarForm({ existing, configured, onClose, onChanged, say }: { existing?: GoogleCalendarAccount; configured: boolean; onClose: () => void; onChanged: () => void; say: (t: string) => void }) {
+  const [label, setLabel] = useState(existing?.label ?? '');
+  const [cals, setCals] = useState<GoogleCalendarListItem[] | null>(null);
+  const [selected, setSelected] = useState<Set<string> | null>(existing?.selected_calendars ? new Set(existing.selected_calendars) : null);
+  const [busy, setBusy] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const m = useMsg();
+
+  const connect = () => {
+    window.location.assign(googleCalendarAuthorizeUrl(existing?.id));
+  };
+
+  const saveLabel = async () => {
+    if (!existing || label.trim() === (existing.label ?? '')) return;
+    try {
+      await saveGoogleCalendar(existing.id, { label: label.trim() });
+      onChanged();
+    } catch (e) {
+      m.bad((e as Error).message);
+    }
+  };
+
+  const checkCalendars = async () => {
+    if (!existing) return;
+    m.clear();
+    setBusy(true);
+    try {
+      const r = await testGoogleCalendar(existing.id);
+      setCals(r.calendars);
+      if (!r.ok) m.bad(r.message ?? t('Failed'));
+    } catch (e) {
+      m.bad((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const toggleCal = (id: string, on: boolean) => {
+    setSelected((prev) => {
+      // null == every calendar; start from what the account actually has
+      // once the box is unticked for the first time.
+      const base = prev ?? new Set((cals ?? []).map((c) => c.id));
+      const next = new Set(base);
+      if (on) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  };
+
+  const saveSelection = async (which: Set<string> | null) => {
+    if (!existing) return;
+    setBusy(true);
+    m.clear();
+    try {
+      await saveGoogleCalendar(existing.id, { selected_calendars: which ? Array.from(which) : null });
+      setSelected(which);
+      m.good(t('Saved.'));
+      onChanged();
+    } catch (e) {
+      m.bad((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = async () => {
+    if (!existing) return;
+    setBusy(true);
+    try {
+      await deleteGoogleCalendar(existing.id);
+      say(t('Google Calendar account removed.'));
+      onClose();
+    } catch (e) {
+      m.bad((e as Error).message);
+      setBusy(false);
+    }
+  };
+
+  if (!existing) {
+    return (
+      <>
+        <h3 className="fs-set__card-title">{t('Google Calendar')}</h3>
+        <p className="fs-set__help">{t('Google rejects a plain username and password for CalDAV; this connects the same way Faustus already connects Gmail — OAuth, with Google asking you for consent.')}</p>
+        {!configured && (
+          <p className="fs-set__help fs-intg__note" data-tone="warn">
+            {t('Set GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET in .env')} — <code className="fs-tools__id">docs/api/google_calendar.md</code>
+          </p>
+        )}
+        <FormFoot msg={m.msg} tone={m.tone}>
+          <Button size="sm" variant="ghost" label={t('Close')} onClick={onClose} />
+          <Button size="sm" variant="primary" icon={CalendarDays} label={t('Connect with Google')} disabled={!configured} onClick={connect} testId="gcal-connect" />
+        </FormFoot>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <h3 className="fs-set__card-title">{t('Google Calendar')}</h3>
+      <Field label={t('Label')} htmlFor="gc-label" help={existing.email}>
+        <input id="gc-label" className="fs-field" value={label} onChange={(e) => setLabel(e.target.value)} onBlur={() => void saveLabel()} />
+      </Field>
+      {existing.status === 'needs_reauth' ? (
+        <div className="fs-notice" data-tone="warning" role="alert">
+          <AlertTriangle size={14} aria-hidden="true" />
+          {t('Google revoked or expired this connection — sync is paused until it reconnects.')}
+        </div>
+      ) : (
+        <p className="fs-set__help" data-tone="ok">{existing.last_sync_at ? t('Last synced {when}.', { when: new Date(existing.last_sync_at).toLocaleString(locale()) }) : t('Not synced yet.')}</p>
+      )}
+      <div className="fs-set__row-end" style={{ justifyContent: 'flex-start' }}>
+        <Button size="sm" variant="secondary" icon={RefreshCw} label={existing.status === 'needs_reauth' ? t('Reconnect with Google') : t('Reconnect')} onClick={connect} testId="gcal-reconnect" />
+        <Button size="sm" variant="ghost" label={busy && !cals ? t('Checking…') : t('Check calendars')} loading={busy && !cals} onClick={() => void checkCalendars()} testId="gcal-check" />
+      </div>
+      {cals && (
+        <div className="fs-set__field">
+          <span className="fs-set__label">{t('Calendars to sync')}</span>
+          <p className="fs-set__help">{t('All calendars sync when none is ticked.')}</p>
+          <ul className="fs-scopes">
+            {cals.map((c) => (
+              <li key={c.id} className="fs-scopes__row">
+                <span>
+                  <strong>{c.summary}</strong>
+                  {c.primary && <span className="fs-set__help"> · {t('primary')}</span>}
+                </span>
+                <Toggle id={`gc-cal-${c.id}`} checked={selected ? selected.has(c.id) : true} onChange={(v) => toggleCal(c.id, v)} />
+              </li>
+            ))}
+          </ul>
+          <div className="fs-set__row-end" style={{ justifyContent: 'flex-start' }}>
+            <Button size="sm" variant="ghost" label={t('All calendars')} disabled={busy} onClick={() => void saveSelection(null)} />
+            <Button size="sm" variant="secondary" label={t('Save selection')} loading={busy} onClick={() => void saveSelection(selected ?? new Set(cals.map((c) => c.id)))} />
+          </div>
+        </div>
+      )}
+      <FormFoot msg={m.msg} tone={m.tone}>
+        <Button size="sm" variant="ghost" label={t('Close')} onClick={onClose} />
+        {!confirmDelete ? (
+          <Button size="sm" variant="danger" icon={Trash2} label={t('Delete')} onClick={() => setConfirmDelete(true)} testId="gcal-delete" />
+        ) : (
+          <span className="fs-modes__confirm">
+            <span className="fs-set__help" data-tone="bad">{t('Delete for good?')}</span>
+            <Button size="sm" variant="danger-solid" label={t('Delete')} loading={busy} onClick={() => void remove()} testId="gcal-delete-confirm" />
+            <Button size="sm" variant="ghost" label={t('Cancel')} disabled={busy} onClick={() => setConfirmDelete(false)} />
+          </span>
+        )}
       </FormFoot>
     </>
   );
