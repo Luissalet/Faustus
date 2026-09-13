@@ -3,6 +3,7 @@
 import logging
 import json
 import re
+import time
 import uuid
 from datetime import datetime, date, timedelta
 from typing import Optional, List
@@ -148,20 +149,40 @@ def _resolve_base_uid(uid: str) -> str:
     return base
 
 
+def _remote_push_fns(action: str):
+    """The provider ``push_event_*`` functions for *action*
+    ('create'/'update'/'delete'), looked up fresh on every call (not bound
+    into this module's globals) so a test's
+    ``monkeypatch.setattr(csync, "push_event_create", fake)`` — pinned by
+    ``tests/test_caldav_writeback_route.py`` — is honoured."""
+    import src.caldav_sync as _csync
+    import src.google_calendar_sync as _gsync
+    attr = {"create": "push_event_create", "update": "push_event_update", "delete": "push_event_delete"}.get(action)
+    if not attr:
+        return []
+    return [getattr(_csync, attr), getattr(_gsync, attr)]
+
+
 async def _push_caldav_event_after_commit(owner: str, uid: str, action: str):
-    """Best-effort CalDAV write-through. Local writes stay authoritative if
-    the remote server is unreachable; pending flags let /sync retry later."""
+    """Best-effort remote write-through (CalDAV or Google Calendar — G1.4).
+    Local writes stay authoritative if the remote server is unreachable;
+    pending flags let /sync retry later.
+
+    Dispatches by *trying* both provider modules rather than pre-resolving
+    the calendar's ``source`` here: each provider's own ``push_event_*``
+    already resolves the event (or, for a delete, the tombstone) and its
+    calendar, and no-ops with ``{"skipped": True}`` when that calendar isn't
+    theirs. That keeps a delete correct even though the event row is already
+    gone by the time this runs — the tombstone still carries `calendar_id`,
+    and each provider's loader checks the calendar's own `source` through
+    it. Exactly one provider is expected to actually apply the action."""
     try:
-        result = {"ok": True}
-        if action == "create":
-            from src.caldav_sync import push_event_create
-            result = await push_event_create(owner, uid)
-        elif action == "update":
-            from src.caldav_sync import push_event_update
-            result = await push_event_update(owner, uid)
-        elif action == "delete":
-            from src.caldav_sync import push_event_delete
-            result = await push_event_delete(owner, uid)
+        results = []
+        for action_fn in _remote_push_fns(action):
+            r = await action_fn(owner, uid)
+            if r and not r.get("skipped"):
+                results.append(r)
+        result = results[0] if results else {"ok": True, "skipped": True}
         if result and result.get("conflict"):
             # CONN-04: `writeback_event` already marked the local row
             # `caldav_sync_pending = "conflict"` (`_persist_writeback_result`)
@@ -187,8 +208,52 @@ async def _push_caldav_event_after_commit(owner: str, uid: str, action: str):
                 db.close()
 
 
+def _is_remote_source(source) -> bool:
+    """Whether a calendar's ``source`` is backed by a remote server (CalDAV or
+    Google Calendar) and therefore participates in the write-back / pending
+    dispatch machinery (G1.4). Local/imported calendars are not."""
+    return source in ("caldav", "google")
+
+
+def _merge_flat_sync_result(caldav_result: dict, google_result: dict, keys: tuple) -> dict:
+    merged: dict = {}
+    for key in keys:
+        if key == "errors":
+            merged["errors"] = [*caldav_result.get("errors", []), *google_result.get("errors", [])]
+        else:
+            merged[key] = caldav_result.get(key, 0) + google_result.get(key, 0)
+    merged["caldav"] = caldav_result
+    merged["google"] = google_result
+    return merged
+
+
+def _merge_provider_sync_results(direction: str, caldav_result: dict, google_result: dict) -> dict:
+    """Combine one CalDAV/Google pair of ``sync_*_direction`` results into
+    the shape POST /sync has always returned (G1.2), plus a per-provider
+    ``caldav``/``google`` breakdown the Studio can drill into."""
+    direction = (direction or "pull").strip().lower()
+    if direction == "push":
+        return _merge_flat_sync_result(caldav_result, google_result, ("events", "errors"))
+    if direction == "both":
+        return {
+            "push": _merge_flat_sync_result(
+                caldav_result.get("push", {}) or {}, google_result.get("push", {}) or {},
+                ("events", "errors"),
+            ),
+            "pull": _merge_flat_sync_result(
+                caldav_result.get("pull", {}) or {}, google_result.get("pull", {}) or {},
+                ("calendars", "events", "deleted", "errors"),
+            ),
+        }
+    # "pull" (default), and any unrecognised direction — whose per-provider
+    # result already carries its own "unsupported direction" error string.
+    return _merge_flat_sync_result(
+        caldav_result, google_result, ("calendars", "events", "deleted", "errors"),
+    )
+
+
 def _record_caldav_delete_tombstone(db, ev: CalendarEvent, owner: str) -> None:
-    if not (ev.calendar and ev.calendar.source == "caldav"):
+    if not (ev.calendar and _is_remote_source(ev.calendar.source)):
         return
     tombstone = db.query(CalendarDeletedEvent).filter(
         CalendarDeletedEvent.uid == ev.uid,
@@ -994,6 +1059,241 @@ def setup_calendar_routes(upload_handler=None) -> APIRouter:
         _save_caldav_accounts(owner, new_accounts)
         return {"ok": True}
 
+    # ── Google Calendar OAuth2 + account routes (G1.2) ──────────────────────
+    # Reuses the OAuth-state signing (`make_oauth_state`/`verify_oauth_state`)
+    # and app-secret HMAC from routes/email_helpers.py, and the same Google
+    # OAuth *client* (GOOGLE_OAUTH_CLIENT_ID/SECRET) already used for Gmail —
+    # a separate, Calendar-specific scope is requested per authorization, so
+    # the two token sets stay independent even though the client is shared.
+
+    def _google_calendar_redirect_uri(request: Request) -> str:
+        """Prefer an explicit GOOGLE_CALENDAR_OAUTH_REDIRECT_URI; else derive
+        one from GOOGLE_OAUTH_REDIRECT_URI (the email OAuth redirect) by
+        swapping its *path* — never guessed by string-replacing "/email/"
+        with "/calendar/", since nothing guarantees that substring is there;
+        else infer scheme+host from the request, exactly like the email flow
+        (routes/email_routes.py's google_oauth_authorize/_callback)."""
+        explicit = (_os.environ.get("GOOGLE_CALENDAR_OAUTH_REDIRECT_URI") or "").strip()
+        if explicit:
+            return explicit
+        email_uri = (_os.environ.get("GOOGLE_OAUTH_REDIRECT_URI") or "").strip()
+        if email_uri:
+            from urllib.parse import urlparse, urlunparse
+            parsed = urlparse(email_uri)
+            return urlunparse(parsed._replace(path="/api/calendar/oauth/google/callback"))
+        host = request.headers.get("host", "localhost:7000")
+        return f"{request.url.scheme}://{host}/api/calendar/oauth/google/callback"
+
+    # The Studio's real Integrations route: studio/src/screens/Settings.tsx's
+    # SECTIONS table keys it 'integrations' and the screen reads/writes it as
+    # the `s` query param (`/settings?s=integrations`) — NOT `/?section=...`,
+    # which is what routes/email_routes.py's (pre-Studio) OAuth callback still
+    # uses. G2 reads `calendar_oauth`/`calendar_oauth_error` off this URL.
+    _GCAL_INTEGRATIONS_PATH = "/settings?s=integrations"
+
+    @router.get("/oauth/google/authorize")
+    async def google_calendar_oauth_authorize(request: Request, account_id: str = ""):
+        """Start the Google Calendar OAuth flow. `account_id` reconnects an
+        existing (e.g. needs_reauth) account; omitted, a new account is
+        created on callback."""
+        import urllib.parse
+        from fastapi.responses import RedirectResponse
+        from routes.email_helpers import make_oauth_state
+
+        owner = _require_user(request)
+        from src.google_calendar_accounts import client_configured, get_account
+        if not client_configured():
+            raise HTTPException(400, "GOOGLE_OAUTH_CLIENT_ID/GOOGLE_OAUTH_CLIENT_SECRET not set — add them to .env")
+        if account_id and not get_account(owner, account_id):
+            raise HTTPException(404, "Account not found")
+
+        client_id = _os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "")
+        redirect_uri = _google_calendar_redirect_uri(request)
+        # The state's "a" field carries "calendar" for a new account, or the
+        # account_id being reconnected — mirrors email's account_id/"a" use,
+        # generalized to also encode "this is a fresh connect".
+        state = make_oauth_state(account_id or "calendar", owner)
+        params = urllib.parse.urlencode({
+            "client_id": client_id,
+            "redirect_uri": redirect_uri,
+            "response_type": "code",
+            "scope": "https://www.googleapis.com/auth/calendar openid email",
+            "access_type": "offline",
+            "prompt": "consent",
+            "state": state,
+        })
+        return RedirectResponse(f"https://accounts.google.com/o/oauth2/v2/auth?{params}")
+
+    @router.get("/oauth/google/callback")
+    async def google_calendar_oauth_callback(
+        request: Request, code: str = "", state: str = "", error: str = "",
+    ):
+        """Exchange the auth code, verify the mailbox identity on reconnect,
+        and persist the account (encrypted tokens only) — then redirect back
+        to the Studio's Integrations section (`_GCAL_INTEGRATIONS_PATH`)."""
+        from fastapi.responses import RedirectResponse
+        from routes.email_helpers import verify_oauth_state
+
+        def _ok():
+            return RedirectResponse(f"{_GCAL_INTEGRATIONS_PATH}&calendar_oauth=ok")
+
+        def _err(code_: str):
+            return RedirectResponse(f"{_GCAL_INTEGRATIONS_PATH}&calendar_oauth_error={code_}")
+
+        if error:
+            return _err("google_error")
+        if not code or not state:
+            return _err("missing_code")
+        state_data = verify_oauth_state(state)
+        if not state_data:
+            return _err("invalid_state")
+        target_account_id = state_data.get("a", "")
+        owner = state_data.get("o", "")
+        is_reconnect = bool(target_account_id) and target_account_id != "calendar"
+
+        client_id = _os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "")
+        client_secret = _os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET", "")
+        if not client_id or not client_secret:
+            return _err("not_configured")
+        redirect_uri = _google_calendar_redirect_uri(request)
+
+        import httpx as _httpx
+        try:
+            resp = _httpx.post("https://oauth2.googleapis.com/token", data={
+                "code": code,
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "redirect_uri": redirect_uri,
+                "grant_type": "authorization_code",
+            }, timeout=10)
+            resp.raise_for_status()
+            data = resp.json()
+        except Exception:
+            logger.warning("Google Calendar token exchange failed")
+            return _err("token_exchange_failed")
+
+        access_token = data.get("access_token", "")
+        refresh_token = data.get("refresh_token", "")
+        if not access_token or not refresh_token:
+            logger.warning("Google Calendar token exchange omitted required offline credentials")
+            return _err("token_exchange_failed")
+        expiry = int(time.time()) + int(data.get("expires_in", 3600))
+
+        email_addr = ""
+        try:
+            ui = _httpx.get(
+                "https://www.googleapis.com/oauth2/v1/userinfo",
+                headers={"Authorization": f"Bearer {access_token}"}, timeout=10,
+            )
+            if ui.is_success:
+                email_addr = (ui.json() or {}).get("email", "") or ""
+        except Exception:
+            pass
+        if not email_addr:
+            logger.warning("Google Calendar OAuth callback: userinfo lookup failed")
+            return _err("identity_verification_failed")
+
+        from src.google_calendar_accounts import get_account, upsert_account
+        from src.secret_storage import encrypt as _enc
+
+        if is_reconnect:
+            existing = get_account(owner, target_account_id, public=False)
+            if not existing:
+                return _err("account_not_found")
+            # A reconnect must prove the new token belongs to the SAME Google
+            # identity already on this account (mirrors email's mailbox-
+            # identity check) — otherwise authenticating a different Google
+            # account would silently swap whose calendars sync here.
+            if (existing.get("email") or "").strip().casefold() != email_addr.strip().casefold():
+                logger.warning("Google Calendar OAuth reconnect identity mismatch")
+                return _err("identity_verification_failed")
+            existing["access_token"] = _enc(access_token)
+            existing["refresh_token"] = _enc(refresh_token)
+            existing["token_expiry"] = str(expiry)
+            existing["status"] = "ok"
+            upsert_account(owner, existing)
+        else:
+            new_account = {
+                "id": str(uuid.uuid4()),
+                "label": f"Google · {email_addr}",
+                "email": email_addr,
+                "access_token": _enc(access_token),
+                "refresh_token": _enc(refresh_token),
+                "token_expiry": str(expiry),
+                "status": "ok",
+                "sync_tokens": {},
+                "selected_calendars": None,
+                "created_at": time.time(),
+                "last_sync_at": None,
+            }
+            upsert_account(owner, new_account)
+        return _ok()
+
+    @router.get("/config/google")
+    async def get_google_calendar_config(request: Request):
+        owner = _require_user(request)
+        from src.google_calendar_accounts import client_configured, list_accounts
+        return {"configured": client_configured(), "accounts": list_accounts(owner)}
+
+    @router.delete("/config/google/{account_id}")
+    async def delete_google_calendar_account(account_id: str, request: Request):
+        owner = _require_user(request)
+        from src.google_calendar_accounts import delete_account
+        if not delete_account(owner, account_id):
+            raise HTTPException(404, "Account not found")
+        return {"ok": True}
+
+    @router.post("/config/google/{account_id}/test")
+    async def test_google_calendar_account(account_id: str, request: Request):
+        """List the account's Google calendars (id/summary/primary) without
+        writing anything — a connectivity check and the source for the
+        Studio's "selected calendars" checklist."""
+        owner = _require_user(request)
+        from src.google_calendar_accounts import access_token_for, get_account
+        if not get_account(owner, account_id):
+            raise HTTPException(404, "Account not found")
+        token = access_token_for(owner, account_id)
+        if not token:
+            return {"ok": False, "error": "needs_reauth"}
+        import httpx
+        try:
+            resp = httpx.get(
+                "https://www.googleapis.com/calendar/v3/users/me/calendarList",
+                headers={"Authorization": f"Bearer {token}"}, timeout=10,
+            )
+            if resp.status_code == 401:
+                return {"ok": False, "error": "needs_reauth"}
+            resp.raise_for_status()
+            items = resp.json().get("items", [])
+            return {"ok": True, "calendars": [
+                {"id": it.get("id"), "summary": it.get("summary") or it.get("id") or "",
+                 "primary": bool(it.get("primary"))}
+                for it in items
+            ]}
+        except httpx.HTTPStatusError as e:
+            return {"ok": False, "error": f"HTTP {e.response.status_code}"}
+        except Exception as e:
+            return {"ok": False, "error": str(e)[:200]}
+
+    @router.put("/config/google/{account_id}")
+    async def update_google_calendar_account(account_id: str, request: Request):
+        owner = _require_user(request)
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        from src.google_calendar_accounts import get_account, upsert_account
+        acc = get_account(owner, account_id, public=False)
+        if not acc:
+            raise HTTPException(404, "Account not found")
+        if body.get("label") is not None:
+            acc["label"] = (body.get("label") or "").strip() or acc.get("label") or "Google Calendar"
+        if "selected_calendars" in body:
+            sel = body.get("selected_calendars")
+            acc["selected_calendars"] = list(sel) if isinstance(sel, list) else None
+        upsert_account(owner, acc)
+        return {"ok": True}
+
     @router.post("/test")
     async def test_connection(request: Request):
         """Probe a CalDAV server with a PROPFIND. Accepts an optional body:
@@ -1099,12 +1399,22 @@ def setup_calendar_routes(upload_handler=None) -> APIRouter:
 
     @router.post("/sync")
     async def sync_caldav_endpoint(request: Request, direction: str = "pull"):
-        """Sync events with the configured CalDAV server.
-        Returns counts + any per-calendar errors. Called by the frontend
-        on calendar open and by the periodic scheduler loop."""
+        """Sync events with every configured remote calendar server — CalDAV
+        AND Google Calendar (G1.2/G1.4). Returns counts + any per-calendar
+        errors. Called by the frontend on calendar open and by the periodic
+        scheduler loop.
+
+        The top-level shape the Studio already reads (`calendars`, `events`,
+        `deleted`, `errors` for `direction=pull`; `events`, `errors` for
+        `direction=push`; `push`/`pull` for `direction=both`) is preserved —
+        those are now the CalDAV+Google totals — with `caldav` and `google`
+        added alongside carrying each provider's own breakdown."""
         owner = _require_user(request)
         from src.caldav_sync import sync_caldav_direction
-        return await sync_caldav_direction(owner, direction)
+        from src.google_calendar_sync import sync_google_direction
+        caldav_result = await sync_caldav_direction(owner, direction)
+        google_result = await sync_google_direction(owner, direction)
+        return _merge_provider_sync_results(direction, caldav_result, google_result)
 
     @router.get("/conflicts")
     async def list_caldav_conflicts(request: Request):
@@ -1366,8 +1676,14 @@ def setup_calendar_routes(upload_handler=None) -> APIRouter:
                 external_ref=data.external_ref or None,
             )
             db.add(ev)
+            if cal.source == "google":
+                # G1.4: the ternary above only recognises "caldav" (pinned by
+                # test_caldav_bidirectional_sync.py's literal-source check);
+                # Google-backed calendars get the same "create" pending flag
+                # here instead of changing that line's text.
+                ev.caldav_sync_pending = "create"
             db.commit()
-            if cal.source == "caldav":
+            if _is_remote_source(cal.source):
                 await _push_caldav_event_after_commit(owner, uid, "create")
             return {"ok": True, "uid": uid, "created": True}
         except HTTPException:
@@ -1415,7 +1731,7 @@ def setup_calendar_routes(upload_handler=None) -> APIRouter:
                 ev.rrule = data.rrule
             if data.color is not None:
                 ev.color = data.color if data.color else None
-            is_caldav = ev.calendar and ev.calendar.source == "caldav"
+            is_caldav = ev.calendar and _is_remote_source(ev.calendar.source)
             if is_caldav:
                 ev.caldav_sync_pending = "update"
             db.commit()
@@ -1442,7 +1758,7 @@ def setup_calendar_routes(upload_handler=None) -> APIRouter:
         try:
             ev = _get_or_404_event(db, base_uid, owner)
             is_occurrence_delete = scope in {"occurrence", "instance"} and "::" in uid and bool(ev.rrule)
-            is_caldav = ev.calendar and ev.calendar.source == "caldav"
+            is_caldav = ev.calendar and _is_remote_source(ev.calendar.source)
             if is_occurrence_delete:
                 key = _occurrence_exdate_key(uid, ev)
                 if not key:
