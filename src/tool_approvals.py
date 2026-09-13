@@ -388,6 +388,13 @@ class ToolApprovalStore:
         # turn", and nothing a stranger holding a leaked id could learn from.
         # Insertion-ordered and capped, so it can never grow without bound.
         self._expired: dict[str, str] = {}
+        # A07/consume_with_reason: same shape as `_expired`, but for an
+        # approval_id a PRIOR consume() already popped (granted, denied, or
+        # an unrecognised decision -- every path through consume() pops the
+        # entry). Lets a second consume of the same id answer
+        # "already_consumed" instead of the indistinguishable-from-a-typo
+        # "not_found" a bare dict lookup would give once the entry is gone.
+        self._consumed: dict[str, str] = {}
         self._lock = threading.Lock()
 
     def _remember_expired_locked(self, pending: PendingToolApproval) -> None:
@@ -395,6 +402,12 @@ class ToolApprovalStore:
         self._expired[pending.approval_id] = pending.owner
         while len(self._expired) > self._max_expired_memory:
             self._expired.pop(next(iter(self._expired)), None)
+
+    def _remember_consumed_locked(self, pending: PendingToolApproval) -> None:
+        self._consumed.pop(pending.approval_id, None)
+        self._consumed[pending.approval_id] = pending.owner
+        while len(self._consumed) > self._max_expired_memory:
+            self._consumed.pop(next(iter(self._consumed)), None)
 
     def _purge_expired_locked(self, now: float) -> None:
         expired = [
@@ -511,37 +524,96 @@ class ToolApprovalStore:
         original one-use grant, so a button labelled "Allow once" cannot widen
         into a run-long bypass just because the chat card reuses the same wire
         value.
+
+        A thin wrapper over `consume_with_reason` for every caller that only
+        ever needed the grant (or None) -- same signature, same return value,
+        byte for byte, as before that method existed.
+        """
+        grant, _reason = self.consume_with_reason(
+            approval_id,
+            decision=decision,
+            owner=owner,
+            session_id=session_id,
+            allow_continuation=allow_continuation,
+        )
+        return grant
+
+    def consume_with_reason(
+        self,
+        approval_id: Any,
+        *,
+        decision: Any,
+        owner: Any,
+        session_id: Any,
+        allow_continuation: bool = True,
+    ) -> tuple[ExactToolApproval | None, str]:
+        """A02/A07 (docs/spec/trueforge/): same consumption as `consume`, plus
+        a TYPED reason for why no grant came back, instead of a bare `None` a
+        caller cannot tell "this id never existed" from "the ttl dropped it"
+        from "somebody else already answered it" from "wrong owner". One of:
+
+        * ``"consumed"``      -- popped just now; a grant is returned too,
+          UNLESS the decision was invalid/deny, which also consumes the
+          pending action (see the original `consume` docstring/behaviour:
+          "deny retires pending action") but returns no grant -- still
+          ``"consumed"``, because the approval genuinely was, just with no
+          resulting authorization.
+        * ``"already_consumed"`` -- a PRIOR call already popped this exact id
+          for this owner (a second click, or two concurrent decisions racing
+          the same approval -- A02's scenario).
+        * ``"expired"``        -- the ttl dropped it before this call, for
+          this owner.
+        * ``"owner_mismatch"`` -- the id exists and is still pending, but for
+          a different owner/session; NOT popped (unchanged from `consume`:
+          authentication is checked before destructive consumption so a
+          leaked/guessed opaque id cannot be used to invalidate another
+          owner's pending action).
+        * ``"not_found"``      -- none of the above; either the id never
+          existed, or it belongs to another owner and even ITS expiry/consumed
+          memory must not leak that to a stranger holding a guessed id.
         """
         now = time.time()
+        normalized_owner = _normalized_owner(owner)
         with self._lock:
             self._purge_expired_locked(now)
             approval_key = str(approval_id or "")
             pending = self._pending.get(approval_key)
             if pending is None:
-                return None
+                if self._expired.get(approval_key) == normalized_owner:
+                    return None, "expired"
+                if self._consumed.get(approval_key) == normalized_owner:
+                    return None, "already_consumed"
+                return None, "not_found"
             if (
-                pending.owner != _normalized_owner(owner)
+                pending.owner != normalized_owner
                 or pending.session_id != str(session_id or "")
             ):
                 # Authentication is checked before destructive consumption so
                 # a leaked/guessed opaque id cannot be used to invalidate
                 # another owner's pending action.
-                return None
+                return None, "owner_mismatch"
             self._pending.pop(approval_key, None)
+            self._remember_consumed_locked(pending)
         normalized_decision = str(decision or "").strip().lower()
         scope = scope_for_decision(normalized_decision)
         if scope is None:
-            return None
+            return None, "consumed"
         if not allow_continuation:
-            return ExactToolApproval(
-                pending,
-                scope=ToolApprovalScope.SINGLE_ACTION,
-                allow_remaining_actions=False,
+            return (
+                ExactToolApproval(
+                    pending,
+                    scope=ToolApprovalScope.SINGLE_ACTION,
+                    allow_remaining_actions=False,
+                ),
+                "consumed",
             )
-        return ExactToolApproval(
-            pending,
-            scope=scope,
-            allow_remaining_actions=True,
+        return (
+            ExactToolApproval(
+                pending,
+                scope=scope,
+                allow_remaining_actions=True,
+            ),
+            "consumed",
         )
 
     def pending_session_ids(self, *, owner: Any) -> list[str]:
@@ -591,12 +663,24 @@ class ToolApprovalStore:
         Returns whether any retired action carried external provenance, so the
         caller can preserve that security state without treating the new user
         message as an approval continuation.
+
+        Thin wrapper over `retire_for_session_ids` for every caller that only
+        ever needed the taint bool -- same signature, same return value, byte
+        for byte, as before that method existed.
         """
+        _ids, carried_taint = self.retire_for_session_ids(owner=owner, session_id=session_id)
+        return carried_taint
+
+    def retire_for_session_ids(self, *, owner: Any, session_id: Any) -> tuple[list[str], bool]:
+        """A07 (docs/spec/trueforge/): same retirement as `retire_for_session`,
+        plus the approval_ids actually retired -- `chat_stop`'s cleanup report
+        needs to say WHICH approvals it retired for the cancelled turn and its
+        stopped workers, not just whether any carried external provenance."""
         now = time.time()
         normalized_owner = _normalized_owner(owner)
         normalized_session = str(session_id or "")
         if not normalized_session:
-            return False
+            return [], False
         with self._lock:
             self._purge_expired_locked(now)
             retired_ids = [
@@ -613,7 +697,7 @@ class ToolApprovalStore:
             )
             for approval_id in retired_ids:
                 self._pending.pop(approval_id, None)
-        return carried_taint
+        return retired_ids, carried_taint
 
 
 tool_approval_store = ToolApprovalStore()
