@@ -303,8 +303,9 @@ deep-link de workflows, recetas desde un run real) ya no aparece aquí.
   (10 min 7 s). En vivo en el 7001: `/connectors` con el preset Jobhunter,
   «App not running · Adapter: 15 tools» con la app apagada, perfil de
   arranque → instancia de PRUEBA en 5179 (`JOBHUNT_DATA_DIR` en
-  `D:\LocalAI\_claude_tmp\jh_testdata`, sigue corriendo: es nuestra,
-  pid en el log del perfil), «Available», qwen3.8 27B q4 llamando
+  `D:\LocalAI\_claude_tmp\jh_testdata`; la mató después mi
+  `restart7001.ps1`, que mata los HIJOS del 7001 — `Stop-Faustus.ps1` no
+  lo hace —, «Iniciar la app» la vuelve a levantar), «Available», qwen3.8 27B q4 llamando
   `list_contexts`/`list_jobs` por MCP con tarjeta de permiso, y con
   «ningún conector» el modelo dice que no tiene la herramienta. Jobhunter
   en Windows: `claude/conectores` `f08fd93`, 28/28.
