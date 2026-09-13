@@ -182,6 +182,14 @@ class TaskCreate(TaskTimezone):
     misfire_policy: Optional[str] = None           # "fire_immediately" | "skip"
     budget_preset: Optional[str] = None            # src.autonomy_budget.PRESETS key
     permissions: Optional[list[str]] = None        # tool allowlist clamp for every run
+    # CONTRATO_CONECTORES F2.2: MCP connector allowlist (`McpServer.id`
+    # values) for every run of this task — stored in the same
+    # `task_policies` row as the fields right above, read by
+    # `src.connector_policy.resolve_allowed_servers_for_session`. `None`
+    # here (the default, like every field in this model) declares nothing —
+    # the task falls through to its session's/project's own tier, then to
+    # unrestricted, exactly like a task that predates this field.
+    connector_ids: Optional[list[str]] = None
 
 
 class TaskUpdate(TaskTimezone):
@@ -203,6 +211,16 @@ class TaskUpdate(TaskTimezone):
     then_task_id: Optional[str] = None
     notifications_enabled: Optional[bool] = None
     character_id: Optional[str] = None
+    # CONTRATO_CONECTORES F2.2 — see TaskCreate.connector_ids. `None` means
+    # "leave the task's declared allowlist as it is" (PUT never mentions it
+    # unless the caller actually sends it), matching how every other field
+    # in this model already behaves; there is currently no way to send this
+    # PUT and explicitly CLEAR a previously-declared connector_ids back to
+    # "undeclared" (only to a concrete list, `[]` included) — the same
+    # documented gap as the project PATCH endpoint (`routes/project_routes.
+    # py`), for the same reason (an explicit `None` here is indistinguishable
+    # from "the caller didn't mention it").
+    connector_ids: Optional[list[str]] = None
 
 
 def _display_task_name(t: ScheduledTask) -> str:
@@ -263,7 +281,55 @@ def _task_to_dict(t: ScheduledTask, include_last_run_result: bool = False) -> di
         last = t.runs[0]  # ordered desc by started_at
         d["last_run_status"] = last.status
         d["last_run_result"] = (last.result or last.error or "")[:500]
+    d["connectors"] = _task_connectors_payload(t)
     return d
+
+
+def _task_connectors_payload(t: ScheduledTask) -> dict:
+    """CONTRATO_CONECTORES F2.2: this task's own declared connector
+    allowlist, plus the fully-resolved effective set (factoring in its
+    working session and that session's project) and which tier produced
+    it. Never raises — a lookup failure degrades to "nothing declared"."""
+    from src.task_scheduler import get_task_policy
+    from src.connector_policy import resolve_allowed_servers
+    from core.database import get_session_connector_ids
+
+    stored = None
+    try:
+        stored = get_task_policy(getattr(t, "id", "") or "").get("connector_ids")
+    except Exception:
+        stored = None
+
+    session_id = getattr(t, "session_id", None)
+    session_ids = None
+    project_ids = None
+    if session_id:
+        try:
+            session_ids = get_session_connector_ids(session_id)
+        except Exception:
+            session_ids = None
+        try:
+            from services.projects import project_for_session
+            project = project_for_session(session_id, getattr(t, "owner", None))
+            if project and isinstance(project.get("connectors"), list):
+                project_ids = project.get("connectors")
+        except Exception:
+            project_ids = None
+
+    effective = resolve_allowed_servers(session=session_ids, project=project_ids, task=stored)
+    if stored is not None:
+        source = "task"
+    elif session_ids is not None:
+        source = "session"
+    elif project_ids is not None:
+        source = "project"
+    else:
+        source = "all"
+    return {
+        "connector_ids": stored,
+        "effective": sorted(effective) if effective is not None else None,
+        "source": source,
+    }
 
 
 def _run_to_dict(r: TaskRun) -> dict:
@@ -604,6 +670,7 @@ def setup_task_routes(task_scheduler) -> APIRouter:
             # policy, exactly as before.
             if any(v is not None for v in (
                 req.dst_ambiguity_policy, req.misfire_policy, req.budget_preset, req.permissions,
+                req.connector_ids,
             )):
                 result["policy"] = set_task_policy(
                     task_id,
@@ -611,7 +678,9 @@ def setup_task_routes(task_scheduler) -> APIRouter:
                     misfire_policy=req.misfire_policy,
                     budget_preset=req.budget_preset,
                     permissions=req.permissions,
+                    connector_ids=req.connector_ids,
                 )
+            result["connectors"] = _task_connectors_payload(task)
             return result
         finally:
             db.close()
@@ -811,6 +880,8 @@ def setup_task_routes(task_scheduler) -> APIRouter:
 
             db.commit()
             db.refresh(task)
+            if req.connector_ids is not None:
+                set_task_policy(task.id, connector_ids=req.connector_ids)
             return _task_to_dict(task)
         finally:
             db.close()

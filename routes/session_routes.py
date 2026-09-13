@@ -8,6 +8,8 @@ import zipfile
 from datetime import datetime
 from urllib.parse import quote as _urlquote
 from fastapi import APIRouter, Form, HTTPException, Response, Request
+from pydantic import BaseModel
+from typing import Any, Dict, List, Optional
 import logging
 
 from core.session_manager import SessionManager
@@ -828,7 +830,113 @@ def setup_session_routes(
                 result["capabilities"] = {}
                 result["lost"] = []
         return result
-    
+
+    class SessionConnectorsRequest(BaseModel):
+        # CONTRATO_CONECTORES F2.2: `None` clears the override (back to
+        # "inherit from project, or unrestricted"); `[]` is a real, distinct
+        # value ("this chat may call zero MCP connectors") and is stored as
+        # `[]`, never coerced to `None`. Pydantic already tells the two apart
+        # (an absent key stays the class default `...` sentinel below is not
+        # used — the field simply has no default, so the body must always
+        # name the key explicitly; see the route body for how that reads).
+        connector_ids: Optional[List[str]] = None
+
+    def _session_connectors_payload(sid: str) -> Dict[str, Any]:
+        from src.connector_policy import resolve_allowed_servers_for_session
+        from core.database import get_session_connector_ids
+        owner = None
+        try:
+            db = SessionLocal()
+            try:
+                db_session = db.query(DbSession).filter(DbSession.id == sid).first()
+                owner = getattr(db_session, "owner", None)
+            finally:
+                db.close()
+        except Exception:
+            pass
+        stored = get_session_connector_ids(sid)
+        effective = resolve_allowed_servers_for_session(sid, owner)
+        if stored is not None:
+            source = "session"
+        else:
+            from services.projects import project_for_session
+            project = None
+            try:
+                project = project_for_session(sid, owner)
+            except Exception:
+                project = None
+            source = "project" if project and isinstance(project.get("connectors"), list) else "all"
+        return {
+            "connector_ids": stored,
+            "effective": sorted(effective) if effective is not None else None,
+            "source": source,
+        }
+
+    @router.get("/session/{sid}/connectors")
+    def get_session_connectors(request: Request, sid: str) -> Dict[str, Any]:
+        """CONTRATO_CONECTORES F2.2: this chat's own connector allowlist, plus
+        the fully-resolved effective set and which tier produced it."""
+        _verify_session_owner(request, sid)
+        return _session_connectors_payload(sid)
+
+    @router.patch("/session/{sid}/connectors")
+    def patch_session_connectors(request: Request, sid: str, body: SessionConnectorsRequest) -> Dict[str, Any]:
+        """Set (or, with `null`, clear) this chat's own connector allowlist.
+        Unknown `McpServer.id` values are kept as-is here (unlike a
+        project's `connectors`): a session's own explicit choice is the
+        highest-precedence tier and a stale id is harmless — it simply
+        never matches a real `mcp__<id>__...` call, which already fails
+        safely at execution time."""
+        _verify_session_owner(request, sid)
+        try:
+            session = session_manager.get_session(sid)
+        except KeyError:
+            raise HTTPException(404, f"Session {sid} not found")
+        from core.database import set_session_connector_ids
+        set_session_connector_ids(sid, body.connector_ids)
+        return _session_connectors_payload(sid)
+
+    @router.get("/session/{sid}/tool-support")
+    def get_session_tool_support(request: Request, sid: str) -> Dict[str, Any]:
+        """CONTRATO_CONECTORES F2.4: whether the model/endpoint this session is
+        currently pinned to can use tools at all (native function-calling,
+        or Faustus's own fenced-block calling — both count as "supported";
+        only the text-only CLI transport does not). Never changes the
+        session's model/endpoint — read-only, same posture as `/api/mcp/*`
+        health checks."""
+        _verify_session_owner(request, sid)
+        try:
+            session = session_manager.get_session(sid)
+        except KeyError:
+            raise HTTPException(404, f"Session {sid} not found")
+        endpoint_url = str(getattr(session, "endpoint_url", "") or "")
+        model = str(getattr(session, "model", "") or "")
+        if not endpoint_url or not model:
+            return {"supported": "unknown", "mode": None, "reason": "No model/endpoint configured for this session."}
+        if endpoint_url.lower().startswith("faustus-cli://"):
+            return {
+                "supported": False,
+                "mode": "text_only",
+                "reason": "This session's endpoint is a text-only transport; tools (including MCP connectors) cannot be offered.",
+            }
+        try:
+            from src.agent_loop import _agent_route_tool_mode
+            is_api, is_native_ollama, is_ollama_compat = _agent_route_tool_mode(
+                endpoint_url, model, effective_user(request), headers=getattr(session, "headers", None) or None,
+            )
+        except Exception:
+            logger.warning("tool-support probe failed for session=%s", sid, exc_info=True)
+            return {"supported": "unknown", "mode": None, "reason": "Could not determine tool support for this model/endpoint."}
+        if is_api:
+            mode, reason = "api", "Native function-calling."
+        elif is_native_ollama:
+            mode, reason = "ollama_native", "Ollama native tool-calling transport."
+        elif is_ollama_compat:
+            mode, reason = "ollama_openai_compat", "Ollama OpenAI-compatible tool-calling transport."
+        else:
+            mode, reason = "fenced", "Fenced-block tool calling (no native function-calling for this model)."
+        return {"supported": True, "mode": mode, "reason": reason}
+
     @router.post("/session/{sid}/inject_messages")
     async def inject_messages(request: Request, sid: str):
         """Bulk-inject messages into a session's history (for group chat sync)."""

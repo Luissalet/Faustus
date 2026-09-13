@@ -1203,6 +1203,20 @@ def save_assistant_response(
 
     stamp_behavior_mode_metadata(md, behavior_mode, _content, getattr(sess, "owner", None))
 
+    # CONTRATO_CONECTORES F2.4: advisory only, never a fallback — if this
+    # chat cannot use tools at all AND has an explicit connector selection,
+    # say so on the reply instead of leaving a silent no-op. Never changes
+    # `sess.model`/`sess.endpoint_url`.
+    try:
+        from src.connector_policy import tool_support_notice
+        _notice = tool_support_notice(
+            session_id, getattr(sess, "endpoint_url", None), getattr(sess, "owner", None),
+        )
+        if _notice:
+            md["notice"] = _notice
+    except Exception:
+        logger.debug("tool_support_notice failed for session %s", session_id, exc_info=True)
+
     if incognito:
         _append_incognito_message(session_id, "assistant", _content, md)
         return None
