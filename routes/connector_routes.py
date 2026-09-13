@@ -1,5 +1,5 @@
 # routes/connector_routes.py
-"""F1.5: `/api/connectors` and `/api/launch-profiles` — the Connectors screen
+"""F1.5: `/api/app-connectors` and `/api/launch-profiles` — the Connectors screen
 backend (Faustus connector plan, Phases C+D).
 
 Reuses `McpManager` and the `McpServer` table for everything MCP already
@@ -134,12 +134,12 @@ def setup_connector_routes(mcp_manager: McpManager) -> APIRouter:
             "status": status,
         }
 
-    @router.get("/api/connectors/presets")
+    @router.get("/api/app-connectors/presets")
     def get_presets(request: Request):
         require_admin(request)
         return connectors.list_presets()
 
-    @router.get("/api/connectors")
+    @router.get("/api/app-connectors")
     async def list_connectors_route(request: Request, check: int = 0):
         require_admin(request)
         force_check = bool(check)
@@ -167,7 +167,7 @@ def setup_connector_routes(mcp_manager: McpManager) -> APIRouter:
             })
         return out
 
-    @router.post("/api/connectors")
+    @router.post("/api/app-connectors")
     async def create_connector_route(request: Request):
         require_admin(request)
         body = await request.json()
@@ -204,7 +204,7 @@ def setup_connector_routes(mcp_manager: McpManager) -> APIRouter:
         status = await _connector_status_for(entry, server, force_check=False)
         return _entry_view(connector_sidecar.get_connector(entry["id"], redact=True), server, status)
 
-    @router.patch("/api/connectors/{connector_id}")
+    @router.patch("/api/app-connectors/{connector_id}")
     async def update_connector_route(connector_id: str, request: Request):
         require_admin(request)
         entry = connector_sidecar.get_connector(connector_id, redact=False)
@@ -261,7 +261,7 @@ def setup_connector_routes(mcp_manager: McpManager) -> APIRouter:
         status = await _connector_status_for(updated, server, force_check=False)
         return _entry_view(connector_sidecar.get_connector(connector_id, redact=True), server, status)
 
-    @router.delete("/api/connectors/{connector_id}")
+    @router.delete("/api/app-connectors/{connector_id}")
     async def delete_connector_route(connector_id: str, request: Request):
         require_admin(request)
         entry = connector_sidecar.get_connector(connector_id, redact=False)
@@ -276,7 +276,7 @@ def setup_connector_routes(mcp_manager: McpManager) -> APIRouter:
         connector_status.invalidate_health(connector_id)
         return {"status": "deleted"}
 
-    @router.post("/api/connectors/{connector_id}/check")
+    @router.post("/api/app-connectors/{connector_id}/check")
     async def check_connector_route(connector_id: str, request: Request):
         require_admin(request)
         entry = connector_sidecar.get_connector(connector_id, redact=False)
@@ -289,7 +289,7 @@ def setup_connector_routes(mcp_manager: McpManager) -> APIRouter:
             db.close()
         return await _connector_status_for(entry, server, force_check=True)
 
-    @router.post("/api/connectors/{connector_id}/connect")
+    @router.post("/api/app-connectors/{connector_id}/connect")
     async def connect_connector_route(connector_id: str, request: Request):
         require_admin(request)
         entry = connector_sidecar.get_connector(connector_id, redact=False)
@@ -317,7 +317,7 @@ def setup_connector_routes(mcp_manager: McpManager) -> APIRouter:
         status = await _connector_status_for(entry, server, force_check=False)
         return {"connected": connected, "status": status}
 
-    @router.post("/api/connectors/{connector_id}/disconnect")
+    @router.post("/api/app-connectors/{connector_id}/disconnect")
     async def disconnect_connector_route(connector_id: str, request: Request):
         require_admin(request)
         entry = connector_sidecar.get_connector(connector_id, redact=False)
@@ -333,7 +333,7 @@ def setup_connector_routes(mcp_manager: McpManager) -> APIRouter:
         status = await _connector_status_for(entry, server, force_check=False)
         return {"connected": False, "status": status}
 
-    @router.get("/api/connectors/{connector_id}/tools")
+    @router.get("/api/app-connectors/{connector_id}/tools")
     def connector_tools_route(connector_id: str, request: Request):
         require_admin(request)
         entry = connector_sidecar.get_connector(connector_id, redact=False)
@@ -341,7 +341,7 @@ def setup_connector_routes(mcp_manager: McpManager) -> APIRouter:
             raise HTTPException(404, "Connector not found")
         return _mcp_list_server_tools(server_id=entry["server_id"], request=request)
 
-    @router.post("/api/connectors/{connector_id}/launch")
+    @router.post("/api/app-connectors/{connector_id}/launch")
     async def launch_connector_route(connector_id: str, request: Request):
         # F1.4 / principle 4: launching a local process is a `require_human`
         # action even though the rest of this router is admin-only — the
@@ -362,7 +362,7 @@ def setup_connector_routes(mcp_manager: McpManager) -> APIRouter:
         client_host = request.client.host if request.client else None
         return await launch_profiles.launch(profile_id, request_client_host=client_host)
 
-    @router.post("/api/connectors/{connector_id}/open")
+    @router.post("/api/app-connectors/{connector_id}/open")
     async def open_connector_route(connector_id: str, request: Request):
         require_human(request)
         entry = connector_sidecar.get_connector(connector_id, redact=False)

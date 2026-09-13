@@ -33,7 +33,7 @@ import './connectors.css';
  * Connectors (CONTRATO_CONECTORES Lote F3, Fase C UI).
  *
  * One unified list: Hoard presets (Jobhunter, Writer…) alongside every other
- * MCP server, exactly as `GET /api/connectors` returns them (F1.5) — a
+ * MCP server, exactly as `GET /api/app-connectors` returns them (F1.5) — a
  * server without a sidecar shows up with `preset: null` and still gets the
  * same row. Mail and Calendar are NOT duplicated here: they already have a
  * real form in Settings → Integrations, and this screen only links to it
@@ -298,7 +298,7 @@ export function ConnectorsScreen() {
           icon={Plug}
           tone="error"
           title={t('Could not read the connector list.')}
-          body={t('GET /api/connectors failed — it may not be wired up yet on this build.')}
+          body={t('GET /api/app-connectors failed — it may not be wired up yet on this build.')}
           primaryAction={{ label: t('Try again'), onClick: () => reload(true) }}
         />
       ) : connectors === null ? (

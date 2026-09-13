@@ -2,12 +2,12 @@
 
 `/connectors`. One unified list of every app the agent can reach through
 MCP: the Hoard presets (Jobhunter, Writer's Hoard…) and every other MCP
-server, exactly as `GET /api/connectors` (Lote F1) returns them. Mail and
+server, exactly as `GET /api/app-connectors` (Lote F1) returns them. Mail and
 Calendar are **not** duplicated here — the "Add" menu links to their real
 forms in Settings → Integrations and to `/calendar` instead of building a
 second one.
 
-This lote is written against the F1/F2 contract (`docs/api/connectors.md`,
+This lote is written against the F1/F2 contract (`docs/api/app-connectors.md`,
 `docs/api/tool_selection.md` once those lots land the routes). Every call
 goes through `studio/src/adapters/connectors.ts`; a route that does not
 exist yet on a given build answers 404 the normal way and the screen shows

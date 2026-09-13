@@ -6,7 +6,7 @@ import { listConnectors, type Connector } from '../../adapters/connectors';
 /**
  * CONTRATO_CONECTORES F3: "Conectores de esta conversación/proyecto/tarea".
  *
- * A reusable multi-select over every connector `/api/connectors` lists
+ * A reusable multi-select over every connector `/api/app-connectors` lists
  * (Hoard presets and every other MCP server, unified — F2's `connector_ids`
  * is a list of `McpServer.id`, nothing narrower). `value: null` means
  * "inherit" — the project's selection, or every enabled connector when

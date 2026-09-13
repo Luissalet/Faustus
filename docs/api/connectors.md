@@ -26,16 +26,16 @@ principle 4: "the model gets no arbitrary execution").
 
 | Method & path | Auth | Notes |
 |---|---|---|
-| `GET /api/connectors/presets` | admin | The two built-in presets, with placeholders and launch-profile hints. |
-| `GET /api/connectors?check=1` | admin | Every sidecar-backed connector (values redacted) **plus** every `McpServer` with no sidecar entry (`preset_id: null`), so the screen shows one unified list. Without `check=1`, returns the last cached health (or `state: "unknown"` if never checked); `check=1` forces a fresh probe (debounced to once per 15s). |
-| `POST /api/connectors` | admin | `{preset_id, values, name?, launch_profile_id?}`. Resolves the preset, creates an `McpServer` through the **same internal handler** `POST /api/mcp/servers` uses (no duplicated validation), then the sidecar entry. Does not connect. 409 on a duplicate (same preset + owner + `APP_URL`). |
-| `PATCH /api/connectors/{id}` | admin | `{values?, name?, launch_profile_id?, is_enabled?}`. Changing `values` regenerates the `McpServer`'s `command`/`args`/`env` and disconnects it (reconnect is separate). |
-| `DELETE /api/connectors/{id}` | admin | Deletes the sidecar entry and the underlying `McpServer`. |
-| `POST /api/connectors/{id}/check` | admin | Forces a fresh health check + returns the full status. |
-| `POST /api/connectors/{id}/connect` / `/disconnect` | admin | Delegates to `McpManager`. Idempotent: connecting an already-connected server returns its current status without a second session. |
-| `GET /api/connectors/{id}/tools` | admin | Delegates to `GET /api/mcp/servers/{id}/tools`. |
-| `POST /api/connectors/{id}/launch` | **human** | Runs the connector's `launch_profile_id`. 403 if none is configured, or if the profile belongs to a different user. |
-| `POST /api/connectors/{id}/open` | **human** | Returns `{"kind":"url","url":...}` when the connector has a `ui_url` (client opens it — no process spawned), otherwise runs an `open_exe` launch profile if one is set. |
+| `GET /api/app-connectors/presets` | admin | The two built-in presets, with placeholders and launch-profile hints. |
+| `GET /api/app-connectors?check=1` | admin | Every sidecar-backed connector (values redacted) **plus** every `McpServer` with no sidecar entry (`preset_id: null`), so the screen shows one unified list. Without `check=1`, returns the last cached health (or `state: "unknown"` if never checked); `check=1` forces a fresh probe (debounced to once per 15s). |
+| `POST /api/app-connectors` | admin | `{preset_id, values, name?, launch_profile_id?}`. Resolves the preset, creates an `McpServer` through the **same internal handler** `POST /api/mcp/servers` uses (no duplicated validation), then the sidecar entry. Does not connect. 409 on a duplicate (same preset + owner + `APP_URL`). |
+| `PATCH /api/app-connectors/{id}` | admin | `{values?, name?, launch_profile_id?, is_enabled?}`. Changing `values` regenerates the `McpServer`'s `command`/`args`/`env` and disconnects it (reconnect is separate). |
+| `DELETE /api/app-connectors/{id}` | admin | Deletes the sidecar entry and the underlying `McpServer`. |
+| `POST /api/app-connectors/{id}/check` | admin | Forces a fresh health check + returns the full status. |
+| `POST /api/app-connectors/{id}/connect` / `/disconnect` | admin | Delegates to `McpManager`. Idempotent: connecting an already-connected server returns its current status without a second session. |
+| `GET /api/app-connectors/{id}/tools` | admin | Delegates to `GET /api/mcp/servers/{id}/tools`. |
+| `POST /api/app-connectors/{id}/launch` | **human** | Runs the connector's `launch_profile_id`. 403 if none is configured, or if the profile belongs to a different user. |
+| `POST /api/app-connectors/{id}/open` | **human** | Returns `{"kind":"url","url":...}` when the connector has a `ui_url` (client opens it — no process spawned), otherwise runs an `open_exe` launch profile if one is set. |
 | `GET/POST/PATCH/DELETE /api/launch-profiles[/{id}]` | **human** (all verbs, including reads) | CRUD for launch profiles. Never reachable from an agent tool — verified in `tests/test_connectors.py::test_launch_profiles_tool_is_never_exposed_to_the_agent`. |
 
 ## `ConnectorStatus` — the seven states
@@ -102,7 +102,7 @@ proves the bridge started, never that the domain app itself is alive
 ## Secrets
 
 `connector_sidecar` redacts any `values` key whose name contains `TOKEN`,
-`KEY`, `SECRET`, or `PASSWORD` on every read (`GET /api/connectors`,
+`KEY`, `SECRET`, or `PASSWORD` on every read (`GET /api/app-connectors`,
 `get_connector(..., redact=True)`). Credentials themselves never live in the
 sidecar or in a launch profile — only paths/URLs; the actual `McpServer.env`
 still goes through the existing encrypted column.
@@ -113,7 +113,7 @@ still goes through the existing encrypted column.
   `src/connector_registry.py`", but the real `GET /api/mcp/servers`
   (`routes/mcp/mcp_routes.py::list_servers`) does not filter by owner at
   all — checked against the actual route. Per the contract's own escape
-  hatch, `GET /api/connectors` does not filter by owner either. `owner` is
+  hatch, `GET /api/app-connectors` does not filter by owner either. `owner` is
   still recorded on every sidecar entry and launch profile (informational,
   and used for the launch-time "belongs to a different user" check).
 - **`_launch_local_detached` is not called directly.** It is a private

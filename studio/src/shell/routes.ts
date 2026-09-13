@@ -67,7 +67,7 @@ export interface Tool {
 
 export const TOOLS: Tool[] = [
   // CONTRATO_CONECTORES Lote F3: the Hoard presets (Jobhunter, Writer…) and
-  // every other MCP server, unified — /api/connectors, not a second store.
+  // every other MCP server, unified — /api/app-connectors, not a second store.
   { path: '/connectors', label: 'Connectors', icon: Plug },
   { path: '/notes', label: 'Notes', icon: StickyNote },
   { path: '/source-control', label: 'Source control', icon: GitBranch },

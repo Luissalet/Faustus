@@ -7330,7 +7330,7 @@ Every enabled connector.	Todos los conectores habilitados.
 Executable (absolute path)	Ejecutable (ruta absoluta)
 Fill in: {list}	Rellena: {list}
 Finish setup first — some placeholders are still missing.	Termina la configuración antes: faltan valores por rellenar.
-GET /api/connectors failed — it may not be wired up yet on this build.	GET /api/connectors ha fallado; puede que esta build todavía no lo tenga conectado.
+GET /api/app-connectors failed — it may not be wired up yet on this build.	GET /api/app-connectors ha fallado; puede que esta build todavía no lo tenga conectado.
 Inherit	Heredar
 Inherit from project	Heredar del proyecto
 Inherited from the project.	Heredado del proyecto.

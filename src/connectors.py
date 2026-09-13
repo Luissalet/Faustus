@@ -146,6 +146,7 @@ def list_presets() -> List[Dict[str, Any]]:
             "health_expect": dict(preset.health_expect),
             "ui_url_default": preset.ui_url_default,
             "placeholders": list(preset.placeholders),
+            "defaults": dict(preset.defaults),
             "launch_profile_hint": dict(preset.launch_profile_hint),
             "optional_extra_env": list(preset.optional_extra_env),
         })

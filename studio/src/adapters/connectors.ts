@@ -5,7 +5,7 @@ import { t } from '../i18n';
  * Connectors (CONTRATO_CONECTORES Lote F3, Studio side).
  *
  * This adapter is written against the F1/F2 contract described in
- * `docs/api/connectors.md` and `docs/api/tool_selection.md` — routes that do
+ * `docs/api/app-connectors.md` and `docs/api/tool_selection.md` — routes that do
  * not exist yet in THIS worktree (F1/F2 are separate lots, integrated by the
  * orchestrator later). Nothing here re-implements the catalogue, the health
  * checks or the launch profiles: it only calls the routes those lots own,
@@ -61,7 +61,7 @@ export interface ConnectorPreset {
 }
 
 export async function listPresets(): Promise<ConnectorPreset[]> {
-  const d = await getJson<ConnectorPreset[] | { presets?: ConnectorPreset[] }>('/api/connectors/presets');
+  const d = await getJson<ConnectorPreset[] | { presets?: ConnectorPreset[] }>('/api/app-connectors/presets');
   return Array.isArray(d) ? d : (d.presets ?? []);
 }
 
@@ -155,7 +155,7 @@ function tCount(n: number): string {
 
 export async function listConnectors(check = false): Promise<Connector[]> {
   const q = check ? '?check=1' : '';
-  const d = await getJson<Connector[] | { connectors?: Connector[] }>(`/api/connectors${q}`);
+  const d = await getJson<Connector[] | { connectors?: Connector[] }>(`/api/app-connectors${q}`);
   return Array.isArray(d) ? d : (d.connectors ?? []);
 }
 
@@ -165,7 +165,7 @@ export interface CreateConnectorInput {
   name?: string;
   launch_profile_id?: string | null;
 }
-export const createConnector = (body: CreateConnectorInput) => post<Connector>('/api/connectors', body, 'connectors/create');
+export const createConnector = (body: CreateConnectorInput) => post<Connector>('/api/app-connectors', body, 'connectors/create');
 
 export interface UpdateConnectorInput {
   values?: Record<string, string>;
@@ -173,20 +173,20 @@ export interface UpdateConnectorInput {
   launch_profile_id?: string | null;
   is_enabled?: boolean;
 }
-export const updateConnector = (id: string, body: UpdateConnectorInput) => patch<Connector>(`/api/connectors/${encodeURIComponent(id)}`, body, 'connectors/update');
+export const updateConnector = (id: string, body: UpdateConnectorInput) => patch<Connector>(`/api/app-connectors/${encodeURIComponent(id)}`, body, 'connectors/update');
 
-export const deleteConnector = (id: string) => del(`/api/connectors/${encodeURIComponent(id)}`, 'connectors/delete');
+export const deleteConnector = (id: string) => del(`/api/app-connectors/${encodeURIComponent(id)}`, 'connectors/delete');
 
-export const checkConnector = (id: string) => post<Connector>(`/api/connectors/${encodeURIComponent(id)}/check`, {}, 'connectors/check');
-export const connectConnector = (id: string) => post<Connector>(`/api/connectors/${encodeURIComponent(id)}/connect`, {}, 'connectors/connect');
-export const disconnectConnector = (id: string) => post<Connector>(`/api/connectors/${encodeURIComponent(id)}/disconnect`, {}, 'connectors/disconnect');
+export const checkConnector = (id: string) => post<Connector>(`/api/app-connectors/${encodeURIComponent(id)}/check`, {}, 'connectors/check');
+export const connectConnector = (id: string) => post<Connector>(`/api/app-connectors/${encodeURIComponent(id)}/connect`, {}, 'connectors/connect');
+export const disconnectConnector = (id: string) => post<Connector>(`/api/app-connectors/${encodeURIComponent(id)}/disconnect`, {}, 'connectors/disconnect');
 
 export interface ConnectorTool {
   name: string;
   description?: string;
   is_disabled?: boolean;
 }
-export const listConnectorTools = (id: string) => getJson<ConnectorTool[]>(`/api/connectors/${encodeURIComponent(id)}/tools`);
+export const listConnectorTools = (id: string) => getJson<ConnectorTool[]>(`/api/app-connectors/${encodeURIComponent(id)}/tools`);
 
 export interface LaunchResult {
   launched: boolean;
@@ -195,12 +195,12 @@ export interface LaunchResult {
   pid?: number | null;
   detail?: string | null;
 }
-export const launchConnector = (id: string) => post<LaunchResult>(`/api/connectors/${encodeURIComponent(id)}/launch`, {}, 'connectors/launch');
+export const launchConnector = (id: string) => post<LaunchResult>(`/api/app-connectors/${encodeURIComponent(id)}/launch`, {}, 'connectors/launch');
 
 export type OpenResult =
   | { kind: 'url'; url: string }
   | { kind: 'exe'; launched: boolean; already_running?: boolean; pid?: number | null; detail?: string | null };
-export const openConnector = (id: string) => post<OpenResult>(`/api/connectors/${encodeURIComponent(id)}/open`, {}, 'connectors/open');
+export const openConnector = (id: string) => post<OpenResult>(`/api/app-connectors/${encodeURIComponent(id)}/open`, {}, 'connectors/open');
 
 /* ── Launch profiles (F1.4/F1.5) — user-authored only; the model never
  *  creates or edits one (contract principle 4). ── */

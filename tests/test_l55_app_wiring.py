@@ -74,3 +74,20 @@ def test_unmounted_sibling_path_still_answers_a_generic_404_for_contrast(client,
     body = response.json()
     assert body["detail"] == "Not Found"
     assert "reason" not in body
+
+
+def test_app_connectors_routes_do_not_collide_with_the_integrations_registry(client, internal_headers):
+    """Both routers are mounted on the real app: the REST-integration
+    registry keeps `/api/connectors` (its `{ok, connectors}` shape), and the
+    MCP connector catalogue (FAUSTUS §80) answers on `/api/app-connectors`
+    — the first live build of the catalogue answered on `/api/connectors`
+    and the registry's route, registered earlier, silently won. The
+    catalogue routes are admin-gated, so on this un-set-up app they answer
+    401 "Setup required": that is the route being reached, as opposed to
+    FastAPI's generic 404 for an unmounted path."""
+    registry = client.get("/api/connectors", headers=internal_headers)
+    assert registry.status_code == 200 and registry.json()["ok"] is True
+    for path in ("/api/app-connectors", "/api/app-connectors/presets", "/api/launch-profiles"):
+        response = client.get(path, headers=internal_headers)
+        assert response.status_code != 404, (path, response.text)
+        assert response.status_code in (200, 401, 403), (path, response.text)

@@ -1,5 +1,5 @@
 """F1: the connector catalogue, sidecar, honest status, and the
-`/api/connectors` routes (src/connectors.py, src/connector_sidecar.py,
+`/api/app-connectors` routes (src/connectors.py, src/connector_sidecar.py,
 src/connector_status.py, routes/connector_routes.py).
 
 Route handlers are driven directly, the way `tests/test_mcp_routes_env_mode.py`
@@ -288,12 +288,12 @@ def test_secret_shaped_values_are_redacted_on_read():
 async def test_create_connector_then_duplicate_is_409(routes, db, bridge_dir):
     body = {"preset_id": "jobhunter", "values": {"JOBHUNT_DIR": bridge_dir,
                                                   "APP_URL": "http://127.0.0.1:5178"}}
-    first = await routes[("POST", "/api/connectors")](request=FakeRequest(body=body))
+    first = await routes[("POST", "/api/app-connectors")](request=FakeRequest(body=body))
     assert first["preset_id"] == "jobhunter"
     assert first["values"]["JOBHUNT_DIR"] == bridge_dir
 
     with pytest.raises(Exception) as exc_info:
-        await routes[("POST", "/api/connectors")](request=FakeRequest(body=body))
+        await routes[("POST", "/api/app-connectors")](request=FakeRequest(body=body))
     from fastapi import HTTPException
     assert isinstance(exc_info.value, HTTPException)
     assert exc_info.value.status_code == 409
@@ -302,7 +302,7 @@ async def test_create_connector_then_duplicate_is_409(routes, db, bridge_dir):
 async def test_patch_values_regenerates_args_and_disconnects(routes, db, manager, bridge_dir, tmp_path):
     body = {"preset_id": "jobhunter", "values": {"JOBHUNT_DIR": bridge_dir,
                                                   "APP_URL": "http://127.0.0.1:5178"}}
-    created = await routes[("POST", "/api/connectors")](request=FakeRequest(body=body))
+    created = await routes[("POST", "/api/app-connectors")](request=FakeRequest(body=body))
     server_id = created["server"]["id"]
     await manager.connect_server(server_id=server_id, name="x", transport="stdio", command="node", args=[])
     assert server_id in manager._connections
@@ -311,7 +311,7 @@ async def test_patch_values_regenerates_args_and_disconnects(routes, db, manager
     (new_dir / "server").mkdir(parents=True)
     (new_dir / "server" / "mcp.js").write_text("// fake\n")
     patch_body = {"values": {"JOBHUNT_DIR": str(new_dir)}}
-    updated = await routes[("PATCH", "/api/connectors/{connector_id}")](
+    updated = await routes[("PATCH", "/api/app-connectors/{connector_id}")](
         connector_id=created["id"], request=FakeRequest(body=patch_body))
 
     assert updated["values"]["JOBHUNT_DIR"] == str(new_dir)
@@ -323,8 +323,8 @@ async def test_patch_values_regenerates_args_and_disconnects(routes, db, manager
 async def test_disabled_connector_state(routes, db, bridge_dir):
     body = {"preset_id": "jobhunter", "values": {"JOBHUNT_DIR": bridge_dir,
                                                   "APP_URL": "http://127.0.0.1:5178"}}
-    created = await routes[("POST", "/api/connectors")](request=FakeRequest(body=body))
-    updated = await routes[("PATCH", "/api/connectors/{connector_id}")](
+    created = await routes[("POST", "/api/app-connectors")](request=FakeRequest(body=body))
+    updated = await routes[("PATCH", "/api/app-connectors/{connector_id}")](
         connector_id=created["id"], request=FakeRequest(body={"is_enabled": False}))
     assert updated["status"]["state"] == "disabled"
     assert updated["server"]["is_enabled"] is False
@@ -333,8 +333,8 @@ async def test_disabled_connector_state(routes, db, bridge_dir):
 async def test_delete_connector_removes_sidecar_and_server(routes, db, bridge_dir):
     body = {"preset_id": "jobhunter", "values": {"JOBHUNT_DIR": bridge_dir,
                                                   "APP_URL": "http://127.0.0.1:5178"}}
-    created = await routes[("POST", "/api/connectors")](request=FakeRequest(body=body))
-    result = await routes[("DELETE", "/api/connectors/{connector_id}")](
+    created = await routes[("POST", "/api/app-connectors")](request=FakeRequest(body=body))
+    result = await routes[("DELETE", "/api/app-connectors/{connector_id}")](
         connector_id=created["id"], request=FakeRequest())
     assert result == {"status": "deleted"}
     assert connector_sidecar.get_connector(created["id"]) is None
@@ -356,3 +356,15 @@ def test_launch_profiles_tool_is_never_exposed_to_the_agent():
         if "launch-profiles" in content or "launch_profiles" in content:
             hits.append(path)
     assert hits == [], f"agent tool module(s) reference launch profiles: {hits}"
+
+
+def test_list_presets_carries_the_defaults_the_form_prefills():
+    """The Studio form prefills each placeholder from `preset.defaults`
+    (APP_URL for both Hoards); the first live build serialised everything
+    but that map, so APP_URL came up empty."""
+    by_id = {p["id"]: p for p in connectors.list_presets()}
+    assert by_id["jobhunter"]["defaults"]["APP_URL"] == "http://127.0.0.1:5178"
+    assert by_id["writer"]["defaults"]["APP_URL"] == "http://127.0.0.1:8766"
+    for preset in by_id.values():
+        for key in preset["defaults"]:
+            assert key in preset["placeholders"]
