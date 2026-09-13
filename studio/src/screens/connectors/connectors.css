@@ -1,0 +1,156 @@
+/* Connectors (CONTRATO_CONECTORES Lote F3, Fase C UI). Shares fs-screen,
+ * fs-panel, fs-set__*, fs-tools, fs-chip and fs-notice with the rest of
+ * Studio (projects.css / settings.css) — this file only adds what is
+ * genuinely new: the row layout and the seven-state status chip. */
+
+.fs-conn__list {
+  display: grid;
+  gap: var(--fs-space-3);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.fs-conn__row {
+  display: grid;
+  gap: var(--fs-space-2);
+  padding: var(--fs-space-4);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-panel);
+  background: var(--fs-surface-1);
+}
+
+.fs-conn__row-main {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--fs-space-3);
+  flex-wrap: wrap;
+}
+
+.fs-conn__identity {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-inline-size: 0;
+}
+
+.fs-conn__row-detail {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-3);
+  flex-wrap: wrap;
+}
+
+.fs-conn__reasons {
+  margin: 0;
+  padding-inline-start: var(--fs-space-5);
+  color: var(--fs-text-2);
+  font-size: var(--fs-label-size);
+}
+
+.fs-conn__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  flex-wrap: wrap;
+}
+
+.fs-conn__add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fs-space-2);
+}
+
+.fs-conn__form {
+  display: grid;
+  gap: var(--fs-space-3);
+}
+
+.fs-conn__profile-form {
+  display: grid;
+  gap: var(--fs-space-3);
+  padding-block-start: var(--fs-space-3);
+  border-block-start: 1px solid var(--fs-border);
+}
+
+.fs-conn__argv {
+  display: grid;
+  gap: var(--fs-space-2);
+}
+
+.fs-conn__argv-row {
+  display: flex;
+  gap: var(--fs-space-2);
+  align-items: center;
+}
+
+.fs-conn__argv-row .fs-field {
+  flex: 1;
+}
+
+/* Status chip: icon + text, colour only reinforces (same rule as
+ * components/StatusBadge.tsx's own comment) — reuses .fs-status's own
+ * variable so no new colour token gets invented for a seventh state. */
+.fs-conn-status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--fs-space-1);
+  padding: 2px var(--fs-space-2);
+  border-radius: var(--fs-radius-pill);
+  background: var(--fs-surface-2);
+  font-size: var(--fs-label-size);
+  font-weight: var(--fs-label-weight);
+  white-space: nowrap;
+  color: var(--fs-conn-status-color, var(--fs-text-3));
+}
+
+.fs-conn-status[data-tone='ok'] {
+  --fs-conn-status-color: var(--fs-success);
+}
+.fs-conn-status[data-tone='warn'] {
+  --fs-conn-status-color: var(--fs-warning);
+}
+.fs-conn-status[data-tone='bad'] {
+  --fs-conn-status-color: var(--fs-danger);
+}
+.fs-conn-status[data-tone='muted'] {
+  --fs-conn-status-color: var(--fs-text-3);
+}
+
+/* ConnectorPicker (reused in session settings, project, task form). */
+.fs-conn-pick {
+  display: grid;
+  gap: var(--fs-space-2);
+}
+
+.fs-conn-pick__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--fs-space-2);
+  flex-wrap: wrap;
+}
+
+.fs-conn-pick__head .fs-set__label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--fs-space-1);
+}
+
+.fs-conn-pick__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fs-space-2);
+}
+
+@media (max-width: 480px) {
+  .fs-conn__row-main {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .fs-conn__actions {
+    justify-content: flex-start;
+  }
+}

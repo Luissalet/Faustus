@@ -2,6 +2,7 @@ import { Save, X } from 'lucide-react';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Button } from '../../components';
 import { listEndpoints, type ModelEndpoint } from '../../adapters/settings';
+import { ConnectorPicker } from '../connectors/ConnectorPicker';
 import {
   buildEmailTarget,
   createAutomation,
@@ -61,6 +62,9 @@ interface Draft {
   modelPair: string;
   chain: string;
   notify: boolean;
+  /** CONTRATO_CONECTORES F2.2: `null` inherits the project's connectors (or
+   *  every enabled one when this task has no project). */
+  connectorIds: string[] | null;
 }
 
 function localDateInput(iso: string | null | undefined): string {
@@ -97,6 +101,7 @@ function draftFrom(existing: Partial<Automation> | null, taskType: TaskType, tri
     modelPair: existing?.model && existing?.endpoint_url ? `${existing.endpoint_url}::${existing.model}` : '',
     chain: existing?.then_task_id ?? '',
     notify: existing?.notifications_enabled !== false,
+    connectorIds: existing?.connector_ids ?? null,
   };
 }
 
@@ -171,7 +176,7 @@ export function AutomationForm({ existing, seed, taskType = 'llm', trigger = 'sc
 
   const save = async () => {
     setError(null);
-    const body: TaskInput = { task_type: d.taskType, trigger_type: d.trigger, notifications_enabled: d.notify, then_task_id: d.chain };
+    const body: TaskInput = { task_type: d.taskType, trigger_type: d.trigger, notifications_enabled: d.notify, then_task_id: d.chain, connector_ids: d.connectorIds };
     if (d.name.trim()) body.name = d.name.trim();
     else if (!existing) body.name = undefined;
     if (d.modelPair) {
@@ -422,8 +427,8 @@ export function AutomationForm({ existing, seed, taskType = 'llm', trigger = 'sc
         </div>
       </div>
 
-      <details className="fs-au__more" open={Boolean(d.modelPair || d.chain || !d.notify)}>
-        <summary>{t('Model, chaining and notifications')}</summary>
+      <details className="fs-au__more" open={Boolean(d.modelPair || d.chain || !d.notify || d.connectorIds !== null)}>
+        <summary>{t('Model, chaining, connectors and notifications')}</summary>
         <div className="fs-au__row">
           <Field label={t('Model')} hint={t('Optional; overrides the session default.')}>
             <select className="fs-field" value={d.modelPair} onChange={(e) => set('modelPair', e.target.value)}>
@@ -457,6 +462,7 @@ export function AutomationForm({ existing, seed, taskType = 'llm', trigger = 'sc
           <input type="checkbox" checked={d.notify} onChange={(e) => set('notify', e.target.checked)} />
           <span>{t('Notify me when it finishes')}</span>
         </label>
+        <ConnectorPicker value={d.connectorIds} onChange={(v) => set('connectorIds', v)} inheritLabel={t('All enabled')} />
       </details>
 
       {error && <p className="fs-au__error" role="alert">{error}</p>}

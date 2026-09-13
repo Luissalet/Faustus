@@ -46,6 +46,7 @@ const SettingsScreen = lazy(() => import('../screens/Settings').then((m) => ({ d
 const AgentsScreen = lazy(() => import('../screens/Agents').then((m) => ({ default: m.AgentsScreen })));
 const SkillsScreen = lazy(() => import('../screens/Skills').then((m) => ({ default: m.SkillsScreen })));
 const SourceControlScreen = lazy(() => import('../screens/SourceControl').then((m) => ({ default: m.SourceControlScreen })));
+const ConnectorsScreen = lazy(() => import('../screens/connectors/Connectors').then((m) => ({ default: m.ConnectorsScreen })));
 const AlternativesScreen = lazy(() => import('../screens/alternatives/AlternativesScreen').then((m) => ({ default: m.AlternativesScreen })));
 const WorkflowsScreen = lazy(() => import('../screens/workflows/WorkflowsScreen').then((m) => ({ default: m.WorkflowsScreen })));
 const OnboardingScreen = lazy(() => import('../screens/Onboarding'));
@@ -239,6 +240,7 @@ function RouteBody() {
         <Route path="/agents" element={<AgentsScreen />} />
         <Route path="/skills" element={<SkillsScreen />} />
         <Route path="/source-control" element={<SourceControlScreen />} />
+        <Route path="/connectors" element={<ConnectorsScreen />} />
         <Route path="/alternatives" element={<AlternativesScreen />} />
         <Route path="/workflows" element={<WorkflowsScreen />} />
         <Route path="/setup" element={<OnboardingScreen />} />

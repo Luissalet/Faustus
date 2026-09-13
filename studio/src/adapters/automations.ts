@@ -41,6 +41,9 @@ export interface Automation {
   then_task_id?: string | null;
   notifications_enabled?: boolean;
   webhook_token?: string | null;
+  /** CONTRATO_CONECTORES F2.2: connectors this scheduled task may use;
+   *  `null`/absent inherits the project's (or every enabled connector). */
+  connector_ids?: string[] | null;
   is_builtin?: boolean;
   is_modified?: boolean;
   created_at?: string | null;
@@ -96,6 +99,7 @@ export interface TaskInput {
   then_task_id?: string;
   notifications_enabled?: boolean;
   character_id?: string;
+  connector_ids?: string[] | null;
 }
 
 async function ok(response: Response, what: string): Promise<Response> {

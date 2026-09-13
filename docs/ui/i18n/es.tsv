@@ -7299,3 +7299,76 @@ The id must start with a letter and use only lowercase letters, digits and _ (2-
 This mode has no checks configured.	Este modo no tiene comprobaciones configuradas.
 Try it	Probarlo
 global default	por defecto global
+A working folder (cwd) is required for a program with a readiness check.	Se requiere una carpeta de trabajo (cwd) para un programa con comprobación de disponibilidad.
+Add a Hoard preset or another MCP server above.	Añade un preset de Hoard u otro servidor MCP arriba.
+Add a connector	Añadir un conector
+Add argument	Añadir argumento
+All connectors	Todos los conectores
+All enabled	Todos los habilitados
+Already running.	Ya está en marcha.
+An absolute path to the executable is required.	Se requiere una ruta absoluta al ejecutable.
+App: {app} · Adapter: {adapter}	App: {app} · Adaptador: {adapter}
+Argument {n}	Argumento {n}
+Arguments (one per box; passed literally, never through a shell)	Argumentos (uno por casilla; se pasan literalmente, nunca por una shell)
+Calendar…	Calendario…
+Capabilities: {list}	Capacidades: {list}
+Check now	Comprobar ahora
+Chosen for this conversation.	Elegido para esta conversación.
+Configure a launch profile first.	Configura antes un perfil de arranque.
+Connectors	Conectores
+Connectors for this conversation	Conectores de esta conversación
+Connectors saved for {name}.	Conectores guardados para {name}.
+Could not load the connector list.	No se pudo cargar la lista de conectores.
+Could not read the connector list.	No se pudo leer la lista de conectores.
+Delete this launch profile?	¿Eliminar este perfil de arranque?
+Edit connector	Editar conector
+Edit launch profile	Editar perfil de arranque
+Environment (JSON object)	Entorno (objeto JSON)
+Environment must be a JSON object.	El entorno debe ser un objeto JSON.
+Every app the agent can reach through MCP, in one place: what it does, whether it answers, and how many tools are enabled.	Cada app que el agente puede alcanzar por MCP, en un solo sitio: qué hace, si responde y cuántas herramientas tiene habilitadas.
+Every enabled connector.	Todos los conectores habilitados.
+Executable (absolute path)	Ejecutable (ruta absoluta)
+Fill in: {list}	Rellena: {list}
+Finish setup first — some placeholders are still missing.	Termina la configuración antes: faltan valores por rellenar.
+GET /api/connectors failed — it may not be wired up yet on this build.	GET /api/connectors ha fallado; puede que esta build todavía no lo tenga conectado.
+Inherit	Heredar
+Inherit from project	Heredar del proyecto
+Inherited from the project.	Heredado del proyecto.
+Launch profile hint (for a launch profile you create yourself)	Pista de perfil de arranque (para un perfil que crees tú mismo)
+Launch profiles	Perfiles de arranque
+Launched.	Lanzado.
+Mail account…	Cuenta de correo…
+Manage connectors…	Gestionar conectores…
+Model, chaining, connectors and notifications	Modelo, encadenado, conectores y notificaciones
+More actions	Más acciones
+New connector: {name}	Nuevo conector: {name}
+New launch profile	Nuevo perfil de arranque
+No connectors	Sin conectores
+No connectors configured yet.	Aún no hay conectores configurados.
+No connectors yet	Todavía no hay conectores
+No launch profiles yet.	Todavía no hay perfiles de arranque.
+No tools reported yet — connect the server first.	Aún no se han listado herramientas: conecta antes el servidor.
+Only you can create or edit these. The agent cannot start programs, and cannot create or edit a profile either.	Solo tú puedes crearlos o editarlos. El agente no puede iniciar programas, ni tampoco crear o editar un perfil.
+Open the app	Abrir la app
+Opens a URL	Abre una URL
+Other MCP server…	Otro servidor MCP…
+Polled every 0.5s until it answers, or the timeout runs out — nothing is ever killed.	Se comprueba cada 0,5 s hasta que responde o se agota el tiempo; nunca se mata el proceso.
+Readiness URL (optional)	URL de disponibilidad (opcional)
+Refresh (check now)	Actualizar (comprobar ahora)
+Remove argument {n}	Quitar argumento {n}
+Saved. Status: {state}	Guardado. Estado: {state}
+Start the app	Iniciar la app
+Started, but not answering yet.	Iniciado, pero todavía no responde.
+Started.	Iniciado.
+This connector is disabled.	Este conector está deshabilitado.
+This model does not support tools; connectors will not be used.	Este modelo no admite herramientas; los conectores no se usarán.
+Timeout (seconds)	Tiempo de espera (segundos)
+Tools — {name}	Herramientas — {name}
+View tools	Ver herramientas
+Working folder (cwd)	Carpeta de trabajo (cwd)
+no response	sin respuesta
+responds	responde
+{n} connector	{n} conector
+{n} connectors	{n} conectores
+{n} reason	{n} motivo
+{n} reasons	{n} motivos
