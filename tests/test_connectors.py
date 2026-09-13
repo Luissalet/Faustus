@@ -385,3 +385,23 @@ def test_jobhunter_token_file_defaults_next_to_the_app_data_and_is_overridable(t
     other = tmp_path / "elsewhere" / "mcp-token"
     resolved = connectors.resolve_preset_values(preset, {"JOBHUNT_DIR": str(tmp_path), "TOKEN_FILE": str(other)})
     assert resolved["env"]["JOBHUNT_TOKEN_FILE"] == str(other)
+
+
+def test_redaction_spares_paths_to_secrets_and_patch_ignores_the_marker(tmp_path, monkeypatch):
+    """`TOKEN_FILE` is where the bridge reads its token, not the token: the
+    form must show the path (the first live build showed "***redacted***"
+    and would have saved it back). A value equal to the marker sent on
+    PATCH means "unchanged"."""
+    monkeypatch.setattr(connector_sidecar, "DATA_DIR", str(tmp_path))
+    assert connector_sidecar.is_secret_key("TOKEN_FILE") is False
+    assert connector_sidecar.is_secret_key("WH_BRIDGE_TOKEN_FILE") is False
+    assert connector_sidecar.is_secret_key("API_TOKEN") is True
+    assert connector_sidecar.is_secret_key("SECRET") is True
+    entry = connector_sidecar.create_connector(
+        preset_id="jobhunter", server_id="srv1", owner="admin",
+        values={"JOBHUNT_DIR": str(tmp_path), "APP_URL": "http://127.0.0.1:5178", "TOKEN_FILE": "/x/mcp-token", "API_TOKEN": "s3cret"},
+        app_url="http://127.0.0.1:5178", ui_url="http://127.0.0.1:5178", launch_profile_id=None,
+    )
+    shown = connector_sidecar.get_connector(entry["id"], redact=True)["values"]
+    assert shown["TOKEN_FILE"] == "/x/mcp-token"
+    assert shown["API_TOKEN"] == connector_sidecar.REDACTED

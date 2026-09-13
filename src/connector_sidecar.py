@@ -54,16 +54,25 @@ def _connectors_file() -> str:
     return os.path.join(DATA_DIR, "connectors.json")
 
 _REDACT_MARKERS = ("TOKEN", "KEY", "SECRET", "PASSWORD")
+#: A key that names WHERE a secret lives (`TOKEN_FILE`, `KEY_PATH`) holds a
+#: path, not the secret — the bridge reads the file itself. Redacting the
+#: path made the edit form show "***redacted***" and write it back on Save.
+_LOCATION_SUFFIXES = ("_FILE", "_PATH", "_DIR")
+REDACTED = "***redacted***"
+
+
+def is_secret_key(key: str) -> bool:
+    upper = str(key).upper()
+    if upper.endswith(_LOCATION_SUFFIXES):
+        return False
+    return any(marker in upper for marker in _REDACT_MARKERS)
 
 
 def _redact_values(values: Dict[str, Any]) -> Dict[str, Any]:
     """Principle 2: never let a secret-shaped value leave this module."""
     out = {}
     for k, v in (values or {}).items():
-        if any(marker in k.upper() for marker in _REDACT_MARKERS):
-            out[k] = "***redacted***"
-        else:
-            out[k] = v
+        out[k] = REDACTED if is_secret_key(k) else v
     return out
 
 

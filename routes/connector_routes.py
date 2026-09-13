@@ -215,7 +215,11 @@ def setup_connector_routes(mcp_manager: McpManager) -> APIRouter:
         updates: Dict[str, Any] = {}
 
         if "values" in body:
-            merged_values = {**(entry.get("values") or {}), **(body.get("values") or {})}
+            # A client that round-trips what GET showed sends the redaction
+            # marker back for secret keys; that is "leave it as it is", never
+            # a new value.
+            incoming = {k: v for k, v in (body.get("values") or {}).items() if v != connector_sidecar.REDACTED}
+            merged_values = {**(entry.get("values") or {}), **incoming}
             resolved = connectors.resolve_preset_values(preset, merged_values) if preset else {"ok": False, "reasons": ["unknown preset"]}
             if not resolved["ok"]:
                 raise HTTPException(400, "; ".join(resolved.get("reasons") or []))
