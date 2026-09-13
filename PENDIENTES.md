@@ -332,13 +332,18 @@ deep-link de workflows, recetas desde un run real) ya no aparece aquí.
   contra Google («Check»). Luis solo tiene que crear el cliente en Google
   Cloud (guía `docs/api/google_oauth_setup.md`) y pegarlo.
 
-## Paridad de aceptación (13-09, noche) — PR1 + A01–A07 HECHO; el resto abierto
+## Paridad de aceptación (13-09, noche) — PR1 + A01–A07 + PR2/A20 HECHO; el resto abierto
 
 - Paquete de Luis en el scratchpad de la sesión y en `docs/spec/paridad/`
   (manifiesto, 36 recetas, estado, backlog). Ejecutor:
   `python3 scripts/acceptance_run.py` → `data/acceptance/<run_id>.jsonl`
-  (hoy `passed=7, NOT_EXECUTED=29`).
-- Siguiente por el blueprint: PR2 SDK TS mínimo + consumidor externo (A20),
+  (hoy `passed=8, NOT_EXECUTED=28`).
+- PR2 hecho (FAUSTUS §84): `sdk/ts` + scope `sessions` + `docs/api/sse_events.json`.
+  Queda de PR2: publicar `faustus-sdk` en un registro (decisión de Luis: npm
+  público o GitHub Packages), generar el cliente desde OpenAPI en vez de a
+  mano, y un job de CI que haga `npm run build && npm test && npm run check`
+  en `sdk/ts`. A21 (UI embebible) es PR6.
+- Siguiente por el blueprint:
   PR4 artefactos/carga diferida (A08/A09/A12/A13), PR5 Code Mode (A10/A11/
   A31), PR6 UI embebible (A21), PR7 OIDC/Team (A22/A23), PR8 evolución con
   rollback (A26–A30), PR9 migración/benchmark (A32–A34). Compacción
@@ -351,6 +356,13 @@ deep-link de workflows, recetas desde un run real) ya no aparece aquí.
 
 ## Última evidencia
 
+- **13-09-2026 madrugada, paridad incremento 2 (SDK + A20).** Suite nube
+  entera tras S1–S3: 17.775 correctas, 49 saltadas, 3 fallos: uno real (la
+  matriz exacta de tokens no listaba la ruta de export, arreglado) y dos de
+  `tests/test_caldav_writeback_route.py` que pasan solos y con cada uno de
+  sus vecinos de calendario: dependencia de orden dentro del worker xdist,
+  no causada por el lote (se vigila en la siguiente suite completa).
+  `scripts/acceptance_run.py`: `passed=8`, `NOT_EXECUTED=28`; A20 ~40 s.
 - **13-09-2026 noche, paridad de aceptación incremento 1 (master `c7df980`+ =
   Windows).** Suite nube entera tras fusionar T1–T3: 17.659 correctas, 49
   saltadas, 0 fallos (11 min 39 s). `scripts/acceptance_run.py`:
