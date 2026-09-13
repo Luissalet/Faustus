@@ -22,7 +22,7 @@ columna `Test` de esa fila.
   (PR1 solo entrega el manifiesto y el ejecutor, no los mecanismos de
   A01-A36); no implica que el caso esté descartado.
 
-Resumen a la entrega de este lote (T1, PR1, 2026-09-13): **1 verde** (A03),
+Resumen tras fusionar T1+T2+T3 (2026-09-13): **7 verde** (A01–A07), 29 `pendiente`. En la entrega de T1 (PR1) era **1 verde** (A03),
 **0 xfail**, **35 pendiente**. De las 35 pendientes, 6 están asignadas por
 `CONTRATO_TRUEFORGE_1.md` a los lotes T2 (A01, A04, A07) y T3 (A02, A05,
 A06) de este mismo encargo; las 29 restantes (A08-A36 salvo las listadas)
@@ -30,13 +30,13 @@ quedan fuera del alcance de T1/T2/T3 y abiertas para un PR posterior.
 
 | ID | Área | Estado | Test | Qué falta |
 |---|---|---|---|---|
-| A01 | turns | pendiente | — | Asignado a T2: `tests/acceptance/test_a01_turn_admission.py` — admisión de un sucesor inválido mientras corre un turno válido no cancela al válido; sin lock por sesión que serialice dos POST concurrentes válidos hoy (`routes/chat_routes.py:1839-4061`, `src/agent_runs.py:1093-1137`) |
-| A02 | approvals | pendiente | — | Asignado a T3: `tests/acceptance/test_a02_approval_race.py` — misma decisión desde dos clientes concurrentes contra la ruta real de aprobaciones; `src/approval_store.py:214-273` ya tiene CAS y recibo `already_<status>`, falta el test HTTP con dos clientes reales |
+| A01 | turns | verde | `tests/acceptance/test_a01_turn_admission.py` | — (T2: lock de admisión por sesión en `routes/chat_routes.py::chat_stream` que envuelve solo la mutación hasta `agent_runs.start()`; un POST inválido nunca toca el run válido en curso; dos POST válidos concurrentes no se entrelazan; `client_message_id` en carrera sigue siendo un solo turno) |
+| A02 | approvals | verde | `tests/acceptance/test_a02_approval_race.py` | — (T3: la misma decisión desde dos clientes concurrentes contra la ruta real → una fila decidida y el perdedor recibe 409 con el recibo del ganador; `tool_approvals.consume_with_reason` devuelve `consumed`/`already_consumed`/`expired`/`not_found`/`owner_mismatch`/`invalid_decision`) |
 | A03 | approvals | verde | `tests/test_tool_approvals.py::test_dispatcher_rejects_modified_approved_action` | — (digest canónico de `src/tool_approvals.py:120-171,293-330` comprobado en `src/tool_execution.py:1179-1195`; test marcado `@pytest.mark.acceptance("A03")` en este lote, sin más cambios) |
-| A04 | events | pendiente | — | Asignado a T2: `tests/acceptance/test_a04_replay_cursor.py` — reconexión con cursor por la ruta real `GET /api/chat/resume/{sid}` con `agent_runs` real y LLM falso contado; `sequence`/replay clamped ya existen (`src/agent_runs.py:565-589,1140-1224`), falta el test end-to-end sin mockear `subscribe` |
-| A05 | recovery | pendiente | — | Asignado a T3: `tests/acceptance/test_a05_unknown_effect.py` — workflows ya distinguen `unknown_effect` por nodo (`src/workflows/store.py:810-860`); nada equivalente existe hoy para tool-calls de un turno de chat (`src/tool_execution.py::execute_tool_block`, `src/agent_runs.py::_partial_from_events`/`recover_interrupted_runs`) |
-| A06 | recovery | pendiente | — | Asignado a T3: `tests/acceptance/test_a06_lease_fencing.py` — `src/task_scheduler.py:778-902` tiene CAS por `lease_owner` pero sin epoch/generación; `_execute_task_locked`/`_execute_action`/`_execute_llm_task` no comprueban la propiedad antes de producir el efecto |
-| A07 | cancel | pendiente | — | Asignado a T2: `tests/acceptance/test_a07_cancel_cascade.py` — `chat_stop` (`routes/chat_routes.py:4122-4190`) cancela hijos directos hoy; falta propagación transitiva a nietos, `tool_approval_store.retire_for_session` en stop, y cancelar preguntas abiertas bajo sesiones de hijos |
+| A04 | events | verde | `tests/acceptance/test_a04_replay_cursor.py` | — (T2: corte tras k eventos y reconexión real por `GET /api/chat/resume` con cursor → sin hueco ni duplicado, `[DONE]` una vez, LLM falso llamado una vez) |
+| A05 | recovery | verde | `tests/acceptance/test_a05_unknown_effect.py` | — (T3: evento `tool_effect` `pending|confirmed|failed` por `call_id` con flush inmediato para tool-calls no `read`; `recover_interrupted_runs` marca `unknown_effects` en el parcial y en la nota; el siguiente turno recibe un bloque de sistema que prohíbe repetirlas sin comprobar) |
+| A06 | recovery | verde | `tests/acceptance/test_a06_lease_fencing.py` | — (T3: `lease_generation` en `scheduled_tasks` y `workflow_node_runs` con migración idempotente; `still_owner` antes de cada efecto en el scheduler → estado `fenced`; handlers de workflow con `_check_fenced` — devuelve `failed` + `fenced: True` porque el engine solo admite cuatro estados de handler) |
+| A07 | cancel | verde | `tests/acceptance/test_a07_cancel_cascade.py` | — (T2: `stop_workers_of_parent_by_level` transitivo; `chat_stop` retira aprobaciones de toda la jerarquía y cancela sus preguntas; `cleanup.workers_stopped` por nivel y `cleanup.approvals_retired`) |
 | A08 | tools | pendiente | — | Fuera del alcance de T1/T2/T3 de este contrato (`CONTRATO_TRUEFORGE_1.md` cubre solo A01-A07) |
 | A09 | tools | pendiente | — | Fuera del alcance de T1/T2/T3 |
 | A10 | code_mode | pendiente | — | Fuera del alcance de T1/T2/T3; sin puente Code Mode↔`tool_execution` encontrado en el árbol auditado (ver `MATRIZ_PARIDAD.md` fila 10) |
