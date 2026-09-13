@@ -1,0 +1,10 @@
+{
+  "message_id": "<ambiguous-time-001@mail.gamma.example>",
+  "in_reply_to": "",
+  "references": "",
+  "external_id": "",
+  "from": "Gamma HR <hr@gamma.example>",
+  "subject": "Entrevista - Site Reliability Engineer en Gamma",
+  "received_at": "2026-09-11T08:00:00+02:00",
+  "body": "Hola,\n\nNos gustaría invitarte a una entrevista la semana que viene para el puesto de Site Reliability Engineer. Te escribiremos en breve con los detalles concretos de fecha y hora.\n\nUn saludo,\nEquipo de RRHH de Gamma"
+}

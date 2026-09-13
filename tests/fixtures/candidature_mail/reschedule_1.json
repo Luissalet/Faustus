@@ -1,0 +1,10 @@
+{
+  "message_id": "<reschedule-001@mail.delta.example>",
+  "in_reply_to": "",
+  "references": "",
+  "external_id": "",
+  "from": "Delta People Ops <peopleops@delta.example>",
+  "subject": "Entrevista - Platform Engineer en Delta",
+  "received_at": "2026-09-12T08:00:00+02:00",
+  "body": "Hola,\n\nNos gustaría invitarte a una entrevista para el puesto de Platform Engineer el 15 de septiembre de 2026 a las 16:00 (CEST), zona Europe/Madrid.\n\nUn saludo,\nDelta People Ops"
+}

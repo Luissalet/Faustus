@@ -8,7 +8,7 @@ from datetime import datetime, date, timedelta
 from typing import Optional, List
 
 from fastapi import APIRouter, HTTPException, Request, UploadFile, File
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import or_, and_
 from sqlalchemy.exc import IntegrityError
 from dateutil.rrule import rrulestr
@@ -216,6 +216,10 @@ class EventCreate(BaseModel):
     calendar_href: Optional[str] = None  # calendar id
     rrule: Optional[str] = None
     color: Optional[str] = None  # per-event color override
+    # F4.1: caller-supplied idempotency key, e.g. "jobhunter:{job_id}:{message_id}".
+    # A second POST with the same (owner, external_ref) returns the existing
+    # event instead of creating a duplicate — see create_event below.
+    external_ref: Optional[str] = Field(default=None, max_length=200)
 
 
 class EventUpdate(BaseModel):
@@ -662,6 +666,7 @@ def _event_to_dict(ev: CalendarEvent) -> dict:
         "color": ev.color or (ev.calendar.color if ev.calendar else ""),
         "event_type": getattr(ev, "event_type", None),
         "importance": getattr(ev, "importance", None) or "normal",
+        "external_ref": getattr(ev, "external_ref", None),
     }
 
 
@@ -1194,8 +1199,32 @@ def setup_calendar_routes(upload_handler=None) -> APIRouter:
             db.close()
 
     @router.get("/events")
-    async def list_events(request: Request, start: str, end: str, calendar: str = ""):
+    async def list_events(request: Request, start: str = "", end: str = "", calendar: str = "", external_ref: str = ""):
         owner = _require_user(request)
+        # F4.1: a direct idempotency-key lookup, independent of any date
+        # window — used to recover the event a previous, possibly-interrupted
+        # POST /events already created (or to confirm none exists yet).
+        if external_ref:
+            db = SessionLocal()
+            try:
+                rows = (
+                    db.query(CalendarEvent)
+                    .join(CalendarCal)
+                    .filter(
+                        CalendarEvent.external_ref == external_ref,
+                        CalendarCal.owner == owner,
+                    )
+                    .order_by(CalendarEvent.dtstart)
+                    .all()
+                )
+                return {"events": [_event_to_dict(e) for e in rows]}
+            except Exception as e:
+                logger.error("Failed to list events by external_ref: %s", e)
+                raise HTTPException(500, "Failed to list events")
+            finally:
+                db.close()
+        if not start or not end:
+            raise HTTPException(400, "start and end are required unless external_ref is given")
         try:
             start_dt = _parse_dt(start)
             end_dt = _parse_dt(end)
@@ -1265,6 +1294,25 @@ def setup_calendar_routes(upload_handler=None) -> APIRouter:
         _reserve_calendar_uploads(request, data.color, data.description, data.location)
         db = SessionLocal()
         try:
+            # F4.1: idempotent create. An owner-scoped external_ref that
+            # already exists means this exact POST (or an earlier, possibly
+            # interrupted retry of it) already happened — hand back that
+            # event instead of creating a duplicate. Scoped to the caller's
+            # own calendars so one owner's key can never collide with
+            # another's.
+            if data.external_ref:
+                existing = (
+                    db.query(CalendarEvent)
+                    .join(CalendarCal)
+                    .filter(
+                        CalendarEvent.external_ref == data.external_ref,
+                        CalendarCal.owner == owner,
+                    )
+                    .first()
+                )
+                if existing:
+                    return {"ok": True, "uid": existing.uid, "created": False}
+
             cal = None
             if data.calendar_href:
                 cal = db.query(CalendarCal).filter(CalendarCal.id == data.calendar_href).first()
@@ -1306,12 +1354,22 @@ def setup_calendar_routes(upload_handler=None) -> APIRouter:
                 rrule=data.rrule or "",
                 color=data.color or None,
                 caldav_sync_pending="create" if cal.source == "caldav" else None,
+                # NOTE: this is a check-then-insert, not a DB-enforced unique
+                # constraint (external_ref is an index, not a unique key —
+                # CalendarEvent has no owner column to scope a composite
+                # unique constraint on, only its calendar does). Two
+                # concurrent POSTs with the same external_ref that race past
+                # the lookup above can both insert. The recipe this exists
+                # for (F4.4) calls this sequentially per message, which is
+                # the case this closes; true concurrent-duplicate protection
+                # is out of scope here.
+                external_ref=data.external_ref or None,
             )
             db.add(ev)
             db.commit()
             if cal.source == "caldav":
                 await _push_caldav_event_after_commit(owner, uid, "create")
-            return {"ok": True, "uid": uid}
+            return {"ok": True, "uid": uid, "created": True}
         except HTTPException:
             raise
         except Exception as e:

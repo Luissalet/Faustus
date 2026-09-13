@@ -1,0 +1,10 @@
+{
+  "message_id": "<ambiguous-job-001@mail.acme.example>",
+  "in_reply_to": "",
+  "references": "",
+  "external_id": "",
+  "from": "Acme Recruiting <rrhh@acme.example>",
+  "subject": "Novedades de Acme sobre tu proceso",
+  "received_at": "2026-09-14T08:00:00+02:00",
+  "body": "Hola,\n\nGracias por tu paciencia durante el proceso con Acme. Te contactaremos pronto con más información.\n\nUn saludo,\nEquipo de RRHH de Acme"
+}
