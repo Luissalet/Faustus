@@ -1,0 +1,40 @@
+{
+  "name": "faustus-sdk",
+  "version": "0.1.0",
+  "private": false,
+  "license": "AGPL-3.0-or-later",
+  "description": "Minimal TypeScript client for the Faustus chat wire: sessions, turns, streaming, resume, cancellation and artifacts.",
+  "type": "module",
+  "main": "./dist/cjs/index.cjs",
+  "module": "./dist/esm/index.js",
+  "types": "./dist/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/types/index.d.ts",
+      "import": "./dist/esm/index.js",
+      "require": "./dist/cjs/index.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "npm run build:esm && npm run build:cjs && npm run build:types",
+    "build:esm": "tsc -p tsconfig.esm.json",
+    "build:cjs": "tsc -p tsconfig.cjs.json && node scripts/rename-cjs.mjs dist/cjs",
+    "build:types": "tsc -p tsconfig.types.json",
+    "build:test": "tsc -p tsconfig.test.json && node scripts/rename-cjs.mjs dist-test",
+    "test": "npm run build:test && node --test dist-test/test/*.test.cjs",
+    "gen:events": "node scripts/gen-events.mjs",
+    "check": "node scripts/gen-events.mjs --check && tsc --noEmit"
+  },
+  "dependencies": {},
+  "peerDependencies": {},
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "name": "faustus-sdk-example-cjs",
+  "private": true,
+  "version": "0.0.0",
+  "description": "A20: faustus-sdk installed into a clean CommonJS project from its packed .tgz.",
+  "scripts": {
+    "start": "node index.cjs"
+  }
+}
