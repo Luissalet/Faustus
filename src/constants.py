@@ -34,6 +34,10 @@ BG_JOBS_FILE = os.path.join(DATA_DIR, "bg_jobs.json")
 VAULT_FILE = os.path.join(DATA_DIR, "vault.json")
 TIDY_CALENDAR_STATE_FILE = os.path.join(DATA_DIR, "tidy_calendar_state.json")
 SKILLS_FILE = os.path.join(DATA_DIR, "skills.json")
+# F1.2 / F1.4: the connector catalogue sidecar and its launch profiles —
+# see src/connector_sidecar.py and src/launch_profiles.py for what each holds.
+CONNECTORS_FILE = os.path.join(DATA_DIR, "connectors.json")
+LAUNCH_PROFILES_FILE = os.path.join(DATA_DIR, "launch_profiles.json")
 APP_DB = os.path.join(DATA_DIR, "app.db")
 # The Context Engine keeps its own SQLite file for the same reason
 # memory_engine.db exists: everything in it is derived, rebuildable and hot on
