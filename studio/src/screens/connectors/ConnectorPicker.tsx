@@ -85,7 +85,7 @@ export function ConnectorPicker({ value, onChange, effective, source, inheritLab
       <div className="fs-conn-pick__head">
         <span className="fs-set__label">
           <Plug size={13} aria-hidden="true" /> {t('Connectors')}
-        </span>
+        </span>{' '}
         {source && (
           <span className="fs-set__help" data-testid="connector-picker-source">
             {source === 'session' && t('Chosen for this conversation.')}

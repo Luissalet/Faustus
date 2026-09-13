@@ -7372,3 +7372,6 @@ responds	responde
 {n} connectors	{n} conectores
 {n} reason	{n} motivo
 {n} reasons	{n} motivos
+Launch profile	Perfil de arranque
+Saved: {name}	Guardado: {name}
+What "Start the app" and "Open the app" run. Create profiles under "Launch profiles".	Lo que ejecutan «Iniciar la app» y «Abrir la app». Crea perfiles en «Perfiles de arranque».

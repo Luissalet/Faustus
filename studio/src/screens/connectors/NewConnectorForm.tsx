@@ -1,11 +1,13 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button } from '../../components';
-import { Field } from '../settings/fields';
+import { Field, Select } from '../settings/fields';
 import { FormFoot, useMsg } from '../settings/IntegrationForms';
 import {
   createConnector,
+  listLaunchProfiles,
   stateLabel,
   updateConnector,
+  type LaunchProfile,
   type Connector,
   type ConnectorPreset,
 } from '../../adapters/connectors';
@@ -35,6 +37,18 @@ export function NewConnectorForm({
     for (const p of preset.placeholders) v[p] = existing?.values[p] ?? preset.defaults?.[p] ?? '';
     return v;
   });
+  // Which user-made launch profile "Start the app" / "Open the app" run
+  // for this connector (F1.4). '' = none; the list is the user's own
+  // profiles, the agent can neither create one nor pick one here.
+  const [profileId, setProfileId] = useState<string>(existing?.launch_profile_id ?? '');
+  const [profiles, setProfiles] = useState<LaunchProfile[]>([]);
+  useEffect(() => {
+    let live = true;
+    listLaunchProfiles()
+      .then((list) => { if (live) setProfiles(list); })
+      .catch(() => { /* the field still shows the current id; the panel reports errors */ });
+    return () => { live = false; };
+  }, []);
   const [busy, setBusy] = useState(false);
   const m = useMsg();
 
@@ -46,9 +60,10 @@ export function NewConnectorForm({
     if (missing.length) return m.bad(t('Fill in: {list}', { list: missing.join(', ') }));
     setBusy(true);
     try {
+      const launch_profile_id = profileId || null;
       const c = existing
-        ? await updateConnector(existing.id, { values, name: name.trim() })
-        : await createConnector({ preset_id: preset.id, values, name: name.trim() });
+        ? await updateConnector(existing.id, { values, name: name.trim(), launch_profile_id })
+        : await createConnector({ preset_id: preset.id, values, name: name.trim(), launch_profile_id });
       m.good(t('Saved. Status: {state}', { state: stateLabel(c.status.state) }));
       onSaved(c);
     } catch (e) {
@@ -80,6 +95,15 @@ export function NewConnectorForm({
           />
         </Field>
       ))}
+      <Field label={t('Launch profile')} htmlFor="conn-launch-profile" help={t('What "Start the app" and "Open the app" run. Create profiles under "Launch profiles".')}>
+        <Select
+          id="conn-launch-profile"
+          value={profileId}
+          onChange={setProfileId}
+          allowEmpty={t('None')}
+          options={profiles.map((p) => ({ value: p.id, label: `${p.name} (${p.kind})` }))}
+        />
+      </Field>
       {preset.launch_profile_hint && (
         <details className="fs-modes__prompt">
           <summary>{t('Launch profile hint (for a launch profile you create yourself)')}</summary>

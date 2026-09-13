@@ -298,6 +298,17 @@ deep-link de workflows, recetas desde un run real) ya no aparece aquí.
 
 ## Última evidencia
 
+- **13-09-2026, conectores (FAUSTUS §80; master `a3b68b4`+ = Windows).** Suite
+  nube entera tras integrar F1–F4: 17.525 correctas, 49 saltadas, 0 fallos
+  (10 min 7 s). En vivo en el 7001: `/connectors` con el preset Jobhunter,
+  «App not running · Adapter: 15 tools» con la app apagada, perfil de
+  arranque → instancia de PRUEBA en 5179 (`JOBHUNT_DATA_DIR` en
+  `D:\LocalAI\_claude_tmp\jh_testdata`, sigue corriendo: es nuestra,
+  pid en el log del perfil), «Available», qwen3.8 27B q4 llamando
+  `list_contexts`/`list_jobs` por MCP con tarjeta de permiso, y con
+  «ningún conector» el modelo dice que no tiene la herramienta. Jobhunter
+  en Windows: `claude/conectores` `f08fd93`, 28/28.
+
 - **12-09-2026 noche, INF-05 + benchmarks reales (master `4a9d21d`,
   Windows `e1efe93`+).** Suite nube entera: 17.367 correctas, 49 saltadas,
   0 fallos (11 min 8 s). Visto en vivo: Physical GPUs, presupuesto por GPU,

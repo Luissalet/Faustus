@@ -285,11 +285,10 @@ export function ConnectorsScreen() {
             onClose={() => setForm(null)}
             onSaved={(c) => {
               setForm(null);
-              say(t('Saved.'));
+              say(t('Saved: {name}', { name: c.server.name || c.id }));
               reload(true);
-              const next = new URLSearchParams(params);
-              next.set('id', c.id);
-              setParams(next, { replace: true });
+              // `?id=` opens the tools drawer (deep link); a save is not a
+              // request to see the tools, so the URL stays as it is.
             }}
           />
         </div>
