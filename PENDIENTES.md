@@ -359,9 +359,15 @@ deep-link de workflows, recetas desde un run real) ya no aparece aquí.
 - **13-09-2026 madrugada, paridad incremento 2 (SDK + A20).** Suite nube
   entera tras S1–S3: 17.775 correctas, 49 saltadas, 3 fallos: uno real (la
   matriz exacta de tokens no listaba la ruta de export, arreglado) y dos de
-  `tests/test_caldav_writeback_route.py` que pasan solos y con cada uno de
-  sus vecinos de calendario: dependencia de orden dentro del worker xdist,
-  no causada por el lote (se vigila en la siguiente suite completa).
+  `tests/test_caldav_writeback_route.py` que pasaban solos. Bisecado por
+  mitades sobre el orden real del worker: la causa era
+  `tests/test_acceptance_index.py` (PR1), que importaba TODOS los
+  `tests/test_*.py` en el mismo proceso bajo otro nombre de módulo
+  (`tests.test_x`) para leer los markers, y así ejecutaba dos veces los
+  efectos de importación (p. ej. `croutes.SessionLocal = <BD temporal>`),
+  dejando la ruta apuntando a una BD que el módulo de pytest nunca escribía.
+  Ahora el índice lee los decoradores con `ast` (sin importar nada) y cachea
+  la pasada (4 s en vez de 36×4 s).
   `scripts/acceptance_run.py`: `passed=8`, `NOT_EXECUTED=28`; A20 ~40 s.
 - **13-09-2026 noche, paridad de aceptación incremento 1 (master `c7df980`+ =
   Windows).** Suite nube entera tras fusionar T1–T3: 17.659 correctas, 49

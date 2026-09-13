@@ -26,8 +26,8 @@ job (see tests/test_acceptance_run.py for that script's own test).
 """
 from __future__ import annotations
 
-import importlib
-import inspect
+import ast
+import functools
 import json
 import re
 from pathlib import Path
@@ -42,11 +42,15 @@ PYPROJECT = REPO_ROOT / "pyproject.toml"
 
 VALID_STATES = ("verde", "xfail", "pendiente")
 
-# Files this index must not try to import as ordinary test modules: pytest
-# itself would collect them the normal way, but a plain importlib.import_module
-# here can trip over fixtures-only conftest.py files or packages with no
-# test_ functions. Only test_*.py files are walked (see _iter_test_functions),
-# so this is already narrow; nothing to exclude today.
+# The walk is a static (ast) read, never an import: importing every
+# tests/test_*.py in-process from *this* test ran their module-level side
+# effects a second time under a different module name (``tests.test_x`` vs
+# pytest's ``test_x``) — e.g. tests/test_caldav_writeback_route.py rebinds
+# ``routes.calendar_routes.SessionLocal`` to a temp DB at import, so the
+# second import pointed the route at a database the first module never
+# wrote to, and its tests failed whenever this file happened to run first
+# on the same xdist worker. Reading decorators from the source has no such
+# side effects and sees exactly the same markers.
 
 
 def _case_ids() -> list[str]:
@@ -54,42 +58,81 @@ def _case_ids() -> list[str]:
     return [c["id"] for c in data["cases"]]
 
 
-def _module_name_for(path: Path) -> str:
-    rel = path.relative_to(REPO_ROOT).with_suffix("")
-    return ".".join(rel.parts)
+class _Marked:
+    """What the index needs from a test function: its acceptance case ids
+    and whether it is xfail-marked."""
+
+    __slots__ = ("case_ids", "xfail")
+
+    def __init__(self, case_ids, xfail):
+        self.case_ids = list(case_ids)
+        self.xfail = bool(xfail)
+
+
+def _mark_name(dec) -> str | None:
+    """'acceptance' for ``@pytest.mark.acceptance(...)``, 'xfail' for
+    ``@pytest.mark.xfail`` / ``@pytest.mark.xfail(...)``, else None."""
+    node = dec.func if isinstance(dec, ast.Call) else dec
+    if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Attribute):
+        if isinstance(node.value.value, ast.Name) and node.value.value.id == "pytest" and node.value.attr == "mark":
+            return node.attr
+    return None
+
+
+def _marked(decorators) -> _Marked | None:
+    case_ids, xfail = [], False
+    for dec in decorators:
+        name = _mark_name(dec)
+        if name == "acceptance" and isinstance(dec, ast.Call) and dec.args:
+            first = dec.args[0]
+            if isinstance(first, ast.Constant) and isinstance(first.value, str):
+                case_ids.append(first.value)
+        elif name == "xfail":
+            xfail = True
+    return _Marked(case_ids, xfail) if (case_ids or xfail) else None
 
 
 def _iter_test_functions():
-    """Yield (path, qualified_name, function) for every test_*.py under tests/."""
+    """Yield (path, qualified_name, _Marked) for every marked test_* function
+    or Test* method in every test_*.py under tests/ — from the source, no
+    imports."""
     for path in sorted(TESTS_DIR.rglob("test_*.py")):
         try:
-            module = importlib.import_module(_module_name_for(path))
-        except Exception:
-            # Import failures unrelated to this index (optional deps, etc.)
-            # are out of scope here; ordinary pytest collection is where a
-            # genuinely broken test module surfaces.
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        except SyntaxError:
+            # A file that does not parse fails ordinary collection loudly;
+            # not this index's job.
             continue
-        for name, obj in vars(module).items():
-            if name.startswith("test_") and inspect.isfunction(obj):
-                yield path, name, obj
-            elif inspect.isclass(obj) and name.startswith("Test"):
-                for mname, mobj in vars(obj).items():
-                    if mname.startswith("test_") and inspect.isfunction(mobj):
-                        yield path, f"{name}.{mname}", mobj
+        for node in tree.body:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith("test_"):
+                marked = _marked(node.decorator_list)
+                if marked:
+                    yield path, node.name, marked
+            elif isinstance(node, ast.ClassDef) and node.name.startswith("Test"):
+                for sub in node.body:
+                    if isinstance(sub, (ast.FunctionDef, ast.AsyncFunctionDef)) and sub.name.startswith("test_"):
+                        marked = _marked(sub.decorator_list)
+                        if marked:
+                            yield path, f"{node.name}.{sub.name}", marked
 
 
 def _acceptance_case_ids(fn) -> list[str]:
-    marks = getattr(fn, "pytestmark", None) or []
-    return [m.args[0] for m in marks if getattr(m, "name", None) == "acceptance" and m.args]
+    return list(getattr(fn, "case_ids", ()) or ())
 
 
 def _has_xfail(fn) -> bool:
-    marks = getattr(fn, "pytestmark", None) or []
-    return any(getattr(m, "name", None) == "xfail" for m in marks)
+    return bool(getattr(fn, "xfail", False))
 
 
 def _collect() -> dict[str, list[tuple[Path, str, object]]]:
     """case_id -> [(file, qualified_test_name, function), ...]."""
+    return dict(_collect_cached())
+
+
+@functools.lru_cache(maxsize=1)
+def _collect_cached():
+    """One source walk per process (~4 s over the whole tests/ tree); the
+    36 parametrized state checks share it."""
     by_case: dict[str, list[tuple[Path, str, object]]] = {}
     for path, qname, fn in _iter_test_functions():
         for case_id in _acceptance_case_ids(fn):
