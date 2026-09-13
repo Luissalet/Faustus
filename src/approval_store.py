@@ -230,10 +230,15 @@ def decide(approval_id: str, *, granted: bool, by: str, reason: str = "") -> Dic
         if row.status != "pending":
             # Deliberately not an error: two people clicking the same card is
             # ordinary, and the second one should be told what happened rather
-            # than shown a failure.
+            # than shown a failure. A02: `approval` carries the WINNER'S own
+            # receipt (decided_by/decided_at/status), not just a formatted
+            # sentence buried in `detail` — the two-clients-decide-at-once
+            # race needs a body the loser can compare against its own
+            # request, not only a human-readable string.
             return {"ok": False, "reason": f"already_{row.status}",
                     "detail": f"decided by {row.decided_by or 'someone'} "
-                              f"at {row.decided_at or 'an unknown time'}"}
+                              f"at {row.decided_at or 'an unknown time'}",
+                    "approval": _from_row(row).to_dict()}
         stamp = now_iso()
         expired = bool(row.expires_at and stamp > row.expires_at)
         values = {"status": "expired" if expired else ("granted" if granted else "denied")}
@@ -261,7 +266,8 @@ def decide(approval_id: str, *, granted: bool, by: str, reason: str = "") -> Dic
                     "reason": (f"already_{current.status}" if current.status != "pending"
                                else "concurrent_change"),
                     "detail": f"decided by {current.decided_by or 'someone'} "
-                              f"at {current.decided_at or 'an unknown time'}"}
+                              f"at {current.decided_at or 'an unknown time'}",
+                    "approval": _from_row(current).to_dict()}
         db.commit()
         if expired:
             return {"ok": False, "reason": "expired", "detail": answer["expires_at"]}

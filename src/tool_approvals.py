@@ -378,16 +378,26 @@ class ToolApprovalStore:
         ttl_seconds: int = DEFAULT_APPROVAL_TTL_SECONDS,
         max_pending: int = DEFAULT_MAX_PENDING_APPROVALS,
         max_expired_memory: int = DEFAULT_MAX_EXPIRED_MEMORY,
+        max_consumed_memory: int = DEFAULT_MAX_EXPIRED_MEMORY,
     ):
         self._ttl_seconds = max(1, int(ttl_seconds))
         self._max_pending = max(1, int(max_pending))
         self._max_expired_memory = max(1, int(max_expired_memory))
+        self._max_consumed_memory = max(1, int(max_consumed_memory))
         self._pending: dict[str, PendingToolApproval] = {}
         # approval_id -> normalized owner, for approvals the TTL dropped. Only
         # the owner is kept: enough to tell that user "this expired, rerun the
         # turn", and nothing a stranger holding a leaked id could learn from.
         # Insertion-ordered and capped, so it can never grow without bound.
         self._expired: dict[str, str] = {}
+        # A02: approval_id -> {owner, tool_name, consumed_at}, for approvals
+        # `consume` already popped. Recorded under the SAME lock that pops
+        # `_pending`, so a second concurrent `consume` racing the first one
+        # sees either the pending card (and wins) or this tombstone (and can
+        # answer "already_consumed" instead of the indistinguishable-from-
+        # "never existed" `None` a bare pop-and-return gave before — see
+        # `consume_with_reason`. Bounded the same way `_expired` is.
+        self._consumed: dict[str, dict[str, Any]] = {}
         self._lock = threading.Lock()
 
     def _remember_expired_locked(self, pending: PendingToolApproval) -> None:
@@ -395,6 +405,16 @@ class ToolApprovalStore:
         self._expired[pending.approval_id] = pending.owner
         while len(self._expired) > self._max_expired_memory:
             self._expired.pop(next(iter(self._expired)), None)
+
+    def _remember_consumed_locked(self, pending: PendingToolApproval) -> None:
+        self._consumed.pop(pending.approval_id, None)
+        self._consumed[pending.approval_id] = {
+            "owner": pending.owner,
+            "tool_name": pending.tool_name,
+            "consumed_at": time.time(),
+        }
+        while len(self._consumed) > self._max_consumed_memory:
+            self._consumed.pop(next(iter(self._consumed)), None)
 
     def _purge_expired_locked(self, now: float) -> None:
         expired = [
@@ -511,6 +531,53 @@ class ToolApprovalStore:
         original one-use grant, so a button labelled "Allow once" cannot widen
         into a run-long bypass just because the chat card reuses the same wire
         value.
+
+        A02: a bare wrapper over `consume_with_reason` that keeps this exact
+        signature and return shape for existing callers (routes/chat_routes.py,
+        routes/skills_routes.py, src/task_scheduler.py) — see that method for
+        why a plain ``None`` here is ambiguous between five different reasons
+        a caller that only needs the ``ExactToolApproval`` never had to care
+        about.
+        """
+        _reason, approval = self.consume_with_reason(
+            approval_id, decision=decision, owner=owner, session_id=session_id,
+            allow_continuation=allow_continuation,
+        )
+        return approval
+
+    def consume_with_reason(
+        self,
+        approval_id: Any,
+        *,
+        decision: Any,
+        owner: Any,
+        session_id: Any,
+        allow_continuation: bool = True,
+    ) -> tuple[str, ExactToolApproval | None]:
+        """Consume a pending approval, typed: `consume`'s ambiguous ``None``
+        collapsed five different situations into one — the same trap A02's
+        HTTP approval races were built to catch. Returns
+        ``(reason, approval_or_None)``:
+
+        * ``"consumed"`` — this call won it; `approval` is set.
+        * ``"already_consumed"`` — a concurrent `consume`/`consume_with_reason`
+          on the SAME `approval_id` already popped it (this store's bounded
+          `_consumed` tombstone still remembers who).
+        * ``"expired"`` — the TTL dropped it before this call arrived, and
+          `owner` matches who it belonged to (see `was_expired`; a mismatched
+          owner gets "not_found" instead — a leaked id must not reveal that
+          an approval for someone else ever existed).
+        * ``"owner_mismatch"`` — a pending card exists for this exact
+          `approval_id` but a different owner/session; NOT popped (a stranger
+          holding a leaked/guessed id cannot invalidate another owner's
+          pending action just by trying).
+        * ``"not_found"`` — never existed, or existed and expired long enough
+          ago that even the bounded expiry memory no longer has it.
+        * ``"invalid_decision"`` — the card WAS this caller's to consume and
+          IS now consumed (no re-consuming it), but `decision` did not map to
+          a known scope (`scope_for_decision`), so there is no `approval` to
+          return. Not one of the four TrueForge-parity reasons the contract
+          names, but real and distinct from all of them.
         """
         now = time.time()
         with self._lock:
@@ -518,7 +585,11 @@ class ToolApprovalStore:
             approval_key = str(approval_id or "")
             pending = self._pending.get(approval_key)
             if pending is None:
-                return None
+                if approval_key in self._consumed:
+                    return "already_consumed", None
+                if self._expired.get(approval_key) == _normalized_owner(owner):
+                    return "expired", None
+                return "not_found", None
             if (
                 pending.owner != _normalized_owner(owner)
                 or pending.session_id != str(session_id or "")
@@ -526,19 +597,20 @@ class ToolApprovalStore:
                 # Authentication is checked before destructive consumption so
                 # a leaked/guessed opaque id cannot be used to invalidate
                 # another owner's pending action.
-                return None
+                return "owner_mismatch", None
             self._pending.pop(approval_key, None)
+            self._remember_consumed_locked(pending)
         normalized_decision = str(decision or "").strip().lower()
         scope = scope_for_decision(normalized_decision)
         if scope is None:
-            return None
+            return "invalid_decision", None
         if not allow_continuation:
-            return ExactToolApproval(
+            return "consumed", ExactToolApproval(
                 pending,
                 scope=ToolApprovalScope.SINGLE_ACTION,
                 allow_remaining_actions=False,
             )
-        return ExactToolApproval(
+        return "consumed", ExactToolApproval(
             pending,
             scope=scope,
             allow_remaining_actions=True,

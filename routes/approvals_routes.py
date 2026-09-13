@@ -19,6 +19,7 @@ bug and "the recipient changed" sends them to the plan.
 import logging
 
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import JSONResponse
 
 from core.middleware import require_admin, require_human
 from src import approval_store
@@ -26,6 +27,16 @@ from src.contracts import ApprovalPlan, ContractError
 from src.contracts.base import now_iso
 
 logger = logging.getLogger(__name__)
+
+# A02: reasons `approval_store.decide()` returns that mean "you lost a race
+# to decide this exact card" — as opposed to "no_decider" (this request was
+# malformed), "not_found" (no such card), or "expired" (the TTL beat both of
+# you). Only these get the 409 in `_decision_response`; a plain 200 with
+# `ok: False` stays the shape for everything else, unchanged.
+_DECISION_RACE_LOST_REASONS = frozenset({
+    "already_granted", "already_denied", "already_expired", "already_revoked",
+    "concurrent_change",
+})
 
 
 def _plan_or_400(payload):
@@ -38,6 +49,18 @@ def _plan_or_400(payload):
 
 def _current_user(request: Request) -> str:
     return str(getattr(request.state, "current_user", "") or "").strip()
+
+
+def _decision_response(result: dict):
+    """A02: the losing side of two concurrent grant/deny calls on the SAME
+    card gets a 409, not a quiet 200 — but the body still carries the
+    winner's own receipt (`approval`: decided_by/decided_at/status, set by
+    `approval_store.decide()` for every one of these reasons), never an
+    opaque failure. A caller that only reads `ok`/`reason` (existing UI,
+    existing tests) sees no change in shape, only in status code."""
+    if not result.get("ok") and str(result.get("reason") or "") in _DECISION_RACE_LOST_REASONS:
+        return JSONResponse(status_code=409, content=result)
+    return result
 
 
 def setup_approvals_routes():
@@ -113,16 +136,17 @@ def setup_approvals_routes():
             approval_id, granted=True,
             by=str(body.get("by") or _current_user(request) or "the signed-in user"),
             reason=str(body.get("reason") or ""))
-        return result
+        return _decision_response(result)
 
     @router.post("/{approval_id}/deny")
     async def deny(approval_id: str, request: Request):
         require_human(request)
         body = await _optional_json(request)
-        return approval_store.decide(
+        result = approval_store.decide(
             approval_id, granted=False,
             by=str(body.get("by") or _current_user(request) or "the signed-in user"),
             reason=str(body.get("reason") or ""))
+        return _decision_response(result)
 
     @router.delete("/{approval_id}")
     async def revoke(approval_id: str, request: Request):
