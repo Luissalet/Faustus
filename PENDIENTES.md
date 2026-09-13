@@ -320,10 +320,15 @@ deep-link de workflows, recetas desde un run real) ya no aparece aquí.
   remitente» (localStorage) y ajuste global «Load remote images in every
   mail» (`email_remote_images`, apagado por defecto: cargar imágenes avisa
   al remitente de que has abierto el correo).
-- Google Calendar: ya se sincroniza por CalDAV (Integrations › Calendar
-  (CalDAV), URL `…/caldav/v2/<correo>/user`, contraseña de aplicación);
-  se lo he explicado a Luis, no hay nada que implementar salvo que quiera
-  OAuth.
+- Google Calendar: me equivoqué — Google rechaza Basic Auth en CalDAV
+  (Luis lo trajo con la doc). HECHO como él propuso (FAUSTUS.md §81):
+  proveedor Google con OAuth2 + Calendar API v3, selector de proveedor en
+  Integrations (Google · iCloud · Nextcloud · CalDAV). Para probarlo en
+  vivo falta el cliente OAuth en su `.env` (no existe ni para el correo):
+  crear cliente web en Google Cloud, habilitar Calendar API, registrar
+  `http://localhost:7000/api/calendar/oauth/google/callback` (y el 7001
+  si prueba ahí), scope `auth/calendar`; después Integrations › Add ›
+  Calendar › Google › Connect.
 
 ## Última evidencia
 
