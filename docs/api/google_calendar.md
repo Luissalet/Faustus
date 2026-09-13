@@ -19,7 +19,7 @@ Cloud steps, your redirect URIs with a Copy button, and accepts either the
 pasted `client_id`/`client_secret` or the `client_secret_*.json` file
 Google offers to download — saved encrypted, live immediately, no restart.
 Full walkthrough (with the Google Cloud menu names in English and Spanish):
-`docs/guides/google-oauth.md`. The short version:
+`docs/api/google_oauth_setup.md`. The short version:
 
 1. In [console.cloud.google.com](https://console.cloud.google.com) → APIs &
    Services → Library, enable the **Google Calendar API** for your project.
@@ -81,7 +81,7 @@ different Google account than the one already on file),
 ## The OAuth client itself (G3)
 
 `src/google_oauth_client.py` / `routes/google_oauth_routes.py` — see
-`docs/guides/google-oauth.md`. Not specific to Calendar: the same client
+`docs/api/google_oauth_setup.md`. Not specific to Calendar: the same client
 also backs Gmail OAuth (`routes/email_routes.py`), one scope and redirect
 URI added per feature.
 

@@ -326,12 +326,19 @@ deep-link de workflows, recetas desde un run real) ya no aparece aquí.
   Integrations (Google · iCloud · Nextcloud · CalDAV). Para probarlo en
   vivo falta el cliente OAuth en su `.env` (no existe ni para el correo):
   crear cliente web en Google Cloud, habilitar Calendar API, registrar
-  `http://localhost:7000/api/calendar/oauth/google/callback` (y el 7001
-  si prueba ahí), scope `auth/calendar`; después Integrations › Add ›
-  Calendar › Google › Connect.
+  las redirect URIs; desde §82 ya no hace falta `.env` ni reiniciar: el
+  asistente de Integrations › Calendar › Google da las URIs exactas con
+  botón de copiar, acepta el `client_secret_*.json` y comprueba el cliente
+  contra Google («Check»). Luis solo tiene que crear el cliente en Google
+  Cloud (guía `docs/api/google_oauth_setup.md`) y pegarlo.
 
 ## Última evidencia
 
+- **13-09-2026 noche, cliente OAuth de Google desde la app (master `ead8879`+ =
+  Windows).** Suite nube entera tras G3: 17.593 correctas, 49 saltadas, 1
+  fallo que era la guía en `docs/guides/` (la guarda de docs solo admite
+  Markdown en subárboles de ingeniería) → movida a
+  `docs/api/google_oauth_setup.md`.
 - **13-09-2026 tarde, correo + Google Calendar (master `9dd3a8c`+ = Windows).**
   Suite nube entera tras los lotes G1/G2: 17.558 correctas, 49 saltadas,
   0 fallos (9 min 41 s). En vivo en el 7001: Integrations › Add › Calendar
