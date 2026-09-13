@@ -1,0 +1,439 @@
+# routes/connector_routes.py
+"""F1.5: `/api/connectors` and `/api/launch-profiles` — the Connectors screen
+backend (Faustus connector plan, Phases C+D).
+
+Reuses `McpManager` and the `McpServer` table for everything MCP already
+does (principle 1): this router creates/updates/deletes `McpServer` rows
+through the SAME handlers `routes/mcp/mcp_routes.py` registers at
+`/api/mcp/servers*` — built once here via `setup_mcp_routes(mcp_manager)` and
+looked up by (method, path) — rather than re-implementing that validation.
+`/api/mcp/*` itself is untouched (rule 10: only additive).
+
+Auth: every route uses `require_admin`, same as `routes/mcp/mcp_routes.py`
+(F1.5's own text), EXCEPT the ones the contract's principle 4 singles out by
+name — launch profiles (CRUD) and the two routes that can start a local
+process or executable (`/connectors/{id}/launch`, `/connectors/{id}/open`).
+Those use `require_human`, which explicitly refuses Faustus's own internal
+agent-tool token (`core/middleware.py::require_human`): "El modelo NO
+obtiene ejecución arbitraria: las herramientas del agente no pueden crear ni
+editar perfiles ni pasar argv." Registering an MCP-backed connector (its argv
+is the preset's own, fixed script — only directories/URLs are substituted)
+stays at the same admin-only level `/api/mcp/servers` already has; only the
+truly-arbitrary-executable half is narrowed further.
+"""
+from __future__ import annotations
+
+import json
+import logging
+from typing import Any, Dict, Optional
+
+from fastapi import APIRouter, HTTPException, Request
+
+from core.database import McpServer, SessionLocal
+from core.middleware import require_admin, require_human
+from src import connector_sidecar, connector_status, connectors, launch_profiles
+from src.mcp_manager import McpManager, server_inherits_env
+from routes.mcp.mcp_routes import setup_mcp_routes
+
+logger = logging.getLogger(__name__)
+
+
+def _current_owner(request: Request) -> Optional[str]:
+    return getattr(request.state, "current_user", None) or None
+
+
+def _server_summary(server: McpServer, manager: McpManager) -> Dict[str, Any]:
+    status = manager.get_server_status(server.id)
+    return {
+        "id": server.id,
+        "name": server.name,
+        "is_enabled": bool(server.is_enabled),
+        "status": status.get("status", "disconnected"),
+        "tool_count": status.get("tool_count"),
+    }
+
+
+def _preset_dict(preset_id: Optional[str]) -> Optional[Dict[str, Any]]:
+    preset = connectors.get_preset(preset_id) if preset_id else None
+    if preset is None:
+        return None
+    for row in connectors.list_presets():
+        if row["id"] == preset.id:
+            return row
+    return None
+
+
+async def _plain_server_status(server: McpServer, manager: McpManager) -> Dict[str, Any]:
+    """A `ConnectorStatus`-shaped summary for an `McpServer` with no sidecar
+    entry — no preset means no app health to check, so `app` stays unknown
+    and the state is derived from the adapter alone."""
+    manager_status = manager.get_server_status(server.id)
+    adapter = {
+        "mcp_status": manager_status.get("status", "disconnected"),
+        "tool_count": manager_status.get("tool_count"),
+        "last_error": manager_status.get("error"),
+    }
+    app = {"reachable": None, "checked_at": None, "latency_ms": None, "detail": ""}
+    if not server.is_enabled:
+        return {"state": "disabled", "app": app, "adapter": adapter, "reasons": ["Connector is disabled"]}
+    if adapter["mcp_status"] in ("connecting", "probing", "needs_auth"):
+        return {"state": "connecting", "app": app, "adapter": adapter, "reasons": []}
+    if adapter["mcp_status"] == "connected" and (adapter.get("tool_count") or 0) > 0:
+        return {"state": "available", "app": app, "adapter": adapter, "reasons": []}
+    if adapter["mcp_status"] == "connected":
+        return {"state": "unknown", "app": app, "adapter": adapter, "reasons": []}
+    reasons = [str(adapter["last_error"])] if adapter.get("last_error") else []
+    return {"state": "error" if reasons else "unknown", "app": app, "adapter": adapter, "reasons": reasons}
+
+
+def setup_connector_routes(mcp_manager: McpManager) -> APIRouter:
+    # One flat router, no `include_router` nesting: this FastAPI build wraps
+    # an included sub-router's routes as an opaque `_IncludedRouter` (its own
+    # composed-matching optimisation), which hides the individual `APIRoute`
+    # objects a direct-call test needs to look up by (method, path) — the
+    # same pattern `tests/test_mcp_routes_env_mode.py` already relies on for
+    # `routes/mcp/mcp_routes.py`. Every path below is written out in full
+    # instead of relying on a router `prefix=`.
+    router = APIRouter(tags=["connectors"])
+
+    # Reuse the MCP server CRUD handlers instead of duplicating their
+    # validation (principle 1). This second `setup_mcp_routes(...)` call
+    # builds a fresh APIRouter closed over the SAME `mcp_manager` the app
+    # already registered one for — it is never itself mounted on the app,
+    # only used here as a lookup table for the closures inside it.
+    _mcp_router = setup_mcp_routes(mcp_manager)
+    _mcp_endpoints: Dict[tuple, Any] = {}
+    for route in _mcp_router.routes:
+        for method in getattr(route, "methods", ()) or ():
+            _mcp_endpoints[(method, route.path)] = route.endpoint
+    _mcp_add_server = _mcp_endpoints[("POST", "/api/mcp/servers")]
+    _mcp_delete_server = _mcp_endpoints[("DELETE", "/api/mcp/servers/{server_id}")]
+    _mcp_toggle_server = _mcp_endpoints[("PATCH", "/api/mcp/servers/{server_id}")]
+    _mcp_list_server_tools = _mcp_endpoints[("GET", "/api/mcp/servers/{server_id}/tools")]
+
+    async def _connector_status_for(entry: Dict[str, Any], server: Optional[McpServer],
+                                     *, force_check: bool) -> Dict[str, Any]:
+        preset = connectors.get_preset(entry["preset_id"])
+        manager_status = mcp_manager.get_server_status(entry["server_id"]) if server else {"status": "disconnected"}
+        return await connector_status.compute_status(
+            preset, values=entry.get("values") or {}, is_enabled=bool(server.is_enabled) if server else False,
+            connector_id=entry["id"], manager_status=manager_status, force_check=force_check,
+        )
+
+    def _entry_view(entry: Dict[str, Any], server: Optional[McpServer], status: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            "id": entry["id"],
+            "preset_id": entry["preset_id"],
+            "owner": entry.get("owner"),
+            "values": entry.get("values") or {},
+            "app_url": entry.get("app_url"),
+            "ui_url": entry.get("ui_url"),
+            "launch_profile_id": entry.get("launch_profile_id"),
+            "preset": _preset_dict(entry["preset_id"]),
+            "server": _server_summary(server, mcp_manager) if server else None,
+            "status": status,
+        }
+
+    @router.get("/api/connectors/presets")
+    def get_presets(request: Request):
+        require_admin(request)
+        return connectors.list_presets()
+
+    @router.get("/api/connectors")
+    async def list_connectors_route(request: Request, check: int = 0):
+        require_admin(request)
+        force_check = bool(check)
+        entries = connector_sidecar.list_connectors(redact=True)
+        db = SessionLocal()
+        try:
+            servers_by_id = {s.id: s for s in db.query(McpServer).all()}
+        finally:
+            db.close()
+        covered = set()
+        out = []
+        for entry in entries:
+            server = servers_by_id.get(entry["server_id"])
+            covered.add(entry["server_id"])
+            status = await _connector_status_for(entry, server, force_check=force_check)
+            out.append(_entry_view(entry, server, status))
+        for server_id, server in servers_by_id.items():
+            if server_id in covered:
+                continue
+            status = await _plain_server_status(server, mcp_manager)
+            out.append({
+                "id": None, "preset_id": None, "owner": None, "values": {}, "app_url": None,
+                "ui_url": None, "launch_profile_id": None, "preset": None,
+                "server": _server_summary(server, mcp_manager), "status": status,
+            })
+        return out
+
+    @router.post("/api/connectors")
+    async def create_connector_route(request: Request):
+        require_admin(request)
+        body = await request.json()
+        preset_id = body.get("preset_id")
+        preset = connectors.get_preset(preset_id)
+        if preset is None:
+            raise HTTPException(404, f"Unknown preset: {preset_id}")
+        values = body.get("values") or {}
+        resolved = connectors.resolve_preset_values(preset, values)
+        if not resolved["ok"]:
+            raise HTTPException(400, "; ".join(resolved.get("reasons") or []) or "missing required values")
+
+        owner = _current_owner(request)
+        dup = connector_sidecar.find_duplicate(preset_id, owner, resolved["app_url"])
+        if dup is not None:
+            raise HTTPException(409, "A connector for this preset and APP_URL already exists")
+
+        name = body.get("name") or preset.name
+        server_body = await _mcp_add_server(
+            request=request, name=name, transport=preset.transport, command=resolved["command"],
+            args=json.dumps(resolved["args"]), env=json.dumps(resolved["env"]), url=None,
+            oauth_file=None, oauth_config=None, inherit_env=None, declared_permissions=None,
+        )
+        entry = connector_sidecar.create_connector(
+            preset_id=preset_id, server_id=server_body["id"], owner=owner, values=values,
+            app_url=resolved["app_url"], ui_url=resolved["ui_url"],
+            launch_profile_id=body.get("launch_profile_id"),
+        )
+        db = SessionLocal()
+        try:
+            server = db.query(McpServer).filter(McpServer.id == entry["server_id"]).first()
+        finally:
+            db.close()
+        status = await _connector_status_for(entry, server, force_check=False)
+        return _entry_view(connector_sidecar.get_connector(entry["id"], redact=True), server, status)
+
+    @router.patch("/api/connectors/{connector_id}")
+    async def update_connector_route(connector_id: str, request: Request):
+        require_admin(request)
+        entry = connector_sidecar.get_connector(connector_id, redact=False)
+        if entry is None:
+            raise HTTPException(404, "Connector not found")
+        body = await request.json()
+        preset = connectors.get_preset(entry["preset_id"])
+        updates: Dict[str, Any] = {}
+
+        if "values" in body:
+            merged_values = {**(entry.get("values") or {}), **(body.get("values") or {})}
+            resolved = connectors.resolve_preset_values(preset, merged_values) if preset else {"ok": False, "reasons": ["unknown preset"]}
+            if not resolved["ok"]:
+                raise HTTPException(400, "; ".join(resolved.get("reasons") or []))
+            updates.update(values=merged_values, app_url=resolved["app_url"], ui_url=resolved["ui_url"])
+            db = SessionLocal()
+            try:
+                server = db.query(McpServer).filter(McpServer.id == entry["server_id"]).first()
+                if server is not None:
+                    server.command = resolved["command"]
+                    server.args = json.dumps(resolved["args"])
+                    server.env = json.dumps(resolved["env"])
+                    db.commit()
+            finally:
+                db.close()
+            await mcp_manager.disconnect_server(entry["server_id"])
+            connector_status.invalidate_health(connector_id)
+
+        if "launch_profile_id" in body:
+            updates["launch_profile_id"] = body["launch_profile_id"]
+
+        if "name" in body and body["name"]:
+            db = SessionLocal()
+            try:
+                server = db.query(McpServer).filter(McpServer.id == entry["server_id"]).first()
+                if server is not None:
+                    server.name = body["name"]
+                    db.commit()
+            finally:
+                db.close()
+
+        if "is_enabled" in body:
+            await _mcp_toggle_server(
+                server_id=entry["server_id"], request=request,
+                is_enabled="true" if body["is_enabled"] else "false",
+            )
+
+        updated = connector_sidecar.update_connector(connector_id, **updates) if updates else entry
+        db = SessionLocal()
+        try:
+            server = db.query(McpServer).filter(McpServer.id == entry["server_id"]).first()
+        finally:
+            db.close()
+        status = await _connector_status_for(updated, server, force_check=False)
+        return _entry_view(connector_sidecar.get_connector(connector_id, redact=True), server, status)
+
+    @router.delete("/api/connectors/{connector_id}")
+    async def delete_connector_route(connector_id: str, request: Request):
+        require_admin(request)
+        entry = connector_sidecar.get_connector(connector_id, redact=False)
+        if entry is None:
+            raise HTTPException(404, "Connector not found")
+        try:
+            await _mcp_delete_server(server_id=entry["server_id"], request=request)
+        except HTTPException as exc:
+            if exc.status_code != 404:
+                raise
+        connector_sidecar.delete_connector(connector_id)
+        connector_status.invalidate_health(connector_id)
+        return {"status": "deleted"}
+
+    @router.post("/api/connectors/{connector_id}/check")
+    async def check_connector_route(connector_id: str, request: Request):
+        require_admin(request)
+        entry = connector_sidecar.get_connector(connector_id, redact=False)
+        if entry is None:
+            raise HTTPException(404, "Connector not found")
+        db = SessionLocal()
+        try:
+            server = db.query(McpServer).filter(McpServer.id == entry["server_id"]).first()
+        finally:
+            db.close()
+        return await _connector_status_for(entry, server, force_check=True)
+
+    @router.post("/api/connectors/{connector_id}/connect")
+    async def connect_connector_route(connector_id: str, request: Request):
+        require_admin(request)
+        entry = connector_sidecar.get_connector(connector_id, redact=False)
+        if entry is None:
+            raise HTTPException(404, "Connector not found")
+        db = SessionLocal()
+        try:
+            server = db.query(McpServer).filter(McpServer.id == entry["server_id"]).first()
+        finally:
+            db.close()
+        if server is None:
+            raise HTTPException(404, "Underlying MCP server not found")
+        current = mcp_manager.get_server_status(server.id)
+        if current.get("status") == "connected":
+            # Idempotent: connect on an already-connected server must not
+            # spawn a second session.
+            status = await _connector_status_for(entry, server, force_check=False)
+            return {"connected": True, "status": status}
+        args = json.loads(server.args) if server.args else []
+        env = json.loads(server.env) if server.env else {}
+        connected = await mcp_manager.connect_server(
+            server_id=server.id, name=server.name, transport=server.transport, command=server.command,
+            args=args, env=env, url=server.url, inherit_env=server_inherits_env(server),
+        )
+        status = await _connector_status_for(entry, server, force_check=False)
+        return {"connected": connected, "status": status}
+
+    @router.post("/api/connectors/{connector_id}/disconnect")
+    async def disconnect_connector_route(connector_id: str, request: Request):
+        require_admin(request)
+        entry = connector_sidecar.get_connector(connector_id, redact=False)
+        if entry is None:
+            raise HTTPException(404, "Connector not found")
+        db = SessionLocal()
+        try:
+            server = db.query(McpServer).filter(McpServer.id == entry["server_id"]).first()
+        finally:
+            db.close()
+        if server is not None and mcp_manager.get_server_status(server.id).get("status") != "disconnected":
+            await mcp_manager.disconnect_server(server.id)
+        status = await _connector_status_for(entry, server, force_check=False)
+        return {"connected": False, "status": status}
+
+    @router.get("/api/connectors/{connector_id}/tools")
+    def connector_tools_route(connector_id: str, request: Request):
+        require_admin(request)
+        entry = connector_sidecar.get_connector(connector_id, redact=False)
+        if entry is None:
+            raise HTTPException(404, "Connector not found")
+        return _mcp_list_server_tools(server_id=entry["server_id"], request=request)
+
+    @router.post("/api/connectors/{connector_id}/launch")
+    async def launch_connector_route(connector_id: str, request: Request):
+        # F1.4 / principle 4: launching a local process is a `require_human`
+        # action even though the rest of this router is admin-only — the
+        # agent's internal-tool token must not be able to reach it.
+        require_human(request)
+        entry = connector_sidecar.get_connector(connector_id, redact=False)
+        if entry is None:
+            raise HTTPException(404, "Connector not found")
+        profile_id = entry.get("launch_profile_id")
+        if not profile_id:
+            raise HTTPException(403, "No launch profile configured for this connector")
+        profile = launch_profiles.get_profile(profile_id)
+        if profile is None:
+            raise HTTPException(403, "The configured launch profile no longer exists")
+        owner = _current_owner(request)
+        if profile.get("owner") and owner and profile["owner"] != owner:
+            raise HTTPException(403, "This launch profile belongs to a different user")
+        client_host = request.client.host if request.client else None
+        return await launch_profiles.launch(profile_id, request_client_host=client_host)
+
+    @router.post("/api/connectors/{connector_id}/open")
+    async def open_connector_route(connector_id: str, request: Request):
+        require_human(request)
+        entry = connector_sidecar.get_connector(connector_id, redact=False)
+        if entry is None:
+            raise HTTPException(404, "Connector not found")
+        client_host = request.client.host if request.client else None
+        if entry.get("ui_url"):
+            note = launch_profiles.loopback_reason(entry["ui_url"], client_host)
+            out = {"kind": "url", "url": entry["ui_url"]}
+            if note:
+                out["reasons"] = [note]
+            return out
+        profile_id = entry.get("launch_profile_id")
+        if profile_id:
+            profile = launch_profiles.get_profile(profile_id)
+            if profile and profile.get("kind") == "open_exe":
+                return await launch_profiles.launch(profile_id, request_client_host=client_host)
+        raise HTTPException(400, "This connector has no UI URL or open_exe launch profile")
+
+    # ── Launch profiles: CRUD only through authenticated HTTP routes, never
+    # by an agent tool (principle 4) — require_human on every verb, reads
+    # included, since there is no legitimate agent use case for this list
+    # either.
+    @router.get("/api/launch-profiles")
+    def list_launch_profiles_route(request: Request):
+        require_human(request)
+        return launch_profiles.list_profiles()
+
+    @router.get("/api/launch-profiles/{profile_id}")
+    def get_launch_profile_route(profile_id: str, request: Request):
+        require_human(request)
+        profile = launch_profiles.get_profile(profile_id)
+        if profile is None:
+            raise HTTPException(404, "Launch profile not found")
+        return profile
+
+    @router.post("/api/launch-profiles")
+    async def create_launch_profile_route(request: Request):
+        require_human(request)
+        body = await request.json()
+        owner = _current_owner(request)
+        try:
+            return launch_profiles.create_profile(
+                owner=owner, name=body.get("name") or "", kind=body.get("kind") or "",
+                executable=body.get("executable") or "", argv=body.get("argv"),
+                cwd=body.get("cwd") or "", env=body.get("env"),
+                readiness=body.get("readiness"), url=body.get("url"),
+            )
+        except launch_profiles.ProfileValidationError as exc:
+            raise HTTPException(400, str(exc))
+
+    @router.patch("/api/launch-profiles/{profile_id}")
+    async def update_launch_profile_route(profile_id: str, request: Request):
+        require_human(request)
+        body = await request.json()
+        try:
+            updated = launch_profiles.update_profile(profile_id, **{
+                k: v for k, v in body.items()
+                if k in ("name", "kind", "executable", "argv", "cwd", "env", "readiness", "url")
+            })
+        except launch_profiles.ProfileValidationError as exc:
+            raise HTTPException(400, str(exc))
+        if updated is None:
+            raise HTTPException(404, "Launch profile not found")
+        return updated
+
+    @router.delete("/api/launch-profiles/{profile_id}")
+    def delete_launch_profile_route(profile_id: str, request: Request):
+        require_human(request)
+        if not launch_profiles.delete_profile(profile_id):
+            raise HTTPException(404, "Launch profile not found")
+        return {"status": "deleted"}
+
+    return router
