@@ -541,6 +541,13 @@ def _load_delete_for_writeback(owner: str, uid: str) -> tuple[str, str, dict] | 
             CalendarDeletedEvent.owner == owner,
         ).first()
         if tombstone:
+            # The tombstone table is shared with google_calendar_sync (G1.4):
+            # a delete on a Google-backed calendar also lands a row here. Only
+            # claim it when the calendar it belonged to was actually CalDAV —
+            # google_calendar_sync has the matching guard the other way.
+            cal = db.query(CalendarCal).filter(CalendarCal.id == tombstone.calendar_id).first()
+            if not cal or cal.source != "caldav":
+                return None
             return "caldav", tombstone.calendar_id, {"uid": uid}
 
         ev = (
@@ -575,9 +582,13 @@ def _pending_writeback_uids(owner: str) -> tuple[list[str], list[str]]:
             )
             .all()
         )
+        # Scoped to CalDAV-sourced calendars for the same reason as
+        # _load_delete_for_writeback above — the tombstone table is shared
+        # with google_calendar_sync.
         delete_rows = (
             db.query(CalendarDeletedEvent.uid)
-            .filter(CalendarDeletedEvent.owner == owner)
+            .join(CalendarCal, CalendarCal.id == CalendarDeletedEvent.calendar_id)
+            .filter(CalendarDeletedEvent.owner == owner, CalendarCal.source == "caldav")
             .all()
         )
         return [row[0] for row in rows], [row[0] for row in delete_rows]
