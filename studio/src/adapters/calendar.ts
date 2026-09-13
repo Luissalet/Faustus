@@ -172,7 +172,9 @@ export async function syncCaldav(): Promise<SyncResult> {
   const r = await ok(await fetch('/api/calendar/sync?direction=pull', { method: 'POST', credentials: 'same-origin' }), 'calendar/sync');
   const data = (await r.json()) as Record<string, unknown>;
   const errors = Array.isArray(data.errors) ? data.errors.map((e) => (typeof e === 'string' ? e : JSON.stringify(e))) : [];
-  return { ok: data.ok !== false, pulled: Number(data.pulled ?? data.imported ?? 0) || 0, pushed: Number(data.pushed ?? 0) || 0, errors };
+  // `/sync?direction=pull` reports `events` (CalDAV + Google totals); `pulled`
+  // and `imported` are older spellings kept for compatibility.
+  return { ok: data.ok !== false, pulled: Number(data.pulled ?? data.events ?? data.imported ?? 0) || 0, pushed: Number(data.pushed ?? 0) || 0, errors };
 }
 
 export interface ParsedEvent {
