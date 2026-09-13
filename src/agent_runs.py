@@ -588,6 +588,90 @@ def _publish(run: _Run, ev: str) -> None:
             pass
 
 
+# ---------------------------------------------------------------------------
+# A05: tool-effect tracking for recovery
+# ---------------------------------------------------------------------------
+#
+# A `tool_effect` event marks the window between "a non-read tool call
+# started" and "its result was recorded" -- the same window a crash makes
+# ambiguous: the write/exec/send may already have happened, but nothing in
+# the run says so. `src.tool_execution.execute_tool_block` calls this once
+# with state="pending" right before dispatch and once more with
+# state="confirmed"/"failed" right after, for every call whose effect_class
+# (src.tool_registry._effect_class_for) is not "read". If the process dies
+# in between, the second write never happens and the `pending` event is the
+# only trace left in the run's log; `_partial_from_events` below turns any
+# `pending` with no matching `confirmed`/`failed` into an `unknown_effect`
+# once the run is recovered.
+
+_TOOL_EFFECT_STATES = ("pending", "confirmed", "failed")
+
+
+def record_tool_effect(
+    session_id: Optional[str], *, call_id: str, tool: str, effect_class: str, state: str,
+) -> None:
+    """Append a `tool_effect` event to `session_id`'s active detached run.
+
+    No-op (never raises) when there is no run registered for `session_id` --
+    a caller with no detached run behind it (a direct/test call to
+    `execute_tool_block`, a headless script) still executes the tool; it is
+    simply not tracked for restart recovery. `idempotency_key` is always
+    derived here as ``f"{run.run_id}:{call_id}"`` from the run this event is
+    actually being recorded against, rather than trusted from the caller, so
+    it can never name a different run's id.
+    """
+    if state not in _TOOL_EFFECT_STATES:
+        raise ValueError(f"invalid tool_effect state: {state!r}")
+    run = _RUNS.get(str(session_id or ""))
+    if run is None:
+        return
+    idempotency_key = f"{run.run_id}:{call_id}"
+    ev = "data: " + json.dumps({
+        "type": "tool_effect",
+        "call_id": str(call_id),
+        "tool": str(tool or ""),
+        "effect_class": str(effect_class or ""),
+        "state": state,
+        "idempotency_key": idempotency_key,
+    }, ensure_ascii=False) + "\n\n"
+    _publish(run, ev)
+
+
+UNKNOWN_EFFECTS_SYSTEM_PREFIX = (
+    "The previous turn in this session was interrupted (a restart) after "
+    "starting the following action(s); whether they took effect is unknown. "
+    "Do not repeat them without checking first:"
+)
+
+
+def unknown_effects_system_block(sess: Any) -> Optional[str]:
+    """A system-role line for the NEXT turn's preface, when the session's
+    most recent assistant message carries `metadata.unknown_effects` (set by
+    `recover_interrupted_runs` below). Returns None once a later assistant
+    message has been saved without that metadata -- i.e. only for the one
+    turn right after the interruption, the same way `src.behavior_modes.
+    system_block` supplies its own line at this same preface slot
+    (routes/chat_helpers.py, src/chat_processor.py)."""
+    history = getattr(sess, "history", None) or []
+    for msg in reversed(history):
+        if getattr(msg, "role", None) != "assistant":
+            continue
+        meta = getattr(msg, "metadata", None) or {}
+        effects = meta.get("unknown_effects") if isinstance(meta, dict) else None
+        if not effects:
+            return None
+        lines = [UNKNOWN_EFFECTS_SYSTEM_PREFIX]
+        for item in effects:
+            if not isinstance(item, dict):
+                continue
+            lines.append(
+                f"- {item.get('tool', '?')} (call_id={item.get('call_id', '?')}, "
+                f"idempotency_key={item.get('idempotency_key', '?')})"
+            )
+        return "\n".join(lines)
+    return None
+
+
 def _brief(value: Any, limit: int = 160) -> str:
     """One safe line for an activity card, never a full command or output."""
     text = re.sub(r"\s+", " ", str(value or "")).strip()
@@ -1447,6 +1531,22 @@ _INTERRUPTED: Dict[str, Dict[str, Any]] = {}
 INTERRUPTED_NOTE = "[Interrupted: Faustus was restarted while this task was running. What it had produced is kept above; send \"continue\" to pick it up.]"
 
 
+def _unknown_effects_note(unknown_effects: List[Dict[str, Any]]) -> str:
+    """A05: appended to INTERRUPTED_NOTE when the recovered run left one or
+    more `tool_effect` calls stuck at "pending" -- see `_partial_from_events`.
+    Kept a separate sentence (not folded into INTERRUPTED_NOTE's own text) so
+    the base note's wording, and the one existing test asserting it verbatim
+    (tests/test_agent_runs_queue_persist.py), never has to change for a run
+    that has no unknown effect at all."""
+    named = ", ".join(
+        f"{e.get('tool', '?')} ({e.get('call_id', '?')})" for e in unknown_effects
+    )
+    return (
+        "[These calls may already have taken effect and were NOT retried: "
+        f"{named}. Do not repeat them without checking first.]"
+    )
+
+
 def _read_log(path: str) -> Dict[str, Any]:
     """Parse a run log: {"status", "run_id", "events": [ev...], "ts", "label"}."""
     events: Dict[int, str] = {}
@@ -1481,6 +1581,11 @@ def _partial_from_events(events: List[str]) -> Dict[str, Any]:
     tool_events: List[Dict[str, Any]] = []
     metrics = None
     saved = False
+    # A05: call_id -> {call_id, tool, idempotency_key} for every `tool_effect`
+    # seen with state="pending"; popped the moment a "confirmed"/"failed" for
+    # the SAME call_id shows up. Whatever remains once every event has been
+    # walked reached "pending" and never resolved -- an unknown_effect.
+    _pending_effects: Dict[str, Dict[str, Any]] = {}
     for ev in events:
         if not ev.startswith("data: ") or ev.startswith("data: [DONE]"):
             continue
@@ -1513,7 +1618,21 @@ def _partial_from_events(events: List[str]) -> Dict[str, Any]:
             metrics = d.get("data")
         elif d.get("type") == "message_saved":
             saved = True
-    return {"text": "".join(text_parts), "tool_events": tool_events[:60], "metrics": metrics, "saved": saved}
+        elif d.get("type") == "tool_effect":
+            call_id = str(d.get("call_id") or "")
+            if not call_id:
+                continue
+            if d.get("state") == "pending":
+                _pending_effects[call_id] = {
+                    "call_id": call_id,
+                    "tool": d.get("tool"),
+                    "idempotency_key": d.get("idempotency_key"),
+                }
+            else:
+                _pending_effects.pop(call_id, None)
+    unknown_effects = list(_pending_effects.values())
+    return {"text": "".join(text_parts), "tool_events": tool_events[:60], "metrics": metrics, "saved": saved,
+            "unknown_effects": unknown_effects}
 
 
 # ---------------------------------------------------------------------------
@@ -1754,6 +1873,9 @@ def recover_interrupted_runs(session_manager=None) -> List[Dict[str, Any]]:
         interrupted_outcome = _outcome_of("interrupted")
         if interrupted_outcome:
             entry["outcome"] = interrupted_outcome
+        _unknown_effects = partial.get("unknown_effects") or []
+        if _unknown_effects:
+            entry["unknown_effects"] = _unknown_effects
         if session_manager is not None and not partial["saved"]:
             try:
                 sess = session_manager.get_session(sid)
@@ -1763,10 +1885,15 @@ def recover_interrupted_runs(session_manager=None) -> List[Dict[str, Any]]:
                 try:
                     from core.models import ChatMessage
                     body = partial["text"].strip()
-                    content = (body + "\n\n" if body else "") + INTERRUPTED_NOTE
+                    note = INTERRUPTED_NOTE
+                    if _unknown_effects:
+                        note = note + "\n" + _unknown_effects_note(_unknown_effects)
+                    content = (body + "\n\n" if body else "") + note
                     meta: Dict[str, Any] = {"stopped": True, "interrupted": True, "run_id": info.get("run_id")}
                     if partial["tool_events"]:
                         meta["tool_events"] = partial["tool_events"]
+                    if _unknown_effects:
+                        meta["unknown_effects"] = _unknown_effects
                     if isinstance(partial.get("metrics"), dict):
                         meta.update({k: v for k, v in partial["metrics"].items() if k in ("model", "harness")})
                     sess.add_message(ChatMessage("assistant", content, metadata=meta))

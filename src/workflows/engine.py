@@ -366,8 +366,14 @@ class WorkflowEngine:
         context["node_id"] = node.id
         context["mark_effect"] = lambda state: self.store.mark_effect(
             run_id, node.id, state, worker_id=worker_id, attempt=attempt)
+        # A06: `generation` closes over the value THIS claim was handed —
+        # not a fresh read — so cancel_requested keeps answering about the
+        # attempt it was made for even if a later claim on the same row (a
+        # takeover) changes what "current" means.
+        _claim_generation = claim.get("lease_generation")
         context["cancel_requested"] = lambda: not self.store.claim_active(
-            run_id, node.id, worker_id=worker_id, attempt=attempt)
+            run_id, node.id, worker_id=worker_id, attempt=attempt,
+            generation=_claim_generation)
 
         handler = self.handlers.get(node.type)
         if handler is None:

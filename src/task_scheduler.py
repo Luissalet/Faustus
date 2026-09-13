@@ -344,6 +344,18 @@ IDEMPOTENT_SINKS: frozenset = frozenset()
 WORKER_ID = f"{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex[:8]}"
 
 
+class TaskFenced(Exception):
+    """A06: raised when `TaskScheduler._still_owner_or_fenced` finds this
+    attempt's lease generation no longer current — a takeover happened (the
+    lease expired and someone, possibly this same process on a later claim,
+    re-claimed the task) between this attempt starting and it reaching an
+    external effect or its result write. Caught in `_execute_task_locked`
+    the same way `TaskDeferred`/`TaskNoop` already are: as a distinct,
+    expected outcome, recorded as `run.status = "fenced"` — never the
+    generic `error` an unhandled exception there would produce, because
+    this is not a bug, it is the fencing working."""
+
+
 def occurrence_key(task_id: str, due_at: datetime | None) -> str:
     """The stable name of one *occurrence* of a task.
 
@@ -750,6 +762,16 @@ class TaskScheduler:
         # Set once, the first time a claim finds no lease columns, so a
         # degraded deployment says so exactly once instead of every tick.
         self._lease_warned = False
+        # A06: task_id -> the lease_generation this process was handed the
+        # LAST time it claimed that task (_claim_due_task). Read by
+        # `still_owner`/`_still_owner_or_fenced` right before an attempt
+        # produces an external effect or writes its result, so a zombie
+        # attempt whose lease was taken over by another worker (expired,
+        # then re-claimed) can tell and abort instead of racing the new
+        # owner. Popped on release; a stale entry left by a crash is
+        # harmless — the next claim on that task_id overwrites it before
+        # anything reads it.
+        self._lease_generation: Dict[str, int] = {}
 
     # ── the claim, and what holds it ──────────────────────────────────────
 
@@ -766,7 +788,7 @@ class TaskScheduler:
         from core.database import ScheduledTask
         ok = all(hasattr(ScheduledTask, column) for column in
                  ("lease_owner", "lease_expires_at", "lease_heartbeat_at",
-                  "lease_attempt", "lease_key"))
+                  "lease_attempt", "lease_key", "lease_generation"))
         if not ok and not getattr(self, "_lease_warned", False):
             self._lease_warned = True
             logger.warning(
@@ -820,11 +842,32 @@ class TaskScheduler:
                         "lease_heartbeat_at": now,
                         "lease_key": func.coalesce(ScheduledTask.lease_key, key),
                         "lease_attempt": func.coalesce(ScheduledTask.lease_attempt, 0) + 1,
+                        # A06: bumped on EVERY successful claim, fresh or
+                        # taken over from an expired lease — never reset by
+                        # `_release_lease`, so it only ever grows across the
+                        # task's whole lifetime. `still_owner` compares the
+                        # generation an attempt was handed here against
+                        # whatever this column holds right before an effect;
+                        # a takeover always changes it, a heartbeat never does.
+                        "lease_generation": func.coalesce(ScheduledTask.lease_generation, 0) + 1,
                     },
                     synchronize_session=False,
                 )
             )
             db.commit()
+            if claimed:
+                row = (
+                    db.query(ScheduledTask.lease_generation)
+                    .filter(ScheduledTask.id == task_id)
+                    .first()
+                )
+                if not hasattr(self, "_lease_generation"):
+                    # A test (or any caller) that built this scheduler via
+                    # TaskScheduler.__new__ and set only the attributes it
+                    # needed predates this store. Create it lazily rather
+                    # than require every such fixture to know about it.
+                    self._lease_generation = {}
+                self._lease_generation[task_id] = int(row[0]) if row and row[0] is not None else 0
             return bool(claimed)
         except OperationalError as e:
             # Somebody else is mid-write on the same row. Treating that as a
@@ -870,6 +913,11 @@ class TaskScheduler:
             return False
         finally:
             db.close()
+            # A06: this attempt is over one way or another — drop its
+            # tracked generation so a leftover entry from THIS task_id's
+            # previous occurrence can never be read by a later, unrelated
+            # attempt. `_claim_due_task` repopulates it on the next claim.
+            getattr(self, "_lease_generation", {}).pop(task_id, None)
 
     def _heartbeat_lease(self, task_id: str) -> bool:
         """Push our lease forward. Returns False once it is no longer ours.
@@ -900,6 +948,57 @@ class TaskScheduler:
             return False
         finally:
             db.close()
+
+    def still_owner(self, task_id: str, generation: int) -> bool:
+        """A06: whether `generation` — the `lease_generation` value
+        `_claim_due_task` handed this attempt when it claimed `task_id` — is
+        still the row's current generation AND this worker still holds the
+        lease.
+
+        False means a takeover happened after this attempt claimed the task:
+        the lease expired (this process fell behind on heartbeats, was
+        starved, or is simply slower than the timeout) and a different
+        worker (this process or another one, after a restart) re-claimed it,
+        which always bumps `lease_generation`. A caller about to produce an
+        external effect or write a result calls this FIRST and aborts
+        (`fenced`, not `failed`) rather than race the new owner — see
+        `_still_owner_or_fenced`, the call sites in `_execute_task_locked`/
+        `_execute_action`/`_execute_llm_task`, and the parallel
+        `src.workflows.store.claim_active` for the workflow-node case.
+
+        Fails OPEN (True) when `_lease_capable()` is False (columns absent —
+        an un-migrated install, or a test's cut-down model): the same
+        degraded-but-working posture every other lease method here already
+        takes, not a new failure mode this method introduces.
+        """
+        if not self._lease_capable():
+            return True
+        from core.database import ScheduledTask, SessionLocal
+        db = SessionLocal()
+        try:
+            row = (
+                db.query(ScheduledTask.lease_owner, ScheduledTask.lease_generation)
+                .filter(ScheduledTask.id == task_id)
+                .first()
+            )
+            if row is None:
+                return False
+            owner, current_generation = row
+            return owner == WORKER_ID and int(current_generation or 0) == int(generation)
+        finally:
+            db.close()
+
+    def _still_owner_or_fenced(self, task_id: str) -> bool:
+        """`still_owner`, using the generation THIS process's `_claim_due_task`
+        recorded for `task_id` (`self._lease_generation`). True when there is
+        no recorded generation at all (an un-migrated install, or a manual/
+        test call that never went through `_claim_due_task`) — nothing to
+        fence against in that case, matching `still_owner`'s own fail-open
+        when lease columns are absent."""
+        generation = getattr(self, "_lease_generation", {}).get(task_id)
+        if generation is None:
+            return True
+        return self.still_owner(task_id, generation)
 
     async def _heartbeat_loop(self, task_id: str):
         """Keep one task's lease alive for as long as this coroutine lives."""
@@ -1673,6 +1772,18 @@ class TaskScheduler:
 
                 foreground_monitor = asyncio.create_task(_cancel_if_foreground_active())
             try:
+                # A06: the fencing check, right before this attempt can
+                # produce any external effect. `_execute_action` and
+                # `_execute_llm_task` re-check at their own entry too — this
+                # one additionally covers `_execute_research_task`, and
+                # closes the window between the claim (possibly ticks ago,
+                # behind the model-slot semaphore or the foreground-quiet
+                # gate above) and dispatch.
+                if not self._still_owner_or_fenced(task_id):
+                    raise TaskFenced(
+                        f"lease generation for task {task_id} changed before dispatch; "
+                        "another worker took over this occurrence"
+                    )
                 if task_type == "action":
                     result, success = await self._execute_action(task, run_id=run_id)
                     run.status = "success" if success else "error"
@@ -1693,6 +1804,20 @@ class TaskScheduler:
                     run.model = self._last_run_model
                 if run.status == "success":
                     await self._deliver_task_result(task, result, db, model=getattr(self, "_last_run_model", None))
+            except TaskFenced as fenced:
+                # Not a failure: the legitimate (new) owner is the one whose
+                # result should stand. Record `fenced` and stop — do NOT
+                # touch task.next_run/last_run here, since either the new
+                # owner's own attempt already did, or will.
+                logger.warning("Task '%s' fenced: %s", task.name, fenced)
+                run_obj = db.query(TaskRun).filter(TaskRun.id == run_id).first()
+                if run_obj:
+                    run_obj.status = "fenced"
+                    run_obj.error = str(fenced)
+                    run_obj.result = run_obj.result or str(fenced)
+                    run_obj.finished_at = _utcnow()
+                    db.commit()
+                return
             except TaskDeferred as defer:
                 count = self._task_defer_counts.get(task_id, 0) + 1
                 self._task_defer_counts[task_id] = count
@@ -1756,6 +1881,26 @@ class TaskScheduler:
                         await foreground_monitor
                     except asyncio.CancelledError:
                         pass
+
+            # A06: the second fencing check — the effect above (action/LLM/
+            # research) may have taken real wall-clock time, long enough for
+            # a takeover to happen WHILE it ran. Written work already done
+            # cannot be unwound here (that is exactly the "no undo" limit
+            # every A06 fencing check has), but the RESULT — next_run,
+            # last_run, notifications, chaining — must never be recorded by
+            # an attempt that is no longer the lease holder, since the new
+            # owner's own attempt owns that bookkeeping now.
+            if not self._still_owner_or_fenced(task_id):
+                logger.warning(
+                    "Task '%s' fenced before result write (lease taken over mid-run)",
+                    task.name,
+                )
+                run.status = "fenced"
+                run.error = ("Lease generation changed while this attempt was running; "
+                             "another worker took over this occurrence.")
+                run.finished_at = _utcnow()
+                db.commit()
+                return
 
             run.finished_at = _utcnow()
 
@@ -1978,6 +2123,20 @@ class TaskScheduler:
     async def _execute_action(self, task, run_id: str | None = None) -> tuple:
         """Execute a built-in action (no LLM needed)."""
         from src.builtin_actions import BUILTIN_ACTIONS
+
+        # A06: re-checked here (not only at _execute_task_locked's dispatch
+        # point) because a builtin action IS the external effect — an email
+        # send, a webhook, a shell command — and this is the last chokepoint
+        # before it runs. Raises so the caller's existing `except TaskFenced`
+        # handles it the same way as every other fencing checkpoint. `getattr`
+        # rather than `task.id`: a task double with no `id` has nothing to
+        # fence against, same fail-open posture as `_execute_llm_task`'s
+        # equivalent check.
+        _task_id = getattr(task, "id", None)
+        if _task_id is not None and not self._still_owner_or_fenced(_task_id):
+            raise TaskFenced(
+                f"lease generation for task {_task_id} changed before the action ran"
+            )
 
         action_fn = BUILTIN_ACTIONS.get(task.action)
         if not action_fn:
@@ -2246,6 +2405,21 @@ class TaskScheduler:
     async def _execute_llm_task(self, task, db) -> str:
         """Execute an LLM task with full tool access via the agent loop."""
         from core.database import Session as DbSession, ChatMessage, CrewMember
+
+        # A06: re-checked here — the agent loop below can call tools with
+        # real external effects, so this is the last chokepoint before any
+        # of them run. Raises so the caller's existing `except TaskFenced`
+        # (in _execute_task_locked) handles it uniformly. `getattr` rather
+        # than `task.id`: several existing tests drive this method directly
+        # with a bare `SimpleNamespace` task double that has no `id` at all
+        # (this method never looked at one before A06) — nothing to fence
+        # against in that case, same fail-open posture `_still_owner_or_fenced`
+        # itself already takes when there is no recorded generation.
+        _task_id = getattr(task, "id", None)
+        if _task_id is not None and not self._still_owner_or_fenced(_task_id):
+            raise TaskFenced(
+                f"lease generation for task {_task_id} changed before the LLM task ran"
+            )
 
         # If this task is wired to a CrewMember (personal assistant, custom
         # crew), prefer the crew member's persona/model/endpoint as overrides.

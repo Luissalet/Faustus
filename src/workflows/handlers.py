@@ -57,6 +57,47 @@ def resolve(path: str, context: Mapping[str, Any]) -> Any:
     return current
 
 
+def _check_fenced(context: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
+    """A06: the fencing check every handler with an external effect calls
+    immediately before that effect — opening an approval card
+    (`approval_handler`), sending (`deliver_handler`), running a skill or
+    starting a media render (`skill_handler`/`media_skill_runner`), or
+    saving an artifact (`artifact_handler`). `trigger`/`condition`/`wait`
+    reach nothing outside the run and are not checked.
+
+    `context["cancel_requested"]` is `engine.py`'s
+    ``lambda: not store.claim_active(..., generation=...)`` closed over
+    THIS attempt's worker_id/attempt/lease_generation (see `_run_node`) — a
+    lease taken over since this attempt claimed the node makes it return
+    True. Returns a `{"status": "failed", ...}` result to return directly
+    from the caller, or None when the effect may proceed.
+
+    Not a distinct `status` value: the engine's `_run_node` only accepts
+    `{"completed", "failed", "paused", "skipped"}` from a handler and would
+    otherwise coerce anything else to `"failed"` with THIS reason
+    overwritten by a generic "unknown status" one. `fenced: True` in the
+    result is the distinguishable marker instead — visible in the node's
+    `result_json` next to the reason, for anything (the run's own history,
+    `needs_reconciliation`-style tooling) that wants to tell a fenced node
+    apart from a handler that genuinely failed.
+    """
+    check = context.get("cancel_requested")
+    if not callable(check):
+        return None
+    try:
+        fenced = bool(check())
+    except Exception:
+        logger.exception("cancel_requested check raised; treating as NOT fenced "
+                         "(fail open — the same posture claim_active's own DB "
+                         "errors already take)")
+        return None
+    if not fenced:
+        return None
+    return {"status": "failed", "fenced": True,
+            "reason": "fenced: this node's lease was taken over by another worker "
+                      "before its effect ran; not executed"}
+
+
 def _field(obj: Any, name: str) -> Any:
     """Read one field off a contract object or a plain dict.
 
@@ -290,6 +331,14 @@ def approval_handler(store: Any = None, *, owner: str = "",
             # says. Left out, the store's own default applies.
             extra["ttl_seconds"] = ttl
 
+        # A06: opening a card is this node's own external effect (a second
+        # one is a duplicate a person has to notice and dismiss) — fenced
+        # the same as deliver/skill/artifact_store, just further down this
+        # handler than those since everything above it is a read.
+        fenced = _check_fenced(context)
+        if fenced is not None:
+            return fenced
+
         # The run's owner is the fallback, and it matters: a card with no
         # owner is in nobody's pending list, so the gate would be waiting on a
         # person who is never shown the question.
@@ -322,6 +371,9 @@ def deliver_handler(send: Optional[Callable] = None) -> Callable:
                 "no sender is wired to the 'deliver' node type; nothing was sent. "
                 "Pass one to default_handlers(deliver=...) — Faustus does not ship "
                 "a mail client and will not pretend it did")}
+        fenced = _check_fenced(context)
+        if fenced is not None:
+            return fenced
         payload = dict(node.config)
         result = send(payload, dict(context)) or {}
         return {"delivered": result.get("status", "completed") == "completed", **result}
@@ -351,6 +403,9 @@ def skill_handler(run: Optional[Callable] = None, *,
                 f"no runner is wired to the 'skill' node type, so {skill_id!r} did "
                 "not run. Pass one to default_handlers(skill=...) — or name a media "
                 "template as 'media:<id>', which is wired")}
+        fenced = _check_fenced(context)
+        if fenced is not None:
+            return fenced
         outcome = run(node, dict(context)) or {}
         if outcome.get("status") in ("failed", "refused"):
             return {**outcome, "status": "failed",
@@ -383,6 +438,9 @@ def media_skill_runner(*, poll_seconds: int = 15) -> Callable:
         run_id = str(previous.get("media_run_id") or "")
 
         if not run_id:
+            fenced = _check_fenced(context)
+            if fenced is not None:
+                return fenced
             workflow_id = str(node.config.get("skill") or "")[len("media:"):]
             from src.workflows.scope import validate_output_scope
             owner = str(context.get('owner') or '')
@@ -441,6 +499,9 @@ def artifact_handler(save: Optional[Callable] = None) -> Callable:
             return {"status": "failed", "reason": (
                 "no store is wired to the 'artifact_store' node type; nothing was "
                 "saved. Pass one to default_handlers(artifact_store=...)")}
+        fenced = _check_fenced(context)
+        if fenced is not None:
+            return fenced
         return dict(save(node, dict(context)) or {"stored": True})
 
     return handle

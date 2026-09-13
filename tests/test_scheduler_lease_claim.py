@@ -66,6 +66,7 @@ def make_scheduler():
     sch._concurrency_cap = 1
     sch._task_handles = {}
     sch._lease_warned = False
+    sch._lease_generation = {}
     return sch
 
 

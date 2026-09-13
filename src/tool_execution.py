@@ -35,6 +35,7 @@ from src.tool_capabilities import (
     ALWAYS_APPROVE_TOOLS,
     ToolRunSecurityContext,
     blocked_tool_result,
+    capabilities_for_action,
     command_guard_requires_approval,
 )
 from src.tool_approvals import ExactToolApproval
@@ -1086,12 +1087,31 @@ async def execute_tool_block(
     ) = _MISSING_TOOL_SECURITY_CONTEXT,
     exact_approval: Optional[ExactToolApproval] = None,
     turn_options: Optional[dict] = None,
+    call_id: Optional[str] = None,
 ) -> Tuple[str, Dict]:
     """Execute a single tool block. Returns (description, result_dict).
 
     Thin wrapper: bind the per-turn workspace (so the path resolvers + subprocess
     cwd confine to it) for the duration of this call, then delegate. Reset on the
     way out so the binding never leaks to the next tool call.
+
+    A05: for a tool whose `effect_class` (src.tool_registry._effect_class_for,
+    the same coarse classification the tool catalogue reports) is not
+    ``"read"``, a ``tool_effect`` event is recorded into the calling
+    session's active detached run (src.agent_runs) *before* dispatch, state
+    ``"pending"``, and again *after* dispatch returns, state
+    ``"confirmed"``/``"failed"``. If this coroutine is cancelled or the
+    process dies between those two writes, the run's replay log carries a
+    ``pending`` `tool_effect` that never resolved — `agent_runs.
+    _partial_from_events`/`recover_interrupted_runs` surface it as an
+    `unknown_effect` on restart, because a crash between "the write/exec/
+    send happened" and "the result was recorded" means the call may already
+    have taken effect and must not be blindly retried. A plain read never
+    writes this event: repeating a read cannot change the world, so it is
+    not a call whose outcome can go "unknown". No-op when there is no
+    `call_id` (a caller outside the chat-turn call sites below) or no active
+    run for `session_id` (headless/manual callers, tests) — the effect still
+    executes, it is simply not tracked for recovery.
     """
     if security_context is _MISSING_TOOL_SECURITY_CONTEXT:
         raise TypeError(
@@ -1231,6 +1251,39 @@ async def execute_tool_block(
     token = _active_workspace.set(workspace or None)
     roots_token = _active_workspace_roots.set(tuple(roots))
     opts_token = _active_turn_options.set(turn_options or None)
+    # A05: classify the effect BEFORE dispatch, using the same action-aware
+    # capabilities a call's approval requirement is already computed from
+    # (src.tool_capabilities.capabilities_for_action), mapped onto the tool
+    # catalogue's coarse effect_class (src.tool_registry._effect_class_for).
+    # Never raises: an unrecognized tool_type/content combination falls back
+    # to the capability layer's own fail-high default (a write), which is
+    # the safer side to record a spurious pending event on, not the side
+    # that silently skips tracking an unknown tool's effect.
+    _effect_class: Optional[str] = None
+    try:
+        # Local import: src.tool_registry imports src.agent_tools, which
+        # imports THIS module at module scope (for the dispatcher table) —
+        # importing _effect_class_for at module level here would be a
+        # circular import.
+        from src.tool_registry import _effect_class_for
+        _caps = capabilities_for_action(
+            getattr(block, "tool_type", None), getattr(block, "content", None)
+        )
+        _effect_class = _effect_class_for(
+            str(getattr(block, "tool_type", None) or ""), _caps.effects
+        )
+    except Exception:
+        _effect_class = None
+    _tracked_effect = bool(_effect_class and _effect_class != "read" and call_id)
+    if _tracked_effect:
+        try:
+            from src import agent_runs as _agent_runs
+            _agent_runs.record_tool_effect(
+                session_id, call_id=str(call_id), tool=str(getattr(block, "tool_type", None) or ""),
+                effect_class=_effect_class, state="pending",
+            )
+        except Exception:
+            logger.debug("tool_effect pending write failed for call_id=%s", call_id, exc_info=True)
     try:
         _tool_started_at = time.monotonic()
         output = await _execute_tool_block_impl(
@@ -1270,6 +1323,7 @@ async def execute_tool_block(
         # nothing downstream of this function reads `_typed_result` yet (the
         # natural next consumer — folding this into a run's own done/error
         # state — lives in src/agent_runs.py, outside this lote's files).
+        _typed_result = None
         try:
             from src.tool_result import normalize_tool_result
             _typed_result = normalize_tool_result(output[1] if len(output) > 1 else None)
@@ -1284,6 +1338,23 @@ async def execute_tool_block(
                 "normalize_tool_result failed for tool=%s",
                 getattr(block, "tool_type", None), exc_info=True,
             )
+        if _tracked_effect:
+            # A05: the call reached a result without the process dying in
+            # between — record it resolved, so recovery never sees this
+            # call_id's `pending` event as an unknown_effect. Reuses CALL-05's
+            # own classifier (`_typed_result`, computed just above) rather
+            # than re-reading exit_code/error a second, independent way.
+            _effect_state = "confirmed" if (_typed_result is not None and _typed_result.status == "succeeded") else "failed"
+            try:
+                from src import agent_runs as _agent_runs
+                _agent_runs.record_tool_effect(
+                    session_id, call_id=str(call_id), tool=str(getattr(block, "tool_type", None) or ""),
+                    effect_class=_effect_class, state=_effect_state,
+                )
+            except Exception:
+                logger.debug(
+                    "tool_effect %s write failed for call_id=%s", _effect_state, call_id, exc_info=True,
+                )
         if isinstance(security_context, ToolRunSecurityContext):
             security_context.observe_tool_result(
                 getattr(block, "tool_type", None),
