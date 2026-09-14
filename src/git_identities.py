@@ -61,6 +61,7 @@ _PROBE_TTL = 600.0  # 10 minutes, per the contract
 _PROBE_CACHE: Dict[str, tuple] = {}
 
 _DEFAULT_HOSTNAME = "github.com"
+_REPO_IDENTITY_CONFIG_KEY = "faustus.identity-id"
 
 
 class GitIdentityError(Exception):
@@ -467,14 +468,25 @@ def _alias_from_url(url: str) -> Optional[str]:
 
 def active_identity_for_repo(repo_path: str, owner: Optional[str], *, remote: str = "origin",
                              remotes: Optional[List[Dict[str, Any]]] = None) -> Optional[Dict[str, Any]]:
-    """The identity whose `ssh_host` matches `remote`'s host alias, or None
-    (an https remote, or an alias with no matching identity). Never probes
-    -- only ever an alias match plus whatever login is already cached.
+    """The identity explicitly selected for this checkout, otherwise the one
+    whose `ssh_host` matches `remote`'s host alias, or None. Never probes --
+    only local git config/alias matching plus whatever login is already cached.
 
     `remotes`, when given, is used INSTEAD of a fresh `git remote -v` --
     `routes/git_routes.py` passes the ones `repo_summary` already fetched so
     listing repos never runs `remote -v` twice per repo."""
     from src import git_panel
+
+    # A repository may choose its identity before it has a remote.  Keep that
+    # preference in local git config: it stays with this checkout, is not
+    # committed, and can be consumed later by either UI or agent publishing.
+    preferred = git_panel.run_git(
+        repo_path, "config", "--local", "--get", _REPO_IDENTITY_CONFIG_KEY,
+    )
+    if preferred.returncode == 0 and preferred.stdout.strip():
+        identity = find_identity(owner, preferred.stdout.strip())
+        if identity is not None:
+            return identity
 
     if remotes is None:
         remotes = git_panel.repo_remotes(repo_path)
@@ -539,9 +551,11 @@ def repo_identity_info(repo_path: str, owner: Optional[str], *, remote: str = "o
 
 def set_repo_identity(repo_path: str, identity: Dict[str, Any], *, remote: str = "origin",
                       set_git_user: bool = True) -> Dict[str, Any]:
-    """Rewrite `remote`'s URL to `identity`'s alias and, when `set_git_user`
-    and the identity carries a name/email, set them as this repo's LOCAL
-    `user.name`/`user.email` (never global). Returns the
+    """Save `identity` as this checkout's preference, rewrite `remote` when it
+    exists, and, when `set_git_user` and the identity carries a name/email,
+    set them as this repo's LOCAL `user.name`/`user.email` (never global).
+    A repository without a remote is valid: its saved identity is consumed
+    when it is published later. Returns the
     ``PUT /api/git/repos/{id}/identity`` payload (minus ``repo``, which the
     route layer adds -- it needs owner-scoped discovery this module doesn't
     have).
@@ -559,20 +573,29 @@ def set_repo_identity(repo_path: str, identity: Dict[str, Any], *, remote: str =
     if not alias and not is_gh:
         raise GitIdentityError("no_alias", "This identity has no ssh config alias to rewrite the remote to")
     entry = next((r for r in git_panel.repo_remotes(repo_path) if r.get("name") == remote), None)
-    if not entry:
-        raise GitIdentityError("no_remote", f"Repo has no remote named {remote!r}")
-    before = entry.get("fetch_url") or entry.get("push_url") or ""
+    before = (entry.get("fetch_url") or entry.get("push_url") or "") if entry else ""
+    after = ""
 
-    if is_gh and identity.get("protocol") == "https":
-        after = rewrite_remote_https(before)
-    else:
-        after = rewrite_remote_alias(before, alias or _DEFAULT_HOSTNAME)
-    if not after:
-        raise GitIdentityError("unrecognized_url", f"Could not parse remote url: {before!r}")
+    if entry:
+        if is_gh and identity.get("protocol") == "https":
+            after = rewrite_remote_https(before) or ""
+        else:
+            after = rewrite_remote_alias(before, alias or _DEFAULT_HOSTNAME) or ""
+        if not after:
+            raise GitIdentityError("unrecognized_url", f"Could not parse remote url: {before!r}")
 
-    proc = git_panel.run_git(repo_path, "remote", "set-url", remote, after)
-    if proc.returncode != 0:
-        raise git_panel.GitCommandError(["remote", "set-url", remote, after], proc.returncode, proc.stdout, proc.stderr)
+        proc = git_panel.run_git(repo_path, "remote", "set-url", remote, after)
+        if proc.returncode != 0:
+            raise git_panel.GitCommandError(["remote", "set-url", remote, after], proc.returncode, proc.stdout, proc.stderr)
+
+    configured = git_panel.run_git(
+        repo_path, "config", "--local", _REPO_IDENTITY_CONFIG_KEY, str(identity["id"]),
+    )
+    if configured.returncode != 0:
+        raise git_panel.GitCommandError(
+            ["config", "--local", _REPO_IDENTITY_CONFIG_KEY, str(identity["id"])],
+            configured.returncode, configured.stdout, configured.stderr,
+        )
 
     if set_git_user:
         if identity.get("git_user_name"):
@@ -584,5 +607,6 @@ def set_repo_identity(repo_path: str, identity: Dict[str, Any], *, remote: str =
 
     return {
         "remote": remote, "remote_url_before": before, "remote_url_after": after,
+        "remote_configured": entry is not None,
         "git_user": _git_user_with_scope(repo_path),
     }

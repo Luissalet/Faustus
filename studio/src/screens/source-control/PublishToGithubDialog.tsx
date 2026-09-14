@@ -49,6 +49,7 @@ export function PublishToGithubDialog({
     setError(null);
     setResult(null);
     setName(repo.name);
+    setIdentityId(repo.identity?.id ?? '');
     getGithubAccounts()
       .then((res) => {
         setAccounts(res);
@@ -58,8 +59,7 @@ export function PublishToGithubDialog({
     listIdentities()
       .then((r) => setIdentities(r.identities))
       .catch(() => setIdentities([]));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, repo.id]);
+  }, [open, repo.id, repo.identity?.id, repo.name]);
 
   const reset = () => {
     setLogin('');

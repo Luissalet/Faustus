@@ -86,6 +86,7 @@ export interface RepoIdentity {
 
 export interface RepoIdentityResult extends RepoIdentity {
   repo: GitRepo;
+  remote_configured?: boolean;
 }
 
 export interface GitFolder {

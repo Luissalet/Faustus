@@ -40,3 +40,14 @@ def test_reset_is_refused_without_a_tool_but_points_to_the_panel():
     out = git_mutation_routed_to_tools("git reset --hard")
     assert out is not None and out["use_instead"] is None
     assert "Source control panel" in out["error"]
+
+
+def test_git_config_write_cannot_bypass_the_git_tools():
+    out = git_mutation_routed_to_tools('git config remote.origin.url "owner:repo.git"')
+    assert out is not None
+    assert out["git_subcommand"] == "config"
+
+
+def test_git_config_reads_still_work_in_shell():
+    assert git_mutation_routed_to_tools("git config --get remote.origin.url") is None
+    assert git_mutation_routed_to_tools("git config user.name") is None

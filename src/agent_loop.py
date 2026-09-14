@@ -6251,10 +6251,19 @@ async def _stream_agent_loop_body(
         try:
             from src.tool_execution import _GIT_TOOL_NAMES
             _git_read = {"git_status", "git_log", "git_diff"}
+            # Continuations such as "Do it" carry their Git intent in the
+            # retrieval query (recent user context), not in the two-word last
+            # message. Also keep a Git action family coherent: if retrieval
+            # already selected init/publish/commit, the companion actions must
+            # not disappear from the same turn after `git_init` creates .git.
+            _git_context = _retrieval_query if _intent.get("continuation") else (_last_user or "")
             _git_intent = bool(re.search(
                 r"\b(git|commit|commits|commitea|push|pull|pull request|fetch|rama|ramas|branch|branches|merge|"
                 r"mergea|mergear|fusiona|subir|sube|sincroniza|stage|checkout|repositorio|repo)\b",
-                _last_user or "", re.IGNORECASE))
+                _git_context, re.IGNORECASE))
+            _git_selected_action = bool(
+                set(_relevant_tools) & (set(_GIT_TOOL_NAMES) - _git_read)
+            )
             import os as _os_git
             _dot_git = _os_git.path.join(workspace, ".git")
             _has_repo = _os_git.path.isdir(_dot_git) or _os_git.path.isfile(_dot_git)
@@ -6264,8 +6273,12 @@ async def _stream_agent_loop_body(
                     _has_repo = repo_toplevel(workspace) is not None
                 except Exception:  # noqa: BLE001
                     _has_repo = False
-            if _has_repo or _git_intent:
-                _git_add = set(_GIT_TOOL_NAMES) if _git_intent and not _low_signal_turn else _git_read
+            if _has_repo or _git_intent or _git_selected_action:
+                _git_add = (
+                    set(_GIT_TOOL_NAMES)
+                    if (_git_intent and not _low_signal_turn) or _git_selected_action
+                    else _git_read
+                )
                 _git_add -= set(disabled_tools)
                 if _git_add - set(_relevant_tools):
                     logger.info("[tool-floor] git tools offered: %s", sorted(_git_add - set(_relevant_tools)))

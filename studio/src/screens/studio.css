@@ -3419,10 +3419,11 @@ aside.fs-panel {
 .fs-workbench-content { display: flex; flex-direction: column; flex: 1; min-block-size: 0; overflow: hidden; }
 .fs-panel__tab { flex-shrink: 0; min-block-size: 40px; }
 /* The panel is resized by dragging its left edge (a split-view grip), never
-   by a slider. 6px wide, invisible until hovered/focused. */
+   by a slider. Keep a quiet 1px rule visible so the control is discoverable. */
 aside.fs-panel { position: relative; }
-.fs-panel__grip { position: absolute; inset-block: 0; inset-inline-start: -3px; inline-size: 6px; cursor: col-resize; touch-action: none; z-index: 2; background: transparent; transition: background var(--fs-duration-fast) var(--fs-ease-out); }
-.fs-panel__grip:hover, .fs-panel__grip:focus-visible { background: var(--fs-accent); }
+.fs-panel__grip { position: absolute; inset-block: 0; inset-inline-start: -5px; inline-size: 10px; cursor: col-resize; touch-action: none; z-index: 2; background: transparent; }
+.fs-panel__grip::after { content: ''; position: absolute; inset-block: 0; inset-inline-start: 4px; inline-size: 1px; background: var(--fs-border-strong); transition: inline-size var(--fs-duration-fast) var(--fs-ease-out), background var(--fs-duration-fast) var(--fs-ease-out); }
+.fs-panel__grip:hover::after, .fs-panel__grip:focus-visible::after { inline-size: 2px; background: var(--fs-accent); }
 .fs-workbench-open { display: flex; overflow: auto; flex-shrink: 0; gap: var(--fs-space-2); padding: var(--fs-space-2) var(--fs-space-4); border-block-end: 1px solid var(--fs-border); }
 .fs-workbench-open > span { display: flex; flex-shrink: 0; max-inline-size: 260px; }
 .fs-workbench-open button { color: var(--fs-text-2); background: transparent; border: 0; padding: var(--fs-space-2); min-block-size: 36px; cursor: pointer; }

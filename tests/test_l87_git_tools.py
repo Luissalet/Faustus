@@ -21,7 +21,7 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src import agent_git_policy, constants as constants_mod, git_panel  # noqa: E402
+from src import agent_git_policy, constants as constants_mod, git_identities, git_panel  # noqa: E402
 from src import settings as settings_mod  # noqa: E402
 from src import tool_execution as te  # noqa: E402
 from src.agent_tools.git_tools import (  # noqa: E402
@@ -175,6 +175,59 @@ def test_git_publish_uses_active_account_adds_origin_and_pushes(ws, monkeypatch)
     assert result["exit_code"] == 0, result
     assert result["github"]["full_name"] == "owner/repo"
     assert calls["remote"][1:] == ("origin", "https://github.com/owner/repo.git")
+    assert calls["push"][1]["set_upstream"] is True
+
+
+def test_git_publish_uses_repo_preselected_identity(ws, monkeypatch):
+    from src import git_github
+
+    monkeypatch.setattr(git_github, "gh_accounts", lambda **_kw: {
+        "available": True,
+        "accounts": [{"login": "owner", "active": True, "protocol": "https"}],
+    })
+    monkeypatch.setattr(git_github, "create_github_repo", lambda login, name, **_kw: {
+        "full_name": f"{login}/{name}", "html_url": f"https://github.com/{login}/{name}",
+        "https_url": f"https://github.com/{login}/{name}.git",
+        "ssh_url": f"git@github.com:{login}/{name}.git",
+    })
+    monkeypatch.setattr(git_identities, "active_identity_for_repo", lambda *_a, **_kw: {
+        "id": "manual:work", "ssh_host": "github-work", "source": "manual",
+    })
+    calls = {}
+    monkeypatch.setattr(git_panel, "add_remote", lambda root, name, url: calls.update(remote=(root, name, url)))
+    monkeypatch.setattr(git_panel, "repo_remotes", lambda _root: [])
+    monkeypatch.setattr(git_panel, "push", lambda root, **kw: calls.update(push=(root, kw)) or "pushed")
+
+    result = _run_async(GitPublishTool().execute('{"user_confirmed": true}', {"owner": OWNER}))
+
+    assert result["exit_code"] == 0, result
+    assert calls["remote"][2] == "git@github-work:owner/repo.git"
+
+
+def test_git_publish_resumes_partial_publish_and_repairs_origin(ws, monkeypatch):
+    from src import git_github
+
+    _run(["remote", "add", "origin", "owner:repo.git"], cwd=ws)
+    monkeypatch.setattr(git_github, "gh_accounts", lambda **_kw: {
+        "available": True,
+        "accounts": [{"login": "owner", "active": True, "protocol": "ssh"}],
+    })
+    monkeypatch.setattr(git_identities, "active_identity_for_repo", lambda *_a, **_kw: {
+        "id": "manual:work", "ssh_host": "github-work", "source": "manual",
+    })
+    monkeypatch.setattr(
+        git_github, "create_github_repo",
+        lambda *_a, **_kw: (_ for _ in ()).throw(AssertionError("must resume, not recreate")),
+    )
+    calls = {}
+    monkeypatch.setattr(git_panel, "push", lambda root, **kw: calls.update(push=(root, kw)) or "pushed")
+
+    result = _run_async(GitPublishTool().execute('{"user_confirmed": true}', {"owner": OWNER}))
+
+    assert result["exit_code"] == 0, result
+    assert result["resumed"] is True
+    assert _run(["remote", "get-url", "origin"], cwd=ws).stdout.strip() == \
+        "git@github-work:owner/repo.git"
     assert calls["push"][1]["set_upstream"] is True
 
 

@@ -66,6 +66,19 @@ def test_repairable_numeric_string_is_fixed_and_executes_with_repaired_value(mon
     assert isinstance(payload["limit"], int)
 
 
+def test_repairable_stringified_paths_array_executes_as_git_commit_array(monkeypatch):
+    monkeypatch.delenv("FAUSTUS_TOOL_ARG_VALIDATION", raising=False)
+    args = {"message": "Initial commit", "paths": '[".gitignore", "app.py"]'}
+    block = function_call_to_tool_block("git_commit", json.dumps(args))
+    assert block is not None
+
+    new_block, meta = agent_loop._validate_native_tool_call("git_commit", json.dumps(args), block)
+
+    assert meta is not None and meta["blocked"] is False
+    assert meta["repairs"][0]["field"] == "paths"
+    assert json.loads(new_block.content)["paths"] == [".gitignore", "app.py"]
+
+
 def test_warn_mode_never_blocks_but_still_reports(monkeypatch):
     monkeypatch.setenv("FAUSTUS_TOOL_ARG_VALIDATION", "warn")
     args = {}  # missing required "pattern"

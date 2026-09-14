@@ -3080,13 +3080,14 @@ def repair_tool_arguments(
     tool_name: str, args: Dict[str, Any], errors: List[ArgumentError]
 ) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
     """Bounded repair (CALL-03): fix only the *form* of a value the schema
-    already accepts, never its meaning. That means exactly two things: a
+    already accepts, never its meaning. That includes a
     number sent as a string that is an exact textual representation of that
     number ("90" -> 90 for an integer field, "1.5" -> 1.5 for a number
-    field), and a boolean sent as the strings "true"/"false" (any case) for
-    a boolean field. Both are shapes local models emit routinely
-    (`"ignore_case": "true"`), and both are unambiguous; refusing them in
-    strict mode would block calls that every tool used to accept.
+    field), a boolean sent as the strings "true"/"false" (any case), or a
+    JSON array/object serialized one extra time as a string. These are shapes
+    local models emit routinely (`"ignore_case": "true"`,
+    `"paths": "[\"a.py\"]"`) and are unambiguous; refusing them in strict
+    mode blocks a call whose meaning is already fully specified.
 
     Never: adds a missing required field, drops or renames a key, changes
     which tool is being called, or touches a value flagged as a path/scope
@@ -3141,6 +3142,15 @@ def repair_tool_arguments(
         stripped = value.strip()
         new_value = None
         reason = "numeric string coerced to the schema's declared number type"
+        if "array" in expected_types or "object" in expected_types:
+            try:
+                decoded = json.loads(stripped)
+            except (TypeError, ValueError):
+                decoded = None
+            expected_container = list if "array" in expected_types else dict
+            if isinstance(decoded, expected_container):
+                new_value = decoded
+                reason = "JSON string decoded to the schema's declared container type"
         if "boolean" in expected_types and stripped.lower() in ("true", "false"):
             new_value = stripped.lower() == "true"
             reason = "boolean string coerced to the schema's declared boolean type"

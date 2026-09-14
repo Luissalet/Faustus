@@ -84,7 +84,7 @@ export function NewRepositoryDialog({
         setGithubLogin((cur) => cur || res.accounts.find((a) => a.active)?.login || res.accounts[0]?.login || '');
       })
       .catch(() => setGithubAccounts({ available: false, version: null, accounts: [] }));
-  }, [open, projectId]);
+  }, [open, projectId, workspace]);
 
   const reset = () => {
     setMode(workspace ? 'init_existing' : 'init');

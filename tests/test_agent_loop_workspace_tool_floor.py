@@ -118,6 +118,7 @@ def tools_sent(
     active_email=None,
     settings=None,
     supports_tools=True,
+    messages=None,
 ):
     """Drive the real `stream_agent_loop` and return the tool names the model got.
 
@@ -169,7 +170,7 @@ def tools_sent(
             stream = agent_loop.stream_agent_loop(
                 endpoint_url=OLLAMA_V1,
                 model=MODEL,
-                messages=[{"role": "user", "content": message}],
+                messages=messages or [{"role": "user", "content": message}],
                 headers={},
                 workspace=workspace,
                 owner=owner,
@@ -334,6 +335,17 @@ def test_vague_turn_keeps_its_read_only_shape(message, workspace):
     assert not names & {"edit_file", "apply_patch", "write_file", "bash", "python"}, (
         f"vague turn was handed write/shell tools: {sorted(names)}"
     )
+
+
+def test_do_it_continuation_keeps_the_complete_git_action_family(workspace):
+    """A terse confirmation must not strand init/publish without commit."""
+    history = [
+        {"role": "user", "content": "Create the repository, commit these files, and publish it to GitHub."},
+        {"role": "assistant", "content": "Everything is ready. Shall I do it?"},
+        {"role": "user", "content": "Do it"},
+    ]
+    names = set(tools_sent("Do it", workspace, messages=history))
+    assert {"git_init", "git_commit", "git_publish", "git_push"} <= names, sorted(names)
 
 
 TRANSLATION_PAIRS = [

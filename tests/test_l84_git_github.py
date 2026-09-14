@@ -540,6 +540,36 @@ def test_github_publish_creates_remote_and_pushes(client, store, tmp_path, monke
     assert body["repo"]["remotes"][0]["fetch_url"] == str(bare)
 
 
+def test_github_publish_uses_identity_selected_before_origin(client, store, tmp_path, monkeypatch):
+    parent = tmp_path / "work_preselected"
+    parent.mkdir()
+    repo = _init_repo(parent / "preselected")
+    _commit(repo, "a.txt", "1\n", "initial")
+    _project(store, parent)
+    bare = _bare(tmp_path / "preselected.git")
+    monkeypatch.setattr(git_github, "_run_gh", _make_fake_run_gh(
+        bare_by_name={"Mlgpigeon/preselected": str(bare)},
+    ))
+    identity = {
+        "id": "manual:work", "label": "Work", "ssh_host": "github-work",
+        "source": "manual", "identity_file": "~/.ssh/id_work",
+    }
+    monkeypatch.setattr(
+        git_identities, "find_identity",
+        lambda _owner, identity_id, **_kw: identity if identity_id == identity["id"] else None,
+    )
+    _run(["config", "--local", "faustus.identity-id", identity["id"]], cwd=repo)
+
+    rid = git_panel.compute_repo_id(str(repo))
+    resp = client.post(f"/api/git/repos/{rid}/github/publish", json={
+        "login": "Mlgpigeon", "private": True, "push": False,
+    }, headers=_hdr())
+
+    assert resp.status_code == 201, resp.text
+    assert _run(["remote", "get-url", "origin"], cwd=repo).stdout.strip() == \
+        "git@github-work:Mlgpigeon/preselected.git"
+
+
 def test_github_publish_409_when_origin_already_exists(client, store, tmp_path, monkeypatch):
     parent = tmp_path / "work7"
     parent.mkdir()

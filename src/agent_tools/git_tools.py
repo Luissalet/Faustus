@@ -736,7 +736,26 @@ class GitPushTool:
 
 
 class GitPublishTool:
-    """Create the GitHub repository, add ``origin`` and optionally push."""
+    """Create/adopt the GitHub repository, repair ``origin`` and optionally push."""
+
+    @staticmethod
+    def _remote_targets(url: str, login: str, name: str) -> bool:
+        """Whether a remote clearly names this exact GitHub repository."""
+        from urllib.parse import urlparse
+
+        raw = str(url or "").strip().replace("\\", "/")
+        if not raw:
+            return False
+        if "://" in raw:
+            candidate = urlparse(raw).path
+        elif ":" in raw:
+            host, candidate = raw.split(":", 1)
+            if candidate.strip("/").removesuffix(".git").lower() == name.lower():
+                return host.removeprefix("git@").lower() == login.lower()
+        else:
+            candidate = raw
+        candidate = candidate.strip("/").removesuffix(".git")
+        return candidate.lower() == f"{login}/{name}".lower()
 
     async def execute(self, content: str, ctx: dict) -> dict:
         args = _args(content)
@@ -749,10 +768,6 @@ class GitPublishTool:
             denial = _policy_denied("git_publish", "push", ctx, args, allowed=bool(policy.get("push")))
             if denial:
                 return denial
-        if any(r.get("name") == "origin" for r in git_panel.repo_remotes(repo_root)):
-            return {"error": "git_publish: this repository already has an 'origin' remote",
-                    "exit_code": 1, "error_class": "git.remote_exists"}
-
         accounts = git_github.gh_accounts(use_cache=False)
         if not accounts.get("available"):
             return {"error": f"git_publish: {git_github.GH_MISSING_DETAIL}", "exit_code": 1,
@@ -774,33 +789,66 @@ class GitPublishTool:
                     "exit_code": 1, "error_class": "github.account_not_found"}
 
         name = str(args.get("name") or "").strip() or os.path.basename(repo_root.rstrip(os.sep))
-        try:
-            created = git_github.create_github_repo(
-                login, name,
-                private=True if args.get("private") is None else bool(args.get("private")),
-                description=str(args.get("description") or ""),
-            )
-        except git_github.GhNotAvailableError:
-            return {"error": f"git_publish: {git_github.GH_MISSING_DETAIL}", "exit_code": 1,
-                    "error_class": "dependency.missing"}
-        except git_github.GitHubRepoExistsError as exc:
-            return {"error": f"git_publish: {exc}", "exit_code": 1,
-                    "error_class": "github.exists"}
-        except git_github.GitHubCommandError as exc:
-            return {"error": f"git_publish: {git_panel.stderr_snippet(exc.stderr or exc.stdout)}",
-                    "exit_code": 1, "error_class": "github.failed"}
-
         identity_id = str(args.get("identity_id") or "").strip()
-        identity = git_identities.find_identity(_owner(ctx), identity_id) if identity_id else None
+        identity = (
+            git_identities.find_identity(_owner(ctx), identity_id)
+            if identity_id
+            else git_identities.active_identity_for_repo(repo_root, _owner(ctx))
+        )
         account = next((a for a in choices if a.get("login") == login), None)
+        created = {
+            "full_name": f"{login}/{name}",
+            "html_url": f"https://github.com/{login}/{name}",
+            "https_url": f"https://github.com/{login}/{name}.git",
+            "ssh_url": f"git@github.com:{login}/{name}.git",
+        }
         if identity and identity.get("ssh_host"):
             remote_url = f"git@{identity['ssh_host']}:{login}/{name}.git"
         elif account and account.get("protocol") == "https":
             remote_url = created.get("https_url") or f"https://github.com/{login}/{name}.git"
         else:
             remote_url = created.get("ssh_url") or f"git@github.com:{login}/{name}.git"
+
+        origin = next((r for r in git_panel.repo_remotes(repo_root) if r.get("name") == "origin"), None)
+        origin_url = (origin.get("fetch_url") or origin.get("push_url") or "") if origin else ""
+        if origin and not self._remote_targets(origin_url, login, name):
+            return {"error": "git_publish: this repository already has an 'origin' remote for a different repository",
+                    "exit_code": 1, "error_class": "git.remote_exists", "remote": origin_url}
+
+        resumed = bool(origin)
+        if not origin:
+            try:
+                created = git_github.create_github_repo(
+                    login, name,
+                    private=True if args.get("private") is None else bool(args.get("private")),
+                    description=str(args.get("description") or ""),
+                )
+            except git_github.GhNotAvailableError:
+                return {"error": f"git_publish: {git_github.GH_MISSING_DETAIL}", "exit_code": 1,
+                        "error_class": "dependency.missing"}
+            except git_github.GitHubRepoExistsError:
+                resumed = True
+            except git_github.GitHubCommandError as exc:
+                return {"error": f"git_publish: {git_panel.stderr_snippet(exc.stderr or exc.stdout)}",
+                        "exit_code": 1, "error_class": "github.failed"}
+
+            if identity and identity.get("ssh_host"):
+                remote_url = f"git@{identity['ssh_host']}:{login}/{name}.git"
+            elif account and account.get("protocol") == "https":
+                remote_url = created.get("https_url") or f"https://github.com/{login}/{name}.git"
+            else:
+                remote_url = created.get("ssh_url") or f"git@github.com:{login}/{name}.git"
         try:
-            git_panel.add_remote(repo_root, "origin", remote_url)
+            if origin:
+                if origin_url != remote_url:
+                    changed = git_panel.run_git(repo_root, "remote", "set-url", "origin", remote_url)
+                    if changed.returncode != 0:
+                        raise git_panel.GitCommandError(
+                            ["remote", "set-url", "origin", remote_url], changed.returncode,
+                            changed.stdout, changed.stderr,
+                        )
+            else:
+                git_panel.add_remote(repo_root, "origin", remote_url)
             pushed = ""
             if push_now:
                 branch = git_panel.current_branch(repo_root)[0]
@@ -819,6 +867,7 @@ class GitPublishTool:
         return {
             "output": f"Published {created['full_name']} to {created['html_url']}" + (f"\n{pushed.strip()}" if pushed.strip() else ""),
             "exit_code": 0, "repo_root": repo_root, "github": created, "remote": remote_url,
+            "resumed": resumed,
         }
 
 

@@ -162,6 +162,24 @@ def test_boolean_strings_are_repaired_the_way_local_models_send_them():
     assert applied == [] and repaired["ignore_case"] == "yes"
 
 
+def test_json_string_array_is_repaired_for_local_model_tool_calls():
+    args = {
+        "message": "Initial commit",
+        "paths": '[".gitignore", "app.py", "pipeline.py"]',
+    }
+    errors = validate_tool_arguments("git_commit", args)
+    repaired, applied = repair_tool_arguments("git_commit", args, errors)
+
+    assert repaired["paths"] == [".gitignore", "app.py", "pipeline.py"]
+    assert applied == [{
+        "field": "paths",
+        "from": '[".gitignore", "app.py", "pipeline.py"]',
+        "to": [".gitignore", "app.py", "pipeline.py"],
+        "reason": "JSON string decoded to the schema's declared container type",
+    }]
+    assert validate_tool_arguments("git_commit", repaired) == []
+
+
 def test_enum_case_is_repaired_but_a_different_word_is_not():
     from src.tool_schemas import repair_tool_arguments, validate_tool_arguments
 

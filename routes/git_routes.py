@@ -790,9 +790,11 @@ def setup_git_routes() -> APIRouter:
             return _error(409, "git.remote_exists", "This repository already has an 'origin' remote",
                           repo=_summary(meta, owner))
         name = (body.name or "").strip() or meta["name"]
+        preferred = git_identities.active_identity_for_repo(meta["path"], owner)
+        identity_id = body.identity_id or (preferred.get("id") if preferred else None)
         result = _do_github_create(
             meta, owner, login=body.login, name=name, private=body.private,
-            description=body.description or "", identity_id=body.identity_id, push=body.push,
+            description=body.description or "", identity_id=identity_id, push=body.push,
         )
         if isinstance(result, JSONResponse):
             return result

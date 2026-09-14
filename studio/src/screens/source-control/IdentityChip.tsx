@@ -118,7 +118,10 @@ export function IdentityChip({ repo, onRepoUpdate }: { repo: GitRepo; onRepoUpda
         load();
       })
       .catch((e: unknown) => {
-        if (e instanceof GitApiError) setApplyError(`${e.message}${str(e.payload.detail) ? ` — ${str(e.payload.detail)}` : ''}`);
+        if (e instanceof GitApiError) {
+          const detail = str(e.payload.detail);
+          setApplyError(detail && detail !== e.message ? `${e.message} — ${detail}` : e.message);
+        }
         else setApplyError((e as Error).message);
       })
       .finally(() => setApplying(false));
@@ -184,7 +187,11 @@ export function IdentityChip({ repo, onRepoUpdate }: { repo: GitRepo; onRepoUpda
       {confirmId && confirmedIdentity && (
         <div className="fs-sc__identity-confirm" data-testid="identity-apply-confirm">
           <p className="fs-set__help">{t('Remote URL before')}: <code>{beforeUrl || t('(none)')}</code></p>
-          <p className="fs-set__help">{t('Remote URL after')}: <code>{afterUrl ?? t('(cannot preview — unrecognized remote)')}</code></p>
+          {beforeUrl ? (
+            <p className="fs-set__help">{t('Remote URL after')}: <code>{afterUrl ?? t('(cannot preview — unrecognized remote)')}</code></p>
+          ) : (
+            <p className="fs-set__help">{t('This identity will be used when you publish this repository.')}</p>
+          )}
           {(confirmedIdentity.git_user_name || confirmedIdentity.git_user_email) && (
             <Toggle
               id="identity-also-user"

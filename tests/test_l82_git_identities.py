@@ -292,12 +292,16 @@ def test_set_repo_identity_without_alias_raises(ssh_home, tmp_path):
     assert exc.value.code == "no_alias"
 
 
-def test_set_repo_identity_no_remote_raises(ssh_home, tmp_path):
+def test_set_repo_identity_without_remote_saves_preference(ssh_home, tmp_path):
     repo = _init_repo(tmp_path / "work3")
     identity = next(i for i in git_identities.list_identities(OWNER)["identities"] if i["label"] == "acct1")
-    with pytest.raises(git_identities.GitIdentityError) as exc:
-        git_identities.set_repo_identity(str(repo), identity)
-    assert exc.value.code == "no_remote"
+    result = git_identities.set_repo_identity(str(repo), identity)
+
+    assert result["remote_url_before"] == ""
+    assert result["remote_url_after"] == ""
+    assert result["remote_configured"] is False
+    assert git_identities.active_identity_for_repo(str(repo), OWNER)["id"] == identity["id"]
+    assert _run(["config", "--local", "--get", "faustus.identity-id"], cwd=repo).stdout.strip() == identity["id"]
 
 
 def test_repo_identity_info_reports_scope(ssh_home, tmp_path):

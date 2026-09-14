@@ -562,6 +562,12 @@ _GIT_MUTATION_RE = re.compile(
     r"tag|stash|add|rm|mv|restore|clean|remote|init|clone|am|apply)\b",
     re.IGNORECASE,
 )
+_GIT_CONFIG_MUTATION_RE = re.compile(
+    r"(?:^|[;&|(]\s*|\bsudo\s+)git(?:\.exe)?\s+(?:-C\s+\S+\s+|-c\s+\S+\s+)*config\s+"
+    r"(?:(?:--local|--global|--system|--worktree)\s+)*(?:--add|--replace-all|--unset(?:-all)?\b|"
+    r"[^\s-][^\s]*\s+[^;&|\r\n]+)",
+    re.IGNORECASE,
+)
 _GIT_TOOL_FOR_SUBCOMMAND = {
     "commit": "git_commit", "add": "git_commit (it stages the paths you name)",
     "push": "git_push", "pull": "git_pull", "fetch": "git_fetch",
@@ -580,6 +586,14 @@ def git_mutation_routed_to_tools(command: str) -> Optional[dict]:
     stay allowed, so a script that merely inspects a repo keeps working."""
     text = command or ""
     m = _GIT_MUTATION_RE.search(text)
+    if not m and _GIT_CONFIG_MUTATION_RE.search(text):
+        return {
+            "error": ("bash: mutating `git config` is not run from the shell here -- use the relevant "
+                      "git_* tool so repository policy and Source control remain authoritative."),
+            "exit_code": 2,
+            "use_instead": "git_publish",
+            "git_subcommand": "config",
+        }
     if not m:
         return None
     sub = m.group("sub").lower()
