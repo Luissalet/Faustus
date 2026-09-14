@@ -106,7 +106,7 @@ def test_zip_attachment_exposes_name_path_and_members_without_extracting(tmp_pat
 
     assert "=== ZIP archive: Silhouettes_fixes.zip ===" in content
     assert f"Owner-checked path: {archive_path.resolve()}" in content
-    assert "repair/INSTRUCCIONES.md" in content
-    assert "repair/replacements/module.py" in content
     assert "Do not call read_file on the ZIP binary itself" in content
+    assert "repair/INSTRUCCIONES.md" not in content
+    assert len(content) < 700
     assert not (tmp_path / "repair").exists()

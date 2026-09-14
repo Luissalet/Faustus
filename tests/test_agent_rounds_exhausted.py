@@ -76,6 +76,42 @@ def test_no_rounds_exhausted_on_normal_finish(monkeypatch):
     assert not any(e.get("type") == "rounds_exhausted" for e in events), events
 
 
+def test_workspace_acknowledgement_without_tools_is_forced_to_act(monkeypatch, tmp_path):
+    _patch_common(monkeypatch)
+    monkeypatch.setattr(al, "blocked_tools_for_owner", lambda owner: set(), raising=False)
+    monkeypatch.setattr(
+        al, "_agent_route_tool_mode", lambda *args, **kwargs: (True, False, True),
+        raising=False,
+    )
+    round_no = 0
+
+    async def _fake_stream(_candidates, messages, **kwargs):
+        nonlocal round_no
+        round_no += 1
+        if round_no == 1:
+            yield f'data: {json.dumps({"delta": "Reference context received."})}\n\n'
+            yield f'data: {json.dumps({"type": "finish", "finish_reason": "stop"})}\n\n'
+        elif round_no == 2:
+            yield f'data: {json.dumps({"type": "tool_calls", "calls": [{"name": "read_file", "arguments": json.dumps({"path": "app.py"})}]})}\n\n'
+            yield f'data: {json.dumps({"type": "finish", "finish_reason": "tool_calls"})}\n\n'
+        else:
+            yield f'data: {json.dumps({"delta": "Inspected the project and reported the result."})}\n\n'
+            yield f'data: {json.dumps({"type": "finish", "finish_reason": "stop"})}\n\n'
+        yield "data: [DONE]\n\n"
+
+    monkeypatch.setattr(al, "stream_llm_with_fallback", _fake_stream, raising=False)
+    events = _types(_collect(al.stream_agent_loop(
+        "http://127.0.0.1:11434/v1", "qwen3.8:27b-q8_0",
+        [{"role": "user", "content": "Implement the fixes in the zip for the project"}],
+        workspace=str(tmp_path),
+        max_rounds=3,
+        relevant_tools={"read_file", "apply_patch", "python"},
+    )))
+
+    assert any(e.get("type") == "harness_check" and e.get("status") == "no_action" for e in events)
+    assert round_no >= 2
+
+
 def test_emits_intent_nudge_exhausted_when_cap_is_exhausted(monkeypatch):
     _patch_common(monkeypatch)
 

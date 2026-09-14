@@ -121,8 +121,7 @@ def _process_text_file(path: str) -> str:
 
 
 def _process_zip_file(path: str, display_name: str) -> str:
-    """Expose a ZIP as a bounded manifest without extracting untrusted paths."""
-    max_members = 200
+    """Expose a ZIP as a compact actionable reference without extracting it."""
     try:
         with zipfile.ZipFile(path) as archive:
             infos = archive.infolist()
@@ -133,13 +132,7 @@ def _process_zip_file(path: str, display_name: str) -> str:
                 f"{sum(max(0, info.file_size) for info in infos)}",
                 "Use Python zipfile or PowerShell to inspect/read specific members. "
                 "Do not call read_file on the ZIP binary itself. Extract only inside the active workspace.",
-                "Archive contents:",
             ]
-            for info in infos[:max_members]:
-                suffix = "/" if info.is_dir() and not info.filename.endswith("/") else ""
-                lines.append(f"- {info.filename}{suffix} ({info.file_size} bytes)")
-            if len(infos) > max_members:
-                lines.append(f"- ... {len(infos) - max_members} more members omitted")
             return "\n".join(lines)
     except (OSError, zipfile.BadZipFile, zipfile.LargeZipFile) as exc:
         logger.warning("ZIP attachment inspection failed for %s: %s", path, exc)

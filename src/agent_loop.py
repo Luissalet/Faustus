@@ -7117,6 +7117,7 @@ async def _stream_agent_loop_body(
     _harness_final_note = ""
     _harness_final_replacement = ""
     _harness_execution_recoveries = 0
+    _no_action_nudges = 0
     _todo_nudged = False
     _round_finish_reason = None
     _harness_scope_active = bool(workspace) or _looks_like_workspace_coding_request(_last_user)
@@ -8977,6 +8978,45 @@ async def _stream_agent_loop_body(
             # call and give the model two bounded chances to issue it. The
             # request classifier and active-project selection must both agree
             # before this narrow obligation exists.
+            # A non-empty acknowledgement is still a silent give-up when the
+            # user explicitly asked for workspace work and no tool ran. This
+            # was observed verbatim with ZIP input: "Reference context
+            # received." was accepted as a completed implementation. Give the
+            # model one bounded, forceful chance to start acting.
+            if (
+                _hc_text
+                and not _ledger.events
+                and _harness_scope_active
+                and _looks_like_workspace_coding_request(_last_user)
+                and _no_action_nudges < 1
+                and round_num < max_rounds
+            ):
+                _no_action_nudges += 1
+                _ledger.notes.append(f"no_action_nudge@{round_num}")
+                logger.warning(
+                    "[harness] round %s returned prose but performed no workspace action; nudging",
+                    round_num,
+                )
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        "[Harness check — automatic runtime message, not a new user request] "
+                        "The original request requires work in the active workspace, but your last response "
+                        "performed no tool call. An acknowledgement is not completion. START your next response "
+                        "with the concrete read, archive-inspection, edit, or terminal tool call needed to advance "
+                        "the original request. Do not summarize the reference and do not stop at a plan."
+                    ),
+                })
+                yield (
+                    "data: " + json.dumps({
+                        "type": "harness_check", "status": "no_action", "round": round_num,
+                        "attempt": 1, "max_attempts": 1,
+                    }) + "\n\n"
+                )
+                full_response += "\n\n"
+                yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
+                continue
+
             if _project_objective_unavailable and _project_objective_unavailable_nudges < 1:
                 try:
                     _unavailable_check = _ledger.check_completion(_hc_text)
