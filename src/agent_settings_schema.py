@@ -138,6 +138,15 @@ GROUPS: list[dict[str, Any]] = [
                   "Learn that bound from the last 20 commands (3 x their median, at most 600 s) instead "
                   "of using the fixed one. It only ever grants MORE time, so a box whose builds run "
                   "silent for minutes stops having them killed; a bound below 30 s is honoured as-is."),
+            _bool("agent_sandbox_execution", "Run commands in the sandbox",
+                  "bash and python go through the Docker sandbox (src/sandbox_exec.py) with the "
+                  "workspace mounted at /workspace, instead of running on this machine."),
+            _select("agent_sandbox_mode", "When the sandbox cannot serve",
+                    "auto = the host runs the command and the result says so — always on native "
+                    "Windows, where a Linux container has no cmd, powershell, .bat, winget or the "
+                    "project's own Python, and elsewhere when the daemon does not answer. "
+                    "strict = refuse instead, never the host.",
+                    ["auto", "strict"]),
             _bool("agent_workspace_no_memory", "Skip memory on coding turns",
                   "Do not retrieve personal memories for workspace coding turns; local models weave them "
                   "into the code."),

@@ -10,6 +10,9 @@ from enum import Enum
 # it now selects chat-session scope.
 TASK_APPROVAL_DECISION = "approve_task"
 CHAT_SESSION_APPROVAL_DECISION = "approve"
+# 14-09-2026: remembered per workspace folder across chats
+# (src/tool_approval_grants.py). Same grant as the chat scope, kept on disk.
+WORKSPACE_APPROVAL_DECISION = "approve_workspace"
 DENY_APPROVAL_DECISION = "deny"
 
 # Session.get_context_messages() adds this server-owned marker only when the
@@ -24,6 +27,7 @@ class ToolApprovalScope(str, Enum):
     SINGLE_ACTION = "single_action"
     TASK = "task"
     CHAT_SESSION = "chat_session"
+    WORKSPACE = "workspace"
 
 
 def scope_for_decision(decision: object) -> ToolApprovalScope | None:
@@ -32,4 +36,6 @@ def scope_for_decision(decision: object) -> ToolApprovalScope | None:
         return ToolApprovalScope.TASK
     if normalized == CHAT_SESSION_APPROVAL_DECISION:
         return ToolApprovalScope.CHAT_SESSION
+    if normalized == WORKSPACE_APPROVAL_DECISION:
+        return ToolApprovalScope.WORKSPACE
     return None

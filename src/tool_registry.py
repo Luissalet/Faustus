@@ -88,12 +88,13 @@ DEFAULT_MAX_OUTPUT_BYTES = MAX_OUTPUT_CHARS
 _LIVE_TIMEOUT_SETTINGS: Mapping[str, str] = {
     "bash": "agent_subprocess_idle_timeout_seconds",
     "python": "agent_subprocess_idle_timeout_seconds",
+    "powershell": "agent_subprocess_idle_timeout_seconds",
 }
 
 #: Tools whose running call can be killed from outside (the idle-timeout
 #: watchdog, or `manage_bg_jobs` itself) but with no guarantee the process
 #: unwound cleanly — `best_effort`, not `cooperative`.
-_BEST_EFFORT_CANCEL_TOOLS = frozenset({"bash", "python", "manage_bg_jobs"})
+_BEST_EFFORT_CANCEL_TOOLS = frozenset({"bash", "python", "powershell", "manage_bg_jobs"})
 
 #: Tools whose entire purpose is handling a credential or secret store.
 #: Classified `sensitive` regardless of what their read/write effects say,

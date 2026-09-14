@@ -1304,7 +1304,9 @@ def test_the_interface_answers_an_approval_by_id_and_fixed_decisions():
     chat_adapter = (root / "studio/src/adapters/chat.ts").read_text(encoding="utf-8")
     skills_adapter = (root / "studio/src/adapters/skills.ts").read_text(encoding="utf-8")
 
-    assert "'approve' | 'approve_task' | 'deny'" in transcript
+    # Four words since 14-09-2026: `approve_workspace` is the folder-scoped
+    # answer (src/tool_approval_grants.py); still an id plus a fixed word.
+    assert "'approve' | 'approve_task' | 'approve_workspace' | 'deny'" in transcript
     assert "tool_approval_id" in chat_adapter
     assert "tool_approval_decision" in chat_adapter
     # The skills sandbox has its own approval, on the same shape.

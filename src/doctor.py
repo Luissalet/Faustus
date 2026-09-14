@@ -281,15 +281,24 @@ def _sandbox_image() -> Finding:
 def _agent_sandbox() -> Finding:
     from src import sandbox_exec
 
-    on = sandbox_exec.enabled()
+    info = sandbox_exec.describe()
+    on = info["enabled"]
+    if not on:
+        detail = "OFF — the agent's shell runs on this machine, as it always did"
+    elif info["target"] == "host":
+        detail = "ON but the host runs the commands — " + (info["skip_reason"] or "auto mode")
+    elif info["target"] == "container":
+        detail = "STRICT — bash and python run in a container, or not at all"
+    else:
+        detail = "AUTO — a container when the daemon answers, this host otherwise"
     return Finding("execution", "agent shell in the sandbox",
-                   "ok" if on else "absent",
-                   "bash and python run in a container" if on else
-                   "OFF — the agent's shell runs on this machine, as it always did",
+                   "ok" if on else "absent", detail,
                    fix="" if on else "turn on `agent_sandbox_execution` once you "
                                      "have used it a while on the test instance; it "
                                      "adds ~0.4s per command and breaks anything "
-                                     "that needs host tools the image lacks")
+                                     "that needs host tools the image lacks; "
+                                     "`agent_sandbox_mode: strict` refuses instead of "
+                                     "falling back to the host")
 
 
 def _approvals() -> Finding:

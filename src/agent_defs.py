@@ -126,7 +126,7 @@ MIN_ROUNDS, MAX_ROUNDS = 3, 40
 MIN_TIMEOUT_S, MAX_TIMEOUT_S = 60, 7200
 
 #: Tools that run a shell no path pattern can see inside.
-SHELL_TOOLS: Tuple[str, ...] = ("bash", "python")
+SHELL_TOOLS: Tuple[str, ...] = ("bash", "python", "powershell")
 
 #: What a definition suggests when it says nothing about how far to push.
 #: ``greedy`` is the default because it is what every worker already did: they

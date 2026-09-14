@@ -78,13 +78,30 @@ async def test_edit_file_without_base_revision_is_unverified_but_unchanged_in_be
 
 
 @pytest.mark.asyncio
-async def test_edit_file_rejects_a_malformed_base_revision(tmp_path):
+async def test_edit_file_treats_a_malformed_base_revision_as_absent(tmp_path):
+    """14-09-2026: `base_revision` is an OPTIONAL precondition. A value that
+    is not a digest ("not-a-hash", "latest") used to be a hard error that
+    cost the model a whole round to learn a format the call never needed;
+    now it is the same unverified write every call without one already
+    gets. A bare 64-hex digest is accepted with its prefix supplied."""
+    from src.agent_tools.filesystem_tools import _normalize_base_revision, sha256_revision
     p = tmp_path / "a.txt"
     p.write_text("one\n")
     res = await EditFileTool().execute(
         json.dumps({"path": str(p), "old_string": "one", "new_string": "ONE", "base_revision": "not-a-hash"}), {})
-    assert res["exit_code"] == 1 and "base_revision" in res["error"]
-    assert p.read_text() == "one\n"
+    assert res["exit_code"] == 0
+    assert p.read_text() == "ONE\n"
+    assert _normalize_base_revision("latest") == ""
+    bare = sha256_revision(b"x")[len("sha256:"):]
+    assert _normalize_base_revision(bare) == "sha256:" + bare
+    assert _normalize_base_revision(bare.upper()) == "sha256:" + bare
+    # …and a bare digest that is STALE still conflicts, so the precondition
+    # keeps its teeth for anyone who supplies a real one.
+    stale = sha256_revision(b"something else")[len("sha256:"):]
+    res = await EditFileTool().execute(
+        json.dumps({"path": str(p), "old_string": "ONE", "new_string": "TWO", "base_revision": stale}), {})
+    assert res.get("status") == "conflict"
+    assert p.read_text() == "ONE\n"
 
 
 # ── write_file ───────────────────────────────────────────────────────────

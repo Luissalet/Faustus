@@ -1038,7 +1038,7 @@ export interface SendOptions {
   /** Per-session sampling knobs (/temp, /maxtokens…), validated server-side. */
   genOverrides?: Record<string, number | boolean>;
   /** Answering a tool approval: the message goes empty and these travel. */
-  approval?: { id: string; decision: 'approve' | 'approve_task' | 'deny' };
+  approval?: { id: string; decision: 'approve' | 'approve_task' | 'approve_workspace' | 'deny' };
   /** `/agents`: the delegation travels as its own field; the server swaps
    *  it in for the model and keeps `message` as the readable label. */
   delegateTasks?: Delegation;

@@ -40,7 +40,7 @@ _TOOL_BLOCK_RE = re.compile(
 # these tags is Markdown fence metadata on a real language (```bash {title=
 # "setup"}), never inline tool args — only the classic tag-then-newline form
 # executes for them.
-_CODE_FENCE_TAGS = frozenset({"bash", "python"})
+_CODE_FENCE_TAGS = frozenset({"bash", "python", "powershell"})
 
 
 def _fenced_tool_call(m) -> Optional[Tuple[str, str]]:
@@ -238,6 +238,9 @@ _TOOL_NAME_MAP = {
     "run": "bash",
     "python": "python",
     "code": "python",
+    "powershell": "powershell",
+    "pwsh": "powershell",
+    "ps1": "powershell",
     "search": "web_search",
     "web_search": "web_search",
     "websearch": "web_search",

@@ -10,8 +10,9 @@ tool parsing / execution logic.
 
 import json
 import logging
+import os
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from src.agent_tools import ToolBlock, TOOL_TAGS
 from src.tool_parsing import _TOOL_NAME_MAP
@@ -114,6 +115,20 @@ FUNCTION_TOOL_SCHEMAS = [
                     "code": {"type": "string", "description": "Python code to execute"}
                 },
                 "required": ["code"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "powershell",
+            "description": "Run a PowerShell script on this Windows host (pwsh or Windows PowerShell), starting in the workspace. Use it for anything Windows-native: .bat/.cmd launchers, winget/choco, Start-Process, services, registry, WMI, paths with backslashes. Write the script exactly as you would type it in a PowerShell window — no outer quoting, no `powershell -Command`. A .bat/.cmd runs with `& cmd.exe /c \"thing.bat\"`; `-File` only takes .ps1. `bash` on Windows is Git Bash (POSIX syntax) and refuses to launch powershell/cmd for you. Not for creating or editing files — use the file tools.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "script": {"type": "string", "description": "PowerShell script to run (multi-line allowed)"}
+                },
+                "required": ["script"]
             }
         }
     },
@@ -2581,6 +2596,8 @@ def function_call_to_tool_block(name: str, arguments: str) -> Optional[ToolBlock
         content = args.get("command", "")
     elif tool_type == "python":
         content = args.get("code", "")
+    elif tool_type == "powershell":
+        content = args.get("script") or args.get("command") or args.get("code") or ""
     elif tool_type == "web_search":
         queries = args.get("queries")
         if isinstance(queries, list) and queries:
@@ -2851,17 +2868,53 @@ def _type_matches(value: Any, expected: str) -> bool:
     return isinstance(value, scalar)
 
 
-def _path_out_of_scope(value: Any) -> bool:
-    """A path-scoped argument may not escape its tool's workspace: no `..`
-    traversal segment, and not an absolute path (POSIX `/...` or a
-    `C:\\...`-style drive path)."""
-    if not isinstance(value, str) or not value:
-        return False
+def _is_absolute_path_text(value: str) -> bool:
     if value.startswith("/") or value.startswith("\\"):
         return True
-    if len(value) >= 2 and value[1] == ":" and value[0].isalpha():
+    return len(value) >= 2 and value[1] == ":" and value[0].isalpha()
+
+
+def _path_out_of_scope(value: Any, path_roots: Optional[Sequence[str]] = None) -> bool:
+    """A path-scoped argument may not escape its tool's workspace.
+
+    A relative path with no `..` segment is always in scope. An absolute
+    path (POSIX `/...` or a `C:\\...` drive path) or one with a `..` segment
+    is in scope ONLY when it resolves inside one of `path_roots` — the
+    workspace and project roots of the turn. Until 14-09-2026 any absolute
+    path was refused here outright, even `C:\\ws\\src\\x.py` inside the bound
+    workspace `C:\\ws` that every file tool would then have accepted: the
+    model read it as "the grep tool rejects absolute Windows paths" and
+    started guessing relative spellings. The check is still pure — it only
+    resolves and compares strings against the roots it is handed; it never
+    touches the tool's own resolver. With no roots at all the historical
+    rule stands (absolute and `..` are out), which is what a call outside
+    any workspace should get."""
+    if not isinstance(value, str) or not value:
+        return False
+    absolute = _is_absolute_path_text(value)
+    traversal = ".." in value.replace("\\", "/").split("/")
+    if not absolute and not traversal:
+        return False
+    roots = [str(r) for r in (path_roots or ()) if r]
+    if not roots:
         return True
-    return ".." in value.replace("\\", "/").split("/")
+    expanded = os.path.expanduser(value)
+    if os.path.isabs(expanded):
+        candidate = expanded
+    else:
+        candidate = os.path.join(roots[0], expanded)
+    try:
+        resolved = os.path.normcase(os.path.realpath(candidate))
+    except (OSError, ValueError):
+        return True
+    for root in roots:
+        try:
+            real_root = os.path.normcase(os.path.realpath(root))
+            if resolved == real_root or os.path.commonpath([resolved, real_root]) == real_root:
+                return False
+        except (OSError, ValueError):
+            continue
+    return True
 
 
 @dataclass
@@ -2884,7 +2937,8 @@ class ArgumentError:
         return f"{self.field}: {self.detail}"
 
 
-def validate_tool_arguments(tool_name: str, args: Any) -> List[ArgumentError]:
+def validate_tool_arguments(tool_name: str, args: Any,
+                            path_roots: Optional[Sequence[str]] = None) -> List[ArgumentError]:
     """Validate a fully-parsed tool-call `arguments` object against its
     schema in FUNCTION_TOOL_SCHEMAS. Checks (CALL-02): wrong type, unknown
     field, enum value out of range, a numeric/string/array value outside its
@@ -2934,8 +2988,12 @@ def validate_tool_arguments(tool_name: str, args: Any) -> List[ArgumentError]:
         if range_error is not None:
             errors.append(range_error)
 
-        if key in path_fields and _path_out_of_scope(value):
-            errors.append(ArgumentError(key, "path_scope", f"{value!r} escapes the allowed scope (.. or absolute)", value))
+        if key in path_fields and _path_out_of_scope(value, path_roots):
+            errors.append(ArgumentError(
+                key, "path_scope",
+                f"{value!r} escapes the allowed scope (outside the workspace/project roots"
+                + (f" {list(path_roots)}" if path_roots else "; no workspace is bound, so only relative paths without `..`")
+                + ")", value))
 
     return errors
 

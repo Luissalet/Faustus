@@ -10,13 +10,18 @@ to yesterday*: `run()` returns None and `subprocess_tools` takes the path it
 always took. There is a test for that, because a flag that changes behaviour
 while switched off is worse than no flag.
 
-The rule that matters is what happens when it is **on** and the sandbox is not
-there. It does not fall through to the host. A missing daemon, an absent image
-or a workspace that is not a directory all come back as an error result naming
-the reason — the same refusal the router gives, surfaced where the model can
-read it. Silently running unsandboxed because Docker Desktop was closed is the
-exact failure this whole phase exists to prevent, and it would look like
-success in every log.
+What happens when it is **on** and the sandbox cannot serve depends on
+`agent_sandbox_mode` (14-09-2026):
+
+* `auto` (default): the host runs it — always on native Windows (a Linux
+  container has no cmd/powershell/.bat/winget and not the user's own Python,
+  so it can never verify a Windows project), and on POSIX when the daemon
+  does not answer. Never silently: the result carries `sandbox_skipped` with
+  the reason and `execution_target` says where it ran.
+* `strict`: the historical rule. A missing daemon, an absent image or a
+  workspace that is not a directory all come back as an error result naming
+  the reason — the same refusal the router gives, surfaced where the model
+  can read it — and nothing puts the command on the host.
 
 ### The one thing it rewrites, and why
 
@@ -31,6 +36,7 @@ command on a guess; rewriting nothing would break every absolute path.
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import logging
 import os
 import re
@@ -45,6 +51,22 @@ from src.execution_backends import DEFAULT_IMAGE
 logger = logging.getLogger(__name__)
 
 SETTING = "agent_sandbox_execution"
+#: How the sandbox behaves when it is ON but cannot serve this host:
+#:
+#:   * ``auto`` (default) — the sandbox is an OPTION, not a gate. On a native
+#:     Windows host the command runs on the host (Git Bash / the Windows
+#:     Python): a Linux container has no ``cmd``, no ``powershell``, no
+#:     ``.bat``, no ``winget`` and not the user's own interpreter, so it can
+#:     never verify a Windows project — seen live on 14-09-2026, where every
+#:     turn ended in «start Docker» or «/bin/sh: cmd: not found». On POSIX the
+#:     container is used when the daemon answers and the host otherwise. The
+#:     result always says where it ran (``execution_target`` /
+#:     ``sandbox_skipped``), so nothing is silent.
+#:   * ``strict`` — the historical rule: on and unavailable means REFUSED,
+#:     never the host. For operators who run untrusted code and would rather
+#:     have no run than an unsandboxed one.
+MODE_SETTING = "agent_sandbox_mode"
+MODES = ("auto", "strict")
 IMAGE_SETTING = "agent_sandbox_image"
 TIMEOUT_SETTING = "agent_sandbox_timeout_s"
 NETWORK_SETTING = "agent_sandbox_network"
@@ -71,6 +93,59 @@ def enabled() -> bool:
     typing `"yes"` must not get one either — they get to see it did nothing
     and fix the value."""
     return _setting(SETTING, False) is True
+
+
+def mode() -> str:
+    """``auto`` unless the operator wrote exactly ``strict``. Any other value
+    is ``auto`` for the same reason `enabled()` is strict about ``True``: an
+    unrecognised word must not quietly buy a behaviour nobody chose — and the
+    behaviour that runs the user's command is the one to fall to."""
+    raw = str(_setting(MODE_SETTING, "auto") or "auto").strip().lower()
+    return raw if raw in MODES else "auto"
+
+
+def _host_is_windows() -> bool:
+    try:
+        from core.platform_compat import IS_WINDOWS
+        return bool(IS_WINDOWS)
+    except Exception:  # noqa: BLE001 - conservative: not Windows
+        return False
+
+
+def host_skip_reason() -> Optional[str]:
+    """Why `run()` would hand this call to the host in ``auto`` mode WITHOUT
+    probing Docker, or None when the sandbox is the place to try first.
+
+    Only the host kind decides here: a native Windows host is skipped
+    unconditionally (a Linux container cannot run the project's own
+    toolchain — cmd, powershell, .bat, winget, the Windows Python — which is
+    what "verify the code" means on that machine). A daemon that does not
+    answer is a second, later reason, found by the probe in `run()`."""
+    if not enabled() or mode() == "strict":
+        return None
+    if _host_is_windows():
+        return ("native Windows host: the Linux container cannot run cmd, "
+                "powershell, .bat files, winget or the project's own Windows "
+                "Python, so commands run on the host (agent_sandbox_mode=auto)")
+    return None
+
+
+def describe() -> Dict[str, Any]:
+    """One line of truth for the prompt and the UI: is the sandbox on, in
+    which mode, and where will the next `bash` actually run. Cheap — it
+    never touches Docker; `run()` does the probe when it matters."""
+    on = enabled()
+    skip = host_skip_reason() if on else None
+    if not on:
+        target = "host"
+    elif skip:
+        target = "host"
+    elif mode() == "strict":
+        target = "container"
+    else:
+        target = "container_or_host"
+    return {"enabled": on, "mode": mode() if on else "off", "target": target,
+            "skip_reason": skip or "", "image": image() if on else ""}
 
 
 def image() -> str:
@@ -194,14 +269,36 @@ def _argv_for(tool: str, command: str) -> list:
     return ["/bin/sh", "-c", command]
 
 
+#: Why the LAST `run()` in this task handed the call to the host (auto
+#: mode), or "" — read by subprocess_tools right after `run()` returned None
+#: so the host result can carry `sandbox_skipped`. Task-local: two turns
+#: never see each other's reason.
+_last_skip: "contextvars.ContextVar[str]" = contextvars.ContextVar(
+    "sandbox_exec_last_skip", default="")
+
+
+def _note_skip(tool: str, reason: str) -> None:
+    _last_skip.set(reason)
+    logger.info("sandbox skipped for %s (auto): %s", tool, reason)
+
+
+def consume_skip_reason() -> str:
+    """The reason the previous `run()` chose the host, cleared on read."""
+    reason = _last_skip.get()
+    if reason:
+        _last_skip.set("")
+    return reason
+
+
 def _refusal(tool: str, reason: str) -> Dict[str, Any]:
     """On, and unable to run it. Not a fallback — an answer the model can act
     on, and one an operator can read as "turn Docker on or turn the setting
     off", never as "your command was wrong"."""
     return {
         "error": f"{tool}: the sandbox is on and the command was NOT run — {reason}. "
-                 f"Faustus does not fall back to running it unsandboxed; either start the "
-                 f"backend or turn off the `{SETTING}` setting.",
+                 f"`{MODE_SETTING}` is `strict`, so Faustus does not fall back to running it "
+                 f"unsandboxed; start the backend, set `{MODE_SETTING}` to `auto` (host when "
+                 f"the container cannot serve) or turn off `{SETTING}`.",
         "exit_code": 126,
         "sandboxed": False,
         "sandbox_refused": True,
@@ -227,12 +324,24 @@ async def run(tool: str, command: str, ctx: Optional[dict] = None) -> Optional[D
     from src.execution_backends import DockerWorkspaceBackend
     from src.tool_execution import agent_cwd, _truncate
 
+    # `auto`: the host is a legitimate destination, and the two reasons to
+    # take it are decided here, in order — the host kind (no probe needed)
+    # and then the daemon. `None` is the caller's cue to run exactly the
+    # path it ran before the sandbox existed; `_last_skip` lets it say why.
+    skip = host_skip_reason()
+    if skip:
+        _note_skip(tool, skip)
+        return None
+
     workspace = agent_cwd()
     if not workspace or not os.path.isdir(workspace):
         return _refusal(tool, f"the workspace {workspace!r} is not a directory")
 
     ready = DockerWorkspaceBackend(image=image()).probe()
     if not ready["ok"]:
+        if mode() == "auto":
+            _note_skip(tool, f"{ready['reason']}: {ready['detail']}")
+            return None
         return _refusal(tool, f"{ready['reason']}: {ready['detail']}")
 
     run_id = str((ctx or {}).get("run_id")

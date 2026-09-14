@@ -46,14 +46,18 @@ def test_card_offers_task_chat_session_and_deny_without_leaking_private_state():
     payload = pending.public_payload()
 
     assert payload["session_id"] == "session-1"
+    # 14-09-2026: `approve_workspace` — remembered per folder across chats
+    # (src/tool_approval_grants.py) — sits between the chat scope and deny.
     assert [option["value"] for option in payload["options"]] == [
         "approve_task",
         "approve",
+        "approve_workspace",
         "deny",
     ]
     assert [option["label"] for option in payload["options"]] == [
         "Allow for this task",
         "Allow for this chat session",
+        "Always for this workspace folder",
         "Deny",
     ]
     serialized = json.dumps(payload, sort_keys=True)
@@ -314,7 +318,9 @@ def test_route_context_agent_frontend_and_cache_bust_wire_the_contract():
     capabilities = (root / "src/tool_capabilities.py").read_text(encoding="utf-8")
     models = (root / "core/models.py").read_text(encoding="utf-8")
 
-    assert 'decision not in {"approve", "approve_task", "deny"}' in route
+    assert 'decision not in {"approve", "approve_task", "approve_workspace", "deny"}' in route
+    # 14-09-2026: the folder-scoped answer is persisted at consumption time.
+    assert "tool_approval_grants.grant(" in route
     assert "set(pending_tool_approval.selected_tools)" in route
     assert "pending_tool_approval.continuation_query" in route
     assert "persist_user_message=not tool_approval_continuation" in route
@@ -332,8 +338,9 @@ def test_route_context_agent_frontend_and_cache_bust_wire_the_contract():
     # and the answer travels as an approval id — never as a message typed into
     # the composer on the user's behalf, which is what made "Approve" look
     # like the user had said the word.
-    assert "'approve' | 'approve_task' | 'deny'" in transcript
+    assert "'approve' | 'approve_task' | 'approve_workspace' | 'deny'" in transcript
     assert "onApproval('approve_task')" in transcript
+    assert "onApproval('approve_workspace')" in transcript
     assert "tool_approval_id" in chat_adapter
     assert "tool_approval_resolved" in chat_adapter
     # An answered question stops being a question: the card must not come back
@@ -342,6 +349,7 @@ def test_route_context_agent_frontend_and_cache_bust_wire_the_contract():
     assert '"label": "Allow once"' not in approvals
     assert '"label": "Allow for this task"' in approvals
     assert '"label": "Allow for this chat session"' in approvals
+    assert '"label": "Always for this workspace folder"' in approvals
     assert "scope_for_decision(normalized_decision)" in approvals
     assert "CHAT_SESSION_APPROVAL_CONTEXT_MARKER" in capabilities
     assert "CHAT_SESSION_APPROVAL_CONTEXT_MARKER" in models

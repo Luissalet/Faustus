@@ -19,7 +19,7 @@ from src.tool_utils import _truncate, get_mcp_manager, set_mcp_manager
 
 logger = logging.getLogger(__name__)
 
-from .subprocess_tools import BashTool, PythonTool
+from .subprocess_tools import BashTool, PythonTool, PowerShellTool
 from .web_tools import WebSearchTool, WebFetchTool
 from .filesystem_tools import ReadFileTool, WriteFileTool, EditFileTool, ApplyPatchTool, LsTool, GlobTool, GrepTool, GetWorkspaceTool
 from .coding_tools import TodoWriteTool
@@ -63,6 +63,7 @@ from .alternatives_tools import (
 TOOL_HANDLERS = {
     "bash": BashTool().execute,
     "python": PythonTool().execute,
+    "powershell": PowerShellTool().execute,
     "web_search": WebSearchTool().execute,
     "web_fetch": WebFetchTool().execute,
     "read_file": ReadFileTool().execute,
@@ -157,7 +158,7 @@ SHELL_TIMEOUT = 60
 PYTHON_TIMEOUT = 30
 
 # Tool types that trigger execution
-TOOL_TAGS = {"bash", "python", "web_search", "web_fetch", "read_file", "inspect_media", "write_file", "edit_file",
+TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_file", "inspect_media", "write_file", "edit_file",
              "plan_media_transform", "transform_media",
              "apply_patch", "todowrite", "delegate_agents",
              "grep", "glob", "ls", "find_symbol", "callers", "tests_for", "rename_symbol",

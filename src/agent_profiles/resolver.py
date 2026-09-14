@@ -110,7 +110,7 @@ SNAPSHOT_SCHEMA = "agent_resolution_snapshot/1"
 _EFFECT_TOOLS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
     ("read", ("read_file", "ls", "glob", "grep")),
     ("write", ("write_file", "edit_file", "apply_patch")),
-    ("shell", ("bash", "python")),
+    ("shell", ("bash", "python", "powershell")),
     ("network", ("web_search", "web_fetch")),
 )
 

@@ -103,6 +103,30 @@ def sha256_revision(data: bytes) -> str:
 
 
 _REVISION_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
+_BARE_SHA256_RE = re.compile(r"^[0-9a-fA-F]{64}$")
+
+
+def _normalize_base_revision(raw: object) -> str:
+    """The `base_revision` a model sent, in the one form the check accepts.
+
+    `sha256:<hex>` is kept; a bare 64-hex digest (the form `read_file`
+    prints in some renderings, and the form models copy most often) gets
+    its prefix; anything else — "latest", "current", "none", a truncated
+    hash, a made-up token — is treated as ABSENT, i.e. the unverified write
+    every call without a base_revision already gets. Until 14-09-2026 that
+    last case was a hard error ("must look like 'sha256:<hex>'"), which cost
+    a whole round to learn what a precondition the call never needed was
+    supposed to look like."""
+    text = str(raw or "").strip()
+    if not text:
+        return ""
+    if _REVISION_RE.match(text):
+        return text
+    if _BARE_SHA256_RE.match(text):
+        return "sha256:" + text.lower()
+    if text.lower().startswith("sha256:") and _BARE_SHA256_RE.match(text[7:]):
+        return "sha256:" + text[7:].lower()
+    return ""
 #: How much of each side of a base/current/proposed conflict report to keep.
 #: "recortado" (trimmed) per EDIT-01 — enough to reconcile by eye, not a full
 #: file dump.
@@ -172,7 +196,7 @@ class EditFileTool:
         old = args.get("old_string", "")
         new = args.get("new_string", "")
         replace_all = bool(args.get("replace_all", False))
-        base_revision = str(args.get("base_revision") or "").strip()
+        base_revision = _normalize_base_revision(args.get("base_revision"))
         if not raw_path:
             return {"error": "edit_file: path required", "exit_code": 1}
         try:
@@ -183,8 +207,6 @@ class EditFileTool:
             return {"error": "edit_file: old_string required (use write_file to create a file)", "exit_code": 1}
         if old == new:
             return {"error": "edit_file: old_string and new_string are identical", "exit_code": 1}
-        if base_revision and not _REVISION_RE.match(base_revision):
-            return {"error": "edit_file: base_revision must look like 'sha256:<hex>'", "exit_code": 1}
 
         # Models quote text with "\n"; Windows files carry "\r\n". Match on
         # LF-normalized text and write the file back with the line endings it
@@ -405,11 +427,9 @@ class WriteFileTool:
                 if isinstance(_a, dict) and "path" in _a:
                     raw_path = str(_a.get("path", "")).strip()
                     body = str(_a.get("content", ""))
-                    base_revision = str(_a.get("base_revision") or "").strip()
+                    base_revision = _normalize_base_revision(_a.get("base_revision"))
             except (json.JSONDecodeError, TypeError, ValueError):
                 pass
-        if base_revision and not _REVISION_RE.match(base_revision):
-            return {"error": "write_file: base_revision must look like 'sha256:<hex>'", "exit_code": 1}
         try:
             path = _resolve_tool_path(raw_path)
         except ValueError as e:
@@ -497,13 +517,11 @@ class ApplyPatchTool:
                 args = json.loads(stripped)
                 if isinstance(args, dict):
                     patch_text = str(args.get("patch_text") or args.get("patchText") or args.get("patch") or "")
-                    base_revision = str(args.get("base_revision") or "").strip()
+                    base_revision = _normalize_base_revision(args.get("base_revision"))
             except (json.JSONDecodeError, TypeError):
                 pass
         if not patch_text.strip():
             return {"error": "apply_patch: patch_text required", "exit_code": 1}
-        if base_revision and not _REVISION_RE.match(base_revision):
-            return {"error": "apply_patch: base_revision must look like 'sha256:<hex>'", "exit_code": 1}
 
         try:
             ops = _parse_agent_patch(patch_text)

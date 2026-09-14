@@ -403,9 +403,17 @@ def setup_workspace_routes():
 
         enabled = sandbox_exec.enabled()
         state = {"enabled": enabled, "image": sandbox_exec.image(),
-                 "network": sandbox_exec.network(), "ready": False, "detail": ""}
+                 "network": sandbox_exec.network(), "ready": False, "detail": "",
+                 "mode": sandbox_exec.mode() if enabled else "off",
+                 "target": sandbox_exec.describe()["target"]}
         if not enabled:
             state["detail"] = "the sandbox setting is off"
+            return state
+        skip = sandbox_exec.host_skip_reason()
+        if skip:
+            # auto mode on a host the container cannot serve: the commands
+            # run here, and the picker should say so instead of "refused".
+            state["detail"] = skip
             return state
         try:
             from src.execution_backends import DockerWorkspaceBackend

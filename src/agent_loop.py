@@ -15,7 +15,7 @@ import json
 import re
 import time
 import logging
-from typing import Any, AsyncGenerator, Callable, List, Dict, NamedTuple, Optional, Set, Tuple
+from typing import Any, AsyncGenerator, Callable, List, Dict, NamedTuple, Optional, Sequence, Set, Tuple
 from urllib.parse import urlparse
 
 from src.llm_core import (
@@ -557,7 +557,7 @@ _DOMAIN_TOOL_MAP = {
     "notes_calendar_tasks": {"manage_notes", "manage_calendar", "manage_tasks"},
     "ui": {"ui_control"},
     "sessions": {"create_session", "list_sessions", "manage_session", "send_to_session", "search_chats", "search_project_chats"},
-    "files": {"bash", "python", "read_file", "write_file", "edit_file", "apply_patch", "todowrite", "grep", "glob", "ls", "get_workspace", "project_context", "project_objectives", "manage_project_context", "manage_bg_jobs"},
+    "files": {"bash", "python", "powershell", "read_file", "write_file", "edit_file", "apply_patch", "todowrite", "grep", "glob", "ls", "get_workspace", "project_context", "project_objectives", "manage_project_context", "manage_bg_jobs"},
     "settings": {"manage_settings", "manage_endpoints", "manage_mcp", "manage_webhooks", "manage_tokens", "app_api"},
     "contacts": {"resolve_contact", "manage_contact"},
     "integrations": {"api_call"},
@@ -730,7 +730,7 @@ def _denial_for_tool(
 # Tools whose presence in a turn makes the reliability rules worth their tokens.
 _HARNESS_RULE_TOOLS = frozenset({
     "read_file", "write_file", "edit_file", "apply_patch", "glob", "grep", "ls",
-    "get_workspace", "bash", "python", "todowrite",
+    "get_workspace", "bash", "python", "powershell", "todowrite",
 })
 
 def _domain_rules_for_tools(tool_names: set) -> list[str]:
@@ -786,7 +786,7 @@ For LONG-running commands (package installs, pip/npm, ffmpeg, model downloads, t
 #!bg
 pip install openai-whisper
 ```
-SANDBOX LIMITS: stdin/stdout are pipes, so there is NO interactive terminal — `input()`, `curses`, `termios`, `pygame`, and `tkinter` will all fail. Don't try to RUN interactive terminal games or GUI apps here — verify syntax (`python -c "import py_compile; py_compile.compile('x.py')"`) and tell the user to run it themselves in their own terminal. For anything the USER should play/use interactively (games, UIs, demos), prefer a single self-contained HTML file with `<canvas>` + inline JS — save it via `create_document` with language="html" and tell the user to hit the Run / Preview button (▶) in the document editor toolbar; it renders inline in a sandboxed iframe so the game is playable right there. Works from any machine that can reach the Faustus UI — no need to copy files out.
+NO TTY: stdin/stdout are pipes, so there is NO interactive terminal — `input()`, `curses`, `termios`, `pygame`, and `tkinter` will all fail. Don't try to RUN interactive terminal games or GUI apps here — verify them non-interactively yourself (their tests, `py_compile`, importing the module, calling the entry point with arguments) before telling the user anything works; hand a command to the user ONLY for the interactive part you truly cannot drive. For anything the USER should play/use interactively (games, UIs, demos), prefer a single self-contained HTML file with `<canvas>` + inline JS — save it via `create_document` with language="html" and tell the user to hit the Run / Preview button (▶) in the document editor toolbar; it renders inline in a sandboxed iframe so the game is playable right there. Works from any machine that can reach the Faustus UI — no need to copy files out.
 NEVER pipe multi-line Python through `python -c "..."` — shell quoting eats real newlines and `\\n` arrives as literal backslash-n, which Python parses as a line-continuation error on line 1. To run multi-line code, either use the dedicated `python` tool block above, or save to a file first with a quoted HEREDOC (`cat > /tmp/x.py << 'EOF' ... EOF`) and then `python /tmp/x.py`.""",
 
     "python": """\
@@ -796,6 +796,14 @@ NEVER pipe multi-line Python through `python -c "..."` — shell quoting eats re
 Execute Python code. Use for computation, data processing, scripting. NOT for writing code for the user (use create_document for that). Same sandbox limits as bash — no TTY, no GUI, no `input()`; for anything the user should interact with, generate a single HTML file with inline JS instead.
 Prefer a dedicated tool whenever one fits the job (reading, searching, or writing files); use python only for computation/processing no dedicated tool covers - not for reading or writing files.
 Do NOT use Python/requests for web lookup/search/latest/current requests when `web_search` or `web_fetch` is available.""",
+
+    "powershell": """\
+```powershell
+<PowerShell script>
+```
+Run a PowerShell script on this Windows host (pwsh or Windows PowerShell), starting in the workspace. Use it for anything Windows-native: `.bat`/`.cmd` launchers, `winget`/`choco`, `Start-Process`, services, registry, WMI, paths with backslashes, the project's `.venv\\Scripts\\python.exe`.
+Write the script exactly as you would type it in a PowerShell window: no outer quoting, no `powershell -Command "..."`, no escaping for a second shell. A `.bat`/`.cmd` runs with `& cmd.exe /c "thing.bat"` — PowerShell's `-File` only accepts `.ps1` and refuses a `.bat`.
+`bash` on Windows is Git Bash (POSIX syntax) and REFUSES to launch `powershell`/`cmd` for you; come here instead. Same rules as bash: not for creating or editing files (use the file tools), `#!bg` is NOT supported here (use bash for detached jobs), never start a foreground server.""",
 
     "web_search": """\
 ```web_search
@@ -1067,6 +1075,68 @@ def _compact_tool_line(name: str, section: str) -> str:
     return f"- `{name}` — " + lines[0][:160]
 
 
+def _execution_environment_block(tool_names: Optional[set] = None) -> str:
+    """Where the agent's commands actually run — told to the model once, as
+    facts, instead of letting it guess from the tool names (14-09-2026).
+
+    Seen live before this existed: on a native Windows box the model called
+    the shell "a Linux sandbox", asked the user to start Docker, wrapped
+    `powershell -Command` inside bash, retried paths with forward slashes,
+    then gave up and told the user to "run this yourself to confirm". None
+    of that is a model defect; nothing had told it what machine it was on.
+    Built from `core.platform_compat` and `src.sandbox_exec.describe()`, so
+    it says what the executor will do — not a promise written by hand."""
+    try:
+        from core.platform_compat import IS_WINDOWS, find_bash
+        from src import sandbox_exec
+        info = sandbox_exec.describe()
+    except Exception:  # noqa: BLE001 - the prompt must never fail on this
+        return ""
+    names = set(tool_names or ())
+    lines = ["## Execution environment (facts, not guesses)"]
+    if info.get("target") == "container":
+        lines.append(
+            f"- `bash`/`python` run INSIDE a Linux container ({info.get('image') or 'docker'}) with the "
+            "workspace mounted at /workspace (strict sandbox mode). Windows programs, .bat files and "
+            "`powershell` are NOT reachable from there.")
+    elif IS_WINDOWS:
+        bash = find_bash() or ""
+        lines.append(
+            "- This machine is **native Windows**. There is NO Docker or Linux container in the way: "
+            "every command runs directly on this PC, in the workspace folder, and nothing needs to be "
+            "started first. Never ask the user to start Docker or to run a verification command "
+            "themselves — run it.")
+        lines.append(
+            f"- `bash` is Git Bash ({bash or 'bash.exe'}): POSIX syntax, `&&`, pipes, `#!bg`. Use it for "
+            "POSIX one-liners; Windows paths inside it work with forward slashes (`C:/Users/...`) or "
+            "quoted backslashes.")
+        if "powershell" in names or not names:
+            lines.append(
+                "- `powershell` runs a PowerShell script natively: use it for `.bat`/`.cmd` launchers, "
+                "`winget`, `Start-Process`, services, registry, `.venv\\Scripts\\python.exe`, anything "
+                "with backslash paths. Write it as you would type it in a PowerShell window — `bash` "
+                "REFUSES to launch `powershell`/`cmd`, so never wrap one inside the other. A `.bat` "
+                "runs with `& cmd.exe /c \"thing.bat\"`; `-File` only accepts `.ps1`.")
+        lines.append(
+            "- `python` runs the PROJECT's interpreter (its `.venv`/`venv` if present, else the host's "
+            "`python`), not a separate environment: what the project installed is importable.")
+        lines.append(
+            "- Absolute paths (`C:\\...`) are accepted by every file tool as long as they are inside "
+            "the workspace; relative paths resolve from the workspace root.")
+    else:
+        where = ("a Linux container when Docker answers, this host otherwise (auto sandbox mode)"
+                 if info.get("target") == "container_or_host" else "directly on this host")
+        lines.append(f"- `bash`/`python` run {where}, starting in the workspace folder.")
+        lines.append(
+            "- Absolute paths are accepted by every file tool as long as they are inside the "
+            "workspace; relative paths resolve from the workspace root.")
+    lines.append(
+        "- Verification is YOUR job: after writing code, run it (tests, `py_compile`, an import, the "
+        "entry point with arguments) here and report what actually happened. A result you did not "
+        "run is not a result.")
+    return "\n".join(lines)
+
+
 def _assemble_prompt(tool_names: set, disabled_tools: set = None, compact: bool = False,
                       record_blocks: Optional[list] = None) -> str:
     """Build the system prompt with only the specified tools included.
@@ -1107,6 +1177,11 @@ def _assemble_prompt(tool_names: set, disabled_tools: set = None, compact: bool 
         parts.extend(_domain_texts)
         for _domain, _text in zip(_domain_rule_names_for_tools(included), _domain_texts):
             _record("domain_rules", _domain, _text)
+        if included & _SHELL_ENV_TOOLS:
+            _env_block = _execution_environment_block(included)
+            if _env_block:
+                parts.append(_env_block)
+                _record("environment", "execution_environment", _env_block)
         return "\n\n".join(parts)
 
     parts = [_AGENT_PREAMBLE]
@@ -1162,7 +1237,34 @@ def _assemble_prompt(tool_names: set, disabled_tools: set = None, compact: bool 
     parts.extend(_domain_texts)
     for _domain, _text in zip(_domain_rule_names_for_tools(included), _domain_texts):
         _record("domain_rules", _domain, _text)
+    if included & _SHELL_ENV_TOOLS:
+        _env_block = _execution_environment_block(included)
+        if _env_block:
+            parts.append(_env_block)
+            _record("environment", "execution_environment", _env_block)
     return "\n\n".join(parts)
+
+
+#: Tools whose presence makes the execution-environment block worth its tokens.
+_SHELL_ENV_TOOLS = frozenset({"bash", "python", "powershell", "manage_bg_jobs"})
+
+
+def _workspace_gate_granted(owner: Any, workspace: Any) -> bool:
+    """The remembered «always for this workspace folder» answer to the
+    untrusted-context gate (src/tool_approval_grants.py, 14-09-2026). Logged
+    when it applies, because a bypass nobody can see in the log is the kind
+    of thing this whole gate exists to prevent."""
+    if not workspace:
+        return False
+    try:
+        from src import tool_approval_grants
+        granted = tool_approval_grants.is_granted(owner, workspace)
+    except Exception as exc:  # noqa: BLE001 - never fail a turn on the store
+        logger.debug("[gate] workspace grant lookup failed: %s", exc)
+        return False
+    if granted:
+        logger.info("[gate] post-external-context gate bypassed: workspace grant for %r", workspace)
+    return granted
 
 
 # Legacy: full prompt with all tools (fallback when RAG unavailable)
@@ -2049,6 +2151,13 @@ def _assistant_requested_followup(messages: List[Dict]) -> bool:
         text = str(content or "").lower()
         if "?" not in text:
             return False
+        # A turn that ENDS on a question is asking one, whatever its wording
+        # ("Which approach do you prefer?", "¿Sigo con la opción 2?"): the
+        # reply belongs to the work that asked. The keyword list below is
+        # kept for questions buried mid-text.
+        _lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+        if _lines and _lines[-1].rstrip("*_` ").endswith("?"):
+            return True
         return bool(re.search(
             r"\b(what would you like|what should|what do you want|which one|which model|"
             r"what.+(?:todo|to-do|list|document|email|model|server|item)|"
@@ -2058,17 +2167,24 @@ def _assistant_requested_followup(messages: List[Dict]) -> bool:
     return False
 
 
-def _classify_agent_request(messages: List[Dict], last_user: str) -> Dict[str, object]:
+def _classify_agent_request(messages: List[Dict], last_user: str, *,
+                            forced_continuation: bool = False) -> Dict[str, object]:
     """Classify only whether this turn deserves domain tool retrieval.
 
     Normal chat should not inherit old Cookbook/email/document context. Recent
     context is used only for explicit continuations ("yes", "do it", "1").
     This function does not inject tools directly; selected tools later decide
     which domain rule packs get appended to the system prompt.
+
+    `forced_continuation` is the route's structural knowledge that this
+    message answers an `ask_user` question the agent itself opened
+    (`harness_options["answers_question"]`): no wording heuristic can beat
+    that, so it wins outright.
     """
     text = str(last_user or "").strip()
     retry_continuation = _is_contextual_retry_continuation(messages, text)
-    continuation = _is_explicit_continuation(text) or _assistant_requested_followup(messages) or retry_continuation
+    continuation = (forced_continuation or _is_explicit_continuation(text)
+                    or _assistant_requested_followup(messages) or retry_continuation)
     retrieval_query = _recent_context_for_retrieval(messages) if continuation else text
     q = retrieval_query.lower()
 
@@ -3995,7 +4111,8 @@ def _tool_arg_validation_mode() -> str:
     return mode if mode in _TOOL_ARG_VALIDATION_MODES else "strict"
 
 
-def _validate_native_tool_call(tc_name: str, tc_args, block: ToolBlock):
+def _validate_native_tool_call(tc_name: str, tc_args, block: ToolBlock,
+                               path_roots: Optional[Sequence[str]] = None):
     """CALL-02/CALL-03: check one converted native call's arguments against
     its FUNCTION_TOOL_SCHEMAS entry, right where the call becomes a
     ToolBlock (the one place `function_call_to_tool_call` — text-fenced
@@ -4027,7 +4144,7 @@ def _validate_native_tool_call(tc_name: str, tc_args, block: ToolBlock):
 
     from src.tool_schemas import repair_tool_arguments, validate_tool_arguments
 
-    errors = validate_tool_arguments(tc_name, args)
+    errors = validate_tool_arguments(tc_name, args, path_roots=path_roots)
     if not errors:
         return block, None
 
@@ -4038,7 +4155,7 @@ def _validate_native_tool_call(tc_name: str, tc_args, block: ToolBlock):
         repaired_args, applied = repair_tool_arguments(tc_name, args, blocking)
         if applied:
             remaining = [
-                e for e in validate_tool_arguments(tc_name, repaired_args)
+                e for e in validate_tool_arguments(tc_name, repaired_args, path_roots=path_roots)
                 if e.kind in _BLOCKING_ARG_ERROR_KINDS
             ]
             if not remaining:
@@ -4088,6 +4205,7 @@ def _resolve_tool_blocks(
     is_api_model: bool = False,
     allow_fenced_for_api: bool = False,
     arg_validation: Optional[Dict[int, Dict[str, Any]]] = None,
+    path_roots: Optional[Sequence[str]] = None,
 ):
     """Choose native function calls or fenced code block parsing. Returns
     (tool_blocks, used_native, converted_calls) — the same three values it
@@ -4108,7 +4226,8 @@ def _resolve_tool_blocks(
             tc_args = tc.get("arguments", "{}")
             block = function_call_to_tool_block(tc_name, tc_args)
             if block:
-                block, arg_meta = _validate_native_tool_call(tc_name, tc_args, block)
+                block, arg_meta = _validate_native_tool_call(tc_name, tc_args, block,
+                                                             path_roots=path_roots)
                 if arg_meta is not None:
                     arg_validation[id(block)] = arg_meta
                 tool_blocks.append(block)
@@ -5087,7 +5206,7 @@ async def _stream_agent_loop_body(
         ),
         approval_gate_bypassed=bool(
             exact_approval and exact_approval.allow_remaining_actions
-        ) or bool(security_gate_bypass),
+        ) or bool(security_gate_bypass) or _workspace_gate_granted(owner, workspace),
         trusted_workspace=str((harness_options or {}).get("trusted_workspace") or ""),
         trusted_agents=bool((harness_options or {}).get("trusted_agents")),
         user_delegation=(
@@ -5302,7 +5421,13 @@ async def _stream_agent_loop_body(
         except Exception as _cap_err:
             logger.debug("temperature cap skipped: %s", _cap_err)
     _ody_memory_identity_turn = _looks_like_memory_identity_turn(_last_user)
-    _intent = _classify_agent_request(messages, _last_user)
+    # The keyword travels only when the route said this message answers an
+    # ask_user question; the plain two-argument call stays the common path.
+    _intent = (
+        _classify_agent_request(messages, _last_user, forced_continuation=True)
+        if (_hopts or {}).get("answers_question")
+        else _classify_agent_request(messages, _last_user)
+    )
     _low_signal_turn = bool(_intent.get("low_signal"))
     _casual_low_signal_turn = _is_casual_low_signal(_last_user)
     _existing_conversation = _user_turn_count(messages) > 1
@@ -6013,7 +6138,7 @@ async def _stream_agent_loop_body(
     # to hold for whatever retrieval brought in too, not just for what the
     # floor itself would have added.
     if _low_signal_readonly_floor and _relevant_tools is not None:
-        _low_signal_privileged = {"bash", "python", "write_file"} | WORKSPACE_TOOL_FLOOR_EDIT
+        _low_signal_privileged = {"bash", "python", "powershell", "write_file"} | WORKSPACE_TOOL_FLOOR_EDIT
         _withheld = sorted(set(_relevant_tools) & _low_signal_privileged)
         if _withheld:
             _relevant_tools = set(_relevant_tools) - _low_signal_privileged
@@ -8352,6 +8477,11 @@ async def _stream_agent_loop_body(
             is_api_model=(_is_api_model and not guide_only),
             allow_fenced_for_api=_ody_doc_finetune_mode,
             arg_validation=_arg_validation,
+            # The roots a path argument may point into — the same ones
+            # execute_tool_block binds for the tool itself, so the schema
+            # check and the tool never disagree about an absolute path
+            # inside the workspace (14-09-2026).
+            path_roots=[r for r in [workspace, *(workspace_roots or [])] if r],
         )
         if _ody_doc_stream_create_mode and tool_blocks:
             create_idx = next(

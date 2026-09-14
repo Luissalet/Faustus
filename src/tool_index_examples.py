@@ -63,6 +63,14 @@ EXAMPLES: Dict[str, List[str]] = {
         "check disk usage on this machine",
         "clona este repositorio con git",
     ],
+    "powershell": [
+        "ejecuta el install.bat del proyecto",
+        "run the .bat launcher and show me the output",
+        "instala potrace con winget",
+        "arranca la app con el python del .venv de Windows",
+        "check which Windows services are running",
+        "lanza el script de PowerShell setup.ps1",
+    ],
     "python": [
         "calcula el promedio de esta lista de números",
         "write a quick script to parse this CSV",

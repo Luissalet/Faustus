@@ -283,7 +283,7 @@ def _mark_tool_approval_resolved(sess, approval_id: Any, decision: Any) -> bool:
 
     approval_key = str(approval_id or "")
     normalized_decision = str(decision or "").strip().lower()
-    if not approval_key or normalized_decision not in {"approve", "approve_task", "deny", "superseded"}:
+    if not approval_key or normalized_decision not in {"approve", "approve_task", "approve_workspace", "deny", "superseded"}:
         return False
 
     message_id = None
@@ -2208,7 +2208,7 @@ def setup_chat_routes(
                     external_untrusted_context_seen or pending_taint
                 )
                 decision = str(tool_approval_decision or "").strip().lower()
-                if decision not in {"approve", "approve_task", "deny"}:
+                if decision not in {"approve", "approve_task", "approve_workspace", "deny"}:
                     raise HTTPException(400, "Invalid tool approval decision.")
                 if plan_mode:
                     raise HTTPException(
@@ -2226,7 +2226,7 @@ def setup_chat_routes(
                 )
                 tool_approval_continuation = True
                 if (
-                    decision in {"approve", "approve_task"}
+                    decision in {"approve", "approve_task", "approve_workspace"}
                     and exact_tool_approval is None
                 ):
                     raise HTTPException(
@@ -2236,6 +2236,17 @@ def setup_chat_routes(
                             "This tool approval could not be consumed.",
                         ),
                     )
+                if decision == "approve_workspace" and exact_tool_approval is not None:
+                    # Remembered on disk for this folder, so the next chat
+                    # in it never asks at this gate (src/tool_approval_grants.py).
+                    try:
+                        from src import tool_approval_grants
+                        tool_approval_grants.grant(
+                            owner, pending_tool_approval.workspace,
+                            tool=pending_tool_approval.tool_name, session_id=session,
+                        )
+                    except Exception as _grant_err:  # noqa: BLE001 - never block the continuation
+                        logger.warning("workspace approval grant not persisted: %s", _grant_err)
                 if not _mark_tool_approval_resolved(
                     sess,
                     tool_approval_id,
@@ -3676,6 +3687,14 @@ def setup_chat_routes(
                         _loop_harness_options["incognito"] = bool(incognito)
                         _loop_harness_options["no_memory"] = bool(no_memory)
                         _loop_harness_options["no_skills"] = bool(no_skills)
+                        # An answer to the agent's own ask_user question is a
+                        # continuation of the work that asked it, whatever the
+                        # words are. Seen live 14-09-2026: the option label
+                        # "Python + web UI (recommended)" classified as a
+                        # vague message, bash/write_file withheld, and the
+                        # model told "Tool is disabled for this request"
+                        # while building the thing it had just proposed.
+                        _loop_harness_options["answers_question"] = bool(question_id)
                         if turn_input_budget is not None:
                             _loop_harness_options["input_token_budget"] = turn_input_budget
 

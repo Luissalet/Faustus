@@ -138,6 +138,7 @@ BUILTIN_EMAIL_TOOLS = frozenset({
 NON_ADMIN_BLOCKED_TOOLS = BUILTIN_EMAIL_TOOLS | {
     "bash",
     "python",
+    "powershell",
     "delegate_agents",
     "manage_bg_jobs",
     "read_file",
@@ -328,7 +329,7 @@ _PLAN_MODE_KNOWN_MUTATORS = {
     "generate_image", "edit_image", "trigger_research", "manage_research",
     # Shell is never read-only-safe; block it explicitly so it stays out of plan
     # mode even if the schema list fails to load.
-    "bash", "python",
+    "bash", "python", "powershell",
     # Controls shell processes (kill); plan mode can't run bash anyway.
     "manage_bg_jobs",
     # Git write/remote tools (Lote 87; git_merge/git_delete_branch Lote 89):

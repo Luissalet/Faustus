@@ -1596,6 +1596,13 @@ async def _execute_tool_block_impl(
         desc = f"{tool}: {first_line}"
         result = await _direct_fallback(tool, content, progress_cb=progress_cb) \
             or {"error": f"{tool}: execution failed", "exit_code": 1}
+    elif tool == "powershell":
+        # The Windows host's own shell (14-09-2026) — direct handler, same
+        # streaming progress callback as bash.
+        first_line = content.split(chr(10))[0][:80]
+        desc = f"powershell: {first_line}"
+        result = await _direct_fallback(tool, content, progress_cb=progress_cb, session_id=session_id, owner=owner) \
+            or {"error": "powershell: execution failed", "exit_code": 1}
     elif tool in ("apply_patch", "todowrite"):
         first_line = content.split(chr(10))[0][:80]
         desc = f"{tool}: {first_line}" if first_line else tool

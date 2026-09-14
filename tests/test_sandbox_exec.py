@@ -5,12 +5,20 @@ the tests are mostly about the two states nobody thinks to check:
 
 * **off** must be byte-identical to before the module existed — a flag that
   changes behaviour while switched off is worse than no flag;
-* **on, and the sandbox is missing** must be a refusal. Not a fallback. The
-  whole phase exists to stop a closed Docker Desktop from quietly putting the
-  model's command back on the machine, and that failure would look like
-  success in every log.
+* **on, strict, and the sandbox is missing** must be a refusal. Not a
+  fallback. That rule exists to stop a closed Docker Desktop from quietly
+  putting the model's command back on the machine, and that failure would
+  look like success in every log;
+* **on, auto (the default since 14-09-2026)** hands the command to the host
+  when the container cannot serve — always on native Windows, and when the
+  daemon does not answer elsewhere — and SAYS so on the result
+  (`sandbox_skipped`), so nothing is silent either way. Seen live: on Windows
+  the strict rule turned every chat into «start Docker» or `/bin/sh: cmd:
+  not found`, and a container that cannot run the project's own toolchain
+  verifies nothing.
 
-The container tests skip when Docker is not there and say so.
+The container tests skip when Docker is not there and say so; they pin
+`strict` so they exercise the container on Windows too.
 """
 from __future__ import annotations
 
@@ -77,11 +85,11 @@ async def test_the_sandbox_only_claims_bash_and_python(workspace, settings):
     assert await sandbox_exec.run("read_file", "x.txt", {}) is None
 
 
-# ── on, and unable: a refusal, never the host ──────────────────────────────
+# ── on, strict, and unable: a refusal, never the host ──────────────────────
 
 @pytest.mark.asyncio
-async def test_a_missing_image_refuses_and_the_command_does_not_run(workspace, settings):
-    settings.update({"agent_sandbox_execution": True,
+async def test_strict_a_missing_image_refuses_and_the_command_does_not_run(workspace, settings):
+    settings.update({"agent_sandbox_execution": True, "agent_sandbox_mode": "strict",
                      "agent_sandbox_image": "faustus-no-such-image:0.0.1"})
     result = await BashTool().execute("echo THIS-MUST-NOT-RUN", {})
     assert result["sandbox_refused"] is True
@@ -90,16 +98,71 @@ async def test_a_missing_image_refuses_and_the_command_does_not_run(workspace, s
     assert "THIS-MUST-NOT-RUN" not in str(result)
     assert "does not fall back" in result["error"]
     assert "agent_sandbox_execution" in result["error"]      # how to turn it off
+    assert "agent_sandbox_mode" in result["error"]           # …or how to let the host run it
 
 
 @pytest.mark.asyncio
-async def test_a_workspace_that_is_not_a_directory_refuses_too(tmp_path, settings, monkeypatch):
-    settings["agent_sandbox_execution"] = True
+async def test_strict_a_workspace_that_is_not_a_directory_refuses_too(tmp_path, settings, monkeypatch):
+    settings.update({"agent_sandbox_execution": True, "agent_sandbox_mode": "strict"})
     import src.tool_execution as te
     monkeypatch.setattr(te, "agent_cwd", lambda: str(tmp_path / "nope"))
     result = await BashTool().execute("echo nope", {})
     assert result["sandbox_refused"] is True
     assert "not a directory" in result["error"]
+
+
+# ── on, auto: the host when the container cannot serve, and it says so ─────
+
+def test_mode_is_auto_unless_the_operator_wrote_strict(settings):
+    for raw in (None, "", "auto", "AUTO", "docker", "yes", 1):
+        settings["agent_sandbox_mode"] = raw
+        assert sandbox_exec.mode() == "auto"
+    settings["agent_sandbox_mode"] = "strict"
+    assert sandbox_exec.mode() == "strict"
+    settings["agent_sandbox_mode"] = " Strict "
+    assert sandbox_exec.mode() == "strict"
+
+
+@pytest.mark.asyncio
+async def test_auto_on_windows_runs_on_the_host_and_marks_the_result(workspace, settings, monkeypatch):
+    settings.update({"agent_sandbox_execution": True, "agent_sandbox_mode": "auto"})
+    monkeypatch.setattr(sandbox_exec, "_host_is_windows", lambda: True)
+    assert "Windows" in (sandbox_exec.host_skip_reason() or "")
+    assert sandbox_exec.describe()["target"] == "host"
+    assert await sandbox_exec.run("bash", "echo x", {}) is None
+    result = await BashTool().execute("echo auto-ran-here", {})
+    assert result["output"] == "auto-ran-here"
+    assert result["exit_code"] == 0
+    assert "sandbox_refused" not in result
+    assert "Windows" in result["sandbox_skipped"]
+    assert result["execution_target"]["kind"] != "container"
+
+
+@pytest.mark.asyncio
+async def test_auto_with_no_daemon_runs_on_the_host_and_names_the_reason(workspace, settings, monkeypatch):
+    settings.update({"agent_sandbox_execution": True, "agent_sandbox_mode": "auto",
+                     "agent_sandbox_image": "faustus-no-such-image:0.0.1"})
+    monkeypatch.setattr(sandbox_exec, "_host_is_windows", lambda: False)
+    assert sandbox_exec.host_skip_reason() is None          # not the host kind…
+    result = await BashTool().execute("echo auto-no-image", {})   # …but the probe
+    assert result["output"] == "auto-no-image"
+    assert "sandbox_refused" not in result
+    assert result["sandbox_skipped"]                          # the probe's own reason
+    # A refusal in strict mode for the same probe result, to pin the contrast.
+    settings["agent_sandbox_mode"] = "strict"
+    refused = await BashTool().execute("echo strict-no-image", {})
+    assert refused["sandbox_refused"] is True
+
+
+@pytest.mark.asyncio
+async def test_the_skip_reason_is_consumed_once_and_never_leaks_to_a_host_only_call(workspace, settings, monkeypatch):
+    settings.update({"agent_sandbox_execution": True, "agent_sandbox_mode": "auto"})
+    monkeypatch.setattr(sandbox_exec, "_host_is_windows", lambda: True)
+    first = await BashTool().execute("echo one", {})
+    assert first["sandbox_skipped"]
+    settings["agent_sandbox_execution"] = False
+    second = await BashTool().execute("echo two", {})
+    assert "sandbox_skipped" not in second
 
 
 # ── the one rewrite ────────────────────────────────────────────────────────
@@ -175,7 +238,7 @@ def test_a_nonsense_timeout_setting_falls_back_instead_of_running_forever(settin
 @pytest.mark.asyncio
 async def test_the_agents_own_bash_runs_unprivileged_and_sees_only_the_workspace(
         workspace, settings):
-    settings["agent_sandbox_execution"] = True
+    settings.update({"agent_sandbox_execution": True, "agent_sandbox_mode": "strict"})
     result = await BashTool().execute("id -u; ls", {})
     assert result["sandboxed"] is True
     assert result["isolation"] == "container"
@@ -186,7 +249,7 @@ async def test_the_agents_own_bash_runs_unprivileged_and_sees_only_the_workspace
 @needs_docker
 @pytest.mark.asyncio
 async def test_the_agents_own_bash_cannot_reach_the_app_key(workspace, settings):
-    settings["agent_sandbox_execution"] = True
+    settings.update({"agent_sandbox_execution": True, "agent_sandbox_mode": "strict"})
     result = await BashTool().execute(
         "cat /workspace/../data/.app_key 2>&1; cat /data/.app_key 2>&1", {})
     assert "No such file or directory" in result["output"]
@@ -198,7 +261,7 @@ async def test_the_agents_own_bash_cannot_reach_the_app_key(workspace, settings)
 @needs_docker
 @pytest.mark.asyncio
 async def test_an_absolute_host_path_in_the_command_still_finds_its_file(workspace, settings):
-    settings["agent_sandbox_execution"] = True
+    settings.update({"agent_sandbox_execution": True, "agent_sandbox_mode": "strict"})
     result = await BashTool().execute(f"wc -l {os.path.join(workspace, 'notes.txt')}", {})
     assert result["exit_code"] == 0
     assert result["workspace_paths_rewritten"] == 1
@@ -210,7 +273,7 @@ async def test_an_absolute_host_path_in_the_command_still_finds_its_file(workspa
 @needs_docker
 @pytest.mark.asyncio
 async def test_the_python_tool_runs_the_images_interpreter_not_ours(workspace, settings):
-    settings["agent_sandbox_execution"] = True
+    settings.update({"agent_sandbox_execution": True, "agent_sandbox_mode": "strict"})
     result = await PythonTool().execute("import sys; print(sys.executable)", {})
     assert result["sandboxed"] is True
     assert result["output"].startswith("/usr/local/bin/python")
@@ -219,7 +282,7 @@ async def test_the_python_tool_runs_the_images_interpreter_not_ours(workspace, s
 @needs_docker
 @pytest.mark.asyncio
 async def test_the_network_is_denied_from_the_agents_shell_by_default(workspace, settings):
-    settings["agent_sandbox_execution"] = True
+    settings.update({"agent_sandbox_execution": True, "agent_sandbox_mode": "strict"})
     result = await BashTool().execute(
         "python -c \"import socket;socket.create_connection(('1.1.1.1',53),2)\" "
         "2>/dev/null && echo REACHED || echo denied", {})

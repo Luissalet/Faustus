@@ -542,3 +542,47 @@ Pedido por Luis con el dictamen externo del 13-09-2026 (análisis de ChatGPT, 17
 **Hecho (FAUSTUS.md §83, §84).** PR2: scope `sessions`/perfil `sdk` para tokens, catálogo versionado de eventos SSE con guarda, `sdk/ts` (cliente TS sin dependencias, ESM+CJS, reconexión por cursor, cancelación con fencing) y A20 en verde contra un servidor real con auth (paquete instalado desde tarball en dos proyectos limpios; reservas: no publicado en registro, escrito a mano, sin CI). PR1: manifiesto de paridad (`docs/spec/paridad/MATRIZ_PARIDAD.md`), estado de aceptación, ejecutor con los doce campos por run. PR3 parcial: A01–A07 en verde (admisión por sesión, aprobaciones con recibo consistente, replay con cursor probado de verdad, `tool_effect`/`unknown_effects` para tool-calls de chat, `lease_generation` + fencing antes del efecto, cancelación transitiva con retirada de aprobaciones y preguntas).
 
 **Queda, en el orden del blueprint (16 §9).** PR4 artefactos duraderos y carga diferida de herramientas (A08, A09, A12, A13); PR5 puente Code Mode con la misma puerta de política y presupuesto padre+hijos (A10, A11, A31); PR6 UI embebible (A21); PR7 OIDC/identidad de servicio/perfil Team (A22, A23); PR8 evolución candidata con evaluación reservada y rollback reutilizando experiencias/Teach/governance (A26–A30); PR9 migración desde el harness de referencia y benchmark pareado con coste total (A32–A34); distribución (A35) y semántica de sesión (A36). Compacción: solo el shaping intra-turno de `_build_route_request_state` y la señal durante el resumen (A14, A15). Cada PR con su caso de aceptación y evidencia en `ESTADO_ACEPTACION.md`.
+
+## OBJ-12 — Faustus corre donde corre el proyecto: Windows de primera clase — EN CURSO (14-09-2026)
+
+Abierto el 14-09-2026 después de que Luis usara la app sobre una carpeta
+Windows y recibiera, turno tras turno, «bash no disponible en entorno»,
+«arranca Docker», «/bin/sh: cmd: not found» y «the grep tool rejects absolute
+Windows paths». Diagnóstico completo y lo ya hecho en FAUSTUS.md §85; lo
+pendiente concreto, en PENDIENTES.md § «Ejecución nativa en Windows».
+
+**El principio.** La máquina del usuario no es un obstáculo entre Faustus y el
+trabajo: es donde el trabajo se verifica. Un harness que solo sabe ejecutar en
+un contenedor Linux no puede comprobar un proyecto Windows — ni su `.bat`, ni
+su `winget`, ni su `.venv\Scripts\python.exe` — y termina devolviendo al
+usuario el comando para que lo ejecute él. Eso es exactamente lo que Faustus
+existe para no hacer.
+
+**Cerrado en este lote (§85).** Sandbox como opción y no como puerta
+(`agent_sandbox_mode`, `auto` por defecto, `strict` conserva la regla dura);
+herramienta `powershell` nativa; el `python` del proyecto en vez del nuestro;
+rutas absolutas dentro del workspace aceptadas por el validador de argumentos;
+responder a la propia pregunta del agente cuenta como continuación; un
+`base_revision` mal escrito deja de abortar la escritura; bloque de entorno en
+el prompt construido desde el propio ejecutor; y la respuesta «Siempre en esta
+carpeta» de la tarjeta de permiso, guardada en disco y heredada por los chats
+posteriores de ese workspace.
+
+**Lo que falta para cerrarlo.**
+
+1. **Paridad de detached.** `#!bg` solo existe en `bash`. Un `.bat` o un
+   `winget install` largo debería poder irse al fondo desde `powershell` con la
+   misma tarjeta de trabajo y la misma reinvocación automática.
+2. **Pantalla de concesiones.** Ver y revocar las concesiones por carpeta
+   (Settings › Security), con la ruta exacta a la vista, porque la herencia es
+   por subárbol.
+3. **El resto del toolchain Windows.** `cmd`/`.cmd` sin pasar por PowerShell,
+   codificación de consola en salidas de programas que no son UTF-8, y rutas
+   UNC (`\\servidor\recurso`) en el confinamiento del workspace.
+4. **Un banco Windows.** Una carpeta de prueba con `.bat`, venv propio y un test
+   suite, recorrida entera por el agente de punta a punta, como el benchmark de
+   whiplash hizo con Deep Research: la prueba de que «verificar es su trabajo»
+   se cumple sin que nadie lea el transcript a mano.
+5. **Elegir el defecto por sistema operativo.** Hoy `agent_sandbox_mode` es
+   global. En POSIX con Docker instalado, el defecto razonable sigue siendo el
+   contenedor; en Windows nunca lo es.

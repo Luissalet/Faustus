@@ -326,6 +326,13 @@ DEFAULT_SETTINGS = {
     # back to injecting the block: blanking the user's own rules is worse than a
     # missed check.
     "agent_workspace_trust": "ask",
+    # The agent's shell in the Docker sandbox (src/sandbox_exec.py), and what
+    # happens when the container cannot serve this host. `auto` runs it here and
+    # says so on the result — on native Windows always, since a Linux container
+    # has no cmd/powershell/.bat/winget and not the project's own Python, so it
+    # can never verify a Windows project. `strict` refuses instead.
+    "agent_sandbox_execution": False,
+    "agent_sandbox_mode": "auto",
     "agent_repo_map": True,
     "agent_repo_map_tokens": 1500,
     # An un-ranged read_file on a file too big to return whole (src/read_plan.py):

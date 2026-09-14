@@ -46,7 +46,7 @@ logger = logging.getLogger(__name__)
 # Tools whose success IS evidence that files changed on disk.
 FILE_MUTATION_TOOLS = frozenset({"write_file", "edit_file", "apply_patch"})
 # Shell tools: only evidence when the command itself looks mutating (see below).
-SHELL_TOOLS = frozenset({"bash", "python"})
+SHELL_TOOLS = frozenset({"bash", "python", "powershell"})
 # Non-file side effects (documents, notes, mail…) — evidence for "I did X" claims
 # that are not about repo files.
 OTHER_EFFECT_TOOLS = frozenset({
@@ -67,7 +67,7 @@ OTHER_EFFECT_TOOLS = frozenset({
 # Tools whose OUTPUT grounds paths: anything they print exists (or existed).
 DISCOVERY_TOOLS = frozenset({
     "ls", "glob", "grep", "read_file", "get_workspace", "project_context",
-    "bash", "python",
+    "bash", "python", "powershell",
 })
 
 # Shell commands that plausibly change the filesystem/repo.

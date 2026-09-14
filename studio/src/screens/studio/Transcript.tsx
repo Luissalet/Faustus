@@ -84,7 +84,7 @@ const speak = (text: string) => import('../../adapters/speech').then((m) => m.sp
 const Harness = lazy(() => import('./Harness'));
 const SubagentBoard = lazy(() => import('./SubagentBoard'));
 
-export type Decision = 'approve' | 'approve_task' | 'deny';
+export type Decision = 'approve' | 'approve_task' | 'approve_workspace' | 'deny';
 
 export interface TranscriptProps {
   turns: Turn[];
@@ -535,6 +535,10 @@ export function AskCard({
         <div className="fs-studio__ask-actions">
           <Button variant="primary" icon={Check} label={t('Approve')} disabled={busy} onClick={() => onApproval('approve')} />
           <Button label={t('Approve the whole task')} disabled={busy} onClick={() => onApproval('approve_task')} />
+          {/* 14-09-2026: remembered per workspace folder across chats
+              (src/tool_approval_grants.py) — the answer to «no me lo
+              preguntes en cada chat nuevo del proyecto». */}
+          <Button label={t('Always for this folder')} title={t('Remember this answer for the workspace folder: later chats in it stop asking here. Destructive-command and desktop confirmations still apply.')} disabled={busy} onClick={() => onApproval('approve_workspace')} />
           <Button variant="danger" icon={X} label={t('Deny')} disabled={busy} onClick={() => onApproval('deny')} />
         </div>
       </div>
@@ -653,7 +657,7 @@ export function AnsweredCard({ decision }: { decision: string }) {
       {t('This permission request expired before it was answered — nothing was executed. Ask again to get a fresh card.')}
     </p>;
   }
-  if (!['approve', 'approve_task', 'deny'].includes(decision)) {
+  if (!['approve', 'approve_task', 'approve_workspace', 'deny'].includes(decision)) {
     return <p className="fs-studio__answered" data-testid="studio-approval-answered">
       {t('This permission request is closed. No approval was granted.')}
     </p>;
@@ -663,7 +667,9 @@ export function AnsweredCard({ decision }: { decision: string }) {
       ? t('You denied it.')
       : decision === 'approve_task'
         ? t('You allowed it for the whole task.')
-        : t('You allowed it.');
+        : decision === 'approve_workspace'
+          ? t('You allowed it for this folder — later chats here will not ask again.')
+          : t('You allowed it.');
   return (
     <p className="fs-studio__answered" data-testid="studio-approval-answered">
       <Check size={13} aria-hidden="true" />

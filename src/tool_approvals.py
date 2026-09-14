@@ -21,6 +21,7 @@ from src.tool_approval_scopes import (
     CHAT_SESSION_APPROVAL_DECISION,
     DENY_APPROVAL_DECISION,
     TASK_APPROVAL_DECISION,
+    WORKSPACE_APPROVAL_DECISION,
     ToolApprovalScope,
     scope_for_decision,
 )
@@ -227,6 +228,16 @@ class PendingToolApproval:
                     ),
                 },
                 {
+                    "label": "Always for this workspace folder",
+                    "value": WORKSPACE_APPROVAL_DECISION,
+                    "description": (
+                        "Execute the sealed action and remember the answer for this "
+                        "workspace folder: later chats in it stop asking at this gate. "
+                        "Destructive-command and desktop-input confirmations, tool, "
+                        "account and sandbox restrictions still apply."
+                    ),
+                },
+                {
                     "label": "Deny",
                     "value": DENY_APPROVAL_DECISION,
                     "description": "Do not execute the proposed action.",
@@ -259,7 +270,7 @@ class PendingToolApproval:
         # shell — best-effort (the sandbox decision itself is made at
         # execution time), but "sandboxed container vs. this host" is known
         # before that, from the same setting subprocess_tools reads.
-        if self.tool_name in ("bash", "python"):
+        if self.tool_name in ("bash", "python", "powershell"):
             try:
                 from src.agent_tools.subprocess_tools import _execution_target
                 from src import sandbox_exec
@@ -288,7 +299,13 @@ class ExactToolApproval:
 
     @property
     def grants_chat_session(self) -> bool:
-        return self.scope is ToolApprovalScope.CHAT_SESSION
+        # A workspace grant covers this chat too — it is the chat grant plus
+        # a record on disk (src/tool_approval_grants.py).
+        return self.scope in (ToolApprovalScope.CHAT_SESSION, ToolApprovalScope.WORKSPACE)
+
+    @property
+    def grants_workspace(self) -> bool:
+        return self.scope is ToolApprovalScope.WORKSPACE
 
     def _matches_unlocked(
         self,

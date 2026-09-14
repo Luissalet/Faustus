@@ -181,7 +181,7 @@ _register(
     result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
 )
 _register(
-    {"bash", "manage_bg_jobs", "python", "delegate_agents"},
+    {"bash", "manage_bg_jobs", "python", "powershell", "delegate_agents"},
     ToolEffect.EXECUTE_CODE,
     result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED,
 )
@@ -613,7 +613,7 @@ def tool_requires_per_call_approval(tool_name: Any) -> bool:
 # the only door past a DANGEROUS/CRITICAL verdict (the slb revalidation).
 # ---------------------------------------------------------------------------
 
-GUARD_SHELL_TOOLS = frozenset({"bash", "python"})
+GUARD_SHELL_TOOLS = frozenset({"bash", "python", "powershell"})
 COMMAND_GUARD_MODES = ("off", "observe", "enforce")
 DEFAULT_COMMAND_GUARD_MODE = "enforce"
 

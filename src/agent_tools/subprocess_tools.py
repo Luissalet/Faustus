@@ -8,7 +8,7 @@ import subprocess
 import sys
 import time
 import collections
-from typing import Optional, Callable, Awaitable, Tuple, Dict
+from typing import Optional, Callable, Awaitable, Tuple, Dict, Mapping
 from core.platform_compat import IS_WINDOWS, find_bash
 from src import process_ownership, sandbox_exec
 from src.constants import MAX_OUTPUT_CHARS
@@ -595,6 +595,60 @@ def git_mutation_routed_to_tools(command: str) -> Optional[dict]:
     }
 
 
+#: A bash command whose FIRST word starts a Windows shell. Only at the start
+#: of the command or of a `;`/`&&`/`||`/pipe segment, so `command -v powershell`,
+#: `grep powershell x.md` and a filename containing the word never match.
+_WINDOWS_SHELL_FROM_BASH_RE = re.compile(
+    r"(?:^|[;&|]\s*|\$\(\s*|`)\s*(?:[\w./\\:-]*/)?"
+    r"(?P<exe>powershell|pwsh|cmd)(?:\.exe)?\s+(?P<rest>-|/|\S)",
+    re.I,
+)
+
+
+def windows_shell_routed_to_powershell(command: str) -> Optional[dict]:
+    """A `bash` command that launches PowerShell or cmd is refused with the
+    `powershell` tool to use instead (None for anything else).
+
+    Seen live on 14-09-2026: with the `powershell` tool right there in the
+    same schema list, the model still wrote
+    `powershell -NoProfile -ExecutionPolicy Bypass -File "…\\install.bat"`
+    inside `bash` — two quoting layers deep, and PowerShell then refused the
+    `.bat` because `-File` wants a `.ps1`, which came back as a bare
+    `exit 127`. Nothing in that output says "you are holding it wrong".
+    Routing costs one round and says exactly what to do; the alternative is
+    the model guessing at quotes.
+
+    Only on Windows: on a POSIX box `pwsh` in a script is a legitimate thing
+    to run and there is no better tool to send it to."""
+    if not IS_WINDOWS:
+        return None
+    text = str(command or "")
+    m = _WINDOWS_SHELL_FROM_BASH_RE.search(text)
+    if not m:
+        return None
+    exe = m.group("exe").lower()
+    return {
+        "error": (
+            f"bash: `{exe}` is not launched from the shell here — use the `powershell` tool, "
+            "which runs the script natively on this host with no second layer of quoting. "
+            "Put the script in its `script` argument exactly as you would type it in a "
+            "PowerShell window. To run a `.bat`/`.cmd` use `& cmd.exe /c \"thing.bat\"` "
+            "(PowerShell's `-File` only accepts `.ps1`)."
+        ),
+        "exit_code": 2,
+        "use_instead": "powershell",
+    }
+
+
+def _mark_sandbox_skip(result: dict, skip: str) -> dict:
+    """`sandbox_skipped` on a host result that the sandbox (auto mode) chose
+    not to take — so a receipt never shows a host run as if the sandbox had
+    been off. No-op when the sandbox simply was off (`skip` empty)."""
+    if skip and isinstance(result, dict):
+        result.setdefault("sandbox_skipped", skip)
+    return result
+
+
 class BashTool:
     async def execute(self, content: str, ctx: dict) -> dict:
         from src.tool_execution import agent_cwd, _truncate
@@ -618,6 +672,11 @@ class BashTool:
         routed = git_mutation_routed_to_tools(content)
         if routed is not None:
             return routed
+        # Same idea, the Windows half: `powershell …` / `cmd …` typed into
+        # Git Bash is a quoting trap with a dedicated tool one call away.
+        routed = windows_shell_routed_to_powershell(content)
+        if routed is not None:
+            return routed
         sandboxed = await sandbox_exec.run("bash", content, ctx)
         if sandboxed is not None:
             if isinstance(sandboxed, dict):
@@ -626,6 +685,16 @@ class BashTool:
                     _execution_target(sandboxed=True, cwd=agent_cwd(), shell="bash"),
                 )
             return sandboxed
+        # `auto` mode handed this call to the host: say so on the result
+        # (empty when the sandbox is simply off).
+        _skip = sandbox_exec.consume_skip_reason()
+        return _mark_sandbox_skip(
+            await self._on_host(content, progress_cb, _subproc_env, session_id), _skip)
+
+    async def _on_host(self, content: str, progress_cb, _subproc_env, session_id) -> dict:
+        """The host path — byte-for-byte what `execute` ran before the
+        sandbox existed (Git Bash on Windows, tmux or /bin/sh elsewhere)."""
+        from src.tool_execution import agent_cwd, _truncate
         launcher = foreground_server_launch(content)
         if launcher:
             return _blocked_server_result(launcher, "bash")
@@ -708,15 +777,23 @@ class PythonTool:
                     _execution_target(sandboxed=True, cwd=agent_cwd(), shell=sys.executable or "python"),
                 )
             return sandboxed
+        _skip = sandbox_exec.consume_skip_reason()
         started_at = time.time()
-        _target = _execution_target(
-            sandboxed=False, cwd=agent_cwd(), shell=sys.executable or "python",
-        )
+        # The interpreter is the PROJECT's, not ours: a `.venv`/`venv` in the
+        # workspace first, then whatever `python` the host resolves once our
+        # own virtualenv is scrubbed from the environment, and only then the
+        # interpreter Faustus itself runs on. Until 14-09-2026 this was
+        # `sys.executable` with our own environment: a project's `.venv`
+        # packages were invisible to the `python` tool, so "verify it" could
+        # only fail on imports the project had actually installed.
+        _env = native_host_environment(_subproc_env)
+        _python = project_python(agent_cwd(), _env)
+        _target = _execution_target(sandboxed=False, cwd=agent_cwd(), shell=_python)
         proc = await asyncio.create_subprocess_exec(
-            (sys.executable or "python"), "-I", "-c", content,
+            _python, "-I", "-c", content,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
-            env=_subproc_env,
+            env=_env,
             cwd=agent_cwd(),
         )
         idle_s = _effective_idle_timeout("python")
@@ -727,13 +804,141 @@ class PythonTool:
             idle_timeout=idle_s,
         )
         if timed_out == "idle":
-            return {**_idle_result("python", idle_s, stdout, stderr), "execution_target": _target}
+            return _mark_sandbox_skip({**_idle_result("python", idle_s, stdout, stderr), "execution_target": _target}, _skip)
         if timed_out:
-            return {"error": f"python: timed out after {DEFAULT_PYTHON_TIMEOUT}s — process killed", "exit_code": 124, "stdout": _truncate(stdout, MAX_OUTPUT_CHARS), "stderr": _truncate(stderr, MAX_OUTPUT_CHARS), "execution_target": _target}
+            return _mark_sandbox_skip({"error": f"python: timed out after {DEFAULT_PYTHON_TIMEOUT}s — process killed", "exit_code": 124, "stdout": _truncate(stdout, MAX_OUTPUT_CHARS), "stderr": _truncate(stderr, MAX_OUTPUT_CHARS), "execution_target": _target}, _skip)
         output = stdout.rstrip()
         err = stderr.rstrip()
         if err:
             output = (output + "\nSTDERR: " + err).strip() if output else "STDERR: " + err
         output = _truncate(output, MAX_OUTPUT_CHARS)
         _record_cycle("python", started_at)
-        return {"output": output or "(no output)", "exit_code": rc or 0, "execution_target": _target}
+        return _mark_sandbox_skip({"output": output or "(no output)", "exit_code": rc or 0, "execution_target": _target}, _skip)
+
+
+def project_python(cwd: str, env: Optional[Mapping[str, str]] = None) -> str:
+    """The interpreter the `python` tool should run in `cwd`.
+
+    Order: a virtualenv inside the workspace (`.venv`, `venv`, `env`, `.env`
+    — the names projects actually use), then the `python`/`python3` the
+    host's PATH resolves with Faustus's venv already scrubbed, then the
+    interpreter Faustus runs on. The last is a floor, not a preference: it
+    is the one interpreter guaranteed to exist."""
+    for name in (".venv", "venv", "env", ".env"):
+        base = os.path.join(cwd or "", name)
+        for rel in (("Scripts", "python.exe"), ("bin", "python"), ("bin", "python3")):
+            cand = os.path.join(base, *rel)
+            if os.path.isfile(cand):
+                return cand
+    path = (env or {}).get("PATH") if env else None
+    for exe in ("python", "python3"):
+        found = shutil.which(exe, path=path) if path else shutil.which(exe)
+        if found and not _is_windows_python_stub(found):
+            return found
+    return sys.executable or "python"
+
+
+def _is_windows_python_stub(path: str) -> bool:
+    """The Microsoft Store `python.exe` alias under WindowsApps opens the
+    Store instead of running — never an interpreter to hand a project."""
+    return IS_WINDOWS and "windowsapps" in os.path.normcase(path)
+
+
+# ---------------------------------------------------------------------------
+# powershell — the Windows host's own shell (14-09-2026)
+# ---------------------------------------------------------------------------
+
+DEFAULT_POWERSHELL_TIMEOUT = 60 * 60
+
+
+def find_powershell() -> Optional[str]:
+    """`pwsh` (PowerShell 7) first, then Windows PowerShell 5.1; None when
+    the host has neither (a POSIX box without pwsh)."""
+    for exe in ("pwsh", "powershell"):
+        found = shutil.which(exe)
+        if found:
+            return found
+    return None
+
+
+class PowerShellTool:
+    """Run a PowerShell script on the host. Exists because the `bash` tool on
+    Windows is Git Bash: right for POSIX one-liners, wrong for `.bat`
+    launchers, `winget`, `Start-Process`, registry/WMI queries and paths with
+    backslashes — everything the model was reaching for with `powershell
+    -Command "..."` inside bash, quoting it twice and failing (seen live
+    14-09-2026). Same guards as bash: git mutations go through git_* tools,
+    foreground servers are refused, idle/hard timeouts, tree kill."""
+
+    async def execute(self, content: str, ctx: dict) -> dict:
+        from src.tool_execution import agent_cwd, _truncate
+        if isinstance(content, dict):
+            content = str(content.get("script") or content.get("command") or content.get("code") or "")
+        script = str(content or "")
+        if not script.strip():
+            return {"error": "powershell: empty script", "exit_code": 1}
+        exe = find_powershell()
+        if not exe:
+            return {"error": ("powershell: no PowerShell on this host (neither `pwsh` nor "
+                              "`powershell` on PATH). Use the `bash` tool here."),
+                    "exit_code": 1}
+        routed = git_mutation_routed_to_tools(script)
+        if routed is not None:
+            routed["error"] = routed["error"].replace("bash:", "powershell:", 1)
+            return routed
+        launcher = foreground_server_launch(script)
+        if launcher:
+            return _blocked_server_result(launcher, "powershell")
+        progress_cb = ctx.get("progress_cb")
+        env = native_host_environment(ctx.get("subproc_env"))
+        cwd = agent_cwd()
+        _target = _execution_target(sandboxed=False, cwd=cwd, shell=exe)
+        started_at = time.time()
+        # `-Command -` reads the script from stdin: no quoting layer, no
+        # command-line length limit, `$`/quotes/backticks arrive untouched.
+        # The `$ErrorActionPreference`/exit wrapper makes a failing native
+        # command or a thrown error surface as a non-zero exit code, which a
+        # bare `-Command` does not guarantee.
+        wrapped = (
+            "$ErrorActionPreference = 'Continue'\n"
+            "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8\n"
+            "$OutputEncoding = [System.Text.Encoding]::UTF8\n"
+            + script + "\n"
+            "if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) { exit $LASTEXITCODE }\n"
+        )
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                exe, "-NoProfile", "-NonInteractive", "-NoLogo", "-ExecutionPolicy", "Bypass",
+                "-Command", "-",
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                env=env,
+                cwd=cwd,
+            )
+        except OSError as e:
+            return {"error": f"powershell: could not start {exe}: {e}", "exit_code": 1,
+                    "execution_target": _target}
+        try:
+            proc.stdin.write(wrapped.encode("utf-8"))
+            await proc.stdin.drain()
+            proc.stdin.close()
+        except Exception as e:  # noqa: BLE001 - the process may have died at once
+            logger.debug("powershell stdin write failed: %s", e)
+        idle_s = _effective_idle_timeout("powershell")
+        stdout, stderr, rc, timed_out = await _run_subprocess_streaming(
+            proc, timeout=DEFAULT_POWERSHELL_TIMEOUT, progress_cb=progress_cb, idle_timeout=idle_s,
+        )
+        if timed_out == "idle":
+            return {**_idle_result("powershell", idle_s, stdout, stderr), "execution_target": _target}
+        if timed_out:
+            return {"error": f"powershell: timed out after {DEFAULT_POWERSHELL_TIMEOUT}s — process killed",
+                    "exit_code": 124, "stdout": _truncate(stdout, MAX_OUTPUT_CHARS),
+                    "stderr": _truncate(stderr, MAX_OUTPUT_CHARS), "execution_target": _target}
+        output = stdout.rstrip()
+        err = stderr.rstrip()
+        if err:
+            output = (output + "\nSTDERR: " + err).strip() if output else "STDERR: " + err
+        _record_cycle("powershell", started_at)
+        return {"output": _truncate(output, MAX_OUTPUT_CHARS) or "(no output)",
+                "exit_code": rc or 0, "execution_target": _target}
