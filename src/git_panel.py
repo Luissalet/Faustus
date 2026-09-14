@@ -1522,14 +1522,16 @@ def create_repo(parent_folder: str, name: str, *, mode: str, owner: Optional[str
     name = (name or "").strip()
     if not name or name in (".", "..") or not _REPO_NAME_RE.match(name):
         raise GitInvalidNameError(name)
-    if mode not in ("init", "clone"):
+    if mode not in ("init", "init_existing", "clone"):
         raise GitInvalidNameError(f"unknown mode {mode!r}")
     if not git_available():
         raise GitNotFoundError()
 
     parent_real = os.path.realpath(parent_folder)
-    target = os.path.join(parent_real, name)
-    if os.path.exists(target) and (not os.path.isdir(target) or os.listdir(target)):
+    target = parent_real if mode == "init_existing" else os.path.join(parent_real, name)
+    if mode != "init_existing" and os.path.exists(target) and (not os.path.isdir(target) or os.listdir(target)):
+        raise GitRepoExistsError(target)
+    if mode == "init_existing" and repo_toplevel(target) is not None:
         raise GitRepoExistsError(target)
 
     if mode == "clone":

@@ -3453,8 +3453,8 @@ aside.fs-panel { position: relative; }
      stacked view is the fallback on narrow screens. */
   .fs-studio[data-panel][data-layout='document'],
   .fs-studio[data-panel][data-layout='review'] {
-    --fs-stage-col: minmax(280px, 360px);
-    --fs-side-col: minmax(0, 1fr);
+    --fs-stage-col: minmax(280px, 1fr);
+    --fs-side-col: minmax(320px, min(var(--fs-panel-width, 520px), 65vw));
   }
   .fs-studio[data-panel][data-layout='review'] {
     grid-template-columns: 264px var(--fs-stage-col) var(--fs-side-col) minmax(280px, 360px);

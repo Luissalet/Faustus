@@ -255,7 +255,8 @@ def _patch_common(monkeypatch):
 
 
 def _run_loop(monkeypatch, round_texts, *, max_rounds=4, relevant_tools=None,
-              autonomy_preset=None, capture_tools=None):
+              autonomy_preset=None, capture_tools=None,
+              endpoint_url="http://x/v1"):
     texts = list(round_texts)
 
     async def _fake_stream(_candidates, messages, **kwargs):
@@ -267,7 +268,7 @@ def _run_loop(monkeypatch, round_texts, *, max_rounds=4, relevant_tools=None,
     monkeypatch.setattr(al, "stream_llm_with_fallback", _fake_stream, raising=False)
 
     gen = al.stream_agent_loop(
-        "http://x/v1", "m",
+        endpoint_url, "m",
         [{"role": "user", "content": "do a long multi-step task"}],
         max_rounds=max_rounds,
         relevant_tools=relevant_tools,
@@ -275,6 +276,39 @@ def _run_loop(monkeypatch, round_texts, *, max_rounds=4, relevant_tools=None,
         owner="admin",
     )
     return _events(_collect(gen))
+
+
+def test_local_model_runs_past_budget_and_round_cycle_until_done(monkeypatch):
+    """Local Ollama work is completion-bound: fallback autonomy ceilings and
+    the finite auto-continue cycle must not turn a long implementation into a
+    user-driven sequence of "keep going" messages."""
+    _patch_common(monkeypatch)
+
+    def _must_not_resolve_a_finite_budget(*args, **kwargs):
+        raise AssertionError("local inference must not receive a finite autonomy budget")
+
+    monkeypatch.setattr(
+        al.autonomy_budget,
+        "resolve_budget",
+        _must_not_resolve_a_finite_budget,
+        raising=False,
+    )
+    events = _run_loop(
+        monkeypatch,
+        ['```bash\necho one\n```', "All done."],
+        max_rounds=1,
+        relevant_tools={"bash"},
+        endpoint_url="http://127.0.0.1:11434/v1",
+    )
+
+    assert any(
+        e.get("type") == "harness_check" and e.get("status") == "auto_continue"
+        for e in events
+    ), events
+    assert not any(e.get("type") == "budget_exhausted" for e in events), events
+    assert not any(e.get("type") == "rounds_exhausted" for e in events), events
+    summary = next(e for e in events if e.get("type") == "harness_summary")
+    assert summary["data"]["stop_reason"] == "complete"
 
 
 def test_read_only_does_not_offer_bash_or_write(monkeypatch):

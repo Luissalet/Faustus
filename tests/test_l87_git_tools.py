@@ -25,8 +25,8 @@ from src import agent_git_policy, constants as constants_mod, git_panel  # noqa:
 from src import settings as settings_mod  # noqa: E402
 from src import tool_execution as te  # noqa: E402
 from src.agent_tools.git_tools import (  # noqa: E402
-    GitBranchTool, GitCheckoutTool, GitCommitTool, GitDiffTool, GitFetchTool,
-    GitLogTool, GitPullTool, GitPushTool, GitStatusTool,
+    GitBranchTool, GitCheckoutTool, GitCommitTool, GitDiffTool, GitFetchTool, GitInitTool,
+    GitLogTool, GitPublishTool, GitPullTool, GitPushTool, GitStatusTool,
 )
 from src.tool_approvals import ToolApprovalStore  # noqa: E402
 from src.tool_capabilities import ToolRunSecurityContext, capabilities_for_action  # noqa: E402
@@ -134,6 +134,48 @@ def _repo_id(repo_path) -> str:
 
 def _set_policy(**patch):
     return agent_git_policy.set_global_policy(patch)
+
+
+def test_git_init_initializes_the_active_existing_workspace_without_staging_files(tmp_path):
+    project = tmp_path / "existing-project"
+    project.mkdir()
+    _write(project, "app.py", "print('hello')\n")
+    ws_token = te._active_workspace.set(str(project))
+    roots_token = te._active_workspace_roots.set((str(project),))
+    try:
+        result = _run_async(GitInitTool().execute("{}", {"owner": OWNER}))
+    finally:
+        te._active_workspace.reset(ws_token)
+        te._active_workspace_roots.reset(roots_token)
+    assert result["exit_code"] == 0, result
+    assert (project / ".git").is_dir()
+    assert _run(["status", "--porcelain"], cwd=project).stdout.strip() == "?? app.py"
+
+
+def test_git_publish_uses_active_account_adds_origin_and_pushes(ws, monkeypatch):
+    from src import git_github
+
+    monkeypatch.setattr(git_github, "gh_accounts", lambda **_kw: {
+        "available": True,
+        "accounts": [{"login": "owner", "active": True, "protocol": "https"}],
+    })
+    monkeypatch.setattr(git_github, "create_github_repo", lambda login, name, **_kw: {
+        "full_name": f"{login}/{name}",
+        "html_url": f"https://github.com/{login}/{name}",
+        "https_url": f"https://github.com/{login}/{name}.git",
+        "ssh_url": f"git@github.com:{login}/{name}.git",
+    })
+    calls = {}
+    monkeypatch.setattr(git_panel, "add_remote", lambda root, name, url: calls.update(remote=(root, name, url)))
+    monkeypatch.setattr(git_panel, "repo_remotes", lambda _root: [])
+    monkeypatch.setattr(git_panel, "push", lambda root, **kw: calls.update(push=(root, kw)) or "pushed")
+
+    result = _run_async(GitPublishTool().execute('{"user_confirmed": true}', {"owner": OWNER}))
+
+    assert result["exit_code"] == 0, result
+    assert result["github"]["full_name"] == "owner/repo"
+    assert calls["remote"][1:] == ("origin", "https://github.com/owner/repo.git")
+    assert calls["push"][1]["set_upstream"] is True
 
 
 # ---------------------------------------------------------------------------
@@ -449,7 +491,7 @@ def test_execute_tool_block_without_approval_still_refuses_by_policy(repo):
 # guards for lote 54's own tools, checked here for the nine git tools.
 # ---------------------------------------------------------------------------
 GIT_TOOL_NAMES = (
-    "git_status", "git_log", "git_diff", "git_branch", "git_checkout",
+    "git_init", "git_publish", "git_status", "git_log", "git_diff", "git_branch", "git_checkout",
     "git_commit", "git_push", "git_pull", "git_fetch",
 )
 
@@ -478,9 +520,9 @@ def test_git_write_and_remote_tools_carry_the_effects_the_contract_asked_for():
     for name in reads:
         assert ToolEffect.READ_WORKSPACE in capabilities_for_tool(name).effects
 
-    writes = {"git_branch", "git_checkout", "git_commit"}
+    writes = {"git_init", "git_branch", "git_checkout", "git_commit"}
     for name in writes:
         assert ToolEffect.WRITE_WORKSPACE in capabilities_for_tool(name).effects
 
-    for name in ("git_push", "git_pull", "git_fetch"):
+    for name in ("git_publish", "git_push", "git_pull", "git_fetch"):
         assert ToolEffect.NETWORK_EGRESS in capabilities_for_tool(name).effects

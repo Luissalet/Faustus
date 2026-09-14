@@ -29,6 +29,7 @@ export function NewRepositoryDialog({
   onOpenChange,
   onCreated,
   projectId,
+  workspace,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -38,8 +39,11 @@ export function NewRepositoryDialog({
    *  to) that project's own linked folders, matching `GitFolder.project_id`.
    *  A project with none yet still falls back to every linked folder. */
   projectId?: string;
+  /** When opened from a chat whose current folder is not a repository, allow
+   *  initializing that folder itself instead of forcing a nested folder. */
+  workspace?: string;
 }) {
-  const [mode, setMode] = useState<'init' | 'clone'>('init');
+  const [mode, setMode] = useState<'init' | 'init_existing' | 'clone'>(workspace ? 'init_existing' : 'init');
   const [folders, setFolders] = useState<GitFolder[] | null>(null);
   const [parentFolder, setParentFolder] = useState('');
   const [subpath, setSubpath] = useState('');
@@ -83,7 +87,7 @@ export function NewRepositoryDialog({
   }, [open, projectId]);
 
   const reset = () => {
-    setMode('init');
+    setMode(workspace ? 'init_existing' : 'init');
     setSubpath('');
     setName('');
     setUrl('');
@@ -99,9 +103,9 @@ export function NewRepositoryDialog({
   const nameValid = isValidRepoName(name);
   const githubReady = githubAccounts?.available === true;
   const canSubmit =
-    Boolean(parentFolder) &&
-    nameValid &&
-    (mode === 'init' || url.trim().length > 0) &&
+    Boolean(mode === 'init_existing' ? workspace : parentFolder) &&
+    (mode === 'init_existing' || nameValid) &&
+    (mode !== 'clone' || url.trim().length > 0) &&
     (mode === 'clone' || !githubEnabled || (githubReady && githubLogin.trim().length > 0)) &&
     !busy;
 
@@ -109,17 +113,22 @@ export function NewRepositoryDialog({
     if (!canSubmit) return;
     setBusy(true);
     setError(null);
-    const parent = subpath.trim() ? `${parentFolder.replace(/\/+$/, '')}/${subpath.trim().replace(/^\/+/, '')}` : parentFolder;
+    const parent = mode === 'init_existing'
+      ? workspace!
+      : subpath.trim() ? `${parentFolder.replace(/\/+$/, '')}/${subpath.trim().replace(/^\/+/, '')}` : parentFolder;
+    const repoName = mode === 'init_existing'
+      ? workspace!.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || 'repository'
+      : name.trim();
     createRepo({
       mode,
       parentFolder: parent,
-      name: name.trim(),
+      name: repoName,
       url: mode === 'clone' ? url.trim() : undefined,
       identityId: identityId || undefined,
-      initialCommit: mode === 'init' ? initialCommit : undefined,
+      initialCommit: mode === 'init' ? initialCommit : false,
       defaultBranch: defaultBranch.trim() || 'main',
       github:
-        mode === 'init' && githubEnabled
+        mode !== 'clone' && githubEnabled
           ? { create: true, login: githubLogin.trim(), private: githubVisibility === 'private', push: githubPush, identityId: identityId || undefined }
           : undefined,
     })
@@ -170,6 +179,11 @@ export function NewRepositoryDialog({
       }
     >
       <div className="fs-seg" role="radiogroup" aria-label={t('Where this repository comes from')}>
+        {workspace && (
+          <button type="button" role="radio" aria-checked={mode === 'init_existing'} onClick={() => setMode('init_existing')} data-testid="new-repo-mode-existing">
+            {t('Use this folder')}
+          </button>
+        )}
         <button type="button" role="radio" aria-checked={mode === 'init'} onClick={() => setMode('init')} data-testid="new-repo-mode-init">
           {t('Create here')}
         </button>
@@ -178,26 +192,26 @@ export function NewRepositoryDialog({
         </button>
       </div>
 
-      <Field label={t('Name')} htmlFor="new-repo-name">
+      {mode !== 'init_existing' && <Field label={t('Name')} htmlFor="new-repo-name">
         <Text id="new-repo-name" value={name} onChange={setName} placeholder={t('my-project')} />
-      </Field>
-      {name.length > 0 && !nameValid && (
+      </Field>}
+      {mode !== 'init_existing' && name.length > 0 && !nameValid && (
         <p className="fs-notice" data-tone="danger" role="alert">
           {t('Only letters, numbers, dots, dashes and underscores.')}
         </p>
       )}
 
-      <Field label={t('Parent folder')} htmlFor="new-repo-parent" help={t('One of your linked project folders — a new folder is created inside it for this repository.')}>
+      {mode !== 'init_existing' && <Field label={t('Parent folder')} htmlFor="new-repo-parent" help={t('One of your linked project folders — a new folder is created inside it for this repository.')}>
         <Select
           id="new-repo-parent"
           value={parentFolder}
           onChange={setParentFolder}
           options={(folders ?? []).map((f) => ({ value: f.path, label: f.project_name ? `${f.project_name} — ${f.path}` : f.path }))}
         />
-      </Field>
-      <Field label={t('Subfolder (optional)')} htmlFor="new-repo-subpath">
+      </Field>}
+      {mode !== 'init_existing' && <Field label={t('Subfolder (optional)')} htmlFor="new-repo-subpath">
         <Text id="new-repo-subpath" value={subpath} onChange={setSubpath} placeholder={t('e.g. work/')} />
-      </Field>
+      </Field>}
 
       {mode === 'clone' && (
         <Field label={t('URL')} htmlFor="new-repo-url" help={t('An https:// or git@ URL. Pick an SSH identity below to clone over ssh.')}>
@@ -223,7 +237,7 @@ export function NewRepositoryDialog({
         <Text id="new-repo-branch" value={defaultBranch} onChange={setDefaultBranch} placeholder="main" />
       </Field>
 
-      {mode === 'init' && (
+      {mode !== 'clone' && (
         <div className="fs-sc__github-section" data-testid="new-repo-github-section">
           <Toggle
             id="new-repo-github-enabled"

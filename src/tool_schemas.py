@@ -2019,6 +2019,46 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "git_init",
+            "description": "Initialize an existing project folder as a Git repository. Use this when the active workspace is not a repository yet. It does not stage project files automatically; follow with git_status and git_commit using an explicit paths list. Prefer this over shelling out to git init.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Existing project folder to initialize (optional; defaults to the active workspace and must stay within its linked project roots)."},
+                    "default_branch": {"type": "string", "description": "Initial branch name (default main)."},
+                    "identity_id": {"type": "string", "description": "Optional configured Git/SSH identity whose user.name and user.email should be set locally."},
+                    "initial_commit": {"type": "boolean", "description": "Create and commit a README only (default false). Existing project files are never staged implicitly."},
+                    "name": {"type": "string", "description": "README title when initial_commit is true (optional)."}
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "git_publish",
+            "description": "Create a GitHub repository for the local repo, add it as origin, and push the current branch by default. Uses the active authenticated gh account when unambiguous. Call only when the user asked to publish/upload/create the remote; commit the intended files first. Never force-push.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Path inside the repo (optional; defaults to the active workspace/project repo)."},
+                    "repo": {"type": "string", "description": "Repo name instead of path when the project has several repositories (optional)."},
+                    "login": {"type": "string", "description": "Authenticated GitHub login (optional when exactly one account is active)."},
+                    "name": {"type": "string", "description": "GitHub repository name (optional; defaults to the local folder name)."},
+                    "private": {"type": "boolean", "description": "Create a private repository (default true)."},
+                    "description": {"type": "string", "description": "GitHub repository description (optional)."},
+                    "identity_id": {"type": "string", "description": "Optional SSH identity used to choose the origin URL."},
+                    "push": {"type": "boolean", "description": "Push the current branch and set upstream after creating origin (default true)."},
+                    "user_confirmed": {"type": "boolean", "description": "Set true only after explicit approval when repo policy disables push."}
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "git_status",
             "description": "Git status of a repo: current branch, ahead/behind its upstream, staged/unstaged/untracked/conflicted files, and the last `limit` commits. Read-only. Every git tool accepts an optional `path` or `repo` (see below) -- when neither is given, and the project has more than one repo and the active workspace isn't inside any of them, the call is refused with error_class git.which_repo naming the repo choices; ask the user which one. `path` is confined to this turn's workspace / the session's project folders; a repo outside that is refused.",
             "parameters": {

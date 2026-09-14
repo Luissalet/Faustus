@@ -462,7 +462,7 @@ _register(
     # commit above — a merge rewrites what the current branch points at
     # (and can create a commit), a branch deletion removes a ref, neither
     # touches a remote.
-    {"git_branch", "git_checkout", "git_commit", "git_merge", "git_delete_branch"},
+    {"git_init", "git_branch", "git_checkout", "git_commit", "git_merge", "git_delete_branch"},
     ToolEffect.WRITE_WORKSPACE,
     result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED,
 )
@@ -474,7 +474,7 @@ _register(
     result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
 )
 _register(
-    {"git_push"},
+    {"git_push", "git_publish"},
     ToolEffect.NETWORK_EGRESS, ToolEffect.EXTERNAL_SIDE_EFFECT,
     result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
 )

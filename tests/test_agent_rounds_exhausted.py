@@ -99,3 +99,32 @@ def test_emits_loop_breaker_triggered_when_loop_breaker_trips(monkeypatch):
     guard = next((e for e in events if e.get("type") == "loop_breaker_triggered"), None)
     assert guard is not None, events
     assert guard["reason"] == "loop_breaker_stall"
+
+
+def test_long_calls_with_same_prefix_are_not_a_loop(monkeypatch):
+    """Regression for Silhouettes: exploratory Python calls shared long import
+    prefixes but differed later. The loop breaker must compare the full payload,
+    not the first 120 characters used for display."""
+    _patch_common(monkeypatch)
+    prefix = "x" * 140
+    calls = iter([
+        f'```update_plan\n{{"plan":"- [ ] {prefix} probe {n}"}}\n```'
+        for n in range(4)
+    ] + ["All done."])
+
+    async def _fake_stream(_candidates, messages, **kwargs):
+        yield f'data: {json.dumps({"delta": next(calls)})}\n\n'
+        yield "data: [DONE]\n\n"
+
+    monkeypatch.setattr(al, "stream_llm_with_fallback", _fake_stream, raising=False)
+    events = _types(_collect(al.stream_agent_loop(
+        "http://x/v1",
+        "m",
+        [{"role": "user", "content": "do a long multi-step task"}],
+        max_rounds=6,
+        relevant_tools={"update_plan"},
+    )))
+
+    assert not any(e.get("type") == "loop_breaker_triggered" for e in events), events
+    summary = next(e for e in events if e.get("type") == "harness_summary")
+    assert summary["data"]["stop_reason"] == "complete"

@@ -117,7 +117,7 @@ class CreateRepoGithubBody(BaseModel):
 
 
 class CreateRepoBody(BaseModel):
-    mode: str = Field(..., pattern="^(init|clone)$")
+    mode: str = Field(..., pattern="^(init|init_existing|clone)$")
     parent_folder: str = Field(..., min_length=1)
     name: str = Field(..., min_length=1)
     url: Optional[str] = None

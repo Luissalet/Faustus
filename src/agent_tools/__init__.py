@@ -42,7 +42,7 @@ from .exec_tools import InstallDependenciesTool, ManageScriptsTool
 from .browser_tools import CaptureEvidenceTool, BrowserExtractTool
 from .spreadsheet_tools import ManageSpreadsheetTool
 from .git_tools import (
-    GitStatusTool, GitLogTool, GitDiffTool,
+    GitInitTool, GitPublishTool, GitStatusTool, GitLogTool, GitDiffTool,
     GitBranchTool, GitCheckoutTool, GitCommitTool,
     GitMergeTool, GitDeleteBranchTool,
     GitPushTool, GitPullTool, GitFetchTool,
@@ -108,6 +108,8 @@ TOOL_HANDLERS = {
     # thin executors over src.git_panel, same runner the Source Control
     # panel uses. See src/agent_tools/git_tools.py for workspace confinement
     # and the agent git policy gate.
+    "git_init": GitInitTool().execute,
+    "git_publish": GitPublishTool().execute,
     "git_status": GitStatusTool().execute,
     "git_log": GitLogTool().execute,
     "git_diff": GitDiffTool().execute,
@@ -213,7 +215,7 @@ TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_fi
              "app_api",
              # Git tools (Lote 87, OBJ-4; git_merge/git_delete_branch Lote 89) —
              # src/agent_tools/git_tools.py.
-             "git_status", "git_log", "git_diff",
+             "git_init", "git_publish", "git_status", "git_log", "git_diff",
              "git_branch", "git_checkout", "git_commit",
              "git_merge", "git_delete_branch",
              "git_push", "git_pull", "git_fetch",

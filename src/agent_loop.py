@@ -10,6 +10,7 @@ import asyncio
 import collections
 import difflib
 import functools
+import hashlib
 import inspect
 import json
 import re
@@ -5086,13 +5087,25 @@ def build_active_plan_note(approved_plan: str) -> str:
     )
 
 
+def _tool_call_signature(tool_type: str, content: str) -> str:
+    """Stable signature for the complete tool payload.
+
+    Hash the full content instead of comparing a display prefix. Long Python
+    probes commonly begin with the same imports while doing entirely different
+    work later; truncating them made legitimate debugging look like a loop.
+    """
+    payload = (content or "").strip().encode("utf-8", errors="surrogatepass")
+    return f"{tool_type}:{hashlib.sha256(payload).hexdigest()}"
+
+
 def _detect_runaway_call(call_freq, threshold=15):
     """Tool name of a call signature repeated >= ``threshold`` times — a real
     runaway loop. Counts IDENTICAL repeated calls (same tool AND args), so a
     legitimate batch of distinct calls to one tool (e.g. creating 18 calendar
     events at once) is NOT flagged. Returns ``None`` when nothing is runaway.
 
-    ``call_freq`` is a Counter keyed by ``"{tool_type}:{content[:120]}"``.
+    ``call_freq`` is keyed by :func:`_tool_call_signature`, which hashes the
+    complete payload so only genuinely identical calls are counted together.
     """
     sig = next((s for s, n in call_freq.items() if n >= threshold), None)
     return sig.split(":", 1)[0] if sig else None
@@ -5264,7 +5277,23 @@ async def _stream_agent_loop_body(
     # WORKSPACE_TOOL_FLOOR below (see
     # tests/test_agent_loop_offer_execute_coherence.py).
     _autonomy_preset = autonomy_budget.normalize_preset(autonomy_preset)
-    _autonomy_budget = autonomy_budget.resolve_budget(_autonomy_preset, get_setting=get_setting)
+    try:
+        from src.model_context import is_local_endpoint as _is_local_budget_endpoint
+        _local_completion_unbounded = bool(_is_local_budget_endpoint(endpoint_url))
+    except Exception:
+        _local_completion_unbounded = False
+
+    # Local inference has no metered provider cost.  Do not manufacture a
+    # per-turn stopping point from the autonomy preset's fallback ceilings:
+    # a coding turn may legitimately re-send a large context for many tool
+    # rounds before it is complete.  Explicit limits already supplied by the
+    # caller (``max_tool_calls`` / cancellation / pause) still apply, as do
+    # the loop breaker and every permission/security gate.
+    _autonomy_budget = (
+        autonomy_budget.Budget()
+        if _local_completion_unbounded
+        else autonomy_budget.resolve_budget(_autonomy_preset, get_setting=get_setting)
+    )
     _budget_ledger = autonomy_budget.Ledger()
     # The tool-call dimension is merged into the pre-existing
     # `max_tool_calls`/`total_tool_calls` mechanism below (one counter, not
@@ -7498,14 +7527,17 @@ async def _stream_agent_loop_body(
 
     # Round budget. Hitting the cap mid-task used to end the turn with a
     # "Continue" button the user had to click (the model re-reads "you hit the
-    # step limit, continue"). With agent_auto_continue_cycles > 0 (default 1)
-    # the harness injects that checkpoint itself and grants another cycle of
-    # max_rounds, once; the button still appears when the extra cycle runs out.
+    # step limit, continue"). Local inference is completion-bound rather than
+    # cost-bound, so it receives as many automatic cycles as it needs. Remote
+    # inference keeps the configured finite number of cycles.
     _rounds_budget = max_rounds
-    try:
-        _auto_cycles_left = int(get_setting("agent_auto_continue_cycles", 1) or 0) if _harness_enabled else 0
-    except (TypeError, ValueError):
-        _auto_cycles_left = 0
+    if _harness_enabled and _local_completion_unbounded:
+        _auto_cycles_left = -1  # sentinel: unlimited automatic cycles
+    else:
+        try:
+            _auto_cycles_left = int(get_setting("agent_auto_continue_cycles", 1) or 0) if _harness_enabled else 0
+        except (TypeError, ValueError):
+            _auto_cycles_left = 0
     round_num = 0
     while True:
         round_num += 1
@@ -7555,8 +7587,9 @@ async def _stream_agent_loop_body(
             yield _budget_exhausted_event(_budget_exhaustion)
             break
         if round_num > _rounds_budget:
-            if _auto_cycles_left > 0:
-                _auto_cycles_left -= 1
+            if _auto_cycles_left != 0:
+                if _auto_cycles_left > 0:
+                    _auto_cycles_left -= 1
                 _rounds_budget += max_rounds
                 logger.info("[harness] step limit (%s) reached mid-task — auto-continuing with %s more rounds",
                             round_num - 1, max_rounds)
@@ -7574,7 +7607,9 @@ async def _stream_agent_loop_body(
                 yield (
                     "data: " + json.dumps({
                         "type": "harness_check", "status": "auto_continue", "reason": "rounds",
-                        "round": round_num - 1, "attempt": 1, "max_attempts": 1,
+                        "round": round_num - 1,
+                        "attempt": 1,
+                        "max_attempts": None if _auto_cycles_left < 0 else 1,
                     }) + "\n\n"
                 )
                 full_response += "\n\n"
@@ -9451,11 +9486,13 @@ async def _stream_agent_loop_body(
         # runaway backstop). On bail we don't give up — we force one
         # tool-free round so the model declares done or declares blocked,
         # mirroring Terminus's explicit-completion handshake.
-        _sig = "|".join(sorted(f"{b.tool_type}:{(b.content or '').strip()[:120]}" for b in tool_blocks))
+        _sig = "|".join(sorted(
+            _tool_call_signature(b.tool_type, b.content or "") for b in tool_blocks
+        ))
         _is_repeat = _sig in _recent_call_sigs
         _recent_call_sigs.append(_sig)
         for _b in tool_blocks:
-            _call_freq[f"{_b.tool_type}:{(_b.content or '').strip()[:120]}"] += 1
+            _call_freq[_tool_call_signature(_b.tool_type, _b.content or "")] += 1
         # "Real" answer text = round text minus <think> blocks. Empty-think
         # rounds (just "<think>\n\n</think>" + a tool call) must not read as
         # progress, so strip think before checking.

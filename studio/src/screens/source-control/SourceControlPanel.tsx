@@ -516,7 +516,10 @@ export function SourceControlPanel({ projectId, repoId, compact = false, workspa
             headingLevel={3}
             icon={GitBranch}
             title={t('No git repository here')}
-            body={t('Link a project folder that contains a git repository to manage it from this chat.')}
+            body={workspace
+              ? t('Initialize this project folder to track its files and publish it when you are ready.')
+              : t('Link a project folder that contains a git repository to manage it from this chat.')}
+            primaryAction={workspace ? { label: t('Create repository'), icon: Plus, onClick: () => setNewRepoOpen(true) } : undefined}
           />
         ) : (
           <>
@@ -527,6 +530,7 @@ export function SourceControlPanel({ projectId, repoId, compact = false, workspa
                 {ab && <span className="fs-sc__repo-ab" data-testid="repo-ahead-behind">{ab}</span>}
               </div>
               <div className="fs-sc__repo-header-actions">
+                <IdentityChip repo={selectedRepo} onRepoUpdate={mergeRepo} />
                 <IconButton icon={Download} label={t('Fetch')} size="sm" disabled={repoBusyId === selectedRepo.id} onClick={() => handleRepoMenuAction(selectedRepo, 'fetch')} testId="repo-header-fetch" />
                 <IconButton icon={ArrowDownToLine} label={t('Pull')} size="sm" disabled={repoBusyId === selectedRepo.id} onClick={() => handleRepoMenuAction(selectedRepo, 'pull')} testId="repo-header-pull" />
                 <IconButton icon={ArrowUpFromLine} label={t('Push')} size="sm" disabled={repoBusyId === selectedRepo.id} onClick={() => handleRepoMenuAction(selectedRepo, 'push')} testId="repo-header-push" />
@@ -580,6 +584,7 @@ export function SourceControlPanel({ projectId, repoId, compact = false, workspa
           </>
         )}
         {toast && <Toast>{toast}</Toast>}
+        <NewRepositoryDialog open={newRepoOpen} onOpenChange={setNewRepoOpen} onCreated={onRepoCreated} projectId={effectiveProjectId} workspace={workspace} />
       </div>
     );
   }

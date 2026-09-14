@@ -201,6 +201,8 @@ NON_ADMIN_BLOCKED_TOOLS = BUILTIN_EMAIL_TOOLS | {
     # Git tools (Lote 87): read a repo's content and, for the write/remote
     # ones, mutate it or a remote host — same privilege class as bash/
     # write_file/read_file above.
+    "git_init",
+    "git_publish",
     "git_status",
     "git_log",
     "git_diff",
@@ -336,8 +338,8 @@ _PLAN_MODE_KNOWN_MUTATORS = {
     # plan mode investigates and never changes anything — a branch/checkout/
     # commit/merge/delete_branch/push/pull/fetch is exactly the kind of
     # durable change plan mode exists to defer.
-    "git_branch", "git_checkout", "git_commit", "git_merge", "git_delete_branch",
-    "git_push", "git_pull", "git_fetch",
+    "git_init", "git_branch", "git_checkout", "git_commit", "git_merge", "git_delete_branch",
+    "git_publish", "git_push", "git_pull", "git_fetch",
     # Project board write tools (Lote 92): plan mode investigates and never
     # changes the board either -- filing/claiming/closing an issue is a
     # durable change, same class as manage_notes/manage_tasks above.

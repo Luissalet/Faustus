@@ -57,10 +57,11 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from typing import Any, Dict, List, Optional
 
 from src import agent_git_policy
-from src import git_panel
+from src import git_github, git_identities, git_panel
 
 logger = logging.getLogger(__name__)
 
@@ -484,6 +485,56 @@ class GitDiffTool:
 # ---------------------------------------------------------------------------
 # Write tools (agent git policy gated)
 # ---------------------------------------------------------------------------
+class GitInitTool:
+    """Initialize the existing workspace folder as a repository.
+
+    This is intentionally separate from ``git_panel.create_repo``: an agent
+    working inside an existing project must not invent a child directory just
+    to get a ``.git`` folder.
+    """
+
+    async def execute(self, content: str, ctx: dict) -> dict:
+        args = _args(content)
+        try:
+            target = _confined_path(str(args.get("path") or ""))
+        except _OutsideWorkspace as exc:
+            return _repo_error("git_init", exc)
+        existing = git_panel.repo_toplevel(target)
+        if existing:
+            return {
+                "error": f"git_init: a repository already exists at or above {target!r}",
+                "exit_code": 1, "error_class": "git.exists", "repo_root": existing,
+            }
+
+        identity_id = str(args.get("identity_id") or "").strip()
+        git_user_name = git_user_email = None
+        if identity_id:
+            identity = git_identities.find_identity(_owner(ctx), identity_id)
+            if not identity:
+                return {"error": f"git_init: unknown identity {identity_id!r}", "exit_code": 1,
+                        "error_class": "git.identity_not_found"}
+            git_user_name = identity.get("git_user_name")
+            git_user_email = identity.get("git_user_email")
+        try:
+            git_panel.init_repo(
+                target,
+                default_branch=str(args.get("default_branch") or "main"),
+                initial_commit=bool(args.get("initial_commit")),
+                repo_name=str(args.get("name") or "").strip(),
+                git_user_name=git_user_name,
+                git_user_email=git_user_email,
+            )
+            git_panel.invalidate_discovery_cache(_owner(ctx))
+        except (git_panel.GitNoIdentityError, git_panel.GitCommandError,
+                git_panel.GitNotFoundError) as exc:
+            return _git_error("git_init", exc)
+        branch, _detached = git_panel.current_branch(target)
+        return {
+            "output": f"Initialized repository in {target} on branch {branch or 'main'}.",
+            "exit_code": 0, "repo_root": target, "branch": branch or "main",
+        }
+
+
 class GitBranchTool:
     """`git_branch`: create (and by default check out) a branch.  Gated by
     `policy.use_branch`."""
@@ -682,6 +733,93 @@ class GitPushTool:
         except (git_panel.GitRejectedError, git_panel.GitCommandError, git_panel.GitNotFoundError) as exc:
             return _git_error("git_push", exc)
         return {"output": output.strip() or "Pushed.", "exit_code": 0, "repo_root": repo_root}
+
+
+class GitPublishTool:
+    """Create the GitHub repository, add ``origin`` and optionally push."""
+
+    async def execute(self, content: str, ctx: dict) -> dict:
+        args = _args(content)
+        repo_root, _repo_err = _resolve_repo_root("git_publish", args, ctx)
+        if _repo_err:
+            return _repo_err
+        push_now = True if args.get("push") is None else bool(args.get("push"))
+        if push_now:
+            policy = _effective_policy(_owner(ctx), repo_root)
+            denial = _policy_denied("git_publish", "push", ctx, args, allowed=bool(policy.get("push")))
+            if denial:
+                return denial
+        if any(r.get("name") == "origin" for r in git_panel.repo_remotes(repo_root)):
+            return {"error": "git_publish: this repository already has an 'origin' remote",
+                    "exit_code": 1, "error_class": "git.remote_exists"}
+
+        accounts = git_github.gh_accounts(use_cache=False)
+        if not accounts.get("available"):
+            return {"error": f"git_publish: {git_github.GH_MISSING_DETAIL}", "exit_code": 1,
+                    "error_class": "dependency.missing"}
+        choices = accounts.get("accounts") or []
+        login = str(args.get("login") or "").strip()
+        if not login:
+            active = [a for a in choices if a.get("active")]
+            if len(active) == 1:
+                login = str(active[0].get("login") or "")
+            elif len(choices) == 1:
+                login = str(choices[0].get("login") or "")
+        if not login:
+            names = [str(a.get("login")) for a in choices if a.get("login")]
+            return {"error": "git_publish: choose a GitHub account", "exit_code": 1,
+                    "error_class": "github.which_account", "accounts": names}
+        if choices and login not in {str(a.get("login")) for a in choices}:
+            return {"error": f"git_publish: GitHub account {login!r} is not authenticated",
+                    "exit_code": 1, "error_class": "github.account_not_found"}
+
+        name = str(args.get("name") or "").strip() or os.path.basename(repo_root.rstrip(os.sep))
+        try:
+            created = git_github.create_github_repo(
+                login, name,
+                private=True if args.get("private") is None else bool(args.get("private")),
+                description=str(args.get("description") or ""),
+            )
+        except git_github.GhNotAvailableError:
+            return {"error": f"git_publish: {git_github.GH_MISSING_DETAIL}", "exit_code": 1,
+                    "error_class": "dependency.missing"}
+        except git_github.GitHubRepoExistsError as exc:
+            return {"error": f"git_publish: {exc}", "exit_code": 1,
+                    "error_class": "github.exists"}
+        except git_github.GitHubCommandError as exc:
+            return {"error": f"git_publish: {git_panel.stderr_snippet(exc.stderr or exc.stdout)}",
+                    "exit_code": 1, "error_class": "github.failed"}
+
+        identity_id = str(args.get("identity_id") or "").strip()
+        identity = git_identities.find_identity(_owner(ctx), identity_id) if identity_id else None
+        account = next((a for a in choices if a.get("login") == login), None)
+        if identity and identity.get("ssh_host"):
+            remote_url = f"git@{identity['ssh_host']}:{login}/{name}.git"
+        elif account and account.get("protocol") == "https":
+            remote_url = created.get("https_url") or f"https://github.com/{login}/{name}.git"
+        else:
+            remote_url = created.get("ssh_url") or f"git@github.com:{login}/{name}.git"
+        try:
+            git_panel.add_remote(repo_root, "origin", remote_url)
+            pushed = ""
+            if push_now:
+                branch = git_panel.current_branch(repo_root)[0]
+                if not branch:
+                    return {
+                        "error": "git_publish: GitHub repository was created and origin was added, but there is no commit to push yet",
+                        "exit_code": 1, "error_class": "git.nothing_to_push",
+                        "repo_root": repo_root, "github": created, "remote": remote_url,
+                    }
+                pushed = git_panel.push(repo_root, remote="origin", branch=branch, set_upstream=True)
+        except (git_panel.GitRejectedError, git_panel.GitCommandError,
+                git_panel.GitNotFoundError) as exc:
+            result = _git_error("git_publish", exc)
+            result.update({"repo_root": repo_root, "github": created, "remote": remote_url})
+            return result
+        return {
+            "output": f"Published {created['full_name']} to {created['html_url']}" + (f"\n{pushed.strip()}" if pushed.strip() else ""),
+            "exit_code": 0, "repo_root": repo_root, "github": created, "remote": remote_url,
+        }
 
 
 class GitPullTool:

@@ -200,6 +200,8 @@ BUILTIN_TOOL_DESCRIPTIONS: Dict[str, str] = {
     # Lote 87 — git tools for the agent (OBJ-4): "commit this and push" done
     # through tools instead of bash, so they respect the repo's agent git
     # policy and show up in the Source control panel.
+    "git_init": "Initialize the current existing project folder as a Git repository. Use for 'create a repository here', 'inicializa este proyecto con git', or when a commit/publish request targets a folder that is not a repo yet. It does not stage the project files automatically.",
+    "git_publish": "Create a GitHub repository for the current local repo, add it as origin, and push the current branch by default. Uses the active authenticated GitHub CLI account when unambiguous. Use for 'upload/publish this repo to GitHub' after committing the intended files. Never force-push.",
     "git_status": "Git status of a repo: current branch, ahead/behind its upstream, staged/unstaged/untracked/conflicted files, and recent commits. Use for 'what's changed', 'git status', 'is this repo dirty'. Read-only.",
     "git_log": "Git commit history for a repo (limit, ref). Use for 'show recent commits', 'git log'. Read-only.",
     "git_diff": "Diff for a repo: working tree (default), staged (staged=true), or one commit (commit=sha). Optionally limited to one file. Use for 'show me the diff', 'what did I change', 'diff this commit'. Read-only.",

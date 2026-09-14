@@ -614,7 +614,7 @@ export interface CreateRepoGithubOptions {
 }
 
 export interface CreateRepoOptions {
-  mode: 'init' | 'clone';
+  mode: 'init' | 'init_existing' | 'clone';
   parentFolder: string;
   name: string;
   url?: string;

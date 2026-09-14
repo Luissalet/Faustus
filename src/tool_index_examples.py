@@ -668,6 +668,16 @@ EXAMPLES: Dict[str, List[str]] = {
     ],
 
     # ── Git ───────────────────────────────────────────────────────────────
+    "git_init": [
+        "crea un repositorio git en esta carpeta",
+        "initialize this existing project as a git repository",
+        "este proyecto todavía no tiene repo, inicialízalo",
+    ],
+    "git_publish": [
+        "sube este repositorio a GitHub",
+        "create the GitHub repo and publish this project",
+        "publica el repo usando mi cuenta activa",
+    ],
     "git_status": [
         "en qué estado está el repo",
         "what's changed since my last commit",

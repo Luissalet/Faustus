@@ -134,6 +134,24 @@ def test_create_repo_init_without_initial_commit_leaves_it_uncommitted(client, s
     assert not (root / "bare_new" / "README.md").exists()
 
 
+def test_create_repo_can_initialize_the_existing_project_folder(client, store, tmp_path):
+    root = tmp_path / "existing-project"
+    root.mkdir()
+    (root / "app.py").write_text("print('kept')\n", encoding="utf-8")
+    _project(store, root)
+
+    resp = client.post("/api/git/repos", json={
+        "mode": "init_existing", "parent_folder": str(root),
+        "name": "existing-project", "initial_commit": False,
+    }, headers=_hdr())
+
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["repo"]["path"] == str(root)
+    assert (root / ".git").is_dir()
+    assert (root / "app.py").read_text(encoding="utf-8") == "print('kept')\n"
+    assert _run(["status", "--porcelain"], cwd=root).stdout.strip() == "?? app.py"
+
+
 def test_create_repo_rejects_invalid_name(client, store, tmp_path):
     root = tmp_path / "proj"
     root.mkdir()
