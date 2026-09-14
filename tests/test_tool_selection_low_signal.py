@@ -52,10 +52,10 @@ def test_the_floor_is_applied_after_the_retrieval():
     assert floor_set < retrieval < union
 
 
-def test_the_read_only_half_is_still_read_only():
-    """The floor still holds back the write/shell half on a vague turn."""
+def test_workspace_low_signal_floor_keeps_the_edit_path():
+    """Agent + bound workspace is enough scope for terse continuations."""
     branch = _low_signal_branch()
-    assert "PLAN_MODE_READONLY_TOOLS" in branch
+    assert "_workspace_tool_floor" in branch
 
 
 @pytest.mark.skipif(

@@ -119,6 +119,7 @@ def tools_sent(
     settings=None,
     supports_tools=True,
     messages=None,
+    uploaded_files=None,
 ):
     """Drive the real `stream_agent_loop` and return the tool names the model got.
 
@@ -182,6 +183,7 @@ def tools_sent(
                 tool_policy=tool_policy,
                 active_document=active_document,
                 active_email=active_email,
+                uploaded_files=uploaded_files,
                 harness_options={
                     "checkpoints": False,
                     "run_tests": False,
@@ -201,6 +203,23 @@ def tools_sent(
         for schema in captured[0]
         if schema.get("function")
     )
+
+
+def test_workspace_fix_archive_uses_execution_toolset_not_chat_noise(workspace):
+    names = tools_sent(
+        "Estos son los arreglos para el codigo, por chatgpt",
+        workspace,
+        uploaded_files=[{
+            "id": "fixes.zip",
+            "name": "fixes.zip",
+            "mime": "application/zip",
+            "size": 123,
+            "path": str(workspace) + "/fixes.zip",
+        }],
+    )
+
+    assert {"read_file", "apply_patch", "bash", "python"} <= set(names)
+    assert "chat_with_model" not in names
 
 
 # --------------------------------------------------------------------------
@@ -323,18 +342,11 @@ def test_edit_floor_holds_for_any_code_request(message, kind, workspace):
 
 
 @pytest.mark.parametrize("message", VAGUE_REQUESTS)
-def test_vague_turn_keeps_its_read_only_shape(message, workspace):
-    """The edit half waits for a request that actually asks for work.
-
-    Pre-existing behaviour (`tests/test_workspace_confine.py`): a vague turn
-    with a workspace bound gets tools to investigate with, not to write with.
-    The floor extends the read half to that turn and leaves the rest as it was.
-    """
+def test_vague_turn_in_agent_workspace_keeps_execution_shape(message, workspace):
+    """A terse follow-up must not remove execution from a bound Agent workspace."""
     names = set(tools_sent(message, workspace))
     assert "read_file" in names and "ls" in names, sorted(names)
-    assert not names & {"edit_file", "apply_patch", "write_file", "bash", "python"}, (
-        f"vague turn was handed write/shell tools: {sorted(names)}"
-    )
+    assert {"edit_file", "apply_patch", "write_file", "bash", "python"} <= names, sorted(names)
 
 
 def test_do_it_continuation_keeps_the_complete_git_action_family(workspace):

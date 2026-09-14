@@ -155,6 +155,46 @@ def test_loop_breaker_suppresses_only_repeated_tool_and_continues(monkeypatch):
     assert "update_plan" in schemas_by_round[3]
     assert "read_file" in schemas_by_round[3]
     assert executed == ["update_plan", "update_plan", "read_file"]
+
+
+def test_repeated_probe_narration_does_not_count_as_progress(monkeypatch):
+    """Qwen must not evade the loop breaker by narrating the same tool call."""
+    _patch_common(monkeypatch)
+    monkeypatch.setattr(al, "blocked_tools_for_owner", lambda owner: set(), raising=False)
+    monkeypatch.setattr(
+        al, "_agent_route_tool_mode", lambda *args, **kwargs: (True, False, False),
+        raising=False,
+    )
+    rounds = 0
+    executed = []
+
+    async def _fake_stream(_candidates, messages, **kwargs):
+        nonlocal rounds
+        rounds += 1
+        if rounds <= 3:
+            yield f'data: {json.dumps({"delta": "Voy a diagnosticarlo otra vez."})}\n\n'
+            yield f'data: {json.dumps({"type": "tool_calls", "calls": [{"name": "update_plan", "arguments": json.dumps({"plan": "- [ ] diagnose"})}]})}\n\n'
+            yield f'data: {json.dumps({"type": "finish", "finish_reason": "tool_calls"})}\n\n'
+        else:
+            yield f'data: {json.dumps({"delta": "No repetiré el diagnóstico."})}\n\n'
+            yield f'data: {json.dumps({"type": "finish", "finish_reason": "stop"})}\n\n'
+        yield "data: [DONE]\n\n"
+
+    async def _fake_exec(block, *args, **kwargs):
+        executed.append(block.tool_type)
+        return block.tool_type, {"output": "same result", "exit_code": 0}
+
+    monkeypatch.setattr(al, "stream_llm_with_fallback", _fake_stream, raising=False)
+    monkeypatch.setattr(al, "execute_tool_block", _fake_exec, raising=False)
+    events = _types(_collect(al.stream_agent_loop(
+        "http://127.0.0.1:11434/v1", "qwen3.8:27b-q8_0",
+        [{"role": "user", "content": "Fix the bug in app.py"}],
+        max_rounds=6,
+        relevant_tools={"update_plan", "edit_file", "read_file"},
+    )))
+
+    assert any(e.get("type") == "loop_breaker_triggered" for e in events), (events, executed, rounds)
+    assert executed == ["update_plan", "update_plan"]
     summary = next(e for e in events if e.get("type") == "harness_summary")
     assert summary["data"]["stop_reason"] == "complete"
 

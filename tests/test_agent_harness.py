@@ -407,6 +407,9 @@ def test_workspace_runtime_error_report_is_actionable_coding_intent():
 
 
 @pytest.mark.parametrize("text", [
+    "Sigue",
+    "Continúa",
+    "Hazlo",
     "Still same fucking problem. THINK",
     "Same error again",
     "Sigue exactamente igual, el mismo fallo",

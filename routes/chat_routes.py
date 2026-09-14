@@ -3722,6 +3722,18 @@ def setup_chat_routes(
                             if _git_policy_before:
                                 yield f"data: {json.dumps({'type': 'git_policy', 'data': _git_policy_before})}\n\n"
 
+                        # Current-turn uploads are owner-checked and each stored
+                        # file is an exact additional root. This lets read_file
+                        # open a truncated text attachment while the rest of the
+                        # turn remains confined to the project workspace, and
+                        # exposes an archive's real path without exposing any
+                        # sibling uploads.
+                        _turn_file_roots = list(_project_roots or [])
+                        for _upload in ctx.uploaded_files:
+                            _upload_path = str(_upload.get("path") or "").strip()
+                            if _upload_path and _upload_path not in _turn_file_roots:
+                                _turn_file_roots.append(_upload_path)
+
                         async for chunk in stream_agent_loop(
                             sess.endpoint_url,
                             sess.model,
@@ -3751,7 +3763,7 @@ def setup_chat_routes(
                             plan_mode=plan_mode,
                             approved_plan=approved_plan or None,
                             workspace=workspace or None,
-                            workspace_roots=_project_roots or None,
+                            workspace_roots=_turn_file_roots or None,
                             relevant_tools=(
                                 set(pending_tool_approval.selected_tools)
                                 if exact_tool_approval

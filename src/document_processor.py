@@ -8,6 +8,7 @@ import logging
 import mimetypes
 import base64
 import tempfile
+import zipfile
 from itertools import islice
 from typing import List, Dict, Any, Optional
 
@@ -117,6 +118,32 @@ def _process_text_file(path: str) -> str:
         if truncated:
             result += "\n[Truncated]"
         return result
+
+
+def _process_zip_file(path: str, display_name: str) -> str:
+    """Expose a ZIP as a bounded manifest without extracting untrusted paths."""
+    max_members = 200
+    try:
+        with zipfile.ZipFile(path) as archive:
+            infos = archive.infolist()
+            lines = [
+                f"\n\n=== ZIP archive: {display_name} ===",
+                f"Owner-checked path: {os.path.realpath(path)}",
+                f"Members: {len(infos)}; uncompressed bytes: "
+                f"{sum(max(0, info.file_size) for info in infos)}",
+                "Use Python zipfile or PowerShell to inspect/read specific members. "
+                "Do not call read_file on the ZIP binary itself. Extract only inside the active workspace.",
+                "Archive contents:",
+            ]
+            for info in infos[:max_members]:
+                suffix = "/" if info.is_dir() and not info.filename.endswith("/") else ""
+                lines.append(f"- {info.filename}{suffix} ({info.file_size} bytes)")
+            if len(infos) > max_members:
+                lines.append(f"- ... {len(infos) - max_members} more members omitted")
+            return "\n".join(lines)
+    except (OSError, zipfile.BadZipFile, zipfile.LargeZipFile) as exc:
+        logger.warning("ZIP attachment inspection failed for %s: %s", path, exc)
+        return f"\n\n[ZIP attachment could not be inspected: {display_name} ({exc})]"
 
 
 def _now_iso() -> str:
@@ -722,6 +749,18 @@ def build_user_content(
                     content[0]["text"] += "\n\n[Audio attached but could not be processed]"
                 else:
                     content.insert(0, {"type": "text", "text": "[Audio attached but could not be processed]"})
+
+        elif ext == ".zip" or mime in {"application/zip", "application/x-zip-compressed"}:
+            extracted_text = _process_zip_file(path, display_name)
+            extracted_text, inline_attachment_remaining = _fit_inline_attachment_text(
+                extracted_text,
+                inline_attachment_remaining,
+                display_name,
+            )
+            if content and content[0]["type"] == "text":
+                content[0]["text"] += extracted_text
+            else:
+                content.insert(0, {"type": "text", "text": extracted_text.lstrip()})
 
         elif upload_handler.is_document_file(display_name, mime):
             if mime == "application/pdf":

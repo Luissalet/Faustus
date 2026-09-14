@@ -22,7 +22,7 @@ from src.context_compactor import annotate_history_positions, maybe_compact, tri
 from src.model_context import estimate_tokens, get_context_length
 from src.auth_helpers import effective_user
 from src.prompt_security import untrusted_context_message
-from src.attachment_refs import attachment_ref
+from src.attachment_refs import attachment_ref, attachment_refs_from_metadata
 from routes.prefs_routes import _load_for_user as load_prefs_for_user
 
 from fastapi import HTTPException
@@ -41,6 +41,12 @@ _CASUAL_BLOCKLIST_RE = re.compile(
     re.IGNORECASE,
 )
 
+_ATTACHMENT_CONTINUATION_RE = re.compile(
+    r"^\s*(?:continue|proceed|go\s+on|keep\s+going|resume|retry|again|do\s+it|"
+    r"sigue|contin[uú]a|adelante|hazlo|reintenta|otra\s+vez)\s*[.!?…]*\s*$",
+    re.IGNORECASE,
+)
+
 
 def _is_casual_low_signal(text: str) -> bool:
     """Short greetings/slang should not pull memory, skills, RAG, or docs."""
@@ -53,6 +59,26 @@ def _is_casual_low_signal(text: str) -> bool:
         return False
     tail_words = re.findall(r"[A-Za-z0-9_'-]+", tail)
     return len(tail_words) <= 2
+
+
+def continuation_attachment_ids(sess, message: str, current_ids: list) -> list[str]:
+    """Carry the previous user turn's attachments across a terse continuation.
+
+    The files remain owner-checked by ``build_uploaded_file_manifest``. Only
+    exact continuation phrases inherit them, so a new unrelated request never
+    receives stale attachments implicitly.
+    """
+    if current_ids or not _ATTACHMENT_CONTINUATION_RE.match(str(message or "")):
+        return [str(value) for value in (current_ids or []) if str(value).strip()]
+    for item in reversed(list(getattr(sess, "history", None) or [])):
+        if getattr(item, "role", None) != "user":
+            continue
+        refs = attachment_refs_from_metadata(getattr(item, "metadata", None))
+        ids = [str(ref.get("attachment_id") or "").strip() for ref in refs]
+        ids = [value for value in ids if value]
+        if ids:
+            return ids
+    return []
 
 
 # Strong references to in-flight fire-and-forget tasks scheduled from this
@@ -701,8 +727,9 @@ async def build_chat_context(
     # bearer-token chat requests use the token owner instead of the "api" sentinel.
     user = effective_user(request)
     uprefs = load_prefs_for_user(user)
+    _manifest_att_ids = continuation_attachment_ids(sess, message, att_ids or []) if agent_mode else (att_ids or [])
     uploaded_files = build_uploaded_file_manifest(
-        att_ids or [],
+        _manifest_att_ids,
         getattr(chat_handler, "upload_handler", None),
         getattr(sess, "owner", None),
     )

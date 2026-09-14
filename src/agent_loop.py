@@ -2100,6 +2100,7 @@ _CASUAL_BLOCKLIST_RE = re.compile(
 _EXPLICIT_CONTINUATION_RE = re.compile(
     r"^\s*(?:"
     r"yes|y|yeah|yep|ok|okay|sure|do it|go ahead|continue|carry on|"
+    r"s[ií]|sigue|contin[uú]a|hazlo|adelante|"
     r"run it|launch it|start it|use that|that one|same|the same|"
     r"first|second|third|the first one|the second one|the third one|"
     r"[123]|[abc]"
@@ -6048,7 +6049,7 @@ async def _stream_agent_loop_body(
     _t1 = time.time()
     if _relevant_tools:
         logger.info(f"[tool-rag] Using caller-provided relevant_tools ({len(_relevant_tools)} tools)")
-    # A read-only floor a low-signal turn earns from having a workspace bound.
+    # A workspace floor a low-signal turn earns from having a workspace bound.
     # It is a FLOOR and not a selection: it used to be assigned straight into
     # `_relevant_tools`, which short-circuits the retrieval below — and that is
     # how "I meant put them into the project objectives tab of the project"
@@ -6061,17 +6062,13 @@ async def _stream_agent_loop_body(
     if not guide_only and not _relevant_tools and _low_signal_turn:
         from src.tool_index import ALWAYS_AVAILABLE
         if workspace:
-            # An active workspace IS the file-work signal: a vague "look at the
-            # project" means explore this folder. Surface only the READ-ONLY file
-            # tools (intersection with the plan-mode read-only allowlist) so the
-            # agent can investigate; write/shell tools stay out until the request
-            # actually calls for them (RAG retrieval adds those on a real ask).
-            # PLAN_MODE_READONLY_TOOLS is imported at module scope; a local
-            # `from ... import` here would rebind it as a function local and
-            # leave the closures above reading it before assignment.
+            # In Agent mode, a bound workspace is already the user's declared
+            # execution scope. Terse follow-ups such as "Sigue" must never
+            # amputate the edit path merely because the wording carries no
+            # nouns. Plan mode is separately clamped read-only above.
             _low_signal_readonly_floor = set(ALWAYS_AVAILABLE)
-            _low_signal_readonly_floor |= (_DOMAIN_TOOL_MAP["files"] & PLAN_MODE_READONLY_TOOLS)
-            logger.info("[tool-rag] Low-signal but workspace active; read-only file tools as a floor, retrieval still runs")
+            _low_signal_readonly_floor |= set(_workspace_tool_floor)
+            logger.info("[tool-rag] Low-signal but workspace active; executable workspace floor retained")
         else:
             # Don't short-circuit: fall through to RAG retrieval below.
             # Non-English queries are flagged low_signal by the English-only
@@ -6175,10 +6172,17 @@ async def _stream_agent_loop_body(
         if "ui" in (_intent.get("domains") or set()):
             _relevant_tools.add("ui_control")
         if (
+            not plan_mode
+            and
             (
                 (
                     workspace
                     and _looks_like_workspace_coding_request(_retrieval_query or _last_user)
+                )
+                or (
+                    workspace
+                    and uploaded_files
+                    and "files" in (_intent.get("domains") or set())
                 )
                 or _looks_like_local_computer_request(_retrieval_query or _last_user)
             )
@@ -6201,7 +6205,7 @@ async def _stream_agent_loop_body(
             for _domain in _latest_only_domains:
                 _relevant_tools.update(_DOMAIN_TOOL_MAP.get(str(_domain), set()))
             logger.info("[tool-rag] Workspace file/terminal request; using Faustus Terminus toolset")
-        elif workspace and not _low_signal_turn and not _active_document_relevant and not active_email:
+        elif workspace and not plan_mode and not _active_document_relevant and not active_email:
             # A bound workspace is the user's declared intent to work in that
             # folder. Whatever the retriever picked (it is English-biased and
             # happily returns session/notes tools for "eliminar chats"), the
@@ -6214,9 +6218,9 @@ async def _stream_agent_loop_body(
                 logger.info("[tool-rag] Workspace bound; adding file/terminal tools: %s", sorted(_missing))
 
     # And now the low-signal floor, on top of whatever the retrieval chose.
-    # Both halves matter: the read-only file tools because a bound workspace is
-    # itself the signal, and the retrieval because a "vague" message can still
-    # name a tool out loud.
+    # A bound Agent workspace keeps the executable file/terminal floor; Plan
+    # mode's resolved floor remains read-only. Retrieval can still add tools
+    # explicitly named by a vague message.
     #
     # But a low-signal turn matched no domain by definition (`low_signal =
     # not continuation and not domains`, above), so nothing upstream seeded
@@ -6232,7 +6236,11 @@ async def _stream_agent_loop_body(
     # floor itself would have added.
     if _low_signal_readonly_floor and _relevant_tools is not None:
         _low_signal_privileged = {"bash", "python", "powershell", "write_file"} | WORKSPACE_TOOL_FLOOR_EDIT
-        _withheld = sorted(set(_relevant_tools) & _low_signal_privileged)
+        # Without a workspace, semantic retrieval alone is not authority to
+        # expose local execution. With a bound workspace, the user selected
+        # Agent mode for that folder, so keep the complete Terminus set added
+        # above; dispatch policy remains the authorization boundary.
+        _withheld = sorted(set(_relevant_tools) & _low_signal_privileged) if not workspace else []
         if _withheld:
             _relevant_tools = set(_relevant_tools) - _low_signal_privileged
             logger.info("[tool-rag] Low-signal turn; retrieval's privileged picks withheld: %s", _withheld)
@@ -6246,17 +6254,13 @@ async def _stream_agent_loop_body(
     # ran (vector retrieval, keyword fallback, the low-signal read-only branch)
     # and whatever the request happened to be worded like.
     #
-    # The edit half is held back on a low-signal turn, matching the read-only
-    # branch above: a vague "look at this" gets tools to investigate with, and
-    # the write side arrives when the request asks for work. That is the loop's
-    # own already-made judgement, not a second guess at the wording.
+    # Agent mode does not hold back the edit half merely because the latest
+    # message is terse. Plan mode is already clamped by the resolved floor.
     #
     # A caller-pinned set (an approval replay, the scheduler) is left alone:
     # that set is an authorization decision, not a retrieval result.
     if not guide_only and _relevant_tools is not None and not relevant_tools:
         _floor_add = set(_workspace_tool_floor)
-        if _low_signal_turn:
-            _floor_add -= WORKSPACE_TOOL_FLOOR_EDIT
         _floor_missing = _floor_add - set(_relevant_tools)
         if _floor_missing:
             _relevant_tools.update(_floor_missing)
@@ -9687,7 +9691,7 @@ async def _stream_agent_loop_body(
         # "Real" answer text = round text minus <think> blocks. Empty-think
         # rounds (just "<think>\n\n</think>" + a tool call) must not read as
         # progress, so strip think before checking.
-        if not _real_text and _single_tool_name in {"python", "bash", "powershell"}:
+        if _single_tool_name in {"python", "bash", "powershell"}:
             if _single_tool_name == _same_probe_tool:
                 _same_probe_rounds += 1
             else:
@@ -9696,9 +9700,11 @@ async def _stream_agent_loop_body(
         else:
             _same_probe_tool = ""
             _same_probe_rounds = 0
-        # Circling = repeating a recent call with nothing written. Any
-        # progress (a NEW distinct call, or actual answer text) resets it.
-        if _is_repeat and not _real_text:
+        # Circling = repeating a recent call without a new action. Narration
+        # is not progress: the live failure repeated the identical Python
+        # probe eleven times while prefixing every call with the same "Voy a
+        # diagnosticar..." sentence, which used to reset this counter.
+        if _is_repeat:
             _stuck_rounds += 1
         else:
             _stuck_rounds = 0

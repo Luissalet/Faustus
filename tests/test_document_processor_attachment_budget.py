@@ -1,4 +1,5 @@
 from pathlib import Path
+import zipfile
 
 
 class _UploadHandler:
@@ -78,3 +79,34 @@ def test_inline_attachment_budget_does_not_truncate_small_batches(tmp_path, monk
     assert "=== File: a.txt ===" in content
     assert "=== File: b.txt ===" in content
     assert "Attachment content truncated" not in content
+
+
+def test_zip_attachment_exposes_name_path_and_members_without_extracting(tmp_path):
+    import src.document_processor as dp
+
+    archive_path = tmp_path / "fixes.zip"
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        archive.writestr("repair/INSTRUCCIONES.md", "Apply these changes")
+        archive.writestr("repair/replacements/module.py", "VALUE = 1\n")
+    uploads = {
+        "zip": {
+            "path": str(archive_path),
+            "name": "Silhouettes_fixes.zip",
+            "mime": "application/zip",
+        }
+    }
+
+    content = dp.build_user_content(
+        "Apply these fixes.",
+        ["zip"],
+        str(tmp_path),
+        _UploadHandler(uploads),
+        owner="tester",
+    )
+
+    assert "=== ZIP archive: Silhouettes_fixes.zip ===" in content
+    assert f"Owner-checked path: {archive_path.resolve()}" in content
+    assert "repair/INSTRUCCIONES.md" in content
+    assert "repair/replacements/module.py" in content
+    assert "Do not call read_file on the ZIP binary itself" in content
+    assert not (tmp_path / "repair").exists()

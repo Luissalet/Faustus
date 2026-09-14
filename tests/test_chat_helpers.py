@@ -15,12 +15,36 @@ from routes.chat_helpers import (
     auto_name_session,
     build_chat_context,
     build_uploaded_file_manifest,
+    continuation_attachment_ids,
     clean_thinking_for_save,
     needs_auto_name,
     PreprocessedMessage,
     PresetInfo,
     save_assistant_response,
 )
+
+
+def test_terse_continuation_reuses_previous_user_attachments():
+    previous = SimpleNamespace(
+        role="user",
+        metadata={"attachments": [{"id": "fixes.zip", "name": "fixes.zip"}]},
+    )
+    current = SimpleNamespace(role="user", metadata=None)
+    sess = SimpleNamespace(history=[previous, current])
+
+    assert continuation_attachment_ids(sess, "Sigue", []) == ["fixes.zip"]
+    assert continuation_attachment_ids(sess, "Continúa.", []) == ["fixes.zip"]
+
+
+def test_unrelated_new_request_does_not_reuse_previous_attachments():
+    previous = SimpleNamespace(
+        role="user",
+        metadata={"attachments": [{"id": "old.zip", "name": "old.zip"}]},
+    )
+    sess = SimpleNamespace(history=[previous])
+
+    assert continuation_attachment_ids(sess, "Arregla ahora la interfaz", []) == []
+    assert continuation_attachment_ids(sess, "Sigue", ["new.zip"]) == ["new.zip"]
 
 
 # The privilege tests patch `effective_user` on the module OBJECT imported

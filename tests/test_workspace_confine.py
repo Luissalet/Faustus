@@ -384,17 +384,14 @@ def _sent_tool_names(monkeypatch, *, workspace, message="look at the local proje
     return {t["function"]["name"] for t in schemas if isinstance(t, dict) and "function" in t}
 
 
-def test_low_signal_with_workspace_surfaces_readonly_file_tools(monkeypatch):
+def test_low_signal_with_workspace_keeps_agent_execution_tools(monkeypatch):
     names = _sent_tool_names(monkeypatch, workspace="/tmp")
     # read-only nav tools surface so the agent can explore
     assert "read_file" in names
     assert "get_workspace" in names
     assert "grep" in names
-    # write/shell tools do NOT surface on a vague message
-    assert "write_file" not in names
-    assert "edit_file" not in names
-    assert "bash" not in names
-    assert "python" not in names
+    # A terse follow-up in an Agent workspace must still be able to act.
+    assert {"write_file", "edit_file", "apply_patch", "bash", "python"} <= names
 
 
 def test_workspace_coding_request_surfaces_edit_and_verify_tools(monkeypatch):
