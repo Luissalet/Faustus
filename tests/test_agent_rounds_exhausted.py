@@ -101,6 +101,64 @@ def test_emits_loop_breaker_triggered_when_loop_breaker_trips(monkeypatch):
     assert guard["reason"] == "loop_breaker_stall"
 
 
+def test_loop_breaker_suppresses_only_repeated_tool_and_continues(monkeypatch):
+    """A loop recovery must not turn an unfinished task into a forced answer."""
+    _patch_common(monkeypatch)
+    monkeypatch.setattr(al, "blocked_tools_for_owner", lambda owner: set(), raising=False)
+    monkeypatch.setattr(
+        al, "_agent_route_tool_mode", lambda *args, **kwargs: (True, False, False),
+        raising=False,
+    )
+    rounds = [
+        [{"name": "update_plan", "arguments": json.dumps({"plan": "- [ ] implement"})}],
+        [{"name": "update_plan", "arguments": json.dumps({"plan": "- [ ] implement"})}],
+        [{"name": "update_plan", "arguments": json.dumps({"plan": "- [ ] implement"})}],
+        [{"name": "read_file", "arguments": json.dumps({"path": "app.py"})}],
+        "Finished after continuing with the remaining tools.",
+    ]
+    round_no = 0
+    schemas_by_round = []
+    executed = []
+
+    async def _fake_stream(_candidates, messages, **kwargs):
+        nonlocal round_no
+        schemas_by_round.append({
+            schema.get("function", {}).get("name")
+            for schema in (kwargs.get("tools") or [])
+        })
+        item = rounds[round_no]
+        round_no += 1
+        if isinstance(item, str):
+            yield f'data: {json.dumps({"delta": item})}\n\n'
+            yield f'data: {json.dumps({"type": "finish", "finish_reason": "stop"})}\n\n'
+        else:
+            yield f'data: {json.dumps({"type": "tool_calls", "calls": item})}\n\n'
+            yield f'data: {json.dumps({"type": "finish", "finish_reason": "tool_calls"})}\n\n'
+        yield "data: [DONE]\n\n"
+
+    async def _fake_exec(block, *args, **kwargs):
+        executed.append(block.tool_type)
+        return block.tool_type, {"output": "ok", "exit_code": 0}
+
+    monkeypatch.setattr(al, "stream_llm_with_fallback", _fake_stream, raising=False)
+    monkeypatch.setattr(al, "execute_tool_block", _fake_exec, raising=False)
+
+    events = _types(_collect(al.stream_agent_loop(
+        "http://127.0.0.1:11434/v1", "qwen3.8:27b-q8_0",
+        [{"role": "user", "content": "Implement the project"}],
+        max_rounds=7,
+        relevant_tools={"update_plan", "read_file"},
+    )))
+
+    guard = next(e for e in events if e.get("type") == "loop_breaker_triggered")
+    assert guard["repeated_tools"] == ["update_plan"]
+    assert "update_plan" in schemas_by_round[3]
+    assert "read_file" in schemas_by_round[3]
+    assert executed == ["update_plan", "update_plan", "read_file"]
+    summary = next(e for e in events if e.get("type") == "harness_summary")
+    assert summary["data"]["stop_reason"] == "complete"
+
+
 def test_long_calls_with_same_prefix_are_not_a_loop(monkeypatch):
     """Regression for Silhouettes: exploratory Python calls shared long import
     prefixes but differed later. The loop breaker must compare the full payload,
@@ -126,5 +184,50 @@ def test_long_calls_with_same_prefix_are_not_a_loop(monkeypatch):
     )))
 
     assert not any(e.get("type") == "loop_breaker_triggered" for e in events), events
+    summary = next(e for e in events if e.get("type") == "harness_summary")
+    assert summary["data"]["stop_reason"] == "complete"
+
+
+def test_attachment_body_is_context_not_tool_routing_intent():
+    prompt = (
+        "Implement this plan to improve the project\n"
+        "=== File: implementation.md ===\n"
+        "# Plan\nConfigure the model server. Edit images. Open the UI panel. "
+        "Create calendar tasks."
+    )
+
+    intent = al._classify_agent_request([], prompt)
+
+    assert intent["retrieval_query"] == "Implement this plan to improve the project"
+    assert intent["domains"] == {"files"}
+    assert intent["low_signal"] is False
+    assert not al._detect_admin_intent([{"role": "user", "content": prompt}])
+
+
+def test_cosmetic_python_probe_variants_are_stopped_as_one_semantic_loop(monkeypatch):
+    _patch_common(monkeypatch)
+    scripted = iter([
+        f"```python\nimport vtracer\nprint({n})\n```" for n in range(5)
+    ] + ["```python\nimport vtracer\nprint('again')\n```",
+         "Continued with the implementation."])
+
+    async def _fake_stream(_candidates, messages, **kwargs):
+        yield f'data: {json.dumps({"delta": next(scripted)})}\n\n'
+        yield "data: [DONE]\n\n"
+
+    monkeypatch.setattr(al, "stream_llm_with_fallback", _fake_stream, raising=False)
+    events = _types(_collect(al.stream_agent_loop(
+        "http://127.0.0.1:11434/v1", "qwen3.8:27b-q8_0",
+        [{"role": "user", "content": "Implement the project"}],
+        max_rounds=7,
+        relevant_tools={"python", "apply_patch"},
+    )))
+
+    guard = next(e for e in events if e.get("type") == "loop_breaker_triggered")
+    assert guard["repeated_tools"] == ["python"]
+    assert "diagnostics without advancing" in guard["detail"]
+    assert guard["round"] == 5
+    redirected = next(e for e in events if e.get("type") == "loop_retry_redirected")
+    assert redirected["tool"] == "python"
     summary = next(e for e in events if e.get("type") == "harness_summary")
     assert summary["data"]["stop_reason"] == "complete"

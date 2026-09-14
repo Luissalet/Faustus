@@ -117,7 +117,9 @@ def test_editing_one_file_and_reporting_two_is_not_verified(tmp_path, monkeypatc
     statuses = [c["status"] for c in checks]
     # The turn used to end here as "verified": one real mutation was enough.
     assert "verified" not in statuses, statuses
-    assert statuses.count("rejected") == 2, statuses
+    assert statuses.count("rejected") == 4, statuses
+    assert any(c.get("status") == "auto_continue" and c.get("reason") == "execution_recovery"
+               for c in checks), checks
     assert "unverified" in statuses, statuses
 
     flagged = [c for c in checks if c["status"] in ("rejected", "unverified")]
@@ -134,13 +136,12 @@ def test_editing_one_file_and_reporting_two_is_not_verified(tmp_path, monkeypatc
     assert any(n.startswith("unverified_claims:") and "claimed_paths_untouched" in n
                for n in summary["notes"]), summary["notes"]
 
-    # The visible answer carries the Spanish note, naming the file it never wrote
-    # and NOT claiming that nothing was done.
-    text = "".join(e["delta"] for e in events if "delta" in e and not e.get("type"))
-    assert "Verificación del harness" in text
-    assert "`tests/test_cart.py`" in text
-    assert "ninguno" not in text
-    assert calls["n"] == 4      # edit round + answer + 2 rejected retries
+    # Rejected narration is replaced, not preserved with a warning appended.
+    replacement = next(e for e in events if e.get("type") == "response_replace")
+    assert "`cart.py`" in replacement["text"]
+    assert "sigue pendiente" in replacement["text"]
+    assert "tests/test_cart.py" not in replacement["text"]
+    assert calls["n"] == 7      # edit + 2 rejection cycles + one forced execution recovery
 
 
 def test_the_model_that_writes_both_files_is_verified(tmp_path, monkeypatch):

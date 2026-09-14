@@ -1402,6 +1402,38 @@ class TurnLedger:
             )
         return head + "; ".join(parts) + "." + tail
 
+    def failure_response(self, check: Dict[str, Any]) -> str:
+        """Truthful replacement for a repeatedly rejected final answer.
+
+        This is deliberately a complete answer, not a suffix: unsupported
+        completion prose must not survive in the transcript or history.
+        """
+        touched = self.mutated_paths()
+        if self.language == "es":
+            if touched:
+                files = ", ".join(f"`{p}`" for p in touched)
+                return (
+                    "No he completado ni verificado todo lo afirmado en este turno. "
+                    f"Los únicos archivos modificados realmente fueron: {files}. "
+                    "El verificador rechazó el cierre del modelo y la tarea sigue pendiente."
+                )
+            return (
+                "No hice ningún cambio verificable en este turno. El modelo afirmó haber "
+                "terminado sin ejecutar ninguna escritura y el verificador rechazó esa "
+                "afirmación. La tarea sigue pendiente."
+            )
+        if touched:
+            files = ", ".join(f"`{p}`" for p in touched)
+            return (
+                "I did not complete or verify everything claimed in this turn. "
+                f"The only files actually modified were: {files}. The verifier rejected "
+                "the model's final claim, and the task remains unfinished."
+            )
+        return (
+            "I made no verified changes in this turn. The model claimed completion without "
+            "executing any write, so the verifier rejected that claim. The task remains unfinished."
+        )
+
     def summary(self, git: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         return {
             "language": self.language,

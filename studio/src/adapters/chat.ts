@@ -382,6 +382,7 @@ export type SubagentPayload = Record<string, unknown>;
 /** Everything the stream can say, narrowed to what the screen renders. */
 export type ChatEvent =
   | { type: 'delta'; text: string; thinking: boolean }
+  | { type: 'response_replace'; text: string }
   | { type: 'heartbeat'; phase: string; phaseAt: number; tool: string; detail: string; round: number }
   | { type: 'tool_start'; tool: string; command: string; fullCommand?: string; round: number }
   | { type: 'tool_progress'; tool: string; message: string }
@@ -1315,6 +1316,9 @@ export function decode(raw: Record<string, unknown>, sseEvent: string | null): C
   }
   if (typeof raw.delta === 'string') {
     return { type: 'delta', text: raw.delta, thinking: Boolean(raw.thinking) };
+  }
+  if (raw.type === 'response_replace') {
+    return { type: 'response_replace', text: str(raw.text) };
   }
   const data = (raw.data && typeof raw.data === 'object' ? raw.data : {}) as Record<string, unknown>;
   switch (raw.type) {

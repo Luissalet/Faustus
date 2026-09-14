@@ -3787,6 +3787,10 @@ def setup_chat_routes(
                                             full_response += data["delta"]
                                             _stream_set(session, partial=full_response)
                                         yield chunk
+                                    elif data.get("type") == "response_replace":
+                                        full_response = str(data.get("text") or "")
+                                        _stream_set(session, partial=full_response)
+                                        yield chunk
                                     elif data.get("type") == "web_sources":
                                         web_sources = data.get("data", [])
                                         yield chunk
@@ -4465,6 +4469,8 @@ def setup_chat_routes(
                     if isinstance(data, dict):
                         if "delta" in data and not data.get("thinking"):
                             full_response += data["delta"]
+                        elif data.get("type") == "response_replace":
+                            full_response = str(data.get("text") or "")
                         elif data.get("type") in ("metrics", "agent_terminal"):
                             last_metrics = data.get("data") or {}
                 yield chunk

@@ -1579,6 +1579,23 @@ _ADMIN_KEYWORDS = [
     "note", "notes", "todo", "todos", "reminder", "reminders",
 ]
 
+_ATTACHED_FILE_ENVELOPE_RE = re.compile(r"(?m)^=== File: .+? ===\s*$")
+
+
+def _request_text_without_attached_files(text: str) -> str:
+    """Return the user's instruction, excluding appended attachment bodies.
+
+    The chat route appends readable uploads as ``=== File: ... ===`` followed
+    by their contents.  Those contents are context/data, not instructions for
+    tool routing.  Treating a 399-line implementation plan as part of the
+    command caused words such as model, image, task and panel to select five
+    unrelated tool domains (58 schemas for a local coding turn).
+    """
+    value = str(text or "")
+    match = _ATTACHED_FILE_ENVELOPE_RE.search(value)
+    return value[:match.start()].strip() if match else value
+
+
 def _detect_admin_intent(messages: List[Dict]) -> bool:
     """Check if the last user message suggests admin/management tool usage."""
     for msg in reversed(messages):
@@ -1586,7 +1603,7 @@ def _detect_admin_intent(messages: List[Dict]) -> bool:
             content = msg.get("content", "")
             if isinstance(content, list):
                 content = " ".join(b.get("text", "") for b in content if isinstance(b, dict))
-            content_lower = content.lower()
+            content_lower = _request_text_without_attached_files(content).lower()
             return any(kw in content_lower for kw in _ADMIN_KEYWORDS)
     return False
 
@@ -1720,6 +1737,12 @@ _WORKSPACE_CODE_TARGET_RE = re.compile(
     r"mk|cmake|md|rst|txt|csv|tsv|xml|svg|log)\b)",
     re.IGNORECASE,
 )
+_WORKSPACE_FAILURE_REPORT_RE = re.compile(
+    r"\b(?:error|exception|traceback|failure|failed|failing|crash(?:ed|es|ing)?|"
+    r"bug|broken|doesn'?t work|does not work|not working|not watertight|unpaired|"
+    r"errores?|excepciones?|fallos?|falla|fallando|no funciona|roto|rota)\b",
+    re.IGNORECASE,
+)
 _EXPLICIT_WORKSPACE_REFERENCE_RE = re.compile(
     r"\b(?:in|inside|within|from|this|current|active)\s+(?:the\s+)?workspace\b"
     r"|\b(?:this|current|active)\s+(?:workspace|repo|project)\b",
@@ -1744,6 +1767,13 @@ def _looks_like_workspace_coding_request(text: str) -> bool:
     if not text.strip():
         return False
     if re.search(r"\b(?:pull request|pr|diff|patch)\b", text, re.IGNORECASE):
+        return True
+    # A concrete runtime/build failure pasted into an Agent turn with a bound
+    # workspace is itself a request to investigate and fix it. Requiring an
+    # imperative verb here classified reports such as "Error: Mesh is not
+    # watertight" as vague chat and then deliberately removed every write
+    # tool, making successful follow-through impossible.
+    if _WORKSPACE_FAILURE_REPORT_RE.search(text):
         return True
     return bool(_WORKSPACE_CODE_ACTION_RE.search(text) and _WORKSPACE_CODE_TARGET_RE.search(text))
 
@@ -2081,6 +2111,14 @@ _EXPLICIT_CONTINUATION_RE = re.compile(
     r")\s*(?:[.!?]+\s*)?$",
     re.IGNORECASE,
 )
+_PROBLEM_CONTINUATION_RE = re.compile(
+    r"^\s*(?:no[,;:]?\s+)?(?:it'?s\s+)?(?:still\b.{0,80}\b(?:same|problem|bug|error|issue)|"
+    r"same\b.{0,80}\b(?:problem|bug|error|issue)|"
+    r"(?:same|still)\s+(?:fucking\s+)?(?:problem|bug|error|issue)|"
+    r"sigue\b.{0,80}\b(?:igual|fallando|el\s+(?:mismo\s+)?(?:problema|fallo|error))|"
+    r"(?:mismo|misma)\b.{0,40}\b(?:problema|fallo|error))",
+    re.IGNORECASE | re.DOTALL,
+)
 _RETRY_CONTINUATION_RE = re.compile(
     r"\b(?:try again|retry|again|rerun|re-run|run it again|launch it again|"
     r"start it again|failed|fails?|died|crashed|broke|insta|instantly)\b",
@@ -2095,7 +2133,8 @@ _COOKBOOK_CONTEXT_RE = re.compile(
 )
 def _is_explicit_continuation(text: str) -> bool:
     """Only these terse replies may inherit older user turns for tool retrieval."""
-    return bool(_EXPLICIT_CONTINUATION_RE.match(str(text or "").strip()))
+    value = str(text or "").strip()
+    return bool(_EXPLICIT_CONTINUATION_RE.match(value) or _PROBLEM_CONTINUATION_RE.match(value))
 
 
 def _is_casual_low_signal(text: str) -> bool:
@@ -2182,14 +2221,27 @@ def _classify_agent_request(messages: List[Dict], last_user: str, *,
     (`harness_options["answers_question"]`): no wording heuristic can beat
     that, so it wins outright.
     """
-    text = str(last_user or "").strip()
+    raw_text = str(last_user or "").strip()
+    has_attached_file = bool(_ATTACHED_FILE_ENVELOPE_RE.search(raw_text))
+    # Uploaded document bodies are evidence for the model, not user intent
+    # for domain/tool selection.  Route from the words the user actually
+    # typed before the attachment envelope.
+    text = _request_text_without_attached_files(raw_text).strip()
     retry_continuation = _is_contextual_retry_continuation(messages, text)
     continuation = (forced_continuation or _is_explicit_continuation(text)
                     or _assistant_requested_followup(messages) or retry_continuation)
     retrieval_query = _recent_context_for_retrieval(messages) if continuation else text
     q = retrieval_query.lower()
 
-    if not text or bool(_LOW_SIGNAL_RE.match(text)) or _is_casual_low_signal(text):
+    attached_implementation = bool(
+        has_attached_file
+        and re.search(
+            r"\b(?:implement|implementa|implementar|execute|ejecuta|apply|aplica|build|crea|haz)\b",
+            text,
+            re.IGNORECASE,
+        )
+    )
+    if (not text or bool(_LOW_SIGNAL_RE.match(text)) or _is_casual_low_signal(text)) and not attached_implementation:
         return {
             "low_signal": True,
             "continuation": False,
@@ -2198,6 +2250,12 @@ def _classify_agent_request(messages: List[Dict], last_user: str, *,
         }
 
     domains: Set[str] = set()
+
+    if attached_implementation:
+        # "Implement this" plus an attached plan is a concrete workspace
+        # coding request. The attachment supplies the specification; it does
+        # not make the instruction vague or conversational.
+        domains.add("files")
 
     def has(*patterns: str) -> bool:
         return any(re.search(p, q) for p in patterns)
@@ -2330,7 +2388,7 @@ def _classify_agent_request(messages: List[Dict], last_user: str, *,
     # The domain keywords above are English; a coding request in Spanish
     # ("Arregla el fallo que hay al borrar") matched nothing, was classified
     # low-signal and — even with a workspace bound — got read-only tools.
-    if not domains and _looks_like_workspace_coding_request(text):
+    if not domains and _looks_like_workspace_coding_request(retrieval_query):
         domains.add("files")
     low_signal = not continuation and not domains
     return {
@@ -6128,13 +6186,19 @@ async def _stream_agent_loop_body(
             and not active_email
         ):
             _relevant_tools = set(_WORKSPACE_TERMINUS_TOOLS)
-            # The replacement drops the retriever's noise on purpose — but the
-            # deterministic domain seeds are not noise. Seen live: "captura
-            # de pantalla de mi escritorio (la pantalla del PC…)" is both a
-            # local-computer request and domain `desktop`; without this the
-            # desktop tools vanished and the model said it cannot see the
-            # screen.
-            for _domain in (_intent.get("domains") or set()):
+            # The replacement drops retriever noise on purpose. On a short
+            # continuation such as "Implement this", `_intent.domains` comes
+            # from prior context; words such as image, model, task and panel in
+            # an attached implementation plan used to re-add media, Cookbook,
+            # personal-task and UI families — 58 schemas in the Silhouettes
+            # incident. Preserve only domains explicitly present in the latest
+            # user message. This still keeps real mixed requests such as an
+            # explicit desktop screenshot while preventing old plan prose from
+            # flooding a local coding model's tool menu.
+            _latest_only_domains = (
+                _classify_agent_request([], _last_user).get("domains") or set()
+            )
+            for _domain in _latest_only_domains:
                 _relevant_tools.update(_DOMAIN_TOOL_MAP.get(str(_domain), set()))
             logger.info("[tool-rag] Workspace file/terminal request; using Faustus Terminus toolset")
         elif workspace and not _low_signal_turn and not _active_document_relevant and not active_email:
@@ -6958,11 +7022,22 @@ async def _stream_agent_loop_body(
     # signatures + consecutive no-text tool rounds to bail early.
     _recent_call_sigs = collections.deque(maxlen=6)
     _stuck_rounds = 0
+    # Exact signatures miss a model that keeps making cosmetic variations of
+    # the same diagnostic (observed: import vtracer; import vtracer,numpy;
+    # inspect vtracer; repeat). Track consecutive one-tool shell/Python rounds
+    # as a semantic stall as well.
+    _same_probe_tool = ""
+    _same_probe_rounds = 0
     # Frequency of each exact call signature (tool + args), for the runaway
     # backstop. Counting identical repeats — not distinct same-tool calls —
     # lets a legit batch (e.g. 18 calendar events at once) through.
     _call_freq: collections.Counter = collections.Counter()
-    _force_answer = False  # set by loop-breaker → next round runs with NO tools
+    _force_answer = False  # reserved for paths that genuinely need a final, tool-free reply
+    # Recovery never removes capabilities. It only redirects repeated
+    # diagnostic calls until the model takes a concrete progress action.
+    _loop_recovery_active = False
+    _loop_recovery_retries = 0
+    _loop_recovery_blocked_tools: Set[str] = set()
     # Supervisor: how many times we've nudged the model after it announced
     # an action without emitting the tool call. Capped to prevent a model
     # that *can't* call the tool from looping forever.
@@ -7036,6 +7111,8 @@ async def _stream_agent_loop_body(
         }) + "\n\n"
 
     _harness_final_note = ""
+    _harness_final_replacement = ""
+    _harness_execution_recoveries = 0
     _todo_nudged = False
     _round_finish_reason = None
     _harness_scope_active = bool(workspace) or _looks_like_workspace_coding_request(_last_user)
@@ -8756,7 +8833,7 @@ async def _stream_agent_loop_body(
                 ):
                     _ledger.stop_reason = "complete_unverified"
                     _ledger.notes.append("unverified_claims_forced:" + ",".join(_fa_check["reasons"]))
-                    _harness_final_note = _ledger.user_note(_fa_check, final=True)
+                    _harness_final_replacement = _ledger.failure_response(_fa_check)
                     yield (
                         "data: " + json.dumps({
                             "type": "harness_check", "status": "unverified",
@@ -8981,7 +9058,12 @@ async def _stream_agent_loop_body(
                             _HARNESS_MAX_REJECTIONS, _check.get("claims"), _check.get("bad_paths"),
                             _check.get("untouched_paths"), _check.get("intent"),
                         )
-                        if round_response.strip():
+                        # Do not feed fabricated completion prose back as an
+                        # assistant fact. It anchors smaller local models on
+                        # their own invention and makes the next retry repeat
+                        # it. Preserve partial answers only when some mutation
+                        # is real and the model merely overstated the scope.
+                        if round_response.strip() and _ledger.effects:
                             messages.append({"role": "assistant", "content": round_response})
                         messages.append({"role": "user", "content": _ledger.rejection_message(_check)})
                         yield (
@@ -8998,13 +9080,54 @@ async def _stream_agent_loop_body(
                         full_response += "\n\n"
                         yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
                         continue
-                    # Retries exhausted: accept the text but never let it pass
-                    # as verified work — annotate for the user and log it.
+                    # Give a workspace model one fresh execution cycle before
+                    # conceding failure. This is not another warning round:
+                    # reset the rejection counter, discard the fabricated
+                    # assistant prose, and require the next response to start
+                    # with a real editing/terminal tool call. The normal round
+                    # budget still protects the host from an actually broken
+                    # provider, while useful local work gets more runway.
+                    if (
+                        _harness_execution_recoveries < 1
+                        and workspace
+                        and bool(
+                            (set(_tool_names_sent) | set(_relevant_tools or []))
+                            & (WORKSPACE_TOOL_FLOOR_EDIT | {"write_file", "bash", "powershell", "python"})
+                        )
+                        and round_num < max_rounds
+                    ):
+                        _harness_execution_recoveries += 1
+                        _ledger.rejections = 0
+                        messages.append({
+                            "role": "user",
+                            "content": (
+                                "[Harness execution recovery — automatic runtime message, not a new user request] "
+                                "Stop writing status prose. Your next response must START with a tool call that "
+                                "advances the original task in the active workspace: inspect a real file if still "
+                                "necessary, then use apply_patch/edit_file/write_file or a terminal command to make "
+                                "the change and run its verification. Do not claim completion until those tool "
+                                "results exist. Continue the original task now."
+                            ),
+                        })
+                        yield (
+                            "data: " + json.dumps({
+                                "type": "harness_check", "status": "auto_continue",
+                                "reason": "execution_recovery", "round": round_num,
+                            }) + "\n\n"
+                        )
+                        full_response += "\n\n"
+                        yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
+                        continue
+
+                    # Retries exhausted: fail closed. The model's prose has
+                    # already been rejected twice, so it must never become the
+                    # visible or persisted answer merely because the retry cap
+                    # was reached.
                     logger.warning("[harness] round %s still unsupported after %s rejections: %s",
                                    round_num, _ledger.rejections, _check["reasons"])
                     _ledger.stop_reason = "complete_unverified"
                     _ledger.notes.append("unverified_claims:" + ",".join(_check["reasons"]))
-                    _harness_final_note = _ledger.user_note(_check, final=True)
+                    _harness_final_replacement = _ledger.failure_response(_check)
                     yield (
                         "data: " + json.dumps({
                             "type": "harness_check", "status": "unverified",
@@ -9496,9 +9619,64 @@ async def _stream_agent_loop_body(
         # multi-step work (file hunts, multi-host ssh, build→test→fix) rides
         # all the way to a real answer. We bail only on a streak of useless
         # rounds, or a single tool fired an absurd number of times (hard
-        # runaway backstop). On bail we don't give up — we force one
-        # tool-free round so the model declares done or declares blocked,
-        # mirroring Terminus's explicit-completion handshake.
+        # runaway backstop). Recovery keeps the complete toolset. It redirects
+        # diagnostic-only retries until the model takes a concrete progress
+        # action; package installation remains allowed, as do all file tools.
+        _real_text = _strip_think_blocks(cleaned_round).strip()
+        _single_tool_name = tool_blocks[0].tool_type if len(tool_blocks) == 1 else ""
+        _shell_progress_action = bool(
+            _single_tool_name in {"bash", "powershell"}
+            and re.search(
+                r"\b(?:pip(?:\.exe)?\s+install|python(?:\.exe)?\s+-m\s+pip\s+install|"
+                r"uv\s+(?:add|sync)|poetry\s+add|npm(?:\.cmd)?\s+(?:install|ci)|"
+                r"pnpm\s+(?:add|install)|yarn\s+(?:add|install)|cargo\s+add|"
+                r"dotnet\s+add\b.{0,80}\bpackage)\b",
+                tool_blocks[0].content or "",
+                re.IGNORECASE,
+            )
+        )
+        if (_loop_recovery_active
+                and _single_tool_name in _loop_recovery_blocked_tools
+                and not _shell_progress_action):
+            _loop_recovery_retries += 1
+            logger.warning(
+                "[agent] redirected diagnostic/read retry during loop recovery on round %d: %s",
+                round_num, _single_tool_name,
+            )
+            yield (
+                "data: " + json.dumps({
+                    "type": "loop_retry_redirected",
+                    "reason": "diagnostic_retry_after_loop",
+                    "round": round_num,
+                    "tool": _single_tool_name,
+                }) + "\n\n"
+            )
+            _emphasis = (
+                " This is another diagnostic-only retry. Make the code change now."
+                if _loop_recovery_retries >= 2 else ""
+            )
+            messages.append({
+                "role": "user",
+                "content": (
+                    "[Runtime loop recovery — not a new user request] This diagnostic "
+                    "retry was skipped because it repeats the stalled investigation. "
+                    "No tool has been removed: all tools remain available. Continue "
+                    "the original implementation plan by calling apply_patch, "
+                    "edit_file, or write_file for the next concrete code change. "
+                    "A real dependency-install command is also allowed if required."
+                    + _emphasis
+                ),
+            })
+            full_response += "\n\n"
+            yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
+            continue
+        if _shell_progress_action:
+            _loop_recovery_active = False
+            _loop_recovery_retries = 0
+            _loop_recovery_blocked_tools.clear()
+            _same_probe_tool = ""
+            _same_probe_rounds = 0
+
         _sig = "|".join(sorted(
             _tool_call_signature(b.tool_type, b.content or "") for b in tool_blocks
         ))
@@ -9509,7 +9687,15 @@ async def _stream_agent_loop_body(
         # "Real" answer text = round text minus <think> blocks. Empty-think
         # rounds (just "<think>\n\n</think>" + a tool call) must not read as
         # progress, so strip think before checking.
-        _real_text = _strip_think_blocks(cleaned_round).strip()
+        if not _real_text and _single_tool_name in {"python", "bash", "powershell"}:
+            if _single_tool_name == _same_probe_tool:
+                _same_probe_rounds += 1
+            else:
+                _same_probe_tool = _single_tool_name
+                _same_probe_rounds = 1
+        else:
+            _same_probe_tool = ""
+            _same_probe_rounds = 0
         # Circling = repeating a recent call with nothing written. Any
         # progress (a NEW distinct call, or actual answer text) resets it.
         if _is_repeat and not _real_text:
@@ -9520,10 +9706,36 @@ async def _stream_agent_loop_body(
         # Distinct calls to one tool (a real batch) are legitimate work, so we
         # count identical call signatures, not raw per-tool-type totals.
         _runaway = _detect_runaway_call(_call_freq)
-        if _stuck_rounds >= 4 or _runaway:
+        # Three identical empty-text rounds are already conclusive: the first
+        # repeat sets this to 1 and the next repeat to 2. Waiting for five
+        # identical rounds was especially expensive on large local models.
+        _semantic_probe_loop = _same_probe_rounds >= 5
+        if _stuck_rounds >= 2 or _runaway or _semantic_probe_loop:
             reason = (f"calling {_runaway} with identical arguments over and over" if _runaway
-                      else "repeating the same tool calls without new progress")
+                      else (f"cycling through {_same_probe_tool} diagnostics without advancing the task"
+                            if _semantic_probe_loop
+                            else "repeating the same tool calls without new progress"))
             logger.warning(f"[agent] loop-breaker tripped on round {round_num} ({reason}); sig={_sig[:80]!r}")
+            _looping_tool_names = {b.tool_type for b in tool_blocks}
+            _loop_recovery_active = True
+            _loop_recovery_blocked_tools = set(_looping_tool_names)
+            # A bad initial intent classification must not make recovery
+            # impossible. A bound workspace is already the user's scope; once
+            # repeated reads prove this is active project work, restore the
+            # complete file/terminal set for the very next round. This changes
+            # capability availability, not authorization: disabled/operator
+            # policy is still enforced when schemas are built and at dispatch.
+            if workspace and _relevant_tools is not None:
+                _recovery_tools = set(_WORKSPACE_TERMINUS_TOOLS) - set(disabled_tools)
+                _restored_tools = _recovery_tools - set(_relevant_tools)
+                if _restored_tools:
+                    _relevant_tools.update(_restored_tools)
+                    if _base_relevant_tools is not None:
+                        _base_relevant_tools.update(_restored_tools)
+                    logger.warning(
+                        "[agent] loop recovery restored workspace action tools: %s",
+                        sorted(_restored_tools),
+                    )
             yield (
                 "data: "
                     + json.dumps({
@@ -9531,33 +9743,35 @@ async def _stream_agent_loop_body(
                     "reason": "loop_breaker_stall",
                     "message": (
                         "The loop-breaker detected repeated tool calls without "
-                        "new progress, so the agent is being forced to stop "
-                        "using tools and give its best final answer."
+                        "new progress. All tools remain available and the agent "
+                        "is being redirected to the next implementation action."
                     ),
                     "round": round_num,
                     "detail": reason,
+                    "repeated_tools": sorted(_looping_tool_names),
                 })
                 + "\n\n"
             )
-            # The model has been executing tools, so its results are already
-            # in context. Force ONE tool-free round to converge: write the
-            # answer from what it has, or state plainly what's blocking it.
-            # The force-answer handler above salvages (grace synthesis) or
-            # apologizes honestly if it still writes nothing.
-            _off = [t for t in ("web_search", "bash")
-                    if disabled_tools and t in disabled_tools]
-            _off_note = (f" ({', '.join(_off)} is currently disabled — say so if "
-                         f"you needed it.)" if _off else "")
-            _force_answer = True
-            _ledger.stop_reason = "loop_breaker"
+            # Do not execute the duplicate that triggered recovery. Its prior
+            # result is already in context. Keep all other tools and direct the
+            # model back to the next concrete task action.
+            _stuck_rounds = 0
+            _recent_call_sigs.clear()
+            _same_probe_tool = ""
+            _same_probe_rounds = 0
+            _ledger.notes.append(
+                "loop_recovered:" + ",".join(sorted(_looping_tool_names))
+            )
             messages.append({
-                "role": "system",
+                "role": "user",
                 "content": (
-                    "You're repeating tool calls without converging. STOP calling "
-                    "tools and end the turn one of two ways: (a) write your best "
-                    "final answer NOW from the information already gathered, or "
-                    "(b) if you're genuinely blocked, say plainly what's blocking "
-                    "you in a sentence or two." + _off_note
+                    "[Runtime loop recovery — not a new user request] The current "
+                    "diagnostic call was skipped because this investigation is "
+                    "cycling. No capability has been removed and every tool remains "
+                    "available. Continue the ORIGINAL implementation plan NOW: make "
+                    "the next concrete file change with apply_patch, edit_file, or "
+                    "write_file. If a dependency is genuinely missing, install it "
+                    "directly instead of running another probe."
                 ),
             })
             full_response += "\n\n"
@@ -10536,6 +10750,17 @@ async def _stream_agent_loop_body(
             tool_events.append(tool_event)
             if block.tool_type in _VERIFIER_EFFECTFUL_TOOLS:
                 _effectful_used = True
+                if _loop_recovery_active:
+                    # Recovery achieved its purpose: the agent stopped probing
+                    # and changed the project. Command tools never disappeared;
+                    # clear only the diagnostic-redirect state so verification
+                    # can proceed normally.
+                    _loop_recovery_active = False
+                    _loop_recovery_retries = 0
+                    _loop_recovery_blocked_tools.clear()
+                    logger.info(
+                        "[agent] file mutation completed; loop recovery cleared for verification"
+                    )
 
             # What the MODEL sees from a browser page carries provenance
             # anchors (src/web_provenance.py): the url, the character range and
@@ -10725,9 +10950,14 @@ async def _stream_agent_loop_body(
             and _looks_like_success_claim(full_response)
         ):
             full_response = "I couldn't make that change because no matching tool action completed."
-    # Harness: a final answer that kept claiming unsupported work is annotated
-    # so the user never mistakes narration for changes on disk.
-    if _harness_final_note:
+    # Harness: replace rejected narration in both the live bubble and the
+    # route's saved accumulator. `response_replace` is intentionally distinct
+    # from a delta: appending a warning still leaves a false completion claim
+    # on screen and in history.
+    if _harness_final_replacement:
+        full_response = _harness_final_replacement.strip()
+        yield f"data: {json.dumps({'type': 'response_replace', 'text': full_response})}\n\n"
+    elif _harness_final_note:
         _note_delta = ("\n\n" if full_response.strip() else "") + _harness_final_note
         full_response = (full_response.rstrip() + _note_delta).strip()
         yield f"data: {json.dumps({'delta': _note_delta})}\n\n"

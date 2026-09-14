@@ -723,6 +723,8 @@ export function apply(turn: Turn, event: ChatEvent): Turn {
       return event.thinking
         ? { ...turn, thinking: turn.thinking + event.text, live: liveToken(live, now, true), uncertain: undefined }
         : { ...turn, text: turn.text + event.text, live: liveToken(live, now, false), uncertain: undefined };
+    case 'response_replace':
+      return { ...turn, text: event.text, live: liveToken(live, now, false), uncertain: undefined };
     case 'heartbeat': {
       const phase: LiveRate['phase'] =
         event.phase === 'thinking' || event.phase === 'writing' || event.phase === 'tool'

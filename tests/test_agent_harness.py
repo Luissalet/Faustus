@@ -6,6 +6,7 @@ import sys
 import pytest
 
 from src import agent_harness as h
+from src import agent_loop as al
 
 
 SCREENSHOT_CLAIM_ES = (
@@ -396,6 +397,34 @@ def test_spanish_coding_request_is_not_low_signal():
     for text in ("hola", "gracias", "Explica qué es un closure"):
         r = al._classify_agent_request([{"role": "user", "content": text}], text)
         assert r["low_signal"], text
+
+
+def test_workspace_runtime_error_report_is_actionable_coding_intent():
+    text = "When I press process: Error: Mesh is not watertight (unpaired: 46728)"
+    result = al._classify_agent_request([{"role": "user", "content": text}], text)
+    assert result["low_signal"] is False
+    assert "files" in result["domains"]
+
+
+@pytest.mark.parametrize("text", [
+    "Still same fucking problem. THINK",
+    "Same error again",
+    "Sigue exactamente igual, el mismo fallo",
+])
+def test_problem_followups_inherit_the_active_task(text):
+    assert al._is_explicit_continuation(text)
+
+
+def test_same_problem_followup_routes_back_to_workspace_tools():
+    messages = [
+        {"role": "user", "content": "Error: Mesh is not watertight when I press Process"},
+        {"role": "assistant", "content": "I will inspect the mesh pipeline."},
+        {"role": "user", "content": "Still same fucking problem. THINK"},
+    ]
+    result = al._classify_agent_request(messages, messages[-1]["content"])
+    assert result["continuation"] is True
+    assert result["low_signal"] is False
+    assert "files" in result["domains"]
 
 
 def test_whole_file_rewrite_is_noted(tmp_path):
