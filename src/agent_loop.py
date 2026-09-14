@@ -7042,6 +7042,7 @@ async def _stream_agent_loop_body(
     _loop_recovery_active = False
     _loop_recovery_retries = 0
     _loop_recovery_blocked_tools: Set[str] = set()
+    _loop_recovery_temporarily_disabled: Set[str] = set()
     # Supervisor: how many times we've nudged the model after it announced
     # an action without emitting the tool call. Capped to prevent a model
     # that *can't* call the tool from looping forever.
@@ -7682,7 +7683,11 @@ async def _stream_agent_loop_body(
             yield _budget_exhausted_event(_budget_exhaustion)
             break
         if round_num > _rounds_budget:
-            if _auto_cycles_left != 0:
+            # Unlimited local execution is completion-bound, not permission to
+            # spin forever. Once the loop breaker has identified a stalled
+            # tool family, reaching the current cycle cap must return control
+            # instead of granting another identical cycle.
+            if _auto_cycles_left != 0 and not _loop_recovery_active:
                 if _auto_cycles_left > 0:
                     _auto_cycles_left -= 1
                 _rounds_budget += max_rounds
@@ -8988,6 +8993,8 @@ async def _stream_agent_loop_body(
                 and not _ledger.events
                 and _harness_scope_active
                 and _looks_like_workspace_coding_request(_last_user)
+                and not _requires_project_objective_apply
+                and not _project_objective_unavailable
                 and _no_action_nudges < 1
                 and round_num < max_rounds
             ):
@@ -9704,7 +9711,7 @@ async def _stream_agent_loop_body(
                 "content": (
                     "[Runtime loop recovery — not a new user request] This diagnostic "
                     "retry was skipped because it repeats the stalled investigation. "
-                    "No tool has been removed: all tools remain available. Continue "
+                    "The repeatedly selected tool is temporarily unavailable. Continue "
                     "the original implementation plan by calling apply_patch, "
                     "edit_file, or write_file for the next concrete code change. "
                     "A real dependency-install command is also allowed if required."
@@ -9765,6 +9772,14 @@ async def _stream_agent_loop_body(
             _looping_tool_names = {b.tool_type for b in tool_blocks}
             _loop_recovery_active = True
             _loop_recovery_blocked_tools = set(_looping_tool_names)
+            # Hiding the stalled tool from the next schema set is essential.
+            # Merely rejecting its execution left it as the model's preferred
+            # visible choice and produced 300+ skipped Bash rounds in a live
+            # local turn. It is restored after the first real mutation.
+            _newly_suppressed = set(_looping_tool_names) - set(disabled_tools)
+            if _newly_suppressed:
+                disabled_tools.update(_newly_suppressed)
+                _loop_recovery_temporarily_disabled.update(_newly_suppressed)
             # A bad initial intent classification must not make recovery
             # impossible. A bound workspace is already the user's scope; once
             # repeated reads prove this is active project work, restore the
@@ -9789,8 +9804,8 @@ async def _stream_agent_loop_body(
                     "reason": "loop_breaker_stall",
                     "message": (
                         "The loop-breaker detected repeated tool calls without "
-                        "new progress. All tools remain available and the agent "
-                        "is being redirected to the next implementation action."
+                        "new progress. The repeated tool is temporarily hidden and "
+                        "the agent is being redirected to the next implementation action."
                     ),
                     "round": round_num,
                     "detail": reason,
@@ -9813,8 +9828,8 @@ async def _stream_agent_loop_body(
                 "content": (
                     "[Runtime loop recovery — not a new user request] The current "
                     "diagnostic call was skipped because this investigation is "
-                    "cycling. No capability has been removed and every tool remains "
-                    "available. Continue the ORIGINAL implementation plan NOW: make "
+                    "cycling. The repeated diagnostic tool is temporarily unavailable. "
+                    "Continue the ORIGINAL implementation plan NOW: make "
                     "the next concrete file change with apply_patch, edit_file, or "
                     "write_file. If a dependency is genuinely missing, install it "
                     "directly instead of running another probe."
@@ -10804,6 +10819,9 @@ async def _stream_agent_loop_body(
                     _loop_recovery_active = False
                     _loop_recovery_retries = 0
                     _loop_recovery_blocked_tools.clear()
+                    if _loop_recovery_temporarily_disabled:
+                        disabled_tools.difference_update(_loop_recovery_temporarily_disabled)
+                        _loop_recovery_temporarily_disabled.clear()
                     logger.info(
                         "[agent] file mutation completed; loop recovery cleared for verification"
                     )

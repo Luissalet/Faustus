@@ -188,7 +188,7 @@ def test_loop_breaker_suppresses_only_repeated_tool_and_continues(monkeypatch):
 
     guard = next(e for e in events if e.get("type") == "loop_breaker_triggered")
     assert guard["repeated_tools"] == ["update_plan"]
-    assert "update_plan" in schemas_by_round[3]
+    assert "update_plan" not in schemas_by_round[3]
     assert "read_file" in schemas_by_round[3]
     assert executed == ["update_plan", "update_plan", "read_file"]
 
