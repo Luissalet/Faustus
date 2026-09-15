@@ -128,7 +128,7 @@ def test_sanitize_merges_search_results_and_user_query():
     assert out[1]["content"] == (
         "UNTRUSTED SOURCE DATA\nSource: web search results\n<<<UNTRUSTED_SOURCE_DATA>>>\nHere are some web search results about python.\n<<<END_UNTRUSTED_SOURCE_DATA>>>"
     )
-    assert out[2] == {"role": "assistant", "content": "Reference context received."}
+    assert out[2] == {"role": "assistant", "content": "<<faustus_ctx_ack>>"}
     assert out[3] == {"role": "user", "content": "What is the latest version of python?"}
 
 
@@ -151,10 +151,32 @@ def test_sanitize_labels_current_request_after_untrusted_context():
     out = _sanitize_llm_messages(messages)
 
     assert [m["role"] for m in out] == ["system", "user", "assistant", "user"]
-    assert out[2] == {"role": "assistant", "content": "Reference context received."}
+    assert out[2] == {"role": "assistant", "content": "<<faustus_ctx_ack>>"}
     assert out[3]["content"] == "Why do I do this?"
     assert "UNTRUSTED SOURCE DATA" not in out[3]["content"]
     assert "prompt-injection" not in out[3]["content"]
+
+
+def test_sanitize_rewrites_legacy_reference_context_echo_in_history():
+    from src.llm_core import _sanitize_llm_messages
+
+    messages = [
+        {"role": "user", "content": "Implement the zip"},
+        {"role": "assistant", "content": "Reference context received."},
+        {"role": "user", "content": "Continua"},
+    ]
+    out = _sanitize_llm_messages(messages)
+    assert out[1] == {"role": "assistant", "content": "<<faustus_ctx_ack>>"}
+
+
+def test_is_reference_context_echo_detects_legacy_and_new():
+    from src.llm_core import is_reference_context_echo, strip_reference_context_echo
+
+    assert is_reference_context_echo("Reference context received.")
+    assert is_reference_context_echo("<<faustus_ctx_ack>>")
+    assert not is_reference_context_echo("Reference context received.\n\nReal work")
+    assert strip_reference_context_echo("Reference context received.") == ""
+    assert strip_reference_context_echo("Reference context received.\n\nDone") == "Done"
 
 
 def test_build_anthropic_payload_alternating_roles():

@@ -17,7 +17,10 @@ assert.deepEqual(insertPastedText('before AFTER end',7,12,'text'), {value:'befor
 
 const calls = [], ready = [], revoked = [], snapshots = [];
 const queue = createAttachmentUploads({
-  upload: (file,signal) => new Promise((resolve,reject) => calls.push({file,signal,resolve,reject})),
+  upload: (file,signal,onProgress) => new Promise((resolve,reject) => {
+    onProgress(0.4);
+    calls.push({file,signal,resolve,reject});
+  }),
   ready: value => ready.push(...value), change: value => snapshots.push(value.map(x=>({...x}))),
   preview: file => 'blob:'+file.name, revoke: url => revoked.push(url), timeoutMessage:()=> 'timeout', emptyMessage:()=> 'empty',
 });
@@ -26,6 +29,7 @@ try {
   queue.add([picture, new File(['a'],'second.png'), new File(['b'],'third.png')]);
   assert.equal(calls.length, 2, 'upload concurrency is bounded');
   assert.deepEqual(snapshots.at(-1).map(x=>x.state), ['uploading','uploading','queued']);
+  assert.ok(snapshots.some(s => s.some(x => x.progress === 0.4)), 'upload progress reaches the pending chip');
   assert.equal(queue.hasPending(), true, 'send guard is synchronous, even before React render');
   queue.remove('pending-1');
   assert.equal(calls[0].signal.aborted, true);
@@ -39,14 +43,18 @@ try {
   assert.equal(calls.length,4);
   calls[3].resolve([{id:'ok'}]); await settle();
   assert.deepEqual(ready, [{id:'ok'}]);
+  const late = new File(['z'],'late.wav',{type:'audio/wav'});
+  queue.add([late]);
+  queue.failFile(late, 'no audio backend');
+  assert.equal(snapshots.at(-1).find(x=>x.file===late)?.state, 'failed', 'async media gate can fail a pending chip');
   queue.dispose();
   assert.equal(calls[2].signal.aborted,true);
   calls[2].resolve([{id:'old-session'}]); await settle();
   assert.deepEqual(ready,[{id:'ok'}], 'old-session upload cannot attach to a new conversation');
-  assert.equal(new Set(revoked).size,3, 'all preview URLs are released');
-  assert.equal(revoked.length,3, 'preview URLs are released once');
+  assert.equal(new Set(revoked).size,4, 'all preview URLs are released');
+  assert.equal(revoked.length,4, 'preview URLs are released once');
   queue.resume(); queue.add([picture]);
-  calls[4].resolve([]); await settle();
+  calls[calls.length-1].resolve([]); await settle();
   assert.equal(snapshots.at(-1)[0].error,'empty');
   assert.equal(queue.hasPending(), true);
 } finally { queue.dispose(); }

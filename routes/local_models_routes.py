@@ -1058,8 +1058,24 @@ def setup_local_models_routes() -> APIRouter:
                 if need > 0:
                     reservation_id = vram_admission.try_reserve(ep["root"], name, need, budget)
                     if reservation_id is None:
-                        verdict = dict(verdict, fits=False,
-                                       reason="another load just reserved this VRAM")
+                        # Another door reserved the same pool. Re-assess so the
+                        # dialog gets a real shortfall — never "free 21 GB /
+                        # short by —" from forcing fits=False on a still-true
+                        # weights-fit verdict.
+                        try:
+                            verdict = await asyncio.to_thread(vram_admission.assess, ep["root"], name)
+                        except Exception as e:  # noqa: BLE001
+                            logger.debug("load: re-assess after reserve miss: %s", e)
+                            verdict = dict(verdict, fits=False,
+                                           reason="another load just reserved this VRAM")
+                        if verdict.get("fits") is True and not verdict.get("already_resident"):
+                            budget = int(verdict.get("budget_alongside_bytes") or 0)
+                            need = int(verdict.get("need_bytes") or verdict.get("footprint_bytes") or 0)
+                            reservation_id = vram_admission.try_reserve(ep["root"], name, need, budget) if need > 0 else None
+                            if reservation_id is None:
+                                # Assess still says it fits; do not block the
+                                # Load button on a reservation bookkeeping race.
+                                logger.warning("load: reserve missed twice for %s; loading without a reservation", name)
             if verdict.get("fits") is False:
                 raise HTTPException(409, {
                     "message": f"{name} does not fit in VRAM next to what is loaded",

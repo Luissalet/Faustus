@@ -2,6 +2,7 @@ import { t } from '../i18n';
 import { Check, Copy, CornerDownLeft } from 'lucide-react';
 import { createContext, useContext, useId, useMemo, useState, type ReactNode } from 'react';
 import { findSensitive, getDisplay, stripEmojis, useDisplay } from '../shell/display';
+import { writeClipboardText } from '../lib/clipboard-write';
 import { parseMarkdown, workspaceLink, type Block, type Footnote, type Inline } from '../lib/markdown';
 import { replaceShortcodesInProse } from '../lib/emoji';
 
@@ -98,13 +99,11 @@ function CodeBlock({ lang, code }: { lang: string; code: string }) {
         aria-label={copied ? t('Copied') : t('Copy code')}
         title={copied ? t('Copied') : t('Copy code')}
         onClick={() => {
-          navigator.clipboard
-            .writeText(code)
-            .then(() => {
-              setCopied(true);
-              setTimeout(() => setCopied(false), 1400);
-            })
-            .catch(() => undefined);
+          void writeClipboardText(code).then((ok) => {
+            if (!ok) return;
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1400);
+          });
         }}
       >
         {copied ? <Check size={13} aria-hidden="true" /> : <Copy size={13} aria-hidden="true" />}

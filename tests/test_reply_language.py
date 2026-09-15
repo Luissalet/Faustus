@@ -34,6 +34,37 @@ def user(text):
 # The reading
 # ---------------------------------------------------------------------------
 
+def test_attachment_bodies_do_not_flip_english_instruction_to_spanish():
+    """Silhouettes: English 'Implement it' + Spanish plan md must stay English."""
+    from src.reply_language import language_of, context_message
+
+    text = (
+        "This is a plan to expand the project's capabilities. Implement it\n\n"
+        "=== File: plan.md ===\n"
+        "[Type: markdown, Lines: 100, Size: 1000 bytes]\n\n"
+        "```markdown\n"
+        "# Silhouettes — Editor de capas para fabricación\n"
+        "Leer primero START_HERE.md. Después ejecutar una microtarea.\n"
+        "Una tarea no se termina por decir que está implementada.\n"
+        "```\n"
+    )
+    assert language_of(text) == "en"
+    msg = context_message([user(text)])
+    assert msg is not None
+    assert msg["_reply_language"] == "en"
+    assert "in English" in msg["content"]
+    assert "attached files" in msg["content"].lower() or "Attached files" in msg["content"]
+
+
+def test_reply_language_mismatch_detects_spanish_after_english_requirement():
+    from src.reply_language import reply_language_mismatch, mismatch_nudge_message
+
+    assert reply_language_mismatch("en", "Voy a continuar con la implementación del plan ahora.") == "es"
+    assert reply_language_mismatch("en", "I will continue implementing the plan now.") is None
+    nudge = mismatch_nudge_message("en")
+    assert nudge and "wrong language" in nudge["content"]
+
+
 def test_the_message_that_started_this_is_read_as_english():
     assert language_of(ENGLISH) == "en"
 

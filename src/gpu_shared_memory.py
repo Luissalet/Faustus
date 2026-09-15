@@ -452,6 +452,29 @@ def vram_snapshot() -> Dict[str, Any]:
     except Exception as e:  # pragma: no cover - defensive, subprocess is guarded
         logger.debug("vram snapshot failed: %s", e)
         data = {"supported": False, "reason": str(e)[:200]}
+    # nvidia-smi on WDDM occasionally omits a card for one sample. A 3→2 drop
+    # under-counts the pool by a whole 16 GB and trips a false "no room"
+    # while the Local models list still draws three cards. Re-read once
+    # before accepting a smaller set.
+    with _vram_lock:
+        prior = _vram_cache.get("data")
+    if (
+        prior
+        and prior.get("supported")
+        and data.get("supported")
+        and int(data.get("count") or 0) < int(prior.get("count") or 0)
+    ):
+        try:
+            again = _vram_uncached()
+        except Exception:
+            again = data
+        if int((again or {}).get("count") or 0) >= int(prior.get("count") or 0):
+            data = again
+        elif int((again or {}).get("count") or 0) > int(data.get("count") or 0):
+            data = again
+        else:
+            # Two consecutive smaller readings: the card really went away.
+            data = again or data
     with _vram_lock:
         _vram_cache["ts"] = time.time()
         _vram_cache["data"] = data

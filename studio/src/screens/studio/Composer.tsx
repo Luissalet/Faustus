@@ -24,6 +24,7 @@ import {
   Plug,
   Plus,
   Shield,
+  Loader2,
   RefreshCw,
   SlidersHorizontal,
   Square,
@@ -214,13 +215,16 @@ function mediaCapabilities(): Promise<MediaCapabilities | null> {
  *  refusing outright rather than spending an upload attempt on it. */
 const MAX_ATTACHMENT_BYTES = 200 * 1024 * 1024; // 200MB
 
-/** Reason a file cannot be attached, or `null` when it is fine — checked
- *  before it is ever queued, so nothing is uploaded (and no inference is
- *  ever asked to use it) for a file this can already rule out locally. */
-async function incompatibilityReason(file: File): Promise<string | null> {
+/** Sync size gate — runs before the chip appears so huge files never flash. */
+function sizeIncompatibility(file: File): string | null {
   if (file.size > MAX_ATTACHMENT_BYTES) {
     return t('{name} is too large ({size} MB) to attach.', { name: file.name, size: Math.round(file.size / 1024 / 1024) });
   }
+  return null;
+}
+
+/** Async media-backend gate — never delays the pending preview chip. */
+async function mediaIncompatibility(file: File): Promise<string | null> {
   const caps = await mediaCapabilities();
   if (!caps) return null; // unknown (not an admin session, or the probe failed): never block on a guess
   if (file.type.startsWith('audio/') && !caps.audio) {
@@ -278,7 +282,7 @@ export function Composer({
   const attachmentTarget = useRef({sessionId, setAttachments});
   attachmentTarget.current = {sessionId, setAttachments};
   const uploads = useMemo(() => createAttachmentUploads<Attachment>({
-    upload: (file, signal) => uploadFiles([file], sessionId, signal),
+    upload: (file, signal, onProgress) => uploadFiles([file], sessionId, signal, onProgress),
     ready: (uploaded) => {
       if (attachmentTarget.current.sessionId !== sessionId) return;
       attachmentTarget.current.setAttachments((list) => [...list, ...uploaded.filter((u) => !list.some((a) => a.id === u.id))]);
@@ -502,19 +506,27 @@ export function Composer({
   };
 
   /* ── Attachments ── */
-  // UX-06: filtered before anything is queued — see `incompatibilityReason`'s
-  // doc comment. `void` on purpose: the caller (paste/drop/file-input) never
-  // waits on this, so a large batch never blocks the keystroke or drop event
-  // that triggered it.
+  // Queue (and show the preview chip) on the same turn as paste/drop; only
+  // the sync size gate runs first. Media-backend checks stay async and fail
+  // the pending chip afterward — never hold the UI blank while
+  // `/api/media/capabilities` loads.
   const addFiles = (files: File[]) => {
+    const accepted: File[] = [];
+    for (const file of files) {
+      const reason = sizeIncompatibility(file);
+      if (reason) onNotice(reason, 'warning');
+      else accepted.push(file);
+    }
+    if (!accepted.length) return;
+    uploads.add(accepted);
     void (async () => {
-      const accepted: File[] = [];
-      for (const file of files) {
-        const reason = await incompatibilityReason(file);
-        if (reason) onNotice(reason, 'warning');
-        else accepted.push(file);
+      for (const file of accepted) {
+        const reason = await mediaIncompatibility(file);
+        if (reason) {
+          uploads.failFile(file, reason);
+          onNotice(reason, 'warning');
+        }
       }
-      if (accepted.length) uploads.add(accepted);
     })();
   };
 
@@ -988,19 +1000,32 @@ const AttachmentList = memo(function AttachmentList({
 }) {
   return (
     <ul className="fs-studio__attachments" aria-label={t('Attachments')}>
-      {pendingFiles.map((entry) => (
+      {pendingFiles.map((entry) => {
+        const pct = entry.state === 'uploading' && typeof entry.progress === 'number'
+          ? Math.round(entry.progress * 100)
+          : null;
+        return (
         <li key={entry.id} className="fs-studio__attachment" data-state={entry.state} data-testid="studio-pending-attachment">
-          {entry.preview ? <img src={entry.preview} alt="" width={36} height={36} /> : <FileText size={16} aria-hidden="true" />}
+          <span className="fs-studio__attachment-thumb">
+            {entry.preview ? <img src={entry.preview} alt="" width={36} height={36} /> : <FileText size={16} aria-hidden="true" />}
+            {entry.state !== 'failed' && (
+              <span className="fs-studio__attachment-spinner" aria-hidden="true">
+                <Loader2 size={14} className="fs-spin" />
+                {pct !== null && <span className="fs-studio__attachment-pct">{pct}%</span>}
+              </span>
+            )}
+          </span>
           <span className="fs-studio__attachment-info">
             <span className="fs-studio__attachment-name" title={entry.file.name}>{entry.file.name || t('Screenshot')}</span>
             <span role={entry.state === 'failed' ? 'alert' : 'status'} className="fs-studio__attachment-status">
-              {entry.state === 'failed' ? entry.error : entry.state === 'queued' ? t('Waiting to upload…') : t('Uploading…')}
+              {entry.state === 'failed' ? entry.error : entry.state === 'queued' ? t('Waiting to upload…') : pct !== null ? t('Uploading {pct}%…', { pct }) : t('Uploading…')}
             </span>
           </span>
           {entry.state === 'failed' && <button type="button" className="fs-studio__attachment-x" aria-label={t('Retry {name}', {name:entry.file.name})} onClick={() => onRetry(entry.id)}><RefreshCw size={13} aria-hidden="true" /></button>}
           <button type="button" className="fs-studio__attachment-x" aria-label={t('Remove {name}', {name:entry.file.name})} onClick={() => onRemovePending(entry.id)}><X size={12} aria-hidden="true" /></button>
         </li>
-      ))}
+        );
+      })}
       {attachments.map((a) => (
         <li key={a.id} className="fs-studio__attachment" data-image={isImage(a.mime)||undefined} data-partial={a.partial||undefined} data-testid="studio-attachment">
           {isImage(a.mime) ? (

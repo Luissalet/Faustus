@@ -34,6 +34,19 @@ from src.research_citations import language_signal
 # never does.
 MIN_SIGNAL = 1.0
 
+# Chat preprocessing appends readable uploads after the user's own words.
+# Scoring those bodies for reply language is what flipped English Silhouettes
+# turns ("Implement it" + Spanish plan zip/md) to an "answer in Spanish"
+# directive. Same envelope the agent loop already strips for tool routing.
+_ATTACHMENT_BODY_START_RE = re.compile(
+    r"(?m)^(?:=== (?:File|ZIP archive): .+? ===|\[Attached non-text file\])\s*$"
+)
+# Image / media chrome is English boilerplate and can outweigh a short Spanish
+# caption when left in the scored text.
+_ATTACHMENT_CHROME_LINE_RE = re.compile(
+    r"(?m)^\[(?:Image attached:.*?|\d+\s+inline media payload.*?omitted|Attachment:.*?)\]\s*$"
+)
+
 # Each directive is written in the language it names.  This is a runtime
 # requirement, not merely descriptive context: weaker wording was easy for
 # small/local models to lose among English tool descriptions and retrieved
@@ -42,25 +55,73 @@ _FRAME = "[Runtime requirement — reply language]\n"
 
 _DIRECTIVE: Dict[str, str] = {
     "en": "The user is writing in English. You must write your whole reply to the user in English — "
-          "narration, summaries and questions alike. Do not switch language because tools, sources "
-          "or system text use another one. Code, file paths, identifiers and tool arguments keep "
-          "their own form.",
+          "narration, summaries and questions alike. Attached files, plans, zip contents, tool output "
+          "and earlier assistant turns may be in another language; that must not change YOUR reply "
+          "language. Do not switch because tools, sources or system text use another one. Code, file "
+          "paths, identifiers and tool arguments keep their own form.",
     "es": "El usuario escribe en español. Debes escribir toda tu respuesta al usuario en español: "
-          "narración, resúmenes y preguntas. No cambies de idioma porque las herramientas, las "
-          "fuentes o el texto del sistema usen otro. El código, las rutas, los identificadores y "
-          "los argumentos de las herramientas se quedan como están.",
+          "narración, resúmenes y preguntas. Los archivos adjuntos, planes, zips, salidas de "
+          "herramientas y turnos anteriores del asistente pueden estar en otro idioma; eso no debe "
+          "cambiar el idioma de TU respuesta. No cambies porque las herramientas, las fuentes o el "
+          "texto del sistema usen otro. El código, las rutas, los identificadores y los argumentos "
+          "de las herramientas se quedan como están.",
     "fr": "L'utilisateur écrit en français. Rédige toute ta réponse à l'utilisateur en français : "
-          "narration, résumés et questions. Le code, les chemins, les identifiants et les "
+          "narration, résumés et questions. Les pièces jointes, plans, zips, sorties d'outils et "
+          "tours d'assistant précédents peuvent être dans une autre langue ; cela ne doit pas "
+          "changer la langue de TA réponse. Le code, les chemins, les identifiants et les "
           "arguments d'outils restent tels quels.",
     "de": "Der Nutzer schreibt auf Deutsch. Schreibe deine gesamte Antwort an den Nutzer auf "
-          "Deutsch: Erläuterungen, Zusammenfassungen und Rückfragen. Code, Pfade, Bezeichner und "
+          "Deutsch: Erläuterungen, Zusammenfassungen und Rückfragen. Angehängte Dateien, Pläne, "
+          "Zips, Tool-Ausgaben und frühere Assistenten-Antworten können in einer anderen Sprache "
+          "sein; das ändert nicht die Sprache deiner Antwort. Code, Pfade, Bezeichner und "
           "Tool-Argumente bleiben unverändert.",
     "pt": "O utilizador escreve em português. Escreve toda a tua resposta ao utilizador em "
-          "português: narração, resumos e perguntas. O código, os caminhos, os identificadores e "
-          "os argumentos das ferramentas ficam como estão.",
+          "português: narração, resumos e perguntas. Anexos, planos, zips, saídas de ferramentas e "
+          "turnos anteriores do assistente podem estar noutro idioma; isso não muda a língua da "
+          "TUA resposta. O código, os caminhos, os identificadores e os argumentos das ferramentas "
+          "ficam como estão.",
     "it": "L'utente scrive in italiano. Scrivi tutta la tua risposta all'utente in italiano: "
-          "narrazione, riepiloghi e domande. Il codice, i percorsi, gli identificatori e gli "
-          "argomenti degli strumenti restano come sono.",
+          "narrazione, riepiloghi e domande. Allegati, piani, zip, output degli strumenti e turni "
+          "precedenti dell'assistente possono essere in un'altra lingua; ciò non deve cambiare la "
+          "lingua della TUA risposta. Il codice, i percorsi, gli identificatori e gli argomenti "
+          "degli strumenti restano come sono.",
+}
+
+_MISMATCH_NUDGE: Dict[str, str] = {
+    "en": (
+        "[Harness check — automatic runtime message, not a new user request] "
+        "Your narration to the user is in the wrong language. The user is writing in English. "
+        "Rewrite the user-facing reply in English now. Keep code, paths and tool arguments as they "
+        "are. Do not repeat tool calls that already succeeded; do not keep answering in the previous "
+        "language just because earlier turns or attached plans used it."
+    ),
+    "es": (
+        "[Harness check — mensaje automático del runtime, no es una petición nueva del usuario] "
+        "Tu narración al usuario está en el idioma equivocado. El usuario escribe en español. "
+        "Reescribe la respuesta al usuario en español ahora. Código, rutas y argumentos de "
+        "herramientas se quedan. No repitas herramientas que ya tuvieron éxito; no sigas en el "
+        "idioma anterior solo porque turnos previos o planes adjuntos lo usaban."
+    ),
+    "fr": (
+        "[Harness check — message automatique du runtime, pas une nouvelle demande] "
+        "Ta narration est dans la mauvaise langue. L'utilisateur écrit en français. "
+        "Réécris la réponse à l'utilisateur en français maintenant."
+    ),
+    "de": (
+        "[Harness check — automatische Runtime-Nachricht, keine neue Nutzeranfrage] "
+        "Deine Erklärung ist in der falschen Sprache. Der Nutzer schreibt auf Deutsch. "
+        "Schreibe die Antwort an den Nutzer jetzt auf Deutsch."
+    ),
+    "pt": (
+        "[Harness check — mensagem automática do runtime, não é um novo pedido] "
+        "A tua narração está no idioma errado. O utilizador escreve em português. "
+        "Reescreve a resposta ao utilizador em português agora."
+    ),
+    "it": (
+        "[Harness check — messaggio automatico del runtime, non è una nuova richiesta] "
+        "La narrazione è nella lingua sbagliata. L'utente scrive in italiano. "
+        "Riscrivi ora la risposta all'utente in italiano."
+    ),
 }
 
 
@@ -83,9 +144,24 @@ def visible_text(content: Any) -> str:
     return ""
 
 
+def instruction_text_for_language(text: Any) -> str:
+    """The user's own words, without appended upload bodies or media chrome.
+
+    Attachment contents are reference data (plans, patches, images), not the
+    language the user is speaking in. Including them made English instructions
+    with Spanish plan zips pin the reply-language directive to Spanish.
+    """
+    value = visible_text(text) if not isinstance(text, str) else str(text or "")
+    match = _ATTACHMENT_BODY_START_RE.search(value)
+    if match:
+        value = value[: match.start()]
+    value = _ATTACHMENT_CHROME_LINE_RE.sub("", value)
+    return value.strip()
+
+
 def language_of(text: Any) -> Optional[str]:
     """The language one message settles, or ``None`` when it settles none."""
-    text = visible_text(text) if not isinstance(text, str) else text
+    text = instruction_text_for_language(text)
     # A direct language request wins over the language used to ask for it.
     # Anchor to the user's opening instruction, not quotations or code later.
     explicit = re.match(r"\s*(?:(?:please|por favor)[, ]+)?(?:answer|reply|respond|write|responde|contesta|escribe)"
@@ -145,7 +221,36 @@ def context_message(
         # Every language scan ignores injected context.  Keeping the marker on
         # the object itself makes the helper safe outside agent_loop too.
         "_agent_injected": "context",
+        "_reply_language": code,
     }
+
+
+def mismatch_nudge_message(required_code: str) -> Optional[Dict[str, str]]:
+    """Harness user turn that forces a rewrite into ``required_code``."""
+    body = _MISMATCH_NUDGE.get(required_code) or _MISMATCH_NUDGE.get("en")
+    if not body:
+        return None
+    return {
+        "role": "user",
+        "content": body,
+        "_agent_injected": "reply_language_mismatch",
+    }
+
+
+def reply_language_mismatch(required_code: Optional[str], reply_text: Any) -> Optional[str]:
+    """Return the observed wrong language, or ``None`` when there is no mismatch.
+
+    Used by the agent harness so a local model that keeps answering in Spanish
+    after an English user turn (Silhouettes project: directive present, still
+    "Voy a…") gets one bounded rewrite chance.
+    """
+    if not required_code or required_code not in _DIRECTIVE:
+        return None
+    # Score the narration only: strip think/tool chrome callers may leave in.
+    observed = language_of(reply_text)
+    if not observed or observed == required_code:
+        return None
+    return observed
 
 
 # ---------------------------------------------------------------------------

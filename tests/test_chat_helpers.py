@@ -34,6 +34,8 @@ def test_terse_continuation_reuses_previous_user_attachments():
 
     assert continuation_attachment_ids(sess, "Sigue", []) == ["fixes.zip"]
     assert continuation_attachment_ids(sess, "Continúa.", []) == ["fixes.zip"]
+    assert continuation_attachment_ids(sess, "Sigue implementando el plan", []) == ["fixes.zip"]
+    assert continuation_attachment_ids(sess, "Implementar todo lo posible", []) == ["fixes.zip"]
 
 
 def test_unrelated_new_request_does_not_reuse_previous_attachments():

@@ -1,7 +1,7 @@
 import { ArrowDown, ArrowUp, Download, HardDrive, RefreshCw, X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button, EmptyState, IconButton, Skeleton } from '../../components';
-import { invalidateSettings } from '../../adapters/settings';
+import { invalidateSettings, getSettings } from '../../adapters/settings';
 import {
   calibrateModel,
   cancelPull,
@@ -301,6 +301,12 @@ export function LocalModelsSection({ admin, say }: { admin: boolean; say: (t: st
   const afterChange = useCallback(() => {
     invalidateSettings();
     void refresh(true);
+    void getSettings()
+      .then((s) => {
+        setDefaultModelName(typeof s.default_model === 'string' ? s.default_model : '');
+        setDefaultEndpointId(typeof s.default_endpoint_id === 'string' ? s.default_endpoint_id : '');
+      })
+      .catch(() => undefined);
   }, [refresh]);
 
   const attach = useCallback(
@@ -387,6 +393,22 @@ export function LocalModelsSection({ admin, say }: { admin: boolean; say: (t: st
   // dead. `working` names the model whose action is in flight: its button
   // spins, and the toast says what is happening now, not only afterwards.
   const [working, setWorking] = useState<string>('');
+  // Chat default from Settings → Default AI (`default_model` /
+  // `default_endpoint_id`). Kept locally so "Set default" flips to Default
+  // the moment the save lands, without waiting for another settings fetch.
+  const [defaultModel, setDefaultModelName] = useState('');
+  const [defaultEndpointId, setDefaultEndpointId] = useState('');
+  useEffect(() => {
+    let alive = true;
+    void getSettings()
+      .then((s) => {
+        if (!alive) return;
+        setDefaultModelName(typeof s.default_model === 'string' ? s.default_model : '');
+        setDefaultEndpointId(typeof s.default_endpoint_id === 'string' ? s.default_endpoint_id : '');
+      })
+      .catch(() => undefined);
+    return () => { alive = false; };
+  }, []);
   // The capability manifest (announced vs tested) per model name. A ref
   // holds the cache itself — `capsTick` is the only thing that triggers a
   // re-render, so a manifest that arrives after the row it belongs to has
@@ -402,6 +424,8 @@ export function LocalModelsSection({ admin, say }: { admin: boolean; say: (t: st
   const act = async (fn: () => Promise<unknown>, okMsg: string, opts?: { name?: string; startMsg?: string }) => {
     if (opts?.name) setWorking(opts.name);
     if (opts?.startMsg) say(opts.startMsg);
+    // Paint the spinner / toast before Ollama's long load/unload holds the UI.
+    await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
     const started = Date.now();
     try {
       await fn();
@@ -513,7 +537,17 @@ export function LocalModelsSection({ admin, say }: { admin: boolean; say: (t: st
 
           <div className="fs-set__card">
             <h3 className="fs-set__card-title">{t('Loaded now')}</h3>
-            <LoadedList loaded={data.loaded} cards={cards} admin={admin} onUnload={(m) => void act(() => unloadModel(data.endpoint_id, m.name, false), t('Unloaded {name}', { name: m.name }))} />
+            <LoadedList
+              loaded={data.loaded}
+              cards={cards}
+              admin={admin}
+              working={working}
+              onUnload={(m) => void act(
+                () => unloadModel(data.endpoint_id, m.name, false),
+                t('Unloaded {name}', { name: m.name }),
+                { name: m.name, startMsg: t('Unloading {name}…', { name: m.name }) },
+              )}
+            />
           </div>
 
           <div className="fs-set__card">
@@ -527,9 +561,11 @@ export function LocalModelsSection({ admin, say }: { admin: boolean; say: (t: st
               optionsFor={optionsFor}
               setOptionsFor={setOptionsFor}
               working={working}
+              defaultModel={defaultModel}
+              defaultEndpointId={defaultEndpointId}
+              endpointId={data.endpoint_id}
               manifests={caps.current}
               calibrating={calibrating}
-              endpointId={data.endpoint_id}
               onCalibrate={(m) => void handleCalibrate(m)}
               onLoad={(m) => void act(async () => {
                 const out = await loadModel(data.endpoint_id, m.name, !!m.capabilities?.embedding);
@@ -541,10 +577,14 @@ export function LocalModelsSection({ admin, say }: { admin: boolean; say: (t: st
                 }
               }, t('Loaded {name}', { name: m.name }), { name: m.name, startMsg: t('Loading {name}…', { name: m.name }) })}
               onUnload={(m) => void act(() => unloadModel(data.endpoint_id, m.name, !!m.capabilities?.embedding), t('Unloaded {name}', { name: m.name }), { name: m.name, startMsg: t('Unloading {name}…', { name: m.name }) })}
-              onDefault={(m) => void act(() => setDefaultModel(data.endpoint_id, m.name), t('{name} is now the default chat model.', { name: m.name }))}
+              onDefault={(m) => void act(async () => {
+                await setDefaultModel(data.endpoint_id, m.name);
+                setDefaultModelName(m.name);
+                setDefaultEndpointId(data.endpoint_id);
+              }, t('{name} is now the default chat model.', { name: m.name }), { name: m.name, startMsg: t('Setting {name} as default…', { name: m.name }) })}
               onDelete={(m) => {
                 if (!window.confirm(t('Delete {name} from this Ollama? The files are removed from disk; pull it again to get it back.', { name: m.name }))) return;
-                void act(() => deleteModel(data.endpoint_id, m.name), t('Deleted {name}', { name: m.name }));
+                void act(() => deleteModel(data.endpoint_id, m.name), t('Deleted {name}', { name: m.name }), { name: m.name, startMsg: t('Deleting {name}…', { name: m.name }) });
               }}
               onSaveOptions={async (m, opts) => {
                 // Errors propagate: the form shows them next to the field
@@ -725,7 +765,7 @@ type LoadedModelHw02 = LoadedModel & {
   kv?: { state: 'measured' | 'unknown'; bytes_per_token?: number; context_length?: number; total_bytes?: number };
 };
 
-function LoadedList({ loaded, cards, admin, onUnload }: { loaded: LoadedModelHw02[]; cards: GpuCard[]; admin: boolean; onUnload: (m: LoadedModel) => void }) {
+function LoadedList({ loaded, cards, admin, working = '', onUnload }: { loaded: LoadedModelHw02[]; cards: GpuCard[]; admin: boolean; working?: string; onUnload: (m: LoadedModel) => void }) {
   if (!loaded.length) return <p className="fs-set__help">{t('Nothing is loaded right now.')}</p>;
   // Two large models resident at once is how the machine went down on
   // 08-09-2026 (two 27B against the commit limit). Say it here, where the
@@ -743,10 +783,12 @@ function LoadedList({ loaded, cards, admin, onUnload }: { loaded: LoadedModelHw0
       {loaded.map((m) => {
         const gpu = m.gpu_pct ?? 0;
         const spill = gpu < 100 && (m.size_cpu ?? 0) > 0;
+        const busy = working === m.name;
         return (
-          <li key={m.name} className="fs-lm__row">
+          <li key={m.name} className="fs-lm__row" data-busy={busy || undefined} aria-busy={busy || undefined}>
             <span className="fs-lm__main">
               <strong>{m.name}</strong>
+              {busy && <span className="fs-lm__pill" data-kind="busy" role="status">{t('Unloading…')}</span>}
               <span className="fs-set__help">{t('{a} resident · {b} VRAM', { a: fmtGb(m.size), b: fmtGb(m.size_vram) })}</span>
               <Placement m={m} cards={cards} />
               <span className="fs-lm__split" data-spill={spill || undefined} title={spill ? t('{n} of the weights are in system RAM — expect PCIe paging and a fraction of the speed.', { n: fmtGb(m.size_cpu) }) : undefined}>
@@ -763,7 +805,17 @@ function LoadedList({ loaded, cards, admin, onUnload }: { loaded: LoadedModelHw0
               {m.context_length ? <span className="fs-set__help">ctx {fmtCtx(m.context_length)}</span> : null}
               {untilText(m.expires_at) && <span className="fs-set__help" title={m.expires_at ?? undefined}>{untilText(m.expires_at)}</span>}
             </span>
-            {admin && <Button size="sm" variant="ghost" label={t('Unload')} onClick={() => onUnload(m)} title={t('Evict from VRAM now (keep_alive 0)')} />}
+            {admin && (
+              <Button
+                size="sm"
+                variant="ghost"
+                label={busy ? t('Unloading…') : t('Unload')}
+                loading={busy}
+                disabled={!!working && !busy}
+                onClick={() => onUnload(m)}
+                title={t('Evict from VRAM now (keep_alive 0)')}
+              />
+            )}
           </li>
         );
       })}
@@ -845,7 +897,7 @@ function optionsSummary(o?: Record<string, string | number>): string {
   return bits.join(' · ');
 }
 
-function InstalledTable({ models, cards, admin, optionsFor, setOptionsFor, working = '', manifests, calibrating = '', endpointId = '', onCalibrate, onLoad, onUnload, onDefault, onDelete, onSaveOptions }: { models: InstalledModel[]; cards: GpuCard[]; admin: boolean; optionsFor: string; setOptionsFor: (n: string) => void; working?: string; manifests?: Map<string, ModelCapabilityManifest>; calibrating?: string; endpointId?: string; onCalibrate: (m: InstalledModel) => void; onLoad: (m: InstalledModel) => void; onUnload: (m: InstalledModel) => void; onDefault: (m: InstalledModel) => void; onDelete: (m: InstalledModel) => void; onSaveOptions: (m: InstalledModel, opts: Record<string, string>) => Promise<void> }) {
+function InstalledTable({ models, cards, admin, optionsFor, setOptionsFor, working = '', defaultModel = '', defaultEndpointId = '', manifests, calibrating = '', endpointId = '', onCalibrate, onLoad, onUnload, onDefault, onDelete, onSaveOptions }: { models: InstalledModel[]; cards: GpuCard[]; admin: boolean; optionsFor: string; setOptionsFor: (n: string) => void; working?: string; defaultModel?: string; defaultEndpointId?: string; manifests?: Map<string, ModelCapabilityManifest>; calibrating?: string; endpointId?: string; onCalibrate: (m: InstalledModel) => void; onLoad: (m: InstalledModel) => void; onUnload: (m: InstalledModel) => void; onDefault: (m: InstalledModel) => void; onDelete: (m: InstalledModel) => void; onSaveOptions: (m: InstalledModel, opts: Record<string, string>) => Promise<void> }) {
   if (!models.length) return <p className="fs-set__help">{t('No models installed on this endpoint yet — pull one below.')}</p>;
   return (
     <div className="fs-lm__table" role="table">
@@ -860,11 +912,15 @@ function InstalledTable({ models, cards, admin, optionsFor, setOptionsFor, worki
       {models.map((m) => {
         const summary = optionsSummary(m.options);
         const sub = [m.family || m.families?.[0], m.license, m.modified_at ? new Date(m.modified_at).toLocaleDateString(locale()) : ''].filter(Boolean).join(' · ');
+        const busy = working === m.name;
+        const isDefault = !!defaultModel && defaultModel === m.name && (!defaultEndpointId || defaultEndpointId === endpointId);
         return (
-          <div key={m.name} className="fs-lm__trow" data-loaded={m.loaded || undefined} role="row">
+          <div key={m.name} className="fs-lm__trow" data-loaded={m.loaded || undefined} data-busy={busy || undefined} data-default={isDefault || undefined} role="row" aria-busy={busy || undefined}>
             <span className="fs-lm__main">
               <strong title={m.digest ? `digest ${m.digest}` : m.name}>{m.name}</strong>
               {m.loaded && <span className="fs-lm__pill">{t('loaded')}</span>}
+              {isDefault && <span className="fs-lm__pill" data-kind="default" data-testid="lm-default-pill">{t('default')}</span>}
+              {busy && <span className="fs-lm__pill" data-kind="busy" role="status">{m.loaded ? t('Unloading…') : t('Loading…')}</span>}
               {sub && <span className="fs-set__help">{sub}</span>}
               {summary && <span className="fs-set__help" title={t('Saved load options')}>{summary}</span>}
             </span>
@@ -878,9 +934,13 @@ function InstalledTable({ models, cards, admin, optionsFor, setOptionsFor, worki
             <span className="fs-set__help" title={t('Context length the model was trained for (from /api/show)')}>{fmtCtx(m.context_length)}</span>
             <span className="fs-lm__actions">
               {admin && (m.loaded
-                ? <Button size="sm" variant="ghost" label={working === m.name ? t('Unloading…') : t('Unload')} loading={working === m.name} disabled={!!working && working !== m.name} onClick={() => onUnload(m)} />
-                : <Button size="sm" variant="ghost" label={working === m.name ? t('Loading…') : t('Load')} loading={working === m.name} disabled={!!working && working !== m.name} onClick={() => onLoad(m)} title={t('Load into VRAM now')} />)}
-              {admin && !m.capabilities?.embedding && <Button size="sm" variant="ghost" label={t('Set default')} onClick={() => onDefault(m)} title={t('Make this the default chat model (Settings → Default AI)')} />}
+                ? <Button size="sm" variant="ghost" label={busy ? t('Unloading…') : t('Unload')} loading={busy} disabled={!!working && !busy} onClick={() => onUnload(m)} />
+                : <Button size="sm" variant="ghost" label={busy ? t('Loading…') : t('Load')} loading={busy} disabled={!!working && !busy} onClick={() => onLoad(m)} title={t('Load into VRAM now')} />)}
+              {admin && !m.capabilities?.embedding && (
+                isDefault
+                  ? <Button size="sm" variant="ghost" label={t('Default')} disabled title={t('This is the default chat model (Settings → Default AI)')} testId="lm-is-default" />
+                  : <Button size="sm" variant="ghost" label={t('Set default')} disabled={!!working} onClick={() => onDefault(m)} title={t('Make this the default chat model (Settings → Default AI)')} />
+              )}
               {admin && !m.capabilities?.embedding && (
                 <Button
                   size="sm"
@@ -892,8 +952,8 @@ function InstalledTable({ models, cards, admin, optionsFor, setOptionsFor, worki
                   title={m.loaded ? t('Run a brief capability check (under a minute) against the loaded model') : t('Load the model first — calibration never loads one on its own')}
                 />
               )}
-              {admin && <Button size="sm" variant="ghost" label={t('Options')} onClick={() => setOptionsFor(optionsFor === m.name ? '' : m.name)} title="num_ctx / num_gpu / keep_alive / main_gpu" />}
-              {admin && <Button size="sm" variant="danger" label={t('Delete')} onClick={() => onDelete(m)} title={t('Remove the model files from this Ollama')} />}
+              {admin && <Button size="sm" variant="ghost" label={t('Options')} disabled={!!working} onClick={() => setOptionsFor(optionsFor === m.name ? '' : m.name)} title="num_ctx / num_gpu / keep_alive / main_gpu" />}
+              {admin && <Button size="sm" variant="danger" label={t('Delete')} disabled={!!working} onClick={() => onDelete(m)} title={t('Remove the model files from this Ollama')} />}
             </span>
             {optionsFor === m.name && <OptionsForm model={m} cards={cards} endpointId={endpointId} onCancel={() => setOptionsFor('')} onSave={(opts) => onSaveOptions(m, opts)} />}
           </div>

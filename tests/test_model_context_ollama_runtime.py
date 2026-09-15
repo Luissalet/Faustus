@@ -22,6 +22,8 @@ def test_model_matching():
 
 def test_loaded_context_wins_over_known_table(monkeypatch):
     mc._ollama_ctx_seen.clear()
+    import src.model_load_options as mlo
+    monkeypatch.setattr(mlo, "resolve_for_request", lambda *a, **k: {})
     monkeypatch.setattr(mc.httpx, "get", lambda url, timeout=0: _Resp({"models": [
         {"name": "qwen3-coder:30b", "context_length": 32768, "size": 1, "size_vram": 1},
     ]}))
@@ -35,11 +37,36 @@ def test_loaded_context_wins_over_known_table(monkeypatch):
 
 def test_env_fallback_when_nothing_loaded(monkeypatch):
     mc._ollama_ctx_seen.clear()
+    import src.model_load_options as mlo
+    monkeypatch.setattr(mlo, "resolve_for_request", lambda *a, **k: {})
     monkeypatch.setattr(mc.httpx, "get", lambda url, timeout=0: _Resp({"models": []}))
     monkeypatch.setenv("OLLAMA_CONTEXT_LENGTH", "65536")
     assert mc._ollama_runtime_context("http://127.0.0.1:11434/v1", "qwen3-coder:30b") == 65536
     monkeypatch.delenv("OLLAMA_CONTEXT_LENGTH", raising=False)
     assert mc._ollama_runtime_context("http://127.0.0.1:11434/v1", "qwen3-coder:30b") is None
+
+
+def test_saved_num_ctx_is_the_window_the_request_will_use(monkeypatch):
+    """Settings → Local models → num_ctx is what llm_core actually sends.
+    The ledger used to show /api/ps or the model-card size instead, so a
+    model expanded to 256k still read as 32.8k."""
+    mc._ollama_ctx_seen.clear()
+    monkeypatch.setattr(mc.httpx, "get", lambda url, timeout=0: _Resp({"models": [
+        {"name": "qwen2.5:7b", "context_length": 32768},
+    ]}))
+    import src.model_load_options as mlo
+    monkeypatch.setattr(mlo, "resolve_for_request", lambda url, model, **_k: {"num_ctx": 262144})
+    ctx, known = mc._query_context_length("http://127.0.0.1:11434/v1", "qwen2.5:7b")
+    assert (ctx, known) == (262144, True)
+
+
+def test_saved_num_ctx_when_the_model_is_not_loaded_yet(monkeypatch):
+    mc._ollama_ctx_seen.clear()
+    monkeypatch.setattr(mc.httpx, "get", lambda url, timeout=0: _Resp({"models": []}))
+    monkeypatch.delenv("OLLAMA_CONTEXT_LENGTH", raising=False)
+    import src.model_load_options as mlo
+    monkeypatch.setattr(mlo, "resolve_for_request", lambda url, model, **_k: {"num_ctx": 262144})
+    assert mc._ollama_runtime_context("http://127.0.0.1:11434/v1", "qwen2.5:7b") == 262144
 
 
 def test_non_ollama_local_endpoint_untouched(monkeypatch):

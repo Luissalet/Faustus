@@ -284,10 +284,23 @@ function alignFrom(line: string): Align[] {
   });
 }
 
+/**
+ * A GFM table starts only when the delimiter has the same cell count as the
+ * header. During streaming the delimiter is often `|---` while the header
+ * already has two columns: that must not look like a table start, or
+ * parseBlocks sees a table, refuses to consume the mismatch, and never
+ * advances `i`.
+ */
+export function isTableStart(lines: string[], i: number): boolean {
+  const line = lines[i];
+  if (!line?.includes('|') || i + 1 >= lines.length || !isDelimiterRow(lines[i + 1])) return false;
+  return splitRow(line).length === splitRow(lines[i + 1]).length;
+}
+
 function startsBlock(lines: string[], i: number): boolean {
   const line = lines[i];
   if (FENCE.test(line) || RULE.test(line) || ATX.test(line) || QUOTE.test(line) || ITEM.test(line)) return true;
-  return line.includes('|') && i + 1 < lines.length && isDelimiterRow(lines[i + 1]);
+  return isTableStart(lines, i);
 }
 
 function parseList(lines: string[], start: number, ctx: Ctx): [Block, number] {
@@ -386,21 +399,19 @@ function parseBlocks(lines: string[], ctx: Ctx): Block[] {
       continue;
     }
 
-    if (line.includes('|') && i + 1 < lines.length && isDelimiterRow(lines[i + 1])) {
+    if (isTableStart(lines, i)) {
       const head = splitRow(line);
       const align = alignFrom(lines[i + 1]);
-      if (align.length === head.length) {
-        i += 2;
-        const rows: Inline[][][] = [];
-        while (i < lines.length && lines[i].trim() !== '' && lines[i].includes('|')) {
-          const cells = splitRow(lines[i]);
-          while (cells.length < head.length) cells.push('');
-          rows.push(cells.slice(0, head.length).map((cell) => parseInline(cell, ctx)));
-          i += 1;
-        }
-        out.push({ kind: 'table', head: head.map((cell) => parseInline(cell, ctx)), align, rows });
-        continue;
+      i += 2;
+      const rows: Inline[][][] = [];
+      while (i < lines.length && lines[i].trim() !== '' && lines[i].includes('|')) {
+        const cells = splitRow(lines[i]);
+        while (cells.length < head.length) cells.push('');
+        rows.push(cells.slice(0, head.length).map((cell) => parseInline(cell, ctx)));
+        i += 1;
       }
+      out.push({ kind: 'table', head: head.map((cell) => parseInline(cell, ctx)), align, rows });
+      continue;
     }
 
     if (ITEM.test(line)) {

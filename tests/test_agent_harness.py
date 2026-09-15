@@ -413,9 +413,36 @@ def test_workspace_runtime_error_report_is_actionable_coding_intent():
     "Still same fucking problem. THINK",
     "Same error again",
     "Sigue exactamente igual, el mismo fallo",
+    "Sigue implementando el plan",
+    "Continua implementando el plan del zip",
+    "Implementar todo lo posible",
+    "Keep going until the plan is finished",
 ])
 def test_problem_followups_inherit_the_active_task(text):
     assert al._is_explicit_continuation(text)
+
+
+def test_sigue_implementando_is_not_low_signal():
+    """Live Silhouettes failure: this follow-up was low_signal with domains=[]."""
+    messages = [
+        {"role": "user", "content": "Implement the plan === File: x.md ===\nplan body"},
+        {"role": "assistant", "content": "Voy a empezar."},
+        {"role": "user", "content": "Sigue implementando el plan"},
+    ]
+    result = al._classify_agent_request(messages, messages[-1]["content"])
+    assert result["continuation"] is True
+    assert result["low_signal"] is False
+    assert "files" in result["domains"]
+
+
+def test_implementar_todo_lo_posible_is_files_not_notes():
+    """Spanish 'todo lo posible' must not match English todos → notes domain."""
+    text = "Implementar todo lo posible"
+    assert al._looks_like_workspace_coding_request(text)
+    result = al._classify_agent_request([{"role": "user", "content": text}], text)
+    assert result["low_signal"] is False
+    assert "files" in result["domains"]
+    assert "notes_calendar_tasks" not in result["domains"]
 
 
 def test_same_problem_followup_routes_back_to_workspace_tools():

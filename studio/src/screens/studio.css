@@ -1353,6 +1353,53 @@ button.fs-studio__git-chip:hover {
   flex-shrink: 0;
 }
 
+.fs-studio__attachment-thumb {
+  position: relative;
+  display: grid;
+  place-items: center;
+  inline-size: 64px;
+  block-size: 64px;
+  flex-shrink: 0;
+}
+
+.fs-studio__attachment-thumb img {
+  inline-size: 100%;
+  block-size: 100%;
+}
+
+.fs-studio__attachment[data-state='queued'] .fs-studio__attachment-thumb img,
+.fs-studio__attachment[data-state='uploading'] .fs-studio__attachment-thumb img {
+  opacity: 0.45;
+}
+
+.fs-studio__attachment-spinner {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  gap: 2px;
+  color: var(--fs-text-1);
+  pointer-events: none;
+}
+
+.fs-studio__attachment-spinner .fs-spin {
+  animation: fs-spin 900ms linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fs-studio__attachment-spinner .fs-spin {
+    animation: none;
+    opacity: 0.7;
+  }
+}
+
+.fs-studio__attachment-pct {
+  font-size: 10px;
+  font-weight: var(--fs-label-weight);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
 .fs-studio__attachment-info {
   display: grid;
   min-inline-size: 0;
@@ -1398,7 +1445,9 @@ button.fs-studio__git-chip:hover {
 }
 
 .fs-studio__attachment[data-state='failed'] { border-color: var(--fs-danger); }
-.fs-studio__composer .fs-studio__attachment[data-state='failed'] {
+.fs-studio__composer .fs-studio__attachment[data-state='failed'],
+.fs-studio__composer .fs-studio__attachment[data-state='queued'],
+.fs-studio__composer .fs-studio__attachment[data-state='uploading'] {
   display: grid;
   grid-template-columns: 64px minmax(0, 1fr) 44px;
   max-inline-size: min(360px, 100%);
@@ -2653,13 +2702,12 @@ aside.fs-panel {
 
 /* UX-05/PERF-01: "volver abajo" — shown only once the reader has scrolled
    past `BOTTOM_THRESHOLD` (Transcript.tsx), same reading Studio.tsx's own
-   auto-scroll uses for "pinned to the bottom". `position: sticky` pins it to
-   the bottom of the nearest SCROLLING ancestor (`.fs-studio__scroll`, found
-   through the intervening `position: relative` sizer — sticky's containing
-   block is the scrollport, not the nearest positioned ancestor, so that is
-   not in the way) without needing a portal or a ref into a fichero ajeno. */
+   auto-scroll uses for "pinned to the bottom". Portaled onto
+   `.fs-studio__transcript-stage` (position: relative) so it floats over the
+   scrollport even when the virtualized turns sizer places the reader far
+   above the end of the conversation. */
 .fs-studio__back-to-bottom {
-  position: sticky;
+  position: absolute;
   z-index: 4;
   inset-block-end: var(--fs-space-4);
   inset-inline-start: 50%;

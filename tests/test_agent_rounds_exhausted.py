@@ -112,6 +112,94 @@ def test_workspace_acknowledgement_without_tools_is_forced_to_act(monkeypatch, t
     assert round_no >= 2
 
 
+def test_continue_after_reference_context_echo_is_forced_to_act(monkeypatch, tmp_path):
+    """Follow-ups like 'Continua' must not accept a boundary echo as done.
+
+    Live Faustus Silhouettes chat: after the zip turn, 'Continua' / 'Continua
+    implementando el plan del zip' returned only 'Reference context received.'
+    and stopped because the coding-request heuristic did not match.
+    """
+    _patch_common(monkeypatch)
+    monkeypatch.setattr(al, "blocked_tools_for_owner", lambda owner: set(), raising=False)
+    monkeypatch.setattr(
+        al, "_agent_route_tool_mode", lambda *args, **kwargs: (True, False, True),
+        raising=False,
+    )
+    round_no = 0
+
+    async def _fake_stream(_candidates, messages, **kwargs):
+        nonlocal round_no
+        round_no += 1
+        if round_no == 1:
+            yield f'data: {json.dumps({"delta": "Reference context received."})}\n\n'
+            yield f'data: {json.dumps({"type": "finish", "finish_reason": "stop"})}\n\n'
+        elif round_no == 2:
+            yield f'data: {json.dumps({"type": "tool_calls", "calls": [{"name": "read_file", "arguments": json.dumps({"path": "app.py"})}]})}\n\n'
+            yield f'data: {json.dumps({"type": "finish", "finish_reason": "tool_calls"})}\n\n'
+        else:
+            yield f'data: {json.dumps({"delta": "Continuing the zip plan."})}\n\n'
+            yield f'data: {json.dumps({"type": "finish", "finish_reason": "stop"})}\n\n'
+        yield "data: [DONE]\n\n"
+
+    monkeypatch.setattr(al, "stream_llm_with_fallback", _fake_stream, raising=False)
+    events = _types(_collect(al.stream_agent_loop(
+        "http://127.0.0.1:11434/v1", "qwen3.8:27b-q4_K_M",
+        [
+            {"role": "user", "content": "Implement the zip plan for the project"},
+            {"role": "assistant", "content": "Reference context received."},
+            {"role": "user", "content": "Continua"},
+        ],
+        workspace=str(tmp_path),
+        max_rounds=3,
+        relevant_tools={"read_file", "apply_patch", "python"},
+    )))
+
+    nudge = next((e for e in events if e.get("type") == "harness_check" and e.get("status") == "no_action"), None)
+    assert nudge is not None, events
+    assert nudge.get("reason") == "reference_context_echo"
+    assert round_no >= 2
+
+
+def test_wrong_reply_language_is_nudged_on_workspace_turn(monkeypatch, tmp_path):
+    """English user turn + Spanish narration must not end the turn silently."""
+    _patch_common(monkeypatch)
+    monkeypatch.setattr(al, "blocked_tools_for_owner", lambda owner: set(), raising=False)
+    monkeypatch.setattr(
+        al, "_agent_route_tool_mode", lambda *args, **kwargs: (True, False, True),
+        raising=False,
+    )
+    round_no = 0
+
+    async def _fake_stream(_candidates, messages, **kwargs):
+        nonlocal round_no
+        round_no += 1
+        if round_no == 1:
+            yield f'data: {json.dumps({"delta": "Voy a continuar con la implementacion del plan ahora mismo."})}\n\n'
+            yield f'data: {json.dumps({"type": "finish", "finish_reason": "stop"})}\n\n'
+        elif round_no == 2:
+            yield f'data: {json.dumps({"type": "tool_calls", "calls": [{"name": "read_file", "arguments": json.dumps({"path": "app.py"})}]})}\n\n'
+            yield f'data: {json.dumps({"type": "finish", "finish_reason": "tool_calls"})}\n\n'
+        else:
+            yield f'data: {json.dumps({"delta": "Inspected the project and continued in English."})}\n\n'
+            yield f'data: {json.dumps({"type": "finish", "finish_reason": "stop"})}\n\n'
+        yield "data: [DONE]\n\n"
+
+    monkeypatch.setattr(al, "stream_llm_with_fallback", _fake_stream, raising=False)
+    events = _types(_collect(al.stream_agent_loop(
+        "http://127.0.0.1:11434/v1", "qwen3.8:27b-q4_K_M",
+        [{"role": "user", "content": "Finish the implementation of this plan until it works"}],
+        workspace=str(tmp_path),
+        max_rounds=3,
+        relevant_tools={"read_file", "apply_patch", "python"},
+    )))
+
+    nudge = next((e for e in events if e.get("type") == "harness_check" and e.get("status") == "language_mismatch"), None)
+    assert nudge is not None, events
+    assert nudge.get("required") == "en"
+    assert nudge.get("observed") == "es"
+    assert round_no >= 2
+
+
 def test_emits_intent_nudge_exhausted_when_cap_is_exhausted(monkeypatch):
     _patch_common(monkeypatch)
 

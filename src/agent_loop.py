@@ -26,6 +26,8 @@ from src.llm_core import (
     _is_ollama_native_url,
     _normalize_http_status,
     _normalize_usage_counts,
+    is_reference_context_echo,
+    strip_reference_context_echo,
 )
 from src.model_context import estimate_tokens
 from src.context_compactor import (
@@ -1585,15 +1587,16 @@ _ATTACHED_FILE_ENVELOPE_RE = re.compile(r"(?m)^=== File: .+? ===\s*$")
 def _request_text_without_attached_files(text: str) -> str:
     """Return the user's instruction, excluding appended attachment bodies.
 
-    The chat route appends readable uploads as ``=== File: ... ===`` followed
-    by their contents.  Those contents are context/data, not instructions for
-    tool routing.  Treating a 399-line implementation plan as part of the
-    command caused words such as model, image, task and panel to select five
-    unrelated tool domains (58 schemas for a local coding turn).
+    The chat route appends readable uploads as ``=== File: ... ===`` / ZIP
+    envelopes followed by their contents.  Those contents are context/data, not
+    instructions for tool routing.  Treating a 399-line implementation plan as
+    part of the command caused words such as model, image, task and panel to
+    select five unrelated tool domains (58 schemas for a local coding turn).
     """
-    value = str(text or "")
-    match = _ATTACHED_FILE_ENVELOPE_RE.search(value)
-    return value[:match.start()].strip() if match else value
+    from src.reply_language import instruction_text_for_language
+
+    # Same envelope cut reply-language uses: File, ZIP, and non-text markers.
+    return instruction_text_for_language(text)
 
 
 def _detect_admin_intent(messages: List[Dict]) -> bool:
@@ -1684,7 +1687,7 @@ def _uploaded_files_context_message(uploaded_files: Optional[List[Dict]]) -> Opt
 
 
 _WORKSPACE_CODE_ACTION_RE = re.compile(
-    r"\b(?:fix|debug|implement|add|remove|change|update|refactor|wire|hook|"
+    r"\b(?:fix|debug|implement(?:ing|ed)?|add|remove|change|update|refactor|wire|hook|"
     r"test|verify|run|build|lint|compile|commit|branch|merge|review|"
     r"download|save|rename|move|copy|extract|convert|open|inspect|read|"
     # Spanish (the heuristic was English-only, so a bound workspace plus a
@@ -1699,14 +1702,19 @@ _WORKSPACE_CODE_ACTION_RE = re.compile(
     # (10-09-2026: "Impleméntame en este proyecto..." only entered code mode
     # because "guardar" appeared later in the sentence). The stressed vowel
     # accepts both spellings and the tail is optional.
-    r"(?:a[ñn][aá]d[ea]|añadir|anadir|agr[eé]g[ao]|agregar|cr[eé][ao]|crear|impl[eé]m[eé]nt[ao]|implementar|"
-    r"arr[eé]gl[ao]|arreglar|corr[ií]g[eo]|corregir|modif[ií]c[ao]|modificar|c[aá]mbi[ao]|cambiar|"
+    # Gerunds matter for follow-ups: "Sigue implementando el plan" used to miss
+    # every action stem (`implement` requires a word boundary, so it does not
+    # match inside `implementando`) and the turn was classified low-signal.
+    r"(?:a[ñn][aá]d[ea]|añadir|anadir|agr[eé]g[ao]|agregar|cr[eé][ao]|crear|"
+    r"impl[eé]m[eé]nt(?:[ao]|ar|ando)|"
+    r"arr[eé]gl[ao]|arreglar|arreglando|corr[ií]g[eo]|corregir|modif[ií]c[ao]|modificar|c[aá]mbi[ao]|cambiar|"
     r"elim[ií]n[ao]|eliminar|b[oó]rr[ao]|borrar|qu[ií]t[ao]|quitar|actual[ií]z[ao]|actualizar|"
     r"refactor[ií]z[ao]|refactorizar|mu[eé]v[eo]|mover|ren[oó]mbr[ao]|renombrar|rev[ií]s[ao]|revisar|"
     r"l[eé][eo]|leer|b[uú]sc[ao]|buscar|ejec[uú]t[ao]|ejecutar|pru[eé]b[ao]|probar|comp[ií]l[ao]|compilar|"
     r"inst[aá]l[ao]|instalar|escr[ií]b[eo]|escribir|programa|desarr[oó]ll[ao]|desarrollar|"
     r"int[eé]gr[ao]|integrar|con[eé]ct[ao]|conectar|rep[aá]r[ao]|reparar|soluciona|solucionar|"
     r"dep[uú]r[ao]|depurar|mej[oó]r[ao]|mejorar|optim[ií]z[ao]|optimizar|aj[uú]st[ao]|ajustar|"
+    r"sig[uv]e|contin[uú](?:a|ar|ando)|"
     r"p[oó]n(?:er|le|e)?|m[eé]te|meter|h[aá]z|hacer)(?:me|te|nos|se|l[oae]s?)?)\b",
     re.IGNORECASE,
 )
@@ -1715,6 +1723,7 @@ _WORKSPACE_CODE_TARGET_RE = re.compile(
     r"typescript|python|route|api|component|module|function|class|file|test|"
     r"bug|error|traceback|regression|failing|failure|branch|commit|folder|"
     r"directory|path|movie|video|subtitle|subtitles|srt|vtt|ass|ffmpeg|"
+    r"plan|plans|patch|zip|todo|objective|objectives|"
     # Spanish targets
     r"interfaz|bot[oó]n|botones|tarjetas?|archivos?|ficheros?|carpetas?|c[oó]digo|"
     r"proyecto|funci[oó]n|funciones|clases?|componentes?|rutas?|endpoints?|tests?|"
@@ -1723,7 +1732,8 @@ _WORKSPACE_CODE_TARGET_RE = re.compile(
     r"panel|ventana|sidebar|barra|galer[ií]a|modal|dise[ñn]o|layout|"
     r"programa|aplicaci[oó]n|web|p[aá]gina|chats?|sesiones?|usuarios?|"
     r"fallos?|problemas?|crash|excepci[oó]n|excepciones|borrado|borrar|eliminar|guardado|guardar|"
-    r"cargar|carga|arranque|inicio|login|contador|lista|listado)\b"
+    r"cargar|carga|arranque|inicio|login|contador|lista|listado|"
+    r"planes?|parche|tareas?|microtareas?|posible)\b"
     r"|(?:~?/[^\"'\s`<>]+)|(?:[A-Za-z]:\\[^\s\"']+)"
     # A bare source filename is as strong a "work in this folder" signal as
     # there is, and only *paths* used to count: "refactor the rate limiter in
@@ -2112,6 +2122,21 @@ _EXPLICIT_CONTINUATION_RE = re.compile(
     r")\s*(?:[.!?]+\s*)?$",
     re.IGNORECASE,
 )
+# Longer "keep implementing / sigue con el plan" follow-ups are still
+# continuations of the active coding task. The short-phrase regex above
+# rejects them, which made Silhouettes turns like "Sigue implementando el
+# plan" low-signal with empty domains until the coding heuristic patched
+# domains — and never re-pulled the prior plan attachment into retrieval.
+_TASK_CONTINUATION_RE = re.compile(
+    r"^\s*(?:"
+    r"(?:sigue|contin[uú]a(?:r)?|continue|keep\s+(?:going|working)|finish|hazlo|adelante)\b"
+    r".{0,100}\b(?:implement\w*|plan|patch|zip|fix|tarea|arreglo|con\s+(?:ello|eso|el\s+plan)|"
+    r"until\s+it\s+works|hasta\s+que\s+funcione)|"
+    r"implementa(?:r)?\s+todo|"
+    r"(?:keep\s+going|finish\s+(?:it|this|the\s+plan)|do\s+(?:the\s+)?(?:rest|remaining))"
+    r")",
+    re.IGNORECASE | re.DOTALL,
+)
 _PROBLEM_CONTINUATION_RE = re.compile(
     r"^\s*(?:no[,;:]?\s+)?(?:it'?s\s+)?(?:still\b.{0,80}\b(?:same|problem|bug|error|issue)|"
     r"same\b.{0,80}\b(?:problem|bug|error|issue)|"
@@ -2133,9 +2158,13 @@ _COOKBOOK_CONTEXT_RE = re.compile(
     re.IGNORECASE,
 )
 def _is_explicit_continuation(text: str) -> bool:
-    """Only these terse replies may inherit older user turns for tool retrieval."""
+    """Only these replies may inherit older user turns for tool retrieval."""
     value = str(text or "").strip()
-    return bool(_EXPLICIT_CONTINUATION_RE.match(value) or _PROBLEM_CONTINUATION_RE.match(value))
+    return bool(
+        _EXPLICIT_CONTINUATION_RE.match(value)
+        or _PROBLEM_CONTINUATION_RE.match(value)
+        or _TASK_CONTINUATION_RE.match(value)
+    )
 
 
 def _is_casual_low_signal(text: str) -> bool:
@@ -2277,7 +2306,11 @@ def _classify_agent_request(messages: List[Dict], last_user: str, *,
     ):
         domains.add("email")
     if has(
-        r"\b(notes?|todos?|to-dos?|checklists?|tasks?|task list|remind me|reminders?|buy|pickup|pick up)\b",
+        r"\b(notes?|to-dos?|checklists?|tasks?|task list|remind me|reminders?|buy|pickup|pick up)\b",
+        # English "todo/todos" as a task list — but NOT Spanish "todo lo posible"
+        # ("everything possible"), which used to route coding follow-ups into
+        # notes_calendar_tasks and skip the files domain.
+        r"\btodos?\b(?!\s+(?:lo|la|el|los|las|esto|eso|aquel|aquella|cuanto|cuánto)\b)",
         # LANG-02: nota/apunta/anota (take a note), recuerda(me)/aviso (remind).
         r"\b(notas?|apunta(?:lo|me)?|an[oó]ta(?:lo|me)?|recu[eé]rda(?:me)?|av[ií]same|pendientes? de la compra|lista de la compra)\b",
     ):
@@ -2386,10 +2419,11 @@ def _classify_agent_request(messages: List[Dict], last_user: str, *,
            r"\b(?:on|en) (?:my|the|el|mi) (?:desktop|escritorio)\b"):
         domains.add("desktop")
 
-    # The domain keywords above are English; a coding request in Spanish
-    # ("Arregla el fallo que hay al borrar") matched nothing, was classified
-    # low-signal and — even with a workspace bound — got read-only tools.
-    if not domains and _looks_like_workspace_coding_request(retrieval_query):
+    # Coding requests always need the files domain, even when another domain
+    # also matched by accident (e.g. Spanish "todo lo posible" used to add
+    # notes_calendar_tasks and then skip this fallback because domains was
+    # already non-empty).
+    if _looks_like_workspace_coding_request(retrieval_query):
         domains.add("files")
     low_signal = not continuation and not domains
     return {
@@ -5264,8 +5298,18 @@ async def _stream_agent_loop_body(
       - data: [DONE]                                        (end)
     """
 
-    from src.reply_language import context_message as _turn_language, refresh_continuation as _refresh_language
+    from src.reply_language import (
+        context_message as _turn_language,
+        refresh_continuation as _refresh_language,
+        conversation_language as _conversation_language,
+        reply_language_mismatch as _reply_language_mismatch,
+        mismatch_nudge_message as _mismatch_nudge_message,
+    )
     _reply_language_hint = _turn_language(messages)
+    _required_reply_lang = (
+        (_reply_language_hint or {}).get("_reply_language")
+        or _conversation_language(messages)
+    )
 
     run_security = ToolRunSecurityContext(
         external_untrusted_context_seen=(
@@ -7119,6 +7163,8 @@ async def _stream_agent_loop_body(
     _harness_final_replacement = ""
     _harness_execution_recoveries = 0
     _no_action_nudges = 0
+    _language_mismatch_nudges = 0
+    _pending_language_nudge = False
     _todo_nudged = False
     _round_finish_reason = None
     _harness_scope_active = bool(workspace) or _looks_like_workspace_coding_request(_last_user)
@@ -7736,6 +7782,8 @@ async def _stream_agent_loop_body(
                 _steer_src = "supervisor" if isinstance(_steer, dict) and _steer.get("source") == "supervisor" else "user"
                 if _steer_src == "user":
                     _reply_language_hint = _turn_language([{"role": "user", "content": _steer_text}]) or _reply_language_hint
+                    if _reply_language_hint and _reply_language_hint.get("_reply_language"):
+                        _required_reply_lang = _reply_language_hint.get("_reply_language")
                 messages.append({"role": "user", "content": (
                     f"[Steering message from the {_steer_src}, received while you were working — "
                     f"it refines your task; follow it from now on] {_steer_text}")})
@@ -7772,6 +7820,28 @@ async def _stream_agent_loop_body(
                 break
         if round_num > 1 or _approved_result_injected:
             _refresh_language(messages, _reply_language_hint)
+        if _pending_language_nudge and _language_mismatch_nudges < 1 and _required_reply_lang:
+            # Prior round narrated in the wrong language while also calling
+            # tools — keep the tool work, force the next narration into the
+            # user's language (Silhouettes: English error reports answered
+            # with "Voy a revisar…" after Spanish plan history).
+            _pending_language_nudge = False
+            _language_mismatch_nudges += 1
+            _lang_nudge = _mismatch_nudge_message(str(_required_reply_lang))
+            if _lang_nudge:
+                messages.append(_lang_nudge)
+                _ledger.notes.append(f"language_mismatch_nudge@{round_num}")
+                logger.warning(
+                    "[harness] injecting deferred reply-language nudge (required=%s)",
+                    _required_reply_lang,
+                )
+                yield (
+                    "data: " + json.dumps({
+                        "type": "harness_check", "status": "language_mismatch",
+                        "required": _required_reply_lang, "deferred": True,
+                        "round": max(1, round_num - 1), "attempt": 1, "max_attempts": 1,
+                    }) + "\n\n"
+                )
         round_response = ""
         round_reasoning = ""  # reasoning_content deltas (DeepSeek-thinking, vLLM --reasoning-parser)
         native_tool_calls = []  # populated if model uses function calling
@@ -8796,6 +8866,23 @@ async def _stream_agent_loop_body(
         if _ody_qwen_finetune_model and not tool_blocks and cleaned_round:
             yield f'data: {json.dumps({"delta": cleaned_round})}\n\n'
 
+        # Reply-language watch: score narration even when tools also ran.
+        _narr_for_lang = strip_reference_context_echo(
+            _strip_think_blocks(cleaned_round or "").strip()
+        )
+        _observed_wrong_lang = None
+        if (
+            _harness_enabled
+            and _required_reply_lang
+            and len(_narr_for_lang) >= 40
+            and _language_mismatch_nudges < 1
+        ):
+            _observed_wrong_lang = _reply_language_mismatch(
+                str(_required_reply_lang), _narr_for_lang
+            )
+            if _observed_wrong_lang and tool_blocks:
+                _pending_language_nudge = True
+
         # Per-round instrumentation (what the provider actually returned).
         _ledger.finish_reasons.append(_round_finish_reason)
         logger.info(
@@ -8868,7 +8955,28 @@ async def _stream_agent_loop_body(
             continue
 
         if not tool_blocks and _harness_enabled and not _force_answer and not plan_mode:
-            _hc_text = _strip_think_blocks(cleaned_round).strip()
+            _hc_raw = _strip_think_blocks(cleaned_round).strip()
+            # Qwen 3.8 (and similar) often emits only the synthetic untrusted-
+            # context separator as its whole answer. Strip it so harness
+            # checks see an empty/no-action round, and so we do not persist
+            # another poisoned "Reference context received." into history.
+            _hc_text = strip_reference_context_echo(_hc_raw).strip()
+            _boundary_echo_only = is_reference_context_echo(_hc_raw)
+            if _boundary_echo_only:
+                cleaned_round = ""
+                round_response = ""
+                # Streaming already appended the echo to full_response; drop the
+                # trailing copy so a later successful round is not prefixed with it.
+                _fr = strip_reference_context_echo(full_response).rstrip()
+                full_response = (_fr + "\n\n") if _fr else ""
+                if round_texts and is_reference_context_echo(_strip_think_blocks(round_texts[-1] or "").strip()):
+                    round_texts[-1] = ""
+            elif _hc_text != _hc_raw:
+                # Prose that started by parroting the separator — keep the body.
+                cleaned_round = _hc_text
+                if round_texts:
+                    round_texts[-1] = _hc_text
+                full_response = strip_reference_context_echo(full_response)
             # ── (1) Truncated output: continue instead of accepting a cut-off
             # answer as the end of the turn.
             if (
@@ -8975,6 +9083,44 @@ async def _stream_agent_loop_body(
                 )
                 yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
                 continue
+            # ── (2a) Wrong reply language — before no_action, so a Spanish
+            # "Voy a…" on an English turn is corrected specifically instead of
+            # only being treated as a missing tool call.
+            if (
+                _observed_wrong_lang
+                and _required_reply_lang
+                and _language_mismatch_nudges < 1
+                and round_num < max_rounds
+            ):
+                _language_mismatch_nudges += 1
+                _pending_language_nudge = False
+                _ledger.notes.append(f"language_mismatch_nudge@{round_num}")
+                logger.warning(
+                    "[harness] round %s replied in %s but user language is %s; nudging",
+                    round_num, _observed_wrong_lang, _required_reply_lang,
+                )
+                if round_response.strip() and not _boundary_echo_only:
+                    messages.append({"role": "assistant", "content": round_response})
+                _lang_nudge = _mismatch_nudge_message(str(_required_reply_lang))
+                if _lang_nudge:
+                    content = _lang_nudge["content"]
+                    if _harness_scope_active and not _ledger.events:
+                        content += (
+                            " If the task needs workspace work, start the rewritten reply with the "
+                            "concrete tool call that advances it — narration alone is not enough."
+                        )
+                    messages.append({**_lang_nudge, "content": content})
+                yield (
+                    "data: " + json.dumps({
+                        "type": "harness_check", "status": "language_mismatch",
+                        "required": _required_reply_lang,
+                        "observed": _observed_wrong_lang,
+                        "round": round_num, "attempt": 1, "max_attempts": 1,
+                    }) + "\n\n"
+                )
+                full_response += "\n\n"
+                yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
+                continue
             # ── (2) Claims vs. evidence. Only meaningful where the model could
             # have acted: a workspace turn, a coding-looking request, or a turn
             # in which tools already ran.
@@ -8988,21 +9134,34 @@ async def _stream_agent_loop_body(
             # was observed verbatim with ZIP input: "Reference context
             # received." was accepted as a completed implementation. Give the
             # model one bounded, forceful chance to start acting.
+            # Follow-ups like "Continua" / "Continua implementando el plan del
+            # zip" often fail the coding-request heuristic even with a bound
+            # workspace; a boundary echo (or any no-tool round while the
+            # workspace harness is active) must still be nudged.
             if (
-                _hc_text
-                and not _ledger.events
+                not _ledger.events
                 and _harness_scope_active
-                and _looks_like_workspace_coding_request(_last_user)
                 and not _requires_project_objective_apply
                 and not _project_objective_unavailable
                 and _no_action_nudges < 1
                 and round_num < max_rounds
+                and (
+                    _boundary_echo_only
+                    or (
+                        _hc_text
+                        and (
+                            bool(workspace)
+                            or _looks_like_workspace_coding_request(_last_user)
+                        )
+                    )
+                )
             ):
                 _no_action_nudges += 1
                 _ledger.notes.append(f"no_action_nudge@{round_num}")
                 logger.warning(
-                    "[harness] round %s returned prose but performed no workspace action; nudging",
+                    "[harness] round %s returned prose but performed no workspace action; nudging%s",
                     round_num,
+                    " (reference-context echo)" if _boundary_echo_only else "",
                 )
                 messages.append({
                     "role": "user",
@@ -9018,6 +9177,7 @@ async def _stream_agent_loop_body(
                     "data: " + json.dumps({
                         "type": "harness_check", "status": "no_action", "round": round_num,
                         "attempt": 1, "max_attempts": 1,
+                        "reason": "reference_context_echo" if _boundary_echo_only else "no_workspace_action",
                     }) + "\n\n"
                 )
                 full_response += "\n\n"

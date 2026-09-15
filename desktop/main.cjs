@@ -3,11 +3,13 @@ const {execFile}=require('node:child_process');
 const {promisify}=require('node:util');
 const {join,resolve}=require('node:path');
 const {existsSync,mkdirSync}=require('node:fs');
-const {localNavigation,externalNavigation}=require('./policy.cjs');
+const {localNavigation,externalNavigation,permissionCheck,permissionRequest}=require('./policy.cjs');
 const execute=promisify(execFile),root=resolve(__dirname,'..');
 const python=join(root,'venv',process.platform==='win32'?'Scripts/python.exe':'bin/python');
 const port=Number(process.env.FAUSTUS_PORT||7000),origin=`http://127.0.0.1:${port}`;
 let mainWindow,ownedToken='',quitting=false,startup=null,stopDesktopControl=()=>{};
+const alive=w=>w&&!w.isDestroyed();
+const liveContents=c=>c&&!c.isDestroyed();
 const splash='data:text/html;charset=utf-8,'+encodeURIComponent(`<!doctype html><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'"><title>Faustus</title><body style="background:#17191d;color:#eee;font:18px system-ui;margin:0"><header style="height:40px;display:flex;background:#121418"><span style="-webkit-app-region:drag;flex:1;padding:8px 18px;color:#e06c75">Faustus</span><button aria-label="Close / Cerrar" onclick="window.faustusWindow.command('close')" style="background:transparent;border:0;color:inherit;padding:0 20px">×</button></header><main style="padding:48px"><h1>Faustus</h1><p>Starting your local workspace… / Iniciando tu espacio local…</p><p>You can close this window to cancel. / Puedes cerrar esta ventana para cancelar.</p></main></body>`);
 app.setName('Faustus');
 // Per-checkout cookies stay separate from browsers and from other installations.
@@ -17,7 +19,7 @@ const runtime=async(args)=>{
   const {stdout}=await execute(python,[join(root,'server_runtime.py'),...args],{cwd:root,windowsHide:true,timeout:150000,maxBuffer:1024*1024});
   const result=JSON.parse(stdout.trim());if(result.error)throw new Error(result.error);return result;
 };
-const windowState=window=>({maximized:window.isMaximized(),fullscreen:window.isFullScreen()});
+const windowState=window=>({maximized:alive(window)&&window.isMaximized(),fullscreen:alive(window)&&window.isFullScreen()});
 // ACT-04: closing the app window is not the same thing as stopping the
 // server, and the two must never be conflated silently. `ownedToken` is only
 // set when THIS instance started the server (see server_runtime.py 'start'
@@ -81,7 +83,7 @@ async function closeConfirmed(target,senderUrl){
   return response===2?'stop':response===1?'keep':'cancel';
 }
 function secureWindow(window){
-  for(const event of ['maximize','unmaximize','enter-full-screen','leave-full-screen'])window.on(event,()=>window.webContents.send('faustus:window-state',windowState(window)));
+  for(const event of ['maximize','unmaximize','enter-full-screen','leave-full-screen'])window.on(event,()=>{if(!alive(window))return;window.webContents.send('faustus:window-state',windowState(window));});
   window.webContents.setWindowOpenHandler(({url})=>{
     if(localNavigation(url,origin))return {action:'allow',overrideBrowserWindowOptions:{frame:false,autoHideMenuBar:true,webPreferences:{preload:join(__dirname,'preload.cjs'),nodeIntegration:false,contextIsolation:true,sandbox:true}}};
     if(externalNavigation(url))void shell.openExternal(url);
@@ -102,16 +104,22 @@ async function shutdown(){
 if(!Number.isInteger(port)||port<1024||port>65535){app.quit();}
 else if(!app.requestSingleInstanceLock()){app.quit();}
 else{
-  app.on('second-instance',()=>{if(mainWindow){if(mainWindow.isMinimized())mainWindow.restore();mainWindow.show();mainWindow.focus();}});
+  app.on('second-instance',()=>{if(!alive(mainWindow)){if(!quitting)void shutdown();return;}if(mainWindow.isMinimized())mainWindow.restore();mainWindow.show();mainWindow.focus();});
   app.on('before-quit',event=>{if(!quitting){event.preventDefault();void shutdown();}});
   app.on('window-all-closed',()=>void shutdown());
   app.whenReady().then(async()=>{
     stopDesktopControl=require('./desktop-control.cjs').startDesktopControl(require('electron'),root);
     if(!existsSync(python)){dialog.showErrorBox('Faustus','Run Start-Faustus-Desktop.bat to install this checkout first.');app.quit();return;}
     const allowed=new Set();
-    session.defaultSession.setPermissionCheckHandler((contents,permission,requestingOrigin)=>localNavigation(requestingOrigin,origin)&&allowed.has(permission));
+    session.defaultSession.setPermissionCheckHandler((contents,permission,requestingOrigin)=>{
+      const from=requestingOrigin||(liveContents(contents)&&contents.getURL())||'';
+      return permissionCheck(permission,from,origin,allowed);
+    });
     session.defaultSession.setPermissionRequestHandler(async(contents,permission,callback)=>{
-      if(!localNavigation(contents.getURL(),origin)||!['media','notifications','clipboard-read'].includes(permission)){callback(false);return;}
+      const page=(liveContents(contents)&&contents.getURL())||'';
+      const decision=permissionRequest(permission,page,origin);
+      if(decision==='allow'){callback(true);return;}
+      if(decision!=='prompt'||!alive(mainWindow)){callback(false);return;}
       const response=await dialog.showMessageBox(mainWindow,{type:'question',title:'Faustus',message:`Allow ${permission} / ¿Permitir ${permission}?`,detail:'Only for this Faustus window. / Sólo para esta ventana de Faustus.',buttons:['Allow / Permitir','Deny / Denegar'],defaultId:1,cancelId:1});
       if(response.response===0)allowed.add(permission);callback(response.response===0);
     });

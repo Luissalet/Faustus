@@ -81,7 +81,9 @@ export function VramAdmissionDialog({ blocked, onDone, say, onDecide }: {
                 model: blocked.model, need: fmtGb(blocked.needBytes), size: fmtGb(blocked.sizeBytes), free: fmtGb(blocked.budgetAlongsideBytes),
               })}
           {' '}
-          {t('Short by {n}.', { n: fmtGb(blocked.shortfallBytes) })}
+          {blocked.shortfallBytes > 0
+            ? t('Short by {n}.', { n: fmtGb(blocked.shortfallBytes) })
+            : null}
         </p>
         <p className="fs-muted">
           {blocked.gpuCount > 1

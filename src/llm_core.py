@@ -2032,7 +2032,60 @@ def _is_untrusted_context_content(content) -> bool:
     return False
 
 
-_REFERENCE_CONTEXT_BOUNDARY = "Reference context received."
+# Synthetic assistant separator inserted between an untrusted-context user
+# message and the real user turn so providers that require strict role
+# alternation do not merge the two. Must NOT look like a user-visible answer:
+# Qwen 3.8 (and similar) repeatedly echoed the old prose
+# "Reference context received." as the entire completion (live Faustus chat
+# ea43ef6c…, Silhouettes zip turns). Keep the legacy string for detection only.
+_REFERENCE_CONTEXT_BOUNDARY = "<<faustus_ctx_ack>>"
+_LEGACY_REFERENCE_CONTEXT_BOUNDARY = "Reference context received."
+_REFERENCE_CONTEXT_BOUNDARY_ALIASES = (
+    _REFERENCE_CONTEXT_BOUNDARY,
+    _LEGACY_REFERENCE_CONTEXT_BOUNDARY,
+)
+
+
+def _message_text_content(content) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for block in content:
+            if isinstance(block, dict) and block.get("type") == "text":
+                parts.append(str(block.get("text") or ""))
+            elif isinstance(block, str):
+                parts.append(block)
+        return "".join(parts)
+    return ""
+
+
+def is_reference_context_echo(text: str) -> bool:
+    """True when model output is only the synthetic/legacy context boundary.
+
+    Used by the agent harness so a parroted ack is treated as an empty round
+    instead of a finished answer.
+    """
+    stripped = str(text or "").strip()
+    if not stripped:
+        return False
+    return stripped in _REFERENCE_CONTEXT_BOUNDARY_ALIASES
+
+
+def strip_reference_context_echo(text: str) -> str:
+    """Remove a leading/sole boundary echo so it is not saved or shown as prose."""
+    raw = str(text or "")
+    stripped = raw.strip()
+    if not stripped:
+        return raw
+    for boundary in _REFERENCE_CONTEXT_BOUNDARY_ALIASES:
+        if stripped == boundary:
+            return ""
+        if stripped.startswith(boundary):
+            rest = stripped[len(boundary):].lstrip("\r\n")
+            # Keep a single leading newline collapse; preserve remaining body.
+            return rest
+    return raw
 
 
 def _sanitize_llm_messages(messages: List[Dict]) -> List[Dict]:
@@ -2056,6 +2109,14 @@ def _sanitize_llm_messages(messages: List[Dict]) -> List[Dict]:
         if not role:
             continue
         if role == "assistant":
+            # Rewrite poisoned history: prior turns that saved the legacy
+            # boundary prose as the whole assistant answer would otherwise
+            # teach the next completion to emit it again.
+            content = item.get("content")
+            text = _message_text_content(content).strip()
+            if text in _REFERENCE_CONTEXT_BOUNDARY_ALIASES and not item.get("tool_calls"):
+                item = dict(item)
+                item["content"] = _REFERENCE_CONTEXT_BOUNDARY
             # Re-add an explicit content=None when the message is tool-calls-only
             # (the None was stripped above) so the provider gets the spec-correct
             # `content: null`, not an omitted key.

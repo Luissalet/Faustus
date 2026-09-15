@@ -2,6 +2,7 @@ import { AlertTriangle, ArrowDown, BookmarkPlus, Check, ChevronDown, Copy, Expan
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Link } from 'react-router';
 import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
+import { createPortal } from 'react-dom';
 import { Button, describeError, ExecutionTimeline, friendlyError, IconButton } from '../../components';
 import { fetchCompactionEvent, pinCompactionFragment, type AskUser, type CompactionEvent, type ContextLedger, type ContextReceipt, type DelegationTask } from '../../adapters/chat';
 import { createRecipeFromRun } from '../../adapters/strategy';
@@ -11,6 +12,7 @@ import { Rich } from '../rich';
 import { issueIdRegex } from '../../adapters/board';
 import { IssueChip, renderIssueSegments } from '../board/IssueChips';
 import { splitMentions } from '../../lib/mentions';
+import { writeClipboardText } from '../../lib/clipboard-write';
 import { safeExternal } from '../../lib/markdown';
 import { stripExecutedFences, toolFenceRegex } from '../../lib/fences';
 import { frameBatcher } from '../../lib/frame-batch';
@@ -679,15 +681,6 @@ export function AnsweredCard({ decision }: { decision: string }) {
   );
 }
 
-async function copyText(text: string): Promise<boolean> {
-  try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 function CopyButton({ text, label = t('Copy') }: { text: string; label?: string }) {
   const [done, setDone] = useState(false);
   return (
@@ -696,7 +689,7 @@ function CopyButton({ text, label = t('Copy') }: { text: string; label?: string 
       label={done ? t('Copied') : label}
       size="sm"
       onClick={() => {
-        void copyText(text).then((ok) => {
+        void writeClipboardText(text).then((ok) => {
           if (!ok) return;
           setDone(true);
           setTimeout(() => setDone(false), 1400);
@@ -1754,10 +1747,16 @@ export function Transcript({ turns, busy, sessionId, onApproval, onAnswer, onEdi
   // always its direct content, whether loading/hero/empty siblings are
   // present or not (see Studio.tsx's `fs-studio__transcript-stage`).
   const scrollElRef = useRef<HTMLElement | null>(null);
+  const [jumpHost, setJumpHost] = useState<HTMLElement | null>(null);
   const setRootRef = useCallback(
     (el: HTMLDivElement | null) => {
       quote.holder.current = el;
-      scrollElRef.current = el ? el.closest<HTMLElement>('.fs-studio__scroll') : null;
+      const scroll = el ? el.closest<HTMLElement>('.fs-studio__scroll') : null;
+      scrollElRef.current = scroll;
+      // Overlay host: the stage around the scrollport. Sticky-inside-turns
+      // never worked — the button lived after the virtualized sizer, so it
+      // was off-screen whenever the reader had scrolled up.
+      setJumpHost(scroll?.parentElement ?? null);
     },
     [quote.holder],
   );
@@ -1791,10 +1790,35 @@ export function Transcript({ turns, busy, sessionId, onApproval, onAnswer, onEdi
     const check = () => setPastBottom(el.scrollHeight - el.scrollTop - el.clientHeight >= BOTTOM_THRESHOLD);
     check();
     el.addEventListener('scroll', check, { passive: true });
-    return () => el.removeEventListener('scroll', check);
-  }, []);
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(check) : null;
+    ro?.observe(el);
+    if (el.firstElementChild) ro?.observe(el.firstElementChild);
+    return () => {
+      el.removeEventListener('scroll', check);
+      ro?.disconnect();
+    };
+  }, [jumpHost, turns.length]);
 
   const items = rowVirtualizer.getVirtualItems();
+
+  const jumpButton = pastBottom && jumpHost
+    ? createPortal(
+        <button
+          type="button"
+          className="fs-studio__back-to-bottom"
+          onClick={() => {
+            const el = scrollElRef.current;
+            if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+            setPastBottom(false);
+          }}
+          data-testid="turn-back-to-bottom"
+          aria-label={t('Jump to the latest messages')}
+        >
+          <ArrowDown size={14} aria-hidden="true" /> {t('New messages')}
+        </button>,
+        jumpHost,
+      )
+    : null;
 
   return (
     <div className="fs-studio__turns" ref={setRootRef} style={{ blockSize: rowVirtualizer.getTotalSize() }}>
@@ -1895,19 +1919,7 @@ export function Transcript({ turns, busy, sessionId, onApproval, onAnswer, onEdi
           </div>
         );
       })}
-      {pastBottom && (
-        <button
-          type="button"
-          className="fs-studio__back-to-bottom"
-          onClick={() => {
-            const el = scrollElRef.current;
-            if (el) el.scrollTop = el.scrollHeight;
-          }}
-          data-testid="turn-back-to-bottom"
-        >
-          <ArrowDown size={14} aria-hidden="true" /> {t('New messages')}
-        </button>
-      )}
+      {jumpButton}
     </div>
   );
 }

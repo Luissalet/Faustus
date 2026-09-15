@@ -1248,6 +1248,26 @@
   color: var(--fs-brand);
 }
 
+.fs-lm__pill[data-kind='default'] {
+  background: color-mix(in srgb, var(--fs-success) 18%, transparent);
+  color: var(--fs-success);
+}
+
+.fs-lm__pill[data-kind='busy'] {
+  background: color-mix(in srgb, var(--fs-warning) 18%, transparent);
+  color: var(--fs-warning);
+}
+
+.fs-lm__trow[data-busy],
+.fs-lm__row[data-busy] {
+  outline: 1px solid color-mix(in srgb, var(--fs-warning) 40%, transparent);
+  background: color-mix(in srgb, var(--fs-warning) 6%, transparent);
+}
+
+.fs-lm__trow[data-default] .fs-lm__main strong {
+  color: var(--fs-text-1);
+}
+
 .fs-lm__cap {
   margin-inline-end: 3px;
   background: var(--fs-surface-3);

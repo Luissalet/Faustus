@@ -42,9 +42,16 @@ _CASUAL_BLOCKLIST_RE = re.compile(
 )
 
 _ATTACHMENT_CONTINUATION_RE = re.compile(
-    r"^\s*(?:continue|proceed|go\s+on|keep\s+going|resume|retry|again|do\s+it|"
-    r"sigue|contin[uú]a|adelante|hazlo|reintenta|otra\s+vez)\s*[.!?…]*\s*$",
-    re.IGNORECASE,
+    r"^\s*(?:"
+    r"(?:continue|proceed|go\s+on|keep\s+going|resume|retry|again|do\s+it|"
+    r"sigue|contin[uú]a|adelante|hazlo|reintenta|otra\s+vez)\s*[.!?…]*\s*$|"
+    # Same family as agent_loop._TASK_CONTINUATION_RE: "Sigue implementando el
+    # plan" / "Implementar todo lo posible" must re-attach the prior zip/plan.
+    r"(?:sigue|contin[uú]a(?:r)?|continue|keep\s+(?:going|working)|finish|hazlo|adelante)\b"
+    r".{0,100}\b(?:implement\w*|plan|patch|zip|fix|tarea|arreglo)|"
+    r"implementa(?:r)?\s+todo"
+    r")",
+    re.IGNORECASE | re.DOTALL,
 )
 
 

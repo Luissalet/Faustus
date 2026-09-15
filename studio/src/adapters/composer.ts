@@ -234,10 +234,21 @@ export function isImage(mime: string): boolean {
   return mime.startsWith('image/');
 }
 
-export async function uploadFiles(files: File[], sessionId?: string | null, signal?: AbortSignal): Promise<Attachment[]> {
-  const fd = new FormData();
-  for (const file of files) fd.append('files', file, file.name);
-  if (sessionId) fd.append('session_id', sessionId);
+function decodeUploadedFiles(raw: { files?: unknown }): Attachment[] {
+  return asArray<Record<string, unknown>>(raw.files).filter((f) => typeof f.id === 'string' && f.id.trim()).map((f) => ({
+    id: String(f.id),
+    name: String(f.name ?? 'archivo'),
+    mime: String(f.mime ?? 'application/octet-stream'),
+    size: typeof f.size === 'number' ? f.size : 0,
+    width: typeof f.width === 'number' ? f.width : undefined,
+    height: typeof f.height === 'number' ? f.height : undefined,
+    status: f.status === 'extracting' || f.status === 'ready' || f.status === 'partial' ? f.status : undefined,
+    partial: f.partial === true,
+    partialReason: typeof f.partial_reason === 'string' ? f.partial_reason : undefined,
+  }));
+}
+
+async function uploadFilesFetch(fd: FormData, signal?: AbortSignal): Promise<Attachment[]> {
   const response = await fetch('/api/upload', {
     method: 'POST',
     body: fd,
@@ -253,18 +264,57 @@ export async function uploadFiles(files: File[], sessionId?: string | null, sign
     }
     throw new ApiError(detail || `upload responded ${response.status}`, response.status);
   }
-  const raw = (await response.json()) as { files?: unknown };
-  return asArray<Record<string, unknown>>(raw.files).filter((f) => typeof f.id === 'string' && f.id.trim()).map((f) => ({
-    id: String(f.id),
-    name: String(f.name ?? 'archivo'),
-    mime: String(f.mime ?? 'application/octet-stream'),
-    size: typeof f.size === 'number' ? f.size : 0,
-    width: typeof f.width === 'number' ? f.width : undefined,
-    height: typeof f.height === 'number' ? f.height : undefined,
-    status: f.status === 'extracting' || f.status === 'ready' || f.status === 'partial' ? f.status : undefined,
-    partial: f.partial === true,
-    partialReason: typeof f.partial_reason === 'string' ? f.partial_reason : undefined,
-  }));
+  return decodeUploadedFiles((await response.json()) as { files?: unknown });
+}
+
+/** Multipart upload. Uses XHR when a progress callback is given (`fetch` has none). */
+export async function uploadFiles(
+  files: File[],
+  sessionId?: string | null,
+  signal?: AbortSignal,
+  onProgress?: (ratio: number) => void,
+): Promise<Attachment[]> {
+  const fd = new FormData();
+  for (const file of files) fd.append('files', file, file.name);
+  if (sessionId) fd.append('session_id', sessionId);
+
+  if (!onProgress || typeof XMLHttpRequest === 'undefined') {
+    return uploadFilesFetch(fd, signal);
+  }
+
+  return new Promise<Attachment[]>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/upload');
+    xhr.withCredentials = true;
+    xhr.responseType = 'json';
+    xhr.upload.onprogress = (event) => {
+      if (!event.lengthComputable || event.total <= 0) return;
+      onProgress(event.loaded / event.total);
+    };
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve(decodeUploadedFiles((xhr.response ?? {}) as { files?: unknown }));
+        return;
+      }
+      let detail = '';
+      try {
+        detail = String((xhr.response as { detail?: unknown } | null)?.detail ?? '');
+      } catch {
+        detail = '';
+      }
+      reject(new ApiError(detail || `upload responded ${xhr.status}`, xhr.status));
+    };
+    xhr.onerror = () => reject(new ApiError('upload failed', 0));
+    xhr.onabort = () => reject(new DOMException('Upload aborted', 'AbortError'));
+    if (signal) {
+      if (signal.aborted) {
+        reject(new DOMException('Upload aborted', 'AbortError'));
+        return;
+      }
+      signal.addEventListener('abort', () => xhr.abort(), { once: true });
+    }
+    xhr.send(fd);
+  });
 }
 
 /** History stores attachments in the user message's metadata; shapes vary. */

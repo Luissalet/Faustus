@@ -81,6 +81,33 @@ const text = (nodes) => md.inlineText(nodes);
   assert(parse('solo texto\n---\notra cosa').blocks[1].kind === 'rule', 'a bare --- is a rule, not a table');
   const short = parse('| a | b |\n| - | - |\n| solo |').blocks[0];
   assert(short.rows[0].length === 2, 'a short row is padded, never dropped');
+
+  // A 2-column header plus a delimiter that still has only one column is
+  // what streaming a table looks like after the first `-`. That must not
+  // count as a table start: parseBlocks used to see "looks like a table"
+  // then refuse to consume the line, spinning until the window died.
+  assert(typeof md.isTableStart === 'function', 'isTableStart is exported');
+  if (typeof md.isTableStart === 'function') {
+    assert(md.isTableStart(['| Archivo | Cambio |', '|-'], 0) === false, 'an incomplete delimiter is not a table yet');
+    assert(md.isTableStart(['| A | B | C |', '| --- | --- |'], 0) === false, 'column count must match');
+    assert(md.isTableStart(['| A | B |', '| --- | --- |'], 0) === true, 'matching header and delimiter is a table');
+    const streaming = parse('| Archivo | Cambio |\n|-');
+    assert(streaming.blocks.every((b) => b.kind !== 'table'), 'streaming delimiter stays a paragraph');
+    assert(streaming.blocks.length >= 1, 'and parsing terminates');
+    const done = parse('| Archivo | Cambio |\n| --- | --- |\n| a | b |');
+    assert(done.blocks[0].kind === 'table' && done.blocks[0].rows.length === 1, 'the finished table still parses');
+    // Every prefix of a table, the way a stream actually arrives, must
+    // terminate. The hang was at the first `-` of the delimiter.
+    let built = '';
+    const streamed = '| Archivo | Cambio |\n| --- | --- |\n| silhouettes/trace.py | PRESETS: exact 0.1/90° |\n';
+    let prefixes = 0;
+    for (const ch of streamed) {
+      built += ch;
+      if (!Array.isArray(parse(built).blocks)) break;
+      prefixes += 1;
+    }
+    assert(prefixes === streamed.length, 'every streamed prefix of a table terminates');
+  }
 }
 
 // ── Quotes, rules, code ──

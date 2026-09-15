@@ -115,7 +115,22 @@ def start(port=7000,owner="web"):
         record=read_record()
         if owned_process(record):
             if record.get("port")!=port:raise ValueError("This checkout already has a managed server on another port")
-            return {"started":False,"port":port,"owner":record.get("owner"),"healthy":healthy(port)}
+            # Another window already owns the server. Wait for it to become
+            # healthy — or to finish dying — instead of failing the splash
+            # with "shared server is not ready" during shutdown/startup races.
+            deadline=time.monotonic()+120
+            while time.monotonic()<deadline:
+                process=owned_process(record)
+                if not process:break
+                if healthy(port):
+                    return {"started":False,"port":port,"owner":record.get("owner"),"healthy":True}
+                time.sleep(.4)
+            if owned_process(record) and not healthy(port):
+                raise ValueError("The shared Faustus server is not ready. Check logs/.")
+            record=read_record()
+            if owned_process(record):
+                if record.get("port")!=port:raise ValueError("This checkout already has a managed server on another port")
+                return {"started":False,"port":port,"owner":record.get("owner"),"healthy":healthy(port)}
         if listening(port):
             if not healthy(port):raise ValueError("The port is occupied by another service. Nothing was stopped.")
             return {"started":False,"port":port,"owner":"external","healthy":True}

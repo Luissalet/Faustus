@@ -421,13 +421,35 @@ def _ollama_model_matches(loaded: str, wanted: str) -> bool:
     return a.split(":")[0] == b.split(":")[0] and (":" not in b or ":" not in a or a.endswith(":latest") or b.endswith(":latest"))
 
 
+def _saved_num_ctx(endpoint_url: str, model: str) -> Optional[int]:
+    """The num_ctx Faustus will send on the next Ollama request.
+
+    Settings → Local models stores this per model. llm_core merges it into
+    the request *after* get_context_length, so the ledger used to show the
+    model-card or currently-loaded /api/ps window (often 32k) while the
+    request actually ran at the expanded value (256k).
+    """
+    try:
+        from src.model_load_options import resolve_for_request
+        ctx = (resolve_for_request(endpoint_url, model) or {}).get("num_ctx")
+        if isinstance(ctx, int) and ctx > 0:
+            return ctx
+    except Exception:
+        return None
+    return None
+
+
 def _ollama_runtime_context(endpoint_url: str, model: str) -> Optional[int]:
     """The context window Ollama is actually serving `model` with.
 
-    1. /api/ps → `context_length` of the resident model (exact).
-    2. Otherwise the last value seen loaded for this model.
-    3. Otherwise OLLAMA_CONTEXT_LENGTH from the environment, if set.
+    1. Saved num_ctx (Settings → Local models) — what the next request sends.
+    2. /api/ps → `context_length` of the resident model (exact).
+    3. Otherwise the last value seen loaded for this model.
+    4. Otherwise OLLAMA_CONTEXT_LENGTH from the environment, if set.
     None when nothing is known (caller falls back to the model-card table)."""
+    saved = _saved_num_ctx(endpoint_url, model)
+    if saved:
+        return saved
     base = _ollama_base(endpoint_url)
     key = (base, (model or "").lower())
     try:
