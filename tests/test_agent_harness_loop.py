@@ -156,10 +156,50 @@ def test_runaway_thinking_is_cut_off_and_retried_without_think(tmp_path, monkeyp
     cut = [e for e in events if e.get("type") == "harness_check" and e.get("status") == "think_cutoff"]
     assert len(cut) == 1 and cut[0]["reasoning_chars"] > 0
     assert calls["n"] == 2
-    assert seen_think == [None, False]
+    assert seen_think == [True, False]
     summary = next(e for e in events if e.get("type") == "harness_summary")["data"]
     assert any(n.startswith("think_cutoff@") for n in summary["notes"])
     assert summary["stop_reason"] == "complete"
+
+
+def test_local_workspace_turn_enables_thinking(tmp_path, monkeypatch):
+    """Coding work on a local endpoint thinks by default so the transcript
+    can show collapsed Thought Ns between tool groups."""
+    _patch_common(monkeypatch)
+    seen = []
+
+    async def _fake_stream(_candidates, messages, **kwargs):
+        seen.append((kwargs.get("gen_overrides") or {}).get("think"))
+        yield f'data: {json.dumps({"delta": "No files were changed."})}\n\n'
+        yield f'data: {json.dumps({"type": "finish", "finish_reason": "stop"})}\n\n'
+        yield "data: [DONE]\n\n"
+
+    monkeypatch.setattr(al, "stream_llm_with_fallback", _fake_stream, raising=False)
+    _run(monkeypatch, str(tmp_path), user="¿Dónde está el contador de proyectos?", max_rounds=2)
+    assert seen and seen[0] is True
+
+
+def test_pinned_think_off_is_not_overridden_on_local_workspace(tmp_path, monkeypatch):
+    _patch_common(monkeypatch)
+    seen = []
+
+    async def _fake_stream(_candidates, messages, **kwargs):
+        seen.append((kwargs.get("gen_overrides") or {}).get("think"))
+        yield f'data: {json.dumps({"delta": "No files were changed."})}\n\n'
+        yield f'data: {json.dumps({"type": "finish", "finish_reason": "stop"})}\n\n'
+        yield "data: [DONE]\n\n"
+
+    monkeypatch.setattr(al, "stream_llm_with_fallback", _fake_stream, raising=False)
+    events = _events(_collect(al.stream_agent_loop(
+        "http://127.0.0.1:11434/v1", "qwen3-coder:30b",
+        [{"role": "user", "content": "¿Dónde está el contador de proyectos?"}],
+        max_rounds=2,
+        relevant_tools={"read_file", "edit_file", "glob"},
+        workspace=str(tmp_path),
+        gen_overrides={"think": False},
+    )))
+    assert seen and seen[0] is False
+    assert events
 
 
 def _native_call_stream(monkeypatch, rounds):

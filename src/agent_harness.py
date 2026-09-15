@@ -1525,6 +1525,8 @@ def local_model_policy() -> str:
         "\n\n## Reliability rules (enforced by the runtime — violations are rejected)\n"
         "1. NEVER invent file names or paths. A path you have not seen in a tool result does not "
         "exist for you. Discover first: glob (e.g. \"**/*card*\"), grep for a symbol, or ls; then read_file. "
+        "If the first search misses, try another pattern or path before concluding the code is absent. "
+        "Do not answer a repository question from training memory. "
         "Only call tools by the exact names you were given (files/folders: ls, glob, grep, read_file — "
         "list_models is about AI models, not files).\n"
         # The second example here used to be the Spanish "voy a modificar X". A 27B read

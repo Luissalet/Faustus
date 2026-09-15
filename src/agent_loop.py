@@ -1826,7 +1826,7 @@ def _workspace_coding_rules(workspace: Optional[str]) -> str:
         f"- Active workspace: `{workspace}`. Treat relative paths as relative to this folder.\n"
         "- This mode is for coding, debugging, shell, file, build, benchmark, and repo tasks. Do not use personal-assistant tools like email, calendar, notes, memory, documents, gallery, or UI panels for workspace work.\n"
         "- Work from the real filesystem and command output. Inspect before editing.\n"
-        "- Start by orienting with `get_workspace` plus `grep`/`glob`/`ls`/`read_file`; prefer targeted reads over dumping whole files.\n"
+        "- Start by orienting with `get_workspace` plus `grep`/`glob`/`ls`/`read_file`; prefer targeted reads over dumping whole files. Several searches beat one guess from memory.\n"
         "- A new system is decided with the user first: when the request (\"implement X\", \"add Y\") admits several reasonable designs (storage, framework or language, location, scope) and neither the request nor the code settles it, call `ask_user` with 2-4 options (recommended first, one line each) BEFORE writing any file. Small edits have one obvious reading: just do them.\n"
         "- For multi-step coding work, call `todowrite` and keep the task list current.\n"
         "- Change repo files with `apply_patch` for related source edits, `edit_file` for one exact replacement, or `write_file` for new/full files. Do not use `create_document`, shell redirects, heredocs, or `sed -i` to modify repo files.\n"
@@ -7281,12 +7281,37 @@ async def _stream_agent_loop_body(
         _think_budget_s = 240.0
     try:
         from src.model_context import is_local_endpoint as _is_local_ep_w
-        _think_watchdog_on = _harness_enabled and _think_budget_s > 0 and _is_local_ep_w(endpoint_url)
+        _local_ep = _is_local_ep_w(endpoint_url)
+        _think_watchdog_on = _harness_enabled and _think_budget_s > 0 and _local_ep
     except Exception:
+        _local_ep = False
         _think_watchdog_on = False
-    if isinstance(gen_overrides, dict) and gen_overrides.get("think") is True:
+    _think_user_pinned = isinstance(gen_overrides, dict) and gen_overrides.get("think") is True
+    _think_user_off = isinstance(gen_overrides, dict) and gen_overrides.get("think") is False
+    if _think_user_pinned:
         _think_watchdog_on = False  # the user pinned thinking on: respect it
+    elif not _think_user_off and _harness_scope_active and _local_ep:
+        # Local coding turns think by default (Cursor-style), with the
+        # runaway watchdog still able to cut over-long reasoning.
+        gen_overrides = dict(gen_overrides or {})
+        gen_overrides["think"] = True
     _think_cutoffs = 0
+    _thinking_segments: List[Dict[str, Any]] = []
+    _open_thought: Optional[Dict[str, Any]] = None
+
+    def _flush_open_thought() -> None:
+        nonlocal _open_thought
+        if not _open_thought:
+            return
+        text = str(_open_thought.get("text") or "").strip()
+        if text:
+            _thinking_segments.append({
+                "text": text,
+                "seconds": max(1, int(round(time.time() - float(_open_thought["t0"])))),
+                "after_step": int(_open_thought["after_step"]),
+            })
+        _open_thought = None
+
     _unknown_tool_nudges = 0
     _empty_round_nudges = 0
     _project_objective_nudges = 0
@@ -7719,6 +7744,7 @@ async def _stream_agent_loop_body(
             approved_tool_event["doc_title"] = approved_result.get("title", "")
         if isinstance(approved_result.get("subagents"), list):
             approved_tool_event["subagents"] = _compact_subagent_reports(approved_result["subagents"])
+        _flush_open_thought()
         tool_events.append(approved_tool_event)
         if approved.tool_name in _VERIFIER_EFFECTFUL_TOOLS:
             _effectful_used = True
@@ -8713,6 +8739,13 @@ async def _stream_agent_loop_body(
                         # round_response unchanged.
                         if data.get("thinking"):
                             round_reasoning += data["delta"]
+                            if _open_thought is None:
+                                _open_thought = {
+                                    "text": "",
+                                    "t0": time.time(),
+                                    "after_step": len(tool_events) - 1,
+                                }
+                            _open_thought["text"] += data["delta"]
                             if _think_first_ts is None:
                                 _think_first_ts = time.time()
                             elif (
@@ -8723,6 +8756,7 @@ async def _stream_agent_loop_body(
                                 _think_runaway = True
                                 break
                         else:
+                            _flush_open_thought()
                             _delta_text = (
                                 _strip_doc_model_artifacts(data["delta"])
                                 if _ody_qwen_finetune_model
@@ -11154,6 +11188,7 @@ async def _stream_agent_loop_body(
             _shot_url = _screenshot_data_url_for_event(result)
             if _shot_url:
                 tool_event["screenshot"] = _shot_url
+            _flush_open_thought()
             tool_events.append(tool_event)
             if block.tool_type in _VERIFIER_EFFECTFUL_TOOLS:
                 _effectful_used = True
@@ -11604,6 +11639,11 @@ async def _stream_agent_loop_body(
         # ever having existed for the tab that watched the live `strategy`
         # SSE event.
         metrics["strategy"] = _strategy_event_summary
+    _flush_open_thought()
+    if _thinking_segments:
+        metrics["thinking_segments"] = _thinking_segments
+        if not metrics.get("thinking"):
+            metrics["thinking"] = "\n\n".join(seg["text"] for seg in _thinking_segments)
     if _hsum:
         # Persisted with the message so the verification card survives reload.
         metrics["harness"] = {

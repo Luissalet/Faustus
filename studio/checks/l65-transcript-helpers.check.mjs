@@ -30,7 +30,7 @@ await build({
 // enough for module load to succeed; nothing under test here calls either.
 globalThis.window ??= { localStorage: { getItem: () => null, setItem: () => {} } };
 globalThis.document ??= { documentElement: { toggleAttribute: () => {} } };
-const { maskSecrets, reportPartsProgress, toolRailSummary } = await import(pathToFileURL(out).href);
+const { maskSecrets, reportPartsProgress, toolRailSummary, toolRailCounts, toolRailParts, thoughtSummary, buildActivity } = await import(pathToFileURL(out).href);
 
 // ── EXEC-02: maskSecrets ──
 assert.equal(maskSecrets('curl -H "Authorization: Bearer sk_live_abcdef123456"'), 'curl -H "Authorization: Bearer ****"');
@@ -53,5 +53,54 @@ assert.deepEqual(toolRailSummary(1, true), { one: 'Running a command', other: 'R
 assert.deepEqual(toolRailSummary(3, true), { one: 'Running a command', other: 'Running commands', n: 3 });
 assert.deepEqual(toolRailSummary(1, false), { one: 'Ran 1 command', other: 'Ran {n} commands', n: 1 });
 assert.deepEqual(toolRailSummary(4, false), { one: 'Ran 1 command', other: 'Ran {n} commands', n: 4 });
+
+// ── Cursor-style categorized counts (searches / files / edits / commands) ──
+assert.deepEqual(toolRailCounts([
+  { tool: 'grep', command: '{"pattern":"steerLive"}' },
+  { tool: 'grep', command: '{"pattern":"_latest_plan_update"}' },
+  { tool: 'read_file', command: 'studio/src/screens/Studio.tsx' },
+  { tool: 'read_file', command: '{"path":"src/agent_loop.py"}' },
+  { tool: 'read_file', command: 'studio/src/screens/Studio.tsx' },
+  { tool: 'bash', command: 'pytest tests/test_steer.py' },
+  { tool: 'edit_file', command: 'docs/ui/i18n/es.tsv' },
+]), { searches: 2, files: 2, edits: 1, commands: 1 });
+
+assert.deepEqual(
+  toolRailParts({ searches: 18, files: 29, edits: 0, commands: 0 }, false),
+  [
+    { one: 'Explored 1 file', other: 'Explored {n} files', n: 29 },
+    { one: '1 search', other: '{n} searches', n: 18 },
+  ],
+);
+assert.deepEqual(
+  toolRailParts({ searches: 3, files: 9, edits: 4, commands: 4 }, false),
+  [
+    { one: 'Edited 1 file', other: 'Edited {n} files', n: 4 },
+    { one: 'Explored 1 file', other: 'Explored {n} files', n: 9 },
+    { one: '1 search', other: '{n} searches', n: 3 },
+    { one: 'Ran 1 command', other: 'Ran {n} commands', n: 4 },
+  ],
+);
+assert.deepEqual(
+  toolRailParts({ searches: 1, files: 0, edits: 0, commands: 0 }, true),
+  [{ one: 'Searching', other: '{n} searches', n: 1 }],
+);
+
+assert.deepEqual(thoughtSummary(0, true), { one: 'Thinking', other: 'Thinking', n: 0 });
+assert.deepEqual(thoughtSummary(1, false), { one: 'Thought 1s', other: 'Thought {n}s', n: 1 });
+assert.deepEqual(thoughtSummary(9, false), { one: 'Thought 1s', other: 'Thought {n}s', n: 9 });
+assert.deepEqual(thoughtSummary(22, true), { one: 'Thought 1s', other: 'Thought {n}s', n: 22 });
+
+assert.deepEqual(
+  buildActivity(5, [{ afterStep: -1 }, { afterStep: 2 }]),
+  [
+    { kind: 'thought', index: 0 },
+    { kind: 'tools', from: 0, to: 3 },
+    { kind: 'thought', index: 1 },
+    { kind: 'tools', from: 3, to: 5 },
+  ],
+);
+assert.deepEqual(buildActivity(4, []), [{ kind: 'tools', from: 0, to: 4 }]);
+assert.deepEqual(buildActivity(0, [{ afterStep: -1 }]), [{ kind: 'thought', index: 0 }]);
 
 console.log('ok l65-transcript-helpers');

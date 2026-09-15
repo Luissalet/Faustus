@@ -66,6 +66,16 @@ export interface Step {
   callId?: string;
 }
 
+/** One collapsed reasoning burst, between tool groups — Cursor's "Thought 9s". */
+export interface Thought {
+  id: string;
+  text: string;
+  seconds: number;
+  afterStep: number;
+  live?: boolean;
+  startedAt?: number;
+}
+
 /** RES-01: one subquestion's coverage, from `DeepResearcher._coverage_snapshot`
  *  (src/deep_research.py) via the `analyzing` progress event's `coverage`
  *  list — the schema a research report is built against, each node marked
@@ -189,6 +199,7 @@ export interface Turn {
   role: 'user' | 'assistant' | 'system';
   text: string;
   thinking: string;
+  thoughts: Thought[];
   steps: Step[];
   rounds: number;
   metrics?: TurnMetrics;
@@ -431,6 +442,7 @@ export function blankTurn(role: Turn['role'], text = ''): Turn {
     role,
     text,
     thinking: '',
+    thoughts: [],
     steps: [],
     rounds: 1,
     sources: [],
@@ -698,6 +710,33 @@ export function formatMetrics(m: TurnMetrics): string {
   return parts.join(' · ');
 }
 
+function closeOpenThought(thoughts: Thought[], now: number): Thought[] {
+  if (!thoughts.length) return thoughts;
+  const last = thoughts[thoughts.length - 1];
+  if (!last.live) return thoughts;
+  const elapsed = last.startedAt ? (now - last.startedAt) / 1000 : last.seconds;
+  return [...thoughts.slice(0, -1), { ...last, live: false, seconds: Math.max(1, Math.round(elapsed)) }];
+}
+
+function appendThought(turn: Turn, text: string, now: number): Thought[] {
+  const thoughts = turn.thoughts ?? [];
+  const last = thoughts[thoughts.length - 1];
+  if (last?.live) {
+    return [...thoughts.slice(0, -1), { ...last, text: last.text + text }];
+  }
+  return [
+    ...thoughts,
+    {
+      id: uid('thought'),
+      text,
+      seconds: 0,
+      live: true,
+      startedAt: now,
+      afterStep: turn.steps.length - 1,
+    },
+  ];
+}
+
 function lastRunning(steps: Step[], tool: string): number {
   for (let i = steps.length - 1; i >= 0; i--) {
     if (steps[i].state === 'running' && steps[i].tool === tool) return i;
@@ -721,8 +760,20 @@ export function apply(turn: Turn, event: ChatEvent): Turn {
       // UX-02/TASK-03: real content arriving settles "uncertain" one way —
       // the turn is plainly alive and answering.
       return event.thinking
-        ? { ...turn, thinking: turn.thinking + event.text, live: liveToken(live, now, true), uncertain: undefined }
-        : { ...turn, text: turn.text + event.text, live: liveToken(live, now, false), uncertain: undefined };
+        ? {
+            ...turn,
+            thinking: turn.thinking + event.text,
+            thoughts: appendThought(turn, event.text, now),
+            live: liveToken(live, now, true),
+            uncertain: undefined,
+          }
+        : {
+            ...turn,
+            text: turn.text + event.text,
+            thoughts: closeOpenThought(turn.thoughts ?? [], now),
+            live: liveToken(live, now, false),
+            uncertain: undefined,
+          };
     case 'response_replace':
       return { ...turn, text: event.text, live: liveToken(live, now, false), uncertain: undefined };
     case 'heartbeat': {
@@ -757,17 +808,19 @@ export function apply(turn: Turn, event: ChatEvent): Turn {
     case 'tool_start': {
       const label = stepLabel(event.tool, event.command);
       const busy = livePhase(live, now, 'tool', label);
+      const thoughts = closeOpenThought(turn.thoughts ?? [], now);
       // After an approval the server replays the same tool's start: the
       // step that was waiting becomes the one that runs, not a twin.
       const held = turn.steps.findIndex((s) => s.state === 'waiting' && s.tool === event.tool);
       if (held !== -1) {
         const steps = turn.steps.slice();
         steps[held] = { ...steps[held], state: 'running', meta: undefined };
-        return { ...turn, steps, live: busy };
+        return { ...turn, steps, thoughts, live: busy };
       }
       return {
         ...turn,
         live: busy,
+        thoughts,
         rounds: Math.max(turn.rounds, event.round),
         steps: [
           ...turn.steps,
@@ -958,6 +1011,7 @@ export function apply(turn: Turn, event: ChatEvent): Turn {
         ...turn,
         streaming: false,
         uncertain: undefined,
+        thoughts: closeOpenThought(turn.thoughts ?? [], Date.now()),
         steps: turn.steps.map((step) => (step.state === 'running' ? { ...step, state: 'cancelled' } : step)),
         workers: turn.workers.map((w) => (workerLive(w) ? { ...w, status: 'partial' as const, stopReason: w.stopReason || t('no signal') } : w)),
       };
@@ -1093,11 +1147,41 @@ function modeFieldsFrom(meta: Record<string, unknown>): { behaviorMode?: string;
   return { behaviorMode, modeCheck: { checked, violations } };
 }
 
+function thoughtsFromMeta(meta: Record<string, unknown>): { thinking: string; thoughts: Thought[] } {
+  const raw = Array.isArray(meta.thinking_segments) ? meta.thinking_segments : [];
+  const segments = raw.flatMap((item) => {
+    const rec = item && typeof item === 'object' ? (item as Record<string, unknown>) : null;
+    const text = rec ? s(rec.text).trim() : '';
+    if (!text) return [];
+    return [{
+      id: uid('thought'),
+      text,
+      seconds: Math.max(0, Math.round(n(rec?.seconds) ?? 0)),
+      afterStep: Math.trunc(n(rec?.after_step) ?? n(rec?.afterStep) ?? -1),
+    } satisfies Thought];
+  });
+  if (segments.length) {
+    return { thinking: segments.map((thought) => thought.text).join('\n\n'), thoughts: segments };
+  }
+  const blob = typeof meta.thinking === 'string' ? meta.thinking : '';
+  if (!blob.trim()) return { thinking: '', thoughts: [] };
+  return {
+    thinking: blob,
+    thoughts: [{
+      id: uid('thought'),
+      text: blob,
+      seconds: Math.max(0, Math.round(n(meta.thinking_time) ?? 0)),
+      afterStep: -1,
+    }],
+  };
+}
+
 export function restoreFromMetadata(turn: Turn, meta: Record<string, unknown>): Turn {
   const events = toolEventsFrom(meta);
   const planUpdate = planUpdateFromMeta(meta);
   const speaker = typeof meta.group_model === 'string' && meta.group_model ? meta.group_model : undefined;
   const modeFields = modeFieldsFrom(meta);
+  const restoredThoughts = thoughtsFromMeta(meta);
   if (
     !events.length &&
     !meta.harness &&
@@ -1105,7 +1189,8 @@ export function restoreFromMetadata(turn: Turn, meta: Record<string, unknown>): 
     !meta.research_sources &&
     !meta.context_receipts &&
     !meta.strategy &&
-    !modeFields.behaviorMode
+    !modeFields.behaviorMode &&
+    !restoredThoughts.thoughts.length
   ) {
     return speaker ? { ...turn, speaker } : turn;
   }
@@ -1167,6 +1252,8 @@ export function restoreFromMetadata(turn: Turn, meta: Record<string, unknown>): 
     ...turn,
     text,
     speaker,
+    thinking: restoredThoughts.thinking || turn.thinking,
+    thoughts: restoredThoughts.thoughts.length ? restoredThoughts.thoughts : turn.thoughts,
     steps: steps.length ? steps : turn.steps,
     workers: workers.length ? workers : turn.workers,
     rounds: Math.max(rounds, Math.max(0, Math.trunc(n(harness?.round_count) ?? 0))),

@@ -203,5 +203,57 @@ assert(plain.steps.length === 0 && plain.summary === undefined, 'a chat turn res
   }
 }
 
+// ── Collapsed thinking segments interleaved with tools ──
+{
+  const real = Date.now;
+  let clock = 1_000;
+  Date.now = () => clock;
+  try {
+    let t = m.blankTurn('assistant');
+    t = m.apply(t, { type: 'delta', text: 'Voy a buscar steer.', thinking: true });
+    t = m.apply(t, { type: 'delta', text: ' Empiezo por grep.', thinking: true });
+    assert(t.thoughts.length === 1 && t.thoughts[0].live === true, 'first thinking opens one live thought');
+    assert(t.thoughts[0].afterStep === -1, 'thought before any tool sits at afterStep -1');
+    assert(t.thinking.includes('Voy a buscar steer'), 'legacy thinking string still concatenates');
+    clock += 9_000;
+    t = m.apply(t, { type: 'tool_start', tool: 'grep', command: 'steerLive', round: 1 });
+    assert(t.thoughts[0].live === false && t.thoughts[0].seconds === 9, 'tool_start collapses the thought with elapsed seconds');
+    t = m.apply(t, { type: 'tool_output', tool: 'grep', command: 'steerLive', output: 'hit', exitCode: 0 });
+    clock += 200;
+    t = m.apply(t, { type: 'delta', text: 'Las pruebas fallan por el harness.', thinking: true });
+    assert(t.thoughts.length === 2 && t.thoughts[1].live === true, 'thinking after tools opens a second thought');
+    assert(t.thoughts[1].afterStep === 0, 'second thought is after the grep step');
+  } finally {
+    Date.now = real;
+  }
+}
+
+{
+  const restored = m.restoreFromMetadata(m.blankTurn('assistant', 'Done.'), {
+    thinking: 'First I will grep, then edit.',
+    thinking_time: 12,
+  });
+  assert(restored.thinking === 'First I will grep, then edit.', 'history restores thinking text');
+  assert(restored.thoughts.length === 1 && restored.thoughts[0].seconds === 12, 'history restores one collapsed thought');
+  assert(restored.thoughts[0].afterStep === -1 && restored.thoughts[0].live !== true, 'restored thought is finished');
+}
+
+{
+  const restored = m.restoreFromMetadata(m.blankTurn('assistant', 'Done.'), {
+    thinking_segments: [
+      { text: 'Look at tests first.', seconds: 4, after_step: -1 },
+      { text: 'The harness already failed.', seconds: 22, after_step: 2 },
+    ],
+    tool_events: [
+      { round: 1, tool: 'grep', command: 'x', output: 'hit', exit_code: 0 },
+      { round: 1, tool: 'read_file', command: 'a.py', output: 'ok', exit_code: 0 },
+      { round: 1, tool: 'bash', command: 'pytest', output: 'fail', exit_code: 1 },
+    ],
+  });
+  assert(restored.thoughts.length === 2, 'persisted segments restore as two thoughts');
+  assert(restored.thoughts[0].seconds === 4 && restored.thoughts[1].afterStep === 2, 'segment order and afterStep survive');
+  assert(restored.thinking.startsWith('Look at tests first.'), 'legacy thinking joins segments');
+}
+
 console.log(failed ? `${failed} CHECK(S) FAILED` : 'ALL OK');
 process.exit(failed ? 1 : 0);

@@ -16,7 +16,7 @@ import { writeClipboardText } from '../../lib/clipboard-write';
 import { safeExternal } from '../../lib/markdown';
 import { stripExecutedFences, toolFenceRegex } from '../../lib/fences';
 import { frameBatcher } from '../../lib/frame-batch';
-import { formatMetrics, liveTps, type CoverageItem, type LiveRate, type PlanStepView, type Step, type Turn, type TurnStrategy } from './model';
+import { formatMetrics, liveTps, type CoverageItem, type LiveRate, type PlanStepView, type Step, type Thought, type Turn, type TurnStrategy } from './model';
 import { t, tn, useLang } from '../../i18n';
 import { getDisplay } from '../../shell/display';
 import { nextStreamAnnouncement } from '../../adapters/streamAnnounce';
@@ -386,9 +386,106 @@ export function toolRailSummary(count: number, live: boolean): { one: string; ot
   return { one: 'Ran 1 command', other: 'Ran {n} commands', n };
 }
 
+const SEARCH_TOOLS = /^(grep|glob|web_search|web_fetch|fetch_url|search_chats|search_project_chats)$/;
+const EXPLORE_TOOLS = /^(read_file|ls)$/;
+const EDIT_TOOLS = /^(write_file|edit_file|apply_patch|create_file|multi_edit|replace_across_files)$/;
+const COMMAND_TOOLS = /^(bash|python|powershell|run_shell)$/;
+
+export function stepPath(step: { command?: string }): string {
+  const raw = (step.command || '').trim();
+  if (!raw) return '';
+  if (raw.startsWith('{')) {
+    try {
+      const args = JSON.parse(raw) as { path?: unknown };
+      if (typeof args.path === 'string' && args.path.trim()) return args.path.trim();
+    } catch {
+      /* display-only: a broken JSON command is still shown as the first line */
+    }
+  }
+  return raw.split('\n')[0].trim();
+}
+
+export function toolRailCounts(steps: { tool: string; command?: string }[]): {
+  searches: number; files: number; edits: number; commands: number;
+} {
+  const files = new Set<string>();
+  const edits = new Set<string>();
+  let searches = 0;
+  let commands = 0;
+  for (const step of steps) {
+    if (SEARCH_TOOLS.test(step.tool)) searches += 1;
+    else if (EXPLORE_TOOLS.test(step.tool)) files.add(stepPath(step) || `${step.tool}:${files.size}`);
+    else if (EDIT_TOOLS.test(step.tool)) edits.add(stepPath(step) || `${step.tool}:${edits.size}`);
+    else commands += 1;
+  }
+  return { searches, files: files.size, edits: edits.size, commands };
+}
+
+export type RailPart = { one: string; other: string; n: number };
+
+export function toolRailParts(
+  counts: { searches: number; files: number; edits: number; commands: number },
+  live: boolean,
+): RailPart[] {
+  const parts: RailPart[] = [];
+  if (counts.edits) {
+    parts.push(live
+      ? { one: 'Editing a file', other: 'Editing {n} files', n: counts.edits }
+      : { one: 'Edited 1 file', other: 'Edited {n} files', n: counts.edits });
+  }
+  if (counts.files) {
+    parts.push(live
+      ? { one: 'Exploring a file', other: 'Exploring {n} files', n: counts.files }
+      : { one: 'Explored 1 file', other: 'Explored {n} files', n: counts.files });
+  }
+  if (counts.searches) {
+    parts.push(live
+      ? { one: 'Searching', other: '{n} searches', n: counts.searches }
+      : { one: '1 search', other: '{n} searches', n: counts.searches });
+  }
+  if (counts.commands) parts.push(toolRailSummary(counts.commands, live));
+  return parts;
+}
+
+export function thoughtSummary(seconds: number, live: boolean): RailPart {
+  const n = Math.max(0, Math.round(seconds));
+  if (live && n < 1) return { one: 'Thinking', other: 'Thinking', n: 0 };
+  return { one: 'Thought 1s', other: 'Thought {n}s', n: Math.max(1, n) };
+}
+
+export type ActivityItem =
+  | { kind: 'thought'; index: number }
+  | { kind: 'tools'; from: number; to: number };
+
+export function buildActivity(stepCount: number, thoughts: { afterStep: number }[]): ActivityItem[] {
+  const items: ActivityItem[] = [];
+  let cursor = 0;
+  thoughts.forEach((thought, index) => {
+    const end = Math.max(0, thought.afterStep + 1);
+    if (end > cursor && end <= stepCount) {
+      items.push({ kind: 'tools', from: cursor, to: end });
+      cursor = end;
+    }
+    items.push({ kind: 'thought', index });
+  });
+  if (cursor < stepCount) items.push({ kind: 'tools', from: cursor, to: stepCount });
+  return items;
+}
+
+function railTitle(steps: Step[], live: boolean): string {
+  const parts = toolRailParts(toolRailCounts(steps), live);
+  if (!parts.length) {
+    const fallback = toolRailSummary(steps.length, live);
+    return tn(fallback.n, fallback.one, fallback.other);
+  }
+  return parts.map((part, i) => {
+    const phrase = tn(part.n, part.one, part.other);
+    return i === 0 ? phrase : phrase.charAt(0).toLowerCase() + phrase.slice(1);
+  }).join(', ');
+}
+
 function ToolRail({ steps, live, sessionId, onOpenFile, onOpenDoc, onOpenEvidence }: { steps: Step[]; live: boolean; sessionId?: string | null; onOpenFile?: (path: string) => void; onOpenDoc?: (docId: string) => void; onOpenEvidence?: (ref: EvidenceRef) => void }) {
-  const summary = toolRailSummary(steps.length, live);
-  const title = tn(summary.n, summary.one, summary.other);
+  const title = railTitle(steps, live);
 
   return (
     <details className="fs-studio__trace fs-studio__tools" data-testid="studio-trace" data-live={live || undefined}>
@@ -503,6 +600,74 @@ function ToolRail({ steps, live, sessionId, onOpenFile, onOpenDoc, onOpenEvidenc
         )}
       </div>
     </details>
+  );
+}
+
+function ThoughtRail({ thought }: { thought: Thought }) {
+  const [, tick] = useState(0);
+  useEffect(() => {
+    if (!thought.live) return;
+    const timer = window.setInterval(() => tick((n) => n + 1), 500);
+    return () => window.clearInterval(timer);
+  }, [thought.live]);
+  const seconds = thought.live && thought.startedAt
+    ? Math.max(0, Math.round((Date.now() - thought.startedAt) / 1000))
+    : thought.seconds;
+  const summary = thoughtSummary(seconds, Boolean(thought.live));
+  return (
+    <details className="fs-studio__thinking fs-studio__thought-rail" data-testid="thought-rail" data-live={thought.live || undefined}>
+      <summary>
+        {thought.live ? <span className="fs-studio__pulse" aria-hidden="true" /> : null}
+        <span>{tn(summary.n, summary.one, summary.other)}</span>
+      </summary>
+      {thought.text ? <p className="fs-prose">{thought.text}</p> : null}
+    </details>
+  );
+}
+
+function ActivityTrail({
+  steps,
+  thoughts,
+  live,
+  sessionId,
+  onOpenFile,
+  onOpenDoc,
+  onOpenEvidence,
+}: {
+  steps: Step[];
+  thoughts: Thought[];
+  live: boolean;
+  sessionId?: string | null;
+  onOpenFile?: (path: string) => void;
+  onOpenDoc?: (docId: string) => void;
+  onOpenEvidence?: (ref: EvidenceRef) => void;
+}) {
+  const showThoughts = getDisplay().thinking;
+  const items = buildActivity(steps.length, thoughts);
+  return (
+    <div className="fs-studio__activity" data-testid="studio-activity">
+      {items.map((item) => {
+        if (item.kind === 'thought') {
+          if (!showThoughts) return null;
+          const thought = thoughts[item.index];
+          return thought ? <ThoughtRail key={thought.id} thought={thought} /> : null;
+        }
+        const slice = steps.slice(item.from, item.to);
+        if (!slice.length) return null;
+        const groupLive = live && slice.some((step) => step.state === 'running' || step.state === 'waiting');
+        return (
+          <ToolRail
+            key={`tools-${item.from}-${item.to}`}
+            steps={slice}
+            live={groupLive}
+            sessionId={sessionId}
+            onOpenFile={onOpenFile}
+            onOpenDoc={onOpenDoc}
+            onOpenEvidence={onOpenEvidence}
+          />
+        );
+      })}
+    </div>
   );
 }
 
@@ -1357,11 +1522,22 @@ function AssistantTurn({
       <span className="fs-turn__node" aria-hidden="true" />
       <div className="fs-turn__body">
         {turn.speaker && <p className="fs-turn__speaker">{turn.speaker}</p>}
-        {turn.thinking && getDisplay().thinking && (
-          <details className="fs-studio__thinking">
-            <summary>{t('Reasoning')} {turn.streaming && !turn.text ? <span className="fs-studio__pulse" /> : null}</summary>
-            <p className="fs-prose">{turn.thinking}</p>
-          </details>
+        {((turn.thoughts && turn.thoughts.length > 0) || turn.steps.length > 0 || turn.thinking) && (
+          <ActivityTrail
+            steps={turn.steps}
+            thoughts={
+              turn.thoughts && turn.thoughts.length > 0
+                ? turn.thoughts
+                : turn.thinking
+                  ? [{ id: `${turn.id}-thinking`, text: turn.thinking, seconds: 0, afterStep: -1, live: turn.streaming && !turn.text }]
+                  : []
+            }
+            live={turn.streaming}
+            sessionId={sessionId}
+            onOpenFile={onOpenFile}
+            onOpenDoc={onOpenDoc}
+            onOpenEvidence={onOpenEvidence}
+          />
         )}
         {(turn.plan || (turn.todos && turn.todos.length > 0) || (turn.streaming && turn.checks.length > 0)) && (
           <Suspense fallback={null}>
@@ -1378,7 +1554,6 @@ function AssistantTurn({
         {turn.planSteps && turn.planSteps.length > 0 && (
           <PlanStepsCard steps={turn.planSteps} revision={turn.planRevision} warnings={turn.planWarnings} />
         )}
-        {turn.steps.length > 0 && <ToolRail steps={turn.steps} live={turn.streaming} sessionId={sessionId} onOpenFile={onOpenFile} onOpenDoc={onOpenDoc} onOpenEvidence={onOpenEvidence} />}
         {turn.workers.length > 0 && (
           <Suspense fallback={null}>
             <SubagentBoard workers={turn.workers} live={turn.streaming} onRerun={onRerun ?? (() => undefined)} onNotice={onNotice} />

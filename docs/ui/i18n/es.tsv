@@ -7438,3 +7438,17 @@ Or drop / paste the client_secret_*.json file Google gave you	O suelta/pega el a
 Paste the Client ID and secret, or the client_secret JSON file.	Pega el ID de cliente y el secreto, o el archivo JSON client_secret.
 Publishing status: Testing, then add your own Google account under Test users. Testing refresh tokens expire after 7 days — publishing without verification is fine for personal use.	Estado de publicación: Prueba, y añade tu propia cuenta de Google en Usuarios de prueba. En modo Prueba, el refresh token caduca a los 7 días — publicar sin verificación está bien para uso personal.
 Remove for good?	¿Eliminar definitivamente?
+1 search	1 búsqueda
+Edited 1 file	1 archivo editado
+Edited {n} files	{n} archivos editados
+Editing a file	Editando un archivo
+Editing {n} files	Editando {n} archivos
+Explored 1 file	1 archivo explorado
+Explored {n} files	{n} archivos explorados
+Exploring a file	Explorando un archivo
+Exploring {n} files	Explorando {n} archivos
+Searching	Buscando
+Thought 1s	Pensó 1s
+Thought {n}s	Pensó {n}s
+{n} searches	{n} búsquedas
+

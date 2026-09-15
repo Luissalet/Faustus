@@ -725,6 +725,19 @@ details.fs-studio__step > summary:hover .fs-trace__label {
 
 /* ── Thinking, asks, sources ── */
 
+.fs-studio__activity {
+  display: grid;
+  gap: 2px;
+}
+
+.fs-studio__thought-rail {
+  margin: 0;
+}
+
+.fs-studio__thought-rail > summary {
+  min-block-size: 22px;
+}
+
 .fs-studio__thinking > summary {
   display: flex;
   align-items: center;

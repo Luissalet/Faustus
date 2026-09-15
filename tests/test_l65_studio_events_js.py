@@ -10,7 +10,9 @@ Each check demonstrates the closed gap:
     (MOD-06) decode and mark the turn; research `coverage` (RES-01) and a
     tool_output's `execution_target` (EXEC-01) decode onto the turn/step.
   - `l65-transcript-helpers`: `maskSecrets` (EXEC-02),
-    `reportPartsProgress` (RES-04), and `toolRailSummary` (grouped tools line).
+    `reportPartsProgress` (RES-04), `toolRailSummary` (grouped tools line),
+    categorized search/file/edit/command counts, collapsed Thought Ns,
+    and interleaved activity groups.
   - `l65-source-wiring`: the QA-44/SEC-03/ask_user-revision-send/TASK-06/
     UX-06 closures that need real source wiring rather than a runtime call.
 """

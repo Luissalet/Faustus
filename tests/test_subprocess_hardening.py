@@ -52,6 +52,13 @@ def test_local_policy_mentions_foreground_servers():
     assert "#!bg" in txt and "uvicorn" in txt and "interactive" in txt
 
 
+def test_local_policy_requires_search_before_answer():
+    from src.agent_harness import local_model_policy
+    txt = local_model_policy()
+    assert "training memory" in txt
+    assert "grep" in txt and "glob" in txt
+
+
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX shell semantics")
 def test_idle_watchdog_kills_a_silent_command_and_its_children(monkeypatch):
     """A command that prints once and then sleeps silently is killed after the
