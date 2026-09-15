@@ -651,6 +651,19 @@ details.fs-studio__tools {
   text-overflow: ellipsis;
 }
 
+.fs-studio__tools-body > .fs-studio__thought-inline {
+  margin-block: 0 var(--fs-space-2);
+  padding-inline-start: var(--fs-space-1);
+}
+
+.fs-studio__thought-inline .fs-prose {
+  margin: 0;
+  padding-inline-start: var(--fs-space-4);
+  border-inline-start: 2px solid var(--fs-border);
+  font-size: var(--fs-label-size);
+  color: var(--fs-text-3);
+}
+
 .fs-studio__tools[data-live] .fs-studio__tools-title {
   color: var(--fs-text-2);
 }
@@ -2391,6 +2404,20 @@ aside.fs-panel {
 }
 .fs-panel__plan-list li[data-status='blocked'] { color: var(--fs-danger); }
 .fs-panel__plan-list li[data-status='done'] { color: var(--fs-text-2); }
+
+.fs-panel__progress {
+  gap: var(--fs-space-4);
+}
+.fs-panel__progress h3 {
+  margin: 0 0 var(--fs-space-2);
+  font-size: var(--fs-text-sm, 0.875rem);
+  display: flex;
+  align-items: baseline;
+  gap: var(--fs-space-2);
+}
+.fs-panel__progress .fs-studio__trace {
+  margin: 0;
+}
 
 .fs-studio__step-links {
   display: flex;

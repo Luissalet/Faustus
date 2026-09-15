@@ -206,10 +206,11 @@ def _blocked_server_result(kind: str, tool: str) -> Dict:
         "error": (
             f"{tool}: `{kind}` starts a long-running server/watcher and would block this turn "
             "(it never exits on its own; the previous attempt hung the run). Do ONE of: "
-            "(1) start it detached — put `#!bg` as the FIRST line of the bash block and the "
-            "command below it; you will be re-invoked with its output and can query/kill it with "
-            "manage_bg_jobs; (2) bound it: `timeout 30 <command>`; (3) verify the code without "
-            "running the server (import it, run its tests, or call the handler directly)."
+            "(1) start it detached — put `#!bg` as the FIRST line of the bash or powershell "
+            "block and the command below it; you will be re-invoked with its output and can "
+            "query/kill it with manage_bg_jobs; (2) bound it: `timeout 30 <command>`; "
+            "(3) verify the code without running the server (import it, run its tests, or "
+            "call the handler directly)."
         ),
         "exit_code": 2,
     }
@@ -713,6 +714,13 @@ class BashTool:
         launcher = foreground_server_launch(content)
         if launcher:
             return _blocked_server_result(launcher, "bash")
+        if IS_WINDOWS and not find_bash():
+            # No Git Bash: run the same command through PowerShell rather than
+            # telling the model the shell does not exist.
+            return await PowerShellTool().execute(
+                content,
+                {"progress_cb": progress_cb, "subproc_env": _subproc_env, "session_id": session_id},
+            )
         started_at = time.time()
         # tmux is a POSIX persistence path. A stray MSYS/Cygwin tmux.exe on
         # native Windows must not bypass the Git Bash launcher below: the tmux

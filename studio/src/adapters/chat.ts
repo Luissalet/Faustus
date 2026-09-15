@@ -283,6 +283,23 @@ export interface Todo {
   verified?: boolean;
 }
 
+const TODO_STATUSES = new Set<Todo['status']>(['pending', 'in_progress', 'completed']);
+
+/** The agent's `todowrite` list, from a live `progress_update` or GET /api/agent/progress. */
+export function todosFrom(raw: unknown): Todo[] {
+  return asArray<Record<string, unknown>>(raw)
+    .map((item) => {
+      const status = str(item.status);
+      return {
+        content: str(item.content ?? item.text),
+        status: (TODO_STATUSES.has(status as Todo['status']) ? status : 'pending') as Todo['status'],
+        priority: str(item.priority) || undefined,
+        verified: typeof item.verified === 'boolean' ? item.verified : undefined,
+      };
+    })
+    .filter((item) => item.content);
+}
+
 /** `event: git_policy` from `src/agent_git_policy.py` — CONTRATO_GIT_2.md:
  *  `{"action":"branch"|"commit"|"push","ok":bool,"branch"?,"sha"?,"detail"?}`. */
 export interface GitPolicyEvent {
@@ -825,6 +842,23 @@ export async function loadHistory(
       index,
     }));
   return { name: raw.name ?? '', model: raw.model ?? '', history };
+}
+
+/**
+ * The todowrite list the agent keeps for this chat (`GET /api/agent/progress/{id}`).
+ * Empty when the session has none yet, or the request fails — the Progress
+ * panel treats that as "nothing to restore", never as an error banner.
+ */
+export async function loadAgentProgress(sessionId: string, signal?: AbortSignal): Promise<Todo[]> {
+  try {
+    const raw = await getJson<{ todos?: unknown }>(
+      `/api/agent/progress/${encodeURIComponent(sessionId)}`,
+      signal,
+    );
+    return todosFrom(raw.todos);
+  } catch {
+    return [];
+  }
 }
 
 /**
@@ -1524,12 +1558,7 @@ export function decode(raw: Record<string, unknown>, sseEvent: string | null): C
     case 'progress_update':
       return {
         type: 'progress',
-        todos: asArray<Record<string, unknown>>(raw.todos).map((t) => ({
-          content: str(t.content ?? t.text),
-          status: (['pending', 'in_progress', 'completed'].includes(str(t.status)) ? str(t.status) : 'pending') as Todo['status'],
-          priority: str(t.priority) || undefined,
-          verified: typeof t.verified === 'boolean' ? t.verified : undefined,
-        })),
+        todos: todosFrom(raw.todos),
       };
     case 'plan_update':
       return {

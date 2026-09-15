@@ -55,16 +55,14 @@ SETTING = "agent_sandbox_execution"
 #:
 #:   * ``auto`` (default) — the sandbox is an OPTION, not a gate. On a native
 #:     Windows host the command runs on the host (Git Bash / the Windows
-#:     Python): a Linux container has no ``cmd``, no ``powershell``, no
-#:     ``.bat``, no ``winget`` and not the user's own interpreter, so it can
-#:     never verify a Windows project — seen live on 14-09-2026, where every
-#:     turn ended in «start Docker» or «/bin/sh: cmd: not found». On POSIX the
+#:     Python) in BOTH auto and strict: a Linux container has no ``cmd``, no
+#:     ``powershell``, no ``.bat``, no ``winget`` and not the user's own
+#:     interpreter, so it can never verify a Windows project. On POSIX the
 #:     container is used when the daemon answers and the host otherwise. The
 #:     result always says where it ran (``execution_target`` /
 #:     ``sandbox_skipped``), so nothing is silent.
-#:   * ``strict`` — the historical rule: on and unavailable means REFUSED,
-#:     never the host. For operators who run untrusted code and would rather
-#:     have no run than an unsandboxed one.
+#:   * ``strict`` — on POSIX, the historical rule: on and unavailable means
+#:     REFUSED, never the host. Windows still takes the host (see above).
 MODE_SETTING = "agent_sandbox_mode"
 MODES = ("auto", "strict")
 IMAGE_SETTING = "agent_sandbox_image"
@@ -113,20 +111,23 @@ def _host_is_windows() -> bool:
 
 
 def host_skip_reason() -> Optional[str]:
-    """Why `run()` would hand this call to the host in ``auto`` mode WITHOUT
-    probing Docker, or None when the sandbox is the place to try first.
+    """Why `run()` would hand this call to the host WITHOUT probing Docker,
+    or None when the sandbox is the place to try first.
 
-    Only the host kind decides here: a native Windows host is skipped
-    unconditionally (a Linux container cannot run the project's own
-    toolchain — cmd, powershell, .bat, winget, the Windows Python — which is
-    what "verify the code" means on that machine). A daemon that does not
-    answer is a second, later reason, found by the probe in `run()`."""
-    if not enabled() or mode() == "strict":
+    A native Windows host is skipped unconditionally — including ``strict``.
+    A Linux container cannot run the project's own toolchain (cmd, powershell,
+    .bat, winget, the Windows Python), which is what "verify the code" means
+    on that machine; asking the user to start Docker does not change that.
+    ``strict`` remains the POSIX hard gate. A daemon that does not answer is
+    a second, later reason, found by the probe in `run()`."""
+    if not enabled():
         return None
     if _host_is_windows():
         return ("native Windows host: the Linux container cannot run cmd, "
                 "powershell, .bat files, winget or the project's own Windows "
-                "Python, so commands run on the host (agent_sandbox_mode=auto)")
+                "Python, so commands run on the host")
+    if mode() == "strict":
+        return None
     return None
 
 

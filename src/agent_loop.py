@@ -431,7 +431,8 @@ _AGENT_RULES = """\
 - For git, use the git_* tools, not bash: they respect the user's repository policy and show up in the Source control panel.
 - When the user talks about branches, commits, pushes or "the repo" without naming one, use git_* with `repo` (name) or no path at all — they resolve to the project's repository; only ask which one if there are several.
 - The project board (FAU-12 style ids) is the project's task list: when the user reports a bug, asks for a feature, drops an idea or asks what is pending, use board_* — create, update, comment, claim — and cite ids. Never keep a parallel list in markdown.
-- Users speak plainly: map what they ask to the right tool yourself; never ask them to name a tool, a path or a command, and never say a tool is unavailable without first checking the catalog (list the tools you have).
+- Users speak plainly: map what they ask to the right tool yourself; never ask them to name a tool, a path or a command, and never say a tool is unavailable without first calling `lookup_tools`.
+- Visual work is verified by seeing it. After a UI/layout/window/page change, call `desktop_screenshot` (this PC's screen; the image is attached) and report what you actually see. Never say you could not look because of a sandbox, Docker, or a missing browser.
 """
 
 _API_AGENT_RULES = """\
@@ -450,7 +451,8 @@ _API_AGENT_RULES = """\
 - For git, use the git_* tools, not bash: they respect the user's repository policy and show up in the Source control panel.
 - When the user talks about branches, commits, pushes or "the repo" without naming one, use git_* with `repo` (name) or no path at all — they resolve to the project's repository; only ask which one if there are several.
 - The project board (FAU-12 style ids) is the project's task list: when the user reports a bug, asks for a feature, drops an idea or asks what is pending, use board_* — create, update, comment, claim — and cite ids. Never keep a parallel list in markdown.
-- Users speak plainly: map what they ask to the right tool yourself; never ask them to name a tool, a path or a command, and never say a tool is unavailable without first checking the catalog (list the tools you have).
+- Users speak plainly: map what they ask to the right tool yourself; never ask them to name a tool, a path or a command, and never say a tool is unavailable without first calling `lookup_tools`.
+- Visual work is verified by seeing it. After a UI/layout/window/page change, call `desktop_screenshot` (this PC's screen; the image is attached) and report what you actually see. Never say you could not look because of a sandbox, Docker, or a missing browser.
 """
 
 _LINK_RULES = """\
@@ -582,7 +584,7 @@ _DOMAIN_TOOL_MAP = {
 _WORKSPACE_TERMINUS_TOOLS = (
     _DOMAIN_TOOL_MAP["files"]
     | {"manage_skills", "ask_teacher", "web_search", "web_fetch", "ask_user", "update_plan",
-       "delegate_agents"}
+       "delegate_agents", "desktop_screenshot", "desktop_list_windows"}
 )
 
 # ── Workspace tool floor (FAUSTUS) ────────────────────────────────────────
@@ -600,9 +602,10 @@ _WORKSPACE_TERMINUS_TOOLS = (
 # `apply_tax(total, rate)` and stripped read_file/edit_file/bash from a plain
 # code request that had a project folder bound.
 #
-# So the loop keeps a floor of its own, and it is deliberately narrow:
-#   * read/list plus one edit path. `bash`, `python` and `write_file` are the
-#     privileged trio a caller may legitimately withhold and are NOT floored.
+# So the loop keeps a floor of its own:
+#   * read/list/search, an edit path, the host shell (`bash`/`python`/`powershell`)
+#     and desktop vision (`desktop_screenshot`). `write_file` stays a privileged
+#     tool a caller may withhold and is NOT floored.
 #   * it never outranks an authorization decision — guide-only, block-all, the
 #     non-admin denylist, plan mode's read-only allowlist, an operator's own
 #     `disabled_tools` setting and the running worker's own agent definition
@@ -619,9 +622,12 @@ _WORKSPACE_TERMINUS_TOOLS = (
 # lines in the server log for tools the same turn had just advertised. Offering
 # a tool and then refusing it is worse than not offering it — it is a trap by
 # construction, and the model has no way to tell it from a bug in its own call.
-WORKSPACE_TOOL_FLOOR_READ = frozenset({"read_file", "ls"})
+WORKSPACE_TOOL_FLOOR_READ = frozenset({
+    "read_file", "ls", "grep", "desktop_screenshot", "desktop_list_windows",
+})
 WORKSPACE_TOOL_FLOOR_EDIT = frozenset({"edit_file", "apply_patch"})
-WORKSPACE_TOOL_FLOOR = WORKSPACE_TOOL_FLOOR_READ | WORKSPACE_TOOL_FLOOR_EDIT
+WORKSPACE_TOOL_FLOOR_SHELL = frozenset({"bash", "python", "powershell"})
+WORKSPACE_TOOL_FLOOR = WORKSPACE_TOOL_FLOOR_READ | WORKSPACE_TOOL_FLOOR_EDIT | WORKSPACE_TOOL_FLOOR_SHELL
 
 
 # ── Why a tool call was refused (FAUSTUS) ─────────────────────────────────
@@ -790,14 +796,14 @@ For LONG-running commands (package installs, pip/npm, ffmpeg, model downloads, t
 #!bg
 pip install openai-whisper
 ```
-NO TTY: stdin/stdout are pipes, so there is NO interactive terminal — `input()`, `curses`, `termios`, `pygame`, and `tkinter` will all fail. Don't try to RUN interactive terminal games or GUI apps here — verify them non-interactively yourself (their tests, `py_compile`, importing the module, calling the entry point with arguments) before telling the user anything works; hand a command to the user ONLY for the interactive part you truly cannot drive. For anything the USER should play/use interactively (games, UIs, demos), prefer a single self-contained HTML file with `<canvas>` + inline JS — save it via `create_document` with language="html" and tell the user to hit the Run / Preview button (▶) in the document editor toolbar; it renders inline in a sandboxed iframe so the game is playable right there. Works from any machine that can reach the Faustus UI — no need to copy files out.
+NO TTY: stdin/stdout are pipes, so interactive prompts (`input()`, `curses`) will hang — don't use those. This is the user's machine, not a Linux jail: after a visual change (UI, layout, window, page) call `desktop_screenshot` and report what you SEE. Do not tell the user you cannot look, and do not hand them a command "because this sandbox cannot". Verify code here (tests, `py_compile`, import, entry point with arguments).
 NEVER pipe multi-line Python through `python -c "..."` — shell quoting eats real newlines and `\\n` arrives as literal backslash-n, which Python parses as a line-continuation error on line 1. To run multi-line code, either use the dedicated `python` tool block above, or save to a file first with a quoted HEREDOC (`cat > /tmp/x.py << 'EOF' ... EOF`) and then `python /tmp/x.py`.""",
 
     "python": """\
 ```python
 <python code>
 ```
-Execute Python code. Use for computation, data processing, scripting. NOT for writing code for the user (use create_document for that). Same sandbox limits as bash — no TTY, no GUI, no `input()`; for anything the user should interact with, generate a single HTML file with inline JS instead.
+Execute Python code. Use for computation, data processing, scripting. NOT for writing code for the user (use create_document for that). stdin is a pipe so `input()` will hang; for anything visual, launch it and call `desktop_screenshot` rather than claiming there is no GUI.
 Prefer a dedicated tool whenever one fits the job (reading, searching, or writing files); use python only for computation/processing no dedicated tool covers - not for reading or writing files.
 Do NOT use Python/requests for web lookup/search/latest/current requests when `web_search` or `web_fetch` is available.""",
 
@@ -807,7 +813,7 @@ Do NOT use Python/requests for web lookup/search/latest/current requests when `w
 ```
 Run a PowerShell script on this Windows host (pwsh or Windows PowerShell), starting in the workspace. Use it for anything Windows-native: `.bat`/`.cmd` launchers, `winget`/`choco`, `Start-Process`, services, registry, WMI, paths with backslashes, the project's `.venv\\Scripts\\python.exe`.
 Write the script exactly as you would type it in a PowerShell window: no outer quoting, no `powershell -Command "..."`, no escaping for a second shell. A `.bat`/`.cmd` runs with `& cmd.exe /c "thing.bat"` — PowerShell's `-File` only accepts `.ps1` and refuses a `.bat`.
-`bash` on Windows is Git Bash (POSIX syntax) and REFUSES to launch `powershell`/`cmd` for you; come here instead. Same rules as bash: not for creating or editing files (use the file tools), `#!bg` is NOT supported here (use bash for detached jobs), never start a foreground server.""",
+`bash` on Windows is Git Bash (POSIX syntax) and REFUSES to launch `powershell`/`cmd` for you; come here instead. Same rules as bash: not for creating or editing files (use the file tools). For LONG-running scripts (`.bat`, `winget`, installs) make the FIRST line `#!bg` to run detached — same job card as bash. Never start a foreground server.""",
 
     "web_search": """\
 ```web_search
@@ -984,6 +990,7 @@ If the user asks for a reminder/alarm before the event, pass `reminder_minutes` 
     "pipeline": "- ```pipeline``` — Run a multi-step AI pipeline. Args (JSON) with ordered steps, each specifying a model and prompt. Use for complex workflows.",
     "ui_control": "- ```ui_control``` — Control the UI: toggle tools on/off, OPEN PANELS, open email reply drafts, switch models, change themes. Commands: `toggle <name> on/off` (names: bash/shell, web/search, research, incognito, document_editor/documents), `open_panel <name>` (panels: documents, gallery, email, sessions, notes, memories/brain, skills, settings, cookbook), `open_email_reply <uid> <folder> <reply|reply-all|ai-reply> <body text>` (opens an email compose document pre-filled with body, DOES NOT send; use this for normal “write/draft a reply saying X” requests), `set_mode agent/chat`, `switch_model <name>`, `set_theme <preset>`, `create_theme <name> <bg> <fg> <panel> <border> <accent>` (optional key=val for advanced colors AND background effects: bgPattern=<none|dots|synapse|rain|constellations|perlin-flow|petals|sparkles|embers>, bgEffectColor=#RRGGBB, bgEffectIntensity=<num>, bgEffectSize=<num>, frosted=true|false). \"open documents\" / \"open library\" / \"show gallery\" / \"open inbox\" / \"open notes\" / \"open cookbook\" all map to `open_panel <name>`. Built-in theme presets: dark, light, midnight, paper, cyberpunk, retrowave, forest, ocean, ume, copper, terminal, organs, lavender, gpt, claude, cute. For any other vibe/name, use create_theme.",
     "ask_user": "- ```ask_user``` — Ask the user to DECIDE when the task is ambiguous and the answer changes what you build next: which approach, which library or storage, which files or behaviour they meant, which scope (a request like \"add auth\" or \"implement X\" with several sensible designs is exactly this). Args (JSON): {\"question\": \"one clear question\", \"options\": [{\"label\": \"short choice\", \"description\": \"one line: what happens if they pick it\"}, ...], \"multi\": false?, \"allow_free_text\": true?}. 2-4 options, the recommended one FIRST with \"(recommended)\" in its label; set \"multi\": true for a checklist when several may apply. The user gets one button per option (each carries a stable `id` in the response so their pick is unambiguous), a checklist when multi, and — unless you pass \"allow_free_text\": false — always a free-text line to answer in their own words, so never add an \"Other\" option yourself. The question itself gets a stable `question_id`. Calling this ENDS your turn and their answer comes back as your next message. Do not ask what has an obvious default or what you can check yourself; ask once, with all the decisions you need in that one question when they are related.",
+    "lookup_tools": "- ```lookup_tools``` — Search the tool catalog and load schemas on demand. Use when a needed tool is not in this turn's native schema list, or before saying a tool is unavailable. Args (JSON): {\"query\": \"send email\"} and/or {\"names\": [\"git_commit\"]}. Optional `detail`: `catalog` (one-liners) or `schema` (full JSON). Returned tools can be called now as a fenced block; native function schemas load on the next round.",
     "update_plan": "- ```update_plan``` — While executing an approved plan, write the plan back: tick steps done or revise them. Args (JSON): {\"plan\": \"- [x] done step\\n- [ ] next step\"} — or, instead of markdown, {\"steps\": [{\"title\": \"...\", \"status\": \"pending|done|blocked\"}, ...]}. Always pass the COMPLETE checklist, not a diff; there is no length limit. Call it after finishing each step (mark it `- [x]`) and whenever the user asks to change the plan. The user's docked plan window updates live. Does nothing if there's no active plan.",
     # Desktop control (FAUSTUS): the model sees the screen and drives it.
     "desktop_screenshot": "- ```desktop_screenshot``` — Capture the user's screen (the computer Faustus runs on) and SEE it: the image is attached to your context. Args (JSON, all optional): {\"monitor\": 0, \"region\": [x, y, w, h]}. Returns the screen size, the returned image size and the scale (the image is downscaled). Coordinates for desktop_click/desktop_scroll are pixels of THIS image (mapped back to the screen for you). Take a new screenshot after every action that changes the screen; fails clearly when there is no interactive desktop.",
@@ -1098,35 +1105,43 @@ def _execution_environment_block(tool_names: Optional[set] = None) -> str:
         return ""
     names = set(tool_names or ())
     lines = ["## Execution environment (facts, not guesses)"]
-    if info.get("target") == "container":
-        lines.append(
-            f"- `bash`/`python` run INSIDE a Linux container ({info.get('image') or 'docker'}) with the "
-            "workspace mounted at /workspace (strict sandbox mode). Windows programs, .bat files and "
-            "`powershell` are NOT reachable from there.")
-    elif IS_WINDOWS:
+    if IS_WINDOWS:
         bash = find_bash() or ""
         lines.append(
             "- This machine is **native Windows**. There is NO Docker or Linux container in the way: "
             "every command runs directly on this PC, in the workspace folder, and nothing needs to be "
-            "started first. Never ask the user to start Docker or to run a verification command "
-            "themselves — run it.")
+            "opened first. Never ask the user to launch Docker Desktop or to run a verification "
+            "command themselves — run it.")
         lines.append(
             f"- `bash` is Git Bash ({bash or 'bash.exe'}): POSIX syntax, `&&`, pipes, `#!bg`. Use it for "
             "POSIX one-liners; Windows paths inside it work with forward slashes (`C:/Users/...`) or "
-            "quoted backslashes.")
+            "quoted backslashes. If Git Bash is missing, `bash` runs the same command through PowerShell "
+            "instead of refusing.")
         if "powershell" in names or not names:
             lines.append(
                 "- `powershell` runs a PowerShell script natively: use it for `.bat`/`.cmd` launchers, "
                 "`winget`, `Start-Process`, services, registry, `.venv\\Scripts\\python.exe`, anything "
                 "with backslash paths. Write it as you would type it in a PowerShell window — `bash` "
                 "REFUSES to launch `powershell`/`cmd`, so never wrap one inside the other. A `.bat` "
-                "runs with `& cmd.exe /c \"thing.bat\"`; `-File` only accepts `.ps1`.")
+                "runs with `& cmd.exe /c \"thing.bat\"`; `-File` only accepts `.ps1`. Long jobs: first "
+                "line `#!bg`.")
         lines.append(
             "- `python` runs the PROJECT's interpreter (its `.venv`/`venv` if present, else the host's "
             "`python`), not a separate environment: what the project installed is importable.")
         lines.append(
             "- Absolute paths (`C:\\...`) are accepted by every file tool as long as they are inside "
             "the workspace; relative paths resolve from the workspace root.")
+        if "desktop_screenshot" in names or not names:
+            lines.append(
+                "- `desktop_screenshot` captures THIS PC's screen and attaches the image so you can SEE "
+                "it. Use it after any visual change (UI, layout, window, installer, browser). This is "
+                "how you verify visual work — not by asking the user to look, and not by claiming a "
+                "Linux sandbox cannot.")
+    elif info.get("target") == "container":
+        lines.append(
+            f"- `bash`/`python` run INSIDE a Linux container ({info.get('image') or 'docker'}) with the "
+            "workspace mounted at /workspace (strict sandbox mode). Windows programs, .bat files and "
+            "`powershell` are NOT reachable from there.")
     else:
         where = ("a Linux container when Docker answers, this host otherwise (auto sandbox mode)"
                  if info.get("target") == "container_or_host" else "directly on this host")
@@ -1134,6 +1149,10 @@ def _execution_environment_block(tool_names: Optional[set] = None) -> str:
         lines.append(
             "- Absolute paths are accepted by every file tool as long as they are inside the "
             "workspace; relative paths resolve from the workspace root.")
+        if "desktop_screenshot" in names or not names:
+            lines.append(
+                "- `desktop_screenshot` captures THIS machine's screen and attaches the image. Use it "
+                "after any visual change rather than telling the user you cannot look.")
     lines.append(
         "- Verification is YOUR job: after writing code, run it (tests, `py_compile`, an import, the "
         "entry point with arguments) here and report what actually happened. A result you did not "
@@ -1142,7 +1161,8 @@ def _execution_environment_block(tool_names: Optional[set] = None) -> str:
 
 
 def _assemble_prompt(tool_names: set, disabled_tools: set = None, compact: bool = False,
-                      record_blocks: Optional[list] = None) -> str:
+                      record_blocks: Optional[list] = None,
+                      deferred_tools: Optional[set] = None) -> str:
     """Build the system prompt with only the specified tools included.
 
     ``record_blocks``, when the caller passes a list, gets one ``{"kind",
@@ -1153,9 +1173,15 @@ def _assemble_prompt(tool_names: set, disabled_tools: set = None, compact: bool 
     would be a second, lossier copy of exactly this loop. ``None`` (the
     default) costs one `is not None` check per section and changes nothing
     else — every existing caller keeps returning a bare string.
+
+    ``deferred_tools`` are selected and executable this turn but only listed
+    as one-liners (src/tool_serve.py). Full sections/schemas stay on
+    ``tool_names``. Domain rules are derived from the union so a deferred
+    email tool still attaches the email rules.
     """
     disabled = disabled_tools or set()
     included = tool_names - disabled
+    deferred = (deferred_tools or set()) - disabled - included
 
     def _record(kind: str, name: str, text: str) -> None:
         if record_blocks is not None:
@@ -1177,12 +1203,19 @@ def _assemble_prompt(tool_names: set, disabled_tools: set = None, compact: bool 
         _record("preamble", "_AGENT_PREAMBLE_COMPACT", parts[0])
         _record("tool_index", "available_tools", _tools_block)
         _record("rules", "_API_AGENT_RULES", _API_AGENT_RULES)
-        _domain_texts = _domain_rules_for_tools(included)
+        if deferred:
+            from src.tool_serve import compact_catalog_block
+            _catalog = compact_catalog_block(deferred, disabled=disabled)
+            if _catalog:
+                parts.append(_catalog)
+                _record("tool_catalog", "deferred_tools", _catalog)
+        _domain_union = included | deferred
+        _domain_texts = _domain_rules_for_tools(_domain_union)
         parts.extend(_domain_texts)
-        for _domain, _text in zip(_domain_rule_names_for_tools(included), _domain_texts):
+        for _domain, _text in zip(_domain_rule_names_for_tools(_domain_union), _domain_texts):
             _record("domain_rules", _domain, _text)
-        if included & _SHELL_ENV_TOOLS:
-            _env_block = _execution_environment_block(included)
+        if _domain_union & _SHELL_ENV_TOOLS:
+            _env_block = _execution_environment_block(_domain_union)
             if _env_block:
                 parts.append(_env_block)
                 _record("environment", "execution_environment", _env_block)
@@ -1235,14 +1268,22 @@ def _assemble_prompt(tool_names: set, disabled_tools: set = None, compact: bool 
             parts.insert(1, _schema_block)
             _record("tool_schema", name, _schema_block)
 
+    if deferred:
+        from src.tool_serve import compact_catalog_block
+        _catalog = compact_catalog_block(deferred, disabled=disabled)
+        if _catalog:
+            parts.append(_catalog)
+            _record("tool_catalog", "deferred_tools", _catalog)
+
     parts.append(_AGENT_RULES)
     _record("rules", "_AGENT_RULES", _AGENT_RULES)
-    _domain_texts = _domain_rules_for_tools(included)
+    _domain_union = included | deferred
+    _domain_texts = _domain_rules_for_tools(_domain_union)
     parts.extend(_domain_texts)
-    for _domain, _text in zip(_domain_rule_names_for_tools(included), _domain_texts):
+    for _domain, _text in zip(_domain_rule_names_for_tools(_domain_union), _domain_texts):
         _record("domain_rules", _domain, _text)
-    if included & _SHELL_ENV_TOOLS:
-        _env_block = _execution_environment_block(included)
+    if _domain_union & _SHELL_ENV_TOOLS:
+        _env_block = _execution_environment_block(_domain_union)
         if _env_block:
             parts.append(_env_block)
             _record("environment", "execution_environment", _env_block)
@@ -1250,7 +1291,7 @@ def _assemble_prompt(tool_names: set, disabled_tools: set = None, compact: bool 
 
 
 #: Tools whose presence makes the execution-environment block worth its tokens.
-_SHELL_ENV_TOOLS = frozenset({"bash", "python", "powershell", "manage_bg_jobs"})
+_SHELL_ENV_TOOLS = frozenset({"bash", "python", "powershell", "manage_bg_jobs", "desktop_screenshot"})
 
 
 def _workspace_gate_granted(owner: Any, workspace: Any) -> bool:
@@ -1708,7 +1749,7 @@ _WORKSPACE_CODE_ACTION_RE = re.compile(
     # match inside `implementando`) and the turn was classified low-signal.
     r"(?:a[ñn][aá]d[ea]|añadir|anadir|agr[eé]g[ao]|agregar|cr[eé][ao]|crear|"
     r"impl[eé]m[eé]nt(?:[ao]|ar|ando)|"
-    r"arr[eé]gl[ao]|arreglar|arreglando|corr[ií]g[eo]|corregir|modif[ií]c[ao]|modificar|c[aá]mbi[ao]|cambiar|"
+    r"arr[eé]gl[ao]|arreglar|arreglando|arreglos|corr[ií]g[eo]|corregir|modif[ií]c[ao]|modificar|c[aá]mbi[ao]|cambiar|"
     r"elim[ií]n[ao]|eliminar|b[oó]rr[ao]|borrar|qu[ií]t[ao]|quitar|actual[ií]z[ao]|actualizar|"
     r"refactor[ií]z[ao]|refactorizar|mu[eé]v[eo]|mover|ren[oó]mbr[ao]|renombrar|rev[ií]s[ao]|revisar|"
     r"l[eé][eo]|leer|b[uú]sc[ao]|buscar|ejec[uú]t[ao]|ejecutar|pru[eé]b[ao]|probar|comp[ií]l[ao]|compilar|"
@@ -1834,6 +1875,7 @@ def _workspace_coding_rules(workspace: Optional[str]) -> str:
         "- If output is huge, use `rg`, `grep`, `head`, `tail`, focused `sed -n`, or scripts that summarize only relevant parts. Do not flood the context with full logs or full files.\n"
         "- If a command fails, use the failure output to choose the next diagnostic or patch. Do not silently stop or claim success.\n"
         "- After code changes, run the smallest relevant verification command you can infer from the repo (for example a focused test, `py_compile`, `node --check`, lint, or build). If verification cannot run, say exactly why.\n"
+        "- Visual work (UI, CSS, layout, windows, pages) is verified by looking at it: call `desktop_screenshot` after the change and report what you SEE. Never tell the user you could not look because of a sandbox or a missing browser.\n"
         "- Keep going until the requested change is actually made and checked, or state the concrete blocker."
     )
 
@@ -3257,18 +3299,31 @@ def _build_system_prompt(
     suppress_personal_memory: bool = False,
     workspace: Optional[str] = None,
     session_id: Optional[str] = None,
+    schema_tools: Optional[Set[str]] = None,
 ) -> List[Dict]:
     """Build agent system prompt, inject MCP/document context, merge consecutive system msgs.
 
     ``session_id`` is only used to remember WHICH learned-memory items were put
     in front of the model this turn (src/memory_engine.py), so the turn's
-    verification result can be credited or blamed on exactly those items."""
+    verification result can be credited or blamed on exactly those items.
+
+    ``schema_tools`` is the hot subset whose full prompt sections / native
+    schemas ship this turn. ``relevant_tools`` remains the executable set;
+    the difference is listed as a compact catalog (src/tool_serve.py).
+    """
     global _cached_base_prompt, _cached_base_prompt_key
     if suppress_local_context:
         active_document = None
 
+    _prompt_tools = relevant_tools
+    _deferred_tools = None
+    if relevant_tools is not None and schema_tools is not None:
+        _prompt_tools = set(schema_tools) & set(relevant_tools)
+        _deferred_tools = set(relevant_tools) - _prompt_tools
+
     # With RAG tools, cache key includes the selected tools
     _rt_key = frozenset(relevant_tools) if relevant_tools else None
+    _st_key = frozenset(schema_tools) if schema_tools is not None else None
     # Include a signature of the built-in overrides so editing one in the
     # Skills UI takes effect without a restart (busts the prompt cache).
     # Hash the full dict so content edits (not just key add/remove) bust it.
@@ -3277,29 +3332,31 @@ def _build_system_prompt(
         _ov_sig = _hl.sha256(_json.dumps(get_builtin_overrides() or {}, sort_keys=True).encode()).hexdigest()
     except Exception:
         _ov_sig = ""
-    cache_key = (frozenset(disabled_tools or []), bool(mcp_mgr), needs_admin, _rt_key, compact, _ov_sig, owner, suppress_local_context, suppress_skills)
+    cache_key = (frozenset(disabled_tools or []), bool(mcp_mgr), needs_admin, _rt_key, _st_key, compact, _ov_sig, owner, suppress_local_context, suppress_skills)
     if _cached_base_prompt and _cached_base_prompt_key == cache_key and not active_document:
         agent_prompt = _cached_base_prompt
         # Skill index is user-editable (name + description), so it must never
         # live in the trusted system role and is NOT cached. Always recompute
         # when the cache hits.
         _, _skill_index_block = _build_base_prompt(
-            disabled_tools, mcp_mgr, needs_admin, relevant_tools,
+            disabled_tools, mcp_mgr, needs_admin, _prompt_tools,
             mcp_disabled_map=mcp_disabled_map, compact=compact, owner=owner,
             suppress_local_context=suppress_local_context,
             suppress_skills=suppress_skills,
+            deferred_tools=_deferred_tools,
         )
     else:
         agent_prompt, _skill_index_block = _build_base_prompt(
             disabled_tools,
             mcp_mgr,
             needs_admin,
-            relevant_tools,
+            _prompt_tools,
             mcp_disabled_map=mcp_disabled_map,
             compact=compact,
             owner=owner,
             suppress_local_context=suppress_local_context,
             suppress_skills=suppress_skills,
+            deferred_tools=_deferred_tools,
         )
         if not active_document:
             _cached_base_prompt = agent_prompt
@@ -4059,11 +4116,16 @@ def _build_base_prompt(
     suppress_local_context: bool = False,
     suppress_skills: bool = False,
     record_blocks: Optional[list] = None,
+    deferred_tools=None,
 ):
     """Build the agent prompt with only relevant tools included.
 
     If relevant_tools is provided (from RAG retrieval), only those tools
     are shown with full descriptions. Otherwise falls back to full prompt.
+
+    ``deferred_tools`` (src/tool_serve.py): selected/executable this turn but
+    listed as catalog one-liners instead of full sections. Native schemas for
+    those names are loaded via `lookup_tools`.
 
     ``record_blocks`` (ARCH-03, effective config): passed straight through to
     `_assemble_prompt`. Its presence also skips the ``AGENT_SYSTEM_PROMPT``
@@ -4077,6 +4139,7 @@ def _build_base_prompt(
     disabled = set(disabled_tools or [])
     if not get_setting("image_gen_enabled", False):
         disabled.add("generate_image")
+    deferred = set(deferred_tools or ())
 
     if relevant_tools is not None:
         # RAG mode: trust the relevant_tools set as already-composed.
@@ -4085,11 +4148,15 @@ def _build_base_prompt(
         # drop manage_memory for clear contact-save patterns). Unioning
         # ALWAYS_AVAILABLE back in here used to silently undo those
         # drops. Only force-include the irreducible loop primitives
-        # (ask_user, update_plan) as belt-and-suspenders.
-        tool_names = set(relevant_tools) | {"ask_user", "update_plan"}
+        # (ask_user, update_plan, lookup_tools) as belt-and-suspenders.
+        tool_names = set(relevant_tools) | {"ask_user", "update_plan", "lookup_tools"}
+        deferred -= {"ask_user", "update_plan", "lookup_tools"}
         if needs_admin:
             tool_names |= _ADMIN_TOOLS
-        agent_prompt = _assemble_prompt(tool_names, disabled, compact=compact, record_blocks=record_blocks)
+        agent_prompt = _assemble_prompt(
+            tool_names, disabled, compact=compact, record_blocks=record_blocks,
+            deferred_tools=deferred,
+        )
     else:
         # Fallback: full prompt (RAG unavailable)
         agent_prompt = AGENT_SYSTEM_PROMPT
@@ -6193,6 +6260,10 @@ async def _stream_agent_loop_body(
     # RAG-based tool selection: retrieve relevant tools for this query.
     # If caller provided a pre-computed set (e.g. task_scheduler), use that.
     _relevant_tools = relevant_tools
+    # Names whose full schemas stay in the native tools list. Domain-map
+    # extras beyond this seed are deferred to the compact catalog + lookup_tools.
+    # A caller-pinned set is an authorization decision: nothing is deferred.
+    _hot_seed: Optional[set] = set(relevant_tools) if relevant_tools else None
     _t1 = time.time()
     if _relevant_tools:
         logger.info(f"[tool-rag] Using caller-provided relevant_tools ({len(_relevant_tools)} tools)")
@@ -6262,6 +6333,8 @@ async def _stream_agent_loop_body(
                             timeout=_TOOL_SELECTION_TIMEOUT_SECONDS,
                         )
                         logger.info(f"[tool-rag] Retrieved tools for query: {sorted(_relevant_tools - ALWAYS_AVAILABLE)}")
+                        if _hot_seed is None:
+                            _hot_seed = set(_relevant_tools)
                     except asyncio.TimeoutError:
                         # Leave _relevant_tools unset so the keyword fallback
                         # below still runs. Hard-coding ALWAYS_AVAILABLE here
@@ -6288,6 +6361,8 @@ async def _stream_agent_loop_body(
             if any(kw in ql for kw in keywords):
                 _relevant_tools.update(tools)
         logger.info(f"[tool-rag] Keyword fallback selected: {sorted(_relevant_tools - ALWAYS_AVAILABLE)}")
+        if _hot_seed is None:
+            _hot_seed = set(_relevant_tools)
 
     # If deterministic domain detection fired, seed the corresponding domain
     # tools into the selected tool set. This is not direct prompt-pack
@@ -6352,6 +6427,11 @@ async def _stream_agent_loop_body(
             for _domain in _latest_only_domains:
                 _relevant_tools.update(_DOMAIN_TOOL_MAP.get(str(_domain), set()))
             logger.info("[tool-rag] Workspace file/terminal request; using Faustus Terminus toolset")
+            # Terminus is the hot set. Domain extras re-seeded from the latest
+            # message stay executable (catalog + lookup_tools) so a stray
+            # "email"/"model" word does not dump those families as schemas.
+            if _hot_seed is not None:
+                _hot_seed = set(_WORKSPACE_TERMINUS_TOOLS)
         elif workspace and not plan_mode and not _active_document_relevant and not active_email:
             # A bound workspace is the user's declared intent to work in that
             # folder. Whatever the retriever picked (it is English-biased and
@@ -6362,6 +6442,8 @@ async def _stream_agent_loop_body(
             _missing = _WORKSPACE_TERMINUS_TOOLS - set(_relevant_tools)
             if _missing:
                 _relevant_tools.update(_WORKSPACE_TERMINUS_TOOLS)
+                if _hot_seed is not None:
+                    _hot_seed |= _WORKSPACE_TERMINUS_TOOLS
                 logger.info("[tool-rag] Workspace bound; adding file/terminal tools: %s", sorted(_missing))
 
     # And now the low-signal floor, on top of whatever the retrieval chose.
@@ -6376,11 +6458,10 @@ async def _stream_agent_loop_body(
     # on a short, topic-free query (observed live: "look at the local
     # project" ranks `bash` among its nearest neighbours purely off token
     # overlap with "local"/"project", never real intent to run a command).
-    # The floor's own design already says "write/shell tools do NOT surface
-    # on a vague message" (WORKSPACE_TOOL_FLOOR's docstring: "bash, python
-    # and write_file are the privileged trio... NOT floored"); that rule has
-    # to hold for whatever retrieval brought in too, not just for what the
-    # floor itself would have added.
+    # The floor's own design floors the host shell and desktop vision on a
+    # bound Agent workspace; `write_file` stays the privileged tool a route
+    # may withhold. Without a workspace, retrieval alone is not authority
+    # to expose local execution.
     if _low_signal_readonly_floor and _relevant_tools is not None:
         _low_signal_privileged = {"bash", "python", "powershell", "write_file"} | WORKSPACE_TOOL_FLOOR_EDIT
         # Without a workspace, semantic retrieval alone is not authority to
@@ -6393,6 +6474,8 @@ async def _stream_agent_loop_body(
             logger.info("[tool-rag] Low-signal turn; retrieval's privileged picks withheld: %s", _withheld)
         _added = sorted(_low_signal_readonly_floor - set(_relevant_tools))
         _relevant_tools = set(_relevant_tools) | _low_signal_readonly_floor
+        if _hot_seed is not None:
+            _hot_seed |= _low_signal_readonly_floor
         if _added:
             logger.info("[tool-rag] Low-signal read-only floor added: %s", _added)
 
@@ -6412,6 +6495,12 @@ async def _stream_agent_loop_body(
         if _floor_missing:
             _relevant_tools.update(_floor_missing)
             logger.info("[tool-floor] workspace bound; restoring %s", sorted(_floor_missing))
+        # Floor tools must stay native schemas even when they already arrived
+        # via domain expansion (those extras are otherwise deferred). A plan
+        # mode turn that picked `read_file` from the files domain used to
+        # catalog it and leave the model with no way to inspect the folder.
+        if _hot_seed is not None:
+            _hot_seed |= _floor_add
 
     # If this turn targets the open document, keep editing tools available
     # regardless of which selection path (RAG, keyword, caller-provided) ran.
@@ -6419,6 +6508,8 @@ async def _stream_agent_loop_body(
     # panel is open.
     if _relevant_tools is not None and _active_document_relevant:
         _relevant_tools.update({"edit_document", "update_document", "suggest_document"})
+        if _hot_seed is not None:
+            _hot_seed.update({"edit_document", "update_document", "suggest_document"})
         if _active_email_draft_relevant:
             # The open compose document already contains the recipient,
             # subject, source UID, and quoted previous-message excerpt. Reading
@@ -6441,6 +6532,8 @@ async def _stream_agent_loop_body(
             from src.tool_index import ALWAYS_AVAILABLE
             _relevant_tools = set(ALWAYS_AVAILABLE)
         _relevant_tools.update({"read_file", "grep", "ls", "manage_documents"})
+        if _hot_seed is not None:
+            _hot_seed.update({"read_file", "grep", "ls", "manage_documents"})
 
     # Tools the user NAMED are offered (OBJ-4, seen live: "usa la herramienta
     # git_status" got "no tengo git_status en esta sesión" because retrieval
@@ -6456,6 +6549,8 @@ async def _stream_agent_loop_body(
         if _named - set(_relevant_tools):
             logger.info("[tool-rag] tools named in the request offered: %s", sorted(_named - set(_relevant_tools)))
             _relevant_tools.update(_named)
+            if _hot_seed is not None:
+                _hot_seed |= _named
 
     # A workspace that is (or contains) a git repository gets the read-only
     # git tools; a request that talks about git/commits/branches/pushing gets
@@ -6498,6 +6593,8 @@ async def _stream_agent_loop_body(
                 if _git_add - set(_relevant_tools):
                     logger.info("[tool-floor] git tools offered: %s", sorted(_git_add - set(_relevant_tools)))
                     _relevant_tools.update(_git_add)
+                    if _hot_seed is not None:
+                        _hot_seed |= _git_add
         except Exception as _git_floor_err:  # noqa: BLE001
             logger.debug("[tool-floor] git floor skipped: %s", _git_floor_err)
 
@@ -6510,9 +6607,14 @@ async def _stream_agent_loop_body(
             from src.tool_index import ALWAYS_AVAILABLE
             _relevant_tools = set(ALWAYS_AVAILABLE)
         _relevant_tools.update(forced_set)
+        if _hot_seed is not None:
+            _hot_seed |= forced_set
 
     if not guide_only and _relevant_tools is not None:
+        _before_browser = set(_relevant_tools)
         _relevant_tools = _expand_browser_mcp_tools(_relevant_tools, mcp_mgr)
+        if _hot_seed is not None:
+            _hot_seed |= _relevant_tools - _before_browser
 
     # The skill index injected by _build_system_prompt tells the model to
     # call `manage_skills action=view`, and Jaccard-matched skills are pasted
@@ -6535,6 +6637,8 @@ async def _stream_agent_loop_body(
             _owner_skills = _sm.load(owner=owner) if _skills_on else []
             if _owner_skills:
                 _relevant_tools.add("manage_skills")
+                if _hot_seed is not None:
+                    _hot_seed.add("manage_skills")
                 if _retrieval_query:
                     # Validate against every known executable tool, not just
                     # TOOL_SECTIONS — code-nav tools (grep/glob/ls) ship as
@@ -6545,10 +6649,13 @@ async def _stream_agent_loop_body(
                         _retrieval_query, skills=_owner_skills,
                         threshold=0.25, max_items=3,
                     ):
-                        _relevant_tools.update(
+                        _skill_tools = {
                             t for t in (_sk.get("requires_toolsets") or [])
                             if t in _known
-                        )
+                        }
+                        _relevant_tools.update(_skill_tools)
+                        if _hot_seed is not None:
+                            _hot_seed |= _skill_tools
         except Exception as _e:
             logger.debug(f"[tool-rag] skill-aware tool include skipped: {_e}")
 
@@ -6595,7 +6702,30 @@ async def _stream_agent_loop_body(
             logger.info("[tool-preflight] pruned=%s", _preflight_pruned)
 
     _intent_domains = set(_intent.get("domains") or set())
+    from src.tool_serve import LOOKUP_TOOL as _LOOKUP_TOOL, partition_offer as _partition_offer
+    _schema_tools = None
+    _deferred_tools: Set[str] = set()
+    if _relevant_tools is not None:
+        _relevant_tools.add(_LOOKUP_TOOL)
+        _catalog_on = bool(get_setting("agent_tool_catalog", True))
+        _partition_seed = set(_hot_seed) if _hot_seed is not None else set(_relevant_tools)
+        try:
+            from src.tool_index import ALWAYS_AVAILABLE as _always_hot
+            _partition_seed |= _always_hot
+        except Exception:
+            pass
+        _schema_tools, _deferred_tools = _partition_offer(
+            _relevant_tools,
+            hot_seed=_partition_seed,
+            enabled=_catalog_on,
+        )
+        if _deferred_tools:
+            logger.info(
+                "[tool-catalog] deferred %s tools to lookup_tools: %s",
+                len(_deferred_tools), sorted(_deferred_tools),
+            )
     _base_relevant_tools = None if _relevant_tools is None else set(_relevant_tools)
+    _base_schema_tools = None if _schema_tools is None else set(_schema_tools)
     _runtime_skill_tools: Set[str] = set()
     # Conditional tools start withdrawn when the runtime can already prove
     # their prerequisite is absent.  This keeps the first schema list honest
@@ -6631,6 +6761,11 @@ async def _stream_agent_loop_body(
                 _relevant_tools.discard(_conditional_name)
             if _base_relevant_tools is not None:
                 _base_relevant_tools.discard(_conditional_name)
+            if _schema_tools is not None:
+                _schema_tools.discard(_conditional_name)
+            if _base_schema_tools is not None:
+                _base_schema_tools.discard(_conditional_name)
+            _deferred_tools.discard(_conditional_name)
             logger.info(
                 "[tool-availability] %s starts withdrawn: %s",
                 _conditional_name, _verdict.reason,
@@ -6707,6 +6842,25 @@ async def _stream_agent_loop_body(
             route_tools = set()
         return route_tools
 
+    def _route_schema_tools(candidate_model: str):
+        route_tools = _route_relevant_tools(candidate_model)
+        if route_tools is None:
+            return None
+        (
+            _is_ody,
+            doc_mode,
+            notes_mode,
+            _stream_create,
+            general_no_tool_mode,
+        ) = _route_finetune_modes(candidate_model)
+        # Finetune clamps are already tiny — keep every remaining name hot.
+        if doc_mode or notes_mode or general_no_tool_mode or _base_schema_tools is None:
+            return route_tools
+        hot = set(_base_schema_tools) & route_tools
+        if _LOOKUP_TOOL in route_tools:
+            hot.add(_LOOKUP_TOOL)
+        return hot
+
     (
         _ody_qwen_finetune_model,
         _ody_doc_finetune_mode,
@@ -6715,6 +6869,7 @@ async def _stream_agent_loop_body(
         _ody_general_no_tool_mode,
     ) = _route_finetune_modes(model)
     _relevant_tools = _route_relevant_tools(model)
+    _schema_tools = _route_schema_tools(model)
     if _ody_doc_finetune_mode and _relevant_tools is not None:
         logger.info("[agent-intent] odysseus doc finetune tool clamp=%s", sorted(_relevant_tools))
     elif _ody_notes_finetune_mode and _relevant_tools is not None:
@@ -6979,6 +7134,7 @@ async def _stream_agent_loop_body(
             _general_no_tool_mode,
         ) = _route_finetune_modes(candidate_model)
         route_tools = _route_relevant_tools(candidate_model)
+        route_schema = _route_schema_tools(candidate_model)
         is_api, is_native_ollama, is_ollama_compat = _agent_route_tool_mode(
             candidate_url,
             candidate_model,
@@ -6993,6 +7149,7 @@ async def _stream_agent_loop_body(
             disabled_tools,
             needs_admin=_needs_admin,
             relevant_tools=route_tools,
+            schema_tools=route_schema,
             mcp_disabled_map=_mcp_disabled_map,
             compact=is_api or is_native_ollama or is_ollama_compat,
             owner=owner,
@@ -7040,6 +7197,7 @@ async def _stream_agent_loop_body(
             "messages": route_messages,
             "mcp_schemas": route_mcp_schemas,
             "relevant_tools": route_tools,
+            "schema_tools": route_schema,
             "is_api_model": is_api,
             "text_only_transport": str(candidate_url or '').lower().startswith('faustus-cli://'),
             "is_ollama_native": is_native_ollama,
@@ -7062,6 +7220,7 @@ async def _stream_agent_loop_body(
     messages = _route_state["messages"]
     mcp_schemas = _route_state["mcp_schemas"]
     _relevant_tools = _route_state["relevant_tools"]
+    _schema_tools = _route_state.get("schema_tools")
     _is_api_model = _route_state["is_api_model"]
     _is_ollama_native = _route_state["is_ollama_native"]
     _ollama_openai_compat = _route_state["ollama_openai_compat"]
@@ -7430,11 +7589,14 @@ async def _stream_agent_loop_body(
             return []
         route_mcp_schemas = route_state["mcp_schemas"]
         route_relevant_tools = route_state["relevant_tools"]
+        route_schema_tools = route_state.get("schema_tools")
+        if route_schema_tools is None:
+            route_schema_tools = route_relevant_tools
         if _force_answer:
             return []
         if route_state["is_api_model"]:
             if route_relevant_tools:
-                schema_names = set(route_relevant_tools)
+                schema_names = set(route_schema_tools or ())
                 if _needs_admin:
                     schema_names |= _ADMIN_TOOLS
                 base_schemas = [
@@ -7443,7 +7605,7 @@ async def _stream_agent_loop_body(
                 ]
                 mcp_filtered = [
                     schema for schema in route_mcp_schemas
-                    if schema.get("function", {}).get("name") in route_relevant_tools
+                    if schema.get("function", {}).get("name") in schema_names
                 ]
                 schemas = base_schemas + mcp_filtered
             else:
@@ -7968,6 +8130,7 @@ async def _stream_agent_loop_body(
             "messages": messages,
             "mcp_schemas": mcp_schemas,
             "relevant_tools": _relevant_tools,
+            "schema_tools": _schema_tools,
             "is_api_model": _is_api_model,
             "text_only_transport": str(endpoint_url or '').lower().startswith('faustus-cli://'),
             "is_ollama_native": _is_ollama_native,
@@ -8113,7 +8276,8 @@ async def _stream_agent_loop_body(
         else:
             _diff_note = (
                 f"relevant_tools={len(_relevant_set)}"
-                f" relevant_not_sent={sorted(_relevant_set - _sent_set)}"
+                f" relevant_not_sent={sorted(_relevant_set - _sent_set - set(_deferred_tools))}"
+                f" deferred={sorted(set(_deferred_tools))}"
                 f" sent_not_relevant={sorted(_sent_set - _relevant_set)}"
             )
         # `relevant_not_sent` says a tool was selected and did not ship;
@@ -8137,6 +8301,9 @@ async def _stream_agent_loop_body(
                 else set(TOOL_SECTIONS) & _relevant_set
             )
             _tool_names_sent_set |= _prose_pool - set(disabled_tools or ())
+        # Catalog names are offered (one-liners) even when their full schema
+        # was not loaded. They remain executable; lookup_tools promotes them.
+        _tool_names_sent_set |= set(_deferred_tools) - set(disabled_tools or ())
         logger.info(
             "[agent-debug] round=%s model=%s _is_api_model=%s tools_sent=%s"
             " tool_names=%s %s %s",
@@ -9231,8 +9398,18 @@ async def _stream_agent_loop_body(
                 _unknown_tool_nudges += 1
                 _sent_names = [n for n in _tool_names_sent if n] or sorted(str(n) for n in (_relevant_tools or []))
                 _sugg: list = []
+                _catalog_pool = list(_sent_names)
+                try:
+                    from src.tool_index import BUILTIN_TOOL_DESCRIPTIONS as _catalog_descs
+                    from src.tool_serve import suggest_close_matches as _suggest_tools
+                    _catalog_pool = list(dict.fromkeys(list(_sent_names) + list(_catalog_descs)))
+                except Exception:
+                    _suggest_tools = None
                 for _d in _dropped[:3]:
-                    _sugg.extend(difflib.get_close_matches(_d, _sent_names, n=3, cutoff=0.5))
+                    if _suggest_tools is not None:
+                        _sugg.extend(_suggest_tools(_d, _catalog_pool, n=3))
+                    else:
+                        _sugg.extend(difflib.get_close_matches(_d, _sent_names, n=3, cutoff=0.5))
                     _sugg.extend(n for n in _sent_names if _d.lower() in n.lower() and n not in _sugg)
                 _sugg = list(dict.fromkeys(_sugg))[:6]
                 for _d in _dropped:
@@ -9249,7 +9426,9 @@ async def _stream_agent_loop_body(
                         "You called a tool that does not exist: " + ", ".join(f"`{d}`" for d in _dropped)
                         + ". NOTHING ran. "
                         + (f"Did you mean: {', '.join(_sugg)}? " if _sugg else "")
-                        + "The tools available in this turn are: " + ", ".join(_sent_names[:40])
+                        + "If the tool exists but was not in this turn's schema list, call `lookup_tools` "
+                        "with a query or names and then retry. "
+                        + "The tools with full schemas this turn are: " + ", ".join(_sent_names[:40])
                         + ". Call the correct tool now with the same intent."
                     ),
                 })
@@ -10648,6 +10827,32 @@ async def _stream_agent_loop_body(
             except Exception as _ledger_err:
                 logger.debug("[harness] ledger record failed: %s", _ledger_err)
 
+            # lookup_tools: promote returned names into the next round's
+            # native schema list. They were already executable (catalog);
+            # this loads the full schema so native function-calling can
+            # emit them without a fenced block.
+            if block.tool_type == "lookup_tools" and not result.get("error"):
+                _promoted = {
+                    str(n) for n in (result.get("promote") or [])
+                    if n and n not in disabled_tools
+                }
+                if not _promoted and isinstance(result.get("lookup_tools"), dict):
+                    _promoted = {
+                        str(n) for n in (result["lookup_tools"].get("promote") or [])
+                        if n and n not in disabled_tools
+                    }
+                if _promoted:
+                    if _relevant_tools is not None:
+                        _relevant_tools.update(_promoted)
+                    if _base_relevant_tools is not None:
+                        _base_relevant_tools.update(_promoted)
+                    if _schema_tools is not None:
+                        _schema_tools.update(_promoted)
+                    if _base_schema_tools is not None:
+                        _base_schema_tools.update(_promoted)
+                    _deferred_tools -= _promoted
+                    logger.info("[tool-catalog] lookup_tools promoted for next round: %s", sorted(_promoted))
+
             # A skill the model just loaded can prescribe tools that weren't
             # RAG-selected this turn (declared via requires_toolsets in its
             # frontmatter). Union them into the selection so the NEXT round's
@@ -10683,6 +10888,10 @@ async def _stream_agent_loop_body(
                                     _runtime_skill_tools.update(_new)
                                     if _base_relevant_tools is not None:
                                         _base_relevant_tools.update(_new)
+                                    if _schema_tools is not None:
+                                        _schema_tools.update(_new)
+                                    if _base_schema_tools is not None:
+                                        _base_schema_tools.update(_new)
                                     logger.info(
                                         "[tool-rag] skill '%s' unlocked tools for next round: %s",
                                         _ms_name, sorted(_new),

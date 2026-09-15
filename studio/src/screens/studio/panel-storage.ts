@@ -8,7 +8,7 @@ export function readPanel(storage: StoragePort, key: string): PanelState {
   try {
     const raw = JSON.parse(storage.getItem(prefix + key) || 'null');
     if (raw && Array.isArray(raw.documents) && Array.isArray(raw.files) && raw.drafts && typeof raw.drafts === 'object') {
-      return {...initialPanel, ...raw, live: false, frames: [], active: -1, streamDoc: null,
+      return {...initialPanel, ...raw, live: false, frames: [], todos: [], todosLive: false, progressRevealed: false, active: -1, streamDoc: null,
         doc: raw.doc ? {...raw.doc, streaming: false} : null};
     }
   } catch { /* Storage may be unavailable; the editor still works in memory. */ }
@@ -21,7 +21,7 @@ export function persistPanels(storage: StoragePort, states: Record<string, Panel
   for (const [key, state] of Object.entries(states)) {
     if (key.startsWith('private:') || written.get(key) === state) continue;
     try {
-      storage.setItem(prefix + key, JSON.stringify({...state, frames: [], active: -1, live: false, streamDoc: null,
+      storage.setItem(prefix + key, JSON.stringify({...state, frames: [], todos: [], todosLive: false, progressRevealed: false, active: -1, live: false, streamDoc: null,
         doc: state.doc ? {...state.doc, streaming: false} : null,
         documents: state.documents.map(doc => ({...doc, streaming: false}))}));
       written.set(key, state);

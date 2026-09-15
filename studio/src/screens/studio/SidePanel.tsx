@@ -1,4 +1,4 @@
-import { Archive, Check, Copy, FileText, GitBranch, Globe, History, Kanban, Monitor, MessageSquarePlus, Redo2, Save, SkipForward, Undo2, X, Users, Paperclip, Files } from 'lucide-react';
+import { Archive, Check, Copy, FileText, GitBranch, Globe, History, Kanban, ListChecks, Monitor, MessageSquarePlus, Redo2, Save, SkipForward, Undo2, X, Users, Paperclip, Files } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { Link } from 'react-router';
 import { Button, IconButton, Popover, Skeleton } from '../../components';
@@ -16,6 +16,7 @@ import {
 } from '../../lib/docSession';
 import {WorkbenchResources} from './WorkbenchResources';
 import SubagentBoard from './SubagentBoard';
+import { ProgressList } from './ProgressList';
 import { SourceControlPanel } from '../source-control/SourceControlPanel';
 import { BoardCompact } from '../board/BoardCompact';
 import FrameSelection, {type VisualSelection} from './FrameSelection';
@@ -35,7 +36,8 @@ import '../documents.css';
  * The panel beside the transcript. Three things live here, each on its own
  * tab: the frames the agent's browser (or the desktop) produced, the living
  * document the agent is writing — with a real editor: save, rename,
- * versions, PDF, the agent's suggestions — and a file from the workspace.
+ * versions, PDF, the agent's suggestions — a file from the workspace, and
+ * the steps the agent is currently working through (todowrite).
  */
 
 export interface SidePanelProps {
@@ -50,6 +52,7 @@ export interface SidePanelProps {
 const TABS: { id: PanelTab; label: string; icon: typeof Globe }[] = [
   {id:'outputs',label:'Results',icon:Files},
   {id:'sources',label:'Sources',icon:Paperclip},
+  {id:'progress',label:'Progress',icon:ListChecks},
   {id:'agents',label:'Agents',icon:Users},
   { id: 'browser', label: 'Browser', icon: Globe },
   { id: 'doc', label: 'Document', icon: FileText },
@@ -647,6 +650,26 @@ function FileTab({ file,draft,dispatch, onNotice }: { file: PanelState['file']; 
   );
 }
 
+function ProgressTab({ state, turns }: { state: PanelState; turns: Turn[] }) {
+  const done = state.todos.filter((step) => step.status === 'completed').length;
+  return (
+    <div className="fs-panel__body fs-panel__progress">
+      {state.todos.length > 0 ? (
+        <section aria-label={t('Progress')}>
+          <h3>
+            {t('Progress')}
+            <span className="fs-sa__muted"> {t('{done} of {total}', { done, total: state.todos.length })}</span>
+          </h3>
+          <ProgressList todos={state.todos} />
+        </section>
+      ) : (
+        <p className="fs-studio__hint">{t('The steps the agent is working through appear here.')}</p>
+      )}
+      <PlanAndChanges turns={turns}/>
+    </div>
+  );
+}
+
 /* ── Plan & changes (BENCH-05) ── */
 
 /** The turn's own plan (`plan_state`'s projection, already carried on
@@ -659,7 +682,7 @@ function PlanAndChanges({ turns }: { turns: Turn[] }) {
   const changes = changeTurn ? aggregateFileChanges(changeTurn.steps.filter((s) => s.diff).map((s) => s.diff!)) : [];
   if (!planTurn && changes.length === 0) return null;
   return (
-    <div className="fs-panel__body fs-panel__plan-changes">
+    <div className="fs-panel__plan-changes">
       {planTurn?.planSteps && (
         <section aria-label={t('Plan')}>
           <h3>{t('Plan')}</h3>
@@ -779,7 +802,7 @@ export default function SidePanel({ state, dispatch, onNotice,turns,workspace,pr
               onClick={() => dispatch({ type: 'tab', tab: tab.id })}
               onKeyDown={event=>{const delta=event.key==='ArrowRight'?1:event.key==='ArrowLeft'?-1:0;
                 if(delta||event.key==='Home'||event.key==='End'){event.preventDefault();const index=event.key==='Home'?0:event.key==='End'?tabs.length-1:(tabs.findIndex(v=>v.id===tab.id)+delta+tabs.length)%tabs.length;dispatch({type:'tab',tab:tabs[index].id});document.getElementById('workbench-tab-'+tabs[index].id)?.focus();}}}
-              data-has={tab.id === 'browser' ? state.frames.length > 0 || undefined : tab.id === 'doc' ? Boolean(state.doc) || undefined : tab.id==='file'?Boolean(state.file)||undefined:undefined}
+              data-has={tab.id === 'browser' ? state.frames.length > 0 || undefined : tab.id === 'doc' ? Boolean(state.doc) || undefined : tab.id==='file'?Boolean(state.file)||undefined:tab.id==='progress'?state.todos.length>0||undefined:undefined}
             >
               <tab.icon size={13} aria-hidden="true" />
               <span>{t(tab.label)}</span>
@@ -797,7 +820,15 @@ export default function SidePanel({ state, dispatch, onNotice,turns,workspace,pr
       </div>}
       <div className="fs-workbench-content" role="tabpanel" id="workbench-content" aria-labelledby={'workbench-tab-'+state.tab}>
       {(state.tab==='outputs'||state.tab==='sources')&&<WorkbenchResources kind={state.tab} state={state} turns={turns} workspace={workspace} project={project} dispatch={dispatch}/>}
-      {state.tab==='agents'&&<><PlanAndChanges turns={turns}/><div className="fs-panel__body"><h3>{t('Agents in this conversation')}</h3>{workers.length?<SubagentBoard workers={workers} live={busy} onRerun={onRerun} onNotice={onNotice}/>:<p>{t('No agents have worked in this conversation yet. Configure a team beside the model picker.')}</p>}</div></>}
+      {state.tab==='progress'&&<ProgressTab state={state} turns={turns}/>}
+      {state.tab === 'agents' && (
+        <div className="fs-panel__body">
+          <h3>{t('Agents in this conversation')}</h3>
+          {workers.length
+            ? <SubagentBoard workers={workers} live={busy} onRerun={onRerun} onNotice={onNotice} />
+            : <p>{t('No agents have worked in this conversation yet. Configure a team beside the model picker.')}</p>}
+        </div>
+      )}
       {state.tab === 'browser' && <BrowserTab state={state} dispatch={dispatch} onVisualSelection={onVisualSelection} />}
       {state.tab === 'doc' && <DocTab key={state.doc?.id||'streaming'} doc={state.doc} dispatch={dispatch} onNotice={onNotice} />}
       {state.tab === 'file' && <FileTab key={state.file?fileKey(state.file):'none'} file={state.file} draft={state.file?state.drafts[fileKey(state.file)]:undefined} dispatch={dispatch} onNotice={onNotice} />}

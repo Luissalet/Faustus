@@ -26,7 +26,7 @@ from .coding_tools import TodoWriteTool
 from .subagent_tools import DelegateAgentsTool
 from .code_tools import FindSymbolTool, CallersTool, TestsForTool, RenameSymbolTool
 from .document_tools import CreateDocumentTool, UpdateDocumentTool, EditDocumentTool, SuggestDocumentTool, ManageDocumentTool
-from .interaction_tools import AskUserTool, UpdatePlanTool
+from .interaction_tools import AskUserTool, UpdatePlanTool, LookupToolsTool
 from .model_interaction_tools import ChatWithModelTool, AskTeacherTool, ListModelsTool
 from .media_tools import InspectMediaTool, MediaTransformTool
 from .bg_job_tools import ManageBgJobsTool
@@ -96,6 +96,7 @@ TOOL_HANDLERS = {
     "get_workspace": GetWorkspaceTool().execute,
     "ask_user": AskUserTool().execute,
     "update_plan": UpdatePlanTool().execute,
+    "lookup_tools": LookupToolsTool().execute,
     "chat_with_model": ChatWithModelTool().execute,
     "ask_teacher": AskTeacherTool().execute,
     "list_models": ListModelsTool().execute,
@@ -187,6 +188,7 @@ TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_fi
              "pipeline",
              "manage_session", "manage_memory", "list_models",
              "ui_control", "generate_image", "ask_user", "update_plan",
+             "lookup_tools",
              "manage_tasks", "api_call", "ask_teacher", "manage_skills",
              "suggest_document",
              "manage_endpoints", "manage_mcp", "manage_webhooks",

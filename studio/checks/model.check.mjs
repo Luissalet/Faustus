@@ -255,5 +255,25 @@ assert(plain.steps.length === 0 && plain.summary === undefined, 'a chat turn res
   assert(restored.thinking.startsWith('Look at tests first.'), 'legacy thinking joins segments');
 }
 
+{
+  let t = m.blankTurn('assistant');
+  t = m.apply(t, {
+    type: 'progress',
+    todos: [
+      { content: 'Inspect', status: 'in_progress' },
+      { content: 'Edit', status: 'pending' },
+    ],
+  });
+  assert(t.todos.length === 2 && t.todos[0].status === 'in_progress', 'progress_update lands on the turn');
+  t = m.apply(t, {
+    type: 'progress',
+    todos: [
+      { content: 'Inspect', status: 'completed' },
+      { content: 'Edit', status: 'in_progress' },
+    ],
+  });
+  assert(t.todos[0].status === 'completed' && t.todos[1].status === 'in_progress', 'a later progress_update replaces the list');
+}
+
 console.log(failed ? `${failed} CHECK(S) FAILED` : 'ALL OK');
 process.exit(failed ? 1 : 0);

@@ -270,12 +270,13 @@ def test_debug_line_reports_the_difference_untruncated(workspace, caplog):
     # No ellipsis and no clipped list: every name is accounted for.
     assert "..." not in line and "…" not in line, f"debug line truncated: {line}"
     dropped = re.search(r"relevant_not_sent=\[(.*?)\]", line).group(1)
-    assert not (set(re.findall(r"'([^']+)'", dropped)) & {"read_file", "edit_file", "ls", "apply_patch"}), (
+    dropped_names = set(re.findall(r"'([^']+)'", dropped))
+    assert not (dropped_names & {"read_file", "edit_file", "ls", "apply_patch", "bash", "python"}), (
         f"a floor tool was dropped on the way to the model: {line}"
     )
     # The tools the clamp may legitimately withhold are still reported, so the
     # line explains the gap rather than hiding it.
-    assert "bash" in dropped and "write_file" in dropped, (
+    assert "write_file" in dropped, (
         f"debug line hides the withheld tools: {line}"
     )
 
@@ -411,6 +412,9 @@ def test_accentless_spanish_is_still_a_coding_request():
     """The incident opened with "Anade" — Spanish typed without the tilde."""
     assert agent_loop._looks_like_workspace_coding_request("Anade una funcion a cart.py")
     assert agent_loop._looks_like_workspace_coding_request("Añade una función a cart.py")
+    assert agent_loop._looks_like_workspace_coding_request(
+        "Estos son los arreglos para el codigo, por chatgpt"
+    )
 
 
 def test_bare_filename_is_a_code_target():
@@ -423,20 +427,32 @@ def test_bare_filename_is_a_code_target():
 
 
 def test_floor_does_not_widen_the_rest_of_the_toolset(workspace):
-    """The floor exempts the floor tools, nothing else.
+    """The floor restores the host toolchain; it does not resurrect everything.
 
-    `bash`, `python` and `write_file` are the privileged trio a route may
-    legitimately withhold; the floor must never hand them back.
+    `write_file` stays a privileged tool a route may withhold. `bash`/`python`
+    are the host's own shell — a bound Agent workspace keeps them, otherwise
+    the model tells the user it cannot verify the code.
     """
     names = set(tools_sent(
         SPANISH_REQUEST, workspace, disabled_tools=set(WEB_INTENT_CLAMP)
     ))
-    assert not names & {"bash", "python", "write_file"}, (
-        f"floor resurrected privileged tools: {sorted(names & {'bash', 'python', 'write_file'})}"
+    assert {"bash", "python"} <= names, (
+        f"floor lost the host shell: {sorted(names)}"
+    )
+    assert "write_file" not in names, (
+        f"floor resurrected write_file: {sorted(names)}"
     )
     assert not names & {"manage_memory", "send_email", "manage_calendar"}, (
         "floor leaked unrelated clamped tools"
     )
+
+
+def test_workspace_floor_offers_desktop_vision(workspace):
+    """Visual work is verified by seeing it — the screenshot tool is floored
+    so the model cannot claim it has no way to look at the screen."""
+    names = set(tools_sent(SPANISH_REQUEST, workspace))
+    assert "desktop_screenshot" in names, sorted(names)
+    assert "desktop_list_windows" in names, sorted(names)
 
 
 # --------------------------------------------------------------------------
@@ -461,7 +477,8 @@ def test_plan_mode_floors_reading_but_not_writing(workspace):
     """Plan mode investigates read-only; the floor must respect that."""
     names = set(tools_sent(SPANISH_REQUEST, workspace, plan_mode=True))
     assert "read_file" in names and "ls" in names, f"plan mode lost its read tools: {names}"
-    assert not names & {"edit_file", "apply_patch", "write_file", "bash"}, (
+    assert "desktop_screenshot" in names, f"plan mode lost desktop vision: {names}"
+    assert not names & {"edit_file", "apply_patch", "write_file", "bash", "powershell"}, (
         f"plan mode was handed mutating tools: {sorted(names)}"
     )
 

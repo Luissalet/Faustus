@@ -817,6 +817,7 @@ async def _direct_fallback(
     session_id: Optional[str] = None,
     owner: Optional[str] = None,
     human_approved: bool = False,
+    disabled_tools: Optional[set] = None,
 ) -> Optional[Dict]:
     _subproc_env = {
         **os.environ,
@@ -858,6 +859,7 @@ async def _direct_fallback(
             # which is a change to src/agent_loop.py.
             "run_id": str(_turn_opts.get("run_id") or ""),
             "turn_id": str(_turn_opts.get("turn_id") or ""),
+            "disabled_tools": disabled_tools or set(),
         }
 
         from src.agent_tools import TOOL_HANDLERS
@@ -1556,17 +1558,20 @@ async def _execute_tool_block_impl(
         return desc, result
 
 
-    # Background execution: a `bash` block whose first line is the `#!bg`
-    # marker runs DETACHED — returns a job id immediately so the chat stream
-    # isn't held open for a multi-minute install/ffmpeg/download. The always-on
-    # monitor re-invokes the agent with the full output when the job finishes.
-    if tool == "bash" and session_id:
+    # Background execution: a `bash` or `powershell` block whose first line is
+    # the `#!bg` marker runs DETACHED — returns a job id immediately so the chat
+    # stream isn't held open for a multi-minute install/ffmpeg/download. The
+    # always-on monitor re-invokes the agent with the full output when it finishes.
+    if tool in ("bash", "powershell") and session_id:
         _is_bg, _bg_cmd = _split_bg_marker(content)
         if _is_bg and _bg_cmd:
             from src import bg_jobs
-            rec = bg_jobs.launch(_bg_cmd, session_id=session_id, cwd=agent_cwd())
+            rec = bg_jobs.launch(
+                _bg_cmd, session_id=session_id, cwd=agent_cwd(),
+                shell="powershell" if tool == "powershell" else "bash",
+            )
             short = _bg_cmd.strip().split(chr(10))[0][:80]
-            desc = f"bash (background): {short}"
+            desc = f"{tool} (background): {short}"
             result = {
                 "output": (
                     f"Started background job `{rec['id']}`. It is running detached; "
@@ -2042,7 +2047,10 @@ async def _execute_tool_block_impl(
     elif tool in dynamic_handlers:
         first_line = content.split(chr(10))[0][:80]
         desc = f"registry: {tool} {first_line}".strip()
-        res = await _direct_fallback(tool, content, progress_cb=progress_cb)
+        res = await _direct_fallback(
+            tool, content, progress_cb=progress_cb,
+            session_id=session_id, owner=owner, disabled_tools=disabled_tools,
+        )
 
         if isinstance(res, tuple):
             desc, result = res

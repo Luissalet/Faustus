@@ -453,23 +453,33 @@ export function thoughtSummary(seconds: number, live: boolean): RailPart {
   return { one: 'Thought 1s', other: 'Thought {n}s', n: Math.max(1, n) };
 }
 
-export type ActivityItem =
-  | { kind: 'thought'; index: number }
-  | { kind: 'tools'; from: number; to: number };
+export type ActivityItem = {
+  kind: 'group';
+  thoughts: number[];
+  from: number;
+  to: number;
+};
 
 export function buildActivity(stepCount: number, thoughts: { afterStep: number }[]): ActivityItem[] {
+  if (!thoughts.length) {
+    return stepCount > 0 ? [{ kind: 'group', thoughts: [], from: 0, to: stepCount }] : [];
+  }
   const items: ActivityItem[] = [];
   let cursor = 0;
+  let pending: number[] = [];
   thoughts.forEach((thought, index) => {
-    const end = Math.max(0, thought.afterStep + 1);
-    if (end > cursor && end <= stepCount) {
-      items.push({ kind: 'tools', from: cursor, to: end });
-      cursor = end;
+    const boundary = Math.max(0, thought.afterStep + 1);
+    if (boundary > cursor) {
+      items.push({ kind: 'group', thoughts: pending, from: cursor, to: boundary });
+      pending = [];
+      cursor = boundary;
     }
-    items.push({ kind: 'thought', index });
+    pending.push(index);
   });
-  if (cursor < stepCount) items.push({ kind: 'tools', from: cursor, to: stepCount });
-  return items;
+  if (cursor < stepCount || pending.length) {
+    items.push({ kind: 'group', thoughts: pending, from: cursor, to: Math.max(cursor, stepCount) });
+  }
+  return items.filter((item) => item.thoughts.length > 0 || item.to > item.from);
 }
 
 function railTitle(steps: Step[], live: boolean): string {
@@ -484,19 +494,65 @@ function railTitle(steps: Step[], live: boolean): string {
   }).join(', ');
 }
 
-function ToolRail({ steps, live, sessionId, onOpenFile, onOpenDoc, onOpenEvidence }: { steps: Step[]; live: boolean; sessionId?: string | null; onOpenFile?: (path: string) => void; onOpenDoc?: (docId: string) => void; onOpenEvidence?: (ref: EvidenceRef) => void }) {
-  const title = railTitle(steps, live);
+function ToolRail({
+  steps,
+  thoughts,
+  live,
+  sessionId,
+  onOpenFile,
+  onOpenDoc,
+  onOpenEvidence,
+}: {
+  steps: Step[];
+  thoughts?: Thought[];
+  live: boolean;
+  sessionId?: string | null;
+  onOpenFile?: (path: string) => void;
+  onOpenDoc?: (docId: string) => void;
+  onOpenEvidence?: (ref: EvidenceRef) => void;
+}) {
+  const nestedThoughts = thoughts?.length ? thoughts : [];
+  const liveThought = nestedThoughts.some((thought) => thought.live);
+  const [, tick] = useState(0);
+  useEffect(() => {
+    if (!liveThought) return;
+    const timer = window.setInterval(() => tick((n) => n + 1), 500);
+    return () => window.clearInterval(timer);
+  }, [liveThought]);
+  const title = steps.length ? railTitle(steps, live) : '';
+  const thoughtLabel = nestedThoughts.map((thought) => {
+    const seconds = thought.live && thought.startedAt
+      ? Math.max(0, Math.round((Date.now() - thought.startedAt) / 1000))
+      : thought.seconds;
+    const summary = thoughtSummary(seconds, Boolean(thought.live));
+    return tn(summary.n, summary.one, summary.other);
+  }).join(' · ');
+  const thoughtOnly = !steps.length && nestedThoughts.length > 0;
+  if (thoughtOnly) {
+    return (
+      <>
+        {nestedThoughts.map((thought) => <ThoughtRail key={thought.id} thought={thought} />)}
+      </>
+    );
+  }
 
   return (
     <details className="fs-studio__trace fs-studio__tools" data-testid="studio-trace" data-live={live || undefined}>
       <summary className="fs-studio__tools-summary" data-testid="tools-summary">
         {live ? <span className="fs-studio__pulse" aria-hidden="true" /> : <span className="fs-trace__node" aria-hidden="true" />}
         <span className="fs-studio__tools-title" role={live ? 'status' : undefined}>
-          {title}
+          {title}{thoughtLabel ? ` · ${thoughtLabel}` : ''}
         </span>
         <ChevronDown size={13} className="fs-studio__tools-chevron" aria-hidden="true" />
       </summary>
       <div className="fs-trace fs-studio__tools-body">
+        {nestedThoughts.map((thought) => (
+          thought.text ? (
+            <div key={thought.id} className="fs-studio__thought-inline" data-testid="thought-rail">
+              <p className="fs-prose">{thought.text}</p>
+            </div>
+          ) : null
+        ))}
         {steps.map((step) =>
           step.output || step.command || step.diff || step.screenshot ? (
             <details
@@ -647,18 +703,18 @@ function ActivityTrail({
   return (
     <div className="fs-studio__activity" data-testid="studio-activity">
       {items.map((item) => {
-        if (item.kind === 'thought') {
-          if (!showThoughts) return null;
-          const thought = thoughts[item.index];
-          return thought ? <ThoughtRail key={thought.id} thought={thought} /> : null;
-        }
         const slice = steps.slice(item.from, item.to);
-        if (!slice.length) return null;
-        const groupLive = live && slice.some((step) => step.state === 'running' || step.state === 'waiting');
+        const nested = showThoughts ? item.thoughts.map((index) => thoughts[index]).filter(Boolean) : [];
+        if (!slice.length && !nested.length) return null;
+        const groupLive = live && (
+          nested.some((thought) => thought.live)
+          || slice.some((step) => step.state === 'running' || step.state === 'waiting')
+        );
         return (
           <ToolRail
-            key={`tools-${item.from}-${item.to}`}
+            key={`group-${item.from}-${item.to}-${item.thoughts.join('.')}`}
             steps={slice}
+            thoughts={nested}
             live={groupLive}
             sessionId={sessionId}
             onOpenFile={onOpenFile}
@@ -1539,12 +1595,11 @@ function AssistantTurn({
             onOpenEvidence={onOpenEvidence}
           />
         )}
-        {(turn.plan || (turn.todos && turn.todos.length > 0) || (turn.streaming && turn.checks.length > 0)) && (
+        {(turn.plan || (turn.streaming && turn.checks.length > 0)) && (
           <Suspense fallback={null}>
             <Harness
               mode="live"
               plan={turn.plan}
-              todos={turn.todos}
               checks={turn.streaming ? turn.checks.slice(-3) : []}
               answer={turn.text}
               onNotice={onNotice}

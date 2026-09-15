@@ -401,6 +401,13 @@ EXAMPLES: Dict[str, List[str]] = {
         "check with me before picking an approach",
         "dame opciones para elegir en vez de asumir",
     ],
+    "lookup_tools": [
+        "qué herramienta uso para enviar un correo",
+        "load the schema for git_commit",
+        "busca una tool para el calendario",
+        "which tool sends email",
+        "catálogo de herramientas",
+    ],
     "update_plan": [
         "marca este paso del plan como hecho",
         "update the plan, that step is done now",

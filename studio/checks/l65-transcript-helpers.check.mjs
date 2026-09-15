@@ -94,13 +94,15 @@ assert.deepEqual(thoughtSummary(22, true), { one: 'Thought 1s', other: 'Thought 
 assert.deepEqual(
   buildActivity(5, [{ afterStep: -1 }, { afterStep: 2 }]),
   [
-    { kind: 'thought', index: 0 },
-    { kind: 'tools', from: 0, to: 3 },
-    { kind: 'thought', index: 1 },
-    { kind: 'tools', from: 3, to: 5 },
+    { kind: 'group', thoughts: [0], from: 0, to: 3 },
+    { kind: 'group', thoughts: [1], from: 3, to: 5 },
   ],
 );
-assert.deepEqual(buildActivity(4, []), [{ kind: 'tools', from: 0, to: 4 }]);
-assert.deepEqual(buildActivity(0, [{ afterStep: -1 }]), [{ kind: 'thought', index: 0 }]);
+assert.deepEqual(buildActivity(4, []), [{ kind: 'group', thoughts: [], from: 0, to: 4 }]);
+assert.deepEqual(buildActivity(0, [{ afterStep: -1 }]), [{ kind: 'group', thoughts: [0], from: 0, to: 0 }]);
+assert.deepEqual(
+  buildActivity(4, [{ afterStep: -1 }, { afterStep: -1 }]),
+  [{ kind: 'group', thoughts: [0, 1], from: 0, to: 4 }],
+);
 
 console.log('ok l65-transcript-helpers');

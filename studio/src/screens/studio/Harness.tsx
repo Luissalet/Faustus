@@ -1,7 +1,7 @@
 import { Check, ChevronDown, CircleDashed, FileDiff, GitCommitHorizontal, History, ShieldAlert, ShieldCheck, Undo2 } from 'lucide-react';
 import { useState } from 'react';
 import { Button, IconButton } from '../../components';
-import type { HarnessCheck, HarnessSummary, Todo } from '../../adapters/chat';
+import type { HarnessCheck, HarnessSummary } from '../../adapters/chat';
 import { commitFiles, commitProposal, fileDiff, restoreCheckpoint, revertFile } from '../../adapters/workspace';
 import { Rich } from '../rich';
 import { t, tn } from '../../i18n';
@@ -65,25 +65,6 @@ export function CheckList({ checks }: { checks: HarnessCheck[] }) {
         );
       })}
     </ul>
-  );
-}
-
-export function ProgressList({ todos }: { todos: Todo[] }) {
-  if (!todos.length) return null;
-  return (
-    <div className="fs-trace fs-studio__trace" data-testid="studio-progress">
-      {todos.map((step, i) => (
-        <div
-          key={`${step.content}-${i}`}
-          className="fs-trace__step"
-          data-state={step.status === 'completed' ? 'succeeded' : step.status === 'in_progress' ? 'running' : 'queued'}
-        >
-          <span className="fs-trace__node" aria-hidden="true" />
-          <span className="fs-trace__label">{step.content}</span>
-          {step.status === 'completed' && step.verified === false && <span className="fs-trace__meta">{t('no evidence')}</span>}
-        </div>
-      ))}
-    </div>
   );
 }
 
@@ -294,7 +275,6 @@ export function HarnessCard({
 export default function Harness(props: {
   mode: 'live' | 'final';
   plan?: string;
-  todos?: Todo[];
   checks: HarnessCheck[];
   summary?: HarnessSummary;
   permissionAnswered?: boolean;
@@ -305,7 +285,6 @@ export default function Harness(props: {
     return (
       <>
         {props.plan && <PlanCard plan={props.plan} />}
-        {props.todos && props.todos.length > 0 && <ProgressList todos={props.todos} />}
         {props.checks.length > 0 && <CheckList checks={props.checks} />}
       </>
     );

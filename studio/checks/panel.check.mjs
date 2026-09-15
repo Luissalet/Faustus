@@ -139,5 +139,58 @@ const feed = (state, event, busy = true) => p.panelReducer(state, { type: 'event
   assert(s.file === null && s.doc === null && !s.live, 'the document, the file and live all belong to the session that left');
 }
 
+// ── Todowrite progress lives in the panel and updates in place ──
+{
+  const first = [
+    { content: 'Read the file', status: 'in_progress' },
+    { content: 'Edit it', status: 'pending' },
+  ];
+  const next = [
+    { content: 'Read the file', status: 'completed' },
+    { content: 'Edit it', status: 'in_progress' },
+  ];
+  let s = feed(p.initialPanel, { type: 'progress', todos: first });
+  assert(s.open && s.tab === 'progress', 'the first todo list opens the Progress tab');
+  assert(s.todos[0].status === 'in_progress' && s.todosLive, 'the list is stored live');
+
+  s = feed(s, { type: 'progress', todos: next });
+  assert(s.todos[0].status === 'completed' && s.todos[1].status === 'in_progress', 'a later update replaces the list, it does not freeze the first snapshot');
+  assert(s.tab === 'progress', 'and it stays on the Progress tab');
+
+  s = p.panelReducer(s, { type: 'close' });
+  s = feed(s, { type: 'progress', todos: next });
+  assert(!s.open, 'closed mid-turn, further todo updates do not reopen it');
+  assert(s.todos[0].status === 'completed', 'but the list itself still updates behind the closed panel');
+
+  s = p.panelReducer(s, { type: 'turn-end' });
+  s = p.panelReducer(s, { type: 'turn-start' });
+  s = feed(s, { type: 'progress', todos: first });
+  assert(s.open && s.tab === 'progress', 'a new turn may open the Progress tab again');
+
+  p.setAutoOpen(false);
+  let off = feed(p.initialPanel, { type: 'progress', todos: first });
+  assert(!off.open, 'with auto-open off it never opens itself');
+  assert(off.todos.length === 2, 'but the list is still kept for when the tab is opened');
+  p.setAutoOpen(true);
+
+  let live = feed(p.initialPanel, { type: 'progress', todos: first });
+  live = p.panelReducer(live, { type: 'progress', todos: [{ content: 'stale restore', status: 'pending' }] });
+  assert(live.todos[0].content === 'Read the file', 'a late GET restore must not overwrite a live progress_update');
+
+  let restore = p.panelReducer(p.initialPanel, { type: 'progress', todos: first });
+  assert(restore.todos.length === 2 && restore.todosLive === false, 'restoring a finished list fills the tab without marking it live');
+  assert(restore.open && restore.tab === 'progress', 'an in-progress restore opens the tab so a reopened chat still shows the work');
+
+  let done = p.panelReducer(p.initialPanel, {
+    type: 'progress',
+    todos: [{ content: 'already done', status: 'completed' }],
+  });
+  assert(!done.open, 'a fully completed restore does not steal the panel');
+
+  let switched = feed(p.initialPanel, { type: 'progress', todos: first });
+  switched = p.panelReducer(switched, { type: 'session-switch' });
+  assert(switched.todos.length === 0 && !switched.todosLive, 'switching session drops the previous chat\'s todo list');
+}
+
 console.log(failed ? `${failed} CHECK(S) FAILED` : 'ALL OK');
 process.exit(failed ? 1 : 0);

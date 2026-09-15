@@ -43,7 +43,10 @@ def test_desktop_tools_are_offered_without_a_workspace(tmp_path):
 
 def test_a_plain_coding_request_does_not_drag_the_desktop_tools_in(workspace):
     names = tools_sent("Anade a cart.py una funcion apply_tax(total, rate) y su test", workspace)
-    assert "desktop_screenshot" not in names and "desktop_click" not in names, names
+    # Vision (`desktop_screenshot` / `desktop_list_windows`) is on the
+    # workspace floor so the model can look after a UI change. Input/control
+    # tools are not — a coding turn must not load click/type/key schemas.
+    assert "desktop_click" not in names and "desktop_type" not in names and "desktop_key" not in names, names
 
 
 @pytest.mark.parametrize("message", ["Controla mi pantalla y cierra la ventana de chatgpt", "Cierra la ventana de Spotify", "Could you close the window of Notepad?"])

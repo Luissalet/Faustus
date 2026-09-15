@@ -401,7 +401,8 @@ def test_the_dispatcher_gate_downstream_agrees_with_the_loop(workspace):
     handed = turn.exec_kwargs[0]
     downstream_denylist = set(handed.get("disabled_tools") or ())
     downstream_policy = handed.get("tool_policy")
-    for name in ("read_file", "ls", "edit_file", "apply_patch"):
+    for name in ("read_file", "ls", "edit_file", "apply_patch", "bash", "python", "powershell",
+                 "grep", "desktop_screenshot"):
         assert name not in downstream_denylist, (
             f"loop passed a floor tool down as disabled: {name}"
         )
@@ -411,20 +412,20 @@ def test_the_dispatcher_gate_downstream_agrees_with_the_loop(workspace):
 
 
 def test_a_blocked_call_is_reported_to_the_model_and_the_ui(workspace):
-    """`bash` is NOT floored, so this turn legitimately refuses it.
+    """`write_file` is NOT floored, so this turn legitimately refuses it.
 
     The refusal must be visible as such: a blocked result, a reason the model
     can read in the next round, and no pretence that it ran.
     """
     disabled, policy = route_turn_policy(SPANISH_REQUEST)
-    assert "bash" in disabled, "fixture no longer withholds bash"
+    assert "write_file" in disabled, "fixture no longer withholds write_file"
     turn = run_turn(
         SPANISH_REQUEST, workspace, disabled_tools=disabled, tool_policy=policy,
-        calls=["bash"],
+        calls=["write_file"],
     )
-    assert "bash" not in turn.offered, "bash must not be offered here"
-    assert "bash" not in turn.executed
-    assert "bash" in turn.refusals
+    assert "write_file" not in turn.offered, "write_file must not be offered here"
+    assert "write_file" not in turn.executed
+    assert "write_file" in turn.refusals
     assert not turn.traps, turn.traps
 
 
@@ -585,14 +586,14 @@ def test_a_fenced_route_gets_the_floor_in_its_prompt_and_can_run_it(workspace):
 
 
 def test_a_fenced_route_still_refuses_what_it_never_advertised(workspace):
-    """The floor is four tools wide on this route too, not a general amnesty."""
+    """The floor restores the host toolchain; it is not a general amnesty."""
     disabled, policy = route_turn_policy(SPANISH_REQUEST)
     turn = run_turn(
         SPANISH_REQUEST, workspace, disabled_tools=disabled, tool_policy=policy,
-        supports_tools=False, calls=["bash"],
+        supports_tools=False, calls=["write_file"],
     )
-    assert "bash" not in turn.executed, turn.executed
-    assert "bash" in turn.refusals
+    assert "write_file" not in turn.executed, turn.executed
+    assert "write_file" in turn.refusals
 
 
 # --------------------------------------------------------------------------
@@ -610,13 +611,13 @@ def test_the_block_log_names_the_predicate_the_policy_and_the_reason(workspace, 
     with caplog.at_level("INFO", logger="src.agent_loop"):
         run_turn(
             SPANISH_REQUEST, workspace, disabled_tools=disabled,
-            tool_policy=policy, calls=["bash"],
+            tool_policy=policy, calls=["write_file"],
         )
     lines = blocked_log_lines(caplog)
     assert lines, "no block line emitted"
     line = lines[0]
     assert "current_tool_policy" not in line, f"still one word for two gates: {line}"
-    for field in ("tool=bash", "source=", "policy=", "origin=", "matched=", "reason="):
+    for field in ("tool=write_file", "source=", "policy=", "origin=", "matched=", "reason="):
         assert field in line, f"{field!r} missing from {line}"
     assert "source=tool_policy" in line, line
 
@@ -630,7 +631,7 @@ def test_a_denylist_only_block_says_disabled_tools_not_tool_policy(workspace, ca
     with caplog.at_level("INFO", logger="src.agent_loop"):
         run_turn(
             SPANISH_REQUEST, workspace,
-            disabled_tools={"bash"}, tool_policy=None, calls=["bash"],
+            disabled_tools={"write_file"}, tool_policy=None, calls=["write_file"],
         )
     lines = blocked_log_lines(caplog)
     assert lines, "no block line emitted"
@@ -641,13 +642,13 @@ def test_a_denylist_only_block_says_disabled_tools_not_tool_policy(workspace, ca
 def test_the_two_gates_produce_different_lines_for_the_same_tool(workspace, caplog):
     """Same tool, same round number, two causes — two distinguishable lines."""
     with caplog.at_level("INFO", logger="src.agent_loop"):
-        run_turn(SPANISH_REQUEST, workspace, disabled_tools={"bash"}, calls=["bash"])
+        run_turn(SPANISH_REQUEST, workspace, disabled_tools={"write_file"}, calls=["write_file"])
         by_denylist = blocked_log_lines(caplog)[-1]
         caplog.clear()
         run_turn(
             SPANISH_REQUEST, workspace,
-            tool_policy=ToolPolicy(disabled_tools=frozenset({"bash"})),
-            calls=["bash"],
+            tool_policy=ToolPolicy(disabled_tools=frozenset({"write_file"})),
+            calls=["write_file"],
         )
         by_policy = blocked_log_lines(caplog)[-1]
     assert by_denylist != by_policy, by_denylist
@@ -672,10 +673,10 @@ def test_a_guide_only_block_names_the_guide_only_policy(workspace, caplog):
 
 def test_the_blocked_result_carries_the_same_three_fields(workspace):
     """What the log says, the result says too — for the UI and the model."""
-    turn = run_turn(SPANISH_REQUEST, workspace, disabled_tools={"bash"}, calls=["bash"])
+    turn = run_turn(SPANISH_REQUEST, workspace, disabled_tools={"write_file"}, calls=["write_file"])
     blocked = [
         e for e in turn.events
-        if e.get("type") == "tool_output" and e.get("tool") == "bash"
+        if e.get("type") == "tool_output" and e.get("tool") == "write_file"
     ]
     assert blocked, "no tool_output for the blocked call"
     assert blocked[0].get("blocked") is True
@@ -691,9 +692,9 @@ def test_the_blocked_result_also_carries_the_spelling_that_matched(workspace):
     src/agent_tools/subagent_tools.py resolves a worker's refusal cause from
     this field, so it has to reach the stream.
     """
-    turn = run_turn(SPANISH_REQUEST, workspace, disabled_tools={"bash"}, calls=["bash"])
-    blocked = [e for e in turn.events if e.get("type") == "tool_output" and e.get("tool") == "bash"]
-    assert blocked and blocked[0].get("policy_matched") == "bash"
+    turn = run_turn(SPANISH_REQUEST, workspace, disabled_tools={"write_file"}, calls=["write_file"])
+    blocked = [e for e in turn.events if e.get("type") == "tool_output" and e.get("tool") == "write_file"]
+    assert blocked and blocked[0].get("policy_matched") == "write_file"
 
 
 @pytest.mark.parametrize(
@@ -850,15 +851,16 @@ def test_the_preflight_denials_are_not_relaxed(workspace):
     assert "read_file" in turn.executed, turn.executed
 
 
-def test_the_privileged_trio_is_never_resurrected(workspace):
-    """`bash`, `python` and `write_file` are withholdable, and stay withheld."""
+def test_write_file_is_never_resurrected(workspace):
+    """The host shell is floored; `write_file` stays withholdable."""
     disabled, policy = route_turn_policy(SPANISH_REQUEST)
     turn = run_turn(
         SPANISH_REQUEST, workspace, disabled_tools=disabled, tool_policy=policy,
-        calls=["bash", "python", "write_file", "manage_memory", "send_email"],
+        calls=["write_file", "manage_memory", "send_email"],
     )
     assert turn.executed == [], turn.executed
-    assert not set(turn.offered) & {"bash", "python", "write_file", "manage_memory"}
+    assert not set(turn.offered) & {"write_file", "manage_memory", "send_email"}
+    assert {"bash", "python"} <= set(turn.offered)
 
 
 def test_no_workspace_no_reconciliation(workspace):

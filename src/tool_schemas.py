@@ -956,6 +956,30 @@ FUNCTION_TOOL_SCHEMAS = [
             }
         }
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "lookup_tools",
+            "description": "Search the tool catalog and load schemas on demand. Use when a needed tool is missing from this turn's native schema list, or before saying a tool is unavailable. Pass `query` (what you want to do) and/or `names` (exact tool names). Returns matching tools; they become native function calls on the next round.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Natural-language description of the action (Spanish or English), e.g. 'send email', 'commit these files'."},
+                    "names": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Exact tool names to load when you already know them."
+                    },
+                    "detail": {
+                        "type": "string",
+                        "enum": ["catalog", "schema"],
+                        "description": "catalog = name + one-liner; schema = also include the full JSON schema. Default schema when names are given, catalog when only query is given — overridden to schema when you need to call one now."
+                    }
+                },
+                "required": []
+            }
+        }
+    },
     # ── Desktop control (FAUSTUS): see the screen and drive it ──────────────
     {
         "type": "function",

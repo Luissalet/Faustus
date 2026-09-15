@@ -25,6 +25,7 @@ import json
 import logging
 import os
 import shlex
+import shutil
 import subprocess
 import threading
 import time
@@ -128,7 +129,17 @@ def _at_concurrency_limit(jobs: Dict[str, Dict[str, Any]]) -> bool:
     return limit > 0 and _running_count(jobs) >= limit
 
 
-def _spawn_process(job_id: str, command: str, cwd: Optional[str]) -> Dict[str, Any]:
+def find_powershell() -> Optional[str]:
+    """`pwsh` first, then Windows PowerShell; None when the host has neither."""
+    for exe in ("pwsh", "powershell"):
+        found = shutil.which(exe)
+        if found:
+            return found
+    return None
+
+
+def _spawn_process(job_id: str, command: str, cwd: Optional[str],
+                   shell: str = "bash") -> Dict[str, Any]:
     """Actually start `command` detached and return the process-related record
     fields (status='running'). Split out of `launch()` so a job queued for RAM
     pressure (see `launch()` / `refresh()`) can be started later by the exact
@@ -136,45 +147,57 @@ def _spawn_process(job_id: str, command: str, cwd: Optional[str]) -> Dict[str, A
     spawn logic."""
     log_path = _JOBS_DIR / f"{job_id}.log"
     exit_path = _JOBS_DIR / f"{job_id}.exit"
+    kind = (shell or "bash").strip().lower()
 
-    # The user command goes in its OWN script file, run as a child `bash`. This
-    # is what isolates it: an `exit` inside it only ends that child (so the
-    # wrapper still records the exit code), and — unlike textually wrapping the
-    # command in `( … )` — the wrapper can't be broken by an unbalanced paren or
-    # a trailing line-continuation in the command. `$?` is the child's real
-    # exit status.
-    bash = find_bash()
-    if bash:
-        # POSIX, or Windows with Git Bash/WSL. The user command goes in its OWN
-        # script file, run as a child `bash` — an `exit` inside it only ends
-        # that child (so the wrapper still records the exit code), and an
-        # unbalanced paren / trailing line-continuation in the command can't
-        # break the wrapper. `$?` is the child's real exit status. Paths are
-        # emitted as POSIX (forward-slash) + shell-quoted so Git Bash on Windows
-        # handles drive paths and spaces correctly.
-        cmd_path = _JOBS_DIR / f"{job_id}.cmd.sh"
-        cmd_path.write_text(command + "\n", encoding="utf-8")
-        lp, xp, cp = (shlex.quote(git_bash_path(p)) for p in (log_path, exit_path, cmd_path))
-        script_path = _JOBS_DIR / f"{job_id}.sh"
-        script_path.write_text(
-            f"bash {cp} > {lp} 2>&1\n"
-            f"echo $? > {xp}\n",
-            encoding="utf-8",
-        )
-        argv = [bash, str(script_path)]
-    else:
-        # Windows without any bash installed: cmd.exe wrapper. The command runs
-        # in its own child .cmd so %ERRORLEVEL% is the command's real exit code.
-        child_path = _JOBS_DIR / f"{job_id}.child.cmd"
-        child_path.write_text("@echo off\r\n" + command + "\r\n", encoding="utf-8")
-        script_path = _JOBS_DIR / f"{job_id}.cmd"
-        script_path.write_text(
-            "@echo off\r\n"
-            f'call "{child_path}" > "{log_path}" 2>&1\r\n'
-            f'echo %ERRORLEVEL%> "{exit_path}"\r\n',
-            encoding="utf-8",
-        )
-        argv = [os.environ.get("ComSpec", "cmd.exe"), "/c", str(script_path)]
+    if kind == "powershell":
+        ps = find_powershell()
+        if ps:
+            child_path = _JOBS_DIR / f"{job_id}.child.ps1"
+            child_path.write_text(command + "\n", encoding="utf-8")
+            wrapper_path = _JOBS_DIR / f"{job_id}.wrapper.ps1"
+            wrapper_path.write_text(
+                "$ErrorActionPreference = 'Continue'\n"
+                f"& {json.dumps(str(child_path))} *> {json.dumps(str(log_path))}\n"
+                f"if ($LASTEXITCODE -is [int]) {{ $LASTEXITCODE | Out-File "
+                f"{json.dumps(str(exit_path))} }} else {{ '0' | Out-File "
+                f"{json.dumps(str(exit_path))} }}\n",
+                encoding="utf-8",
+            )
+            argv = [ps, "-NoProfile", "-NonInteractive", "-NoLogo",
+                    "-ExecutionPolicy", "Bypass", "-File", str(wrapper_path)]
+        else:
+            kind = "bash"
+
+    if kind != "powershell":
+        # The user command goes in its OWN script file, run as a child `bash`.
+        # This is what isolates it: an `exit` inside it only ends that child
+        # (so the wrapper still records the exit code), and — unlike textually
+        # wrapping the command in `( … )` — the wrapper can't be broken by an
+        # unbalanced paren or a trailing line-continuation. `$?` is the child's
+        # real exit status.
+        bash = find_bash()
+        if bash:
+            cmd_path = _JOBS_DIR / f"{job_id}.cmd.sh"
+            cmd_path.write_text(command + "\n", encoding="utf-8")
+            lp, xp, cp = (shlex.quote(git_bash_path(p)) for p in (log_path, exit_path, cmd_path))
+            script_path = _JOBS_DIR / f"{job_id}.sh"
+            script_path.write_text(
+                f"bash {cp} > {lp} 2>&1\n"
+                f"echo $? > {xp}\n",
+                encoding="utf-8",
+            )
+            argv = [bash, str(script_path)]
+        else:
+            child_path = _JOBS_DIR / f"{job_id}.child.cmd"
+            child_path.write_text("@echo off\r\n" + command + "\r\n", encoding="utf-8")
+            script_path = _JOBS_DIR / f"{job_id}.cmd"
+            script_path.write_text(
+                "@echo off\r\n"
+                f'call "{child_path}" > "{log_path}" 2>&1\r\n'
+                f'echo %ERRORLEVEL%> "{exit_path}"\r\n',
+                encoding="utf-8",
+            )
+            argv = [os.environ.get("ComSpec", "cmd.exe"), "/c", str(script_path)]
 
     proc = subprocess.Popen(
         argv,
@@ -215,7 +238,7 @@ def _spawn_process(job_id: str, command: str, cwd: Optional[str]) -> Dict[str, A
 
 
 def launch(command: str, session_id: str, cwd: Optional[str] = None,
-           max_runtime_s: int = DEFAULT_MAX_RUNTIME_S) -> Dict[str, Any]:
+           max_runtime_s: int = DEFAULT_MAX_RUNTIME_S, shell: str = "bash") -> Dict[str, Any]:
     """Launch `command` detached. Returns the job record.
 
     Ordinarily `status='running'`: output + the final exit code are written to
@@ -237,6 +260,7 @@ def launch(command: str, session_id: str, cwd: Optional[str] = None,
         "id": job_id,
         "session_id": session_id,
         "command": command,
+        "shell": (shell or "bash"),
         "max_runtime_s": max_runtime_s,
         "followed_up": False,       # has the agent been re-invoked with the result?
     }
@@ -259,7 +283,7 @@ def launch(command: str, session_id: str, cwd: Optional[str] = None,
         logger.info("bg job %s: queued (pressure=%s, at_concurrency_limit=%s) instead of launched: %s",
                     job_id, pressured, at_limit, command[:80])
     else:
-        rec.update(_spawn_process(job_id, command, cwd))
+        rec.update(_spawn_process(job_id, command, cwd, shell=rec["shell"]))
     jobs[job_id] = rec
     _save(jobs)
     return rec
@@ -354,7 +378,10 @@ def refresh() -> Dict[str, Dict[str, Any]]:
                 # "deferred, not dropped" contract, just gated on a different
                 # resource than RAM.
                 break
-            rec.update(_spawn_process(rec["id"], rec.get("command", ""), rec.get("cwd")))
+            rec.update(_spawn_process(
+                rec["id"], rec.get("command", ""), rec.get("cwd"),
+                shell=str(rec.get("shell") or "bash"),
+            ))
             rec["queued_for_concurrency"] = False
             running += 1
             changed = True

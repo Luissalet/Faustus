@@ -149,3 +149,15 @@ class UpdatePlanTool:
         logger.info("Tool executed: %s (revision=%s, warnings=%d)",
                     desc, parsed_plan.revision, len(parsed_plan.warnings))
         return desc, result
+
+
+class LookupToolsTool:
+    async def execute(self, content, ctx):
+        """Search the tool index and return compact catalog rows / schemas.
+
+        Read-only. Does not run the listed tools. The agent loop promotes
+        returned names into the next round's native schema list.
+        """
+        from src.tool_serve import execute_lookup
+
+        return execute_lookup(content, ctx or {})

@@ -258,6 +258,11 @@ DEFAULT_SETTINGS = {
     # removes tools, and never one the workspace floor guarantees. Set false to
     # send every selected tool regardless.
     "agent_tool_preflight": True,
+    # Defer domain-extra tool schemas into a compact catalog + lookup_tools
+    # helper so a turn does not dump 40 native schemas. Selected tools stay
+    # executable; lookup_tools loads full schemas on demand. Set false to
+    # send every selected schema like before.
+    "agent_tool_catalog": True,
     "agent_tool_rerank": False,
     # ── Reliability harness (src/agent_harness.py and friends) ──
     # Claims-vs-evidence checks, syntax check, fabricated-path detection.
@@ -327,10 +332,10 @@ DEFAULT_SETTINGS = {
     # missed check.
     "agent_workspace_trust": "ask",
     # The agent's shell in the Docker sandbox (src/sandbox_exec.py), and what
-    # happens when the container cannot serve this host. `auto` runs it here and
-    # says so on the result — on native Windows always, since a Linux container
-    # has no cmd/powershell/.bat/winget and not the project's own Python, so it
-    # can never verify a Windows project. `strict` refuses instead.
+    # happens when the container cannot serve this host. On native Windows the
+    # host always runs it (Git Bash / PowerShell / the project's Python) — a
+    # Linux image cannot verify a Windows project. `auto` does the same on
+    # POSIX when the daemon does not answer. `strict` refuses on POSIX only.
     "agent_sandbox_execution": False,
     "agent_sandbox_mode": "auto",
     "agent_repo_map": True,

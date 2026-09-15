@@ -123,6 +123,7 @@ export const COMMANDS: SlashCommand[] = [
   },
   { name: 'open', aliases: ['show'], category: 'Agent', usage: '/open path', help: 'Opens a file from the working folder in the side panel.' },
   { name: 'browser', category: 'Agent', usage: '/browser', help: 'Opens the panel with what the agent sees in the browser.' },
+  { name: 'progress', category: 'Agent', usage: '/progress', help: 'Opens the panel with the steps the agent is working through.' },
   { name: 'doc', category: 'Agent', usage: '/doc [title]', help: 'Opens the document panel (with a title, creates a new one).' },
   { name: 'sh', aliases: ['exec', 'run'], category: 'Agent', usage: '/sh command', help: 'Runs a shell command in the working folder and shows the output.' },
 

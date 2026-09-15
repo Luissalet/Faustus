@@ -9,6 +9,7 @@ import {
   listModels,
   listSessions,
   loadHistory,
+  loadAgentProgress,
   metricsFrom,
   pauseChat,
   pendingOutboxFor,
@@ -880,6 +881,10 @@ export function StudioScreen() {
       .catch(() => {
         if (!controller.signal.aborted) setLoadError(t('Could not open this conversation.'));
       });
+    void loadAgentProgress(sessionId, controller.signal).then((todos) => {
+      if (controller.signal.aborted || !todos.length) return;
+      panelDispatch({ type: 'progress', todos });
+    });
     return () => {
       controller.abort();
       // Leaving a conversation drops OUR view of the turn, never the turn:
@@ -1565,6 +1570,9 @@ export function StudioScreen() {
         }
         case 'browser':
           panelDispatch({ type: 'open', tab: 'browser' });
+          return true;
+        case 'progress':
+          panelDispatch({ type: 'open', tab: 'progress' });
           return true;
         case 'open': {
           if (!workspace) {

@@ -2892,6 +2892,7 @@ Opens a file from the working folder in the side panel.	Abre un fichero de la ca
 Opens in the previous interface	Se abre en la interfaz anterior
 Opens the document panel (with a title, creates a new one).	Abre el panel de documento (con título, crea uno nuevo).
 Opens the endpoint manager.	Abre el gestor de endpoints.
+Opens the panel with the steps the agent is working through.	Abre el panel con los pasos que está cumpliendo el agente.
 Opens the panel with what the agent sees in the browser.	Abre el panel con lo que ve el agente en el navegador.
 Optional label (Work, Personal). Blank uses the address.	Etiqueta opcional (Trabajo, Personal). En blanco usa la dirección.
 Optional. The agent reads and changes files here.	Opcional. El agente lee y cambia archivos aquí.
@@ -3092,6 +3093,7 @@ Profile «{tier}»	Perfil «{tier}»
 Profile «{tier}» applied: {n} setting changed.	Perfil «{tier}» aplicado: {n} ajuste cambiado.
 Profile «{tier}» applied: {n} settings changed.	Perfil «{tier}» aplicado: {n} ajustes cambiados.
 Profiles for this machine	Perfiles para esta máquina
+Progress	Progreso
 Project	Proyecto
 Project archived	Proyecto archivado
 Project id	Id del proyecto
@@ -4349,6 +4351,7 @@ The session is stopped first, then the card goes.	Primero se para la sesión; de
 The sign-in was refused.	Se ha rechazado el inicio de sesión.
 The skills; with a query, the ones that match.	Las skills; con una consulta, las que coinciden.
 The source could not be read, so nothing here is a comparison.	No se pudo leer el origen, así que nada de esto es una comparación.
+The steps the agent is working through appear here.	Los pasos que está cumpliendo el agente aparecen aquí.
 The source could not be read.	No se ha podido leer la fuente.
 The source note is read-only: do not edit or replace it.	La nota de origen es de solo lectura: no la edites ni la sustituyas.
 The source registry could not be read	No se ha podido leer el registro de fuentes

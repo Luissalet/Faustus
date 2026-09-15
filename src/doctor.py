@@ -283,6 +283,17 @@ def _agent_sandbox() -> Finding:
 
     info = sandbox_exec.describe()
     on = info["enabled"]
+    try:
+        from core.platform_compat import IS_WINDOWS
+        windows = bool(IS_WINDOWS)
+    except Exception:
+        windows = False
+    if windows:
+        return Finding(
+            "execution", "agent shell in the sandbox", "ok",
+            "Windows host — commands run on this PC (Git Bash / PowerShell), not in Docker",
+            fix="",
+        )
     if not on:
         detail = "OFF — the agent's shell runs on this machine, as it always did"
     elif info["target"] == "host":

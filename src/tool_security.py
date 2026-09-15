@@ -251,6 +251,8 @@ PLAN_MODE_READONLY_TOOLS = {
     "glob",
     "ls",
     "get_workspace",
+    "desktop_screenshot",
+    "desktop_list_windows",
     "web_search",
     "web_fetch",
     "search_chats",
@@ -294,6 +296,7 @@ PLAN_MODE_READONLY_TOOLS = {
     "board_list",
     "board_ready",
     "board_get",
+    "lookup_tools",
 }
 
 

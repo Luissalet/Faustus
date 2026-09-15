@@ -58,12 +58,21 @@ def test_windows_skips_the_container_without_asking_docker(settings, monkeypatch
                          "skip_reason": reason, "image": sandbox_exec.image()}
 
 
-def test_strict_still_refuses_on_windows(settings, monkeypatch):
-    """The operator who wants the hard gate keeps it, host kind regardless."""
+def test_strict_still_skips_the_container_on_windows(settings, monkeypatch):
+    """A Linux image cannot verify a Windows project even when the operator
+    asked for the hard gate: cmd, .bat, winget and the project's Python are
+    on the host. Strict remains the POSIX refusal; on native Windows the
+    host always runs it and says why."""
     settings.update({"agent_sandbox_execution": True, "agent_sandbox_mode": "strict"})
     monkeypatch.setattr(sandbox_exec, "_host_is_windows", lambda: True)
-    assert sandbox_exec.host_skip_reason() is None
-    assert sandbox_exec.describe()["target"] == "container"
+
+    def _never(*a, **k):
+        raise AssertionError("strict mode probed Docker on a Windows host")
+    monkeypatch.setattr("src.execution_backends.DockerWorkspaceBackend.probe", _never)
+
+    reason = sandbox_exec.host_skip_reason()
+    assert reason and "Windows" in reason
+    assert sandbox_exec.describe()["target"] == "host"
 
 
 def test_off_is_still_off(settings, monkeypatch):
@@ -214,7 +223,7 @@ def test_the_environment_block_is_built_from_the_executor(settings, monkeypatch)
     monkeypatch.setattr("core.platform_compat.find_bash",
                         lambda: r"C:\Program Files\Git\bin\bash.exe")
     from src.agent_loop import _execution_environment_block
-    block = _execution_environment_block({"bash", "python", "powershell"})
+    block = _execution_environment_block({"bash", "python", "powershell", "desktop_screenshot"})
     assert "native Windows" in block
     assert "NO Docker" in block
     # The three sentences that answer what the live sessions got wrong.
@@ -222,24 +231,45 @@ def test_the_environment_block_is_built_from_the_executor(settings, monkeypatch)
     assert "powershell" in block and "never wrap" in block.lower()
     assert "Absolute paths" in block
     assert "Verification is YOUR job" in block
+    assert "desktop_screenshot" in block
+    assert "run INSIDE a Linux container" not in block
+    assert "native Windows" in block
+
+
+def test_windows_strict_sandbox_still_tells_the_model_it_is_on_the_host(settings, monkeypatch):
+    """The prompt used to check target==container BEFORE IS_WINDOWS, so a
+    Windows box with sandbox=strict was told it lived in a Linux image."""
+    settings.update({"agent_sandbox_execution": True, "agent_sandbox_mode": "strict"})
+    monkeypatch.setattr(sandbox_exec, "_host_is_windows", lambda: True)
+    monkeypatch.setattr("core.platform_compat.IS_WINDOWS", True)
+    monkeypatch.setattr("core.platform_compat.find_bash", lambda: r"C:\Git\bin\bash.exe")
+    from src.agent_loop import _execution_environment_block
+    block = _execution_environment_block({"bash", "python", "powershell"})
+    assert "native Windows" in block
+    assert "run INSIDE a Linux container" not in block
+    assert "start Docker" not in block
 
 
 def test_the_block_says_container_when_the_container_really_runs_it(settings, monkeypatch):
     settings.update({"agent_sandbox_execution": True, "agent_sandbox_mode": "strict"})
     monkeypatch.setattr(sandbox_exec, "_host_is_windows", lambda: False)
+    monkeypatch.setattr("core.platform_compat.IS_WINDOWS", False)
     from src.agent_loop import _execution_environment_block
     block = _execution_environment_block({"bash", "python"})
     assert "container" in block and "/workspace" in block
     assert "native Windows" not in block
 
 
-def test_the_block_only_costs_tokens_when_a_shell_tool_is_offered():
+def test_the_block_only_costs_tokens_when_a_shell_or_vision_tool_is_offered():
     from src.agent_loop import _assemble_prompt, _SHELL_ENV_TOOLS
     assert "bash" in _SHELL_ENV_TOOLS and "powershell" in _SHELL_ENV_TOOLS
+    assert "desktop_screenshot" in _SHELL_ENV_TOOLS
     without = _assemble_prompt({"read_file", "grep"})
     assert "Execution environment" not in without
     with_shell = _assemble_prompt({"read_file", "bash"})
     assert "Execution environment" in with_shell
+    with_vision = _assemble_prompt({"read_file", "desktop_screenshot"})
+    assert "Execution environment" in with_vision
 
 
 # ── the powershell tool ───────────────────────────────────────────────────
@@ -446,3 +476,121 @@ def test_a_broken_grant_store_never_fails_a_turn(monkeypatch, tmp_path):
         raise OSError("disk gone")
     monkeypatch.setattr("src.tool_approval_grants.is_granted", _boom)
     assert agent_loop._workspace_gate_granted("admin", str(tmp_path)) is False
+
+
+# ── 6. the workspace floor includes the host's own toolchain ──────────────
+
+def test_workspace_floor_includes_shell_search_and_desktop_vision():
+    from src.agent_loop import (
+        WORKSPACE_TOOL_FLOOR, WORKSPACE_TOOL_FLOOR_READ, WORKSPACE_TOOL_FLOOR_SHELL,
+    )
+    assert {"bash", "python", "powershell"} <= WORKSPACE_TOOL_FLOOR_SHELL
+    assert {"grep", "desktop_screenshot", "desktop_list_windows"} <= WORKSPACE_TOOL_FLOOR_READ
+    assert WORKSPACE_TOOL_FLOOR_SHELL <= WORKSPACE_TOOL_FLOOR
+    assert "write_file" not in WORKSPACE_TOOL_FLOOR
+
+
+def test_plan_mode_keeps_desktop_vision_and_grep_as_readonly():
+    from src.tool_security import PLAN_MODE_READONLY_TOOLS, plan_mode_disabled_tools
+    assert "desktop_screenshot" in PLAN_MODE_READONLY_TOOLS
+    assert "desktop_list_windows" in PLAN_MODE_READONLY_TOOLS
+    disabled = plan_mode_disabled_tools()
+    assert "desktop_screenshot" not in disabled
+    assert "bash" in disabled and "powershell" in disabled
+
+
+def test_the_prompt_does_not_forbid_gui_verification():
+    """Live sessions read 'no GUI' / 'Don't try to RUN GUI apps' as 'I cannot
+    look at the screen', then handed the user the verification. Desktop
+    vision is the way to look."""
+    from src.agent_loop import TOOL_SECTIONS, _AGENT_RULES, _API_AGENT_RULES
+    bash = TOOL_SECTIONS["bash"]
+    python = TOOL_SECTIONS["python"]
+    assert "Don't try to RUN" not in bash
+    assert "Same sandbox limits" not in python
+    assert "desktop_screenshot" in bash
+    for rules in (_AGENT_RULES, _API_AGENT_RULES):
+        assert "desktop_screenshot" in rules
+        assert "visual" in rules.lower()
+
+
+def test_powershell_tool_section_supports_bg():
+    from src.agent_loop import TOOL_SECTIONS
+    assert "#!bg" in TOOL_SECTIONS["powershell"]
+    assert "NOT supported" not in TOOL_SECTIONS["powershell"]
+
+
+@pytest.mark.asyncio
+async def test_bash_without_git_bash_delegates_to_powershell(monkeypatch):
+    from src.agent_tools import subprocess_tools as st
+    monkeypatch.setattr(st, "IS_WINDOWS", True)
+    monkeypatch.setattr(st, "find_bash", lambda: None)
+
+    called = {}
+
+    async def _ps(self, content, ctx):
+        called["script"] = content
+        return {"output": "hi", "exit_code": 0, "execution_target": {"kind": "windows"}}
+
+    monkeypatch.setattr(st.PowerShellTool, "execute", _ps)
+    result = await st.BashTool()._on_host("echo hi", None, None, "sess")
+    assert result["exit_code"] == 0
+    assert called["script"] == "echo hi"
+    assert "Git Bash is required" not in str(result)
+
+
+@pytest.mark.asyncio
+async def test_powershell_bg_marker_launches_a_job(monkeypatch):
+    from collections import namedtuple
+    from src.tool_execution import _execute_tool_block_impl
+
+    launched = {}
+
+    def _launch(command, session_id, cwd=None, max_runtime_s=3600, shell="bash"):
+        launched.update(command=command, session_id=session_id, shell=shell, cwd=cwd)
+        return {"id": "job-ps1"}
+
+    monkeypatch.setattr("src.bg_jobs.launch", _launch)
+    Block = namedtuple("ToolBlock", ["tool_type", "content"])
+    desc, result = await _execute_tool_block_impl(
+        Block("powershell", "#!bg\nwinget install --id Foo.Bar -e"),
+        session_id="sess-1",
+        owner="admin",
+    )
+    assert result["exit_code"] == 0
+    assert result["bg_job_id"] == "job-ps1"
+    assert launched["command"] == "winget install --id Foo.Bar -e"
+    assert launched["shell"] == "powershell"
+    assert "background" in desc
+
+
+def test_bg_jobs_can_spawn_through_powershell(monkeypatch, tmp_path):
+    from src import bg_jobs
+    captured = {}
+
+    class _Proc:
+        pid = 4242
+
+    def _popen(argv, **kwargs):
+        captured["argv"] = argv
+        return _Proc()
+
+    monkeypatch.setattr(bg_jobs.subprocess, "Popen", _popen)
+    monkeypatch.setattr(bg_jobs, "_JOBS_DIR", tmp_path)
+    monkeypatch.setattr("core.platform_compat.find_bash", lambda: None)
+    monkeypatch.setattr(bg_jobs, "find_powershell", lambda: r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe")
+
+    rec = bg_jobs._spawn_process("abc", "Write-Output hi", str(tmp_path), shell="powershell")
+    assert rec["status"] == "running"
+    assert captured["argv"][0].lower().endswith("powershell.exe")
+    assert any("abc" in str(a) or a.endswith(".ps1") for a in captured["argv"])
+
+
+def test_doctor_on_windows_does_not_tell_you_to_start_docker(settings, monkeypatch):
+    monkeypatch.setattr(sandbox_exec, "_host_is_windows", lambda: True)
+    monkeypatch.setattr("core.platform_compat.IS_WINDOWS", True)
+    settings.update({"agent_sandbox_execution": False, "agent_sandbox_mode": "auto"})
+    from src.doctor import _agent_sandbox
+    finding = _agent_sandbox()
+    assert "start Docker" not in (finding.fix or "")
+    assert "turn on `agent_sandbox_execution`" not in (finding.fix or "")

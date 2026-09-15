@@ -1,4 +1,4 @@
-import type { BrowserFrame, ChatEvent, DocSuggestion } from '../../adapters/chat';
+import type { BrowserFrame, ChatEvent, DocSuggestion, Todo } from '../../adapters/chat';
 import { pingGitRefresh } from '../../adapters/git';
 import { pingBoardRefresh } from '../../adapters/board';
 import { t } from '../../i18n';
@@ -6,11 +6,12 @@ import { t } from '../../i18n';
 /**
  * The side panel next to the transcript: what the agent sees (browser and
  * desktop frames), the document it is writing, a file from the workspace,
- * (Lote 86) the workspace's git repository, live, and (Lote 93) the
- * project's work board. State and reducer only; SidePanel.tsx paints it.
+ * (Lote 86) the workspace's git repository, live, (Lote 93) the
+ * project's work board, and the todowrite list the agent is working through.
+ * State and reducer only; SidePanel.tsx paints it.
  */
 
-export type PanelTab = 'outputs' | 'sources' | 'agents' | 'browser' | 'doc' | 'file' | 'git' | 'board';
+export type PanelTab = 'outputs' | 'sources' | 'progress' | 'agents' | 'browser' | 'doc' | 'file' | 'git' | 'board';
 export interface PanelDraft {text:string; base:string; revision?:string}
 
 export interface DocState {
@@ -43,6 +44,18 @@ export interface PanelState {
    *  and by an issue-id chip elsewhere in the chat (Transcript.tsx) via the
    *  `board-issue` action below, so both land on the same tab+state. */
   boardIssue: string | null;
+  /** The agent's current todowrite list. Session-level, replaced on every
+   *  `progress_update` so the Progress tab stays current instead of freezing
+   *  the first snapshot at the top of the transcript. Not persisted — the
+   *  server file (`GET /api/agent/progress/{id}`) is the restore source. */
+  todos: Todo[];
+  /** A live `progress_update` already wrote `todos` this mount; a late
+   *  restore must not overwrite it with a stale GET. */
+  todosLive: boolean;
+  /** This turn already had a chance to open the Progress tab — same
+   *  once-per-turn rule as `live` for browser frames. Reset on turn-start
+   *  so the next task can surface the list again. */
+  progressRevealed: boolean;
 }
 
 export const MAX_FRAMES = 8;
@@ -75,6 +88,9 @@ export const initialPanel: PanelState = {
   file: null,
   documents: [], files: [], drafts: {}, width: 520, streamDoc: null,
   boardIssue: null,
+  todos: [],
+  todosLive: false,
+  progressRevealed: false,
 };
 
 export type PanelAction =
@@ -95,10 +111,29 @@ export type PanelAction =
   | { type: 'doc'; doc: DocState | null }
   | { type: 'suggestions'; docId?:string|null; suggestions: DocSuggestion[] }
   | { type: 'session-switch' }
+  /** Restore the session's saved todowrite list. Ignored once a live
+   *  `progress_update` has already written this mount's list. */
+  | { type: 'progress'; todos: Todo[] }
   /** Lote 93: open the Board tab, optionally straight to one issue's
    *  detail (an issue-id chip elsewhere in the chat) — `id: null` opens
    *  the list. */
   | { type: 'board-issue'; id: string | null };
+
+/** Open the Progress tab the first time a turn produces a todo list, the
+ *  same once-per-turn rule the browser tab uses for frames. */
+function revealProgress(state: PanelState, todos: Todo[], busy: boolean): PanelState {
+  const first = !state.progressRevealed && todos.length > 0;
+  const steal = !state.open || state.tab === 'outputs';
+  const openNow = first && busy && autoOpenEnabled() && steal;
+  return {
+    ...state,
+    todos,
+    todosLive: true,
+    progressRevealed: state.progressRevealed || todos.length > 0,
+    open: state.open || openNow,
+    tab: openNow ? 'progress' : state.tab,
+  };
+}
 
 function reducePanel(state: PanelState, action: PanelAction): PanelState {
   switch (action.type) {
@@ -111,11 +146,23 @@ function reducePanel(state: PanelState, action: PanelAction): PanelState {
     case 'show':
       return action.index >= 0 && action.index < state.frames.length ? { ...state, active: action.index } : state;
     case 'turn-start':
-      return { ...state, live: false };
+      return { ...state, live: false, progressRevealed: false };
     case 'turn-end':
       return { ...state, live: false, doc: state.doc?.streaming ? { ...state.doc, streaming: false } : state.doc };
     case 'session-switch':
       return { ...initialPanel };
+    case 'progress': {
+      if (state.todosLive) return state;
+      const working = action.todos.some((step) => step.status === 'in_progress');
+      const steal = !state.open || state.tab === 'outputs';
+      const openNow = working && autoOpenEnabled() && steal;
+      return {
+        ...state,
+        todos: action.todos,
+        open: state.open || openNow,
+        tab: openNow ? 'progress' : state.tab,
+      };
+    }
     case 'board-issue':
       return { ...state, open: true, tab: 'board', boardIssue: action.id };
     case 'file':
@@ -185,6 +232,9 @@ function reducePanel(state: PanelState, action: PanelAction): PanelState {
         }
         const known = new Set(doc.suggestions.map((s) => s.id));
         return { ...state, open: true, tab: 'doc', doc: { ...doc, suggestions: [...doc.suggestions, ...ev.suggestions.filter((s) => !known.has(s.id))] } };
+      }
+      if (ev.type === 'progress') {
+        return revealProgress(state, ev.todos, action.busy);
       }
       if (ev.type === 'tool_output' && ev.docId && ['create_document', 'update_document', 'edit_document'].includes(ev.tool)) {
         // The doc_update event normally follows; if it does not, the tool

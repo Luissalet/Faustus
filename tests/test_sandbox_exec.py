@@ -55,6 +55,15 @@ def settings(monkeypatch):
     return values
 
 
+@pytest.fixture(autouse=True)
+def posix_sandbox_host(monkeypatch, request):
+    """Strict-container tests pin POSIX. Native Windows is covered by the
+    tests that name Windows in their title and by test_windows_native_execution."""
+    if "windows" in request.node.name.lower():
+        return
+    monkeypatch.setattr(sandbox_exec, "_host_is_windows", lambda: False)
+
+
 # ── off means off ──────────────────────────────────────────────────────────
 
 @pytest.mark.asyncio

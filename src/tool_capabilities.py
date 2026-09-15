@@ -531,6 +531,11 @@ _register(
     ToolEffect.WRITE_WORKSPACE,
     result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED,
 )
+_register(
+    # Catalog helper: reads Faustus's own tool index, executes nothing.
+    {"lookup_tools"},
+    ToolEffect.READ_PRIVATE,
+)
 
 
 TOOL_CAPABILITIES: Mapping[str, ToolCapabilities] = MappingProxyType(dict(_REGISTRY))
