@@ -256,12 +256,15 @@ def _patch_common(monkeypatch):
 
 def _run_loop(monkeypatch, round_texts, *, max_rounds=4, relevant_tools=None,
               autonomy_preset=None, capture_tools=None,
-              endpoint_url="http://x/v1"):
+              endpoint_url="http://x/v1", max_tool_calls=0,
+              capture_messages=None, user="do a long multi-step task"):
     texts = list(round_texts)
 
     async def _fake_stream(_candidates, messages, **kwargs):
         if capture_tools is not None:
             capture_tools.append(kwargs.get("tools") or [])
+        if capture_messages is not None:
+            capture_messages.append(list(messages))
         body = texts.pop(0) if texts else "All done."
         yield f'data: {json.dumps({"delta": body})}\n\n'
         yield "data: [DONE]\n\n"
@@ -269,10 +272,11 @@ def _run_loop(monkeypatch, round_texts, *, max_rounds=4, relevant_tools=None,
 
     gen = al.stream_agent_loop(
         endpoint_url, "m",
-        [{"role": "user", "content": "do a long multi-step task"}],
+        [{"role": "user", "content": user}],
         max_rounds=max_rounds,
         relevant_tools=relevant_tools,
         autonomy_preset=autonomy_preset,
+        max_tool_calls=max_tool_calls,
         owner="admin",
     )
     return _events(_collect(gen))
@@ -309,6 +313,82 @@ def test_local_model_runs_past_budget_and_round_cycle_until_done(monkeypatch):
     assert not any(e.get("type") == "rounds_exhausted" for e in events), events
     summary = next(e for e in events if e.get("type") == "harness_summary")
     assert summary["data"]["stop_reason"] == "complete"
+
+
+def test_local_model_ignores_caller_tool_cap_and_never_emits_budget_exhausted(monkeypatch):
+    """Even an explicit max_tool_calls=1 must not mint budget_exhausted /
+    budget_exceeded on local inference — that event name is what local
+    models copy into the chat as if it were the answer."""
+    _patch_common(monkeypatch)
+    events = _run_loop(
+        monkeypatch,
+        ['```bash\necho one\n```', '```bash\necho two\n```', "All done."],
+        max_rounds=4,
+        relevant_tools={"bash"},
+        endpoint_url="http://127.0.0.1:11434/v1",
+        max_tool_calls=1,
+    )
+    assert not any(e.get("type") == "budget_exhausted" for e in events), events
+    assert not any(e.get("type") == "budget_exceeded" for e in events), events
+    summary = next((e for e in events if e.get("type") == "harness_summary"), None)
+    if summary:
+        assert summary["data"]["stop_reason"] not in ("budget_exhausted", "budget_exceeded")
+
+
+def test_local_auto_continue_prompt_does_not_mention_budget(monkeypatch):
+    """The injected continue message used to say 'step budget'; local models
+    then answered 'budget exhausted'."""
+    _patch_common(monkeypatch)
+    seen = []
+    _run_loop(
+        monkeypatch,
+        ['```bash\necho one\n```', "All done."],
+        max_rounds=1,
+        relevant_tools={"bash"},
+        endpoint_url="http://127.0.0.1:11434/v1",
+        capture_messages=seen,
+    )
+    injected = [
+        str(m.get("content") or "")
+        for turn in seen
+        for m in turn
+        if isinstance(m, dict) and m.get("role") == "user"
+    ]
+    blob = "\n".join(injected).lower()
+    assert "budget" not in blob, injected
+
+
+def test_local_model_budget_exhausted_claim_is_stripped_and_continued(monkeypatch):
+    """A text-only 'budget exhausted' from a local model is not the answer."""
+    _patch_common(monkeypatch)
+    events = _run_loop(
+        monkeypatch,
+        ["budget exhausted", "The files were listed and the work is done."],
+        max_rounds=4,
+        relevant_tools={"bash"},
+        endpoint_url="http://127.0.0.1:11434/v1",
+    )
+    assert not any(e.get("type") == "budget_exhausted" for e in events), events
+    assert any(
+        e.get("type") == "harness_check" and e.get("reason") == "local_no_cost_stop"
+        for e in events
+    ), events
+    replaces = [e.get("text", "") for e in events if e.get("type") == "response_replace"]
+    assert replaces and "budget exhausted" not in replaces[-1].lower()
+    deltas = "".join(e.get("delta", "") for e in events if "delta" in e)
+    assert "work is done" in deltas
+
+
+@pytest.mark.parametrize("text,expect", [
+    ("budget exhausted", True),
+    ("Budget exhausted.", True),
+    ("presupuesto agotado", True),
+    ("Se quedó sin presupuesto.", True),
+    ("4", False),
+    ("The files were updated and the tests pass.", False),
+])
+def test_budget_exhausted_stop_matcher(text, expect):
+    assert al._looks_like_budget_exhausted_stop(text) is expect
 
 
 def test_read_only_does_not_offer_bash_or_write(monkeypatch):

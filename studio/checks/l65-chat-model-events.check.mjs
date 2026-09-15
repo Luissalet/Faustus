@@ -34,7 +34,7 @@ async function bundle(entry, outName) {
 }
 
 const { decode } = await bundle('studio/src/adapters/chat.ts', 'chat.mjs');
-const { apply, blankTurn } = await bundle('studio/src/screens/studio/model.ts', 'model.mjs');
+const { apply, blankTurn, appendSteer } = await bundle('studio/src/screens/studio/model.ts', 'model.mjs');
 
 // ── ask_user revision ──
 {
@@ -128,6 +128,32 @@ const { apply, blankTurn } = await bundle('studio/src/screens/studio/model.ts', 
   // Absent from a server that has not been taught to forward it yet: no crash.
   const evNoTarget = decode({ type: 'tool_output', tool: 'bash', command: 'ls', output: 'ok', exit_code: 0 }, null);
   assert.equal(evNoTarget.executionTarget, undefined);
+}
+
+// ── Mid-turn steer: decode + append to the transcript as a user message ──
+{
+  const ev = decode({ type: 'steer', text: 'Use pytest, not unittest.', source: 'user', round: 1, interrupt: true }, null);
+  assert.equal(ev.type, 'steer');
+  assert.equal(ev.text, 'Use pytest, not unittest.');
+  assert.equal(ev.source, 'user');
+  assert.equal(ev.interrupt, true);
+
+  const user = blankTurn('user', 'Write the tests');
+  let assistant = blankTurn('assistant', 'I will start by reading');
+  assistant = apply(assistant, { type: 'delta', text: ' everything', thinking: false });
+  let turns = [user, assistant];
+  turns = appendSteer(turns, 'Use pytest, not unittest.', true);
+  assert.equal(turns.length, 4);
+  assert.equal(turns[1].streaming, false);
+  assert.equal(turns[2].role, 'user');
+  assert.equal(turns[2].text, 'Use pytest, not unittest.');
+  assert.equal(turns[3].role, 'assistant');
+  assert.equal(turns[3].streaming, true);
+  // Optimistic send already inserted the user row: interrupt still opens a
+  // new assistant bubble and does not duplicate the message.
+  turns = appendSteer(turns, 'Use pytest, not unittest.', true);
+  assert.equal(turns.filter((t) => t.role === 'user' && t.text === 'Use pytest, not unittest.').length, 1);
+  assert.equal(turns[turns.length - 1].role, 'assistant');
 }
 
 console.log('ok l65-chat-model-events');

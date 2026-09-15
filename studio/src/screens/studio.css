@@ -621,6 +621,54 @@
   box-shadow: var(--fs-panel-shadow);
 }
 
+/* One Cursor/ChatGPT-style line: "Running commands" / "Ran N commands".
+   Closed by default — expand to see each step's command and output. */
+details.fs-studio__tools {
+  padding-block: var(--fs-space-1);
+}
+
+.fs-studio__tools-summary {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  padding-block: var(--fs-space-1);
+  padding-inline: var(--fs-space-1) var(--fs-space-2);
+  cursor: pointer;
+  list-style: none;
+  color: var(--fs-text-3);
+  font-size: var(--fs-label-size);
+}
+
+.fs-studio__tools-summary::-webkit-details-marker {
+  display: none;
+}
+
+.fs-studio__tools-title {
+  flex: 1;
+  min-inline-size: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.fs-studio__tools[data-live] .fs-studio__tools-title {
+  color: var(--fs-text-2);
+}
+
+.fs-studio__tools-chevron {
+  flex-shrink: 0;
+  color: var(--fs-text-3);
+  transition: transform var(--fs-duration-fast) var(--fs-ease);
+}
+
+.fs-studio__tools[open] > .fs-studio__tools-summary .fs-studio__tools-chevron {
+  transform: rotate(180deg);
+}
+
+.fs-studio__tools-body {
+  padding-block-start: var(--fs-space-1);
+}
+
 details.fs-studio__step {
   display: block;
   padding: 0;
@@ -944,8 +992,8 @@ button.fs-studio__git-chip:hover {
 /* Stop: the same circle as send, hollow, with the halo pulsing while the
    model is still talking. */
 .fs-studio__send .fs-icon-btn {
-  inline-size: 40px;
-  block-size: 40px;
+  inline-size: var(--fs-control-md);
+  block-size: var(--fs-control-md);
   border-radius: var(--fs-radius-pill);
   border: 2px solid var(--fs-brand);
   color: var(--fs-brand);
@@ -964,10 +1012,46 @@ button.fs-studio__git-chip:hover {
 }
 
 .fs-studio__bar {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--fs-space-2);
-  flex-wrap: wrap;
+  min-inline-size: 0;
+  container-type: inline-size;
+}
+
+.fs-studio__bar-start,
+.fs-studio__bar-end,
+.fs-studio__bar-tools {
+  display: flex;
+  align-items: center;
+  min-inline-size: 0;
+}
+
+.fs-studio__bar-start {
+  gap: var(--fs-space-2);
+}
+
+.fs-studio__bar-tools {
+  gap: var(--fs-space-1);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.fs-studio__bar-tools > * {
+  flex-shrink: 0;
+}
+
+.fs-studio__bar-tools::-webkit-scrollbar {
+  display: none;
+}
+
+.fs-studio__bar-end {
+  gap: 2px;
+  justify-content: flex-end;
+  position: relative;
+  z-index: 1;
 }
 
 .fs-studio__knobs {
@@ -979,7 +1063,9 @@ button.fs-studio__git-chip:hover {
 }
 
 .fs-studio__send {
-  margin-inline-start: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-1);
 }
 
 /* Chips: pills that fill with ember when pressed. */
@@ -1080,8 +1166,8 @@ button.fs-studio__git-chip:hover {
 .fs-studio__go {
   display: grid;
   place-items: center;
-  inline-size: 40px;
-  block-size: 40px;
+  inline-size: var(--fs-control-md);
+  block-size: var(--fs-control-md);
   border: 0;
   border-radius: var(--fs-radius-pill);
   background: var(--fs-accent-gradient);
@@ -1098,7 +1184,7 @@ button.fs-studio__git-chip:hover {
 }
 
 .fs-studio__go:hover:not(:disabled) {
-  transform: translateY(-2px) rotate(-8deg) scale(1.06);
+  transform: translateY(-1px);
   box-shadow: var(--fs-glow), var(--fs-lift-shadow);
 }
 
@@ -1176,17 +1262,12 @@ button.fs-studio__git-chip:hover {
 }
 
 @media (max-width: 767px) {
-  /* Keep send/stop visible: the full agent toolbar must not become a tall
-     second column beside the mode switch on a narrow phone. */
+  /* One stable row: tools scroll, send never wraps onto a second line. */
   .fs-studio__composer { grid-template-columns: minmax(0, 1fr); }
   .fs-studio__bar, .fs-studio__input { min-inline-size: 0; }
-  .fs-studio__send { display: flex; align-items: center; gap: 4px; }
-  .fs-studio__knobs { flex: 0 0 100%; order: 3; flex-wrap: nowrap; overflow-x: auto; min-inline-size: 0; padding-block: 4px; }
-  .fs-studio__knobs > * { flex-shrink: 0; }
-  .fs-studio__knobs .fs-studio__chip { min-block-size: 44px; }
   .fs-studio__composer .fs-studio__attachments { max-block-size: 180px; overflow-y: auto; }
   .fs-studio__chip--model span {
-    max-inline-size: 12ch;
+    max-inline-size: 10ch;
   }
 
   .fs-studio__seg button {
@@ -1204,6 +1285,10 @@ button.fs-studio__git-chip:hover {
   .fs-studio__send .fs-icon-btn,
   .fs-turn--assistant[data-streaming] .fs-turn__node::after {
     animation: none;
+  }
+
+  .fs-studio__tools-chevron {
+    transition: none;
   }
 
   .fs-studio__session,
@@ -1406,7 +1491,6 @@ button.fs-studio__git-chip:hover {
   gap: 4px;
 }
 
-.fs-popover.fs-media-recipes { inline-size: min(460px, calc(100vw - 32px)); max-inline-size: calc(100vw - 32px); max-block-size: min(640px, 75dvh, var(--radix-popover-content-available-height, 75dvh)); overflow: auto; }
 .fs-media-recipes section { display: grid; gap: var(--fs-space-3); }
 .fs-media-recipes h3, .fs-media-recipes p { margin: 0; }
 .fs-media-recipes label { display: grid; gap: 6px; min-inline-size: 0; }
@@ -3557,24 +3641,40 @@ aside.fs-panel { position: relative; }
 .fs-media-recipes .fs-panel__row > label { flex: 1; min-inline-size: 0; }
 @media (max-width: 767px) { .fs-media-recipes textarea, .fs-frame-selection textarea, .fs-frame-selection input { font-size: 16px; } }
 
-/* Compact composer: optional controls live in the add popover. */
-.fs-popover.fs-studio__add-menu { max-inline-size: calc(100vw - 24px); inline-size: min(420px, calc(100vw - 24px)); max-block-size: min(65vh, 580px); overflow-y: auto; }
+/* Compact composer: optional controls live in the add popover.
+   Size, ceiling and scroll live on `.fs-studio__composer-menu`. */
+.fs-popover.fs-studio__composer-menu {
+  inline-size: min(420px, calc(100vw - 24px));
+  max-inline-size: calc(100vw - 24px);
+  max-block-size: min(var(--radix-popover-content-available-height, 48dvh), 48dvh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--fs-surface-2);
+  backdrop-filter: none;
+}
 .fs-studio__add-content { display: grid; gap: var(--fs-space-3); }
 .fs-studio__add-options { display: grid; gap: var(--fs-space-2); }
 .fs-studio__add-options > .fs-studio__chip,
 .fs-studio__add-options > .fs-icon-btn { justify-content: flex-start; inline-size: 100%; min-block-size: 36px; border-radius: var(--fs-radius-control); }
-.fs-studio__model-control { margin-inline-start: auto; min-inline-size: 0; }
-/* The autonomy preset chip (TASK-06) made the bar 22px too wide at the
-   default stage width and Send wrapped to a second line under the "+"
-   (seen live on the 7001). The model control is the elastic element: it
-   may shrink to its truncated label; the chips and Send never wrap
-   before it does. */
-@media (min-width: 601px) {
-  .fs-studio__bar > .fs-studio__model-control { flex: 1 1 96px; max-inline-size: 240px; }
-  .fs-studio__bar > .fs-studio__chip, .fs-studio__bar > .fs-studio__seg, .fs-studio__bar > .fs-studio__send, .fs-studio__bar > .fs-studio__mic { flex-shrink: 0; }
-  .fs-studio__model-control .fs-studio__chip--model span { max-inline-size: 14ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fs-studio__model-control {
+  min-inline-size: 0;
+  max-inline-size: 18ch;
 }
-.fs-popover.fs-studio__permission-menu { max-inline-size: calc(100vw - 24px); inline-size: min(380px, calc(100vw - 24px)); }
+.fs-studio__model-control .fs-studio__chip--model {
+  max-inline-size: 100%;
+}
+.fs-studio__model-control .fs-studio__chip--model span {
+  max-inline-size: 12ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fs-studio__bar-end .fs-icon-btn,
+.fs-studio__mic {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
 .fs-studio__permission-menu p { color: var(--fs-text-2); margin-block: 0 var(--fs-space-2); }
 .fs-studio__permission-menu [role="radiogroup"] { display: grid; gap: var(--fs-space-1); }
 .fs-studio__permission-menu [role="radio"] { display: grid; gap: var(--fs-space-1); text-align: start; padding: var(--fs-space-2); border: 1px solid transparent; border-radius: var(--fs-radius-control); background: transparent; color: var(--fs-text-1); cursor: pointer; }
@@ -3589,7 +3689,7 @@ aside.fs-panel { position: relative; }
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
-@media (max-width: 600px) { .fs-studio__bar { flex-wrap: wrap; } .fs-studio__permission-menu [role="radio"], .fs-studio__add-options > .fs-studio__chip { min-block-size: 44px; } }
+@media (max-width: 600px) { .fs-studio__permission-menu [role="radio"], .fs-studio__add-options > .fs-studio__chip { min-block-size: 44px; } }
 
 /* CONTRATO_MODOS Lote B: the "Manage modes…" link at the foot of the
    behaviour-mode popover — same look as `.fs-mail__link` (email.css), a
@@ -3605,12 +3705,8 @@ aside.fs-panel { position: relative; }
   text-decoration: underline;
 }
 
-:root .fs-popover.fs-studio__add-menu,
-:root .fs-popover.fs-studio__permission-menu { background: var(--fs-surface-2); backdrop-filter: none; }
-
 /* TASK-04/UX-04: the busy-state Stop menu — three scopes (each with a
    consequence line) plus the "Direct it…"/"Send after" note composer. */
-.fs-popover.fs-studio__stop-menu { max-inline-size: calc(100vw - 24px); inline-size: min(340px, calc(100vw - 24px)); background: var(--fs-surface-2); backdrop-filter: none; }
 .fs-studio__stop-menu [role="menu"] { display: grid; gap: var(--fs-space-1); }
 .fs-studio__stop-menu [role="menuitem"] { display: grid; gap: 2px; text-align: start; padding: var(--fs-space-2); border: 1px solid transparent; border-radius: var(--fs-radius-control); background: transparent; color: var(--fs-text-1); cursor: pointer; }
 .fs-studio__stop-menu [role="menuitem"] span { color: var(--fs-text-2); font-size: var(--fs-label); }
@@ -3619,7 +3715,6 @@ aside.fs-panel { position: relative; }
 .fs-studio__stop-menu-note textarea { resize: vertical; min-block-size: 44px; }
 .fs-studio__stop-menu-note-actions { display: flex; justify-content: flex-end; gap: var(--fs-space-1); }
 @media (max-width: 600px) { .fs-studio__stop-menu [role="menuitem"] { min-block-size: 44px; } }
-.fs-studio__bar > .fs-studio__send { display: flex; align-items: center; margin-inline-start: 0; }
 
 /* A plan step title is one line of inline markdown inside a flex row: the
    paragraph the renderer wraps it in must not add block margins. */
@@ -3715,13 +3810,23 @@ aside.fs-panel { position: relative; }
    a wide stage they show only their icon (the label lives in the tooltip and
    the aria-label); the popover still spells everything out. */
 .fs-studio__chip--compact .fs-studio__chip-label { max-inline-size: 12ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* The decision is the COMPOSER's width, not the viewport's: a 1920px window
-   still wrapped once the side panel and the conversation list took their
-   share. Container query on the bar itself. */
-.fs-studio__bar { container-type: inline-size; }
+/* Secondary chips collapse to icons inside the composer (always ≤ 860px).
+   The action cluster stays on the same row; the middle zone scrolls. */
 @container (max-width: 1040px) {
   .fs-studio__chip--compact .fs-studio__chip-label { display: none; }
-  .fs-studio__chip--compact { padding-inline: var(--fs-space-2); }
+  .fs-studio__chip--compact {
+    inline-size: var(--fs-control-sm);
+    padding-inline: 0;
+    justify-content: center;
+    gap: 0;
+  }
+  .fs-studio__chip--compact:hover {
+    translate: none;
+  }
+}
+@container (max-width: 560px) {
+  .fs-studio__seg-label { display: none; }
+  .fs-studio__seg button { padding-inline: var(--fs-space-2); gap: 0; }
 }
 
 /* ═══ Lote B (CONTRATO_EXCURSOS.md) — excursos ═══ */
@@ -4101,9 +4206,3 @@ aside.fs-panel { position: relative; }
     grid-template-columns: 1fr 1fr;
   }
 }
-
-
-/* The behaviour-mode menu lists eight modes with a description each: cap it
-   to the viewport and scroll inside (seen live: the top of the list was cut
-   off above the window on a 750px-high viewport). */
-.fs-popover.fs-studio__mode-menu { max-block-size: min(72vh, 640px); overflow-y: auto; }

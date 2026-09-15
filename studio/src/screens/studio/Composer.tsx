@@ -350,6 +350,12 @@ export function Composer({
    *  next message starts from nothing, exactly like attachments do. */
   const trySend = () => {
     if (uploads.hasPending()) return;
+    if (busy && onSteer) {
+      const text = draft.trim();
+      if (!text) return;
+      onSteer(text);
+      return;
+    }
     onSend(draft);
     if (docContext.length) setDocContext([]);
   };
@@ -762,10 +768,13 @@ export function Composer({
         onClick={(event) => refreshSuggestions(draft, event.currentTarget.selectionStart ?? draft.length)}
         data-testid="studio-input"
       />
-      <p className="fs-studio__paste-hint">{t('Paste a screenshot with Ctrl+V, or drop a file here.')}</p>
+      {dragging && (
+        <p className="fs-studio__paste-hint">{t('Paste a screenshot with Ctrl+V, or drop a file here.')}</p>
+      )}
 
       <div className="fs-studio__bar">
-        <Popover side="top" className="fs-studio__add-menu" testId="studio-add-menu" trigger={<IconButton icon={Plus} label={t('Add files and tools')} testId="studio-add" />}>
+        <div className="fs-studio__bar-start">
+        <Popover placement="composer" className="fs-studio__add-menu" testId="studio-add-menu" trigger={<IconButton icon={Plus} size="sm" label={t('Add files and tools')} testId="studio-add" />}>
           <div className="fs-studio__add-content">
 
 
@@ -827,7 +836,7 @@ export function Composer({
           </button>
           {knobs.mode === 'agent' && (
             <>
-              <Popover side="top" className="fs-media-recipes" trigger={<button type="button" className="fs-studio__chip" aria-pressed={Boolean(knobs.noSkills||knobs.inputTokenBudget)}><SlidersHorizontal size={13}/>{t('Agent context')}</button>}>
+              <Popover placement="composer" className="fs-media-recipes" trigger={<button type="button" className="fs-studio__chip" aria-pressed={Boolean(knobs.noSkills||knobs.inputTokenBudget)}><SlidersHorizontal size={13}/>{t('Agent context')}</button>}>
                 <section aria-label={t('Agent context')}>
                   <h3>{t('Agent context')}</h3>
                   <label><span><input type="checkbox" checked={Boolean(knobs.noSkills)} onChange={event=>setKnobs(k=>({...k,noSkills:event.target.checked}))}/>{t('Skip automatic skills')}</span></label>
@@ -915,7 +924,7 @@ export function Composer({
             onClick={() => setKnobs((k) => ({ ...k, mode: 'chat' }))}
             data-testid="studio-mode-chat"
           >
-            <MessageSquare size={13} aria-hidden="true" /> {t('Chat')}
+            <MessageSquare size={13} aria-hidden="true" /> <span className="fs-studio__seg-label">{t('Chat')}</span>
           </button>
           <button
             type="button"
@@ -924,9 +933,11 @@ export function Composer({
             onClick={() => setKnobs((k) => ({ ...k, mode: 'agent' }))}
             data-testid="studio-mode-agent"
           >
-            <Bot size={13} aria-hidden="true" /> {t('Agent')}
+            <Bot size={13} aria-hidden="true" /> <span className="fs-studio__seg-label">{t('Agent')}</span>
           </button>
         </div>
+        </div>
+        <div className="fs-studio__bar-tools">
         {knobs.mode === 'agent' && (
           <AutonomyPresetSelector
             preset={knobs.autonomyPreset ?? 'supervised'}
@@ -938,6 +949,8 @@ export function Composer({
         <ApprovalSelector disabled={busy} onNotice={onNotice} />
         <StrategyProfileSelector profile={strategyProfile} onPick={pickStrategyProfile} />
         <RecipeSelector recipeId={activeRecipeId} recipes={recipes} onPick={pickRecipe} />
+        </div>
+        <div className="fs-studio__bar-end">
         <div className="fs-studio__model-control">{modelPicker}</div>
           <span className="fs-studio__mic" data-recording={dictation ? true : undefined}>
             <IconButton
@@ -949,8 +962,13 @@ export function Composer({
               testId="studio-mic"
             />
           </span>
+          {onVoice && <IconButton icon={AudioLines} size="sm" label={t(voiceActive ? 'Close voice mode' : 'Talk to Faustus')} onClick={onVoice} testId="studio-voice" />}
         <div className="fs-studio__send">
-          {onVoice && <IconButton icon={AudioLines} label={t(voiceActive ? 'Close voice mode' : 'Talk to Faustus')} onClick={onVoice} testId="studio-voice" />}
+          {busy && canSend && onSteer && (
+            <button type="button" className="fs-studio__go" onClick={trySend} aria-label={t('Send')} data-testid="studio-steer-send">
+              <ArrowUp size={16} aria-hidden="true" />
+            </button>
+          )}
           {busy ? (
             <StopMenu
               onStop={onStop}
@@ -962,9 +980,10 @@ export function Composer({
             />
           ) : (
             <button type="submit" className="fs-studio__go" disabled={!canSend || preparing} aria-label={t(preparing ? 'Creating…' : 'Send')} data-testid="studio-send">
-              <ArrowUp size={18} aria-hidden="true" />
+              <ArrowUp size={16} aria-hidden="true" />
             </button>
           )}
+        </div>
         </div>
       </div>
     </form>
@@ -1085,11 +1104,11 @@ function AutonomyPresetSelector({ preset, onPick }: { preset: AutonomyPreset; on
   const current = AUTONOMY_PRESET_CHOICES.find((c) => c.value === preset) ?? AUTONOMY_PRESET_CHOICES[0];
   return (
     <Popover
-      side="top"
+      placement="composer"
       className="fs-studio__permission-menu"
       trigger={
-        <button type="button" className="fs-studio__chip" data-autonomy={preset} data-testid="studio-autonomy-preset">
-          <Gauge size={14} aria-hidden="true" /> {current.label}
+        <button type="button" className="fs-studio__chip fs-studio__chip--compact" data-autonomy={preset} data-testid="studio-autonomy-preset" title={current.label} aria-label={t('Autonomy: {label}', { label: current.label })}>
+          <Gauge size={14} aria-hidden="true" /> <span className="fs-studio__chip-label">{current.label}</span>
         </button>
       }
     >
@@ -1130,8 +1149,8 @@ function BehaviorModeSelector({
   const [open, setOpen] = useState(false);
   return (
     <Popover
-      side="top"
-      className="fs-studio__permission-menu fs-studio__mode-menu"
+      placement="composer"
+      className="fs-studio__permission-menu"
       open={open}
       onOpenChange={setOpen}
       trigger={
@@ -1201,7 +1220,7 @@ function SessionConnectorsSelector({ sessionId }: { sessionId: string | null }) 
 
   return (
     <Popover
-      side="top"
+      placement="composer"
       className="fs-studio__permission-menu"
       open={open}
       onOpenChange={setOpen}
@@ -1257,7 +1276,7 @@ function StrategyProfileSelector({ profile, onPick }: { profile: StrategyProfile
   const current = STRATEGY_PROFILE_CHOICES.find((c) => c.value === profile) ?? STRATEGY_PROFILE_CHOICES[1];
   return (
     <Popover
-      side="top"
+      placement="composer"
       className="fs-studio__permission-menu"
       trigger={
         <button type="button" className="fs-studio__chip fs-studio__chip--compact" data-strategy-profile={profile} data-testid="studio-strategy-profile" title={current.label} aria-label={t('Strategy profile: {label}', { label: current.label })}>
@@ -1292,10 +1311,13 @@ function RecipeSelector({
   recipeId, recipes, onPick,
 }: { recipeId: string | null; recipes: Recipe[]; onPick: (value: string | null) => void }) {
   const current = recipes.find((r) => r.id === recipeId) ?? null;
+  const [open, setOpen] = useState(false);
   return (
     <Popover
-      side="top"
+      placement="composer"
       className="fs-studio__permission-menu"
+      open={open}
+      onOpenChange={setOpen}
       trigger={
         <button type="button" className="fs-studio__chip fs-studio__chip--compact" data-recipe={recipeId ?? ''} data-testid="studio-recipe-selector" title={current ? current.title : t('No recipe')} aria-label={t('Recipe: {label}', { label: current ? current.title : t('No recipe') })}>
           <BookOpen size={14} aria-hidden="true" /> <span className="fs-studio__chip-label">{current ? current.title : t('No recipe')}</span>
@@ -1308,7 +1330,7 @@ function RecipeSelector({
           type="button"
           role="radio"
           aria-checked={!recipeId}
-          onClick={() => onPick(null)}
+          onClick={() => { onPick(null); setOpen(false); }}
           data-testid="studio-recipe-none"
         >
           <strong>{t('No recipe')}</strong>
@@ -1320,7 +1342,7 @@ function RecipeSelector({
             type="button"
             role="radio"
             aria-checked={recipeId === recipe.id}
-            onClick={() => onPick(recipe.id)}
+            onClick={() => { onPick(recipe.id); setOpen(false); }}
             data-testid={`studio-recipe-${recipe.id}`}
           >
             <strong>{recipe.title}{recipe.status === 'draft' ? ` (${t('draft')})` : ''}</strong>
@@ -1367,7 +1389,7 @@ function StopMenu({
   };
   return (
     <Popover
-      side="top"
+      placement="composer"
       className="fs-studio__stop-menu"
       testId="studio-stop-menu"
       trigger={<IconButton icon={Square} label={t('Stop')} testId="studio-stop" />}
@@ -1408,7 +1430,7 @@ function StopMenu({
               {onSteer && (
                 <button type="button" role="menuitem" onClick={() => setNoteMode('steer')}>
                   <strong>{t('Direct it…')}</strong>
-                  <span>{t('Add an instruction it picks up before its next step.')}</span>
+                  <span>{t('Adds it to the conversation now — it follows it while it works.')}</span>
                 </button>
               )}
               {onQueueSend && (
@@ -1441,7 +1463,8 @@ function ApprovalSelector({ disabled, onNotice }: { disabled: boolean; onNotice:
     catch (e) { onNotice((e as Error).message, 'danger'); }
     finally { setSaving(false); }
   };
-  return <Popover side="top" className="fs-studio__permission-menu" trigger={<button type="button" className="fs-studio__chip" data-permission={mode} disabled={!ready || disabled || saving}><Shield size={14} />{choices.find(c => c.value === mode)?.label ?? t('Ask for approval')}</button>}>
+  const label = choices.find(c => c.value === mode)?.label ?? t('Ask for approval');
+  return <Popover placement="composer" className="fs-studio__permission-menu" trigger={<button type="button" className="fs-studio__chip fs-studio__chip--compact" data-permission={mode} disabled={!ready || disabled || saving} title={label} aria-label={t('Approval: {label}', { label })}><Shield size={14} aria-hidden="true" /><span className="fs-studio__chip-label">{label}</span></button>}>
     <p>{t('Approval mode for all Faustus chats. Only an administrator can change it.')}</p>
     <div role="radiogroup" aria-label={t('Tool approvals')}>
       {choices.map(choice => <button key={choice.value} type="button" role="radio" aria-checked={mode === choice.value} disabled={saving || disabled} onClick={() => void choose(choice.value)}><strong>{choice.label}</strong><span>{choice.detail}</span></button>)}

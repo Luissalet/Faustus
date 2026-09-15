@@ -193,3 +193,35 @@ async def test_budget_not_exhausted_runs_the_stream_to_completion_normally(monke
     assert tracking.closed is False, "a naturally-finished stream is not explicitly closed again"
     assert len(tracking._events) == 0
     assert not [n for n in sched._pending_notifications if n["status"] == "budget_exhausted"]
+
+
+async def test_local_task_never_returns_budget_exhausted_result(monkeypatch):
+    """A scheduled task on a local endpoint must not surface `[budget_exhausted:…]`
+    even with a one-call preset: there is no metered cost to exhaust."""
+    tid = f"auto02-budget-local-{uuid.uuid4()}"
+    set_task_policy(tid, budget_preset="supervised")
+
+    tracking = _TrackingAgen([_tool_output_event(i) for i in range(5)])
+
+    def _fake_stream_agent_loop(**kwargs):
+        return tracking
+
+    monkeypatch.setattr("src.agent_loop.stream_agent_loop", _fake_stream_agent_loop)
+    monkeypatch.setattr("src.task_endpoint.resolve_task_candidates", lambda **kw: [])
+    monkeypatch.setattr(
+        "src.autonomy_budget.resolve_budget",
+        lambda preset, get_setting=None, overrides=None: Budget(max_tool_calls=1),
+    )
+    async def _fake_task_llm_call_async(**kwargs):
+        return "summary"
+    monkeypatch.setattr("src.task_endpoint.task_llm_call_async", _fake_task_llm_call_async)
+
+    sched = TaskScheduler(session_manager=None)
+    result = await sched._run_agent_loop(
+        "http://127.0.0.1:11434/v1", "model", _make_task(tid), "s",
+    )
+
+    assert not str(result).startswith("[budget_exhausted:")
+    assert "budget_exhausted" not in str(result)
+    assert tracking.closed is False
+    assert not [n for n in sched._pending_notifications if n["status"] == "budget_exhausted"]

@@ -28,7 +28,7 @@ function ReferenceCatalog({projectId,onUse}:{projectId:string;onUse:(file:File,r
   useEffect(()=>{alive.current=true;return()=>{alive.current=false;};},[]);
   useEffect(()=>{const controller=new AbortController();setLinks(null);setError('');listContextLinks(projectId,controller.signal).then(result=>{if(!controller.signal.aborted)setLinks(result.links.filter(link=>link.kind==='gallery_image'&&link.tags.includes(catalogTag)));}).catch(e=>{if(!controller.signal.aborted)setError(e.message);});return()=>controller.abort();},[projectId,reload]);
   const action=async(work:()=>Promise<void>)=>{if(busy)return;setBusy(true);setError('');setNotice('');try{await work();}catch(e){if(alive.current)setError((e as Error).message);}finally{if(alive.current)setBusy(false);}};
-  return <Popover side="top" className="fs-media-recipes" trigger={<button type="button" className="fs-studio__chip"><Images size={13}/>{t('Visual references')}</button>}><section aria-label={t('Visual references')}><h3>{t('Visual references')}</h3>
+  return <Popover placement="composer" className="fs-media-recipes" trigger={<button type="button" className="fs-studio__chip"><Images size={13}/>{t('Visual references')}</button>}><section aria-label={t('Visual references')}><h3>{t('Visual references')}</h3>
     <p>{t('Save named images in this project and attach them to any of its chats. Consistency depends on the selected image model.')}</p>
     {error&&<p role="alert">{error}</p>}{notice&&<p role="status">{notice}</p>}
     {!links?(error?<Button label={t('Retry')} onClick={()=>setReload(n=>n+1)}/>:<p role="status">{t('Loading…')}</p>):<>

@@ -1379,6 +1379,12 @@ def queue_steer(session_id: str, text: str, source: str = "user",
     return True
 
 
+def peek_steers(session_id: str) -> bool:
+    """True when a live turn has a steer waiting, without draining it."""
+    run = _RUNS.get(session_id)
+    return bool(run is not None and run.steer_queue)
+
+
 def take_steers(session_id: str) -> List[Dict[str, str]]:
     """Drain the steer queue -- what `pending_user_messages` hands the loop
     at its next safe point. Mirrors `subagent_tools.pending_steers`."""

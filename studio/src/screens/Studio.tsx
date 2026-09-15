@@ -78,7 +78,7 @@ import { Egg } from './studio/Egg';
 import { Rich } from './rich';
 import { knownGroupParents, stripGroupPrefix } from '../adapters/group';
 import { Composer, type Knobs } from './studio/Composer';
-import { apply, beginApproval, blankTurn, cleanUserText, closeApproval, restoreFromMetadata, type Turn } from './studio/model';
+  import { apply, beginApproval, blankTurn, cleanUserText, closeApproval, restoreFromMetadata, appendSteer, type Turn } from './studio/model';
 import { useChatPanel } from './studio/useChatPanel';
 import ChatTeam from './studio/ChatTeam';
 import { SessionsPane } from './studio/SessionsPane';
@@ -1026,9 +1026,12 @@ export function StudioScreen() {
   const patchLast = useCallback((fn: (turn: Turn) => Turn) => {
     setTurns((list) => {
       if (!list || list.length === 0) return list;
-      const last = list[list.length - 1];
-      if (last.role !== 'assistant') return list;
-      return [...list.slice(0, -1), fn(last)];
+      let i = list.length - 1;
+      while (i >= 0 && list[i].role !== 'assistant') i--;
+      if (i < 0) return list;
+      const next = list.slice();
+      next[i] = fn(list[i]);
+      return next;
     });
   }, []);
 
@@ -1165,7 +1168,11 @@ export function StudioScreen() {
           signal: controller.signal,
         })) {
           if (controller.signal.aborted || controllerRef.current !== controller) break;
-          patchLast((t) => apply(t, event));
+          if (event.type === 'steer') {
+            setTurns((list) => appendSteer(list, event.text, event.interrupt));
+          } else {
+            patchLast((t) => apply(t, event));
+          }
           panelDispatch({ type: 'event', event, busy: true });
         }
       } catch (error) {
@@ -1242,7 +1249,11 @@ export function StudioScreen() {
           signal: controller.signal,
         })) {
           if (controller.signal.aborted || controllerRef.current !== controller) break;
-          patchLast((t) => apply(t, event));
+          if (event.type === 'steer') {
+            setTurns((list) => appendSteer(list, event.text, event.interrupt));
+          } else {
+            patchLast((t) => apply(t, event));
+          }
           panelDispatch({ type: 'event', event, busy: true });
         }
       } catch (error) {
@@ -1295,7 +1306,11 @@ export function StudioScreen() {
             setTurns((list) => [...(list ?? []), blankTurn('assistant')]);
             setNotice({ text: t('This conversation was still working — picking it up live.'), tone: 'info' });
           }
-          patchLast((t) => apply(t, event));
+          if (event.type === 'steer') {
+            setTurns((list) => appendSteer(list, event.text, event.interrupt));
+          } else {
+            patchLast((t) => apply(t, event));
+          }
           panelDispatch({ type: 'event', event, busy: true });
         }
       } catch {
@@ -2326,11 +2341,27 @@ export function StudioScreen() {
     return undefined;
   }, [turns]);
 
+  // "Dirigir…" — a user message on the live turn. The model picks it up
+  // while generating (or before its next step if a tool is in flight).
+  const steerLive = useCallback((text: string) => {
+    const message = text.trim();
+    if (!sessionId || !message) return;
+    setDraft((current) => (current.trim() === message ? '' : current));
+    setTurns((list) => appendSteer(list, message, false));
+    void steerChat(sessionId, message, { runId: runIdRef.current, mode: 'steer' }).then((ok) => {
+      if (!ok) say(t('I could not deliver that — nothing is running right now.'), 'warning');
+    });
+  }, [sessionId, say]);
+
   /* ── Send ── */
   const send = useCallback(
     async (text: string) => {
       const message = text.trim();
-      if ((!message && attachments.length === 0) || busy || sendingMessage.current) return;
+      if ((!message && attachments.length === 0) || sendingMessage.current) return;
+      if (busy) {
+        if (message) steerLive(message);
+        return;
+      }
 
       const parsed = message ? parseCommand(message) : null;
       if (parsed) {
@@ -2376,7 +2407,7 @@ export function StudioScreen() {
         setPreparingMessage(false);
       }
     },
-    [attachments, busy, runCommand, ensureSession, run, sessionId, pendingModeId],
+    [attachments, busy, runCommand, ensureSession, run, sessionId, pendingModeId, steerLive],
   );
 
   /* Notas → "Resolver con el agente": sends as soon as a route is known and
@@ -2453,15 +2484,6 @@ export function StudioScreen() {
 
   const cancelTask = useCallback(() => stopScoped('task'), [stopScoped]);
   const cancelWork = useCallback(() => stopScoped('work'), [stopScoped]);
-
-  // "Dirigir…" — injected into the live turn at its next safe point; does
-  // NOT stop or replace the current stream.
-  const steerLive = useCallback((text: string) => {
-    if (!sessionId) return;
-    void steerChat(sessionId, text, { runId: runIdRef.current, mode: 'steer' }).then((ok) => {
-      if (!ok) say(t('I could not deliver that — nothing is running right now.'), 'warning');
-    });
-  }, [sessionId, say]);
 
   // "Enviar después" — held server-side, delivered as a new turn once this
   // one ends; never touches the live turn.

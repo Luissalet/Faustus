@@ -6,6 +6,7 @@
 //     preview (never the key name, never the real argv — display only).
 //   - RES-04: `reportPartsProgress` turns `_final_report_in_parts`'s own
 //     "part N of M" progress message into a written/pending count.
+//   - `toolRailSummary`: live vs finished copy for the grouped tools line.
 //
 // Run by tests/test_l65_studio_events_js.py, or by hand:
 //   node studio/checks/l65-transcript-helpers.check.mjs
@@ -29,7 +30,7 @@ await build({
 // enough for module load to succeed; nothing under test here calls either.
 globalThis.window ??= { localStorage: { getItem: () => null, setItem: () => {} } };
 globalThis.document ??= { documentElement: { toggleAttribute: () => {} } };
-const { maskSecrets, reportPartsProgress } = await import(pathToFileURL(out).href);
+const { maskSecrets, reportPartsProgress, toolRailSummary } = await import(pathToFileURL(out).href);
 
 // ── EXEC-02: maskSecrets ──
 assert.equal(maskSecrets('curl -H "Authorization: Bearer sk_live_abcdef123456"'), 'curl -H "Authorization: Bearer ****"');
@@ -46,5 +47,11 @@ assert.deepEqual(reportPartsProgress('Writing sections 1-4 of 12 (part 1 of 3)')
 assert.deepEqual(reportPartsProgress('Writing sections 9-12 of 12 (part 3 of 3)'), { written: 2, total: 3 });
 assert.equal(reportPartsProgress('searching'), null);
 assert.equal(reportPartsProgress(''), null);
+
+// ── Grouped tool rail (Cursor/ChatGPT-style collapsed summary) ──
+assert.deepEqual(toolRailSummary(1, true), { one: 'Running a command', other: 'Running commands', n: 1 });
+assert.deepEqual(toolRailSummary(3, true), { one: 'Running a command', other: 'Running commands', n: 3 });
+assert.deepEqual(toolRailSummary(1, false), { one: 'Ran 1 command', other: 'Ran {n} commands', n: 1 });
+assert.deepEqual(toolRailSummary(4, false), { one: 'Ran 1 command', other: 'Ran {n} commands', n: 4 });
 
 console.log('ok l65-transcript-helpers');

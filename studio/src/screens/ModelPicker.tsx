@@ -8,13 +8,13 @@ const ModelPalette = lazy(() => import('./ModelPalette'));
 const ModelConnections = lazy(() => import('./ModelConnections'));
 
 /**
- * The model picker is a palette, not a dropdown.
+ * The model picker is a searchable palette, not a dropdown.
  *
- * Two reasons. A box with forty models in it needs a search field, and
- * cmdk is the palette Ctrl+K already uses; the Radix dropdown would have
- * pulled floating-ui in for the first time — 80 KB, a quarter of the
- * budget — to draw a list the palette draws better. The palette itself is
- * a lazy chunk: the chip is on every page load, the list only when opened.
+ * A box with forty models in it needs a search field, and cmdk is the
+ * palette Ctrl+K already uses. In chat it sits on the composer (same
+ * width, opening upward) rather than floating at page-center. The
+ * palette itself is a lazy chunk: the chip is on every page load, the
+ * list only when opened.
  */
 export function ModelPicker({
   routes,
@@ -69,7 +69,7 @@ export function ModelPicker({
       </button>
       {loaded && (
         <Suspense fallback={null}>
-          <ModelPalette open={open} onOpenChange={setOpen} routes={routes} current={current} onPick={onPick} onRefresh={onRefresh} refreshing={refreshing} onConnect={() => {setOpen(false); setConnecting(true);}} />
+          <ModelPalette open={open} onOpenChange={setOpen} routes={routes} current={current} onPick={onPick} onRefresh={onRefresh} refreshing={refreshing} onConnect={() => {setOpen(false); setConnecting(true);}} anchor="composer" />
         </Suspense>
       )}
       {connecting && <Suspense fallback={null}><ModelConnections open={connecting} onOpenChange={setConnecting} onDone={() => onRefresh?.()} /></Suspense>}

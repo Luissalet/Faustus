@@ -71,11 +71,82 @@
   cursor: pointer;
 }
 
+/* Model rows: name on its own line, tags underneath. Connect/refresh
+   stay a single line. */
+.fs-palette__item--model {
+  align-items: flex-start;
+  padding-block: var(--fs-space-3);
+}
+
+.fs-palette__mark {
+  display: inline-flex;
+  flex: none;
+  margin-block-start: 2px;
+  color: var(--fs-text-3);
+}
+
+.fs-palette__body {
+  flex: 1;
+  min-inline-size: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--fs-space-1);
+}
+
+.fs-palette__identity {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--fs-space-2);
+  min-inline-size: 0;
+}
+
+.fs-palette__tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--fs-space-1);
+}
+
 /* cmdk drives this attribute from both the keyboard and the pointer, so
    arrow keys and hover land on the same visual state. */
 .fs-palette__item[data-selected='true'] {
   background: var(--fs-surface-2);
   color: var(--fs-text-1);
+}
+
+/* The keyboard cursor (data-selected) and the model in use (data-current)
+   are different questions. Current keeps the ember fill even when the
+   arrow keys have moved on; selected-on-current just deepens it. */
+.fs-palette__item[data-current] {
+  background: var(--fs-ember-faint);
+  color: var(--fs-text-1);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fs-brand) 40%, transparent);
+}
+
+.fs-palette__item[data-current][data-selected='true'] {
+  background: color-mix(in srgb, var(--fs-brand) 18%, var(--fs-surface-2));
+}
+
+.fs-palette__item[data-current] .fs-palette__mark {
+  color: var(--fs-brand);
+}
+
+.fs-palette__item[data-current] .fs-palette__name {
+  color: var(--fs-text-1);
+  font-weight: var(--fs-label-weight);
+}
+
+.fs-palette__current {
+  flex: none;
+  padding: 1px var(--fs-space-2);
+  border-radius: var(--fs-radius-pill);
+  background: var(--fs-brand);
+  color: var(--fs-on-brand);
+  font-size: 10px;
+  font-weight: var(--fs-label-weight);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .fs-palette__empty {
@@ -173,20 +244,16 @@
 }
 
 /* ── The VRAM verdict beside a local model ────────────────────────────
- * It takes the endpoint's place at the end of the row, so the model name
- * keeps its width — the name is what you came to read. The word carries
- * the meaning; the colour only agrees with it.
+ * Tags sit under the name, so the name can use the full width and wrap
+ * instead of disappearing behind "structured output". The word of the
+ * verdict carries the meaning; the colour only agrees with it.
  */
 .fs-palette__name {
-  /* Takes the slack, gives it back first: on a phone the row is name, alias,
-     size and verdict, and without this the alias chip (which cannot wrap)
-     pushed the model name clean out of the dialog — the one thing on the row
-     nobody can do without. */
-  flex: 1 1 auto;
-  min-inline-size: 5ch;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  flex: 1 1 12ch;
+  min-inline-size: 12ch;
+  overflow: visible;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 /* The weights on disk. It takes the free space, so it and the verdict sit
@@ -215,7 +282,6 @@
 }
 
 .fs-palette__fit {
-  margin-inline-start: auto;
   flex: none;
   padding: 1px var(--fs-space-2);
   border-radius: var(--fs-radius-pill);
@@ -260,13 +326,8 @@
   white-space: nowrap;
 }
 
-/* On a phone the row cannot hold four things, and a chip truncated to
-   "same as …" says nothing at all. The footnote is the one that goes: the
-   name and the two numbers are what the choice is made on. */
-@media (max-width: 520px) {
-  .fs-palette__alias {
-    display: none;
-  }
+.fs-palette__identity .fs-palette__size {
+  margin-inline-start: auto;
 }
 
 /* SET-02: privacy (local/cloud, plus a coin when it is billed) and tested
@@ -286,8 +347,8 @@
 }
 
 .fs-palette__caps {
-  flex: none;
   display: inline-flex;
+  flex-wrap: wrap;
   gap: 3px;
 }
 
@@ -319,8 +380,40 @@
   color: var(--fs-danger);
 }
 
-@media (max-width: 640px) {
-  .fs-palette__caps {
-    display: none;
-  }
+/* Model picker: as wide as the composer (860px), not the 560px Ctrl+K box.
+   Composer-anchored: measured left/width/bottom, opening upward. */
+.fs-palette--models {
+  display: flex;
+  flex-direction: column;
+  inline-size: min(860px, calc(100vw - var(--fs-space-5) * 2));
+}
+
+.fs-palette--models .fs-palette__list {
+  max-block-size: min(480px, 60vh);
+}
+
+.fs-palette--models .fs-palette__input,
+.fs-palette--models .fs-palette__vram {
+  flex: none;
+}
+
+.fs-palette.fs-palette--composer {
+  inset-block-start: auto;
+  inset-inline-start: auto;
+  left: var(--fs-palette-left);
+  right: auto;
+  bottom: var(--fs-palette-bottom);
+  translate: none;
+  inline-size: var(--fs-palette-width);
+  width: var(--fs-palette-width);
+  max-inline-size: none;
+  max-block-size: var(--fs-palette-max);
+  max-height: var(--fs-palette-max);
+  transform-origin: 50% 100%;
+}
+
+.fs-palette--composer .fs-palette__list {
+  flex: 1 1 auto;
+  min-block-size: 0;
+  max-block-size: none;
 }

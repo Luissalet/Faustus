@@ -1,11 +1,10 @@
-import { Activity, AlertTriangle, Archive, ArchiveRestore, ArrowLeft, Brain, Check, ClipboardList, Download, Eye, FileText, FolderOpen, FolderPlus, GitBranch, Image, Kanban, Layers, Link2, Lock, MessageSquare, PencilLine, Pin, PinOff, Plus, RefreshCw, Send, Settings2, Target, Trash2, Unlink, X } from 'lucide-react';
+import { Activity, AlertTriangle, Archive, ArchiveRestore, ArrowLeft, Brain, Check, ClipboardList, Download, Eye, FileText, FolderOpen, FolderPlus, GitBranch, Image, Kanban, Layers, Link2, Lock, MessageSquare, PencilLine, Pin, PinOff, Plus, RefreshCw, Settings2, Target, Trash2, Unlink, X } from 'lucide-react';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { ActivityDot, Button, Dialog, EmptyState, Menu, Skeleton, Toast } from '../components';
-import { listModels, type ChatSession, type ModelRoute } from '../adapters/chat';
+import { type ChatSession } from '../adapters/chat';
 import { groupActivity, sessionActivity, useChatActivity } from '../shell/activity';
 import { pickNative } from '../adapters/composer';
-import { fitOf, fitSummary, useFitHints } from '../adapters/fit';
 import { relativeTime } from '../adapters/home';
 import {
   addContextRoot,
@@ -629,10 +628,10 @@ function FileNeighborhood({ projectId }: { projectId: string }) {
 }
 
 /**
- * A project as a page (UI-040), and now the whole of it: start a chat
- * here, its chats, objectives, memory files, what the agent changed, the
- * context block the model receives, and the settings. `/projects/new`
- * is the same page with only the form.
+ * A project as a page (UI-040), and now the whole of it: open a chat in
+ * Studio from here, its chats, objectives, memory files, what the agent
+ * changed, the context block the model receives, and the settings.
+ * `/projects/new` is the same page with only the form.
  */
 export function ProjectScreen() {
   const { projectId = '' } = useParams();
@@ -645,9 +644,6 @@ export function ProjectScreen() {
   const [context, setContext] = useState<string | null>(null);
   const [links, setLinks] = useState<ContextLink[] | null>(null);
   const [linkStates, setLinkStates] = useState<Record<string, LinkStatus>>({});
-  const [routes, setRoutes] = useState<ModelRoute[]>([]);
-  const [routeId, setRouteId] = useState('');
-  const [prompt, setPrompt] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<'delete' | { chat: string } | null>(null);
   const [rootInput, setRootInput] = useState<string | null>(null);
@@ -737,25 +733,6 @@ export function ProjectScreen() {
     void reload();
   }, [reload]);
 
-  useEffect(() => {
-    void listModels()
-      .then((list) => {
-        setRoutes(list);
-        let last = '';
-        try {
-          last = (JSON.parse(localStorage.getItem('faustus_studio_route') ?? '{}') as { id?: string }).id ?? '';
-        } catch {
-          /* private mode */
-        }
-        setRouteId((id) => id || (list.some((r) => r.id === last) ? last : (list[0]?.id ?? '')));
-      })
-      .catch(() => setRoutes([]));
-  }, []);
-
-  // Will the model for the new chat fit on the card? Read once, when the
-  // Brief is on screen, from the same endpoint the picker uses.
-  const fit = useFitHints(tab === 'brief');
-
   const setTab = (id: TabId) => {
     const next = new URLSearchParams(params);
     next.set('tab', id);
@@ -795,17 +772,15 @@ export function ProjectScreen() {
     }
   };
 
+  /** Open Studio's full composer in a chat filed under this project.
+   *  The brief used to host a mini prompt + model select; that picker did
+   *  not survive into Studio, and could not attach files. One button is enough. */
   const start = async () => {
     if (!project) return;
     setBusy('start');
     try {
-      const sid = await startChatInProject(project, routes.find((r) => r.id === routeId) ?? null, prompt);
-      const q = new URLSearchParams({ s: sid });
-      if (prompt.trim()) {
-        q.set('draft', prompt.trim());
-        q.set('send', '1');
-      }
-      navigate(`/studio?${q}`);
+      const sid = await startChatInProject(project, null);
+      navigate(`/studio?s=${encodeURIComponent(sid)}`);
     } catch (e) {
       say((e as Error).message);
       setBusy(null);
@@ -963,35 +938,22 @@ export function ProjectScreen() {
 
       {tab === 'brief' && (
         <div className="fs-pj__brief">
-          <form
-            className="fs-pj__start"
-            onSubmit={(e) => {
-              e.preventDefault();
-              void start();
-            }}
-          >
-            <label className="fs-pj__start-label" htmlFor="fs-pj-prompt">
-              {t('Start a chat in {name}', { name: project.name })}
-            </label>
-            <textarea id="fs-pj-prompt" className="fs-field fs-pj__textarea" rows={2} value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder={t('What do you want to do here? (optional)')} disabled={project.archived} data-testid="project-prompt" />
-            <div className="fs-pj__row">
-              <select className="fs-field" value={routeId} onChange={(e) => setRouteId(e.target.value)} aria-label={t('Model for the new chat')} disabled={project.archived}>
-                {routes.length === 0 && <option value="">{t('No model available')}</option>}
-                {routes.map((r) => {
-                  // The same reading the picker gives, in the only form a
-                  // native <option> can carry: "16.4 GB · no room". Empty
-                  // when the model is not served from this machine.
-                  const summary = fitSummary(fitOf(r, fit));
-                  return (
-                    <option key={r.id} value={r.id}>
-                      {summary ? `${r.model} · ${summary} · ${r.endpointName}` : `${r.model} · ${r.endpointName}`}
-                    </option>
-                  );
-                })}
-              </select>
-              <Button type="submit" variant="primary" size="sm" icon={Send} label={t('Start chat')} loading={busy === 'start'} disabled={project.archived || !routes.length} testId="project-start" />
+          <div className="fs-pj__start">
+            <div className="fs-pj__start-copy">
+              <p className="fs-pj__start-label">{t('Start a chat in {name}', { name: project.name })}</p>
+              <p className="fs-pj__muted">{t('Opens Studio with the full composer — model, files and the rest.')}</p>
             </div>
-          </form>
+            <Button
+              variant="primary"
+              size="sm"
+              icon={Plus}
+              label={t('New chat')}
+              loading={busy === 'start'}
+              disabled={project.archived}
+              onClick={() => void start()}
+              testId="project-start"
+            />
+          </div>
 
           <div className="fs-pj__cards">
             <section className="fs-panel fs-pj__card">
@@ -1095,12 +1057,14 @@ export function ProjectScreen() {
         <div className="fs-panel">
           <div className="fs-pj__card-head">
             <h3>{chats ? tn(chats.length, '{n} conversation in {folder}', '{n} conversations in {folder}', { folder: project.folder ?? '' }) : t('Conversations')}</h3>
-            {!project.archived && <Button variant="secondary" size="sm" icon={Plus} label={t('New chat')} onClick={() => setTab('brief')} />}
+            {!project.archived && (
+              <Button variant="secondary" size="sm" icon={Plus} label={t('New chat')} loading={busy === 'start'} onClick={() => void start()} testId="project-chats-new" />
+            )}
           </div>
           {chats === null ? (
             <Skeleton label={t('Loading the conversations')} count={3} height="44px" />
           ) : chats.length === 0 ? (
-            <p className="fs-pj__muted">{t('No chats yet. Start one from the brief and it will stay grouped here.')}</p>
+            <p className="fs-pj__muted">{t('No chats yet. Start one and it will stay grouped here.')}</p>
           ) : (
             <div className="fs-list fs-list--rail">
               {chats.map((c) => {

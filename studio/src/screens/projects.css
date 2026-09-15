@@ -250,17 +250,27 @@
   gap: var(--fs-space-4);
 }
 
-/* Start a chat: the project's own composer, small. */
+/* New chat: one button into Studio — no mini composer that forgets the model. */
 .fs-pj__start {
-  display: grid;
-  gap: var(--fs-space-2);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--fs-space-3);
   padding: var(--fs-space-4);
   border: 1px solid color-mix(in srgb, var(--fs-brand) 35%, var(--fs-border));
   border-radius: var(--fs-radius-panel);
   background: var(--fs-ember-faint);
 }
 
+.fs-pj__start-copy {
+  display: grid;
+  gap: var(--fs-space-1);
+  min-inline-size: min(100%, 16rem);
+}
+
 .fs-pj__start-label {
+  margin: 0;
   font-weight: 600;
 }
 

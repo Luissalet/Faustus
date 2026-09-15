@@ -219,6 +219,81 @@ def test_empty_round_after_tool_work_is_nudged_once(tmp_path, monkeypatch):
     assert any(n.startswith("empty_round_nudge@") for n in summary["notes"])
 
 
+def test_empty_completion_502_after_tools_is_nudged_not_fatal(tmp_path, monkeypatch):
+    """Silhouettes / qwen3.8 on Ollama: a later round sometimes finishes with
+    no text and no tool call. stream_llm_with_fallback turns that into
+    'All model candidates returned no substantive output' (HTTP 502). The
+    harness must treat it as an empty round and continue, not kill the turn.
+    """
+    (tmp_path / "server.py").write_text("x = 1\n", encoding="utf-8")
+    _patch_common(monkeypatch)
+    calls = {"n": 0}
+
+    async def _fake_stream(_candidates, messages, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            yield (
+                'data: {"type": "tool_calls", "calls": '
+                '[{"name": "read_file", "arguments": "{\\"path\\": \\"server.py\\"}"}]}\n\n'
+            )
+            yield 'data: {"type": "finish", "finish_reason": "tool_calls"}\n\n'
+            yield "data: [DONE]\n\n"
+            return
+        if calls["n"] == 2:
+            yield (
+                'event: error\ndata: '
+                '{"error": "All model candidates returned no substantive output", '
+                '"status": 502, "error_class": "generation.empty_completion"}\n\n'
+            )
+            return
+        yield 'data: {"delta": "I read server.py; nothing was changed."}\n\n'
+        yield 'data: {"type": "finish", "finish_reason": "stop"}\n\n'
+        yield "data: [DONE]\n\n"
+
+    monkeypatch.setattr(al, "stream_llm_with_fallback", _fake_stream, raising=False)
+    chunks = _collect(al.stream_agent_loop(
+        "http://127.0.0.1:11434/v1", "qwen3.8:27b-q4_K_M",
+        [{"role": "user", "content": "Añade un endpoint /api/stats en server.py"}],
+        max_rounds=6,
+        relevant_tools={"read_file", "edit_file", "glob"},
+        workspace=str(tmp_path),
+    ))
+    events = _events(chunks)
+    empty = [e for e in events if e.get("type") == "harness_check" and e.get("status") == "empty_round"]
+    assert len(empty) == 1, [e.get("type") for e in events]
+    assert calls["n"] == 3
+    assert not any(c.startswith("event: error") for c in chunks)
+    assert not any(e.get("type") == "agent_terminal" for e in events)
+    summary = next(e for e in events if e.get("type") == "harness_summary")["data"]
+    assert summary["stop_reason"] == "complete"
+    assert any(n.startswith("empty_round_nudge@") for n in summary["notes"])
+
+
+def test_real_provider_502_still_terminates_the_turn(tmp_path, monkeypatch):
+    """A genuine upstream 502 is not an empty round and must still stop."""
+    (tmp_path / "server.py").write_text("x = 1\n", encoding="utf-8")
+    _patch_common(monkeypatch)
+
+    async def _fake_stream(_candidates, messages, **kwargs):
+        yield (
+            'event: error\ndata: '
+            '{"error": "Bad gateway", "status": 502, '
+            '"error_class": "transport.llm_service_error"}\n\n'
+        )
+
+    monkeypatch.setattr(al, "stream_llm_with_fallback", _fake_stream, raising=False)
+    chunks = _collect(al.stream_agent_loop(
+        "http://127.0.0.1:11434/v1", "qwen3.8:27b-q4_K_M",
+        [{"role": "user", "content": "Añade un endpoint /api/stats en server.py"}],
+        max_rounds=4,
+        relevant_tools={"read_file", "edit_file", "glob"},
+        workspace=str(tmp_path),
+    ))
+    assert any(c.startswith("event: error") for c in chunks)
+    events = _events(chunks)
+    assert not any(e.get("type") == "harness_check" and e.get("status") == "empty_round" for e in events)
+
+
 def test_delegate_agents_worker_reports_are_persisted_with_the_tool_event(tmp_path, monkeypatch):
     """The sub-agent board is rebuilt from history: the compact worker reports
     travel in metrics.tool_events[*].subagents (evidence fields only)."""

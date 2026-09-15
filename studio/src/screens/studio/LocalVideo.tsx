@@ -36,7 +36,7 @@ function VideoForm(){
       else{const blob=await response.blob();if(mounted.current)download(blob,'localized.mp4');}
     }catch(e){if(!controller.signal.aborted)setError((e as Error).message);}finally{if(mounted.current)setBusy('');}
   };
-  return <Popover side="top" className="fs-media-recipes" trigger={<button type="button" className="fs-studio__chip"><Captions size={13}/>{t('Local video')}{busy?'…':''}</button>}><section aria-label={t('Local video')}><h3>{t('Local video')}</h3>
+  return <Popover placement="composer" className="fs-media-recipes" trigger={<button type="button" className="fs-studio__chip"><Captions size={13}/>{t('Local video')}{busy?'…':''}</button>}><section aria-label={t('Local video')}><h3>{t('Local video')}</h3>
     <p>{t('Offline subtitles and narration for clips up to 3 minutes, 1080p and 64 MB. No cloud calls or automatic model downloads.')}</p>
     <p>{t('Transcribe with existing Whisper weights, then edit or translate the segments yourself. Dubbing uses an installed Windows voice and replaces the original audio; it does not clone voices or synchronize lips.')}</p>
     {caps&&<p>{t('Local tools:')} FFmpeg {caps.ffmpeg?t('Available'):t('Unavailable')} · Whisper {caps.whisper?t('Installed'):t('Not installed')} · {t('System voice')} {caps.system_voice?t('Available'):t('Unavailable')}</p>}

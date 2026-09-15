@@ -60,8 +60,24 @@ const read = (p) => readFileSync(join(root, p), 'utf8');
 {
   const src = read('studio/src/screens/studio/Composer.tsx');
   const fn = src.slice(src.indexOf('const addFiles ='), src.indexOf('const onPaste ='));
-  assert.ok(/incompatibilityReason/.test(fn), 'addFiles must check incompatibilityReason before queueing');
+  assert.ok(/mediaIncompatibility/.test(fn) || /incompatibilityReason/.test(fn), 'addFiles must check incompatibility before queueing');
   assert.ok(/uploads\.add\(accepted\)/.test(fn), 'only accepted files reach uploads.add');
+}
+
+// ── Steer while generating: typing in the composer is a live steer, not a
+// no-op behind busy, and the stream applies steer events to the transcript. ──
+{
+  const composer = read('studio/src/screens/studio/Composer.tsx');
+  const trySend = composer.slice(composer.indexOf('const trySend ='), composer.indexOf('/* ── CMP-09/CMP-12'));
+  assert.ok(/busy && onSteer/.test(trySend), 'trySend must steer when the turn is live');
+  assert.ok(/onSteer\(/.test(trySend), 'trySend must call onSteer with the draft');
+  const studio = read('studio/src/screens/Studio.tsx');
+  assert.ok(/appendSteer\(/.test(studio), 'a live steer must land in the transcript via appendSteer');
+  assert.ok(/event\.type === 'steer'/.test(studio) || /appendSteer\(list, event\.text/.test(studio),
+    'the live stream must apply steer events, not drop them on the assistant turn');
+  const send = studio.slice(studio.indexOf('const send = useCallback'), studio.indexOf('/* Notas'));
+  assert.ok(/if \(busy\)/.test(send) && /steerLive\(/.test(send),
+    'send() while a turn is live must steer instead of returning');
 }
 
 console.log('ok l65-source-wiring');

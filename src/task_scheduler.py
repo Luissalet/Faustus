@@ -2835,7 +2835,7 @@ class TaskScheduler:
         # defaulted) via `set_task_policy`/`get_task_policy` — never widened
         # by this run, and checked every event, not just at the boundaries
         # `max_steps`/`max_rounds` already enforce.
-        from src.autonomy_budget import resolve_budget, Ledger, build_checkpoint
+        from src.autonomy_budget import Budget, resolve_budget, Ledger, build_checkpoint
         # `getattr` — see the identical note in `_execute_llm_task`: a task
         # stand-in with no `id` has no policy to enforce, not a crash.
         _task_id_for_policy = getattr(task, "id", "") or ""
@@ -2844,7 +2844,19 @@ class TaskScheduler:
             from src.settings import get_setting as _get_setting
         except Exception:
             _get_setting = None
-        budget = resolve_budget(task_policy["budget_preset"], get_setting=_get_setting)
+        try:
+            from src.model_context import is_local_endpoint as _is_local_task_ep
+            _local_task = bool(_is_local_task_ep(endpoint_url))
+        except Exception:
+            _local_task = False
+        # Local inference has no metered cost. The agent loop already refuses
+        # to emit `budget_exhausted` for it; this outer ledger must not invent
+        # the same stop as a user-visible `[budget_exhausted:…]` result.
+        budget = (
+            Budget()
+            if _local_task
+            else resolve_budget(task_policy["budget_preset"], get_setting=_get_setting)
+        )
         ledger = Ledger()
         _loop_started = time.monotonic()
 

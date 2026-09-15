@@ -427,6 +427,7 @@ export type ChatEvent =
        *  second lookup (`src/agent_runs.py::trace_for_call`, lote 61). */
       callId?: string;
     }
+  | { type: 'steer'; text: string; source: string; interrupt: boolean }
   | { type: 'subagent'; payload: SubagentPayload }
   | { type: 'frame'; frame: BrowserFrame }
   | { type: 'doc_open'; title: string; language: string }
@@ -1388,6 +1389,13 @@ export function decode(raw: Record<string, unknown>, sseEvent: string | null): C
       };
     case 'agent_step':
       return { type: 'round', round: num(raw.round) ?? 1 };
+    case 'steer':
+      return {
+        type: 'steer',
+        text: str(raw.text),
+        source: str(raw.source, 'user'),
+        interrupt: Boolean(raw.interrupt),
+      };
     // The server says the pending question has been answered — by this tab,
     // by another one, or by a continuation it is replaying. Either way the
     // card is stale and must go, or a second answer is sent for a decision
@@ -1983,8 +1991,9 @@ export async function pauseChat(sessionId: string, runId?: string | null): Promi
 
 /**
  * UX-04: send an instruction to the LIVE turn. `mode: 'steer'` (default) is
- * injected as a user message at the turn's next safe point; `mode: 'queue'`
- * ("Enviar después") is held and delivered as a new turn once this one ends,
+ * injected as a user message as soon as the model can take it (mid-generation
+ * if it is thinking or writing; after the current tool if one is in flight);
+ * `mode: 'queue'` ("Enviar después") is held and delivered as a new turn once this one ends,
  * never altering the work already in flight.
  */
 export async function steerChat(

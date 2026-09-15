@@ -51,6 +51,7 @@ const read = (p) => readFileSync(path(p), 'utf8').replace(/\r\n/g, '\n');
   assert.ok(src.includes('<StrategyProfileSelector') && src.includes('<RecipeSelector'), 'both selectors must be rendered');
   assert.ok(src.includes("data-testid=\"studio-strategy-profile\""), 'strategy profile chip must carry a stable testid');
   assert.ok(src.includes("data-testid=\"studio-recipe-selector\""), 'recipe chip must carry a stable testid');
+  assert.ok(src.includes('placement="composer"'), 'composer chip menus must share placement="composer"');
   // three profiles, exactly as the contract names them
   for (const value of ["value: 'fast'", "value: 'balanced'", "value: 'deep_review'"]) {
     assert.ok(src.includes(value), `STRATEGY_PROFILE_CHOICES must include ${value}`);

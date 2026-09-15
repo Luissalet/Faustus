@@ -21,7 +21,7 @@ const result = await build({
         <button onClick={() => fetch('/fixture/online', {method:'POST'})}>Reconnect fixture</button>
         <button onClick={() => fetch('/fixture/chat-offline', {method:'POST'})}>Disconnect conversations only</button>
       </aside>
-      <main className="fs-main"><div className="fs-main__inner"><Routes><Route path="/studio" element={<main><h1>Conversation destination</h1><Link to="/activity">Return to activity</Link></main>}/>
+      <main className="fs-main" data-screen="wide"><div className="fs-main__inner"><Routes><Route path="/studio" element={<main><h1>Conversation destination</h1><Link to="/activity">Return to activity</Link></main>}/>
         <Route path="*" element={<ActivityScreen/>}/></Routes></div></main>
     </div></BrowserRouter>);`, resolveDir: process.cwd(), sourcefile: 'activity-preview.tsx', loader: 'tsx' },
   bundle: true, format: 'esm', platform: 'browser', write: false,
@@ -38,7 +38,7 @@ const sessions = [
   { id: 'waiting', name: 'Revisar el proyecto antes de modificar archivos', model: 'Modelo local' },
   { id: 'queued', name: 'Resumen de documentos para la siguiente sesión', model: 'Qwen local' },
 ];
-const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Faustus · Activity QA (synthetic)</title><link rel="stylesheet" href="/fixture.css"><style>.fixture-controls{display:flex;flex-wrap:wrap;gap:1rem;padding:1rem;color:var(--fs-text-2);background:var(--fs-surface-2)}.fixture-controls button{background:var(--fs-surface-1);color:inherit;padding:.4rem;border:1px solid var(--fs-border)}body{overflow:auto}.fs-screen{margin-inline:auto}</style></head><body><div id="root"></div><script type="module" src="/fixture.js"></script></body></html>`;
+const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Faustus · Activity QA (synthetic)</title><link rel="stylesheet" href="/fixture.css"><style>.fixture-controls{display:flex;flex-wrap:wrap;gap:1rem;padding:1rem;color:var(--fs-text-2);background:var(--fs-surface-2)}.fixture-controls button{background:var(--fs-surface-1);color:inherit;padding:.4rem;border:1px solid var(--fs-border)}html,body,#root,.fs-app{height:100%;margin:0}body{overflow:hidden}.fs-app{display:flex;flex-direction:column}.fs-main{flex:1;min-block-size:0;overflow-y:auto;overflow-x:hidden}.fs-screen{margin-inline:auto}</style></head><body><div id="root"></div><script type="module" src="/fixture.js"></script></body></html>`;
 createServer(async (req, res) => {
   const url = new URL(req.url, 'http://127.0.0.1');
   const json = (body, code=200) => { res.writeHead(code, {'Content-Type':'application/json'}); res.end(JSON.stringify(body)); };
@@ -73,6 +73,24 @@ createServer(async (req, res) => {
       if (req.headers['x-odysseus-run-id'] !== 'run-working') return json({stopped:false}, 409);
       stopped = true; return json({stopped:true});
     }
+    if (url.pathname === '/api/questions') return json({ questions: [{
+      question_id: 'qst-continue', session: 'cd0d63ee-1fed-4eea-93b4-0ae82255c960',
+      question: 'Allow this task to continue?',
+      options: [
+        { id: 'allow_task', label: 'Allow for this task', description: 'Execute the sealed action and allow every otherwise-gated action needed to finish this request. Current tool plus later tools in this turn stay allowed.' },
+        { id: 'allow_session', label: 'Allow for this chat session', description: 'Execute the sealed action and stop asking at this gate for later requests in this chat. Current tool plus later tools stay allowed.' },
+        { id: 'allow_workspace', label: 'Always for this workspace folder', description: 'Execute the sealed action and remember the answer for this workspace folder: later chats in this folder skip this gate.' },
+        { id: 'deny', label: 'Deny', description: 'Do not execute the proposed action.' },
+      ],
+      multi: false, expires_at: null, revision: 1, opened_at: '2026-09-14T12:53:00Z',
+    }], count: 1 });
+    if (url.pathname === '/api/attention') return json({ rows: [{
+      session_id: 'cd0d63ee-1fed-4eea-93b4-0ae82255c960',
+      kind: 'question', lifecycle: 'waiting', wait_cause: 'question',
+      connection_health: 'stale', reason: 'Waiting for your answer', unread: true,
+      next_action: 'answer', signal: { source: 'events', age_s: 90000 },
+      since: Date.parse('2026-09-14T12:53:00Z') / 1000,
+    }], unread_count: 1 });
     if (url.pathname.includes('/tasks/runs')) return json({runs:[{id:'done',task_name:'Exportar notas del proyecto',status:'completed',result:'Archivo listo.',started_at:new Date((started-300)*1000).toISOString(),finished_at:new Date((started-250)*1000).toISOString()}]});
     if (url.pathname === '/api/workflows/runs') return json({ok:true,runs:[{
       id:'workflow-qa', title:'Preparar vídeo y revisar su publicación', workflow_id:'video.review',

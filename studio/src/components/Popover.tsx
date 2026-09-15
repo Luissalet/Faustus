@@ -15,6 +15,23 @@ export interface PopoverProps {
    *  than for every repo row up front). */
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  /** Chip menus on the composer: open upward, stay below the title bar
+   *  and chat header, scroll inside one shared shell. */
+  placement?: 'composer';
+}
+
+function composerCollisionPadding(): { top: number; right: number; bottom: number; left: number } {
+  const edge = 12;
+  let top = edge;
+  if (typeof document !== 'undefined') {
+    for (const sel of ['.fs-desktop-bar', '.fs-studio__head']) {
+      const el = document.querySelector(sel);
+      if (el instanceof HTMLElement) {
+        top = Math.max(top, el.getBoundingClientRect().bottom + 8);
+      }
+    }
+  }
+  return { top: Math.round(top), right: edge, bottom: edge, left: edge };
 }
 
 /**
@@ -32,16 +49,22 @@ export function Popover({
   className,
   open,
   onOpenChange,
+  placement,
 }: PopoverProps) {
+  const composer = placement === 'composer';
+  const classes = ['fs-popover'];
+  if (composer) classes.push('fs-studio__composer-menu');
+  if (className) classes.push(className);
   return (
     <RadixPopover.Root open={open} onOpenChange={onOpenChange}>
       <RadixPopover.Trigger asChild>{trigger}</RadixPopover.Trigger>
       <RadixPopover.Portal container={document.getElementById('fs-overlay-root') ?? undefined}>
         <RadixPopover.Content
-          className={className ? `fs-popover ${className}` : 'fs-popover'}
+          className={classes.join(' ')}
           align={align}
-          side={side}
+          side={composer ? 'top' : side}
           sideOffset={6}
+          collisionPadding={composer ? composerCollisionPadding() : 8}
           data-testid={testId}
         >
           {children}

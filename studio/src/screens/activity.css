@@ -1,5 +1,36 @@
 /* Actividad y Automatizaciones (UI-050 · UI-051 · UI-052). */
 
+/* The list + detail split must fill the main column and scroll inside
+   each pane. Otherwise a long permission prompt grows the card past the
+   viewport — the same failure as nowrap option buttons growing it past
+   the column. */
+.fs-main:has(.fs-act),
+.fs-shell[data-nav='rail'] .fs-main:has(.fs-act) {
+  display: grid;
+  overflow: hidden;
+}
+
+.fs-main:has(.fs-act) .fs-main__inner,
+.fs-main:has(.fs-act) .fs-route {
+  min-block-size: 0;
+  block-size: 100%;
+  display: grid;
+}
+
+.fs-screen.fs-act {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fs-space-5);
+  min-inline-size: 0;
+  min-block-size: 0;
+  block-size: 100%;
+  overflow: hidden;
+}
+
+.fs-screen.fs-act > :not(.fs-act__layout) {
+  flex-shrink: 0;
+}
+
 .fs-run {
   position: relative; /* anchors its node on the rail */
   display: flex;
@@ -359,22 +390,46 @@
 
 .fs-act__layout {
   display: grid;
-  grid-template-columns: minmax(320px, 1fr) minmax(0, 1fr);
+  grid-template-columns: minmax(280px, 1fr) minmax(0, 1fr);
   gap: var(--fs-space-4);
-  align-items: start;
-  min-block-size: 50vh;
+  align-items: stretch;
+  min-inline-size: 0;
+  min-block-size: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
 }
 
 .fs-act__list {
   display: grid;
   gap: var(--fs-space-3);
   min-inline-size: 0;
+  min-block-size: 0;
+  overflow: auto;
+  align-content: start;
 }
 
 .fs-act__pane {
+  display: flex;
+  flex-direction: column;
   min-inline-size: 0;
+  max-inline-size: 100%;
+  min-block-size: 0;
   position: sticky;
   inset-block-start: var(--fs-space-4);
+  max-block-size: calc(100dvh - var(--fs-space-7) * 2);
+  overflow: hidden;
+}
+
+.fs-act__detail,
+.fs-act__blank {
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-panel);
+  background: var(--fs-surface-1);
+  box-shadow: var(--fs-panel-shadow);
+  flex: 1 1 auto;
+  min-block-size: 0;
+  min-inline-size: 0;
+  overflow: auto;
 }
 
 /* The row is a button now: same look, plus the current one. */
@@ -405,18 +460,70 @@
   font-weight: 500;
 }
 
-.fs-act__detail,
-.fs-act__blank {
-  border: 1px solid var(--fs-border);
-  border-radius: var(--fs-radius-panel);
-  background: var(--fs-surface-1);
-  box-shadow: var(--fs-panel-shadow);
-}
-
 .fs-act__detail {
   display: grid;
   gap: var(--fs-space-4);
   padding: var(--fs-space-5);
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  overflow: auto;
+  overflow-wrap: anywhere;
+}
+
+.fs-act__options {
+  display: grid;
+  gap: var(--fs-space-2);
+  min-inline-size: 0;
+}
+
+.fs-act__option {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--fs-space-2);
+  inline-size: 100%;
+  min-inline-size: 0;
+  padding: var(--fs-space-2) var(--fs-space-3);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-control);
+  background: var(--fs-surface-2);
+  color: var(--fs-text-1);
+  text-align: start;
+  font: inherit;
+  cursor: pointer;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.fs-act__option:hover:not(:disabled),
+.fs-act__option[data-checked] {
+  border-color: color-mix(in srgb, var(--fs-brand) 45%, var(--fs-border));
+  background: var(--fs-ember-faint);
+}
+
+.fs-act__option:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.fs-act__option > span {
+  display: grid;
+  gap: 2px;
+  min-inline-size: 0;
+}
+
+.fs-act__option input[type="checkbox"] {
+  margin-block-start: 3px;
+  flex: 0 0 auto;
+}
+
+.fs-act__option-label {
+  font-weight: 600;
+}
+
+.fs-act__option-desc {
+  display: block;
+  font-size: var(--fs-label-size);
+  color: var(--fs-text-3);
 }
 
 .fs-act__blank {
@@ -459,12 +566,14 @@
 }
 
 .fs-act__ask {
+  min-inline-size: 0;
   padding: var(--fs-space-3) var(--fs-space-4);
   border: 1px solid color-mix(in srgb, var(--fs-warning) 50%, var(--fs-border));
   border-radius: var(--fs-radius-panel);
   background: color-mix(in srgb, var(--fs-warning) 8%, transparent);
   font-size: var(--fs-label-size);
   line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 
 .fs-act__actions {
@@ -472,6 +581,17 @@
   flex-wrap: wrap;
   align-items: center;
   gap: var(--fs-space-2);
+  min-inline-size: 0;
+}
+
+.fs-act__actions .fs-btn {
+  white-space: normal;
+  height: auto;
+  min-block-size: var(--fs-control-sm);
+  max-inline-size: 100%;
+  overflow-wrap: anywhere;
+  text-align: start;
+  justify-content: flex-start;
 }
 
 .fs-act__link {
@@ -587,18 +707,45 @@
 
   .fs-act__layout {
     grid-template-columns: minmax(0, 1fr);
+    flex: none;
+    overflow: visible;
   }
 
   .fs-act__layout[data-detail] .fs-act__list {
     display: none;
   }
 
+  .fs-main:has(.fs-act),
+  .fs-shell[data-nav='rail'] .fs-main:has(.fs-act) {
+    display: block;
+    overflow: auto;
+  }
+
+  .fs-main:has(.fs-act) .fs-main__inner,
+  .fs-main:has(.fs-act) .fs-route {
+    block-size: auto;
+    display: block;
+  }
+
+  .fs-screen.fs-act {
+    block-size: auto;
+    overflow: visible;
+  }
+
+  .fs-act__list {
+    overflow: visible;
+  }
+
   .fs-act__pane {
     position: static;
+    max-block-size: none;
+    overflow: visible;
   }
 
   .fs-act__detail {
     padding: var(--fs-space-4);
+    overflow: visible;
+    flex: none;
   }
 }
 

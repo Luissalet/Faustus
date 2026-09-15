@@ -375,125 +375,134 @@ function ArgumentRepairs({ step }: { step: Step }) {
   );
 }
 
+/**
+ * One collapsible headline for the turn's tools — Cursor/ChatGPT style —
+ * instead of printing every command as its own visible row. Pure so the
+ * live vs finished copy is checked directly (studio/checks/l65-transcript-helpers.check.mjs).
+ */
+export function toolRailSummary(count: number, live: boolean): { one: string; other: string; n: number } {
+  const n = Math.max(0, count);
+  if (live) return { one: 'Running a command', other: 'Running commands', n };
+  return { one: 'Ran 1 command', other: 'Ran {n} commands', n };
+}
+
 function ToolRail({ steps, live, sessionId, onOpenFile, onOpenDoc, onOpenEvidence }: { steps: Step[]; live: boolean; sessionId?: string | null; onOpenFile?: (path: string) => void; onOpenDoc?: (docId: string) => void; onOpenEvidence?: (ref: EvidenceRef) => void }) {
-  const [expanded, setExpanded] = useState(false);
-  const leadingDone = steps.findIndex((s) => s.state !== 'succeeded');
-  const doneCount = leadingDone === -1 ? steps.length : leadingDone;
-  const collapse = !expanded && !live && doneCount > 3;
-  const visible = collapse ? steps.slice(doneCount) : steps;
+  const summary = toolRailSummary(steps.length, live);
+  const title = tn(summary.n, summary.one, summary.other);
 
   return (
-    <div className="fs-trace fs-studio__trace" data-testid="studio-trace">
-      {collapse && (
-        <button type="button" className="fs-trace__collapsed" onClick={() => setExpanded(true)} aria-expanded={false} data-testid="trace-expand">
-          <span aria-hidden="true" />
-          <span>
-            <ChevronDown size={13} aria-hidden="true" /> {doneCount} pasos completados
-          </span>
-        </button>
-      )}
-      {visible.map((step) =>
-        step.output || step.command || step.diff || step.screenshot ? (
-          <details
-            key={step.id}
-            className="fs-trace__step fs-studio__step"
-            data-state={step.state}
-            // A11Y-01/QA-44: opening this by keyboard (Enter on the
-            // <summary>) can reveal a tall diff/output the browser's own
-            // focus-scroll only partly brought into view — found live at
-            // 200% zoom, the box's own bottom edge a few px below the
-            // fold. Nudging on open (never on close) covers it without
-            // fighting the reader's scroll position the rest of the time.
-            onToggle={(e) => {
-              if (!e.currentTarget.open) return;
-              e.currentTarget.scrollIntoView({ block: 'nearest' });
-              // QA-44 hueco 2: at 200% zoom the whole card (command + output
-              // + diff) can be taller than the effective viewport, so
-              // bringing ITS edge into view still leaves a long diff below
-              // the fold — the diff's own box (studio.css's `.fs-diff`,
-              // capped by `max-block-size`) always fits on its own, so bring
-              // that in too once the card's content is actually visible.
-              e.currentTarget.querySelector('.fs-diff')?.scrollIntoView({ block: 'nearest' });
-            }}
-          >
-            <summary>
+    <details className="fs-studio__trace fs-studio__tools" data-testid="studio-trace" data-live={live || undefined}>
+      <summary className="fs-studio__tools-summary" data-testid="tools-summary">
+        {live ? <span className="fs-studio__pulse" aria-hidden="true" /> : <span className="fs-trace__node" aria-hidden="true" />}
+        <span className="fs-studio__tools-title" role={live ? 'status' : undefined}>
+          {title}
+        </span>
+        <ChevronDown size={13} className="fs-studio__tools-chevron" aria-hidden="true" />
+      </summary>
+      <div className="fs-trace fs-studio__tools-body">
+        {steps.map((step) =>
+          step.output || step.command || step.diff || step.screenshot ? (
+            <details
+              key={step.id}
+              className="fs-trace__step fs-studio__step"
+              data-state={step.state}
+              // A11Y-01/QA-44: opening this by keyboard (Enter on the
+              // <summary>) can reveal a tall diff/output the browser's own
+              // focus-scroll only partly brought into view — found live at
+              // 200% zoom, the box's own bottom edge a few px below the
+              // fold. Nudging on open (never on close) covers it without
+              // fighting the reader's scroll position the rest of the time.
+              onToggle={(e) => {
+                if (!e.currentTarget.open) return;
+                e.currentTarget.scrollIntoView({ block: 'nearest' });
+                // QA-44 hueco 2: at 200% zoom the whole card (command + output
+                // + diff) can be taller than the effective viewport, so
+                // bringing ITS edge into view still leaves a long diff below
+                // the fold — the diff's own box (studio.css's `.fs-diff`,
+                // capped by `max-block-size`) always fits on its own, so bring
+                // that in too once the card's content is actually visible.
+                e.currentTarget.querySelector('.fs-diff')?.scrollIntoView({ block: 'nearest' });
+              }}
+            >
+              <summary>
+                <span className="fs-trace__node" aria-hidden="true" />
+                <span className="fs-trace__label">{step.label}</span>
+                {step.executionTarget && (
+                  <span className="fs-trace__meta" data-testid="tool-execution-target" title={[step.executionTarget.cwd, step.executionTarget.shell].filter(Boolean).join(' · ')}>
+                    {t('runs on {target}', { target: executionTargetLabel(step.executionTarget.kind) })}
+                  </span>
+                )}
+                {step.diff && (
+                  <span className="fs-trace__meta fs-diff-stat">
+                    {step.diff.newFile && <em>nuevo</em>}
+                    {step.diff.added > 0 && <ins>+{step.diff.added}</ins>}
+                    {step.diff.removed > 0 && <del>−{step.diff.removed}</del>}
+                  </span>
+                )}
+                {step.meta && <span className="fs-trace__meta">{step.meta}</span>}
+              </summary>
+              {(onOpenFile && FILE_TOOLS.test(step.tool) && step.command) || (onOpenDoc && step.docId) ? (
+                <p className="fs-studio__step-links">
+                  {onOpenFile && FILE_TOOLS.test(step.tool) && step.command && (
+                    <button type="button" className="fs-link" onClick={() => onOpenFile((step.diff?.file || step.command || '').split('\n')[0].trim())}>
+                      Ver el fichero
+                    </button>
+                  )}
+                  {onOpenDoc && step.docId && (
+                    <button type="button" className="fs-link" onClick={() => onOpenDoc(step.docId as string)}>
+                      Abrir el documento
+                    </button>
+                  )}
+                </p>
+              ) : null}
+              {step.diff ? (
+                <DiffLines text={step.diff.text} />
+              ) : (
+                step.command &&
+                step.command !== step.label && (
+                  <pre className="fs-studio__cmd" data-testid="step-command">
+                    {maskSecrets(step.command)}
+                  </pre>
+                )
+              )}
+              {(step.repairs?.length || step.argumentErrors?.length) ? <ArgumentRepairs step={step} /> : null}
+              {onOpenEvidence && step.evidenceRefs?.length ? (
+                <p className="fs-studio__step-links" data-testid="tool-evidence-links">
+                  {step.evidenceRefs.map((ref) => (
+                    <button
+                      key={ref.evidence_id}
+                      type="button"
+                      className="fs-link"
+                      onClick={() => onOpenEvidence(ref)}
+                    >
+                      {t('View evidence')}
+                    </button>
+                  ))}
+                </p>
+              ) : null}
+              {step.callId && (
+                <p className="fs-studio__step-links" data-testid="tool-trace-link">
+                  <Link
+                    className="fs-link"
+                    to={`/activity?trace=${encodeURIComponent(step.callId)}${sessionId ? `&session=${encodeURIComponent(sessionId)}` : ''}`}
+                  >
+                    {t('View trace')}
+                  </Link>
+                </p>
+              )}
+              {step.output && <pre className="fs-studio__out">{step.output.slice(0, 6000)}</pre>}
+              {step.screenshot && <img className="fs-studio__shot" src={step.screenshot} alt={t('Tool screenshot')} loading="lazy" />}
+            </details>
+          ) : (
+            <div key={step.id} className="fs-trace__step" data-state={step.state}>
               <span className="fs-trace__node" aria-hidden="true" />
               <span className="fs-trace__label">{step.label}</span>
-              {step.executionTarget && (
-                <span className="fs-trace__meta" data-testid="tool-execution-target" title={[step.executionTarget.cwd, step.executionTarget.shell].filter(Boolean).join(' · ')}>
-                  {t('runs on {target}', { target: executionTargetLabel(step.executionTarget.kind) })}
-                </span>
-              )}
-              {step.diff && (
-                <span className="fs-trace__meta fs-diff-stat">
-                  {step.diff.newFile && <em>nuevo</em>}
-                  {step.diff.added > 0 && <ins>+{step.diff.added}</ins>}
-                  {step.diff.removed > 0 && <del>−{step.diff.removed}</del>}
-                </span>
-              )}
               {step.meta && <span className="fs-trace__meta">{step.meta}</span>}
-            </summary>
-            {(onOpenFile && FILE_TOOLS.test(step.tool) && step.command) || (onOpenDoc && step.docId) ? (
-              <p className="fs-studio__step-links">
-                {onOpenFile && FILE_TOOLS.test(step.tool) && step.command && (
-                  <button type="button" className="fs-link" onClick={() => onOpenFile((step.diff?.file || step.command || '').split('\n')[0].trim())}>
-                    Ver el fichero
-                  </button>
-                )}
-                {onOpenDoc && step.docId && (
-                  <button type="button" className="fs-link" onClick={() => onOpenDoc(step.docId as string)}>
-                    Abrir el documento
-                  </button>
-                )}
-              </p>
-            ) : null}
-            {step.diff ? (
-              <DiffLines text={step.diff.text} />
-            ) : (
-              step.command &&
-              step.command !== step.label && (
-                <pre className="fs-studio__cmd" data-testid="step-command">
-                  {maskSecrets(step.command)}
-                </pre>
-              )
-            )}
-            {(step.repairs?.length || step.argumentErrors?.length) ? <ArgumentRepairs step={step} /> : null}
-            {onOpenEvidence && step.evidenceRefs?.length ? (
-              <p className="fs-studio__step-links" data-testid="tool-evidence-links">
-                {step.evidenceRefs.map((ref) => (
-                  <button
-                    key={ref.evidence_id}
-                    type="button"
-                    className="fs-link"
-                    onClick={() => onOpenEvidence(ref)}
-                  >
-                    {t('View evidence')}
-                  </button>
-                ))}
-              </p>
-            ) : null}
-            {step.callId && (
-              <p className="fs-studio__step-links" data-testid="tool-trace-link">
-                <Link
-                  className="fs-link"
-                  to={`/activity?trace=${encodeURIComponent(step.callId)}${sessionId ? `&session=${encodeURIComponent(sessionId)}` : ''}`}
-                >
-                  {t('View trace')}
-                </Link>
-              </p>
-            )}
-            {step.output && <pre className="fs-studio__out">{step.output.slice(0, 6000)}</pre>}
-            {step.screenshot && <img className="fs-studio__shot" src={step.screenshot} alt={t('Tool screenshot')} loading="lazy" />}
-          </details>
-        ) : (
-          <div key={step.id} className="fs-trace__step" data-state={step.state}>
-            <span className="fs-trace__node" aria-hidden="true" />
-            <span className="fs-trace__label">{step.label}</span>
-            {step.meta && <span className="fs-trace__meta">{step.meta}</span>}
-          </div>
-        ),
-      )}
-    </div>
+            </div>
+          ),
+        )}
+      </div>
+    </details>
   );
 }
 
@@ -1498,7 +1507,9 @@ function AssistantTurn({
         {turn.ledger && <Ledger ledger={turn.ledger} sessionId={sessionId} role="assistant" content={turn.text} />}
         {/* The heartbeat, last of all: it sits exactly where the turn's own
             numbers will appear when it finishes. */}
-        {turn.streaming && turn.live && !(turn.research && !turn.research.done) && <LiveLine live={turn.live} contextTokens={turn.ledger?.total} />}
+        {turn.streaming && turn.live && !(turn.research && !turn.research.done) && !(turn.live.phase === 'tool' && turn.steps.length > 0) && (
+          <LiveLine live={turn.live} contextTokens={turn.ledger?.total} />
+        )}
         {!turn.streaming && (
           <div className="fs-turn__foot">
             <span className="fs-turn__foot-left">

@@ -235,6 +235,7 @@ Address	Dirección
 Address (optional)	Dirección (opcional)
 Address book	Libreta de direcciones
 Adds a local server or an API key.	Añade un servidor local o una clave de API.
+Adds it to the conversation now — it follows it while it works.	Lo añade ahora a la conversación: lo tiene en cuenta mientras trabaja.
 Adds a task to Notes.	Añade una tarea a Notas.
 Adds visible guidance to your message. The image model determines how closely it can follow it.	Añade indicaciones visibles al mensaje. El modelo de imagen determina con qué fidelidad puede seguirlas.
 Adjustment opacity	Opacidad del ajuste
@@ -359,6 +360,7 @@ Apply style	Aplicar estilo
 Applying…	Aplicando…
 Approval	Aprobación
 Approval mode for all Faustus chats. Only an administrator can change it.	Se aplica a todos los chats de Faustus. Solo un administrador puede cambiarlo.
+Approval: {label}	Aprobación: {label}
 Approvals	Aprobaciones
 Approve	Aprobar
 Approve and send	Aprobar y enviar
@@ -468,6 +470,7 @@ Automatic · English / Spanish	Automático · Inglés / Español
 Automations	Automatizaciones
 Automations, summaries, tidying the memory. Empty: the chat's.	Automatizaciones, resúmenes, ordenar la memoria. Vacío: el del chat.
 Autonomy	Autonomía
+Autonomy: {label}	Autonomía: {label}
 Available	Disponible
 Available once a cut-out lands.	Disponible cuando llegue un recorte.
 Available once a result lands.	Disponible cuando llegue un resultado.
@@ -3505,6 +3508,7 @@ Runners	Runners
 Running	Ejecutando
 Running `{cmd}`…	Ejecutando `{cmd}`…
 Running a command	Ejecutando un comando
+Running commands	Ejecutando comandos
 Running a tool	Usando una herramienta
 Running right now	En marcha ahora mismo
 Running tests	Ejecutando tests
@@ -6708,6 +6712,8 @@ No alternatives yet. Add one to start comparing approaches.	Aún no hay alternat
 No experiments yet	Aún no hay experimentos
 Nothing to apply: the main copy already matches.	Nada que aplicar: la copia principal ya coincide.
 Ran.	Ejecutado.
+Ran 1 command	1 comando ejecutado
+Ran {n} commands	{n} comandos ejecutados
 Reading the experiment	Leyendo el experimento
 Reading the experiments	Leyendo los experimentos
 Save text	Guardar texto

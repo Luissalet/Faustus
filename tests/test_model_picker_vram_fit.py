@@ -112,13 +112,15 @@ def test_a_verdict_is_never_borrowed_by_another_machines_endpoint():
     assert "const hint = fitOf(route, fit);" in _PALETTE, "the row must go through the gate"
 
 
-def test_the_project_brief_gives_the_same_reading():
-    """The picker is not the only place a model is chosen: a new chat in a
-    project is started from a native <select>, which had neither number nor
-    verdict on it."""
+def test_the_project_brief_does_not_choose_a_model():
+    """A new chat in a project opens Studio. The brief used to host a native
+    <select> that neither pasted files nor kept the chosen model once the
+    conversation view loaded — so the real picker is the only place left."""
     project = (_REPO / "studio" / "src" / "screens" / "Project.tsx").read_text(encoding="utf-8")
-    assert "fitSummary(fitOf(r, fit))" in project
-    assert "useFitHints(" in project
+    assert "fitSummary(fitOf(r, fit))" not in project
+    assert "useFitHints(" not in project
+    assert "startChatInProject(project, null)" in project
+    assert 'testId="project-start"' in project
     body = _FIT_ADAPTER[_FIT_ADAPTER.index("export function fitSummary("):]
     body = body[:body.index("\n}")]
     assert "[fitSize(fit), word].filter(Boolean)" in body, (
@@ -579,15 +581,50 @@ def _js_body(src: str, header: str) -> str:
     raise AssertionError(f"unbalanced braces after {header!r}")
 
 
-def test_the_row_keeps_the_name_at_full_width():
+def test_the_row_keeps_the_name_readable():
     """The endpoint is the group heading, not a repeat on every row: in a
     picker of forty local models, `127.0.0.1:11434` forty times is the least
-    informative thing on screen, and it was squeezing the names."""
+    informative thing on screen, and it was squeezing the names.
+
+    Tags live under the name so a long id (`qwen3.8:27b-q4_K_M`) stays in
+    full instead of disappearing behind 'structured output'.
+    """
     assert 'Command.Group key={endpoint} heading={endpoint}' in _PALETTE
     item = _PALETTE[_PALETTE.index("<Command.Item"):_PALETTE.index("</Command.Item>")]
     assert "endpointName" not in item, "the endpoint must not be repeated per row"
     assert 'className="fs-palette__name"' in _PALETTE
-    assert "text-overflow: ellipsis" in _PALETTE_CSS, "a long name truncates rather than wrapping"
+    assert 'className="fs-palette__tags"' in _PALETTE
+    name_css = _PALETTE_CSS[_PALETTE_CSS.index(".fs-palette__name {") :]
+    name_css = name_css[: name_css.index("\n}")]
+    assert "ellipsis" not in name_css, "the name wraps rather than truncating"
+    assert "nowrap" not in name_css
+
+
+def test_the_current_model_is_marked_on_the_row():
+    """Opening the picker used to highlight 'Connect an AI provider' (the
+    first cmdk item) while the model in use only had a 15px check. The row
+    in use has to say so in words, keep an ember fill when the cursor
+    moves, and cmdk has to land on it."""
+    assert 'data-current={isCurrent || undefined}' in _PALETTE
+    assert "aria-current={isCurrent ? 'true' : undefined}" in _PALETTE
+    assert 'className="fs-palette__current"' in _PALETTE
+    assert "t('Current')" in _PALETTE
+    assert ".fs-palette__item[data-current]" in _PALETTE_CSS
+    assert "value={picked}" in _PALETTE
+
+
+def test_the_chat_picker_sits_on_the_composer():
+    """A page-center 560px dialog is a second window. In chat the palette
+    is the composer's width and opens off its top edge."""
+    picker = (_REPO / "studio" / "src" / "screens" / "ModelPicker.tsx").read_text(
+        encoding="utf-8"
+    )
+    assert 'anchor="composer"' in picker
+    assert "fs-palette--composer" in _PALETTE_CSS
+    assert "fs-palette--models" in _PALETTE_CSS
+    assert "860px" in _PALETTE_CSS
+    assert ".fs-desktop-bar" in _PALETTE and ".fs-studio__head" in _PALETTE
+    assert "paletteCeiling" in _PALETTE
 
 
 def test_the_picker_marks_tags_that_are_the_same_model():

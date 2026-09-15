@@ -5,7 +5,7 @@ import {loadMediaRecipes,previewMediaRecipe,recipeInputs,recipeMessage,type Medi
 import {t} from '../../i18n';
 
 export function MediaRecipes({onInsert}:{onInsert:(text:string)=>void}) {
-  return <Popover side="top" className="fs-media-recipes" trigger={<button type="button" className="fs-studio__chip"><Clapperboard size={13}/>{t('Media recipe')}</button>}><RecipeForm onInsert={onInsert}/></Popover>;
+  return <Popover placement="composer" className="fs-media-recipes" trigger={<button type="button" className="fs-studio__chip"><Clapperboard size={13}/>{t('Media recipe')}</button>}><RecipeForm onInsert={onInsert}/></Popover>;
 }
 function RecipeForm({onInsert}:{onInsert:(text:string)=>void}) {
   const [recipes,setRecipes]=useState<MediaRecipe[]|null>(null),[selected,setSelected]=useState('');

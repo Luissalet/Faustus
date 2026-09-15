@@ -9,8 +9,8 @@ Each check demonstrates the closed gap:
     the `uncertain` SSE event (UX-02/TASK-03) and `capabilities_changed`
     (MOD-06) decode and mark the turn; research `coverage` (RES-01) and a
     tool_output's `execution_target` (EXEC-01) decode onto the turn/step.
-  - `l65-transcript-helpers`: `maskSecrets` (EXEC-02) and
-    `reportPartsProgress` (RES-04), Transcript.tsx's own pure helpers.
+  - `l65-transcript-helpers`: `maskSecrets` (EXEC-02),
+    `reportPartsProgress` (RES-04), and `toolRailSummary` (grouped tools line).
   - `l65-source-wiring`: the QA-44/SEC-03/ask_user-revision-send/TASK-06/
     UX-06 closures that need real source wiring rather than a runtime call.
 """

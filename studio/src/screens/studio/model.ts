@@ -961,7 +961,32 @@ export function apply(turn: Turn, event: ChatEvent): Turn {
         steps: turn.steps.map((step) => (step.state === 'running' ? { ...step, state: 'cancelled' } : step)),
         workers: turn.workers.map((w) => (workerLive(w) ? { ...w, status: 'partial' as const, stopReason: w.stopReason || t('no signal') } : w)),
       };
+    case 'steer':
+      return turn;
   }
+}
+
+/** Insert a mid-turn user message. `interrupt` seals the live assistant
+ *  bubble and opens a new one for the redirected generation. */
+export function appendSteer(turns: Turn[] | null, text: string, interrupt = false): Turn[] {
+  const needle = text.trim();
+  if (!needle) return turns ?? [];
+  const list = [...(turns ?? [])];
+  const already = list.some((t) => t.role === 'user' && t.text === needle);
+  if (interrupt) {
+    for (let i = list.length - 1; i >= 0; i--) {
+      if (list[i].role === 'assistant' && list[i].streaming) {
+        list[i] = apply(list[i], { type: 'done' });
+        break;
+      }
+    }
+  }
+  if (!already) list.push(blankTurn('user', needle));
+  if (interrupt) {
+    const last = list[list.length - 1];
+    if (!(last?.role === 'assistant' && last.streaming)) list.push(blankTurn('assistant'));
+  }
+  return list;
 }
 
 export function planStepFromRaw(raw: unknown): PlanStepView | null {

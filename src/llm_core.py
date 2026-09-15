@@ -3532,6 +3532,37 @@ def _stream_status_error_chunk(status: int, friendly: str, raw: str, *,
     return f'event: error\ndata: {json.dumps(payload)}\n\n'
 
 
+EMPTY_COMPLETION_ERROR_CLASS = "generation.empty_completion"
+
+
+def _empty_completion_error_chunk(message: str) -> str:
+    """Terminal SSE error for a stream that finished without text or tools.
+
+    Distinct from a transport 502: the provider answered, just with nothing
+    the caller can use. Foreground routing must not switch models on this
+    (`fallback_eligible: false`); the agent harness can retry the same route.
+    """
+    return (
+        "event: error\ndata: "
+        + json.dumps({
+            "error": message,
+            "status": 502,
+            "error_class": EMPTY_COMPLETION_ERROR_CLASS,
+            "fallback_eligible": False,
+        })
+        + "\n\n"
+    )
+
+
+def is_empty_completion_error(error_data) -> bool:
+    """True when a stream error is a clean empty completion, not a transport cut."""
+    if not isinstance(error_data, dict):
+        return False
+    if str(error_data.get("error_class") or "") == EMPTY_COMPLETION_ERROR_CLASS:
+        return True
+    return "no substantive output" in str(error_data.get("error") or "").lower()
+
+
 def _stream_refusal_event(text: str = "", *, stop_reason: Optional[str] = None) -> str:
     """Typed SSE event for a provider-issued refusal (MOD-03), instead of
     letting it masquerade as ordinary answer text: OpenAI-compatible's
@@ -5304,6 +5335,7 @@ async def stream_llm_with_fallback(candidates, messages, **kwargs):
     fallback_on_empty = bool(kwargs.pop("fallback_on_empty", True))
     candidate_request_factory = kwargs.pop("candidate_request_factory", None)
     candidate_route_descriptors = kwargs.pop("candidate_route_descriptors", None)
+    abort_when = kwargs.pop("abort_when", None)
     eligible_statuses = None if fallback_statuses is None else frozenset(fallback_statuses)
 
     raw_candidates = list(candidates or [])
@@ -5478,6 +5510,12 @@ async def stream_llm_with_fallback(candidates, messages, **kwargs):
 
                 if substantive or emitted:
                     yield chunk
+                    if callable(abort_when):
+                        try:
+                            if abort_when():
+                                break
+                        except Exception:
+                            pass
                 elif not is_done:
                     pending_metadata.append(chunk)
         finally:
@@ -5497,7 +5535,9 @@ async def stream_llm_with_fallback(candidates, messages, **kwargs):
         if retried:
             continue
         if not is_last and fallback_on_empty:
-            last_error = f'event: error\ndata: {json.dumps({"error": f"Model {model} returned no substantive output", "status": 502})}\n\n'
+            last_error = _empty_completion_error_chunk(
+                f"Model {model} returned no substantive output"
+            )
             failures.append({
                 "candidate_index": i,
                 "model": model,
@@ -5508,7 +5548,11 @@ async def stream_llm_with_fallback(candidates, messages, **kwargs):
             logger.warning(f"[fallback] {tag} {model} returned no substantive output; trying next")
             continue
         if not is_last:
-            yield f'event: error\ndata: {json.dumps({"error": f"Model {model} returned no substantive output", "status": 502})}\n\n'
+            yield _empty_completion_error_chunk(
+                f"Model {model} returned no substantive output"
+            )
             return
-        yield f'event: error\ndata: {json.dumps({"error": "All model candidates returned no substantive output", "status": 502})}\n\n'
+        yield _empty_completion_error_chunk(
+            "All model candidates returned no substantive output"
+        )
         return

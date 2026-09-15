@@ -3212,92 +3212,310 @@ def setup_chat_routes(
 
                     # ── Chat mode: call stream_llm directly, NO tools, NO document access ──
                     try:
-                        async for chunk in stream_llm_with_fallback(
-                            _foreground_candidates,
-                            messages,
-                            temperature=ctx.preset.temperature,
-                            # Respect the preset; 0/unset = let the server decide (no
-                            # cap), matching agent mode. The old hard 4096 fallback
-                            # truncated reasoning models mid-<think> — they'd burn the
-                            # whole budget thinking and never emit the answer (seen in
-                            # Compare on heavy generation prompts).
-                            max_tokens=ctx.preset.max_tokens,
-                            prompt_type=preset_id,
-                            tools=None,
-                            session_id=session,
-                            fallback_statuses=_foreground_policy.eligible_statuses,
-                            fallback_on_empty=_foreground_policy.fallback_on_empty,
-                            candidate_request_factory=_chat_request_factory,
-                            candidate_route_descriptors=_foreground_route_descriptors,
-                            gen_overrides=_gen_overrides or None,
-                        ):
-                            if chunk.startswith("data: ") and not chunk.startswith("data: [DONE]"):
-                                try:
-                                    data = json.loads(chunk[6:])
-                                    if "delta" in data:
-                                        if _commit_chat_compaction(_actual_candidate_index):
-                                            _compacted_length = _chat_request_state["context_lengths"].get(
-                                                _actual_candidate_index,
+                        while True:
+                            _chat_got_done = False
+                            async for chunk in stream_llm_with_fallback(
+                                _foreground_candidates,
+                                messages,
+                                temperature=ctx.preset.temperature,
+                                # Respect the preset; 0/unset = let the server decide (no
+                                # cap), matching agent mode. The old hard 4096 fallback
+                                # truncated reasoning models mid-<think> — they'd burn the
+                                # whole budget thinking and never emit the answer (seen in
+                                # Compare on heavy generation prompts).
+                                max_tokens=ctx.preset.max_tokens,
+                                prompt_type=preset_id,
+                                tools=None,
+                                session_id=session,
+                                fallback_statuses=_foreground_policy.eligible_statuses,
+                                fallback_on_empty=_foreground_policy.fallback_on_empty,
+                                candidate_request_factory=_chat_request_factory,
+                                candidate_route_descriptors=_foreground_route_descriptors,
+                                gen_overrides=_gen_overrides or None,
+                                abort_when=lambda: agent_runs.peek_steers(session),
+                            ):
+                                if chunk.startswith("data: ") and not chunk.startswith("data: [DONE]"):
+                                    try:
+                                        data = json.loads(chunk[6:])
+                                        if "delta" in data:
+                                            if _commit_chat_compaction(_actual_candidate_index):
+                                                _compacted_length = _chat_request_state["context_lengths"].get(
+                                                    _actual_candidate_index,
+                                                    _selected_context_length,
+                                                )
+                                                yield f'data: {json.dumps({"type": "compacted", "context_length": _compacted_length})}\n\n'
+                                            # Reasoning tokens arrive flagged thinking:true.
+                                            # Forward them so the client can show a thinking
+                                            # indicator, but don't fold them into the saved
+                                            # reply (mirrors the rewrite path below).
+                                            if data.get("thinking"):
+                                                thinking_response += data["delta"]
+                                            else:
+                                                full_response += data["delta"]
+                                                _stream_set(session, partial=full_response)
+                                            yield chunk
+                                        elif data.get("type") == "fallback":
+                                            # Selected model failed; a fallback answered.
+                                            # Forward the notice and remember the real model.
+                                            _answered_by = data.get("answered_by") or _answered_by
+                                            _actual_model = _actual_model or _answered_by
+                                            _actual_candidate_index = data.get("candidate_index", 0)
+                                            if not isinstance(_actual_candidate_index, int):
+                                                _actual_candidate_index = 0
+                                            if 0 <= _actual_candidate_index < len(_foreground_route_descriptors):
+                                                _actual_route = _foreground_route_descriptors[_actual_candidate_index]
+                                            if _commit_chat_compaction(_actual_candidate_index):
+                                                _compacted_length = _chat_request_state["context_lengths"].get(
+                                                    _actual_candidate_index,
+                                                    _selected_context_length,
+                                                )
+                                                yield f'data: {json.dumps({"type": "compacted", "context_length": _compacted_length})}\n\n'
+                                            data["selected_model"] = data.get("selected_model") or _requested_model
+                                            yield f'data: {json.dumps(data)}\n\n'
+                                        elif data.get("type") == "model_actual":
+                                            if _commit_chat_compaction(_actual_candidate_index):
+                                                _compacted_length = _chat_request_state["context_lengths"].get(
+                                                    _actual_candidate_index,
+                                                    _selected_context_length,
+                                                )
+                                                yield f'data: {json.dumps({"type": "compacted", "context_length": _compacted_length})}\n\n'
+                                            _actual_model = data.get("model") or _actual_model
+                                            data["requested_model"] = _requested_model
+                                            data["requested_endpoint_id"] = _requested_route.get("endpoint_id")
+                                            data["requested_endpoint_label"] = _requested_route.get("endpoint_label")
+                                            data["endpoint_id"] = _actual_route.get("endpoint_id")
+                                            data["endpoint_label"] = _actual_route.get("endpoint_label")
+                                            yield f'data: {json.dumps(data)}\n\n'
+                                        elif data.get("type") == "usage":
+                                            if _commit_chat_compaction(_actual_candidate_index):
+                                                _compacted_length = _chat_request_state["context_lengths"].get(
+                                                    _actual_candidate_index,
+                                                    _selected_context_length,
+                                                )
+                                                yield f'data: {json.dumps({"type": "compacted", "context_length": _compacted_length})}\n\n'
+                                            last_metrics = data.get("data", {})
+                                            _reported_model = last_metrics.get("model")
+                                            last_metrics["requested_model"] = _requested_model
+                                            last_metrics["model"] = _reported_model or _actual_model or _answered_by or _requested_model
+                                            last_metrics["requested_endpoint_id"] = _requested_route.get("endpoint_id")
+                                            last_metrics["requested_endpoint_label"] = _requested_route.get("endpoint_label")
+                                            last_metrics["endpoint_id"] = _actual_route.get("endpoint_id")
+                                            last_metrics["endpoint_label"] = _actual_route.get("endpoint_label")
+                                            if isinstance(
+                                                _actual_route.get("endpoint_cost_tracked"),
+                                                bool,
+                                            ):
+                                                last_metrics["endpoint_cost_tracked"] = _actual_route.get(
+                                                    "endpoint_cost_tracked"
+                                                )
+                                            _actual_context_length = _chat_request_state["context_lengths"].get(
+                                            _actual_candidate_index,
                                                 _selected_context_length,
                                             )
-                                            yield f'data: {json.dumps({"type": "compacted", "context_length": _compacted_length})}\n\n'
-                                        # Reasoning tokens arrive flagged thinking:true.
-                                        # Forward them so the client can show a thinking
-                                        # indicator, but don't fold them into the saved
-                                        # reply (mirrors the rewrite path below).
-                                        if data.get("thinking"):
-                                            thinking_response += data["delta"]
-                                        else:
-                                            full_response += data["delta"]
-                                            _stream_set(session, partial=full_response)
+                                            _route_trim = _chat_request_state.get("trim_stats", {}).get(
+                                                _actual_candidate_index,
+                                                {},
+                                            )
+                                            if _route_trim and (
+                                                _route_trim.get("messages_after") < _route_trim.get("messages_before")
+                                                or _route_trim.get("tokens_after") < _route_trim.get("tokens_before")
+                                            ):
+                                                last_metrics["context_trimmed"] = True
+                                                last_metrics["context_messages_before_trim"] = _route_trim.get("messages_before")
+                                                last_metrics["context_messages_after_trim"] = _route_trim.get("messages_after")
+                                                last_metrics["context_tokens_before_trim"] = _route_trim.get("tokens_before")
+                                                last_metrics["context_tokens_after_trim"] = _route_trim.get("tokens_after")
+                                            elif ctx.context_trimmed:
+                                                last_metrics["context_trimmed"] = True
+                                                last_metrics["context_messages_before_trim"] = ctx.context_messages_before_trim
+                                                last_metrics["context_messages_after_trim"] = ctx.context_messages_after_trim
+                                                last_metrics["context_tokens_before_trim"] = ctx.context_tokens_before_trim
+                                                last_metrics["context_tokens_after_trim"] = ctx.context_tokens_after_trim
+                                            if _actual_context_length and last_metrics.get("input_tokens"):
+                                                pct = min(round((last_metrics["input_tokens"] / _actual_context_length) * 100, 1), 100.0)
+                                                last_metrics["context_percent"] = pct
+                                                last_metrics["context_length"] = _actual_context_length
+                                            # The frontend reads `tokens_per_second`; the raw usage event
+                                            # carries the backend's true gen speed as `gen_tps` (llama.cpp
+                                            # timings). Map it through so this direct-chat path shows real
+                                            # t/s instead of "n/a" → falling back to a bare token count.
+                                            if last_metrics.get("gen_tps") and not last_metrics.get("tokens_per_second"):
+                                                last_metrics["tokens_per_second"] = last_metrics["gen_tps"]
+                                                last_metrics["tps_source"] = "backend"
+                                            # Wall-clock response time for the stats popup ("Time").
+                                            last_metrics.setdefault("response_time", round(time.time() - _chat_start, 2))
+                                            _exec = _chat_execution_metrics(
+                                                started_monotonic=_chat_start_monotonic,
+                                                finished_monotonic=time.monotonic(),
+                                                queue_wait_s=(locals().get("_admission") or {}).get("waited_s"),
+                                                engine_timings=last_metrics.get("engine_timings"),
+                                                usage_tokens={
+                                                    "prompt": last_metrics.get("input_tokens"),
+                                                    "generated": last_metrics.get("output_tokens"),
+                                                    "source": "reported_engine",
+                                                },
+                                                endpoint_url=sess.endpoint_url,
+                                            )
+                                            if _exec is not None:
+                                                last_metrics["execution"] = _exec
+                                            yield f'data: {json.dumps({"type": "metrics", "data": last_metrics})}\n\n'
+                                    except json.JSONDecodeError:
                                         yield chunk
-                                    elif data.get("type") == "fallback":
-                                        # Selected model failed; a fallback answered.
-                                        # Forward the notice and remember the real model.
-                                        _answered_by = data.get("answered_by") or _answered_by
-                                        _actual_model = _actual_model or _answered_by
-                                        _actual_candidate_index = data.get("candidate_index", 0)
-                                        if not isinstance(_actual_candidate_index, int):
-                                            _actual_candidate_index = 0
-                                        if 0 <= _actual_candidate_index < len(_foreground_route_descriptors):
-                                            _actual_route = _foreground_route_descriptors[_actual_candidate_index]
-                                        if _commit_chat_compaction(_actual_candidate_index):
-                                            _compacted_length = _chat_request_state["context_lengths"].get(
+                                elif chunk.startswith("event: error"):
+                                    logger.warning(f"Stream error for {sess.model} on {sess.endpoint_url}: {chunk!r}")
+                                    if (
+                                        not _chat_terminal_saved
+                                        and (full_response.strip() or thinking_response.strip())
+                                    ):
+                                        _failure_status = _stream_failure_status(chunk)
+                                        _failure_message = (
+                                            f"Model request failed (HTTP {_failure_status})"
+                                            if _failure_status is not None
+                                            else "Model request failed"
+                                        )
+                                        _terminal_content = full_response.strip()
+                                        _failure_note = f"[Response stopped: {_failure_message}]"
+                                        _terminal_content = (
+                                            f"{_terminal_content}\n\n{_failure_note}"
+                                            if _terminal_content
+                                            else _failure_note
+                                        )
+                                        _had_terminal_usage = bool(last_metrics)
+                                        _terminal_metrics = dict(last_metrics or {})
+                                        if not _had_terminal_usage:
+                                            _actual_request_messages = _chat_request_state["requests"].get(
+                                                _actual_candidate_index,
+                                                messages,
+                                            )
+                                            _actual_context_length = _chat_request_state["context_lengths"].get(
                                                 _actual_candidate_index,
                                                 _selected_context_length,
                                             )
-                                            yield f'data: {json.dumps({"type": "compacted", "context_length": _compacted_length})}\n\n'
-                                        data["selected_model"] = data.get("selected_model") or _requested_model
-                                        yield f'data: {json.dumps(data)}\n\n'
-                                    elif data.get("type") == "model_actual":
-                                        if _commit_chat_compaction(_actual_candidate_index):
-                                            _compacted_length = _chat_request_state["context_lengths"].get(
-                                                _actual_candidate_index,
-                                                _selected_context_length,
+                                            _estimated_input = estimate_tokens(_actual_request_messages)
+                                            _estimated_output = max(
+                                                len(full_response + thinking_response) // 4,
+                                                0,
                                             )
-                                            yield f'data: {json.dumps({"type": "compacted", "context_length": _compacted_length})}\n\n'
-                                        _actual_model = data.get("model") or _actual_model
-                                        data["requested_model"] = _requested_model
-                                        data["requested_endpoint_id"] = _requested_route.get("endpoint_id")
-                                        data["requested_endpoint_label"] = _requested_route.get("endpoint_label")
-                                        data["endpoint_id"] = _actual_route.get("endpoint_id")
-                                        data["endpoint_label"] = _actual_route.get("endpoint_label")
-                                        yield f'data: {json.dumps(data)}\n\n'
-                                    elif data.get("type") == "usage":
-                                        if _commit_chat_compaction(_actual_candidate_index):
-                                            _compacted_length = _chat_request_state["context_lengths"].get(
-                                                _actual_candidate_index,
-                                                _selected_context_length,
+                                            _terminal_metrics.update({
+                                                "input_tokens": _estimated_input,
+                                                "output_tokens": _estimated_output,
+                                                "total_tokens": _estimated_input + _estimated_output,
+                                                "usage_source": "estimated",
+                                                "response_time": round(time.time() - _chat_start, 2),
+                                                "context_length": _actual_context_length,
+                                                "context_percent": (
+                                                    min(
+                                                        round(
+                                                            (_estimated_input / _actual_context_length) * 100,
+                                                            1,
+                                                        ),
+                                                        100.0,
+                                                    )
+                                                    if _actual_context_length
+                                                    else 0
+                                                ),
+                                            })
+                                        _terminal_metrics.update({
+                                            "failed": True,
+                                            "failure": {
+                                                "status": _failure_status,
+                                                "message": _failure_message,
+                                            },
+                                            "model": _actual_model or _answered_by or _requested_model,
+                                            "requested_model": _requested_model,
+                                            "endpoint_id": _actual_route.get("endpoint_id"),
+                                            "endpoint_label": _actual_route.get("endpoint_label"),
+                                            "requested_endpoint_id": _requested_route.get("endpoint_id"),
+                                            "requested_endpoint_label": _requested_route.get("endpoint_label"),
+                                        })
+                                        if isinstance(
+                                            _actual_route.get("endpoint_cost_tracked"),
+                                            bool,
+                                        ):
+                                            _terminal_metrics["endpoint_cost_tracked"] = _actual_route.get(
+                                                "endpoint_cost_tracked"
                                             )
-                                            yield f'data: {json.dumps({"type": "compacted", "context_length": _compacted_length})}\n\n'
-                                        last_metrics = data.get("data", {})
-                                        _reported_model = last_metrics.get("model")
-                                        last_metrics["requested_model"] = _requested_model
-                                        last_metrics["model"] = _reported_model or _actual_model or _answered_by or _requested_model
-                                        last_metrics["requested_endpoint_id"] = _requested_route.get("endpoint_id")
-                                        last_metrics["requested_endpoint_label"] = _requested_route.get("endpoint_label")
-                                        last_metrics["endpoint_id"] = _actual_route.get("endpoint_id")
-                                        last_metrics["endpoint_label"] = _actual_route.get("endpoint_label")
+                                        if thinking_response.strip():
+                                            _terminal_metrics["thinking"] = thinking_response.strip()
+                                        # INF-03/T07: a stream cut mid-turn. Whatever
+                                        # phases the engine reported before the cut
+                                        # (if any `usage` event ever arrived) still
+                                        # count; an estimated token count is `computed`,
+                                        # never disguised as `reported_engine`.
+                                        _exec = _chat_execution_metrics(
+                                            started_monotonic=_chat_start_monotonic,
+                                            finished_monotonic=time.monotonic(),
+                                            queue_wait_s=(locals().get("_admission") or {}).get("waited_s"),
+                                            engine_timings=_terminal_metrics.get("engine_timings"),
+                                            usage_tokens={
+                                                "prompt": _terminal_metrics.get("input_tokens"),
+                                                "generated": _terminal_metrics.get("output_tokens"),
+                                                "source": "reported_engine" if _had_terminal_usage else "computed",
+                                            },
+                                            endpoint_url=sess.endpoint_url,
+                                        )
+                                        if _exec is not None:
+                                            _terminal_metrics["execution"] = _exec
+                                        _commit_chat_compaction(_actual_candidate_index)
+                                        _saved_id = save_assistant_response(
+                                            sess,
+                                            session_manager,
+                                            session,
+                                            _terminal_content,
+                                            _terminal_metrics,
+                                            character_name=ctx.preset.character_name,
+                                            incognito=incognito,
+                                            wires=getattr(ctx, "side_thread_wires", None),
+                                            behavior_mode=getattr(ctx, "behavior_mode", None),
+                                        )
+                                        accumulate_token_usage(session, _terminal_metrics)
+                                        _chat_terminal_saved = True
+                                        _stream_set(session, status="error")
+                                        if _saved_id:
+                                            yield f'data: {json.dumps({"type": "message_saved", "id": _saved_id})}\n\n'
+                                        yield f'data: {json.dumps({"type": "chat_terminal", "data": _terminal_metrics})}\n\n'
+                                    yield chunk
+                                elif chunk.startswith("event: "):
+                                    yield chunk
+                                elif chunk == "data: [DONE]\n\n":
+                                    if _chat_terminal_saved:
+                                        # Some providers append DONE after a terminal
+                                        # error.  The failed partial is already saved;
+                                        # never re-save/post-process it as a success or
+                                        # advertise successful completion to the client.
+                                        continue
+                                    _chat_got_done = True
+                                    # Generate fallback metrics if LLM didn't send usage
+                                    if not last_metrics and full_response:
+                                        _elapsed = time.time() - _chat_start
+                                        _est_out = len(full_response) // 4
+                                        _tps = round(_est_out / _elapsed, 2) if _elapsed > 0 else 0
+                                        _actual_context_length = _chat_request_state["context_lengths"].get(
+                                            _actual_candidate_index,
+                                            _selected_context_length,
+                                        )
+                                        _actual_request_messages = _chat_request_state["requests"].get(
+                                            _actual_candidate_index,
+                                            messages,
+                                        )
+                                        _est_in = estimate_tokens(_actual_request_messages)
+                                        _ctx_pct = min(round((_est_in / _actual_context_length) * 100, 1), 100.0) if _actual_context_length else 0
+                                        last_metrics = {
+                                            "response_time": round(_elapsed, 2),
+                                            "input_tokens": _est_in,
+                                            "output_tokens": _est_out,
+                                            "tokens_per_second": _tps,
+                                            "request_context_tokens": _est_in,
+                                            "context_percent": _ctx_pct,
+                                            "context_length": _actual_context_length,
+                                            "model": _actual_model or _answered_by or _requested_model,
+                                            "requested_model": _requested_model,
+                                            "requested_endpoint_id": _requested_route.get("endpoint_id"),
+                                            "requested_endpoint_label": _requested_route.get("endpoint_label"),
+                                            "endpoint_id": _actual_route.get("endpoint_id"),
+                                            "endpoint_label": _actual_route.get("endpoint_label"),
+                                            "usage_source": "estimated",
+                                        }
                                         if isinstance(
                                             _actual_route.get("endpoint_cost_tracked"),
                                             bool,
@@ -3305,270 +3523,94 @@ def setup_chat_routes(
                                             last_metrics["endpoint_cost_tracked"] = _actual_route.get(
                                                 "endpoint_cost_tracked"
                                             )
-                                        _actual_context_length = _chat_request_state["context_lengths"].get(
-                                        _actual_candidate_index,
-                                            _selected_context_length,
-                                        )
-                                        _route_trim = _chat_request_state.get("trim_stats", {}).get(
-                                            _actual_candidate_index,
-                                            {},
-                                        )
-                                        if _route_trim and (
-                                            _route_trim.get("messages_after") < _route_trim.get("messages_before")
-                                            or _route_trim.get("tokens_after") < _route_trim.get("tokens_before")
-                                        ):
-                                            last_metrics["context_trimmed"] = True
-                                            last_metrics["context_messages_before_trim"] = _route_trim.get("messages_before")
-                                            last_metrics["context_messages_after_trim"] = _route_trim.get("messages_after")
-                                            last_metrics["context_tokens_before_trim"] = _route_trim.get("tokens_before")
-                                            last_metrics["context_tokens_after_trim"] = _route_trim.get("tokens_after")
-                                        elif ctx.context_trimmed:
-                                            last_metrics["context_trimmed"] = True
-                                            last_metrics["context_messages_before_trim"] = ctx.context_messages_before_trim
-                                            last_metrics["context_messages_after_trim"] = ctx.context_messages_after_trim
-                                            last_metrics["context_tokens_before_trim"] = ctx.context_tokens_before_trim
-                                            last_metrics["context_tokens_after_trim"] = ctx.context_tokens_after_trim
-                                        if _actual_context_length and last_metrics.get("input_tokens"):
-                                            pct = min(round((last_metrics["input_tokens"] / _actual_context_length) * 100, 1), 100.0)
-                                            last_metrics["context_percent"] = pct
-                                            last_metrics["context_length"] = _actual_context_length
-                                        # The frontend reads `tokens_per_second`; the raw usage event
-                                        # carries the backend's true gen speed as `gen_tps` (llama.cpp
-                                        # timings). Map it through so this direct-chat path shows real
-                                        # t/s instead of "n/a" → falling back to a bare token count.
-                                        if last_metrics.get("gen_tps") and not last_metrics.get("tokens_per_second"):
-                                            last_metrics["tokens_per_second"] = last_metrics["gen_tps"]
-                                            last_metrics["tps_source"] = "backend"
-                                        # Wall-clock response time for the stats popup ("Time").
-                                        last_metrics.setdefault("response_time", round(time.time() - _chat_start, 2))
+                                        # INF-03: this whole branch only runs when the
+                                        # engine never sent a `usage` event at all —
+                                        # every token count above is `computed` (an
+                                        # estimate), never `reported_engine`.
                                         _exec = _chat_execution_metrics(
                                             started_monotonic=_chat_start_monotonic,
                                             finished_monotonic=time.monotonic(),
                                             queue_wait_s=(locals().get("_admission") or {}).get("waited_s"),
-                                            engine_timings=last_metrics.get("engine_timings"),
+                                            engine_timings=None,
                                             usage_tokens={
-                                                "prompt": last_metrics.get("input_tokens"),
-                                                "generated": last_metrics.get("output_tokens"),
-                                                "source": "reported_engine",
+                                                "prompt": _est_in, "generated": _est_out,
+                                                "source": "computed",
                                             },
                                             endpoint_url=sess.endpoint_url,
                                         )
                                         if _exec is not None:
                                             last_metrics["execution"] = _exec
                                         yield f'data: {json.dumps({"type": "metrics", "data": last_metrics})}\n\n'
-                                except json.JSONDecodeError:
-                                    yield chunk
-                            elif chunk.startswith("event: error"):
-                                logger.warning(f"Stream error for {sess.model} on {sess.endpoint_url}: {chunk!r}")
-                                if (
-                                    not _chat_terminal_saved
-                                    and (full_response.strip() or thinking_response.strip())
-                                ):
-                                    _failure_status = _stream_failure_status(chunk)
-                                    _failure_message = (
-                                        f"Model request failed (HTTP {_failure_status})"
-                                        if _failure_status is not None
-                                        else "Model request failed"
-                                    )
-                                    _terminal_content = full_response.strip()
-                                    _failure_note = f"[Response stopped: {_failure_message}]"
-                                    _terminal_content = (
-                                        f"{_terminal_content}\n\n{_failure_note}"
-                                        if _terminal_content
-                                        else _failure_note
-                                    )
-                                    _had_terminal_usage = bool(last_metrics)
-                                    _terminal_metrics = dict(last_metrics or {})
-                                    if not _had_terminal_usage:
-                                        _actual_request_messages = _chat_request_state["requests"].get(
-                                            _actual_candidate_index,
-                                            messages,
+                                    if full_response:
+                                        _commit_chat_compaction(_actual_candidate_index)
+                                        _metrics_to_save = dict(last_metrics or {})
+                                        if thinking_response.strip() and not _metrics_to_save.get("thinking"):
+                                            _metrics_to_save["thinking"] = thinking_response.strip()
+                                        _saved_id = save_assistant_response(
+                                            sess, session_manager, session, full_response, _metrics_to_save,
+                                            character_name=ctx.preset.character_name,
+                                            web_sources=web_sources,
+                                            rag_sources=ctx.rag_sources,
+                                            research_sources=research_sources,
+                                            used_memories=ctx.used_memories,
+                                            do_research=effective_do_research,
+                                            incognito=incognito,
+                                            wires=getattr(ctx, "side_thread_wires", None),
+                                            behavior_mode=getattr(ctx, "behavior_mode", None),
                                         )
-                                        _actual_context_length = _chat_request_state["context_lengths"].get(
-                                            _actual_candidate_index,
-                                            _selected_context_length,
-                                        )
-                                        _estimated_input = estimate_tokens(_actual_request_messages)
-                                        _estimated_output = max(
-                                            len(full_response + thinking_response) // 4,
-                                            0,
-                                        )
-                                        _terminal_metrics.update({
-                                            "input_tokens": _estimated_input,
-                                            "output_tokens": _estimated_output,
-                                            "total_tokens": _estimated_input + _estimated_output,
-                                            "usage_source": "estimated",
-                                            "response_time": round(time.time() - _chat_start, 2),
-                                            "context_length": _actual_context_length,
-                                            "context_percent": (
-                                                min(
-                                                    round(
-                                                        (_estimated_input / _actual_context_length) * 100,
-                                                        1,
-                                                    ),
-                                                    100.0,
-                                                )
-                                                if _actual_context_length
-                                                else 0
+                                        if _saved_id:
+                                            yield f'data: {json.dumps({"type": "message_saved", "id": _saved_id})}\n\n'
+                                        run_post_response_tasks(
+                                            sess, session_manager, session, message, full_response,
+                                            _metrics_to_save, ctx.uprefs, memory_manager, memory_vector, webhook_manager,
+                                            incognito=incognito, compare_mode=compare_mode,
+                                            character_name=ctx.preset.character_name,
+                                            owner=_user,
+                                            allow_background_extraction=(
+                                                not tool_policy.block_all_tool_calls
+                                                and not tool_approval_continuation
                                             ),
-                                        })
-                                    _terminal_metrics.update({
-                                        "failed": True,
-                                        "failure": {
-                                            "status": _failure_status,
-                                            "message": _failure_message,
-                                        },
-                                        "model": _actual_model or _answered_by or _requested_model,
-                                        "requested_model": _requested_model,
-                                        "endpoint_id": _actual_route.get("endpoint_id"),
-                                        "endpoint_label": _actual_route.get("endpoint_label"),
-                                        "requested_endpoint_id": _requested_route.get("endpoint_id"),
-                                        "requested_endpoint_label": _requested_route.get("endpoint_label"),
-                                    })
-                                    if isinstance(
-                                        _actual_route.get("endpoint_cost_tracked"),
-                                        bool,
-                                    ):
-                                        _terminal_metrics["endpoint_cost_tracked"] = _actual_route.get(
-                                            "endpoint_cost_tracked"
                                         )
-                                    if thinking_response.strip():
-                                        _terminal_metrics["thinking"] = thinking_response.strip()
-                                    # INF-03/T07: a stream cut mid-turn. Whatever
-                                    # phases the engine reported before the cut
-                                    # (if any `usage` event ever arrived) still
-                                    # count; an estimated token count is `computed`,
-                                    # never disguised as `reported_engine`.
-                                    _exec = _chat_execution_metrics(
-                                        started_monotonic=_chat_start_monotonic,
-                                        finished_monotonic=time.monotonic(),
-                                        queue_wait_s=(locals().get("_admission") or {}).get("waited_s"),
-                                        engine_timings=_terminal_metrics.get("engine_timings"),
-                                        usage_tokens={
-                                            "prompt": _terminal_metrics.get("input_tokens"),
-                                            "generated": _terminal_metrics.get("output_tokens"),
-                                            "source": "reported_engine" if _had_terminal_usage else "computed",
-                                        },
-                                        endpoint_url=sess.endpoint_url,
-                                    )
-                                    if _exec is not None:
-                                        _terminal_metrics["execution"] = _exec
-                                    _commit_chat_compaction(_actual_candidate_index)
-                                    _saved_id = save_assistant_response(
-                                        sess,
-                                        session_manager,
-                                        session,
-                                        _terminal_content,
-                                        _terminal_metrics,
-                                        character_name=ctx.preset.character_name,
-                                        incognito=incognito,
-                                        wires=getattr(ctx, "side_thread_wires", None),
-                                        behavior_mode=getattr(ctx, "behavior_mode", None),
-                                    )
-                                    accumulate_token_usage(session, _terminal_metrics)
-                                    _chat_terminal_saved = True
-                                    _stream_set(session, status="error")
-                                    if _saved_id:
-                                        yield f'data: {json.dumps({"type": "message_saved", "id": _saved_id})}\n\n'
-                                    yield f'data: {json.dumps({"type": "chat_terminal", "data": _terminal_metrics})}\n\n'
-                                yield chunk
-                            elif chunk.startswith("event: "):
-                                yield chunk
-                            elif chunk == "data: [DONE]\n\n":
-                                if _chat_terminal_saved:
-                                    # Some providers append DONE after a terminal
-                                    # error.  The failed partial is already saved;
-                                    # never re-save/post-process it as a success or
-                                    # advertise successful completion to the client.
+                                    _stream_set(session, status="done")
+                                    yield chunk
+                            if not _chat_got_done:
+                                _live_steers = agent_runs.take_steers(session)
+                                if _live_steers:
+                                    if full_response.strip():
+                                        messages.append({"role": "assistant", "content": full_response})
+                                        if not incognito:
+                                            sess.add_message(ChatMessage(
+                                                "assistant", full_response,
+                                                metadata={
+                                                    "interrupted": True, "steer": True,
+                                                    "model": _actual_model or _answered_by or _requested_model,
+                                                },
+                                            ))
+                                    for _st in _live_steers:
+                                        _st_text = (
+                                            str((_st or {}).get("text") or "").strip()
+                                            if isinstance(_st, dict) else str(_st or "").strip()
+                                        )
+                                        if not _st_text:
+                                            continue
+                                        messages.append({"role": "user", "content": _st_text})
+                                        if not incognito:
+                                            sess.add_message(ChatMessage("user", _st_text, metadata={"steer": True}))
+                                        yield "data: " + json.dumps({
+                                            "type": "steer", "text": _st_text,
+                                            "source": "user" if not (isinstance(_st, dict) and _st.get("source") == "supervisor") else "supervisor",
+                                            "interrupt": True,
+                                        }) + "\n\n"
+                                    if not incognito:
+                                        try:
+                                            session_manager.save_sessions()
+                                        except Exception:
+                                            logger.debug("steer persist failed", exc_info=True)
+                                    full_response = ""
+                                    thinking_response = ""
+                                    last_metrics = {}
                                     continue
-                                # Generate fallback metrics if LLM didn't send usage
-                                if not last_metrics and full_response:
-                                    _elapsed = time.time() - _chat_start
-                                    _est_out = len(full_response) // 4
-                                    _tps = round(_est_out / _elapsed, 2) if _elapsed > 0 else 0
-                                    _actual_context_length = _chat_request_state["context_lengths"].get(
-                                        _actual_candidate_index,
-                                        _selected_context_length,
-                                    )
-                                    _actual_request_messages = _chat_request_state["requests"].get(
-                                        _actual_candidate_index,
-                                        messages,
-                                    )
-                                    _est_in = estimate_tokens(_actual_request_messages)
-                                    _ctx_pct = min(round((_est_in / _actual_context_length) * 100, 1), 100.0) if _actual_context_length else 0
-                                    last_metrics = {
-                                        "response_time": round(_elapsed, 2),
-                                        "input_tokens": _est_in,
-                                        "output_tokens": _est_out,
-                                        "tokens_per_second": _tps,
-                                        "request_context_tokens": _est_in,
-                                        "context_percent": _ctx_pct,
-                                        "context_length": _actual_context_length,
-                                        "model": _actual_model or _answered_by or _requested_model,
-                                        "requested_model": _requested_model,
-                                        "requested_endpoint_id": _requested_route.get("endpoint_id"),
-                                        "requested_endpoint_label": _requested_route.get("endpoint_label"),
-                                        "endpoint_id": _actual_route.get("endpoint_id"),
-                                        "endpoint_label": _actual_route.get("endpoint_label"),
-                                        "usage_source": "estimated",
-                                    }
-                                    if isinstance(
-                                        _actual_route.get("endpoint_cost_tracked"),
-                                        bool,
-                                    ):
-                                        last_metrics["endpoint_cost_tracked"] = _actual_route.get(
-                                            "endpoint_cost_tracked"
-                                        )
-                                    # INF-03: this whole branch only runs when the
-                                    # engine never sent a `usage` event at all —
-                                    # every token count above is `computed` (an
-                                    # estimate), never `reported_engine`.
-                                    _exec = _chat_execution_metrics(
-                                        started_monotonic=_chat_start_monotonic,
-                                        finished_monotonic=time.monotonic(),
-                                        queue_wait_s=(locals().get("_admission") or {}).get("waited_s"),
-                                        engine_timings=None,
-                                        usage_tokens={
-                                            "prompt": _est_in, "generated": _est_out,
-                                            "source": "computed",
-                                        },
-                                        endpoint_url=sess.endpoint_url,
-                                    )
-                                    if _exec is not None:
-                                        last_metrics["execution"] = _exec
-                                    yield f'data: {json.dumps({"type": "metrics", "data": last_metrics})}\n\n'
-                                if full_response:
-                                    _commit_chat_compaction(_actual_candidate_index)
-                                    _metrics_to_save = dict(last_metrics or {})
-                                    if thinking_response.strip() and not _metrics_to_save.get("thinking"):
-                                        _metrics_to_save["thinking"] = thinking_response.strip()
-                                    _saved_id = save_assistant_response(
-                                        sess, session_manager, session, full_response, _metrics_to_save,
-                                        character_name=ctx.preset.character_name,
-                                        web_sources=web_sources,
-                                        rag_sources=ctx.rag_sources,
-                                        research_sources=research_sources,
-                                        used_memories=ctx.used_memories,
-                                        do_research=effective_do_research,
-                                        incognito=incognito,
-                                        wires=getattr(ctx, "side_thread_wires", None),
-                                        behavior_mode=getattr(ctx, "behavior_mode", None),
-                                    )
-                                    if _saved_id:
-                                        yield f'data: {json.dumps({"type": "message_saved", "id": _saved_id})}\n\n'
-                                    run_post_response_tasks(
-                                        sess, session_manager, session, message, full_response,
-                                        _metrics_to_save, ctx.uprefs, memory_manager, memory_vector, webhook_manager,
-                                        incognito=incognito, compare_mode=compare_mode,
-                                        character_name=ctx.preset.character_name,
-                                        owner=_user,
-                                        allow_background_extraction=(
-                                            not tool_policy.block_all_tool_calls
-                                            and not tool_approval_continuation
-                                        ),
-                                    )
-                                _stream_set(session, status="done")
-                                yield chunk
+                            break
                     except (asyncio.CancelledError, GeneratorExit):
                         if full_response and not incognito:
                             logger.info("Client disconnected mid-stream (chat mode) for session %s, saving partial (%d chars)", session, len(full_response))
@@ -3850,7 +3892,32 @@ def setup_chat_routes(
                                         # and yielded by the loop but silently
                                         # dropped right here, never reaching the UI.
                                         "capabilities_changed",
+                                        # UX-04: live steer / pause of the main turn.
+                                        # `steer` is also persisted as a user message
+                                        # so the transcript keeps it after reload.
+                                        "steer",
+                                        "paused",
                                     ):
+                                        if data.get("type") == "steer":
+                                            _st_text = str(data.get("text") or "").strip()
+                                            if _st_text and not incognito:
+                                                if data.get("interrupt") and full_response.strip():
+                                                    sess.add_message(ChatMessage(
+                                                        "assistant", full_response,
+                                                        metadata={
+                                                            "interrupted": True, "steer": True,
+                                                            "model": _actual_model or _answered_by or _requested_model,
+                                                        },
+                                                    ))
+                                                    full_response = ""
+                                                    thinking_response = ""
+                                                sess.add_message(ChatMessage(
+                                                    "user", _st_text, metadata={"steer": True},
+                                                ))
+                                                try:
+                                                    session_manager.save_sessions()
+                                                except Exception:
+                                                    logger.debug("steer persist failed", exc_info=True)
                                         if data.get("type") == "agent_step":
                                             _event_round = data.get("round", 1)
                                             _agent_rounds = max(_agent_rounds, _event_round)

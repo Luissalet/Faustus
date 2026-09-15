@@ -233,11 +233,89 @@ def test_loop_injects_queued_steer_before_the_next_round(tmp_path, monkeypatch):
     r1_user = [m for m in seen_requests[0] if m.get("role") == "user" and "write the test now" in str(m.get("content"))]
     r2_user = [m for m in seen_requests[1] if m.get("role") == "user" and "write the test now" in str(m.get("content"))]
     assert not r1_user and len(r2_user) == 1
-    assert "Steering" in r2_user[0]["content"] and "user" in r2_user[0]["content"]
+    assert r2_user[0]["content"] == "Stop reading, write the test now."
+    assert steer[0].get("interrupt") is False
     actionable = [m for m in seen_requests[1]
                   if m.get("_agent_injected") != "reply_language_continuity"]
     assert "write the test now" in str(actionable[-1].get("content"))
     reminders = [m for m in seen_requests[1]
                  if m.get("_agent_injected") == "reply_language_continuity"]
     assert len(reminders) == 1 and "English" in reminders[0]["content"]
+    assert queue == []
+
+
+def test_apply_steers_appends_plain_user_messages():
+    """A steer is a conversation turn, not a wrapped system note."""
+    import src.agent_loop as al
+
+    messages = [{"role": "user", "content": "Explain a.py"}]
+    events, texts, hint, plan, affected = al._apply_steers_to_messages(
+        messages, [{"text": "Use pytest, not unittest.", "source": "user"}],
+        round_num=2, interrupt=False,
+    )
+    assert messages[-1]["role"] == "user"
+    assert messages[-1]["content"] == "Use pytest, not unittest."
+    assert texts == ["Use pytest, not unittest."]
+    assert events[0]["type"] == "steer"
+    assert events[0]["text"] == "Use pytest, not unittest."
+    assert events[0]["source"] == "user"
+    assert events[0]["round"] == 2
+    assert events[0]["interrupt"] is False
+    assert plan is None and affected == []
+
+
+def test_loop_aborts_generation_when_steer_arrives_mid_stream(tmp_path, monkeypatch):
+    """A steer queued while tokens are still arriving must stop that
+    completion, keep the partial, and call the model again with the user's
+    message in the conversation — Cursor/ChatGPT steer, not 'wait for the
+    next round'."""
+    import src.agent_loop as al
+    from tests.test_agent_harness_loop import _patch_common, _collect, _events
+
+    _patch_common(monkeypatch)
+    seen_requests = []
+    queue = []
+    leftover = {"emitted": False}
+
+    async def _fake_stream(_candidates, messages, **kwargs):
+        seen_requests.append([dict(m) for m in messages])
+        if len(seen_requests) == 1:
+            queue.append({"text": "Use pytest, not unittest.", "source": "user"})
+            yield f'data: {json.dumps({"delta": "I will start by reading everything"})}\n\n'
+            leftover["emitted"] = True
+            yield f'data: {json.dumps({"delta": " and then rewrite the whole suite"})}\n\n'
+            yield f'data: {json.dumps({"type": "finish", "finish_reason": "stop"})}\n\n'
+        else:
+            yield f'data: {json.dumps({"delta": "Switching to pytest now."})}\n\n'
+            yield f'data: {json.dumps({"type": "finish", "finish_reason": "stop"})}\n\n'
+        yield "data: [DONE]\n\n"
+    monkeypatch.setattr(al, "stream_llm_with_fallback", _fake_stream, raising=False)
+
+    def _pending():
+        out, queue[:] = list(queue), []
+        return out
+
+    gen = al.stream_agent_loop(
+        "http://127.0.0.1:11434/v1", "qwen3-coder:30b",
+        [{"role": "user", "content": "Write the tests"}],
+        max_rounds=4, relevant_tools={"read_file"}, workspace=str(tmp_path),
+        pending_user_messages=_pending,
+    )
+    events = _events(_collect(gen))
+    deltas = "".join(e.get("delta") or "" for e in events)
+    assert "I will start by reading everything" in deltas
+    assert "rewrite the whole suite" not in deltas
+    assert leftover["emitted"] is False
+    steer = [e for e in events if e.get("type") == "steer"]
+    assert len(steer) == 1
+    assert steer[0]["text"] == "Use pytest, not unittest."
+    assert steer[0]["interrupt"] is True
+    assert "Switching to pytest now." in deltas
+    assert len(seen_requests) >= 2
+    r2_user = [m for m in seen_requests[1]
+               if m.get("role") == "user" and "pytest" in str(m.get("content"))]
+    assert len(r2_user) == 1
+    assert r2_user[0]["content"] == "Use pytest, not unittest."
+    r2_asst = [m for m in seen_requests[1] if m.get("role") == "assistant"]
+    assert r2_asst and "I will start by reading everything" in str(r2_asst[-1].get("content"))
     assert queue == []

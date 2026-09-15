@@ -287,6 +287,8 @@ def test_empty_final_candidate_surfaces_terminal_error(monkeypatch):
     assert len(errors) == 1
     assert "All model candidates returned no substantive output" in errors[0]
     assert '"status": 502' in errors[0]
+    assert '"error_class": "generation.empty_completion"' in errors[0]
+    assert llm_core.is_empty_completion_error(json.loads(errors[0].split("data: ", 1)[1]))
 
 
 def test_explicit_foreground_policy_falls_back_on_availability_error(monkeypatch):

@@ -101,7 +101,10 @@ function AttentionFacts({ run }: { run: ActivityRun }) {
  * ACT-03: answers an open `ask_user` question straight from the tray —
  * one click per option, a checklist with "Send" when several may apply
  * (`multi`), and always a line for a free-text answer, the same three ways
- * `QuestionCard` (Transcript.tsx) offers on the live card. Deliberately its
+ * `QuestionCard` (Transcript.tsx) offers on the live card. Options are
+ * stacked wrapping cards (label + description), never nowrap buttons: a
+ * permission prompt with a long consequence must stay inside the pane.
+ * Deliberately its
  * own small local `picked`/`own` state (mirroring `QuestionCard`'s), reset
  * per question by the `key={questionId}` the caller passes — answering one
  * question must never leave the next one pre-filled with the last one's pick.
@@ -131,26 +134,32 @@ function QuestionAnswerPanel({
       <p className="fs-prose">{question.question}</p>
       {question.expiresAt && <p className="fs-act__hint">{t('Expires {time}', { time: relativeTime(question.expiresAt) })}</p>}
       {question.options.length > 0 && !question.multi && (
-        <div className="fs-act__actions" role="group" data-testid="activity-question-options">
+        <div className="fs-act__options" role="group" data-testid="activity-question-options">
           {question.options.map((option) => (
-            <Button
+            <button
               key={option.label}
-              size="sm"
-              label={option.description ? `${option.label} — ${option.description}` : option.label}
+              type="button"
+              className="fs-act__option"
               disabled={busy}
               onClick={() => onAnswer(option.label, option.id ? [option.id] : undefined)}
-              testId="activity-question-option"
-            />
+              data-testid="activity-question-option"
+            >
+              <span className="fs-act__option-label">{option.label}</span>
+              {option.description && <span className="fs-act__option-desc">{option.description}</span>}
+            </button>
           ))}
         </div>
       )}
       {question.options.length > 0 && question.multi && (
         <>
-          <div className="fs-act__actions" role="group" data-testid="activity-question-options">
+          <div className="fs-act__options" role="group" data-testid="activity-question-options">
             {question.options.map((option) => (
-              <label key={option.label} className="fs-act__field" data-testid="activity-question-check">
+              <label key={option.label} className="fs-act__option" data-checked={picked.includes(option.label) || undefined} data-testid="activity-question-check">
                 <input type="checkbox" checked={picked.includes(option.label)} disabled={busy} onChange={() => toggle(option.label)} />
-                <span>{option.description ? `${option.label} — ${option.description}` : option.label}</span>
+                <span>
+                  <span className="fs-act__option-label">{option.label}</span>
+                  {option.description && <span className="fs-act__option-desc">{option.description}</span>}
+                </span>
               </label>
             ))}
           </div>

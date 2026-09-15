@@ -26,6 +26,7 @@ from src.llm_core import (
     _is_ollama_native_url,
     _normalize_http_status,
     _normalize_usage_counts,
+    is_empty_completion_error,
     is_reference_context_echo,
     strip_reference_context_echo,
 )
@@ -3034,6 +3035,24 @@ def _looks_like_success_claim(text: str) -> bool:
     return bool(_FAKE_SUCCESS_RE.search(text or ""))
 
 
+# Local models parrot stop-event names they see in prompts or prior turns.
+# Keep this matcher off the prompt itself: naming the forbidden phrase there
+# is how a 27B copies it as the answer (see local_model_policy).
+_BUDGET_STOP_CLAIM_RE = re.compile(
+    r"(?:budget[_\s-]*exhausted|ran\s+out\s+of\s+budget|"
+    r"presupuesto\s+agotado|se\s+qued[oó]\s+sin\s+presupuesto)",
+    re.IGNORECASE,
+)
+
+
+def _looks_like_budget_exhausted_stop(text: str) -> bool:
+    """Short text-only stop claim that is not a real local-runtime ending."""
+    body = (text or "").strip()
+    if not body or len(body) > 240:
+        return False
+    return bool(_BUDGET_STOP_CLAIM_RE.search(body))
+
+
 _DOC_TOOL_TRUNCATED_FENCE_RE = re.compile(
     r"```(create|update|edit|edi|suggest)_documen(?!t)(?=\s|\n|```)",
     re.IGNORECASE,
@@ -5041,6 +5060,77 @@ def _apply_steer_to_plan_update(
     return new_payload, affected
 
 
+def _take_pending_steers(
+    pending_user_messages: Optional[Callable[[], List[Dict[str, Any]]]],
+) -> List[Dict[str, Any]]:
+    if pending_user_messages is None:
+        return []
+    try:
+        return list(pending_user_messages() or [])
+    except Exception as err:
+        logger.debug("[steer] queue read failed: %s", err)
+        return []
+
+
+def _steer_entry_text(steer: Any) -> str:
+    if isinstance(steer, dict):
+        return str(steer.get("text") or "").strip()
+    return str(steer or "").strip()
+
+
+def _steer_entry_source(steer: Any) -> str:
+    if isinstance(steer, dict) and steer.get("source") == "supervisor":
+        return "supervisor"
+    return "user"
+
+
+def _apply_steers_to_messages(
+    messages: List[Dict[str, Any]],
+    steers: List[Any],
+    round_num: int = 1,
+    *,
+    interrupt: bool = False,
+    reply_language_hint: Optional[Dict[str, Any]] = None,
+    latest_plan_update: Optional[Dict[str, Any]] = None,
+) -> Tuple[List[Dict[str, Any]], List[str], Optional[Dict[str, Any]], Optional[Dict[str, Any]], List[str]]:
+    """Append each steer as a plain user turn (Cursor/ChatGPT) and build SSE payloads.
+
+    Mutates ``messages``. A steer is the user's own words, not a wrapped
+    system note — the next model call sees it as conversation.
+    """
+    try:
+        from src.reply_language import context_message as _turn_language
+    except Exception:  # noqa: BLE001 - language hint is optional
+        _turn_language = lambda _m: None  # type: ignore[misc,assignment]
+    events: List[Dict[str, Any]] = []
+    texts: List[str] = []
+    hint = reply_language_hint
+    for steer in steers or []:
+        text = _steer_entry_text(steer)
+        if not text:
+            continue
+        source = _steer_entry_source(steer)
+        if source == "user":
+            try:
+                hint = _turn_language([{"role": "user", "content": text}]) or hint
+            except Exception:  # noqa: BLE001
+                pass
+        messages.append({"role": "user", "content": text})
+        events.append({
+            "type": "steer",
+            "round": round_num,
+            "text": text[:4000],
+            "source": source,
+            "interrupt": bool(interrupt),
+        })
+        texts.append(text)
+    plan = latest_plan_update
+    affected: List[str] = []
+    if texts and latest_plan_update:
+        plan, affected = _apply_steer_to_plan_update(latest_plan_update, texts)
+    return events, texts, hint, plan, affected
+
+
 def _build_actions_snapshot(tool_events: list, limit: int = 8000) -> str:
     """Compact record of what the agent actually did this turn, for the
     verifier to judge against. One block per tool execution: the command and
@@ -5260,10 +5350,15 @@ async def _stream_agent_loop_body(
     (chat model controls); it disables the local-model agent temperature cap.
     ``gen_overrides`` carries extra sampling params (top_p, think, ...) that
     llm_core forwards to the provider.
-    ``pending_user_messages`` (optional, sync): called at the start of every
-    round; each ``{"text", "source"}`` it returns is appended as a ``user``
-    message before the model is called and announced with a ``steer`` event.
-    This is how a delegate_agents worker is steered mid-task.
+    ``pending_user_messages`` (optional, sync): drained at the start of every
+    round AND while a completion is streaming. Each ``{"text", "source"}`` is
+    appended as a plain ``user`` message and announced with a ``steer`` event.
+    A steer that lands mid-generation aborts that completion (keeping the
+    partial as an assistant turn) so the next call already has the user's
+    words — Cursor/ChatGPT steer, not "wait for the next tool round".
+    During a tool call the drain waits for the next round, so a write is
+    never cut off. This is how the main session and a delegate_agents
+    worker are steered mid-task.
     ``pending_pause`` (UX-04, optional, sync): checked right after
     ``pending_user_messages`` at the same safe point (top of a round, between
     rounds — never mid tool call or mid write). Returning True ends the turn
@@ -5276,9 +5371,11 @@ async def _stream_agent_loop_body(
     ``"bounded_autonomous"`` or ``"read_only"`` — see ``src/autonomy_budget.py``.
     Resolves a six-dimension :class:`~src.autonomy_budget.Budget` for this
     turn; ``read_only`` additionally removes every tool whose effects are not
-    read-only from what is offered AND executable this turn. Reaching any
-    dimension ends the turn with a ``budget_exhausted`` event and a
-    checkpoint, same as running out of rounds.
+    read-only from what is offered AND executable this turn. On a remote
+    endpoint, reaching any dimension ends the turn with a ``budget_exhausted``
+    event and a checkpoint, same as running out of rounds. Local inference
+    is completion-bound: it never emits ``budget_exhausted`` and never
+    treats a caller ``max_tool_calls`` cap as a billed stop.
     ``harness_options`` (all optional, mostly project-level knobs resolved by
     the route): ``checkpoints`` (bool, default True — shadow snapshot before
     the first change), ``test_command`` (str, overrides test detection),
@@ -5387,11 +5484,13 @@ async def _stream_agent_loop_body(
         _local_completion_unbounded = False
 
     # Local inference has no metered provider cost.  Do not manufacture a
-    # per-turn stopping point from the autonomy preset's fallback ceilings:
-    # a coding turn may legitimately re-send a large context for many tool
-    # rounds before it is complete.  Explicit limits already supplied by the
-    # caller (``max_tool_calls`` / cancellation / pause) still apply, as do
-    # the loop breaker and every permission/security gate.
+    # per-turn stopping point from the autonomy preset's fallback ceilings
+    # or from a caller-supplied tool-call cap: a coding turn may legitimately
+    # re-send a large context for many tool rounds, and local models parrot
+    # ``budget_exhausted`` as if it were an answer.  Cancellation, pause, the
+    # loop breaker and every permission/security gate still apply.
+    if _local_completion_unbounded:
+        max_tool_calls = 0
     _autonomy_budget = (
         autonomy_budget.Budget()
         if _local_completion_unbounded
@@ -5935,6 +6034,10 @@ async def _stream_agent_loop_body(
             yield (
                 f'data: {json.dumps({"type": "ask_user", "data": _direct_ask_user_payload})}\n\n'
             )
+
+        if _local_completion_unbounded and _looks_like_budget_exhausted_stop(direct_response):
+            direct_response = ""
+            yield f"data: {json.dumps({'type': 'response_replace', 'text': ''})}\n\n"
 
         duration = time.time() - direct_start
         direct_usage = _usage_bucket(
@@ -7166,6 +7269,7 @@ async def _stream_agent_loop_body(
     _language_mismatch_nudges = 0
     _pending_language_nudge = False
     _todo_nudged = False
+    _budget_stop_echo_retried = False
     _round_finish_reason = None
     _harness_scope_active = bool(workspace) or _looks_like_workspace_coding_request(_last_user)
     # Thinking watchdog (local thinking models): a round that has produced only
@@ -7722,7 +7826,10 @@ async def _stream_agent_loop_body(
         # `total_tool_calls` is not in `_round_loop_budget` (merged into the
         # legacy `max_tool_calls` check below instead), so this never
         # double-reports that dimension.
-        _budget_exhaustion = _budget_ledger.check(_round_loop_budget)
+        _budget_exhaustion = (
+            None if _local_completion_unbounded
+            else _budget_ledger.check(_round_loop_budget)
+        )
         if _budget_exhaustion is not None:
             logger.info("[agent] autonomy budget exhausted at round start: %s", _budget_exhaustion.as_dict())
             _ledger.stop_reason = "budget_exhausted"
@@ -7743,7 +7850,7 @@ async def _stream_agent_loop_body(
                     "role": "user",
                     "content": (
                         "[Harness check — automatic message from the runtime, not from the user] "
-                        f"You used the {round_num - 1}-step budget and the task is not finished. "
+                        f"You used {round_num - 1} steps and the task is not finished. "
                         f"You have {max_rounds} more steps. Continue from EXACTLY where you left off; "
                         "do not repeat work already done, do not re-read files you already read. "
                         "Finish the remaining objectives and then report only what the tools show."
@@ -7766,43 +7873,26 @@ async def _stream_agent_loop_body(
                 # harness `continue` on the final round included).
                 _exhausted_rounds = True
                 break
-        # Steering (delegate_agents workers): text queued while the previous
-        # round ran becomes a user message now, before this round's request.
-        if pending_user_messages is not None:
-            try:
-                _steers = list(pending_user_messages() or [])
-            except Exception as _steer_err:
-                logger.debug("[steer] queue read failed: %s", _steer_err)
-                _steers = []
-            _steer_texts_this_round: List[str] = []
-            for _steer in _steers:
-                _steer_text = str((_steer or {}).get("text") or "").strip() if isinstance(_steer, dict) else str(_steer or "").strip()
-                if not _steer_text:
-                    continue
-                _steer_src = "supervisor" if isinstance(_steer, dict) and _steer.get("source") == "supervisor" else "user"
-                if _steer_src == "user":
-                    _reply_language_hint = _turn_language([{"role": "user", "content": _steer_text}]) or _reply_language_hint
-                    if _reply_language_hint and _reply_language_hint.get("_reply_language"):
-                        _required_reply_lang = _reply_language_hint.get("_reply_language")
-                messages.append({"role": "user", "content": (
-                    f"[Steering message from the {_steer_src}, received while you were working — "
-                    f"it refines your task; follow it from now on] {_steer_text}")})
-                yield "data: " + json.dumps({"type": "steer", "round": round_num,
-                                             "text": _steer_text[:300], "source": _steer_src}) + "\n\n"
-                _steer_texts_this_round.append(_steer_text)
-            # TASK-05: whatever a steer just contradicted among this turn's
-            # own PENDING plan steps is marked `needs_review` right here —
-            # the safe point between rounds — so the round about to run
-            # (its tool calls, a file write among them) cannot act on a step
-            # the correction just invalidated as if nothing had changed.
-            if _steer_texts_this_round and _latest_plan_update:
-                _latest_plan_update, _steer_affected_ids = _apply_steer_to_plan_update(
-                    _latest_plan_update, _steer_texts_this_round)
-                if _steer_affected_ids:
-                    logger.info("[steer] marked %d plan step(s) needs_review: %s",
-                                len(_steer_affected_ids), _steer_affected_ids)
-                    yield "data: " + json.dumps({"type": "plan_update",
-                                                 "data": _latest_plan_update}) + "\n\n"
+        # Steering: text queued while the previous round ran (or while a tool
+        # was in flight) becomes a user message now, before this round's request.
+        _steers = _take_pending_steers(pending_user_messages)
+        if _steers:
+            _steer_events, _steer_texts_this_round, _reply_language_hint, _latest_plan_update, _steer_affected_ids = (
+                _apply_steers_to_messages(
+                    messages, _steers, round_num=round_num, interrupt=False,
+                    reply_language_hint=_reply_language_hint,
+                    latest_plan_update=_latest_plan_update,
+                )
+            )
+            if _reply_language_hint and _reply_language_hint.get("_reply_language"):
+                _required_reply_lang = _reply_language_hint.get("_reply_language")
+            for _ev in _steer_events:
+                yield "data: " + json.dumps(_ev) + "\n\n"
+            if _steer_affected_ids:
+                logger.info("[steer] marked %d plan step(s) needs_review: %s",
+                            len(_steer_affected_ids), _steer_affected_ids)
+                yield "data: " + json.dumps({"type": "plan_update",
+                                             "data": _latest_plan_update}) + "\n\n"
         # UX-04: pause, checked at the same safe point as steering — between
         # rounds, never mid tool call. Ends the turn exactly like an
         # ask_user question does (break, no result fed back), so a resumed
@@ -7846,6 +7936,7 @@ async def _stream_agent_loop_body(
         round_reasoning = ""  # reasoning_content deltas (DeepSeek-thinking, vLLM --reasoning-parser)
         native_tool_calls = []  # populated if model uses function calling
         _round_finish_reason = None  # provider finish_reason for this round (stop/length/tool_calls)
+        _recover_empty_completion = False
 
         _active_route_state = {
             "messages": messages,
@@ -8262,6 +8353,7 @@ async def _stream_agent_loop_body(
             bool(all_tool_schemas),
             agent_stream_timeout,
         )
+        _steer_interrupted: List[Dict[str, Any]] = []
         async for chunk in stream_llm_with_fallback(
             _candidates,
             messages,
@@ -8304,6 +8396,7 @@ async def _stream_agent_loop_body(
                     chunk[:500],
                 )
                 terminal_status = None
+                error_data = {}
                 try:
                     error_line = next(
                         line[6:]
@@ -8316,6 +8409,29 @@ async def _stream_agent_loop_body(
                     )
                 except Exception:
                     pass
+                # A clean empty completion is not a transport failure. The
+                # harness already nudges silent give-ups; treating this 502 as
+                # fatal is what killed Silhouettes turns after a tool round
+                # when qwen3.8/Ollama returned usage+[DONE] and nothing else.
+                if (
+                    is_empty_completion_error(error_data)
+                    and _harness_enabled
+                    and not _force_answer
+                    and not plan_mode
+                    and _empty_round_nudges < 1
+                    and (
+                        _harness_scope_active
+                        or round_num > 1
+                        or bool(_ledger.progress)
+                    )
+                ):
+                    logger.warning(
+                        "[harness] round %s returned no substantive output; "
+                        "nudging instead of failing the turn",
+                        round_num,
+                    )
+                    _recover_empty_completion = True
+                    break
                 terminal_error = {
                     "message": (
                         f"Model request failed (HTTP {terminal_status})"
@@ -8630,6 +8746,44 @@ async def _stream_agent_loop_body(
                 # Forward error events to frontend as visible text
                 yield chunk
             # Intercept [DONE] — don't forward until all rounds finish
+            _now_steers = _take_pending_steers(pending_user_messages)
+            if _now_steers:
+                _steer_interrupted = _now_steers
+                logger.info("[steer] interrupting round %s mid-generation (%d message(s))",
+                            round_num, len(_steer_interrupted))
+                break
+
+        if _steer_interrupted:
+            # Keep what was already said, then the user's words, then ask
+            # again. Do not execute tools from an aborted completion.
+            _partial = strip_tool_blocks(
+                round_response,
+                skip_fenced=(_is_api_model and not native_tool_calls and not guide_only),
+            ).strip()
+            if _ody_qwen_finetune_model:
+                _partial = _strip_doc_model_artifacts(_partial).strip()
+            if _partial:
+                _asst: Dict[str, Any] = {"role": "assistant", "content": _partial}
+                if round_reasoning:
+                    _asst["reasoning_content"] = round_reasoning
+                messages.append(_asst)
+            _steer_events, _steer_texts_this_round, _reply_language_hint, _latest_plan_update, _steer_affected_ids = (
+                _apply_steers_to_messages(
+                    messages, _steer_interrupted, round_num=round_num, interrupt=True,
+                    reply_language_hint=_reply_language_hint,
+                    latest_plan_update=_latest_plan_update,
+                )
+            )
+            if _reply_language_hint and _reply_language_hint.get("_reply_language"):
+                _required_reply_lang = _reply_language_hint.get("_reply_language")
+            for _ev in _steer_events:
+                yield "data: " + json.dumps(_ev) + "\n\n"
+            if _steer_affected_ids:
+                logger.info("[steer] marked %d plan step(s) needs_review: %s",
+                            len(_steer_affected_ids), _steer_affected_ids)
+                yield "data: " + json.dumps({"type": "plan_update",
+                                             "data": _latest_plan_update}) + "\n\n"
+            continue
 
         if _think_runaway:
             # The model has been "thinking" for the whole budget without a
@@ -8954,6 +9108,30 @@ async def _stream_agent_loop_body(
             yield "data: " + json.dumps({"type": "harness_check", "status": "auto_continue", "reason": "approval_echo", "round": round_num}) + "\n\n"
             continue
 
+        if (not tool_blocks and _local_completion_unbounded and not _budget_stop_echo_retried
+                and not _force_answer and not plan_mode
+                and _looks_like_budget_exhausted_stop(_strip_think_blocks(cleaned_round))):
+            # Local models invent a billed stop this runtime does not have.
+            # Bounce once, and take the phrase off the live bubble so it is
+            # never the visible answer.
+            _budget_stop_echo_retried = True
+            messages.append({"role": "assistant", "content": cleaned_round})
+            messages.append({"role": "system", "content": (
+                "That is not a stopping condition this runtime uses. "
+                "Keep working the original task with the available tools. "
+                "Do not invent a reason to stop."
+            )})
+            if round_response and full_response.endswith(round_response):
+                full_response = full_response[:-len(round_response)]
+            elif cleaned_round and full_response.endswith(cleaned_round):
+                full_response = full_response[:-len(cleaned_round)]
+            yield f"data: {json.dumps({'type': 'response_replace', 'text': full_response.strip()})}\n\n"
+            yield "data: " + json.dumps({
+                "type": "harness_check", "status": "auto_continue",
+                "reason": "local_no_cost_stop", "round": round_num,
+            }) + "\n\n"
+            continue
+
         if not tool_blocks and _harness_enabled and not _force_answer and not plan_mode:
             _hc_raw = _strip_think_blocks(cleaned_round).strip()
             # Qwen 3.8 (and similar) often emits only the synthetic untrusted-
@@ -9056,9 +9234,13 @@ async def _stream_agent_loop_body(
             # objectives). One bounded nudge; then the turn ends as before.
             if (
                 not _hc_text
-                and (_harness_scope_active or (_ledger.progress and any(t.get("status") != "completed" for t in _ledger.progress)))
+                and (
+                    _recover_empty_completion
+                    or _harness_scope_active
+                    or (_ledger.progress and any(t.get("status") != "completed" for t in _ledger.progress))
+                )
                 and _empty_round_nudges < 1
-                and round_num > 1
+                and (round_num > 1 or _recover_empty_completion)
             ):
                 _empty_round_nudges += 1
                 _open = [t.get("content") for t in (_ledger.progress or []) if t.get("status") != "completed"]
@@ -10126,8 +10308,12 @@ async def _stream_agent_loop_body(
             # TASK-06: autonomy budget, checked before every tool call —
             # tokens/active_seconds/subagents/remote_spend accumulated from
             # rounds completed so far (see the round-loop check above for
-            # why sub-round granularity isn't needed here).
-            _budget_exhaustion = _budget_ledger.check(_round_loop_budget)
+            # why sub-round granularity isn't needed here). Local inference
+            # never takes this exit: there is no metered cost to exhaust.
+            _budget_exhaustion = (
+                None if _local_completion_unbounded
+                else _budget_ledger.check(_round_loop_budget)
+            )
             if _budget_exhaustion is not None:
                 logger.info("[agent] autonomy budget exhausted before tool call: %s", _budget_exhaustion.as_dict())
                 yield _budget_exhausted_event(_budget_exhaustion)
@@ -11156,6 +11342,11 @@ async def _stream_agent_loop_body(
 
     # If the response is completely empty and no tools were executed,
     # yield a fallback message so the user is not left hanging.
+    if _local_completion_unbounded and _looks_like_budget_exhausted_stop(
+        _strip_think_blocks(strip_tool_blocks(full_response))
+    ):
+        full_response = ""
+        yield f"data: {json.dumps({'type': 'response_replace', 'text': ''})}\n\n"
     full_response, _fallback_chunk = _empty_response_fallback(
         full_response, round_reasoning, tool_events
     )
