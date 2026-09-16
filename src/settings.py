@@ -80,6 +80,12 @@ DEFAULT_SETTINGS = {
     # have been observed inventing signatures and sending to real
     # recipients without confirmation.
     "agent_email_confirm": True,
+    # Creator workspace (WP02, docs/spec/creator/plan): typed revisioned
+    # documents (canvas/timeline/transcript/song/storyboard) and per-project
+    # Creator profile under /api/creator/*. Default OFF: with the flag off,
+    # every /api/creator/* route responds 404 and nothing is read or written
+    # (checked before any store access, never after).
+    "creator_enabled": False,
     "image_gen_enabled": False,
     "image_model": "",
     "image_quality": "medium",
