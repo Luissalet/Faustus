@@ -125,6 +125,9 @@ scripts/compound/*.json
 research_data/
 **/search_analytics.json
 
+# Isolated git worktrees (superpowers SDD)
+.worktrees/
+
 # Internal dev/review notes — not for public repo
 dev-docs/
 # Windows-port working docs (local only, not for public repo)

@@ -4,7 +4,7 @@
 
 **Goal:** Impedir que un agente local cuelgue el turno en un servidor Windows, se quede sin modelo en VRAM, marque Verified un bug visual sin browser, o reinyecte un spec de 170 k en el chat siguiente.
 
-**Architecture:** Cinco capas independientes en el harness actual: guard de servidores Windows-correcto, pin de `keep_alive` por run, idle corto para lanzamientos de servidor, contrato UI en el `TurnLedger`, continuidad de todos/adjuntos a nivel proyecto. Cada capa se entrega con tests verdes y se puede mergear sola.
+**Architecture:** Cinco capas independientes en el harness actual: guard de servidores Windows-correcto, pin de `keep_alive` por run, idle corto para lanzamientos de servidor, contrato UI en el `TurnLedger`, continuidad de todos/adjuntos a nivel proyecto. Cada capa se entrega con tests verdes y se puede mergear sola. Mid-turn overflow (`src/context_overflow.py`, FAUSTUS §86) ya está en master: Task 7b reutiliza esos stubs; no reimplementar spill.
 
 **Tech Stack:** Python 3.13, pytest, Ollama `/api/chat` + `/api/generate`, Git Bash en Windows, Playwright MCP ya cableado como `mcp__builtin_browser__*`.
 
@@ -413,6 +413,109 @@ def test_attachment_budget_keeps_headings_drops_body():
 
 ---
 
+### Task 7b: Continue-turn inyecta working state, no el spec
+
+**Files:**
+- Modify: `src/agent_loop.py` (`_looks_like_continue_turn`, `_CONTINUE_TURN_RE`, round-0 injection near the existing todowrite-refresh block ~8038)
+- Modify: `src/agent_tools/coding_tools.py` (persist `last_files` / last tools on the project file)
+- Modify: `src/agent_harness.py` (`attachment_budgeted_text` already from Task 7 — apply it to the live last user message, not only ledger paths)
+- Test: `tests/test_project_todos.py`, `tests/test_agent_loop_workspace_tool_floor.py` or a new `tests/test_continue_turn_context.py`
+
+**Interfaces:**
+- Consumes: Task 7 `load_project_todos` / `incomplete_todos` / `attachment_budgeted_text`
+- Produces:
+
+```python
+# src/agent_loop.py — extend the existing short-phrase matcher
+_IMPLEMENTATION_CONTINUE_RE = re.compile(
+    r"keep\s+implementing|continue\s+the\s+implementation|"
+    r"sigue(?:e)?(?:\s+el)?\s+plan|sigue\s+implementando",
+    re.I,
+)
+
+def _looks_like_continue_turn(text: str) -> bool:
+    # keep today's exact Continue-button match, AND the longer "keep implementing" family
+    ...
+
+# src/agent_tools/coding_tools.py
+def save_project_working_set(project_id: str, *, last_files: list[str], last_tools: list[dict], last_error: str = "") -> None: ...
+def load_project_working_set(project_id: str) -> dict: ...
+# file shape: data/agent_todos/project-<id>.json
+# {"todos": [...], "last_files": [...], "last_tools": [{"tool","ok","paths"}], "last_error": "", "updated_at": iso}
+
+def continue_turn_block(todos, working_set) -> str:
+    """Incomplete todos + last files + last 8 tools + last error. Empty string if nothing."""
+```
+
+Hoy `_looks_like_continue_turn` solo casa «Continue» / «continuar» cortos (`_CONTINUE_TURN_RE`) y, si los todos de *sesión* están complete, inyecta `TODOWRITE_REFRESH_NUDGE`. No casa «Keep implementing the plan» (el mensaje real de Silhouettes 16-09) y no inyecta el working set del *proyecto*.
+
+- [ ] **Step 1: Failing tests**
+
+```python
+from src.agent_loop import _looks_like_continue_turn
+from src.agent_tools import coding_tools as ct
+from src.agent_harness import attachment_budgeted_text
+
+def test_keep_implementing_is_a_continue_turn():
+    assert _looks_like_continue_turn("Keep implementing the plan")
+    assert _looks_like_continue_turn("Continue the implementation")
+    assert _looks_like_continue_turn("sigue el plan")
+    assert not _looks_like_continue_turn("what does keep implementing mean in this file?")
+
+def test_continue_block_lists_incomplete_and_files(tmp_path, monkeypatch):
+    monkeypatch.setattr(ct, "_TODO_DIR", str(tmp_path))
+    ct.save_project_todos("p1", [
+        {"content": "Diagnose giant layers", "status": "in_progress", "priority": "high"},
+        {"content": "Verify all fixes in browser", "status": "pending", "priority": "high"},
+        {"content": "Done already", "status": "completed", "priority": "low"},
+    ])
+    ct.save_project_working_set("p1", last_files=["static/editor/viewport2d.js"],
+                                last_tools=[{"tool": "edit_file", "ok": True, "paths": ["static/editor/viewport2d.js"]}],
+                                last_error="")
+    from src.agent_loop import continue_turn_block
+    block = continue_turn_block(ct.load_project_todos("p1"), ct.load_project_working_set("p1"))
+    assert "Diagnose giant layers" in block
+    assert "Verify all fixes in browser" in block
+    assert "Done already" not in block
+    assert "viewport2d.js" in block
+
+def test_attachment_budget_applied_to_user_message():
+    blob = "Keep implementing.\n=== File: plan.md ===\n# Task 08\n" + ("x" * 8000)
+    out = attachment_budgeted_text(blob, 400)
+    assert "Task 08" in out
+    assert "x" * 1000 not in out
+```
+
+- [ ] **Step 2: Run — expect FAIL** on `_looks_like_continue_turn("Keep implementing the plan")` (hoy False).
+
+Run: `pytest tests/test_continue_turn_context.py -v`
+
+- [ ] **Step 3: Implement**
+
+1. Extender `_looks_like_continue_turn` con `_IMPLEMENTATION_CONTINUE_RE.search` (no `match` anclado al mensaje entero). No tratar una pregunta *sobre* esas palabras como continue: si el texto tiene `?` y no empieza por el patrón, False.
+2. `save_project_working_set` mergea en el mismo JSON de Task 7. Al cerrar el turno en `agent_loop` (junto a donde ya se persiste progress), si hay `project_id`: `last_files = _ledger.mutated_paths()[:12]`, `last_tools =` últimos 8 `self.events` con `tool/ok/paths/error`, `last_error` = último `e["error"]`.
+3. Round 0, justo después del bloque todowrite-refresh (~8038): si `_looks_like_continue_turn(_last_user)` **o** es el primer turno de un chat nuevo del proyecto (`not any(m.get("role")=="assistant" for m in messages)`), y `incomplete_todos(load_project_todos(project_id))` no vacío, append un `role: system` con `continue_turn_block(...)`. Copy:
+
+```
+Incomplete work for this project (from the previous chat):
+- [in_progress] …
+- [pending] …
+Last files touched: …
+Last tools: edit_file ok static/editor/viewport2d.js; bash fail …
+```
+
+Si el mensaje es continue-turn, **después** aplicar `attachment_budgeted_text` al último `role=user` de `messages` (el spec de 170 k deja de ocupar el prompt; el disco no se toca). Reutilizar overflow: no hace falta rehidratar blobs; el working set nombra paths. Misma sesión con stubs ya en history: no compactar esos stubs otra vez.
+
+4. El `TODOWRITE_REFRESH_NUDGE` de sesión complete se queda: corre solo cuando los todos de *sesión* están complete, como hoy.
+
+- [ ] **Step 4: Run**
+
+Run: `pytest tests/test_continue_turn_context.py tests/test_project_todos.py tests/test_workspace_confine.py::test_todowrite_persists_session_list -v`
+
+Expected: PASS. Un user message con `=== File:` de 170 k queda ≤ `agent_inline_attachment_max_chars` + TOC.
+
+---
+
 ### Task 8: `ui_verify` en la tarjeta + aviso de modelo largo
 
 **Files:**
@@ -453,6 +556,7 @@ No es TDD. Es el cierre del spec «Success».
 | UI verify ledger + todowrite | 5 |
 | Browser tools en schema | 6 |
 | Project todos + attachment budget | 7 |
+| Continue-turn working state (spec 5c) | 7b |
 | Tarjeta ui_verify + notice modelo | 8 |
 | Success medible + FAUSTUS.md | 9 |
 | Non-goal autowitch | 8 (solo notice) |

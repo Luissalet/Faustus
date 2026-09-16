@@ -1,7 +1,7 @@
 # Mid-turn context compaction + disk overflow
 
 **Date:** 2026-09-15  
-**Status:** Approved in chat (option C); awaiting spec review before implementation plan  
+**Status:** Implemented (FAUSTUS.md §86). Overflow store + `apply_midturn_pressure` + `context_compacted` SSE are on master. Close-the-loop spec 5c reuses these stubs.  
 **Problem source:** Silhouettes chat `c3a9e716-5115-407a-8934-bc0baf4a90d4` — ~1h47m, 61 rounds, context ~90%+, thrash on one failing test, ended in `rounds_exhausted`.
 
 ## Problem
