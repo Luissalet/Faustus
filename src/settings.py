@@ -839,6 +839,13 @@ DEFAULT_SETTINGS = {
     # (routes/mcp/mcp_routes.py). Empty for every server nobody has
     # configured — McpManager's own class defaults apply then.
     "mcp_degraded_thresholds": {},
+    # A19: bound on how many `tools/list` pages (src/mcp_manager.py::
+    # _discover_tools_paginated) an MCP server's `nextCursor` chain is
+    # followed for during discovery/reconnect, so a server whose cursor
+    # never terminates cannot hang a connect forever. A server that hits
+    # the cap has its listing marked truncated (`discovery_truncated` in
+    # the connection status) rather than silently served partial.
+    "mcp_discovery_max_pages": 20,
     # OBJ-4 (Lote 82): global default for how the agent itself behaves
     # inside a git repository it is working in -- does it use a separate
     # branch, commit what it changed, push. A per-repo override lives in
