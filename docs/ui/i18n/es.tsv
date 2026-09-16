@@ -7579,3 +7579,16 @@ Weights on disk	Pesos en disco
 VRAM verdict	Veredicto de VRAM
 Parameter contract registered	Contrato de parámetros registrado
 Creator sections	Secciones de Creator
+Profile	Perfil
+Resolution	Resolución
+Estimated size	Tamaño estimado
+ffmpeg available	ffmpeg disponible
+ffmpeg not available	ffmpeg no disponible
+Cached — instant reuse	En caché — reutilización instantánea
+Render finished.	Renderizado terminado.
+Render failed.	Error al renderizar.
+Cancel requested.	Cancelación solicitada.
+Approval required — approve it in the Preflight panel, then render again.	Aprobación requerida — apruébala en el panel de preflight y vuelve a renderizar.
+Reused a cached render.	Se reutilizó un renderizado en caché.
+Render complete.	Renderizado completo.
+Occurrence: {id}	Ocurrencia: {id}

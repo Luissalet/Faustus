@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Redo2, Undo2, ZoomIn, ZoomOut } from 'lucide-react';
+import { Clapperboard, Redo2, Undo2, ZoomIn, ZoomOut } from 'lucide-react';
 import { Button, EmptyState, Toast } from '../../components';
 import { t } from '../../i18n';
 import * as api from '../../adapters/creator';
 import * as tlApi from '../../adapters/creator_timeline';
 import { TimelineTrack, TRACK_GAP, TRACK_HEIGHT } from './TimelineTrack';
+import { RenderPanel } from './RenderPanel';
 import './timeline.css';
 
 /**
@@ -59,6 +60,7 @@ export function Timeline({ doc, onDocUpdated, onRevisionConflict }: TimelineProp
   const [validation, setValidation] = useState<{ ok: boolean; findings: tlApi.ValidationFinding[] } | null>(null);
   const [revisionHistory, setRevisionHistory] = useState<number[]>([doc.revision]);
   const [undoIndex, setUndoIndex] = useState(0); // index into revisionHistory, from the end
+  const [renderPanelOpen, setRenderPanelOpen] = useState(false); // WP14
   const frameTicks = useFrameTicks(doc);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -203,6 +205,8 @@ export function Timeline({ doc, onDocUpdated, onRevisionConflict }: TimelineProp
           onClick={() => setPixelsPerTick((p) => Math.max(MIN_PX_PER_TICK, p / 1.5))} testId="timeline-zoom-out" />
         <Button size="sm" variant="ghost" icon={ZoomIn} label={t('Zoom in')}
           onClick={() => setPixelsPerTick((p) => Math.min(MAX_PX_PER_TICK, p * 1.5))} testId="timeline-zoom-in" />
+        <Button size="sm" variant="primary" icon={Clapperboard} label={t('Render')}
+          onClick={() => setRenderPanelOpen(true)} testId="timeline-render-open" />
         <span className="fs-timeline__muted">{t('Playhead: {t}', { t: playheadTicks.toString() })}</span>
         {inOut.in !== null && <span className="fs-timeline__muted">{t('In: {t}', { t: inOut.in.toString() })}</span>}
         {inOut.out !== null && <span className="fs-timeline__muted">{t('Out: {t}', { t: inOut.out.toString() })}</span>}
@@ -239,6 +243,14 @@ export function Timeline({ doc, onDocUpdated, onRevisionConflict }: TimelineProp
       </div>
 
       {toast && <Toast>{toast}</Toast>}
+
+      {renderPanelOpen && (
+        <RenderPanel
+          projectId={doc.project_id}
+          docId={doc.id}
+          onClose={() => setRenderPanelOpen(false)}
+        />
+      )}
     </div>
   );
 }

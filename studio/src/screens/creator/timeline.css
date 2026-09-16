@@ -125,3 +125,100 @@
   font-size: 10px;
   user-select: none;
 }
+
+/* WP14 — Render panel, appended over the WP13 timeline shell above. */
+
+.fs-render-panel {
+  position: fixed;
+  top: 64px;
+  right: 16px;
+  width: 320px;
+  max-height: calc(100vh - 96px);
+  overflow-y: auto;
+  background: var(--fs-surface, #1b1b22);
+  border: 1px solid var(--fs-border, #2a2a33);
+  border-radius: 10px;
+  padding: 12px 14px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.fs-render-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.fs-render-panel__header h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.fs-render-panel__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--fs-muted, #8a8a94);
+}
+
+.fs-render-panel__field select {
+  background: var(--fs-surface-alt, #16161c);
+  color: var(--fs-text, #e8e8ec);
+  border: 1px solid var(--fs-border, #2a2a33);
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+
+.fs-render-panel__plan {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 10px;
+  font-size: 12px;
+  margin: 0;
+}
+
+.fs-render-panel__plan dt {
+  color: var(--fs-muted, #8a8a94);
+}
+
+.fs-render-panel__plan dd {
+  margin: 0;
+  text-align: right;
+}
+
+.fs-render-panel__error {
+  color: var(--fs-danger, #f87171);
+  font-size: 12px;
+  margin: 0;
+}
+
+.fs-render-panel__progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.fs-render-panel__progress-bar {
+  flex: 1;
+  height: 6px;
+  background: var(--fs-surface-alt, #16161c);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.fs-render-panel__progress-fill {
+  height: 100%;
+  background: var(--fs-accent, #6ea8fe);
+  transition: width 0.2s ease;
+}
+
+.fs-render-panel__result {
+  font-size: 12px;
+  color: var(--fs-text, #e8e8ec);
+  margin: 0;
+}
