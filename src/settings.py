@@ -370,6 +370,16 @@ DEFAULT_SETTINGS = {
     "agent_project_tests_scope": "related",
     "agent_project_tests_timeout_seconds": 300,
     "agent_project_tests_fix_rounds": 1,
+    # Harness-driven UI smoke test (src/ui_smoke.py): a turn that mutates
+    # static/templates/*.html/*.js/*.css starts the project's own web server
+    # in a free port, fetches its pages, and re-fetches every referenced
+    # script/stylesheet/ES import to check status AND Content-Type — the
+    # class of bug (`.mjs` served as text/plain) that passed 170 unit tests
+    # while the whole UI stayed dead (chat 782b7d89, 16-09-2026). Loads
+    # Playwright headless when it is installed, for real console errors.
+    "agent_ui_smoke": True,
+    "agent_ui_smoke_timeout_seconds": 60,
+    "agent_ui_smoke_playwright": True,
     # After a failing run, re-run the same test files against the turn's
     # checkpoint to tell new failures from pre-existing ones (no fix round
     # when everything was already failing before the change).

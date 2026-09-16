@@ -229,6 +229,18 @@ GROUPS: list[dict[str, Any]] = [
                   "Command run instead of the detected linters; the changed paths are appended. "
                   "Empty = auto-detect.",
                   placeholder="auto-detect"),
+            _bool("agent_ui_smoke", "UI smoke test",
+                  "After a turn that touches static/templates/*.html/*.js/*.css, start the project's "
+                  "own web server and fetch its pages plus every script/stylesheet/ES import, checking "
+                  "HTTP status AND Content-Type (catches a `.mjs` served as text/plain, which passes "
+                  "every unit test while leaving the whole UI dead)."),
+            _int("agent_ui_smoke_timeout_seconds", "UI smoke timeout (s)",
+                 "Wall-clock cap for one ui_smoke run (server start + page/asset crawl + optional "
+                 "Playwright pass).",
+                 10, 600),
+            _bool("agent_ui_smoke_playwright", "UI smoke: use Playwright",
+                  "When Python playwright + a Chromium build are installed, also load the page "
+                  "headless and capture real console errors and 4xx/5xx network responses."),
             _text("agent_auto_review", "Diff reviewer",
                   "Independent, tool-less review of the turn's diff: off, same (this chat's model) or a "
                   "model name on the same endpoint.",
