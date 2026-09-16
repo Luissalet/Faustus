@@ -80,6 +80,12 @@ DEFAULT_SETTINGS = {
     # have been observed inventing signatures and sending to real
     # recipients without confirmation.
     "agent_email_confirm": True,
+    # Creator plan (docs/spec/creator/plan/). Off by default: with this flag
+    # off, Creator routes answer 404/403 (documented per-route) and nothing
+    # Creator-specific is written — including WP06's additive deployment
+    # evidence side-write in src/model_calibration.py::save_tested, which
+    # reads this setting before it writes anything.
+    "creator_enabled": False,
     "image_gen_enabled": False,
     "image_model": "",
     "image_quality": "medium",
