@@ -96,21 +96,27 @@ async def test_unavailable_sandbox_never_falls_back_to_host_privileges(
     # itself was never invoked.
     assert spy.calls == 0
 
-    # ── the new port answers the same way directly, plus the "unsupported
-    #    platform" half of the trigger (native Windows: a Linux sandbox
-    #    container can never verify that host) ──────────────────────────
+    # ── the new port answers the same way directly. This scenario is a
+    #    POSIX-with-Docker-installed one (daemon absent), so platform
+    #    detection is pinned to POSIX regardless of the machine actually
+    #    running this test — Windows CI must see the identical "daemon"
+    #    verdict a Linux box would, not a platform short-circuit. ─────────
+    import core.platform_compat as pc
+    monkeypatch.setattr(pc, "IS_WINDOWS", False, raising=False)
+
+    def _provider_no_daemon(self, args, timeout=30):
+        if args[:1] == ["version"]:
+            return subprocess.CompletedProcess(
+                args, 1, b"", b"Cannot connect to the Docker daemon")
+        return subprocess.CompletedProcess(args, 0, b"", b"")
+
+    monkeypatch.setattr(sandbox_provider.DockerSandboxProvider, "_run_docker",
+                        _provider_no_daemon)
     provider = sandbox_provider.get_provider(image=sandbox_exec.image(), workspace=workspace)
     avail_no_daemon = provider.probe()
     assert avail_no_daemon.available is False
     assert avail_no_daemon.kind == "daemon"
     assert "daemon" in avail_no_daemon.reason.lower()
-
-    import core.platform_compat as pc
-    monkeypatch.setattr(pc, "IS_WINDOWS", True, raising=False)
-    avail_unsupported = provider.probe()
-    assert avail_unsupported.available is False
-    assert avail_unsupported.kind == "platform"
-    assert "windows" in avail_unsupported.reason.lower()
 
     record_evidence(
         request,
@@ -119,5 +125,48 @@ async def test_unavailable_sandbox_never_falls_back_to_host_privileges(
         error=result["error"],
         host_launcher_calls=spy.calls,
         provider_probe_no_daemon=avail_no_daemon.to_dict(),
-        provider_probe_unsupported_platform=avail_unsupported.to_dict(),
     )
+
+
+@pytest.mark.asyncio
+async def test_native_windows_platform_kind_only_without_docker_installed(monkeypatch):
+    """Not the acceptance case itself (one marker per function — see above),
+    but the exact distinction the case's "or unsupported" half needs: native
+    Windows with NO Docker install at all is genuinely `kind="platform"` and
+    never probes a docker client; native Windows WITH Docker Desktop on
+    PATH (the daemon answers) is NOT declared unavailable "because it is
+    Windows" — it falls through to the ordinary daemon/image checks, since
+    Docker Desktop runs the same Linux container there too."""
+    import core.platform_compat as pc
+    monkeypatch.setattr(pc, "IS_WINDOWS", True, raising=False)
+
+    # No Docker at all on this native Windows host: `kind="platform"`,
+    # and the docker client is never touched (no `_run_docker` fake needed —
+    # `shutil.which` alone decides this branch).
+    import shutil as _shutil
+    real_which = _shutil.which
+    monkeypatch.setattr(_shutil, "which",
+                        lambda cmd, *a, **kw: None if cmd == "docker" else real_which(cmd, *a, **kw))
+    provider_no_docker = sandbox_provider.get_provider(image=sandbox_exec.image())
+    avail_unsupported = provider_no_docker.probe()
+    assert avail_unsupported.available is False
+    assert avail_unsupported.kind == "platform"
+    assert "windows" in avail_unsupported.reason.lower()
+
+    # Docker Desktop IS on PATH and its daemon answers: same Windows host,
+    # but no platform gate — the Linux container runs fine under it.
+    monkeypatch.setattr(_shutil, "which",
+                        lambda cmd, *a, **kw: "/usr/bin/docker" if cmd == "docker" else real_which(cmd, *a, **kw))
+
+    def _provider_ok(self, args, timeout=30):
+        if args[:1] == ["version"]:
+            return subprocess.CompletedProcess(args, 0, b"24.0.0", b"")
+        if args[:2] == ["image", "inspect"]:
+            return subprocess.CompletedProcess(args, 0, b"sha256:ok", b"")
+        return subprocess.CompletedProcess(args, 0, b"", b"")
+
+    monkeypatch.setattr(sandbox_provider.DockerSandboxProvider, "_run_docker", _provider_ok)
+    provider_with_desktop = sandbox_provider.get_provider(image=sandbox_exec.image())
+    avail_with_desktop = provider_with_desktop.probe()
+    assert avail_with_desktop.available is True
+    assert avail_with_desktop.kind != "platform"

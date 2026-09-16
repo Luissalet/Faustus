@@ -18,6 +18,22 @@ def isolated_registry(tmp_path, monkeypatch):
     monkeypatch.setattr(sp, "_registry_path", lambda: str(reg))
 
 
+@pytest.fixture(autouse=True)
+def posix_docker_on_path(monkeypatch, request):
+    """Every scenario here is "Docker is installed, daemon/image answer this
+    way" — pinned to POSIX with `docker` found on PATH so it is deterministic
+    on Windows CI too. `test_probe_reports_unsupported_platform` overrides
+    both explicitly; it is the one test about the platform gate itself."""
+    if "unsupported_platform" in request.node.name:
+        return
+    import shutil as _shutil
+    real_which = _shutil.which
+    monkeypatch.setattr("core.platform_compat.IS_WINDOWS", False, raising=False)
+    monkeypatch.setattr(_shutil, "which",
+                        lambda cmd, *a, **kw: "/usr/bin/docker" if cmd == "docker"
+                        else real_which(cmd, *a, **kw))
+
+
 def _cp(args, code, out=b"", err=b""):
     return subprocess.CompletedProcess(args, code, out, err)
 
@@ -75,6 +91,10 @@ def test_probe_reports_image_missing(monkeypatch):
 def test_probe_reports_unsupported_platform(monkeypatch):
     provider = _provider(monkeypatch, FakeClient())
     monkeypatch.setattr("core.platform_compat.IS_WINDOWS", True, raising=False)
+    import shutil as _shutil
+    real_which = _shutil.which
+    monkeypatch.setattr(_shutil, "which",
+                        lambda cmd, *a, **kw: None if cmd == "docker" else real_which(cmd, *a, **kw))
     avail = provider.probe()
     assert avail.available is False
     assert avail.kind == "platform"
