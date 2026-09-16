@@ -105,6 +105,15 @@ DEFAULT_SETTINGS = {
     "agent_midturn_keep_tool_rounds": 6,
     "agent_midturn_spill_chars": 8000,
     "agent_context_overflow_keep_hours": 48,
+    # A single tool result whose string fields total more than this many
+    # characters (src/tool_result_offload.py) is stored whole in the
+    # artifact store BEFORE the model sees it, and replaced in the prompt by
+    # a bounded preview + an artifact_id it can open by range or query. This
+    # is independent of agent_midturn_spill_chars/context_overflow (that
+    # mechanism spills across whole ROUNDS once the transcript is under
+    # pressure; this one catches a single oversized RESULT the moment it
+    # comes back, whether or not the turn is under pressure yet).
+    "agent_tool_result_offload_chars": 20000,
     # While a local agent run is in flight, every Ollama request uses this
     # keep_alive so a long bash cannot unload the weight. Restored on run end.
     "agent_run_keep_alive": "2h",
