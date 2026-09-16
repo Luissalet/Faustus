@@ -9,6 +9,7 @@ import hashlib
 import json
 import logging
 import re
+from dataclasses import dataclass, field as dataclass_field
 from typing import Any, Dict, List, Optional, Tuple
 
 from src.model_context import get_context_length, estimate_tokens
@@ -926,12 +927,38 @@ async def maybe_compact(
         logger.error(f"Compaction summary failed: {e}")
         return messages, context_length, False
 
+    # A14: what the LLM summary above must not be allowed to lose — built
+    # from the raw `older` rows, never from the (lossy) `summary` text
+    # itself, and appended verbatim, not summarized a second time. The
+    # objective is the FIRST user turn of the whole conversation (the task
+    # that started it), looked up across both halves so it survives even
+    # when that very message is the one being folded.
+    objective_text = ""
+    for msg in (older + recent):
+        if isinstance(msg, dict) and msg.get("role") == "user":
+            objective_text = _content_as_text(msg.get("content"))[:300]
+            break
+    preserve = build_compaction_preserve(older, objective=objective_text)
+    preserve_block = preserve.to_block()
+
+    summary_content = f"[Conversation summary — earlier messages were compacted]\n{summary}"
+    if preserve_block:
+        summary_content += "\n\n" + preserve_block
+
     summary_msg = {
         "role": "system",
         # Marked so trim_for_context treats it as essential: the messages it
         # stands in for have already been deleted from the transcript.
-        "metadata": {"compacted": True},
-        "content": f"[Conversation summary — earlier messages were compacted]\n{summary}",
+        "metadata": {
+            "compacted": True,
+            "compaction_preserve": {
+                "approvals": preserve.approvals,
+                "constraints": preserve.constraints,
+                "objective": preserve.objective,
+                "source_refs": preserve.source_refs,
+            },
+        },
+        "content": summary_content,
     }
 
     # CTX-02: same log compact_with_integrity writes to, for the LLM-summary
@@ -1209,6 +1236,166 @@ def _dedupe_preserve_order(items: List[str]) -> List[str]:
     return out
 
 
+# ---------------------------------------------------------------------------
+# A14 — CompactionPreserve: what compaction (either path) must never deform.
+#
+# Four things a compacted history has to keep LITERAL, never paraphrased,
+# whether they survive as their own untouched messages or as a preserved
+# block re-injected after the summary/marker:
+#   1) the identity of every NOT-YET-RESOLVED approval mentioned anywhere in
+#      the span being folded (approval_id, tool/action, args fingerprint) —
+#      "you asked for permission" is not enough, the model needs the exact
+#      card to check `approval_store.get()` against;
+#   2) explicit user constraints from earlier turns (imperative
+#      prohibition/obligation sentences, ES/EN);
+#   3) the turn/task's declared objective;
+#   4) source references (paths, URLs, overflow ids, artifact ids) the
+#      surviving text points at.
+# ---------------------------------------------------------------------------
+
+#: apr_<20 hex chars> — `src.approval_store.request()`'s id shape.
+_APPROVAL_ID_RE = re.compile(r'\bapr_[0-9a-f]{20}\b')
+#: art_<...> / artifact_<...> style ids seen in tool-result stubs.
+_ARTIFACT_ID_RE = re.compile(r'\b(?:art|artifact)_[0-9a-zA-Z]{6,40}\b')
+# NOTE: overflow-id stubs ("[overflow id=<sha256>]") are matched with the
+# module-level `_OVERFLOW_ID_RE` already defined above (spill_large_tool_results
+# / _overflow_stub's own pattern) — reused here rather than redefined.
+
+#: Bilingual, bounded heuristic for user-stated prohibitions/obligations.
+#: Deliberately conservative (bounded lookahead, sentence-ish stop) — false
+#: negatives are safer here than turning half the transcript into
+#: "constraints". Captures the trigger phrase through the next sentence
+#: boundary.
+_CONSTRAINT_RE = re.compile(
+    r'(?:'
+    r'\b(?:never|don\'t|do not|always|must(?:\s+not)?|please\s+(?:don\'t|never|always)|'
+    r'make sure (?:to|you)|do not touch|never touch)\b'
+    r'|'
+    r'\b(?:nunca|no toques|no hagas|no uses|no modifiques|siempre|debes|no debes|'
+    r'asegúrate de|aseg[úu]rate de)\b'
+    r')[^.\n!?]{0,160}[.\n!?]?',
+    re.IGNORECASE,
+)
+
+
+@dataclass
+class CompactionPreserve:
+    """What `build_compaction_preserve` found in a span about to be folded,
+    and what must be re-injected verbatim after summarizing/marking it."""
+
+    approvals: List[Dict[str, str]] = dataclass_field(default_factory=list)
+    constraints: List[str] = dataclass_field(default_factory=list)
+    objective: str = ""
+    source_refs: List[str] = dataclass_field(default_factory=list)
+
+    def is_empty(self) -> bool:
+        return not (self.approvals or self.constraints or self.objective
+                    or self.source_refs)
+
+    def to_block(self) -> str:
+        """Render as one literal, greppable block. Never passed through an
+        LLM — built here and re-injected verbatim by the caller."""
+        if self.is_empty():
+            return ""
+        lines: List[str] = ["Preserved (compaction-safe):"]
+        if self.objective:
+            lines.append(f"Objective: {self.objective}")
+        if self.approvals:
+            lines.append("Pending approvals:")
+            for a in self.approvals:
+                lines.append(
+                    f"  - approval_id={a.get('approval_id', '')} "
+                    f"tool={a.get('tool', '')} args_digest={a.get('args_digest', '')}"
+                )
+        if self.constraints:
+            lines.append("Constraints:")
+            for c in self.constraints:
+                lines.append(f"  - {c}")
+        if self.source_refs:
+            lines.append("Sources: " + ", ".join(self.source_refs))
+        return "\n".join(lines)
+
+
+def _find_pending_approvals(text: str) -> List[Dict[str, str]]:
+    """Resolve every `apr_...` id mentioned in `text` against the real
+    `approval_store`; keep only cards still `pending` (a granted/denied/
+    expired one is already resolved — nothing to preserve identity-wise)."""
+    out: List[Dict[str, str]] = []
+    seen: set = set()
+    for approval_id in _APPROVAL_ID_RE.findall(text or ""):
+        if approval_id in seen:
+            continue
+        seen.add(approval_id)
+        try:
+            from src import approval_store
+            approval = approval_store.get(approval_id)
+        except Exception:  # noqa: BLE001 - never let a lookup break compaction
+            approval = None
+        if approval is None or approval.status != "pending":
+            continue
+        out.append({
+            "approval_id": approval.id,
+            "tool": approval.plan.action,
+            "args_digest": approval.plan.fingerprint(),
+        })
+    return out
+
+
+def _extract_constraints(text: str) -> List[str]:
+    found = []
+    for m in _CONSTRAINT_RE.finditer(text or ""):
+        snippet = m.group(0).strip()
+        if snippet:
+            found.append(snippet)
+    return _dedupe_preserve_order(found)
+
+
+def build_compaction_preserve(
+    messages: List[Dict[str, Any]],
+    *,
+    objective: str = "",
+) -> "CompactionPreserve":
+    """Scan `messages` (the span a compaction pass is about to fold) and
+    build the literal block that must survive it.
+
+    `objective` is passed in by the caller — usually the most recent real
+    user message in the FULL conversation, not just the folded span, since
+    the objective can predate the fold but must still survive it.
+    """
+    approvals: List[Dict[str, str]] = []
+    constraints: List[str] = []
+    refs: List[str] = []
+    seen_approval_ids: set = set()
+
+    last_user_text = ""
+    for msg in messages or ():
+        if not isinstance(msg, dict):
+            continue
+        text = _content_as_text(msg.get("content"))
+        if not text:
+            continue
+        for a in _find_pending_approvals(text):
+            if a["approval_id"] not in seen_approval_ids:
+                seen_approval_ids.add(a["approval_id"])
+                approvals.append(a)
+        if msg.get("role") == "user":
+            constraints.extend(_extract_constraints(text))
+            last_user_text = text
+        refs.extend(extract_protected_strings(text))
+        refs.extend(f"overflow:{oid}" for oid in _OVERFLOW_ID_RE.findall(text))
+        refs.extend(_ARTIFACT_ID_RE.findall(text))
+
+    if not objective:
+        objective = last_user_text[:300]
+
+    return CompactionPreserve(
+        approvals=approvals,
+        constraints=_dedupe_preserve_order(constraints),
+        objective=objective,
+        source_refs=_dedupe_preserve_order(refs),
+    )
+
+
 def _tool_call_names(msg: Dict[str, Any]) -> List[str]:
     calls = msg.get("tool_calls") if isinstance(msg, dict) else None
     if not isinstance(calls, list):
@@ -1465,6 +1652,10 @@ async def apply_midturn_pressure(
         "llm_summarized": False,
         "overflow_ids": [],
         "skipped": None,
+        # A15: what the model has since paid to re-read back in, for this
+        # run — cumulative at report time, not just this pass's own spill.
+        "reacquired_count": 0,
+        "reacquired_chars": 0,
     }
     try:
         enabled = bool(get_setting("agent_midturn_compact_enabled", True))
@@ -1572,6 +1763,15 @@ async def apply_midturn_pressure(
         except Exception:  # noqa: BLE001
             pass
 
+    if session_id:
+        try:
+            from src import context_overflow as overflow
+            summary = overflow.reacquisition_summary(session_id, run_id)
+            report["reacquired_count"] = summary["reacquired_count"]
+            report["reacquired_chars"] = summary["reacquired_chars"]
+        except Exception:  # noqa: BLE001
+            pass
+
     return current, report
 
 
@@ -1647,9 +1847,24 @@ def compact_with_integrity(
     protected_strings = _dedupe_preserve_order(extract_protected_strings(older_text))
     tokens_before = estimate_tokens(older)
 
+    # A14: the FIRST user turn in the conversation is the declared task
+    # objective \u2014 the ask that started it, which later approval/tool-result
+    # exchanges (the usual folded span) do not restate. Looked up over the
+    # whole conversation, not just `older`, so it survives even once its own
+    # message is folded away.
+    objective_text = ""
+    for msg in convo:
+        if isinstance(msg, dict) and msg.get("role") == "user":
+            objective_text = _content_as_text(msg.get("content"))[:300]
+            break
+    preserve = build_compaction_preserve(older, objective=objective_text)
+
     marker_lines = [f"[compactado: {len(older)} mensajes, {tokens_before} tokens \u2192 0]"]
     if protected_strings:
         marker_lines.append("Identifiers preserved verbatim: " + ", ".join(protected_strings))
+    preserve_block = preserve.to_block()
+    if preserve_block:
+        marker_lines.append(preserve_block)
     provisional_text = "\n".join(marker_lines)
     tokens_after = estimate_tokens([{"role": "system", "content": provisional_text}])
     marker_text = provisional_text.replace(
@@ -1688,6 +1903,12 @@ def compact_with_integrity(
             "compacted": True,
             "ctx02_compacted": True,
             "evidence_refs": [evidence_mapping],
+            "compaction_preserve": {
+                "approvals": preserve.approvals,
+                "constraints": preserve.constraints,
+                "objective": preserve.objective,
+                "source_refs": preserve.source_refs,
+            },
         },
     }
 
