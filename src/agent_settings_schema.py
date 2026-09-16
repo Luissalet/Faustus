@@ -318,6 +318,11 @@ GROUPS: list[dict[str, Any]] = [
             _int("agent_context_overflow_keep_hours", "Overflow keep (hours)",
                  "How long spilled tool bodies stay under data/context_overflow.",
                  1, 8760),
+            _int("agent_tool_result_offload_chars", "Offload tool result over (chars)",
+                 "A single tool result whose string fields total more than this is "
+                 "stored whole in the artifact store before the model sees a "
+                 "truncated preview + artifact_id it can open by range or query.",
+                 1_000, 500_000),
             _bool("agent_tool_wall_time", "Wall time on tool results",
                   "Prefix every tool result the model reads with how long the call took, "
                   "how long the turn has been running and the local clock, so it can tell a "
