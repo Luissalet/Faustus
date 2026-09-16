@@ -62,6 +62,10 @@ from .alternatives_tools import (
 from .code_mode_tool import RunCodeTool
 from .context_overflow_tool import ReadOverflowTool
 from .artifact_read_tool import ReadArtifactTool
+from .code_graph_tools import (
+    CodeGraphIndexTool, CodeGraphSearchTool, CodeGraphTraceTool,
+    CodeGraphChangesTool, CodeGraphArchitectureTool, CodeGraphSnippetTool,
+)
 
 TOOL_HANDLERS = {
     "bash": BashTool().execute,
@@ -155,6 +159,14 @@ TOOL_HANDLERS = {
     # subprocess round instead of one model round trip per call. See
     # src/code_mode/ and src/agent_tools/code_mode_tool.py.
     "run_code": RunCodeTool().execute,
+    # Code graph (R2, Reach wave): architecture/tracing queries over
+    # src.context_engine.code_index's resolved graph. See src/code_graph/.
+    "code_graph_index": CodeGraphIndexTool().execute,
+    "code_graph_search": CodeGraphSearchTool().execute,
+    "code_graph_trace": CodeGraphTraceTool().execute,
+    "code_graph_changes": CodeGraphChangesTool().execute,
+    "code_graph_architecture": CodeGraphArchitectureTool().execute,
+    "code_graph_snippet": CodeGraphSnippetTool().execute,
 }
 # Config/integration admin tools (manage_endpoints/mcp/webhooks/tokens/settings).
 TOOL_HANDLERS.update(ADMIN_TOOL_HANDLERS)
@@ -246,7 +258,11 @@ TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_fi
              "req_propose", "req_link",
              # Isolated, comparable alternatives (CMP-13, W2-G) --
              # src/agent_tools/alternatives_tools.py.
-             "alt_start", "alt_compare", "alt_apply"} | BUILTIN_EMAIL_TOOLS | DESKTOP_TOOLS | SEMANTIC_TOOLS
+             "alt_start", "alt_compare", "alt_apply",
+             # Code graph (R2, Reach wave) -- src/agent_tools/code_graph_tools.py.
+             "code_graph_index", "code_graph_search", "code_graph_trace",
+             "code_graph_changes", "code_graph_architecture",
+             "code_graph_snippet"} | BUILTIN_EMAIL_TOOLS | DESKTOP_TOOLS | SEMANTIC_TOOLS
 
 ToolBlock = namedtuple("ToolBlock", ["tool_type", "content"])
 

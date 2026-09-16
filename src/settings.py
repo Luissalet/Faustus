@@ -922,6 +922,11 @@ DEFAULT_SETTINGS = {
     # HarnessRevision is trusted — bounded so a bad candidate is caught
     # cheaply rather than adopted on one lucky pass.
     "harness_evolution_canary_runs": 5,
+    # R2 (Reach wave): auto-index the code graph in the background when a
+    # code turn resolves a workspace whose graph is missing/stale, so
+    # code_graph_search/trace/architecture answer from a warm index on the
+    # first ask instead of the agent having to call code_graph_index itself.
+    "agent_code_graph_auto_index": True,
 }
 
 

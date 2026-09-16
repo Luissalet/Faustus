@@ -3895,6 +3895,11 @@ def _build_system_prompt(
 
     if workspace and not suppress_local_context:
         agent_prompt += _workspace_coding_rules(workspace)
+        try:  # R2: background code-graph auto-index; never blocks/fails the turn.
+            from src.code_graph.auto_index import maybe_auto_index
+            maybe_auto_index(workspace)
+        except Exception:
+            pass
         # Standing instructions kept in the repo itself (AGENTS.md / CLAUDE.md /
         # .odysseus/INSTRUCTIONS.md): conventions, how to run the tests, what
         # not to touch. Cached by mtime — byte-identical until the file changes.

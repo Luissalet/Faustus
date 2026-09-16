@@ -246,6 +246,16 @@ BUILTIN_TOOL_DESCRIPTIONS: Dict[str, str] = {
     "alt_start": "Start a new experiment: try more than one approach to the same task, each fully isolated (a git worktree, a directory snapshot, or a text snapshot). Returns the experiment id and each alternative's id — always cite the experiment id back. Use for 'let's try this two different ways', 'try it again without losing the first attempt', 'compare a quick fix against a proper refactor'.",
     "alt_compare": "Diff every alternative of an experiment against its shared base, and see which files more than one alternative touches. Use for 'how do these two attempts differ', 'which one changed less', 'did they touch the same files'. Read-only.",
     "alt_apply": "Merge one alternative's changes into the user's main copy — a three-way merge that never discards a manual edit made there since the experiment started. On a conflict nothing is written; relay the conflicting files to the user rather than guessing. Use for 'go with the second one', 'apply that alternative'. Refused unless the user explicitly approved.",
+    # Code graph (R2, Reach wave): a persistent, per-workspace graph of
+    # symbols/calls/imports/routes (src.code_graph, over
+    # src.context_engine.code_index) so architecture and call-tracing
+    # questions are answered from an index instead of reading whole files.
+    "code_graph_index": "Build or refresh the persistent code graph (symbols, calls, imports, HTTP routes) for a workspace — incremental by file hash. Use before other code_graph_* tools on a repo never indexed before, or after a large external change (git pull, branch switch).",
+    "code_graph_search": "Search the code graph for a symbol by name or pattern (or by meaning with semantic: true) without reading files — file:line, kind and signature for each match. Use for 'where is X defined', 'find the class that handles Y' across a whole repo.",
+    "code_graph_trace": "Trace a call/import path between two named symbols (BFS over the resolved graph) — the chain of symbols with file:line and how certain each hop is. Use for 'how does this eventually call that', 'what's the path from the route handler to the database write'.",
+    "code_graph_changes": "Diff the workspace against a git ref and map the changed lines to the symbols they fall inside, plus each affected symbol's direct callers. Use for 'what did this change actually touch', 'what should I re-test after this diff'.",
+    "code_graph_architecture": "One-call architecture summary: languages, symbol/edge counts, HTTP routes, the most-called functions (fan-in), and hotspots (long, heavily-called functions). Use when opening an unfamiliar repo — 'give me the lay of the land' — instead of exploring file by file.",
+    "code_graph_snippet": "The exact source lines of one symbol from the code graph, nothing else from the file. Use right after code_graph_search/trace to read just the definition found, instead of opening the whole file.",
 }
 
 
