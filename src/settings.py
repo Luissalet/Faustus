@@ -909,6 +909,12 @@ DEFAULT_SETTINGS = {
     # read fresh on every check, so revocation is visible on the very next
     # request that consults it.
     "token_revocation_bound_seconds": 0,
+    # Harness evolution (src/harness_evolution/): after a CandidatePatch
+    # passes validation (A26) and evaluation on source + held-out tasks
+    # (A27), promotion runs this many canary rounds before the new
+    # HarnessRevision is trusted — bounded so a bad candidate is caught
+    # cheaply rather than adopted on one lucky pass.
+    "harness_evolution_canary_runs": 5,
 }
 
 
