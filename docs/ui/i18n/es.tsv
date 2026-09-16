@@ -6810,6 +6810,22 @@ Subtitles	Subtítulos
 unmapped	sin mapear
 {n} cue(s)	{n} cue(s)
 {rule}: {actual} (target {target})	{rule}: {actual} (objetivo {target})
+Canvas	Canvas
+Canvas editor	Editor de lienzo
+Canvas controls	Controles del lienzo
+Blend mode	Modo de fusión
+Normal	Normal
+Multiply	Multiplicar
+Screen	Trama
+Inpaint prompt	Instrucción de inpaint
+Describe the change	Describe el cambio
+Request generation	Solicitar generación
+Polygon mask	Máscara poligonal
+No canvas content	Sin contenido de lienzo
+This document has no layers yet.	Este documento aún no tiene capas.
+Click to add points, double-click to close the mask.	Haz clic para añadir puntos, doble clic para cerrar la máscara.
+Exported as {id}	Exportado como {id}
+Inpaint proposal ready ({recipe})	Propuesta de inpaint lista ({recipe})
 
 About this selection…	Sobre esta selección…
 Accept proposal	Aceptar propuesta
