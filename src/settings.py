@@ -701,6 +701,23 @@ DEFAULT_SETTINGS = {
     "agent_loop_breaker_nudge_after": 3,
     "agent_loop_breaker_block_after": 6,
     "agent_loop_breaker_stop_after": 10,
+    # H4: src/rewrite_policy.py — discourages repeated whole-file `write_file`
+    # rewrites of the same existing, non-trivial file within one turn ("off"
+    # disables it entirely). From the require_edit-th qualifying rewrite the
+    # integrator's write_file refuses and points at edit_file/apply_patch;
+    # from the block-th it refuses harder and the harness round injects a
+    # "read the file and the diff first" instruction. Not yet wired into
+    # src/agent_tools/filesystem_tools.py (see H45_wiring.md).
+    "agent_rewrite_policy": "require_edit",
+    "agent_rewrite_policy_require_edit_after": 2,
+    "agent_rewrite_policy_block_after": 4,
+    "agent_rewrite_policy_min_lines": 150,
+    # H5: src/test_debt.py — a test seen as pre_existing/exempt (project_tests
+    # baseline comparison) for this many TURNS becomes "overdue" and surfaces
+    # as a high-priority todo until fixed or dismissed with a reason. Not yet
+    # wired into src/agent_loop.py (see H45_wiring.md).
+    "agent_test_debt": True,
+    "agent_test_debt_turns": 3,
     # Model the workers run on ("" = the coordinator's). Two different models
     # generate at the same time on Ollama; two requests to one model queue on
     # its single slot — pin the worker model to the other card (Local models →

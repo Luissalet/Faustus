@@ -892,6 +892,42 @@ GROUPS: list[dict[str, Any]] = [
                   "it, so code_graph_search/trace/architecture already have a warm index to answer from."),
         ],
     ),
+    _group(
+        "harness_policy", "Rewrite & test debt policy",
+        "Two harness lot H4/H5 policies (src/rewrite_policy.py, src/test_debt.py) aimed at a small "
+        "local model: discourage rewriting the same large file whole several times in one turn "
+        "instead of editing it, and keep a persistent journal of tests exempted as pre-existing so "
+        "one never stays silently forgiven for days. Not yet wired into the turn loop — see "
+        "H45_wiring.md.",
+        [
+            _select("agent_rewrite_policy", "Rewrite policy",
+                    "\"off\" never restricts write_file. Any other value enables the ladder below: "
+                    "from the Nth qualifying rewrite of an existing, non-trivial file within one turn, "
+                    "write_file is refused in favour of edit_file/apply_patch.",
+                    ["off", "require_edit"]),
+            _int("agent_rewrite_policy_require_edit_after", "Rewrite policy: require edit after N rewrites",
+                 "Whole-file write_file rewrites of the same existing, non-trivial file within one "
+                 "turn before write_file starts refusing and pointing at edit_file/apply_patch.",
+                 1, 20),
+            _int("agent_rewrite_policy_block_after", "Rewrite policy: block after N rewrites",
+                 "Further whole-file rewrites of the same file (past require-edit) before the refusal "
+                 "escalates and the harness round injects a stronger 'read the file and the diff "
+                 "first' instruction.",
+                 2, 50),
+            _int("agent_rewrite_policy_min_lines", "Rewrite policy: file size floor (lines)",
+                 "A file at or under this many lines before the write is never restricted — the "
+                 "policy only guards files too large for a small model to hold in memory across "
+                 "several full rewrites.",
+                 0, 5000),
+            _bool("agent_test_debt", "Test debt journal",
+                  "Track tests seen as pre-existing/exempt across turns per project "
+                  "(data/test_debt/<project>.json) instead of only comparing this turn's baseline."),
+            _int("agent_test_debt_turns", "Test debt: overdue after N turns",
+                 "A test seen as pre-existing/exempt for this many turns becomes 'overdue' and is "
+                 "surfaced as a high-priority todo until it is fixed or dismissed with a reason.",
+                 1, 50),
+        ],
+    ),
 ]
 
 
