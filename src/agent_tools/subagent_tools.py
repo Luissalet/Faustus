@@ -38,6 +38,15 @@ MIN_WORKER_TIMEOUT_S = 60         # floor for the per-worker timeout (counted fr
 SUBAGENT_FOLDER = "Agents"
 REVIEWER_NAME = "reviewer"
 
+# A31: a reservation is taken BEFORE a worker is launched, so it must be sized
+# from something known ahead of time — the round budget — not from actual
+# usage, which only exists once the worker has already run. This is a coarse
+# per-round token allowance (prompt + completion, generous on purpose: a
+# reservation that is too small only means real usage often needs a top-up
+# reconciliation, never an unsafe overspend, because the CEILING check in
+# src/budget_account.py is what actually protects the run).
+DEFAULT_RESERVE_TOKENS_PER_ROUND = 6000
+
 
 # ---------------------------------------------------------------------------
 # v2: exclusive files per worker (a lock, not a warning)
@@ -366,6 +375,28 @@ def _setting(key: str, default: Any = None) -> Any:
         return get_setting(key, default)
     except Exception:
         return default
+
+
+def _budget_run_id_for(parent_session_id: Optional[str]) -> str:
+    """A31: the id `src/budget_account.py` books reservations under. The
+    coordinator's own in-flight turn already has one (`agent_runs.run_id` —
+    the same identity `GET /api/runs/{run_id}/budget` is keyed by), so a
+    worker's spend and the coordinator's own land in the same account rather
+    than two disconnected ledgers. Falls back to the parent session id itself
+    when no turn is currently tracked for it (e.g. a dispatched job, or a
+    test harness that drives `delegate_agents` without going through the
+    normal chat-turn machinery) — accounting still happens, just keyed by
+    session instead of by turn."""
+    if not parent_session_id:
+        return ""
+    try:
+        from src import agent_runs as _agent_runs
+        rid = _agent_runs.get_run_id(parent_session_id)
+        if rid:
+            return str(rid)
+    except Exception:
+        pass
+    return str(parent_session_id)
 
 
 # One GPU per machine, not one per delegate_agents CALL: the "at most N
@@ -1859,6 +1890,19 @@ class DelegateAgentsTool:
         locks = FileLockRegistry(workspace)
         harness_options = ctx.get("harness_options") if isinstance(ctx.get("harness_options"), dict) else None
 
+        # A31: open (idempotent) the run's budget account BEFORE any worker
+        # is reserved for. The ceiling is read from the setting at this
+        # point — rule 8 of the lot contract — not re-read per worker, so a
+        # setting change mid-delegation cannot widen an already-open run.
+        budget_run_id = _budget_run_id_for(parent_sid)
+        if budget_run_id:
+            try:
+                from src import budget_account as _budget
+                _ceiling = int(_setting("agent_budget_tokens_per_run", 0) or 0)
+                _budget.open(budget_run_id, ceiling_tokens=_ceiling)
+            except Exception as e:
+                logger.debug("delegate_agents: budget_account.open failed: %s", e)
+
         async def emit_for(run: SubagentRun):
             async def _emit(payload: Dict[str, Any]):
                 if progress_cb is None:
@@ -1960,6 +2004,31 @@ class DelegateAgentsTool:
                 await emit({'event': 'error', 'message': run.error})
                 await emit({'event': 'done', **run.report()})
                 return
+            # A31: reserve BEFORE the worker is launched, not after — a
+            # reservation that does not fit under the run's ceiling is
+            # refused here, so the GPU/model slot below is never taken for a
+            # worker that was going to be rejected anyway. `run.id` (not
+            # `run.session_id`, which does not exist until `_run_subagent`
+            # assigns it) is the child key: stable for the life of this run,
+            # including a queued worker that has not started yet.
+            if budget_run_id:
+                from src.budget_account import BudgetExceeded as _BudgetExceeded
+                try:
+                    from src import budget_account as _budget
+                    _reservation = _budget.reserve(
+                        budget_run_id, run.id,
+                        tokens=int(rounds) * DEFAULT_RESERVE_TOKENS_PER_ROUND,
+                    )
+                except Exception as e:
+                    logger.debug("delegate_agents: budget_account.reserve failed: %s", e)
+                    _reservation = None
+                if isinstance(_reservation, _BudgetExceeded):
+                    run.error = _reservation.reason
+                    run.stop_reason = "budget_exceeded"
+                    run.finished = time.time()
+                    await emit({"event": "error", "message": run.error, "budget": _reservation.as_dict()})
+                    await emit({"event": "done", **run.report()})
+                    return
             try:
                 if team_slots is not None:
                     await team_slots.acquire()
@@ -2017,6 +2086,25 @@ class DelegateAgentsTool:
                 run.finished = run.finished or time.time()
                 if dog is not None and not dog.done():
                     dog.cancel()
+                # A31: reconcile against REAL usage, closing the reservation
+                # taken above. `run.input_tokens`/`run.output_tokens` are
+                # accumulated from `round_info`/`metrics` events in
+                # `_run_subagent` and are already final by the time this
+                # `finally` runs (it runs after every branch that could still
+                # touch them). Cost is passed as None — Faustus has no
+                # verified per-model price table wired to workers yet — which
+                # books it as `unpriced_usage`, never a false-zero cost; see
+                # T7_wiring.md for the pricing follow-up.
+                if budget_run_id:
+                    try:
+                        from src import budget_account as _budget
+                        _budget.reconcile(
+                            budget_run_id, run.id,
+                            used_tokens=int(run.input_tokens or 0) + int(run.output_tokens or 0),
+                            used_cost=None,
+                        )
+                    except Exception as e:
+                        logger.debug("delegate_agents: budget_account.reconcile failed: %s", e)
                 # Its files are free again: a dependent task later in a
                 # sequential run (or a fixer after verification) may edit
                 # what this worker wrote — until now the locks outlived the

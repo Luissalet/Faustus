@@ -406,6 +406,30 @@ GROUPS: list[dict[str, Any]] = [
                   "Nudge a stalled worker once, then stop it."),
             _bool("agent_subagent_lean_tools", "Lean worker toolset",
                   "Workers skip web, memory, skills and background-job tools unless their task mentions them (fewer schema tokens per round)."),
+            _int("agent_budget_tokens_per_run", "Run token ceiling",
+                 "Total tokens the coordinator plus every worker, reviewer and retry may spend on "
+                 "one run (src/budget_account.py). A worker's reservation is rejected BEFORE it is "
+                 "launched if it would not fit under what remains. 0 = no ceiling, accounting only "
+                 "— GET /api/runs/{run_id}/budget still reports reserved vs. consumed tokens.",
+                 0, 50_000_000),
+            # A29: src/loop_breaker.py's deterministic escalation ladder (kept
+            # in this group rather than a new one so the schema's requested
+            # group order/prefix — test_agent_settings_schema.py — is
+            # untouched). Not yet wired into src/agent_loop.py's turn loop
+            # (see T7_wiring.md); the module and these settings exist so the
+            # policy is independently testable ahead of that wiring.
+            _int("agent_loop_breaker_nudge_after", "Loop breaker: nudge after N repeats",
+                 "Identical (tool, arguments, result) calls in a row before a system message is "
+                 "injected telling the model to try something else.",
+                 1, 50),
+            _int("agent_loop_breaker_block_after", "Loop breaker: block tool after N repeats",
+                 "Further identical repeats (past the nudge) before that tool is hidden from the "
+                 "next round's schema.",
+                 2, 100),
+            _int("agent_loop_breaker_stop_after", "Loop breaker: stop turn after N repeats",
+                 "Further identical repeats (past the block) before the turn ends with "
+                 "stop_reason \"non_progressing_loop\".",
+                 3, 200),
         ],
     ),
     _group(

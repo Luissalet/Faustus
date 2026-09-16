@@ -119,7 +119,13 @@ def test_groups_follow_the_requested_layout():
     assert {"agent_subagent_reviewer", "agent_subagent_max_parallel", "agent_subagent_depth",
             "agent_subagent_stall_seconds", "agent_subagent_tick_seconds", "agent_subagent_supervisor",
             "agent_subagent_lean_tools", "agent_subagent_worker_model",
-            "dispatch_model", "dispatch_endpoint_id"} == set(by_group["subagents"])
+            "dispatch_model", "dispatch_endpoint_id",
+            # A31/A29 (lot T7): run budget ceiling and the loop-breaker's
+            # escalation thresholds — kept in this group rather than a new
+            # one so the group order/prefix asserted above is untouched.
+            "agent_budget_tokens_per_run", "agent_loop_breaker_nudge_after",
+            "agent_loop_breaker_block_after", "agent_loop_breaker_stop_after",
+            } == set(by_group["subagents"])
     assert {"agent_runs_persist", "agent_runs_keep_hours", "agent_queue_local_concurrency",
             "agent_queue_api_concurrency", "agent_scorecard"} == set(by_group["runs"])
     assert all(k.startswith("browser_") for k in by_group["browser"]) and len(by_group["browser"]) == 7

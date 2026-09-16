@@ -626,6 +626,20 @@ DEFAULT_SETTINGS = {
     "agent_autonomy_max_subagents": 4,
     "agent_autonomy_max_remote_spend": 20_000,
     "agent_autonomy_max_memory_mb": 2048,
+    # A31: run-wide token ceiling enforced by src/budget_account.py before a
+    # worker/reviewer/judge is launched (reservations rejected up front, not
+    # after the fact). 0 = no ceiling — the ledger still tracks reserved vs.
+    # consumed tokens per run, it just never refuses a reservation for it.
+    "agent_budget_tokens_per_run": 0,
+    # A29: src/loop_breaker.py's deterministic escalation ladder — N identical
+    # (tool, args, result) calls in a row nudge, another M block that tool,
+    # another K stop the turn with stop_reason "non_progressing_loop". Not
+    # yet wired into src/agent_loop.py's turn loop (see T7_wiring.md); the
+    # module and these settings exist so the policy is independently
+    # testable ahead of that wiring.
+    "agent_loop_breaker_nudge_after": 3,
+    "agent_loop_breaker_block_after": 6,
+    "agent_loop_breaker_stop_after": 10,
     # Model the workers run on ("" = the coordinator's). Two different models
     # generate at the same time on Ollama; two requests to one model queue on
     # its single slot — pin the worker model to the other card (Local models →
