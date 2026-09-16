@@ -106,6 +106,15 @@ DEFAULT_SETTINGS = {
     # rejected before it is copied into the durable artifact store. Default
     # 30 minutes.
     "creator_ingest_max_duration_s": 1800,
+    # WP15: ASR worker defaults (src/creator/adapters/whisper.py,
+    # src/creator/asr.py). "base" is faster-whisper's own balanced default;
+    # "cpu" never touches src/creator/resources.py's GPU admission gate — a
+    # job only calls resources.admit() when its resolved device is "cuda".
+    # max_concurrent bounds the in-process worker pool ("cola de 1" by
+    # default, the same conservative default WP30 picks for heavy jobs).
+    "creator_asr_default_model": "base",
+    "creator_asr_device": "cpu",
+    "creator_asr_max_concurrent": 1,
     "image_gen_enabled": False,
     "image_model": "",
     "image_quality": "medium",
