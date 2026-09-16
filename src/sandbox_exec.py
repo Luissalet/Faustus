@@ -69,6 +69,19 @@ IMAGE_SETTING = "agent_sandbox_image"
 TIMEOUT_SETTING = "agent_sandbox_timeout_s"
 NETWORK_SETTING = "agent_sandbox_network"
 MEMORY_SETTING = "agent_sandbox_memory_mb"
+#: A long-lived, per-session container (src/sandbox_provider.py) instead of
+#: one `--rm` container per call. Off by default — same byte-identical
+#: promise as `enabled()` itself: nothing about the ephemeral path changes
+#: unless this is explicitly turned on.
+PERSISTENT_SESSION_SETTING = "agent_sandbox_persistent_session"
+#: What the NEXT command does when the session's container is gone — removed
+#: by hand (`docker rm`), pruned by Docker Desktop, whatever. Never silently
+#: treated as "still there".
+#:   * ``recreate_empty`` (default) — a fresh, empty session sandbox, and the
+#:     result says so plus what is known to have been lost.
+#:   * ``fail`` — refuse the command; nothing is recreated.
+MISSING_POLICY_SETTING = "sandbox_missing_policy"
+MISSING_POLICIES = ("recreate_empty", "fail")
 
 DEFAULT_TIMEOUT_S = 900
 DEFAULT_MEMORY_MB = 2048
@@ -165,6 +178,15 @@ def memory_mb() -> int:
 
 def network() -> bool:
     return _setting(NETWORK_SETTING, False) is True
+
+
+def persistent_session_enabled() -> bool:
+    return _setting(PERSISTENT_SESSION_SETTING, False) is True
+
+
+def missing_policy() -> str:
+    raw = str(_setting(MISSING_POLICY_SETTING, "recreate_empty") or "recreate_empty").strip().lower()
+    return raw if raw in MISSING_POLICIES else "recreate_empty"
 
 
 def manifest() -> SkillManifest:
@@ -294,15 +316,19 @@ def consume_skip_reason() -> str:
 def _refusal(tool: str, reason: str) -> Dict[str, Any]:
     """On, and unable to run it. Not a fallback — an answer the model can act
     on, and one an operator can read as "turn Docker on or turn the setting
-    off", never as "your command was wrong"."""
+    off", never as "your command was wrong". Leads with the literal phrase
+    `sandbox unavailable: <reason>` so a caller (or a test) can find the
+    verdict without parsing the rest of the sentence."""
     return {
-        "error": f"{tool}: the sandbox is on and the command was NOT run — {reason}. "
-                 f"`{MODE_SETTING}` is `strict`, so Faustus does not fall back to running it "
-                 f"unsandboxed; start the backend, set `{MODE_SETTING}` to `auto` (host when "
-                 f"the container cannot serve) or turn off `{SETTING}`.",
+        "error": f"{tool}: sandbox unavailable: {reason}. The sandbox is on and the "
+                 f"command was NOT run — `{MODE_SETTING}` is `strict`, so Faustus does "
+                 f"not fall back to running it unsandboxed; start the backend, set "
+                 f"`{MODE_SETTING}` to `auto` (host when the container cannot serve) or "
+                 f"turn off `{SETTING}`.",
         "exit_code": 126,
         "sandboxed": False,
         "sandbox_refused": True,
+        "sandbox_unavailable_reason": reason,
     }
 
 
@@ -337,6 +363,10 @@ async def run(tool: str, command: str, ctx: Optional[dict] = None) -> Optional[D
     workspace = agent_cwd()
     if not workspace or not os.path.isdir(workspace):
         return _refusal(tool, f"the workspace {workspace!r} is not a directory")
+
+    session_id = str((ctx or {}).get("session_id") or "").strip()
+    if persistent_session_enabled() and session_id:
+        return await _run_in_session(tool, command, ctx, workspace, session_id)
 
     ready = DockerWorkspaceBackend(image=image()).probe()
     if not ready["ok"]:
@@ -409,3 +439,116 @@ async def run(tool: str, command: str, ctx: Optional[dict] = None) -> Optional[D
     return {**common,
             "output": _truncate(output, MAX_OUTPUT_CHARS) or "(no output)",
             "exit_code": result.exit_code if result.exit_code is not None else 1}
+
+
+# ── the persistent, per-session sandbox path (agent_sandbox_persistent_session) ─
+#
+# Everything above this line is the original, ephemeral `--rm`-per-call
+# path and is untouched by what follows: `run()` only reaches this branch
+# when the setting is explicitly on AND the call carries a session id.
+
+async def _run_in_session(tool: str, command: str, ctx: Optional[dict],
+                           workspace: str, session_id: str) -> Dict[str, Any]:
+    """The persistent-session counterpart of the code below it: instead of a
+    fresh container per call, this reuses (or recreates) one container named
+    after `session_id`, and treats its disappearance as a fact to report, not
+    a chance to run unsandboxed on the host."""
+    from src.constants import MAX_OUTPUT_CHARS
+    from src.tool_execution import _truncate
+    from src import sandbox_provider as provider_mod
+
+    provider = provider_mod.get_provider(image=image(), workspace=workspace)
+
+    avail = await asyncio.to_thread(provider.probe)
+    if not avail.available:
+        if mode() == "auto":
+            _note_skip(tool, avail.reason)
+            return None
+        return _refusal(tool, avail.reason)
+
+    was_seen = provider_mod.session_seen(session_id)
+    status = await asyncio.to_thread(provider.status, session_id)
+
+    note: str = ""
+    lost_files: list = []
+
+    if status == "unknown":
+        return _refusal(
+            tool, f"sandbox session {session_id!r} could not be checked — the "
+                  f"backend did not answer the status probe")
+
+    if status == "missing" and not was_seen:
+        # Never created before: this is a first use, not a disappearance.
+        created = await asyncio.to_thread(provider.create, session_id)
+        if not created.get("created"):
+            return _refusal(tool, created.get("reason") or
+                             f"could not create the sandbox session {session_id!r}")
+    elif status == "missing" and was_seen:
+        # It existed once and is gone now — apply the missing policy and say
+        # so explicitly. This is the ONLY place allowed to claim what did or
+        # did not survive, and it never claims survival.
+        policy = missing_policy()
+        result = await asyncio.to_thread(provider.recreate, session_id, policy)
+        note = str(result.get("message") or "")
+        lost_files = list(result.get("lost_files") or [])
+        if not result.get("recreated"):
+            return {
+                "error": f"{tool}: {note or 'sandbox session missing and not recreated'}",
+                "exit_code": 126,
+                "sandboxed": False,
+                "sandbox_refused": True,
+                "sandbox_session_status": "missing",
+                "sandbox_session_recreated": False,
+                "sandbox_missing_policy": policy,
+                "sandbox_lost_files": lost_files,
+            }
+    # status == "exists": nothing to do, reuse it as-is.
+
+    rewritten, rewrites = to_container(command, workspace)
+    argv = _argv_for(tool, rewritten)
+    touches = [t for t in ((ctx or {}).get("sandbox_touches") or []) if isinstance(t, str)]
+
+    exec_result = await asyncio.to_thread(
+        provider.exec, session_id, argv, timeout=timeout_s(), touches=touches)
+
+    if not exec_result.get("executed"):
+        # Removed between the status check above and this exec — a narrow
+        # race, still never allowed to look like success.
+        return {
+            "error": f"{tool}: sandbox unavailable: session {session_id!r} disappeared "
+                     f"between the status check and running the command; nothing ran.",
+            "exit_code": 126,
+            "sandboxed": False,
+            "sandbox_refused": True,
+            "sandbox_session_status": "missing",
+        }
+
+    stdout = to_host(exec_result.get("stdout", ""), workspace).rstrip()
+    stderr = to_host(exec_result.get("stderr", ""), workspace).rstrip()
+    output = stdout
+    if stderr:
+        output = (output + "\nSTDERR: " + stderr).strip() if output else "STDERR: " + stderr
+
+    common: Dict[str, Any] = {
+        "sandboxed": True,
+        "backend": "docker_workspace_session",
+        "isolation": "container",
+        "image": image(),
+        "network": False,
+        "sandbox_session": session_id,
+    }
+    if rewrites:
+        common["workspace_paths_rewritten"] = rewrites
+    if note:
+        common["sandbox_session_note"] = note
+        common["sandbox_session_recreated"] = True
+        common["sandbox_lost_files"] = lost_files
+
+    if exec_result.get("timed_out"):
+        return {**common,
+                "error": f"{tool}: timed out after {timeout_s()}s — the session command was killed",
+                "exit_code": 124}
+
+    return {**common,
+            "output": _truncate(output, MAX_OUTPUT_CHARS) or "(no output)",
+            "exit_code": exec_result.get("exit_code", 1)}
