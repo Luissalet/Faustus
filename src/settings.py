@@ -88,6 +88,14 @@ DEFAULT_SETTINGS = {
     # (Also gates WP06's additive deployment-evidence side-write in
     # src/model_calibration.py::save_tested, which reads it before writing.)
     "creator_enabled": False,
+    # WP30: conservative resource admission for Creator media jobs
+    # (src/creator/resources.py). "serial" (default) allows one heavy load
+    # at a time per device; "measured" allows concurrency only when the
+    # measured VRAM free on that device covers every admitted footprint plus
+    # the new one, with creator_vram_margin_mb of headroom left over. Read
+    # fresh on every admission, never cached.
+    "creator_resource_mode": "serial",
+    "creator_vram_margin_mb": 512,
     "image_gen_enabled": False,
     "image_model": "",
     "image_quality": "medium",
