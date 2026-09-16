@@ -221,6 +221,19 @@ def test_all_five_kinds_validate_a_minimal_valid_document(tmp_path):
                 "selected_take": None,
             }],
         },
+        # WP16 additive kind — see documents.py::_validate_subtitles.
+        "subtitles": {
+            "language": "en",
+            "clock": {"ticks_per_second_numerator": "16000", "ticks_per_second_denominator": "1"},
+            "profile": {
+                "max_chars_per_line": 42, "max_lines": 2, "cps_max": 17.0,
+                "min_duration_seconds": 1.0, "max_duration_seconds": 7.0,
+                "min_gap_seconds": 0.08, "pause_break_seconds": 0.6,
+            },
+            "style": {"font_family": "Arial", "font_size": 42, "primary_color": "#FFFFFF"},
+            "styles": {},
+            "cues": [],
+        },
     }
     assert set(contents) == set(DOCUMENT_KINDS)
     for kind, content in contents.items():

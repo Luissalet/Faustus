@@ -28,7 +28,7 @@ from .errors import InvalidDocument
 
 SCHEMA_VERSION = 1
 
-DOCUMENT_KINDS = ("canvas", "timeline", "transcript", "song", "storyboard")
+DOCUMENT_KINDS = ("canvas", "timeline", "transcript", "song", "storyboard", "subtitles")
 DOCUMENT_STATES = ("proposed", "accepted")
 
 
@@ -179,12 +179,46 @@ def _validate_storyboard(content: Dict[str, Any]) -> None:
         _require(st is None or _is_str(st, min_len=1), f"{spath}.selected_take invalid")
 
 
+def _validate_subtitles(content: Dict[str, Any]) -> None:
+    """WP16: one caption TRACK (one language) segmented from a ``transcript``
+    document. ``profile``/``style`` are validated in full by
+    ``src.creator.subtitles`` (``resolve_profile``/``_normalize_style``) —
+    this structural pass only checks the shape every ``subtitles`` document
+    must have, same division of labour as every other kind here."""
+    for key in ("language", "clock", "profile", "style", "cues"):
+        _require(key in content, f"subtitles.content.{key} is required")
+    _require(_is_str(content["language"], min_len=1), "subtitles.content.language must be non-empty")
+    _validate_clock(content["clock"], "subtitles.content.clock")
+    _require(isinstance(content["profile"], dict), "subtitles.content.profile must be an object")
+    _require(isinstance(content["style"], dict), "subtitles.content.style must be an object")
+    cues = content["cues"]
+    _require(isinstance(cues, list), "subtitles.content.cues must be an array")
+    for i, cue in enumerate(cues):
+        cpath = f"subtitles.content.cues[{i}]"
+        _require(isinstance(cue, dict), f"{cpath} must be an object")
+        for key in ("id", "start_ticks", "duration_ticks", "lines", "speaker_id",
+                    "source_cue_ids", "editorial_status", "edited", "unmapped"):
+            _require(key in cue, f"{cpath}.{key} is required")
+        _require(_is_ticks(cue["start_ticks"], allow_zero=True), f"{cpath}.start_ticks invalid")
+        _require(_is_ticks(cue["duration_ticks"]), f"{cpath}.duration_ticks invalid")
+        lines = cue["lines"]
+        _require(isinstance(lines, list) and len(lines) >= 1 and all(isinstance(l, str) and l for l in lines),
+                  f"{cpath}.lines must be a non-empty array of non-empty strings")
+        _require(cue["speaker_id"] is None or _is_str(cue["speaker_id"], min_len=1), f"{cpath}.speaker_id invalid")
+        _require(isinstance(cue["source_cue_ids"], list), f"{cpath}.source_cue_ids must be an array")
+        _require(cue["editorial_status"] in ("proposed", "accepted", "needs_review"),
+                  f"{cpath}.editorial_status is invalid")
+        _require(isinstance(cue["edited"], bool), f"{cpath}.edited must be a bool")
+        _require(isinstance(cue["unmapped"], bool), f"{cpath}.unmapped must be a bool")
+
+
 _VALIDATORS = {
     "canvas": _validate_canvas,
     "timeline": _validate_timeline,
     "transcript": _validate_transcript,
     "song": _validate_song,
     "storyboard": _validate_storyboard,
+    "subtitles": _validate_subtitles,
 }
 
 

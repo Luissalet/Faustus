@@ -7,6 +7,7 @@ import * as api from '../../adapters/creator';
 import { t } from '../../i18n';
 import { Timeline } from './Timeline';
 import { ModelExplorer } from './ModelExplorer';
+import { Subtitles } from './Subtitles';
 import './creator.css';
 
 /**
@@ -515,14 +516,17 @@ function PreflightCard({ projectId, deployments }: { projectId: string; deployme
 
 // ── screen ───────────────────────────────────────────────────────────────
 
-type CreatorTab = 'workspace' | 'timeline' | 'models';
+type CreatorTab = 'workspace' | 'timeline' | 'models' | 'subtitles';
 
 export function CreatorScreen() {
   const [params, setParams] = useSearchParams();
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectId, setProjectIdState] = useState(params.get('project') ?? '');
   const [tab, setTab] = useState<CreatorTab>(
-    params.get('tab') === 'timeline' ? 'timeline' : params.get('tab') === 'models' ? 'models' : 'workspace',
+    params.get('tab') === 'timeline' ? 'timeline'
+      : params.get('tab') === 'models' ? 'models'
+      : params.get('tab') === 'subtitles' ? 'subtitles'
+      : 'workspace',
   );
   const [caps, setCaps] = useState<api.CreatorCapabilities | 'disabled' | null>(null);
   const [libraryItems, setLibraryItems] = useState<api.LibraryItem[]>([]);
@@ -712,6 +716,16 @@ export function CreatorScreen() {
             >
               {t('Models')}
             </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === 'subtitles'}
+              className="fs-creator__tab"
+              onClick={() => changeTab('subtitles')}
+              data-testid="creator-tab-subtitles"
+            >
+              {t('Subtitles')}
+            </button>
           </div>
 
           {(tab === 'workspace' || tab === 'timeline') && (
@@ -748,6 +762,7 @@ export function CreatorScreen() {
           )}
 
           {tab === 'models' && <ModelExplorer projectId={projectId} />}
+          {tab === 'subtitles' && <Subtitles projectId={projectId} />}
         </>
       )}
 

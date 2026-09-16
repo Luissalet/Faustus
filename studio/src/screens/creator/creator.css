@@ -449,3 +449,119 @@
   padding: 4px 8px;
   text-align: left;
 }
+
+/* ── WP16: Subtitles ─────────────────────────────────────────────────── */
+
+.fs-subtitles__regen {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--fs-border, #2a2a2e);
+  margin-bottom: 8px;
+}
+
+.fs-subtitles__track-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.fs-subtitles__track {
+  width: 100%;
+  text-align: left;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: none;
+  cursor: pointer;
+}
+
+.fs-subtitles__track--active {
+  border-color: var(--fs-accent, #4a90d9);
+  background: rgba(74, 144, 217, 0.1);
+}
+
+.fs-subtitles__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--fs-border, #2a2a2e);
+  margin-bottom: 8px;
+}
+
+.fs-subtitles__cues {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+}
+
+.fs-subtitles__cue {
+  border: 1px solid var(--fs-border, #2a2a2e);
+  border-radius: 6px;
+  padding: 8px;
+}
+
+.fs-subtitles__cue--selected {
+  border-color: var(--fs-accent, #4a90d9);
+}
+
+.fs-subtitles__cue-meta {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 0.8rem;
+  color: var(--fs-muted, #888);
+  margin-bottom: 4px;
+}
+
+.fs-subtitles__cue-time {
+  font-variant-numeric: tabular-nums;
+}
+
+.fs-subtitles__cue-flag {
+  padding: 1px 6px;
+  border-radius: 8px;
+  font-size: 0.72rem;
+}
+
+.fs-subtitles__cue-flag--unmapped {
+  background: rgba(217, 83, 79, 0.15);
+  color: #d9534f;
+}
+
+.fs-subtitles__cue-flag--edited {
+  background: rgba(60, 165, 92, 0.15);
+  color: #3ca55c;
+}
+
+.fs-subtitles__cue-text {
+  width: 100%;
+  min-height: 2.4em;
+  resize: vertical;
+  font-family: inherit;
+  font-size: 0.95rem;
+}
+
+.fs-subtitles__cue-warnings {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.fs-subtitles__cue-warning {
+  font-size: 0.78rem;
+  color: #d9843e;
+}
