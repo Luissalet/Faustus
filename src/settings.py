@@ -865,6 +865,12 @@ DEFAULT_SETTINGS = {
         "admin_panel": "ctrl+shift+u",
         "cancel": "escape",
     },
+    # Harness evolution (src/harness_evolution/): after a CandidatePatch
+    # passes validation (A26) and evaluation on source + held-out tasks
+    # (A27), promotion runs this many canary rounds before the new
+    # HarnessRevision is trusted — bounded so a bad candidate is caught
+    # cheaply rather than adopted on one lucky pass.
+    "harness_evolution_canary_runs": 5,
 }
 
 
