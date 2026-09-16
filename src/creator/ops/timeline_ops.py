@@ -19,7 +19,7 @@ import copy
 from typing import Any, Dict, List, Optional
 
 from ..errors import InvalidOperation
-from .model import Rational, TimeRange, find_by_id, index_by_id, require_kind
+from .model import Rational, RetimingMap, TimeRange, find_by_id, index_by_id, require_kind
 
 TRACK_KINDS = ("video", "audio", "image", "caption", "overlay")
 
@@ -247,6 +247,133 @@ def set_gain(doc: Dict[str, Any], op: Dict[str, Any]) -> Dict[str, Any]:
     return content
 
 
+def snap(doc: Dict[str, Any], op: Dict[str, Any]) -> Dict[str, Any]:
+    """WP13 additive op: moves a clip to the nearest snap target (another
+    clip's cut, a marker, or the frame grid) to ``op['near_ticks']``, within
+    ``op['window_ticks']``. Delegates the search to
+    ``src/creator/timeline/snapping.py`` — a client-side snap preview is
+    ALWAYS advisory; this is where the snapped position is actually decided
+    and validated (overlap re-checked exactly like ``move``). No-ops (moves
+    to ``near_ticks`` itself) when nothing is within the window, so a
+    caller can always send this op instead of branching client-side on
+    whether a candidate existed."""
+    require_kind(doc, "timeline")
+    from ..timeline import snapping  # local import: avoids a package-init cycle at module load
+
+    content = copy.deepcopy(doc["content"])
+    track = _track(content, op.get("track_id"))
+    _require_not_locked(track)
+    clip = find_by_id(track["clips"], op.get("clip_id"), what="clip")
+
+    near_ticks = op.get("near_ticks")
+    if not isinstance(near_ticks, (int, str)) or isinstance(near_ticks, bool):
+        raise InvalidOperation("timeline.snap requires an integer/string 'near_ticks'")
+    near_ticks = int(near_ticks)
+    window_ticks = op.get("window_ticks")
+    if not isinstance(window_ticks, (int, str)) or isinstance(window_ticks, bool):
+        raise InvalidOperation("timeline.snap requires an integer/string 'window_ticks'")
+    window_ticks = int(window_ticks)
+    frame_ticks = op.get("frame_ticks")
+    if frame_ticks is not None:
+        frame_ticks = int(frame_ticks)
+
+    result = snapping.snap(
+        content, near_ticks, window_ticks=window_ticks, frame_ticks=frame_ticks,
+        include_tracks=bool(op.get("include_tracks", True)),
+        include_markers=bool(op.get("include_markers", True)),
+    )
+
+    clip = copy.deepcopy(clip)
+    clip["timeline_start_ticks"] = str(result.snapped_ticks)
+    _clip_range(clip)
+    track["clips"] = [clip if c["id"] == clip["id"] else c for c in track["clips"]]
+    _check_no_overlap(track["clips"])
+    return content
+
+
+def retime(doc: Dict[str, Any], op: Dict[str, Any]) -> Dict[str, Any]:
+    """WP13 additive op: attaches (or replaces) a clip's ``retiming_map`` —
+    a ``src/creator/timeline/retiming.py``-shaped list of source↔dest
+    segments used by a downstream renderer/exporter to resolve a speed
+    ramp or a cut-with-gap, instead of the clip's plain linear
+    ``source_range`` mapping. Additive field: a clip with no
+    ``retiming_map`` still means "linear, whole source_range", exactly as
+    before this op existed. Structurally validated via
+    ``ops.model.RetimingMap`` (rejects overlapping destination segments);
+    does NOT check the map's ``dest`` span matches the clip's own timeline
+    span — a caller building a partial/preview map is allowed to, and
+    ``timeline.validate`` (WP13's read-side report) is where that kind of
+    cross-check belongs, not a write-time hard failure."""
+    require_kind(doc, "timeline")
+    content = copy.deepcopy(doc["content"])
+    track = _track(content, op.get("track_id"))
+    _require_not_locked(track)
+    clip = find_by_id(track["clips"], op.get("clip_id"), what="clip")
+
+    segments = op.get("retiming_map")
+    if not isinstance(segments, list):
+        raise InvalidOperation("timeline.retime requires an array 'retiming_map'")
+    validated = RetimingMap.from_list(segments)  # raises InvalidOperation on a malformed/overlapping map
+
+    clip["retiming_map"] = validated.to_list()
+    return content
+
+
+def add_marker(doc: Dict[str, Any], op: Dict[str, Any]) -> Dict[str, Any]:
+    """WP13 additive op: appends a document-level marker (see
+    ``src/creator/timeline/tracks.py::add_marker`` for the shape/validation
+    — track-independent, not a ``track.kind``)."""
+    require_kind(doc, "timeline")
+    from ..timeline import tracks as timeline_tracks
+
+    marker_id = op.get("marker_id")
+    at_ticks = op.get("at_ticks")
+    label = op.get("label")
+    return timeline_tracks.add_marker(doc["content"], marker_id, at_ticks, label)
+
+
+def ripple_insert(doc: Dict[str, Any], op: Dict[str, Any]) -> Dict[str, Any]:
+    """WP13 additive op: inserts a new clip at ``op['clip']['timeline_start_ticks']``
+    on ``track_id`` and shifts every clip on that SAME track whose current
+    start is at or after the insertion point to the right by the new
+    clip's ``timeline_duration_ticks`` — the ripple counterpart to
+    ``ripple_delete`` (WP12), so an editor can open a gap for an insert
+    without hand-computing every later clip's new start. Other tracks are
+    untouched, same "one track ripples at a time" rule ``ripple_delete``
+    documents."""
+    require_kind(doc, "timeline")
+    content = copy.deepcopy(doc["content"])
+    track = _track(content, op.get("track_id"))
+    _require_not_locked(track)
+
+    clip = op.get("clip")
+    if not isinstance(clip, dict):
+        raise InvalidOperation("timeline.ripple_insert requires an object 'clip'")
+    required = ("id", "asset_ref", "timeline_start_ticks", "source_range",
+                "source_clock", "timeline_duration_ticks")
+    for key in required:
+        if key not in clip:
+            raise InvalidOperation(f"timeline.ripple_insert clip.{key} is required")
+    if any(c.get("id") == clip["id"] for c in track["clips"]):
+        raise InvalidOperation(f"clip id already exists on this track: {clip['id']!r}")
+
+    new_range = _clip_range(clip)
+    TimeRange.from_dict(clip["source_range"], field_name=f"clip {clip['id']!r}.source_range")
+    Rational.from_dict(clip["source_clock"], field_name=f"clip {clip['id']!r}.source_clock")
+
+    shifted = []
+    for c in track["clips"]:
+        c = copy.deepcopy(c)
+        c_range = _clip_range(c)
+        if c_range.start_ticks >= new_range.start_ticks:
+            c["timeline_start_ticks"] = str(c_range.start_ticks + new_range.duration_ticks)
+        shifted.append(c)
+    shifted.append(copy.deepcopy(clip))
+    _check_no_overlap(shifted)
+    track["clips"] = shifted
+    return content
+
+
 OPS = {
     "timeline.insert_clip": insert_clip,
     "timeline.trim": trim,
@@ -254,4 +381,8 @@ OPS = {
     "timeline.move": move,
     "timeline.ripple_delete": ripple_delete,
     "timeline.set_gain": set_gain,
+    "timeline.snap": snap,
+    "timeline.retime": retime,
+    "timeline.add_marker": add_marker,
+    "timeline.ripple_insert": ripple_insert,
 }
