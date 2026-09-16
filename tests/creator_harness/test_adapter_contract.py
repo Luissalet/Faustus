@@ -111,7 +111,41 @@ def _setup_ffmpeg(monkeypatch) -> Tuple[AdapterPort, str, Callable[[], int]]:
     return ffmpeg_mod.FfmpegAdapter(), evidence, (lambda: len(ffmpeg_mod._JOBS))
 
 
-_CONTRACT_SETUPS = {"comfyui": _setup_comfyui, "ffmpeg": _setup_ffmpeg}
+class _ExplodingModelLoader:
+    """Stands in for `WhisperAdapter`'s `model_loader` in every generic
+    contract check below — none of them ever gets far enough to need a real
+    transcription (describe()/plan() never load a model per the adapter's
+    own module docstring; submit() here is only ever given an INVALID plan
+    or an unstaged input, both rejected before a job is queued). If any of
+    that changes, this loader raises loudly instead of silently faking a
+    transcript — WP15's own `test_describe_never_imports_a_model_only_the_
+    package` uses the same shape."""
+
+    def __call__(self, model_size, device):
+        raise AssertionError(
+            "the WP36 generic adapter contract must never reach a real model load")
+
+
+def _setup_whisper(monkeypatch) -> Tuple[AdapterPort, str, Callable[[], int]]:
+    from src.creator.adapters import whisper as whisper_mod
+    adapter = whisper_mod.WhisperAdapter(
+        model_loader=_ExplodingModelLoader(),
+        engine_available=lambda: (True, "", "fake-contract-1.0"))
+    return adapter, "fake_engine", (lambda: len(whisper_mod._JOBS))
+
+
+_CONTRACT_SETUPS = {"comfyui": _setup_comfyui, "ffmpeg": _setup_ffmpeg, "whisper": _setup_whisper}
+
+#: (op, params, inputs) for a plan this adapter considers well-formed —
+#: used by the generic "plan()/submit() are pure/classify correctly" checks
+#: below. A registered adapter with no entry here is caught by
+#: `test_every_registered_adapter_has_a_contract_setup` just like a missing
+#: `_CONTRACT_SETUPS` entry would be.
+_VALID_OP_FOR = {
+    "comfyui": ("sdxl_txt2img", {}, []),
+    "ffmpeg": ("trim", {"start_seconds": 0, "duration_seconds": 1}, ["occ_1"]),
+    "whisper": ("transcribe", {}, ["occ_1"]),
+}
 
 
 @pytest.fixture(params=sorted(registered_adapters().keys()))
@@ -162,9 +196,7 @@ def test_describe_never_queues_a_job(prepared):
 def test_plan_creates_no_job_for_a_valid_looking_task(prepared, adapter_name):
     adapter, _evidence, job_count = prepared
     before = job_count()
-    op = "sdxl_txt2img" if adapter_name == "comfyui" else "trim"
-    params = {} if adapter_name == "comfyui" else {"start_seconds": 0, "duration_seconds": 1}
-    inputs = [] if adapter_name == "comfyui" else ["occ_1"]
+    op, params, inputs = _VALID_OP_FOR[adapter_name]
     adapter.plan(op, params, inputs)
     assert job_count() == before, "plan() must never create a job — that is submit()'s job alone"
 
