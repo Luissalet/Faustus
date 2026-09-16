@@ -7514,3 +7514,19 @@ patch (JSON, merged into content)	patch (JSON, fusionado con el contenido)
 patch JSON	JSON del patch
 project	project
 {n} active admission(s), {q} queued	{n} admisión(es) activa(s), {q} en cola
+Clip {id}, starts at tick {t}	Clip {id}, empieza en el tick {t}
+Document view	Vista del documento
+In: {t}	Entrada: {t}
+JSON	JSON
+No timeline content	Sin contenido de timeline
+Out: {t}	Salida: {t}
+Playhead: {t}	Cabezal: {t}
+Redone.	Rehecho.
+This document has no tracks yet.	Este documento todavía no tiene pistas.
+Timeline	Timeline
+Timeline controls	Controles del timeline
+Timeline editor	Editor de timeline
+Track {id} clips	Clips de la pista {id}
+Undone.	Deshecho.
+Valid	Válido
+{n} problem(s)	{n} problema(s)

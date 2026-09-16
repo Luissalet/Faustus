@@ -171,6 +171,25 @@
   flex-wrap: wrap;
 }
 
+.fs-creator__view-tabs {
+  display: flex;
+  gap: 4px;
+}
+
+.fs-creator__view-tab {
+  border: 1px solid var(--fs-border, #2a2a33);
+  background: transparent;
+  border-radius: 6px;
+  padding: 3px 10px;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.fs-creator__view-tab--active {
+  background: var(--fs-accent-muted, #2c3b57);
+  border-color: var(--fs-accent, #6ea8fe);
+}
+
 .fs-creator__json {
   max-height: 260px;
   overflow: auto;
