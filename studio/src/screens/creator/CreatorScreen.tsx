@@ -6,6 +6,7 @@ import { listProjects, type Project } from '../../adapters/projects';
 import * as api from '../../adapters/creator';
 import { t } from '../../i18n';
 import { Timeline } from './Timeline';
+import { Canvas } from './Canvas';
 import { ModelExplorer } from './ModelExplorer';
 import './creator.css';
 
@@ -211,12 +212,14 @@ function DocumentPanel({
    *  "Timeline" screen tab is a shortcut into this document's own timeline
    *  view, not a second copy of the workspace. `undefined` leaves whatever
    *  the person last picked here alone. */
-  preferredView?: 'timeline' | 'json';
+  preferredView?: 'timeline' | 'canvas' | 'json';
 }) {
-  const [view, setView] = useState<'timeline' | 'json'>('timeline');
+  const [view, setView] = useState<'timeline' | 'canvas' | 'json'>('timeline');
   useEffect(() => {
-    if (preferredView) setView(preferredView);
-  }, [preferredView]);
+    if (preferredView) { setView(preferredView); return; }
+    if (doc?.kind === 'canvas') setView('canvas');
+    else if (doc?.kind === 'timeline') setView('timeline');
+  }, [preferredView, doc?.id, doc?.kind]);
   const [patchText, setPatchText] = useState('{}');
   const [commandId, setCommandId] = useState('');
   const [expectedRevision, setExpectedRevision] = useState<number | ''>('');
@@ -289,13 +292,22 @@ function DocumentPanel({
 
       {error && <p className="fs-creator__error" role="alert">{error}</p>}
 
-      {doc.kind === 'timeline' && (
+      {(doc.kind === 'timeline' || doc.kind === 'canvas') && (
         <div className="fs-creator__view-tabs" role="tablist" aria-label={t('Document view')}>
-          <button type="button" role="tab" aria-selected={view === 'timeline'}
-            className={view === 'timeline' ? 'fs-creator__view-tab fs-creator__view-tab--active' : 'fs-creator__view-tab'}
-            onClick={() => setView('timeline')} data-testid="creator-view-timeline">
-            {t('Timeline')}
-          </button>
+          {doc.kind === 'timeline' && (
+            <button type="button" role="tab" aria-selected={view === 'timeline'}
+              className={view === 'timeline' ? 'fs-creator__view-tab fs-creator__view-tab--active' : 'fs-creator__view-tab'}
+              onClick={() => setView('timeline')} data-testid="creator-view-timeline">
+              {t('Timeline')}
+            </button>
+          )}
+          {doc.kind === 'canvas' && (
+            <button type="button" role="tab" aria-selected={view === 'canvas'}
+              className={view === 'canvas' ? 'fs-creator__view-tab fs-creator__view-tab--active' : 'fs-creator__view-tab'}
+              onClick={() => setView('canvas')} data-testid="creator-view-canvas">
+              {t('Canvas')}
+            </button>
+          )}
           <button type="button" role="tab" aria-selected={view === 'json'}
             className={view === 'json' ? 'fs-creator__view-tab fs-creator__view-tab--active' : 'fs-creator__view-tab'}
             onClick={() => setView('json')} data-testid="creator-view-json">
@@ -306,6 +318,8 @@ function DocumentPanel({
 
       {doc.kind === 'timeline' && view === 'timeline' ? (
         <Timeline doc={doc} onDocUpdated={onDocUpdated} onRevisionConflict={onReload} />
+      ) : doc.kind === 'canvas' && view === 'canvas' ? (
+        <Canvas doc={doc} onDocUpdated={onDocUpdated} onRevisionConflict={onReload} />
       ) : (
         <pre className="fs-creator__json" tabIndex={0} aria-label={t('Document content (JSON)')}>
           {JSON.stringify(doc.content, null, 2)}
@@ -515,14 +529,16 @@ function PreflightCard({ projectId, deployments }: { projectId: string; deployme
 
 // ── screen ───────────────────────────────────────────────────────────────
 
-type CreatorTab = 'workspace' | 'timeline' | 'models';
+type CreatorTab = 'workspace' | 'timeline' | 'canvas' | 'models';
 
 export function CreatorScreen() {
   const [params, setParams] = useSearchParams();
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectId, setProjectIdState] = useState(params.get('project') ?? '');
   const [tab, setTab] = useState<CreatorTab>(
-    params.get('tab') === 'timeline' ? 'timeline' : params.get('tab') === 'models' ? 'models' : 'workspace',
+    params.get('tab') === 'timeline' ? 'timeline'
+      : params.get('tab') === 'canvas' ? 'canvas'
+      : params.get('tab') === 'models' ? 'models' : 'workspace',
   );
   const [caps, setCaps] = useState<api.CreatorCapabilities | 'disabled' | null>(null);
   const [libraryItems, setLibraryItems] = useState<api.LibraryItem[]>([]);
@@ -705,6 +721,16 @@ export function CreatorScreen() {
             <button
               type="button"
               role="tab"
+              aria-selected={tab === 'canvas'}
+              className="fs-creator__tab"
+              onClick={() => changeTab('canvas')}
+              data-testid="creator-tab-canvas"
+            >
+              {t('Canvas')}
+            </button>
+            <button
+              type="button"
+              role="tab"
               aria-selected={tab === 'models'}
               className="fs-creator__tab"
               onClick={() => changeTab('models')}
@@ -714,7 +740,7 @@ export function CreatorScreen() {
             </button>
           </div>
 
-          {(tab === 'workspace' || tab === 'timeline') && (
+          {(tab === 'workspace' || tab === 'timeline' || tab === 'canvas') && (
             <div className="fs-creator__grid" role="group" aria-label={t('Creator workspace')}>
               <LibraryPanel
                 projectId={projectId}
@@ -737,7 +763,7 @@ export function CreatorScreen() {
                 projectId={projectId}
                 kinds={kinds}
                 onDocUpdated={setDoc}
-                preferredView={tab === 'timeline' ? 'timeline' : undefined}
+                preferredView={tab === 'timeline' ? 'timeline' : tab === 'canvas' ? 'canvas' : undefined}
               />
               <aside className="fs-creator__right" aria-label={t('Capabilities and resources')}>
                 <ResourcesCard resources={resources} />
