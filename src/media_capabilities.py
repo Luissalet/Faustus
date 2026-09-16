@@ -47,8 +47,14 @@ _cache: Dict[str, Any] = {"at": 0.0, "manifest": None}
 def _run_version(binary: str, *args: str, timeout: float = 3.0
                  ) -> Tuple[bool, str, str]:
     """`(installed, version_line, detail)`. `installed` means the binary was
-    found AND answered inside the timeout — a PATH entry that hangs or a
-    stale symlink is not "installed" for this manifest's purposes."""
+    found, answered inside the timeout, AND exited with `returncode == 0` —
+    a PATH entry that hangs, a stale symlink, or a binary that runs but
+    refuses (missing shared library, broken build, wrong architecture under
+    Wine/emulation) is not "installed" for this manifest's purposes either.
+    Before this fix (QA01 / `00_WP00_INVENTARIO.md` §4) any process that
+    merely *exited*, including with a non-zero code, was reported as
+    installed; a caller could not tell a working ffmpeg from a broken one
+    without reading `detail` itself."""
     path = shutil.which(binary)
     if not path:
         return False, "", f"{binary!r} not found on PATH"
@@ -60,7 +66,11 @@ def _run_version(binary: str, *args: str, timeout: float = 3.0
     except OSError as exc:
         return False, "", f"{binary!r} on PATH but could not be run: {exc}"
     lines = (proc.stdout or proc.stderr or "").splitlines()
-    return True, (lines[0].strip() if lines else ""), path
+    first_line = lines[0].strip() if lines else ""
+    if proc.returncode != 0:
+        return False, "", (f"{binary!r} on PATH at {path} but exited with "
+                           f"code {proc.returncode}: {first_line or '(no output)'}")
+    return True, first_line, path
 
 
 def probe_ffmpeg() -> Dict[str, Any]:

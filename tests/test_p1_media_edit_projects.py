@@ -141,6 +141,89 @@ def test_export_may_replace_the_original_with_explicit_confirmation(tmp_path, so
     assert source_image.read_bytes() != before, "the explicit confirmation should have taken effect"
 
 
+# ── QA01 / 00_WP00_INVENTARIO.md §4: the order `export()` actually applies
+#    crop/rotate/flip vs. layers was never verified beyond the docstring.
+#    Pinned here with minimal 8×8 fixtures and `operation_semantics_version`
+#    (see `src.media_edit_projects.OPERATION_SEMANTICS_VERSION`). The order
+#    is NOT changed by this batch — only proven and versioned.
+
+def _solid(color, size=(8, 8)):
+    return _png_bytes(color, size=size)
+
+
+def test_create_stamps_the_operation_semantics_version(tmp_path, source_image):
+    record = projects.create(str(source_image), owner="alice", directory=str(tmp_path))
+    assert record["operation_semantics_version"] == projects.OPERATION_SEMANTICS_VERSION
+
+
+def test_export_applies_crop_before_layers_not_after(tmp_path):
+    """The real, shipped order: `history` transforms run first against the
+    original, THEN layers are painted on top of the already-transformed
+    canvas — so a layer's (x, y) lands on the POST-crop canvas, not the
+    original one.
+
+    An 8×8 blue original; a 2×2 green layer pinned at (0, 0); a crop that
+    keeps only the bottom-right 6×6 (`left=2, top=2`). If layers were
+    composited BEFORE the crop, the green 2×2 square would sit entirely
+    inside the region the crop then throws away, and the exported image
+    would come out solid blue. Since crop actually runs first, the green
+    square is painted at (0, 0) of the ALREADY-cropped 6×6 canvas and
+    survives."""
+    tmp_path = tmp_path
+    source = tmp_path / "original.png"
+    source.write_bytes(_solid((0, 0, 255)))  # 8x8 blue
+    record = projects.create(str(source), owner="alice", directory=str(tmp_path))
+
+    projects.add_layer(record["id"], owner="alice",
+                       image_b64=_b64(_solid((0, 255, 0), size=(2, 2))),
+                       x=0, y=0, directory=str(tmp_path))
+    projects.record_op(record["id"], owner="alice", op_type="crop",
+                       params={"left": 2, "top": 2, "right": 8, "bottom": 8},
+                       directory=str(tmp_path))
+
+    dest = tmp_path / "out.png"
+    out = projects.export(record["id"], str(dest), owner="alice", directory=str(tmp_path))
+    assert out["operation_semantics_version"] == projects.OPERATION_SEMANTICS_VERSION
+
+    from PIL import Image
+    exported = Image.open(dest).convert("RGBA")
+    assert exported.size == (6, 6), "the crop must have run against the original"
+    assert exported.getpixel((0, 0)) == (0, 255, 0, 255), (
+        "the layer must be painted AFTER the crop, on the post-crop canvas — "
+        "if it had been painted before, the crop would have thrown it away "
+        "and this pixel would still be the original blue")
+    assert exported.getpixel((5, 5)) == (0, 0, 255, 255), "everywhere the layer doesn't cover stays the (cropped) original"
+
+
+def test_export_applies_multiple_transforms_in_the_order_they_were_recorded(tmp_path):
+    """`history` entries run in the order they were appended, not sorted by
+    type — crop-then-rotate and rotate-then-crop are different pictures, and
+    this pins that `export()` respects the recorded sequence rather than
+    applying, say, all rotates before all crops."""
+    from PIL import Image
+
+    source = tmp_path / "original.png"
+    # Distinct corners so a rotation is observable: (8,8), top-left red.
+    img = Image.new("RGBA", (8, 8), (255, 255, 255, 255))
+    for x in range(4):
+        for y in range(4):
+            img.putpixel((x, y), (255, 0, 0, 255))  # top-left quadrant red
+    img.save(source)
+
+    record = projects.create(str(source), owner="alice", directory=str(tmp_path))
+    # Crop to the top-left 4x4 (still all red), THEN rotate 90 — recorded in
+    # that order.
+    projects.record_op(record["id"], owner="alice", op_type="crop",
+                       params={"left": 0, "top": 0, "right": 4, "bottom": 4},
+                       directory=str(tmp_path))
+    projects.record_op(record["id"], owner="alice", op_type="rotate",
+                       params={"degrees": 90}, directory=str(tmp_path))
+    dest = tmp_path / "crop-then-rotate.png"
+    projects.export(record["id"], str(dest), owner="alice", directory=str(tmp_path))
+    result = Image.open(dest).convert("RGBA")
+    assert result.size == (4, 4), "crop ran on the 8x8 original before the rotate, per the recorded order"
+
+
 def test_a_changed_original_stops_further_edits(tmp_path, source_image):
     record = projects.create(str(source_image), owner="alice", directory=str(tmp_path))
     source_image.write_bytes(_png_bytes((99, 99, 99)))  # something else touched it

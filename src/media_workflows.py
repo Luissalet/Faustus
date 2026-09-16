@@ -66,6 +66,18 @@ PLACEHOLDER = re.compile(r"^\{\{([a-z][a-z0-9_]*)\}\}$")
 #: recorded seed quietly stops reproducing the image it came from.
 MAX_SEED = 2 ** 53 - 1
 
+#: `MediaWorkflow.fingerprint()` versioning (QA01). v1 is the original eight
+#: fields (no `models`/`requires_nodes`/`outputs`) — kept forever, byte for
+#: byte, because it is what every fingerprint already committed to
+#: `config/media_workflows/reviews/approved_recipes.json` was computed with,
+#: and none of those entries carry an explicit version tag. v2 adds the three
+#: missing fields and is what `.fingerprint()` computes by default from this
+#: fix onward. An entry in the review registry with no `fingerprint_version`
+#: key is read as v1; a newly-added entry may set `"fingerprint_version": 2`
+#: to be checked against the fuller identity going forward.
+FINGERPRINT_LEGACY_VERSION = 1
+FINGERPRINT_VERSION = 2
+
 
 class TemplateError(ContractError):
     """A template on disk is wrong, or the values given to it are.
@@ -161,6 +173,7 @@ class MediaWorkflow:
             "requires_nodes": list(self.requires_nodes),
             "outputs": dict(self.outputs),
             "fingerprint": self.fingerprint(),
+            "fingerprint_version": FINGERPRINT_VERSION,
             "source": os.path.basename(self.source),
             "requires_consent": self.requires_consent,
             "consent_subject_input": self.consent_subject_input,
@@ -169,20 +182,43 @@ class MediaWorkflow:
             out["graph"] = dict(self.graph)
         return out
 
-    def fingerprint(self) -> str:
+    def fingerprint(self, *, fingerprint_version: int = FINGERPRINT_VERSION) -> str:
         """Identity of the recipe, graph included.
 
         The graph is in it on purpose: a template whose sampler changed is a
         different recipe, and an artifact that claims to have come from
-        `image.product 1.0.0` should not silently mean two different things."""
-        return fingerprint([
+        `image.product 1.0.0` should not silently mean two different things.
+
+        `fingerprint_version` exists because that used to not be true of
+        `models`, `requires_nodes` or `outputs`: two recipes with the same
+        graph but a different checkpoint, a different required node, or a
+        different declared output shape produced the SAME fingerprint (QA01 /
+        `00_WP00_INVENTARIO.md` §4). `FINGERPRINT_VERSION` (the default) folds
+        those three fields in. `fingerprint_version=1` reproduces the exact
+        eight-field, pre-fix computation byte for byte — every fingerprint
+        already recorded in `config/media_workflows/reviews/approved_recipes.json`
+        was computed that way, with no version tag of its own (an absent tag
+        means "legacy v1"), and `review_status()` below asks for that exact
+        version when checking an entry, so upgrading this default never
+        silently un-approves an already-reviewed recipe. See
+        `docs/spec/creator/WP01.md` for the migration note."""
+        parts = [
             ("id", self.id), ("version", self.version), ("engine", self.engine),
             ("inputs", [i.to_dict() for i in self.inputs]),
             ("computed", dict(self.computed)),
+        ]
+        if fingerprint_version >= 2:
+            parts += [
+                ("models", [m.to_dict() for m in self.models]),
+                ("requires_nodes", list(self.requires_nodes)),
+                ("outputs", dict(self.outputs)),
+            ]
+        parts += [
             ("graph", dict(self.graph)),
             ("requires_consent", self.requires_consent),
             ("consent_subject_input", self.consent_subject_input),
-        ])
+        ]
+        return fingerprint(parts)
 
 
 # ── reading a template ────────────────────────────────────────────────────
@@ -571,9 +607,16 @@ def review_status(workflow: MediaWorkflow, *,
     entries = list((table.get(workflow.id) or {}).get("approved") or [])
     node_types = graph_node_types(workflow)
 
-    fingerprint = workflow.fingerprint()
-    if any(str(e.get("fingerprint")) == fingerprint for e in entries):
-        return {"reviewed": True, "reason": "", "new_nodes": []}
+    # Each entry is checked against the fingerprint scheme it was actually
+    # recorded under (QA01): an entry with no `fingerprint_version` is a
+    # legacy (v1) hash, and asking `workflow.fingerprint()` for today's
+    # default (v2) instead would make every already-approved recipe look
+    # unreviewed the moment this fix ships. A fresh entry may opt into v2 by
+    # setting the field explicitly.
+    for entry in entries:
+        entry_version = int(entry.get("fingerprint_version") or FINGERPRINT_LEGACY_VERSION)
+        if str(entry.get("fingerprint")) == workflow.fingerprint(fingerprint_version=entry_version):
+            return {"reviewed": True, "reason": "", "new_nodes": []}
 
     reviewed_nodes: set = set()
     for e in entries:

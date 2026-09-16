@@ -12,6 +12,7 @@ avoid.
 """
 from __future__ import annotations
 
+import os
 import time
 
 import pytest
@@ -72,6 +73,53 @@ def test_ffmpeg_probe_reports_a_hung_binary_as_not_installed(monkeypatch):
     result = caps.probe_ffmpeg()
     assert result["installed"] is False
     assert "did not answer" in result["detail"]
+
+
+# ── QA01 / 00_WP00_INVENTARIO.md §4: `_run_version()` declared a binary
+#    "installed" as soon as the subprocess merely exited, never checking
+#    `returncode` — a broken ffmpeg build that runs and immediately fails
+#    would have been reported as a healthy, usable backend.
+
+def test_ffmpeg_probe_is_not_installed_when_the_real_binary_exits_non_zero(tmp_path, monkeypatch):
+    """A fake `ffmpeg` on PATH that answers instantly but exits 1 — the case
+    the plan flagged as unchecked. RED before the fix: `_run_version` looked
+    only at `TimeoutExpired`/`OSError`, so this used to come back
+    `installed=True`."""
+    fake_ffmpeg = tmp_path / "ffmpeg"
+    fake_ffmpeg.write_text("#!/bin/sh\necho 'ffmpeg version broken-build'\nexit 1\n")
+    fake_ffmpeg.chmod(0o755)
+    fake_ffprobe = tmp_path / "ffprobe"
+    fake_ffprobe.write_text("#!/bin/sh\necho 'ffprobe version broken-build'\nexit 0\n")
+    fake_ffprobe.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{tmp_path}{os.pathsep}{os.environ.get('PATH', '')}")
+
+    result = caps.probe_ffmpeg()
+    assert result["installed"] is False
+    assert "exited with code 1" in result["detail"]
+
+
+def test_run_version_reports_the_nonzero_exit_code_directly(tmp_path, monkeypatch):
+    fake = tmp_path / "ffmpeg"
+    fake.write_text("#!/bin/sh\necho 'some diagnostic on stdout'\nexit 1\n")
+    fake.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{tmp_path}{os.pathsep}{os.environ.get('PATH', '')}")
+
+    installed, version, detail = caps._run_version("ffmpeg", "-version")
+    assert installed is False
+    assert version == ""
+    assert "exited with code 1" in detail
+    assert "some diagnostic on stdout" in detail
+
+
+def test_run_version_still_reports_installed_true_on_a_clean_zero_exit(tmp_path, monkeypatch):
+    fake = tmp_path / "ffmpeg"
+    fake.write_text("#!/bin/sh\necho 'ffmpeg version 6.0'\nexit 0\n")
+    fake.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{tmp_path}{os.pathsep}{os.environ.get('PATH', '')}")
+
+    installed, version, detail = caps._run_version("ffmpeg", "-version")
+    assert installed is True
+    assert version == "ffmpeg version 6.0"
 
 
 def test_stt_probe_is_false_when_faster_whisper_is_not_installed(monkeypatch):

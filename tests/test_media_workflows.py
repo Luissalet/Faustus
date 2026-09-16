@@ -200,6 +200,98 @@ def test_the_fingerprint_changes_when_the_recipe_changes_not_when_inputs_do():
            mw.render(base, {"prompt": "b"})["fingerprint"]
 
 
+# ── QA01 / 00_WP00_INVENTARIO.md §4: fingerprint omitted models/requires_nodes
+#    /outputs, so two recipes that only differed there were indistinguishable
+#    to `review_status()` — a reviewer approving recipe A would, without
+#    knowing it, also be approving a same-graph recipe B that pulls a
+#    different checkpoint or promises a different `outputs` shape. Fixed by
+#    versioning the fingerprint (`fingerprint_version`) rather than silently
+#    changing what `.fingerprint()` means for everyone: legacy callers who
+#    pass `fingerprint_version=1` get bit-identical output to before this fix,
+#    so `config/media_workflows/reviews/approved_recipes.json` (which records
+#    implicit-v1 fingerprints) never needs migrating. See docs/spec/creator/WP01.md.
+
+def test_fingerprint_default_now_distinguishes_recipes_that_only_differ_in_models():
+    """RED before the fix: `template()` and `same_graph_different_model` were
+    identical graphs pointing at different checkpoints, and the default
+    `.fingerprint()` could not tell them apart — a human reviewing one would
+    unknowingly be vouching for the other's model, too."""
+    base = template()
+    different_model = template(models=[
+        {"name": "a-completely-different-checkpoint.safetensors", "kind": "checkpoint",
+         "license": "CreativeML Open RAIL++-M"}])
+    assert base.graph == different_model.graph, "the graphs must be identical for this to test the gap"
+    assert base.fingerprint() != different_model.fingerprint()
+
+
+def test_fingerprint_default_now_distinguishes_recipes_that_only_differ_in_requires_nodes():
+    base = template()
+    different_nodes = template(requires_nodes=["KSampler", "SomeOtherNode"])
+    assert base.graph == different_nodes.graph
+    assert base.fingerprint() != different_nodes.fingerprint()
+
+
+def test_fingerprint_default_now_distinguishes_recipes_that_only_differ_in_outputs():
+    base = template()
+    different_outputs = template(outputs={"image": "artifact:image", "mask": "artifact:mask"})
+    assert base.graph == different_outputs.graph
+    assert base.fingerprint() != different_outputs.fingerprint()
+
+
+def test_legacy_fingerprint_version_1_is_bit_identical_to_the_pre_fix_output():
+    """The compatibility contract: an already-approved registry entry (which
+    only ever recorded the pre-fix hash, with no `fingerprint_version` key of
+    its own) must keep matching. `fingerprint_version=1` reproduces exactly
+    the eight legacy fields, in the same order, so old recorded hashes never
+    have to be recomputed or migrated."""
+    from src.contracts.base import fingerprint as raw_fingerprint
+
+    base = template()
+    legacy = raw_fingerprint([
+        ("id", base.id), ("version", base.version), ("engine", base.engine),
+        ("inputs", [i.to_dict() for i in base.inputs]),
+        ("computed", dict(base.computed)),
+        ("graph", dict(base.graph)),
+        ("requires_consent", base.requires_consent),
+        ("consent_subject_input", base.consent_subject_input),
+    ])
+    assert base.fingerprint(fingerprint_version=1) == legacy
+    # ... and changing models/requires_nodes/outputs must NOT move the v1
+    # hash, precisely because v1 is what the old registry entries recorded.
+    different_model = template(models=[
+        {"name": "other.safetensors", "kind": "checkpoint", "license": "x"}])
+    assert base.fingerprint(fingerprint_version=1) == different_model.fingerprint(fingerprint_version=1)
+
+
+def test_shipped_templates_still_match_their_legacy_registry_fingerprints():
+    """The actual migration proof: every fingerprint already committed in
+    `approved_recipes.json` still matches its template when asked for the
+    version those entries were recorded under (the implicit legacy v1) —
+    upgrading the default fingerprint scheme approved nothing new and revoked
+    nothing already reviewed."""
+    catalogue = mw.catalogue()
+    assert catalogue["broken"] == []
+    registry = mw.load_review_registry()
+    checked = 0
+    for workflow in catalogue["workflows"]:
+        entries = registry.get(workflow.id, {}).get("approved") or []
+        for entry in entries:
+            version = int(entry.get("fingerprint_version") or 1)
+            assert entry["fingerprint"] == workflow.fingerprint(fingerprint_version=version), (
+                f"{workflow.id} no longer matches its recorded {version=} fingerprint")
+            checked += 1
+    assert checked >= 4, "the seeded shipped-template entries should all have been checked"
+
+
+def test_review_status_still_approves_the_shipped_templates_after_the_fix():
+    """`review_status()` is what actually gates a run (`media_runs.plan`/
+    `start`). It must keep reading the legacy registry as reviewed, not just
+    the raw fingerprints in isolation."""
+    for workflow in mw.catalogue()["workflows"]:
+        status = mw.review_status(workflow)
+        assert status["reviewed"] is True, f"{workflow.id}: {status}"
+
+
 # ── a broken template is caught when it is read ───────────────────────────
 
 def test_a_graph_placeholder_nobody_declared_is_refused_at_load():

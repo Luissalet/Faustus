@@ -43,6 +43,26 @@ logger = logging.getLogger(__name__)
 PROJECTS_DIR = os.path.join(DATA_DIR, "media_edit_projects")
 _LOCK = threading.RLock()
 
+#: QA01 / `00_WP00_INVENTARIO.md` §4 asked whether `export()`'s real order of
+#: composition (base copy → crop/rotate/flip → layers, or layers first) ever
+#: got verified beyond the docstring. It had not. Verified here with 8×8 PIL
+#: fixtures (`tests/test_p1_media_edit_projects.py`) and pinned as a version
+#: number rather than silently changed: `export()` applies every `rotate`/
+#: `flip`/`crop` entry from `history`, IN THE ORDER RECORDED, to a copy of the
+#: original FIRST — then composites every layer from `layers`, IN THE ORDER
+#: ADDED, on top of that already-transformed canvas. A layer's `x`/`y` are
+#: therefore always relative to the POST-transform canvas, never to the
+#: original image's coordinates, regardless of when the layer was added
+#: relative to a crop/rotate/flip in `history`'s timeline. That is the
+#: existing, shipped semantics (Studio's editor and any already-saved project
+#: assume it), so this batch does NOT reorder it — a genuine bug there would
+#: silently reflow every project someone has already saved. `create()` stamps
+#: every new project with the version below; a project on disk without the
+#: field predates this stamp but was always composited this same way, so no
+#: migration is needed — only a NEW composition order, if one is ever
+#: introduced, would need a `2` and a real migration plan.
+OPERATION_SEMANTICS_VERSION = 1
+
 
 class EditProjectError(ValueError):
     def __init__(self, message: str, code: str):
@@ -105,6 +125,7 @@ def create(source_path: str, *, owner: str, directory: Optional[str] = None) -> 
         "source_sha256": _sha256(source_path),
         "layers": [],
         "history": [],
+        "operation_semantics_version": OPERATION_SEMANTICS_VERSION,
         "created_at": now_iso(),
         "updated_at": now_iso(),
     }
@@ -198,6 +219,10 @@ def export(project_id: str, dest_path: str, *, owner: str,
                 "nothing here overwrites an existing export", "destination_exists")
 
         base = Image.open(source_abs).convert("RGBA")
+        # operation_semantics_version 1: transforms (recorded order) FIRST,
+        # against the original — layers are composited afterwards, on top of
+        # whatever this loop produces. See the module-level constant's
+        # docstring; do not reorder without a version bump and a migration.
         for op in record["history"]:
             if op["type"] == "rotate":
                 degrees = int((op.get("params") or {}).get("degrees", 0)) % 360
@@ -247,7 +272,9 @@ def export(project_id: str, dest_path: str, *, owner: str,
     original_untouched = os.path.isfile(source_abs) and _sha256(source_abs) == record["source_sha256"]
     return {"ok": True, "project_id": project_id, "path": dest_abs,
            "original_preserved": original_untouched or dest_abs == source_abs,
-           "layers_applied": len(record["layers"]), "history_length": len(record["history"])}
+           "layers_applied": len(record["layers"]), "history_length": len(record["history"]),
+           "operation_semantics_version": record.get(
+               "operation_semantics_version", OPERATION_SEMANTICS_VERSION)}
 
 
 def _has_alpha(img) -> bool:
