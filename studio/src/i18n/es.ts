@@ -1696,6 +1696,7 @@ export const es: Record<string, string> = {
   "Drop .woff2, .ttf or .otf files into static/fonts/custom/ and reload: they appear in the font list.": "Deja ficheros .woff2, .ttf u .otf en static/fonts/custom/ y recarga: aparecen en la lista de fuentes.",
   "Drop the objective": "Descartar el objetivo",
   "Drop to add as a layer": "Suelta para añadir como capa",
+  "Drop to attach": "Suelta para adjuntar",
   "Drop {id}": "Descartar {id}",
   "Drops data/skills/ (every SKILL.md). Memory is not affected.": "Elimina data/skills/ (todos los SKILL.md). La memoria no se toca.",
   "Dry run": "Simular",

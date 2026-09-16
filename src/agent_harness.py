@@ -475,6 +475,24 @@ def _is_vendor_frame(path: str) -> bool:
         return False
 
 
+# Upload ids look like `ec096bce31424b00969963a9b508d9c6.md`. They are storage
+# names, not files the user asked to edit. Counted as missing, they fire
+# check_target_substitution (Silhouettes d20e933f round 85).
+_ATTACHMENT_ID_NAME_RE = re.compile(r"^[0-9a-f]{16,}\.[A-Za-z0-9]+$", re.I)
+# `build_user_content` appends `=== File: … ===` / `=== ZIP archive: … ===`
+# bodies after the typed request. Paths inside that dump are context.
+_INLINED_ATTACHMENT_RE = re.compile(r"\n=== (?:File|ZIP archive): ")
+
+
+def user_authored_text(text: str) -> str:
+    """The words the user typed, without inlined attachment / ZIP bodies."""
+    body = text or ""
+    m = _INLINED_ATTACHMENT_RE.search(body)
+    if m:
+        return body[:m.start()].rstrip()
+    return body
+
+
 def extract_path_tokens(text: str) -> List[str]:
     """Path-like tokens mentioned in prose (de-duplicated, order kept)."""
     out: List[str] = []
@@ -492,6 +510,9 @@ def extract_path_tokens(text: str) -> List[str]:
             continue
         # skip bare version-ish or numeric names like 1.0.json? keep — rare.
         if re.fullmatch(r"[\d.]+\.\w+", tok):
+            continue
+        base = tok.replace("\\", "/").rsplit("/", 1)[-1]
+        if _ATTACHMENT_ID_NAME_RE.fullmatch(base):
             continue
         seen.add(low)
         out.append(tok)
@@ -1243,7 +1264,7 @@ class TurnLedger:
             return []
         created = {_norm(p).rsplit("/", 1)[-1] for p in self.mutated_paths()}
         out: List[str] = []
-        for tok in extract_path_tokens(self.user_text):
+        for tok in extract_path_tokens(user_authored_text(self.user_text)):
             # A pasted traceback names dependency/stdlib frames the user never
             # "named" and that the index deliberately skips (node_modules,
             # site-packages, venv). Counted as missing, they fired

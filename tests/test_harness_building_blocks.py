@@ -200,6 +200,34 @@ def test_related_test_files_scopes_by_stem(ws):
     assert pt.related_test_files(str(ws), ["../elsewhere/calc.py"]) == []
 
 
+def test_related_test_files_includes_node_test_mjs(ws):
+    """Silhouettes d20e933f: the turn rewrote interactions2d.js and wrote
+    tests/editor/test_gestures.mjs. related_test_files only knew pytest
+    `test_*.py`, so verification ran unrelated python tests and stamped
+    verified without ever running `node --test`."""
+    from src import project_tests as pt
+    editor = ws / "static" / "editor"
+    editor.mkdir(parents=True)
+    (editor / "interactions2d.js").write_text("export function drag() { return 1; }\n", encoding="utf-8")
+    tdir = ws / "tests" / "editor"
+    tdir.mkdir(parents=True)
+    (tdir / "test_gestures.mjs").write_text(
+        "import test from 'node:test';\n"
+        "import assert from 'node:assert/strict';\n"
+        "import { drag } from '../../static/editor/interactions2d.js';\n"
+        "test('one commit', () => { assert.equal(drag(), 1); });\n",
+        encoding="utf-8",
+    )
+    rel = pt.related_test_files(str(ws), [
+        "static/editor/interactions2d.js",
+        "tests/editor/test_gestures.mjs",
+    ])
+    assert "tests/editor/test_gestures.mjs" in rel
+    # Changing only the source still finds the node test (import / stem).
+    rel_src = pt.related_test_files(str(ws), ["static/editor/interactions2d.js"])
+    assert "tests/editor/test_gestures.mjs" in rel_src
+
+
 def test_run_for_turn_pass_fail_and_fix_message(ws, settings):
     from src import project_tests as pt
     settings["agent_project_tests"] = True

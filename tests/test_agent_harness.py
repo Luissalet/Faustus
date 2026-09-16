@@ -648,6 +648,47 @@ def test_a_mention_of_a_file_that_really_is_missing_still_fires(tmp_path):
     assert chk and chk["missing"] == ["static/js/cards.js"]
 
 
+def test_inlined_attachment_bodies_are_not_user_named_targets(tmp_path):
+    """Silhouettes d20e933f round 85: 'Keep implementing the plan' plus a 170k
+    spec attachment named files that are not in the workspace (attachment id
+    `ec096bce….md`, other FAUSTUS_*.md, manifest.json). Those are context,
+    not targets. Treating them as user-named missing files burned a
+    target_substituted round on globbing phantoms after task 08 was done."""
+    (tmp_path / "static" / "editor").mkdir(parents=True)
+    (tmp_path / "static" / "editor" / "interactions2d.js").write_text("export {}\n", encoding="utf-8")
+    user = (
+        "Keep implementing the plan\n\n"
+        "=== ZIP archive: Silhouettes_editor_implementacion_Qwen.zip ===\n"
+        "Owner-checked path: D:\\uploads\\d4e516679dda4f8fbd3a7d81778127bd.zip\n"
+        "Members: 12\n\n"
+        "=== File: ec096bce31424b00969963a9b508d9c6.md ===\n"
+        "[Type: markdown, Lines: 4000, Size: 172921 bytes]\n\n"
+        "```markdown\n"
+        "See FAUSTUS_ARREGLO_SVG_Y_STL.md and FAUSTUS_QUITAR_DIENTES_DE_SIERRA.md.\n"
+        "The package ships a manifest.json next to the editor.\n"
+        "```\n"
+    )
+    led = h.TurnLedger(str(tmp_path), user)
+    assert led.user_missing_paths() == []
+    led.record(
+        "write_file",
+        "static/editor/interactions2d.js\nexport function drag() {}",
+        {"output": "Wrote", "exit_code": 0, "diff": {"new_file": False, "added": 1, "removed": 0, "text": "+x"}},
+        73,
+    )
+    assert led.check_target_substitution(
+        "Task 08 is closed. Rewrote static/editor/interactions2d.js."
+    ) is None
+
+
+def test_attachment_id_filenames_are_not_path_tokens():
+    tokens = h.extract_path_tokens(
+        "See ec096bce31424b00969963a9b508d9c6.md and static/editor/interactions2d.js"
+    )
+    assert "static/editor/interactions2d.js" in tokens
+    assert all(not t.startswith("ec096bce") for t in tokens)
+
+
 # ---------------------------------------------------------------------------
 # Post-mutation static checks (regressions)
 # ---------------------------------------------------------------------------

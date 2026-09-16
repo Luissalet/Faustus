@@ -10,6 +10,7 @@ Extracted from agent_tools.py.
 import asyncio
 import collections
 import contextvars
+import difflib
 import hashlib
 import json
 import logging
@@ -300,6 +301,17 @@ def _resolve_tool_path_in_workspace(workspace: str, raw_path: str) -> str:
             if os.path.commonpath([os.path.normcase(resolved), nbase]) != nbase:
                 raise ValueError
         except ValueError:
+            remapped = _reanchor_abs_typo(raw_path, [base])
+            if remapped:
+                if _is_sensitive_path(remapped):
+                    raise ValueError(
+                        f"path '{raw_path}' is inside a sensitive directory "
+                        f"(e.g. .ssh, .gnupg) or matches a sensitive filename"
+                    )
+                logging.getLogger(__name__).info(
+                    "[harness] reanchored %s -> %s", raw_path, remapped
+                )
+                return remapped
             raise ValueError(f"path '{raw_path}' is outside the workspace ({workspace})")
     return resolved
 
@@ -371,6 +383,75 @@ def vet_workspace(raw: str) -> Optional[str]:
     return resolved
 
 
+# One-letter typos in a long Windows folder (`independiente` vs
+# `independientes`) still share ~99% of the path. A different project that
+# happens to contain the same relative suffix does not.
+_ABS_TYPO_SIMILARITY = 0.85
+
+
+def _reanchor_abs_typo(raw_path: str, roots: Sequence[str]) -> Optional[str]:
+    """If an absolute path is a near-miss of a workspace path, return the
+    real path under a root.
+
+    Silhouettes 782b7d89: Qwen dropped the 's' in ``independientes`` twice.
+    Confinement said "outside the workspace" for files that existed under
+    the real root. The original location is never opened — only a path
+    already inside ``roots``.
+    """
+    expanded = os.path.expanduser(str(raw_path or "").strip())
+    if not os.path.isabs(expanded):
+        return None
+    raw_norm = os.path.normpath(expanded)
+    raw_parts = pathlib.PurePath(raw_norm).parts
+    if len(raw_parts) < 3:
+        return None
+
+    intended = os.path.normcase(raw_norm)
+    best: Optional[str] = None
+    best_n = 0
+    best_ratio = 0.0
+    for root in roots:
+        if not root:
+            continue
+        root_real = os.path.realpath(root)
+        if os.path.isfile(root_real):
+            continue
+        # Longest suffix first (skip the drive / leading root component).
+        for i in range(1, len(raw_parts)):
+            suffix = raw_parts[i:]
+            n = len(suffix)
+            if n < best_n:
+                break
+            candidate = os.path.realpath(os.path.join(root_real, *suffix))
+            if not _path_is_within_root(candidate, root_real):
+                continue
+            parent = os.path.dirname(candidate)
+            exists = os.path.exists(candidate)
+            parent_ok = (
+                bool(parent)
+                and os.path.isdir(parent)
+                and _path_is_within_root(parent, root_real)
+            )
+            if not exists and not parent_ok:
+                continue
+            # A 1-component suffix (`C:\Windows\a.txt` → workspace/a.txt) is
+            # only accepted when that file already exists and the full paths
+            # are near-identical. New files need at least two components.
+            if not exists and n < 2:
+                continue
+            recovered = os.path.normcase(
+                os.path.normpath(os.path.join(root_real, *suffix))
+            )
+            ratio = difflib.SequenceMatcher(None, intended, recovered).ratio()
+            if ratio < _ABS_TYPO_SIMILARITY:
+                continue
+            if n > best_n or (n == best_n and ratio > best_ratio):
+                best_n = n
+                best_ratio = ratio
+                best = candidate
+    return best
+
+
 def _path_is_within_root(resolved: str, root: str) -> bool:
     root = os.path.realpath(root)
     resolved = os.path.realpath(resolved)
@@ -407,6 +488,16 @@ def _resolve_tool_path_in_roots(
         )
     if any(_path_is_within_root(resolved, root) for root in clean_roots):
         return resolved
+    remapped = _reanchor_abs_typo(raw_path, clean_roots)
+    if remapped:
+        if _is_sensitive_path(remapped):
+            raise ValueError(
+                f"path '{raw_path}' is inside a sensitive directory or matches a sensitive filename"
+            )
+        logging.getLogger(__name__).info(
+            "[harness] reanchored %s -> %s", raw_path, remapped
+        )
+        return remapped
     raise ValueError(f"path '{raw_path}' is outside the workspace / project work roots")
 
 

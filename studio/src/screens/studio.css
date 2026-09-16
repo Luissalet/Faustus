@@ -1349,6 +1349,39 @@ button.fs-studio__git-chip:hover {
   box-shadow: 0 0 0 4px var(--fs-ember), var(--fs-lift-shadow);
 }
 
+/* Cover the slab without entering the grid: an in-flow hint grew the
+   composer (and stole the drag) every time the pointer crossed a child.
+   Opaque surface, not glass — glass would show the attachment card and
+   the empty right side as two colours. */
+.fs-studio__drop-hint {
+  position: absolute;
+  inset: 0;
+  grid-column: 1 / -1;
+  grid-row: 1 / -1;
+  z-index: 2;
+  margin: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  border-radius: inherit;
+  background: color-mix(in srgb, var(--fs-surface-2) 88%, var(--fs-brand));
+  color: var(--fs-text-1);
+  font-size: var(--fs-label-size);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  opacity: 0;
+  visibility: hidden;
+}
+
+.fs-studio__composer[data-dragging] > :not(.fs-studio__drop-hint) {
+  visibility: hidden;
+}
+
+.fs-studio__composer[data-dragging] .fs-studio__drop-hint {
+  opacity: 1;
+  visibility: visible;
+}
+
 /* The `@` file list and the `/` command list: a strip above the text, on
    the same slab, so the eye does not have to travel to a floating menu. */
 .fs-studio__suggest {

@@ -119,3 +119,52 @@ def test_missing_pytest_is_inconclusive_not_a_broken_change():
     # A real failing suite is still a real failure.
     real = pt.parse_output("pytest", 1, "FAILED tests/test_a.py::test_x - AssertionError\n= 1 failed in 0.1s =")
     assert real["inconclusive"] is False and real["ok"] is False
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node not on PATH")
+def test_js_editor_change_runs_node_tests_not_unrelated_pytest(tmp_path, monkeypatch):
+    """Silhouettes d20e933f stamped verified on pytest test_import/jobs/models/store
+    (82 passed) while the actual gate was `node --test tests/editor/test_gestures.mjs`.
+    A JS-only mutation must run the node tests; pytest related files must stay .py."""
+    ws = tmp_path / "ws"
+    (ws / "tests" / "editor").mkdir(parents=True)
+    (ws / "static" / "editor").mkdir(parents=True)
+    (ws / "tests" / "test_store.py").write_text(
+        "def test_store():\n    assert True\n", encoding="utf-8",
+    )
+    (ws / "static" / "editor" / "interactions2d.js").write_text(
+        "export function drag() { return 1; }\n", encoding="utf-8",
+    )
+    (ws / "tests" / "editor" / "test_gestures.mjs").write_text(
+        "import test from 'node:test';\n"
+        "import assert from 'node:assert/strict';\n"
+        "import { drag } from '../../static/editor/interactions2d.js';\n"
+        "test('drag commits once', () => { assert.equal(drag(), 1); });\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(pt, "_setting", lambda key, default=None: {
+        "agent_project_tests": True,
+        "agent_project_tests_scope": "related",
+        "agent_project_test_command": "",
+        "agent_project_tests_timeout_seconds": 60,
+        "agent_project_tests_baseline": False,
+    }.get(key, default), raising=False)
+
+    changed = ["static/editor/interactions2d.js", "tests/editor/test_gestures.mjs",
+               "silhouettes/editor/api.py"]
+    (ws / "silhouettes" / "editor").mkdir(parents=True)
+    (ws / "silhouettes" / "editor" / "api.py").write_text("x = 1\n", encoding="utf-8")
+    (ws / "tests" / "test_import.py").write_text(
+        "def test_import():\n    assert True\n", encoding="utf-8",
+    )
+
+    res = pt.run_for_turn(str(ws), changed)
+    assert res is not None
+    related = res.get("related_files") or []
+    assert "tests/editor/test_gestures.mjs" in related
+    assert "tests/test_import.py" not in related
+    assert "tests/test_store.py" not in related
+    assert res.get("ok") is True
+    assert res.get("kind") == "node"
+    cmd = res.get("command") or ""
+    assert "--test" in cmd and "test_gestures.mjs" in cmd

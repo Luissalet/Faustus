@@ -63,7 +63,7 @@ const feed = (state, event, busy = true) => p.panelReducer(state, { type: 'event
 // ── The frame list is bounded ──
 {
   let s = p.initialPanel;
-  for (let i = 0; i < p.MAX_FRAMES + 5; i++) s = feed(s, { type: 'frame', frame: frameOf({ title: `f${i}` }) });
+  for (let i = 0; i < p.MAX_FRAMES + 5; i++) s = feed(s, { type: 'frame', frame: frameOf({ title: `f${i}`, src: `${PNG}${i}` }) });
   assert(s.frames.length === p.MAX_FRAMES, `a long session keeps ${p.MAX_FRAMES} frames, not all of them`);
   assert(s.frames[s.frames.length - 1].title === `f${p.MAX_FRAMES + 4}`, 'and the newest is the one kept');
   assert(s.frames[0].title === 'f5', 'the oldest are the ones dropped');
@@ -122,10 +122,44 @@ const feed = (state, event, busy = true) => p.panelReducer(state, { type: 'event
   assert(none.frames.length === 0, 'a tool with no screenshot adds nothing');
 }
 
+// ── A browser action shows the page URL, not the MCP tool name, and
+//    does not mint a second thumbnail for the live-view follow-up ──
+{
+  const raw = {
+    type: 'tool_output',
+    tool: 'mcp__builtin_browser__browser_navigate',
+    command: '{"url":"http://192.168.0.140:5000/editor"}',
+    output: '### Page\n- Page URL: http://192.168.0.140:5000/editor\n- Page Title: Silhouettes',
+    screenshot: PNG,
+    browser_url: 'http://192.168.0.140:5000/editor',
+    browser_title: 'Silhouettes — Editor de capas',
+  };
+  const decoded = chat.decode(raw, null);
+  let s = feed(p.initialPanel, decoded);
+  assert(s.frames.length === 1, 'the tool card screenshot becomes one frame');
+  assert(s.frames[0].url === 'http://192.168.0.140:5000/editor', 'the Browser tab shows the page URL, not a blank caption');
+  assert(s.frames[0].title === 'Silhouettes — Editor de capas', 'and the page title, not the MCP tool name');
+  assert(!String(s.frames[0].title).includes('browser_navigate'), 'the tool name is not the caption');
+
+  s = feed(s, {
+    type: 'frame',
+    frame: frameOf({
+      src: PNG,
+      url: 'http://192.168.0.140:5000/editor',
+      title: 'Silhouettes — Editor de capas',
+      tool: 'mcp__builtin_browser__browser_navigate',
+    }),
+  });
+  assert(s.frames.length === 1, 'the live-view event updates that frame instead of stacking a twin thumbnail');
+
+  const other = feed(s, { type: 'frame', frame: frameOf({ src: 'data:image/png;base64,bbbb', title: 'later', url: 'about:blank' }) });
+  assert(other.frames.length === 2, 'a later capture with a different image still stacks');
+}
+
 // ── Showing a frame by index ──
 {
   let s = p.initialPanel;
-  for (let i = 0; i < 3; i++) s = feed(s, { type: 'frame', frame: frameOf({ title: `f${i}` }) });
+  for (let i = 0; i < 3; i++) s = feed(s, { type: 'frame', frame: frameOf({ title: `f${i}`, src: `${PNG}${i}` }) });
   assert(p.panelReducer(s, { type: 'show', index: 0 }).active === 0, 'an earlier frame can be brought back');
   assert(p.panelReducer(s, { type: 'show', index: 99 }).active === s.active, 'an index that is not there changes nothing');
   assert(p.panelReducer(s, { type: 'show', index: -1 }).active === s.active, 'and neither does a negative one');

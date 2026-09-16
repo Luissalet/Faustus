@@ -5139,3 +5139,25 @@ El paquete de Luis no era solo M0 y M1: detrás de los 100 requisitos P0 venían
 **Que hace.** (1) El detector semantico compara un *esqueleto* del comando (colapsa digitos, quita `python -c`), no el nombre de la herramienta: `print(1)`/`print(2)` sigue siendo un loop; import → nest → export no. (2) Tras 3 ghost-calls de la herramienta escondida, se restaura al schema (`loop_retry_redirected.restored=true`) para que el siguiente comando distinto corra. (3) El route ahora reenvia `loop_retry_redirected`.
 
 **Ficheros.** `src/agent_loop.py`, `routes/chat_routes.py`, `docs/api/sse_events.json`, `tests/test_agent_rounds_exhausted.py`.
+
+## 88. Adjuntos no son destinos; `node --test` cuenta en el verified (16-09-2026)
+
+**Problema.** El chat Silhouettes `d20e933f` (turno "Keep implementing the plan", Qwen 3.8 27B Q4, 86 rondas / 74 min) cerro como `complete` / `verified`, pero el harness se equivoco en dos sitios:
+
+1. `target_substituted` a la ronda 85 porque `user_missing_paths()` leyo el ZIP y el spec de 170k inlined en el mensaje (`ec096bce….md`, `FAUSTUS_ARREGLO_SVG_Y_STL.md`, `manifest.json`) como ficheros que Luis habia pedido. No estaban en el workspace. El modelo ya habia cerrado task 08; la ronda extra se fue a glob de fantasmas.
+2. La verificacion post-turno corrio pytest "related" sobre `test_import.py` / `test_jobs.py` / `test_models.py` / `test_store.py` (82 passed) y estampo verified. El gate real era `node --test tests/editor/test_gestures.mjs`. `related_test_files` solo conocia `test_*.py`; los `.mjs` no existian para el runner.
+
+**Que hace.** (1) `user_authored_text()` corta el mensaje en el primer `=== File:` / `=== ZIP archive:`; los ids de adjunto (`[0-9a-f]{16,}.ext`) no son path tokens. (2) Los tests `test_*.mjs` / `*.test.js` entran en `related_test_files`; pytest solo recibe `.py`; `run_for_turn` lanza `node --test` sobre los related JS y el `ok` es AND de ambos. Un cambio solo-JS ya no cae al suite pytest entero.
+
+**Ficheros.** `src/agent_harness.py`, `src/project_tests.py`, `tests/test_agent_harness.py`, `tests/test_harness_building_blocks.py`, `tests/test_project_tests_scoping.py`.
+
+## 89. Typo en la carpeta padre no es "fuera del workspace" (16-09-2026)
+
+**Problema.** El chat Silhouettes `782b7d89` (turno "Keep implementing this plan", Qwen 3.8 27B Q4, 30 rondas / 18 min) cerro `complete` / `verified`. Los parches del §88 aguantaron: `target_substituted=false`, verificacion `pytest+node` **170 passed; node --test: 20 passed** (`test_gestures.mjs` + `test_selection.mjs`). Tres `read_file` fallaron:
+
+1. Dos veces el modelo escribio `Proyectos independiente\Silhouettes\...` (sin la `s`) en vez del workspace `Proyectos independientes\Silhouettes`. El confinamiento dijo "outside the workspace" para `evidence/editor/task08.json` y `silhouettes/editor/commands.py`, que existian bajo la raiz real. En bash el propio modelo se puso un `cd typo || cd real`; `read_file` no tenia ese escape. Rondas 3 y 12 quemadas.
+2. `docs/editor_acceptance.md` no existe; `Did you mean` ya disparo. No es un fallo nuevo del harness.
+
+**Que hace.** Si una ruta absoluta cae fuera de las raices, se busca el sufijo mas largo que exista (o cuyo padre exista) bajo el workspace. Solo se acepta si el path completo pedido y el recuperado se parecen ≥0.85 (el typo de una letra en una ruta Windows larga ronda 0.99; otro proyecto con el mismo `src/app.py` no). El original nunca se abre. `.ssh` / sensibles siguen bloqueados.
+
+**Ficheros.** `src/tool_execution.py`, `tests/test_workspace_confine.py`.

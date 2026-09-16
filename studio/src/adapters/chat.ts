@@ -413,6 +413,12 @@ export type ChatEvent =
       docId?: string;
       /** A validated raster data: URL (desktop_screenshot and browser tools). */
       screenshot?: string;
+      /** Live browser view (`src/browser_view.py`): the page the screenshot
+       *  was taken on. The panel used to ignore these and caption the frame
+       *  with the MCP tool name, so the Browser tab showed
+       *  `mcp__builtin_browser__browser_navigate` and no URL. */
+      browserUrl?: string;
+      browserTitle?: string;
       /** CALL-03: `_validate_native_tool_call`'s (src/agent_loop.py) argument
        *  validation outcome for this call, forwarded from the wire's
        *  `argument_errors`/`repairs` — `model.ts`'s `argumentRepairFields`
@@ -1386,6 +1392,8 @@ export function decode(raw: Record<string, unknown>, sseEvent: string | null): C
         diff: diffFrom(raw.diff),
         docId: str(raw.doc_id) || undefined,
         screenshot: safeFrameSrc(raw.screenshot) || undefined,
+        browserUrl: str(raw.browser_url).slice(0, 2048) || undefined,
+        browserTitle: str(raw.browser_title).slice(0, 300) || undefined,
         argumentErrors: argumentErrorsFrom(raw.argument_errors),
         repairs: repairsFrom(raw.repairs),
         evidenceRefs: evidenceRefsFrom(raw.evidence_refs),

@@ -23,6 +23,7 @@ from src.tool_execution import (
     _active_workspace,
     _resolve_search_root,
     _resolve_tool_path,
+    _resolve_tool_path_in_roots,
     _resolve_tool_path_in_workspace,
     agent_cwd,
     execute_tool_block as _execute_tool_block,
@@ -72,6 +73,57 @@ def test_resolver_blocks_sensitive_inside_workspace(ws):
     os.makedirs(os.path.join(ws, ".ssh"), exist_ok=True)
     with pytest.raises(ValueError):
         _resolve_tool_path_in_workspace(ws, ".ssh/authorized_keys")
+
+
+def test_parent_folder_typo_is_reanchored_into_workspace(tmp_path):
+    """Silhouettes 782b7d89: Qwen dropped the 's' in 'independientes' twice.
+    ``read_file`` treated the path as outside the workspace instead of opening
+    the file that existed under the real root."""
+    real_ws = tmp_path / "Proyectos independientes" / "Silhouettes"
+    nested = real_ws / "evidence" / "editor"
+    nested.mkdir(parents=True)
+    target = nested / "task08.json"
+    target.write_text("ok\n", encoding="utf-8")
+    (real_ws / "silhouettes" / "editor").mkdir(parents=True)
+    commands = real_ws / "silhouettes" / "editor" / "commands.py"
+    commands.write_text("HANDLERS = {}\n", encoding="utf-8")
+
+    typo_task = (
+        tmp_path / "Proyectos independiente" / "Silhouettes"
+        / "evidence" / "editor" / "task08.json"
+    )
+    typo_cmd = (
+        tmp_path / "Proyectos independiente" / "Silhouettes"
+        / "silhouettes" / "editor" / "commands.py"
+    )
+    assert not typo_task.exists() and not typo_cmd.exists()
+
+    ws = str(real_ws)
+    assert _resolve_tool_path_in_workspace(ws, str(typo_task)) == os.path.realpath(target)
+    assert _resolve_tool_path_in_roots([ws], str(typo_cmd), ws) == os.path.realpath(commands)
+
+
+def test_unrelated_absolute_path_is_still_outside(tmp_path):
+    """A different project that happens to share ``src/app.py`` must not be
+    silently rewritten into this workspace."""
+    real_ws = tmp_path / "Proyectos independientes" / "Silhouettes"
+    (real_ws / "src").mkdir(parents=True)
+    (real_ws / "src" / "app.py").write_text("inside\n", encoding="utf-8")
+    other = tmp_path / "UNRELATED_PROJ" / "src" / "app.py"
+    other.parent.mkdir(parents=True)
+    other.write_text("nope\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="outside the workspace"):
+        _resolve_tool_path_in_workspace(str(real_ws), str(other))
+
+
+def test_typo_reanchor_still_blocks_sensitive(tmp_path):
+    real_ws = tmp_path / "Proyectos independientes" / "Silhouettes"
+    ssh = real_ws / ".ssh"
+    ssh.mkdir(parents=True)
+    (ssh / "id_rsa").write_text("secret\n", encoding="utf-8")
+    typo = tmp_path / "Proyectos independiente" / "Silhouettes" / ".ssh" / "id_rsa"
+    with pytest.raises(ValueError, match="sensitive"):
+        _resolve_tool_path_in_workspace(str(real_ws), str(typo))
 
 
 # ── the central binding: the safety net ─────────────────────────────────
@@ -129,6 +181,25 @@ async def test_read_write_edit_confined_e2e(ws, admin):
     _, r = await execute_tool_block(_block("write_file", f"{escape}\nx"), owner="a", workspace=ws)
     assert r["exit_code"] == 1 and "outside the workspace" in r["error"]
     assert not os.path.exists(escape)
+
+
+@pytest.mark.asyncio
+async def test_read_file_reanchors_parent_folder_typo(tmp_path, admin):
+    """End-to-end of 782b7d89: the model dropped an 's' in the workspace
+    parent folder. The file is inside the real root; the call must succeed."""
+    real_ws = tmp_path / "Proyectos independientes" / "Silhouettes"
+    nested = real_ws / "evidence" / "editor"
+    nested.mkdir(parents=True)
+    (nested / "task08.json").write_text("from-workspace\n", encoding="utf-8")
+    typo = (
+        tmp_path / "Proyectos independiente" / "Silhouettes"
+        / "evidence" / "editor" / "task08.json"
+    )
+    _, r = await execute_tool_block(
+        _block("read_file", str(typo)), owner="a", workspace=str(real_ws),
+    )
+    assert r["exit_code"] == 0, r
+    assert "from-workspace" in (r.get("output") or "")
 
 
 @pytest.mark.asyncio

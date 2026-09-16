@@ -119,6 +119,56 @@ export type PanelAction =
    *  the list. */
   | { type: 'board-issue'; id: string | null };
 
+function urlFromCommand(command: string): string {
+  const text = String(command || '').trim();
+  if (!text.startsWith('{')) return '';
+  try {
+    const parsed = JSON.parse(text) as { url?: unknown };
+    const url = typeof parsed?.url === 'string' ? parsed.url.trim() : '';
+    if (!url || url.length > 2048) return '';
+    return /^(https?:\/\/|about:)/i.test(url) ? url : '';
+  } catch {
+    return '';
+  }
+}
+
+function frameFromToolOutput(ev: Extract<ChatEvent, { type: 'tool_output' }>): BrowserFrame {
+  const desktop = /^desktop_/.test(ev.tool);
+  const url = (ev.browserUrl || urlFromCommand(ev.command)).slice(0, 2048);
+  const title = (ev.browserTitle || (desktop ? t('Desktop') : url) || t('Browser')).slice(0, 300);
+  return {
+    src: ev.screenshot as string,
+    url,
+    title,
+    tool: ev.tool,
+    source: desktop ? 'desktop' : 'browser',
+    at: Date.now(),
+  };
+}
+
+/** Each browser ACTION yields a tool_output screenshot and a `browser_view`
+ *  frame of the same capture. Stacking both filled the 8-slot strip with
+ *  twins and hid the URL on the first of each pair. */
+function absorbFrame(state: PanelState, frame: BrowserFrame, busy: boolean): PanelState {
+  const last = state.frames[state.frames.length - 1];
+  const replace = Boolean(last && last.src === frame.src);
+  const next = replace && last
+    ? { ...last, ...frame, url: frame.url || last.url, title: frame.title || last.title }
+    : frame;
+  const frames = replace
+    ? [...state.frames.slice(0, -1), next]
+    : [...state.frames, frame].slice(-MAX_FRAMES);
+  const first = !state.live;
+  return {
+    ...state,
+    frames,
+    active: frames.length - 1,
+    live: busy,
+    open: state.open || (first && autoOpenEnabled()),
+    tab: first && autoOpenEnabled() && !state.open ? 'browser' : state.tab,
+  };
+}
+
 /** Open the Progress tab the first time a turn produces a todo list, the
  *  same once-per-turn rule the browser tab uses for frames. */
 function revealProgress(state: PanelState, todos: Todo[], busy: boolean): PanelState {
@@ -174,20 +224,7 @@ function reducePanel(state: PanelState, action: PanelAction): PanelState {
     case 'event': {
       const ev = action.event;
       if (ev.type === 'frame' || (ev.type === 'tool_output' && ev.screenshot)) {
-        const frame: BrowserFrame =
-          ev.type === 'frame'
-            ? ev.frame
-            : { src: ev.screenshot as string, url: '', title: /^desktop_/.test(ev.tool) ? t('Desktop') : ev.tool, tool: ev.tool, source: /^desktop_/.test(ev.tool) ? 'desktop' : 'browser', at: Date.now() };
-        const frames = [...state.frames, frame].slice(-MAX_FRAMES);
-        const first = !state.live;
-        return {
-          ...state,
-          frames,
-          active: frames.length - 1,
-          live: action.busy,
-          open: state.open || (first && autoOpenEnabled()),
-          tab: first && autoOpenEnabled() && !state.open ? 'browser' : state.tab,
-        };
+        return absorbFrame(state, ev.type === 'frame' ? ev.frame : frameFromToolOutput(ev), action.busy);
       }
       if (ev.type === 'doc_open') {
         return {

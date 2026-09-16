@@ -16,8 +16,10 @@ Detection (first match wins):
 
 Scope: with `scope="related"` (default) pytest only runs the test files that
 name a changed module (`test_<stem>*.py`, `<stem>_test.py`, changed test files
-themselves); when nothing matches it falls back to the whole suite, still
-bounded by the timeout. Other runners always run their whole suite.
+themselves); node tests (`test_*.mjs` / `*.test.js`) for changed JS sources
+run via `node --test` in the same turn. When nothing Python-related matches,
+pytest does not fall back to the whole suite just because a node test exists.
+Other runners always run their whole suite.
 
 Stdlib only; never raises.
 """
@@ -44,6 +46,18 @@ OUTPUT_CAP = 200_000
 TAIL_CHARS = 3_000
 _TEST_FILE_RE = re.compile(r"(?:^|/)(?:test_[^/]*\.py|[^/]*_test\.py|tests?\.py)$", re.I)
 _JS_TEST_FILE_RE = re.compile(r"\.(?:test|spec)\.(?:[cm]?js|[jt]sx?)$", re.I)
+# node --test convention (Silhouettes tests/editor/test_gestures.mjs), not Jest's *.test.js.
+_NODE_TEST_FILE_RE = re.compile(r"(?:^|/)(?:test_[^/]*\.(?:mjs|cjs|js)|[^/]*_test\.(?:mjs|cjs|js))$", re.I)
+
+
+def _is_node_test_file(path: str) -> bool:
+    rel = (path or "").replace("\\", "/")
+    return bool(_NODE_TEST_FILE_RE.search(rel) or _JS_TEST_FILE_RE.search(rel))
+
+
+def _is_any_test_file(path: str) -> bool:
+    rel = (path or "").replace("\\", "/")
+    return bool(_TEST_FILE_RE.search(rel) or _is_node_test_file(rel))
 
 
 def _setting(key: str, default: Any) -> Any:
@@ -338,7 +352,7 @@ def related_test_files(workspace: str, changed: Iterable[str], limit: int = 12) 
         if rel.startswith("../"):
             continue
         base = rel.rsplit("/", 1)[-1]
-        if _TEST_FILE_RE.search(rel):
+        if _is_any_test_file(rel):
             if os.path.isfile(os.path.join(workspace, rel)) and rel not in out:
                 out.append(rel)
             continue
@@ -357,11 +371,17 @@ def related_test_files(workspace: str, changed: Iterable[str], limit: int = 12) 
             for dirpath, dirnames, filenames in os.walk(os.path.join(workspace, d)):
                 dirnames[:] = [x for x in dirnames if not x.startswith(".") and x not in ("__pycache__", "node_modules", "venv", ".venv")]
                 for fn in filenames:
-                    if not _TEST_FILE_RE.search(fn):
+                    if not _is_any_test_file(fn):
                         continue
                     low = fn.lower()
                     rel = os.path.relpath(os.path.join(dirpath, fn), workspace).replace(os.sep, "/")
-                    if any(low in (f"test_{s}.py", f"{s}_test.py") or low.startswith(f"test_{s}_") or low.startswith(f"test_{s}.") for s in stems):
+                    if any(
+                        low in (f"test_{s}.py", f"{s}_test.py", f"test_{s}.mjs", f"test_{s}.js",
+                                f"{s}_test.mjs", f"{s}.test.js", f"{s}.spec.js")
+                        or low.startswith(f"test_{s}_")
+                        or low.startswith(f"test_{s}.")
+                        for s in stems
+                    ):
                         if rel not in out:
                             out.append(rel)
                     elif scanned < _IMPORT_SCAN_MAX_FILES:
@@ -457,10 +477,22 @@ def run_tests(
             result["related_files"] = rel
         elif spec.get("kind") == "pytest" and scope == "related" and changed is not None:
             rel = related_test_files(workspace, changed)
-            if rel:
-                argv = argv + ["--"] + rel
+            py_rel = [f for f in rel if f.endswith(".py")]
+            if py_rel:
+                argv = argv + ["--"] + py_rel
                 result["scope"] = "related"
                 result["related_files"] = rel
+            elif rel:
+                # JS/node tests only: do not fall back to the whole pytest
+                # suite (Silhouettes d20e933f verified 82 unrelated python
+                # tests and never ran test_gestures.mjs).
+                result["scope"] = "related"
+                result["related_files"] = rel
+                result["ran"] = False
+                result["ok"] = True
+                result["summary"] = "no related python tests"
+                result["duration_s"] = round(time.time() - t0, 1)
+                return result
         result["command"] = " ".join(shlex.quote(a) if " " in a else a for a in argv)
     kwargs: Dict[str, Any] = dict(
         cwd=workspace, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8",
@@ -620,6 +652,27 @@ def parse_output(kind: str, exit_code: Optional[int], out: str) -> Dict[str, Any
             inconclusive = True
             summary = "pytest is not installed in the project's interpreter"
             failures = []
+    elif kind == "node":
+        m = re.search(
+            r"# tests\s+(\d+).*?# pass\s+(\d+).*?# fail\s+(\d+)",
+            out, re.S,
+        )
+        if m:
+            n_tests, n_pass, n_fail = m.group(1), m.group(2), m.group(3)
+            summary = f"{n_pass} passed"
+            if n_fail != "0":
+                summary += f", {n_fail} failed"
+            elif n_tests != n_pass:
+                summary += f" of {n_tests}"
+        else:
+            summary = "passed" if ok else "failed"
+        for line in out.splitlines():
+            s = line.strip()
+            if s.startswith("not ok ") or "AssertionError" in s:
+                if s not in failures:
+                    failures.append(s[:200])
+            if len(failures) >= 20:
+                break
     elif kind == "npm":
         m = _JEST_RE.search(out) or _VITEST_RE.search(out)
         if m:
@@ -750,6 +803,87 @@ def compare_with_baseline(workspace: str, checkpoint_sha: Optional[str], spec: D
     return res
 
 
+def _node_executable() -> Optional[str]:
+    return shutil.which("node") or shutil.which("node.exe")
+
+
+def run_node_tests(
+    workspace: str,
+    files: Iterable[str],
+    *,
+    timeout_s: Optional[float] = None,
+) -> Dict[str, Any]:
+    """Run `node --test` on the given related files. Never raises."""
+    rel: List[str] = []
+    for raw in files:
+        if not raw:
+            continue
+        path = raw.replace("\\", "/")
+        if os.path.isfile(os.path.join(workspace, *path.split("/"))) and path not in rel:
+            rel.append(path)
+    node = _node_executable()
+    if not rel:
+        return {
+            "ran": False, "kind": "node", "label": "node --test", "scope": "related",
+            "ok": None, "inconclusive": True, "summary": "no node test files",
+            "failures": [], "related_files": [], "command": "", "duration_s": 0.0,
+        }
+    if not node:
+        return {
+            "ran": False, "kind": "node", "label": "node --test", "scope": "related",
+            "ok": None, "inconclusive": True, "summary": "node is not available",
+            "failures": [], "related_files": rel, "command": "", "duration_s": 0.0,
+        }
+    spec = {
+        "kind": "node",
+        "argv": [node, "--test", *rel],
+        "label": "node --test",
+    }
+    res = run_tests(workspace, spec, timeout_s=timeout_s)
+    res["scope"] = "related"
+    res["related_files"] = rel
+    return res
+
+
+def _merge_node_tests(primary: Optional[Dict[str, Any]], node: Dict[str, Any]) -> Dict[str, Any]:
+    """Pytest result plus `node --test`. Overall ok is AND of both runs."""
+    related = list(dict.fromkeys(
+        list((primary or {}).get("related_files") or [])
+        + list(node.get("related_files") or [])
+    ))
+    if not primary or not primary.get("ran"):
+        out = dict(node)
+        out["related_files"] = related
+        if primary and primary.get("summary"):
+            out["pytest_skipped"] = primary.get("summary")
+        return out
+    out = dict(primary)
+    out["node_tests"] = {
+        k: node.get(k) for k in (
+            "ran", "kind", "ok", "summary", "exit_code", "command",
+            "failures", "inconclusive", "duration_s", "related_files",
+        ) if k in node
+    }
+    out["related_files"] = related
+    node_ran = bool(node.get("ran"))
+    node_ok = bool(node.get("ok")) and not node.get("inconclusive")
+    node_sum = node.get("summary") or ("passed" if node_ok else "failed")
+    if node_ran:
+        out["summary"] = (out.get("summary") or "") + f"; node --test: {node_sum}"
+        if node.get("command"):
+            prev = out.get("command") or ""
+            out["command"] = (prev + " && " if prev else "") + node["command"]
+        if not node_ok:
+            out["ok"] = False
+            out["failures"] = list(out.get("failures") or []) + list(node.get("failures") or [])
+        if out.get("kind") == "pytest":
+            out["kind"] = "pytest+node"
+    elif node.get("inconclusive"):
+        note = node.get("summary") or "node tests skipped"
+        out["summary"] = (out.get("summary") or "") + f"; {note}"
+    return out
+
+
 def run_for_turn(workspace: str, changed: Iterable[str], *, override: Optional[str] = None,
                  checkpoint_sha: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """Detect + run. None when the feature is off or no runner exists. With a
@@ -760,16 +894,25 @@ def run_for_turn(workspace: str, changed: Iterable[str], *, override: Optional[s
         return None
     override = override or str(_setting("agent_project_test_command", "") or "").strip() or None
     spec = detect_test_command(workspace, override)
-    if not spec:
-        return None
+    changed_list = list(changed)
     scope = str(_setting("agent_project_tests_scope", "related") or "related")
-    res = run_tests(workspace, spec, changed=list(changed), scope=scope)
-    logger.info("[harness] project tests (%s, %s): ok=%s %s in %ss", spec.get("kind"), res.get("scope"),
-                res.get("ok"), res.get("summary"), res.get("duration_s"))
-    if res.get("ran") and res.get("ok") is False and not res.get("inconclusive"):
-        res = compare_with_baseline(workspace, checkpoint_sha, spec, res, changed=list(changed))
-        if res.get("pre_existing_only"):
-            logger.info("[harness] project tests: every failure is pre-existing (failed at the checkpoint too)")
+    res: Optional[Dict[str, Any]] = None
+    if spec:
+        res = run_tests(workspace, spec, changed=changed_list, scope=scope)
+        logger.info("[harness] project tests (%s, %s): ok=%s %s in %ss", spec.get("kind"), res.get("scope"),
+                    res.get("ok"), res.get("summary"), res.get("duration_s"))
+        if res.get("ran") and res.get("ok") is False and not res.get("inconclusive"):
+            res = compare_with_baseline(workspace, checkpoint_sha, spec, res, changed=changed_list)
+            if res.get("pre_existing_only"):
+                logger.info("[harness] project tests: every failure is pre-existing (failed at the checkpoint too)")
+    node_files: List[str] = []
+    if scope == "related":
+        node_files = [f for f in related_test_files(workspace, changed_list) if _is_node_test_file(f)]
+    if node_files:
+        node_res = run_node_tests(workspace, node_files)
+        logger.info("[harness] node tests: ok=%s %s in %ss",
+                    node_res.get("ok"), node_res.get("summary"), node_res.get("duration_s"))
+        res = _merge_node_tests(res, node_res)
     return res
 
 
@@ -809,7 +952,8 @@ def compact(res: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         return None
     keys = ("ran", "kind", "label", "scope", "ok", "exit_code", "output_matched", "timed_out", "duration_s",
             "summary", "failures", "inconclusive", "command", "related_files",
-            "new_failures", "pre_existing", "pre_existing_only", "exempt", "baseline", "fixed")
+            "new_failures", "pre_existing", "pre_existing_only", "exempt", "baseline", "fixed",
+            "node_tests")
     out = {k: res.get(k) for k in keys if k in res}
     out["output_tail"] = (res.get("output_tail") or "")[-1500:]
     return out

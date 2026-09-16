@@ -71,6 +71,7 @@ import type { Suggestion } from './commands';
 import { capMentionItems, resolveSuggestionIntent } from './composer-suggest';
 import { frameBatcher } from '../../lib/frame-batch';
 import { clipboardFiles, insertPastedText } from '../../lib/clipboard-attachments';
+import { createFileDropSession, isFileDrag } from '../../lib/file-drop';
 import {REFERENCE_ROLES} from '../../lib/image-references';
 import {MediaRecipes} from './MediaRecipes';
 import { createAttachmentUploads, type PendingAttachment } from '../../lib/attachment-uploads';
@@ -296,6 +297,8 @@ export function Composer({
   useEffect(() => { uploads.resume(); return () => uploads.dispose(); }, [uploads]);
   const uploading = pendingFiles.some((file) => file.state !== 'failed');
   const [dragging, setDragging] = useState(false);
+  const dropSession = useMemo(() => createFileDropSession(setDragging), []);
+  useEffect(() => () => dropSession.dispose(), [dropSession]);
 
   /* ── CMP-03/W3-A: document context chips ──
    * `docSession.ts`'s `sendComposerContext` (used today by `SidePanel.tsx`'s
@@ -553,7 +556,7 @@ export function Composer({
 
   const onDrop = (event: DragEvent<HTMLFormElement>) => {
     event.preventDefault();
-    setDragging(false);
+    dropSession.drop();
     void addFiles(Array.from(event.dataTransfer.files ?? []));
   };
 
@@ -641,11 +644,16 @@ export function Composer({
         event.preventDefault();
         trySend();
       }}
-      onDragOver={(event) => {
-        event.preventDefault();
-        setDragging(true);
+      onDragEnter={(event) => {
+        if (isFileDrag(event.dataTransfer?.types)) event.preventDefault();
+        dropSession.enter(event.dataTransfer?.types);
       }}
-      onDragLeave={() => setDragging(false)}
+      onDragOver={(event) => {
+        if (!isFileDrag(event.dataTransfer?.types)) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'copy';
+      }}
+      onDragLeave={() => dropSession.leave()}
       onDrop={onDrop}
       data-testid="studio-composer"
     >
@@ -768,9 +776,9 @@ export function Composer({
         onClick={(event) => refreshSuggestions(draft, event.currentTarget.selectionStart ?? draft.length)}
         data-testid="studio-input"
       />
-      {dragging && (
-        <p className="fs-studio__paste-hint">{t('Paste a screenshot with Ctrl+V, or drop a file here.')}</p>
-      )}
+      <p className="fs-studio__drop-hint" data-active={dragging || undefined} aria-hidden={!dragging}>
+        {t('Drop to attach')}
+      </p>
 
       <div className="fs-studio__bar">
         <div className="fs-studio__bar-start">
