@@ -75,6 +75,89 @@ def _backend(url: str = "", *, client_id: str = "") -> ComfyUIBackend:
     return ComfyUIBackend(url, client_id=client_id or DEFAULT_CLIENT_ID)
 
 
+# ── WP30: conservative resource admission ───────────────────────────────
+#
+# Every function below is a no-op, by construction, whenever `creator_enabled`
+# is off: `_creator_enabled()` is checked first and nothing downstream of it
+# imports `src.creator.resources` at all in that case, so `resource_admission.
+# acquire()` is never called and this module's behaviour is unchanged (see
+# tests/test_media_runs.py::test_flag_off_admission_never_called). Any
+# unexpected error from the new module fails OPEN (treated as admitted)
+# rather than blocking an existing render on a bug in code this render never
+# asked for.
+
+def _creator_enabled() -> bool:
+    try:
+        from src.settings import get_setting
+        return bool(get_setting("creator_enabled", False))
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _creator_admit(run_id: str, workflow: "workflows.MediaWorkflow",
+                   rendered: Mapping[str, Any], engine: ComfyUIBackend):
+    """`None` means "proceed as before" (flag off, or the check itself
+    failed); otherwise the `resources.Admission` the gate returned."""
+    if not _creator_enabled():
+        return None
+    try:
+        from src.creator import resources as creator_resources
+        shape = creator_resources.shape_key(rendered.get("values"))
+        footprint = creator_resources.estimate_footprint(
+            workflow.id, workflow.version, engine.base_url, shape=shape)
+        return creator_resources.admit(footprint, engine.base_url, run_id=run_id), footprint, shape
+    except Exception as e:  # noqa: BLE001
+        logger.warning("media run %s: creator admission check failed, proceeding "
+                       "without it: %s", run_id, e)
+        return None
+
+
+def _creator_note_inflight(run_id: str, workflow: "workflows.MediaWorkflow",
+                           engine: ComfyUIBackend, footprint, shape: str) -> None:
+    try:
+        from src.creator import resources as creator_resources
+        vram_before = None
+        try:
+            from src import gpu_shared_memory as gsm
+            snap = gsm.vram_snapshot()
+            if snap.get("supported"):
+                vram_before = snap.get("used")
+        except Exception:  # noqa: BLE001
+            pass
+        creator_resources.note_inflight(run_id, workflow.id, workflow.version, engine.base_url,
+                                        device=engine.base_url, footprint=footprint,
+                                        vram_before_bytes=vram_before, shape=shape)
+    except Exception as e:  # noqa: BLE001
+        logger.debug("media run %s: creator note_inflight failed: %s", run_id, e)
+
+
+def _creator_finish(run_id: str) -> None:
+    """Called whenever a run reaches a terminal status (completed, failed,
+    cancelled): folds a real VRAM delta into the footprint table (if this
+    run ever noted a baseline) and releases its admission lease (if it ever
+    held one). Both halves are harmless no-ops for a run WP30 admission was
+    never engaged for — never gated on `creator_enabled` itself, so a lease
+    taken while the flag was on is still freed if it is then turned off."""
+    try:
+        from src.creator import resources as creator_resources
+        after = None
+        try:
+            from src import gpu_shared_memory as gsm
+            snap = gsm.vram_snapshot()
+            if snap.get("supported"):
+                after = snap.get("used")
+        except Exception:  # noqa: BLE001
+            pass
+        creator_resources.settle_inflight(run_id, vram_after_bytes=after)
+    except Exception as e:  # noqa: BLE001
+        logger.debug("media run %s: creator settle_inflight failed: %s", run_id, e)
+    try:
+        from src.creator import resources as creator_resources
+        creator_resources.release(run_id)
+    except Exception as e:  # noqa: BLE001
+        logger.debug("media run %s: creator release failed: %s", run_id, e)
+
+
 def _consent_gate(workflow: "workflows.MediaWorkflow",
                   inputs: Optional[Mapping[str, Any]]) -> Optional[Dict[str, Any]]:
     """MEDIA-06: a refusal if this recipe clones an identity nobody has
@@ -281,6 +364,20 @@ def start(workflow_id: str, inputs: Optional[Mapping[str, Any]] = None, *,
     finally:
         db.close()
 
+    # WP30: admit BEFORE the job ever reaches the engine. A refusal leaves
+    # the row `queued` with the reason instead of submitting -- see the
+    # module-level comment above `_creator_enabled()`.
+    admitted = _creator_admit(run_id, workflow, rendered, engine)
+    if admitted is not None:
+        admission, footprint, shape = admitted
+        if not admission.ok:
+            _update(run_id, status="queued", reason=f"resource_wait: {admission.reason}")
+            return {"ok": True, "run_id": run_id, "status": "queued",
+                    "workflow": workflow.id, "version": workflow.version,
+                    "admitted": False, "wait_for": admission.wait_for,
+                    "reason": admission.reason}
+        _creator_note_inflight(run_id, workflow, engine, footprint, shape)
+
     try:
         job = engine.submit(rendered, requires_nodes=list(workflow.requires_nodes))
     except ComfyUIError as e:
@@ -289,12 +386,17 @@ def start(workflow_id: str, inputs: Optional[Mapping[str, Any]] = None, *,
             # finished story rather than an open question.
             _update(run_id, status="failed", reason=f"{e.reason}: {e.detail}",
                     ended_at=now_iso())
+            _creator_finish(run_id)
             return {"ok": False, "run_id": run_id, "status": "failed",
                     "reason": e.reason, "detail": e.detail, "workflow": workflow.id}
         # Everything else is unresolved on purpose. `reconcile()` asks the
         # engine whether it is holding a job with this run's client id, which
         # is a question that can actually be answered -- unlike "did the POST
-        # arrive before the socket closed?".
+        # arrive before the socket closed?". The admission lease (if any) is
+        # deliberately NOT released here: the engine may actually be holding
+        # the job, and releasing now would let another heavy job start
+        # believing the device is free. It is freed once reconcile_run()
+        # settles this run one way or the other.
         _update(run_id, status="submit_unknown", reason=f"{e.reason}: {e.detail}")
         logger.warning("media run %s: the submit outcome is unknown (%s); it will "
                        "be reconciled by client id %s", run_id, e.reason, client_id)
@@ -358,6 +460,8 @@ def reconcile_run(run_id: str, *, grace_seconds: int = 60,
         changed = _update(run_id, _only_unsubmitted=True, status="failed", ended_at=now_iso(),
                 reason="this run carries no client id, so a job of its on the "
                        "engine cannot be told from anyone else's")
+        if changed:
+            _creator_finish(run_id)
         return {"ok": True, "run_id": run_id, "reason": "no_correlation",
                 "changed": changed}
 
@@ -381,6 +485,8 @@ def reconcile_run(run_id: str, *, grace_seconds: int = 60,
     changed = _update(run_id, _only_unsubmitted=True, status="failed", ended_at=now_iso(),
             reason="the engine is reachable and holds no job carrying this run's "
                    "client id, so the prompt never reached the queue")
+    if changed:
+        _creator_finish(run_id)
     return {"ok": True, "run_id": run_id, "reason": "never_queued" if changed else "already_settled", "changed": changed}
 
 
@@ -577,6 +683,7 @@ def _poll(run_id: str, *, collect: bool = True) -> Dict[str, Any]:
         _update(run_id, status=state["status"],
                 reason=state.get("reason") or f"the render {state['status']}",
                 ended_at=now_iso())
+        _creator_finish(run_id)
         return {"ok": True, "run_id": run_id,
                 **{**record, "status": state["status"],
                    "reason": state.get("reason", "")},
@@ -600,6 +707,7 @@ def _poll(run_id: str, *, collect: bool = True) -> Dict[str, Any]:
         # finish the sentence the first one started.
         _update(run_id, status="completed",
                 ended_at=record.get("ended_at") or now_iso())
+        _creator_finish(run_id)
         return {"ok": True, "run_id": run_id,
                 **{**record, "status": "completed"},
                 "checked": True, "artifacts": [], "skipped": [],
@@ -608,6 +716,7 @@ def _poll(run_id: str, *, collect: bool = True) -> Dict[str, Any]:
     if not outputs:
         _update(run_id, status='failed', ended_at=now_iso(),
                 reason='the engine finished without reporting any output files')
+        _creator_finish(run_id)
         return {'ok': True, 'run_id': run_id, 'checked': True}
     try:
         kept = _collect(record, outputs, engine)
@@ -619,6 +728,7 @@ def _poll(run_id: str, *, collect: bool = True) -> Dict[str, Any]:
     _update(run_id, status="completed", ended_at=now_iso(),
             reason='',
             artifact_ids=",".join(a["id"] for a in kept["artifacts"]))
+    _creator_finish(run_id)
     return {"ok": True, "run_id": run_id,
             **{**record, "status": "completed"},
             "checked": True, "artifacts": kept["artifacts"],
@@ -842,6 +952,7 @@ def cancel(run_id: str) -> Dict[str, Any]:
             current = get(run_id) or {}
             return {'ok': current.get('status') == 'cancelled', 'run_id': run_id,
                     'status': current.get('status'), 'reason': 'already_' + str(current.get('status'))}
+        _creator_finish(run_id)
         return {"ok": True, "run_id": run_id, "status": "cancelled",
                 "detail": "it had not reached the engine"}
 
@@ -861,4 +972,5 @@ def cancel(run_id: str) -> Dict[str, Any]:
         current = get(run_id) or {}
         return {'ok': current.get('status') == 'cancelled', 'run_id': run_id,
                 'status': current.get('status'), 'reason': 'already_' + str(current.get('status'))}
+    _creator_finish(run_id)
     return {"ok": True, "run_id": run_id, "status": "cancelled", **stopped}
