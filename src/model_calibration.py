@@ -257,10 +257,22 @@ def save_tested(
     *,
     announced: Mapping[str, Any],
     data_dir: Optional[str] = None,
+    deployment_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Merge freshly-tested keys into whatever was calibrated before — a
     calibration run that skipped `vision` (not resident long enough, or not
-    announced) must not erase an earlier `vision` result."""
+    announced) must not erase an earlier `vision` result.
+
+    `deployment_id` (MOD-02/WP06, `src/model_identity.py`) is optional and
+    purely additive: when a caller has already resolved one (from
+    `model_identity.resolve_deployment`), each freshly-tested key is ALSO
+    logged as `probed`-level `CapabilityEvidence` under that deployment, on
+    the side, in `DATA_DIR/creator/model_identity.db`. The legacy manifest
+    store above (`key` — `ollama|digest:<digest>` or endpoint-scoped) is
+    untouched by this: same file, same shape, same callers, whether or not
+    `deployment_id` is ever passed. A caller with no deployment_id (every
+    caller before this lot, and any new one that has none to hand) gets
+    exactly the old behaviour."""
     with _store_lock:
         data = _load_store_locked(data_dir)
         entry = data["manifests"].setdefault(key, {})
@@ -271,7 +283,61 @@ def save_tested(
         entry["degraded"] = compute_degraded(announced, merged)
         entry["updated_at"] = _utcnow_iso()
         _save_store_locked(data, data_dir)
-        return _manifest_view(entry)
+        view = _manifest_view(entry)
+    _record_deployment_evidence(deployment_id, key, tested)
+    return view
+
+
+def _record_deployment_evidence(deployment_id: Optional[str], key: str, tested: Mapping[str, Any]) -> None:
+    """Best-effort side write: a calibration probe's result, filed as
+    `probed`-level evidence for the deployment it actually ran against — or,
+    when the caller has no resolved `deployment_id` to give (every caller
+    before this lot, and MOD-19's "migrar probes viejos"), filed under a
+    fixed `legacy_unknown` pseudo-deployment derived from the legacy
+    manifest `key`, capped at `inferred` so an old probe with insufficient
+    identity is never promoted to `probed`/`measured` just because it ran.
+
+    Never allowed to fail (or slow down) the calibration it rides along
+    with — an evidence-store outage must not stop `save_tested` from doing
+    what every caller before this lot already relied on it to do.
+
+    Gated on the `creator_enabled` setting (CONTRATO rule 5, default False):
+    read before anything is written, so every existing caller of
+    `save_tested` — none of which knows this store exists — keeps writing
+    ONLY `model_capabilities.json`, exactly as before this lot, until an
+    operator turns Creator on."""
+    try:
+        from src import settings as _settings
+        if not _settings.get_setting("creator_enabled", False):
+            return
+    except Exception:  # noqa: BLE001
+        return
+    try:
+        from src import model_identity as mi
+    except Exception:  # noqa: BLE001 — module not importable in a minimal test env
+        return
+    dep_id = str(deployment_id or "").strip() or mi.legacy_deployment_id(key)
+    level = mi.LEVEL_PROBED if deployment_id else mi.LEVEL_INFERRED
+    store = mi.default_store()
+    for capability, result in dict(tested or {}).items():
+        if capability not in TEST_KEYS:
+            continue
+        result = result if isinstance(result, Mapping) else {}
+        ok = result.get("ok")
+        if ok is None and isinstance(result.get("evidence"), Mapping) and result["evidence"].get("skipped"):
+            continue  # budget/precondition skip: nothing was actually observed
+        try:
+            store.add_evidence(
+                deployment_id=dep_id,
+                capability=str(capability),
+                level=level,
+                source="model_calibration.run_calibration",
+                observed_at=str(result.get("tested_at") or "") or None,
+                conditions={"ok": ok, "manifest_key": key},
+                method=str(capability),
+            )
+        except Exception:  # noqa: BLE001 — one bad row must not drop the rest
+            logger.debug("model_calibration: failed to record deployment evidence for %s", capability)
 
 
 def is_model_loaded(loaded_names: Any, name: str, *, same_model: Callable[[str, str], bool]) -> bool:
