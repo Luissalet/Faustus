@@ -25,6 +25,19 @@ def save_todos(session_id: str, todos: List[Dict[str, Any]]) -> None:
         json.dump({"todos": todos}, f, ensure_ascii=False, indent=2)
 
 
+def load_todos(session_id: str) -> List[Dict[str, Any]]:
+    """Return the last persisted todowrite list for this chat, or []."""
+    sid = _safe_session_id(str(session_id or "current"))
+    path = os.path.join(_TODO_DIR, f"{sid}.json")
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError, TypeError):
+        return []
+    todos = data.get("todos") if isinstance(data, dict) else None
+    return todos if isinstance(todos, list) else []
+
+
 class TodoWriteTool:
     async def execute(self, content: str, ctx: dict) -> dict:
         try:

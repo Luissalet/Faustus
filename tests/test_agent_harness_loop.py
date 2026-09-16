@@ -418,3 +418,206 @@ def test_missing_project_cannot_be_reported_as_a_successful_objective_change(tmp
     assert calls["n"] == 2
 
 
+def test_looks_like_continue_turn():
+    assert al._looks_like_continue_turn("Continue")
+    assert al._looks_like_continue_turn("continuar")
+    assert al._looks_like_continue_turn("Continue with task 03")
+    assert not al._looks_like_continue_turn("Añade un botón de borrar")
+    assert not al._looks_like_continue_turn("")
+
+
+def test_stale_completed_progress_is_refreshed_after_more_tools(tmp_path, monkeypatch):
+    """After a 5/5 completed list, more tool work must prompt a new todowrite
+    so the Progress panel does not freeze on the previous batch."""
+    import src.agent_tools.coding_tools as ct
+    monkeypatch.setattr(ct, "_TODO_DIR", str(tmp_path / "agent_todos"))
+    _patch_common(monkeypatch)
+    (tmp_path / "a.py").write_text("x = 1\n", encoding="utf-8")
+    (tmp_path / "b.py").write_text("y = 2\n", encoding="utf-8")
+    done = [{"content": "Task 02", "status": "completed"}]
+    tw = "```todowrite\n" + json.dumps({"todos": done}) + "\n```"
+    steps = [
+        tw,
+        "```get_workspace\n{}\n```",
+        '```read_file\n{"path": "a.py"}\n```',
+        '```update_plan\n{"plan":"- [ ] keep going"}\n```',
+        '```read_file\n{"path": "b.py"}\n```',
+        "No files were changed.",
+    ]
+    seen = []
+
+    async def _fake_stream(_candidates, messages, **kwargs):
+        seen.append("\n".join(
+            str(m.get("content") or "") for m in messages if isinstance(m.get("content"), str)
+        ))
+        i = min(len(seen) - 1, len(steps) - 1)
+        text = steps[i]
+        finish = "stop" if i >= len(steps) - 1 else "tool_calls"
+        yield f'data: {json.dumps({"delta": text})}\n\n'
+        yield f'data: {json.dumps({"type": "finish", "finish_reason": finish})}\n\n'
+        yield "data: [DONE]\n\n"
+
+    monkeypatch.setattr(al, "stream_llm_with_fallback", _fake_stream, raising=False)
+
+    async def _fake_exec(block, *a, **k):
+        if block.tool_type == "todowrite":
+            return ("todowrite", {"output": "ok", "todos": done})
+        return (block.tool_type, {"output": "ok", "exit_code": 0})
+    monkeypatch.setattr(al, "execute_tool_block", _fake_exec, raising=False)
+
+    _events(_collect(al.stream_agent_loop(
+        "http://127.0.0.1:11434/v1", "qwen3-coder:30b",
+        [{"role": "user", "content": "Añade un botón de borrar en las tarjetas de proyectos"}],
+        max_rounds=8, relevant_tools={"read_file", "get_workspace", "update_plan", "todowrite"},
+        workspace=str(tmp_path), session_id="sess-stale-progress",
+    )))
+    assert any("Progress list is fully completed" in blob for blob in seen), seen[-1] if seen else seen
+
+
+def test_continue_turn_refreshes_completed_progress_immediately(tmp_path, monkeypatch):
+    """Clicking Continue after a finished batch must ask for a new todowrite
+    on the first model call, not after four more silent tools."""
+    import src.agent_tools.coding_tools as ct
+    monkeypatch.setattr(ct, "_TODO_DIR", str(tmp_path / "agent_todos"))
+    ct.save_todos("sess-cont", [{"content": "Task 02", "status": "completed"}])
+    _patch_common(monkeypatch)
+    seen = []
+
+    async def _fake_stream(_candidates, messages, **kwargs):
+        seen.append("\n".join(
+            str(m.get("content") or "") for m in messages if isinstance(m.get("content"), str)
+        ))
+        yield f'data: {json.dumps({"delta": "No files were changed."})}\n\n'
+        yield f'data: {json.dumps({"type": "finish", "finish_reason": "stop"})}\n\n'
+        yield "data: [DONE]\n\n"
+
+    monkeypatch.setattr(al, "stream_llm_with_fallback", _fake_stream, raising=False)
+    _events(_collect(al.stream_agent_loop(
+        "http://127.0.0.1:11434/v1", "qwen3-coder:30b",
+        [{"role": "user", "content": "Continue"}],
+        max_rounds=2, relevant_tools={"read_file", "todowrite"},
+        workspace=str(tmp_path), session_id="sess-cont",
+    )))
+    assert seen and "Progress list is fully completed" in seen[0]
+
+
+def test_auto_continue_asks_to_refresh_a_completed_progress_list(tmp_path, monkeypatch):
+    import src.agent_tools.coding_tools as ct
+    monkeypatch.setattr(ct, "_TODO_DIR", str(tmp_path / "agent_todos"))
+    _patch_common(monkeypatch)
+    done = [{"content": "Task 02", "status": "completed"}]
+    tw = "```todowrite\n" + json.dumps({"todos": done}) + "\n```"
+    grep_block = '```grep\n{"pattern": "x"}\n```'
+    seen = []
+
+    async def _fake_stream(_candidates, messages, **kwargs):
+        seen.append("\n".join(
+            str(m.get("content") or "") for m in messages if isinstance(m.get("content"), str)
+        ))
+        n = len(seen)
+        if n == 1:
+            text, finish = tw, "tool_calls"
+        elif n == 2:
+            text, finish = grep_block, "tool_calls"
+        else:
+            text, finish = "No files were changed.", "stop"
+        yield f'data: {json.dumps({"delta": text})}\n\n'
+        yield f'data: {json.dumps({"type": "finish", "finish_reason": finish})}\n\n'
+        yield "data: [DONE]\n\n"
+
+    monkeypatch.setattr(al, "stream_llm_with_fallback", _fake_stream, raising=False)
+
+    async def _fake_exec(block, *a, **k):
+        if block.tool_type == "todowrite":
+            return ("todowrite", {"output": "ok", "todos": done})
+        return (block.tool_type, {"output": "ok", "exit_code": 0})
+    monkeypatch.setattr(al, "execute_tool_block", _fake_exec, raising=False)
+
+    events = _events(_collect(al.stream_agent_loop(
+        "http://127.0.0.1:11434/v1", "qwen3-coder:30b",
+        [{"role": "user", "content": "Añade un botón de borrar en las tarjetas de proyectos"}],
+        max_rounds=2, relevant_tools={"grep", "todowrite"},
+        workspace=str(tmp_path), session_id="sess-auto-progress",
+    )))
+    autos = [e for e in events if e.get("type") == "harness_check" and e.get("status") == "auto_continue"]
+    assert autos, [e.get("type") for e in events]
+    assert any("Progress list is fully completed" in blob for blob in seen)
+
+
+def test_permission_to_continue_is_rejected_and_the_model_is_told_to_keep_working(tmp_path, monkeypatch):
+    """Continue already given; after real edits the model asks for a green
+    light. That must not end the turn — seen live as 'Say the word and I'll
+    continue' after task 03, with the star IoU question still open."""
+    _patch_common(monkeypatch)
+    (tmp_path / "x.py").write_text("a = 1\n", encoding="utf-8")
+    edit = (
+        "```edit_file\n"
+        + json.dumps({"path": "x.py", "old_string": "a = 1", "new_string": "a = 2"})
+        + "\n```"
+    )
+    stall = (
+        "I updated x.py. The star IoU question is still open.\n\n"
+        "Say the word and I'll continue with task 04."
+    )
+    calls = _scripted_stream(monkeypatch, [
+        (edit, "tool_calls"),
+        (stall, "stop"),
+        ("No files were changed. Task 04 is next.", "stop"),
+    ])
+    events = _events(_collect(al.stream_agent_loop(
+        "http://127.0.0.1:11434/v1", "qwen3-coder:30b",
+        [{"role": "user", "content": "Continue"}],
+        max_rounds=6, relevant_tools={"read_file", "edit_file", "glob"},
+        workspace=str(tmp_path),
+        harness_options={"trusted_workspace": str(tmp_path)},
+    )))
+    rejected = [e for e in events if e.get("type") == "harness_check" and e.get("status") == "rejected"]
+    assert rejected, [e.get("type") for e in events]
+    assert "asked_instead_of_continuing" in (rejected[0].get("reasons") or [])
+    assert calls["n"] >= 3
+
+
+def test_backed_work_is_kept_when_a_permission_stall_is_exhausted(tmp_path, monkeypatch):
+    """Seen live: tasks 04–06 wrote 17 files, then the model asked for a green
+    light. After two rejections the harness replaced the whole summary with
+    'the task remains unfinished'. The writes were real; the summary must stay."""
+    _patch_common(monkeypatch)
+    (tmp_path / "x.py").write_text("a = 1\n", encoding="utf-8")
+    edit = (
+        "```edit_file\n"
+        + json.dumps({"path": "x.py", "old_string": "a = 1", "new_string": "a = 2"})
+        + "\n```"
+    )
+    stall = (
+        "I updated x.py and finished the remaining editor tasks.\n\n"
+        "Say the word and I'll continue with the next one."
+    )
+    _scripted_stream(monkeypatch, [
+        (edit, "tool_calls"),
+        (stall, "stop"),
+        (stall, "stop"),
+        (stall, "stop"),
+    ])
+    events = _events(_collect(al.stream_agent_loop(
+        "http://127.0.0.1:11434/v1", "qwen3-coder:30b",
+        [{"role": "user", "content": "Continue"}],
+        max_rounds=8, relevant_tools={"read_file", "edit_file", "glob"},
+        workspace=str(tmp_path),
+        harness_options={"trusted_workspace": str(tmp_path), "run_tests": False},
+    )))
+    checks = [e for e in events if e.get("type") == "harness_check"]
+    assert any(c.get("status") == "rejected" for c in checks)
+    assert any(c.get("status") == "stall_exhausted" for c in checks), [
+        (c.get("status"), c.get("reasons"), c.get("reason")) for c in checks
+    ]
+    assert not any(c.get("status") == "unverified" for c in checks)
+    assert not any(c.get("reason") == "execution_recovery" for c in checks)
+    replace = [e for e in events if e.get("type") == "response_replace"]
+    assert not any("task remains unfinished" in (e.get("text") or "") for e in replace)
+    assert not any("I did not complete or verify" in (e.get("text") or "") for e in replace)
+    summary = next(e for e in events if e.get("type") == "harness_summary")["data"]
+    assert summary["stop_reason"] == "complete"
+    assert "x.py" in summary["mutations"]
+    assert any(str(n).startswith("stall_exhausted:") for n in (summary.get("notes") or []))
+
+

@@ -73,32 +73,39 @@ def _python_for(workspace: str) -> Optional[str]:
     return None
 
 
-def _fallback_python() -> Optional[str]:
-    """A real interpreter for `-m pytest` when the project has no venv, or None.
+def _fallback_python(workspace: str = "") -> Optional[str]:
+    """The same interpreter the `python` tool would pick when there is no
+    project venv: PATH after Faustus's own venv is scrubbed, never the frozen
+    app.
 
-    Never `sys.executable` in the frozen build: there it is the app's own
-    Faustus.exe, which ignores `-m` and boots a second copy of the application
-    (splash + tray + another server) instead of running pytest — see
-    agent_harness.host_python()."""
+    Preferring `sys.executable` first made pytest run under Faustus's
+    site-packages. A workspace that had installed jsonschema into the host
+    Python then failed collection, and the agent burned a fix round on a
+    ModuleNotFoundError that was not its change. `project_python` is the
+    single picker so the two paths cannot drift.
+
+    Never the frozen executable: there it is the app's own Faustus.exe, which
+    ignores `-m pytest` and boots a second copy of the application."""
     try:
-        from src.agent_harness import host_python
-        py = host_python()
+        from src.agent_tools.subprocess_tools import project_python
+        py = project_python(workspace or "", native_host_environment())
     except Exception:                                   # pragma: no cover
-        py = None if getattr(sys, "frozen", False) else sys.executable
-    if py:
-        return py
-    names = ("python", "python3") if os.name == "nt" else ("python3", "python")
-    for name in names:
-        found = shutil.which(name)
-        if not found:
-            continue
+        py = None
+    if not py:
         try:
-            if os.path.realpath(found) == os.path.realpath(sys.executable):
-                continue                                # that is the frozen app again
+            from src.agent_harness import host_python
+            py = host_python()
+        except Exception:                               # pragma: no cover
+            py = None if getattr(sys, "frozen", False) else sys.executable
+    if not py:
+        return None
+    if getattr(sys, "frozen", False):
+        try:
+            if os.path.realpath(py) == os.path.realpath(sys.executable):
+                return None
         except (OSError, ValueError):                   # pragma: no cover
-            pass
-        return found
-    return None
+            return None
+    return py
 
 
 def _has_pytest_config(workspace: str) -> bool:
@@ -247,7 +254,7 @@ def detect_test_command(workspace: str, override: Optional[str] = None) -> Optio
     if _has_pytest_config(workspace) or _has_python_tests(workspace):
         py = _python_for(workspace)
         if py is None:
-            py = _fallback_python()
+            py = _fallback_python(workspace)
             kind_note = "host python"
         else:
             kind_note = "project venv"
@@ -593,10 +600,18 @@ def parse_output(kind: str, exit_code: Optional[int], out: str) -> Dict[str, Any
             # 2 = interrupted/usage, 3 = internal error, 4 = usage error
             inconclusive = True
             summary = summary or f"pytest exited with {exit_code}"
-        if not ok and failures and all("error" in f.lower() and _PYTEST_IMPORT_RE.search(f) for f in failures):
+        # Collection-time missing modules (jsonschema, a pytest plugin, …)
+        # are the runner's environment, not the change. pytest reports them
+        # as `ERROR tests/foo.py` and often exits 1 — the same code as a
+        # real assertion failure — so the node kind has to be read from the
+        # output, not from the exit status. A `FAILED` test that happens to
+        # mention ModuleNotFoundError in a traceback is still a real fail.
+        has_error_node = bool(re.search(r"^ERROR \S+", out, re.M))
+        has_failed_node = bool(re.search(r"^FAILED \S+", out, re.M))
+        if not ok and _PYTEST_IMPORT_RE.search(out) and has_error_node and not has_failed_node:
             inconclusive = True
             summary = (summary + " — " if summary else "") + "collection errors (missing modules): environment, not the change"
-        if not ok and not failures and _PYTEST_IMPORT_RE.search(out) and "error" in out.lower():
+        elif not ok and not failures and _PYTEST_IMPORT_RE.search(out) and "error" in out.lower():
             inconclusive = True
             summary = summary or "import error during collection (environment?)"
         if _PYTEST_MISSING_RE.search(out):
@@ -666,6 +681,17 @@ def _name_related_test(rel: str, changed: Iterable[str]) -> bool:
     return False
 
 
+def _test_files_from_failures(failures: Iterable[str]) -> List[str]:
+    """`tests/test_a.py::test_x — AssertionError` → `tests/test_a.py`."""
+    out: List[str] = []
+    for item in failures:
+        node = (item or "").split(" — ", 1)[0].strip()
+        path = node.split("::", 1)[0].strip().replace("\\", "/")
+        if path and path not in out:
+            out.append(path)
+    return out
+
+
 def compare_with_baseline(workspace: str, checkpoint_sha: Optional[str], spec: Dict[str, Any],
                           res: Dict[str, Any], changed: Optional[Iterable[str]] = None) -> Dict[str, Any]:
     """Tests failed after the turn: run the SAME test files against the
@@ -674,11 +700,17 @@ def compare_with_baseline(workspace: str, checkpoint_sha: Optional[str], spec: D
     too). A pre-existing failure in a test file that is not tied by name to
     the changed files is *exempt*: when every failure is exempt the run is
     flagged `pre_existing_only` and costs no fix round. Only for pytest with a
-    known test-file list; never raises."""
+    known test-file list; never raises.
+
+    A full-suite run has no `related_files`. Without a fallback the star IoU
+    (or any other pre-existing fail) was re-charged as a new failure on every
+    turn — seen live, surviving three task gates. The files that actually
+    failed are enough to re-run against the checkpoint."""
     res.setdefault("new_failures", list(res.get("failures") or []))
     res.setdefault("pre_existing", [])
     changed = list(changed or [])
-    if not checkpoint_sha or spec.get("kind") != "pytest" or not res.get("related_files"):
+    files = list(res.get("related_files") or []) or _test_files_from_failures(res.get("failures") or [])
+    if not checkpoint_sha or spec.get("kind") != "pytest" or not files:
         return res
     if not bool(_setting("agent_project_tests_baseline", True)):
         return res
@@ -693,7 +725,7 @@ def compare_with_baseline(workspace: str, checkpoint_sha: Optional[str], spec: D
             res["baseline"] = {"ran": False, "summary": "checkpoint export failed"}
             return res
         base_spec = dict(spec)
-        base = run_tests(tmp, base_spec, test_files=list(res.get("related_files") or []))
+        base = run_tests(tmp, base_spec, test_files=files)
         res["baseline"] = compact(base)
         if not base.get("ran") or base.get("inconclusive"):
             return res
@@ -764,7 +796,9 @@ def failure_message(res: Dict[str, Any]) -> str:
         "Fix the CAUSE with edit_file (read the failing test and the code it exercises first). "
         "Do NOT delete, skip or weaken tests to make them pass, and do not re-run the whole suite "
         "yourself — the runtime re-runs it when you finish. If the failure is unrelated to your "
-        "change (pre-existing), say so explicitly in your final answer, naming the test."
+        "change (pre-existing), name the test in ONE sentence and continue the remaining plan. "
+        "Do not ask the user whether to investigate it versus accepting it as baseline — that "
+        "is not a blocker."
     )
     return "\n".join(lines)
 

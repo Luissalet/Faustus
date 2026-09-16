@@ -20,10 +20,17 @@ def pyws(tmp_path):
     return ws
 
 
-def test_detect_test_command_uses_the_host_interpreter(pyws):
+def test_detect_test_command_uses_the_same_interpreter_as_the_python_tool(pyws):
+    """A workspace with no venv must run pytest with the same interpreter the
+    `python` tool would pick — not Faustus's own venv. Seen live: jsonschema
+    was installed on the host Python, missing in ours, and collection failed."""
+    from src.agent_tools.subprocess_tools import project_python
+    from src.native_env import native_host_environment
     spec = pt.detect_test_command(str(pyws))
+    expected = project_python(str(pyws), native_host_environment())
     assert spec["kind"] == "pytest"
-    assert spec["argv"][0] == sys.executable and spec["argv"][1:3] == ["-m", "pytest"]
+    assert spec["argv"][0] == expected and spec["argv"][1:3] == ["-m", "pytest"]
+    assert spec["note"] == "host python"
 
 
 def test_detect_test_command_never_runs_the_frozen_executable(pyws, monkeypatch):
@@ -49,9 +56,11 @@ def test_detect_test_command_never_runs_the_frozen_executable(pyws, monkeypatch)
 
 def test_frozen_build_without_any_interpreter_is_inconclusive(pyws, monkeypatch):
     """No real python anywhere → "could not run", never a test failure."""
+    import src.agent_tools.subprocess_tools as st
     monkeypatch.setattr(sys, "frozen", True, raising=False)
     monkeypatch.setattr(sys, "executable", os.path.join("C:\\", "Faustus", "Faustus.exe"), raising=False)
     monkeypatch.setattr(pt.shutil, "which", lambda *_a, **_k: None)
+    monkeypatch.setattr(st.shutil, "which", lambda *_a, **_k: None)
     spec = pt.detect_test_command(str(pyws))
     assert spec is not None and not spec.get("argv")
     res = pt.run_tests(str(pyws), spec)
@@ -67,6 +76,24 @@ def test_project_venv_still_wins_over_the_host_interpreter(pyws, monkeypatch):
     monkeypatch.setattr(sys, "frozen", True, raising=False)
     spec = pt.detect_test_command(str(pyws))
     assert spec["argv"][0] == str(venv_py) and spec["note"] == "project venv"
+
+
+def test_test_files_from_failures_feeds_full_suite_baseline():
+    """A full-suite run has no related_files; the files that failed are what
+    the checkpoint re-run must cover, or a pre-existing star IoU is billed
+    as a new failure every turn."""
+    assert pt._test_files_from_failures([
+        "tests/test_pipeline.py::test_real_end_to_end[star] — AssertionError",
+        "tests/test_pipeline.py::test_other",
+        "tests/editor/test_models.py",
+    ]) == ["tests/test_pipeline.py", "tests/editor/test_models.py"]
+    res = {
+        "ran": True, "ok": False,
+        "failures": ["tests/test_pipeline.py::test_star — IoU 0.97"],
+    }
+    out = pt.compare_with_baseline(".", None, {"kind": "pytest"}, dict(res))
+    assert out.get("pre_existing_only") is not True
+    assert out.get("new_failures") == res["failures"]
 
 
 def test_missing_pytest_is_inconclusive_not_a_broken_change():

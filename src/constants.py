@@ -100,6 +100,9 @@ GENERATED_IMAGES_DIR = os.path.join(DATA_DIR, "generated_images")
 ARTIFACTS_DIR = os.path.join(DATA_DIR, "artifacts")
 ARTIFACT_STORE_DIR = os.path.join(ARTIFACTS_DIR, "store")
 ARTIFACT_RUNS_DIR = os.path.join(ARTIFACTS_DIR, "runs")
+# Mid-turn context spill: full tool bodies folded out of the live prompt
+# (src/context_overflow.py). Content-addressed per session.
+CONTEXT_OVERFLOW_DIR = os.path.join(DATA_DIR, "context_overflow")
 TTS_CACHE_DIR = os.path.join(DATA_DIR, "tts_cache")
 EMAIL_URGENCY_CACHE_DIR = os.path.join(DATA_DIR, "email_urgency_cache")
 SKILLS_DIR = os.path.join(DATA_DIR, "skills")

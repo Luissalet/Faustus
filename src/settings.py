@@ -96,6 +96,15 @@ DEFAULT_SETTINGS = {
     "agent_tool_images": True,
     "agent_tool_image_max_px": 1280,
     "agent_keep_images": 1,
+    # Mid-turn context pressure (src/context_compactor.apply_midturn_pressure):
+    # each agent round spills fat/old tool results to data/context_overflow and
+    # folds history so a long overnight turn stays under a soft ceiling instead
+    # of crawling at 90%+ until rounds_exhausted.
+    "agent_midturn_compact_enabled": True,
+    "agent_midturn_compact_pct": 0.70,
+    "agent_midturn_keep_tool_rounds": 6,
+    "agent_midturn_spill_chars": 8000,
+    "agent_context_overflow_keep_hours": 48,
     # Desktop input tools (desktop_click/type/key/scroll/focus_window):
     # "ask_each" = approval card on EVERY call, "ask_task" = the normal
     # scoped approval gate, "off" = not offered at all.

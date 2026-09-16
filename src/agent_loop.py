@@ -34,6 +34,7 @@ from src.model_context import estimate_tokens
 from src.context_compactor import (
     apply_compaction_state,
     apply_compaction_state_for_session,
+    apply_midturn_pressure,
     compact_with_integrity,
     maybe_compact,
     COMPACT_THRESHOLD,
@@ -1805,6 +1806,38 @@ _LOCAL_COMPUTER_REFERENCE_RE = re.compile(
     r"|\b(?:local|host)\s+(?:computer|machine|files?|system)\b"
     r"|\b(?:on|from)\s+(?!this\b|my\b|the\b|a\b|an\b)(?:[a-z][a-z0-9_.-]{1,31})\b",
     re.IGNORECASE,
+)
+
+
+_CONTINUE_TURN_RE = re.compile(
+    r"^\s*(?:continue|continuar|continúa|continua|sigue|adelante|"
+    r"keep going|go on)\s*[.!]?\s*$",
+    re.IGNORECASE,
+)
+
+
+def _looks_like_continue_turn(text: str) -> bool:
+    """True when the user is resuming a paused batch, not starting a new task.
+
+    Studio's Continue control and ask_user "Continue" answers arrive as a short
+    message. A fully completed Progress list then needs a todowrite refresh so
+    the panel does not freeze on the previous batch.
+    """
+    t = str(text or "").strip()
+    if not t:
+        return False
+    if _CONTINUE_TURN_RE.match(t):
+        return True
+    return bool(re.match(r"^(?:continue|continuar)\b.{0,80}$", t, re.IGNORECASE))
+
+
+TODOWRITE_REFRESH_NUDGE = (
+    "[Harness check — automatic message from the runtime, not from the user] "
+    "The Progress list is fully completed but the task is not. Call todowrite "
+    "ONCE now with the remaining objectives (one in_progress, the rest pending), "
+    "then continue. Update it as those objectives are verifiably completed. "
+    "Do not ask for permission to proceed. A pre-existing test failure you did "
+    "not introduce is a one-sentence note, not a question and not a blocker."
 )
 
 
@@ -5348,6 +5381,33 @@ def _tool_call_signature(tool_type: str, content: str) -> str:
     return f"{tool_type}:{hashlib.sha256(payload).hexdigest()}"
 
 
+def _probe_skeleton(tool_type: str, content: str) -> str:
+    """Collapse cosmetic diagnostic variants (``print(1)`` vs ``print(2)``).
+
+    Distinct shell work in a row (import PNGs → nest layers → export) must
+    not share a skeleton. Treating any five consecutive bash rounds as a
+    stall hid the tool Silhouettes still needed and burned the round cap.
+    """
+    text = content or ""
+    try:
+        parsed = json.loads(text)
+        if isinstance(parsed, dict):
+            text = str(
+                parsed.get("command")
+                or parsed.get("code")
+                or parsed.get("script")
+                or text
+            )
+    except (TypeError, ValueError):
+        pass
+    text = re.sub(r"^\s*(?:bash|sh|cmd|powershell)(?:\.exe)?\s+", "", text, flags=re.I)
+    text = re.sub(r"python(?:\.exe)?\s+-c\s+", "", text, flags=re.I)
+    text = re.sub(r"['\"]", "", text)
+    text = re.sub(r"\d+", "0", text)
+    text = re.sub(r"\s+", " ", text).strip().lower()
+    return f"{tool_type}:{text[:240]}"
+
+
 def _detect_runaway_call(call_freq, threshold=15):
     """Tool name of a call signature repeated >= ``threshold`` times — a real
     runaway loop. Counts IDENTICAL repeated calls (same tool AND args), so a
@@ -7337,6 +7397,7 @@ async def _stream_agent_loop_body(
     # inspect vtracer; repeat). Track consecutive one-tool shell/Python rounds
     # as a semantic stall as well.
     _same_probe_tool = ""
+    _same_probe_skeleton = ""
     _same_probe_rounds = 0
     # Frequency of each exact call signature (tool + args), for the runaway
     # backstop. Counting identical repeats — not distinct same-tool calls —
@@ -7347,6 +7408,7 @@ async def _stream_agent_loop_body(
     # diagnostic calls until the model takes a concrete progress action.
     _loop_recovery_active = False
     _loop_recovery_retries = 0
+    _MAX_LOOP_RECOVERY_RETRIES = 3
     _loop_recovery_blocked_tools: Set[str] = set()
     _loop_recovery_temporarily_disabled: Set[str] = set()
     # Supervisor: how many times we've nudged the model after it announced
@@ -7428,6 +7490,7 @@ async def _stream_agent_loop_body(
     _language_mismatch_nudges = 0
     _pending_language_nudge = False
     _todo_nudged = False
+    _todo_refresh_nudged = False
     _budget_stop_echo_retried = False
     _round_finish_reason = None
     _harness_scope_active = bool(workspace) or _looks_like_workspace_coding_request(_last_user)
@@ -7972,6 +8035,21 @@ async def _stream_agent_loop_body(
             _auto_cycles_left = int(get_setting("agent_auto_continue_cycles", 1) or 0) if _harness_enabled else 0
         except (TypeError, ValueError):
             _auto_cycles_left = 0
+    if (
+        _harness_enabled and _harness_scope_active and session_id
+        and not _todo_refresh_nudged
+        and "todowrite" not in disabled_tools
+        and _looks_like_continue_turn(_last_user)
+    ):
+        try:
+            from src.agent_tools.coding_tools import load_todos as _load_todos
+            _saved_todos = _load_todos(session_id)
+        except Exception:
+            _saved_todos = []
+        if _harness.progress_list_is_complete(_saved_todos):
+            messages.append({"role": "user", "content": TODOWRITE_REFRESH_NUDGE})
+            _todo_refresh_nudged = True
+            logger.info("[harness] todowrite refresh injected at continue turn start")
     round_num = 0
     while True:
         round_num += 1
@@ -8034,15 +8112,26 @@ async def _stream_agent_loop_body(
                 _rounds_budget += max_rounds
                 logger.info("[harness] step limit (%s) reached mid-task — auto-continuing with %s more rounds",
                             round_num - 1, max_rounds)
+                _auto_continue_text = (
+                    "[Harness check — automatic message from the runtime, not from the user] "
+                    f"You used {round_num - 1} steps and the task is not finished. "
+                    f"You have {max_rounds} more steps. Continue from EXACTLY where you left off; "
+                    "do not repeat work already done, do not re-read files you already read. "
+                    "Finish the remaining objectives and then report only what the tools show."
+                )
+                if (
+                    _harness.progress_list_is_complete(_ledger.progress)
+                    and not _todo_refresh_nudged
+                    and "todowrite" not in disabled_tools
+                ):
+                    _auto_continue_text += (
+                        " The Progress list is fully completed; call todowrite now with the remaining "
+                        "objectives (one in_progress, the rest pending) before doing more work."
+                    )
+                    _todo_refresh_nudged = True
                 messages.append({
                     "role": "user",
-                    "content": (
-                        "[Harness check — automatic message from the runtime, not from the user] "
-                        f"You used {round_num - 1} steps and the task is not finished. "
-                        f"You have {max_rounds} more steps. Continue from EXACTLY where you left off; "
-                        "do not repeat work already done, do not re-read files you already read. "
-                        "Finish the remaining objectives and then report only what the tools show."
-                    ),
+                    "content": _auto_continue_text,
                 })
                 _ledger.notes.append(f"auto_continue_rounds@{round_num - 1}")
                 yield (
@@ -8125,6 +8214,35 @@ async def _stream_agent_loop_body(
         native_tool_calls = []  # populated if model uses function calling
         _round_finish_reason = None  # provider finish_reason for this round (stop/length/tool_calls)
         _recover_empty_completion = False
+
+        # Mid-turn context pressure: spill fat/old tool bodies to disk and fold
+        # history so overnight coding turns stay under the soft ceiling instead
+        # of thrashing at 90%+ context until rounds_exhausted.
+        try:
+            _durable_overflow = not bool(
+                _hopts.get("incognito") or _hopts.get("no_memory")
+            )
+            messages, _midturn_report = await apply_midturn_pressure(
+                messages,
+                endpoint_url=endpoint_url,
+                model=model,
+                session_id=session_id or "",
+                owner=owner,
+                headers=headers,
+                round_num=round_num,
+                run_id=str(_hopts.get("run_id") or ""),
+                durable_overflow=_durable_overflow,
+            )
+            if _midturn_report.get("changed"):
+                yield (
+                    "data: " + json.dumps({
+                        "type": "context_compacted",
+                        "round": round_num,
+                        "data": _midturn_report,
+                    }) + "\n\n"
+                )
+        except Exception as _midturn_err:
+            logger.warning("[agent] midturn pressure skipped: %s", _midturn_err)
 
         _active_route_state = {
             "messages": messages,
@@ -9651,7 +9769,7 @@ async def _stream_agent_loop_body(
                 if not _check["ok"]:
                     if _ledger.rejections < _HARNESS_MAX_REJECTIONS:
                         _ledger.rejections += 1
-                        if "intent_without_action" in _check["reasons"]:
+                        if "intent_without_action" in _check["reasons"] or "asked_instead_of_continuing" in _check["reasons"]:
                             _ledger.intent_nudges += 1
                             # Share the cap with the legacy intent supervisor
                             # below so a stalled model gets 2 nudges total,
@@ -9681,6 +9799,7 @@ async def _stream_agent_loop_body(
                                 "round": round_num, "attempt": _ledger.rejections,
                                 "max_attempts": _HARNESS_MAX_REJECTIONS,
                                 "mutations": _ledger.mutated_paths(),
+                                "permission": _check.get("permission"),
                             }) + "\n\n"
                         )
                         full_response += "\n\n"
@@ -9696,6 +9815,7 @@ async def _stream_agent_loop_body(
                     if (
                         _harness_execution_recoveries < 1
                         and workspace
+                        and not (_ledger.effects and _harness.TurnLedger.check_is_stall_only(_check))
                         and bool(
                             (set(_tool_names_sent) | set(_relevant_tools or []))
                             & (WORKSPACE_TOOL_FLOOR_EDIT | {"write_file", "bash", "powershell", "python"})
@@ -9725,24 +9845,41 @@ async def _stream_agent_loop_body(
                         yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
                         continue
 
-                    # Retries exhausted: fail closed. The model's prose has
-                    # already been rejected twice, so it must never become the
-                    # visible or persisted answer merely because the retry cap
-                    # was reached.
-                    logger.warning("[harness] round %s still unsupported after %s rejections: %s",
-                                   round_num, _ledger.rejections, _check["reasons"])
-                    _ledger.stop_reason = "complete_unverified"
-                    _ledger.notes.append("unverified_claims:" + ",".join(_check["reasons"]))
-                    _harness_final_replacement = _ledger.failure_response(_check)
-                    yield (
-                        "data: " + json.dumps({
-                            "type": "harness_check", "status": "unverified",
-                            "reasons": _check["reasons"], "claims": _check.get("claims", []),
-                            "bad_paths": _check.get("bad_paths", []), "intent": _check.get("intent"),
-                            "untouched_paths": _check.get("untouched_paths", []),
-                            "round": round_num, "mutations": _ledger.mutated_paths(),
-                        }) + "\n\n"
-                    )
+                    # Retries exhausted. A stall after real writes is not a
+                    # fabricated completion: keep the summary the user can
+                    # actually read. Replacing it with "the task remains
+                    # unfinished" was the live failure on a 17-file turn.
+                    if _ledger.effects and _harness.TurnLedger.check_is_stall_only(_check):
+                        logger.warning(
+                            "[harness] round %s stall exhausted after %s rejections (%s) — keeping backed answer",
+                            round_num, _ledger.rejections, ",".join(_check["reasons"]),
+                        )
+                        _ledger.stop_reason = "complete"
+                        _ledger.notes.append("stall_exhausted:" + ",".join(_check["reasons"]))
+                        _harness_final_note = _ledger.user_note(_check, final=True)
+                        yield (
+                            "data: " + json.dumps({
+                                "type": "harness_check", "status": "stall_exhausted",
+                                "reasons": _check["reasons"], "claims": _check.get("claims", []),
+                                "intent": _check.get("intent"), "permission": _check.get("permission"),
+                                "round": round_num, "mutations": _ledger.mutated_paths(),
+                            }) + "\n\n"
+                        )
+                    else:
+                        logger.warning("[harness] round %s still unsupported after %s rejections: %s",
+                                       round_num, _ledger.rejections, _check["reasons"])
+                        _ledger.stop_reason = "complete_unverified"
+                        _ledger.notes.append("unverified_claims:" + ",".join(_check["reasons"]))
+                        _harness_final_replacement = _ledger.failure_response(_check)
+                        yield (
+                            "data: " + json.dumps({
+                                "type": "harness_check", "status": "unverified",
+                                "reasons": _check["reasons"], "claims": _check.get("claims", []),
+                                "bad_paths": _check.get("bad_paths", []), "intent": _check.get("intent"),
+                                "untouched_paths": _check.get("untouched_paths", []),
+                                "round": round_num, "mutations": _ledger.mutated_paths(),
+                            }) + "\n\n"
+                        )
                 elif _ledger.rejections or _ledger.effects:
                     # ── (2b) Substituted target. The user named a file that does
                     # not exist; the model edited other files and the answer does
@@ -10249,30 +10386,57 @@ async def _stream_agent_loop_body(
                 "[agent] redirected diagnostic/read retry during loop recovery on round %d: %s",
                 round_num, _single_tool_name,
             )
+            _restore_hidden = _loop_recovery_retries >= _MAX_LOOP_RECOVERY_RETRIES
+            if _restore_hidden:
+                # Qwen still emits native calls for a tool missing from the
+                # schema. Skipping those with no cap burned Silhouettes
+                # c3a9e716 rounds 68–81 until rounds_exhausted. Restore so a
+                # *different* command can run; this ghost call is still skipped.
+                if _loop_recovery_temporarily_disabled:
+                    disabled_tools.difference_update(_loop_recovery_temporarily_disabled)
+                    _loop_recovery_temporarily_disabled.clear()
+                _loop_recovery_active = False
+                _loop_recovery_blocked_tools.clear()
+                _loop_recovery_retries = 0
             yield (
                 "data: " + json.dumps({
                     "type": "loop_retry_redirected",
-                    "reason": "diagnostic_retry_after_loop",
+                    "reason": (
+                        "hidden_tool_restored" if _restore_hidden
+                        else "diagnostic_retry_after_loop"
+                    ),
                     "round": round_num,
                     "tool": _single_tool_name,
+                    "restored": _restore_hidden,
                 }) + "\n\n"
             )
-            _emphasis = (
-                " This is another diagnostic-only retry. Make the code change now."
-                if _loop_recovery_retries >= 2 else ""
-            )
-            messages.append({
-                "role": "user",
-                "content": (
-                    "[Runtime loop recovery — not a new user request] This diagnostic "
-                    "retry was skipped because it repeats the stalled investigation. "
-                    "The repeatedly selected tool is temporarily unavailable. Continue "
-                    "the original implementation plan by calling apply_patch, "
-                    "edit_file, or write_file for the next concrete code change. "
-                    "A real dependency-install command is also allowed if required."
-                    + _emphasis
-                ),
-            })
+            if _restore_hidden:
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        "[Runtime loop recovery — not a new user request] The "
+                        "previously hidden tool is available again. Do NOT repeat "
+                        "the stalled diagnostic. Take a different next step: a new "
+                        "command, or apply_patch / edit_file / write_file."
+                    ),
+                })
+            else:
+                _emphasis = (
+                    " This is another diagnostic-only retry. Make the code change now."
+                    if _loop_recovery_retries >= 2 else ""
+                )
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        "[Runtime loop recovery — not a new user request] This diagnostic "
+                        "retry was skipped because it repeats the stalled investigation. "
+                        "The repeatedly selected tool is temporarily unavailable. Continue "
+                        "the original implementation plan by calling apply_patch, "
+                        "edit_file, or write_file for the next concrete code change. "
+                        "A real dependency-install command is also allowed if required."
+                        + _emphasis
+                    ),
+                })
             full_response += "\n\n"
             yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
             continue
@@ -10281,6 +10445,7 @@ async def _stream_agent_loop_body(
             _loop_recovery_retries = 0
             _loop_recovery_blocked_tools.clear()
             _same_probe_tool = ""
+            _same_probe_skeleton = ""
             _same_probe_rounds = 0
 
         _sig = "|".join(sorted(
@@ -10294,13 +10459,16 @@ async def _stream_agent_loop_body(
         # rounds (just "<think>\n\n</think>" + a tool call) must not read as
         # progress, so strip think before checking.
         if _single_tool_name in {"python", "bash", "powershell"}:
-            if _single_tool_name == _same_probe_tool:
+            _probe_sk = _probe_skeleton(_single_tool_name, tool_blocks[0].content or "")
+            if _probe_sk == _same_probe_skeleton:
                 _same_probe_rounds += 1
             else:
                 _same_probe_tool = _single_tool_name
+                _same_probe_skeleton = _probe_sk
                 _same_probe_rounds = 1
         else:
             _same_probe_tool = ""
+            _same_probe_skeleton = ""
             _same_probe_rounds = 0
         # Circling = repeating a recent call without a new action. Narration
         # is not progress: the live failure repeated the identical Python
@@ -10374,6 +10542,7 @@ async def _stream_agent_loop_body(
             _stuck_rounds = 0
             _recent_call_sigs.clear()
             _same_probe_tool = ""
+            _same_probe_skeleton = ""
             _same_probe_rounds = 0
             _ledger.notes.append(
                 "loop_recovered:" + ",".join(sorted(_looping_tool_names))
@@ -11545,11 +11714,17 @@ async def _stream_agent_loop_body(
         # Progress discipline: a multi-step workspace task that is several tool
         # calls in without a todowrite list gets one nudge, so the Progress
         # panel (and the model's own plan) exists before the edits pile up.
+        # A fully completed list with more tools after it is the Continue /
+        # auto-continue stall: the panel still shows 5/5 from the previous
+        # batch until the model writes the next objectives.
+        _todowrite_offered = (
+            "todowrite" not in disabled_tools
+            and ("todowrite" in _tool_names_sent or not _is_api_model)
+        )
         if (
             _harness_enabled and _harness_scope_active and not _todo_nudged
             and _ledger.progress is None and len(_ledger.events) >= 4
-            and "todowrite" not in disabled_tools
-            and ("todowrite" in _tool_names_sent or not _is_api_model)
+            and _todowrite_offered
         ):
             _todo_nudged = True
             messages.append({
@@ -11562,6 +11737,15 @@ async def _stream_agent_loop_body(
                 ),
             })
             logger.info("[harness] todowrite nudge injected on round %s", round_num)
+        elif (
+            _harness_enabled and _harness_scope_active and not _todo_refresh_nudged
+            and _harness.progress_list_is_complete(_ledger.progress)
+            and _ledger.tools_since_progress() >= 4
+            and _todowrite_offered
+        ):
+            _todo_refresh_nudged = True
+            messages.append({"role": "user", "content": TODOWRITE_REFRESH_NUDGE})
+            logger.info("[harness] todowrite refresh injected on round %s (stale completed list)", round_num)
 
         # Emit agent_step event
         yield (

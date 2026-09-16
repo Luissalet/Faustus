@@ -296,6 +296,24 @@ GROUPS: list[dict[str, Any]] = [
                  "Only the last N tool images stay in the prompt; older ones become "
                  "'[earlier image omitted]'. -1 = keep all.",
                  -1, 100),
+            _bool("agent_midturn_compact_enabled", "Mid-turn context compaction",
+                  "During a long agent turn, spill old/large tool outputs to disk and "
+                  "fold history when the prompt nears the soft ceiling — so overnight "
+                  "tasks keep moving instead of thrashing at a full context window."),
+            _float("agent_midturn_compact_pct", "Mid-turn soft ceiling",
+                   "Fraction of the model context (0.40–0.95) that triggers mid-turn "
+                   "spill/compaction. Lower = more aggressive. Default 0.70.",
+                   0.40, 0.95, step=0.01),
+            _int("agent_midturn_keep_tool_rounds", "Tool rounds kept full",
+                 "Most recent tool-call batches kept verbatim before older ones spill. "
+                 "Oversized single results still spill.",
+                 0, 40),
+            _int("agent_midturn_spill_chars", "Spill tool results over (chars)",
+                 "A single tool result this large is spilled even if recent.",
+                 500, 200_000),
+            _int("agent_context_overflow_keep_hours", "Overflow keep (hours)",
+                 "How long spilled tool bodies stay under data/context_overflow.",
+                 1, 8760),
             _bool("agent_context_engine", "Context Engine",
                   "One compiler decides what the model is told: a ContextPacket per call with "
                   "a manifest, the omissions and a budget, instead of every subsystem "

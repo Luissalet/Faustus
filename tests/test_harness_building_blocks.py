@@ -282,6 +282,22 @@ def test_parse_output_pytest_and_npm_variants():
     assert none["ok"] is True and none["inconclusive"] is True
     env = parse_output("pytest", 2, "ERROR tests/test_a.py\nE   ModuleNotFoundError: No module named 'fastapi'")
     assert env["inconclusive"] is True
+    # pytest often exits 1 for collection errors, the same code as a real fail.
+    jsonschema = parse_output(
+        "pytest", 1,
+        "ERROR tests/editor/test_models.py\n"
+        "E   ModuleNotFoundError: No module named 'jsonschema'\n"
+        "= 1 error in 0.42s =\n",
+    )
+    assert jsonschema["inconclusive"] is True
+    assert "environment" in jsonschema["summary"]
+    # A FAILED test whose traceback mentions ImportError is still a real fail.
+    real_import = parse_output(
+        "pytest", 1,
+        "FAILED tests/test_a.py::test_x - ImportError: cannot import name 'gone'\n"
+        "= 1 failed in 0.1s =\n",
+    )
+    assert real_import["inconclusive"] is False and real_import["ok"] is False
     jest = parse_output("npm", 1, "Tests:       1 failed, 3 passed, 4 total\n  ✕ adds numbers (3 ms)")
     assert jest["summary"] == "1 failed, 3 passed, 4 total" and jest["failures"] == ["✕ adds numbers (3 ms)"]
     mocha = parse_output("npm", 0, "  3 passing (20ms)\n  1 pending")

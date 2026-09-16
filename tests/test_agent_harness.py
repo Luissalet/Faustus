@@ -140,6 +140,49 @@ def test_question_with_unknown_paths_is_allowed(tmp_path):
     assert check["ok"], check
 
 
+PERMISSION_STALL = (
+    "The star IoU failure has now survived three task gates — do you want it "
+    "investigated as a real defect, or formally accepted as a known limitation "
+    "in the baseline?\n\n"
+    "Next in the plan is task 04. Say the word and I'll continue."
+)
+
+
+def test_permission_to_continue_is_a_stall_not_a_question():
+    """Seen live: Continue already given, the model asked for a green light
+    about a pre-existing test and stopped. A trailing `?` is not a legitimate
+    stop when the question is 'may I keep going?'."""
+    assert h.find_permission_stall(PERMISSION_STALL)
+    assert h.find_permission_stall("Ready for task 04 whenever you want it.")
+    assert h.find_permission_stall("Dime y continúo con la siguiente tarea.")
+    # Real design questions still end a turn.
+    assert h.find_permission_stall("Should I edit projects.js or sessions.js?") is None
+    assert h.find_permission_stall("¿Quieres que añada el botón en la tarjeta o en el menú?") is None
+    ledger = h.TurnLedger(None, "Continue")
+    ledger.record(
+        "edit_file", '{"path": "x.py", "old_string": "a", "new_string": "b"}',
+        {"output": "Edited x.py", "exit_code": 0}, 1,
+    )
+    check = ledger.check_completion(PERMISSION_STALL)
+    assert "asked_instead_of_continuing" in check["reasons"], check
+    msg = ledger.rejection_message(check)
+    assert "permission" in msg.lower() and "ask_user" in msg
+    assert "Nothing you described has happened" not in msg
+    assert "stands" in msg
+    # ask_user is the legitimate channel; prose is not.
+    ledger.asked_user = True
+    check2 = ledger.check_completion(PERMISSION_STALL)
+    assert "asked_instead_of_continuing" not in check2["reasons"]
+    assert h.TurnLedger.check_is_stall_only(
+        {"reasons": ["asked_instead_of_continuing"]}
+    )
+    assert not h.TurnLedger.check_is_stall_only(
+        {"reasons": ["asked_instead_of_continuing", "claimed_paths_untouched"]}
+    )
+    assert not h.TurnLedger.check_is_stall_only({"reasons": ["claims_without_mutation"]})
+    assert not h.TurnLedger.check_is_stall_only({"reasons": []})
+
+
 def test_stderr_to_dev_null_is_not_a_mutation():
     """Seen live: `find … | xargs grep … 2>/dev/null` was recorded as a mutation
     of 'cards.js' (the redirect matched the write pattern) and the turn summary
@@ -185,6 +228,22 @@ def test_progress_verification():
     out = ledger.record_progress([{"content": "a", "status": "completed"}, {"content": "b", "status": "completed"}], 3)
     assert out[1]["verified"] is True and out[1]["mutation_backed"] is True
     assert out[0]["verified"] is False  # keeps its original verdict
+
+
+def test_progress_list_is_complete_and_tools_since():
+    assert h.progress_list_is_complete(None) is False
+    assert h.progress_list_is_complete([]) is False
+    assert h.progress_list_is_complete([{"content": "a", "status": "completed"}]) is True
+    assert h.progress_list_is_complete([
+        {"content": "a", "status": "completed"},
+        {"content": "b", "status": "in_progress"},
+    ]) is False
+    ledger = h.TurnLedger(None, "do stuff")
+    assert ledger.tools_since_progress() == 0
+    ledger.record_progress([{"content": "a", "status": "completed"}], 1)
+    assert ledger.tools_since_progress() == 0
+    ledger.record("grep", '{"pattern": "x"}', {"output": "ok", "exit_code": 0}, 2)
+    assert ledger.tools_since_progress() == 1
 
 
 def test_detect_language():

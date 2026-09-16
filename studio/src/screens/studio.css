@@ -2451,7 +2451,11 @@ aside.fs-panel {
   border: 1px solid var(--fs-border);
   background: color-mix(in srgb, var(--fs-surface-1) 70%, transparent);
   box-shadow: var(--fs-panel-shadow);
-  overflow: hidden;
+  /* overflow:hidden zeroes the flex min-size inside .fs-panel__body and
+     clips later workers with no scrollbar. auto keeps the rounded clip. */
+  overflow: auto;
+  overscroll-behavior: contain;
+  min-block-size: 0;
 }
 
 .fs-sa-board__head {

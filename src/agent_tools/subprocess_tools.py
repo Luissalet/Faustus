@@ -812,8 +812,12 @@ class PythonTool:
         _env = native_host_environment(_subproc_env)
         _python = project_python(agent_cwd(), _env)
         _target = _execution_target(sandboxed=False, cwd=agent_cwd(), shell=_python)
+        # No `-I`: isolated mode hides user site-packages and the workspace
+        # on sys.path, so `import jsonschema` failed here while the same
+        # interpreter's `python -m pytest` (no -I) passed. The environment is
+        # already scrubbed of Faustus's PYTHONPATH by native_host_environment.
         proc = await asyncio.create_subprocess_exec(
-            _python, "-I", "-c", content,
+            _python, "-c", content,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             env=_env,

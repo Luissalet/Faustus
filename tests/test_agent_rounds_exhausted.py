@@ -10,6 +10,7 @@ import asyncio
 import json
 
 import src.agent_loop as al
+from src.tool_capabilities import ToolGateDecision
 
 
 def _collect(gen):
@@ -393,5 +394,131 @@ def test_cosmetic_python_probe_variants_are_stopped_as_one_semantic_loop(monkeyp
     assert guard["round"] == 5
     redirected = next(e for e in events if e.get("type") == "loop_retry_redirected")
     assert redirected["tool"] == "python"
+    summary = next(e for e in events if e.get("type") == "harness_summary")
+    assert summary["data"]["stop_reason"] == "complete"
+
+
+def test_hidden_tool_ghost_calls_restore_so_later_shell_work_can_run(monkeypatch):
+    """Silhouettes c3a9e716 rounds 66–81: loop-breaker hid bash, then Qwen
+    kept emitting native bash (the remaining API walkthrough). Those ghost
+    calls were skipped with no cap until rounds_exhausted. After a few
+    redirects the hidden tool must come back so a *different* shell command
+    can actually run.
+    """
+    _patch_common(monkeypatch)
+    monkeypatch.setattr(al, "blocked_tools_for_owner", lambda owner: set(), raising=False)
+    monkeypatch.setattr(
+        al, "_agent_route_tool_mode", lambda *args, **kwargs: (True, False, False),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        al.ToolRunSecurityContext,
+        "decision_for",
+        lambda self, *a, **k: ToolGateDecision(allowed=True),
+        raising=False,
+    )
+    stalled = [{"name": "bash", "arguments": json.dumps({"command": "python -c 'print(1)'"})}]
+    rounds = [
+        stalled, stalled, stalled,  # identical → hide bash
+        stalled, stalled, stalled,  # ghost calls while hidden
+        [{"name": "bash", "arguments": json.dumps({"command": "curl import pngs"})}],
+        [{"name": "bash", "arguments": json.dumps({"command": "curl nest layers"})}],
+        "Walkthrough finished.",
+    ]
+    round_no = 0
+    executed = []
+
+    async def _fake_stream(_candidates, messages, **kwargs):
+        nonlocal round_no
+        item = rounds[round_no]
+        round_no += 1
+        if isinstance(item, str):
+            yield f'data: {json.dumps({"delta": item})}\n\n'
+            yield f'data: {json.dumps({"type": "finish", "finish_reason": "stop"})}\n\n'
+        else:
+            yield f'data: {json.dumps({"type": "tool_calls", "calls": item})}\n\n'
+            yield f'data: {json.dumps({"type": "finish", "finish_reason": "tool_calls"})}\n\n'
+        yield "data: [DONE]\n\n"
+
+    async def _fake_exec(block, *args, **kwargs):
+        executed.append((block.tool_type, block.content or ""))
+        return block.tool_type, {"output": "ok", "exit_code": 0}
+
+    monkeypatch.setattr(al, "stream_llm_with_fallback", _fake_stream, raising=False)
+    monkeypatch.setattr(al, "execute_tool_block", _fake_exec, raising=False)
+    events = _types(_collect(al.stream_agent_loop(
+        "http://127.0.0.1:11434/v1", "qwen3.8:27b-q8_0",
+        [{"role": "user", "content": "Implement the project"}],
+        max_rounds=20,
+        relevant_tools={"bash", "edit_file", "write_file"},
+    )))
+
+    assert any(e.get("type") == "loop_breaker_triggered" for e in events), events
+    restored = [e for e in events if e.get("type") == "loop_retry_redirected" and e.get("restored")]
+    assert restored, events
+    bodies = " ".join(content for _tool, content in executed)
+    assert "curl import pngs" in bodies, executed
+    assert "curl nest layers" in bodies, executed
+    assert not any(e.get("type") == "rounds_exhausted" for e in events), events
+    summary = next(e for e in events if e.get("type") == "harness_summary")
+    assert summary["data"]["stop_reason"] == "complete"
+
+
+def test_distinct_bash_commands_are_not_a_semantic_probe_loop(monkeypatch):
+    """An API walkthrough is several different bash commands in a row.
+    Digit-tweaked `print(n)` probes are a loop; import → nest → fit is not.
+    """
+    _patch_common(monkeypatch)
+    monkeypatch.setattr(al, "blocked_tools_for_owner", lambda owner: set(), raising=False)
+    monkeypatch.setattr(
+        al, "_agent_route_tool_mode", lambda *args, **kwargs: (True, False, False),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        al.ToolRunSecurityContext,
+        "decision_for",
+        lambda self, *a, **k: ToolGateDecision(allowed=True),
+        raising=False,
+    )
+    commands = [
+        "python -c 'import pngs'",
+        "python -c 'nest layers'",
+        "python -c 'run fit'",
+        "python -c 'export zip'",
+        "python -c 'reopen package'",
+        "python -c 'screenshot editor'",
+    ]
+    scripted = iter(
+        [[{"name": "bash", "arguments": json.dumps({"command": c})}] for c in commands]
+        + ["All six walkthrough steps ran."]
+    )
+
+    async def _fake_stream(_candidates, messages, **kwargs):
+        item = next(scripted)
+        if isinstance(item, str):
+            yield f'data: {json.dumps({"delta": item})}\n\n'
+            yield f'data: {json.dumps({"type": "finish", "finish_reason": "stop"})}\n\n'
+        else:
+            yield f'data: {json.dumps({"type": "tool_calls", "calls": item})}\n\n'
+            yield f'data: {json.dumps({"type": "finish", "finish_reason": "tool_calls"})}\n\n'
+        yield "data: [DONE]\n\n"
+
+    executed = []
+
+    async def _fake_exec(block, *args, **kwargs):
+        executed.append(block.content or "")
+        return block.tool_type, {"output": "ok", "exit_code": 0}
+
+    monkeypatch.setattr(al, "stream_llm_with_fallback", _fake_stream, raising=False)
+    monkeypatch.setattr(al, "execute_tool_block", _fake_exec, raising=False)
+    events = _types(_collect(al.stream_agent_loop(
+        "http://127.0.0.1:11434/v1", "qwen3.8:27b-q8_0",
+        [{"role": "user", "content": "Walk the editor journey"}],
+        max_rounds=10,
+        relevant_tools={"bash", "edit_file"},
+    )))
+
+    assert not any(e.get("type") == "loop_breaker_triggered" for e in events), events
+    assert len(executed) == 6, executed
     summary = next(e for e in events if e.get("type") == "harness_summary")
     assert summary["data"]["stop_reason"] == "complete"

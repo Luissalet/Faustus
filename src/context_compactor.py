@@ -227,6 +227,14 @@ COMPACT_THRESHOLD = 0.85  # Trigger compaction at 85% of context window
 SUMMARY_MAX_TOKENS = 1024
 SMALL_CONTEXT_LIMIT = 8192  # Models with context <= this get aggressive trimming
 
+# Mid-turn pressure (overnight / long agent loops). Soft ceiling is lower than
+# COMPACT_THRESHOLD so local prefills do not crawl near the hard window.
+DEFAULT_MIDTURN_COMPACT_PCT = 0.70
+DEFAULT_MIDTURN_KEEP_TOOL_ROUNDS = 6
+DEFAULT_MIDTURN_SPILL_CHARS = 8000
+OVERFLOW_STUB_HEAD_CHARS = 400
+_OVERFLOW_ID_RE = re.compile(r"\[overflow id=([0-9a-f]{64})\b")
+
 # Cursor-style self-summarization prompt — produces structured, dense summaries
 SELF_SUMMARY_SYSTEM_PROMPT = """You are summarizing a conversation to preserve context after compaction. Produce a structured summary that lets the conversation continue seamlessly.
 
@@ -1253,6 +1261,318 @@ def _last_convo_user_index(convo: List[Dict[str, Any]]) -> Optional[int]:
         if isinstance(msg, dict) and msg.get("role") == "user":
             return i
     return None
+
+
+def _tool_batch_starts(messages: List[Dict[str, Any]]) -> List[int]:
+    """Indices of assistant messages that open a tool-call batch."""
+    starts: List[int] = []
+    for i, msg in enumerate(messages):
+        if isinstance(msg, dict) and msg.get("role") == "assistant" and msg.get("tool_calls"):
+            starts.append(i)
+    return starts
+
+
+def _indices_in_last_tool_rounds(messages: List[Dict[str, Any]], keep_rounds: int) -> set:
+    """Message indices belonging to the last ``keep_rounds`` tool batches."""
+    starts = _tool_batch_starts(messages)
+    if keep_rounds <= 0 or not starts:
+        return set()
+    kept_starts = starts[-keep_rounds:]
+    protected: set = set()
+    for s in kept_starts:
+        protected.add(s)
+        j = s + 1
+        while j < len(messages):
+            msg = messages[j]
+            if not isinstance(msg, dict):
+                break
+            role = msg.get("role")
+            if role == "tool":
+                protected.add(j)
+                j += 1
+                continue
+            meta = msg.get("metadata") if isinstance(msg.get("metadata"), dict) else {}
+            source = str(meta.get("source") or "")
+            if role == "user" and source.startswith(TOOL_IMAGE_SOURCE_PREFIX):
+                protected.add(j)
+                j += 1
+                continue
+            break
+    return protected
+
+
+def _overflow_stub(
+    *,
+    content_sha256: str,
+    tool: str,
+    call_id: str,
+    nbytes: int,
+    head: str,
+    durable: bool,
+) -> str:
+    where = "disk" if durable else "memory-only (incognito)"
+    lines = [
+        f"[overflow id={content_sha256} tool={tool or 'unknown'} bytes={nbytes}"
+        f" call_id={call_id or '-'} storage={where}]",
+        "Full tool output spilled out of the live prompt. Re-read the workspace "
+        "file if this was a write, or restore via the overflow id.",
+    ]
+    head = (head or "").strip()
+    if head:
+        lines.append("--- head ---")
+        lines.append(head[:OVERFLOW_STUB_HEAD_CHARS])
+    return "\n".join(lines)
+
+
+def spill_large_tool_results(
+    messages: List[Dict[str, Any]],
+    *,
+    session_id: str,
+    keep_tool_rounds: int = DEFAULT_MIDTURN_KEEP_TOOL_ROUNDS,
+    spill_chars: int = DEFAULT_MIDTURN_SPILL_CHARS,
+    durable: bool = True,
+    run_id: str = "",
+    round_num: int = 0,
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """Replace old / oversized tool bodies with overflow stubs.
+
+    Returns ``(new_messages, report)``. ``messages`` is not mutated when
+    nothing changes (same list identity).
+    """
+    if not messages:
+        return messages, {"spilled": 0, "overflow_ids": [], "changed": False}
+
+    recent = _indices_in_last_tool_rounds(messages, keep_tool_rounds)
+    from src import context_overflow as overflow
+
+    out: Optional[List[Dict[str, Any]]] = None
+    spilled = 0
+    overflow_ids: List[str] = []
+
+    for i, msg in enumerate(messages):
+        if not isinstance(msg, dict) or msg.get("role") != "tool":
+            continue
+        content = msg.get("content")
+        if not isinstance(content, str) or not content:
+            continue
+        if _OVERFLOW_ID_RE.search(content):
+            continue
+        oversized = len(content) >= max(1, int(spill_chars))
+        if i in recent and not oversized:
+            continue
+
+        meta = msg.get("metadata") if isinstance(msg.get("metadata"), dict) else {}
+        tool = ""
+        source = str(meta.get("source") or "")
+        if source.startswith(TOOL_IMAGE_SOURCE_PREFIX):
+            tool = source[len(TOOL_IMAGE_SOURCE_PREFIX):].strip()
+        call_id = str(msg.get("tool_call_id") or "")
+        if not tool:
+            for j in range(i - 1, -1, -1):
+                prev = messages[j]
+                if not isinstance(prev, dict):
+                    continue
+                if prev.get("role") == "assistant" and prev.get("tool_calls"):
+                    for tc in prev["tool_calls"]:
+                        if isinstance(tc, dict) and tc.get("id") == call_id:
+                            fn = tc.get("function") if isinstance(tc.get("function"), dict) else {}
+                            tool = str(fn.get("name") or "")
+                            break
+                    break
+                if prev.get("role") in ("user", "system"):
+                    break
+
+        digest = ""
+        nbytes = len(content.encode("utf-8", "replace"))
+        wrote_disk = False
+        if durable:
+            try:
+                rec = overflow.persist(
+                    session_id=session_id,
+                    content=content,
+                    tool=tool,
+                    call_id=call_id,
+                    role="tool",
+                    run_id=run_id,
+                    round_num=round_num,
+                    durable=True,
+                )
+                digest = rec["content_sha256"]
+                nbytes = int(rec.get("bytes") or nbytes)
+                wrote_disk = True
+            except Exception as e:  # noqa: BLE001
+                logger.warning("midturn spill persist failed: %s", e)
+                digest = hashlib.sha256(content.encode("utf-8", "replace")).hexdigest()
+        else:
+            digest = hashlib.sha256(content.encode("utf-8", "replace")).hexdigest()
+
+        ids = extract_protected_strings(content)
+        head_bits = []
+        if ids:
+            head_bits.append("ids: " + ", ".join(_dedupe_preserve_order(ids)[:12]))
+        head_bits.append(content[:OVERFLOW_STUB_HEAD_CHARS])
+        stub = _overflow_stub(
+            content_sha256=digest,
+            tool=tool,
+            call_id=call_id,
+            nbytes=nbytes,
+            head="\n".join(head_bits),
+            durable=wrote_disk,
+        )
+        if out is None:
+            out = list(messages)
+        new_msg = dict(msg)
+        new_msg["content"] = stub
+        meta_out = dict(meta) if meta else {}
+        meta_out["overflow_id"] = digest
+        meta_out["overflow_spilled"] = True
+        new_msg["metadata"] = meta_out
+        out[i] = new_msg
+        spilled += 1
+        overflow_ids.append(digest)
+
+    if out is None:
+        return messages, {"spilled": 0, "overflow_ids": [], "changed": False}
+    return out, {"spilled": spilled, "overflow_ids": overflow_ids, "changed": spilled > 0}
+
+
+async def apply_midturn_pressure(
+    messages: List[Dict[str, Any]],
+    *,
+    endpoint_url: str,
+    model: str,
+    session_id: str = "",
+    owner: Optional[str] = None,
+    headers: Optional[Dict] = None,
+    round_num: int = 0,
+    run_id: str = "",
+    durable_overflow: bool = True,
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """Keep a long agent turn under the soft context ceiling.
+
+    Pipeline: spill fat/old tool results → ``compact_with_integrity`` →
+    ``maybe_compact`` if still hot. Never raises; on failure returns the
+    input messages with ``changed=False``.
+    """
+    report: Dict[str, Any] = {
+        "changed": False,
+        "reason": "midturn_pressure",
+        "tokens_before": 0,
+        "tokens_after": 0,
+        "context_length": 0,
+        "spilled": 0,
+        "integrity_folded": False,
+        "llm_summarized": False,
+        "overflow_ids": [],
+        "skipped": None,
+    }
+    try:
+        enabled = bool(get_setting("agent_midturn_compact_enabled", True))
+    except Exception:  # noqa: BLE001
+        enabled = True
+    if not enabled:
+        report["skipped"] = "disabled"
+        return messages, report
+
+    try:
+        soft_pct = float(get_setting("agent_midturn_compact_pct", DEFAULT_MIDTURN_COMPACT_PCT)
+                         or DEFAULT_MIDTURN_COMPACT_PCT)
+    except Exception:  # noqa: BLE001
+        soft_pct = DEFAULT_MIDTURN_COMPACT_PCT
+    soft_pct = min(0.95, max(0.40, soft_pct))
+
+    try:
+        keep_rounds = int(get_setting("agent_midturn_keep_tool_rounds",
+                                      DEFAULT_MIDTURN_KEEP_TOOL_ROUNDS)
+                          or DEFAULT_MIDTURN_KEEP_TOOL_ROUNDS)
+    except Exception:  # noqa: BLE001
+        keep_rounds = DEFAULT_MIDTURN_KEEP_TOOL_ROUNDS
+    try:
+        spill_chars = int(get_setting("agent_midturn_spill_chars",
+                                      DEFAULT_MIDTURN_SPILL_CHARS)
+                          or DEFAULT_MIDTURN_SPILL_CHARS)
+    except Exception:  # noqa: BLE001
+        spill_chars = DEFAULT_MIDTURN_SPILL_CHARS
+
+    context_length = get_context_length(endpoint_url, model)
+    report["context_length"] = context_length
+    if not context_length:
+        report["skipped"] = "unknown_context_length"
+        return messages, report
+
+    used = estimate_tokens(messages)
+    report["tokens_before"] = used
+    if used < soft_pct * context_length:
+        report["skipped"] = "under_threshold"
+        report["tokens_after"] = used
+        return messages, report
+
+    current = messages
+    try:
+        current, spill_report = spill_large_tool_results(
+            current,
+            session_id=session_id or "session",
+            keep_tool_rounds=max(0, keep_rounds),
+            spill_chars=max(500, spill_chars),
+            durable=durable_overflow,
+            run_id=run_id,
+            round_num=round_num,
+        )
+        report["spilled"] = int(spill_report.get("spilled") or 0)
+        report["overflow_ids"] = list(spill_report.get("overflow_ids") or [])
+        if spill_report.get("changed"):
+            report["changed"] = True
+    except Exception as e:  # noqa: BLE001
+        logger.warning("apply_midturn_pressure spill failed: %s", e)
+
+    used = estimate_tokens(current)
+    if used >= soft_pct * context_length:
+        try:
+            folded, evidence = compact_with_integrity(
+                current,
+                owner_id=owner or "system",
+                session_id=session_id or "",
+                keep_recent=max(4, keep_rounds),
+            )
+            if evidence:
+                current = folded
+                report["integrity_folded"] = True
+                report["changed"] = True
+        except Exception as e:  # noqa: BLE001
+            logger.warning("apply_midturn_pressure integrity failed: %s", e)
+
+    used = estimate_tokens(current)
+    if used >= soft_pct * context_length:
+        try:
+            compacted, _ctx, was = await maybe_compact(
+                None,
+                endpoint_url,
+                model,
+                current,
+                headers,
+                owner=owner,
+                persist=False,
+            )
+            if was:
+                current = compacted
+                report["llm_summarized"] = True
+                report["changed"] = True
+        except Exception as e:  # noqa: BLE001
+            logger.warning("apply_midturn_pressure maybe_compact failed: %s", e)
+
+    report["tokens_after"] = estimate_tokens(current)
+
+    if durable_overflow and session_id:
+        try:
+            from src import context_overflow as overflow
+            overflow.prune(
+                session_id=session_id,
+                referenced_ids=overflow.referenced_overflow_ids(current),
+            )
+        except Exception:  # noqa: BLE001
+            pass
+
+    return current, report
 
 
 def compact_with_integrity(

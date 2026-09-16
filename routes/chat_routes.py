@@ -3866,6 +3866,7 @@ def setup_chat_routes(
                                         "rounds_exhausted", "budget_exceeded",
                                         "budget_exhausted",
                                         "loop_breaker_triggered",
+                                        "loop_retry_redirected",
                                         "intent_nudge_exhausted",
                                         "ask_user",
                                         "plan_update",

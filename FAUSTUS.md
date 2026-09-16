@@ -5123,3 +5123,19 @@ El paquete de Luis no era solo M0 y M1: detrás de los 100 requisitos P0 venían
 **Estado honesto.** El bypass por carpeta es una decisión del usuario guardada en disco: si concede sobre `C:\Users\luism\Desktop\Proyectos independientes`, hereda todo lo que cuelgue de ahí. No hay todavía pantalla para listarlas ni revocarlas (`tool_approval_grants.list_for/revoke` existen y esperan su sitio en Settings › Security). `powershell` no soporta `#!bg` (los detached siguen siendo cosa de `bash`). En POSIX con Docker caído, `auto` cambia el comportamiento histórico: quien quiera la puerta dura tiene que escribir `agent_sandbox_mode: strict`.
 
 **Ficheros.** `src/sandbox_exec.py`, `src/agent_tools/subprocess_tools.py`, `src/agent_tools/{__init__,filesystem_tools}.py`, `src/tool_schemas.py`, `src/agent_loop.py`, `routes/{chat_routes,workspace_routes}.py`, `src/tool_approval_grants.py` (nuevo), `src/tool_approval_scopes.py`, `src/tool_approvals.py`, `src/{tool_execution,tool_capabilities,tool_security,tool_policy,tool_registry,tool_parsing,tool_index,tool_index_examples,agent_defs,agent_harness,doctor,settings,agent_settings_schema}.py`, `src/agent_profiles/{builtin,resolver}.py`, `studio/src/screens/studio/Transcript.tsx`, `studio/src/adapters/chat.ts`, `studio/src/i18n/es.ts`, `tests/{test_sandbox_exec,test_edit_base_revision,test_tool_approval_task_scope,test_external_context_tool_gate}.py`.
+
+## 86. Compactacion a mitad de turno para tareas largas (15-09-2026)
+
+**Problema.** Un chat Silhouettes se quedo ~1h47m a ~90% de una ventana de ~200k, reescribiendo el mismo test, hasta `rounds_exhausted`. Habia compactacion al *inicio* del turno, no en cada ronda de herramientas.
+
+**Que hace.** Cada ronda del agente, si el prompt supera el techo blando (70% por defecto): (1) vuelca tool results viejos/grandes a `data/context_overflow/` y deja stubs; (2) `compact_with_integrity`; (3) `maybe_compact` si sigue alto; (4) emite `context_compacted`. Incognito no escribe disco. Ajustes: `agent_midturn_compact_*`, `agent_context_overflow_keep_hours`.
+
+**Ficheros.** `src/context_overflow.py`, `src/context_compactor.py`, `src/agent_loop.py`, `src/settings.py`, `src/agent_settings_schema.py`, `src/constants.py`, `docs/api/sse_events.json`, `tests/test_context_overflow.py`, `tests/test_midturn_pressure.py`.
+
+## 87. Loop-breaker: no esconder bash para siempre (16-09-2026)
+
+**Problema.** El chat Silhouettes `c3a9e716` (turno "Continue the implementation") murio en `rounds_exhausted` a la ronda 81. El loop-breaker escondio `bash` en la 66 porque cinco rondas seguidas de bash contaban como "diagnostics" aunque los comandos eran distintos (import PNG vs nest). Qwen siguio emitiendo `bash` nativo (93 tokens, ~8s) durante 14 rondas; esas llamadas no se ejecutaban y `loop_retry_redirected` ni siquiera llegaba al UI (el route las tiraba).
+
+**Que hace.** (1) El detector semantico compara un *esqueleto* del comando (colapsa digitos, quita `python -c`), no el nombre de la herramienta: `print(1)`/`print(2)` sigue siendo un loop; import → nest → export no. (2) Tras 3 ghost-calls de la herramienta escondida, se restaura al schema (`loop_retry_redirected.restored=true`) para que el siguiente comando distinto corra. (3) El route ahora reenvia `loop_retry_redirected`.
+
+**Ficheros.** `src/agent_loop.py`, `routes/chat_routes.py`, `docs/api/sse_events.json`, `tests/test_agent_rounds_exhausted.py`.

@@ -226,7 +226,35 @@ INTENT_PATTERNS: List[re.Pattern] = [
 ]
 
 # Question to the user → the turn legitimately ends without tools.
+# A permission-to-continue question is NOT this: that is a stall, see
+# find_permission_stall(). The `$` is end-of-string (no MULTILINE).
 _QUESTION_TAIL_RE = re.compile(r"[?¿][\s*_`\"')\]]*$")
+
+# Asking the user for a green light instead of doing the next work. Seen
+# live: a coding turn that had already been told to Continue ended with
+# "Say the word and I'll continue" / "the question is still open" about a
+# pre-existing test, and the harness let it because `_QUESTION_TAIL_RE`
+# treats a trailing `?` as a legitimate stop. ask_user is the only valid
+# way to stop for a decision; a rhetorical question in prose is not.
+_PERMISSION_STALL_RES: Tuple[re.Pattern, ...] = (
+    re.compile(r"\bsay the word\b", re.IGNORECASE),
+    re.compile(r"\bwhenever you want(?:\s+it)?\b", re.IGNORECASE),
+    re.compile(r"\bwaiting on your (?:call|go-ahead|green light|ok|okay|word)\b", re.IGNORECASE),
+    re.compile(
+        r"\b(?:should I|shall I|do you want me to)\s+"
+        r"(?:continue|proceed|keep going|start|go on)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(r"\bready for (?:task|step|the next)\b.{0,60}\bwhenever\b", re.IGNORECASE),
+    re.compile(r"\blet me know (?:if|when) you want\b", re.IGNORECASE),
+    re.compile(
+        r"\bthe question (?:you should be asking|is still (?:open|worth asking)|still worth asking)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(r"\bdime y (?:contin[uú]o|sigo)\b", re.IGNORECASE),
+    re.compile(r"\bav[ií]same y (?:contin[uú]o|sigo)\b", re.IGNORECASE),
+    re.compile(r"\bla pregunta (?:sigue abierta|sigue mereciendo|que deber[ií]as)\b", re.IGNORECASE),
+)
 
 # "No puedo saber en cuántas GPUs estoy corriendo", "I can't tell how many
 # GPUs I'm running on", "no sé si estoy ejecutando la versión buena": the
@@ -394,13 +422,28 @@ def find_mutation_claims(text: str, limit: int = 4, include_bare_done: bool = Tr
     return out
 
 
+def find_permission_stall(text: str) -> Optional[str]:
+    """Prose that asks the user for permission to keep going, instead of
+    calling a tool or ask_user. None when the text is a real design question
+    ("postgres or sqlite?") or empty."""
+    body = text or ""
+    for pat in _PERMISSION_STALL_RES:
+        m = pat.search(body)
+        if m:
+            start = max(0, m.start() - 20)
+            return body[start:m.end() + 40].replace("\n", " ").strip()[:140]
+    return None
+
+
 def find_intent_announcement(text: str, tail_chars: int = 600) -> Optional[str]:
     """If the END of `text` announces an action (EN/ES) — or ends with a colon
     introducing content that never came — return the offending phrase."""
     body = (text or "").rstrip()
     if not body:
         return None
-    if _QUESTION_TAIL_RE.search(body):
+    # A trailing `?` is a legitimate stop only when it is not a go-ahead
+    # request in disguise ("do you want me to continue?").
+    if _QUESTION_TAIL_RE.search(body) and not find_permission_stall(body):
         return None
     tail = body[-tail_chars:]
     # Only the last paragraph matters: earlier announcements may have been
@@ -969,6 +1012,18 @@ def git_change_summary(workspace: Optional[str], timeout: float = 8.0) -> Option
 # Per-turn ledger
 # ---------------------------------------------------------------------------
 
+def progress_list_is_complete(progress: Optional[List[Dict[str, Any]]]) -> bool:
+    """True when the Progress panel has items and every one is completed.
+
+    An empty or missing list is not complete — that is "no plan yet". A fully
+    checked list with no `in_progress` item is what stays on screen after
+    Continue / auto-continue until the model writes the next batch.
+    """
+    if not isinstance(progress, list) or not progress:
+        return False
+    return all(str(item.get("status") or "") == "completed" for item in progress)
+
+
 class TurnLedger:
     """What actually happened this turn, as recorded from tool executions."""
 
@@ -1097,6 +1152,10 @@ class TurnLedger:
         self.progress_round = round_num
         self._events_at_last_progress = len(self.events)
         return annotated
+
+    def tools_since_progress(self) -> int:
+        """Successful or failed tool calls recorded after the last todowrite snapshot."""
+        return max(0, len(self.events) - self._events_at_last_progress)
 
     # -- evidence -----------------------------------------------------------
     @property
@@ -1244,8 +1303,9 @@ class TurnLedger:
         claims = find_mutation_claims(body)
         bad_paths = self.unverified_paths(body)
         intent = find_intent_announcement(body)
+        permission = None if self.asked_user else find_permission_stall(body)
         reasons: List[str] = []
-        is_question = bool(_QUESTION_TAIL_RE.search(body.rstrip()))
+        is_question = bool(_QUESTION_TAIL_RE.search(body.rstrip())) and not permission
         if claims and not self.effects:
             # "Done." after real (read-only / shell) tool work is a report of
             # whatever ran, not a fabricated edit: reject only when the text
@@ -1273,6 +1333,8 @@ class TurnLedger:
             reasons.append("claimed_paths_untouched")
         if intent and not claims:
             reasons.append("intent_without_action")
+        if permission:
+            reasons.append("asked_instead_of_continuing")
         return {
             "ok": not reasons,
             "reasons": reasons,
@@ -1280,20 +1342,39 @@ class TurnLedger:
             "bad_paths": bad_paths,
             "untouched_paths": untouched,
             "intent": intent,
+            "permission": permission,
         }
+
+    @staticmethod
+    def check_is_stall_only(check: Dict[str, Any]) -> bool:
+        """True when the only problem is stopping to ask or announce, not a
+        false claim about files. Exhausting retries on a stall must not erase
+        mutations that already happened — seen live as a 17-file turn replaced
+        with 'the task remains unfinished'."""
+        reasons = set(check.get("reasons") or [])
+        if not reasons:
+            return False
+        return not (
+            reasons
+            & {"claims_without_mutation", "fabricated_paths", "claimed_paths_untouched"}
+        )
 
     # -- messages -----------------------------------------------------------
     def rejection_message(self, check: Dict[str, Any]) -> str:
         """Instruction fed back to the model (English: local models follow
         English instructions more reliably; the user-facing summary is
         localized separately)."""
-        partial = check["reasons"] == ["claimed_paths_untouched"]
+        permission = "asked_instead_of_continuing" in check["reasons"]
+        permission_only = check["reasons"] == ["asked_instead_of_continuing"]
+        partial = check["reasons"] == ["claimed_paths_untouched"] or permission_only
         lines = [
             "[Harness check — automatic message from the runtime, not from the user]",
             # Half a turn's work being real changes what the model must do next,
             # so it changes the first line the model reads.
             ("PART of your last message is NOT supported by the tool log of this turn:"
-             if partial else
+             if partial and not permission_only else
+             "You stopped to ask for permission instead of doing the next work:"
+             if permission_only else
              "Your last message is NOT supported by the tool log of this turn:"),
         ]
         tools = ", ".join(f"{k}×{v}" for k, v in self.tools_run().items()) or "none"
@@ -1332,6 +1413,26 @@ class TurnLedger:
                 f'- You announced "{check["intent"]}" and then ended the turn without calling '
                 "any tool. Announcing is not doing."
             )
+        if "asked_instead_of_continuing" in check["reasons"]:
+            snippet = check.get("permission") or "a go-ahead from the user"
+            lines.append(
+                f'- You asked the user for permission to continue ("{snippet}") instead of '
+                "doing the next work. Continue / remaining plan items are already a go-ahead. "
+                "Pre-existing test failures you did not introduce are not a blocker: note them "
+                "in one sentence and move on. If a design choice is truly blocking, call "
+                "ask_user once — a rhetorical question in prose is not asking."
+            )
+        stall_only = not (
+            {"claims_without_mutation", "fabricated_paths", "claimed_paths_untouched"}
+            & set(check["reasons"])
+        )
+        if permission_only or (permission and stall_only and self.effects):
+            lines.append(
+                "The work already done this turn stands. Do NOT redo it and do NOT wait. "
+                "Call tools now for the remaining task (todowrite first if the Progress list "
+                "is fully completed), then report only what the tools show."
+            )
+            return "\n".join(lines)
         if partial:
             # Part of the work is real: sending the "nothing happened" script
             # here would make the model redo or undo the edits it did make.
@@ -1388,6 +1489,11 @@ class TurnLedger:
                 "anunció una acción y terminó sin ejecutar ninguna herramienta" if es else
                 "it announced an action and ended without calling any tool"
             )
+        if "asked_instead_of_continuing" in check["reasons"]:
+            parts.append(
+                "pidió permiso para continuar en vez de seguir con el trabajo" if es else
+                "it asked for permission to continue instead of doing the next work"
+            )
         head = "⚠️ **Verificación del harness**: " if es else "⚠️ **Harness check**: "
         if check["reasons"] == ["claimed_paths_untouched"]:
             # Some of the work IS real here — "nothing above happened" would be
@@ -1395,6 +1501,9 @@ class TurnLedger:
             tail = (" No des por hecha esa parte; el resto sí está respaldado por el registro "
                     "de herramientas." if es else
                     " Do not take that part as done; the rest is backed by the tool log.")
+        elif check["reasons"] == ["asked_instead_of_continuing"]:
+            tail = (" El trabajo hecho se mantiene; no esperes permiso, sigue." if es else
+                    " The work already done stands; do not wait for permission, continue.")
         else:
             tail = (
                 " No des por hecho nada de lo anterior." if es else
@@ -1550,7 +1659,10 @@ def local_model_policy() -> str:
         "listing exactly which files changed (from the tool results, not from memory).\n"
         "8. If the request is ambiguous (which bug? which file? which behaviour?) and the code you "
         "read shows no concrete defect, do NOT guess a fix: call ask_user with the specific question "
-        "(or the 2-3 candidate interpretations). Never rewrite code you have not shown to be wrong.\n"
+        "(or the 2-3 candidate interpretations). Never rewrite code you have not shown to be wrong. "
+        "Do NOT ask for permission to continue a plan the user already started, and do not wait for "
+        "a green light after Continue: keep working. A pre-existing test failure you did not cause "
+        "is a one-sentence note, not a question and not a blocker.\n"
         "9. Change existing files with edit_file (exact old_string → new_string). write_file is for "
         "NEW files or when the user asked for a full rewrite; a whole-file rewrite from memory drops "
         "code you did not remember.\n"
