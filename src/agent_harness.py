@@ -1129,6 +1129,11 @@ class TurnLedger:
         self._events_at_last_progress = 0
         self.finish_reasons: List[Optional[str]] = []
         self.stop_reason: str = "complete"
+        # P1: True when src.plan_tracker.active(scope) found a plan with a
+        # current task for this turn (set by the loop). A short imperative
+        # ("Sigue implementando el plan") on an active plan that ends with
+        # zero tool calls is then a completion failure, not an answer.
+        self.plan_active: bool = False
         self.notes: List[str] = []
         # Per-file verdicts: the cheap syntax check below, enriched in place by
         # the static-analysis gate (src/static_checks.py). One entry per file —
@@ -1500,6 +1505,13 @@ class TurnLedger:
             reasons.append("asked_instead_of_continuing")
         if self.needs_ui_verify() and not self.has_browser_evidence():
             reasons.append("ui_unverified")
+        if self.plan_active and not self.events:
+            try:
+                from src.plan_tracker import looks_like_execute_request
+                if looks_like_execute_request(user_authored_text(self.user_text)):
+                    reasons.append("plan_without_action")
+            except Exception:  # noqa: BLE001
+                pass
         return {
             "ok": not reasons,
             "reasons": reasons,
@@ -1593,8 +1605,17 @@ class TurnLedger:
                 "Open the editor in the browser MCP (browser_navigate + browser_snapshot). "
                 "Do not start Flask/python app.py in the foreground; use #!bg if the server is down."
             )
+        if "plan_without_action" in check["reasons"]:
+            lines.append(
+                "- An implementation plan is active for this project and the user asked you to "
+                "execute it, but you ended the turn with ZERO tool calls. The attachment is not "
+                "background reading: it is work. Call plan_status, then plan_task for the current "
+                "task, then read/edit the real files and run the tests — and mark it with "
+                "plan_done only with evidence from tool results."
+            )
         stall_only = not (
-            {"claims_without_mutation", "fabricated_paths", "claimed_paths_untouched", "ui_unverified"}
+            {"claims_without_mutation", "fabricated_paths", "claimed_paths_untouched", "ui_unverified",
+             "plan_without_action"}
             & set(check["reasons"])
         )
         if permission_only or (permission and stall_only and self.effects):
@@ -1669,6 +1690,11 @@ class TurnLedger:
             parts.append(
                 "cambió archivos de UI sin verificarlos en el navegador" if es else
                 "it changed UI files without verifying them in the browser"
+            )
+        if "plan_without_action" in check["reasons"]:
+            parts.append(
+                "hay un plan activo y se le pidió ejecutarlo, pero terminó sin llamar a ninguna herramienta" if es else
+                "a plan is active and it was asked to execute it, but it ended without calling any tool"
             )
         head = "⚠️ **Verificación del harness**: " if es else "⚠️ **Harness check**: "
         if check["reasons"] == ["claimed_paths_untouched"]:

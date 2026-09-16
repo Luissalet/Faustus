@@ -8239,11 +8239,60 @@ async def _stream_agent_loop_body(
     try:
         _pid = str(_hopts.get("project_id") or "")
         _is_continue = _looks_like_continue_turn(_last_user)
-        if _is_continue or any(
+        _has_inline_attachment = any(
             isinstance(m.get("content"), str) and "=== File:" in (m.get("content") or "")
             for m in (messages or [])
             if m.get("role") == "user"
-        ):
+        )
+        # P1: a big structured plan attached to the message is parsed ONCE
+        # (by hash) into src/plan_tracker.py's per-scope state; the prompt
+        # gets the typed request + a brief + the CURRENT task's full text,
+        # never the 172 KB again ("Reference context received." ×4 in the
+        # Silhouettes series came from the TOC-only trim below).
+        _plan_scope = None
+        _plan_tracker = None
+        try:
+            from src import plan_tracker as _pt
+            if bool(get_setting("agent_plan_tracker", True)):
+                _plan_scope = _pt.scope_for(_pid or None, workspace)
+                if _has_inline_attachment:
+                    _last_user_msg = next(
+                        (m for m in reversed(messages or [])
+                         if m.get("role") == "user" and not m.get("_agent_injected")), None)
+                    _content = _last_user_msg.get("content") if _last_user_msg else None
+                    if isinstance(_content, str):
+                        _found = _pt.find_plan_attachment(_content)
+                        if _found:
+                            _ptitle, _pbody = _found
+                            _plan_tracker = _pt.upsert_from_attachment(_plan_scope, _ptitle, _pbody)
+                            if _plan_tracker:
+                                _task_chars = int(get_setting("agent_plan_tracker_task_chars", 6000) or 6000)
+                                _last_user_msg["content"] = _pt.replace_attachment(
+                                    _content, _plan_tracker, max_task_chars=_task_chars)
+                                _has_inline_attachment = False  # replaced: skip the TOC trim
+                                _ledger.notes.append("plan_tracker:attachment:" + str(_plan_tracker.get("hash") or ""))
+                if _plan_tracker is None:
+                    _plan_tracker = _pt.active(_plan_scope)
+                if _plan_tracker and _pt.current_task(_plan_tracker):
+                    _ledger.plan_active = True
+                    # Offer the plan tools alongside whatever the retriever
+                    # picked: the brief tells the model to use them.
+                    if _relevant_tools is not None and not guide_only:
+                        _relevant_tools = set(_relevant_tools) | (
+                            {"plan_status", "plan_task", "plan_done", "plan_skip", "plan_next"} - set(disabled_tools))
+                    _cur = _pt.current_task(_plan_tracker) or {}
+                    _prog = _pt.progress(_plan_tracker)
+                    yield (
+                        "data: " + json.dumps({
+                            "type": "plan_tracker",
+                            "hash": _plan_tracker.get("hash"), "title": _plan_tracker.get("title"),
+                            "done": _prog.get("done"), "total": _prog.get("total"),
+                            "current": _cur.get("key") or _cur.get("id"),
+                        }) + "\n\n"
+                    )
+        except Exception as _pt_err:
+            logger.debug("[harness] plan_tracker skipped: %s", _pt_err)
+        if _is_continue or _has_inline_attachment:
             _budget_last_user_attachment(messages, force=_is_continue)
         if _pid and bool(get_setting("agent_project_todos", True)):
             from src.agent_tools.coding_tools import (
@@ -8268,6 +8317,19 @@ async def _stream_agent_loop_body(
                         messages, {"role": "system", "content": _cblock}
                     )
                     logger.info("[harness] project continue-turn working set injected")
+        # P1: no attachment this turn but a plan with work left → the brief
+        # (progress + current task + acceptance) instead of nothing.
+        if (_plan_tracker is not None and _ledger.plan_active
+                and not any(isinstance(m.get("content"), str) and "=== Plan task" in m.get("content", "")
+                            for m in (messages or []) if m.get("role") == "user")):
+            try:
+                from src import plan_tracker as _pt
+                messages = _insert_before_latest_user(
+                    messages, {"role": "system", "content": _pt.brief(_plan_tracker, _ledger.language)}
+                )
+                logger.info("[harness] active plan brief injected")
+            except Exception as _pb_err:
+                logger.debug("[harness] plan brief injection skipped: %s", _pb_err)
     except Exception as _pt_inj_err:
         logger.debug("[harness] project todo inject skipped: %s", _pt_inj_err)
     # H2: dependency drift (src/dependency_drift.py). The project declares
@@ -9979,6 +10041,11 @@ async def _stream_agent_loop_body(
                         "performed no tool call. An acknowledgement is not completion. START your next response "
                         "with the concrete read, archive-inspection, edit, or terminal tool call needed to advance "
                         "the original request. Do not summarize the reference and do not stop at a plan."
+                        + (
+                            " An implementation plan is ACTIVE for this project: call plan_status, then "
+                            "plan_task for the current task, and start on it now."
+                            if _ledger.plan_active else ""
+                        )
                     ),
                 })
                 yield (
