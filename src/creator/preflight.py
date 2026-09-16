@@ -163,12 +163,43 @@ class PreflightReport:
 
 # ── WP07 seam (monkeypatchable) ─────────────────────────────────────────────
 
+# Which Creator operation needs which capability axis (WP07 vocabulary), and
+# which ones clone a voice or likeness and therefore need a consent subject.
+OPERATION_AXES: Dict[str, str] = {
+    "generate_image": "image_out", "edit_image": "image_edit", "region_edit": "region_edit",
+    "controlnet": "controlnet", "upscale": "upscale", "describe_image": "vision_in",
+    "generate_video": "video_out", "analyze_video": "video_in",
+    "transcribe": "asr", "tts": "tts", "voice_clone": "tts", "dub": "tts",
+    "generate_music": "music", "analyze_audio": "audio_in", "generate_audio": "audio_out",
+    "generate_text": "text", "chat": "text",
+}
+CONSENT_OPERATIONS: Dict[str, str] = {"voice_clone": "consent_subject", "dub": "consent_subject"}
+
+
 def _capabilities_for(deployment_id: str) -> Any:
-    """``src.creator.capabilities.capabilities_for`` (WP07). Tests that run
-    before WP07 lands monkeypatch this function directly:
-    ``monkeypatch.setattr(preflight, "_capabilities_for", fake)``."""
-    from src.creator.capabilities import capabilities_for
-    return capabilities_for(deployment_id)
+    """Adapter over WP07's ``capability_profile_for_deployment``: turns the
+    fixed-axis profile into the ``operations`` mapping this module reads
+    (an operation is offered when its axis is known or announced — an
+    explicit ``unsupported`` axis withholds it; ``unknown`` withholds too,
+    because a preflight must not promise what nobody has evidence for).
+    Returns None when the deployment is unknown. Tests monkeypatch this
+    function directly."""
+    from src.creator import capabilities as caps
+    profile = caps.capability_profile_for_deployment(deployment_id)
+    axes = getattr(profile, "axes", None) or {}
+    if not axes:
+        return None
+    operations: Dict[str, Dict[str, Any]] = {}
+    for op, axis in OPERATION_AXES.items():
+        ev = axes.get(axis)
+        status = getattr(ev, "status", None)
+        if status in (caps.STATUS_KNOWN, caps.STATUS_ANNOUNCED):
+            entry: Dict[str, Any] = {"axis": axis, "status": status}
+            if op in CONSENT_OPERATIONS:
+                entry["requires_consent"] = True
+                entry["consent_subject_param"] = CONSENT_OPERATIONS[op]
+            operations[op] = entry
+    return {"deployment_id": deployment_id, "operations": operations, "profile": profile.to_dict()}
 
 
 def _validate_params(engine: str, task: str, params: Mapping[str, Any]) -> Any:

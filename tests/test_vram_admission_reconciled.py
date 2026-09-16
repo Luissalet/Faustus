@@ -257,3 +257,28 @@ def test_reconcile_on_start_clears_in_memory_state_and_logs():
     assert result == {"cleared": 1, "pending_cleared": 1}
     assert va.reservations_snapshot() == []
     assert va.pending() == []
+
+
+def test_a_models_own_stale_reservation_never_blocks_its_reload():
+    """Live failure (16-09): a 27B loaded on round 1 left its reservation
+    behind (nothing re-assessed while it was resident), the model was
+    unloaded between the approval card and the resumed turn, and the resumed
+    turn's `try_reserve` counted that slip as another job's room — "does not
+    fit next to what is loaded", with nothing loaded at all."""
+    from src import vram_admission as va
+    root = "http://127.0.0.1:11434"
+    with va._RES_LOCK:
+        va._RESERVATIONS.clear()
+    first = va.try_reserve(root, "big:27b", 18 * 2**30, 21 * 2**30)
+    assert first is not None
+    # The same model asks again: its own slip is superseded, not competed with.
+    assert va.reserved_bytes(root, exclude_model="big:27b") == 0
+    assert va.reserved_bytes(root) == 18 * 2**30
+    second = va.try_reserve(root, "big:27b", 18 * 2**30, 21 * 2**30)
+    assert second is not None and second != first
+    with va._RES_LOCK:
+        assert first not in va._RESERVATIONS
+    # A DIFFERENT model still sees the room as taken.
+    assert va.try_reserve(root, "other:13b", 8 * 2**30, 21 * 2**30) is None
+    with va._RES_LOCK:
+        va._RESERVATIONS.clear()

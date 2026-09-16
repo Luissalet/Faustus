@@ -132,7 +132,7 @@ def _expire_reservations_locked(now: float) -> None:
 
 
 def reserved_bytes(root: str, *, device: Optional[Union[int, str]] = None,
-                    include_devices: bool = False) -> int:
+                    include_devices: bool = False, exclude_model: str = "") -> int:
     """Bytes currently set aside against `root`'s pool (or one GPU of it).
 
     `include_devices=True` (opt-in; default False so nothing changes for
@@ -145,9 +145,15 @@ def reserved_bytes(root: str, *, device: Optional[Union[int, str]] = None,
     key = _reservation_key(root, device)
     with _RES_LOCK:
         _expire_reservations_locked(time.time())
-        total = sum(r["bytes"] for r in _RESERVATIONS.values() if r["key"] == key)
+        # `exclude_model`: a reservation this same model left behind (it
+        # loaded, was unloaded between turns, and nothing re-assessed while it
+        # was resident to release the slip) is our own room, not another
+        # job's — counting it made a 27B "not fit" next to nothing at all.
+        rows = [r for r in _RESERVATIONS.values()
+                if not (exclude_model and r.get("model") == exclude_model)]
+        total = sum(r["bytes"] for r in rows if r["key"] == key)
         if device is None and include_devices:
-            total += sum(r["bytes"] for r in _RESERVATIONS.values()
+            total += sum(r["bytes"] for r in rows
                         if r["key"] != key and r["key"].startswith(f"{croot}|gpu"))
         return total
 
@@ -175,6 +181,11 @@ def try_reserve(root: str, model: str, bytes_needed: int, budget_bytes: int, *,
     now = time.time()
     with _RES_LOCK:
         _expire_reservations_locked(now)
+        # A stale slip for the same model on the same key is superseded by
+        # this one (see reserved_bytes): it never competes with itself.
+        for rid_old in [rid for rid, r in _RESERVATIONS.items()
+                        if r["key"] == key and r.get("model") == model and not r.get("loading")]:
+            _RESERVATIONS.pop(rid_old, None)
         already = sum(r["bytes"] for r in _RESERVATIONS.values() if r["key"] == key)
         if already + max(0, int(bytes_needed)) > max(0, int(budget_bytes)):
             return None
@@ -540,7 +551,7 @@ def assess(root: str, model: str) -> Dict[str, Any]:
     # either, so /api/ps says nothing about it, but the room is already
     # spoken for. Without this, two assess() calls a moment apart both see
     # the full budget and both say "fits" for memory that only exists once.
-    reserved = reserved_bytes(root)
+    reserved = reserved_bytes(root, exclude_model=model)
     budget_alongside = max(0, budget_alongside - reserved)
 
     rate = vram_fit.KV_RATES.get(digests.get(model) or model) or {}

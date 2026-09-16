@@ -190,6 +190,20 @@ def restore_keep_alive(endpoint: str, model: str, keep_alive: str) -> bool:
     url = _root(endpoint) + "/api/generate"
     try:
         import httpx
+        # An empty-prompt generate LOADS the model when it is not resident
+        # (that is Ollama's documented "load" call). Only touch a model that
+        # is actually resident; otherwise there is no keep_alive to restore
+        # and the ping would pull 18 GB back into VRAM for nothing.
+        try:
+            ps = httpx.get(_root(endpoint) + "/api/ps", timeout=3.0).json() or {}
+        except Exception:  # noqa: BLE001
+            ps = {}
+        resident = {_norm_model(str(m.get("name") or m.get("model") or ""))
+                    for m in (ps.get("models") or []) if isinstance(m, dict)}
+        if resident and _norm_model(model) not in resident:
+            return False
+        if not resident and ps:
+            return False
         httpx.post(
             url,
             json={"model": model, "keep_alive": keep_alive, "prompt": "", "stream": False},

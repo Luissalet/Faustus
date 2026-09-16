@@ -90,10 +90,21 @@ def test_restore_never_talks_to_a_remote_provider(monkeypatch):
     monkeypatch.undo()  # real restore_keep_alive
     posted = []
 
+    class _Resp:
+        def __init__(self, data):
+            self._d = data
+
+        def json(self):
+            return self._d
+
     class _Http:
         @staticmethod
         def post(url, **kw):
             posted.append(url)
+
+        @staticmethod
+        def get(url, **kw):
+            return _Resp({"models": [{"name": "qwen:latest"}]})
 
     import sys
     monkeypatch.setitem(sys.modules, "httpx", _Http)
@@ -116,3 +127,29 @@ def test_with_model_defaults_pin_beats_saved_keep_alive(monkeypatch):
     other = llm_core._with_model_defaults("http://127.0.0.1:11434/v1", "judge", None)
     assert other["keep_alive"] == "5m"
     pin.unpin_for_run("r4", tok)
+
+
+def test_restore_skips_a_model_that_is_no_longer_resident(monkeypatch):
+    """An empty-prompt generate LOADS a model: never restore keep_alive on
+    one Ollama already unloaded (that would pull 18 GB back for nothing)."""
+    pin.reset_for_tests()
+    monkeypatch.undo()
+    posted = []
+
+    class _Resp:
+        def json(self):
+            return {"models": [{"name": "other:7b"}]}
+
+    class _Http:
+        @staticmethod
+        def post(url, **kw):
+            posted.append(url)
+
+        @staticmethod
+        def get(url, **kw):
+            return _Resp()
+
+    import sys
+    monkeypatch.setitem(sys.modules, "httpx", _Http)
+    assert pin.restore_keep_alive("http://127.0.0.1:11434/v1", "qwen", "5m") is False
+    assert posted == []

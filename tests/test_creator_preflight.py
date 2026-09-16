@@ -485,3 +485,36 @@ def test_route_approve_rejects_stale_digest_after_material_change(route_client):
     resp = client.post(f"/api/creator/preflight/{digest}/approve", json=changed_body)
     assert resp.status_code == 409
     assert resp.json()["detail"]["reason"] == "digest_mismatch"
+
+
+def test_capabilities_seam_adapts_wp07_axes_to_operations(monkeypatch):
+    """The real WP07 profile (axes) reaches preflight as the `operations`
+    map: a known image_out axis offers generate_image, an unknown tts axis
+    withholds voice_clone, and a clone operation carries its consent key."""
+    from src.creator import capabilities as caps, preflight as pf
+
+    class _Ev:
+        def __init__(self, status):
+            self.status = status
+
+    class _Profile:
+        axes = {"image_out": _Ev(caps.STATUS_KNOWN), "tts": _Ev(caps.STATUS_UNKNOWN),
+                "text": _Ev(caps.STATUS_ANNOUNCED)}
+
+        def to_dict(self):
+            return {"axes": list(self.axes)}
+
+    monkeypatch.setattr(caps, "capability_profile_for_deployment", lambda d, **k: _Profile())
+    out = pf._capabilities_for("dep-1")
+    assert "generate_image" in out["operations"]
+    assert "chat" in out["operations"]
+    assert "voice_clone" not in out["operations"]
+    assert pf._missing_capability("voice_clone", "ollama", out, None)
+
+    class _Profile2(_Profile):
+        axes = {"tts": _Ev(caps.STATUS_KNOWN)}
+
+    monkeypatch.setattr(caps, "capability_profile_for_deployment", lambda d, **k: _Profile2())
+    out2 = pf._capabilities_for("dep-2")
+    requires, key = pf._consent_requirement(out2, "voice_clone")
+    assert requires and key == "consent_subject"
