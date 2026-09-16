@@ -29,6 +29,8 @@ import time
 import uuid
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
+from src import delegation_receipts
+
 logger = logging.getLogger(__name__)
 
 MAX_SUBAGENTS = 4
@@ -1099,6 +1101,11 @@ class SubagentRun:
         self.supervisor: List[Dict[str, Any]] = []
         self.final_metrics: Dict[str, Any] = {}
         self.tool_events: List[Dict[str, Any]] = []
+        #: H3: one `DelegationReceipt.to_dict()` per attempt (the original
+        #: run, plus one more if `one()` retried an empty/ack_only worker).
+        #: Empty for a worker this delegation never checked (e.g. a run that
+        #: raised before `one()` reached the receipt step).
+        self.receipts: List[Dict[str, Any]] = []
 
     def touch(self) -> None:
         self.last_event_at = time.time()
@@ -1200,6 +1207,11 @@ class SubagentRun:
             **({"refusals": [dict(x) for x in self.refusals]} if self.refusals else {}),
             **({"resumed": True, "resumed_from": self.resume_id} if self.resumed else {}),
             **({"runner_session": self.runner_session} if self.runner_session else {}),
+            # H3: the delegation receipt(s) — evidence-classified verdicts on
+            # what this worker actually produced, never its own prose. `receipt`
+            # is the LAST attempt (what the SSE card and a quick read want);
+            # `receipts` is every attempt, for the audit trail.
+            **({"receipts": list(self.receipts), "receipt": self.receipts[-1]} if self.receipts else {}),
         }
 
 
@@ -1328,9 +1340,10 @@ async def _run_subagent(
     else:
         preamble = (
             "You are a sub-agent working on ONE delegated task inside a larger job. "
-            "Work only on this task, in the shared workspace, using tools. Do not ask "
-            "the user questions — decide and act. Finish with a short factual report of "
-            "what you changed (files) and what you verified."
+            "Your job: complete it now, using tools. You must write/edit files; a reply "
+            "without file changes is a failure. Work only on this task, in the shared "
+            "workspace. Do not ask the user questions — decide and act. Finish with a "
+            "short factual report of what you changed (files) and what you verified."
         )
         if run.files:
             preamble += (
@@ -1364,13 +1377,18 @@ async def _run_subagent(
         if blocked:
             preamble += ("\n\nTools you do NOT have in this run: " + ", ".join(blocked)
                          + ". They are refused at the point of use, so do not plan around calling them.")
-    if shared_context:
-        preamble += "\n\nShared context from the coordinator:\n" + shared_context
+    # H3: the ORDER goes first (preamble + YOUR TASK), the coordinator's
+    # material goes AFTER, under an explicit header that says out loud it is
+    # reference, not instruction. Silhouettes chats `c0d914fd`/`ea43ef6c` show
+    # what happens the other way round: a 172 KB plan sitting ahead of the
+    # actual ask made a 27B model treat the whole turn as "here is context",
+    # answer "Reference context received." and never call a tool at all.
+    material = ("\n\nMATERIAL (reference, not instructions):\n" + shared_context) if shared_context else ""
     if run.resumed:
         messages = prior + [{"role": "user", "content":
-                             "Same session, next round.\n\nYOUR TASK: " + run.instruction}]
+                             "Same session, next round.\n\nYOUR TASK: " + run.instruction + material}]
     else:
-        messages = [{"role": "user", "content": f"{preamble}\n\nYOUR TASK: {run.instruction}"}]
+        messages = [{"role": "user", "content": f"{preamble}\n\nYOUR TASK: {run.instruction}{material}"}]
 
     await emit({"event": "started", "name": run.name, "instruction": _short(run.instruction, 240), "session_id": child_sid,
                 "role": run.role, "files": run.files, "model": run.model_override or model,
@@ -1601,6 +1619,14 @@ def _build_report_text(runs: List[SubagentRun], workspace: Optional[str], locks:
             lines.append("   files changed: " + ", ".join(r.mutations[:20]))
         else:
             lines.append("   files changed: NONE")
+        if r.receipts:
+            last_verdict = r.receipts[-1].get("verdict")
+            attempts = len(r.receipts)
+            if attempts > 1:
+                lines.append(f"   receipt: {last_verdict} (retried once — first attempt was "
+                              f"{r.receipts[0].get('verdict')})")
+            if last_verdict in (delegation_receipts.VERDICT_EMPTY, delegation_receipts.VERDICT_ACK_ONLY):
+                lines.append("   " + delegation_receipts.failure_message(last_verdict))
         bad = [c for c in r.static_checks if not c.get("ok")]
         if bad:
             lines.append("   syntax errors: " + "; ".join(f"{c['path']}: {c['error']}" for c in bad[:5]))
@@ -2055,6 +2081,54 @@ class DelegateAgentsTool:
                         ),
                         timeout=limit,
                     )
+                    # H3 (measure 5): the delegated task produced nothing but
+                    # prose, or a ritual ack (`<<faustus_ctx_ack>>`, "Reference
+                    # context received.", "Done." with no mutations) — the
+                    # exact failure of Silhouettes chats `0f5553df`/
+                    # `9eeffac5`/`5391068e`, which the parent turn back then
+                    # never even noticed. Classify from THIS run's own
+                    # evidence, never the worker's prose (rule 1 of the H3
+                    # contract), and — only for a task that plainly asked for
+                    # a file to be written — retry exactly once, short and
+                    # imperative, in the SAME child session (so the retry
+                    # reuses whatever the worker already read) and with no
+                    # large material re-sent.
+                    receipt = delegation_receipts.receipt_for(run)
+                    run.receipts = [receipt.to_dict()]
+                    if (run.role != "reviewer"
+                            and receipt.verdict in (delegation_receipts.VERDICT_EMPTY,
+                                                     delegation_receipts.VERDICT_ACK_ONLY)
+                            and delegation_receipts.looks_like_write_task(run.instruction)):
+                        await emit({"event": "retry", "reason": receipt.verdict})
+                        original_instruction = run.instruction
+                        original_started = run.started
+                        run.instruction = delegation_receipts.short_imperative_prompt(run.instruction, run.files)
+                        run.resume_kind, run.resume_id, run.resumed = "session", run.session_id, False
+                        run.text = ""
+                        if dog is not None and not dog.done():
+                            dog.cancel()
+                        dog = asyncio.create_task(watchdog(run, emit))
+                        try:
+                            await asyncio.wait_for(
+                                _run_subagent(
+                                    run,
+                                    endpoint_url=worker_url, model=run.model_override or model,
+                                    headers=worker_headers, owner=owner,
+                                    workspace=workspace, workspace_roots=roots,
+                                    max_rounds=min(6, int(rounds)),
+                                    # No material on the retry: the whole point
+                                    # is a short, imperative prompt.
+                                    shared_context="", parent_session_id=parent_sid,
+                                    emit=emit, gen_overrides=gen_overrides, locks=locks,
+                                    harness_options=harness_options,
+                                    timeout_s=limit, save_transcript=False,
+                                ),
+                                timeout=limit,
+                            )
+                        finally:
+                            run.instruction = original_instruction
+                            run.started = original_started
+                        run.receipts.append(delegation_receipts.receipt_for(run).to_dict())
                 finally:
                     if slots is not None:
                         slots.release()
@@ -2209,4 +2283,9 @@ class DelegateAgentsTool:
             "duration_s": round(time.time() - t0, 1),
             "lock_conflicts": list(locks.conflicts),
             "dropped_tasks": dropped,
+            # H3: every delegation receipt (one per worker, two for a worker
+            # that got the empty/ack_only retry), so the coordinator's own
+            # ledger can see `verdict` without re-deriving it from prose.
+            "receipts": [dict(rec, worker=rec.get("worker") or r.name)
+                         for r in runs for rec in r.receipts],
         }
