@@ -552,6 +552,24 @@ _register(
     ToolEffect.READ_PRIVATE,
     result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
 )
+# R3 (Reach wave, src/agent_tools/fanout_tools.py): fan one prompt across N
+# candidates, each isolated the same way alt_start's alternatives are.
+# `fanout_status`/`fanout_results` only read this run's own checkpoint
+# state and diff stats -- READ_WORKSPACE, same class as `alt_compare`.
+# `fanout_run` creates N isolated alternatives and runs a worker inside
+# each (same class as `alt_start` plus `delegate_agents`); `fanout_apply`
+# writes into the user's own workspace files (same class as `alt_apply`).
+# Both WRITE_WORKSPACE, neither touches a remote host.
+_register(
+    {"fanout_status", "fanout_results"},
+    ToolEffect.READ_WORKSPACE,
+    result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED,
+)
+_register(
+    {"fanout_run", "fanout_apply"},
+    ToolEffect.WRITE_WORKSPACE,
+    result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED,
+)
 
 
 TOOL_CAPABILITIES: Mapping[str, ToolCapabilities] = MappingProxyType(dict(_REGISTRY))

@@ -246,6 +246,14 @@ BUILTIN_TOOL_DESCRIPTIONS: Dict[str, str] = {
     "alt_start": "Start a new experiment: try more than one approach to the same task, each fully isolated (a git worktree, a directory snapshot, or a text snapshot). Returns the experiment id and each alternative's id — always cite the experiment id back. Use for 'let's try this two different ways', 'try it again without losing the first attempt', 'compare a quick fix against a proper refactor'.",
     "alt_compare": "Diff every alternative of an experiment against its shared base, and see which files more than one alternative touches. Use for 'how do these two attempts differ', 'which one changed less', 'did they touch the same files'. Read-only.",
     "alt_apply": "Merge one alternative's changes into the user's main copy — a three-way merge that never discards a manual edit made there since the experiment started. On a conflict nothing is written; relay the conflicting files to the user rather than guessing. Use for 'go with the second one', 'apply that alternative'. Refused unless the user explicitly approved.",
+    # R3 (Reach wave) — fan-out: the same prompt raced across N candidate
+    # models/endpoints, each isolated like alt_start's alternatives, scored
+    # automatically (tests/harness/diff size/cost/latency) instead of a
+    # human eyeballing the diffs the way orca leaves it.
+    "fanout_run": "Race the SAME prompt across N candidate models/endpoints (e.g. a cheap local model vs. a paid remote one), each isolated in its own alternative so they never collide. Returns a run_id immediately — poll with fanout_status/fanout_results. Use for 'try this with both models and see which does better', 'run this on Qwen and GPT-4 and compare', 'which model handles this task best'.",
+    "fanout_status": "Per-candidate state (queued/running/done/error) of a fanout_run. Use for 'is the fan-out done yet', 'how are the candidates doing'. Read-only.",
+    "fanout_results": "Ranked scoreboard for a fanout_run — tests passing, harness/error state, diff size, cost, latency, each weighted, with a reasoning line per candidate — plus each candidate's diff. Use for 'which one won', 'show me the comparison', 'why did that one score higher'. Read-only.",
+    "fanout_apply": "Merge one fanout_run candidate's changes into the user's main copy — the same three-way merge alt_apply uses. Call once to preview, again with user_confirmed true once the user approves. Use for 'go with the local model's version', 'apply the winner'. Refused unless the user explicitly approved.",
 }
 
 

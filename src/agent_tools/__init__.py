@@ -60,6 +60,9 @@ from .alternatives_tools import (
     AltStartTool, AltCompareTool, AltApplyTool,
 )
 from .code_mode_tool import RunCodeTool
+from .fanout_tools import (
+    FanoutRunTool, FanoutStatusTool, FanoutResultsTool, FanoutApplyTool,
+)
 from .context_overflow_tool import ReadOverflowTool
 from .artifact_read_tool import ReadArtifactTool
 
@@ -155,6 +158,13 @@ TOOL_HANDLERS = {
     # subprocess round instead of one model round trip per call. See
     # src/code_mode/ and src/agent_tools/code_mode_tool.py.
     "run_code": RunCodeTool().execute,
+    # R3 (Reach wave): fan one prompt across N candidate models/endpoints,
+    # each isolated via src.alternatives, ranked by src.fanout.score. See
+    # src/fanout/ and src/agent_tools/fanout_tools.py.
+    "fanout_run": FanoutRunTool().execute,
+    "fanout_status": FanoutStatusTool().execute,
+    "fanout_results": FanoutResultsTool().execute,
+    "fanout_apply": FanoutApplyTool().execute,
 }
 # Config/integration admin tools (manage_endpoints/mcp/webhooks/tokens/settings).
 TOOL_HANDLERS.update(ADMIN_TOOL_HANDLERS)
@@ -246,7 +256,9 @@ TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_fi
              "req_propose", "req_link",
              # Isolated, comparable alternatives (CMP-13, W2-G) --
              # src/agent_tools/alternatives_tools.py.
-             "alt_start", "alt_compare", "alt_apply"} | BUILTIN_EMAIL_TOOLS | DESKTOP_TOOLS | SEMANTIC_TOOLS
+             "alt_start", "alt_compare", "alt_apply",
+             # R3 (Reach wave): fan-out -- src/agent_tools/fanout_tools.py.
+             "fanout_run", "fanout_status", "fanout_results", "fanout_apply"} | BUILTIN_EMAIL_TOOLS | DESKTOP_TOOLS | SEMANTIC_TOOLS
 
 ToolBlock = namedtuple("ToolBlock", ["tool_type", "content"])
 
