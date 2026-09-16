@@ -11,13 +11,17 @@ from __future__ import annotations
 import pytest
 
 
-@pytest.mark.xfail(strict=True, reason="app.py wiring for setup_evolution_routes() "
-                                       "is scratchpad/paridad_wave2/U5_wiring.md, not "
-                                       "owned by U5 in this lot")
 def test_evolution_routes_are_registered_in_app():
     import app as app_module
 
-    paths = {route.path for route in app_module.app.routes}
+    def _walk(routes):
+        for r in routes:
+            if hasattr(r, "path"):
+                yield r.path
+            inner = getattr(r, "original_router", None) or getattr(r, "router", None)
+            if inner is not None and hasattr(inner, "routes"):
+                yield from _walk(inner.routes)
+    paths = set(_walk(app_module.app.routes))
     assert "/api/harness/revisions" in paths, (
         "routes/evolution_routes.py::setup_evolution_routes() is not yet "
         "app.include_router()'d in app.py — see U5_wiring.md")

@@ -18,11 +18,6 @@ import pytest
 REPO = Path(__file__).resolve().parents[1]
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "routes/skill_source_routes.py is not yet included in app.py (app.py is "
-    "not an owned file for this lot) — see scratchpad/paridad_wave2/"
-    "U3_wiring.md for the exact two-line diff. The router itself, and every "
-    "endpoint it exposes, are already fully tested standalone."))
 def test_skill_source_routes_registered_on_the_real_app():
     text = (REPO / "app.py").read_text(encoding="utf-8")
     assert "setup_skill_source_routes" in text

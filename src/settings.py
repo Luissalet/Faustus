@@ -384,6 +384,13 @@ DEFAULT_SETTINGS = {
     # POSIX when the daemon does not answer. `strict` refuses on POSIX only.
     "agent_sandbox_execution": False,
     "agent_sandbox_mode": "auto",
+    # A persistent, per-session container (src/sandbox_provider.py) instead
+    # of one --rm container per call. Off by default.
+    "agent_sandbox_persistent_session": False,
+    # What the next command does when that session's container is found
+    # missing (removed outside Faustus, e.g. `docker rm`): recreate_empty =
+    # fresh, empty sandbox, and the result says what was lost; fail = refuse.
+    "sandbox_missing_policy": "recreate_empty",
     "agent_repo_map": True,
     "agent_repo_map_tokens": 1500,
     # An un-ranged read_file on a file too big to return whole (src/read_plan.py):

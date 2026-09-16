@@ -15,8 +15,6 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from src.agent_tools import ToolBlock, TOOL_TAGS
-from src.agent_tools.context_overflow_tool import TOOL_SCHEMA as READ_OVERFLOW_TOOL_SCHEMA
-from src.agent_tools.artifact_read_tool import TOOL_SCHEMA as READ_ARTIFACT_TOOL_SCHEMA
 from src.tool_parsing import _TOOL_NAME_MAP
 from src.tool_security import BUILTIN_EMAIL_TOOLS
 
@@ -983,8 +981,59 @@ FUNCTION_TOOL_SCHEMAS = [
         }
     },
     # ── A15 / A12: read back what compaction or offload took out of context ──
-    READ_OVERFLOW_TOOL_SCHEMA,
-    READ_ARTIFACT_TOOL_SCHEMA,
+    # (Literal dicts on purpose: tests/test_tool_index_schema_parity.py and
+    # tests/test_objective_tool_schema.py literal_eval this list; the same
+    # dicts live next to their handlers as TOOL_SCHEMA and a test keeps both
+    # copies equal.)
+    {
+        "type": "function",
+        "function": {
+            "name": "read_overflow",
+            "description": "Re-read the ORIGINAL body of a tool result that context compaction spilled to disk, by the id in its in-prompt stub (\"[overflow id=<sha256> ...]\"). Use this when you need a detail the stub's short preview omitted. The re-read is recorded with its cost (characters/estimated tokens) against this session's run.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "content_sha256": {
+                        "type": "string",
+                        "description": "The overflow id from the stub, e.g. the 64-hex-char value after \"overflow id=\"."
+                    }
+                },
+                "required": [
+                    "content_sha256"
+                ]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "read_artifact",
+            "description": "Read back the full text of an artifact by id — a character range (start/end, 0-based, end exclusive) or a `query` substring with surrounding context. Use it to read past a '[... chars omitted; open the artifact ...]' truncation left in an earlier tool result.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "artifact_id": {
+                        "type": "string"
+                    },
+                    "start": {
+                        "type": "integer",
+                        "description": "0-based start offset (range mode)."
+                    },
+                    "end": {
+                        "type": "integer",
+                        "description": "Exclusive end offset (range mode)."
+                    },
+                    "query": {
+                        "type": "string",
+                        "description": "Case-insensitive substring to locate instead of a range."
+                    }
+                },
+                "required": [
+                    "artifact_id"
+                ]
+            }
+        }
+    },
     # ── Code Mode (T6, A10/A11): compose several tool calls in one round ────
     {
         "type": "function",

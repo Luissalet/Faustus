@@ -25,9 +25,9 @@
   "scripts": {
     "build": "npm run build:esm && npm run build:cjs && npm run build:types",
     "build:esm": "tsc -p tsconfig.esm.json",
-    "build:cjs": "tsc -p tsconfig.cjs.json && node scripts/rename-cjs.mjs dist/cjs",
+    "build:cjs": "node scripts/tsc-node10.mjs tsconfig.cjs.json && node scripts/rename-cjs.mjs dist/cjs",
     "build:types": "tsc -p tsconfig.types.json",
-    "build:test": "tsc -p tsconfig.test.json && node scripts/rename-cjs.mjs dist-test",
+    "build:test": "node scripts/tsc-node10.mjs tsconfig.test.json && node scripts/rename-cjs.mjs dist-test",
     "test": "npm run build:test && node --test dist-test/test/*.test.cjs",
     "gen:events": "node scripts/gen-events.mjs",
     "check": "node scripts/gen-events.mjs --check && tsc --noEmit"

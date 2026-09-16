@@ -798,6 +798,9 @@ memory_router = setup_memory_routes(memory_manager, session_manager, memory_vect
 app.include_router(memory_router)
 from routes.skills_routes import setup_skills_routes
 app.include_router(setup_skills_routes(skills_manager))
+# A25: git-backed skill sources (pinned revision, verified update, rollback).
+from routes.skill_source_routes import setup_skill_source_routes
+app.include_router(setup_skill_source_routes())
 
 # Phase 0 contracts: the backend catalogue and a pure manifest validator.
 # Read-only by construction — no DB, no filesystem, no process.
@@ -826,6 +829,10 @@ app.include_router(setup_approvals_routes())
 # that is gated by require_human on the approvals routes.
 from routes.workflows_routes import setup_workflows_routes
 app.include_router(setup_workflows_routes())
+# A26-A30: harness evolution — propose/validate/evaluate/promote a
+# CandidatePatch against the running harness's own versioned revisions.
+from routes.evolution_routes import setup_evolution_routes
+app.include_router(setup_evolution_routes())
 
 # The Context Engine: what a model is told, and the ledger of what it was told.
 # Reads are owner-scoped and open to the tool layer; writes are admin. The two

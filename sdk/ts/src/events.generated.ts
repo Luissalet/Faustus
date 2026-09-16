@@ -50,6 +50,8 @@ export interface ToolOutputEvent {
   evidence_refs?: unknown[];
   execution_target?: Record<string, unknown>;
   call_id?: string;
+  duration_ms?: number;
+  turn_elapsed_ms?: number;
   sequence?: number;
   trace_id?: string;
   step_id?: string;

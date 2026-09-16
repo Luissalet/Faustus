@@ -34,7 +34,8 @@ from src.settings import DEFAULT_SETTINGS, RETIRED_SETTING_KEYS
 SCHEMA_KEY_RE = re.compile(r"^(agent_|browser_|desktop_)")
 # Agent-adjacent keys that live under other prefixes but belong on this page.
 EXTRA_KEYS: tuple[str, ...] = ("tool_path_extra_roots", "vision_enabled", "vision_model",
-                               "dispatch_model", "dispatch_endpoint_id", "gpu_placement_prefer")
+                               "dispatch_model", "dispatch_endpoint_id", "gpu_placement_prefer",
+                               "sandbox_missing_policy")
 
 FIELD_TYPES: tuple[str, ...] = ("bool", "int", "float", "text", "select", "list", "secret")
 _NUMERIC_TYPES = ("int", "float")
@@ -157,6 +158,13 @@ GROUPS: list[dict[str, Any]] = [
                     "strict = on POSIX, refuse instead of falling back to the host. Windows "
                     "still runs on the host.",
                     ["auto", "strict"]),
+            _bool("agent_sandbox_persistent_session", "Persistent per-session sandbox",
+                  "Reuse one long-lived container per session (src/sandbox_provider.py) "
+                  "instead of a fresh one per command. Off by default."),
+            _select("sandbox_missing_policy", "If the session sandbox disappears",
+                    "recreate_empty = start a fresh, empty sandbox and say so (the result "
+                    "lists what is known to be lost). fail = refuse the next command instead.",
+                    ["recreate_empty", "fail"]),
             _bool("agent_workspace_no_memory", "Skip memory on coding turns",
                   "Do not retrieve personal memories for workspace coding turns; local models weave them "
                   "into the code."),

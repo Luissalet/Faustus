@@ -22,12 +22,7 @@ columna `Test` de esa fila.
   (PR1 solo entrega el manifiesto y el ejecutor, no los mecanismos de
   A01-A36); no implica que el caso esté descartado.
 
-Resumen tras fusionar T1+T2+T3+S3+T4-ola1 (2026-09-16): **10 verde** (A01–A07,
-A08, A09, A20), 26 `pendiente`. En la entrega de T1 (PR1) era **1 verde**
-(A03), **0 xfail**, **35 pendiente**. De las 35 pendientes, 6 estaban
-asignadas por `CONTRATO_PARIDAD_1.md` a los lotes T2 (A01, A04, A07) y T3
-(A02, A05, A06); T4 (ola 1 de paridad, `CONTRATO.md`) cierra A08/A09 (tool
-discovery); las 27 restantes quedan abiertas para un PR posterior.
+Resumen tras fusionar las olas 1 y 2 de paridad (2026-09-16): **36 verde** (A01–A36), 0 `xfail`, 0 `pendiente`. Cada fila enlaza el test real que la cierra; las reservas honestas que quedan (publicación del SDK en un registro, instalación en máquina limpia no automatizable aquí, «compartir sesión» como hueco abierto, sandbox git-backed para skills) están en la columna «Qué falta» de su fila y en `MATRIZ_PARIDAD.md`.
 
 | ID | Área | Estado | Test | Qué falta |
 |---|---|---|---|---|

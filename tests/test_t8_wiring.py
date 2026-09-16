@@ -25,3 +25,16 @@ def test_read_overflow_tool_is_registered_in_the_live_tool_loop():
     assert "read_overflow" in names, (
         "read_overflow missing from tool_schemas.FUNCTION_TOOL_SCHEMAS"
     )
+
+
+def test_inlined_read_tool_schemas_match_their_handler_copies():
+    """tool_schemas.py holds literal copies (the parity tests literal_eval the
+    list); the handler modules hold the originals. Drift here would hand the
+    model one schema and validate calls against another."""
+    import src.agent_tools  # noqa: F401 - import order (see tool_schemas' cycle)
+    from src.tool_schemas import FUNCTION_TOOL_SCHEMAS
+    from src.agent_tools.context_overflow_tool import TOOL_SCHEMA as RO
+    from src.agent_tools.artifact_read_tool import TOOL_SCHEMA as RA
+    names = {s["function"]["name"]: s for s in FUNCTION_TOOL_SCHEMAS}
+    assert names["read_overflow"] == RO
+    assert names["read_artifact"] == RA

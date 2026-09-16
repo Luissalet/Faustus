@@ -401,6 +401,24 @@ EXAMPLES: Dict[str, List[str]] = {
         "check with me before picking an approach",
         "dame opciones para elegir en vez de asumir",
     ],
+    "run_code": [
+        "read these five files and tell me which ones import requests",
+        "compón varias llamadas en un solo paso",
+        "run a small script that greps the repo and reads the matches",
+        "haz varias lecturas y decide en una sola ronda",
+    ],
+    "read_overflow": [
+        "read the full output that was truncated earlier",
+        "lee el cuerpo completo de ese resultado que se recortó",
+        "open the spilled tool result by its overflow id",
+        "necesito el detalle que la compactación omitió",
+    ],
+    "read_artifact": [
+        "open the artifact from that truncated result",
+        "abre el artefacto por su id y busca 'error'",
+        "read lines 2000 to 3000 of the stored output",
+        "lee el artefacto completo que guardó el descargo",
+    ],
     "lookup_tools": [
         "qué herramienta uso para enviar un correo",
         "load the schema for git_commit",

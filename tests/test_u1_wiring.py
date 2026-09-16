@@ -15,11 +15,5 @@ import pytest
 import src.settings as settings_mod
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "sandbox_missing_policy is not yet registered in "
-    "src.settings.DEFAULT_SETTINGS (src/settings.py is not an owned file for "
-    "this lot) — see scratchpad/paridad_wave2/U1_wiring.md for the exact diff. "
-    "Runtime reads already default safely via get_setting(); only saving an "
-    "explicit value through the settings API is blocked until this lands."))
 def test_sandbox_missing_policy_is_registered_in_the_settings_schema():
     assert "sandbox_missing_policy" in settings_mod.DEFAULT_SETTINGS

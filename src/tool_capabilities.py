@@ -536,6 +536,22 @@ _register(
     {"lookup_tools"},
     ToolEffect.READ_PRIVATE,
 )
+_register(
+    # Code Mode (A10/A11): runs model-written code that composes other tool
+    # calls through the same dispatcher; the program's own output is
+    # whatever those tools returned, so it inherits the loosest integrity.
+    {"run_code"},
+    ToolEffect.EXECUTE_CODE,
+    result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
+)
+_register(
+    # Re-acquire a tool body compaction spilled (A15) or an oversized result
+    # the offload stored (A12): reads Faustus's own store, but the bytes are
+    # whatever the original tool returned — external content stays external.
+    {"read_overflow", "read_artifact"},
+    ToolEffect.READ_PRIVATE,
+    result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
+)
 
 
 TOOL_CAPABILITIES: Mapping[str, ToolCapabilities] = MappingProxyType(dict(_REGISTRY))
