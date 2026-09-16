@@ -134,7 +134,26 @@ def _setup_whisper(monkeypatch) -> Tuple[AdapterPort, str, Callable[[], int]]:
     return adapter, "fake_engine", (lambda: len(whisper_mod._JOBS))
 
 
-_CONTRACT_SETUPS = {"comfyui": _setup_comfyui, "ffmpeg": _setup_ffmpeg, "whisper": _setup_whisper}
+def _setup_tts(monkeypatch) -> Tuple[AdapterPort, str, Callable[[], int]]:
+    """WP18's tts adapter — a deterministic fake synthesis function per
+    known engine, exactly like `_setup_whisper`'s exploding model loader:
+    the generic contract checks below never need real audio, only a
+    protocol-shaped answer."""
+    from src.creator.adapters import tts as tts_mod
+
+    def _fake_synth(text, raw_voice, language, speed):
+        return b"RIFF____WAVEfmt ", "audio/wav"
+
+    synth = {name: _fake_synth for name in tts_mod.known_engines()}
+    probe = lambda engine: {"installed": True, "detail": "contract-fake"}
+    adapter = tts_mod.TtsAdapter(synth=synth, probe=probe)
+    return adapter, "fake_engine", (lambda: len(tts_mod._JOBS))
+
+
+_CONTRACT_SETUPS = {
+    "comfyui": _setup_comfyui, "ffmpeg": _setup_ffmpeg, "whisper": _setup_whisper,
+    "tts": _setup_tts,
+}
 
 #: (op, params, inputs) for a plan this adapter considers well-formed —
 #: used by the generic "plan()/submit() are pure/classify correctly" checks
@@ -145,6 +164,7 @@ _VALID_OP_FOR = {
     "comfyui": ("sdxl_txt2img", {}, []),
     "ffmpeg": ("trim", {"start_seconds": 0, "duration_seconds": 1}, ["occ_1"]),
     "whisper": ("transcribe", {}, ["occ_1"]),
+    "tts": ("tts", {"voice_id": "kokoro:af_heart", "text": "hello there"}, []),
 }
 
 

@@ -918,6 +918,9 @@ from routes.creator_timeline_routes import setup_creator_timeline_routes  # WP13
 app.include_router(setup_creator_timeline_routes())
 from routes.creator_asr_routes import setup_creator_asr_routes  # WP15
 app.include_router(setup_creator_asr_routes())
+from routes.creator_voice_routes import setup_creator_voice_routes, setup_creator_consent_routes  # WP18
+app.include_router(setup_creator_voice_routes())
+app.include_router(setup_creator_consent_routes())
 
 # What this machine can actually do. Every probe already existed; this is the
 # one place that asks them all and puts the fix in the sentence.
