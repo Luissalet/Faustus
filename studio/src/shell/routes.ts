@@ -25,6 +25,7 @@ import {
   Columns3,
   Users,
   Scale,
+  Wand2,
 } from 'lucide-react';
 
 /**
@@ -69,6 +70,10 @@ export const TOOLS: Tool[] = [
   // CONTRATO_CONECTORES Lote F3: the Hoard presets (Jobhunter, Writer…) and
   // every other MCP server, unified — /api/app-connectors, not a second store.
   { path: '/connectors', label: 'Connectors', icon: Plug },
+  // WP05: shown only once `useCreatorAvailable()` (adapters/creator.ts)
+  // confirms `creator_enabled` is on -- the Rail filters this entry out by
+  // path, same list either way so the palette and SERVER_ROUTES agree.
+  { path: '/creator', label: 'Creator', icon: Wand2 },
   { path: '/notes', label: 'Notes', icon: StickyNote },
   { path: '/source-control', label: 'Source control', icon: GitBranch },
   { path: '/calendar', label: 'Calendar', icon: CalendarDays },
@@ -124,6 +129,7 @@ export const SERVER_ROUTES = [
   '/cookbook',
   '/context',
   '/workflows',
+  '/creator',
   // The paths the interface this one replaced owned. Still served, still in
   // bookmarks; the router redirects each to the screen that took over.
   '/gallery',

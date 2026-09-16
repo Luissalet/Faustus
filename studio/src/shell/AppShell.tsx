@@ -14,6 +14,7 @@ import { DESTINATIONS, TOOLS } from './routes';
 import { useBadges } from './badges';
 import { ensureOverlayRoot, removeOverlayRoot } from './overlayRoot';
 import { useShell } from './store';
+import { useCreatorAvailable } from '../adapters/creator';
 
 /* Inicio is the eager bundle; every other screen arrives as a route chunk
    the first time it is opened, so the eager bundle stays inside the 350 KB
@@ -49,6 +50,7 @@ const SourceControlScreen = lazy(() => import('../screens/SourceControl').then((
 const ConnectorsScreen = lazy(() => import('../screens/connectors/Connectors').then((m) => ({ default: m.ConnectorsScreen })));
 const AlternativesScreen = lazy(() => import('../screens/alternatives/AlternativesScreen').then((m) => ({ default: m.AlternativesScreen })));
 const WorkflowsScreen = lazy(() => import('../screens/workflows/WorkflowsScreen').then((m) => ({ default: m.WorkflowsScreen })));
+const CreatorScreen = lazy(() => import('../screens/creator/CreatorScreen').then((m) => ({ default: m.CreatorScreen })));
 const OnboardingScreen = lazy(() => import('../screens/Onboarding'));
 /* cmdk rides in with the first Ctrl+K, not with the page. */
 const CommandPalette = lazy(() => import('./CommandPalette').then((m) => ({ default: m.CommandPalette })));
@@ -74,6 +76,12 @@ function Rail() {
   const badges = useBadges();
   const { pathname } = useLocation();
   const navRef = useRef<HTMLElement>(null);
+  // WP05: `/creator`'s entry only shows once the one-shot capability probe
+  // confirms `creator_enabled` is on (CONTRATO.md rule 5) -- `null` while
+  // that check is in flight is treated as "not yet", same as `false`, so
+  // the rail never flashes the entry on and then off.
+  const creatorAvailable = useCreatorAvailable();
+  const tools = creatorAvailable ? TOOLS : TOOLS.filter((tool) => tool.path !== '/creator');
   const [indicator, setIndicator] = useState<{ x: number; y: number } | null>(null);
   const [rail, setRail] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
 
@@ -165,7 +173,7 @@ function Rail() {
 
       <div className="fs-nav__tools" aria-label={t('Tools')}>
         <p className="fs-nav__tools-head">{t('Tools')}</p>
-        {TOOLS.map((tool) => (
+        {tools.map((tool) => (
           <NavLink key={tool.path} to={tool.path} className="fs-nav__tool" data-testid={`tool-${tool.label.toLowerCase()}`}>
             <tool.icon size={13} aria-hidden="true" />
             <span>{t(tool.label)}</span>
@@ -199,7 +207,7 @@ function Rail() {
 function RouteStage() {
   const { pathname, search } = useLocation();
   const editing = (pathname.startsWith('/library/edit') && /[?&](img|draft|new)=/.test(search)) || /^\/documents\/[^/]+/.test(pathname);
-  const screen = pathname.startsWith('/studio') ? 'studio' : editing ? 'editor' : pathname.startsWith('/activity') || pathname.startsWith('/email') || pathname.startsWith('/compare') || pathname.startsWith('/council') || (pathname.startsWith('/memory') && /[?&]t=provenance/.test(search)) || (pathname.startsWith('/agents') && /[?&]t=tournament/.test(search)) || pathname.startsWith('/cookbook') || pathname.startsWith('/source-control') || pathname.startsWith('/workflows') ? 'wide' : undefined;
+  const screen = pathname.startsWith('/studio') ? 'studio' : editing ? 'editor' : pathname.startsWith('/activity') || pathname.startsWith('/email') || pathname.startsWith('/compare') || pathname.startsWith('/council') || (pathname.startsWith('/memory') && /[?&]t=provenance/.test(search)) || (pathname.startsWith('/agents') && /[?&]t=tournament/.test(search)) || pathname.startsWith('/cookbook') || pathname.startsWith('/source-control') || pathname.startsWith('/workflows') || pathname.startsWith('/creator') ? 'wide' : undefined;
   return (
     <main className="fs-main" id="fs-main" tabIndex={-1} data-screen={screen}>
       <div className="fs-main__inner">
@@ -243,6 +251,7 @@ function RouteBody() {
         <Route path="/connectors" element={<ConnectorsScreen />} />
         <Route path="/alternatives" element={<AlternativesScreen />} />
         <Route path="/workflows" element={<WorkflowsScreen />} />
+        <Route path="/creator" element={<CreatorScreen />} />
         <Route path="/setup" element={<OnboardingScreen />} />
         {/*
           Two paths the interface Studio replaced used to own, and that are
