@@ -62,6 +62,7 @@ from .alternatives_tools import (
 from .code_mode_tool import RunCodeTool
 from .context_overflow_tool import ReadOverflowTool
 from .artifact_read_tool import ReadArtifactTool
+from .pdf_ops_tool import PdfOpsTool
 
 TOOL_HANDLERS = {
     "bash": BashTool().execute,
@@ -155,6 +156,9 @@ TOOL_HANDLERS = {
     # subprocess round instead of one model round trip per call. See
     # src/code_mode/ and src/agent_tools/code_mode_tool.py.
     "run_code": RunCodeTool().execute,
+    # PDF operations (R4, Reach wave): merge/split/rotate/compress/watermark/
+    # etc. over src.pdf_ops. See src/agent_tools/pdf_ops_tool.py.
+    "pdf_ops": PdfOpsTool().execute,
 }
 # Config/integration admin tools (manage_endpoints/mcp/webhooks/tokens/settings).
 TOOL_HANDLERS.update(ADMIN_TOOL_HANDLERS)
@@ -246,7 +250,9 @@ TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_fi
              "req_propose", "req_link",
              # Isolated, comparable alternatives (CMP-13, W2-G) --
              # src/agent_tools/alternatives_tools.py.
-             "alt_start", "alt_compare", "alt_apply"} | BUILTIN_EMAIL_TOOLS | DESKTOP_TOOLS | SEMANTIC_TOOLS
+             "alt_start", "alt_compare", "alt_apply",
+             # PDF operations (R4, Reach wave) -- src/agent_tools/pdf_ops_tool.py.
+             "pdf_ops"} | BUILTIN_EMAIL_TOOLS | DESKTOP_TOOLS | SEMANTIC_TOOLS
 
 ToolBlock = namedtuple("ToolBlock", ["tool_type", "content"])
 

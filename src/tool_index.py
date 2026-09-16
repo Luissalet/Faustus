@@ -246,6 +246,10 @@ BUILTIN_TOOL_DESCRIPTIONS: Dict[str, str] = {
     "alt_start": "Start a new experiment: try more than one approach to the same task, each fully isolated (a git worktree, a directory snapshot, or a text snapshot). Returns the experiment id and each alternative's id — always cite the experiment id back. Use for 'let's try this two different ways', 'try it again without losing the first attempt', 'compare a quick fix against a proper refactor'.",
     "alt_compare": "Diff every alternative of an experiment against its shared base, and see which files more than one alternative touches. Use for 'how do these two attempts differ', 'which one changed less', 'did they touch the same files'. Read-only.",
     "alt_apply": "Merge one alternative's changes into the user's main copy — a three-way merge that never discards a manual edit made there since the experiment started. On a conflict nothing is written; relay the conflicting files to the user rather than guessing. Use for 'go with the second one', 'apply that alternative'. Refused unless the user explicitly approved.",
+    # R4 (Reach wave) — PDF operations Stirling-PDF-style: merge, split,
+    # extract, rotate, reorder, delete pages, metadata, compress, watermark,
+    # page count, and optional to_images/ocr. src/pdf_ops.py + src/agent_tools/pdf_ops_tool.py.
+    "pdf_ops": "PDF operations: merge several PDFs into one, split by page ranges, extract a subset of pages, rotate pages, reorder every page, delete pages, read/write metadata (title/author/subject/keywords), compress (re-encode + dedupe, reports bytes before/after), watermark_text (diagonal stamp), page_count, to_images (rasterize to PNG, optional dependency), ocr (add a searchable text layer, needs the ocrmypdf CLI). Use for 'combina estos PDFs', 'split this PDF into chapters', 'rotate page 3', 'quita las últimas dos páginas', 'shrink this PDF', 'add a DRAFT watermark', 'how many pages does this have', 'make this scanned PDF searchable'.",
 }
 
 

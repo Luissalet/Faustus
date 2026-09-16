@@ -394,7 +394,10 @@ LEGACY = {
 
 NEW_KEYS = {"default_completion_mode", "capabilities", "specialties", "tags", "preferred_tasks",
             "avoid_tasks", "verification_profile", "context_profile", "budget_profile",
-            "collaboration_profile", "output_contract", "extends", "prompt_append", "inherits"}
+            "collaboration_profile", "output_contract", "extends", "prompt_append", "inherits",
+            # R4 (Reach wave): a slug into src.personas, rendered onto system_prompt by
+            # resolve_task -- see src/agent_defs.py's FRONTMATTER_KEYS docstring.
+            "persona"}
 OLD_KEYS = {"slug", "name", "description", "mode", "model", "endpoint_id", "runner", "tools",
             "deny", "permission", "files", "max_rounds", "timeout_s", "prompt", "source", "path",
             "may_delegate", "caveats"}

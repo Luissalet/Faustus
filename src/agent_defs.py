@@ -148,13 +148,19 @@ PROFILE_FIELDS: Tuple[str, ...] = ("verification_profile", "context_profile",
 
 #: Every key an AGENT.md may carry. A key that is not here does not load —
 #: :func:`parse` names it and suggests the nearest one this build knows.
+#:
+#: `persona` (R4, Reach wave): a slug into `src.personas` — the agent's
+#: IDENTITY prose (agency-agents research note, `agent_repos.md` §5), never a
+#: second selector next to this one. It is read-and-rendered, not enforced:
+#: like `capabilities`/`tags`/the profile fields, it cannot widen what the
+#: table at the top of this module already decided a definition may do.
 FRONTMATTER_KEYS: Tuple[str, ...] = (
     "name", "description", "mode", "model", "endpoint_id", "runner",
     "tools", "deny", "permission", "files", "max_rounds", "timeout_s",
     "default_completion_mode", "capabilities", "specialties", "tags",
     "preferred_tasks", "avoid_tasks", "verification_profile", "context_profile",
     "budget_profile", "collaboration_profile", "output_contract", "extends",
-    "prompt_append",
+    "prompt_append", "persona",
 )
 
 #: A profile/contract id: the same narrow shape ``src/contracts/base.py``
@@ -242,6 +248,11 @@ class AgentDef:
     #: Empty for a definition that inherits nothing — which is every
     #: definition that existed before this field did.
     inherits: Tuple[str, ...] = ()
+    #: R4 (Reach wave): a slug into `src.personas`, or "". NOT an enforcement
+    #: point — see the docstring on `FRONTMATTER_KEYS`. Resolved by
+    #: :func:`resolve_task`, which prepends the persona's rendered block to
+    #: `system_prompt` ahead of this definition's own prompt.
+    persona: str = ""
     #: Which keys the FILE actually stated, sorted. Inheritance needs it: a
     #: child that says nothing about `mode` must inherit its parent's, and
     #: "said worker" and "said nothing, so it defaulted to worker" are the
@@ -280,6 +291,7 @@ class AgentDef:
             "output_contract": self.output_contract,
             "extends": self.extends, "prompt_append": self.prompt_append,
             "inherits": list(self.inherits),
+            "persona": self.persona,
         }
 
 
@@ -547,6 +559,11 @@ def parse(text: str, *, slug: str, source: str = SOURCE_USER, path: str = "") ->
                             f"{', '.join(COMPLETION_MODES)}")
     extends = _extends_of(fm.get("extends"), slug)
 
+    persona_raw = str(fm.get("persona") or "").strip()
+    persona = slugify(persona_raw, fallback="") if persona_raw else ""
+    if persona_raw and not persona:
+        raise AgentDefError(f"persona: `{persona_raw}` is not a usable slug")
+
     definition = AgentDef(
         slug=slug,
         name=str(fm.get("name") or slug).strip()[:80],
@@ -582,6 +599,7 @@ def parse(text: str, *, slug: str, source: str = SOURCE_USER, path: str = "") ->
         extends=extends,
         prompt_append=_prompt_append_of(fm.get("prompt_append"), extends),
         stated=tuple(sorted(str(k) for k in fm)),
+        persona=persona,
     )
     definition.caveats = tuple(caveats + _caveats_for(definition))
     return definition
@@ -650,6 +668,8 @@ def to_markdown(d: AgentDef) -> str:
         if value != "default":
             fm[name] = value
     fm["output_contract"] = d.output_contract
+    if d.persona:
+        fm["persona"] = d.persona
     return f"---\n{emit_frontmatter(fm)}\n---\n\n{d.prompt.strip()}\n"
 
 
@@ -718,6 +738,7 @@ def from_dict(raw: Any) -> Optional[AgentDef]:
         extends=str(raw.get("extends") or ""),
         prompt_append=str(raw.get("prompt_append") or ""),
         inherits=tuple(str(i) for i in (raw.get("inherits") or ())),
+        persona=str(raw.get("persona") or ""),
     )
 
 
@@ -1152,6 +1173,7 @@ def _materialise(child: AgentDef, parent: AgentDef) -> AgentDef:
         prompt_append="",          # folded into `prompt` above; never applied twice
         inherits=inherits,
         stated=child.stated,
+        persona=pick("persona"),
     )
     # Keep the caveats nobody can recompute (the clamped numbers), drop the
     # derived ones from before the merge, and derive them again from the
@@ -1291,8 +1313,23 @@ def resolve_task(task: Dict[str, Any], *, workspace: Optional[str] = None,
         return {"agent": slug, "reason": f"unknown agent definition `{slug}`" + (f". Known: {known}" if known else "")}
     task["agent"] = definition.slug
     task["agent_def"] = definition.to_dict()
-    if definition.prompt:
-        task["system_prompt"] = definition.prompt
+    prompt = definition.prompt
+    if definition.persona:
+        # R4 (Reach wave): the persona is IDENTITY, rendered above the
+        # agent's own prompt — never a replacement for it. An unknown/stale
+        # slug renders "" (src.personas.registry.render_system_block never
+        # raises), so a persona reference that no longer resolves costs one
+        # paragraph of the prompt, never the whole dispatch.
+        try:
+            from src.personas.registry import render_system_block
+            block = render_system_block(definition.persona)
+        except Exception as exc:  # noqa: BLE001 - the personas store is optional infra
+            logger.debug("agent_defs: persona '%s' unavailable: %s", definition.persona, exc)
+            block = ""
+        if block:
+            prompt = f"{block}\n\n{prompt}".strip() if prompt else block
+    if prompt:
+        task["system_prompt"] = prompt
     if not str(task.get("model") or "").strip() and definition.model:
         task["model"] = definition.model
     if not task.get("files") and definition.files:
