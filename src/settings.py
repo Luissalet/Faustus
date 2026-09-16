@@ -85,12 +85,8 @@ DEFAULT_SETTINGS = {
     # Creator profile under /api/creator/*. Default OFF: with the flag off,
     # every /api/creator/* route responds 404 and nothing is read or written
     # (checked before any store access, never after).
-    "creator_enabled": False,
-    # Creator plan (docs/spec/creator/plan/). Off by default: with this flag
-    # off, Creator routes answer 404/403 (documented per-route) and nothing
-    # Creator-specific is written — including WP06's additive deployment
-    # evidence side-write in src/model_calibration.py::save_tested, which
-    # reads this setting before it writes anything.
+    # (Also gates WP06's additive deployment-evidence side-write in
+    # src/model_calibration.py::save_tested, which reads it before writing.)
     "creator_enabled": False,
     "image_gen_enabled": False,
     "image_model": "",

@@ -886,6 +886,12 @@ from routes.changesets_routes import setup_changesets_routes, setup_doctor_route
 app.include_router(setup_changesets_routes())
 from routes.budget_routes import setup_budget_routes
 app.include_router(setup_budget_routes())
+# Creator plan (docs/spec/creator/): documents/profile (WP02) and model
+# identity (WP06). Both answer 404 unless `creator_enabled`.
+from routes.creator_routes import setup_creator_routes
+app.include_router(setup_creator_routes())
+from routes.model_identity_routes import setup_model_identity_routes
+app.include_router(setup_model_identity_routes())
 
 # What this machine can actually do. Every probe already existed; this is the
 # one place that asks them all and puts the fix in the sentence.
