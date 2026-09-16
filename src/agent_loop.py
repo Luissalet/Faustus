@@ -11217,16 +11217,53 @@ async def _stream_agent_loop_body(
             # native schema list. They were already executable (catalog);
             # this loads the full schema so native function-calling can
             # emit them without a fenced block.
+            #
+            # A08/A09 (paridad, tool discovery): the raw `promote` list from
+            # `execute_lookup` only subtracted `disabled_tools`. That is not
+            # the whole authorization story — `tool_policy` and the
+            # non-admin denylist can refuse a name discovery would otherwise
+            # promote, and offering a schema execution then refuses is a
+            # documented trap (tests/test_agent_loop_offer_execute_coherence.py).
+            # `src.tool_discovery.audit_selection` re-narrows to the EXACT
+            # permitted set with the same predicate execution uses, and — if
+            # nothing survives — attaches a bounded (N=5) "closest by
+            # name/capability" fallback instead of leaving the model to
+            # guess or invent a call. The decision is emitted as a
+            # `tool_discovery` SSE event (docs/api/sse_events.json) so the
+            # run carries an auditable {query, candidates, resolved, reason}
+            # record, not just a debug log line.
             if block.tool_type == "lookup_tools" and not result.get("error"):
-                _promoted = {
-                    str(n) for n in (result.get("promote") or [])
-                    if n and n not in disabled_tools
-                }
-                if not _promoted and isinstance(result.get("lookup_tools"), dict):
-                    _promoted = {
-                        str(n) for n in (result["lookup_tools"].get("promote") or [])
-                        if n and n not in disabled_tools
+                _raw_promote = {str(n) for n in (result.get("promote") or []) if n}
+                if not _raw_promote and isinstance(result.get("lookup_tools"), dict):
+                    _raw_promote = {
+                        str(n) for n in (result["lookup_tools"].get("promote") or []) if n
                     }
+                _lt_query = ""
+                try:
+                    _lt_args = json.loads(block.content or "{}")
+                    if isinstance(_lt_args, dict):
+                        _lt_query = str(_lt_args.get("query") or _lt_args.get("q") or "").strip()
+                except Exception:
+                    _lt_query = ""
+                _lt_admin = True
+                try:
+                    from src.tool_security import owner_is_admin_or_single_user as _lt_owner_is_admin
+                    _lt_admin = bool(_lt_owner_is_admin(owner))
+                except Exception:
+                    _lt_admin = True
+                from src.tool_discovery import audit_selection as _td_audit_selection
+                _td_audit = _td_audit_selection(
+                    _lt_query, sorted(_raw_promote),
+                    disabled_tools=disabled_tools, tool_policy=tool_policy, admin=_lt_admin,
+                    fallback_pool=sorted(_relevant_tools or ()) or None,
+                )
+                yield (
+                    "data: " + json.dumps({
+                        "type": "tool_discovery", "round": round_num,
+                        **_td_audit.to_dict(),
+                    }) + "\n\n"
+                )
+                _promoted = set(_td_audit.resolved)
                 if _promoted:
                     if _relevant_tools is not None:
                         _relevant_tools.update(_promoted)
@@ -11238,6 +11275,11 @@ async def _stream_agent_loop_body(
                         _base_schema_tools.update(_promoted)
                     _deferred_tools -= _promoted
                     logger.info("[tool-catalog] lookup_tools promoted for next round: %s", sorted(_promoted))
+                elif _lt_query:
+                    logger.info(
+                        "[tool-catalog] lookup_tools no permitted match for %r — %s",
+                        _lt_query, _td_audit.reason,
+                    )
 
             # A skill the model just loaded can prescribe tools that weren't
             # RAG-selected this turn (declared via requires_toolsets in its

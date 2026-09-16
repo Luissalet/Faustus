@@ -68,6 +68,7 @@
     {"type": "doc_stream_delta", "stability": "extended", "fields": {}},
     {"type": "doc_update", "stability": "extended", "fields": {}},
     {"type": "doc_suggestions", "stability": "extended", "fields": {}},
+    {"type": "tool_discovery", "stability": "extended", "fields": {"round": "int?", "query": "string", "candidates": "array", "resolved": "array", "reason": "string", "fallback": "array"}, "note": "A08/A09: lookup_tools resolution — candidates the index returned, the exact permitted subset promoted for the next round (resolved), and (when resolved is empty) a bounded N=5 closest-by-name/capability fallback"},
 
     {"type": "model_info", "stability": "extended", "fields": {}, "note": "which model actually answered (research/model-switch banners)"},
     {"type": "round_info", "stability": "extended", "fields": {}, "note": "per-round provider instrumentation (finish_reason, token counts, sampling settings)"},

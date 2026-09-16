@@ -22,11 +22,12 @@ columna `Test` de esa fila.
   (PR1 solo entrega el manifiesto y el ejecutor, no los mecanismos de
   A01-A36); no implica que el caso esté descartado.
 
-Resumen tras fusionar T1+T2+T3+S3 (2026-09-13): **8 verde** (A01–A07, A20), 28 `pendiente`. En la entrega de T1 (PR1) era **1 verde** (A03),
-**0 xfail**, **35 pendiente**. De las 35 pendientes, 6 están asignadas por
-`CONTRATO_PARIDAD_1.md` a los lotes T2 (A01, A04, A07) y T3 (A02, A05,
-A06) de este mismo encargo; las 29 restantes (A08-A36 salvo las listadas)
-quedan fuera del alcance de T1/T2/T3 y abiertas para un PR posterior.
+Resumen tras fusionar T1+T2+T3+S3+T4-ola1 (2026-09-16): **10 verde** (A01–A07,
+A08, A09, A20), 26 `pendiente`. En la entrega de T1 (PR1) era **1 verde**
+(A03), **0 xfail**, **35 pendiente**. De las 35 pendientes, 6 estaban
+asignadas por `CONTRATO_PARIDAD_1.md` a los lotes T2 (A01, A04, A07) y T3
+(A02, A05, A06); T4 (ola 1 de paridad, `CONTRATO.md`) cierra A08/A09 (tool
+discovery); las 27 restantes quedan abiertas para un PR posterior.
 
 | ID | Área | Estado | Test | Qué falta |
 |---|---|---|---|---|
@@ -37,8 +38,8 @@ quedan fuera del alcance de T1/T2/T3 y abiertas para un PR posterior.
 | A05 | recovery | verde | `tests/acceptance/test_a05_unknown_effect.py` | — (T3: evento `tool_effect` `pending|confirmed|failed` por `call_id` con flush inmediato para tool-calls no `read`; `recover_interrupted_runs` marca `unknown_effects` en el parcial y en la nota; el siguiente turno recibe un bloque de sistema que prohíbe repetirlas sin comprobar) |
 | A06 | recovery | verde | `tests/acceptance/test_a06_lease_fencing.py` | — (T3: `lease_generation` en `scheduled_tasks` y `workflow_node_runs` con migración idempotente; `still_owner` antes de cada efecto en el scheduler → estado `fenced`; handlers de workflow con `_check_fenced` — devuelve `failed` + `fenced: True` porque el engine solo admite cuatro estados de handler) |
 | A07 | cancel | verde | `tests/acceptance/test_a07_cancel_cascade.py` | — (T2: `stop_workers_of_parent_by_level` transitivo; `chat_stop` retira aprobaciones de toda la jerarquía y cancela sus preguntas; `cleanup.workers_stopped` por nivel y `cleanup.approvals_retired`) |
-| A08 | tools | pendiente | — | Fuera del alcance de T1/T2/T3 de este contrato (`CONTRATO_PARIDAD_1.md` cubre solo A01-A07) |
-| A09 | tools | pendiente | — | Fuera del alcance de T1/T2/T3 |
+| A08 | tools | verde | `tests/acceptance/test_a08_tool_discovery.py` | — (T4: `lookup_tools` — ya existente en `src/tool_serve.py` — narrowed to the EXACT permitted schema by `src/tool_discovery.py::is_permitted`/`audit_selection` — `tool_policy`/`disabled_tools`/admin denylist AND real-tool existence, not just `disabled_tools` — wired into `agent_loop.py`'s `lookup_tools` promotion step; selection+resolution audited via the new `tool_discovery` SSE event) |
+| A09 | tools | verde | `tests/acceptance/test_a09_tool_discovery_no_match.py` | — (T4: `src/tool_discovery.py::audit_selection`'s unknown-tool branch — a name that is not a real tool never resolves/promotes; explicit bounded (N=5) "closest by name/capability" fallback via `nearest_by_name_or_capability`, no fabricated call, no schema dump) |
 | A10 | code_mode | pendiente | — | Fuera del alcance de T1/T2/T3; sin puente Code Mode↔`tool_execution` encontrado en el árbol auditado (ver `MATRIZ_PARIDAD.md` fila 10) |
 | A11 | code_mode | pendiente | — | Fuera del alcance de T1/T2/T3 |
 | A12 | artifacts | pendiente | — | Fuera del alcance de T1/T2/T3 |
