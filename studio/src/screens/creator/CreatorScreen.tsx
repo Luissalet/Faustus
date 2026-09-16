@@ -6,6 +6,7 @@ import { listProjects, type Project } from '../../adapters/projects';
 import * as api from '../../adapters/creator';
 import { t } from '../../i18n';
 import { Timeline } from './Timeline';
+import { ModelExplorer } from './ModelExplorer';
 import './creator.css';
 
 /**
@@ -194,7 +195,7 @@ function LibraryPanel({
 // ── center zone: active document ────────────────────────────────────────
 
 function DocumentPanel({
-  doc, history, loading, error, onCreate, onPatch, onReload, projectId, kinds, onDocUpdated,
+  doc, history, loading, error, onCreate, onPatch, onReload, projectId, kinds, onDocUpdated, preferredView,
 }: {
   doc: api.CreatorDocument | null;
   history: api.CommandHistoryEntry[];
@@ -206,8 +207,16 @@ function DocumentPanel({
   projectId: string;
   kinds: string[];
   onDocUpdated: (doc: api.CreatorDocument) => void;
+  /** Set from the outer Workspace/Timeline/Models tablist (WP08 x WP13): the
+   *  "Timeline" screen tab is a shortcut into this document's own timeline
+   *  view, not a second copy of the workspace. `undefined` leaves whatever
+   *  the person last picked here alone. */
+  preferredView?: 'timeline' | 'json';
 }) {
   const [view, setView] = useState<'timeline' | 'json'>('timeline');
+  useEffect(() => {
+    if (preferredView) setView(preferredView);
+  }, [preferredView]);
   const [patchText, setPatchText] = useState('{}');
   const [commandId, setCommandId] = useState('');
   const [expectedRevision, setExpectedRevision] = useState<number | ''>('');
@@ -506,10 +515,15 @@ function PreflightCard({ projectId, deployments }: { projectId: string; deployme
 
 // ── screen ───────────────────────────────────────────────────────────────
 
+type CreatorTab = 'workspace' | 'timeline' | 'models';
+
 export function CreatorScreen() {
   const [params, setParams] = useSearchParams();
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectId, setProjectIdState] = useState(params.get('project') ?? '');
+  const [tab, setTab] = useState<CreatorTab>(
+    params.get('tab') === 'timeline' ? 'timeline' : params.get('tab') === 'models' ? 'models' : 'workspace',
+  );
   const [caps, setCaps] = useState<api.CreatorCapabilities | 'disabled' | null>(null);
   const [libraryItems, setLibraryItems] = useState<api.LibraryItem[]>([]);
   const [libraryLoading, setLibraryLoading] = useState(false);
@@ -531,6 +545,15 @@ export function CreatorScreen() {
       const next = new URLSearchParams(prev);
       if (id) next.set('project', id); else next.delete('project');
       return next;
+    }, { replace: true });
+  }, [setParams]);
+
+  const changeTab = useCallback((next: CreatorTab) => {
+    setTab(next);
+    setParams((prev) => {
+      const p = new URLSearchParams(prev);
+      if (next === 'workspace') p.delete('tab'); else p.set('tab', next);
+      return p;
     }, { replace: true });
   }, [setParams]);
 
@@ -657,35 +680,75 @@ export function CreatorScreen() {
       )}
 
       {projectId && enabled && (
-        <div className="fs-creator__grid" role="group" aria-label={t('Creator workspace')}>
-          <LibraryPanel
-            projectId={projectId}
-            filter={filter}
-            onFilterChange={setFilter}
-            activeDocId={docId}
-            onOpen={openLibraryItem}
-            items={libraryItems}
-            loading={libraryLoading}
-            error={libraryError}
-          />
-          <DocumentPanel
-            doc={doc}
-            history={history}
-            loading={docLoading}
-            error={docError}
-            onCreate={(kind) => void createDoc(kind)}
-            onPatch={patchDoc}
-            onReload={reloadDoc}
-            projectId={projectId}
-            kinds={kinds}
-            onDocUpdated={setDoc}
-          />
-          <aside className="fs-creator__right" aria-label={t('Capabilities and resources')}>
-            <ResourcesCard resources={resources} />
-            <DeploymentsCard deployments={deployments} />
-            <PreflightCard projectId={projectId} deployments={deployments} />
-          </aside>
-        </div>
+        <>
+          <div className="fs-creator__tabs" role="tablist" aria-label={t('Creator sections')}>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === 'workspace'}
+              className="fs-creator__tab"
+              onClick={() => changeTab('workspace')}
+              data-testid="creator-tab-workspace"
+            >
+              {t('Workspace')}
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === 'timeline'}
+              className="fs-creator__tab"
+              onClick={() => changeTab('timeline')}
+              data-testid="creator-tab-timeline"
+            >
+              {t('Timeline')}
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === 'models'}
+              className="fs-creator__tab"
+              onClick={() => changeTab('models')}
+              data-testid="creator-tab-models"
+            >
+              {t('Models')}
+            </button>
+          </div>
+
+          {(tab === 'workspace' || tab === 'timeline') && (
+            <div className="fs-creator__grid" role="group" aria-label={t('Creator workspace')}>
+              <LibraryPanel
+                projectId={projectId}
+                filter={filter}
+                onFilterChange={setFilter}
+                activeDocId={docId}
+                onOpen={openLibraryItem}
+                items={libraryItems}
+                loading={libraryLoading}
+                error={libraryError}
+              />
+              <DocumentPanel
+                doc={doc}
+                history={history}
+                loading={docLoading}
+                error={docError}
+                onCreate={(kind) => void createDoc(kind)}
+                onPatch={patchDoc}
+                onReload={reloadDoc}
+                projectId={projectId}
+                kinds={kinds}
+                onDocUpdated={setDoc}
+                preferredView={tab === 'timeline' ? 'timeline' : undefined}
+              />
+              <aside className="fs-creator__right" aria-label={t('Capabilities and resources')}>
+                <ResourcesCard resources={resources} />
+                <DeploymentsCard deployments={deployments} />
+                <PreflightCard projectId={projectId} deployments={deployments} />
+              </aside>
+            </div>
+          )}
+
+          {tab === 'models' && <ModelExplorer projectId={projectId} />}
+        </>
       )}
 
       {toast && <Toast>{toast}</Toast>}
