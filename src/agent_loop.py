@@ -16,6 +16,7 @@ import json
 import re
 import time
 import logging
+import os
 from typing import Any, AsyncGenerator, Callable, List, Dict, NamedTuple, Optional, Sequence, Set, Tuple
 from urllib.parse import urlparse
 
@@ -7616,6 +7617,12 @@ async def _stream_agent_loop_body(
     _HARNESS_MAX_REJECTIONS = 2
     _HARNESS_MAX_LENGTH_CONTINUES = 2
     _ledger = _harness.TurnLedger(workspace, _last_user)
+    # H4: whole-file rewrite policy (src/rewrite_policy.py), one instance per
+    # turn — the 2nd full rewrite of an existing large file is refused with
+    # "use edit_file/apply_patch", the 4th is blocked. Threaded to
+    # WriteFileTool through turn_options → tool_execution ctx.
+    from src.rewrite_policy import RewritePolicy as _RewritePolicy
+    _rewrite_policy = _RewritePolicy.from_settings(get_setting)
     # TASK-06: latest update_plan payload seen this turn, for the
     # autonomy-budget checkpoint (src/autonomy_budget.py::build_checkpoint) —
     # a plain read of what update_plan already returns, no plan handling of
@@ -7925,6 +7932,7 @@ async def _stream_agent_loop_body(
                         "harness_options": _hopts,
                         "run_id": str(_hopts.get("run_id") or session_id or ""),
                         "turn_id": _context_turn_id,
+                        "rewrite_policy": _rewrite_policy,
                     },
                 )
             finally:
@@ -8244,6 +8252,14 @@ async def _stream_agent_loop_body(
                 load_project_working_set as _load_pws,
             )
             _ptodos = _load_ptodos(_pid)
+            # H5: tests left exempt/pre_existing for N turns become
+            # high-priority todos (src/test_debt.py) — merged idempotently.
+            try:
+                if bool(get_setting("agent_test_debt", True)):
+                    from src import test_debt as _tdebt
+                    _ptodos = _tdebt.merge_todo_items(_ptodos, _tdebt.todo_items(_pid))
+            except Exception as _td_err:
+                logger.debug("[harness] test_debt todo merge skipped: %s", _td_err)
             _is_new_chat = not any(m.get("role") == "assistant" for m in (messages or []))
             if (_is_continue or _is_new_chat) and _inc_ptodos(_ptodos):
                 _cblock = continue_turn_block(_ptodos, _load_pws(_pid))
@@ -8254,6 +8270,33 @@ async def _stream_agent_loop_body(
                     logger.info("[harness] project continue-turn working set injected")
     except Exception as _pt_inj_err:
         logger.debug("[harness] project todo inject skipped: %s", _pt_inj_err)
+    # H2: dependency drift (src/dependency_drift.py). The project declares
+    # packages its interpreter / node_modules do not have → tell the model
+    # BEFORE it runs anything, instead of letting it discover by traceback
+    # three rounds later. Once per turn, off the event loop, cached by hash.
+    if workspace and os.path.isdir(workspace) and bool(get_setting("agent_dependency_drift", True)):
+        try:
+            from src.dependency_drift import check_drift as _check_drift, system_note as _drift_note_for
+            _drift_report = await asyncio.to_thread(_check_drift, workspace)
+            if not _drift_report.ok:
+                _drift_note = _drift_note_for(_drift_report, _ledger.language)
+                if _drift_note:
+                    messages = _insert_before_latest_user(
+                        messages, {"role": "system", "content": _drift_note}
+                    )
+                    _ledger.notes.append(
+                        "dependency_drift:missing_python=" + ",".join(_drift_report.missing_python)
+                        + ";missing_node=" + ",".join(_drift_report.missing_node)
+                    )
+                    logger.info("[harness] dependency drift note injected: %s", _drift_report.hint)
+                if bool(get_setting("agent_auto_install_missing_deps", False)):
+                    from src.dependency_drift import auto_install as _drift_auto_install
+                    _install_result = await _drift_auto_install(
+                        _drift_report, workspace, owner=str(_hopts.get("project_id") or session_id or "")
+                    )
+                    _ledger.notes.append(f"dependency_drift:auto_install={_install_result.to_mapping()}")
+        except Exception as _dd_err:
+            logger.debug("[harness] dependency drift check skipped: %s", _dd_err)
     round_num = 0
     while True:
         round_num += 1
@@ -10259,6 +10302,66 @@ async def _stream_agent_loop_body(
                         full_response += "\n\n"
                         yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
                         continue
+                    # ── (3b) UI smoke (src/ui_smoke.py, H1): start the
+                    # project's own server and check pages/assets the way a
+                    # browser would — status AND Content-Type, not just "the
+                    # tests passed". Catches the class of bug pytest cannot
+                    # see (a `.mjs` served as text/plain broke 100% of a UI
+                    # that had 170 green unit tests). Runs before the project
+                    # tests so `ui_verify` on the card already reflects it;
+                    # re-runs only when new mutations landed since the last
+                    # pass, with one bounded fix round.
+                    if (_ledger.mutations and bool(get_setting("agent_ui_smoke", True))
+                            and _ledger.ui_smoke_runs < 3
+                            and len(_ledger.mutations) != _ledger.ui_smoke_mutations_at_run):
+                        _ledger.ui_smoke_runs += 1
+                        _ledger.ui_smoke_mutations_at_run = len(_ledger.mutations)
+                        _usres = None
+                        try:
+                            from src import ui_smoke as _ui_smoke
+                            _usres = await asyncio.to_thread(
+                                _ui_smoke.run_for_turn, workspace, _ledger.mutated_paths(),
+                            )
+                            _ledger.ui_smoke = _ui_smoke.compact(_usres)
+                        except Exception as _us_err:
+                            logger.debug("[harness] ui_smoke failed to run: %s", _us_err)
+                            _usres = None
+                        if _usres and _usres.get("ran") and _usres.get("ok") is False:
+                            _note = "ui_smoke_failed:" + str(_usres.get("summary") or "")[:80]
+                            if _note not in _ledger.notes:
+                                _ledger.notes.append(_note)
+                            if _ledger.ui_smoke_fix_rounds < 1:
+                                _ledger.ui_smoke_fix_rounds += 1
+                                logger.warning("[harness] round %s ui_smoke FAILED (%s) — one fix round",
+                                               round_num, _usres.get("summary"))
+                                if round_response.strip():
+                                    messages.append({"role": "assistant", "content": round_response})
+                                messages.append({"role": "user", "content": _ui_smoke.failure_message(_usres)})
+                                yield (
+                                    "data: " + json.dumps({
+                                        "type": "harness_check", "status": "ui_smoke_failed",
+                                        "round": round_num, "ui_smoke": _ledger.ui_smoke,
+                                        "attempt": _ledger.ui_smoke_fix_rounds, "max_attempts": 1,
+                                        "mutations": _ledger.mutated_paths(),
+                                    }) + "\n\n"
+                                )
+                                full_response += "\n\n"
+                                yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
+                                continue
+                            yield (
+                                "data: " + json.dumps({
+                                    "type": "harness_check", "status": "ui_smoke_failed",
+                                    "round": round_num, "ui_smoke": _ledger.ui_smoke,
+                                    "mutations": _ledger.mutated_paths(),
+                                }) + "\n\n"
+                            )
+                        elif _usres and _usres.get("ran"):
+                            yield (
+                                "data: " + json.dumps({
+                                    "type": "harness_check", "status": "ui_smoke_ok",
+                                    "round": round_num, "ui_smoke": _ledger.ui_smoke,
+                                }) + "\n\n"
+                            )
                     # ── (4) Functional verification: the project's own tests
                     # (src/project_tests.py). "It parses" became "it works".
                     # Re-run every time the model finishes with changes (so the
@@ -10281,6 +10384,16 @@ async def _stream_agent_loop_body(
                                 if _tres is not None:
                                     _tres["ui_verify"] = _ledger.ui_verify_status(_last_user)
                                 _ledger.tests = _ptests.compact(_tres)
+                                # H5: tests accepted as pre_existing/exempt
+                                # start a clock (src/test_debt.py); after N
+                                # turns they come back as high-priority todos.
+                                try:
+                                    _pid_for_debt = str(_hopts.get("project_id") or "")
+                                    if _pid_for_debt and bool(get_setting("agent_test_debt", True)):
+                                        from src import test_debt as _tdebt
+                                        _tdebt.record(_pid_for_debt, _ledger.tests, turn=_context_turn_id)
+                                except Exception as _td_err:
+                                    logger.debug("[harness] test_debt record skipped: %s", _td_err)
                         except Exception as _pt_err:
                             logger.debug("[harness] project tests failed to run: %s", _pt_err)
                             _tres = None
@@ -10920,6 +11033,7 @@ async def _stream_agent_loop_body(
                             "harness_options": _hopts,
                             "run_id": str(_hopts.get("run_id") or session_id or ""),
                             "turn_id": _context_turn_id,
+                            "rewrite_policy": _rewrite_policy,
                         },
                     )
                     _prefetched_duration_ms[idx] = round(max(0.0, (time.monotonic() - _pt0) * 1000.0), 1)
@@ -11217,6 +11331,7 @@ async def _stream_agent_loop_body(
                                     "harness_options": _hopts,
                                     "run_id": str(_hopts.get("run_id") or session_id or ""),
                                     "turn_id": _context_turn_id,
+                                    "rewrite_policy": _rewrite_policy,
                                 },
                             )
                         finally:
@@ -11975,6 +12090,30 @@ async def _stream_agent_loop_body(
             elif _loop_action == "stop":
                 _loop_policy_stop = True
                 logger.info("[loop-breaker] stopping turn after %d identical calls to %s", _loop_policy.streak, block.tool_type)
+            # H4: a refused whole-file rewrite is surfaced to the UI; a
+            # `block` verdict also injects the harness round text so the
+            # model reads the file and the diff before touching it again.
+            if isinstance(result, dict) and result.get("policy") == "rewrite_policy":
+                _rw_verdict = str(result.get("policy_verdict") or "")
+                _rw_path = (block.content or "").split("\n", 1)[0].strip()[:200]
+                if _rw_verdict == "block":
+                    _rw_note = "rewrite_blocked:" + _rw_path[:80]
+                    if _rw_note not in _ledger.notes:
+                        _ledger.notes.append(_rw_note)
+                    messages.append({"role": "user", "content": (
+                        "[Runtime rewrite policy — not a new user request] You have rewritten "
+                        f"`{_rw_path}` from scratch {int(result.get('count') or 0)} times this turn "
+                        "and it is now blocked for whole-file writes. Read the file (read_file) and the "
+                        "diff of your last change before touching it again, then change ONLY the lines "
+                        "that need it with edit_file or apply_patch."
+                    )})
+                yield (
+                    "data: " + json.dumps({
+                        "type": "rewrite_policy_triggered", "round": round_num,
+                        "path": _rw_path, "verdict": _rw_verdict,
+                        "count": int(result.get("count") or 0),
+                    }) + "\n\n"
+                )
             # A12: offload an oversized result (see the approved-result site).
             try:
                 from src.tool_result_offload import offload_if_oversized as _offload

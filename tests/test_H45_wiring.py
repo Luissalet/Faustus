@@ -22,7 +22,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -33,33 +32,23 @@ def _source(*parts: str) -> str:
 
 # ── (a) H4: write_file consults RewritePolicy before writing ──────────────
 
-@pytest.mark.xfail(strict=True, reason="H45_wiring.md (a).1-2: agent_loop.py "
-                    "does not yet create a per-turn RewritePolicy or thread it "
-                    "into turn_options/ctx")
 def test_agent_loop_creates_and_threads_a_rewrite_policy_per_turn():
     src = _source("src", "agent_loop.py")
     assert "rewrite_policy" in src
     assert "RewritePolicy" in src
 
 
-@pytest.mark.xfail(strict=True, reason="H45_wiring.md (a).2: tool_execution.py's "
-                    "ctx literal does not yet carry rewrite_policy")
 def test_tool_execution_ctx_carries_rewrite_policy():
     src = _source("src", "tool_execution.py")
     assert '"rewrite_policy"' in src
 
 
-@pytest.mark.xfail(strict=True, reason="H45_wiring.md (a).3: WriteFileTool does "
-                    "not yet consult ctx['rewrite_policy'] before writing")
 def test_write_file_tool_consults_rewrite_policy_before_writing():
     src = _source("src", "agent_tools", "filesystem_tools.py")
     assert "rewrite_policy" in src
     assert "deny_result" in src
 
 
-@pytest.mark.xfail(strict=True, reason="H45_wiring.md (a).3: a require_edit/block "
-                    "verdict does not yet produce the write_file refusal shape "
-                    "CONTRATO.md specifies")
 def test_write_file_refusal_shape_is_wired(tmp_path, monkeypatch):
     """End-to-end: once wired, a 2nd whole-file write_file of an existing
     large file (with a turn-scoped RewritePolicy threaded through ctx) must
@@ -98,17 +87,12 @@ def test_write_file_refusal_shape_is_wired(tmp_path, monkeypatch):
 
 # ── (b) H5: test_debt.record / todo_items are called from the loop ────────
 
-@pytest.mark.xfail(strict=True, reason="H45_wiring.md (b).1: agent_loop.py does "
-                    "not yet call test_debt.record() after project_tests.compact")
 def test_agent_loop_records_test_debt_after_running_project_tests():
     src = _source("src", "agent_loop.py")
     assert "test_debt" in src
     assert "_tdebt.record(" in src or "test_debt.record(" in src
 
 
-@pytest.mark.xfail(strict=True, reason="H45_wiring.md (b).2: agent_loop.py does "
-                    "not yet merge test_debt.todo_items() into the project "
-                    "continue-turn working set")
 def test_agent_loop_merges_test_debt_todo_items_into_continue_turn_injection():
     src = _source("src", "agent_loop.py")
     assert "merge_todo_items" in src

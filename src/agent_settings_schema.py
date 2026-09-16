@@ -446,9 +446,7 @@ GROUPS: list[dict[str, Any]] = [
             # A29: src/loop_breaker.py's deterministic escalation ladder (kept
             # in this group rather than a new one so the schema's requested
             # group order/prefix — test_agent_settings_schema.py — is
-            # untouched). Not yet wired into src/agent_loop.py's turn loop
-            # (see T7_wiring.md); the module and these settings exist so the
-            # policy is independently testable ahead of that wiring.
+            # untouched). Wired into src/agent_loop.py's tool-result site.
             _int("agent_loop_breaker_nudge_after", "Loop breaker: nudge after N repeats",
                  "Identical (tool, arguments, result) calls in a row before a system message is "
                  "injected telling the model to try something else.",
@@ -905,13 +903,21 @@ GROUPS: list[dict[str, Any]] = [
         ],
     ),
     _group(
-        "harness_policy", "Rewrite & test debt policy",
-        "Two harness lot H4/H5 policies (src/rewrite_policy.py, src/test_debt.py) aimed at a small "
-        "local model: discourage rewriting the same large file whole several times in one turn "
-        "instead of editing it, and keep a persistent journal of tests exempted as pre-existing so "
-        "one never stays silently forgiven for days. Not yet wired into the turn loop — see "
-        "H45_wiring.md.",
+        "harness_policy", "Long-implementation policies",
+        "Harness policies aimed at a small local model on long, multi-turn implementations "
+        "(src/dependency_drift.py, src/rewrite_policy.py, src/test_debt.py): tell it what is not "
+        "installed before it runs anything, discourage rewriting the same large file whole several "
+        "times in one turn instead of editing it, and keep a persistent journal of tests exempted as "
+        "pre-existing so one never stays silently forgiven for days.",
         [
+            _bool("agent_dependency_drift", "Dependency drift check",
+                  "When a code turn starts, compare the project's requirements.txt/pyproject.toml/"
+                  "package.json with what its interpreter and node_modules actually have and tell the "
+                  "model what is missing before it runs anything."),
+            _bool("agent_auto_install_missing_deps", "Auto-install missing dependencies",
+                  "Install the packages the dependency drift check found missing through the same "
+                  "approved install_dependencies flow, instead of leaving it for the model to discover "
+                  "by traceback."),
             _select("agent_rewrite_policy", "Rewrite policy",
                     "\"off\" never restricts write_file. Any other value enables the ladder below: "
                     "from the Nth qualifying rewrite of an existing, non-trivial file within one turn, "

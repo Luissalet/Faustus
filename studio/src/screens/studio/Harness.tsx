@@ -229,6 +229,11 @@ export function HarnessCard({
           {t('UI changes were not verified in the browser')}
         </p>
       )}
+      {summary.uiVerify === 'ok_smoke' && (
+        <p className="fs-notice" data-tone="info" data-testid="ui-verify-smoke">
+          {t('UI checked by the harness smoke test (server, assets, console), not in a browser session')}
+        </p>
+      )}
 
       {(verdict || testsLine) && (
         <p className="fs-harness__line">

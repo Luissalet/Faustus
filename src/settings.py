@@ -380,6 +380,13 @@ DEFAULT_SETTINGS = {
     "agent_ui_smoke": True,
     "agent_ui_smoke_timeout_seconds": 60,
     "agent_ui_smoke_playwright": True,
+    # H2: at the start of a code turn, compare requirements*/pyproject/
+    # package.json against what the project's interpreter and node_modules
+    # actually have; tell the model what is missing BEFORE it runs anything.
+    "agent_dependency_drift": True,
+    # ...and optionally install it through the approved install_dependencies
+    # flow (EXEC-05) instead of leaving it for the model to discover by traceback.
+    "agent_auto_install_missing_deps": False,
     # After a failing run, re-run the same test files against the turn's
     # checkpoint to tell new failures from pre-existing ones (no fix round
     # when everything was already failing before the change).
@@ -716,16 +723,16 @@ DEFAULT_SETTINGS = {
     # disables it entirely). From the require_edit-th qualifying rewrite the
     # integrator's write_file refuses and points at edit_file/apply_patch;
     # from the block-th it refuses harder and the harness round injects a
-    # "read the file and the diff first" instruction. Not yet wired into
-    # src/agent_tools/filesystem_tools.py (see H45_wiring.md).
+    # "read the file and the diff first" instruction. Wired through
+    # agent_loop turn_options → tool_execution ctx → WriteFileTool.
     "agent_rewrite_policy": "require_edit",
     "agent_rewrite_policy_require_edit_after": 2,
     "agent_rewrite_policy_block_after": 4,
     "agent_rewrite_policy_min_lines": 150,
     # H5: src/test_debt.py — a test seen as pre_existing/exempt (project_tests
     # baseline comparison) for this many TURNS becomes "overdue" and surfaces
-    # as a high-priority todo until fixed or dismissed with a reason. Not yet
-    # wired into src/agent_loop.py (see H45_wiring.md).
+    # as a high-priority todo until fixed or dismissed with a reason
+    # (recorded after project_tests, merged into the continue-turn todos).
     "agent_test_debt": True,
     "agent_test_debt_turns": 3,
     # Model the workers run on ("" = the coordinator's). Two different models

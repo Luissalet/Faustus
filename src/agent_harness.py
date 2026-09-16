@@ -1145,6 +1145,12 @@ class TurnLedger:
         self.tests: Optional[Dict[str, Any]] = None        # project_tests.compact()
         self.tests_runs = 0
         self.tests_fix_rounds = 0
+        # H1: harness-driven UI smoke (src/ui_smoke.py) — server start + HTTP
+        # status/Content-Type checks + optional Playwright console errors.
+        self.ui_smoke: Optional[Dict[str, Any]] = None     # ui_smoke.compact()
+        self.ui_smoke_runs = 0
+        self.ui_smoke_fix_rounds = 0
+        self.ui_smoke_mutations_at_run = -1    # len(mutations) at the last smoke pass
         self.review: Optional[Dict[str, Any]] = None       # auto_review.compact()
         self.review_runs = 0
         self.review_fix_rounds = 0
@@ -1312,14 +1318,27 @@ class TurnLedger:
         text = user_text or self.user_text or ""
         return bool(self.mutated_paths()) and bool(UI_INTENT_RE.search(text))
 
+    def has_ui_smoke_evidence(self) -> bool:
+        """A ui_smoke pass (H1) that actually ran and found nothing wrong —
+        weaker than a human/MCP browser check (no visual review), but real
+        HTTP evidence the harness gathered on its own, unprompted."""
+        us = self.ui_smoke
+        return bool(us) and bool(us.get("ran")) and bool(us.get("ok"))
+
     def ui_verify_status(self, user_text: str = "") -> str:
-        """Card field: ok | missing | skipped. Never changes test `ok`."""
+        """Card field: ok | ok_smoke | missing | skipped. Never changes test `ok`.
+
+        ``ok_smoke`` = verified by the harness's own smoke crawl
+        (status + Content-Type + console errors), not by a browser session.
+        """
         if not self._ui_verify_enabled():
             return "skipped"
         if not self.needs_ui_verify(user_text):
             return "skipped"
         if self.has_browser_evidence():
             return "ok"
+        if self.has_ui_smoke_evidence():
+            return "ok_smoke"
         return "missing"
 
     def tools_run(self) -> Dict[str, int]:
@@ -1725,6 +1744,7 @@ class TurnLedger:
             "checkpoint": (self.checkpoint or {}).get("sha") if isinstance(self.checkpoint, dict) else None,
             "tests": self.tests,
             "tests_fix_rounds": self.tests_fix_rounds,
+            "ui_smoke": self.ui_smoke,
             "review": self.review,
             "review_fix_rounds": self.review_fix_rounds,
             "asked_user": self.asked_user,

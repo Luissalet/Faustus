@@ -945,6 +945,11 @@ async def _direct_fallback(
             # content this run already saw.
             "tool_policy": tool_policy,
             "security_context": security_context,
+            # H4: the turn's RewritePolicy instance (src/rewrite_policy.py),
+            # set once per turn in agent_loop.py. None when the calling
+            # context never set one — filesystem_tools.py treats that as
+            # "policy off" rather than raising.
+            "rewrite_policy": _turn_opts.get("rewrite_policy"),
             # The run's project identity, surfaced as its own ctx key so a tool
             # does not have to know that the route packs it into the harness
             # knobs (services/projects.py::agent_options puts it there). Read

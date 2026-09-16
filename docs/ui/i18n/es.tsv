@@ -7661,3 +7661,5 @@ Approval required — approve it in the Preflight panel, then render again.	Apro
 Reused a cached render.	Se reutilizó un renderizado en caché.
 Render complete.	Renderizado completo.
 Occurrence: {id}	Ocurrencia: {id}
+UI changes were not verified in the browser	Los cambios de UI no se verificaron en el navegador
+UI checked by the harness smoke test (server, assets, console), not in a browser session	UI comprobada por la prueba de humo del harness (servidor, assets, consola), no en una sesión de navegador

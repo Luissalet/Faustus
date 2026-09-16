@@ -441,6 +441,22 @@ class WriteFileTool:
                     old, crlf, revision_now = _read_text_lf(path)
                 except (FileNotFoundError, IsADirectoryError, UnicodeDecodeError, OSError):
                     old, crlf, revision_now = "", False, None
+                # H4: a turn-scoped RewritePolicy (src/rewrite_policy.py) —
+                # the 2nd whole-file rewrite of an existing large file is
+                # refused with "use edit_file/apply_patch", the 4th blocked.
+                # None (no policy in ctx) means "off", never an error.
+                policy = ctx.get("rewrite_policy") if isinstance(ctx, dict) else None
+                if policy is not None:
+                    try:
+                        from src.rewrite_policy import deny_result
+                        verdict = policy.observe_lines(path, "write_file", old, body)
+                        if verdict != "ok":
+                            denied = deny_result(raw_path or path, verdict, policy.rewrite_count(path),
+                                                 policy.min_lines)
+                            denied["count"] = policy.rewrite_count(path)
+                            return denied, None, "conflict"
+                    except AttributeError:
+                        pass
                 if base_revision:
                     conflict = _base_revision_conflict(
                         "write_file", path, base_revision, revision_now,

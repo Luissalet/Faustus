@@ -5914,6 +5914,8 @@ export const es: Record<string, string> = {
   "Type and layout": "Tipografía y disposición",
   "Type below. In agent mode it uses tools and shows you every step in the rail; in chat mode it only talks.": "Escribe abajo. En modo agente usa herramientas y te enseña cada paso en el carril; en modo chat solo conversa.",
   "Type text": "Escribir texto",
+  "UI changes were not verified in the browser": "Los cambios de UI no se verificaron en el navegador",
+  "UI checked by the harness smoke test (server, assets, console), not in a browser session": "UI comprobada por la prueba de humo del harness (servidor, assets, consola), no en una sesión de navegador",
   "UI control": "Control de la interfaz",
   "URL": "URL",
   "USB4": "USB4",

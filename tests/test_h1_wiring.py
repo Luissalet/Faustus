@@ -6,18 +6,15 @@ INTEGRATOR's change (`src/agent_harness.py` / `src/agent_loop.py`), spelled
 out exactly in
 `/tmp/claude-0/-home-claude/cd8d3c3e-16cc-5feb-bffa-6a4518d14f14/scratchpad/harness_wave/H1_wiring.md`.
 
-This file documents, as executable xfail tests, exactly what "wired" means
-so the day that diff lands, these flip to failing-because-they-now-pass and
-`strict=True` makes that impossible to miss.
+This file asserts, as plain tests, exactly what "wired" means — the wiring
+landed in the integrator pass after the harness wave.
 """
 from __future__ import annotations
 
-import pytest
 
 from src.agent_harness import TurnLedger
 
 
-@pytest.mark.xfail(reason="H1 not wired into agent_harness.py yet — see H1_wiring.md §1", strict=True)
 def test_turn_ledger_has_ui_smoke_slot():
     ledger = TurnLedger(workspace=".")
     # §1: TurnLedger.__init__ carries a ui_smoke slot next to `tests`.
@@ -27,7 +24,6 @@ def test_turn_ledger_has_ui_smoke_slot():
     assert ledger.ui_smoke_runs == 0
 
 
-@pytest.mark.xfail(reason="H1 not wired into agent_harness.py yet — see H1_wiring.md §2", strict=True)
 def test_ui_verify_status_counts_ui_smoke_as_evidence_without_mcp_browser():
     """The chat #24 sub-turn-1 shape: UI files mutated, no MCP browser tool
     used, but ui_smoke itself ran and found nothing wrong. §2 of the wiring
@@ -45,7 +41,6 @@ def test_ui_verify_status_counts_ui_smoke_as_evidence_without_mcp_browser():
     assert ledger.ui_verify_status() == "ok_smoke"
 
 
-@pytest.mark.xfail(reason="H1 not wired into agent_harness.py yet — see H1_wiring.md §2", strict=True)
 def test_ui_verify_status_missing_when_ui_smoke_failed():
     """The actual chat #24 sub-turn-1 bug, reproduced: ui_smoke ran and
     caught the .mjs/text/plain mismatch. That must NOT read as verified."""
@@ -80,7 +75,6 @@ def test_mcp_browser_evidence_still_outranks_ui_smoke():
     assert ledger.ui_verify_status() == "ok"
 
 
-@pytest.mark.xfail(reason="H1 not wired into agent_harness.py yet — see H1_wiring.md §3", strict=True)
 def test_summary_includes_ui_smoke():
     ledger = TurnLedger(workspace=".")
     ledger.ui_smoke = {"ran": True, "ok": True, "summary": "ui_smoke ok"}

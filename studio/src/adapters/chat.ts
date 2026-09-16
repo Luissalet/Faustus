@@ -330,7 +330,7 @@ export interface HarnessSummary {
   tests?: Record<string, unknown>;
   review?: Record<string, unknown>;
   staticAnalysis?: Record<string, unknown>;
-  uiVerify?: 'ok' | 'missing' | 'skipped';
+  uiVerify?: 'ok' | 'ok_smoke' | 'missing' | 'skipped';
   changeset?: {
     id?: string;
     stored?: boolean;
@@ -1282,7 +1282,8 @@ export function summaryFrom(data: Record<string, unknown>): HarnessSummary {
     review: data.review && typeof data.review === 'object' ? (data.review as Record<string, unknown>) : undefined,
     staticAnalysis:
       data.static_analysis && typeof data.static_analysis === 'object' ? (data.static_analysis as Record<string, unknown>) : undefined,
-    uiVerify: data.ui_verify === 'ok' || data.ui_verify === 'missing' || data.ui_verify === 'skipped'
+    uiVerify:
+      data.ui_verify === 'ok' || data.ui_verify === 'ok_smoke' || data.ui_verify === 'missing' || data.ui_verify === 'skipped'
       ? data.ui_verify
       : undefined,
     changeset: cs

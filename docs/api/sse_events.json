@@ -97,7 +97,7 @@
     {"type": "workspace_rejected", "stability": "extended", "fields": {}},
     {"type": "model_router", "stability": "extended", "fields": {}, "note": "explains an automatic model-routing decision for this turn"},
     {"type": "attachments", "stability": "extended", "fields": {}},
-    {"type": "rewrite_policy_triggered", "stability": "extended", "fields": {"path": "string", "verdict": "require_edit|block", "count": "int"}, "note": "H4 (src/rewrite_policy.py): write_file refused a repeated whole-file rewrite of the same large, existing file this turn; the model must use edit_file/apply_patch instead. Not yet wired — see H45_wiring.md"},
-    {"type": "test_debt_overdue", "stability": "extended", "fields": {"data": {"items": "array"}}, "note": "H5 (src/test_debt.py): one or more pre-existing/exempt tests have stayed exempt for agent_test_debt_turns turns and were injected as high-priority todos. Not yet wired — see H45_wiring.md"}
+    {"type": "rewrite_policy_triggered", "stability": "extended", "fields": {"path": "string", "verdict": "require_edit|block", "count": "int"}, "note": "H4 (src/rewrite_policy.py): write_file refused a repeated whole-file rewrite of the same large, existing file this turn; the model must use edit_file/apply_patch instead. Emitted from the tool-result site of the agent loop."},
+    {"type": "test_debt_overdue", "stability": "extended", "fields": {"data": {"items": "array"}}, "note": "H5 (src/test_debt.py): one or more pre-existing/exempt tests have stayed exempt for agent_test_debt_turns turns and were injected as high-priority todos into the continue-turn working set."}
   ]
 }

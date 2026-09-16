@@ -10,10 +10,8 @@ from __future__ import annotations
 
 import inspect
 
-import pytest
 
 
-@pytest.mark.xfail(strict=True, reason="H2 wiring not yet applied to src/agent_loop.py (see H2_wiring.md)")
 def test_dependency_drift_is_wired_into_agent_loop():
     from src import agent_loop
 
