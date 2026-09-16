@@ -909,6 +909,8 @@ async def _direct_fallback(
     owner: Optional[str] = None,
     human_approved: bool = False,
     disabled_tools: Optional[set] = None,
+    tool_policy: Optional[Any] = None,
+    security_context: Optional[Any] = None,
 ) -> Optional[Dict]:
     _subproc_env = {
         **os.environ,
@@ -937,6 +939,12 @@ async def _direct_fallback(
             # `_human_approved`) to unlock a policy-denied git_commit/
             # git_push/git_branch/git_checkout.
             "human_approved": human_approved,
+            # Code Mode (A10): a native tool that re-enters execute_tool_block
+            # (run_code) must carry the SAME security posture the outer call
+            # was given — not a fresh context that forgot the untrusted
+            # content this run already saw.
+            "tool_policy": tool_policy,
+            "security_context": security_context,
             # The run's project identity, surfaced as its own ctx key so a tool
             # does not have to know that the route packs it into the harness
             # knobs (services/projects.py::agent_options puts it there). Read
@@ -1387,6 +1395,7 @@ async def execute_tool_block(
             owner=owner,
             progress_cb=progress_cb,
             tool_policy=tool_policy,
+            security_context=security_context,
             approved_document_id=(
                 exact_approval.pending.document_id
                 if approval_claimed
@@ -1513,6 +1522,7 @@ async def _execute_tool_block_impl(
     owner: Optional[str] = None,
     progress_cb: Optional[Callable[[Dict], Awaitable[None]]] = None,
     tool_policy: Optional[Any] = None,
+    security_context: Optional[Any] = None,
     approved_document_id: Optional[str] = None,
     approved_document_version: Optional[int] = None,
     approved_document_digest: Optional[str] = None,
@@ -2152,6 +2162,7 @@ async def _execute_tool_block_impl(
         res = await _direct_fallback(
             tool, content, progress_cb=progress_cb,
             session_id=session_id, owner=owner, disabled_tools=disabled_tools,
+            tool_policy=tool_policy, security_context=security_context,
         )
 
         if isinstance(res, tuple):
@@ -2185,8 +2196,6 @@ _FORMATTER_HANDLED_KEYS = {
     # echoing them here put ~8 KB of base64 per screenshot into the text the
     # model reads and told it nothing (FAUSTUS).
     "images", "screenshot",
-    # Wall time (src/tool_clock.py) is rendered as the header line, not as data.
-    "_timing",
 }
 
 

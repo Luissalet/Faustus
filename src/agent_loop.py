@@ -1697,6 +1697,15 @@ def _user_turn_count(messages: List[Dict]) -> int:
     return count
 
 
+def _storage_owner_for_offload(owner: Optional[str]) -> str:
+    """Owner bucket for offloaded tool results (A12); empty = not durable."""
+    try:
+        from src.owner_identity import effective_storage_owner
+        return effective_storage_owner(owner, auth_is_disabled=None) or ""
+    except Exception:  # noqa: BLE001
+        return str(owner or "")
+
+
 def _insert_before_latest_user(messages: List[Dict], context_msg: Dict) -> List[Dict]:
     """Insert context before the latest user turn, preserving language last.
 
@@ -7549,6 +7558,14 @@ async def _stream_agent_loop_body(
     _loop_recovery_active = False
     _loop_recovery_retries = 0
     _MAX_LOOP_RECOVERY_RETRIES = 3
+    # A29: the last rung the recovery above never had — a deterministic STOP.
+    # Same (tool, args, RESULT) N times → nudge, then block the tool, then end
+    # the turn with stop_reason=non_progressing_loop, whatever the model says
+    # about itself. Pure counters (src/loop_breaker.py); a different result
+    # resets them, so a turn with real progress never trips it.
+    from src.loop_breaker import LoopPolicy as _LoopPolicy, hash_result as _loop_hash_result, STOP_REASON as _LOOP_STOP_REASON
+    _loop_policy = _LoopPolicy.from_settings(get_setting)
+    _loop_policy_stop = False
     _loop_recovery_blocked_tools: Set[str] = set()
     _loop_recovery_temporarily_disabled: Set[str] = set()
     # Supervisor: how many times we've nudged the model after it announced
@@ -8129,6 +8146,21 @@ async def _stream_agent_loop_body(
                 yield "data: " + json.dumps({"type": "progress_update", "round": 0, "todos": _annotated_todos}) + "\n\n"
         except Exception as _ledger_err:
             logger.debug("[harness] ledger record (approved) failed: %s", _ledger_err)
+        # A12: an oversized result is stored whole (owner-scoped, sha256) and
+        # the model reads a bounded summary + artifact_id it can open with
+        # read_artifact — never a silent truncation.
+        try:
+            from src.tool_result_offload import offload_if_oversized as _offload
+            approved_result = _offload(
+                approved_result,
+                owner=_storage_owner_for_offload(owner),
+                session_id=session_id or "",
+                run_id=str((_hopts or {}).get("run_id") or ""),
+                call_id=_approved_call_id,
+                tool=approved.tool_name,
+            )
+        except Exception:  # noqa: BLE001
+            logger.debug("[tool_result_offload] skipped for %s", approved.tool_name, exc_info=True)
         formatted_approved_result = format_tool_result(desc, approved_result)
         _append_tool_results(
             messages,
@@ -10603,6 +10635,20 @@ async def _stream_agent_loop_body(
                 "[agent] redirected diagnostic/read retry during loop recovery on round %d: %s",
                 round_num, _single_tool_name,
             )
+            # A29: a skipped duplicate is still the same non-progressing state.
+            try:
+                if _loop_policy.observe_skipped(_single_tool_name or tool_blocks[0].tool_type, tool_blocks[0].content or "") == "stop":
+                    _loop_policy_stop = True
+            except Exception:  # noqa: BLE001
+                pass
+            if _loop_policy_stop:
+                _ledger.stop_reason = _LOOP_STOP_REASON
+                yield "data: " + json.dumps({
+                    "type": "loop_breaker_stop", "round": round_num,
+                    "tool": sorted(_loop_policy.blocked_tools | {_single_tool_name or tool_blocks[0].tool_type}),
+                    "streak": _loop_policy.streak,
+                }) + "\n\n"
+                break
             _restore_hidden = _loop_recovery_retries >= _MAX_LOOP_RECOVERY_RETRIES
             if _restore_hidden:
                 # Qwen still emits native calls for a tool missing from the
@@ -10761,6 +10807,20 @@ async def _stream_agent_loop_body(
             _same_probe_tool = ""
             _same_probe_skeleton = ""
             _same_probe_rounds = 0
+            # A29: a skipped duplicate is still the same non-progressing state.
+            try:
+                if _loop_policy.observe_skipped(_single_tool_name or tool_blocks[0].tool_type, tool_blocks[0].content or "") == "stop":
+                    _loop_policy_stop = True
+            except Exception:  # noqa: BLE001
+                pass
+            if _loop_policy_stop:
+                _ledger.stop_reason = _LOOP_STOP_REASON
+                yield "data: " + json.dumps({
+                    "type": "loop_breaker_stop", "round": round_num,
+                    "tool": sorted(_loop_policy.blocked_tools | {_single_tool_name or tool_blocks[0].tool_type}),
+                    "streak": _loop_policy.streak,
+                }) + "\n\n"
+                break
             _ledger.notes.append(
                 "loop_recovered:" + ",".join(sorted(_looping_tool_names))
             )
@@ -10959,6 +11019,13 @@ async def _stream_agent_loop_body(
             if _denial is not None:
                 reason = _denial.reason
                 desc = f"{block.tool_type}: BLOCKED"
+                # A29: calling a withheld tool with the same args is the same
+                # non-progressing state — count it so the stop still arrives.
+                try:
+                    if _loop_policy.observe_skipped(block.tool_type, block.content or "") == "stop":
+                        _loop_policy_stop = True
+                except Exception:  # noqa: BLE001
+                    pass
                 result = {
                     "error": reason,
                     "exit_code": 1,
@@ -11859,6 +11926,11 @@ async def _stream_agent_loop_body(
             # returned no page text, or there is no URL to anchor to — which is
             # what keeps a setting-off run byte-identical.
             _model_result = result
+            try:
+                from src.tool_clock import timing_of as _timing_of, attach as _attach_timing
+                _result_timing = _timing_of(result)
+            except Exception:  # noqa: BLE001
+                _result_timing, _attach_timing = None, None
             if block.tool_type.startswith(_BROWSER_MCP_PREFIX):
                 try:
                     from src.browser_view import annotate_page_text as _annotate_page
@@ -11868,6 +11940,51 @@ async def _stream_agent_loop_body(
                 except Exception as _wp_err:  # noqa: BLE001 - never cost a turn
                     logger.debug("[web-provenance] skipped for %s: %s", block.tool_type, _wp_err)
 
+            # A29: feed the loop policy the CALL and its RESULT.
+            try:
+                if isinstance(result, dict) and result.get("blocked"):
+                    _loop_action = "none"  # already counted by observe_skipped
+                else:
+                    _loop_action = _loop_policy.observe(
+                        block.tool_type, block.content or "", _loop_hash_result(result)
+                    )
+            except Exception:  # noqa: BLE001
+                _loop_action = "none"
+            if _loop_action == "nudge":
+                messages.append({"role": "user", "content": (
+                    "[Runtime loop recovery — not a new user request] This exact call, with "
+                    "this exact result, has now repeated "
+                    f"{_loop_policy.streak} times. Take a different concrete action; do not "
+                    "repeat it."
+                )})
+                logger.info("[loop-breaker] nudge after %d identical calls to %s", _loop_policy.streak, block.tool_type)
+            elif _loop_action == "block_tool":
+                disabled_tools.update(_loop_policy.blocked_tools)
+                messages.append({"role": "user", "content": (
+                    "[Runtime loop recovery — not a new user request] The tool "
+                    f"`{block.tool_type}` is withheld for the rest of this turn: the same call "
+                    "kept returning the same result. Finish with what you have or use a "
+                    "different tool."
+                )})
+                logger.info("[loop-breaker] tool %s withheld after %d identical calls", block.tool_type, _loop_policy.streak)
+            elif _loop_action == "stop":
+                _loop_policy_stop = True
+                logger.info("[loop-breaker] stopping turn after %d identical calls to %s", _loop_policy.streak, block.tool_type)
+            # A12: offload an oversized result (see the approved-result site).
+            try:
+                from src.tool_result_offload import offload_if_oversized as _offload
+                _model_result = _offload(
+                    _model_result,
+                    owner=_storage_owner_for_offload(owner),
+                    session_id=session_id or "",
+                    run_id=str((_hopts or {}).get("run_id") or ""),
+                    call_id=_call_id,
+                    tool=block.tool_type,
+                )
+            except Exception:  # noqa: BLE001
+                logger.debug("[tool_result_offload] skipped for %s", block.tool_type, exc_info=True)
+            if _model_result is not result and _attach_timing is not None:
+                _attach_timing(_model_result, _result_timing)
             formatted = format_tool_result(desc, _model_result)
             tool_results.append(formatted)
             tool_result_texts.append(formatted)
@@ -11933,6 +12050,17 @@ async def _stream_agent_loop_body(
 
         # If budget was hit, stop the loop
         if budget_hit:
+            break
+
+        # A29: a non-progressing loop ends the turn on its own, bounded.
+        if _loop_policy_stop:
+            _ledger.stop_reason = _LOOP_STOP_REASON
+            yield "data: " + json.dumps({
+                "type": "loop_breaker_stop",
+                "round": round_num,
+                "tool": _loop_policy.snapshot().get("blocked_tools"),
+                "streak": _loop_policy.streak,
+            }) + "\n\n"
             break
 
         # ask_user posed a question — stop here and wait for the user's choice.

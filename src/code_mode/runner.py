@@ -113,6 +113,8 @@ async def run_code_mode(
     disabled_tools: Optional[set] = None,
     workspace: Optional[str] = None,
     workspace_roots: Optional[list] = None,
+    tool_policy: Any = None,
+    security_context: Any = None,
 ) -> dict:
     limits = _limits()
     timeout_s = max(1, limits["timeout_seconds"])
@@ -186,6 +188,8 @@ async def run_code_mode(
                     workspace_roots=workspace_roots,
                     disabled_tools=disabled_tools,
                     call_id=f"code_mode:{call_id}:{uuid.uuid4().hex[:8]}",
+                    tool_policy=tool_policy,
+                    security_context=security_context,
                 )
                 # "ok" transport-wise means "the tool ran" (even a functional
                 # error, e.g. a bad path or a policy rejection, is `ok=True`

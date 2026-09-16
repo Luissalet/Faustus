@@ -15,6 +15,8 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from src.agent_tools import ToolBlock, TOOL_TAGS
+from src.agent_tools.context_overflow_tool import TOOL_SCHEMA as READ_OVERFLOW_TOOL_SCHEMA
+from src.agent_tools.artifact_read_tool import TOOL_SCHEMA as READ_ARTIFACT_TOOL_SCHEMA
 from src.tool_parsing import _TOOL_NAME_MAP
 from src.tool_security import BUILTIN_EMAIL_TOOLS
 
@@ -980,6 +982,9 @@ FUNCTION_TOOL_SCHEMAS = [
             }
         }
     },
+    # ── A15 / A12: read back what compaction or offload took out of context ──
+    READ_OVERFLOW_TOOL_SCHEMA,
+    READ_ARTIFACT_TOOL_SCHEMA,
     # ── Code Mode (T6, A10/A11): compose several tool calls in one round ────
     {
         "type": "function",

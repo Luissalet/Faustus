@@ -17,11 +17,12 @@ Nothing here throws: a missing clock never costs a turn.
 from __future__ import annotations
 
 import contextvars
+import threading
 import time
+from collections import OrderedDict
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-TIMING_KEY = "_timing"
 
 # Monotonic start of the turn currently streaming in this task (contextvar so
 # workers and nested loops each carry their own).
@@ -87,33 +88,57 @@ def fmt_duration(seconds: Optional[float]) -> str:
     return f"{h}h {m:02d}m"
 
 
+# Timings live BESIDE the result, never inside it: CALL-05 promises the dict
+# a tool returns reaches its caller byte-for-byte, and tests hold it to that.
+# Keyed by id(result), popped when read, capped — a result that is never
+# formatted costs one slot, not a leak.
+_TIMINGS: "OrderedDict[int, Dict[str, Any]]" = OrderedDict()
+_TIMINGS_CAP = 256
+_TIMINGS_LOCK = threading.Lock()
+
+
+def _remember(result: Any, timing: Dict[str, Any]) -> None:
+    with _TIMINGS_LOCK:
+        _TIMINGS[id(result)] = timing
+        while len(_TIMINGS) > _TIMINGS_CAP:
+            _TIMINGS.popitem(last=False)
+
+
 def stamp(result: Any, started_monotonic: float, *, started_wall: Optional[float] = None) -> Any:
-    """Attach timing to a tool result dict in place (returns it). Non-dict
+    """Record timing for a tool result (returns it unchanged). Non-dict
     results are left alone."""
     if not isinstance(result, dict):
         return result
     try:
         elapsed = max(0.0, time.monotonic() - float(started_monotonic))
         wall = float(started_wall) if started_wall else time.time() - elapsed
-        result[TIMING_KEY] = {
+        te = turn_elapsed_s()
+        _remember(result, {
             "started_at": datetime.fromtimestamp(wall).astimezone().isoformat(timespec="seconds"),
             "elapsed_ms": int(elapsed * 1000),
-            "turn_elapsed_ms": (
-                int(turn_elapsed_s() * 1000) if turn_elapsed_s() is not None else None
-            ),
+            "turn_elapsed_ms": int(te * 1000) if te is not None else None,
             "round": _TURN_ROUND.get() or None,
-        }
+        })
     except Exception:  # noqa: BLE001
         pass
     return result
 
 
-def timing_of(result: Any) -> Optional[Dict[str, Any]]:
-    if isinstance(result, dict):
-        t = result.get(TIMING_KEY)
-        if isinstance(t, dict):
-            return t
-    return None
+def timing_of(result: Any, *, pop: bool = False) -> Optional[Dict[str, Any]]:
+    if not isinstance(result, dict):
+        return None
+    with _TIMINGS_LOCK:
+        if pop:
+            return _TIMINGS.pop(id(result), None)
+        return _TIMINGS.get(id(result))
+
+
+def attach(result: Any, timing: Optional[Dict[str, Any]]) -> Any:
+    """Carry a timing over to a replacement result (offload/annotation
+    builds a new dict); no-op without a timing."""
+    if isinstance(result, dict) and timing:
+        _remember(result, dict(timing))
+    return result
 
 
 def header_line(result: Any) -> str:
@@ -121,7 +146,7 @@ def header_line(result: Any) -> str:
     carries no timing or the setting is off."""
     if not enabled():
         return ""
-    t = timing_of(result)
+    t = timing_of(result, pop=True)
     if not t:
         return ""
     elapsed_s = (t.get("elapsed_ms") or 0) / 1000.0

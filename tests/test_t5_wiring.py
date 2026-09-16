@@ -21,27 +21,15 @@ import pytest
 REPO = Path(__file__).resolve().parents[1]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="src/agent_loop.py is not T5's file to edit; wiring documented in "
-           "T5_wiring.md §1 for the integrator to apply at both format_tool_result "
-           "call sites (~L8132 approved-replay, ~L11829 in-loop).",
-)
 def test_agent_loop_calls_offload_before_formatting_tool_results():
     text = (REPO / "src" / "agent_loop.py").read_text(encoding="utf-8")
     assert "tool_result_offload" in text
     assert "offload_if_oversized" in text
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Tool registration lives in src/tool_schemas.py and "
-           "src/agent_tools/__init__.py, which are T6's files for this "
-           "contract, not T5's; the read_artifact schema + dispatch entry is "
-           "specified in T5_wiring.md §2 for the integrator to add.",
-)
 def test_read_artifact_tool_is_registered():
-    schemas = (REPO / "src" / "tool_schemas.py").read_text(encoding="utf-8")
-    registry = (REPO / "src" / "agent_tools" / "__init__.py").read_text(encoding="utf-8")
-    assert '"read_artifact"' in schemas
-    assert "read_artifact" in registry
+    from src.agent_tools import TOOL_HANDLERS, TOOL_TAGS
+    from src.tool_schemas import FUNCTION_TOOL_SCHEMAS
+    names = {s.get("function", {}).get("name") for s in FUNCTION_TOOL_SCHEMAS}
+    assert "read_artifact" in names
+    assert "read_artifact" in TOOL_HANDLERS and "read_artifact" in TOOL_TAGS

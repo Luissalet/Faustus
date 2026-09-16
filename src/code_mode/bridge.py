@@ -93,6 +93,8 @@ async def dispatch_call(
     workspace_roots: Optional[list],
     disabled_tools: Optional[Iterable[str]],
     call_id: str,
+    tool_policy: Any = None,
+    security_context: Any = None,
 ) -> dict:
     """Run one guest ``tools.call(tool_name, args)`` through the real
     dispatcher and return the same result shape ``execute_tool_block``
@@ -121,7 +123,11 @@ async def dispatch_call(
         # callers: pass the raw arguments through as the block content.
         block = ToolBlock(name, json.dumps(raw_args))
 
-    security_context = ToolRunSecurityContext()
+    # The run's own posture when the tool handed it down (ctx["security_context"]
+    # / ctx["tool_policy"] from execute_tool_block's ctx); a fresh one only for
+    # headless callers, which have no run history to forget.
+    if security_context is None:
+        security_context = ToolRunSecurityContext()
     try:
         _desc, result = await execute_tool_block(
             block,
@@ -130,7 +136,7 @@ async def dispatch_call(
             owner=owner,
             workspace=workspace,
             workspace_roots=workspace_roots,
-            tool_policy=None,
+            tool_policy=tool_policy,
             security_context=security_context,
             call_id=call_id,
         )

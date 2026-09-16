@@ -10,13 +10,6 @@ from __future__ import annotations
 import pytest
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "read_overflow (src/agent_tools/context_overflow_tool.py) is not yet "
-    "registered in src.tool_schemas.FUNCTION_TOOL_SCHEMAS or "
-    "src.agent_tools.TOOL_HANDLERS -- see T8_wiring.md for the exact diff. "
-    "Once the integrator applies it this test starts passing (and should "
-    "be deleted or have its xfail marker removed)."
-))
 def test_read_overflow_tool_is_registered_in_the_live_tool_loop():
     from src import agent_tools
     from src import tool_schemas

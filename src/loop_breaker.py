@@ -151,10 +151,45 @@ class LoopPolicy:
         returning a different result) resets it to a fresh streak of one,
         which is what makes a turn WITH real progress never trip this."""
         signature = f"{tool}␟{normalize_args(args)}␟{result_hash}"
-        if signature == self._last_signature:
+        prefix = f"{tool}␟{normalize_args(args)}␟"
+        if signature == self._last_signature or (
+            # The runtime skipped the previous identical call(s) — there was
+            # no result to compare, so this real result continues the streak
+            # and becomes the one later calls are compared against.
+            self._last_signature is not None
+            and self._last_signature == prefix + "<skipped>"
+        ):
+            self._last_signature = signature
             self._streak += 1
         else:
             self._last_signature = signature
+            self._streak = 1
+            self._nudged_at = None
+            self._blocked_at = None
+        if self._streak >= self.stop_after:
+            return "stop"
+        if self._streak >= self.block_after:
+            if self._blocked_at is None:
+                self._blocked_at = self._streak
+                self.blocked_tools.add(tool)
+            return "block_tool"
+        if self._streak >= self.nudge_after:
+            if self._nudged_at is None:
+                self._nudged_at = self._streak
+            return "nudge"
+        return "none"
+
+    def observe_skipped(self, tool: str, args: Any) -> str:
+        """A duplicate the runtime refused to execute (so there is no result
+        to hash) still extends the streak when its tool+args match the last
+        observed call: not running it is not progress. Returns the same
+        actions as :meth:`observe`; a call to a different tool/args starts
+        a fresh streak with an unknown result."""
+        prefix = f"{tool}␟{normalize_args(args)}␟"
+        if self._last_signature and self._last_signature.startswith(prefix):
+            self._streak += 1
+        else:
+            self._last_signature = prefix + "<skipped>"
             self._streak = 1
             self._nudged_at = None
             self._blocked_at = None

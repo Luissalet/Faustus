@@ -60,6 +60,8 @@ from .alternatives_tools import (
     AltStartTool, AltCompareTool, AltApplyTool,
 )
 from .code_mode_tool import RunCodeTool
+from .context_overflow_tool import ReadOverflowTool
+from .artifact_read_tool import ReadArtifactTool
 
 TOOL_HANDLERS = {
     "bash": BashTool().execute,
@@ -77,6 +79,10 @@ TOOL_HANDLERS = {
     "todowrite": TodoWriteTool().execute,
     "delegate_agents": DelegateAgentsTool().execute,
     "ls": LsTool().execute,
+    # A15: re-acquire a tool body the mid-turn compaction spilled to disk.
+    "read_overflow": ReadOverflowTool().execute,
+    # A12: read back an offloaded (oversized) tool result by range or query.
+    "read_artifact": ReadArtifactTool().execute,
     "glob": GlobTool().execute,
     "grep": GrepTool().execute,
     "find_symbol": FindSymbolTool().execute,
@@ -194,6 +200,8 @@ TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_fi
              "manage_session", "manage_memory", "list_models",
              "ui_control", "generate_image", "ask_user", "update_plan",
              "lookup_tools",
+             # A15 / A12: re-acquire what compaction or offload took out of context.
+             "read_overflow", "read_artifact",
              "manage_tasks", "api_call", "ask_teacher", "manage_skills",
              "suggest_document",
              "manage_endpoints", "manage_mcp", "manage_webhooks",

@@ -21,7 +21,7 @@ stream and tool execution are faked — same harness as
 tool call 20 times running. It is the acceptance test A29 actually needs, and
 it is expected to FAIL against today's `agent_loop.py`: nothing there yet
 stops a turn independently for a non-progressing loop, or reports
-`non_progressing_loop`. It is marked `xfail(strict=True)` — if it ever starts
+`non_progressing_loop`. The wiring landed in the integration lot (if it ever starts
 passing, that means the wiring in `T7_wiring.md` (or something equivalent)
 landed, and this test should be turned into a normal, green acceptance test
 at that point rather than staying xfail.
@@ -56,18 +56,6 @@ def _events(chunks):
 
 
 @pytest.mark.acceptance("A29")
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "src/loop_breaker.py's LoopPolicy is implemented and unit-tested "
-        "(tests/test_loop_breaker.py) but not wired into src/agent_loop.py, "
-        "which this lot (T7) does not own outside tool-selection functions "
-        "(CONTRATO.md). See T7_wiring.md for the exact diff. Today's inline "
-        "_loop_recovery_* mechanism redirects/blocks a repeated call but "
-        "never stops the turn with stop_reason=non_progressing_loop, so this "
-        "real end-to-end run keeps cycling instead of stopping."
-    ),
-)
 def test_twenty_identical_tool_calls_stop_the_turn_deterministically(tmp_path, monkeypatch, request):
     monkeypatch.setattr(al, "get_setting", lambda key, default=None: default, raising=False)
     monkeypatch.setattr(al, "get_mcp_manager", lambda: None, raising=False)
@@ -94,6 +82,11 @@ def test_twenty_identical_tool_calls_stop_the_turn_deterministically(tmp_path, m
         "http://127.0.0.1:11434/v1", "qwen3-coder:30b",
         [{"role": "user", "content": "Find the config file and read it"}],
         max_rounds=20, relevant_tools={"bash"}, workspace=str(tmp_path),
+        # The user already answered "allow for this task" (what a real long
+        # coding turn looks like after its first approval card); otherwise the
+        # second bash stops the turn at the untrusted-context gate long before
+        # any loop counter can matter.
+        session_id="sess-a29", security_gate_bypass=True,
     )
     events = _events(_collect(gen))
 

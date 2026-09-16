@@ -36,7 +36,8 @@ def test_stamp_records_elapsed_and_turn_clock():
         tc.set_round(3)
         t0 = time.monotonic() - 2.0
         res = tc.stamp({"output": "hi", "exit_code": 0}, t0)
-        t = res[tc.TIMING_KEY]
+        assert res == {"output": "hi", "exit_code": 0}  # the dict itself is untouched
+        t = tc.timing_of(res)
         assert 1900 <= t["elapsed_ms"] <= 4000
         assert t["turn_elapsed_ms"] is not None and t["turn_elapsed_ms"] >= 0
         assert t["round"] == 3
@@ -57,8 +58,8 @@ def test_formatted_result_starts_with_the_clock_line():
     assert lines[0] == "### bash"
     assert lines[1].startswith("⏱ took 12s")
     assert "started " in lines[1]
-    # The private key is never echoed as a data blob.
-    assert "_timing" not in text
+    # Read once: a second format of the same dict carries no stale clock.
+    assert "⏱" not in format_tool_result("bash", res)
     assert "```\nok\n```" in text
 
 
@@ -84,6 +85,13 @@ def test_clock_line_absent_when_setting_off(monkeypatch):
 
 def test_unstamped_result_formats_exactly_as_before():
     assert format_tool_result("bash", {"output": "ok", "exit_code": 0}) == "### bash\n```\nok\n```"
+
+
+def test_attach_carries_timing_to_a_replacement_dict():
+    res = tc.stamp({"output": "x" * 10}, time.monotonic() - 2)
+    replacement = {"output": "x…", "artifact_id": "a1"}
+    tc.attach(replacement, tc.timing_of(res))
+    assert tc.timing_of(replacement)["elapsed_ms"] >= 1900
 
 
 def test_sse_fields_carry_duration_and_turn_clock():
@@ -134,6 +142,7 @@ def test_execute_tool_block_stamps_the_result(monkeypatch, tmp_path):
         security_context=te.NO_TOOL_SECURITY_CONTEXT,
     ))
     assert isinstance(out, tuple)
-    t = out[1][tc.TIMING_KEY]
+    assert set(out[1].keys()) == {"content", "size"}  # CALL-05: byte-for-byte
+    t = tc.timing_of(out[1])
     assert t["elapsed_ms"] >= 40
     assert "took " in format_tool_result(out[0], out[1])

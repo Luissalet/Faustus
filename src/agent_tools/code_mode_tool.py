@@ -55,4 +55,6 @@ class RunCodeTool:
             disabled_tools=ctx.get("disabled_tools") or set(),
             workspace=get_active_workspace(),
             workspace_roots=list(get_active_workspace_roots()),
+            tool_policy=ctx.get("tool_policy"),
+            security_context=ctx.get("security_context"),
         )

@@ -18,6 +18,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import app
+from core import middleware
 
 
 @pytest.fixture()
@@ -25,24 +26,17 @@ def client():
     return TestClient(app, client=("127.0.0.1", 51234))
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "routes/budget_routes.py exists and works (see "
-        "tests/acceptance/test_a31_budget_reservations.py) but app.py does not "
-        "register it yet — app.py is not owned by lot T7. Diff in "
-        "scratchpad/paridad_wave1/T7_wiring.md section 1."
-    ),
-)
 def test_budget_route_is_registered_on_the_real_app(client, monkeypatch):
     from src import budget_account
     import tempfile
     from pathlib import Path
     tmp = Path(tempfile.mkdtemp())
     monkeypatch.setattr(budget_account, "default_path", lambda: tmp / "budget.sqlite3")
-    monkeypatch.setenv("AUTH_ENABLED", "false")
-
-    response = client.get("/api/runs/some-run/budget")
+    # The internal tool token is the same path the agent's own tools use;
+    # "Setup required" (401) is what an unauthenticated client gets on a
+    # fresh data dir, which says nothing about routing.
+    headers = {middleware.INTERNAL_TOOL_HEADER: middleware.INTERNAL_TOOL_TOKEN}
+    response = client.get("/api/runs/some-run/budget", headers=headers)
     # An unmounted path answers the app's generic 404 with no `run_id` key at
     # all (see test_unmounted_sibling_path_still_answers_a_generic_404_for_contrast
     # in tests/test_l55_app_wiring.py for the same contrast on a different

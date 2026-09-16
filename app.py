@@ -877,6 +877,8 @@ app.include_router(setup_integrations_routes())
 # gives the same fingerprint, which is what makes it a report.
 from routes.changesets_routes import setup_changesets_routes, setup_doctor_routes
 app.include_router(setup_changesets_routes())
+from routes.budget_routes import setup_budget_routes
+app.include_router(setup_budget_routes())
 
 # What this machine can actually do. Every probe already existed; this is the
 # one place that asks them all and puts the fix in the sentence.
