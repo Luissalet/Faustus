@@ -7456,3 +7456,61 @@ Thought 1s	Pensó 1s
 Thought {n}s	Pensó {n}s
 {n} searches	{n} búsquedas
 
+Active document	Documento activo
+Admission: {fits}	Admisión: {fits}
+All kinds	Todos los tipos
+Apply a command	Aplicar un comando
+Budget verdict: {v}	Veredicto de presupuesto: {v}
+Capabilities and resources	Capacidades y recursos
+Checking Creator	Comprobando Creator
+Choose a project	Elige un proyecto
+Command already applied (deduped).	El comando ya se había aplicado (deduplicado).
+Command applied.	Comando aplicado.
+Command history	Historial de comandos
+Command: patch_content	Comando: patch_content
+Could not load the library	No se pudo cargar la biblioteca
+Creator is disabled	Creator está desactivado
+Creator works inside a project — pick one above.	Creator funciona dentro de un proyecto — elige uno arriba.
+Creator workspace	Espacio de trabajo Creator
+Creator	Creator
+Devices	Dispositivos
+Document content (JSON)	Contenido del documento (JSON)
+Estimate:	Estimación:
+Filter by kind	Filtrar por tipo
+Known deployments	Deployments conocidos
+Loading deployments	Cargando deployments
+Loading resources	Cargando recursos
+Mode: {mode}	Modo: {mode}
+New document:	Nuevo documento:
+New {kind} document created.	Documento {kind} nuevo creado.
+No GPU detected.	No se detectó ninguna GPU.
+No commands yet.	Aún no hay comandos.
+No document open	No hay ningún documento abierto
+No known deployments yet.	Aún no hay deployments conocidos.
+Nothing here yet	Nada por aquí todavía
+Occurrences produced in this project will show up here.	Las occurrences producidas en este proyecto aparecerán aquí.
+Occurrences	Occurrences
+Open one from the library on the left, or start a new one.	Abre uno desde la biblioteca de la izquierda, o crea uno nuevo.
+Pick a project above to open its Creator documents.	Elige un proyecto arriba para abrir sus documentos de Creator.
+Preflight	Preflight
+Project library	Biblioteca del proyecto
+Reload and try again	Recargar y volver a intentarlo
+Run preflight	Ejecutar preflight
+Select a project…	Selecciona un proyecto…
+Send command	Enviar comando
+The patch must be valid JSON.	El patch debe ser JSON válido.
+The plan changed since preflight; re-run preflight and approve again.	El plan cambió desde el preflight; repite el preflight y aprueba de nuevo.
+This document changed since you loaded it. The server now has revision {n}.	Este documento cambió desde que lo cargaste. El servidor tiene ahora la revisión {n}.
+Turn it on in Settings: the "creator_enabled" setting.	Actívalo en Ajustes: el ajuste «creator_enabled».
+command_id (optional, dedupe key)	command_id (opcional, clave de deduplicado)
+command_id	command_id
+deduped	deduplicado
+deployment_id	deployment_id
+expected_revision	expected_revision
+operation	operation
+params (JSON)	params (JSON)
+params JSON	JSON de params
+patch (JSON, merged into content)	patch (JSON, fusionado con el contenido)
+patch JSON	JSON del patch
+project	project
+{n} active admission(s), {q} queued	{n} admisión(es) activa(s), {q} en cola

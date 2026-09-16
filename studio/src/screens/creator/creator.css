@@ -1,0 +1,278 @@
+/* WP05 — Creator shell. Scoped under .fs-creator so nothing here leaks into
+   the rest of Studio (faustus-css-gotchas: never a bare `button` selector —
+   it beats the shared control styles' specificity and every button on the
+   page inherits this screen's sizing; every rule here is class-scoped). */
+
+.fs-creator {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  height: 100%;
+  min-height: 0;
+}
+
+.fs-creator__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.fs-creator__top h1 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.fs-creator__project-select {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+}
+
+.fs-creator__project-select select {
+  min-width: 200px;
+}
+
+.fs-creator__grid {
+  display: grid;
+  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr) minmax(260px, 320px);
+  gap: 12px;
+  flex: 1;
+  min-height: 0;
+}
+
+@media (max-width: 960px) {
+  .fs-creator__grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.fs-creator__library,
+.fs-creator__document,
+.fs-creator__right {
+  min-height: 0;
+  overflow-y: auto;
+  border: 1px solid var(--fs-border, #2a2a33);
+  border-radius: 10px;
+  padding: 10px;
+}
+
+.fs-creator__library-filters {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.fs-creator__library-filters select,
+.fs-creator__library-filters input {
+  flex: 1;
+  min-width: 0;
+}
+
+.fs-creator__library-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.fs-creator__library-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  padding: 6px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  cursor: pointer;
+}
+
+.fs-creator__library-item[aria-selected='true'] {
+  border-color: var(--fs-accent, #ff6a4d);
+  background: color-mix(in srgb, var(--fs-accent, #ff6a4d) 12%, transparent);
+}
+
+.fs-creator__library-item:hover,
+.fs-creator__library-item:focus-visible {
+  background: color-mix(in srgb, currentColor 8%, transparent);
+}
+
+.fs-creator__thumb {
+  width: 40px;
+  height: 40px;
+  border-radius: 6px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.fs-creator__thumb--placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.65rem;
+  background: color-mix(in srgb, currentColor 10%, transparent);
+}
+
+.fs-creator__library-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.fs-creator__library-meta b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  /* Standard property first (per faustus-css-gotchas), -webkit- as the
+     rendering fallback -- never the other way around. */
+  line-clamp: 1;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+}
+
+.fs-creator__muted {
+  opacity: 0.65;
+  font-size: 0.8rem;
+}
+
+.fs-creator__tag {
+  display: inline-block;
+  font-size: 0.7rem;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 12%, transparent);
+  width: fit-content;
+}
+
+.fs-creator__doc-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.fs-creator__doc-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.fs-creator__new-doc {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.fs-creator__json {
+  max-height: 260px;
+  overflow: auto;
+  background: color-mix(in srgb, currentColor 5%, transparent);
+  border-radius: 8px;
+  padding: 8px;
+  font-size: 0.78rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.fs-creator__history {
+  margin-top: 10px;
+  font-size: 0.85rem;
+}
+
+.fs-creator__history ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+
+.fs-creator__command-editor {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-top: 1px solid var(--fs-border, #2a2a33);
+  padding-top: 10px;
+}
+
+.fs-creator__command-editor label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.8rem;
+}
+
+.fs-creator__command-editor textarea {
+  font-family: var(--fs-mono, monospace);
+  font-size: 0.78rem;
+}
+
+.fs-creator__conflict {
+  border: 1px solid #d9843e;
+  background: color-mix(in srgb, #d9843e 15%, transparent);
+  border-radius: 8px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.fs-creator__error {
+  color: #e05a5a;
+  font-size: 0.82rem;
+}
+
+.fs-creator__ok {
+  color: #4caf7d;
+  font-size: 0.82rem;
+}
+
+.fs-creator__right {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.fs-creator__card {
+  border: 1px solid var(--fs-border, #2a2a33);
+  border-radius: 8px;
+  padding: 8px;
+}
+
+.fs-creator__card h4 {
+  margin: 0 0 6px;
+  font-size: 0.85rem;
+}
+
+.fs-creator__preflight-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.fs-creator__preflight-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 0.78rem;
+}
+
+.fs-creator__preflight-report {
+  margin-top: 8px;
+  font-size: 0.8rem;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.fs-creator__missing {
+  margin: 0;
+  padding-left: 16px;
+  color: #d9843e;
+}

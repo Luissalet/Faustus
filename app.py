@@ -1609,6 +1609,16 @@ async def serve_alternatives(request: Request):
     several approaches to the same task before one is applied."""
     return await serve_index(request)
 
+@app.get("/creator")
+async def serve_creator(request: Request):
+    """Studio Creator shell (WP05): the deep-link SPA entry for
+    `studio/src/screens/creator/CreatorScreen.tsx`, over the Creator API
+    that already exists (`routes/creator_*.py`, WP02/03/07/09/30). This
+    route only serves the SPA shell -- whether the screen itself shows the
+    workspace or "Creator is disabled" is decided client-side from
+    `GET /api/creator/capabilities` (`creator_enabled` setting)."""
+    return await serve_index(request)
+
 @app.get("/login")
 async def serve_login(request: Request):
     if not AUTH_ENABLED:
