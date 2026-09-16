@@ -6826,6 +6826,35 @@ This document has no layers yet.	Este documento aún no tiene capas.
 Click to add points, double-click to close the mask.	Haz clic para añadir puntos, doble clic para cerrar la máscara.
 Exported as {id}	Exportado como {id}
 Inpaint proposal ready ({recipe})	Propuesta de inpaint lista ({recipe})
+Music	Música
+Loading songs	Cargando canciones
+New song	Nueva canción
+Song	Canción
+No songs yet	Aún no hay canciones
+Create a song to start writing lyrics and generating takes.	Crea una canción para empezar a escribir la letra y generar tomas.
+Simple	Sencillo
+Expert	Experto
+Lyrics	Letra
+Remove section	Eliminar sección
+Lyrics for this section (leave empty for instrumental)	Letra de esta sección (vacío para instrumental)
+Style tags (comma-separated)	Etiquetas de estilo (separadas por comas)
+Target BPM	BPM objetivo
+Target key	Tonalidad objetivo
+Seed	Semilla
+Duration (s)	Duración (s)
+Take generated.	Toma generada.
+Takes	Tomas
+No takes yet — generate one above.	Aún no hay tomas — genera una arriba.
+seed	semilla
+Selected	Seleccionada
+The document changed elsewhere — reloaded.	El documento cambió en otro sitio — recargado.
+intro	intro
+verse	estrofa
+pre_chorus	preestribillo
+chorus	estribillo
+bridge	puente
+outro	outro
+completed	completado
 
 About this selection…	Sobre esta selección…
 Accept proposal	Aceptar propuesta

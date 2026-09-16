@@ -9,6 +9,7 @@ import { Timeline } from './Timeline';
 import { Canvas } from './Canvas';
 import { ModelExplorer } from './ModelExplorer';
 import { Subtitles } from './Subtitles';
+import { Music } from './Music';
 import './creator.css';
 
 /**
@@ -542,6 +543,7 @@ function PreflightCard({ projectId, deployments }: { projectId: string; deployme
 
 type CreatorTab = 'workspace' | 'timeline' | 'models' | 'subtitles';
 type CreatorTab = 'workspace' | 'timeline' | 'canvas' | 'models';
+type CreatorTab = 'workspace' | 'timeline' | 'models' | 'music';
 
 export function CreatorScreen() {
   const [params, setParams] = useSearchParams();
@@ -554,6 +556,7 @@ export function CreatorScreen() {
       : 'workspace',
       : params.get('tab') === 'canvas' ? 'canvas'
       : params.get('tab') === 'models' ? 'models' : 'workspace',
+      : params.get('tab') === 'music' ? 'music'
   );
   const [caps, setCaps] = useState<api.CreatorCapabilities | 'disabled' | null>(null);
   const [libraryItems, setLibraryItems] = useState<api.LibraryItem[]>([]);
@@ -763,6 +766,16 @@ export function CreatorScreen() {
             >
               {t('Subtitles')}
             </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === 'music'}
+              className="fs-creator__tab"
+              onClick={() => changeTab('music')}
+              data-testid="creator-tab-music"
+            >
+              {t('Music')}
+            </button>
           </div>
 
           {(tab === 'workspace' || tab === 'timeline') && (
@@ -802,6 +815,7 @@ export function CreatorScreen() {
 
           {tab === 'models' && <ModelExplorer projectId={projectId} />}
           {tab === 'subtitles' && <Subtitles projectId={projectId} />}
+          {tab === 'music' && <Music projectId={projectId} />}
         </>
       )}
 
