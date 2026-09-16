@@ -47,5 +47,96 @@
         "note": "Seeded from the shipped template at the time the MEDIA-02 review gate was introduced."
       }
     ]
+  },
+  "image.txt2img": {
+    "approved": [
+      {
+        "version": "1.0.0",
+        "fingerprint_version": 2,
+        "fingerprint": "dd11fc9617b61b4209d32bc096b89c559edf67afede968c7f2410a8319448712",
+        "node_types": ["CLIPTextEncode", "CheckpointLoaderSimple", "EmptyLatentImage", "KSampler", "SaveImage", "VAEDecode"],
+        "approved_by": "wp11-recipe-catalogue",
+        "approved_at": "2026-09-16T00:00:00Z",
+        "note": "WP11 factory recipe (comfy_recipes.RECIPE_TXT2IMG): only ComfyUI core nodes, same node vocabulary already reviewed for image.product."
+      }
+    ]
+  },
+  "image.img2img": {
+    "approved": [
+      {
+        "version": "1.0.0",
+        "fingerprint_version": 2,
+        "fingerprint": "36978ba48499790e8afa2074126d7c8a6c7b42a168e9ad8a160a700bc1536423",
+        "node_types": ["CLIPTextEncode", "CheckpointLoaderSimple", "KSampler", "LoadImage", "SaveImage", "VAEDecode", "VAEEncode"],
+        "approved_by": "wp11-recipe-catalogue",
+        "approved_at": "2026-09-16T00:00:00Z",
+        "note": "WP11 factory recipe (comfy_recipes.RECIPE_IMG2IMG): only ComfyUI core nodes, same node vocabulary already reviewed for image.reference-edit."
+      }
+    ]
+  },
+  "image.inpaint": {
+    "approved": [
+      {
+        "version": "1.0.0",
+        "fingerprint_version": 2,
+        "fingerprint": "07fd04e1a8ab2599d94aa46eb4a1e0f5adfbe0949ef94e9850c2761feddaf936",
+        "node_types": ["CLIPTextEncode", "CheckpointLoaderSimple", "KSampler", "LoadImage", "LoadImageMask", "SaveImage", "VAEDecode", "VAEEncodeForInpaint"],
+        "approved_by": "wp11-recipe-catalogue",
+        "approved_at": "2026-09-16T00:00:00Z",
+        "note": "WP11 factory recipe (comfy_recipes.RECIPE_INPAINT, IMG04). LoadImageMask/VAEEncodeForInpaint are ComfyUI core nodes; the mask never travels as a conditioning field, only as this template's dedicated MASK-typed input."
+      }
+    ]
+  },
+  "image.controlnet-pose": {
+    "approved": [
+      {
+        "version": "1.0.0",
+        "fingerprint_version": 2,
+        "fingerprint": "ba4b0730acd993567f2114cdbfc2a33bf8e3aad43189da168e455ce058c521d0",
+        "node_types": ["CLIPTextEncode", "CheckpointLoaderSimple", "ControlNetApplyAdvanced", "ControlNetLoader", "EmptyLatentImage", "KSampler", "LoadImage", "SaveImage", "VAEDecode"],
+        "approved_by": "wp11-recipe-catalogue",
+        "approved_at": "2026-09-16T00:00:00Z",
+        "note": "WP11 factory recipe (comfy_recipes.RECIPE_CONTROLNET_POSE). ControlNetLoader/ControlNetApplyAdvanced are ComfyUI core nodes."
+      }
+    ]
+  },
+  "image.controlnet-depth": {
+    "approved": [
+      {
+        "version": "1.0.0",
+        "fingerprint_version": 2,
+        "fingerprint": "4244e267b7720f83c85b48e8528f7c4164ac2bdd02ad708f149cbef192c0f172",
+        "node_types": ["CLIPTextEncode", "CheckpointLoaderSimple", "ControlNetApplyAdvanced", "ControlNetLoader", "EmptyLatentImage", "KSampler", "LoadImage", "SaveImage", "VAEDecode"],
+        "approved_by": "wp11-recipe-catalogue",
+        "approved_at": "2026-09-16T00:00:00Z",
+        "note": "WP11 factory recipe (comfy_recipes.RECIPE_CONTROLNET_DEPTH). Same reviewed node vocabulary as image.controlnet-pose; the control net MODEL differs, which fingerprint v2 folds into identity (see 'fingerprint changes if models changes' test)."
+      }
+    ]
+  },
+  "image.upscale": {
+    "approved": [
+      {
+        "version": "1.0.0",
+        "fingerprint_version": 2,
+        "fingerprint": "c633bc8edfe70339ad00d648d2a4278c61957144b787ecff2fbf06261ed21135",
+        "node_types": ["ImageUpscaleWithModel", "LoadImage", "SaveImage", "UpscaleModelLoader"],
+        "approved_by": "wp11-recipe-catalogue",
+        "approved_at": "2026-09-16T00:00:00Z",
+        "note": "WP11 factory recipe (comfy_recipes.RECIPE_UPSCALE, IMG09). ComfyUI core nodes only; no tiling node — see the template's own description for the scope limit."
+      }
+    ]
+  },
+  "image.txt2img-lora": {
+    "approved": [
+      {
+        "version": "1.0.0",
+        "fingerprint_version": 2,
+        "fingerprint": "416f517718678ca1c26b68ec750f54a120c0bc2adef3d8dc349bdc82b8b38e77",
+        "node_types": ["CLIPTextEncode", "CheckpointLoaderSimple", "EmptyLatentImage", "KSampler", "LoraLoader", "SaveImage", "VAEDecode"],
+        "approved_by": "wp11-recipe-catalogue",
+        "approved_at": "2026-09-16T00:00:00Z",
+        "note": "WP11 factory recipe (comfy_recipes.RECIPE_TXT2IMG_LORA). LoraLoader is a ComfyUI core node."
+      }
+    ]
   }
 }

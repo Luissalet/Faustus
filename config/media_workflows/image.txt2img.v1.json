@@ -1,0 +1,66 @@
+{
+  "id": "image.txt2img",
+  "version": "1.0.0",
+  "title": "Text to image, direct controls",
+  "engine": "comfyui",
+  "description": "Text to image with steps/cfg/seed exposed directly, rather than folded into a 'draft/final' enum — WP11's slot-typed recipes drive this template through comfy_recipes.ComfyRecipe('image.txt2img'). Core nodes only.",
+
+  "models": [
+    {
+      "name": "sd_xl_base_1.0.safetensors",
+      "kind": "checkpoint",
+      "license": "CreativeML Open RAIL++-M",
+      "node": "CheckpointLoaderSimple",
+      "field": "ckpt_name"
+    }
+  ],
+  "requires_nodes": [
+    "CheckpointLoaderSimple", "CLIPTextEncode", "EmptyLatentImage",
+    "KSampler", "VAEDecode", "SaveImage"
+  ],
+
+  "outputs": { "image": "artifact:image" },
+
+  "inputs": {
+    "prompt": { "type": "text", "required": true, "max_len": 1200, "title": "What the picture is of" },
+    "negative_prompt": {
+      "type": "text",
+      "default": "text, watermark, logo, blurry, low quality, distorted proportions",
+      "max_len": 600,
+      "title": "What to keep out of it"
+    },
+    "size": {
+      "type": "enum",
+      "choices": ["square", "portrait", "landscape", "widescreen"],
+      "default": "square",
+      "title": "Shape"
+    },
+    "steps": { "type": "integer", "default": 24, "minimum": 4, "maximum": 80, "title": "Sampler steps" },
+    "cfg": { "type": "number", "default": 7.0, "minimum": 1, "maximum": 20, "title": "CFG scale" },
+    "seed": { "type": "seed", "title": "Recorded either way, so the picture can be made again" }
+  },
+
+  "computed": {
+    "width":  { "from": "size", "map": { "square": 1024, "portrait": 896, "landscape": 1216, "widescreen": 1344 } },
+    "height": { "from": "size", "map": { "square": 1024, "portrait": 1152, "landscape": 832, "widescreen": 768 } },
+    "sampler": { "from": "size", "map": { "square": "dpmpp_2m", "portrait": "dpmpp_2m", "landscape": "dpmpp_2m", "widescreen": "dpmpp_2m" } },
+    "scheduler": { "from": "size", "map": { "square": "karras", "portrait": "karras", "landscape": "karras", "widescreen": "karras" } }
+  },
+
+  "graph": {
+    "1": { "class_type": "CheckpointLoaderSimple", "inputs": { "ckpt_name": "sd_xl_base_1.0.safetensors" } },
+    "2": { "class_type": "CLIPTextEncode", "inputs": { "text": "{{prompt}}", "clip": ["1", 1] } },
+    "3": { "class_type": "CLIPTextEncode", "inputs": { "text": "{{negative_prompt}}", "clip": ["1", 1] } },
+    "4": { "class_type": "EmptyLatentImage", "inputs": { "width": "{{width}}", "height": "{{height}}", "batch_size": 1 } },
+    "5": {
+      "class_type": "KSampler",
+      "inputs": {
+        "seed": "{{seed}}", "steps": "{{steps}}", "cfg": "{{cfg}}",
+        "sampler_name": "{{sampler}}", "scheduler": "{{scheduler}}", "denoise": 1.0,
+        "model": ["1", 0], "positive": ["2", 0], "negative": ["3", 0], "latent_image": ["4", 0]
+      }
+    },
+    "6": { "class_type": "VAEDecode", "inputs": { "samples": ["5", 0], "vae": ["1", 2] } },
+    "7": { "class_type": "SaveImage", "inputs": { "images": ["6", 0], "filename_prefix": "faustus/txt2img" } }
+  }
+}

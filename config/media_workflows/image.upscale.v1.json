@@ -1,0 +1,31 @@
+{
+  "id": "image.upscale",
+  "version": "1.0.0",
+  "title": "Upscale with a real ESRGAN-family model",
+  "engine": "comfyui",
+  "description": "IMG09: an upscale is a model-driven reconstruction, not a higher-resolution capture. The export keeps the source resolution recorded in `values` (so 'native vs reconstructed' is answerable from the receipt) and the scaler's model name — this template does not itself do tiled processing (ImageUpscaleWithModel runs the whole frame at once); tiling is future work tracked in docs/spec/creator/WP11.md, not silently assumed here.",
+
+  "models": [
+    { "name": "RealESRGAN_x4plus.pth", "kind": "upscale", "license": "BSD-3-Clause",
+      "node": "UpscaleModelLoader", "field": "model_name" }
+  ],
+  "requires_nodes": [
+    "LoadImage", "UpscaleModelLoader", "ImageUpscaleWithModel", "SaveImage"
+  ],
+
+  "outputs": { "image": "artifact:image" },
+
+  "inputs": {
+    "reference_image": { "type": "artifact", "required": true, "title": "The picture to upscale, staged in the engine's input folder" },
+    "scale": { "type": "enum", "choices": ["2", "4"], "default": "4", "title": "Scale factor (informational — the model itself is fixed-ratio; a mismatch is refused by the engine, not silently resized here)" }
+  },
+
+  "computed": {},
+
+  "graph": {
+    "1": { "class_type": "LoadImage", "inputs": { "image": "{{reference_image}}" } },
+    "2": { "class_type": "UpscaleModelLoader", "inputs": { "model_name": "RealESRGAN_x4plus.pth" } },
+    "3": { "class_type": "ImageUpscaleWithModel", "inputs": { "upscale_model": ["2", 0], "image": ["1", 0] } },
+    "4": { "class_type": "SaveImage", "inputs": { "images": ["3", 0], "filename_prefix": "faustus/upscale" } }
+  }
+}
