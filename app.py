@@ -914,6 +914,8 @@ from routes.creator_recipe_routes import setup_creator_recipe_routes  # WP11
 app.include_router(setup_creator_recipe_routes())
 from routes.creator_timeline_routes import setup_creator_timeline_routes  # WP13
 app.include_router(setup_creator_timeline_routes())
+from routes.creator_asr_routes import setup_creator_asr_routes  # WP15
+app.include_router(setup_creator_asr_routes())
 
 # What this machine can actually do. Every probe already existed; this is the
 # one place that asks them all and puts the fix in the sentence.
