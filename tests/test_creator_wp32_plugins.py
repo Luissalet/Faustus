@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -272,6 +273,114 @@ def test_update_and_rollback_restore_byte_exact(tmp_path, store):
     assert [h["event_type"] for h in hist[-2:]] == ["updated", "rolled_back"]
 
 
+def _build_readonly_target(tmp_path, name: str) -> Path:
+    target = tmp_path / name
+    (target / "sub").mkdir(parents=True)
+    (target / "sub" / "old.txt").write_bytes(b"stale content that must go")
+    (target / "readonly.txt").write_bytes(b"stale readonly file")
+    os.chmod(target / "readonly.txt", 0o444)
+    os.chmod(target / "sub", 0o555)  # read-only directory: entries can't be unlinked as-is
+    return target
+
+
+def _naive_replace(tgt: Path, src: Path) -> None:
+    for entry in list(tgt.iterdir()):
+        if entry.is_dir():
+            shutil.rmtree(entry)
+        else:
+            entry.unlink()
+    for entry in src.iterdir():
+        dest = tgt / entry.name
+        if entry.is_dir():
+            shutil.copytree(entry, dest)
+        else:
+            shutil.copy2(entry, dest)
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root bypasses POSIX permission checks — "
+                                              "the naive-failure demonstration needs an "
+                                              "unprivileged user")
+def test_naive_replace_reproduces_the_reported_bug(tmp_path):
+    """Proves the fixture actually reproduces the Windows-class failure: a
+    plain, non-hardened replace (what the coordinator's report describes as
+    `shutil.rmtree(..., ignore_errors=True)` swallowing the problem, or a
+    bare `unlink()` on a read-only file on Windows) really does fail against
+    a tree with a read-only file and a read-only directory."""
+    target = _build_readonly_target(tmp_path, "naive_target")
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "new.txt").write_bytes(b"fresh content")
+    with pytest.raises(PermissionError):
+        _naive_replace(target, source)
+    os.chmod(target / "sub", 0o755)  # let tmp_path teardown clean up
+
+
+def test_replace_dir_contents_survives_read_only_entries(tmp_path):
+    """POSIX reproduction of the Windows failure this fix closes: a target
+    tree with a read-only FILE and a read-only DIRECTORY must still be
+    fully replaced, byte for byte, by `_replace_dir_contents` — not
+    partially, and not by silently keeping stale bytes around. Compared by
+    content digest, not mtimes, so a restore that only touched metadata
+    without truly rewriting bytes would still be caught."""
+    target = _build_readonly_target(tmp_path, "target")
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "new.txt").write_bytes(b"fresh content")
+
+    pl._replace_dir_contents(target, source)
+    assert sorted(p.name for p in target.iterdir()) == ["new.txt"]
+    assert (target / "new.txt").read_bytes() == b"fresh content"
+    assert pl._digest_of_dir(str(target)) == pl._digest_of_dir(str(source))
+
+
+def test_update_and_rollback_survive_read_only_source_fixture(tmp_path, store):
+    """The end-to-end path the coordinator's report targets: v1 is
+    installed from a fixture with a read-only file and a read-only
+    directory (as a checkout or a prior backup might produce), v2 replaces
+    it, and rollback restores v1 — compared by CONTENT DIGEST, not mtimes,
+    so a restore that merely touched metadata without truly rewriting bytes
+    would still be caught.
+    """
+    root_v1 = tmp_path / "ro_pkg_v1" / "engine.readonly"
+    (root_v1 / "sub").mkdir(parents=True)
+    (root_v1 / "sub" / "asset.bin").write_bytes(b"v1 nested asset")
+    (root_v1 / "adapter.py").write_bytes(b"# v1 adapter\n")
+    (root_v1 / "plugin.json").write_text(json.dumps({
+        "id": "engine.readonly", "kind": "engine_adapter", "version": "1.0.0",
+        "permissions": {"network": False, "fs": False, "gpu": False, "cost": False},
+    }), encoding="utf-8")
+    os.chmod(root_v1 / "adapter.py", 0o444)
+    os.chmod(root_v1 / "sub", 0o555)
+    try:
+        source_v1 = {"id": "engine.readonly", "kind": "engine_adapter",
+                    "transport": "local_dir", "path": str(root_v1)}
+        pl.install("alice", source_v1, store=store)
+        install_dir = Path(store.get("alice", "engine.readonly")["install_dir"])
+        v1_digest = pl._digest_of_dir(str(install_dir))
+
+        root_v2 = tmp_path / "ro_pkg_v2" / "engine.readonly"
+        _write_package(root_v2, {
+            "id": "engine.readonly", "kind": "engine_adapter", "version": "2.0.0",
+            "permissions": {"network": False, "fs": False, "gpu": False, "cost": False},
+        }, {"adapter.py": "# v2 adapter\n"})
+        updated = pl.update("alice", "engine.readonly",
+                            {"id": "engine.readonly", "kind": "engine_adapter",
+                             "transport": "local_dir", "path": str(root_v2)}, store=store)
+        assert updated["version"] == "2.0.0"
+        assert not (install_dir / "sub").exists()  # the read-only v1 dir is truly gone
+        assert (install_dir / "adapter.py").read_bytes() == b"# v2 adapter\n"
+
+        rolled_back = pl.rollback("alice", "engine.readonly", store=store)
+        assert rolled_back["version"] == "1.0.0"
+        assert pl._digest_of_dir(str(install_dir)) == v1_digest
+        assert (install_dir / "sub" / "asset.bin").read_bytes() == b"v1 nested asset"
+    finally:
+        # tmp_path teardown needs these writable again.
+        for p in (root_v1 / "sub", root_v1 / "adapter.py"):
+            if p.exists():
+                os.chmod(p, 0o755 if p.is_dir() else 0o644)
+
+
 def test_update_transport_failure_never_mutates(tmp_path, store):
     pl.install("alice", _engine_adapter_source(tmp_path, "engine.stable"), store=store)
     before = store.get("alice", "engine.stable")
@@ -392,7 +501,15 @@ def _init_repo(tmp_path) -> Path:
 @pytest.mark.skipif(
     subprocess.run(["git", "--version"], capture_output=True).returncode != 0,
     reason="git not available")
-def test_skill_git_install_update_rollback_reuses_skill_sources(tmp_path, store):
+def test_skill_git_install_update_rollback_reuses_skill_sources(tmp_path, store, monkeypatch):
+    # skill_sources' own store/backups are isolated the same way
+    # tests/acceptance/test_a25_skill_git_source.py does it — never the
+    # real DATA_DIR, so this test never depends on (or mutates) shared
+    # repo-level state.
+    import src.skill_sources as skill_sources_mod
+    monkeypatch.setattr(skill_sources_mod, "SKILL_SOURCES_DB", str(tmp_path / "skill_sources.db"))
+    monkeypatch.setattr(skill_sources_mod, "BACKUPS_ROOT", str(tmp_path / "skill_sources_backups"))
+
     repo = _init_repo(tmp_path)
     source = {"id": "repo-skill", "kind": "skill", "transport": "git",
              "source_url": str(repo), "ref": "HEAD"}
