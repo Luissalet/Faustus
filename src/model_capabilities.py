@@ -75,6 +75,23 @@ CAP_TTS = "tts"
 CAP_REALTIME = "realtime"
 CAP_TEXT_RENDERING = "text_rendering"
 
+# ── WP07 additive vocabulary: multimodal task-specific capabilities ─────────
+#
+# 04_MODELOS_Y_RECURSOS.md ("Ejemplos concretos que justifican granularidad"):
+# reading images, editing them, painting inside a mask, following a
+# control-net/conditioning signal, upscaling, generating video FROM a video
+# (not just producing one), and generating music are distinct operations that
+# must not be assumed from one another. `CAP_VIDEO_GENERATION` above already
+# names video OUTPUT; `CAP_VIDEO_INPUT` is the missing input-side counterpart
+# (S2V/I2V/video-conditioned pipelines). None of these five replace or rename
+# an existing token — purely additive, per CONTRATO.md's file-ownership rule
+# for this module ("vocabulario nuevo, nunca renombrar").
+CAP_VIDEO_INPUT = "video_input"
+CAP_MUSIC_GENERATION = "music_generation"
+CAP_REGION_EDITING = "region_editing"
+CAP_CONTROLNET_CONDITIONING = "controlnet_conditioning"
+CAP_UPSCALING = "upscaling"
+
 CAPABILITIES = frozenset(
     {
         CAP_VISION,
@@ -96,6 +113,11 @@ CAPABILITIES = frozenset(
         CAP_TTS,
         CAP_REALTIME,
         CAP_TEXT_RENDERING,
+        CAP_VIDEO_INPUT,
+        CAP_MUSIC_GENERATION,
+        CAP_REGION_EDITING,
+        CAP_CONTROLNET_CONDITIONING,
+        CAP_UPSCALING,
     }
 )
 
@@ -244,6 +266,18 @@ TASK_CLASSIFY = "classification.classify"
 TASK_MODERATE = "moderation.moderate"
 TASK_UNKNOWN = "unknown"
 
+# WP07 additive: task ids `src/creator/params.py` keys its `(engine, task)`
+# ParamSchema registry with. `TASK_IMAGE_EDIT` already covers a free-form
+# image edit; these name the narrower operations 04_MODELOS_Y_RECURSOS.md
+# calls out as NOT interchangeable with it or with each other (inpaint needs
+# a mask, controlnet needs a conditioning signal, upscale takes no prompt in
+# many engines, music is not "audio.synthesize" in the TTS sense).
+TASK_IMAGE_INPAINT = "image.inpaint"
+TASK_IMAGE_UPSCALE = "image.upscale"
+TASK_IMAGE_CONTROLNET = "image.controlnet"
+TASK_MUSIC_GENERATE = "music.generate"
+TASK_VIDEO_EDIT = "video.edit"
+
 _FAMILY_ALIASES = {
     "llm": FAMILY_CHAT,
     "text": FAMILY_CHAT,
@@ -291,6 +325,19 @@ _CAPABILITY_ALIASES = {
     "json": CAP_JSON_MODE,
     "structured_outputs": CAP_STRUCTURED_OUTPUT,
     "search": CAP_WEB_SEARCH,
+    "video_in": CAP_VIDEO_INPUT,
+    "video_understanding": CAP_VIDEO_INPUT,
+    "music": CAP_MUSIC_GENERATION,
+    "music_gen": CAP_MUSIC_GENERATION,
+    "text_to_music": CAP_MUSIC_GENERATION,
+    "masked_edit": CAP_REGION_EDITING,
+    "region_edit": CAP_REGION_EDITING,
+    "regional_editing": CAP_REGION_EDITING,
+    "controlnet": CAP_CONTROLNET_CONDITIONING,
+    "control_net": CAP_CONTROLNET_CONDITIONING,
+    "conditioning": CAP_CONTROLNET_CONDITIONING,
+    "upscale": CAP_UPSCALING,
+    "super_resolution": CAP_UPSCALING,
 }
 
 _DETERMINISTIC_CONTROL_ALIASES = {
@@ -1006,6 +1053,11 @@ _CAPABILITY_LABELS_ES: Dict[str, str] = {
     CAP_TEXT_RENDERING: "renderizado de texto",
     CAP_FILES: "adjuntos de archivo",
     CAP_PDF: "PDF",
+    CAP_VIDEO_INPUT: "vídeo de entrada",
+    CAP_MUSIC_GENERATION: "generación de música",
+    CAP_REGION_EDITING: "edición por regiones (máscara)",
+    CAP_CONTROLNET_CONDITIONING: "control-net / conditioning",
+    CAP_UPSCALING: "escalado (upscaling)",
 }
 
 
