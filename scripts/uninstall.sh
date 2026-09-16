@@ -9,7 +9,7 @@
 # runs after an explicit --purge on the command line; there is no other
 # path to that deletion in this script.
 #
-# See docs/distribution/LIFECYCLE.md for the full clean-install / upgrade /
+# See docs/spec/distribution/LIFECYCLE.md for the full clean-install / upgrade /
 # backup / restore / uninstall lifecycle this script is one step of.
 set -euo pipefail
 

@@ -7,7 +7,7 @@
 # runs after an explicit -Purge switch; there is no other path to that
 # deletion in this script.
 #
-# See docs/distribution/LIFECYCLE.md for the full lifecycle this script is
+# See docs/spec/distribution/LIFECYCLE.md for the full lifecycle this script is
 # one step of.
 param(
     [switch]$Purge,

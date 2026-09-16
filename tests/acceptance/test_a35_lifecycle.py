@@ -1,5 +1,5 @@
 """A35 — clean install/upgrade/backup/restore/uninstall lifecycle
-(docs/distribution/LIFECYCLE.md, scripts/lifecycle_check.py,
+(docs/spec/distribution/LIFECYCLE.md, scripts/lifecycle_check.py,
 scripts/uninstall.sh, scripts/uninstall.ps1).
 
 Real code under test: ``scripts.lifecycle_check`` against a real, throwaway

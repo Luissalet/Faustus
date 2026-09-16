@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """lifecycle_check.py — automate what the install/upgrade/backup/restore/
-uninstall lifecycle (docs/distribution/LIFECYCLE.md, A35) can be checked
+uninstall lifecycle (docs/spec/distribution/LIFECYCLE.md, A35) can be checked
 without actually running an installer on a clean machine.
 
 Two things this script does for real, against any ``--data-dir``:
@@ -21,7 +21,7 @@ Plus one static check:
              --purge/-Purge guard around it
 
 None of this replaces actually installing on a clean Windows/macOS/Docker
-machine — see docs/distribution/LIFECYCLE.md for what stays a manual,
+machine — see docs/spec/distribution/LIFECYCLE.md for what stays a manual,
 documented procedure and why.
 """
 from __future__ import annotations

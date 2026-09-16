@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.13, pytest, Ollama `/api/chat` + `/api/generate`, Git Bash en Windows, Playwright MCP ya cableado como `mcp__builtin_browser__*`.
 
-**Spec:** `docs/superpowers/specs/2026-09-16-local-agent-close-the-loop-design.md`
+**Spec:** `docs/spec/superpowers/specs/2026-09-16-local-agent-close-the-loop-design.md`
 
 ## Global Constraints
 
