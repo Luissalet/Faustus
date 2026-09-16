@@ -9,6 +9,7 @@ from fastapi import APIRouter, HTTPException, Request, Form
 from core.database import get_db_session, ApiToken
 from core.middleware import require_admin
 from src.auth_helpers import get_current_user
+from src import service_identity
 
 MAX_NAME_LEN = 100
 DEFAULT_SCOPES = "chat"
@@ -131,12 +132,24 @@ def setup_api_token_routes() -> APIRouter:
         name: str = Form(""),
         scopes: str = Form(None),
         profile: str = Form(None),
+        # A23: an unattended/machine credential. `subject` names the job or
+        # service using this token (distinct from `owner`, the admin who
+        # minted it); when set, this token is additionally registered as a
+        # service identity (src/service_identity.py) with `scopes` REQUIRED
+        # explicitly (no "chat" default — see `_normalize_scopes` below) and
+        # an optional absolute expiry. Plain human/integration tokens (no
+        # `subject`) are unaffected and behave exactly as before.
+        subject: str = Form(None),
+        expires_in_seconds: int = Form(None),
     ):
         require_admin(request)
         name = name.strip()[:MAX_NAME_LEN]
         if not name:
             raise HTTPException(400, "Token name is required")
         owner = get_current_user(request)
+        subject = (subject.strip()[:MAX_NAME_LEN] or None) if isinstance(subject, str) else None
+        if subject and not (isinstance(scopes, (str, list)) and scopes) and not (isinstance(profile, str) and profile):
+            raise HTTPException(400, "A service identity token requires explicit scopes or a profile")
         scope_list = _normalize_scopes(scopes, profile)
         scopes_value = ",".join(scope_list)
 
@@ -156,7 +169,14 @@ def setup_api_token_routes() -> APIRouter:
             ))
         _invalidate_cache(request)
 
-        return {
+        expires_at = None
+        if subject:
+            if isinstance(expires_in_seconds, int) and expires_in_seconds > 0:
+                import time as _time
+                expires_at = _time.time() + int(expires_in_seconds)
+            service_identity.register(token_id, subject=subject, scopes=scope_list, expires_at=expires_at)
+
+        response = {
             "id": token_id,
             "name": name,
             "owner": owner,
@@ -164,6 +184,32 @@ def setup_api_token_routes() -> APIRouter:
             "token_prefix": raw_token[:8],
             "scopes": scope_list,
         }
+        if subject:
+            response["subject"] = subject
+            response["expires_at"] = expires_at
+        return response
+
+    @router.post("/tokens/{token_id}/revoke")
+    def revoke_token(request: Request, token_id: str):
+        """A23: explicit revocation, distinct from DELETE — deactivates the
+        `ApiToken` row (same immediate effect DELETE already had on the
+        bearer-auth cache) AND, when this token has a service-identity
+        record, stamps its `revoked_at` there too, so both
+        `service_identity.is_revoked()` and the app's own bearer-token check
+        agree the instant this call returns."""
+        require_admin(request)
+        current_user = get_current_user(request)
+        with get_db_session() as db:
+            token = db.query(ApiToken).filter(ApiToken.id == token_id).first()
+            if not token:
+                raise HTTPException(404, "Token not found")
+            if current_user and token.owner != current_user:
+                raise HTTPException(403, "Not your token")
+            token.is_active = False
+            db.add(token)
+        service_identity.revoke(token_id)
+        _invalidate_cache(request)
+        return {"status": "revoked"}
 
     @router.patch("/tokens/{token_id}")
     async def update_token(request: Request, token_id: str):
@@ -216,6 +262,7 @@ def setup_api_token_routes() -> APIRouter:
             if current_user and token.owner != current_user:
                 raise HTTPException(403, "Not your token")
             db.delete(token)
+        service_identity.revoke(token_id)
         _invalidate_cache(request)
         return {"status": "deleted"}
 

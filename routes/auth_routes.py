@@ -1,6 +1,7 @@
 """Authentication routes — login, logout, signup, status, user management."""
 
 from fastapi import APIRouter, Request, Response, HTTPException
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from typing import Optional
 import asyncio
@@ -13,6 +14,8 @@ from pathlib import Path
 
 from core.atomic_io import atomic_write_json, atomic_write_text
 from core.auth import AuthManager, RESERVED_USERNAMES, SetAdminResult, TOKEN_TTL
+from core.middleware import with_asgi_root_path
+from core import oidc as oidc_mod
 from src.constants import DEEP_RESEARCH_DIR, MEMORY_FILE, PASSWORD_MIN_LENGTH, SKILLS_DIR
 from src.rate_limiter import RateLimiter
 from src.settings_scrub import scrub_settings
@@ -195,6 +198,137 @@ def setup_auth_routes(auth_manager: AuthManager) -> APIRouter:
             cookie_kwargs["max_age"] = TOKEN_TTL
         response.set_cookie(**cookie_kwargs)
         return {"ok": True, "username": username}
+
+    # ------------------------------------------------------------------
+    # Corporate OIDC login (A22) — Authorization Code + PKCE. A separate
+    # mechanism from /login above, but it finishes the exact same way: a
+    # `create_session_trusted` call sets the same `odysseus_session` cookie.
+    # ------------------------------------------------------------------
+
+    def _default_oidc_redirect_uri(request: Request) -> str:
+        scheme = "https" if _secure_cookie(request) else request.url.scheme
+        host = request.url.netloc
+        return with_asgi_root_path(request.scope, f"{scheme}://{host}/api/auth/oidc/callback")
+
+    @router.get("/oidc/login")
+    async def oidc_login(request: Request):
+        issuer = str(_load_settings().get("oidc_issuer") or "").strip()
+        client_id = str(_load_settings().get("oidc_client_id") or "").strip()
+        if not issuer or not client_id:
+            raise HTTPException(400, "OIDC is not configured")
+        redirect_uri = str(_load_settings().get("oidc_redirect_uri") or "").strip() or _default_oidc_redirect_uri(request)
+        scope = str(_load_settings().get("oidc_scopes") or "openid email profile")
+        discovery_ttl = int(_load_settings().get("oidc_discovery_cache_seconds", 3600) or 3600)
+        try:
+            discovery = await oidc_mod.fetch_discovery(issuer, ttl_seconds=discovery_ttl)
+        except Exception as e:
+            logger.warning("OIDC discovery failed: %s", e)
+            raise HTTPException(502, "Could not reach the identity provider") from e
+        authorization_endpoint = discovery.get("authorization_endpoint")
+        if not authorization_endpoint:
+            raise HTTPException(502, "Identity provider discovery document has no authorization_endpoint")
+        pending = oidc_mod.register_pending(redirect_uri=redirect_uri)
+        auth_url = oidc_mod.build_authorization_url(
+            authorization_endpoint=authorization_endpoint, client_id=client_id,
+            redirect_uri=redirect_uri, scope=scope, state=pending["state"],
+            nonce=pending["nonce"], code_challenge=pending["code_challenge"],
+        )
+        return RedirectResponse(url=auth_url, status_code=302)
+
+    @router.get("/oidc/callback")
+    async def oidc_callback(request: Request, code: Optional[str] = None,
+                             state: Optional[str] = None, error: Optional[str] = None):
+        if error:
+            raise HTTPException(400, f"Identity provider returned an error: {error}")
+        if not code or not state:
+            raise HTTPException(400, "Missing code or state")
+
+        # One-shot: a replayed callback (same state used twice) finds
+        # nothing the second time and never creates a session.
+        pending = oidc_mod.pop_pending_state(state)
+        if pending is None:
+            raise HTTPException(400, "Invalid, expired, or already-used login attempt")
+
+        settings = _load_settings()
+        issuer = str(settings.get("oidc_issuer") or "").strip()
+        client_id = str(settings.get("oidc_client_id") or "").strip()
+        raw_secret = str(settings.get("oidc_client_secret") or "")
+        if raw_secret:
+            from src.secret_storage import decrypt as _dec_secret
+            client_secret = _dec_secret(raw_secret)
+        else:
+            client_secret = ""
+        if not issuer or not client_id:
+            raise HTTPException(400, "OIDC is not configured")
+        discovery_ttl = int(settings.get("oidc_discovery_cache_seconds", 3600) or 3600)
+        jwks_ttl = int(settings.get("oidc_jwks_cache_seconds", 3600) or 3600)
+
+        discovery = await oidc_mod.fetch_discovery(issuer, ttl_seconds=discovery_ttl)
+        token_endpoint = discovery.get("token_endpoint")
+        jwks_uri = discovery.get("jwks_uri")
+        if not token_endpoint or not jwks_uri:
+            raise HTTPException(502, "Identity provider discovery document is incomplete")
+
+        token_data = {
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": pending["redirect_uri"],
+            "client_id": client_id,
+            "code_verifier": pending["verifier"],
+        }
+        if client_secret:
+            token_data["client_secret"] = client_secret
+        try:
+            status_code, token_body = await oidc_mod.exchange_code_for_token(token_endpoint, token_data)
+        except Exception as e:
+            logger.warning("OIDC token exchange failed: %s", e)
+            raise HTTPException(502, "Could not reach the identity provider token endpoint") from e
+        if status_code != 200:
+            raise HTTPException(401, "Token exchange rejected by identity provider")
+        id_token = token_body.get("id_token")
+        if not id_token:
+            raise HTTPException(401, "Identity provider response had no id_token")
+
+        jwks = await oidc_mod.fetch_jwks(jwks_uri, ttl_seconds=jwks_ttl)
+        try:
+            claims = oidc_mod.verify_id_token(
+                id_token, jwks=jwks, issuer=issuer, audience=client_id, nonce=pending["nonce"],
+            )
+        except oidc_mod.OidcError as e:
+            raise HTTPException(e.status, str(e)) from e
+
+        if not claims.get("email_verified"):
+            raise HTTPException(403, "Identity provider email is not verified")
+        email = str(claims.get("email") or "").strip().lower()
+        allowed_emails = settings.get("oidc_allowed_emails") or []
+        allowed_domains = settings.get("oidc_allowed_domains") or []
+        if not oidc_mod.is_email_allowed(email, allowed_emails=allowed_emails, allowed_domains=allowed_domains):
+            raise HTTPException(403, "This email is not permitted to sign in")
+
+        sub = str(claims.get("sub") or "")
+        if not sub:
+            raise HTTPException(401, "id_token has no subject claim")
+
+        admin_emails = settings.get("oidc_admin_emails") or []
+        admin_group = str(settings.get("oidc_admin_group") or "")
+        wants_admin = oidc_mod.is_admin_identity(claims, admin_emails=admin_emails, admin_group=admin_group)
+
+        username = await asyncio.to_thread(
+            auth_manager.resolve_or_create_oidc_user, sub, email, wants_admin,
+        )
+        if not username:
+            raise HTTPException(500, "Could not provision a local account for this identity")
+
+        token = await asyncio.to_thread(auth_manager.create_session_trusted, username)
+        if not token:
+            raise HTTPException(500, "Could not start a session")
+
+        redirect = RedirectResponse(url=with_asgi_root_path(request.scope, "/"), status_code=302)
+        redirect.set_cookie(
+            key=SESSION_COOKIE, value=token, httponly=True, samesite="lax",
+            secure=_secure_cookie(request), path="/", max_age=TOKEN_TTL,
+        )
+        return redirect
 
     @router.post("/logout")
     async def logout(request: Request, response: Response):

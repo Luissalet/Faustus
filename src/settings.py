@@ -865,6 +865,43 @@ DEFAULT_SETTINGS = {
         "admin_panel": "ctrl+shift+u",
         "cancel": "escape",
     },
+    # A22 — corporate OIDC login (core/oidc.py, routes/auth_routes.py
+    # /api/auth/oidc/*). Empty issuer/client_id means "not configured", the
+    # OIDC login route then answers 400 instead of trying an empty URL.
+    "oidc_issuer": "",
+    "oidc_client_id": "",
+    # `secret_storage`-encrypted (`enc:` prefix) at rest by whatever admin UI
+    # sets it; read back through `src.secret_storage.decrypt`, which passes a
+    # plaintext value through unchanged, so an operator who pastes the secret
+    # in unencrypted still works.
+    "oidc_client_secret": "",
+    # Empty -> derived from the incoming request's own origin
+    # (scheme+host[:port], honouring X-Forwarded-Proto same as
+    # routes/auth_routes.py::_secure_cookie). Set explicitly when the
+    # externally-reachable origin differs (reverse proxy, custom domain).
+    "oidc_redirect_uri": "",
+    "oidc_scopes": "openid email profile",
+    # Allow-list for who may sign in via OIDC at all. Both empty -> nobody is
+    # admitted (fail closed: forgetting to configure this must not mean "open
+    # to anyone who can reach the IdP"). Domains support a single leading
+    # wildcard segment (e.g. "*.example.com").
+    "oidc_allowed_emails": [],
+    "oidc_allowed_domains": [],
+    # Who gets the admin role on the local account OIDC provisions/links.
+    # `oidc_admin_group` names a claim value looked for in the id_token's
+    # `groups` (or `roles`) claim; re-evaluated on every login, so a group or
+    # allow-list change takes effect the next time that person signs in.
+    "oidc_admin_emails": [],
+    "oidc_admin_group": "",
+    "oidc_discovery_cache_seconds": 3600,
+    "oidc_jwks_cache_seconds": 3600,
+    # A23 — machine credentials (src/service_identity.py) layered on the
+    # `ody_` API tokens. How long a cached "not revoked yet" answer may stay
+    # valid after a revoke() before every checker is guaranteed to see it.
+    # 0 (default): no cache at all — the on-disk service-identity store is
+    # read fresh on every check, so revocation is visible on the very next
+    # request that consults it.
+    "token_revocation_bound_seconds": 0,
 }
 
 
