@@ -216,8 +216,19 @@ class VerifyResult:
 # ── filesystem helpers ──────────────────────────────────────────────────
 
 def _make_writable(path: str) -> None:
+    """Clear the read-only bit so ``rmtree``/``unlink`` can proceed. A
+    DIRECTORY keeps (gets) its execute bit here — dropping it, as a naive
+    "just set rw" would, makes the directory un-listable/un-traversable and
+    turns `_rmtree_force`'s OWN top-down `os.walk` into the next
+    `PermissionError`, one level further down, the moment it tries to
+    descend into the directory this function just "fixed". Windows'
+    `os.chmod` only ever toggles the read-only attribute, so setting the
+    execute bit there is a harmless no-op, not a behavior change."""
     try:
-        os.chmod(path, stat.S_IWRITE | stat.S_IREAD)
+        if os.path.isdir(path):
+            os.chmod(path, stat.S_IWRITE | stat.S_IREAD | stat.S_IEXEC)
+        else:
+            os.chmod(path, stat.S_IWRITE | stat.S_IREAD)
     except OSError:
         pass
 
@@ -240,28 +251,63 @@ def _rmtree_force(path: Any) -> None:
     shutil.rmtree(path)
 
 
+#: Never stage/copy a `.git` directory into a plugin's own install tree —
+#: belt and suspenders alongside `_fetch_git_ref` already stripping it from
+#: the clone: a `local_dir` source that happens to BE a git working copy
+#: (or a second copy pass over one) must not carry `.git`'s packed objects
+#: (read-only on Windows) into a plugin's files.
+_COPY_IGNORE = shutil.ignore_patterns(".git")
+
+
 def _copy_tree_contents(src: str, dst: str) -> None:
     os.makedirs(dst, exist_ok=True)
     for entry in os.listdir(src):
+        if entry == ".git":
+            continue
         s = os.path.join(src, entry)
         d = os.path.join(dst, entry)
         if os.path.isdir(s):
-            shutil.copytree(s, d, dirs_exist_ok=True)
+            shutil.copytree(s, d, dirs_exist_ok=True, ignore=_COPY_IGNORE)
         else:
             shutil.copy2(s, d)
 
 
+def _remove_entry_force(entry: Path) -> None:
+    """Delete one directory entry, clearing any read-only bit first —
+    ``entry.unlink()`` on a read-only FILE (not just a directory tree)
+    raises ``PermissionError`` on Windows even though the same file
+    unlinks fine on POSIX (there, only the parent directory's write
+    permission matters). Every removal in this module that is NOT already
+    a full ``_rmtree_force`` (which handles this recursively for
+    directories) goes through this, so a plugin's files copied with their
+    source's original mode bits — e.g. from a read-only local fixture, or
+    from a prior backup that preserved permissions via ``copy2`` — never
+    silently fail to be replaced on Windows."""
+    _make_writable(str(entry))
+    if entry.is_dir() and not entry.is_symlink():
+        _rmtree_force(entry)
+    else:
+        entry.unlink()
+
+
 def _replace_dir_contents(target: Path, source: Path) -> None:
+    """Empty ``target`` and copy every entry of ``source`` into it — the
+    one "swap the files" primitive every install/update/rollback path in
+    this module uses. Both the removal (``_remove_entry_force``, which
+    clears read-only bits before deleting — files as well as directories)
+    and the copy (``ignore=_COPY_IGNORE``) are resilient the same way on
+    POSIX and on Windows, so a read-only source tree (a fixture built with
+    ``chmod 0o444``, a backup that preserved its original mode bits, a
+    `.git` directory's packed objects) never leaves stale bytes behind."""
     target.mkdir(parents=True, exist_ok=True)
     for entry in list(target.iterdir()):
-        if entry.is_dir():
-            _rmtree_force(entry)
-        else:
-            entry.unlink()
+        _remove_entry_force(entry)
     for entry in source.iterdir():
+        if entry.name == ".git":
+            continue
         dest = target / entry.name
         if entry.is_dir():
-            shutil.copytree(entry, dest)
+            shutil.copytree(entry, dest, ignore=_COPY_IGNORE)
         else:
             shutil.copy2(entry, dest)
 
@@ -942,7 +988,7 @@ def update(owner: str, plugin_id: str, source: Mapping[str, Any], *,
             _rmtree_force(backup_dir)
         if os.path.isdir(install_dir):
             os.makedirs(os.path.dirname(backup_dir) or ".", exist_ok=True)
-            shutil.copytree(install_dir, backup_dir)
+            shutil.copytree(install_dir, backup_dir, ignore=_COPY_IGNORE)
         else:
             backup_dir = ""
 

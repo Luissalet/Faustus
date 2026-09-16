@@ -100,8 +100,20 @@ def _run_git(args: list[str], cwd: Optional[str] = None) -> str:
 
 
 def _make_writable(path: str) -> None:
+    """Clear the read-only bit so `rmtree`/`unlink` can proceed. A
+    directory keeps (gets) its execute bit here: dropping it — as setting
+    only S_IWRITE|S_IREAD does — makes the directory un-listable and turns
+    `_rmtree_force`'s own top-down `os.walk` into the next
+    `PermissionError` one level further down, the moment it tries to
+    descend into the directory this function just "fixed" (observed on a
+    real git clone: a subdirectory chmod'd here loses +x before `os.walk`
+    recurses into it). Windows' `os.chmod` only ever toggles the read-only
+    attribute, so setting the execute bit there is a harmless no-op."""
     try:
-        os.chmod(path, stat.S_IWRITE | stat.S_IREAD)
+        if os.path.isdir(path):
+            os.chmod(path, stat.S_IWRITE | stat.S_IREAD | stat.S_IEXEC)
+        else:
+            os.chmod(path, stat.S_IWRITE | stat.S_IREAD)
     except OSError:
         pass
 
