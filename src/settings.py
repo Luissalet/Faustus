@@ -105,6 +105,13 @@ DEFAULT_SETTINGS = {
     "agent_midturn_keep_tool_rounds": 6,
     "agent_midturn_spill_chars": 8000,
     "agent_context_overflow_keep_hours": 48,
+    # While a local agent run is in flight, every Ollama request uses this
+    # keep_alive so a long bash cannot unload the weight. Restored on run end.
+    "agent_run_keep_alive": "2h",
+    "agent_run_keep_alive_restore": True,
+    "agent_ui_verify": True,
+    "agent_inline_attachment_max_chars": 4000,
+    "agent_project_todos": True,
     # Desktop input tools (desktop_click/type/key/scroll/focus_window):
     # "ask_each" = approval card on EVERY call, "ask_task" = the normal
     # scoped approval gate, "off" = not offered at all.
@@ -250,6 +257,9 @@ DEFAULT_SETTINGS = {
     # bash / python tool: a command that prints nothing for this long is killed
     # with its whole process tree (src/agent_tools/subprocess_tools.py). 0 = never.
     "agent_subprocess_idle_timeout_seconds": 300,
+    # Server-shaped commands (python app.py, flask, uvicorn, …) never inherit
+    # the adaptive idle trained on long pytest/compiles. 0 = no extra cap.
+    "agent_server_idle_timeout_seconds": 45,
     # Learn the idle timeout from what this box really does (src/adaptive_timeout.py):
     # 3 x the median of the last 20 command durations, clamped to [30, 600] s, and
     # only ever LONGER than the fixed value above — a box whose commands legitimately

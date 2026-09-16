@@ -1,17 +1,113 @@
 import json
 import os
 import re
-from typing import Any, Dict, List
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
 
 from src.constants import DATA_DIR
 
 
 _TODO_DIR = os.path.join(DATA_DIR, "agent_todos")
+_INCOMPLETE_STATUSES = frozenset({"pending", "in_progress"})
 
 
 def _safe_session_id(value: str) -> str:
     value = value or "current"
     return re.sub(r"[^A-Za-z0-9_.-]+", "_", value)[:120] or "current"
+
+
+def _project_file(project_id: str) -> str:
+    pid = _safe_session_id(str(project_id or "").strip())
+    return os.path.join(_TODO_DIR, f"project-{pid}.json")
+
+
+def _load_project_doc(project_id: str) -> Dict[str, Any]:
+    pid = str(project_id or "").strip()
+    if not pid:
+        return {}
+    try:
+        with open(_project_file(pid), encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError, TypeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _dump_project_doc(project_id: str, data: Dict[str, Any]) -> None:
+    pid = str(project_id or "").strip()
+    if not pid:
+        return
+    os.makedirs(_TODO_DIR, exist_ok=True)
+    payload = dict(data or {})
+    payload["updated_at"] = datetime.now(timezone.utc).isoformat()
+    with open(_project_file(pid), "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+
+
+def save_project_todos(project_id: str, todos: List[Dict[str, Any]]) -> None:
+    """Merge `todos` into data/agent_todos/project-<id>.json."""
+    pid = str(project_id or "").strip()
+    if not pid:
+        return
+    data = _load_project_doc(pid)
+    data["todos"] = list(todos or [])
+    _dump_project_doc(pid, data)
+
+
+def load_project_todos(project_id: str) -> List[Dict[str, Any]]:
+    todos = _load_project_doc(project_id).get("todos")
+    return todos if isinstance(todos, list) else []
+
+
+def incomplete_todos(todos: Optional[List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    for item in todos or []:
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("status") or "pending") in _INCOMPLETE_STATUSES:
+            out.append(item)
+    return out
+
+
+def save_project_working_set(
+    project_id: str,
+    *,
+    last_files: Optional[List[str]] = None,
+    last_tools: Optional[List[Dict[str, Any]]] = None,
+    last_error: str = "",
+) -> None:
+    """Merge last files/tools/error into the project todo file without wiping todos."""
+    pid = str(project_id or "").strip()
+    if not pid:
+        return
+    data = _load_project_doc(pid)
+    data["last_files"] = [str(p) for p in (last_files or []) if str(p).strip()][:12]
+    tools: List[Dict[str, Any]] = []
+    for item in (last_tools or [])[-8:]:
+        if not isinstance(item, dict):
+            continue
+        tools.append({
+            "tool": str(item.get("tool") or ""),
+            "ok": bool(item.get("ok")),
+            "paths": [str(p) for p in (item.get("paths") or []) if p][:6],
+        })
+    data["last_tools"] = tools
+    data["last_error"] = str(last_error or "")[:400]
+    _dump_project_doc(pid, data)
+
+
+def load_project_working_set(project_id: str) -> Dict[str, Any]:
+    data = _load_project_doc(project_id)
+    todos = data.get("todos") if isinstance(data.get("todos"), list) else []
+    files = data.get("last_files") if isinstance(data.get("last_files"), list) else []
+    tools = data.get("last_tools") if isinstance(data.get("last_tools"), list) else []
+    return {
+        "todos": todos,
+        "last_files": [str(p) for p in files if p],
+        "last_tools": [t for t in tools if isinstance(t, dict)],
+        "last_error": str(data.get("last_error") or ""),
+        "updated_at": str(data.get("updated_at") or ""),
+    }
 
 
 def save_todos(session_id: str, todos: List[Dict[str, Any]]) -> None:
@@ -79,6 +175,14 @@ class TodoWriteTool:
         path = os.path.join(_TODO_DIR, f"{session_id}.json")
         with open(path, "w", encoding="utf-8") as f:
             json.dump({"todos": normalized}, f, ensure_ascii=False, indent=2)
+        pid = str((ctx or {}).get("project_id") or "").strip()
+        if pid:
+            try:
+                from src.settings import get_setting
+                if bool(get_setting("agent_project_todos", True)):
+                    save_project_todos(pid, normalized)
+            except Exception:
+                pass
 
         lines = []
         for item in normalized:

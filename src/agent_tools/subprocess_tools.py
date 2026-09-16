@@ -172,7 +172,7 @@ async def _kill_tree_async(proc) -> Optional[str]:
 # the foreground they block the turn until the timeout — the model must start
 # them detached (`#!bg` first line) or bounded (`timeout N …`).
 _SERVER_LAUNCH_RE = re.compile(
-    r"(?:^|[;&|(]\s*)(?:[\w./\\:-]*python[\w.]*\s+(?:-m\s+)?)?(?:"
+    r"(?:^|[;&|(]\s*)(?:(?:nohup|setsid)\s+)*(?:[\w./\\:-]*python[\w.]*\s+(?:-m\s+)?)?(?:"
     r"uvicorn|gunicorn|hypercorn|daphne|waitress-serve|flask\s+run|streamlit\s+run|"
     r"http\.server|php\s+-S|rails\s+s(?:erver)?\b|ng\s+serve|vite\b(?!\s+build)|next\s+dev|nuxt\s+dev|"
     r"npm\s+(?:run\s+)?(?:start|dev|serve)\b|yarn\s+(?:run\s+)?(?:start|dev|serve)\b|pnpm\s+(?:run\s+)?(?:start|dev|serve)\b|"
@@ -181,27 +181,85 @@ _SERVER_LAUNCH_RE = re.compile(
     r")",
     re.I | re.M,
 )
+# `python app.py` / `python -m flask` / `.venv\Scripts\python.exe app.py` / `py -3 app.py`.
+# `--check` is a one-shot flag, not a server — leave it alone.
+_PYTHON_APP_RE = re.compile(
+    r"(?:^|[;&|(]\s*)(?:(?:nohup|setsid)\s+)*"
+    r"(?:[\w./\\:-]*pythonw?(?:\.exe)?|py(?:\.exe)?(?:\s+-\d+(?:\.\d+)?)?)"
+    r"\s+(?:-m\s+flask\b|(?:[\w./\\-]+[/\\])?app\.py)\b"
+    r"(?!\s+--check\b)",
+    re.I | re.M,
+)
+# POSIX-only detach signals. On Windows/Git Bash, `nohup` and a trailing `&`
+# do not actually background a Flask — the turn hangs. `timeout` / Start-Process
+# still count everywhere.
+_POSIX_DETACH_RE = re.compile(
+    r"(?:&\s*$|&\s*\n|\bnohup\b|\bsetsid\b|\bdisown\b|\bscreen\s+-d|\btmux\s+new)",
+    re.I | re.M,
+)
+_ANY_DETACH_RE = re.compile(
+    r"(?:\bstart\s+/b\b|Start-Process|\btimeout\s+-?\d|\bgtimeout\s+\d)",
+    re.I | re.M,
+)
+# Kept for callers/tests that still name the old combined signal.
 _BACKGROUNDED_RE = re.compile(
     r"(?:&\s*$|&\s*\n|\bnohup\b|\bsetsid\b|\bdisown\b|\bstart\s+/b\b|Start-Process|\btimeout\s+-?\d|\bgtimeout\s+\d|\bscreen\s+-d|\btmux\s+new)",
     re.I | re.M,
 )
 
 
-def foreground_server_launch(command: str) -> Optional[str]:
+def _is_detached(command: str, windows: bool) -> bool:
+    if _ANY_DETACH_RE.search(command):
+        return True
+    if windows:
+        return False
+    return bool(_POSIX_DETACH_RE.search(command))
+
+
+def looks_like_server_launch(command: str) -> bool:
+    """True when the command *looks* like a server/watcher, ignoring detach."""
+    cmd = str(command or "")
+    return bool(_SERVER_LAUNCH_RE.search(cmd) or _PYTHON_APP_RE.search(cmd))
+
+
+def _idle_for_command(command: str, key: str = "bash") -> float:
+    """Adaptive idle, capped short for server-shaped commands (never adaptive-up)."""
+    base = _effective_idle_timeout(key)
+    if not looks_like_server_launch(command):
+        return base
+    try:
+        from src.settings import get_setting
+        cap = float(get_setting("agent_server_idle_timeout_seconds", 45) or 45)
+    except Exception:
+        cap = 45.0
+    if cap <= 0 or not base:
+        return base
+    return min(base, cap)
+
+
+def foreground_server_launch(command: str, *, windows: Optional[bool] = None) -> Optional[str]:
     """Return the matched launcher when `command` starts a server/watcher in
-    the foreground (nothing backgrounds or bounds it), else None."""
+    the foreground (nothing backgrounds or bounds it), else None.
+
+    ``windows=None`` uses ``IS_WINDOWS``. POSIX ``nohup`` / trailing ``&``
+    still count as detached; on Windows they do not.
+    """
     cmd = str(command or "")
     if not cmd.strip():
         return None
-    m = _SERVER_LAUNCH_RE.search(cmd)
+    m = _SERVER_LAUNCH_RE.search(cmd) or _PYTHON_APP_RE.search(cmd)
     if not m:
         return None
-    if _BACKGROUNDED_RE.search(cmd):
+    win = IS_WINDOWS if windows is None else bool(windows)
+    if _is_detached(cmd, win):
         return None
     return m.group(0).strip(" ;&|(")
 
 
 def _blocked_server_result(kind: str, tool: str) -> Dict:
+    extra = ""
+    if IS_WINDOWS:
+        extra = " On Windows, `nohup` and a trailing `&` do not detach a server."
     return {
         "error": (
             f"{tool}: `{kind}` starts a long-running server/watcher and would block this turn "
@@ -211,6 +269,7 @@ def _blocked_server_result(kind: str, tool: str) -> Dict:
             "query/kill it with manage_bg_jobs; (2) bound it: `timeout 30 <command>`; "
             "(3) verify the code without running the server (import it, run its tests, or "
             "call the handler directly)."
+            + extra
         ),
         "exit_code": 2,
     }
@@ -768,7 +827,7 @@ class BashTool:
             )
         except RuntimeError as e:
             return {"error": f"bash: {e}", "exit_code": 1, "execution_target": _target}
-        idle_s = _effective_idle_timeout("bash")
+        idle_s = _idle_for_command(content, "bash")
         stdout, stderr, rc, timed_out = await _run_subprocess_streaming(
             proc,
             timeout=DEFAULT_BASH_TIMEOUT,
@@ -823,7 +882,7 @@ class PythonTool:
             env=_env,
             cwd=agent_cwd(),
         )
-        idle_s = _effective_idle_timeout("python")
+        idle_s = _idle_for_command(content, "python")
         stdout, stderr, rc, timed_out = await _run_subprocess_streaming(
             proc,
             timeout=DEFAULT_PYTHON_TIMEOUT,
@@ -952,7 +1011,7 @@ class PowerShellTool:
             proc.stdin.close()
         except Exception as e:  # noqa: BLE001 - the process may have died at once
             logger.debug("powershell stdin write failed: %s", e)
-        idle_s = _effective_idle_timeout("powershell")
+        idle_s = _idle_for_command(script, "powershell")
         stdout, stderr, rc, timed_out = await _run_subprocess_streaming(
             proc, timeout=DEFAULT_POWERSHELL_TIMEOUT, progress_cb=progress_cb, idle_timeout=idle_s,
         )

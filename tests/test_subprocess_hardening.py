@@ -23,20 +23,52 @@ def test_foreground_server_launch_detection():
         "node server.js", "flask run --port 5000", "python -m http.server 8080",
         "docker compose up", "tail -f server.log", "watch -n1 ls", "ollama serve",
         "streamlit run app.py", "python manage.py runserver",
+        "python app.py",
+        "python app.py > server.log 2>&1",
+        'cd "C:\\\\Users\\\\luism\\\\Desktop\\\\Proyectos independientes\\\\Silhouettes" && python app.py',
+        "python -m flask run",
+        r".venv\Scripts\python.exe app.py",
+        "py -3 app.py",
     ]
     for c in blocked:
         assert st.foreground_server_launch(c), c
     allowed = [
-        "python -m uvicorn server:app --port 8000 &",
-        "nohup python -m uvicorn app:app > s.log 2>&1 &",
         "timeout 20 python -m uvicorn server:app",
         "npm run build", "node scripts/build.js", "python -m pytest -q", "pytest tests/ -q && echo ok",
         "docker compose up -d", "tail -n 20 server.log", "ls -la && cat README.md",
         "curl -s http://127.0.0.1:8000/api/stats", "python server.py --check",
+        "python app.py --check",
         'python -c "import server; print(server.app)"', "git status && git diff --stat", "",
     ]
     for c in allowed:
         assert st.foreground_server_launch(c) is None, c
+    posix_detached = [
+        "python -m uvicorn server:app --port 8000 &",
+        "nohup python -m uvicorn app:app > s.log 2>&1 &",
+    ]
+    for c in posix_detached:
+        assert st.foreground_server_launch(c, windows=False) is None, c
+
+
+def test_windows_nohup_does_not_count_as_detached():
+    cmd = "nohup python -m uvicorn app:app > s.log 2>&1 &"
+    assert st.foreground_server_launch(cmd, windows=True)
+    assert st.foreground_server_launch(cmd, windows=False) is None
+
+
+def test_windows_ampersand_python_app_blocked():
+    cmd = (
+        'cd "/c/Users/x/Silhouettes" && nohup python app.py > server.log 2>&1 &\n'
+        "sleep 3\n"
+        "curl -s http://127.0.0.1:5000/editor"
+    )
+    assert st.foreground_server_launch(cmd, windows=True)
+
+
+def test_server_shaped_command_uses_short_idle(monkeypatch):
+    monkeypatch.setattr(st, "_effective_idle_timeout", lambda key: 900.0)
+    assert st._idle_for_command("python app.py") == 45.0
+    assert st._idle_for_command("pytest -q") == 900.0
 
 
 def test_bash_tool_refuses_foreground_server_before_running():
@@ -46,10 +78,18 @@ def test_bash_tool_refuses_foreground_server_before_running():
     assert "uvicorn" in res["error"]
 
 
+def test_bash_tool_refuses_python_app_py():
+    res = asyncio.run(st.BashTool().execute("python app.py", {"session_id": "s1"}))
+    assert res["exit_code"] == 2
+    assert "#!bg" in res["error"]
+
+
 def test_local_policy_mentions_foreground_servers():
     from src.agent_harness import local_model_policy
     txt = local_model_policy()
     assert "#!bg" in txt and "uvicorn" in txt and "interactive" in txt
+    assert "python app.py" in txt
+    assert "nohup" in txt and "Windows" in txt
 
 
 def test_local_policy_requires_search_before_answer():

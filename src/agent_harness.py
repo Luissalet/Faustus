@@ -45,6 +45,24 @@ logger = logging.getLogger(__name__)
 
 # Tools whose success IS evidence that files changed on disk.
 FILE_MUTATION_TOOLS = frozenset({"write_file", "edit_file", "apply_patch"})
+UI_PATH_RE = re.compile(
+    r"(?:\.(?:html?|css|s?css|jsx|tsx|vue)$)|(?:(?:^|[/\\])(?:static|templates|editor)[/\\])",
+    re.I,
+)
+UI_INTENT_RE = re.compile(
+    r"browser|navegador|viewport|canvas|thumbnail|\bdrag\b|visual|editor\s*2d|\bcapa\b",
+    re.I,
+)
+UI_VERIFY_TODO_RE = re.compile(
+    r"verif|browser|screenshot|navegador|captura",
+    re.I,
+)
+BROWSER_EVIDENCE_MARKERS = (
+    "browser_snapshot",
+    "browser_take_screenshot",
+    "browser_evaluate",
+    "browser_navigate",
+)
 # Shell tools: only evidence when the command itself looks mutating (see below).
 SHELL_TOOLS = frozenset({"bash", "python", "powershell"})
 # Non-file side effects (documents, notes, mail…) — evidence for "I did X" claims
@@ -491,6 +509,46 @@ def user_authored_text(text: str) -> str:
     if m:
         return body[:m.start()].rstrip()
     return body
+
+
+_ATTACHMENT_HEADING_RE = re.compile(r"^(#{1,3})\s+(.+?)\s*$", re.M)
+_ATTACHMENT_TITLE_RE = re.compile(r"=== (?:File|ZIP archive): (.+?) ===")
+
+
+def attachment_budgeted_text(text: str, max_chars: int = 4000) -> str:
+    """Keep the typed request, attachment titles and heading TOC — drop the body.
+
+    `user_authored_text` already strips inlined files so path-token extraction
+    does not treat the spec as destinations. This is the same cut for the
+    prompt the model sees: a 170 k plan becomes headings plus a pointer.
+    """
+    body = text or ""
+    m = _INLINED_ATTACHMENT_RE.search(body)
+    if not m:
+        return body
+    prefix = body[: m.start()].rstrip()
+    rest = body[m.start() :]
+    titles = _ATTACHMENT_TITLE_RE.findall(rest)
+    title = (titles[0] or "").strip() if titles else "attachment"
+    cap = max(0, int(max_chars or 0))
+    toc: List[str] = []
+    used = 0
+    for hm in _ATTACHMENT_HEADING_RE.finditer(rest):
+        line = f"{hm.group(1)} {hm.group(2).strip()}"
+        extra = len(line) + 1
+        if cap and used + extra > cap:
+            break
+        toc.append(line)
+        used += extra
+    kind = "ZIP archive" if rest.lstrip().startswith("=== ZIP archive:") else "File"
+    parts: List[str] = []
+    if prefix:
+        parts.append(prefix)
+    parts.append(f"=== {kind}: {title} ===")
+    if toc:
+        parts.append("\n".join(toc))
+    parts.append("Full text is in the workspace / attachment; read the section you need.")
+    return "\n".join(parts)
 
 
 def extract_path_tokens(text: str) -> List[str]:
@@ -1164,6 +1222,8 @@ class TurnLedger:
             if newly_done:
                 item["verified"] = bool(evidence_since)
                 item["mutation_backed"] = bool(mutation_since)
+                if UI_VERIFY_TODO_RE.search(str(item.get("content") or "")) and not self.has_browser_evidence():
+                    item["verified"] = False
             elif before is not None:
                 for k in ("verified", "mutation_backed"):
                     if k in before:
@@ -1198,6 +1258,42 @@ class TurnLedger:
                 if p not in out:
                     out.append(p)
         return out
+
+    def mutated_ui_paths(self) -> List[str]:
+        return [p for p in self.mutated_paths() if UI_PATH_RE.search(p.replace("\\", "/"))]
+
+    def has_browser_evidence(self) -> bool:
+        for e in self.events:
+            if not e.get("ok"):
+                continue
+            tool = str(e.get("tool") or "")
+            if any(marker in tool for marker in BROWSER_EVIDENCE_MARKERS):
+                return True
+        return False
+
+    def needs_ui_verify(self, user_text: str = "") -> bool:
+        try:
+            from src.settings import get_setting
+            if not bool(get_setting("agent_ui_verify", True)):
+                return False
+        except Exception:  # noqa: BLE001
+            pass
+        text = user_text or self.user_text or ""
+        return bool(self.mutated_ui_paths()) or bool(UI_INTENT_RE.search(text))
+
+    def ui_verify_status(self, user_text: str = "") -> str:
+        """Card field: ok | missing | skipped. Never changes test `ok`."""
+        try:
+            from src.settings import get_setting
+            if not bool(get_setting("agent_ui_verify", True)):
+                return "skipped"
+        except Exception:  # noqa: BLE001
+            pass
+        if not self.needs_ui_verify(user_text):
+            return "skipped"
+        if self.has_browser_evidence():
+            return "ok"
+        return "missing"
 
     def tools_run(self) -> Dict[str, int]:
         counts: Dict[str, int] = {}
@@ -1356,6 +1452,8 @@ class TurnLedger:
             reasons.append("intent_without_action")
         if permission:
             reasons.append("asked_instead_of_continuing")
+        if self.needs_ui_verify() and not self.has_browser_evidence():
+            reasons.append("ui_unverified")
         return {
             "ok": not reasons,
             "reasons": reasons,
@@ -1377,7 +1475,7 @@ class TurnLedger:
             return False
         return not (
             reasons
-            & {"claims_without_mutation", "fabricated_paths", "claimed_paths_untouched"}
+            & {"claims_without_mutation", "fabricated_paths", "claimed_paths_untouched", "ui_unverified"}
         )
 
     # -- messages -----------------------------------------------------------
@@ -1443,8 +1541,14 @@ class TurnLedger:
                 "in one sentence and move on. If a design choice is truly blocking, call "
                 "ask_user once — a rhetorical question in prose is not asking."
             )
+        if "ui_unverified" in check["reasons"]:
+            lines.append(
+                "- UI files changed this turn but no browser snapshot/evaluate ran. "
+                "Open the editor in the browser MCP (browser_navigate + browser_snapshot). "
+                "Do not start Flask/python app.py in the foreground; use #!bg if the server is down."
+            )
         stall_only = not (
-            {"claims_without_mutation", "fabricated_paths", "claimed_paths_untouched"}
+            {"claims_without_mutation", "fabricated_paths", "claimed_paths_untouched", "ui_unverified"}
             & set(check["reasons"])
         )
         if permission_only or (permission and stall_only and self.effects):
@@ -1514,6 +1618,11 @@ class TurnLedger:
             parts.append(
                 "pidió permiso para continuar en vez de seguir con el trabajo" if es else
                 "it asked for permission to continue instead of doing the next work"
+            )
+        if "ui_unverified" in check["reasons"]:
+            parts.append(
+                "cambió archivos de UI sin verificarlos en el navegador" if es else
+                "it changed UI files without verifying them in the browser"
             )
         head = "⚠️ **Verificación del harness**: " if es else "⚠️ **Harness check**: "
         if check["reasons"] == ["claimed_paths_untouched"]:
@@ -1592,6 +1701,7 @@ class TurnLedger:
             "review": self.review,
             "review_fix_rounds": self.review_fix_rounds,
             "asked_user": self.asked_user,
+            "ui_verify": self.ui_verify_status(),
         }
 
 
@@ -1688,10 +1798,11 @@ def local_model_policy() -> str:
         "NEW files or when the user asked for a full rewrite; a whole-file rewrite from memory drops "
         "code you did not remember.\n"
         "10. Never start a server, dev watcher or any command that does not exit on its own "
-        "(uvicorn, flask run, npm start/dev, tail -f, …) in the foreground: it blocks the turn and "
-        "gets killed. Either put `#!bg` as the first line of the bash block to run it detached, "
-        "bound it with `timeout 30 …`, or verify the code without running it (tests, import, "
-        "calling the handler directly). Never run interactive programs."
+        "(uvicorn, flask run, python app.py, npm start/dev, tail -f, …) in the foreground: it "
+        "blocks the turn and gets killed. Either put `#!bg` as the first line of the bash block "
+        "to run it detached, bound it with `timeout 30 …`, or verify the code without running it "
+        "(tests, import, calling the handler directly). On Windows, `nohup` and a trailing `&` "
+        "do not detach; use `#!bg`. Never run interactive programs."
     )
 
 

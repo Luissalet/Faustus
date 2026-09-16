@@ -5161,3 +5161,14 @@ El paquete de Luis no era solo M0 y M1: detrás de los 100 requisitos P0 venían
 **Que hace.** Si una ruta absoluta cae fuera de las raices, se busca el sufijo mas largo que exista (o cuyo padre exista) bajo el workspace. Solo se acepta si el path completo pedido y el recuperado se parecen ≥0.85 (el typo de una letra en una ruta Windows larga ronda 0.99; otro proyecto con el mismo `src/app.py` no). El original nunca se abre. `.ssh` / sensibles siguen bloqueados.
 
 **Ficheros.** `src/tool_execution.py`, `tests/test_workspace_confine.py`.
+
+## 90. Cerrar el bucle del agente local (16-09-2026)
+
+**Problema.** El turno Silhouettes del 16-09 (`nohup python app.py > server.log 2>&1 &` + spec de 170 k + CSS/JS del editor) colgaba el bash en Windows, podia descargar qwen3.8 a los 5 min de silencio, sellaba Verified un cambio visual sin browser, y el chat siguiente reinyectaba el plan entero.
+
+**Medido en esta maquina (16-09, ~16:50).** El comando exacto del 16-09 a `BashTool.execute`: **3.4 ms**, `exit_code == 2`, error con `#!bg`. No arranco Flask. `http://127.0.0.1:7000/` respondia 200; `ollama ps` estaba vacio (ningun peso cargado en el momento de medir — el pin `keep_alive=2h` queda cubierto por `tests/test_run_model_pin.py`, no por un restore en vivo). Un `edit_file` de `static/editor/x.css` sin snapshot: `ui_verify=missing`, `check.ok=false`, razon `ui_unverified`. `Keep implementing the plan` es continue-turn; un adjunto de 8051 chars baja a 121 (titulo + headings, el cuerpo `x*8000` no entra).
+
+**Que hace.** (1) `python app.py` / `python -m flask` son launchers; en Windows `nohup` y `&` no despegan — hay que `#!bg`. Idle de servidor capado a 45 s. (2) Pin de `keep_alive` por run local y restore al terminar. (3) TurnLedger exige evidencia browser en turnos UI; el schema ofrece las tools de sesion Playwright despues de mutar UI. (4) `todowrite` persiste `data/agent_todos/project-<id>.json`; un chat nuevo o continue-turn inyecta incompletos + last files/tools, no el spec. (5) Tarjeta `ui_verify` ok/missing/skipped; aviso `system_notice` una vez si el modelo es qwen3.8 y hay ≥40 rondas o compactacion mid-turn. Sin autowitch. Sin auto-`#!bg`.
+
+**Ficheros.** `src/agent_tools/subprocess_tools.py`, `src/run_model_pin.py`, `src/llm_core.py`, `src/agent_loop.py`, `src/agent_harness.py`, `src/agent_tools/coding_tools.py`, `src/project_tests.py`, `src/settings.py`, `src/agent_settings_schema.py`, `docs/api/sse_events.json`, `studio/src/{adapters/chat.ts,screens/studio/Harness.tsx,i18n/es.ts}`, `tests/{test_subprocess_hardening,test_run_model_pin,test_agent_harness,test_browser_mcp_expansion,test_project_todos,test_continue_turn_context,test_qwen38_notice}.py`.
+

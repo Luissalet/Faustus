@@ -124,6 +124,9 @@ def test_ledger_accepts_claims_backed_by_mutation(tmp_path):
     ledger.record("edit_file", '{"path": "static/js/projects.js", "old_string": "1", "new_string": "2"}',
                   {"output": "Edited static/js/projects.js (1 replacement)", "exit_code": 0}, 1)
     check = ledger.check_completion("I've added the delete button in static/js/projects.js.")
+    assert "ui_unverified" in check["reasons"]
+    ledger.record("mcp__builtin_browser__browser_snapshot", "", {"output": "ok", "exit_code": 0}, 2)
+    check = ledger.check_completion("I've added the delete button in static/js/projects.js.")
     assert check["ok"], check
     assert ledger.mutated_paths() == ["static/js/projects.js"]
 
@@ -809,3 +812,59 @@ def test_a_readonly_grep_does_not_verify_a_false_mutation_claim(tmp_path):
     check = ledger.check_completion("He modificado src/app.py para renombrar la función.")
     assert not check["ok"]
     assert "claims_without_mutation" in check["reasons"]
+
+
+def test_needs_ui_verify_on_editor_js(tmp_path):
+    led = h.TurnLedger(str(tmp_path), "arregla el canvas")
+    led.record("edit_file", '{"path": "static/editor/viewport2d.js", "old_string": "a", "new_string": "b"}',
+               {"output": "Edited", "exit_code": 0}, 1)
+    assert led.needs_ui_verify("arregla el canvas")
+    assert not led.has_browser_evidence()
+    check = led.check_completion("Fixed the canvas drag.")
+    assert "ui_unverified" in check["reasons"]
+    msg = led.rejection_message(check)
+    assert "browser_navigate" in msg and "#!bg" in msg
+
+
+def test_browser_snapshot_satisfies_ui_verify(tmp_path):
+    led = h.TurnLedger(str(tmp_path), "arregla el canvas")
+    led.record("edit_file", '{"path": "static/editor/layer_tree.js", "old_string": "a", "new_string": "b"}',
+               {"output": "Edited", "exit_code": 0}, 1)
+    led.record("mcp__builtin_browser__browser_snapshot", "", {"output": "ok", "exit_code": 0}, 2)
+    assert led.has_browser_evidence()
+    check = led.check_completion("Fixed the layer tree.")
+    assert "ui_unverified" not in check["reasons"]
+
+
+def test_todowrite_verify_item_not_mutation_backed_without_browser(tmp_path):
+    led = h.TurnLedger(str(tmp_path), "fix the editor")
+    led.record("edit_file", '{"path": "static/editor/editor.css", "old_string": "a", "new_string": "b"}',
+               {"output": "Edited", "exit_code": 0}, 1)
+    out = led.record_progress([
+        {"content": "Verify all fixes in browser", "status": "completed", "priority": "high"}
+    ], 2)
+    assert out[0]["verified"] is False
+
+
+def test_ui_verify_status_missing_without_browser(tmp_path):
+    led = h.TurnLedger(str(tmp_path), "arregla el canvas")
+    led.record("edit_file", '{"path": "static/editor/viewport2d.js", "old_string": "a", "new_string": "b"}',
+               {"output": "Edited", "exit_code": 0}, 1)
+    assert led.ui_verify_status() == "missing"
+    assert led.summary()["ui_verify"] == "missing"
+
+
+def test_ui_verify_status_ok_with_snapshot(tmp_path):
+    led = h.TurnLedger(str(tmp_path), "arregla el canvas")
+    led.record("edit_file", '{"path": "static/editor/layer_tree.js", "old_string": "a", "new_string": "b"}',
+               {"output": "Edited", "exit_code": 0}, 1)
+    led.record("mcp__builtin_browser__browser_snapshot", "", {"output": "ok", "exit_code": 0}, 2)
+    assert led.ui_verify_status() == "ok"
+
+
+def test_ui_verify_status_skipped_when_setting_off(tmp_path, monkeypatch):
+    monkeypatch.setattr("src.settings.get_setting", lambda k, d=None: False if k == "agent_ui_verify" else d)
+    led = h.TurnLedger(str(tmp_path), "arregla el canvas")
+    led.record("edit_file", '{"path": "static/editor/editor.css", "old_string": "a", "new_string": "b"}',
+               {"output": "Edited", "exit_code": 0}, 1)
+    assert led.ui_verify_status() == "skipped"

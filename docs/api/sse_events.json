@@ -52,6 +52,7 @@
     {"type": "steer", "stability": "extended", "fields": {}},
     {"type": "compacted", "stability": "extended", "fields": {}},
     {"type": "context_compacted", "stability": "extended", "fields": {"round": "int?", "data": "object"}, "note": "mid-turn spill/fold under soft context ceiling (tokens_before/after, spilled, overflow_ids)"},
+    {"type": "system_notice", "stability": "extended", "fields": {"message": "string", "round": "int?"}, "note": "advisory (e.g. qwen3.8 long-loop hint); not a turn error"},
     {"type": "context_trimmed", "stability": "extended", "fields": {}},
     {"type": "memories_used", "stability": "extended", "fields": {}},
     {"type": "rag_sources", "stability": "extended", "fields": {}},

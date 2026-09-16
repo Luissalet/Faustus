@@ -137,6 +137,10 @@ GROUPS: list[dict[str, Any]] = [
                  "A bash / python command that prints nothing for this long is killed with its whole "
                  "process tree (a server left in the foreground, a prompt waiting for input). 0 = never.",
                  0, 86400),
+            _int("agent_server_idle_timeout_seconds", "Server-command idle timeout (s)",
+                 "Cap for commands that look like a server/watcher (python app.py, flask, uvicorn, "
+                 "npm start). Not adaptive. 0 = use the normal idle timeout.",
+                 0, 3600),
             _bool("agent_adaptive_idle_timeout", "Adaptive idle timeout",
                   "Learn that bound from the last 20 commands (3 x their median, at most 600 s) instead "
                   "of using the fixed one. It only ever grants MORE time, so a box whose builds run "
@@ -314,6 +318,21 @@ GROUPS: list[dict[str, Any]] = [
             _int("agent_context_overflow_keep_hours", "Overflow keep (hours)",
                  "How long spilled tool bodies stay under data/context_overflow.",
                  1, 8760),
+            _text("agent_run_keep_alive", "Keep-alive during agent run",
+                 "Ollama keep_alive while a local agent run is in flight (e.g. 2h). "
+                 "Stops the weight unloading mid-bash. Prefer a duration over -1."),
+            _bool("agent_run_keep_alive_restore", "Restore keep-alive when the run ends",
+                  "Ping Ollama at the end of a run so keep_alive returns to the saved value."),
+            _bool("agent_ui_verify", "Require browser verify for UI turns",
+                  "A turn that edits HTML/CSS/JS in static/templates/editor cannot close as "
+                  "verified without a browser snapshot, evaluate, or navigate."),
+            _int("agent_inline_attachment_max_chars", "Inline attachment max chars",
+                 "When a user message inlines a spec/file over this size, the model sees "
+                 "the title and heading TOC instead of the full body. 0 = never trim.",
+                 0, 500_000),
+            _bool("agent_project_todos", "Persist todos per project",
+                  "todowrite writes the list to the project as well as the chat, so a new "
+                  "chat in the same project sees incomplete work."),
             _bool("agent_context_engine", "Context Engine",
                   "One compiler decides what the model is told: a ContextPacket per call with "
                   "a manifest, the omissions and a budget, instead of every subsystem "

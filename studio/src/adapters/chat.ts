@@ -330,6 +330,7 @@ export interface HarnessSummary {
   tests?: Record<string, unknown>;
   review?: Record<string, unknown>;
   staticAnalysis?: Record<string, unknown>;
+  uiVerify?: 'ok' | 'missing' | 'skipped';
   changeset?: {
     id?: string;
     stored?: boolean;
@@ -1276,6 +1277,9 @@ export function summaryFrom(data: Record<string, unknown>): HarnessSummary {
     review: data.review && typeof data.review === 'object' ? (data.review as Record<string, unknown>) : undefined,
     staticAnalysis:
       data.static_analysis && typeof data.static_analysis === 'object' ? (data.static_analysis as Record<string, unknown>) : undefined,
+    uiVerify: data.ui_verify === 'ok' || data.ui_verify === 'missing' || data.ui_verify === 'skipped'
+      ? data.ui_verify
+      : undefined,
     changeset: cs
       ? {
           id: typeof cs.id === 'string' ? cs.id : undefined,
@@ -1590,6 +1594,16 @@ export function decode(raw: Record<string, unknown>, sseEvent: string | null): C
       };
     case 'harness_summary':
       return { type: 'summary', summary: summaryFrom(data) };
+    case 'system_notice':
+      return {
+        type: 'check',
+        check: {
+          status: 'model_notice',
+          round: num(raw.round),
+          reasons: [],
+          detail: str(raw.message ?? raw.detail),
+        },
+      };
     case 'context_ledger': {
       // The percentage is the headline; the sections are why. "The model
       // ignored my instructions" is usually 9k of tool schemas and skills

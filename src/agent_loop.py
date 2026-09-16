@@ -165,7 +165,7 @@ def _browser_intent_is_real(names: Set[str]) -> bool:
     return bool(browser & _BROWSER_MCP_SESSION_TOOLS) or len(browser) > 1
 
 
-def _expand_browser_mcp_tools(tool_names: Set[str], mcp_mgr) -> Set[str]:
+def _expand_browser_mcp_tools(tool_names: Set[str], mcp_mgr, force: bool = False) -> Set[str]:
     """Expand browser intent to every connected Playwright MCP tool.
 
     Playwright MCP tool names can change between releases (for example
@@ -176,9 +176,29 @@ def _expand_browser_mcp_tools(tool_names: Set[str], mcp_mgr) -> Set[str]:
     Only when the turn is actually about the browser — see
     _browser_intent_is_real. A lone peripheral hit keeps just the tool the
     index returned rather than pulling in the whole set.
+
+    ``force=True`` (UI-verify turns after a mutation) adds the session set plus
+    screenshot/evaluate, not the 28 coordinate-mouse tools.
     """
     names = set(tool_names or set())
     if not mcp_mgr:
+        return names
+    if force:
+        wanted = set(_BROWSER_MCP_SESSION_TOOLS) | {
+            _BROWSER_MCP_PREFIX + "browser_take_screenshot",
+            _BROWSER_MCP_PREFIX + "browser_evaluate",
+        }
+        try:
+            declared = {
+                t.get("qualified_name")
+                for t in mcp_mgr.get_all_tools()
+                if t.get("server_id") == "builtin_browser" and not t.get("is_disabled")
+            }
+            declared.discard(None)
+        except Exception as exc:
+            logger.warning("Failed to list browser MCP tools: %s", exc)
+            declared = set()
+        names |= (wanted & declared) if declared else wanted
         return names
     if not _browser_intent_is_real(names):
         if any(n.startswith(_BROWSER_MCP_PREFIX) for n in names):
@@ -1814,6 +1834,11 @@ _CONTINUE_TURN_RE = re.compile(
     r"keep going|go on)\s*[.!]?\s*$",
     re.IGNORECASE,
 )
+_IMPLEMENTATION_CONTINUE_RE = re.compile(
+    r"keep\s+implementing|continue\s+the\s+implementation|"
+    r"sigue(?:e)?(?:\s+el)?\s+plan|sigue\s+implementando",
+    re.I,
+)
 
 
 def _looks_like_continue_turn(text: str) -> bool:
@@ -1821,14 +1846,102 @@ def _looks_like_continue_turn(text: str) -> bool:
 
     Studio's Continue control and ask_user "Continue" answers arrive as a short
     message. A fully completed Progress list then needs a todowrite refresh so
-    the panel does not freeze on the previous batch.
+    the panel does not freeze on the previous batch. Longer "keep implementing
+    the plan" / "sigue el plan" messages are the same intent with a spec attached.
     """
     t = str(text or "").strip()
     if not t:
         return False
     if _CONTINUE_TURN_RE.match(t):
         return True
-    return bool(re.match(r"^(?:continue|continuar)\b.{0,80}$", t, re.IGNORECASE))
+    if re.match(r"^(?:continue|continuar)\b.{0,80}$", t, re.IGNORECASE):
+        return True
+    if not _IMPLEMENTATION_CONTINUE_RE.search(t):
+        return False
+    # A question ABOUT those words is not a continue request.
+    if "?" in t and not _IMPLEMENTATION_CONTINUE_RE.match(t.lstrip()):
+        return False
+    return True
+
+
+def project_todos_block(todos) -> str:
+    """Incomplete project todos for a new/continue chat. Empty if nothing open."""
+    from src.agent_tools.coding_tools import incomplete_todos as _incomplete
+    inc = _incomplete(todos)
+    if not inc:
+        return ""
+    lines = ["Incomplete work for this project (from the previous chat):"]
+    for item in inc[:24]:
+        if not isinstance(item, dict):
+            continue
+        content = str(item.get("content") or "").strip()
+        if not content:
+            continue
+        status = str(item.get("status") or "pending")
+        lines.append(f"- [{status}] {content}")
+    return "\n".join(lines)[:3500]
+
+
+def continue_turn_block(todos, working_set) -> str:
+    """Incomplete todos + last files + last 8 tools + last error. Empty if nothing."""
+    parts: List[str] = []
+    todos_text = project_todos_block(todos)
+    if todos_text:
+        parts.append(todos_text)
+    ws = working_set if isinstance(working_set, dict) else {}
+    files = [str(p) for p in (ws.get("last_files") or []) if p]
+    if files:
+        parts.append("Last files touched: " + ", ".join(files[:12]))
+    bits: List[str] = []
+    for item in (ws.get("last_tools") or [])[-8:]:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("tool") or "?").strip() or "?"
+        ok = "ok" if item.get("ok") else "fail"
+        paths = " ".join(str(p) for p in (item.get("paths") or []) if p)
+        bits.append(f"{name} {ok} {paths}".strip())
+    if bits:
+        parts.append("Last tools: " + "; ".join(bits))
+    err = str(ws.get("last_error") or "").strip()
+    if err:
+        parts.append("Last error: " + err[:400])
+    return "\n".join(parts)[:3500]
+
+
+def _budget_last_user_attachment(messages: List[Dict], *, force: bool = False) -> None:
+    """Replace an oversized inlined spec on the last user message (in memory only)."""
+    from src.agent_harness import _INLINED_ATTACHMENT_RE, attachment_budgeted_text
+    try:
+        max_chars = int(get_setting("agent_inline_attachment_max_chars", 4000) or 4000)
+    except (TypeError, ValueError):
+        max_chars = 4000
+    if max_chars < 0:
+        max_chars = 4000
+    for msg in reversed(messages or []):
+        if msg.get("role") != "user" or msg.get("_agent_injected"):
+            continue
+        content = msg.get("content", "")
+        if not isinstance(content, str):
+            return
+        if content.startswith("[Harness check"):
+            continue
+        if not _INLINED_ATTACHMENT_RE.search(content):
+            return
+        if not force and max_chars and len(content) <= max_chars:
+            return
+        cap = max_chars if max_chars > 0 else 4000
+        msg["content"] = attachment_budgeted_text(content, cap)
+        return
+
+
+def _maybe_persist_project_todos(session_id: Optional[str], project_id: str, todos: List[Dict]) -> None:
+    from src.agent_tools.coding_tools import save_todos as _save_todos
+    from src.agent_tools.coding_tools import save_project_todos as _save_project
+    if session_id:
+        _save_todos(session_id, todos)
+    pid = str(project_id or "").strip()
+    if pid and bool(get_setting("agent_project_todos", True)):
+        _save_project(pid, todos)
 
 
 TODOWRITE_REFRESH_NUDGE = (
@@ -1839,6 +1952,27 @@ TODOWRITE_REFRESH_NUDGE = (
     "Do not ask for permission to proceed. A pre-existing test failure you did "
     "not introduce is a one-sentence note, not a question and not a blocker."
 )
+
+_QWEN38_RE = re.compile(r"qwen3\.8", re.I)
+_QWEN38_LONG_NOTICE = (
+    "This model degrades in long tool loops; qwen3-coder usually closes better."
+)
+
+
+def qwen38_long_run_notice(
+    model: str,
+    round_num: int = 0,
+    compacted: bool = False,
+    already: bool = False,
+) -> Optional[str]:
+    """SSE system_notice copy, at most once per run. Not a turn error."""
+    if already:
+        return None
+    if not _QWEN38_RE.search(str(model or "")):
+        return None
+    if int(round_num or 0) < 40 and not compacted:
+        return None
+    return _QWEN38_LONG_NOTICE
 
 
 def _looks_like_workspace_coding_request(text: str) -> bool:
@@ -7491,6 +7625,7 @@ async def _stream_agent_loop_body(
     _pending_language_nudge = False
     _todo_nudged = False
     _todo_refresh_nudged = False
+    _qwen38_notice_sent = False
     _budget_stop_echo_retried = False
     _round_finish_reason = None
     _harness_scope_active = bool(workspace) or _looks_like_workspace_coding_request(_last_user)
@@ -7980,9 +8115,9 @@ async def _stream_agent_loop_body(
             if approved.tool_name == "todowrite" and isinstance(approved_result, dict) and isinstance(approved_result.get("todos"), list) and not approved_result.get("error"):
                 _annotated_todos = _ledger.record_progress(approved_result["todos"], 0)
                 try:
-                    from src.agent_tools.coding_tools import save_todos as _save_todos
-                    if session_id:
-                        _save_todos(session_id, _annotated_todos)
+                    _maybe_persist_project_todos(
+                        session_id, str(_hopts.get("project_id") or ""), _annotated_todos
+                    )
                 except Exception:
                     pass
                 yield "data: " + json.dumps({"type": "progress_update", "round": 0, "todos": _annotated_todos}) + "\n\n"
@@ -8050,6 +8185,32 @@ async def _stream_agent_loop_body(
             messages.append({"role": "user", "content": TODOWRITE_REFRESH_NUDGE})
             _todo_refresh_nudged = True
             logger.info("[harness] todowrite refresh injected at continue turn start")
+    try:
+        _pid = str(_hopts.get("project_id") or "")
+        _is_continue = _looks_like_continue_turn(_last_user)
+        if _is_continue or any(
+            isinstance(m.get("content"), str) and "=== File:" in (m.get("content") or "")
+            for m in (messages or [])
+            if m.get("role") == "user"
+        ):
+            _budget_last_user_attachment(messages, force=_is_continue)
+        if _pid and bool(get_setting("agent_project_todos", True)):
+            from src.agent_tools.coding_tools import (
+                incomplete_todos as _inc_ptodos,
+                load_project_todos as _load_ptodos,
+                load_project_working_set as _load_pws,
+            )
+            _ptodos = _load_ptodos(_pid)
+            _is_new_chat = not any(m.get("role") == "assistant" for m in (messages or []))
+            if (_is_continue or _is_new_chat) and _inc_ptodos(_ptodos):
+                _cblock = continue_turn_block(_ptodos, _load_pws(_pid))
+                if _cblock:
+                    messages = _insert_before_latest_user(
+                        messages, {"role": "system", "content": _cblock}
+                    )
+                    logger.info("[harness] project continue-turn working set injected")
+    except Exception as _pt_inj_err:
+        logger.debug("[harness] project todo inject skipped: %s", _pt_inj_err)
     round_num = 0
     while True:
         round_num += 1
@@ -8215,9 +8376,23 @@ async def _stream_agent_loop_body(
         _round_finish_reason = None  # provider finish_reason for this round (stop/length/tool_calls)
         _recover_empty_completion = False
 
+        try:
+            if _relevant_tools is not None and (
+                _ledger.mutated_ui_paths()
+                or (_harness.UI_INTENT_RE.search(_last_user or "") and _ledger.needs_ui_verify(_last_user))
+            ):
+                _relevant_tools = _expand_browser_mcp_tools(_relevant_tools, mcp_mgr, force=True)
+                if _schema_tools is not None:
+                    _schema_tools = set(_schema_tools) | {
+                        n for n in _relevant_tools if n.startswith(_BROWSER_MCP_PREFIX)
+                    }
+        except Exception as _ui_tools_err:
+            logger.debug("[harness] ui browser tools expand skipped: %s", _ui_tools_err)
+
         # Mid-turn context pressure: spill fat/old tool bodies to disk and fold
         # history so overnight coding turns stay under the soft ceiling instead
         # of thrashing at 90%+ context until rounds_exhausted.
+        _midturn_compacted = False
         try:
             _durable_overflow = not bool(
                 _hopts.get("incognito") or _hopts.get("no_memory")
@@ -8234,6 +8409,7 @@ async def _stream_agent_loop_body(
                 durable_overflow=_durable_overflow,
             )
             if _midturn_report.get("changed"):
+                _midturn_compacted = True
                 yield (
                     "data: " + json.dumps({
                         "type": "context_compacted",
@@ -8243,6 +8419,24 @@ async def _stream_agent_loop_body(
                 )
         except Exception as _midturn_err:
             logger.warning("[agent] midturn pressure skipped: %s", _midturn_err)
+        try:
+            _qwen_notice = qwen38_long_run_notice(
+                str(model or ""),
+                round_num=round_num,
+                compacted=_midturn_compacted,
+                already=_qwen38_notice_sent,
+            )
+            if _qwen_notice:
+                _qwen38_notice_sent = True
+                yield (
+                    "data: " + json.dumps({
+                        "type": "system_notice",
+                        "message": _qwen_notice,
+                        "round": round_num,
+                    }) + "\n\n"
+                )
+        except Exception as _qn_err:
+            logger.debug("[agent] qwen long-run notice skipped: %s", _qn_err)
 
         _active_route_state = {
             "messages": messages,
@@ -10026,6 +10220,8 @@ async def _stream_agent_loop_body(
                                     override=_hopts.get("test_command"),
                                     checkpoint_sha=(_ledger.checkpoint or {}).get("sha") if isinstance(_ledger.checkpoint, dict) else None,
                                 )
+                                if _tres is not None:
+                                    _tres["ui_verify"] = _ledger.ui_verify_status(_last_user)
                                 _ledger.tests = _ptests.compact(_tres)
                         except Exception as _pt_err:
                             logger.debug("[harness] project tests failed to run: %s", _pt_err)
@@ -10982,9 +11178,9 @@ async def _stream_agent_loop_body(
                 if block.tool_type == "todowrite" and isinstance(result, dict) and isinstance(result.get("todos"), list) and not result.get("error"):
                     _annotated_todos = _ledger.record_progress(result["todos"], round_num)
                     try:
-                        from src.agent_tools.coding_tools import save_todos as _save_todos
-                        if session_id:
-                            _save_todos(session_id, _annotated_todos)
+                        _maybe_persist_project_todos(
+                            session_id, str(_hopts.get("project_id") or ""), _annotated_todos
+                        )
                     except Exception:
                         pass
                     yield (
@@ -11865,6 +12061,28 @@ async def _stream_agent_loop_body(
         logger.info("[harness] turn summary: stop=%s tools=%s mutations=%s failed=%s rejections=%s",
                     _hsum["stop_reason"], _hsum["tool_calls"], _hsum["mutations"],
                     _hsum["failed_calls"], _hsum["rejections"])
+        try:
+            _ws_pid = str(_hopts.get("project_id") or "").strip()
+            if _ws_pid and bool(get_setting("agent_project_todos", True)) and _ledger.events:
+                from src.agent_tools.coding_tools import save_project_working_set as _save_pws
+                _last_error = ""
+                _last_tools = []
+                for _ev in _ledger.events[-8:]:
+                    _last_tools.append({
+                        "tool": _ev.get("tool"),
+                        "ok": bool(_ev.get("ok")),
+                        "paths": list(_ev.get("paths") or [])[:6],
+                    })
+                    if not _ev.get("ok") and _ev.get("error"):
+                        _last_error = str(_ev.get("error") or "")[:400]
+                _save_pws(
+                    _ws_pid,
+                    last_files=_ledger.mutated_paths()[:12],
+                    last_tools=_last_tools,
+                    last_error=_last_error,
+                )
+        except Exception as _pws_err:
+            logger.debug("[harness] project working set persist skipped: %s", _pws_err)
         # --- And the change set: what the answer CLAIMED, against what the
         # checkpoint says actually changed. The ledger records what happened;
         # this asks whether the sentence the user is about to read is
@@ -12182,12 +12400,31 @@ async def stream_agent_loop(*args, **kwargs) -> AsyncGenerator[str, None]:
     bound.apply_defaults()
     owner = bound.arguments.get("owner")
     session_id = bound.arguments.get("session_id")
+    _pin_run_id = ""
+    _pin_token = None
+    try:
+        from src import run_model_pin as _run_pin
+        _hopts = bound.arguments.get("harness_options") or {}
+        _pin_run_id = str((_hopts.get("run_id") if isinstance(_hopts, dict) else None) or session_id or "")
+        _pin_token = _run_pin.pin_for_run(
+            _pin_run_id,
+            str(bound.arguments.get("endpoint_url") or ""),
+            str(bound.arguments.get("model") or ""),
+        )
+    except Exception:  # noqa: BLE001
+        logger.debug("stream_agent_loop: model pin skipped", exc_info=True)
     gen = _stream_agent_loop_body(*args, **kwargs)
     try:
         async for chunk in gen:
             yield chunk
     finally:
         await gen.aclose()
+        if _pin_run_id:
+            try:
+                from src import run_model_pin as _run_pin
+                _run_pin.unpin_for_run(_pin_run_id, _pin_token)
+            except Exception:  # noqa: BLE001
+                logger.debug("stream_agent_loop: model unpin failed", exc_info=True)
         try:
             mcp_mgr = get_mcp_manager()
             if mcp_mgr is not None:

@@ -34,6 +34,7 @@ const CHECK_WORDS: Record<string, string> = {
   review_running: 'Reviewing the diff',
   review_issues: 'The review found problems',
   verified: 'Checks completed',
+  model_notice: 'Model notice',
 };
 
 const REASON_WORDS: Record<string, string> = {
@@ -41,6 +42,7 @@ const REASON_WORDS: Record<string, string> = {
   fabricated_paths: 'names files that do not exist',
   claimed_paths_untouched: 'names files it did not touch',
   no_tools: 'used no tools',
+  ui_unverified: 'UI changes not verified in the browser',
 };
 
 export function CheckList({ checks }: { checks: HarnessCheck[] }) {
@@ -221,6 +223,12 @@ export function HarnessCard({
       </summary>
 
       <CheckList checks={checks} />
+
+      {summary.uiVerify === 'missing' && (
+        <p className="fs-notice" data-tone="warning" data-testid="ui-verify-missing">
+          {t('UI changes were not verified in the browser')}
+        </p>
+      )}
 
       {(verdict || testsLine) && (
         <p className="fs-harness__line">

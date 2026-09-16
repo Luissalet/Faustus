@@ -1,7 +1,7 @@
 # Cerrar el bucle del agente local (servidor, VRAM, UI, plan)
 
 **Date:** 2026-09-16  
-**Status:** Spec for implementation plan; not yet implemented  
+**Status:** Implemented (FAUSTUS.md §90). Server guard, keep_alive pin, UI verify, project todos, continue-turn budget. Code is on this tree; not committed unless Luis asks.  
 **Problem source:** chats Silhouettes 14–16 sep 2026, sobre todo `782b7d89` (qwen3.8:27b-q4_K_M). El último turno escribió parches, dijo «reinicio el servidor y verifico en el navegador», lanzó `nohup python app.py`, el bash no volvió, Ollama descargó el modelo. El canvas seguía en `viewBox 0 0 200 200`, los thumbnails no existían en el DOM, el drag perdía `normalization_pose`.
 
 Relacionado: FAUSTUS.md §§85–89 (sandbox Windows, loop-breaker, adjuntos como destinos, `node --test`, typo de workspace). Esos parches cubren fallos *anteriores* de la misma serie. Esta spec cubre lo que esos parches no tocan.

@@ -953,7 +953,7 @@ def compact(res: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     keys = ("ran", "kind", "label", "scope", "ok", "exit_code", "output_matched", "timed_out", "duration_s",
             "summary", "failures", "inconclusive", "command", "related_files",
             "new_failures", "pre_existing", "pre_existing_only", "exempt", "baseline", "fixed",
-            "node_tests")
+            "node_tests", "ui_verify")
     out = {k: res.get(k) for k in keys if k in res}
     out["output_tail"] = (res.get("output_tail") or "")[-1500:]
     return out

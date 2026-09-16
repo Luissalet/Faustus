@@ -71,7 +71,20 @@ def test_without_an_mcp_manager_nothing_changes():
     assert al._expand_browser_mcp_tools(names, None) == names
 
 
-def test_intent_predicate_directly():
+def test_force_expands_session_tools_not_the_whole_mouse_set():
+    names = {"edit_file", "read_file"}
+    got = al._expand_browser_mcp_tools(names, _Mgr(), force=True)
+    assert f"{P}browser_navigate" in got
+    assert f"{P}browser_snapshot" in got
+    assert f"{P}browser_take_screenshot" in got
+    assert f"{P}browser_click" not in got
+    assert "edit_file" in got
+
+
+def test_health_endpoint_prompt_still_does_not_expand():
+    names = {"edit_file", "read_file", f"{P}browser_console_messages"}
+    got = al._expand_browser_mcp_tools(names, _Mgr())
+    assert got == names
     assert al._browser_intent_is_real({"builtin_browser"})
     assert al._browser_intent_is_real({f"{P}browser_navigate"})
     assert al._browser_intent_is_real({f"{P}browser_click", f"{P}browser_hover"})

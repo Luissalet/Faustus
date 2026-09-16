@@ -3357,16 +3357,29 @@ def _model_load_defaults(url: str, model: str) -> Dict:
 
 def _with_model_defaults(url: str, model: str, gen_overrides: Optional[Dict]) -> Optional[Dict]:
     """Saved per-model defaults UNDER the caller's explicit overrides: a
-    `/ctx 8192` in the chat still beats a saved num_ctx of 32768."""
+    `/ctx 8192` in the chat still beats a saved num_ctx of 32768.
+
+    An active agent-run pin (src/run_model_pin.py) beats the saved keep_alive
+    so a long bash cannot unload the weight; an explicit caller keep_alive
+    still wins over the pin.
+    """
     defaults = _model_load_defaults(url, model)
-    if not defaults:
-        return gen_overrides
+    caller = gen_overrides if isinstance(gen_overrides, dict) else {}
+    caller_keep_alive = caller.get("keep_alive") not in (None, "")
     merged = dict(defaults)
-    for k, v in (gen_overrides or {}).items():
+    for k, v in caller.items():
         if v is None or v == "":
             continue
         merged[k] = v
-    return merged
+    if not caller_keep_alive:
+        try:
+            from src.run_model_pin import keep_alive_override
+            pinned = keep_alive_override()
+            if pinned:
+                merged["keep_alive"] = pinned
+        except Exception:  # noqa: BLE001
+            pass
+    return merged if merged else gen_overrides
 
 
 def _apply_gen_overrides_openai(payload: Dict, overrides: Dict, url: str) -> None:
