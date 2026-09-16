@@ -70,6 +70,7 @@ from .code_graph_tools import (
     CodeGraphIndexTool, CodeGraphSearchTool, CodeGraphTraceTool,
     CodeGraphChangesTool, CodeGraphArchitectureTool, CodeGraphSnippetTool,
 )
+from .pdf_ops_tool import PdfOpsTool
 
 TOOL_HANDLERS = {
     "bash": BashTool().execute,
@@ -183,6 +184,9 @@ TOOL_HANDLERS = {
     "fanout_status": FanoutStatusTool().execute,
     "fanout_results": FanoutResultsTool().execute,
     "fanout_apply": FanoutApplyTool().execute,
+    # PDF operations (R4, Reach wave): merge/split/rotate/compress/watermark/
+    # etc. over src.pdf_ops. See src/agent_tools/pdf_ops_tool.py.
+    "pdf_ops": PdfOpsTool().execute,
 }
 # Config/integration admin tools (manage_endpoints/mcp/webhooks/tokens/settings).
 TOOL_HANDLERS.update(ADMIN_TOOL_HANDLERS)
@@ -282,7 +286,9 @@ TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_fi
              "code_graph_changes", "code_graph_architecture",
              "code_graph_snippet",
              # R3 (Reach wave): fan-out -- src/agent_tools/fanout_tools.py.
-             "fanout_run", "fanout_status", "fanout_results", "fanout_apply"} | BUILTIN_EMAIL_TOOLS | DESKTOP_TOOLS | SEMANTIC_TOOLS
+             "fanout_run", "fanout_status", "fanout_results", "fanout_apply",
+             # PDF operations (R4, Reach wave) -- src/agent_tools/pdf_ops_tool.py.
+             "pdf_ops"} | BUILTIN_EMAIL_TOOLS | DESKTOP_TOOLS | SEMANTIC_TOOLS
 
 ToolBlock = namedtuple("ToolBlock", ["tool_type", "content"])
 

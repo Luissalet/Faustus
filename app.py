@@ -1408,6 +1408,10 @@ app.include_router(setup_reach_routes())
 from routes.fanout_routes import setup_fanout_routes
 app.include_router(setup_fanout_routes())
 
+# Agent personas (R4, Reach wave) -- src/personas/, routes/persona_routes.py.
+from routes.persona_routes import setup_persona_routes
+app.include_router(setup_persona_routes())
+
 # ========= ROUTES (kept in app.py) =========
 
 @app.get("/")

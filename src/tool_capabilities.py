@@ -600,6 +600,15 @@ _register(
     ToolEffect.WRITE_WORKSPACE,
     result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED,
 )
+_register(
+    # PDF operations (R4, Reach wave, src/agent_tools/pdf_ops_tool.py): every
+    # op reads an input PDF from the workspace/uploads allowlist and (except
+    # page_count/metadata-read) writes a NEW file back into it -- same class
+    # as edit_file/apply_patch. Never touches the network or the shell.
+    {"pdf_ops"},
+    ToolEffect.WRITE_WORKSPACE,
+    result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED,
+)
 
 
 TOOL_CAPABILITIES: Mapping[str, ToolCapabilities] = MappingProxyType(dict(_REGISTRY))

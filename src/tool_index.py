@@ -268,6 +268,10 @@ BUILTIN_TOOL_DESCRIPTIONS: Dict[str, str] = {
     "fanout_status": "Per-candidate state (queued/running/done/error) of a fanout_run. Use for 'is the fan-out done yet', 'how are the candidates doing'. Read-only.",
     "fanout_results": "Ranked scoreboard for a fanout_run — tests passing, harness/error state, diff size, cost, latency, each weighted, with a reasoning line per candidate — plus each candidate's diff. Use for 'which one won', 'show me the comparison', 'why did that one score higher'. Read-only.",
     "fanout_apply": "Merge one fanout_run candidate's changes into the user's main copy — the same three-way merge alt_apply uses. Call once to preview, again with user_confirmed true once the user approves. Use for 'go with the local model's version', 'apply the winner'. Refused unless the user explicitly approved.",
+    # R4 (Reach wave) — PDF operations Stirling-PDF-style: merge, split,
+    # extract, rotate, reorder, delete pages, metadata, compress, watermark,
+    # page count, and optional to_images/ocr. src/pdf_ops.py + src/agent_tools/pdf_ops_tool.py.
+    "pdf_ops": "PDF operations: merge several PDFs into one, split by page ranges, extract a subset of pages, rotate pages, reorder every page, delete pages, read/write metadata (title/author/subject/keywords), compress (re-encode + dedupe, reports bytes before/after), watermark_text (diagonal stamp), page_count, to_images (rasterize to PNG, optional dependency), ocr (add a searchable text layer, needs the ocrmypdf CLI). Use for 'combina estos PDFs', 'split this PDF into chapters', 'rotate page 3', 'quita las últimas dos páginas', 'shrink this PDF', 'add a DRAFT watermark', 'how many pages does this have', 'make this scanned PDF searchable'.",
 }
 
 

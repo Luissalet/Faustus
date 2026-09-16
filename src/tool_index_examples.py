@@ -941,4 +941,15 @@ EXAMPLES: Dict[str, List[str]] = {
         "go with the winning candidate's changes",
         "aplica ya el resultado ganador del fan-out",
     ],
+
+    # ── PDF operations (R4, Reach wave) ─────────────────────────────────────
+    "pdf_ops": [
+        "combina estos tres PDFs en uno solo",
+        "split this PDF into one file per chapter",
+        "rota la página 3 90 grados",
+        "quita las dos últimas páginas de este PDF",
+        "shrink this PDF, it's too big to email",
+        "ponle una marca de agua que diga BORRADOR",
+        "cuántas páginas tiene este documento",
+    ],
 }

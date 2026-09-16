@@ -2818,6 +2818,36 @@ FUNCTION_TOOL_SCHEMAS = [
             }
         }
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "pdf_ops",
+            "description": "PDF operations: merge several PDFs into one, split a PDF by page ranges, extract a subset of pages, rotate pages, reorder every page, delete pages, read/write metadata (title/author/subject/keywords), compress (re-encode content streams, dedupe objects, reports bytes before/after), watermark_text (diagonal text stamp on every page), page_count, to_images (rasterize pages to PNG -- needs pypdfium2 or pdf2image), ocr (add a searchable text layer -- needs the ocrmypdf CLI). Every path is confined to the active workspace / uploads folder. A generated file is written NEXT TO its source and never overwrites an input unless `overwrite: true`.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "op": {"type": "string", "enum": ["merge", "split", "extract_pages", "rotate", "reorder", "delete_pages", "metadata", "compress", "watermark_text", "page_count", "to_images", "ocr"], "description": "Which operation to run"},
+                    "input": {"type": "string", "description": "Path to the source PDF (all ops except merge)"},
+                    "inputs": {"type": "array", "items": {"type": "string"}, "description": "merge only: two or more PDF paths, in the order they should be joined"},
+                    "output": {"type": "string", "description": "Destination path for a single-file result. Defaults to a new file next to the input (e.g. report.merged.pdf)"},
+                    "output_dir": {"type": "string", "description": "split/to_images only: destination folder. Defaults to the input's own folder"},
+                    "ranges": {"type": "array", "items": {"type": "string"}, "description": "split only: one page-range string per output file, e.g. [\"1-3\", \"4-6\"]"},
+                    "pages": {"description": "extract_pages/rotate/delete_pages/to_images: a page-range string (\"1-3,5,8-10\", 1-based) or a list of page numbers"},
+                    "degrees": {"type": "integer", "description": "rotate only: rotation in degrees, a multiple of 90"},
+                    "order": {"type": "array", "items": {"type": "integer"}, "description": "reorder only: every page of the source, listed once each, in the new order (1-based)"},
+                    "set_fields": {"type": "object", "description": "metadata only: fields to write ({\"title\":..., \"author\":..., \"subject\":..., \"keywords\":...}). Omit to just read the current metadata"},
+                    "text": {"type": "string", "description": "watermark_text only: the text to stamp on every page"},
+                    "opacity": {"type": "number", "description": "watermark_text only: 0-1 opacity (default 0.3)"},
+                    "font_size": {"type": "integer", "description": "watermark_text only: font size in points (default 40)"},
+                    "angle": {"type": "number", "description": "watermark_text only: rotation angle in degrees (default 45)"},
+                    "dpi": {"type": "integer", "description": "to_images only: render resolution (default 150)"},
+                    "language": {"type": "string", "description": "ocr only: Tesseract language code (default eng)"},
+                    "overwrite": {"type": "boolean", "description": "Allow the output to replace an input file. Default false"}
+                },
+                "required": ["op"]
+            }
+        }
+    },
 ]
 
 
