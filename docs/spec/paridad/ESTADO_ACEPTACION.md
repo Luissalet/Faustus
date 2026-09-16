@@ -58,9 +58,9 @@ quedan fuera del alcance de T1/T2/T3 y abiertas para un PR posterior.
 | A26 | learning | pendiente | — | Fuera del alcance de T1/T2/T3 |
 | A27 | learning | pendiente | — | Fuera del alcance de T1/T2/T3 |
 | A28 | learning | pendiente | — | Fuera del alcance de T1/T2/T3 |
-| A29 | loops | pendiente | — | Fuera del alcance de T1/T2/T3 |
+| A29 | loops | xfail | `tests/acceptance/test_a29_loop_breaker.py::test_twenty_identical_tool_calls_stop_the_turn_deterministically` | `src/loop_breaker.py` (`LoopPolicy`) is implemented and unit-tested (`tests/test_loop_breaker.py`, all green) but not wired into `src/agent_loop.py`'s round loop — that file is not owned by lot T7; exact diff in `T7_wiring.md` §2. Today's inline `_loop_recovery_*` mechanism (FAUSTUS.md §87) redirects/blocks a repeated call but never stops the turn with `non_progressing_loop`. |
 | A30 | learning | pendiente | — | Fuera del alcance de T1/T2/T3 |
-| A31 | budget | pendiente | — | Fuera del alcance de T1/T2/T3 |
+| A31 | budget | verde | `tests/acceptance/test_a31_budget_reservations.py::test_parallel_children_reserve_and_reconcile_against_shared_run_budget` | `src/budget_account.py` reservation/reconciliation is wired into `src/agent_tools/subagent_tools.py`'s worker launch (real `delegate_agents`); `GET /api/runs/{run_id}/budget` (`routes/budget_routes.py`) works but is not yet mounted on `app.py` (not T7-owned) — one-line diff in `T7_wiring.md` §1, checked by `tests/test_t7_wiring.py` (xfail). Cost is always `unpriced_usage` today (no per-model price table found) — never a false 0.0. |
 | A32 | benchmark | pendiente | — | Fuera del alcance de T1/T2/T3; `scripts/acceptance_run.py` (este lote) ya sienta el formato `cost_status`/`total_cost` por caso como paso previo |
 | A33 | benchmark | pendiente | — | Fuera del alcance de T1/T2/T3 |
 | A34 | migration | pendiente | — | Fuera del alcance de T1/T2/T3 |
