@@ -140,6 +140,133 @@ def prune(*, session_id: str, referenced_ids: Optional[Set[str]] = None) -> int:
     return removed
 
 
+# ---------------------------------------------------------------------------
+# A15 — reacquisition: when the model asks for a detail that compaction
+# omitted, it re-reads the ORIGINAL spilled body (by its overflow id) or an
+# artifact, and that re-read has a real cost — this records it so a run's
+# report can show "compaction saved N tokens, then the model paid M of them
+# back". Schema lives in the shared Context Engine database, same pattern
+# `context_engine.compaction_pins` uses for its own event log.
+# ---------------------------------------------------------------------------
+
+from src.context_engine import store as _store  # noqa: E402  (after constants import above)
+
+_REACQ_SCHEMA = (
+    """
+    CREATE TABLE IF NOT EXISTS context_reacquisitions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT NOT NULL DEFAULT '',
+        run_id TEXT NOT NULL DEFAULT '',
+        overflow_id TEXT NOT NULL DEFAULT '',
+        artifact_id TEXT NOT NULL DEFAULT '',
+        chars INTEGER NOT NULL DEFAULT 0,
+        tokens_est INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_context_reacq_scope "
+    "ON context_reacquisitions(session_id, run_id, created_at)",
+)
+_store.register_schema("context_reacquisitions", _REACQ_SCHEMA)
+
+
+def _tokens_est(chars: int) -> int:
+    # Same rough 4-chars-per-token heuristic `model_context.estimate_tokens`
+    # uses elsewhere in the compaction path; good enough for a cost figure,
+    # not for context-window accounting.
+    return max(0, int(chars / 4))
+
+
+def record_reacquisition(
+    *,
+    session_id: str,
+    run_id: str = "",
+    overflow_id: str = "",
+    artifact_id: str = "",
+    chars: int,
+) -> Dict[str, Any]:
+    """Record that the model paid to re-read `overflow_id` or `artifact_id`.
+    Never raises — a broken log must not break the re-read it is logging."""
+    tokens_est = _tokens_est(chars)
+    record = {
+        "session_id": session_id or "", "run_id": run_id or "",
+        "overflow_id": overflow_id or "", "artifact_id": artifact_id or "",
+        "chars": int(chars or 0), "tokens_est": tokens_est, "at": now_iso(),
+    }
+    try:
+        with _store.db() as conn:
+            conn.execute(
+                "INSERT INTO context_reacquisitions"
+                "(session_id, run_id, overflow_id, artifact_id, chars, tokens_est, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (record["session_id"], record["run_id"], record["overflow_id"],
+                 record["artifact_id"], record["chars"], record["tokens_est"],
+                 record["at"]),
+            )
+    except Exception as e:  # noqa: BLE001
+        logger.warning("context_overflow.record_reacquisition failed: %s", e)
+    return record
+
+
+def reacquisitions_for(session_id: str, run_id: str = "") -> List[Dict[str, Any]]:
+    """The queryable log a run/session report reads back: every reacquisition
+    recorded for this session (optionally narrowed to one run)."""
+    sid = str(session_id or "").strip()
+    if not sid:
+        return []
+    try:
+        with _store.db() as conn:
+            if run_id:
+                cur = conn.execute(
+                    "SELECT session_id, run_id, overflow_id, artifact_id, chars, "
+                    "tokens_est, created_at AS at FROM context_reacquisitions "
+                    "WHERE session_id=? AND run_id=? ORDER BY created_at ASC",
+                    (sid, run_id),
+                )
+            else:
+                cur = conn.execute(
+                    "SELECT session_id, run_id, overflow_id, artifact_id, chars, "
+                    "tokens_est, created_at AS at FROM context_reacquisitions "
+                    "WHERE session_id=? ORDER BY created_at ASC",
+                    (sid,),
+                )
+            return _store.rows(cur)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("context_overflow.reacquisitions_for failed: %s", e)
+        return []
+
+
+def reacquisition_summary(session_id: str, run_id: str = "") -> Dict[str, int]:
+    """`reacquired_count`/`reacquired_chars` — the two counters a compaction
+    report adds on top of its own `tokens_before/after`."""
+    entries = reacquisitions_for(session_id, run_id)
+    return {
+        "reacquired_count": len(entries),
+        "reacquired_chars": sum(int(e.get("chars") or 0) for e in entries),
+        "reacquired_tokens_est": sum(int(e.get("tokens_est") or 0) for e in entries),
+    }
+
+
+def read_overflow(
+    *,
+    session_id: str,
+    content_sha256: str,
+    run_id: str = "",
+) -> Optional[Dict[str, Any]]:
+    """Re-acquire an original spilled body by its overflow id and record the
+    cost. Returns ``{"content", "content_sha256", "chars"}`` or ``None`` when
+    nothing is stored under that id — the caller (a tool, a route) decides
+    how to report a miss."""
+    content = load(session_id=session_id, content_sha256=content_sha256)
+    if content is None:
+        return None
+    record_reacquisition(
+        session_id=session_id, run_id=run_id,
+        overflow_id=content_sha256, chars=len(content),
+    )
+    return {"content": content, "content_sha256": content_sha256, "chars": len(content)}
+
+
 def referenced_overflow_ids(messages) -> Set[str]:
     """Sha256 ids mentioned in in-prompt overflow stubs."""
     found: Set[str] = set()

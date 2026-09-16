@@ -43,8 +43,8 @@ quedan fuera del alcance de T1/T2/T3 y abiertas para un PR posterior.
 | A11 | code_mode | pendiente | — | Fuera del alcance de T1/T2/T3 |
 | A12 | artifacts | pendiente | — | Fuera del alcance de T1/T2/T3 |
 | A13 | artifacts | pendiente | — | Fuera del alcance de T1/T2/T3 |
-| A14 | context | pendiente | — | Fuera del alcance de T1/T2/T3 |
-| A15 | context | pendiente | — | Fuera del alcance de T1/T2/T3 |
+| A14 | context | verde | `tests/acceptance/test_a14_compaction_preserve.py::test_compaction_preserves_pending_approval_constraints_objective_and_sources` | — |
+| A15 | context | verde | `tests/acceptance/test_a15_reacquisition.py::test_spilled_body_is_reacquired_intact_and_the_run_report_records_its_cost` | Reacquisition tool (`read_overflow`) not yet wired to the agent's live tool loop — see `T8_wiring.md` |
 | A16 | sandbox | pendiente | — | Fuera del alcance de T1/T2/T3 |
 | A17 | sandbox | pendiente | — | Fuera del alcance de T1/T2/T3 |
 | A18 | mcp | pendiente | — | Fuera del alcance de T1/T2/T3 |
