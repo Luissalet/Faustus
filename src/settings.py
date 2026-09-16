@@ -638,6 +638,17 @@ DEFAULT_SETTINGS = {
     # after the fact). 0 = no ceiling — the ledger still tracks reserved vs.
     # consumed tokens per run, it just never refuses a reservation for it.
     "agent_budget_tokens_per_run": 0,
+    # R3 (Reach wave): src/fanout/ -- how many fan-out candidates (each its
+    # own worker in its own isolated alternative) run their worker at the
+    # same time. Two big LOCAL models rarely fit one card's VRAM at once, so
+    # the runner additionally serialises candidates that look local to it
+    # regardless of this ceiling (src/fanout/runner.py's own local lane).
+    "agent_fanout_max_parallel": 2,
+    # Comma-separated extra models fanout_run's default candidate list
+    # offers alongside the chat's own model and the worker/dispatch models
+    # already configured (src.fanout.plan.from_settings_default_candidates).
+    # Empty by default -- nothing invented that was never configured here.
+    "agent_fanout_model_pool": "",
     # A29: src/loop_breaker.py's deterministic escalation ladder — N identical
     # (tool, args, result) calls in a row nudge, another M block that tool,
     # another K stop the turn with stop_reason "non_progressing_loop". Not

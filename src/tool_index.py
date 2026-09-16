@@ -260,6 +260,14 @@ BUILTIN_TOOL_DESCRIPTIONS: Dict[str, str] = {
     "code_graph_changes": "Diff the workspace against a git ref and map the changed lines to the symbols they fall inside, plus each affected symbol's direct callers. Use for 'what did this change actually touch', 'what should I re-test after this diff'.",
     "code_graph_architecture": "One-call architecture summary: languages, symbol/edge counts, HTTP routes, the most-called functions (fan-in), and hotspots (long, heavily-called functions). Use when opening an unfamiliar repo — 'give me the lay of the land' — instead of exploring file by file.",
     "code_graph_snippet": "The exact source lines of one symbol from the code graph, nothing else from the file. Use right after code_graph_search/trace to read just the definition found, instead of opening the whole file.",
+    # R3 (Reach wave) — fan-out: the same prompt raced across N candidate
+    # models/endpoints, each isolated like alt_start's alternatives, scored
+    # automatically (tests/harness/diff size/cost/latency) instead of a
+    # human eyeballing the diffs the way orca leaves it.
+    "fanout_run": "Race the SAME prompt across N candidate models/endpoints (e.g. a cheap local model vs. a paid remote one), each isolated in its own alternative so they never collide. Returns a run_id immediately — poll with fanout_status/fanout_results. Use for 'try this with both models and see which does better', 'run this on Qwen and GPT-4 and compare', 'which model handles this task best'.",
+    "fanout_status": "Per-candidate state (queued/running/done/error) of a fanout_run. Use for 'is the fan-out done yet', 'how are the candidates doing'. Read-only.",
+    "fanout_results": "Ranked scoreboard for a fanout_run — tests passing, harness/error state, diff size, cost, latency, each weighted, with a reasoning line per candidate — plus each candidate's diff. Use for 'which one won', 'show me the comparison', 'why did that one score higher'. Read-only.",
+    "fanout_apply": "Merge one fanout_run candidate's changes into the user's main copy — the same three-way merge alt_apply uses. Call once to preview, again with user_confirmed true once the user approves. Use for 'go with the local model's version', 'apply the winner'. Refused unless the user explicitly approved.",
 }
 
 

@@ -420,6 +420,17 @@ GROUPS: list[dict[str, Any]] = [
                  "launched if it would not fit under what remains. 0 = no ceiling, accounting only "
                  "— GET /api/runs/{run_id}/budget still reports reserved vs. consumed tokens.",
                  0, 50_000_000),
+            # R3 (Reach wave): src/fanout/ -- one prompt raced across N
+            # candidate models, each in its own isolated alternative.
+            _int("agent_fanout_max_parallel", "Fan-out: max parallel candidates",
+                 "How many fanout_run candidates run their worker at the same time; the rest wait. "
+                 "Candidates that look local to each other are additionally serialised to one at a "
+                 "time regardless of this ceiling — two big local models rarely fit one card's VRAM.",
+                 1, 16),
+            _text("agent_fanout_model_pool", "Fan-out: extra model pool",
+                  "Comma-separated extra models fanout_run offers as default candidates, alongside "
+                  "the chat's own model and the worker/dispatch models already configured above. "
+                  "Empty by default."),
             # A29: src/loop_breaker.py's deterministic escalation ladder (kept
             # in this group rather than a new one so the schema's requested
             # group order/prefix — test_agent_settings_schema.py — is

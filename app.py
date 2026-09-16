@@ -1403,6 +1403,11 @@ app.include_router(setup_companion_routes())
 from routes.reach_routes import setup_reach_routes
 app.include_router(setup_reach_routes())
 
+# R3 (Reach wave): one prompt, N candidate models, each racing in its own
+# isolated alternative -- see src/fanout/ and docs/spec/fanout.md.
+from routes.fanout_routes import setup_fanout_routes
+app.include_router(setup_fanout_routes())
+
 # ========= ROUTES (kept in app.py) =========
 
 @app.get("/")

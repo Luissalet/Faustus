@@ -917,4 +917,28 @@ EXAMPLES: Dict[str, List[str]] = {
         "dame las líneas exactas de esa clase",
         "get the source of that symbol you just found",
     ],
+
+    # ── Fan-out (R3, Reach wave) ─────────────────────────────────────────
+    "fanout_run": [
+        "prueba esto con Qwen local y con el modelo remoto y compara",
+        "run this task on both models in parallel and tell me which one wins",
+        "quiero comparar cómo resuelven esta tarea varios modelos a la vez",
+        "race the cheap model against the expensive one on this fix",
+    ],
+    "fanout_status": [
+        "cómo van los candidatos del fan-out",
+        "is the model comparison run finished yet",
+        "sigue corriendo esa comparación de modelos",
+    ],
+    "fanout_results": [
+        "cuál de los modelos lo hizo mejor",
+        "show me the fanout scoreboard",
+        "por qué ganó ese candidato",
+        "compare the diffs from each model's attempt",
+    ],
+    "fanout_apply": [
+        "aplica la versión que hizo el modelo local",
+        "go with the winning candidate's changes",
+        "aplica ya el resultado ganador del fan-out",
+    ],
 }

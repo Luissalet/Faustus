@@ -2745,6 +2745,79 @@ FUNCTION_TOOL_SCHEMAS = [
             }
         }
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "fanout_run",
+            "description": "Race the SAME prompt across N candidate models/endpoints, each isolated in its own alternative (a git worktree or a directory snapshot, like alt_start) so they never collide. Returns immediately with a run_id -- poll with fanout_status/fanout_results, do not wait here. Candidates default to the chat's own model plus whatever worker/dispatch model this install has configured when `candidates` is omitted. Use when the user wants to compare what different models (e.g. a cheap local model vs. a remote one) each do with the same task before picking one.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "prompt": {"type": "string", "description": "The task every candidate receives, verbatim and identical"},
+                    "workspace": {"type": "string", "description": "Absolute path to the repo/directory to branch from (optional -- defaults to the turn's active workspace)"},
+                    "candidates": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "label": {"type": "string"},
+                                "model": {"type": "string"},
+                                "endpoint_url": {"type": "string"},
+                                "endpoint_id": {"type": "string"}
+                            }
+                        },
+                        "description": "Optional. One entry per candidate (2-3 typical). Omit to use this install's configured defaults."
+                    },
+                    "max_rounds": {"type": "integer", "description": "Per-candidate round ceiling (default 8)"}
+                },
+                "required": ["prompt"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "fanout_status",
+            "description": "Per-candidate state (queued/running/done/error) of a fanout_run. Read-only.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "run_id": {"type": "string", "description": "Run id returned by fanout_run"}
+                },
+                "required": ["run_id"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "fanout_results",
+            "description": "Ranked scoreboard for a fanout_run -- tests passing, harness/error state, diff size, cost, latency, each weighted, plus a one-line reasoning per candidate -- and each candidate's diff against the base. Read-only.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "run_id": {"type": "string", "description": "Run id returned by fanout_run"}
+                },
+                "required": ["run_id"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "fanout_apply",
+            "description": "Merge one fanout_run candidate's changes into the user's main copy -- the same three-way merge alt_apply uses, so a manual edit made to the main copy since the run started is never discarded. Call once to preview (nothing written), then again with user_confirmed true after the user explicitly approves. On a conflict nothing is written; relay the conflicting files to the user rather than guessing.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "run_id": {"type": "string", "description": "Run id returned by fanout_run"},
+                    "label": {"type": "string", "description": "Which candidate to apply"},
+                    "user_confirmed": {"type": "boolean", "description": "Set true ONLY after the user explicitly approved applying this candidate"}
+                },
+                "required": ["run_id", "label"]
+            }
+        }
+    },
 ]
 
 

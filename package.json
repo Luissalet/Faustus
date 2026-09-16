@@ -28,6 +28,7 @@
     "zustand": "^5.0.5"
   },
   "devDependencies": {
-    "@antithesishq/bombadil": "^0.7.0"
+    "@antithesishq/bombadil": "^0.7.0",
+    "happy-dom": "^20.14.5"
   }
 }

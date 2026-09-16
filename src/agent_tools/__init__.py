@@ -60,6 +60,9 @@ from .alternatives_tools import (
     AltStartTool, AltCompareTool, AltApplyTool,
 )
 from .code_mode_tool import RunCodeTool
+from .fanout_tools import (
+    FanoutRunTool, FanoutStatusTool, FanoutResultsTool, FanoutApplyTool,
+)
 from .context_overflow_tool import ReadOverflowTool
 from .artifact_read_tool import ReadArtifactTool
 from .reach_tools import ReachReadTool, ReachSearchTool, ReachDoctorTool
@@ -173,6 +176,13 @@ TOOL_HANDLERS = {
     "code_graph_changes": CodeGraphChangesTool().execute,
     "code_graph_architecture": CodeGraphArchitectureTool().execute,
     "code_graph_snippet": CodeGraphSnippetTool().execute,
+    # R3 (Reach wave): fan one prompt across N candidate models/endpoints,
+    # each isolated via src.alternatives, ranked by src.fanout.score. See
+    # src/fanout/ and src/agent_tools/fanout_tools.py.
+    "fanout_run": FanoutRunTool().execute,
+    "fanout_status": FanoutStatusTool().execute,
+    "fanout_results": FanoutResultsTool().execute,
+    "fanout_apply": FanoutApplyTool().execute,
 }
 # Config/integration admin tools (manage_endpoints/mcp/webhooks/tokens/settings).
 TOOL_HANDLERS.update(ADMIN_TOOL_HANDLERS)
@@ -270,7 +280,9 @@ TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_fi
              # Code graph (R2, Reach wave) -- src/agent_tools/code_graph_tools.py.
              "code_graph_index", "code_graph_search", "code_graph_trace",
              "code_graph_changes", "code_graph_architecture",
-             "code_graph_snippet"} | BUILTIN_EMAIL_TOOLS | DESKTOP_TOOLS | SEMANTIC_TOOLS
+             "code_graph_snippet",
+             # R3 (Reach wave): fan-out -- src/agent_tools/fanout_tools.py.
+             "fanout_run", "fanout_status", "fanout_results", "fanout_apply"} | BUILTIN_EMAIL_TOOLS | DESKTOP_TOOLS | SEMANTIC_TOOLS
 
 ToolBlock = namedtuple("ToolBlock", ["tool_type", "content"])
 

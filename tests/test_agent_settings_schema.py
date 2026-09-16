@@ -125,6 +125,10 @@ def test_groups_follow_the_requested_layout():
             # one so the group order/prefix asserted above is untouched.
             "agent_budget_tokens_per_run", "agent_loop_breaker_nudge_after",
             "agent_loop_breaker_block_after", "agent_loop_breaker_stop_after",
+            # R3 (Reach wave): src/fanout/ -- fan-out candidate concurrency
+            # and its optional extra model pool, kept in this group for the
+            # same reason as above.
+            "agent_fanout_max_parallel", "agent_fanout_model_pool",
             } == set(by_group["subagents"])
     assert {"agent_runs_persist", "agent_runs_keep_hours", "agent_queue_local_concurrency",
             "agent_queue_api_concurrency", "agent_scorecard"} == set(by_group["runs"])
