@@ -900,6 +900,8 @@ from routes.creator_preflight_routes import setup_creator_preflight_routes  # WP
 app.include_router(setup_creator_preflight_routes())
 from routes.creator_resources_routes import setup_creator_resources_routes  # WP30
 app.include_router(setup_creator_resources_routes())
+from routes.creator_ingest_routes import setup_creator_ingest_routes  # WP04
+app.include_router(setup_creator_ingest_routes())
 
 # What this machine can actually do. Every probe already existed; this is the
 # one place that asks them all and puts the fix in the sentence.

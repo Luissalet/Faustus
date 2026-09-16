@@ -96,6 +96,16 @@ DEFAULT_SETTINGS = {
     # fresh on every admission, never cached.
     "creator_resource_mode": "serial",
     "creator_vram_margin_mb": 512,
+    # WP04: bounded local/URL ingestion into the Creator library
+    # (src/creator/ingest.py). A file above this many bytes is rejected
+    # before anything is written to disk or the artifact store — checked
+    # against the source's own size first, no exceptions for a "trusted"
+    # caller. Default 300 MB.
+    "creator_ingest_max_bytes": 300 * 1024 * 1024,
+    # A probed video/audio container longer than this many seconds is
+    # rejected before it is copied into the durable artifact store. Default
+    # 30 minutes.
+    "creator_ingest_max_duration_s": 1800,
     "image_gen_enabled": False,
     "image_model": "",
     "image_quality": "medium",
