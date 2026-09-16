@@ -868,3 +868,62 @@ def test_ui_verify_status_skipped_when_setting_off(tmp_path, monkeypatch):
     led.record("edit_file", '{"path": "static/editor/editor.css", "old_string": "a", "new_string": "b"}',
                {"output": "Edited", "exit_code": 0}, 1)
     assert led.ui_verify_status() == "skipped"
+
+
+# --- UI verify: the contract binds only where a browser was on the table ---
+
+
+def test_python_under_editor_dir_is_not_a_ui_path(tmp_path):
+    led = h.TurnLedger(str(tmp_path), "fix the parser")
+    led.record("edit_file", '{"path": "src/editor/parser.py", "old_string": "a", "new_string": "b"}',
+               {"output": "Edited", "exit_code": 0}, 1)
+    assert led.mutated_ui_paths() == []
+    assert not led.needs_ui_verify()
+    assert led.ui_verify_status() == "skipped"
+    assert "ui_unverified" not in led.check_completion("Fixed the parser.")["reasons"]
+
+
+def test_layout_words_without_any_mutation_owe_no_screenshot(tmp_path):
+    led = h.TurnLedger(str(tmp_path), "why does the canvas look wrong in the browser?")
+    led.record("read_file", '{"path": "static/editor/viewport2d.js"}', {"output": "...", "exit_code": 0}, 1)
+    assert not led.needs_ui_verify()
+    assert led.ui_verify_status() == "skipped"
+
+
+def test_visual_studio_is_not_layout_intent(tmp_path):
+    led = h.TurnLedger(str(tmp_path), "open the project in Visual Studio and visualize the data")
+    led.record("edit_file", '{"path": "src/data.py", "old_string": "a", "new_string": "b"}',
+               {"output": "Edited", "exit_code": 0}, 1)
+    assert not led.needs_ui_verify()
+
+
+def test_layout_intent_plus_backend_mutation_still_needs_a_look(tmp_path):
+    led = h.TurnLedger(str(tmp_path), "make the canvas bigger")
+    led.record("edit_file", '{"path": "src/viewport.py", "old_string": "a", "new_string": "b"}',
+               {"output": "Edited", "exit_code": 0}, 1)
+    assert led.needs_ui_verify()
+    assert led.ui_verify_status() == "missing"
+
+
+def test_navigate_alone_is_not_evidence(tmp_path):
+    led = h.TurnLedger(str(tmp_path), "arregla el canvas")
+    led.record("edit_file", '{"path": "static/editor/viewport2d.js", "old_string": "a", "new_string": "b"}',
+               {"output": "Edited", "exit_code": 0}, 1)
+    led.record("mcp__builtin_browser__browser_navigate", '{"url": "http://127.0.0.1:5000/editor"}',
+               {"output": "ok", "exit_code": 0}, 2)
+    assert not led.has_browser_evidence()
+    led.record("mcp__builtin_browser__browser_take_screenshot", "", {"output": "ok", "exit_code": 0}, 3)
+    assert led.has_browser_evidence()
+
+
+def test_no_browser_offered_means_skipped_not_missing(tmp_path):
+    """The built-in browser is off on this box: the model could not have
+    looked, so the card says skipped and the check does not fail the turn."""
+    led = h.TurnLedger(str(tmp_path), "arregla el canvas")
+    led.record("edit_file", '{"path": "static/editor/viewport2d.js", "old_string": "a", "new_string": "b"}',
+               {"output": "Edited", "exit_code": 0}, 1)
+    led.browser_tools_offered = False
+    assert led.ui_verify_status() == "skipped"
+    assert "ui_unverified" not in led.check_completion("Fixed the canvas drag.")["reasons"]
+    led.browser_tools_offered = True
+    assert led.ui_verify_status() == "missing"

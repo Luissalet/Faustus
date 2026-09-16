@@ -42,3 +42,12 @@ def test_attachment_budget_applied_to_user_message():
     assert "Task 08" in out
     assert "x" * 1000 not in out
     assert "Keep implementing." in out
+
+
+def test_short_attachment_is_never_trimmed_on_a_continue_turn(monkeypatch):
+    from src import agent_loop as al
+    monkeypatch.setattr(al, "get_setting", lambda k, d=None: 4000 if k == "agent_inline_attachment_max_chars" else d)
+    body = "sigue el plan\n\n=== File: plan.md ===\n# Plan\n## Step 1\nDo the thing.\n"
+    msgs = [{"role": "user", "content": body}]
+    al._budget_last_user_attachment(msgs, force=True)
+    assert msgs[0]["content"] == body

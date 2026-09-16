@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 from src import run_model_pin as pin
@@ -15,20 +17,35 @@ def _reset(monkeypatch):
     pin.reset_for_tests()
 
 
-def test_pin_supplies_keep_alive_for_that_run():
-    pin.pin_for_run("r1", "http://127.0.0.1:11434", "qwen3.8:27b")
-    assert pin.keep_alive_override("r1") == "2h"
-    assert pin.keep_alive_override("other") is None
-    rec = pin.unpin_for_run("r1")
+def test_pin_supplies_keep_alive_for_the_pinned_model_only():
+    tok = pin.pin_for_run("r1", "http://127.0.0.1:11434", "qwen3.8:27b")
+    assert pin.keep_alive_override("qwen3.8:27b") == "2h"
+    assert pin.keep_alive_override("QWEN3.8:27b:latest") == "2h"
+    # A judge / embedding model called inside the run keeps its own keep_alive.
+    assert pin.keep_alive_override("nomic-embed-text") is None
+    rec = pin.unpin_for_run("r1", tok)
     assert rec["model"] == "qwen3.8:27b"
-    assert pin.keep_alive_override("r1") is None
+    assert pin.keep_alive_override("qwen3.8:27b") is None
 
 
 def test_keep_alive_override_uses_active_context():
-    pin.pin_for_run("r2", "http://127.0.0.1:11434/v1", "m")
+    tok = pin.pin_for_run("r2", "http://127.0.0.1:11434/v1", "m")
     assert pin.keep_alive_override() == "2h"
-    pin.unpin_for_run("r2")
+    pin.unpin_for_run("r2", tok)
     assert pin.keep_alive_override() is None
+
+
+def test_nested_run_under_same_session_does_not_drop_parent_pin():
+    """A worker spawned by the run shares the session id: its unpin must
+    restore the parent's pin, not clear it."""
+    parent = pin.pin_for_run("sess", "http://127.0.0.1:11434", "big")
+    child = pin.pin_for_run("sess", "http://127.0.0.1:11434", "coder")
+    assert pin.keep_alive_override("coder") == "2h"
+    assert pin.keep_alive_override("big") is None  # the child context pins its own model
+    pin.unpin_for_run("sess", child)
+    assert pin.keep_alive_override("big") == "2h"
+    pin.unpin_for_run("sess", parent)
+    assert pin.keep_alive_override("big") is None
 
 
 def test_unpin_restores_saved_keep_alive(monkeypatch):
@@ -40,19 +57,62 @@ def test_unpin_restores_saved_keep_alive(monkeypatch):
 
     monkeypatch.setattr(pin, "restore_keep_alive", fake_restore)
     monkeypatch.setattr(pin, "_saved_keep_alive", lambda endpoint, model: "5m")
-    pin.pin_for_run("r3", "http://127.0.0.1:11434/v1", "qwen")
-    pin.unpin_for_run("r3")
+    tok = pin.pin_for_run("r3", "http://127.0.0.1:11434/v1", "qwen")
+    pin.unpin_for_run("r3", tok)
     assert calls == [("http://127.0.0.1:11434/v1", "qwen", "5m")]
+
+
+def test_async_unpin_runs_restore_off_the_loop(monkeypatch):
+    import threading
+
+    seen = {}
+
+    def fake_restore(endpoint, model, keep_alive):
+        seen["thread"] = threading.current_thread().name
+        return True
+
+    monkeypatch.setattr(pin, "restore_keep_alive", fake_restore)
+    monkeypatch.setattr(pin, "_saved_keep_alive", lambda endpoint, model: "5m")
+
+    async def go():
+        tok = pin.pin_for_run("r5", "http://127.0.0.1:11434", "m")
+        assert pin.keep_alive_override("m") == "2h"
+        rec = await pin.unpin_for_run_async("r5", tok)
+        assert rec["model"] == "m"
+        assert pin.keep_alive_override("m") is None
+
+    asyncio.run(go())
+    assert seen["thread"] != threading.main_thread().name
+
+
+def test_restore_never_talks_to_a_remote_provider(monkeypatch):
+    pin.reset_for_tests()
+    monkeypatch.undo()  # real restore_keep_alive
+    posted = []
+
+    class _Http:
+        @staticmethod
+        def post(url, **kw):
+            posted.append(url)
+
+    import sys
+    monkeypatch.setitem(sys.modules, "httpx", _Http)
+    assert pin.restore_keep_alive("https://openrouter.ai/api/v1", "gpt", "5m") is False
+    assert posted == []
+    assert pin.restore_keep_alive("http://127.0.0.1:11434/v1", "qwen", "5m") is True
+    assert posted == ["http://127.0.0.1:11434/api/generate"]
 
 
 def test_with_model_defaults_pin_beats_saved_keep_alive(monkeypatch):
     from src import llm_core
 
     monkeypatch.setattr(llm_core, "_model_load_defaults", lambda url, model: {"keep_alive": "5m", "num_ctx": 8192})
-    pin.pin_for_run("r4", "http://127.0.0.1:11434", "m")
+    tok = pin.pin_for_run("r4", "http://127.0.0.1:11434", "m")
     merged = llm_core._with_model_defaults("http://127.0.0.1:11434/v1", "m", None)
     assert merged["keep_alive"] == "2h"
     assert merged["num_ctx"] == 8192
     caller = llm_core._with_model_defaults("http://127.0.0.1:11434/v1", "m", {"keep_alive": "30m"})
     assert caller["keep_alive"] == "30m"
-    pin.unpin_for_run("r4")
+    other = llm_core._with_model_defaults("http://127.0.0.1:11434/v1", "judge", None)
+    assert other["keep_alive"] == "5m"
+    pin.unpin_for_run("r4", tok)

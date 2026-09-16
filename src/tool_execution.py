@@ -1379,6 +1379,7 @@ async def execute_tool_block(
             logger.debug("tool_effect pending write failed for call_id=%s", call_id, exc_info=True)
     try:
         _tool_started_at = time.monotonic()
+        _tool_started_wall = time.time()
         output = await _execute_tool_block_impl(
             block,
             session_id=session_id,
@@ -1416,6 +1417,16 @@ async def execute_tool_block(
         # nothing downstream of this function reads `_typed_result` yet (the
         # natural next consumer — folding this into a run's own done/error
         # state — lives in src/agent_runs.py, outside this lote's files).
+        # Wall time on the result the model will read (src/tool_clock.py):
+        # the one place every caller funnels through, same as CALL-05 below.
+        try:
+            from src.tool_clock import stamp as _stamp_timing
+            if isinstance(output, tuple) and len(output) > 1:
+                _stamp_timing(output[1], _tool_started_at, started_wall=_tool_started_wall)
+            else:
+                _stamp_timing(output, _tool_started_at, started_wall=_tool_started_wall)
+        except Exception:  # noqa: BLE001
+            logger.debug("tool timing stamp skipped", exc_info=True)
         _typed_result = None
         try:
             from src.tool_result import normalize_tool_result
@@ -2174,12 +2185,21 @@ _FORMATTER_HANDLED_KEYS = {
     # echoing them here put ~8 KB of base64 per screenshot into the text the
     # model reads and told it nothing (FAUSTUS).
     "images", "screenshot",
+    # Wall time (src/tool_clock.py) is rendered as the header line, not as data.
+    "_timing",
 }
 
 
 def format_tool_result(description: str, result: Dict) -> str:
     """Format a tool result into text for feeding back to the LLM."""
     parts = [f"### {description}"]
+    try:
+        from src.tool_clock import header_line as _clock_line
+        _cl = _clock_line(result)
+        if _cl:
+            parts.append(_cl)
+    except Exception:  # noqa: BLE001 - a clock never costs a result
+        pass
     _image_count = 0
     try:
         from src.tool_images import normalize_result_images

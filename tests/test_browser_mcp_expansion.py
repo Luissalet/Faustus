@@ -81,10 +81,24 @@ def test_force_expands_session_tools_not_the_whole_mouse_set():
     assert "edit_file" in got
 
 
+def test_force_with_browser_server_absent_adds_nothing():
+    class _NoBrowser:
+        def get_all_tools(self):
+            return [{"server_id": "other", "qualified_name": "mcp__other__thing", "is_disabled": False}]
+
+    names = {"edit_file"}
+    assert al._expand_browser_mcp_tools(names, _NoBrowser(), force=True) == names
+    disabled = _Mgr(disabled=set(_ALL))
+    assert al._expand_browser_mcp_tools(names, disabled, force=True) == names
+
+
 def test_health_endpoint_prompt_still_does_not_expand():
     names = {"edit_file", "read_file", f"{P}browser_console_messages"}
     got = al._expand_browser_mcp_tools(names, _Mgr())
     assert got == names
+
+
+def test_intent_predicate_directly():
     assert al._browser_intent_is_real({"builtin_browser"})
     assert al._browser_intent_is_real({f"{P}browser_navigate"})
     assert al._browser_intent_is_real({f"{P}browser_click", f"{P}browser_hover"})

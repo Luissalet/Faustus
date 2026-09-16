@@ -3374,7 +3374,7 @@ def _with_model_defaults(url: str, model: str, gen_overrides: Optional[Dict]) ->
     if not caller_keep_alive:
         try:
             from src.run_model_pin import keep_alive_override
-            pinned = keep_alive_override()
+            pinned = keep_alive_override(model)
             if pinned:
                 merged["keep_alive"] = pinned
         except Exception:  # noqa: BLE001

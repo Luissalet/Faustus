@@ -36,6 +36,8 @@ export interface Step {
   command?: string;
   output?: string;
   round: number;
+  /** Wall time of the call in ms (src/tool_clock.py), shown on the card. */
+  durationMs?: number;
   /** A file write/edit as the server diffed it. */
   diff?: StepDiff;
   /** Validated raster data: URL (desktop_screenshot, browser tools). */
@@ -737,6 +739,27 @@ function appendThought(turn: Turn, text: string, now: number): Thought[] {
   ];
 }
 
+/** `exit 2 · 12.4s`, `3m 05s`, or nothing — the card's small grey meta. */
+export function fmtDuration(ms: number | undefined): string {
+  if (ms === undefined || ms === null || !Number.isFinite(ms) || ms < 0) return '';
+  const s = ms / 1000;
+  if (s < 10) return `${s.toFixed(1)}s`;
+  if (s < 60) return `${Math.round(s)}s`;
+  const m = Math.floor(s / 60);
+  const sec = Math.round(s - m * 60);
+  if (m < 60) return `${m}m ${String(sec).padStart(2, '0')}s`;
+  const h = Math.floor(m / 60);
+  return `${h}h ${String(m - h * 60).padStart(2, '0')}m`;
+}
+
+export function stepMeta(exitCode: number | null, durationMs: number | undefined): string | undefined {
+  const parts: string[] = [];
+  if (exitCode !== null && exitCode !== 0) parts.push(`exit ${exitCode}`);
+  const d = fmtDuration(durationMs);
+  if (d && (durationMs ?? 0) >= 500) parts.push(d);
+  return parts.length ? parts.join(' · ') : undefined;
+}
+
 function lastRunning(steps: Step[], tool: string): number {
   for (let i = steps.length - 1; i >= 0; i--) {
     if (steps[i].state === 'running' && steps[i].tool === tool) return i;
@@ -856,7 +879,8 @@ export function apply(turn: Turn, event: ChatEvent): Turn {
         tool: event.tool,
         label: index === -1 ? stepLabel(event.tool, event.command) : turn.steps[index].label,
         state: event.exitCode === null || event.exitCode === 0 ? 'succeeded' : 'failed',
-        meta: event.exitCode !== null && event.exitCode !== 0 ? `exit ${event.exitCode}` : undefined,
+        meta: stepMeta(event.exitCode, event.durationMs),
+        durationMs: event.durationMs,
         command: index === -1 ? event.command : turn.steps[index].command,
         output: event.output,
         round: index === -1 ? turn.rounds : turn.steps[index].round,

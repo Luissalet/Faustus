@@ -318,6 +318,10 @@ GROUPS: list[dict[str, Any]] = [
             _int("agent_context_overflow_keep_hours", "Overflow keep (hours)",
                  "How long spilled tool bodies stay under data/context_overflow.",
                  1, 8760),
+            _bool("agent_tool_wall_time", "Wall time on tool results",
+                  "Prefix every tool result the model reads with how long the call took, "
+                  "how long the turn has been running and the local clock, so it can tell a "
+                  "40-minute command from a 40 ms one."),
             _text("agent_run_keep_alive", "Keep-alive during agent run",
                  "Ollama keep_alive while a local agent run is in flight (e.g. 2h). "
                  "Stops the weight unloading mid-bash. Prefer a duration over -1."),

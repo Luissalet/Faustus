@@ -450,6 +450,11 @@ export type ChatEvent =
        *  "Ver traza" deep link to `/activity?trace=<call_id>` without a
        *  second lookup (`src/agent_runs.py::trace_for_call`, lote 61). */
       callId?: string;
+      /** Wall time (src/tool_clock.py): how long this call took and how long
+       *  the turn had been running when it finished — the same numbers the
+       *  model reads on the result's first line. */
+      durationMs?: number;
+      turnElapsedMs?: number;
     }
   | { type: 'steer'; text: string; source: string; interrupt: boolean }
   | { type: 'subagent'; payload: SubagentPayload }
@@ -1403,6 +1408,8 @@ export function decode(raw: Record<string, unknown>, sseEvent: string | null): C
         evidenceRefs: evidenceRefsFrom(raw.evidence_refs),
         executionTarget: executionTargetFrom(raw.execution_target),
         callId: str(raw.call_id) || undefined,
+        durationMs: num(raw.duration_ms) ?? undefined,
+        turnElapsedMs: num(raw.turn_elapsed_ms) ?? undefined,
       };
     case 'browser_view': {
       const frame = frameFrom(raw);

@@ -198,7 +198,10 @@ def _expand_browser_mcp_tools(tool_names: Set[str], mcp_mgr, force: bool = False
         except Exception as exc:
             logger.warning("Failed to list browser MCP tools: %s", exc)
             declared = set()
-        names |= (wanted & declared) if declared else wanted
+        # Only tools the browser server actually declares: with the browser
+        # MCP off (or the operator's `disabled_tools` withholding it) there is
+        # nothing to offer, and the ledger must not believe there was.
+        names |= (wanted & declared)
         return names
     if not _browser_intent_is_real(names):
         if any(n.startswith(_BROWSER_MCP_PREFIX) for n in names):
@@ -1927,9 +1930,12 @@ def _budget_last_user_attachment(messages: List[Dict], *, force: bool = False) -
             continue
         if not _INLINED_ATTACHMENT_RE.search(content):
             return
-        if not force and max_chars and len(content) <= max_chars:
+        if not max_chars or len(content) <= max_chars:
+            # Under the ceiling the model reads the whole thing; a continue
+            # turn does not make a 2 k attachment worth cutting. (`force`
+            # only skips the "is this a continue turn" gate upstream.)
             return
-        cap = max_chars if max_chars > 0 else 4000
+        cap = max_chars
         msg["content"] = attachment_budgeted_text(content, cap)
         return
 
@@ -8214,6 +8220,11 @@ async def _stream_agent_loop_body(
     round_num = 0
     while True:
         round_num += 1
+        try:
+            from src.tool_clock import set_round as _clock_set_round
+            _clock_set_round(round_num)
+        except Exception:  # noqa: BLE001
+            pass
         # CMP-09/CMP-12: the `strategy` event, emitted ONCE per turn (round 1
         # only — mirrors agent_git_policy's before_turn, one event per hook,
         # not one per round) so the UI/orchestrator can show what strategy
@@ -8381,11 +8392,21 @@ async def _stream_agent_loop_body(
                 _ledger.mutated_ui_paths()
                 or (_harness.UI_INTENT_RE.search(_last_user or "") and _ledger.needs_ui_verify(_last_user))
             ):
+                _before_ui_expand = set(_relevant_tools)
                 _relevant_tools = _expand_browser_mcp_tools(_relevant_tools, mcp_mgr, force=True)
                 if _schema_tools is not None:
                     _schema_tools = set(_schema_tools) | {
                         n for n in _relevant_tools if n.startswith(_BROWSER_MCP_PREFIX)
                     }
+                # The verify contract only binds when the model was actually
+                # handed a browser tool (built-in browser on, not disabled
+                # for this session). Otherwise the card says "skipped".
+                _ledger.browser_tools_offered = any(
+                    n.startswith(_BROWSER_MCP_PREFIX) or n == "builtin_browser"
+                    for n in (_relevant_tools or ())
+                )
+                if _ledger.browser_tools_offered and not (_before_ui_expand & set(_relevant_tools) == set(_relevant_tools)):
+                    logger.info("[harness] browser tools offered for UI verification")
         except Exception as _ui_tools_err:
             logger.debug("[harness] ui browser tools expand skipped: %s", _ui_tools_err)
 
@@ -11458,6 +11479,11 @@ async def _stream_agent_loop_body(
 
             # Emit tool_output (include ui_event data if present)
             tool_output_data = {"type": "tool_output", "tool": block.tool_type, "command": cmd_display, "output": output_text, "exit_code": result.get("exit_code"), "call_id": _call_id}
+            try:
+                from src.tool_clock import sse_fields as _clock_sse
+                tool_output_data.update(_clock_sse(result))
+            except Exception:  # noqa: BLE001
+                pass
             if result.get("blocked"):
                 # A refusal is a different event from a failure, and the client
                 # has no other way to tell them apart: both arrive as exit_code
@@ -12413,16 +12439,20 @@ async def stream_agent_loop(*args, **kwargs) -> AsyncGenerator[str, None]:
         )
     except Exception:  # noqa: BLE001
         logger.debug("stream_agent_loop: model pin skipped", exc_info=True)
+    from src import tool_clock as _tool_clock
+    _clock_token = _tool_clock.begin_turn()
     gen = _stream_agent_loop_body(*args, **kwargs)
     try:
         async for chunk in gen:
             yield chunk
     finally:
         await gen.aclose()
-        if _pin_run_id:
+        _tool_clock.end_turn(_clock_token)
+        if _pin_token is not None:
             try:
                 from src import run_model_pin as _run_pin
-                _run_pin.unpin_for_run(_pin_run_id, _pin_token)
+                # Off the event loop: the restore ping is a blocking POST.
+                await _run_pin.unpin_for_run_async(_pin_run_id, _pin_token)
             except Exception:  # noqa: BLE001
                 logger.debug("stream_agent_loop: model unpin failed", exc_info=True)
         try:

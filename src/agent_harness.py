@@ -45,23 +45,32 @@ logger = logging.getLogger(__name__)
 
 # Tools whose success IS evidence that files changed on disk.
 FILE_MUTATION_TOOLS = frozenset({"write_file", "edit_file", "apply_patch"})
+# A path whose edit is only provable by looking at it: markup and styles
+# anywhere, scripts only where they are served to a browser. `src/editor/x.py`
+# is not UI; `static/editor/viewport2d.js` is.
 UI_PATH_RE = re.compile(
-    r"(?:\.(?:html?|css|s?css|jsx|tsx|vue)$)|(?:(?:^|[/\\])(?:static|templates|editor)[/\\])",
+    r"(?:\.(?:html?|css|s?css|less|jsx|tsx|vue|svelte)$)"
+    r"|(?:(?:^|/)(?:static|templates|public|assets)/.*\.(?:m?js|ts|svg)$)",
     re.I,
 )
+# The user is talking about what the page LOOKS like. Word-bounded on purpose:
+# "visualize the data" and "Visual Studio" are not layout work.
 UI_INTENT_RE = re.compile(
-    r"browser|navegador|viewport|canvas|thumbnail|\bdrag\b|visual|editor\s*2d|\bcapa\b",
+    r"\b(?:browser|navegador|viewport|canvas|thumbnails?|miniaturas?|drag|arrastr\w*|"
+    r"visualmente|layout|maquetaci[oó]n|editor\s*2d|capas?|css|estilos?)\b",
     re.I,
 )
 UI_VERIFY_TODO_RE = re.compile(
     r"verif|browser|screenshot|navegador|captura",
     re.I,
 )
+# Tools whose success means somebody LOOKED at the page. Navigating alone is
+# not looking — the model must snapshot, screenshot or evaluate after it.
 BROWSER_EVIDENCE_MARKERS = (
     "browser_snapshot",
     "browser_take_screenshot",
+    "browser_screenshot",
     "browser_evaluate",
-    "browser_navigate",
 )
 # Shell tools: only evidence when the command itself looks mutating (see below).
 SHELL_TOOLS = frozenset({"bash", "python", "powershell"})
@@ -1271,24 +1280,42 @@ class TurnLedger:
                 return True
         return False
 
-    def needs_ui_verify(self, user_text: str = "") -> bool:
+    # Set by the loop once it knows whether a browser tool was offered to the
+    # model this turn. None = unknown (older callers, unit tests): treated as
+    # offered so the contract still applies. False = the browser MCP is off or
+    # disabled for this session — then "verify in the browser" is not
+    # something the model COULD have done, and demanding it would fail every
+    # UI turn on a box with the built-in browser switched off.
+    browser_tools_offered: Optional[bool] = None
+
+    def _ui_verify_enabled(self) -> bool:
         try:
             from src.settings import get_setting
             if not bool(get_setting("agent_ui_verify", True)):
                 return False
         except Exception:  # noqa: BLE001
             pass
+        return self.browser_tools_offered is not False
+
+    def needs_ui_verify(self, user_text: str = "") -> bool:
+        """The turn changed something only a browser can prove.
+
+        UI files mutated → yes. The user talked about layout AND the turn
+        mutated files (any) → yes: a "make the canvas bigger" that edits
+        `viewport.py` still ends on screen. A turn that only answered or
+        only ran tests owes no screenshot, whatever words the user used.
+        """
+        if not self._ui_verify_enabled():
+            return False
+        if self.mutated_ui_paths():
+            return True
         text = user_text or self.user_text or ""
-        return bool(self.mutated_ui_paths()) or bool(UI_INTENT_RE.search(text))
+        return bool(self.mutated_paths()) and bool(UI_INTENT_RE.search(text))
 
     def ui_verify_status(self, user_text: str = "") -> str:
         """Card field: ok | missing | skipped. Never changes test `ok`."""
-        try:
-            from src.settings import get_setting
-            if not bool(get_setting("agent_ui_verify", True)):
-                return "skipped"
-        except Exception:  # noqa: BLE001
-            pass
+        if not self._ui_verify_enabled():
+            return "skipped"
         if not self.needs_ui_verify(user_text):
             return "skipped"
         if self.has_browser_evidence():

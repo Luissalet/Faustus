@@ -108,6 +108,10 @@ DEFAULT_SETTINGS = {
     # While a local agent run is in flight, every Ollama request uses this
     # keep_alive so a long bash cannot unload the weight. Restored on run end.
     "agent_run_keep_alive": "2h",
+    # Every tool result the model reads starts with a wall-time line (how long
+    # the call took, how long the turn has run, the local clock) — time as a
+    # construct the model can reason about (src/tool_clock.py).
+    "agent_tool_wall_time": True,
     "agent_run_keep_alive_restore": True,
     "agent_ui_verify": True,
     "agent_inline_attachment_max_chars": 4000,
