@@ -926,6 +926,9 @@ from routes.creator_canvas_routes import setup_creator_canvas_routes  # WP20
 app.include_router(setup_creator_canvas_routes())
 from routes.creator_subtitle_routes import setup_creator_subtitle_routes  # WP16
 app.include_router(setup_creator_subtitle_routes())
+from routes.creator_voice_routes import setup_creator_voice_routes, setup_creator_consent_routes  # WP18
+app.include_router(setup_creator_voice_routes())
+app.include_router(setup_creator_consent_routes())
 
 # What this machine can actually do. Every probe already existed; this is the
 # one place that asks them all and puts the fix in the sentence.
