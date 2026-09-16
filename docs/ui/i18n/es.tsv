@@ -7579,3 +7579,27 @@ Weights on disk	Pesos en disco
 VRAM verdict	Veredicto de VRAM
 Parameter contract registered	Contrato de parámetros registrado
 Creator sections	Secciones de Creator
+Choose a transcript…	Elige una transcripción…
+Choose one on the left, or create one from a transcript.	Elige uno a la izquierda, o crea uno desde una transcripción.
+Cue text	Texto del cue
+Export ASS	Exportar ASS
+Export SRT	Exportar SRT
+Export VTT	Exportar VTT
+From transcript	Desde transcripción
+No subtitle track selected	Ninguna pista de subtítulos seleccionada
+No subtitle tracks yet	Aún no hay pistas de subtítulos
+Pick a transcript and regenerate.	Elige una transcripción y regenera.
+QA warnings	Avisos de QA
+Regenerate from transcript	Regenerar desde transcript
+Regenerated from transcript (edited cues kept).	Regenerado desde la transcripción (se conservaron los cues editados).
+Someone else changed this document — reload it.	Otra persona cambió este documento — recárgalo.
+Subtitle controls	Controles de subtítulos
+Subtitle cues	Cues de subtítulos
+Subtitle documents	Documentos de subtítulos
+Subtitle editor	Editor de subtítulos
+Subtitle track created from transcript.	Pista de subtítulos creada desde la transcripción.
+Subtitle tracks	Pistas de subtítulos
+Subtitles	Subtítulos
+unmapped	sin mapear
+{n} cue(s)	{n} cue(s)
+{rule}: {actual} (target {target})	{rule}: {actual} (objetivo {target})
