@@ -100,6 +100,7 @@ class FakeDockerClient:
 async def test_next_exec_detects_externally_removed_session_and_never_claims_files_survived(
         workspace, settings, monkeypatch, request):
     monkeypatch.setattr(sandbox_exec, "_host_is_windows", lambda: False)
+    _pin_posix(monkeypatch)
     settings.update({
         "agent_sandbox_execution": True,
         "agent_sandbox_mode": "strict",
@@ -157,6 +158,16 @@ async def test_next_exec_detects_externally_removed_session_and_never_claims_fil
     )
 
 
+def _pin_posix(monkeypatch) -> None:
+    """This case is a POSIX-with-Docker session scenario; pin platform
+    detection to POSIX so it is deterministic on Windows CI too — the
+    native-Windows behaviour of `DockerSandboxProvider.probe()` is covered
+    separately in test_a16 alongside the "Windows WITH Docker Desktop still
+    works" contrast."""
+    import core.platform_compat as pc
+    monkeypatch.setattr(pc, "IS_WINDOWS", False, raising=False)
+
+
 @pytest.mark.asyncio
 async def test_fail_policy_refuses_instead_of_recreating(workspace, settings, monkeypatch):
     """Not the acceptance case itself (one marker per function — see the
@@ -164,6 +175,7 @@ async def test_fail_policy_refuses_instead_of_recreating(workspace, settings, mo
     `sandbox_missing_policy=fail` must refuse rather than silently hand the
     model a fresh container it never asked for."""
     monkeypatch.setattr(sandbox_exec, "_host_is_windows", lambda: False)
+    _pin_posix(monkeypatch)
     settings.update({
         "agent_sandbox_execution": True,
         "agent_sandbox_mode": "strict",

@@ -218,18 +218,35 @@ class DockerSandboxProvider:
     # ── availability ────────────────────────────────────────────────────
 
     def probe(self) -> Availability:
+        """Order: platform → daemon → image.
+
+        The "platform" check is NOT "is this host Windows" — Docker Desktop
+        runs the very same Linux container on Windows as it does on macOS or
+        Linux (via its WSL2/Hyper-V VM), so a session sandbox works fine
+        there once the daemon answers. What genuinely cannot serve a Linux
+        sandbox image is a native Windows host with no Docker install at
+        all: no CLI on PATH to even ask. That, and only that, is `kind=
+        "platform"` — a Windows host WITH Docker Desktop on PATH falls
+        through to the same daemon/image checks as any other host, and is
+        never declared unavailable "because it is Windows". (What actually
+        cannot run inside the Linux container — cmd, powershell, .bat, the
+        Windows Python — is a different question, about the model's own
+        shell commands, answered by `sandbox_exec.host_skip_reason()`, not
+        by this port.)
+        """
         try:
             from core.platform_compat import IS_WINDOWS
         except Exception:  # noqa: BLE001 - conservative default
             IS_WINDOWS = False
-        if IS_WINDOWS:
-            return Availability(
-                False,
-                "native Windows host: a Linux sandbox container cannot run this "
-                "platform's own shell/tools, so there is no session sandbox to use here",
-                kind="platform")
         import shutil as _shutil
         if _shutil.which(self.docker) is None:
+            if IS_WINDOWS:
+                return Availability(
+                    False,
+                    "native Windows host with no Docker install found on PATH "
+                    "(no Docker Desktop / WSL2 backend) — there is nothing to run "
+                    "the Linux sandbox image on",
+                    kind="platform")
             return Availability(False, f"no {self.docker!r} on PATH", kind="daemon")
         seen_daemon = self._run_docker(["version", "--format", "{{.Server.Version}}"], timeout=15)
         if seen_daemon.returncode != 0:
