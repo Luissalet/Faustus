@@ -12,6 +12,7 @@ import re
 import stat
 import asyncio
 import time
+import httpx
 from collections import deque
 from contextlib import contextmanager
 from typing import Any, Callable, Deque, Dict, List, Optional, Set, TextIO, Tuple
@@ -780,24 +781,55 @@ def make_list_roots_callback(server_id: str) -> Callable[[Any], Any]:
     return _list_roots_callback
 
 
+def _make_tools_changed_handler(manager: "McpManager", server_id: str) -> Callable[[Any], Any]:
+    """A19: a ClientSession `message_handler` that reacts to
+    `notifications/tools/list_changed` by invalidating this server's
+    cached schema and re-running bounded, paginated discovery in the
+    background — the model's next call sees the new schema without
+    anyone having to reconnect."""
+    async def _handler(message: Any) -> None:
+        try:
+            import mcp.types as types
+            root = getattr(message, "root", message)
+            if isinstance(root, types.ToolListChangedNotification):
+                manager._on_tools_list_changed(server_id)
+        except Exception as e:  # noqa: BLE001 - a notification must never break the session
+            logger.debug(f"MCP message handler error for {server_id}: {e}")
+    return _handler
+
+
 def _open_client_session(client_session_cls: Any, read_stream: Any, write_stream: Any,
-                          server_id: str) -> Any:
+                          server_id: str, manager: "McpManager" = None) -> Any:
     """`ClientSession(read_stream, write_stream, ...)` with the TOOL-05
     callbacks, falling back to the plain two-argument call when the target
     does not accept them — a test double built before those callbacks
     existed (several already exist under `tests/`, stubbing `mcp.
     ClientSession` with a plain ``lambda r, w: FakeSession()``), or a future
     SDK version that renames a parameter, must still connect exactly as it
-    did before this function existed rather than raising `TypeError`."""
+    did before this function existed rather than raising `TypeError`.
+
+    `manager`, when given, also wires a `message_handler` (A19) that
+    invalidates and refreshes this server's cached tool schema on
+    `notifications/tools/list_changed`."""
+    kwargs: Dict[str, Any] = {
+        "sampling_callback": make_sampling_callback(server_id),
+        "elicitation_callback": make_elicitation_callback(server_id),
+        "list_roots_callback": make_list_roots_callback(server_id),
+    }
+    if manager is not None:
+        kwargs["message_handler"] = _make_tools_changed_handler(manager, server_id)
     try:
-        return client_session_cls(
-            read_stream, write_stream,
-            sampling_callback=make_sampling_callback(server_id),
-            elicitation_callback=make_elicitation_callback(server_id),
-            list_roots_callback=make_list_roots_callback(server_id),
-        )
+        return client_session_cls(read_stream, write_stream, **kwargs)
     except TypeError:
-        return client_session_cls(read_stream, write_stream)
+        try:
+            return client_session_cls(
+                read_stream, write_stream,
+                sampling_callback=kwargs["sampling_callback"],
+                elicitation_callback=kwargs["elicitation_callback"],
+                list_roots_callback=kwargs["list_roots_callback"],
+            )
+        except TypeError:
+            return client_session_cls(read_stream, write_stream)
 
 
 class McpManager:
@@ -835,6 +867,20 @@ class McpManager:
         # never called it — those keep reading the class defaults exactly as
         # before this dict existed.
         self._degraded_overrides: Dict[str, Dict[str, float]] = {}
+        # A18: server_id -> the OAuthClientProvider built at connect time for
+        # a Streamable HTTP server, kept around so call_tool can inspect/
+        # refresh its token context directly instead of re-discovering it.
+        self._oauth_providers: Dict[str, Any] = {}
+        # A18 test hook: an httpx.MockTransport (or any httpx.BaseTransport)
+        # to send the manual refresh-token request through instead of the
+        # network. None (the default) means a real httpx.AsyncClient.
+        self._oauth_http_transport: Any = None
+        # A19: server_id -> background re-discovery task kicked off by
+        # `notifications/tools/list_changed`. Kept only so it isn't
+        # garbage-collected mid-flight; disconnect_server does not need to
+        # cancel it explicitly (it checks `self._sessions.get(server_id)`
+        # is still alive before touching any state).
+        self._tools_refresh_tasks: Dict[str, Any] = {}
 
     async def connect_server(
         self,
@@ -954,8 +1000,8 @@ class McpManager:
                     transport = await stack.enter_async_context(stdio_client(server_params))
                 read_stream, write_stream = transport
                 session = await stack.enter_async_context(
-                    _open_client_session(ClientSession, read_stream, write_stream, server_id))
-                await session.initialize()
+                    _open_client_session(ClientSession, read_stream, write_stream, server_id, manager=self))
+                init_result = await session.initialize()
                 tools_result = await session.list_tools()
             except BaseException as exc:  # noqa: BLE001 - report to the waiter, then bail
                 try:
@@ -971,7 +1017,7 @@ class McpManager:
                     raise
                 return
             if not ready.done():
-                ready.set_result((session, tools_result))
+                ready.set_result((session, tools_result, init_result))
             try:
                 await close_event.wait()
             finally:
@@ -983,7 +1029,7 @@ class McpManager:
 
         task = asyncio.create_task(_owner(), name=f"mcp-stdio-{server_id}")
         try:
-            session, tools_result = await ready
+            session, tools_result, init_result = await ready
         except asyncio.CancelledError:
             # The caller gave up (timeout / shutdown): take the owner down with us.
             close_event.set()
@@ -995,17 +1041,13 @@ class McpManager:
                 await asyncio.wait_for(task, timeout=_MCP_CLOSE_TIMEOUT_S)
             raise
 
-        tools = []
-        for tool in tools_result.tools:
-            tools.append({
-                "name": tool.name,
-                "description": tool.description or "",
-                "input_schema": tool.inputSchema if hasattr(tool, "inputSchema") else {},
-                # MCP tool annotations (readOnlyHint / destructiveHint) drive
-                # plan-mode read-only gating. Absent on many servers, so we
-                # fall back to a name heuristic in mcp_tool_is_readonly().
-                "annotations": getattr(tool, "annotations", None),
-            })
+        # A19: bounded, cursor-following discovery. The owner task already
+        # fetched page one to unblock `ready` fast; this continues from
+        # there (via `first_result`) instead of refetching it.
+        server_version = getattr(getattr(init_result, "serverInfo", None), "version", None)
+        tools, discovery_truncated = await self._discover_tools_paginated(
+            session, server_id, server_version, first_result=tools_result,
+        )
 
         # Extract identity hints from env vars (e.g. email address, API name)
         # so tool descriptions can distinguish between multiple instances of
@@ -1035,6 +1077,7 @@ class McpManager:
             # went — so the UI can say so instead of the user guessing.
             "inherit_env": bool(inherit_env),
             "stderr_log": stderr_log_path(server_id) if errlog is not None else "",
+            "discovery_truncated": discovery_truncated,
         }
 
         logger.info(f"MCP server connected: {name} ({server_id}) - {len(tools)} tools via stdio")
@@ -1062,22 +1105,13 @@ class McpManager:
                 transport = await stack.enter_async_context(sse_client(url))
                 read_stream, write_stream = transport
                 session = await stack.enter_async_context(
-                    _open_client_session(ClientSession, read_stream, write_stream, server_id))
+                    _open_client_session(ClientSession, read_stream, write_stream, server_id, manager=self))
 
-                await session.initialize()
-                tools_result = await session.list_tools()
-
-                tools = []
-                for tool in tools_result.tools:
-                    tools.append({
-                        "name": tool.name,
-                        "description": tool.description or "",
-                        "input_schema": tool.inputSchema if hasattr(tool, 'inputSchema') else {},
-                        # MCP tool annotations (readOnlyHint / destructiveHint) drive
-                        # plan-mode read-only gating. Absent on many servers, so we
-                        # fall back to a name heuristic in mcp_tool_is_readonly().
-                        "annotations": getattr(tool, 'annotations', None),
-                    })
+                init_result = await session.initialize()
+                server_version = getattr(getattr(init_result, "serverInfo", None), "version", None)
+                tools, discovery_truncated = await self._discover_tools_paginated(
+                    session, server_id, server_version,
+                )
 
                 self._sessions[server_id] = session
                 self._stacks[server_id] = stack
@@ -1087,6 +1121,7 @@ class McpManager:
                     "name": name,
                     "transport": "sse",
                     "tool_count": len(tools),
+                    "discovery_truncated": discovery_truncated,
                 }
 
                 registered = True
@@ -1155,24 +1190,22 @@ class McpManager:
             transport = await stack.enter_async_context(streamablehttp_client(url, auth=provider))
             read_stream, write_stream, _get_session_id = transport
             session = await stack.enter_async_context(
-                _open_client_session(ClientSession, read_stream, write_stream, server_id))
-            await session.initialize()
+                _open_client_session(ClientSession, read_stream, write_stream, server_id, manager=self))
+            init_result = await session.initialize()
+            server_version = getattr(getattr(init_result, "serverInfo", None), "version", None)
 
-            tools_result = await session.list_tools()
-            tools = []
-            for tool in tools_result.tools:
-                tools.append({
-                    "name": tool.name,
-                    "description": tool.description or "",
-                    "input_schema": tool.inputSchema if hasattr(tool, "inputSchema") else {},
-                })
+            tools, discovery_truncated = await self._discover_tools_paginated(
+                session, server_id, server_version,
+            )
 
             self._sessions[server_id] = session
             self._stacks[server_id] = stack
             self._tools[server_id] = tools
+            self._oauth_providers[server_id] = provider
             self._connections[server_id] = {
                 "status": "connected", "name": name, "transport": "http",
                 "tool_count": len(tools),
+                "discovery_truncated": discovery_truncated,
             }
             clear_auth_url(server_id)
             # Tools changed (this can complete after connect_server already
@@ -1183,11 +1216,13 @@ class McpManager:
             return True
         except ImportError:
             logger.warning("MCP package not installed. Install with: pip install mcp")
+            self._oauth_providers.pop(server_id, None)
             self._connections[server_id] = {"status": "error", "error": "mcp package not installed", "name": name}
             safe_mode.record_mcp_connection(server_id, "error")
             return False
         except Exception as e:
             logger.error(f"Failed to connect HTTP MCP server {name} ({server_id}): {e}")
+            self._oauth_providers.pop(server_id, None)
             self._connections[server_id] = {"status": "error", "error": str(e), "name": name}
             safe_mode.record_mcp_connection(server_id, "error")
             return False
@@ -1232,6 +1267,7 @@ class McpManager:
         self._sessions.pop(server_id, None)
         self._tools.pop(server_id, None)
         self._connections.pop(server_id, None)
+        self._oauth_providers.pop(server_id, None)
         self._generation += 1
         logger.info(f"MCP server disconnected: {server_id}")
 
@@ -1283,6 +1319,195 @@ class McpManager:
                 "name": srv.name,
             }
 
+    async def _discover_tools_paginated(
+        self,
+        session: Any,
+        server_id: str,
+        server_version: Optional[str] = None,
+        first_result: Any = None,
+    ) -> Tuple[List[Dict], bool]:
+        """A19: page through `tools/list` following `nextCursor`, bounded by
+        the `mcp_discovery_max_pages` setting (default 20) so a server whose
+        cursor never terminates cannot hang a connect/reconnect forever.
+
+        `first_result`, when given, is an already-fetched first page (the
+        stdio owner-task path fetches page one itself to unblock `ready`
+        quickly) — this continues from its cursor instead of refetching it.
+
+        Writes the discovered catalog into the version-keyed schema cache
+        (src/mcp_tool_cache.py), keyed by `server_version` + a hash of the
+        catalog, so a later reconnect or `notifications/tools/list_changed`
+        can tell "still current" from "changed" without guessing.
+
+        Returns `(tools, truncated)` — `truncated` is True only when the
+        page cap was hit with a `nextCursor` still outstanding (a server
+        that never paginates, or whose last page has no cursor, is never
+        marked truncated).
+        """
+        from src.mcp_tool_cache import compute_version_key, put as _cache_put
+
+        try:
+            from src.settings import get_setting
+            max_pages = int(get_setting("mcp_discovery_max_pages", 20) or 20)
+        except Exception:  # noqa: BLE001 - a bad setting must not break discovery
+            max_pages = 20
+        max_pages = max(1, max_pages)
+
+        tools_raw: List[Any] = []
+        pages = 0
+        truncated = False
+        result = first_result if first_result is not None else await session.list_tools()
+        while True:
+            tools_raw.extend(result.tools)
+            pages += 1
+            cursor = getattr(result, "nextCursor", None)
+            if not cursor:
+                break
+            if pages >= max_pages:
+                truncated = True
+                logger.warning(
+                    f"MCP discovery for {server_id} truncated at {max_pages} pages "
+                    f"(mcp_discovery_max_pages setting); more tools may exist"
+                )
+                break
+            result = await session.list_tools(cursor=cursor)
+
+        tools = [
+            {
+                "name": tool.name,
+                "description": tool.description or "",
+                "input_schema": tool.inputSchema if hasattr(tool, "inputSchema") else {},
+                # MCP tool annotations (readOnlyHint / destructiveHint) drive
+                # plan-mode read-only gating. Absent on many servers, so we
+                # fall back to a name heuristic in mcp_tool_is_readonly().
+                "annotations": getattr(tool, "annotations", None),
+            }
+            for tool in tools_raw
+        ]
+
+        version_key = compute_version_key(server_version, tools)
+        _cache_put(server_id, version_key, tools)
+        return tools, truncated
+
+    def _on_tools_list_changed(self, server_id: str) -> None:
+        """A19: `notifications/tools/list_changed` handler — invalidate the
+        cached schema and re-run bounded discovery in the background so the
+        next call sees the new tools/schema without a reconnect. Best-effort:
+        a notification racing a disconnect must never raise into the
+        session's read loop."""
+        try:
+            from src.mcp_tool_cache import invalidate as _cache_invalidate
+            _cache_invalidate(server_id)
+            task = asyncio.create_task(self._refresh_tools_after_change(server_id))
+            self._tools_refresh_tasks[server_id] = task
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"MCP tools/list_changed handling failed for {server_id}: {e}")
+
+    async def _refresh_tools_after_change(self, server_id: str) -> None:
+        session = self._sessions.get(server_id)
+        if session is None:
+            return
+        try:
+            tools, truncated = await self._discover_tools_paginated(session, server_id)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"MCP tools/list_changed refresh failed for {server_id}: {e}")
+            return
+        self._tools[server_id] = tools
+        conn = self._connections.get(server_id)
+        if isinstance(conn, dict):
+            conn["tool_count"] = len(tools)
+            conn["discovery_truncated"] = truncated
+        self._generation += 1
+        logger.info(f"MCP server {server_id}: tools/list_changed - {len(tools)} tools re-discovered")
+
+    async def _oauth_ensure_valid(self, server_id: str) -> Optional[Dict]:
+        """A18: preflight token check before a tool call reaches an OAuth
+        Streamable HTTP MCP server.
+
+        A non-OAuth server (no provider on record) is a no-op — returns
+        None immediately. Otherwise: a still-valid access token is also a
+        no-op. An expired one with a refresh_token gets exactly one manual
+        refresh attempt (bounded, `_oauth_http_transport` swappable for
+        tests); success is a no-op too, the caller proceeds with the
+        refreshed token transparently.
+
+        Anything else — no refresh_token, or the refresh request itself
+        failing — kicks off a fresh authorization flow in the background
+        (the SAME reconnect path `_start_http_connect`/`_connect_http` use
+        at initial connect, so the existing `/api/mcp/oauth/callback` route
+        resolves it with no new wiring) and returns a typed error at once
+        instead of blocking the tool call on the interactive browser step:
+        `{"error": ..., "reauthorization_required": True, "server_id": ...}`.
+        No token, header, or authorization URL (which carries `state=`) is
+        ever put in that dict — only server_id and a plain-English reason,
+        so it is safe for the model to see and safe to log verbatim.
+
+        Because this runs BEFORE the tool is ever dispatched to the
+        session, a call that ends up here never reached the MCP server: the
+        retry after the user reauthorizes is the first real attempt, not a
+        second one — nothing to double-execute.
+        """
+        provider = self._oauth_providers.get(server_id)
+        if provider is None:
+            return None
+
+        ctx = provider.context
+        refreshed = False
+        try:
+            if ctx.is_token_valid():
+                return None
+            if ctx.can_refresh_token():
+                refresh_request = await provider._refresh_token()
+                async with httpx.AsyncClient(
+                    transport=self._oauth_http_transport, timeout=10.0
+                ) as client:
+                    response = await client.send(refresh_request)
+                refreshed = await provider._handle_refresh_response(response)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:  # noqa: BLE001 - any refresh failure falls through to reauth
+            logger.warning(f"MCP OAuth refresh failed for {server_id}: {type(e).__name__}: {e}")
+            refreshed = False
+
+        if refreshed:
+            return None
+
+        conn = self._connections.get(server_id, {})
+        name = conn.get("name", server_id) if isinstance(conn, dict) else server_id
+        db = SessionLocal()
+        try:
+            srv = db.query(McpServer).filter(McpServer.id == server_id).first()
+            url = srv.url if srv else None
+        finally:
+            db.close()
+
+        if url:
+            try:
+                # Same path a manual reconnect takes: tear down the stale
+                # session/stack first so nothing leaks, then start a fresh
+                # (bounded) connect attempt, which publishes needs_auth +
+                # auth_url the instant the authorization URL is known.
+                await self.disconnect_server(server_id)
+                await self._start_http_connect(server_id, name, url, wait=2.0)
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"MCP reauthorization kickoff failed for {server_id}: {e}")
+        else:
+            self._connections[server_id] = {
+                "status": "needs_auth", "name": name, "transport": "http",
+            }
+            safe_mode.record_mcp_connection(server_id, "needs_auth")
+
+        return {
+            "error": "MCP server authorization expired; reauthorize the connection to continue.",
+            "reauthorization_required": True,
+            "server_id": server_id,
+            "exit_code": 1,
+        }
+
     async def call_tool(self, qualified_name: str, arguments: Dict) -> Dict:
         """Call an MCP tool by its qualified name (mcp__{server_id}__{tool_name}).
 
@@ -1330,6 +1555,17 @@ class McpManager:
             detail = self._connections.get(server_id, {}).get("error")
             suffix = f" ({detail})" if detail else ""
             return {"error": f"MCP server not connected: {server_id}{suffix}", "exit_code": 1}
+
+        # A18: preflight OAuth token check — no-op for a non-OAuth server, a
+        # single bounded refresh+retry for an expired one, a fast typed
+        # error (no secrets) with a background reauthorization kicked off
+        # for anything worse. The call below never runs when this fires, so
+        # a subsequent retry after the user reauthorizes is the first real
+        # attempt against the server, never a second one.
+        oauth_err = await self._oauth_ensure_valid(server_id)
+        if oauth_err is not None:
+            self._record_call_outcome(server_id, False, 0.0)
+            return oauth_err
 
         # A built-in whose owner task already finished has no live process
         # behind the session: skip the doomed call and go straight to reconnect.
