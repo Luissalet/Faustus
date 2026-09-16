@@ -1,0 +1,32 @@
+{
+  "name": "@faustus/embed",
+  "version": "0.1.0",
+  "private": false,
+  "license": "AGPL-3.0-or-later",
+  "description": "Embeddable <faustus-chat> Web Component: one isolated chat session (Shadow DOM, own faustus-sdk client, own auth) that a host application can drop in more than once on the same page.",
+  "type": "module",
+  "main": "./dist/faustus-embed.js",
+  "module": "./dist/faustus-embed.js",
+  "types": "./dist/faustus-embed.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/faustus-embed.d.ts",
+      "default": "./dist/faustus-embed.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "build:watch": "node build.mjs --watch"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  }
+}

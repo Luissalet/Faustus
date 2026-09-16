@@ -1,0 +1,128 @@
+<!doctype html>
+<!--
+  A21 example: two isolated `<faustus-chat>` instances on the same page —
+  different sessions, different tokens, different themes. Each element owns
+  its own faustus-sdk client and Shadow DOM; nothing here couples them.
+
+  Serve this file with a static server (it is an ES module, so it cannot be
+  opened as a `file://` URL): e.g. `python3 -m http.server 8899` from this
+  directory, then open http://127.0.0.1:8899/example.html.
+
+  The server this page talks to must list this page's origin in
+  `ALLOWED_ORIGINS` (see studio/embed/README.md's "CORS" section) — a
+  bearer-token request from a page on a different origin is still a
+  cross-origin request and needs the server's explicit opt-in.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>faustus-chat embed example</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 24px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #f8fafc;
+      color: #0f172a;
+    }
+    h1 {
+      font-size: 18px;
+      margin: 0 0 4px;
+    }
+    p.lede {
+      margin: 0 0 20px;
+      color: #64748b;
+      font-size: 14px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+    @media (max-width: 860px) {
+      .grid { grid-template-columns: 1fr; }
+    }
+    .panel h2 {
+      font-size: 14px;
+      margin: 0 0 8px;
+    }
+    faustus-chat {
+      height: 480px;
+    }
+    .log {
+      margin-top: 8px;
+      font-size: 12px;
+      font-family: ui-monospace, monospace;
+      color: #475569;
+      max-height: 120px;
+      overflow-y: auto;
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 6px 8px;
+    }
+  </style>
+</head>
+<body>
+  <h1>faustus-chat — two embedded sessions</h1>
+  <p class="lede">
+    Panel A and Panel B are two independent &lt;faustus-chat&gt; elements: two
+    different session ids, two different bearer tokens, two different
+    themes. Sending a message in one never appears in the other, and each
+    keeps its own Shadow DOM styling.
+  </p>
+
+  <div class="grid">
+    <div class="panel">
+      <h2>Panel A — light theme, session A</h2>
+      <faustus-chat id="chat-a" server="http://127.0.0.1:8000" theme="light"></faustus-chat>
+      <div class="log" id="log-a" aria-label="Panel A event log"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Panel B — dark theme, session B</h2>
+      <faustus-chat id="chat-b" server="http://127.0.0.1:8000" theme="dark"></faustus-chat>
+      <div class="log" id="log-b" aria-label="Panel B event log"></div>
+    </div>
+  </div>
+
+  <script type="module">
+    import '/dist/faustus-embed.js';
+
+    // Two distinct sessions and two distinct tokens — set as PROPERTIES,
+    // never as attributes, so the token is never written to the DOM at all
+    // (see studio/embed/README.md's "Auth" section). In a real host app
+    // these would come from that app's own per-user auth, not a query
+    // string or localStorage.
+    const chatA = document.getElementById('chat-a');
+    const chatB = document.getElementById('chat-b');
+
+    chatA.token = window.__FAUSTUS_TOKEN_A__ || '';
+    chatA.session = window.__FAUSTUS_SESSION_A__ || null;
+
+    chatB.token = window.__FAUSTUS_TOKEN_B__ || '';
+    chatB.session = window.__FAUSTUS_SESSION_B__ || null;
+
+    function wireLog(chat, logId) {
+      const log = document.getElementById(logId);
+      const append = (line) => {
+        const row = document.createElement('div');
+        row.textContent = line;
+        log.appendChild(row);
+        log.scrollTop = log.scrollHeight;
+      };
+      chat.addEventListener('faustus:turn-start', (e) =>
+        append(`turn-start session=${e.detail.sessionId} run=${e.detail.runId}`),
+      );
+      chat.addEventListener('faustus:turn-end', (e) =>
+        append(`turn-end session=${e.detail.sessionId} reason=${e.detail.reason}`),
+      );
+      chat.addEventListener('faustus:error', (e) => append(`error: ${e.detail.message}`));
+    }
+
+    wireLog(chatA, 'log-a');
+    wireLog(chatB, 'log-b');
+  </script>
+</body>
+</html>
