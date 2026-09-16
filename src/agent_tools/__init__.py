@@ -71,6 +71,7 @@ from .code_graph_tools import (
     CodeGraphChangesTool, CodeGraphArchitectureTool, CodeGraphSnippetTool,
 )
 from .pdf_ops_tool import PdfOpsTool
+from .goal_tools import GoalDefineTool, GoalStatusTool, GoalEvaluateTool, GoalEvidenceTool
 
 TOOL_HANDLERS = {
     "bash": BashTool().execute,
@@ -187,6 +188,12 @@ TOOL_HANDLERS = {
     # PDF operations (R4, Reach wave): merge/split/rotate/compress/watermark/
     # etc. over src.pdf_ops. See src/agent_tools/pdf_ops_tool.py.
     "pdf_ops": PdfOpsTool().execute,
+    # Goal with completion by evidence (WP27, Creator): thin executors over
+    # src.creator.goal. Only goal_evaluate can ever move a goal to done.
+    "goal_define": GoalDefineTool().execute,
+    "goal_status": GoalStatusTool().execute,
+    "goal_evaluate": GoalEvaluateTool().execute,
+    "goal_evidence": GoalEvidenceTool().execute,
 }
 # Config/integration admin tools (manage_endpoints/mcp/webhooks/tokens/settings).
 TOOL_HANDLERS.update(ADMIN_TOOL_HANDLERS)
@@ -258,6 +265,9 @@ TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_fi
              "list_cookbook_servers",
              # Other tools the agent reaches for that were also missing.
              "edit_image", "trigger_research", "manage_research",
+             # Goal with completion by evidence (WP27, Creator):
+             # src/agent_tools/goal_tools.py.
+             "goal_define", "goal_status", "goal_evaluate", "goal_evidence",
              # Generic loopback to any UI-button endpoint (cookbook,
              # gallery, email folders, etc.) — agent uses this when
              # there's no named tool wrapper for the action.
