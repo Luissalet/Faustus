@@ -59,6 +59,7 @@ from .requirement_tools import (
 from .alternatives_tools import (
     AltStartTool, AltCompareTool, AltApplyTool,
 )
+from .code_mode_tool import RunCodeTool
 
 TOOL_HANDLERS = {
     "bash": BashTool().execute,
@@ -144,6 +145,10 @@ TOOL_HANDLERS = {
     "alt_start": AltStartTool().execute,
     "alt_compare": AltCompareTool().execute,
     "alt_apply": AltApplyTool().execute,
+    # Code Mode (T6, A10/A11): compose several tool calls in one isolated
+    # subprocess round instead of one model round trip per call. See
+    # src/code_mode/ and src/agent_tools/code_mode_tool.py.
+    "run_code": RunCodeTool().execute,
 }
 # Config/integration admin tools (manage_endpoints/mcp/webhooks/tokens/settings).
 TOOL_HANDLERS.update(ADMIN_TOOL_HANDLERS)
@@ -194,6 +199,8 @@ TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_fi
              "manage_endpoints", "manage_mcp", "manage_webhooks",
              "manage_tokens", "manage_documents", "manage_settings",
              "manage_notes", "manage_calendar",
+             # Code Mode (T6, A10/A11): src/agent_tools/code_mode_tool.py.
+             "run_code",
              "resolve_contact", "manage_contact",
              # Email tool names come from BUILTIN_EMAIL_TOOLS (unioned below)
              # so the fence regex, dispatch, and non-admin blocklist all cover

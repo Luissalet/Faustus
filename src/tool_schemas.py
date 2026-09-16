@@ -980,6 +980,22 @@ FUNCTION_TOOL_SCHEMAS = [
             }
         }
     },
+    # ── Code Mode (T6, A10/A11): compose several tool calls in one round ────
+    {
+        "type": "function",
+        "function": {
+            "name": "run_code",
+            "description": "Write a short Python program that composes several tool calls in ONE round instead of one model round trip per call (e.g. read three files, grep, then decide). Runs isolated (no network, no credentials, a fresh temp directory) with a `tools` object in scope: `tools.call(name, args)` runs a tool exactly as if you had called it directly -- same policy, same approvals, same disabled-tools list, and `tools.list()` returns the tool names/schemas you may call. Bounded by wall time, call count and output size; a runaway program is killed and you get a diagnostic receipt back instead of the program's own output. Only available when Code Mode is enabled.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "code": {"type": "string", "description": "Python source to run. Use the `tools` object already in scope; do not import it."},
+                    "language": {"type": "string", "enum": ["python"], "description": "Always \"python\" today."}
+                },
+                "required": ["code"]
+            }
+        }
+    },
     # ── Desktop control (FAUSTUS): see the screen and drive it ──────────────
     {
         "type": "function",

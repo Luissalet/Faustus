@@ -261,6 +261,20 @@ DEFAULT_SETTINGS = {
     # bash / python tool: a command that prints nothing for this long is killed
     # with its whole process tree (src/agent_tools/subprocess_tools.py). 0 = never.
     "agent_subprocess_idle_timeout_seconds": 300,
+    # Code Mode (T6, A10/A11): the model writes a short Python program that
+    # composes several tool calls in one isolated-subprocess round instead of
+    # one model round trip per call (src/code_mode/, run_code tool). Off by
+    # default -- the run_code tool refuses to run while this is False.
+    "agent_code_mode": False,
+    # Wall-clock ceiling for one run_code subprocess. Exceeding it kills the
+    # process tree and returns a diagnostic receipt (terminated_by="timeout").
+    "agent_code_mode_timeout_seconds": 60,
+    # Max tools.call() invocations one run_code program may make before it is
+    # killed (terminated_by="max_calls").
+    "agent_code_mode_max_calls": 50,
+    # Max bytes of captured stdout/stderr one run_code program may produce
+    # before it is killed (terminated_by="output").
+    "agent_code_mode_max_output_bytes": 200_000,
     # Server-shaped commands (python app.py, flask, uvicorn, …) never inherit
     # the adaptive idle trained on long pytest/compiles. 0 = no extra cap.
     "agent_server_idle_timeout_seconds": 45,
