@@ -2926,6 +2926,71 @@ FUNCTION_TOOL_SCHEMAS = [
             }
         }
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "plan_status",
+            "description": "Progress of the active persisted plan for this project (P1, src/plan_tracker.py): done/total/skipped/pending plus a compact 'id key status title' line per task. Use this instead of asking for the plan attachment again -- its full text is not in this conversation; the tracker already parsed it once. Errors with 'no active plan for this project' when none exists.",
+            "parameters": {
+                "type": "object",
+                "properties": {}
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "plan_task",
+            "description": "Full text, acceptance criteria and mentioned files for one task of the active persisted plan (P1). Pass the task's id ('t03') or its plan-native key ('WP03'/'Tarea 7'/'Task 3.2'); omit both to get the current task.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string", "description": "Task id (e.g. 't03') or key (e.g. 'WP03'). Omit for the current task."}
+                }
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "plan_done",
+            "description": "Mark one task of the active persisted plan (P1) done, with concrete evidence (>= 20 chars -- what you ran/saw, not 'done'). If files were mutated this turn and the task named files that were not among them, the response lists them as unverified_files -- informative, not a refusal.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string", "description": "Task id or key"},
+                    "evidence": {"type": "string", "description": "Concrete evidence this task is really done (>= 20 chars)"}
+                },
+                "required": ["id", "evidence"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "plan_skip",
+            "description": "Mark one task of the active persisted plan (P1) skipped, with a reason. Skipped tasks are excluded from 'pending' but stay visible in plan_status.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string", "description": "Task id or key"},
+                    "reason": {"type": "string", "description": "Why this task is being skipped"}
+                },
+                "required": ["id", "reason"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "plan_next",
+            "description": "Return the next pending task of the active persisted plan (P1) and mark it in_progress. Does NOT mark the current task done first -- call plan_done for that before moving on.",
+            "parameters": {
+                "type": "object",
+                "properties": {}
+            }
+        }
+    },
 ]
 
 

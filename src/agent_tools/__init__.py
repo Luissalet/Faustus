@@ -72,6 +72,7 @@ from .code_graph_tools import (
 )
 from .pdf_ops_tool import PdfOpsTool
 from .goal_tools import GoalDefineTool, GoalStatusTool, GoalEvaluateTool, GoalEvidenceTool
+from .plan_tools import PlanStatusTool, PlanTaskTool, PlanDoneTool, PlanSkipTool, PlanNextTool
 
 TOOL_HANDLERS = {
     "bash": BashTool().execute,
@@ -194,6 +195,14 @@ TOOL_HANDLERS = {
     "goal_status": GoalStatusTool().execute,
     "goal_evaluate": GoalEvaluateTool().execute,
     "goal_evidence": GoalEvidenceTool().execute,
+    # P1: plan tracker tools (src/plan_tracker.py) — a persisted, per-project
+    # plan attachment (=== File/ZIP: ... === parsed once) instead of
+    # reinjected in full every chat.
+    "plan_status": PlanStatusTool().execute,
+    "plan_task": PlanTaskTool().execute,
+    "plan_done": PlanDoneTool().execute,
+    "plan_skip": PlanSkipTool().execute,
+    "plan_next": PlanNextTool().execute,
 }
 # Config/integration admin tools (manage_endpoints/mcp/webhooks/tokens/settings).
 TOOL_HANDLERS.update(ADMIN_TOOL_HANDLERS)
@@ -268,6 +277,8 @@ TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_fi
              # Goal with completion by evidence (WP27, Creator):
              # src/agent_tools/goal_tools.py.
              "goal_define", "goal_status", "goal_evaluate", "goal_evidence",
+             # P1: plan tracker (src/plan_tracker.py, src/agent_tools/plan_tools.py).
+             "plan_status", "plan_task", "plan_done", "plan_skip", "plan_next",
              # Generic loopback to any UI-button endpoint (cookbook,
              # gallery, email folders, etc.) — agent uses this when
              # there's no named tool wrapper for the action.

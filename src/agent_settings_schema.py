@@ -944,6 +944,19 @@ GROUPS: list[dict[str, Any]] = [
                  "A test seen as pre-existing/exempt for this many turns becomes 'overdue' and is "
                  "surfaced as a high-priority todo until it is fixed or dismissed with a reason.",
                  1, 50),
+            _bool("agent_plan_tracker", "Plan tracker",
+                  "Parse a large plan attachment (=== File/ZIP: ... === inlined after the user's "
+                  "own text) once per project, persist it and its per-task status under DATA_DIR/"
+                  "plan_tracker, and inject a short brief plus only the current task instead of "
+                  "reinjecting the whole attachment body in every chat (src/plan_tracker.py)."),
+            _int("agent_plan_tracker_min_chars", "Plan tracker: minimum attachment size",
+                 "An inlined attachment body shorter than this many characters is never treated as "
+                 "a plan to track, no matter how many tasks its structure would parse.",
+                 100, 100000),
+            _int("agent_plan_tracker_task_chars", "Plan tracker: current-task text cap",
+                 "Maximum characters of the current task's own text kept when replacing the full "
+                 "attachment in the prompt.",
+                 200, 50000),
         ],
     ),
 ]

@@ -735,6 +735,15 @@ DEFAULT_SETTINGS = {
     # (recorded after project_tests, merged into the continue-turn todos).
     "agent_test_debt": True,
     "agent_test_debt_turns": 3,
+    # P1: src/plan_tracker.py — parse a large plan attachment (=== File/ZIP:
+    # ... === inlined after the user's own text) once, persist it and its
+    # per-task state under DATA_DIR/plan_tracker, and hand back a short
+    # system brief plus only the current task instead of reinjecting the
+    # whole body every chat (Silhouettes project: a 172 KB plan reinjected
+    # across 6+ chats with no state between them).
+    "agent_plan_tracker": True,
+    "agent_plan_tracker_min_chars": 3000,
+    "agent_plan_tracker_task_chars": 6000,
     # Model the workers run on ("" = the coordinator's). Two different models
     # generate at the same time on Ollama; two requests to one model queue on
     # its single slot — pin the worker model to the other card (Local models →

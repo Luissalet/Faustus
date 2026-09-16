@@ -977,4 +977,34 @@ EXAMPLES: Dict[str, List[str]] = {
         "attach this artifact as evidence for the goal",
         "this URL is the proof for that criterion",
     ],
+
+    # ── Plan tracker (P1) — a persisted plan instead of a reinjected attachment ─
+    "plan_status": [
+        "qué queda pendiente del plan",
+        "how far along is the implementation plan",
+        "dame el progreso del plan que subí",
+        "plan status please",
+    ],
+    "plan_task": [
+        "qué necesita la tarea actual del plan",
+        "show me the acceptance criteria for WP03",
+        "qué archivos toca este paso del plan",
+        "what's the current task in the plan",
+    ],
+    "plan_done": [
+        "marca esta tarea del plan como hecha",
+        "this step of the plan is finished, here's the proof",
+        "close out this task with evidence",
+    ],
+    "plan_skip": [
+        "salta esta tarea del plan, no la vamos a hacer",
+        "skip this step, it's not needed",
+        "mark this task as skipped, we changed the approach",
+    ],
+    "plan_next": [
+        "sigue con la siguiente tarea del plan",
+        "what's the next task",
+        "move on to the next step of the plan",
+        "continua implementando el plan",
+    ],
 }

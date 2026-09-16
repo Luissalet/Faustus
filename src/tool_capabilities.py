@@ -84,7 +84,14 @@ _register(
     # workspace turn, so the model could not even lay out its objectives
     # without a click. It shares update_plan's class: UI-facing, no external
     # or workspace effect.
-    {"ask_user", "update_plan", "todowrite"},
+    # P1: plan_status/plan_task are pure reads of the persisted plan tracker
+    # (like todowrite's own read side); plan_done/plan_skip/plan_next write
+    # only that same local progress file under DATA_DIR — control-plane
+    # bookkeeping, never workspace or external effect, so they join
+    # todowrite's class rather than getting a write_private classification
+    # that would gate them behind an approval click.
+    {"ask_user", "update_plan", "todowrite",
+     "plan_status", "plan_task", "plan_done", "plan_skip", "plan_next"},
     ToolEffect.USER_INTERACTION,
 )
 _register(

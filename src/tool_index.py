@@ -278,6 +278,16 @@ BUILTIN_TOOL_DESCRIPTIONS: Dict[str, str] = {
     "goal_status": "Read a Goal's current state: status, evidence, usage against its ceiling, and the next concrete step — read-only, never runs a checker. Use for 'how's the goal doing', 'what goals does this project have', 'what's left to finish'.",
     "goal_evaluate": "Run every acceptance criterion of a Goal for real — subprocess, filesystem, artifact store, HTTP, another document's revision — and decide done/blocked/progressing/ceiling_reached from that evidence alone. The only way a goal becomes done. Use for 'check if the goal is actually done', 'verify the acceptance criteria', 'am I really finished'.",
     "goal_evidence": "Attach one evidence ref for a Goal criterion; the ref is independently re-verified against that criterion's real checker before anything is recorded, and never marks the goal done by itself. Use for 'here's the file/artifact/URL that satisfies this criterion'.",
+
+    # P1: plan tracker — a large plan attachment (=== File/ZIP: ... ===)
+    # parsed once and persisted per project (src/plan_tracker.py) instead of
+    # reinjected whole every chat. Use these instead of asking for the plan
+    # text again.
+    "plan_status": "Progress of the active persisted plan for this project: done/total/skipped/pending plus a compact task list. Use for 'what's left on the plan', 'where are we on the implementation plan', 'plan status'.",
+    "plan_task": "Full text, acceptance criteria and mentioned files for one task of the active persisted plan, by id or key, or the current task if neither is given. Use for 'what does the current task need', 'show me task WP03', 'what are the acceptance criteria for this step'.",
+    "plan_done": "Mark one task of the active persisted plan done, with concrete evidence of what was actually run/checked. Use for 'mark this task done', 'this step is finished'.",
+    "plan_skip": "Mark one task of the active persisted plan skipped, with a reason. Use for 'skip this task', 'we're not doing this step'.",
+    "plan_next": "Return the next pending task of the active persisted plan and mark it in_progress, without closing the current one. Use for 'what's the next task', 'move on to the next step'.",
 }
 
 
