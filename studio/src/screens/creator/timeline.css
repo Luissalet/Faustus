@@ -1,0 +1,127 @@
+/* WP13 — Timeline editor. Scoped under .fs-timeline (faustus-css-gotchas:
+   never a bare `button`/`rect` selector). */
+
+.fs-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  outline: none;
+}
+
+.fs-timeline:focus-visible {
+  outline: 2px solid var(--fs-accent, #6ea8fe);
+  outline-offset: 2px;
+}
+
+.fs-timeline__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.fs-timeline__muted {
+  color: var(--fs-muted, #8a8a94);
+  font-size: 0.8rem;
+}
+
+.fs-timeline__error {
+  color: var(--fs-danger, #e5534b);
+  font-size: 0.85rem;
+}
+
+.fs-timeline__validation {
+  font-size: 0.78rem;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.fs-timeline__validation--ok {
+  background: var(--fs-success-bg, #1b3a2b);
+  color: var(--fs-success, #4cc38a);
+}
+
+.fs-timeline__validation--error {
+  background: var(--fs-danger-bg, #3a1b1b);
+  color: var(--fs-danger, #e5534b);
+}
+
+.fs-timeline__scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+  border: 1px solid var(--fs-border, #2a2a33);
+  border-radius: 10px;
+  padding: 8px;
+  position: relative;
+}
+
+.fs-timeline__tracks {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.fs-timeline__playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--fs-accent, #6ea8fe);
+  z-index: 2;
+  pointer-events: none;
+}
+
+.fs-timeline__track {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.fs-timeline__track-label {
+  flex: 0 0 96px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  font-size: 0.72rem;
+  color: var(--fs-muted, #8a8a94);
+}
+
+.fs-timeline__track-kind {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.fs-timeline__track-lane {
+  flex: 1;
+  background: var(--fs-surface-alt, #16161c);
+  border-radius: 6px;
+}
+
+.fs-timeline__clip {
+  fill: var(--fs-accent-muted, #2c3b57);
+  stroke: var(--fs-accent, #6ea8fe);
+  stroke-width: 1;
+  cursor: grab;
+}
+
+.fs-timeline__clip:focus-visible {
+  outline: 2px solid var(--fs-accent, #6ea8fe);
+  outline-offset: 1px;
+}
+
+.fs-timeline__clip--selected {
+  fill: var(--fs-accent, #6ea8fe);
+}
+
+.fs-timeline__clip--dragging {
+  cursor: grabbing;
+  opacity: 0.8;
+}
+
+.fs-timeline__clip-label {
+  fill: var(--fs-text, #e8e8ec);
+  font-size: 10px;
+  user-select: none;
+}

@@ -6,6 +6,7 @@ import { listProjects, type Project } from '../../adapters/projects';
 import * as api from '../../adapters/creator';
 import { ModelExplorer } from './ModelExplorer';
 import { t } from '../../i18n';
+import { Timeline } from './Timeline';
 import './creator.css';
 
 /**
@@ -195,6 +196,7 @@ function LibraryPanel({
 
 function DocumentPanel({
   doc, history, loading, error, onCreate, onPatch, onReload, projectId, kinds,
+  doc, history, loading, error, onCreate, onPatch, onReload, projectId, kinds, onDocUpdated,
 }: {
   doc: api.CreatorDocument | null;
   history: api.CommandHistoryEntry[];
@@ -205,7 +207,9 @@ function DocumentPanel({
   onReload: () => void;
   projectId: string;
   kinds: string[];
+  onDocUpdated: (doc: api.CreatorDocument) => void;
 }) {
+  const [view, setView] = useState<'timeline' | 'json'>('timeline');
   const [patchText, setPatchText] = useState('{}');
   const [commandId, setCommandId] = useState('');
   const [expectedRevision, setExpectedRevision] = useState<number | ''>('');
@@ -281,6 +285,28 @@ function DocumentPanel({
       <pre className="fs-creator__json" tabIndex={0} aria-label={t('Document content (JSON)')}>
         {JSON.stringify(doc.content, null, 2)}
       </pre>
+      {doc.kind === 'timeline' && (
+        <div className="fs-creator__view-tabs" role="tablist" aria-label={t('Document view')}>
+          <button type="button" role="tab" aria-selected={view === 'timeline'}
+            className={view === 'timeline' ? 'fs-creator__view-tab fs-creator__view-tab--active' : 'fs-creator__view-tab'}
+            onClick={() => setView('timeline')} data-testid="creator-view-timeline">
+            {t('Timeline')}
+          </button>
+          <button type="button" role="tab" aria-selected={view === 'json'}
+            className={view === 'json' ? 'fs-creator__view-tab fs-creator__view-tab--active' : 'fs-creator__view-tab'}
+            onClick={() => setView('json')} data-testid="creator-view-json">
+            {t('JSON')}
+          </button>
+        </div>
+      )}
+
+      {doc.kind === 'timeline' && view === 'timeline' ? (
+        <Timeline doc={doc} onDocUpdated={onDocUpdated} onRevisionConflict={onReload} />
+      ) : (
+        <pre className="fs-creator__json" tabIndex={0} aria-label={t('Document content (JSON)')}>
+          {JSON.stringify(doc.content, null, 2)}
+        </pre>
+      )}
 
       <details className="fs-creator__history">
         <summary>{t('Command history')} ({history.length})</summary>
@@ -310,6 +336,7 @@ function DocumentPanel({
             value={expectedRevision}
             onChange={(e) => setExpectedRevision(e.target.value === '' ? '' : Number(e.target.value))}
             aria-label={t('expected_revision')}
+            onDocUpdated={setDoc}
           />
         </label>
         <label>
