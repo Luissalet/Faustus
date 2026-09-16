@@ -859,4 +859,24 @@ EXAMPLES: Dict[str, List[str]] = {
         "apply the first attempt into my working copy",
         "aplica esa alternativa, la otra descártala",
     ],
+
+    # ── Reach (R1) — canales de lectura/búsqueda con fallback real ────────
+    "reach_read": [
+        "resume este vídeo de YouTube",
+        "read this GitHub issue and its comments",
+        "qué dice este hilo de reddit",
+        "get me the text of this tweet",
+    ],
+    "reach_search": [
+        "busca repos de GitHub sobre agentes de IA",
+        "find reddit posts about local LLMs",
+        "busca papers en arxiv sobre RAG",
+        "search wikipedia for the transformer architecture",
+    ],
+    "reach_doctor": [
+        "por qué falló al leer ese enlace",
+        "which internet sources can you actually reach right now",
+        "revisa el estado de los canales de reach",
+        "check if the github channel is configured",
+    ],
 }

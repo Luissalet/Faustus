@@ -62,6 +62,7 @@ from .alternatives_tools import (
 from .code_mode_tool import RunCodeTool
 from .context_overflow_tool import ReadOverflowTool
 from .artifact_read_tool import ReadArtifactTool
+from .reach_tools import ReachReadTool, ReachSearchTool, ReachDoctorTool
 
 TOOL_HANDLERS = {
     "bash": BashTool().execute,
@@ -155,6 +156,11 @@ TOOL_HANDLERS = {
     # subprocess round instead of one model round trip per call. See
     # src/code_mode/ and src/agent_tools/code_mode_tool.py.
     "run_code": RunCodeTool().execute,
+    # Reach (R1): "eyes on the internet" channels with real, ordered backend
+    # fallback. See src/reach/ and src/agent_tools/reach_tools.py.
+    "reach_read": ReachReadTool().execute,
+    "reach_search": ReachSearchTool().execute,
+    "reach_doctor": ReachDoctorTool().execute,
 }
 # Config/integration admin tools (manage_endpoints/mcp/webhooks/tokens/settings).
 TOOL_HANDLERS.update(ADMIN_TOOL_HANDLERS)
@@ -246,7 +252,9 @@ TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_fi
              "req_propose", "req_link",
              # Isolated, comparable alternatives (CMP-13, W2-G) --
              # src/agent_tools/alternatives_tools.py.
-             "alt_start", "alt_compare", "alt_apply"} | BUILTIN_EMAIL_TOOLS | DESKTOP_TOOLS | SEMANTIC_TOOLS
+             "alt_start", "alt_compare", "alt_apply",
+             # Reach (R1) -- src/agent_tools/reach_tools.py.
+             "reach_read", "reach_search", "reach_doctor"} | BUILTIN_EMAIL_TOOLS | DESKTOP_TOOLS | SEMANTIC_TOOLS
 
 ToolBlock = namedtuple("ToolBlock", ["tool_type", "content"])
 

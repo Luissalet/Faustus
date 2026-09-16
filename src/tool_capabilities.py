@@ -545,6 +545,22 @@ _register(
     result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
 )
 _register(
+    # Reach (R1): reach_read/reach_search fetch attacker-reachable content
+    # from arbitrary channels (web, youtube, github, reddit, x, hackernews,
+    # rss, arxiv, wikipedia) -- same class as web_fetch/web_search.
+    {"reach_read", "reach_search"},
+    ToolEffect.BROKERED_NETWORK_READ,
+    ToolEffect.NETWORK_EGRESS,
+    result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
+)
+_register(
+    # reach_doctor only reports channel/backend health (ready/needs_config/
+    # unavailable + reason); live=True makes a request per backend but the
+    # RESULT is a status string Faustus derived, not attacker-controlled text.
+    {"reach_doctor"},
+    ToolEffect.READ_PRIVATE,
+)
+_register(
     # Re-acquire a tool body compaction spilled (A15) or an oversized result
     # the offload stored (A12): reads Faustus's own store, but the bytes are
     # whatever the original tool returned — external content stays external.

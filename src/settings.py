@@ -922,6 +922,24 @@ DEFAULT_SETTINGS = {
     # HarnessRevision is trusted — bounded so a bad candidate is caught
     # cheaply rather than adopted on one lucky pass.
     "harness_evolution_canary_runs": 5,
+    # Reach (R1, src/reach/): "eyes on the internet" channels (web, youtube,
+    # github, reddit, x, hackernews, rss, arxiv, wikipedia). Per-channel
+    # credentials live at "reach_<channel>_token", secret_storage-encrypted
+    # (`enc:` prefix) at rest same as oidc_client_secret above; read back
+    # through src.reach.credentials.get_token, never logged or returned by
+    # reach_doctor/reach_read/reach_search.
+    "reach_github_token": "",
+    "reach_reddit_token": "",
+    "reach_x_token": "",
+    # Jina Reader (r.jina.ai) fallback: on by default (no auth needed for
+    # basic use); an API key raises its rate limit.
+    "reach_jina_enabled": True,
+    "reach_jina_api_key": "",
+    # Self-hosted Nitter instance for X search when no browser session is
+    # available (src/reach/x.py). Empty -> X search only works through an
+    # active browser session; reach_doctor reports "unavailable" honestly
+    # instead of pretending a public search API exists.
+    "reach_nitter_base": "",
 }
 
 

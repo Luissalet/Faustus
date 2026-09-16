@@ -2606,6 +2606,51 @@ FUNCTION_TOOL_SCHEMAS = [
             }
         }
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "reach_read",
+            "description": "Read a URL (or a channel-native id) from any of Faustus's Reach channels -- generic web pages, YouTube (transcript + top comments), GitHub (repo/README or an issue/PR with comments), Reddit (thread or subreddit listing), X/Twitter (a single post), Hacker News (item + comments), RSS/Atom feeds, arXiv (abstract) and Wikipedia (summary). Tries each channel's backends in real order and falls back automatically when one fails -- the result reports which backend actually served it (`backend`) and how trustworthy the content is (`source_trust`: public_api > mirror > scrape > browser_session). Prefer this over web_fetch for these platforms: it returns clean text plus structured `items` (comments/replies) that a generic fetch would not extract.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string", "description": "URL or channel-native id to read (e.g. a YouTube link, a GitHub repo/issue URL, a Reddit thread URL, an X status URL, an arXiv id, a Wikipedia title)"},
+                    "channel": {"type": "string", "description": "Force a specific channel instead of auto-detecting it from the URL", "enum": ["web", "youtube", "github", "reddit", "x", "hackernews", "rss", "arxiv", "wikipedia"]}
+                },
+                "required": ["url"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "reach_search",
+            "description": "Search within one or more Reach channels (github repos/code, reddit posts, hackernews stories, arxiv papers, wikipedia articles; X search only works through an active browser session or a configured Nitter mirror and otherwise reports unavailable rather than inventing results). Defaults to the web channel when no channels are given. Returns each hit's title/url/snippet plus which backend served it.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Search query"},
+                    "channels": {"type": "array", "items": {"type": "string", "enum": ["web", "youtube", "github", "reddit", "x", "hackernews", "rss", "arxiv", "wikipedia"]}, "description": "Which channels to search (default: [\"web\"])"},
+                    "limit": {"type": "integer", "description": "Max results per channel (default 10)"}
+                },
+                "required": ["query"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "reach_doctor",
+            "description": "Health check for every Reach channel/backend: which are ready, which need configuration (missing token/optional package), which are unavailable, and which backend is active per channel -- with an 'N/M channels ready' summary. Costs no quota by default; pass live=true to make one real, cheap, cached request per backend instead of only checking config presence. Never returns token/cookie values. Use this before relying on a channel, or when a reach_read/reach_search call failed and the reason is unclear.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "live": {"type": "boolean", "description": "Make one real cheap request per backend instead of a config-only check (default false)"}
+                },
+                "required": []
+            }
+        }
+    },
 ]
 
 

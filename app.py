@@ -1397,6 +1397,10 @@ app.include_router(setup_contacts_routes())
 from companion import setup_companion_routes
 app.include_router(setup_companion_routes())
 
+# Reach (R1) — eyes-on-the-internet channels.
+from routes.reach_routes import setup_reach_routes
+app.include_router(setup_reach_routes())
+
 # ========= ROUTES (kept in app.py) =========
 
 @app.get("/")
