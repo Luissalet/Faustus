@@ -2848,6 +2848,84 @@ FUNCTION_TOOL_SCHEMAS = [
             }
         }
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "goal_define",
+            "description": "Create a Goal (WP27, Creator): an executable target with typed, checkable acceptance criteria -- never prose. Each criterion is test_passes{cmd}, file_exists{path}, artifact_present{occurrence_id|kind}, http_ok{url}, doc_revision_at_least{doc_id,revision}, or custom_check{tool,args,expect}. floor (optional) names which criteria must pass for 'done' (defaults to every criterion marked required). ceiling (optional) is the hard stop -- max_rounds/max_tokens/max_seconds/max_cost_usd -- after which the goal stops trying even if it is not done. Requires creator_enabled.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "project_id": {"type": "string", "description": "The project this goal belongs to"},
+                    "statement": {"type": "string", "description": "What the goal is, in one or two sentences -- for humans, not evaluated"},
+                    "acceptance": {
+                        "type": "array",
+                        "description": "Non-empty list of typed criteria",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {"type": "string", "description": "Stable id for this criterion (auto-generated if omitted)"},
+                                "kind": {"type": "string", "enum": ["test_passes", "file_exists", "artifact_present", "http_ok", "doc_revision_at_least", "custom_check"]},
+                                "spec": {"type": "object", "description": "Kind-specific fields, e.g. {\"cmd\": \"pytest tests/test_x.py\"} or {\"path\": \"dist/out.mp4\"}"},
+                                "required": {"type": "boolean", "description": "Counts toward the floor. Default true"},
+                                "description": {"type": "string"}
+                            },
+                            "required": ["kind", "spec"]
+                        }
+                    },
+                    "floor": {"type": "object", "description": "Optional {\"required_criterion_ids\": [...]} overriding which criteria must pass"},
+                    "ceiling": {"type": "object", "description": "Optional {\"max_rounds\":int, \"max_tokens\":int, \"max_seconds\":number, \"max_cost_usd\":number}"},
+                    "no_progress_limit": {"type": "integer", "description": "Consecutive evaluations with an unchanged unmet set before the goal blocks (default 2)"}
+                },
+                "required": ["project_id", "statement", "acceptance"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "goal_status",
+            "description": "Read a Goal's current state (WP27, Creator): status, floor/ceiling, usage, append-only evidence, no_progress_streak, and the next concrete step. Pass goal_id for one goal, or project_id alone to list every goal for that project. Read-only -- never runs a checker (use goal_evaluate for that). Requires creator_enabled.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "goal_id": {"type": "string", "description": "The goal to read"},
+                    "project_id": {"type": "string", "description": "List every goal for this project (used only when goal_id is omitted)"}
+                }
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "goal_evaluate",
+            "description": "Run every acceptance criterion of a Goal for REAL (subprocess for test_passes, filesystem for file_exists, the artifact store for artifact_present, an HTTP probe for http_ok, another Creator document's revision for doc_revision_at_least) and decide the goal's next status from that evidence alone: done (floor met), ceiling_reached (hard stop crossed), blocked (no new evidence across no_progress_limit evaluations), progressing, or open. This is the ONLY way a goal can become done -- a convincing message never does. Requires creator_enabled.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "goal_id": {"type": "string", "description": "The goal to evaluate"},
+                    "workspace": {"type": "string", "description": "Working directory for test_passes/file_exists criteria (defaults to the active workspace)"}
+                },
+                "required": ["goal_id"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "goal_evidence",
+            "description": "Attach one evidence ref for a Goal criterion (WP27, Creator). The ref is independently re-verified against that criterion's own real checker before anything is recorded -- an unverifiable or mismatched ref is refused and nothing is written. Even a verified entry never marks the goal done by itself; call goal_evaluate for that. Requires creator_enabled.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "goal_id": {"type": "string"},
+                    "criterion_id": {"type": "string", "description": "One of the goal's acceptance criterion ids"},
+                    "ref": {"type": "string", "description": "The concrete, checkable reference this evidence claims (a file path, an occurrence id, a URL, an exit code label -- whatever that criterion's kind checks)"}
+                },
+                "required": ["goal_id", "criterion_id", "ref"]
+            }
+        }
+    },
 ]
 
 

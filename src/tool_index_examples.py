@@ -952,4 +952,29 @@ EXAMPLES: Dict[str, List[str]] = {
         "ponle una marca de agua que diga BORRADOR",
         "cuántas páginas tiene este documento",
     ],
+
+    # ── Goal with completion by evidence (WP27, Creator) ────────────────────
+    "goal_define": [
+        "define qué significa que esto esté terminado",
+        "set the acceptance criteria for this task before you start",
+        "quiero un techo de coste para esta tarea, que pare si se pasa",
+        "create a goal that only counts as done when the tests pass and the file exists",
+    ],
+    "goal_status": [
+        "cómo va el objetivo del proyecto",
+        "what's left before this goal is done",
+        "muéstrame la evidencia acumulada de ese goal",
+        "list the goals for this project",
+    ],
+    "goal_evaluate": [
+        "comprueba de verdad si el objetivo está cumplido",
+        "actually verify the acceptance criteria, don't just tell me it's done",
+        "run the real check before you claim this is finished",
+        "está esto realmente terminado o solo lo dices",
+    ],
+    "goal_evidence": [
+        "aquí está el archivo que cumple ese criterio",
+        "attach this artifact as evidence for the goal",
+        "this URL is the proof for that criterion",
+    ],
 }

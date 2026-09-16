@@ -272,6 +272,12 @@ BUILTIN_TOOL_DESCRIPTIONS: Dict[str, str] = {
     # extract, rotate, reorder, delete pages, metadata, compress, watermark,
     # page count, and optional to_images/ocr. src/pdf_ops.py + src/agent_tools/pdf_ops_tool.py.
     "pdf_ops": "PDF operations: merge several PDFs into one, split by page ranges, extract a subset of pages, rotate pages, reorder every page, delete pages, read/write metadata (title/author/subject/keywords), compress (re-encode + dedupe, reports bytes before/after), watermark_text (diagonal stamp), page_count, to_images (rasterize to PNG, optional dependency), ocr (add a searchable text layer, needs the ocrmypdf CLI). Use for 'combina estos PDFs', 'split this PDF into chapters', 'rotate page 3', 'quita las últimas dos páginas', 'shrink this PDF', 'add a DRAFT watermark', 'how many pages does this have', 'make this scanned PDF searchable'.",
+    # Goal with completion by evidence (WP27, Creator): typed, checkable
+    # acceptance criteria plus a floor and a ceiling — src/creator/goal.py.
+    "goal_define": "Create a Goal (Creator): an executable target with typed, checkable acceptance criteria — test_passes, file_exists, artifact_present, http_ok, doc_revision_at_least, custom_check — never prose. Takes an optional floor (which criteria must pass) and ceiling (max rounds/tokens/seconds/cost — a hard stop). Use for 'define what done means for this', 'set the acceptance criteria', 'give this task a budget ceiling'.",
+    "goal_status": "Read a Goal's current state: status, evidence, usage against its ceiling, and the next concrete step — read-only, never runs a checker. Use for 'how's the goal doing', 'what goals does this project have', 'what's left to finish'.",
+    "goal_evaluate": "Run every acceptance criterion of a Goal for real — subprocess, filesystem, artifact store, HTTP, another document's revision — and decide done/blocked/progressing/ceiling_reached from that evidence alone. The only way a goal becomes done. Use for 'check if the goal is actually done', 'verify the acceptance criteria', 'am I really finished'.",
+    "goal_evidence": "Attach one evidence ref for a Goal criterion; the ref is independently re-verified against that criterion's real checker before anything is recorded, and never marks the goal done by itself. Use for 'here's the file/artifact/URL that satisfies this criterion'.",
 }
 
 

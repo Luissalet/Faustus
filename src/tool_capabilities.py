@@ -609,6 +609,36 @@ _register(
     ToolEffect.WRITE_WORKSPACE,
     result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED,
 )
+_register(
+    # Goal (WP27, Creator, src/agent_tools/goal_tools.py): goal_status only
+    # reads the goal's own private ledger under DATA_DIR/creator/goals.db.
+    {"goal_status"},
+    ToolEffect.READ_PRIVATE,
+)
+_register(
+    # goal_define writes a new goal row to that same private ledger — no
+    # workspace file, no network, no shell.
+    {"goal_define"},
+    ToolEffect.WRITE_PRIVATE,
+)
+_register(
+    # goal_evaluate runs the goal's own typed checkers for real, and a
+    # test_passes criterion is a subprocess call (the SAME class bash/
+    # manage_scripts already carry) even though the command was fixed at
+    # goal_define time rather than chosen by this call.
+    {"goal_evaluate"},
+    ToolEffect.EXECUTE_CODE,
+    ToolEffect.WRITE_PRIVATE,
+    result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED,
+)
+_register(
+    # goal_evidence independently re-verifies the ref against the same real
+    # checker before writing anything — same effect class as goal_evaluate.
+    {"goal_evidence"},
+    ToolEffect.EXECUTE_CODE,
+    ToolEffect.WRITE_PRIVATE,
+    result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED,
+)
 
 
 TOOL_CAPABILITIES: Mapping[str, ToolCapabilities] = MappingProxyType(dict(_REGISTRY))
