@@ -1,0 +1,377 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:faustus:creator-plan:reference:deployment-manifest:1",
+  "title": "REFERENCE ONLY — deployment-manifest",
+  "description": "Contrato de diseño ilustrativo. No es una API existente ni prueba de validación de seguridad del runtime.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "example_only": {
+      "type": "boolean"
+    },
+    "deployment_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "model_spec_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "weights_revision": {
+      "type": "string",
+      "minLength": 1
+    },
+    "engine": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "build_digest": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "version",
+        "build_digest"
+      ]
+    },
+    "endpoint_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "configuration": {
+      "type": "object"
+    },
+    "configuration_fingerprint": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "availability": {
+      "enum": [
+        "discovered",
+        "installed",
+        "connected",
+        "contract_fixture_only",
+        "task_verified",
+        "unknown"
+      ]
+    },
+    "tasks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "support": {
+            "enum": [
+              "declared",
+              "verified",
+              "unsupported",
+              "unknown"
+            ]
+          },
+          "required_inputs": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 0,
+            "uniqueItems": true
+          },
+          "input_schema": {
+            "type": "object"
+          },
+          "output_media_types": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 0,
+            "uniqueItems": true
+          },
+          "evidence_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 0,
+            "uniqueItems": true
+          }
+        },
+        "required": [
+          "task_id",
+          "support",
+          "required_inputs",
+          "input_schema",
+          "output_media_types",
+          "evidence_ids"
+        ]
+      },
+      "minItems": 1
+    },
+    "resources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "resource_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "kind": {
+            "enum": [
+              "gpu",
+              "ram_commit",
+              "cpu",
+              "scratch_disk",
+              "remote_quota"
+            ]
+          },
+          "requested_bytes": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(0|[1-9][0-9]*)$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "amount_source": {
+            "enum": [
+              "estimate",
+              "measured",
+              "unknown",
+              "fixture"
+            ]
+          }
+        },
+        "required": [
+          "resource_id",
+          "kind",
+          "requested_bytes",
+          "amount_source"
+        ]
+      },
+      "minItems": 0
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "state": {
+            "enum": [
+              "declared",
+              "tested_pass",
+              "tested_fail",
+              "unknown",
+              "legacy_unknown"
+            ]
+          },
+          "scope": {
+            "enum": [
+              "weights",
+              "deployment",
+              "task_fixture"
+            ]
+          },
+          "source_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "source_revision": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "observed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "method": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "id",
+          "state",
+          "scope",
+          "source_id",
+          "source_revision",
+          "observed_at",
+          "method"
+        ]
+      },
+      "minItems": 1
+    },
+    "privacy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "route": {
+          "enum": [
+            "local",
+            "remote",
+            "fixture"
+          ]
+        },
+        "outbound_allowed": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "route",
+        "outbound_allowed"
+      ]
+    },
+    "cost": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "currency": {
+          "enum": [
+            "EUR",
+            "USD"
+          ]
+        },
+        "rate": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[0-9]+(\\.[0-9]+)?$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "unit": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "state": {
+          "enum": [
+            "quoted",
+            "measured",
+            "unknown",
+            "fixture"
+          ]
+        }
+      },
+      "required": [
+        "currency",
+        "rate",
+        "unit",
+        "state"
+      ]
+    },
+    "rights": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "enum": [
+            "reviewed_allowed",
+            "restricted",
+            "unknown",
+            "not_applicable"
+          ]
+        },
+        "weights": {
+          "enum": [
+            "reviewed_allowed",
+            "restricted",
+            "unknown",
+            "not_applicable"
+          ]
+        },
+        "references": {
+          "enum": [
+            "reviewed_allowed",
+            "restricted",
+            "unknown",
+            "not_applicable"
+          ]
+        }
+      },
+      "required": [
+        "code",
+        "weights",
+        "references"
+      ]
+    }
+  },
+  "required": [
+    "schema_version",
+    "example_only",
+    "deployment_id",
+    "model_spec_id",
+    "weights_revision",
+    "engine",
+    "endpoint_id",
+    "configuration",
+    "configuration_fingerprint",
+    "availability",
+    "tasks",
+    "resources",
+    "evidence",
+    "privacy",
+    "cost",
+    "rights"
+  ]
+}

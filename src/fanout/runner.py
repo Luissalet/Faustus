@@ -24,6 +24,7 @@ import logging
 import os
 import re
 import shlex
+import subprocess
 import time
 import uuid
 from typing import Any, Awaitable, Callable, Dict, List, Optional
@@ -343,7 +344,10 @@ async def _run_one_candidate(run_id: str, owner: str, exp_id: str, cand: Dict[st
         from src import project_tests
         spec = project_tests.detect_test_command(alt_path, override=None)
         if spec and spec.get("argv"):
-            command = shlex.join(spec["argv"])
+            # alternatives.run_tests re-splits this with shlex(posix=os.name!="nt"):
+            # on Windows POSIX quoting would leave literal quotes in argv.
+            command = (subprocess.list2cmdline(spec["argv"]) if os.name == "nt"
+                       else shlex.join(spec["argv"]))
             tests_result = alternatives.run_tests(owner, exp_id, cand["alt_id"], command,
                                                     timeout=DEFAULT_TEST_TIMEOUT)
             cand["tests"] = tests_result

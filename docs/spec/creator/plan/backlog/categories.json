@@ -1,0 +1,255 @@
+[
+  {
+    "code": "UX",
+    "title": "Creator como espacio de trabajo",
+    "source_ids": [
+      "F01",
+      "F12",
+      "F17"
+    ],
+    "baseline": "Existen proyectos, Chat/Agent, adjuntos y workbench; no se verificó un espacio Creator integral.",
+    "touchpoints": [
+      "services/projects.py",
+      "studio/src"
+    ]
+  },
+  {
+    "code": "AST",
+    "title": "Biblioteca y conocimiento multimedia",
+    "source_ids": [
+      "F01",
+      "F05",
+      "F12",
+      "F13",
+      "A06",
+      "W03"
+    ],
+    "baseline": "Hay artifact store con bytes/occurrences y enlaces de contexto; ampliar metadatos y navegación en vez de crear otro almacén.",
+    "touchpoints": [
+      "src/artifact_store.py",
+      "src/artifact_identity.py",
+      "src/provenance_graph.py",
+      "src/project_export.py"
+    ]
+  },
+  {
+    "code": "IMG",
+    "title": "Imagen, diseño y canvas",
+    "source_ids": [
+      "F04",
+      "F05",
+      "F16",
+      "A06",
+      "W02",
+      "W04"
+    ],
+    "baseline": "Hay editor por capas/máscaras, transformaciones y recetas ComfyUI; el compositor y el conditioning requieren profundización.",
+    "touchpoints": [
+      "src/media_edit_projects.py",
+      "src/media_workflows.py",
+      "config/media_workflows",
+      "studio/src/adapters/imageTools.ts"
+    ]
+  },
+  {
+    "code": "VID",
+    "title": "Vídeo, montaje y producción",
+    "source_ids": [
+      "F01",
+      "F02",
+      "F03",
+      "A07",
+      "A08",
+      "A09",
+      "A10",
+      "A11",
+      "W05"
+    ],
+    "baseline": "Hay vídeo local acotado y renders ComfyUI; no se localizó un NLE integral. OpenCut orienta UX, no prueba que su reescritura esté lista.",
+    "touchpoints": [
+      "services/local_video.py",
+      "src/media_runs.py",
+      "src/workflows",
+      "src/creator (propuesto)"
+    ]
+  },
+  {
+    "code": "SUB",
+    "title": "Subtítulos, traducción y localización",
+    "source_ids": [
+      "F06",
+      "F07",
+      "A03",
+      "A04"
+    ],
+    "baseline": "Existen segmentos y SRT/VTT; alineación por palabra, glosarios y localización profunda son extensiones. Los límites de VideoLingo no se heredan como soluciones.",
+    "touchpoints": [
+      "services/local_video.py",
+      "src/media_subtitles.py",
+      "services/speech_runtime.py"
+    ]
+  },
+  {
+    "code": "AUD",
+    "title": "Voz, sonido y edición de audio",
+    "source_ids": [
+      "F01",
+      "F07",
+      "A04",
+      "A05",
+      "W08"
+    ],
+    "baseline": "Jarvis y narración local existen; el doblaje actual no debe presentarse como clonación, lip-sync o mezcla multipista.",
+    "touchpoints": [
+      "services/speech_runtime.py",
+      "services/local_video.py",
+      "src/media_consent.py",
+      "src/media_transforms.py"
+    ]
+  },
+  {
+    "code": "MUS",
+    "title": "Music Studio y canciones",
+    "source_ids": [
+      "A01",
+      "A02",
+      "W09",
+      "F02",
+      "F04"
+    ],
+    "baseline": "No se verificó Music Studio integrado; ACE-Step es investigación adicional independiente de los posts de X.",
+    "touchpoints": [
+      "src/media_backends",
+      "src/media_runs.py",
+      "config/media_workflows",
+      "src/creator/music.py (propuesto)"
+    ]
+  },
+  {
+    "code": "MOD",
+    "title": "Model intelligence y configuración operativa",
+    "source_ids": [
+      "F08",
+      "F09",
+      "F10",
+      "F07",
+      "A01",
+      "A05",
+      "A06",
+      "A09",
+      "A10",
+      "W01",
+      "W04"
+    ],
+    "baseline": "Faustus ya tiene metadatos ricos, lectores, calibración y launch receipts. Extender y unificar sus autoridades; no reemplazarlas por un catálogo de nombres.",
+    "touchpoints": [
+      "src/model_capabilities.py",
+      "src/model_calibration.py",
+      "src/model_capability_readers",
+      "src/model_router.py",
+      "src/inference_capabilities.py",
+      "src/launch_receipts.py"
+    ]
+  },
+  {
+    "code": "RES",
+    "title": "Recursos, colas y fiabilidad",
+    "source_ids": [
+      "F02",
+      "F03",
+      "F11",
+      "F14",
+      "F07"
+    ],
+    "baseline": "Existen admission, topology, memory budget, media outbox y scheduler; su integración exacta debe reauditarse. Preservar modo conservador.",
+    "touchpoints": [
+      "src/resource_admission.py",
+      "src/vram_admission.py",
+      "src/gpu_topology.py",
+      "src/memory_budget.py",
+      "src/media_runs.py"
+    ]
+  },
+  {
+    "code": "ORC",
+    "title": "Orquestación, continuidad y equipos",
+    "source_ids": [
+      "F01",
+      "F10",
+      "F12",
+      "D01",
+      "D02",
+      "D03",
+      "W06",
+      "W07"
+    ],
+    "baseline": "Faustus ya dispone de workflows, completion, budgets, teams, Council y compacción; mejorar sus invariantes y UX sin añadir otro orquestador central.",
+    "touchpoints": [
+      "src/workflows",
+      "src/completion_engine",
+      "src/context_compactor.py",
+      "src/dispatch.py",
+      "src/agent_runs.py",
+      "src/attention.py"
+    ]
+  },
+  {
+    "code": "EXT",
+    "title": "MCP, extensiones y distribución",
+    "source_ids": [
+      "D04",
+      "D06",
+      "D07",
+      "D08",
+      "D09",
+      "F01",
+      "F08"
+    ],
+    "baseline": "MCP, skills, presets y apps externas existen. Adoptar lifecycle y UX útiles sin reemplazar transportes ni copiar código sin licencia.",
+    "touchpoints": [
+      "src/mcp_manager.py",
+      "src/extension_manifest.py",
+      "src/skill_import_review.py",
+      "src/preset_manager.py",
+      "src/builtin_mcp.py"
+    ]
+  },
+  {
+    "code": "QA",
+    "title": "Calidad, migración y seguridad",
+    "source_ids": [
+      "F01",
+      "F02",
+      "F04",
+      "F05",
+      "F07",
+      "F15",
+      "D04",
+      "A03"
+    ],
+    "baseline": "Existe infraestructura amplia de pruebas y permisos. Ampliar cobertura con observaciones reproducibles; no declarar todo probado por leer el README.",
+    "touchpoints": [
+      "tests",
+      "studio/checks",
+      "src/media_consent.py",
+      "src/provider_policy.py",
+      "src/artifact_migration.py"
+    ]
+  },
+  {
+    "code": "ADV",
+    "title": "Expansiones ambiciosas posteriores",
+    "source_ids": [
+      "A06",
+      "A09",
+      "D04",
+      "A01"
+    ],
+    "baseline": "Opciones de producto propuestas, no funcionalidades verificadas en Faustus ni promesas de los posts de X.",
+    "touchpoints": [
+      "src/creator (propuesto)",
+      "src/mcp_manager.py",
+      "src/bench"
+    ]
+  }
+]
