@@ -4,7 +4,6 @@ import { RefreshCw, FileWarning, Sparkles } from 'lucide-react';
 import { Button, EmptyState, Skeleton, Toast } from '../../components';
 import { listProjects, type Project } from '../../adapters/projects';
 import * as api from '../../adapters/creator';
-import { ModelExplorer } from './ModelExplorer';
 import { t } from '../../i18n';
 import { Timeline } from './Timeline';
 import './creator.css';
@@ -195,7 +194,6 @@ function LibraryPanel({
 // ── center zone: active document ────────────────────────────────────────
 
 function DocumentPanel({
-  doc, history, loading, error, onCreate, onPatch, onReload, projectId, kinds,
   doc, history, loading, error, onCreate, onPatch, onReload, projectId, kinds, onDocUpdated,
 }: {
   doc: api.CreatorDocument | null;
@@ -282,9 +280,6 @@ function DocumentPanel({
 
       {error && <p className="fs-creator__error" role="alert">{error}</p>}
 
-      <pre className="fs-creator__json" tabIndex={0} aria-label={t('Document content (JSON)')}>
-        {JSON.stringify(doc.content, null, 2)}
-      </pre>
       {doc.kind === 'timeline' && (
         <div className="fs-creator__view-tabs" role="tablist" aria-label={t('Document view')}>
           <button type="button" role="tab" aria-selected={view === 'timeline'}
@@ -336,7 +331,6 @@ function DocumentPanel({
             value={expectedRevision}
             onChange={(e) => setExpectedRevision(e.target.value === '' ? '' : Number(e.target.value))}
             aria-label={t('expected_revision')}
-            onDocUpdated={setDoc}
           />
         </label>
         <label>
@@ -512,13 +506,10 @@ function PreflightCard({ projectId, deployments }: { projectId: string; deployme
 
 // ── screen ───────────────────────────────────────────────────────────────
 
-type CreatorTab = 'workspace' | 'models';
-
 export function CreatorScreen() {
   const [params, setParams] = useSearchParams();
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectId, setProjectIdState] = useState(params.get('project') ?? '');
-  const [tab, setTab] = useState<CreatorTab>(params.get('tab') === 'models' ? 'models' : 'workspace');
   const [caps, setCaps] = useState<api.CreatorCapabilities | 'disabled' | null>(null);
   const [libraryItems, setLibraryItems] = useState<api.LibraryItem[]>([]);
   const [libraryLoading, setLibraryLoading] = useState(false);
@@ -540,15 +531,6 @@ export function CreatorScreen() {
       const next = new URLSearchParams(prev);
       if (id) next.set('project', id); else next.delete('project');
       return next;
-    }, { replace: true });
-  }, [setParams]);
-
-  const changeTab = useCallback((next: CreatorTab) => {
-    setTab(next);
-    setParams((prev) => {
-      const p = new URLSearchParams(prev);
-      if (next === 'models') p.set('tab', 'models'); else p.delete('tab');
-      return p;
     }, { replace: true });
   }, [setParams]);
 
@@ -675,63 +657,35 @@ export function CreatorScreen() {
       )}
 
       {projectId && enabled && (
-        <>
-          <div className="fs-creator__tabs" role="tablist" aria-label={t('Creator sections')}>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={tab === 'workspace'}
-              className="fs-creator__tab"
-              onClick={() => changeTab('workspace')}
-              data-testid="creator-tab-workspace"
-            >
-              {t('Workspace')}
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={tab === 'models'}
-              className="fs-creator__tab"
-              onClick={() => changeTab('models')}
-              data-testid="creator-tab-models"
-            >
-              {t('Models')}
-            </button>
-          </div>
-
-          {tab === 'workspace' && (
-            <div className="fs-creator__grid" role="group" aria-label={t('Creator workspace')}>
-              <LibraryPanel
-                projectId={projectId}
-                filter={filter}
-                onFilterChange={setFilter}
-                activeDocId={docId}
-                onOpen={openLibraryItem}
-                items={libraryItems}
-                loading={libraryLoading}
-                error={libraryError}
-              />
-              <DocumentPanel
-                doc={doc}
-                history={history}
-                loading={docLoading}
-                error={docError}
-                onCreate={(kind) => void createDoc(kind)}
-                onPatch={patchDoc}
-                onReload={reloadDoc}
-                projectId={projectId}
-                kinds={kinds}
-              />
-              <aside className="fs-creator__right" aria-label={t('Capabilities and resources')}>
-                <ResourcesCard resources={resources} />
-                <DeploymentsCard deployments={deployments} />
-                <PreflightCard projectId={projectId} deployments={deployments} />
-              </aside>
-            </div>
-          )}
-
-          {tab === 'models' && <ModelExplorer projectId={projectId} />}
-        </>
+        <div className="fs-creator__grid" role="group" aria-label={t('Creator workspace')}>
+          <LibraryPanel
+            projectId={projectId}
+            filter={filter}
+            onFilterChange={setFilter}
+            activeDocId={docId}
+            onOpen={openLibraryItem}
+            items={libraryItems}
+            loading={libraryLoading}
+            error={libraryError}
+          />
+          <DocumentPanel
+            doc={doc}
+            history={history}
+            loading={docLoading}
+            error={docError}
+            onCreate={(kind) => void createDoc(kind)}
+            onPatch={patchDoc}
+            onReload={reloadDoc}
+            projectId={projectId}
+            kinds={kinds}
+            onDocUpdated={setDoc}
+          />
+          <aside className="fs-creator__right" aria-label={t('Capabilities and resources')}>
+            <ResourcesCard resources={resources} />
+            <DeploymentsCard deployments={deployments} />
+            <PreflightCard projectId={projectId} deployments={deployments} />
+          </aside>
+        </div>
       )}
 
       {toast && <Toast>{toast}</Toast>}
