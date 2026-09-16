@@ -73,15 +73,71 @@ DEFAULT_DST_AMBIGUITY_POLICY = "run_once"
 
 #: What a recurrence that was due while nothing was watching (the machine
 #: was off, the scheduler was down) does once it comes back:
-#:   fire_immediately — the historical behavior: an overdue task is pushed to
-#:                       fire shortly after startup, same as any other catch-up.
-#:   skip             — the missed occurrence is abandoned; `next_run` moves
-#:                       straight to the next FUTURE occurrence instead, so a
-#:                       task that was due three times while the team was
-#:                       offline for three hours runs zero times for that gap,
-#:                       not three (and not once late, either).
-MISFIRE_POLICIES = ("fire_immediately", "skip")
+#:   fire_immediately  — the historical name for `fire_once` (kept as an
+#:                        accepted alias so every task/test written before
+#:                        A24 keeps meaning exactly what it always meant):
+#:                        an overdue task is pushed to fire shortly after
+#:                        startup, once, no matter how many occurrences it
+#:                        missed.
+#:   fire_once          — A24's name for the same policy (docs/spec/paridad/
+#:                         SCHEDULER_POLITICA.md's contract vocabulary). The
+#:                         two are interchangeable in every stored/returned
+#:                         value; `get_task_policy` never normalizes one into
+#:                         the other, so a task that declared "fire_immediately"
+#:                         keeps reading back exactly that string.
+#:   skip                — the missed occurrence(s) are abandoned; `next_run`
+#:                         moves straight to the next FUTURE occurrence
+#:                         instead, so a task that was due three times while
+#:                         the team was offline for three hours runs zero
+#:                         times for that gap, not three (and not once late,
+#:                         either).
+#:   catch_up_max:k      — up to `k` of the missed occurrences are actually
+#:                         run, each carrying ITS OWN original scheduled
+#:                         instant (and so its own `fire_key` — see
+#:                         `occurrence_key`/`claim_fire_key`), oldest first;
+#:                         anything beyond the k-th missed occurrence is
+#:                         abandoned exactly like `skip`. `k` is a positive
+#:                         integer; `_parse_misfire_policy` is the one place
+#:                         that parses/validates the suffix.
+#:
+#: The stored/returned default is still the literal `"fire_immediately"` —
+#: unchanged on purpose: `tests/test_auto_02_task_dst_misfire.py` and other
+#: pre-A24 code compare `get_task_policy(...)["misfire_policy"]` against
+#: this exact string, and `fire_once` is defined above to mean precisely
+#: the same thing, so nothing observable changes for a task that never
+#: declares a policy. A24 tasks that want the contract's own vocabulary can
+#: declare `misfire_policy="fire_once"` explicitly and get it back
+#: unchanged (see `_parse_misfire_policy`, which treats both identically).
+MISFIRE_POLICIES = ("fire_immediately", "fire_once", "skip")
 DEFAULT_MISFIRE_POLICY = "fire_immediately"
+
+#: `catch_up_max:<k>` — a positive integer suffix. Compiled once at import
+#: time rather than per validation call.
+_CATCH_UP_MAX_RE = re.compile(r"^catch_up_max:([1-9]\d*)$")
+
+
+def _parse_misfire_policy(policy: str | None) -> tuple[str, int | None]:
+    """Normalize a stored/declared `misfire_policy` string to `(kind, k)`.
+
+    `kind` is one of `"fire_once"` (covers both `fire_once` and the
+    `fire_immediately` alias), `"skip"`, or `"catch_up_max"` (with `k` the
+    parsed cap); an unrecognized or `None` value falls back to the default
+    the same way an unrecognized `dst_ambiguity_policy` does in
+    `compute_next_run`, rather than raising deep inside the startup sweep.
+    """
+    if policy in ("fire_immediately", "fire_once"):
+        return "fire_once", None
+    if policy == "skip":
+        return "skip", None
+    if policy:
+        m = _CATCH_UP_MAX_RE.match(policy)
+        if m:
+            return "catch_up_max", int(m.group(1))
+    return _parse_misfire_policy(DEFAULT_MISFIRE_POLICY)
+
+
+def _valid_misfire_policy(policy: str) -> bool:
+    return policy in MISFIRE_POLICIES or bool(_CATCH_UP_MAX_RE.match(policy or ""))
 
 
 def _dst_resolve(local_naive: datetime, tz, policy: str):
@@ -194,6 +250,29 @@ def _policy_connect():
             conn.commit()
     except Exception:
         logger.warning("task_policies.connector_ids migration failed", exc_info=True)
+    # A24: queue of still-owed catch-up instants for a `catch_up_max:k` task
+    # (see `_set_catchup_pending`/`_pop_catchup_pending`). Same idempotent
+    # ALTER pattern as `connector_ids` just above.
+    try:
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(task_policies)")]
+        if "catchup_pending_json" not in cols:
+            conn.execute("ALTER TABLE task_policies ADD COLUMN catchup_pending_json TEXT")
+            conn.commit()
+    except Exception:
+        logger.warning("task_policies.catchup_pending_json migration failed", exc_info=True)
+    # A24: the deduplication table. `fire_key` is the PRIMARY KEY, so the
+    # database itself — not a Python `if` — is what rejects a second insert
+    # for the same occurrence; see `claim_fire_key`.
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS scheduler_fire_log (
+            fire_key TEXT PRIMARY KEY,
+            task_id TEXT NOT NULL,
+            scheduled_at TEXT,
+            claimed_at TEXT NOT NULL,
+            worker_id TEXT NOT NULL
+        )
+    """)
+    conn.commit()
     return conn
 
 
@@ -222,8 +301,9 @@ def set_task_policy(task_id: str, *, dst_ambiguity_policy: str | None = None,
     """
     if dst_ambiguity_policy is not None and dst_ambiguity_policy not in DST_AMBIGUITY_POLICIES:
         raise ValueError(f"dst_ambiguity_policy must be one of {DST_AMBIGUITY_POLICIES}")
-    if misfire_policy is not None and misfire_policy not in MISFIRE_POLICIES:
-        raise ValueError(f"misfire_policy must be one of {MISFIRE_POLICIES}")
+    if misfire_policy is not None and not _valid_misfire_policy(misfire_policy):
+        raise ValueError(
+            f"misfire_policy must be one of {MISFIRE_POLICIES} or 'catch_up_max:<k>'")
     if budget_preset is not None and budget_preset not in _BUDGET_PRESETS:
         raise ValueError(f"budget_preset must be one of {_BUDGET_PRESETS}")
     current = get_task_policy(task_id)
@@ -312,6 +392,56 @@ def _get_run_all_pending(task_id: str) -> str | None:
         conn.close()
     return row["run_all_pending_at"] if row and row["run_all_pending_at"] else None
 
+
+def _set_catchup_pending(task_id: str, when_isos: list[str]) -> None:
+    """Remember the still-owed catch-up instants for a `catch_up_max:k`
+    task, oldest first. `[]`/`None` clears it. Read by
+    `TaskScheduler._next_moment_after`, which drains one entry per call —
+    the same one-pending-slot-at-a-time shape `_set_run_all_pending` uses
+    for its own (unrelated) follow-up occurrence."""
+    conn = _policy_connect()
+    try:
+        payload = json.dumps(list(when_isos)) if when_isos else None
+        conn.execute(
+            "INSERT INTO task_policies (task_id, catchup_pending_json, updated_at) VALUES (?,?,?) "
+            "ON CONFLICT(task_id) DO UPDATE SET catchup_pending_json=excluded.catchup_pending_json, "
+            "updated_at=excluded.updated_at",
+            (task_id, payload, _utcnow().isoformat()),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _pop_catchup_pending(task_id: str) -> str | None:
+    """Take the next still-owed catch-up instant (ISO string) for `task_id`,
+    or `None` when nothing is owed. Persists the remainder immediately, so a
+    crash between pops loses at most the one instant already handed out —
+    never re-hands out an instant already consumed, and never loses the rest
+    of the queue."""
+    conn = _policy_connect()
+    try:
+        row = conn.execute(
+            "SELECT catchup_pending_json FROM task_policies WHERE task_id = ?",
+            (task_id,),
+        ).fetchone()
+    finally:
+        conn.close()
+    raw = row["catchup_pending_json"] if row else None
+    if not raw:
+        return None
+    try:
+        pending = json.loads(raw)
+    except Exception:
+        logger.debug("bad catchup_pending_json for %s: %r", task_id, raw)
+        return None
+    if not pending:
+        return None
+    head, rest = pending[0], pending[1:]
+    _set_catchup_pending(task_id, rest)
+    return head
+
+
 #: The three honest answers to "what if this occurrence runs twice?".
 #:
 #: at_most_once      -- repeating it is worse than skipping it, so a lease that
@@ -366,6 +496,61 @@ def occurrence_key(task_id: str, due_at: datetime | None) -> str:
     """
     stamp = due_at.replace(microsecond=0).isoformat() if due_at else "unscheduled"
     return f"task:{task_id}:{stamp}"
+
+
+# A24's own vocabulary for the same string: "each occurrence has a
+# fire_key = task_id + scheduled_at, unique". `occurrence_key` already
+# computes exactly that (and existing callers keep using that name) — `fire_key`
+# is an alias so code/tests written against the contract's naming and code
+# written against the pre-existing lease/dedup naming both call the same
+# function and can never disagree about what one occurrence's key is.
+fire_key = occurrence_key
+
+
+def claim_fire_key(task_id: str, due_at: datetime | None) -> bool:
+    """Claim the `fire_key` for one occurrence. `True` the first time it is
+    called for a given `(task_id, due_at)` pair, `False` every time after.
+
+    This is the second, independent line of defense the contract asks for
+    on top of `_claim_due_task`'s row-level lease CAS: that UPDATE...WHERE
+    already stops two schedulers from both winning the SAME row at the SQL
+    level, but it says nothing about a *retry* that computes the same
+    `due_at` again after the lease was released (a crash right after
+    dispatch, a caller that re-derives `due_at` instead of reusing the
+    lease's `lease_key`) — or about a second delivery attempt that reaches
+    this function from outside the claim path entirely (a queued retry, a
+    manual re-trigger of "the 09:00 run"). A `PRIMARY KEY` constraint on
+    `scheduler_fire_log.fire_key` is what actually enforces "once": the
+    `INSERT` either lands or raises `IntegrityError`, and SQLite serializes
+    writers, so two threads/processes racing this on the same key cannot
+    both come away with `True` — see
+    `tests/acceptance/test_a24_scheduler_dst_misfire.py::test_two_concurrent_claims_dedupe_by_fire_key`.
+    """
+    return _claim_fire_key_literal(fire_key(task_id, due_at), task_id,
+                                   due_at.isoformat() if due_at else None)
+
+
+def _claim_fire_key_literal(key: str, task_id: str, scheduled_at_iso: str | None) -> bool:
+    """The actual `INSERT`; shared by `claim_fire_key` (formats a `due_at`
+    into a key) and callers that already hold a precomputed key string —
+    `task.lease_key` in `_execute_task_locked` IS the occurrence's fire_key
+    (see `_claim_due_task`'s COALESCE), so claiming it does not need to
+    re-derive it from a datetime."""
+    conn = _policy_connect()
+    try:
+        try:
+            conn.execute(
+                "INSERT INTO scheduler_fire_log (fire_key, task_id, scheduled_at, "
+                "claimed_at, worker_id) VALUES (?,?,?,?,?)",
+                (key, task_id, scheduled_at_iso, _utcnow().isoformat(), WORKER_ID),
+            )
+            conn.commit()
+            return True
+        except _sqlite3.IntegrityError:
+            conn.rollback()
+            return False
+    finally:
+        conn.close()
 
 
 def delivery_semantics(task) -> str:
@@ -868,7 +1053,7 @@ class TaskScheduler:
                     # than require every such fixture to know about it.
                     self._lease_generation = {}
                 self._lease_generation[task_id] = int(row[0]) if row and row[0] is not None else 0
-            return bool(claimed)
+            claimed = bool(claimed)
         except OperationalError as e:
             # Somebody else is mid-write on the same row. Treating that as a
             # lost race costs at most one tick of delay; treating it as an
@@ -881,6 +1066,21 @@ class TaskScheduler:
             raise
         finally:
             db.close()
+        return claimed
+        # NOTE (A24): `fire_key`/`claim_fire_key` are deliberately NOT wired
+        # in here. This method's CAS already gives exactly one caller the
+        # row per claim, and a LEGITIMATE retry after lease recovery
+        # (`_recover_expired_leases`) claims the very same `due_at` again on
+        # purpose — rejecting that here would turn every recovered lease
+        # into a permanently stuck occurrence (see
+        # `tests/test_scheduler_lease_claim.py::
+        # test_a_recovered_lease_keeps_the_occurrence_key_and_counts_the_attempt`,
+        # which failed exactly this way while this WAS wired in here). The
+        # fire_key gate belongs at the point that actually produces (or is
+        # about to produce) the effect/result — see
+        # `_execute_task_locked`'s `claim_fire_key` call — where "attempt 2
+        # of the same claim" and "the SAME occurrence already delivered" are
+        # actually distinguishable.
 
     def _release_lease(self, task_id: str) -> bool:
         """Hand the claim back once the occurrence has been attempted.
@@ -1114,7 +1314,20 @@ class TaskScheduler:
         instead of the module default, and — for `run_all` — first checks
         whether a second, `fold=1` occurrence of an ambiguous wall-clock is
         still owed from the LAST call before computing a fresh cycle.
+
+        A24: a task whose `misfire_policy` is `catch_up_max:k` may also owe
+        one or more still-unfired catch-up instants queued by the startup
+        sweep (`start()`'s misfire block) — those are drained FIRST, ahead of
+        even a pending `run_all` follow-up, because they are older debt: the
+        misfire happened before this call, the DST ambiguity (if any) is
+        just how each individual catch-up instant itself resolves.
         """
+        catchup = _pop_catchup_pending(task.id)
+        if catchup:
+            try:
+                return datetime.fromisoformat(catchup)
+            except Exception:
+                logger.debug("bad catchup_pending entry for %s: %r", task.id, catchup)
         policy = get_task_policy(task.id)
         pending = _get_run_all_pending(task.id)
         if pending:
@@ -1157,6 +1370,36 @@ class TaskScheduler:
                 _set_run_all_pending(task_id, followup_utc.isoformat())
         except Exception:
             logger.debug("could not evaluate run_all follow-up for %s", task_id, exc_info=True)
+
+    def _enumerate_missed_occurrences(self, db, task, missed_at: datetime,
+                                      now: datetime, cap: int) -> list:
+        """Up to `cap` occurrences from `missed_at` (inclusive) that fell
+        before `now`, oldest first — the debt a `catch_up_max:k` task owes.
+
+        Walks `compute_next_run` forward one cycle at a time rather than
+        computing a closed form, so it honors the SAME per-occurrence DST
+        policy `_next_moment_after` uses for the live schedule. Capped at
+        `cap` results (never more, so a task offline for a year under
+        `catch_up_max:3` enumerates 3 calls, not one per missed cycle) with
+        one extra probe purely to decide whether more were abandoned than
+        `cap` (informational — callers that only need the list ignore it).
+        """
+        tz_name = _resolve_task_timezone(db, task)
+        policy = get_task_policy(task.id)
+        dst_policy = policy["dst_ambiguity_policy"]
+        out = [missed_at]
+        cursor = missed_at
+        while len(out) < cap:
+            nxt = compute_next_run(
+                task.schedule, task.scheduled_time, task.scheduled_day,
+                task.scheduled_date, after=cursor, cron_expression=task.cron_expression,
+                tz_name=tz_name, dst_ambiguity_policy=dst_policy,
+            )
+            if nxt is None or nxt >= now:
+                break
+            out.append(nxt)
+            cursor = nxt
+        return out
 
     def _set_run_progress(self, run_id: str, message: str):
         """Persist short live progress text for Activity while a run is active."""
@@ -1303,11 +1546,12 @@ class TaskScheduler:
                     _ST.next_run.isnot(None),
                     _ST.next_run < now,
                 ).all()
-                fired_soon = skipped = 0
+                fired_soon = skipped = caught_up = 0
                 if overdue:
                     for t in overdue:
                         policy = get_task_policy(t.id)
-                        if policy["misfire_policy"] == "skip":
+                        kind, k = _parse_misfire_policy(policy["misfire_policy"])
+                        if kind == "skip":
                             missed_at = t.next_run
                             t.next_run = self._next_moment_after(db, t, after=now)
                             skipped += 1
@@ -1316,14 +1560,38 @@ class TaskScheduler:
                                 "misfire_policy=skip abandons it, next_run=%s",
                                 t.id, t.name, missed_at, t.next_run,
                             )
-                        else:
+                        elif kind == "catch_up_max":
+                            missed_at = t.next_run
+                            instants = self._enumerate_missed_occurrences(db, t, missed_at, now, cap=k)
+                            to_fire, first = instants[:k], None
+                            if to_fire:
+                                first, rest = to_fire[0], to_fire[1:]
+                                t.next_run = first
+                                if rest:
+                                    _set_catchup_pending(t.id, [d.isoformat() for d in rest])
+                                caught_up += len(to_fire)
+                            else:
+                                # k somehow parsed to 0/enumeration found
+                                # nothing before `now` — fall back to `skip`'s
+                                # behavior rather than leave next_run in the
+                                # past forever.
+                                t.next_run = self._next_moment_after(db, t, after=now)
+                                skipped += 1
+                            logger.info(
+                                "Task %s (%s) misfired at %s while nothing was watching; "
+                                "misfire_policy=catch_up_max:%s will run %d missed "
+                                "occurrence(s), next_run=%s",
+                                t.id, t.name, missed_at, k, len(to_fire), t.next_run,
+                            )
+                        else:  # fire_once / fire_immediately (default)
                             t.next_run = now + timedelta(seconds=60)
                             fired_soon += 1
                     db.commit()
                     logger.info(
                         "Startup misfire sweep: %d overdue task(s) pushed to fire soon, "
-                        "%d skipped to their next future occurrence",
-                        fired_soon, skipped,
+                        "%d skipped to their next future occurrence, %d caught-up "
+                        "occurrence(s) queued",
+                        fired_soon, skipped, caught_up,
                     )
             finally:
                 db.close()
@@ -1783,6 +2051,24 @@ class TaskScheduler:
                     raise TaskFenced(
                         f"lease generation for task {task_id} changed before dispatch; "
                         "another worker took over this occurrence"
+                    )
+                # A24: the deduplication gate. `task.lease_key` IS this
+                # occurrence's `fire_key` (`_claim_due_task` sets it via
+                # COALESCE, so a retry after lease recovery inherits the
+                # SAME key rather than minting a new one) — claiming it here,
+                # right before the effect, is what actually distinguishes
+                # "attempt 2 of an occurrence whose attempt 1 never got this
+                # far" (claim succeeds, proceeds) from "this occurrence's
+                # effect already ran" (claim fails, fenced) — unlike claiming
+                # it back in `_claim_due_task`, which cannot tell those two
+                # apart and would wrongly block the former (see that
+                # method's docstring note). No `lease_key` (a degraded,
+                # un-migrated install, or a manual trigger that bypassed the
+                # claim) fails open, matching `_still_owner_or_fenced`.
+                if task.lease_key and not _claim_fire_key_literal(task.lease_key, task.id, None):
+                    raise TaskFenced(
+                        f"occurrence {task.lease_key} for task {task_id} already "
+                        "produced a result; not dispatching a duplicate"
                     )
                 if task_type == "action":
                     result, success = await self._execute_action(task, run_id=run_id)
