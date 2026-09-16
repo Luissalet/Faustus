@@ -1,6 +1,45 @@
 # Pendientes de cierre
 
-Actualizado: 11-09-2026 (00:30). Sólo trabajo vigente; quitar cada entrada al cerrarla.
+Actualizado: 16-09-2026 (noche). Sólo trabajo vigente; quitar cada entrada al cerrarla.
+
+## Noche del 16-09 (auditoría Cursor, paridad 36/36, Reach, Creator fase 1-2)
+
+Contexto completo en FAUSTUS.md §90-94 y OBJETIVOS.md OBJ-11/13/14/15.
+
+### Qué mirar en el 7001
+
+- **Creator con el flag.** `creator_enabled` sigue OFF por defecto en `src/settings.py`. Para ver algo hay que activarlo a mano y comprobar por pantalla: `/creator` (WP05), la biblioteca (WP03), un preflight real contra un motor instalado (WP09) y el lifecycle de un plugin (WP32) de principio a fin — nada de esto se ha probado con navegador real en este lote, solo con TestClient/pytest.
+- **Personas.** `GET /api/personas` y el render de sistema (`render_system_block`) están probados por HTTP; falta comprobar en el Studio que un AGENT.md con `persona: security-auditor` realmente antepone el bloque al prompt en un turno de verdad, no solo en el test unitario de `agent_defs.py`.
+- **Reach.** `reach_doctor` con `live=1` no se ha corrido contra la red real en esta sesión — solo contra `httpx.MockTransport`. Antes de dar los 9 canales por buenos en producción, correr `GET /api/reach/doctor?live=1` una vez con las credenciales que haya configuradas y mirar cuántos de los 9 responden `ready` de verdad.
+
+### Los 38 fallos heredados de la suite
+
+La suite completa de la nube sobre este árbol da **17.951 verdes / 38 fallos heredados** (ninguno introducido por el trabajo de hoy). Confirmado en esta sesión, contra `bce096a8` (antes de todo el trabajo de hoy) además de contra HEAD, para al menos uno de ellos: `tests/test_docs_no_orphan_images.py::test_pages_site_owns_its_entrypoint_and_media` falla igual en ambos commits — cuatro `.md` fuera de las carpetas de ingeniería permitidas (`docs/distribution/LIFECYCLE.md` y tres bajo `docs/superpowers/`, ninguno de este lote de documentación). Esta sesión lanzó su propia corrida completa (`python3 -m pytest -q -n 2 --dist loadfile -p no:cacheprovider tests`) para obtener la lista exacta de los 38 ficheros, pero no terminó dentro del tiempo del informe (iba por el 36 % cuando se cerró esta nota). **Pendiente real:** la próxima sesión que toque este árbol debe rematar esa corrida (o reanudarla) y sustituir este párrafo por la lista de ficheros exacta en vez de solo el recuento — no asumir que el recuento de 38 sigue siendo válido sin volver a correrla.
+
+### xfail y limitaciones honestas que cada lote dejó
+
+- **A15** — reacquisition tool (`read_overflow`) no cableada al bucle vivo del agente (`T8_wiring.md`).
+- **A12/A13** — punto de llamada de offload en `agent_loop.py` y el tool `read_artifact` documentados en `T5_wiring.md`, no en los ficheros propios de T5 (`tests/test_t5_wiring.py` xfail).
+- **A25** — `routes/skill_source_routes.py` no montado en `app.py` (`U3_wiring.md`, `tests/test_u3_wiring.py` xfail).
+- **A26** — `routes/evolution_routes.py` no montado en `app.py` (`U5_wiring.md`, `tests/test_u5_wiring.py` xfail).
+- **A31** — `GET /api/runs/{run_id}/budget` no montado en `app.py` (`T7_wiring.md` §1, `tests/test_t7_wiring.py` xfail). El coste de un delegate sin tabla de precios reporta siempre `unpriced_usage`, nunca `0.0` falso.
+- **A29** — `loop_breaker.py` probado en aislado pero, según `MATRIZ_PARIDAD.md` fila 16, su cableado a `agent_loop.py` en lugar de (o junto a) los contadores inline existentes está descrito en `T7_wiring.md` sin aplicar en este árbol — confirmar el estado exacto (`ESTADO_ACEPTACION.md` lo da verde vía `tests/acceptance/test_a29_loop_breaker.py`, que sí ejercita la política real; la discrepancia con la fila 16 de la matriz merece una relectura antes de asumir que ya está enganchado en el loop de producción).
+- **A17** — `sandbox_missing_policy` no está aún en `DEFAULT_SETTINGS`/`agent_settings_schema.py` (`U1_wiring.md`).
+- **WP02/WP09/WP30 (Creator)** — implementados y probados, sin montar en `app.py`; diff exacto en `WP02_wiring.md`, `WP09_wiring.md`, `WP30_wiring.md`.
+- **Reach** — el backend de sesión de navegador (`x`/`reddit`) es un seam real sin lector conectado; búsqueda en `x` sin navegador ni `reach_nitter_base` responde `unavailable` honesto.
+- **Code graph** — sin edge `INHERITS`; no recorre cadenas de herencia.
+- **Fan-out** — sin SSE de progreso, solo poll.
+- **PDF ops** — `compress` es deflate + dedup de `pypdf`, no re-muestreo de imágenes; `PATH_ARGUMENT_FIELDS` no se amplió con las rutas de `pdf_ops`, así que el reparador de argumentos (JSON-string→objeto) no las cubre todavía.
+
+### Trampas nuevas de hoy
+
+- **Reserva de VRAM compitiendo consigo misma.** `try_reserve`/`reserved_bytes` contaban la reserva SOBRANTE de un modelo que se está recargando como si fuera hueco ocupado por otro trabajo. Arreglado con `exclude_model=` — un modelo nunca compite con su propia reserva pendiente, otros modelos sí la siguen viendo. Visto en vivo en el turno de humo del 7001 con un 27B que se descargó entre la tarjeta de aprobación y la reanudación del turno (§94).
+- **El ping de restore de `run_model_pin` carga el modelo si estaba descargado.** Un `generate` con prompt vacío contra Ollama para "restaurar" el `keep_alive` original CARGA el modelo si no estaba residente — 18 GB por nada. El restore ahora comprueba que el modelo sigue cargado antes de tocarlo (§90, §94).
+- **`moduleResolution=Node10` vs TypeScript 6.** `sdk/ts` es `"type": "module"` pero sus builds CJS necesitan `Node10`; TypeScript 6 convirtió esa opción en error duro salvo `ignoreDeprecations: "6.0"`, y TypeScript 5.9 RECHAZA ese mismo valor (TS5103). `sdk/ts/scripts/tsc-node10.mjs` detecta la versión del compilador instalado y pasa el flag solo cuando hace falta — no asumir una versión fija de `tsc` en ningún script nuevo que compile ese paquete.
+- **`.git` de solo lectura en Windows.** Un `git clone` deja ficheros pack de `.git` en modo solo lectura en Windows; `shutil.rmtree` normal falla al borrar el directorio de trabajo temporal. `_rmtree_force` (en `src/skill_sources.py` y replicado en `src/creator/plugins.py` con el mismo nombre y el mismo comentario "mirrors skill_sources._rmtree_force") quita el atributo de solo lectura antes de borrar. Cualquier código nuevo que clone un repo a un directorio temporal y lo borre después necesita la misma función, no `shutil.rmtree` a secas.
+- **`subprocess.list2cmdline` para comandos de test en Windows.** `src/fanout/runner.py` arma el comando del test del proyecto con `list2cmdline(argv)` en Windows (`os.name == "nt"`) en vez de `shlex.join`, que asume comillas POSIX y rompe rutas con espacios o backslashes en cmd.exe.
+- **`ast.literal_eval` sobre `FUNCTION_TOOL_SCHEMAS`.** Varios tests de paridad (`test_objective_tool_schema.py`, `test_tool_index_schema_parity.py`, `test_t8_wiring.py`) no importan `src/tool_schemas.py` — parsean su AST y hacen `ast.literal_eval` sobre el nodo de la asignación. Esto exige que `FUNCTION_TOOL_SCHEMAS` (y cualquier estructura que estos tests lean) siga siendo un **literal de dict/list en el código fuente**, nunca el resultado de una función o una comprensión que solo se evalúa en tiempo de ejecución — un tool nuevo añadido con `.append()` o construido dinámicamente no lo verán estos tests y darán una paridad falsa.
+- **La unión de tools incluidas+diferidas decide las reglas de dominio, no solo las incluidas.** `src/agent_loop.py` calcula `_domain_union = included | deferred` antes de derivar qué bloques de reglas (entorno, permisos por dominio) entran en el prompt — una tool todavía diferida (no promovida por `lookup_tools`) YA cuenta para decidir si, por ejemplo, entra el bloque de entorno de shell. Cualquier lote que añada un dominio de reglas nuevo tiene que unirse a este cálculo, no solo a `included`, o una tool ofrecida-pero-diferida se queda sin su bloque de reglas hasta que se promueve.
 
 ## Ejecución nativa en Windows y el permiso por carpeta (14-09-2026)
 
