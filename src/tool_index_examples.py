@@ -879,4 +879,42 @@ EXAMPLES: Dict[str, List[str]] = {
         "revisa el estado de los canales de reach",
         "check if the github channel is configured",
     ],
+
+    # ── Code graph (R2, Reach wave) ─────────────────────────────────────────
+    "code_graph_index": [
+        "indexa este repo para que puedas navegarlo rápido",
+        "build the code graph for this project",
+        "escanea el código y crea el mapa de símbolos",
+        "refresh the code index, I just pulled a bunch of changes",
+    ],
+    "code_graph_search": [
+        "dónde está definida la función calcular_envio",
+        "where is the UserStore class defined in this repo",
+        "busca en el código algo relacionado con autenticación",
+        "find the code that handles password reset",
+    ],
+    "code_graph_trace": [
+        "cómo llega la llamada desde el endpoint hasta la base de datos",
+        "trace the call path from login() to send_email()",
+        "qué funciones hay entre A y B",
+        "show me how this handler eventually calls that function",
+    ],
+    "code_graph_changes": [
+        "qué funciones tocó este cambio y quién las llama",
+        "what did my last commit actually affect",
+        "dado este diff, qué debería volver a probar",
+        "show me what's impacted since HEAD~3",
+    ],
+    "code_graph_architecture": [
+        "dame un resumen de la arquitectura de este proyecto",
+        "what does this codebase look like, give me the lay of the land",
+        "qué rutas HTTP tiene este backend",
+        "which functions in this repo are the biggest hotspots",
+    ],
+    "code_graph_snippet": [
+        "enséñame solo el código de esa función, sin abrir el archivo entero",
+        "show me just the definition of process_payment",
+        "dame las líneas exactas de esa clase",
+        "get the source of that symbol you just found",
+    ],
 }

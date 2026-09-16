@@ -871,6 +871,16 @@ GROUPS: list[dict[str, Any]] = [
                   "disk untouched, because turning a switch off is not a delete."),
         ],
     ),
+    _group(
+        "code_graph", "Code graph",
+        "A persistent, per-workspace graph of symbols/calls/imports/routes (code_graph_* tools) "
+        "for architecture and call-tracing questions answered from an index instead of reading files.",
+        [
+            _bool("agent_code_graph_auto_index", "Auto-index on code turns",
+                  "Index a workspace's code graph in the background the first time a code turn opens "
+                  "it, so code_graph_search/trace/architecture already have a warm index to answer from."),
+        ],
+    ),
 ]
 
 

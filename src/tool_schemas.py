@@ -2651,6 +2651,100 @@ FUNCTION_TOOL_SCHEMAS = [
             }
         }
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "code_graph_index",
+            "description": "Build or refresh the persistent code graph (symbols + calls/imports/routes) for a workspace -- incremental by file hash, so a repeat call only reindexes what changed. Run this once before code_graph_search/trace/architecture on a repo that has never been indexed; the other code_graph_* tools also refresh automatically.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "root": {"type": "string", "description": "Workspace root to index (optional -- defaults to the turn's active workspace)"},
+                    "force": {"type": "boolean", "description": "Full reindex ignoring stored file hashes (default false: incremental)"}
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "code_graph_search",
+            "description": "Search the code graph for a symbol by name/pattern (or by meaning with semantic: true) without reading files -- returns file:line, kind and signature for each match. Use to answer 'where is X defined' across a whole repo.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "pattern": {"type": "string", "description": "Name, partial name, or (with semantic: true) a natural-language description of the symbol"},
+                    "kinds": {"type": "array", "items": {"type": "string"}, "description": "Restrict to these symbol kinds (module, class, function, method, constant, route, tool)"},
+                    "limit": {"type": "integer", "description": "Max results (default 40)"},
+                    "semantic": {"type": "boolean", "description": "Rank by meaning (local embeddings) instead of name/text match"},
+                    "root": {"type": "string", "description": "Workspace root (optional -- defaults to the active workspace)"}
+                },
+                "required": ["pattern"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "code_graph_trace",
+            "description": "Trace a call/import path between two symbols (BFS over the resolved graph, up to max_depth hops) -- returns the chain of symbols with file:line and how sure each hop is (exact/static_inferred/lexical). Use for 'how does A eventually reach B' without reading every file in between.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "from": {"type": "string", "description": "Starting symbol name or qualified name"},
+                    "to": {"type": "string", "description": "Target symbol name or qualified name"},
+                    "max_depth": {"type": "integer", "description": "Max hops to search (default 5, capped at 8)"},
+                    "root": {"type": "string", "description": "Workspace root (optional -- defaults to the active workspace)"}
+                },
+                "required": ["from", "to"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "code_graph_changes",
+            "description": "Diff the workspace against base_ref and map the changed lines to the symbols they fall inside, plus each affected symbol's direct callers -- so you know exactly what to re-test or re-review after an edit, without reading the whole diff by hand.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "base_ref": {"type": "string", "description": "Git ref to diff against (default HEAD)"},
+                    "root": {"type": "string", "description": "Workspace root (optional -- defaults to the active workspace)"}
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "code_graph_architecture",
+            "description": "One-call architecture summary of a workspace: languages, symbol/edge counts, HTTP routes, the most-called modules/functions (fan-in), and hotspots (long functions with many callers). Use when opening an unfamiliar repo instead of exploring file by file.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "root": {"type": "string", "description": "Workspace root (optional -- defaults to the active workspace)"}
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "code_graph_snippet",
+            "description": "The exact source lines of one symbol from the code graph -- nothing else from the file. Use after code_graph_search/trace to read just the definition you found, instead of opening the whole file.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "symbol": {"type": "string", "description": "Symbol name or qualified name to read"},
+                    "root": {"type": "string", "description": "Workspace root (optional -- defaults to the active workspace)"}
+                },
+                "required": ["symbol"]
+            }
+        }
+    },
 ]
 
 

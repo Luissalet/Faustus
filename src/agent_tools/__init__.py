@@ -63,6 +63,10 @@ from .code_mode_tool import RunCodeTool
 from .context_overflow_tool import ReadOverflowTool
 from .artifact_read_tool import ReadArtifactTool
 from .reach_tools import ReachReadTool, ReachSearchTool, ReachDoctorTool
+from .code_graph_tools import (
+    CodeGraphIndexTool, CodeGraphSearchTool, CodeGraphTraceTool,
+    CodeGraphChangesTool, CodeGraphArchitectureTool, CodeGraphSnippetTool,
+)
 
 TOOL_HANDLERS = {
     "bash": BashTool().execute,
@@ -161,6 +165,14 @@ TOOL_HANDLERS = {
     "reach_read": ReachReadTool().execute,
     "reach_search": ReachSearchTool().execute,
     "reach_doctor": ReachDoctorTool().execute,
+    # Code graph (R2, Reach wave): architecture/tracing queries over
+    # src.context_engine.code_index's resolved graph. See src/code_graph/.
+    "code_graph_index": CodeGraphIndexTool().execute,
+    "code_graph_search": CodeGraphSearchTool().execute,
+    "code_graph_trace": CodeGraphTraceTool().execute,
+    "code_graph_changes": CodeGraphChangesTool().execute,
+    "code_graph_architecture": CodeGraphArchitectureTool().execute,
+    "code_graph_snippet": CodeGraphSnippetTool().execute,
 }
 # Config/integration admin tools (manage_endpoints/mcp/webhooks/tokens/settings).
 TOOL_HANDLERS.update(ADMIN_TOOL_HANDLERS)
@@ -254,7 +266,11 @@ TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_fi
              # src/agent_tools/alternatives_tools.py.
              "alt_start", "alt_compare", "alt_apply",
              # Reach (R1) -- src/agent_tools/reach_tools.py.
-             "reach_read", "reach_search", "reach_doctor"} | BUILTIN_EMAIL_TOOLS | DESKTOP_TOOLS | SEMANTIC_TOOLS
+             "reach_read", "reach_search", "reach_doctor",
+             # Code graph (R2, Reach wave) -- src/agent_tools/code_graph_tools.py.
+             "code_graph_index", "code_graph_search", "code_graph_trace",
+             "code_graph_changes", "code_graph_architecture",
+             "code_graph_snippet"} | BUILTIN_EMAIL_TOOLS | DESKTOP_TOOLS | SEMANTIC_TOOLS
 
 ToolBlock = namedtuple("ToolBlock", ["tool_type", "content"])
 

@@ -568,6 +568,20 @@ _register(
     ToolEffect.READ_PRIVATE,
     result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
 )
+_register(
+    # code_graph_* (R2, Reach wave) only read what src.context_engine.code_index
+    # has already indexed from the workspace (symbols, calls, imports, routes)
+    # plus, for code_graph_changes, a read-only `git diff` -- same class as
+    # find_symbol/callers/tests_for: a workspace-scoped reader whose result
+    # quotes source text (and diff hunks) an attacker could have planted in
+    # the repo. code_graph_index only writes the derived sqlite cache under
+    # DATA_DIR, never a workspace file, so it stays a read/build tool rather
+    # than a workspace write.
+    {"code_graph_index", "code_graph_search", "code_graph_trace",
+     "code_graph_changes", "code_graph_architecture", "code_graph_snippet"},
+    ToolEffect.READ_WORKSPACE,
+    result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED,
+)
 
 
 TOOL_CAPABILITIES: Mapping[str, ToolCapabilities] = MappingProxyType(dict(_REGISTRY))

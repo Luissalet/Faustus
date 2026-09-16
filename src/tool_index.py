@@ -250,6 +250,16 @@ BUILTIN_TOOL_DESCRIPTIONS: Dict[str, str] = {
     "reach_read": "Read a URL or channel-native id from web, YouTube (transcript + comments), GitHub (repo/README or issue/PR with comments), Reddit (thread/subreddit), X/Twitter (a post), Hacker News (item + comments), RSS/Atom, arXiv (abstract) or Wikipedia (summary). Falls back across backends automatically and reports which one served it. Use for 'read this YouTube video', 'summarize this GitHub issue', 'what does this reddit thread say', 'get me this tweet', 'read this HN thread's comments'.",
     "reach_search": "Search inside one or more Reach channels — GitHub repos/code, Reddit, Hacker News, arXiv, Wikipedia (X search only via a browser session or configured Nitter). Use for 'search GitHub for X', 'find reddit posts about X', 'search arxiv for papers on X', 'look this up on wikipedia'.",
     "reach_doctor": "Health check for every Reach channel/backend: ready / needs config / unavailable, which backend is active, an 'N/M ready' summary. Pass live=true for one real cheap probe per backend. Use for 'why did reading that link fail', 'what internet sources can you actually reach right now', 'check reach health'.",
+    # Code graph (R2, Reach wave): a persistent, per-workspace graph of
+    # symbols/calls/imports/routes (src.code_graph, over
+    # src.context_engine.code_index) so architecture and call-tracing
+    # questions are answered from an index instead of reading whole files.
+    "code_graph_index": "Build or refresh the persistent code graph (symbols, calls, imports, HTTP routes) for a workspace — incremental by file hash. Use before other code_graph_* tools on a repo never indexed before, or after a large external change (git pull, branch switch).",
+    "code_graph_search": "Search the code graph for a symbol by name or pattern (or by meaning with semantic: true) without reading files — file:line, kind and signature for each match. Use for 'where is X defined', 'find the class that handles Y' across a whole repo.",
+    "code_graph_trace": "Trace a call/import path between two named symbols (BFS over the resolved graph) — the chain of symbols with file:line and how certain each hop is. Use for 'how does this eventually call that', 'what's the path from the route handler to the database write'.",
+    "code_graph_changes": "Diff the workspace against a git ref and map the changed lines to the symbols they fall inside, plus each affected symbol's direct callers. Use for 'what did this change actually touch', 'what should I re-test after this diff'.",
+    "code_graph_architecture": "One-call architecture summary: languages, symbol/edge counts, HTTP routes, the most-called functions (fan-in), and hotspots (long, heavily-called functions). Use when opening an unfamiliar repo — 'give me the lay of the land' — instead of exploring file by file.",
+    "code_graph_snippet": "The exact source lines of one symbol from the code graph, nothing else from the file. Use right after code_graph_search/trace to read just the definition found, instead of opening the whole file.",
 }
 
 
