@@ -150,10 +150,6 @@ def _setup_tts(monkeypatch) -> Tuple[AdapterPort, str, Callable[[], int]]:
     return adapter, "fake_engine", (lambda: len(tts_mod._JOBS))
 
 
-_CONTRACT_SETUPS = {
-    "comfyui": _setup_comfyui, "ffmpeg": _setup_ffmpeg, "whisper": _setup_whisper,
-    "tts": _setup_tts,
-}
 class _ExplodingMusicEngineRunner:
     """Stands in for `MusicAdapter`'s `engine_runner` in every generic
     contract check below — none of them ever gets far enough to need a
@@ -163,6 +159,7 @@ class _ExplodingMusicEngineRunner:
     queued). Same discipline as `_ExplodingModelLoader` above, for WP24."""
 
     def __call__(self, engine, params, out_path):
+        raise AssertionError(
             "the WP36 generic adapter contract must never reach a real music engine")
 
 
@@ -174,8 +171,10 @@ def _setup_music(monkeypatch) -> Tuple[AdapterPort, str, Callable[[], int]]:
     return adapter, "fake_engine", (lambda: len(music_mod._JOBS))
 
 
-_CONTRACT_SETUPS = {"comfyui": _setup_comfyui, "ffmpeg": _setup_ffmpeg, "whisper": _setup_whisper,
-                    "music": _setup_music}
+_CONTRACT_SETUPS = {
+    "comfyui": _setup_comfyui, "ffmpeg": _setup_ffmpeg, "whisper": _setup_whisper,
+    "tts": _setup_tts, "music": _setup_music,
+}
 
 #: (op, params, inputs) for a plan this adapter considers well-formed —
 #: used by the generic "plan()/submit() are pure/classify correctly" checks
