@@ -896,6 +896,8 @@ from routes.creator_library_routes import setup_creator_library_routes  # WP03
 app.include_router(setup_creator_library_routes())
 from routes.creator_capability_routes import setup_creator_capability_routes  # WP07
 app.include_router(setup_creator_capability_routes())
+from routes.creator_model_explorer_routes import setup_creator_model_explorer_routes  # WP08
+app.include_router(setup_creator_model_explorer_routes())
 from routes.creator_preflight_routes import setup_creator_preflight_routes  # WP09
 app.include_router(setup_creator_preflight_routes())
 from routes.creator_resources_routes import setup_creator_resources_routes  # WP30

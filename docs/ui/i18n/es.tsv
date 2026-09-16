@@ -7514,3 +7514,52 @@ patch (JSON, merged into content)	patch (JSON, fusionado con el contenido)
 patch JSON	JSON del patch
 project	project
 {n} active admission(s), {q} queued	{n} admisión(es) activa(s), {q} en cola
+Any capability	Cualquier capacidad
+Any evidence	Cualquier evidencia
+Compare ({n}/3 selected)	Comparar ({n}/3 seleccionados)
+Compare deployments	Comparar despliegues
+Compare task	Tarea de comparación
+Could not load the Model Explorer	No se pudo cargar el Explorador de modelos
+Could not load this model	No se pudo cargar este modelo
+Deployments appear here once Faustus has resolved or calibrated them (WP06).	Los despliegues aparecen aquí una vez que Faustus los ha resuelto o calibrado (WP06).
+Deployments	Despliegues
+Filter by capability	Filtrar por capacidad
+Filter by evidence	Filtrar por evidencia
+Footprint & VRAM	Huella y VRAM
+Has at least announced capabilities	Tiene al menos capacidades anunciadas
+Has known (tested) capabilities	Tiene capacidades conocidas (probadas)
+Legacy calibration (pre-deployment-id)	Calibración heredada (previa a deployment_id)
+License:	Licencia:
+Loading model	Cargando modelo
+Model detail	Detalle del modelo
+Model list	Lista de modelos
+Never heard of: {ids}	Nunca se han visto: {ids}
+No known deployments yet	Todavía no hay despliegues conocidos
+No registered parameter schema for this engine yet.	Todavía no hay un esquema de parámetros registrado para este motor.
+Older evidence, scoped to this manifest key, not to this exact deployment.	Evidencia más antigua, acotada a esta clave de manifiesto, no a este despliegue exacto.
+Parameter contracts	Contratos de parámetros
+Pick a deployment from the list to see its full ficha.	Elige un despliegue de la lista para ver su ficha completa.
+Saved to project preferences.	Guardado en las preferencias del proyecto.
+Search model or family…	Buscar modelo o familia…
+Search models	Buscar modelos
+Select a model	Selecciona un modelo
+Select {model} for comparison	Selecciona {model} para comparar
+Task id, e.g. chat.completions	Id de tarea, p. ej. chat.completions
+Use for this task	Usar para esta tarea
+context unknown	contexto desconocido
+size unknown	tamaño desconocido
+{k} known, {a} announced	{k} conocidas, {a} anunciadas
+{model} set as the preference for "{task}".	Se estableció {model} como preferencia para "{task}".
+known	conocido
+announced	anunciado
+unsupported	no soportado
+measured	medido
+Task support	Soporte de la tarea
+Context window (tokens)	Ventana de contexto (tokens)
+License	Licencia
+Parameter size	Tamaño de parámetros
+Quantization	Cuantización
+Weights on disk	Pesos en disco
+VRAM verdict	Veredicto de VRAM
+Parameter contract registered	Contrato de parámetros registrado
+Creator sections	Secciones de Creator

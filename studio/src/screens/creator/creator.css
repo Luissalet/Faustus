@@ -276,3 +276,157 @@
   padding-left: 16px;
   color: #d9843e;
 }
+
+/* ── WP08 — Model Explorer tab ── */
+
+.fs-creator__tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--fs-border, #2a2a2e);
+}
+
+.fs-creator__tab {
+  padding: 6px 12px;
+  font-size: 0.85rem;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+}
+
+.fs-creator__tab[aria-selected="true"] {
+  border-bottom-color: currentColor;
+  font-weight: 600;
+}
+
+.fs-model-explorer {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  flex: 1;
+}
+
+.fs-model-explorer__filters {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.fs-model-explorer__body {
+  display: grid;
+  grid-template-columns: minmax(220px, 320px) minmax(0, 1fr);
+  gap: 12px;
+  min-height: 0;
+}
+
+.fs-model-explorer__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow-y: auto;
+}
+
+.fs-model-explorer__row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.fs-model-explorer__row-open {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  text-align: left;
+  background: transparent;
+  border: 1px solid var(--fs-border, #2a2a2e);
+  border-radius: 6px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.fs-model-explorer__detail {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.fs-model-explorer__use-for-task {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.fs-model-explorer__use-for-task label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 0.78rem;
+}
+
+.fs-model-explorer__axes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.fs-model-explorer__axes li {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.8rem;
+}
+
+.fs-model-explorer__basis {
+  font-size: 0.7rem;
+  border-radius: 4px;
+  padding: 1px 6px;
+  border: 1px solid currentColor;
+  opacity: 0.85;
+}
+
+.fs-model-explorer__basis--known,
+.fs-model-explorer__basis--measured {
+  color: #3ca55c;
+}
+
+.fs-model-explorer__basis--announced,
+.fs-model-explorer__basis--estimated {
+  color: #d9843e;
+}
+
+.fs-model-explorer__basis--unsupported {
+  color: #d9534f;
+}
+
+.fs-model-explorer__basis--unknown {
+  color: #888;
+}
+
+.fs-model-explorer__compare-controls {
+  border-top: 1px solid var(--fs-border, #2a2a2e);
+  padding-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.fs-model-explorer__compare table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.fs-model-explorer__compare th,
+.fs-model-explorer__compare td {
+  border: 1px solid var(--fs-border, #2a2a2e);
+  padding: 4px 8px;
+  text-align: left;
+}
