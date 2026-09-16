@@ -40,6 +40,7 @@ from .documents import (
     validate_content,
 )
 from .errors import DocumentNotFound, InvalidDocument, InvalidOperation, RevisionConflict
+from .ops import registry as _ops_registry
 
 _BUSY_TIMEOUT_S = 30
 
@@ -201,6 +202,36 @@ class DocumentStore:
                 for r in rows
             ]
 
+    def get_revision_snapshot(self, owner: str, doc_id: str, revision: int) -> Optional[Dict[str, Any]]:
+        """WP12 addition: the exact ``content``/``state``/``asset_refs`` the
+        document had at a past ``revision``, owner-scoped. Backs
+        ``src/creator/ops/undo.py``'s ``undo_to`` — undo restores CONTENT
+        from this append-only snapshot log, it never re-derives it by
+        replaying/reversing ops. Returns ``None`` for an unknown/foreign
+        document OR an unknown revision, same 404-shaped treatment as
+        :meth:`get` (CONTRATO.md rule 3).
+        """
+        with self._conn() as conn:
+            owned = conn.execute(
+                "SELECT 1 FROM creator_documents WHERE id = ? AND owner = ?",
+                (doc_id, owner or ""),
+            ).fetchone()
+            if owned is None:
+                return None
+            row = conn.execute(
+                "SELECT * FROM creator_document_revisions WHERE doc_id = ? AND revision = ?",
+                (doc_id, int(revision)),
+            ).fetchone()
+            if row is None:
+                return None
+            return {
+                "revision": row["revision"],
+                "state": row["state"],
+                "content": json.loads(row["content_json"]),
+                "asset_refs": json.loads(row["asset_refs_json"]),
+                "at": row["at"],
+            }
+
     # ------------------------------------------------------------------
     # Writes
     # ------------------------------------------------------------------
@@ -304,7 +335,9 @@ class DocumentStore:
             content = json.loads(row["content_json"])
             state = row["state"]
             asset_refs = json.loads(row["asset_refs_json"])
-            content, state, asset_refs = _apply_op(row["kind"], content, state, asset_refs, op)
+            content, state, asset_refs = _apply_op(
+                row["kind"], content, state, asset_refs, op, revision=current_revision,
+            )
 
             new_revision = current_revision + 1
             stamp = time.time()
@@ -340,10 +373,30 @@ def _apply_op(
     state: str,
     asset_refs: List[str],
     op: Dict[str, Any],
+    *,
+    revision: Optional[int] = None,
 ) -> tuple:
+    """WP12 aditive hook: ``op["type"]`` is first looked up in the typed ops
+    registry (``src/creator/ops/registry.py`` — canvas/timeline/transcript/
+    undo ops, discovered by ``pkgutil``). Only when that registry has no
+    handler for the type does this fall through to the small set of
+    generic ops WP02 shipped (``set_content``/``patch_content``/
+    ``set_state``/``set_asset_refs``) below. This is the single dispatcher
+    change this file makes for WP12; nothing about the generic ops'
+    existing behaviour changed.
+    """
     if not isinstance(op, dict) or "type" not in op:
         raise InvalidOperation("op must be an object with a 'type'")
     op_type = op["type"]
+
+    if isinstance(op_type, str) and _ops_registry.get(op_type) is not None:
+        doc_snapshot = {
+            "kind": kind, "content": content, "state": state,
+            "asset_refs": asset_refs, "revision": revision,
+        }
+        new_content = _ops_registry.apply(doc_snapshot, op)
+        validate_content(kind, new_content)
+        return new_content, state, asset_refs
 
     if op_type == "set_content":
         new_content = op.get("content")
