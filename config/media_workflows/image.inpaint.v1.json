@@ -1,0 +1,54 @@
+{
+  "id": "image.inpaint",
+  "version": "1.0.0",
+  "title": "Inpainting with a traceable mask",
+  "engine": "comfyui",
+  "description": "IMG04: reference and mask are both resolved to the engine's own upload names, and VAEEncodeForInpaint is the ONLY node that sees them together, so the receipt can name exactly which bytes made the picture. The 'role' of the mask is never sent as a conditioning field — it is a MASK-typed graph input, wired only into the inpaint encoder.",
+
+  "models": [
+    { "name": "sd_xl_base_1.0.safetensors", "kind": "checkpoint", "license": "CreativeML Open RAIL++-M",
+      "node": "CheckpointLoaderSimple", "field": "ckpt_name" }
+  ],
+  "requires_nodes": [
+    "CheckpointLoaderSimple", "CLIPTextEncode", "LoadImage", "LoadImageMask",
+    "VAEEncodeForInpaint", "KSampler", "VAEDecode", "SaveImage"
+  ],
+
+  "outputs": { "image": "artifact:image" },
+
+  "inputs": {
+    "reference_image": { "type": "artifact", "required": true, "title": "The original picture, staged in the engine's input folder" },
+    "mask": { "type": "artifact", "required": true, "title": "The mask image, staged in the engine's input folder (white = repaint)" },
+    "prompt": { "type": "text", "required": true, "max_len": 1200, "title": "What should appear in the masked area" },
+    "negative_prompt": { "type": "text", "default": "text, watermark, logo, blurry, low quality", "max_len": 600, "title": "What to keep out of it" },
+    "strength": { "type": "number", "default": 0.85, "minimum": 0.2, "maximum": 1.0, "title": "How much the masked area may change (denoise)" },
+    "grow_mask_by": { "type": "integer", "default": 6, "minimum": 0, "maximum": 64, "title": "Pixels to grow the mask by, softening its edge" },
+    "steps": { "type": "integer", "default": 28, "minimum": 4, "maximum": 80, "title": "Sampler steps" },
+    "cfg": { "type": "number", "default": 7.0, "minimum": 1, "maximum": 20, "title": "CFG scale" },
+    "seed": { "type": "seed", "title": "Recorded either way, so a different mask can be told apart from a different seed" }
+  },
+
+  "computed": {},
+
+  "graph": {
+    "1": { "class_type": "CheckpointLoaderSimple", "inputs": { "ckpt_name": "sd_xl_base_1.0.safetensors" } },
+    "2": { "class_type": "LoadImage", "inputs": { "image": "{{reference_image}}" } },
+    "3": { "class_type": "LoadImageMask", "inputs": { "image": "{{mask}}", "channel": "red" } },
+    "4": {
+      "class_type": "VAEEncodeForInpaint",
+      "inputs": { "pixels": ["2", 0], "mask": ["3", 0], "vae": ["1", 2], "grow_mask_by": "{{grow_mask_by}}" }
+    },
+    "5": { "class_type": "CLIPTextEncode", "inputs": { "text": "{{prompt}}", "clip": ["1", 1] } },
+    "6": { "class_type": "CLIPTextEncode", "inputs": { "text": "{{negative_prompt}}", "clip": ["1", 1] } },
+    "7": {
+      "class_type": "KSampler",
+      "inputs": {
+        "seed": "{{seed}}", "steps": "{{steps}}", "cfg": "{{cfg}}",
+        "sampler_name": "dpmpp_2m", "scheduler": "karras", "denoise": "{{strength}}",
+        "model": ["1", 0], "positive": ["5", 0], "negative": ["6", 0], "latent_image": ["4", 0]
+      }
+    },
+    "8": { "class_type": "VAEDecode", "inputs": { "samples": ["7", 0], "vae": ["1", 2] } },
+    "9": { "class_type": "SaveImage", "inputs": { "images": ["8", 0], "filename_prefix": "faustus/inpaint" } }
+  }
+}

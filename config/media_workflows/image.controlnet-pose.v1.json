@@ -1,0 +1,62 @@
+{
+  "id": "image.controlnet-pose",
+  "version": "1.0.0",
+  "title": "Text to image guided by a pose control image",
+  "engine": "comfyui",
+  "description": "The control image (already an OpenPose-style skeleton render) is a SEPARATE staged input from any reference image — a control map is not a 'variation' of a photo, it is a structural constraint. conditioning_scale is exposed directly.",
+
+  "models": [
+    { "name": "sd_xl_base_1.0.safetensors", "kind": "checkpoint", "license": "CreativeML Open RAIL++-M",
+      "node": "CheckpointLoaderSimple", "field": "ckpt_name" },
+    { "name": "control-lora-openposeXL2-rank256.safetensors", "kind": "controlnet", "license": "OpenRAIL",
+      "node": "ControlNetLoader", "field": "control_net_name" }
+  ],
+  "requires_nodes": [
+    "CheckpointLoaderSimple", "CLIPTextEncode", "EmptyLatentImage", "LoadImage",
+    "ControlNetLoader", "ControlNetApplyAdvanced", "KSampler", "VAEDecode", "SaveImage"
+  ],
+
+  "outputs": { "image": "artifact:image" },
+
+  "inputs": {
+    "controlnet_image": { "type": "artifact", "required": true, "title": "The pose control map, staged in the engine's input folder" },
+    "prompt": { "type": "text", "required": true, "max_len": 1200, "title": "What the picture is of" },
+    "negative_prompt": { "type": "text", "default": "text, watermark, logo, blurry, low quality", "max_len": 600, "title": "What to keep out of it" },
+    "conditioning_scale": { "type": "number", "default": 1.0, "minimum": 0, "maximum": 2, "title": "How strongly the pose constrains the result" },
+    "size": { "type": "enum", "choices": ["square", "portrait", "landscape"], "default": "portrait", "title": "Shape" },
+    "steps": { "type": "integer", "default": 28, "minimum": 4, "maximum": 80, "title": "Sampler steps" },
+    "cfg": { "type": "number", "default": 7.0, "minimum": 1, "maximum": 20, "title": "CFG scale" },
+    "seed": { "type": "seed", "title": "Recorded either way, so the picture can be made again" }
+  },
+
+  "computed": {
+    "width":  { "from": "size", "map": { "square": 1024, "portrait": 896, "landscape": 1216 } },
+    "height": { "from": "size", "map": { "square": 1024, "portrait": 1152, "landscape": 832 } }
+  },
+
+  "graph": {
+    "1": { "class_type": "CheckpointLoaderSimple", "inputs": { "ckpt_name": "sd_xl_base_1.0.safetensors" } },
+    "2": { "class_type": "LoadImage", "inputs": { "image": "{{controlnet_image}}" } },
+    "3": { "class_type": "ControlNetLoader", "inputs": { "control_net_name": "control-lora-openposeXL2-rank256.safetensors" } },
+    "4": { "class_type": "CLIPTextEncode", "inputs": { "text": "{{prompt}}", "clip": ["1", 1] } },
+    "5": { "class_type": "CLIPTextEncode", "inputs": { "text": "{{negative_prompt}}", "clip": ["1", 1] } },
+    "6": {
+      "class_type": "ControlNetApplyAdvanced",
+      "inputs": {
+        "positive": ["4", 0], "negative": ["5", 0], "control_net": ["3", 0], "image": ["2", 0],
+        "strength": "{{conditioning_scale}}", "start_percent": 0.0, "end_percent": 1.0
+      }
+    },
+    "7": { "class_type": "EmptyLatentImage", "inputs": { "width": "{{width}}", "height": "{{height}}", "batch_size": 1 } },
+    "8": {
+      "class_type": "KSampler",
+      "inputs": {
+        "seed": "{{seed}}", "steps": "{{steps}}", "cfg": "{{cfg}}",
+        "sampler_name": "dpmpp_2m", "scheduler": "karras", "denoise": 1.0,
+        "model": ["1", 0], "positive": ["6", 0], "negative": ["6", 1], "latent_image": ["7", 0]
+      }
+    },
+    "9": { "class_type": "VAEDecode", "inputs": { "samples": ["8", 0], "vae": ["1", 2] } },
+    "10": { "class_type": "SaveImage", "inputs": { "images": ["9", 0], "filename_prefix": "faustus/controlnet-pose" } }
+  }
+}

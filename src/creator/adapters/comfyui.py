@@ -76,10 +76,26 @@ class ComfyUIAdapter(BaseAdapter):
     # network; check_engine=True is opt-in and documented as such below) ──
 
     def plan(self, op: str, params: Mapping[str, Any],
-             inputs: Sequence[str]) -> AdapterPlan:
+             inputs: Sequence[str], *, owner: str = "") -> AdapterPlan:
+        """`op` is normally a raw `media_workflows` template id, exactly as
+        before. WP11 additive hook: when `op` instead names a
+        `src.creator.comfy_recipes` recipe, `resolve_for_adapter()`
+        translates the SLOT-keyed `params` into that recipe's underlying
+        `(workflow_id, template_inputs)` pair before falling through to the
+        SAME `media_runs.plan()` call every other `op` already used —
+        `owner` is only ever consulted to resolve a user recipe (CONTRATO
+        rule 3: never trusted from anywhere else); a factory recipe or a
+        raw workflow id ignores it entirely."""
         from src import media_runs
+        from src.creator import comfy_recipes
 
-        result = media_runs.plan(op, dict(params or {}), check_engine=True)
+        workflow_id = op
+        template_params: Mapping[str, Any] = params or {}
+        resolved = comfy_recipes.resolve_for_adapter(op, params, owner=owner)
+        if resolved is not None:
+            workflow_id, template_params = resolved
+
+        result = media_runs.plan(workflow_id, dict(template_params or {}), check_engine=True)
         ok = bool(result.get("ok"))
         missing: list = []
         if not ok:
@@ -92,7 +108,7 @@ class ComfyUIAdapter(BaseAdapter):
             ok=ok, adapter=NAME, task=op,
             estimated_cost={"models": result.get("models") or []},
             missing=tuple(missing), detail=str(result.get("detail") or result.get("reason") or ""),
-            engine_plan={"workflow_id": op, "inputs": dict(params or {}),
+            engine_plan={"workflow_id": workflow_id, "inputs": dict(template_params or {}),
                          "engine_url": (result.get("engine") or {}).get("url", self._base_url)},
         )
 

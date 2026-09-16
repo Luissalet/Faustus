@@ -908,6 +908,8 @@ from routes.creator_goal_routes import setup_creator_goal_routes  # WP27
 app.include_router(setup_creator_goal_routes())
 from routes.creator_plugin_routes import setup_creator_plugin_routes  # WP32
 app.include_router(setup_creator_plugin_routes())
+from routes.creator_recipe_routes import setup_creator_recipe_routes  # WP11
+app.include_router(setup_creator_recipe_routes())
 
 # What this machine can actually do. Every probe already existed; this is the
 # one place that asks them all and puts the fix in the sentence.

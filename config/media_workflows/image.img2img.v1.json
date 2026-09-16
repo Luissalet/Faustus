@@ -1,0 +1,48 @@
+{
+  "id": "image.img2img",
+  "version": "1.0.0",
+  "title": "Image to image, direct strength/steps/cfg",
+  "engine": "comfyui",
+  "description": "Image to image with strength (denoise), steps and cfg exposed directly. The reference is a bare engine filename — resolved from an occurrence to a staged upload by the adapter, never a path a caller named.",
+
+  "models": [
+    { "name": "sd_xl_base_1.0.safetensors", "kind": "checkpoint", "license": "CreativeML Open RAIL++-M",
+      "node": "CheckpointLoaderSimple", "field": "ckpt_name" }
+  ],
+  "requires_nodes": [
+    "CheckpointLoaderSimple", "CLIPTextEncode", "LoadImage", "VAEEncode",
+    "KSampler", "VAEDecode", "SaveImage"
+  ],
+
+  "outputs": { "image": "artifact:image" },
+
+  "inputs": {
+    "reference_image": { "type": "artifact", "required": true, "title": "The picture to work from, already staged in the engine's input folder" },
+    "prompt": { "type": "text", "required": true, "max_len": 1200, "title": "What should be different about it" },
+    "negative_prompt": { "type": "text", "default": "text, watermark, logo, blurry, low quality", "max_len": 600, "title": "What to keep out of it" },
+    "strength": { "type": "number", "default": 0.55, "minimum": 0.05, "maximum": 0.95, "title": "How far it may move from the reference (denoise)" },
+    "steps": { "type": "integer", "default": 24, "minimum": 4, "maximum": 80, "title": "Sampler steps" },
+    "cfg": { "type": "number", "default": 7.0, "minimum": 1, "maximum": 20, "title": "CFG scale" },
+    "seed": { "type": "seed", "title": "Recorded either way, so the variation can be made again" }
+  },
+
+  "computed": {},
+
+  "graph": {
+    "1": { "class_type": "CheckpointLoaderSimple", "inputs": { "ckpt_name": "sd_xl_base_1.0.safetensors" } },
+    "2": { "class_type": "LoadImage", "inputs": { "image": "{{reference_image}}" } },
+    "3": { "class_type": "VAEEncode", "inputs": { "pixels": ["2", 0], "vae": ["1", 2] } },
+    "4": { "class_type": "CLIPTextEncode", "inputs": { "text": "{{prompt}}", "clip": ["1", 1] } },
+    "5": { "class_type": "CLIPTextEncode", "inputs": { "text": "{{negative_prompt}}", "clip": ["1", 1] } },
+    "6": {
+      "class_type": "KSampler",
+      "inputs": {
+        "seed": "{{seed}}", "steps": "{{steps}}", "cfg": "{{cfg}}",
+        "sampler_name": "dpmpp_2m", "scheduler": "karras", "denoise": "{{strength}}",
+        "model": ["1", 0], "positive": ["4", 0], "negative": ["5", 0], "latent_image": ["3", 0]
+      }
+    },
+    "7": { "class_type": "VAEDecode", "inputs": { "samples": ["6", 0], "vae": ["1", 2] } },
+    "8": { "class_type": "SaveImage", "inputs": { "images": ["7", 0], "filename_prefix": "faustus/img2img" } }
+  }
+}

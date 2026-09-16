@@ -1,0 +1,56 @@
+{
+  "id": "image.txt2img-lora",
+  "version": "1.0.0",
+  "title": "Text to image with one LoRA applied",
+  "engine": "comfyui",
+  "description": "Same as image.txt2img, with a single LoraLoader inserted between the checkpoint and both the sampler's model input and the two CLIPTextEncode nodes — a LoRA changes the CLIP conditioning too, not only the UNet, so wiring only the model input silently under-applies it.",
+
+  "models": [
+    { "name": "sd_xl_base_1.0.safetensors", "kind": "checkpoint", "license": "CreativeML Open RAIL++-M",
+      "node": "CheckpointLoaderSimple", "field": "ckpt_name" },
+    { "name": "example-style.safetensors", "kind": "lora", "license": "unspecified — set per deployment",
+      "node": "LoraLoader", "field": "lora_name" }
+  ],
+  "requires_nodes": [
+    "CheckpointLoaderSimple", "LoraLoader", "CLIPTextEncode", "EmptyLatentImage",
+    "KSampler", "VAEDecode", "SaveImage"
+  ],
+
+  "outputs": { "image": "artifact:image" },
+
+  "inputs": {
+    "prompt": { "type": "text", "required": true, "max_len": 1200, "title": "What the picture is of" },
+    "negative_prompt": { "type": "text", "default": "text, watermark, logo, blurry, low quality", "max_len": 600, "title": "What to keep out of it" },
+    "lora_strength": { "type": "number", "default": 0.8, "minimum": 0, "maximum": 2, "title": "How strongly the LoRA is applied (model and CLIP alike)" },
+    "size": { "type": "enum", "choices": ["square", "portrait", "landscape"], "default": "square", "title": "Shape" },
+    "steps": { "type": "integer", "default": 24, "minimum": 4, "maximum": 80, "title": "Sampler steps" },
+    "cfg": { "type": "number", "default": 7.0, "minimum": 1, "maximum": 20, "title": "CFG scale" },
+    "seed": { "type": "seed", "title": "Recorded either way, so the picture can be made again" }
+  },
+
+  "computed": {
+    "width":  { "from": "size", "map": { "square": 1024, "portrait": 896, "landscape": 1216 } },
+    "height": { "from": "size", "map": { "square": 1024, "portrait": 1152, "landscape": 832 } }
+  },
+
+  "graph": {
+    "1": { "class_type": "CheckpointLoaderSimple", "inputs": { "ckpt_name": "sd_xl_base_1.0.safetensors" } },
+    "2": { "class_type": "LoraLoader", "inputs": {
+      "model": ["1", 0], "clip": ["1", 1], "lora_name": "example-style.safetensors",
+      "strength_model": "{{lora_strength}}", "strength_clip": "{{lora_strength}}"
+    } },
+    "3": { "class_type": "CLIPTextEncode", "inputs": { "text": "{{prompt}}", "clip": ["2", 1] } },
+    "4": { "class_type": "CLIPTextEncode", "inputs": { "text": "{{negative_prompt}}", "clip": ["2", 1] } },
+    "5": { "class_type": "EmptyLatentImage", "inputs": { "width": "{{width}}", "height": "{{height}}", "batch_size": 1 } },
+    "6": {
+      "class_type": "KSampler",
+      "inputs": {
+        "seed": "{{seed}}", "steps": "{{steps}}", "cfg": "{{cfg}}",
+        "sampler_name": "dpmpp_2m", "scheduler": "karras", "denoise": 1.0,
+        "model": ["2", 0], "positive": ["3", 0], "negative": ["4", 0], "latent_image": ["5", 0]
+      }
+    },
+    "7": { "class_type": "VAEDecode", "inputs": { "samples": ["6", 0], "vae": ["1", 2] } },
+    "8": { "class_type": "SaveImage", "inputs": { "images": ["7", 0], "filename_prefix": "faustus/txt2img-lora" } }
+  }
+}
