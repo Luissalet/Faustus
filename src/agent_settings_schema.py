@@ -807,6 +807,26 @@ GROUPS: list[dict[str, Any]] = [
         ],
     ),
     _group(
+        "code_mode", "Code Mode",
+        "The model writes a short Python program that composes several tool calls in one isolated "
+        "subprocess round instead of one model round trip per call (run_code tool). Every tool call "
+        "the program makes goes through the same policy gate and approvals an ordinary call would.",
+        [
+            _bool("agent_code_mode", "Code Mode",
+                  "Register and allow the run_code tool. Off by default; the tool refuses to run "
+                  "while this is off."),
+            _int("agent_code_mode_timeout_seconds", "Wall time limit (s)",
+                 "A run_code program is killed and returns a diagnostic receipt after this long.",
+                 1, 3600),
+            _int("agent_code_mode_max_calls", "Tool call limit",
+                 "Max tools.call() invocations one run_code program may make before it is killed.",
+                 1, 10_000),
+            _int("agent_code_mode_max_output_bytes", "Output size limit (bytes)",
+                 "Max captured stdout/stderr one run_code program may produce before it is killed.",
+                 1_000, 50_000_000, step=1000),
+        ],
+    ),
+    _group(
         "history", "Imported history",
         "Your conversations from somewhere else, brought here. A ChatGPT or Claude data export, an "
         "LM Studio chat folder or one of Faustus's own JSON exports is normalised into its own "
