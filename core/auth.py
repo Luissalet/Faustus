@@ -7,6 +7,7 @@ import enum
 import hashlib
 import json
 import os
+import re
 import secrets
 import threading
 import time
@@ -515,6 +516,64 @@ class AuthManager:
 
     def is_admin(self, username: str) -> bool:
         return self.users.get(username, {}).get("is_admin", False)
+
+    def resolve_or_create_oidc_user(self, sub: str, email: str, wants_admin: bool) -> Optional[str]:
+        """Map a verified OIDC identity (A22) to a local account.
+
+        Keyed by `sub` (the OIDC subject claim), never by `email` — an
+        identity provider can reassign an email address to a different
+        person, but `sub` is guaranteed stable for the lifetime of that
+        account at the IdP. `self._config["oidc_identities"]` is the
+        `sub -> username` mapping; the local `username` itself is only a
+        human-readable label, generated from the email's local part with a
+        numeric suffix on collision.
+
+        - `sub` already linked to a still-existing local user: role is
+          re-synced from `wants_admin` on THIS call (so an admin-list or
+          group change takes effect the very next time that person signs
+          in, no manual step) and that username is returned.
+        - `sub` unseen: a new local account is provisioned — a random,
+          never-disclosed password (login only ever happens via OIDC for
+          this account) — and linked. Reserved usernames and existing
+          accounts are skipped when picking a candidate name.
+
+        Returns the local username to open a session for, or None if `sub`
+        is empty (the caller must treat that as a hard failure, never as
+        "create a nameless account").
+        """
+        sub = str(sub or "").strip()
+        if not sub:
+            return None
+        with self._config_lock:
+            identities = self._config.setdefault("oidc_identities", {})
+            users = self._config.setdefault("users", {})
+            username = identities.get(sub)
+            if username and username in users:
+                users[username]["is_admin"] = bool(wants_admin)
+                users[username]["privileges"] = dict(
+                    ADMIN_PRIVILEGES if wants_admin else DEFAULT_PRIVILEGES
+                )
+                self._save()
+                return username
+
+            base = re.sub(r"[^a-z0-9_.-]+", "-", (email or "").split("@", 1)[0].strip().lower()).strip("-.")
+            base = base or "oidc-user"
+            candidate = base
+            suffix = 0
+            while candidate in users or candidate in RESERVED_USERNAMES:
+                suffix += 1
+                candidate = f"{base}-{suffix}"
+            users[candidate] = {
+                "password_hash": _hash_password(secrets.token_urlsafe(32)),
+                "created": time.time(),
+                "is_admin": bool(wants_admin),
+                "privileges": dict(ADMIN_PRIVILEGES if wants_admin else DEFAULT_PRIVILEGES),
+                "oidc_sub": sub,
+            }
+            identities[sub] = candidate
+            self._save()
+        logger.info("Provisioned local account '%s' for OIDC subject (admin=%s)", candidate, wants_admin)
+        return candidate
 
     def list_users(self) -> List[Dict[str, Any]]:
         return [

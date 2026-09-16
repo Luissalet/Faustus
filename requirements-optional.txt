@@ -64,3 +64,10 @@ pyautogui
 # ART-03: visual page-overflow check of PDFs (src/document_actions.py::detect_page_overflow).
 # Pure Python (pdfminer); the route answers 503 "pdfplumber is not installed" without it.
 pdfplumber
+
+# A22: corporate OIDC login (core/oidc.py) — verifies the id_token's JWS
+# signature (RS256/ES256) against the identity provider's JWKS. Imported
+# lazily so a deployment that never turns OIDC on (empty oidc_issuer/
+# oidc_client_id) never pays for it; the OIDC login route answers 500
+# "PyJWT is not installed" without it instead of failing to import.
+PyJWT>=2.8,<3
