@@ -171,11 +171,14 @@ def test_tests_still_failing_after_fix_round_is_reported_not_looped(project, mon
     events = _run(project)
     statuses = [e["status"] for e in events if e.get("type") == "harness_check"]
     assert statuses.count("tests_failed") == 1, statuses
-    assert statuses[-1] == "verified"
+    # The card is still emitted (the user sees the red tests) — and then the
+    # hard completion gate refuses to seal the turn `complete`.
+    assert statuses[-2:] == ["verified", "completion_gated"], statuses
     verified = next(e for e in events if e.get("type") == "harness_check" and e["status"] == "verified")
-    assert verified["tests"]["ok"] is False
+    assert verified["tests"]["ok"] is False and verified["gate"] == "tests_failed"
     summary = next(e for e in events if e.get("type") == "harness_summary")["data"]
     assert any(n.startswith("tests_failed:") for n in summary["notes"])
+    assert summary["stop_reason"] == "complete_unverified"
     assert calls["n"] == 3
 
 

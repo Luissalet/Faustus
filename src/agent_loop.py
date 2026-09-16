@@ -10479,6 +10479,12 @@ async def _stream_agent_loop_body(
                             "static_analysis": _ledger.static_analysis,
                             "workspace": workspace or None,
                             "tests": _ledger.tests,
+                            "ui_smoke": _ledger.ui_smoke,
+                            # Hard gate preview: the reason this turn will NOT
+                            # be sealed complete (None = it will).
+                            "gate": _harness.completion_gate(
+                                {"stop_reason": "complete", "tests": _ledger.tests,
+                                 "ui_smoke": _ledger.ui_smoke, "mutations": _ledger.mutated_paths()}, None),
                             "review": _ledger.review,
                             "checkpoint": (_ledger.checkpoint or {}).get("sha") if isinstance(_ledger.checkpoint, dict) else None,
                             "review_mode": bool(_hopts.get("review_mode")) and bool(_ledger.mutations),
@@ -12450,6 +12456,28 @@ async def _stream_agent_loop_body(
                     "unclaimed_changes": list(_changeset.unclaimed_changes())[:20],
                     "rendered": _changesets.render(_changeset, _proof),
                 }
+                # Hard completion gate (Silhouettes measure #1): a turn whose
+                # tests failed, whose UI smoke failed, or whose claims the
+                # checkpoint contradicts can never be sealed `complete` —
+                # whatever the model wrote. Downgrade BEFORE the changeset
+                # store records `completed`.
+                _gate_reason = _harness.completion_gate(_hsum, _hsum.get("changeset"))
+                if _gate_reason:
+                    _ledger.stop_reason = "complete_unverified"
+                    _hsum["stop_reason"] = "complete_unverified"
+                    _gate_note = "hard_gate:" + _gate_reason
+                    if _gate_note not in _ledger.notes:
+                        _ledger.notes.append(_gate_note)
+                    _hsum["notes"] = _ledger.notes
+                    logger.warning("[harness] hard completion gate: %s — turn closed complete_unverified", _gate_reason)
+                    yield (
+                        "data: " + json.dumps({
+                            "type": "harness_check", "status": "completion_gated",
+                            "reason": _gate_reason, "round": round_num,
+                            "verdict": _proof.get("verdict"),
+                            "tests": _hsum.get("tests"), "ui_smoke": _hsum.get("ui_smoke"),
+                        }) + "\n\n"
+                    )
                 from src.changeset_store import record_turn as _record_changeset
                 _hsum["changeset"].update(await asyncio.to_thread(
                     _record_changeset, _changeset, _proof,
@@ -12462,6 +12490,28 @@ async def _stream_agent_loop_body(
                                 [p["path"] for p in _changeset.unsupported_claims()])
         except Exception as _cs_err:
             logger.debug("[harness] change set failed: %s", _cs_err)
+        # The same gate for a turn that built no changeset (tests / smoke
+        # evidence lives on the ledger regardless of claims).
+        try:
+            if _hsum.get("stop_reason") == "complete":
+                _gate_reason = _harness.completion_gate(_hsum, None)
+                if _gate_reason:
+                    _ledger.stop_reason = "complete_unverified"
+                    _hsum["stop_reason"] = "complete_unverified"
+                    _gate_note = "hard_gate:" + _gate_reason
+                    if _gate_note not in _ledger.notes:
+                        _ledger.notes.append(_gate_note)
+                    _hsum["notes"] = _ledger.notes
+                    logger.warning("[harness] hard completion gate: %s — turn closed complete_unverified", _gate_reason)
+                    yield (
+                        "data: " + json.dumps({
+                            "type": "harness_check", "status": "completion_gated",
+                            "reason": _gate_reason, "round": round_num,
+                            "tests": _hsum.get("tests"), "ui_smoke": _hsum.get("ui_smoke"),
+                        }) + "\n\n"
+                    )
+        except Exception as _gate_err:
+            logger.debug("[harness] completion gate skipped: %s", _gate_err)
 
         if (_ledger.events or _ledger.rejections or _ledger.length_continues or _ledger.notes
                 or _hsum.get("changeset") or _hsum["stop_reason"] != "complete"):

@@ -1752,6 +1752,53 @@ class TurnLedger:
         }
 
 
+#: Changeset verdicts (src/prove.py) that can never seal a turn as
+#: ``complete``: the answer's claims were disproved by the checkpoint
+#: (``contradicted``) or nothing at all backs them (``unproved``).
+HARD_GATE_VERDICTS = ("contradicted", "unproved")
+
+
+def completion_gate(summary: Dict[str, Any], changeset: Optional[Dict[str, Any]] = None) -> Optional[str]:
+    """The hard completion gate (Silhouettes measure #1).
+
+    Given the turn summary (``TurnLedger.summary()``) and the judged
+    changeset (``{"verdict": ..., "unsupported_claims": [...]}``), returns
+    the reason a ``stop_reason == "complete"`` must be downgraded to
+    ``complete_unverified`` — or None when the turn may keep its ``complete``.
+
+    Deterministic, never raises, and only ever *removes* a ``complete``:
+
+    * project tests ran and FAILED with new failures (not pre-existing only,
+      not inconclusive) → ``tests_failed``;
+    * the harness's own UI smoke ran and failed → ``ui_smoke_failed``;
+    * the changeset verdict is ``contradicted``/``unproved`` while the answer
+      actually claimed paths → ``changeset_<verdict>``.
+
+    A turn with no mutations and no claims (a pure answer) is never gated:
+    there is nothing to have proved.
+    """
+    try:
+        if str(summary.get("stop_reason") or "") != "complete":
+            return None
+        tests = summary.get("tests") if isinstance(summary.get("tests"), dict) else None
+        if (tests and tests.get("ran") and tests.get("ok") is False
+                and not tests.get("inconclusive") and not tests.get("pre_existing_only")):
+            return "tests_failed"
+        smoke = summary.get("ui_smoke") if isinstance(summary.get("ui_smoke"), dict) else None
+        if smoke and smoke.get("ran") and smoke.get("ok") is False:
+            return "ui_smoke_failed"
+        if isinstance(changeset, dict):
+            verdict = str(changeset.get("verdict") or "")
+            claims = changeset.get("unsupported_claims") or []
+            if verdict == "contradicted":
+                return "changeset_contradicted"
+            if verdict == "unproved" and claims:
+                return "changeset_unproved"
+    except Exception:  # noqa: BLE001 - a report about the turn never breaks it
+        return None
+    return None
+
+
 # ---------------------------------------------------------------------------
 # helpers
 # ---------------------------------------------------------------------------
