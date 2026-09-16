@@ -134,7 +134,29 @@ def _setup_whisper(monkeypatch) -> Tuple[AdapterPort, str, Callable[[], int]]:
     return adapter, "fake_engine", (lambda: len(whisper_mod._JOBS))
 
 
-_CONTRACT_SETUPS = {"comfyui": _setup_comfyui, "ffmpeg": _setup_ffmpeg, "whisper": _setup_whisper}
+class _ExplodingMusicEngineRunner:
+    """Stands in for `MusicAdapter`'s `engine_runner` in every generic
+    contract check below — none of them ever gets far enough to need a
+    real generation (describe()/plan() never load a model per the
+    adapter's own module docstring; submit() here is only ever given an
+    INVALID plan or an unstaged input, both rejected before a job is
+    queued). Same discipline as `_ExplodingModelLoader` above, for WP24."""
+
+    def __call__(self, engine, params, out_path):
+        raise AssertionError(
+            "the WP36 generic adapter contract must never reach a real music engine")
+
+
+def _setup_music(monkeypatch) -> Tuple[AdapterPort, str, Callable[[], int]]:
+    from src.creator.adapters import music as music_mod
+    adapter = music_mod.MusicAdapter(
+        engine_runner=_ExplodingMusicEngineRunner(),
+        engine_probe=lambda: {"ace_step": (True, "", "fake-contract-1.0"), "musicgen": (False, "not installed", "")})
+    return adapter, "fake_engine", (lambda: len(music_mod._JOBS))
+
+
+_CONTRACT_SETUPS = {"comfyui": _setup_comfyui, "ffmpeg": _setup_ffmpeg, "whisper": _setup_whisper,
+                    "music": _setup_music}
 
 #: (op, params, inputs) for a plan this adapter considers well-formed —
 #: used by the generic "plan()/submit() are pure/classify correctly" checks
@@ -145,6 +167,7 @@ _VALID_OP_FOR = {
     "comfyui": ("sdxl_txt2img", {}, []),
     "ffmpeg": ("trim", {"start_seconds": 0, "duration_seconds": 1}, ["occ_1"]),
     "whisper": ("transcribe", {}, ["occ_1"]),
+    "music": ("music.generate", {"engine": "ace_step", "duration_s": 20, "style_tags": ["pop"]}, []),
 }
 
 

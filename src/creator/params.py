@@ -236,6 +236,21 @@ register_schema(ParamSchema(
 ))
 
 register_schema(ParamSchema(
+    engine="musicgen",
+    task=mc.TASK_MUSIC_GENERATE,
+    fields=(
+        ParamField(key="duration_s", label="Duración", type=TYPE_NUMBER, unit="s",
+                   default=8, minimum=1, maximum=30, affects_time=True, affects_cost=True,
+                   description="MusicGen (audiocraft) — sin canal de letra estructurada."),
+        ParamField(key="prompt", label="Prompt", type=TYPE_STRING, required=True,
+                   description="Texto descriptivo; una letra dada se pliega aquí como pista, "
+                               "nunca como control garantizado (MUS02)."),
+        ParamField(key="seed", label="Seed", type=TYPE_INTEGER, minimum=0,
+                   description="Intento reproducible bajo las mismas condiciones; no garantía bit a bit."),
+    ),
+))
+
+register_schema(ParamSchema(
     engine="chatterbox",
     task=mc.TASK_AUDIO_SYNTHESIZE,
     fields=(

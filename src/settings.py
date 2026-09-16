@@ -115,6 +115,14 @@ DEFAULT_SETTINGS = {
     "creator_asr_default_model": "base",
     "creator_asr_device": "cpu",
     "creator_asr_max_concurrent": 1,
+    # WP24: Music Studio worker defaults (src/creator/adapters/music.py,
+    # src/creator/music.py). "" (empty) default_engine means "use whichever
+    # of acestep/audiocraft describe() finds installed" — neither ships
+    # with this repo and neither is ever installed automatically. Same
+    # "cola de 1" default as ASR/ffmpeg for a heavy generative job.
+    "creator_music_default_engine": "",
+    "creator_music_device": "cpu",
+    "creator_music_max_concurrent": 1,
     "image_gen_enabled": False,
     "image_model": "",
     "image_quality": "medium",

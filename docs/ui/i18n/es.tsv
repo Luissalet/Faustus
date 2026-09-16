@@ -7579,3 +7579,32 @@ Weights on disk	Pesos en disco
 VRAM verdict	Veredicto de VRAM
 Parameter contract registered	Contrato de parámetros registrado
 Creator sections	Secciones de Creator
+Music	Música
+Loading songs	Cargando canciones
+New song	Nueva canción
+Song	Canción
+No songs yet	Aún no hay canciones
+Create a song to start writing lyrics and generating takes.	Crea una canción para empezar a escribir la letra y generar tomas.
+Simple	Sencillo
+Expert	Experto
+Lyrics	Letra
+Remove section	Eliminar sección
+Lyrics for this section (leave empty for instrumental)	Letra de esta sección (vacío para instrumental)
+Style tags (comma-separated)	Etiquetas de estilo (separadas por comas)
+Target BPM	BPM objetivo
+Target key	Tonalidad objetivo
+Seed	Semilla
+Duration (s)	Duración (s)
+Take generated.	Toma generada.
+Takes	Tomas
+No takes yet — generate one above.	Aún no hay tomas — genera una arriba.
+seed	semilla
+Selected	Seleccionada
+The document changed elsewhere — reloaded.	El documento cambió en otro sitio — recargado.
+intro	intro
+verse	estrofa
+pre_chorus	preestribillo
+chorus	estribillo
+bridge	puente
+outro	outro
+completed	completado
