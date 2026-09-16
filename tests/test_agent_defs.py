@@ -702,14 +702,20 @@ async def test_a_definition_reaches_the_loop_that_runs_the_worker(store, delegat
     seen = {}
 
     async def _loop(endpoint_url, model, messages, **kwargs):
-        seen["messages"] = messages
-        seen["disabled"] = set(kwargs.get("disabled_tools") or ())
-        seen["max_rounds"] = kwargs.get("max_rounds")
+        if "messages" not in seen:               # the FIRST call only — see below
+            seen["messages"] = messages
+            seen["disabled"] = set(kwargs.get("disabled_tools") or ())
+            seen["max_rounds"] = kwargs.get("max_rounds")
         yield "data: " + json.dumps({"type": "harness_summary",
                                      "data": {"mutations": [], "stop_reason": "complete"}}) + "\n\n"
         yield "data: [DONE]\n\n"
     delegation(_loop)
 
+    # H3: zero mutations + no final text on a task that says "fix" is exactly
+    # the empty/ack_only pattern subagent_tools.py now retries once (short,
+    # imperative, smaller max_rounds) — this fake loop never produces a
+    # mutation either time, so the assertions below pin down the FIRST call
+    # (the one driven by the definition's own ceiling), not the retry's.
     result = await _delegate({"tasks": [{"instruction": "fix the parser", "agent": "scoped"}],
                               "timeout_s": 60})
     prompt = seen["messages"][0]["content"]
