@@ -47,6 +47,7 @@ import logging
 import os
 import shutil
 import sqlite3
+import stat
 import subprocess
 import tempfile
 from dataclasses import dataclass
@@ -96,6 +97,44 @@ def _run_git(args: list[str], cwd: Optional[str] = None) -> str:
         raise SkillSourceError(
             f"git {' '.join(args)} failed: {(result.stderr or result.stdout).strip()[:500]}")
     return result.stdout.strip()
+
+
+def _make_writable(path: str) -> None:
+    try:
+        os.chmod(path, stat.S_IWRITE | stat.S_IREAD)
+    except OSError:
+        pass
+
+
+def _rmtree_force(path) -> None:
+    """`shutil.rmtree`, resilient to Windows' read-only git object files.
+
+    Git for Windows marks packed objects (`.git/objects/pack/*.pack`,
+    `*.idx`) — and sometimes loose objects — read-only on disk. A plain
+    `shutil.rmtree` there raises `PermissionError` (`WinError 5`) on every
+    one of them; `ignore_errors=True` "fixes" that by swallowing the error
+    and silently leaving `.git` behind, which is worse — the caller believes
+    the directory is gone (or, here, that a fetched revision's `.git` was
+    stripped before copying) when it is not. This instead walks the tree
+    first, clears the read-only bit on every entry, and only then removes
+    it — no `onerror`/`onexc` callback (their signatures differ between
+    Python 3.11 and 3.12+, and this needs to work on both, per the batch
+    that reported this: Windows 11 / Python 3.11).
+
+    A no-op non-error on a path that does not exist, matching how every
+    call site here already used `shutil.rmtree` (some with
+    `ignore_errors=True` for exactly that case, which this replaces).
+    """
+    path = str(path)
+    if not os.path.lexists(path):
+        return
+    for root, dirs, files in os.walk(path):
+        for name in dirs:
+            _make_writable(os.path.join(root, name))
+        for name in files:
+            _make_writable(os.path.join(root, name))
+    _make_writable(path)
+    shutil.rmtree(path)
 
 
 def _connect() -> sqlite3.Connection:
@@ -217,18 +256,36 @@ def _fetch_ref_into(source_url: str, ref: str, dest_dir: str) -> str:
     """Clone `source_url`, check out `ref`, and copy its working tree
     (never its `.git`) into `dest_dir`. Returns the resolved commit SHA —
     the actual `pinned_revision`, not the ref name, so a branch that moves
-    later never silently changes what an already-installed skill runs."""
-    with tempfile.TemporaryDirectory(prefix="faustus-skillsrc-") as clone_dir:
+    later never silently changes what an already-installed skill runs.
+
+    `.git` is stripped from `clone_dir` (via `_rmtree_force` — plain
+    `rmtree`/`ignore_errors` silently fails to remove it on Windows, see
+    that function's docstring) BEFORE the copy, and the copy itself also
+    ignores any `.git` entry it finds (`shutil.copytree(...,
+    ignore=shutil.ignore_patterns(".git"))`) as a second, independent guard
+    — belt and suspenders, so a `.git` never reaches `dest_dir` even if one
+    of the two guards alone would have missed it (a submodule's own nested
+    `.git`, for instance). By the time either runs, the `git` subprocess
+    that created `clone_dir` has already exited (`_run_git` uses
+    `subprocess.run`, which blocks until it does) and holds no open handles
+    into it — the other classic Windows deletion failure, a process still
+    holding the file open, does not apply here.
+    """
+    with tempfile.TemporaryDirectory(prefix="faustus-skillsrc-",
+                                     ignore_cleanup_errors=True) as clone_dir:
         _run_git(["clone", "--quiet", "--no-single-branch", source_url, clone_dir])
         _run_git(["checkout", "--quiet", ref], cwd=clone_dir)
         sha = _run_git(["rev-parse", "HEAD"], cwd=clone_dir)
-        shutil.rmtree(os.path.join(clone_dir, ".git"), ignore_errors=True)
+        _rmtree_force(os.path.join(clone_dir, ".git"))
         os.makedirs(dest_dir, exist_ok=True)
         for entry in os.listdir(clone_dir):
+            if entry == ".git":
+                continue
             src = os.path.join(clone_dir, entry)
             dst = os.path.join(dest_dir, entry)
             if os.path.isdir(src):
-                shutil.copytree(src, dst, dirs_exist_ok=True)
+                shutil.copytree(src, dst, dirs_exist_ok=True,
+                                ignore=shutil.ignore_patterns(".git"))
             else:
                 shutil.copy2(src, dst)
     return sha
@@ -244,7 +301,8 @@ def _remote_ref_sha(source_url: str, ref: str) -> str:
         # Not a branch/tag name ls-remote can match (e.g. a bare SHA, or a
         # ref that no longer exists) — resolve it the expensive way, via a
         # throwaway fetch, rather than reporting a false "no update".
-        with tempfile.TemporaryDirectory(prefix="faustus-skillsrc-check-") as tmp:
+        with tempfile.TemporaryDirectory(prefix="faustus-skillsrc-check-",
+                                         ignore_cleanup_errors=True) as tmp:
             _run_git(["init", "--quiet", tmp])
             _run_git(["fetch", "--quiet", "--depth", "1", source_url, ref], cwd=tmp)
             return _run_git(["rev-parse", "FETCH_HEAD"], cwd=tmp)
@@ -257,7 +315,7 @@ def _replace_dir_contents(target: Path, source: Path) -> None:
     two share one "swap the files" primitive."""
     for entry in list(target.iterdir()):
         if entry.is_dir():
-            shutil.rmtree(entry)
+            _rmtree_force(entry)
         else:
             entry.unlink()
     for entry in source.iterdir():
@@ -290,7 +348,8 @@ def install(skill_dir, source_url: str, ref: str = "HEAD", *,
         raise SkillSourceError(
             f"{skill_dir!r} is not empty; install() is for a fresh skill "
             "directory, update() is for one that already has a source")
-    with tempfile.TemporaryDirectory(prefix="faustus-skillsrc-install-") as staging:
+    with tempfile.TemporaryDirectory(prefix="faustus-skillsrc-install-",
+                                     ignore_cleanup_errors=True) as staging:
         sha = _fetch_ref_into(source_url, ref, staging)
         skill_md = Path(staging) / "SKILL.md"
         if not skill_md.is_file():
@@ -350,7 +409,8 @@ def update(skill_key: str, *, verify: bool = True,
     if not skill_dir.is_dir():
         raise SkillSourceError(f"skill directory {skill_dir} no longer exists")
 
-    with tempfile.TemporaryDirectory(prefix="faustus-skillsrc-update-") as staging_s:
+    with tempfile.TemporaryDirectory(prefix="faustus-skillsrc-update-",
+                                     ignore_cleanup_errors=True) as staging_s:
         staging = Path(staging_s)
         sha = _fetch_ref_into(src["source_url"], src["ref"], staging_s)
         if sha == src["pinned_revision"]:
@@ -380,7 +440,7 @@ def update(skill_key: str, *, verify: bool = True,
         digest = _digest_of(staging_s)
         backup_dir = _backup_dir_for(skill_key)
         if backup_dir.exists():
-            shutil.rmtree(backup_dir)
+            _rmtree_force(backup_dir)
         backup_dir.parent.mkdir(parents=True, exist_ok=True)
         shutil.copytree(skill_dir, backup_dir)
         backup_digest = _digest_of(backup_dir)  # what's actually on disk in the backup
