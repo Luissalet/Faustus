@@ -1,6 +1,22 @@
 # Pendientes de cierre
 
-Actualizado: 16-09-2026 (noche). Sólo trabajo vigente; quitar cada entrada al cerrarla.
+Actualizado: 17-09-2026 (madrugada). Sólo trabajo vigente; quitar cada entrada al cerrarla.
+
+## Madrugada del 17-09 (harness para implementaciones largas — FAUSTUS.md §95, OBJ-16)
+
+### Qué mirar en el 7001
+
+- **Repetir el chat #14 de Silhouettes.** «Sigue implementando el plan» + el plan de 172 KB adjunto, con el 27B real. Esperado: evento `plan_tracker` (N tareas, tarea actual), prompt del modelo < 12 KB (la nota `plan_tracker:attachment:<hash>` en el resumen), ≥ 1 tool call y `plan_status`/`plan_task` entre ellas. Si vuelve «Reference context received.», el nudge de `no_action` y luego `plan_without_action` tienen que aparecer en la lista de checks del Studio — y el turno no puede cerrar `complete`.
+- **`ui_smoke` con Flask real en Windows.** Mutar un `.mjs` bajo `static/` de un proyecto Flask y comprobar que `harness_check ui_smoke_ok` aparece (o `ui_smoke_failed` con el `content_type` si el servidor lo sirve mal). Playwright de Python + Chromium en la máquina del proyecto son opcionales — sin ellos solo hace la parte HTTP y lo dice.
+- **Puerta dura.** Un turno con un test rojo nuevo: la tarjeta `verified` trae `gate: tests_failed` y el resumen `complete_unverified` («Not sealed as complete» en el Studio).
+- **Deriva de dependencias.** Quitar `shapely` del venv del proyecto y abrir un turno: la nota de sistema con «falta shapely — instálala con install_dependencies» tiene que llegar antes de cualquier bash.
+
+### Limitaciones honestas
+
+- La puerta dura solo impide sellar `complete`; no abre una ronda de arreglo propia (las de tests/smoke/review siguen siendo las que arreglan).
+- `plan_done` informa de los ficheros de la tarea que el turno no tocó, pero no ejecuta criterios tipados; el `Goal` de WP27 (`test_passes`, `http_ok`) aún no está enganchado al tracker.
+- El parser de planes es heurístico (encabezados/listas/checkboxes): un plan en prosa pura da 0 tareas y cae al recorte a TOC de §90.
+- `delegation_receipts` reintenta una vez con orden corta; si el segundo intento vuelve vacío, el padre recibe el aviso explícito y sigue — no hay tercer intento.
 
 ## Noche del 16-09 (auditoría Cursor, paridad 36/36, Reach, Creator fase 1-2)
 
@@ -18,14 +34,9 @@ La suite completa de la nube (worktree limpia, `-n 2 --dist loadfile`, commit `6
 
 ### xfail y limitaciones honestas que cada lote dejó
 
-- **A15** — reacquisition tool (`read_overflow`) no cableada al bucle vivo del agente (`T8_wiring.md`).
-- **A12/A13** — punto de llamada de offload en `agent_loop.py` y el tool `read_artifact` documentados en `T5_wiring.md`, no en los ficheros propios de T5 (`tests/test_t5_wiring.py` xfail).
-- **A25** — `routes/skill_source_routes.py` no montado en `app.py` (`U3_wiring.md`, `tests/test_u3_wiring.py` xfail).
-- **A26** — `routes/evolution_routes.py` no montado en `app.py` (`U5_wiring.md`, `tests/test_u5_wiring.py` xfail).
-- **A31** — `GET /api/runs/{run_id}/budget` no montado en `app.py` (`T7_wiring.md` §1, `tests/test_t7_wiring.py` xfail). El coste de un delegate sin tabla de precios reporta siempre `unpriced_usage`, nunca `0.0` falso.
-- **A29** — `loop_breaker.py` probado en aislado pero, según `MATRIZ_PARIDAD.md` fila 16, su cableado a `agent_loop.py` en lugar de (o junto a) los contadores inline existentes está descrito en `T7_wiring.md` sin aplicar en este árbol — confirmar el estado exacto (`ESTADO_ACEPTACION.md` lo da verde vía `tests/acceptance/test_a29_loop_breaker.py`, que sí ejercita la política real; la discrepancia con la fila 16 de la matriz merece una relectura antes de asumir que ya está enganchado en el loop de producción).
-- **A17** — `sandbox_missing_policy` no está aún en `DEFAULT_SETTINGS`/`agent_settings_schema.py` (`U1_wiring.md`).
-- **WP02/WP09/WP30 (Creator)** — implementados y probados, sin montar en `app.py`; diff exacto en `WP02_wiring.md`, `WP09_wiring.md`, `WP30_wiring.md`.
+- **A31** — el coste de un delegate sin tabla de precios reporta siempre `unpriced_usage`, nunca `0.0` falso.
+- **A29** — `loop_breaker.py` cableado en `agent_loop.py` (observa cada (tool, args, resultado), `observe_skipped` en las recuperaciones, `stop_reason=non_progressing_loop`).
+- **Creator** — 27 de 43 paquetes implementados y montados detrás de `creator_enabled` (OFF); ningún motor real (ComfyUI, faster-whisper, TTS, ACE-Step/MusicGen) instalado en este entorno, así que todo adapter reporta `available=False` honesto. Quedan WP17/19/21/23/25/26/28/29/31/33/34/35/37/38/39/40/42.
 - **Reach** — el backend de sesión de navegador (`x`/`reddit`) es un seam real sin lector conectado; búsqueda en `x` sin navegador ni `reach_nitter_base` responde `unavailable` honesto.
 - **Code graph** — sin edge `INHERITS`; no recorre cadenas de herencia.
 - **Fan-out** — sin SSE de progreso, solo poll.

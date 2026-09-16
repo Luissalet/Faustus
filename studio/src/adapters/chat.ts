@@ -1602,6 +1602,29 @@ export function decode(raw: Record<string, unknown>, sseEvent: string | null): C
       };
     case 'harness_summary':
       return { type: 'summary', summary: summaryFrom(data) };
+    case 'plan_tracker':
+      // Long-implementation mode: a parsed plan with per-task state.
+      return {
+        type: 'check',
+        check: {
+          status: 'plan_tracker',
+          round: undefined,
+          reasons: [],
+          label: str(raw.title) || undefined,
+          detail: `${num(raw.done) ?? 0}/${num(raw.total) ?? 0}${raw.current ? ` · ${str(raw.current)}` : ''}`,
+        },
+      };
+    case 'rewrite_policy_triggered':
+      return {
+        type: 'check',
+        check: {
+          status: 'rewrite_policy',
+          round: num(raw.round),
+          reasons: [],
+          label: str(raw.path) || undefined,
+          detail: `${str(raw.verdict)} ×${num(raw.count) ?? 0}`,
+        },
+      };
     case 'system_notice':
       return {
         type: 'check',

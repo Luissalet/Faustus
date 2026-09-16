@@ -35,6 +35,19 @@ const CHECK_WORDS: Record<string, string> = {
   review_issues: 'The review found problems',
   verified: 'Checks completed',
   model_notice: 'Model notice',
+  ui_smoke_failed: 'UI smoke test failed',
+  ui_smoke_ok: 'UI smoke test passed',
+  completion_gated: 'Not sealed as complete',
+  no_action: 'No action taken',
+  rewrite_policy: 'Whole-file rewrite refused',
+  plan_tracker: 'Implementation plan',
+};
+
+const GATE_WORDS: Record<string, string> = {
+  tests_failed: 'the tests fail',
+  ui_smoke_failed: 'the UI smoke test fails',
+  changeset_contradicted: 'the checkpoint contradicts what was claimed',
+  changeset_unproved: 'nothing backs what was claimed',
 };
 
 const REASON_WORDS: Record<string, string> = {
@@ -43,6 +56,7 @@ const REASON_WORDS: Record<string, string> = {
   claimed_paths_untouched: 'names files it did not touch',
   no_tools: 'used no tools',
   ui_unverified: 'UI changes not verified in the browser',
+  plan_without_action: 'an active plan was to be executed, but no tool was called',
 };
 
 export function CheckList({ checks }: { checks: HarnessCheck[] }) {
@@ -50,8 +64,9 @@ export function CheckList({ checks }: { checks: HarnessCheck[] }) {
   return (
     <ul className="fs-harness__checks" aria-label={t('Harness checks')}>
       {checks.map((c, i) => {
-        const bad = ['unverified', 'rejected', 'syntax_error', 'tests_failed', 'review_issues', 'target_substituted', 'unknown_tool'].includes(c.status);
-        const good = c.status === 'verified';
+        const bad = ['unverified', 'rejected', 'syntax_error', 'tests_failed', 'review_issues', 'target_substituted', 'unknown_tool', 'ui_smoke_failed', 'completion_gated', 'rewrite_policy'].includes(c.status);
+        const good = c.status === 'verified' || c.status === 'ui_smoke_ok';
+        const detail = c.status === 'completion_gated' && c.detail && GATE_WORDS[c.detail] ? t(GATE_WORDS[c.detail]) : c.detail;
         return (
           <li key={`${c.status}-${i}`} className="fs-harness__check" data-tone={bad ? 'danger' : good ? 'success' : 'info'}>
             {good ? <ShieldCheck size={13} aria-hidden="true" /> : bad ? <ShieldAlert size={13} aria-hidden="true" /> : <CircleDashed size={13} aria-hidden="true" />}
@@ -60,7 +75,7 @@ export function CheckList({ checks }: { checks: HarnessCheck[] }) {
               {c.label ? ` · ${c.label}` : ''}
               {c.model ? ` · ${c.model}` : ''}
               {c.reasons && c.reasons.length > 0 ? `: ${c.reasons.map((r) => (REASON_WORDS[r] ? t(REASON_WORDS[r]) : r)).join(', ')}` : ''}
-              {c.detail && !c.reasons?.length ? ` · ${c.detail}` : ''}
+              {detail && !c.reasons?.length ? ` · ${detail}` : ''}
             </span>
             {c.round !== undefined && <span className="fs-trace__meta">{t('round {n}', {n: c.round})}</span>}
           </li>

@@ -76,10 +76,12 @@ def test_write_file_refusal_shape_is_wired(tmp_path, monkeypatch):
     async def _write_once():
         return await tool.execute(f"{target}\n{new_body}", ctx)
 
-    first = asyncio.get_event_loop().run_until_complete(_write_once())
+    async def _both():
+        return await _write_once(), await _write_once()
+
+    first, second = asyncio.run(_both())
     assert first.get("exit_code") == 0, first  # 1st rewrite: allowed
 
-    second = asyncio.get_event_loop().run_until_complete(_write_once())
     assert second.get("policy") == "rewrite_policy"
     assert second.get("policy_verdict") == "require_edit"
     assert second.get("exit_code") == 1
