@@ -1,6 +1,12 @@
 # Pendientes de cierre
 
-Actualizado: 17-09-2026 (madrugada). Sólo trabajo vigente; quitar cada entrada al cerrarla.
+Actualizado: 17-09-2026 (mediodía). Sólo trabajo vigente; quitar cada entrada al cerrarla.
+
+## Mediodía del 17-09 (conectores — FAUSTUS.md §96)
+
+- Conectores de Luis dados de alta en el 7000: Jobhunter's Hoard (:5178, 15 tools, perfil `node server/index.js` con `PORT=5178`) y Writer's Hoard (:8766, 126 tools, perfil `open_exe` sobre `release/win-unpacked/Writers Hoard.exe`). Falta probar en vivo «seguir a la app»: arrancar un segundo Jobhunter (caería en 5179), parar el de 5178 y pulsar Check — el conector debe mudarse y decir «Followed the app from … to …».
+- Un `stop` del servidor 7000 mata también las apps lanzadas desde un perfil (hijas del proceso): Writer's Hoard se cerró al reiniciar el 7000. Valorar lanzar los perfiles desacoplados (`CREATE_NEW_PROCESS_GROUP` + `DETACHED_PROCESS`) para que sobrevivan a un reinicio de Faustus.
+- La app de escritorio sigue sin devtools ni menú: para diagnosticar otra pantalla en blanco vale `Ctrl+Shift+I` (el menú por defecto de Electron sigue activo aunque no se vea).
 
 ## Madrugada del 17-09 (harness para implementaciones largas — FAUSTUS.md §95, OBJ-16)
 
