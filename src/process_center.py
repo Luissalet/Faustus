@@ -351,7 +351,7 @@ def snapshot(*, connectors: Optional[Iterable[Dict[str, Any]]] = None,
             if row.origin == "other":
                 row.origin, row.label = "faustus", "started by Faustus (agent shell, MCP server or tool)"
             out["faustus"].append(row.to_dict())
-            seen.add(child.pid)
+            seen.add(child_pid)
     except Exception:  # noqa: BLE001
         pass
 
