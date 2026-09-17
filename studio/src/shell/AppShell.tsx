@@ -3,7 +3,8 @@ import { clearThemeAttribute, syncThemeFromServer } from './theme';
 import { applyTheme, getTheme, syncAppearanceFromServer, useAppearance } from './appearance';
 import { useNavSize } from './navSize';
 import { Settings2 } from 'lucide-react';
-import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { lazyChunk, RouteErrorBoundary } from './lazyChunk';
 import { BrowserRouter, Navigate, NavLink, Route, Routes, useLocation } from 'react-router';
 import { Skeleton } from '../components';
 import { HomeScreen } from '../screens/Home';
@@ -22,39 +23,39 @@ import { useCreatorAvailable } from '../adapters/creator';
    is fetched right after the first paint (`warmStudio`) so opening it from
    Inicio costs nothing perceptible. */
 const loadStudio = () => import('../screens/Studio');
-const StudioScreen = lazy(() => loadStudio().then((m) => ({ default: m.StudioScreen })));
-const ActivityScreen = lazy(() => import('../screens/Activity').then((m) => ({ default: m.ActivityScreen })));
-const AutomationsScreen = lazy(() => import('../screens/Automations').then((m) => ({ default: m.AutomationsScreen })));
-const LibraryScreen = lazy(() => import('../screens/Library').then((m) => ({ default: m.LibraryScreen })));
-const EditorScreen = lazy(() => import('../screens/library/editor/Editor').then((m) => ({ default: m.EditorScreen })));
-const DocumentScreen = lazy(() => import('../screens/documents/Editor').then((m) => ({ default: m.DocumentScreen })));
-const ProjectScreen = lazy(() => import('../screens/Project').then((m) => ({ default: m.ProjectScreen })));
-const ProjectsScreen = lazy(() => import('../screens/Projects').then((m) => ({ default: m.ProjectsScreen })));
-const NotesScreen = lazy(() => import('../screens/Notes').then((m) => ({ default: m.NotesScreen })));
-const MemoryScreen = lazy(() => import('../screens/Memory').then((m) => ({ default: m.MemoryScreen })));
-const CalendarScreen = lazy(() => import('../screens/Calendar').then((m) => ({ default: m.CalendarScreen })));
-const EmailScreen = lazy(() => import('../screens/email/Email').then((m) => ({ default: m.EmailScreen })));
-const ResearchScreen = lazy(() => import('../screens/research/Research').then((m) => ({ default: m.ResearchScreen })));
-const CookbookScreen = lazy(() => import('../screens/cookbook/Cookbook').then((m) => ({ default: m.CookbookScreen })));
-const CompareScreen = lazy(() => import('../screens/compare/Compare').then((m) => ({ default: m.CompareScreen })));
-const ContextScreen = lazy(() => import('../screens/Context').then((m) => ({ default: m.ContextScreen })));
-const GroupScreen = lazy(() => import('../screens/group/Group').then((m) => ({ default: m.GroupScreen })));
-const CouncilScreen = lazy(() => import('../screens/Council').then((m) => ({ default: m.CouncilScreen })));
-const StateMirrorScreen = lazy(() => import('../screens/StateMirror').then((m) => ({ default: m.StateMirrorScreen })));
-const DeltasScreen = lazy(() => import('../screens/Deltas').then((m) => ({ default: m.DeltasScreen })));
-const CompletionScreen = lazy(() => import('../screens/Completion').then((m) => ({ default: m.CompletionScreen })));
-const SettingsScreen = lazy(() => import('../screens/Settings').then((m) => ({ default: m.SettingsScreen })));
-const AgentsScreen = lazy(() => import('../screens/Agents').then((m) => ({ default: m.AgentsScreen })));
-const SkillsScreen = lazy(() => import('../screens/Skills').then((m) => ({ default: m.SkillsScreen })));
-const SourceControlScreen = lazy(() => import('../screens/SourceControl').then((m) => ({ default: m.SourceControlScreen })));
-const ConnectorsScreen = lazy(() => import('../screens/connectors/Connectors').then((m) => ({ default: m.ConnectorsScreen })));
-const AlternativesScreen = lazy(() => import('../screens/alternatives/AlternativesScreen').then((m) => ({ default: m.AlternativesScreen })));
-const WorkflowsScreen = lazy(() => import('../screens/workflows/WorkflowsScreen').then((m) => ({ default: m.WorkflowsScreen })));
-const CreatorScreen = lazy(() => import('../screens/creator/CreatorScreen').then((m) => ({ default: m.CreatorScreen })));
-const OnboardingScreen = lazy(() => import('../screens/Onboarding'));
+const StudioScreen = lazyChunk(() => loadStudio().then((m) => ({ default: m.StudioScreen })));
+const ActivityScreen = lazyChunk(() => import('../screens/Activity').then((m) => ({ default: m.ActivityScreen })));
+const AutomationsScreen = lazyChunk(() => import('../screens/Automations').then((m) => ({ default: m.AutomationsScreen })));
+const LibraryScreen = lazyChunk(() => import('../screens/Library').then((m) => ({ default: m.LibraryScreen })));
+const EditorScreen = lazyChunk(() => import('../screens/library/editor/Editor').then((m) => ({ default: m.EditorScreen })));
+const DocumentScreen = lazyChunk(() => import('../screens/documents/Editor').then((m) => ({ default: m.DocumentScreen })));
+const ProjectScreen = lazyChunk(() => import('../screens/Project').then((m) => ({ default: m.ProjectScreen })));
+const ProjectsScreen = lazyChunk(() => import('../screens/Projects').then((m) => ({ default: m.ProjectsScreen })));
+const NotesScreen = lazyChunk(() => import('../screens/Notes').then((m) => ({ default: m.NotesScreen })));
+const MemoryScreen = lazyChunk(() => import('../screens/Memory').then((m) => ({ default: m.MemoryScreen })));
+const CalendarScreen = lazyChunk(() => import('../screens/Calendar').then((m) => ({ default: m.CalendarScreen })));
+const EmailScreen = lazyChunk(() => import('../screens/email/Email').then((m) => ({ default: m.EmailScreen })));
+const ResearchScreen = lazyChunk(() => import('../screens/research/Research').then((m) => ({ default: m.ResearchScreen })));
+const CookbookScreen = lazyChunk(() => import('../screens/cookbook/Cookbook').then((m) => ({ default: m.CookbookScreen })));
+const CompareScreen = lazyChunk(() => import('../screens/compare/Compare').then((m) => ({ default: m.CompareScreen })));
+const ContextScreen = lazyChunk(() => import('../screens/Context').then((m) => ({ default: m.ContextScreen })));
+const GroupScreen = lazyChunk(() => import('../screens/group/Group').then((m) => ({ default: m.GroupScreen })));
+const CouncilScreen = lazyChunk(() => import('../screens/Council').then((m) => ({ default: m.CouncilScreen })));
+const StateMirrorScreen = lazyChunk(() => import('../screens/StateMirror').then((m) => ({ default: m.StateMirrorScreen })));
+const DeltasScreen = lazyChunk(() => import('../screens/Deltas').then((m) => ({ default: m.DeltasScreen })));
+const CompletionScreen = lazyChunk(() => import('../screens/Completion').then((m) => ({ default: m.CompletionScreen })));
+const SettingsScreen = lazyChunk(() => import('../screens/Settings').then((m) => ({ default: m.SettingsScreen })));
+const AgentsScreen = lazyChunk(() => import('../screens/Agents').then((m) => ({ default: m.AgentsScreen })));
+const SkillsScreen = lazyChunk(() => import('../screens/Skills').then((m) => ({ default: m.SkillsScreen })));
+const SourceControlScreen = lazyChunk(() => import('../screens/SourceControl').then((m) => ({ default: m.SourceControlScreen })));
+const ConnectorsScreen = lazyChunk(() => import('../screens/connectors/Connectors').then((m) => ({ default: m.ConnectorsScreen })));
+const AlternativesScreen = lazyChunk(() => import('../screens/alternatives/AlternativesScreen').then((m) => ({ default: m.AlternativesScreen })));
+const WorkflowsScreen = lazyChunk(() => import('../screens/workflows/WorkflowsScreen').then((m) => ({ default: m.WorkflowsScreen })));
+const CreatorScreen = lazyChunk(() => import('../screens/creator/CreatorScreen').then((m) => ({ default: m.CreatorScreen })));
+const OnboardingScreen = lazyChunk(() => import('../screens/Onboarding'));
 /* cmdk rides in with the first Ctrl+K, not with the page. */
-const CommandPalette = lazy(() => import('./CommandPalette').then((m) => ({ default: m.CommandPalette })));
-const Tour = lazy(() => import('./Tour').then((m) => ({ default: m.Tour })));
+const CommandPalette = lazyChunk(() => import('./CommandPalette').then((m) => ({ default: m.CommandPalette })));
+const Tour = lazyChunk(() => import('./Tour').then((m) => ({ default: m.Tour })));
 
 /**
  * The rail.
@@ -220,6 +221,7 @@ function RouteStage() {
 function RouteBody() {
   return (
     <div className="fs-route">
+      <RouteErrorBoundary>
       <Suspense fallback={<Skeleton label={t('Loading the screen')} count={4} height="56px" />}>
       <Routes>
         <Route path="/" element={<HomeScreen />} />
@@ -264,6 +266,7 @@ function RouteBody() {
         <Route path="*" element={<NotFound />} />
       </Routes>
       </Suspense>
+      </RouteErrorBoundary>
     </div>
   );
 }

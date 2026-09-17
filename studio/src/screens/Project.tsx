@@ -1,5 +1,6 @@
 import { Activity, AlertTriangle, Archive, ArchiveRestore, ArrowLeft, Brain, Check, ClipboardList, Download, Eye, FileText, FolderOpen, FolderPlus, GitBranch, Image, Kanban, Layers, Link2, Lock, MessageSquare, PencilLine, Pin, PinOff, Plus, RefreshCw, Settings2, Target, Trash2, Unlink, X } from 'lucide-react';
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazyChunk } from '../shell/lazyChunk';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { ActivityDot, Button, Dialog, EmptyState, Menu, Skeleton, Toast } from '../components';
 import { type ChatSession } from '../adapters/chat';
@@ -107,7 +108,7 @@ export { relocateResultMessage } from '../adapters/projects';
  * one also keeps `Project.tsx`'s own module import graph from reaching
  * `<Rich>` (screens/rich.tsx → shell/display.ts's module-scope `document`
  * access) until the Board tab actually renders, instead of at import time. */
-const BoardPanel = lazy(() => import('./board/BoardPanel').then((m) => ({ default: m.BoardPanel })));
+const BoardPanel = lazyChunk(() => import('./board/BoardPanel').then((m) => ({ default: m.BoardPanel })));
 
 /* ── Context sources ──
  *

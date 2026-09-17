@@ -31,7 +31,7 @@ from fastapi import APIRouter, HTTPException, Request
 
 from core.database import McpServer, SessionLocal
 from core.middleware import require_admin, require_human
-from src import connector_sidecar, connector_status, connectors, launch_profiles
+from src import connector_discovery, connector_sidecar, connector_status, connectors, launch_profiles
 from src.mcp_manager import McpManager, server_inherits_env
 from routes.mcp.mcp_routes import setup_mcp_routes
 
@@ -120,6 +120,55 @@ def setup_connector_routes(mcp_manager: McpManager) -> APIRouter:
             connector_id=entry["id"], manager_status=manager_status, force_check=force_check,
         )
 
+    async def _follow_app(entry: Dict[str, Any]) -> Dict[str, Any]:
+        """Jobhunter takes the first free port from 5178 up, so a stored
+        APP_URL goes stale. When the configured URL does not answer, look
+        for the app by its own fingerprint on the other loopback ports and,
+        if it is there, move the connector: sidecar values/app_url/ui_url,
+        the MCP server's env (the bridge reads JOBHUNT_URL/WH_BRIDGE_URL at
+        spawn), and the cached health. Returns the (possibly updated) entry
+        with `relocated_from` set when it moved."""
+        preset = connectors.get_preset(entry["preset_id"])
+        if preset is None:
+            return entry
+        resolved = connectors.resolve_preset_values(preset, entry.get("values") or {})
+        if not resolved["ok"]:
+            return entry
+        health = await connector_status.get_health(entry["id"], resolved["app_url"], preset.health_path, force=True)
+        if health.get("reachable"):
+            return entry
+        try:
+            found = await connector_discovery.find_app(preset, current_url=resolved["app_url"])
+        except Exception as exc:  # noqa: BLE001 - discovery is best effort
+            logger.debug("[connectors] discovery failed for %s: %s", entry["id"], exc)
+            found = None
+        if found is None or found.url.rstrip("/") == str(resolved["app_url"]).rstrip("/"):
+            return entry
+        values = {**(entry.get("values") or {}), "APP_URL": found.url}
+        moved = connectors.resolve_preset_values(preset, values)
+        if not moved["ok"]:
+            return entry
+        db = SessionLocal()
+        try:
+            server = db.query(McpServer).filter(McpServer.id == entry["server_id"]).first()
+            if server is not None:
+                server.command = moved["command"]
+                server.args = json.dumps(moved["args"])
+                server.env = json.dumps(moved["env"])
+                db.commit()
+        finally:
+            db.close()
+        if mcp_manager.get_server_status(entry["server_id"]).get("status") != "disconnected":
+            await mcp_manager.disconnect_server(entry["server_id"])
+        connector_status.invalidate_health(entry["id"])
+        updated = connector_sidecar.update_connector(
+            entry["id"], values=values, app_url=moved["app_url"], ui_url=moved["ui_url"],
+        ) or entry
+        logger.info("[connectors] %s followed its app from %s to %s", entry["id"], resolved["app_url"], found.url)
+        updated = dict(updated)
+        updated["relocated_from"] = resolved["app_url"]
+        return updated
+
     def _entry_view(entry: Dict[str, Any], server: Optional[McpServer], status: Dict[str, Any]) -> Dict[str, Any]:
         return {
             "id": entry["id"],
@@ -132,7 +181,62 @@ def setup_connector_routes(mcp_manager: McpManager) -> APIRouter:
             "preset": _preset_dict(entry["preset_id"]),
             "server": _server_summary(server, mcp_manager) if server else None,
             "status": status,
+            "relocated_from": entry.get("relocated_from"),
         }
+
+    @router.get("/api/app-connectors/discover")
+    async def discover_route(request: Request):
+        """Nearby apps: every loopback web app that answers, with the process
+        behind it and the preset it matches — the Bluetooth-style pairing
+        list. `connected` marks the ones a connector already points at."""
+        require_admin(request)
+        known = {}
+        for entry in connector_sidecar.list_connectors(redact=True):
+            known[(entry.get("preset_id"), str(entry.get("app_url") or "").rstrip("/"))] = entry["id"]
+        exclude = set()
+        try:
+            exclude.add(int(request.url.port or 0))
+        except Exception:  # noqa: BLE001
+            pass
+        found = await connector_discovery.discover(exclude=exclude)
+        out = []
+        for cand in found:
+            row = cand.to_dict()
+            row["connector_id"] = known.get((cand.preset_id, cand.url.rstrip("/")))
+            missing = []
+            if cand.preset_id:
+                preset = connectors.get_preset(cand.preset_id)
+                resolved = connectors.resolve_preset_values(preset, cand.values) if preset else {"ok": False, "missing": []}
+                missing = list(resolved.get("missing") or []) if not resolved["ok"] else []
+            row["missing"] = missing
+            out.append(row)
+        return {"apps": out, "scanned_at": connector_status.now_iso()}
+
+    @router.post("/api/app-connectors/adopt")
+    async def adopt_route(request: Request):
+        """One-click Add for a discovered app: create the connector from the
+        preset it fingerprinted as, with the values discovery could fill
+        (live URL, install dir from the process cwd) plus whatever the body
+        adds. Reuses the create route so validation and the 409 stay one."""
+        require_admin(request)
+        body = await request.json()
+        port = int(body.get("port") or 0)
+        if not port:
+            raise HTTPException(400, "port is required")
+        listing = [lp for lp in connector_discovery.listening_ports() if lp.port == port]
+        found = await connector_discovery.discover(
+            ports=listing or [connector_discovery.ListeningPort(port=port)], exclude=set())
+        cand = next((c for c in found if c.port == port), None)
+        if cand is None:
+            raise HTTPException(404, f"Nothing answered on port {port}")
+        preset_id = body.get("preset_id") or cand.preset_id
+        if not preset_id:
+            raise HTTPException(400, "This app is not a known preset; add it as an MCP server instead")
+        values = {**cand.values, **{k: v for k, v in (body.get("values") or {}).items() if v}}
+        return await _create_from_payload(request, {
+            "preset_id": preset_id, "values": values,
+            "name": body.get("name"), "launch_profile_id": body.get("launch_profile_id"),
+        })
 
     @router.get("/api/app-connectors/presets")
     def get_presets(request: Request):
@@ -152,6 +256,21 @@ def setup_connector_routes(mcp_manager: McpManager) -> APIRouter:
         covered = set()
         out = []
         for entry in entries:
+            if force_check:
+                # A forced refresh is also when a moved app is followed
+                # (redact=False: _follow_app needs the real values).
+                raw = connector_sidecar.get_connector(entry["id"], redact=False) or entry
+                followed = await _follow_app(raw)
+                if followed.get("relocated_from"):
+                    entry = {**(connector_sidecar.get_connector(entry["id"], redact=True) or entry),
+                             "relocated_from": followed["relocated_from"]}
+                    db = SessionLocal()
+                    try:
+                        srv = db.query(McpServer).filter(McpServer.id == entry["server_id"]).first()
+                        if srv is not None:
+                            servers_by_id[srv.id] = srv
+                    finally:
+                        db.close()
             server = servers_by_id.get(entry["server_id"])
             covered.add(entry["server_id"])
             status = await _connector_status_for(entry, server, force_check=force_check)
@@ -171,6 +290,9 @@ def setup_connector_routes(mcp_manager: McpManager) -> APIRouter:
     async def create_connector_route(request: Request):
         require_admin(request)
         body = await request.json()
+        return await _create_from_payload(request, body)
+
+    async def _create_from_payload(request: Request, body: Dict[str, Any]):
         preset_id = body.get("preset_id")
         preset = connectors.get_preset(preset_id)
         if preset is None:
@@ -286,12 +408,16 @@ def setup_connector_routes(mcp_manager: McpManager) -> APIRouter:
         entry = connector_sidecar.get_connector(connector_id, redact=False)
         if entry is None:
             raise HTTPException(404, "Connector not found")
+        entry = await _follow_app(entry)
         db = SessionLocal()
         try:
             server = db.query(McpServer).filter(McpServer.id == entry["server_id"]).first()
         finally:
             db.close()
-        return await _connector_status_for(entry, server, force_check=True)
+        status = await _connector_status_for(entry, server, force_check=True)
+        if entry.get("relocated_from"):
+            status = {**status, "relocated_from": entry["relocated_from"], "app_url": entry.get("app_url")}
+        return status
 
     @router.post("/api/app-connectors/{connector_id}/connect")
     async def connect_connector_route(connector_id: str, request: Request):
@@ -306,6 +432,13 @@ def setup_connector_routes(mcp_manager: McpManager) -> APIRouter:
             db.close()
         if server is None:
             raise HTTPException(404, "Underlying MCP server not found")
+        entry = await _follow_app(entry)
+        if entry.get("relocated_from"):
+            db = SessionLocal()
+            try:
+                server = db.query(McpServer).filter(McpServer.id == entry["server_id"]).first()
+            finally:
+                db.close()
         current = mcp_manager.get_server_status(server.id)
         if current.get("status") == "connected":
             # Idempotent: connect on an already-connected server must not

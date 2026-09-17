@@ -1,7 +1,8 @@
 import { CheckSquare, FileText, FolderKanban, GitBranch, MessageSquare, PanelRight, Waypoints, X } from 'lucide-react';
 import {withImageReferences} from '../lib/image-references';
 import {MessageNavigator} from './studio/MessageNavigator';
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { lazyChunk } from '../shell/lazyChunk';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { Button, Dialog, IconButton, Popover, Skeleton } from '../components';
 import {
@@ -100,20 +101,20 @@ import { getSessionMode, listModes, modeLabel, resolveModeCommand, setSessionMod
 
 /* Rare, and the eager bundle has a budget: the folder picker and the side
    panel (browser frames, document editor, file viewer) arrive when opened. */
-const WorkspaceDialog = lazy(() => import('./studio/WorkspaceDialog'));
-const SidePanel = lazy(() => import('./studio/SidePanel'));
+const WorkspaceDialog = lazyChunk(() => import('./studio/WorkspaceDialog'));
+const SidePanel = lazyChunk(() => import('./studio/SidePanel'));
 /* CMP-01-layout (W2-A2): the "review" layout's fourth column. W2-A1 owns
    this component (docs/adaptations/decisions/CMP-01.md); it is a named
    export, not default, so it is wrapped here rather than imported directly. */
-const ReviewPane = lazy(() => import('./documents/ReviewPane').then((m) => ({ default: m.ReviewPane })));
+const ReviewPane = lazyChunk(() => import('./documents/ReviewPane').then((m) => ({ default: m.ReviewPane })));
 // Lote 50 (BENCH-03 wiring): only fetched once a tool card's "ver evidencia"
 // button is actually clicked — same rare-on-demand posture as the two above.
-const EvidenceInspector = lazy(() => import('./Evidence'));
+const EvidenceInspector = lazyChunk(() => import('./Evidence'));
 import {selectionImage,selectionPrompt} from './studio/FrameSelection';
 import ProjectVisualReferences from './studio/ProjectVisualReferences';
 import StyleLab from './studio/StyleLab';
 import LocalVideo from './studio/LocalVideo';
-const VoicePanel = lazy(() => import('../voice/VoicePanel'));
+const VoicePanel = lazyChunk(() => import('../voice/VoicePanel'));
 
 /* The speech adapter (TTS/STT with browser fallbacks) loads on first use. */
 const speak = (text: string) => import('../adapters/speech').then((m) => m.speak(text));
@@ -711,7 +712,7 @@ export function StudioScreen() {
     setPicking(true);
     // QA-44 hueco 1: `pickNative` below is async, and `setWsOpen(true)` (the
     // fallback dialog) only runs once it resolves `unavailable` — so the
-    // lazy `WorkspaceDialog` chunk (Studio.tsx's own `lazy(() => import(...))`)
+    // lazy `WorkspaceDialog` chunk (Studio.tsx's own `lazyChunk(() => import(...))`)
     // was never even requested until AFTER that wait, and its `<Suspense
     // fallback={null}>` rendered nothing at all while it loaded. A keyboard
     // user's focus, mid-click on the chip, had nowhere to land for that

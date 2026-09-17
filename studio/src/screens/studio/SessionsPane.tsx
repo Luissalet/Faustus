@@ -1,5 +1,6 @@
 import { Archive, ArchiveRestore, ArrowUpDown, Bot, CheckSquare, Download, FolderOpen, MoreHorizontal, Plus, Search, Sparkles, Star, Trash2, Users, X } from 'lucide-react';
-import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
+import { lazyChunk } from '../../shell/lazyChunk';
 import { Link } from 'react-router';
 import { ActivityDot, Button, IconButton, QuickMenu, Skeleton } from '../../components';
 import { sessionActivity, useChatActivity, type SessionActivity } from '../../shell/activity';
@@ -18,7 +19,7 @@ import {
 import { getParentsMap, indentSessions } from '../../adapters/sideThreads';
 import { t, tn } from '../../i18n';
 
-const SessionDialog = lazy(() => import('./SessionDialog'));
+const SessionDialog = lazyChunk(() => import('./SessionDialog'));
 
 export type SortMode = 'active' | 'created' | 'name' | 'group';
 const SORT_KEY = 'odysseus-session-sort'; // shared with the previous interface

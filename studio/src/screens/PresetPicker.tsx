@@ -1,9 +1,10 @@
 import { Sparkles, X } from 'lucide-react';
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
+import { lazyChunk } from '../shell/lazyChunk';
 import type { Preset } from '../adapters/presets';
 import { t } from '../i18n';
 
-const PresetPalette = lazy(() => import('./PresetPalette'));
+const PresetPalette = lazyChunk(() => import('./PresetPalette'));
 
 /** The preset chip: a name when one is on, a palette when clicked. */
 export function PresetPicker({

@@ -1,11 +1,12 @@
 import { t } from '../i18n';
 import { ChevronDown, Cpu } from 'lucide-react';
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
+import { lazyChunk } from '../shell/lazyChunk';
 import type { ModelRoute } from '../adapters/chat';
 import { isInstalled, modelLabel } from '../lib/model-label';
 
-const ModelPalette = lazy(() => import('./ModelPalette'));
-const ModelConnections = lazy(() => import('./ModelConnections'));
+const ModelPalette = lazyChunk(() => import('./ModelPalette'));
+const ModelConnections = lazyChunk(() => import('./ModelConnections'));
 
 /**
  * The model picker is a searchable palette, not a dropdown.

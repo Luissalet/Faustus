@@ -1,7 +1,8 @@
 import { AlertTriangle, ArrowDown, BookmarkPlus, Check, ChevronDown, Copy, Expand, FileText, FoldVertical, GitBranch, GitBranchPlus, GitCommit, GitFork, Pencil, Quote, RefreshCw, Telescope, Theater, Trash2, UploadCloud, Volume2, VolumeX, X } from 'lucide-react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Link } from 'react-router';
-import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
+import { Fragment, Suspense, useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
+import { lazyChunk } from '../../shell/lazyChunk';
 import { createPortal } from 'react-dom';
 import { Button, describeError, ExecutionTimeline, friendlyError, IconButton } from '../../components';
 import { fetchCompactionEvent, pinCompactionFragment, type AskUser, type CompactionEvent, type ContextLedger, type ContextReceipt, type DelegationTask } from '../../adapters/chat';
@@ -83,8 +84,8 @@ const speak = (text: string) => import('../../adapters/speech').then((m) => m.sp
 /* The harness card carries diff, revert and commit: a chunk that arrives
    with the first agent turn that has something to show, not on page load.
    Same for the sub-agent board: most turns never delegate. */
-const Harness = lazy(() => import('./Harness'));
-const SubagentBoard = lazy(() => import('./SubagentBoard'));
+const Harness = lazyChunk(() => import('./Harness'));
+const SubagentBoard = lazyChunk(() => import('./SubagentBoard'));
 
 export type Decision = 'approve' | 'approve_task' | 'approve_workspace' | 'deny';
 

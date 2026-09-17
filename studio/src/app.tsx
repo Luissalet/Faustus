@@ -10,12 +10,13 @@
  * everything shared lives in hashed chunks that every importer names the
  * same way.
  */
-import { StrictMode, Suspense, lazy } from 'react';
+import { StrictMode, Suspense } from 'react';
+import { lazyChunk } from './shell/lazyChunk';
 import { createRoot } from 'react-dom/client';
 import { AppShell } from './shell/AppShell';
 import { DesktopBar } from './shell/DesktopBar';
 
-const Gallery = lazy(async () => ({
+const Gallery = lazyChunk(async () => ({
   default: (await import('./gallery/Gallery')).Gallery,
 }));
 

@@ -405,3 +405,88 @@ def test_redaction_spares_paths_to_secrets_and_patch_ignores_the_marker(tmp_path
     shown = connector_sidecar.get_connector(entry["id"], redact=True)["values"]
     assert shown["TOKEN_FILE"] == "/x/mcp-token"
     assert shown["API_TOKEN"] == connector_sidecar.REDACTED
+
+
+# ── 17-09: follow the app / nearby apps ──────────────────────────────────────
+
+def _fingerprint_server(health_server, service="jubhunters-hoard"):
+    return health_server(200, json.dumps({"service": service, "version": "0.2.0"}).encode())
+
+
+async def test_check_follows_the_app_to_its_new_port(routes, db, manager, bridge_dir, health_server, monkeypatch):
+    """Jobhunter takes the first free port from 5178 up: the stored APP_URL
+    dies, the app answers on another port. A check moves the connector."""
+    from src import connector_discovery
+    live = _fingerprint_server(health_server)
+    live_port = int(live.rsplit(":", 1)[1])
+    body = {"preset_id": "jobhunter", "values": {"JOBHUNT_DIR": bridge_dir,
+                                                  "APP_URL": "http://127.0.0.1:1"}}  # nothing listens on :1
+    created = await routes[("POST", "/api/app-connectors")](request=FakeRequest(body=body))
+    server_id = created["server"]["id"]
+    await manager.connect_server(server_id=server_id, name="x", transport="stdio", command="node", args=[])
+    # The scan sees only our fake app.
+    monkeypatch.setattr(connector_discovery, "listening_ports",
+                        lambda: [connector_discovery.ListeningPort(port=live_port, process="node", cwd=bridge_dir)])
+
+    status = await routes[("POST", "/api/app-connectors/{connector_id}/check")](
+        connector_id=created["id"], request=FakeRequest())
+    assert status["relocated_from"] == "http://127.0.0.1:1"
+    assert status["app_url"] == live
+    row = db.query(McpServer).filter(McpServer.id == server_id).first()
+    assert json.loads(row.env)["JOBHUNT_URL"] == live
+    assert server_id in manager.calls["disconnect"]  # respawn with the new env
+    entry = connector_sidecar.get_connector(created["id"], redact=False)
+    assert entry["app_url"] == live and entry["values"]["APP_URL"] == live
+
+
+async def test_check_leaves_a_reachable_app_alone(routes, db, bridge_dir, health_server, monkeypatch):
+    from src import connector_discovery
+    live = _fingerprint_server(health_server)
+    body = {"preset_id": "jobhunter", "values": {"JOBHUNT_DIR": bridge_dir, "APP_URL": live}}
+    created = await routes[("POST", "/api/app-connectors")](request=FakeRequest(body=body))
+    monkeypatch.setattr(connector_discovery, "listening_ports", lambda: (_ for _ in ()).throw(AssertionError("no scan")))
+    status = await routes[("POST", "/api/app-connectors/{connector_id}/check")](
+        connector_id=created["id"], request=FakeRequest())
+    assert "relocated_from" not in status and status["app"]["reachable"] is True
+
+
+async def test_discover_lists_nearby_apps_with_preset_and_install_dir(routes, db, bridge_dir, health_server, monkeypatch):
+    from src import connector_discovery
+    live = _fingerprint_server(health_server)
+    other = health_server(200, b"not json")
+    live_port, other_port = int(live.rsplit(":", 1)[1]), int(other.rsplit(":", 1)[1])
+    monkeypatch.setattr(connector_discovery, "listening_ports", lambda: [
+        connector_discovery.ListeningPort(port=live_port, pid=42, process="node", cwd=bridge_dir),
+        connector_discovery.ListeningPort(port=other_port, pid=43, process="python"),
+        connector_discovery.ListeningPort(port=11434, process="ollama"),   # skipped, never probed
+    ])
+    out = await routes[("GET", "/api/app-connectors/discover")](request=FakeRequest())
+    apps = out["apps"]
+    assert [a["port"] for a in apps][:1] == [live_port]  # recognised first
+    hit = apps[0]
+    assert hit["preset_id"] == "jobhunter" and hit["process"] == "node"
+    assert hit["values"] == {"APP_URL": live, "JOBHUNT_DIR": bridge_dir}
+    assert hit["missing"] == [] and hit["connector_id"] is None
+    assert all(a["port"] != 11434 for a in apps)
+
+
+async def test_adopt_creates_the_connector_from_a_discovered_app(routes, db, bridge_dir, health_server, monkeypatch):
+    from src import connector_discovery
+    live = _fingerprint_server(health_server)
+    live_port = int(live.rsplit(":", 1)[1])
+    monkeypatch.setattr(connector_discovery, "listening_ports", lambda: [
+        connector_discovery.ListeningPort(port=live_port, pid=42, process="node", cwd=bridge_dir)])
+    created = await routes[("POST", "/api/app-connectors/adopt")](request=FakeRequest(body={"port": live_port}))
+    assert created["preset_id"] == "jobhunter"
+    assert created["app_url"] == live and created["values"]["JOBHUNT_DIR"] == bridge_dir
+    # Now discovery reports it as already connected.
+    out = await routes[("GET", "/api/app-connectors/discover")](request=FakeRequest())
+    assert out["apps"][0]["connector_id"] == created["id"]
+
+
+def test_match_preset_by_service_then_title():
+    from src.connector_discovery import match_preset
+    assert match_preset({"service": "jubhunters-hoard"}, "") == "jobhunter"
+    assert match_preset({"service": "writers-hoard-ai-bridge"}, "") == "writer"
+    assert match_preset(None, "Jubhunter's Hoard") == "jobhunter"
+    assert match_preset({"service": "something-else"}, "My app") is None
