@@ -41,6 +41,17 @@ def server():
         proc.wait(timeout=5)
 
 
+def _family(proc) -> set:
+    """The Popen pid and its children: on Windows a venv `python.exe` is a
+    launcher whose child is the interpreter that really holds the port."""
+    pids = {proc.pid}
+    try:
+        pids |= {c.pid for c in psutil.Process(proc.pid).children(recursive=True)}
+    except Exception:  # noqa: BLE001
+        pass
+    return pids
+
+
 def _row(port):
     rows = [r for r in pc.snapshot(include_watched=False)["ports"] if port in r["ports"]]
     assert rows, "the listener should be in the ports list"
@@ -50,7 +61,7 @@ def _row(port):
 def test_snapshot_lists_the_port_with_its_process_and_attributes_it_to_faustus(server):
     port, proc = server
     row = _row(port)
-    assert row["pid"] == proc.pid
+    assert row["pid"] in _family(proc)
     assert "http.server" in row["cmdline"]
     assert row["created_at"] and row["uptime_s"] is not None
     assert row["origin"] == "faustus", row      # a child of this interpreter
@@ -80,7 +91,7 @@ def test_stop_kills_the_tree_and_a_second_stop_is_gone(server):
     port, proc = server
     row = _row(port)
     out = pc.stop(row["pid"], row["created_at"])
-    assert out["ok"] and proc.pid in out["signalled"], out
+    assert out["ok"] and row["pid"] in out["signalled"], out
     proc.wait(timeout=10)
     assert pc.stop(row["pid"], row["created_at"])["code"] == "gone"
     assert pc.stop_port(port)["code"] == "gone"
@@ -89,7 +100,7 @@ def test_stop_kills_the_tree_and_a_second_stop_is_gone(server):
 def test_stop_port_finds_the_listener_by_port(server):
     port, proc = server
     out = pc.stop_port(port)
-    assert out["ok"] and out["port"] == port and proc.pid in out["signalled"], out
+    assert out["ok"] and out["port"] == port and set(out["signalled"]) & _family(proc), out
     proc.wait(timeout=10)
 
 
