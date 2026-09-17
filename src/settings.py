@@ -1049,6 +1049,17 @@ DEFAULT_SETTINGS = {
     # code_graph_search/trace/architecture answer from a warm index on the
     # first ask instead of the agent having to call code_graph_index itself.
     "agent_code_graph_auto_index": True,
+    # Web Push (src/push.py, lot P-A): whether the notification bus
+    # (src/notifications.py) fans events out as browser/OS push
+    # notifications in addition to the in-app WS/polling paths. On by
+    # default — a subscription only exists if the user explicitly granted
+    # notification permission and registered one from the PWA, so this flag
+    # is a kill switch, not a consent gate.
+    "push_enabled": True,
+    # RFC 8292 VAPID `sub` claim contact (a push service may use this to
+    # reach the server operator about a misbehaving sender). Empty ->
+    # "mailto:faustus@localhost" (src/push.py:_vapid_contact).
+    "push_contact": "",
 }
 
 

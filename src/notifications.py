@@ -65,6 +65,33 @@ _next_id = 1
 #: resolve an owner) — `list()`/`subscribe()` treat it as "everyone's own".
 _subscribers: Dict[str, List[Any]] = {}
 
+#: Sinks registered via `register_sink` — plain callables invoked
+#: synchronously, fire-and-forget, from `emit()` alongside the WS
+#: subscriber fan-out. This is how a module `app.py` doesn't import for us
+#: (e.g. `src/push.py`, kept import-free of `app.py` on purpose so it can be
+#: owned by a different lot) still gets to react to every event without
+#: `notifications.py` importing it back — the dependency points inward,
+#: sinks register themselves. Each sink is wrapped in its own try/except at
+#: call time so one broken sink never takes another down or breaks emit's
+#: own "never raises" contract.
+_sinks: List[Any] = []
+
+
+def register_sink(callback) -> None:
+    """Register a callable invoked as `callback(event_dict)` after every
+    successful `emit()`. Idempotent — registering the same callable twice is
+    a no-op, so a module whose `start()` is called from multiple request
+    handlers doesn't accumulate duplicate sinks."""
+    with _lock:
+        if callback not in _sinks:
+            _sinks.append(callback)
+
+
+def unregister_sink(callback) -> None:
+    with _lock:
+        if callback in _sinks:
+            _sinks.remove(callback)
+
 
 def _owner_key(owner: Optional[str]) -> str:
     return (owner or "").strip()
@@ -163,6 +190,11 @@ def emit(
             targets = [*_subscribers.get(owner_key, ())]
             if owner_key:
                 targets += [*_subscribers.get("", ())]
+            # NOTE: `list` is shadowed at module scope by the
+            # `list = list_events` alias below (kept for
+            # `N.list(...)`-reading call sites) — `_sinks[:]` copies
+            # without going anywhere near that name.
+            sinks = _sinks[:]
     except Exception:
         logger.warning("notifications.emit failed for kind=%r", kind, exc_info=True)
         return None
@@ -184,6 +216,12 @@ def emit(
             # (it still has `list(since_id=...)` to catch up) — never the
             # emitter's.
             logger.debug("notifications: subscriber queue rejected event", exc_info=True)
+
+    for sink in sinks:
+        try:
+            sink(event)
+        except Exception:
+            logger.debug("notifications: sink %r raised", sink, exc_info=True)
 
     return event
 

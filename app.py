@@ -1413,6 +1413,12 @@ logger.info("Connector routes initialized")
 # chat_stream send shim) and its WebSocket push. See docs/api/mobile.md.
 from routes.mobile_routes import setup_mobile_routes
 app.include_router(setup_mobile_routes())
+# Web Push (src/push.py) and the PWA files (manifest, service worker) that
+# turn Studio into an installable phone app — routes/push_routes.py, routes/pwa_routes.py.
+from routes.push_routes import setup_push_routes
+app.include_router(setup_push_routes())
+from routes.pwa_routes import setup_pwa_routes
+app.include_router(setup_pwa_routes())
 
 # AI Interaction tools (debates, pipelines, self-managing AI, UI control)
 from src.ai_interaction import set_session_manager as set_ai_session_manager, set_memory_manager as set_ai_memory_manager, set_rag_manager as set_ai_rag_manager

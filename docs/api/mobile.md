@@ -252,3 +252,108 @@ different shape (a flat bounded ring vs per-owner unread state), on purpose
 - `core.authz.api_token_allowed("GET", "/api/mobile/bootstrap", ["chat"])` →
   `(True, "")`; the same call with `[]` → `(False, "API token missing
   required scope: chat")`.
+
+## Web Push (`src/push.py`, `routes/push_routes.py`, lot P-A)
+
+Real browser/OS push notifications for the same events `src/notifications.py`
+already emits — the ones above already reach a connected WebSocket; this is
+what reaches a phone/desktop when Studio's tab (or the installed PWA) isn't
+even open. Built without `pywebpush`/`http-ece` (their wheels don't build in
+this environment): message encryption is RFC 8291 (`aes128gcm`, ECDH P-256 +
+HKDF-SHA256) and the sender identity is RFC 8292 VAPID (an ES256 JWT), both
+implemented directly on `cryptography` (already a hard dependency). See
+`src/push.py`'s module docstring for the derivation steps; the encryption is
+validated against RFC 8291's own Appendix A worked example byte-for-byte in
+`tests/test_push.py`.
+
+### Auth
+
+Same pattern as the rest of this file: `_push_owner()` in
+`routes/push_routes.py` trusts a companion-pairing bearer token directly
+(already scope-checked by `AuthMiddleware`/`core/authz.py`) and only defers
+to the real `require_admin` for a cookie caller.
+
+### Endpoints
+
+**`GET /api/push/vapid-key`** → `{"key": "<base64url>"}` — the VAPID public
+key as an uncompressed P-256 point, exactly what
+`PushManager.subscribe({applicationServerKey})` expects. Generated once into
+`data/push/vapid.json` (0600) and stable for the life of the install — a new
+keypair on every restart would invalidate every subscription a browser
+already pinned `applicationServerKey` against.
+
+**`POST /api/push/subscribe`**
+```json
+{"subscription": {"endpoint": "https://…", "keys": {"p256dh": "…", "auth": "…"}},
+ "device_name": "Pixel 8"}
+```
+→ `{"ok": true, "subscription": {"id": "…", "owner": "…", "endpoint": "…",
+"keys": {...}, "device_name": "…", "created_at": …, "last_ok": null,
+"failures": 0}}`. Deduped by `endpoint` — resubscribing (a rotated key, a
+re-registered service worker) updates the existing row instead of piling up
+dead duplicates. Persisted to `data/push/subscriptions.json` (0600).
+
+**`POST /api/push/unsubscribe`** — body `{"endpoint": "https://…"}` →
+`{"ok": true, "removed": true|false}`.
+
+**`GET /api/push/subscriptions`** → `{"subscriptions": [...]}` — every
+subscription the caller owns, in the same shape `subscribe` returns.
+
+**`POST /api/push/test`** — sends "Faustus está conectado" to every
+subscription the caller owns and reports per-subscription delivery:
+`{"ok": true, "results": [{"id": "…", "device_name": "…", "ok": true,
+"status": 201}]}`.
+
+### The payload a service worker's `push` handler receives
+
+Every push body (after the browser's own decryption) is JSON shaped as:
+
+```json
+{"title": "Weather chat", "body": "the forecast is sunny…",
+ "url": "/studio?s=s1", "kind": "turn_finished", "id": 42}
+```
+
+`url` is where the service worker should navigate/focus a tab on click,
+derived from the bus event's `kind`:
+
+| kind | url |
+|---|---|
+| `turn_finished` / `turn_error` | `/studio?s=<session_id>` (or `/studio` if unknown) |
+| `approval_pending` / `approval_resolved` | `/studio?s=<session_id>` (or `/studio`) |
+| `task_finished` | `/` |
+| `reminder` | `/notes` |
+
+`approval_pending` sends with `Urgency: high` (wakes a dozing device sooner
+on networks that throttle low-urgency push); every other kind sends
+`normal`.
+
+### Bus wiring
+
+`src/notifications.py` gained a small sink registry
+(`register_sink`/`unregister_sink`) so a module `app.py` doesn't import
+directly — this one — can still react to every `emit()`. Importing
+`routes/push_routes.py` (which `app.py` already does, to mount the router)
+registers `src/push.py`'s sink exactly once (`push.start()` is idempotent);
+the sink resolves the event's `owner`, skips silently if that owner has no
+stored subscriptions or `push_enabled` is off, and otherwise
+`broadcast()`s the mapped payload above.
+
+Settings (`src/settings.py`): `push_enabled` (default `True` — a kill
+switch; a subscription only exists if the browser was granted permission
+and the PWA registered one) and `push_contact` (the RFC 8292 VAPID `sub`
+claim; empty → `mailto:faustus@localhost`).
+
+A send is best-effort per subscription: **404/410** (the push service has
+permanently given up on that endpoint) drops it immediately; **429/5xx**
+or a network error counts a failure and drops the subscription after 10
+consecutive failures.
+
+### Verification
+
+- `python3 -m pytest tests/test_push.py tests/test_notifications.py -q` — 56
+  passed, including the RFC 8291 Appendix A vector matched byte-for-byte
+  (salt and ephemeral key injected) and an ES256 VAPID JWT verified against
+  its own published public key.
+- Full `app.py` import boots with `/api/push/vapid-key`, `/api/push/subscribe`,
+  `/api/push/unsubscribe`, `/api/push/subscriptions` and `/api/push/test`
+  all present in the route table.
