@@ -7763,6 +7763,7 @@ async def _stream_agent_loop_body(
 
     _unknown_tool_nudges = 0
     _empty_round_nudges = 0
+    _echo_nudges = 0
     _project_objective_nudges = 0
     _project_objective_unavailable_nudges = 0
 
@@ -10080,6 +10081,38 @@ async def _stream_agent_loop_body(
             # zip" often fail the coding-request heuristic even with a bound
             # workspace; a boundary echo (or any no-tool round while the
             # workspace harness is active) must still be nudged.
+            # A round that is ONLY the synthetic context separator is not an
+            # answer, whatever the workspace situation: seen live on a plain
+            # web question (no workspace, retrieved memory as untrusted
+            # context) — the model echoed the marker, the turn ended, and the
+            # person got an empty reply. One nudge, then the loop below.
+            if (
+                _boundary_echo_only
+                and not _harness_scope_active
+                and _echo_nudges < 1
+                and round_num < max_rounds
+            ):
+                _echo_nudges += 1
+                _ledger.notes.append(f"echo_nudge@{round_num}")
+                logger.warning("[harness] round %s returned only the context separator — nudging", round_num)
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        "[Harness check — automatic runtime message, not a new user request] "
+                        "Your last message contained only the context separator and no answer. "
+                        "Answer the person's request now, calling a tool first if you need one."
+                    ),
+                })
+                yield (
+                    "data: " + json.dumps({
+                        "type": "harness_check", "status": "no_action", "round": round_num,
+                        "attempt": 1, "max_attempts": 1, "reason": "reference_context_echo",
+                    }) + "\n\n"
+                )
+                full_response += "\n\n"
+                yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
+                continue
+
             if (
                 not _ledger.events
                 and _harness_scope_active
