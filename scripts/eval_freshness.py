@@ -159,10 +159,52 @@ class FaustusClient:
         )
         resp.raise_for_status()
 
+    def _default_route(self) -> dict:
+        """The server's default model as the composer would send it
+        (endpoint_url + model + endpoint_id), cached after the first call;
+        empty when the settings or the model list cannot be read, in which
+        case the server decides."""
+        cached = getattr(self, "_route", None)
+        if cached is not None:
+            return cached
+        route: dict = {}
+        try:
+            settings = self.session.get(f"{self.base}/api/auth/settings", timeout=self.timeout).json() or {}
+            wanted_model = str(settings.get("default_model") or "")
+            wanted_endpoint = str(settings.get("default_endpoint_id") or "")
+            items = (self.session.get(f"{self.base}/api/models?background=false", timeout=self.timeout).json() or {}).get("items") or []
+            for item in items:
+                if not isinstance(item, dict) or item.get("model_type") not in (None, "llm"):
+                    continue
+                models = [str(m) for m in (item.get("models") or [])]
+                endpoint_id = str(item.get("endpoint_id") or "")
+                if wanted_model in models and (not wanted_endpoint or endpoint_id == wanted_endpoint):
+                    route = {"endpoint_url": str(item.get("url") or ""), "model": wanted_model, "endpoint_id": endpoint_id}
+                    break
+        except Exception:  # noqa: BLE001 - the server default is the fallback
+            route = {}
+        self._route = route
+        return route
+
+    def _new_session(self, name: str) -> str:
+        """A real chat session per question: the stream endpoint answers 404
+        for an id it has never seen. Endpoint and model are left empty with
+        validation skipped so the server's default model answers."""
+        resp = self.session.post(
+            f"{self.base}/api/session",
+            data={"name": name, "skip_validation": "true", **self._default_route()},
+            timeout=self.timeout,
+        )
+        resp.raise_for_status()
+        session_id = (resp.json() or {}).get("id")
+        if not session_id:
+            raise RuntimeError("/api/session returned no id")
+        return str(session_id)
+
     def run_question(self, message: str, control: bool) -> QuestionResult:
-        session_id = f"eval-freshness-{uuid.uuid4().hex[:12]}"
         started = time.monotonic()
         try:
+            session_id = self._new_session(f"eval freshness {uuid.uuid4().hex[:8]}")
             resp = self.session.post(
                 f"{self.base}/api/chat_stream",
                 json={"message": message, "session": session_id, "mode": "agent"},
