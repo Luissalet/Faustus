@@ -2,6 +2,13 @@
 
 Actualizado: 17-09-2026 (tarde). REGLA: nunca nombres de empresas/personas del buzón de Luis en commits, docs, tests ni comentarios — ejemplos siempre ficticios. Sólo trabajo vigente; quitar cada entrada al cerrarla.
 
+## Noche del 17-09 (vigilantes y tarjetas de Inicio — FAUSTUS.md §99)
+
+- Verificación en vivo pendiente de cerrar: crear desde el chat del 7000 la tarea del tiempo y la de vigilancia de stock, ver la tarjeta en Inicio y el aviso al cambiar (ver §99). Open-Meteo devolvió 429 desde la nube (IP compartida); en el PC no debería.
+- `watch_page` decide disponibilidad por palabras («Add to cart», «Agotado», «Notify me»…); una tienda con render solo por JavaScript no muestra esas palabras en el HTML — en ese caso valorar el navegador integrado para la captura.
+- El briefing de noticias depende del proveedor de búsqueda configurado (SearXNG por defecto): si no está levantado, la tarjeta dirá «search failed».
+- Ideas siguientes (no hechas): tarjeta de calendario del día, tarjeta de «candidaturas» (Jobhunter: pendientes/entrevistas), precios (vigilar un número en la página y avisar por debajo de un umbral), RSS por URL de feed, y elegir tamaño/orden de las tarjetas arrastrando.
+
 ## Tarde del 17-09 (candidaturas por correo — FAUSTUS.md §98)
 
 - `review_candidature_mail` verificado en vivo tres veces (rechazos, entrevistas, ambas): Jobhunter y calendario correctos e idempotentes. Desde que se leen todos los correos no-bulk de la ventana (no solo los de asunto «candidatura»), la entrevista con confirmación de hora también sale; queda valorar un evento de día completo para entrevistas a demanda con fecha límite («complete by …»); y el modelo dijo «en menos de una hora» de una entrevista ya pasada (13:00 vs 15:07): revisar cómo llega la hora actual al prompt del 27B.

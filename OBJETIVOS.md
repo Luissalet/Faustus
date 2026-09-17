@@ -622,3 +622,7 @@ Pedido el 17-09: ver qué se está ejecutando (puertos, apps abiertas por el asi
 ## OBJ-18 · Candidaturas desde el correo (Jobhunter's Hoard + calendario) — HECHO (17-09-2026)
 
 Pedido: «Revisa mi correo dos semanas y actualiza qué empresas me han rechazado / me han dado entrevistas en jobhunter's hoard y ponlas en el calendario», que funcione con el 27B local. Hecho como una herramienta determinista (`review_candidature_mail`, FAUSTUS.md §98) que hace la receta entera en una llamada. Verificado en vivo tres veces con el 27B: rechazos y entrevista registrados en Jobhunter (estado y mensajes), evento único en el calendario, tercera pasada idempotente en 44 s. **Siguiente.** Evento de día completo para entrevistas a demanda con fecha límite, texto de la receta, hora actual en el prompt.
+
+## OBJ-19 · Vigilantes programados y tarjetas de Inicio — HECHO, en verificación (17-09-2026)
+
+Pedido: tareas programadas en lenguaje natural (tiempo diario, briefings de noticias, aviso de reposición en tienda, resumen de correo) y un panel de Inicio con las tarjetas elegidas. Hecho: cuatro acciones deterministas (`src/watchers.py`), `pin_to_home` en `manage_tasks`, tarjetas en Inicio y toggle en Automations (FAUSTUS.md §99). **Siguiente.** Verificación en vivo desde el chat, tarjetas de calendario/candidaturas/precios, orden por arrastre.
