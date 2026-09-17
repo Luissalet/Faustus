@@ -687,7 +687,13 @@ class ToolIndex:
         r"\bevery\s+\w+"                                       # every day / dya / morning / monday / 2 hours
         r"|\b(?:daily|nightly|hourly|weekly|monthly)\b"
         r"|\beach\s+(?:day|morning|night|week|hour|evening)\b"
-        r"|\bat\s+\d{1,2}(?::\d{2})?\s*(?:a\.?m\.?|p\.?m\.?)\b",  # at 7:30 am / at 7am
+        r"|\bat\s+\d{1,2}(?::\d{2})?\s*(?:a\.?m\.?|p\.?m\.?)\b"  # at 7:30 am / at 7am
+        # Spanish: cada día / cada mañana / todos los días / que se repita /
+        # diariamente / cada hora / a las 8 / avísame cuando (a watch)
+        r"|\bcada\s+(?:d[ií]a|ma[ñn]ana|noche|semana|hora|mes|lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo|\d+\s*(?:horas?|minutos?|d[ií]as?))\b"
+        r"|\btodos\s+los\s+d[ií]as\b|\btodas\s+las\s+ma[ñn]anas\b|\bque\s+se\s+repita\b|\bdiari[oa]mente\b|\bsemanalmente\b"
+        r"|\ba\s+las\s+\d{1,2}(?::\d{2})?\b(?!\s*(?:horas de|h de))"
+        r"|\bav[ií]same\s+(?:cuando|si|en cuanto)\b|\bnotify me when\b|\balert me when\b|\btell me when\b",
         re.I,
     )
     _WEB_RE = re.compile(
