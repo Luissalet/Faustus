@@ -31,6 +31,8 @@ def ws(tmp_path, monkeypatch):
     from src import plan_tracker as pt
     monkeypatch.setattr(consts, "DATA_DIR", str(tmp_path / "data"), raising=False)
     monkeypatch.setattr(pt, "PLAN_TRACKER_DIR", str(tmp_path / "data" / "plan_tracker"), raising=False)
+    from src.agent_tools import coding_tools as ct
+    monkeypatch.setattr(ct, "_TODO_DIR", str(tmp_path / "data" / "agent_todos"), raising=False)
     w = tmp_path / "ws"
     (w / "src").mkdir(parents=True)
     (w / "src" / "a.py").write_text("x = 1\n", encoding="utf-8")
@@ -55,7 +57,8 @@ def test_plan_attachment_is_parsed_once_and_execute_request_without_action_is_re
     # (2) The model never saw the 172 KB: the last user message carries the
     # typed request, the brief and ONLY the current task.
     first_prompt = calls["messages"][0]
-    last_user = next(m for m in reversed(first_prompt) if m.get("role") == "user")
+    last_user = next(m for m in reversed(first_prompt)
+                     if m.get("role") == "user" and "Sigue implementando" in str(m.get("content", "")))
     assert "Sigue implementando el plan" in last_user["content"]
     assert "=== Plan task" in last_user["content"]
     assert "Detail line 119" not in last_user["content"] or len(last_user["content"]) < 12000

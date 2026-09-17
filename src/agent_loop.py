@@ -8256,9 +8256,13 @@ async def _stream_agent_loop_body(
             if bool(get_setting("agent_plan_tracker", True)):
                 _plan_scope = _pt.scope_for(_pid or None, workspace)
                 if _has_inline_attachment:
+                    # The last user message may be a runtime nudge appended
+                    # after the real one (todowrite refresh): take the last
+                    # user message that actually carries the attachment.
                     _last_user_msg = next(
                         (m for m in reversed(messages or [])
-                         if m.get("role") == "user" and not m.get("_agent_injected")), None)
+                         if m.get("role") == "user" and not m.get("_agent_injected")
+                         and isinstance(m.get("content"), str) and "=== File:" in m.get("content", "")), None)
                     _content = _last_user_msg.get("content") if _last_user_msg else None
                     if isinstance(_content, str):
                         _found = _pt.find_plan_attachment(_content)
