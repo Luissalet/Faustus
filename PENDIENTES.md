@@ -4,7 +4,8 @@ Actualizado: 17-09-2026 (tarde). REGLA: nunca nombres de empresas/personas del b
 
 ## Noche del 17-09 (vigilantes y tarjetas de Inicio — FAUSTUS.md §99)
 
-- Verificación en vivo pendiente de cerrar: crear desde el chat del 7000 la tarea del tiempo y la de vigilancia de stock, ver la tarjeta en Inicio y el aviso al cambiar (ver §99). Open-Meteo devolvió 429 desde la nube (IP compartida); en el PC no debería.
+- Verificado en vivo: tiempo (desde el chat), correo, noticias y vigilancia de texto (por API), tarjetas en Inicio con Refresh. Queda probar el caso real de reposición en una tienda (el modelo pedirá la URL): si la tienda pinta el stock solo con JavaScript, `watch_page` dirá «sin señal clara» — entonces habría que capturar con el navegador integrado.
+- El modelo eligió `when: today` para «mañana» al programarlo a las 8:00 (razonable, pero no literal): valorar que la tarjeta muestre hoy y mañana a la vez.
 - `watch_page` decide disponibilidad por palabras («Add to cart», «Agotado», «Notify me»…); una tienda con render solo por JavaScript no muestra esas palabras en el HTML — en ese caso valorar el navegador integrado para la captura.
 - El briefing de noticias depende del proveedor de búsqueda configurado (SearXNG por defecto): si no está levantado, la tarjeta dirá «search failed».
 - Ideas siguientes (no hechas): tarjeta de calendario del día, tarjeta de «candidaturas» (Jobhunter: pendientes/entrevistas), precios (vigilar un número en la página y avisar por debajo de un umbral), RSS por URL de feed, y elegir tamaño/orden de las tarjetas arrastrando.
