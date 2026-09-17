@@ -450,3 +450,23 @@ def test_reconcile_closes_tasks_from_completed_todos_or_written_files(tmp_path, 
     # Idempotent: nothing new on a second pass.
     assert pt.reconcile(scope, tracker, todos=todos, mutated_paths=["src/rewrite_policy.py"],
                         workspace=str(ws), turn="t1") == []
+
+
+def test_a_tracker_from_an_older_parser_is_reparsed_keeping_state_by_key(tmp_path, monkeypatch):
+    from src import plan_tracker as pt
+    monkeypatch.setattr(pt, "PLAN_TRACKER_DIR", str(tmp_path / "pt"), raising=False)
+    scope = "proj-v"
+    tracker = pt.upsert_from_attachment(scope, "plan.md", FAUSTUS_CREATOR_PLAN)
+    pt.mark(scope, tracker["hash"], "WP04", "done", "did it")
+    stale = pt.load(scope, tracker["hash"])
+    stale["parser_version"] = 1
+    stale["tasks"].insert(0, {"id": "t00", "key": "t00", "title": "Plan title as a task", "text": "",
+                              "acceptance": [], "files": [], "depends_on": []})
+    stale["state"]["t00"] = {"status": "pending", "evidence": "", "updated_at": 0, "turn": None}
+    pt.save(scope, stale)
+    fresh = pt.upsert_from_attachment(scope, "plan.md", FAUSTUS_CREATOR_PLAN)
+    assert fresh["parser_version"] == pt.PARSER_VERSION
+    assert [t["key"] for t in fresh["tasks"]] == ["WP03", "WP04", "WP05"]
+    wp04 = next(t for t in fresh["tasks"] if t["key"] == "WP04")
+    assert fresh["state"][wp04["id"]]["status"] == "done"
+    assert fresh["seen_count"] == 2  # first sight + this one; mark() is not a sighting

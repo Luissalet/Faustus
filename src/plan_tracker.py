@@ -36,6 +36,9 @@ from typing import Any, Dict, List, Optional, Tuple
 from src.constants import DATA_DIR
 
 PLAN_TRACKER_DIR = os.path.join(DATA_DIR, "plan_tracker")
+#: Bump when parse_plan changes shape: a stored tracker from an older parser
+#: is re-parsed on next sight, keeping per-task state by key/title.
+PARSER_VERSION = 2
 
 # ---------------------------------------------------------------------------
 # Attachment detection
@@ -340,7 +343,7 @@ def upsert_from_attachment(scope: str, title: str, body: str) -> Optional[Dict[s
         return None
     now = time.time()
     existing = load(scope, spec.hash)
-    if existing:
+    if existing and existing.get("parser_version") == PARSER_VERSION:
         existing["seen_count"] = int(existing.get("seen_count", 1)) + 1
         existing["last_seen_at"] = now
         save(scope, existing)
@@ -350,13 +353,24 @@ def upsert_from_attachment(scope: str, title: str, body: str) -> Optional[Dict[s
         t["id"]: {"status": "pending", "evidence": "", "updated_at": now, "turn": None}
         for t in tasks
     }
+    if existing:
+        # A newer parser re-reads the same plan: keep every task's state,
+        # matched by key first (WP03) then by title, never by position.
+        old_by_key = {str(t.get("key") or ""): t["id"] for t in existing.get("tasks", []) if t.get("key")}
+        old_by_title = {str(t.get("title") or "").strip().lower(): t["id"] for t in existing.get("tasks", [])}
+        old_state = existing.get("state", {})
+        for t in tasks:
+            oid = old_by_key.get(t["key"]) or old_by_title.get(str(t["title"]).strip().lower())
+            if oid and oid in old_state:
+                state[t["id"]] = dict(old_state[oid])
     tracker: Dict[str, Any] = {
         "hash": spec.hash,
         "title": spec.title,
         "source_title": title,
-        "created_at": now,
+        "parser_version": PARSER_VERSION,
+        "created_at": (existing or {}).get("created_at") or now,
         "last_seen_at": now,
-        "seen_count": 1,
+        "seen_count": int((existing or {}).get("seen_count", 0)) + 1,
         "tasks": tasks,
         "state": state,
     }
