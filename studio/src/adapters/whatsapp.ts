@@ -129,7 +129,7 @@ export interface WaMessage {
   status?: 'pending' | 'sent' | 'delivered' | 'read' | 'played';
   reactions?: { emoji: string; from: string; from_name: string; from_me: boolean }[];
   /** The quoted message, when this bubble is a reply. */
-  reply_to?: { id: string; from_name: string; text: string };
+  reply_to?: { id: string; from_name: string; from_me?: boolean; text: string };
   edited?: boolean;
   /** Revoked ("this message was deleted"): the row stays, render it as such. */
   deleted?: boolean;

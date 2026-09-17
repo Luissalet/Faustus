@@ -633,6 +633,96 @@
 
 .fs-wa__image-link {
   display: block;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: zoom-in;
+  border-radius: var(--fs-radius-control);
+}
+
+.fs-wa__image-link:focus-visible {
+  outline: 2px solid var(--fs-focus);
+  outline-offset: 2px;
+}
+
+/* ── Photo overlay (lightbox) ── */
+
+.fs-wa__lightbox-backdrop {
+  background: color-mix(in srgb, var(--fs-canvas) 92%, transparent);
+}
+
+.fs-wa__lightbox {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  z-index: 1;
+  outline: 0;
+}
+
+.fs-wa__lightbox-bar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--fs-space-2);
+  padding: var(--fs-space-3) var(--fs-space-4);
+}
+
+.fs-wa__lightbox-zoom {
+  margin-inline-end: auto;
+  font-size: var(--fs-label-size);
+  color: var(--fs-text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.fs-wa__lightbox-download {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 32px;
+  block-size: 32px;
+  border-radius: var(--fs-radius-control);
+  color: var(--fs-text-2);
+}
+
+.fs-wa__lightbox-download:hover {
+  background: var(--fs-surface-2);
+  color: var(--fs-text-1);
+}
+
+.fs-wa__lightbox-stage {
+  flex: 1;
+  min-block-size: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  cursor: zoom-in;
+  touch-action: none;
+}
+
+.fs-wa__lightbox-stage[data-zoomed] {
+  cursor: grab;
+}
+
+.fs-wa__lightbox-stage[data-zoomed]:active {
+  cursor: grabbing;
+}
+
+.fs-wa__lightbox-img {
+  max-inline-size: 92vw;
+  max-block-size: calc(100dvh - 120px);
+  object-fit: contain;
+  border-radius: var(--fs-radius-control);
+  transition: transform var(--fs-duration-fast) var(--fs-ease);
+  user-select: none;
+}
+
+.fs-wa__lightbox-caption {
+  margin: 0;
+  padding: var(--fs-space-3) var(--fs-space-4);
+  text-align: center;
+  color: var(--fs-text-2);
+  font-size: var(--fs-label-size);
 }
 
 .fs-wa__image {
@@ -795,4 +885,36 @@
     border-inline-end: none;
     padding-inline-end: 0;
   }
+}
+
+/* ── "Archived" row at the top of the list, as in WhatsApp ── */
+
+.fs-wa__archived-row {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  inline-size: 100%;
+  padding: var(--fs-space-2) var(--fs-space-3);
+  border: 0;
+  border-block-end: 1px solid var(--fs-border);
+  background: none;
+  color: var(--fs-text-2);
+  font: inherit;
+  font-size: var(--fs-label-size);
+  text-align: start;
+  cursor: pointer;
+}
+
+.fs-wa__archived-row:hover {
+  background: var(--fs-surface-2);
+  color: var(--fs-text-1);
+}
+
+.fs-wa__archived-row:focus-visible {
+  outline: 2px solid var(--fs-focus);
+  outline-offset: -2px;
+}
+
+.fs-wa__archived-row .fs-set__help {
+  margin-inline-start: auto;
 }

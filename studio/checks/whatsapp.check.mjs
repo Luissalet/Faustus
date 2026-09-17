@@ -156,7 +156,6 @@ assert.match(composer, /fs-wa__reply-strip/, 'replying shows a "replying to" str
 assert.match(composer, /onClearReply/, 'the reply strip can be cleared');
 
 // Images/documents.
-assert.match(bubble, /target="_blank"/, 'image bubbles open the full image in a new tab');
 assert.match(bubble, /download className="fs-wa__doc-link"/, 'document bubbles download');
 
 // Ask Faustus.
@@ -196,3 +195,19 @@ const whatsappIdx = routes.indexOf("{ path: '/whatsapp'");
 assert.ok(connectorsIdx >= 0 && whatsappIdx > connectorsIdx, "'/whatsapp' comes right after '/connectors' in TOOLS");
 
 console.log('whatsapp: ALL OK');
+
+// Wave 3b: photos open in an in-app overlay with zoom (never a new tab); an
+// "Archived" row at the top of the list, as WhatsApp has.
+const lightbox = readFileSync(new URL('../src/screens/whatsapp/WhatsAppLightbox.tsx', import.meta.url), 'utf8');
+assert.match(lightbox, /export function Lightbox/, 'Lightbox exists');
+assert.match(lightbox, /RadixDialog\.Root/, 'lightbox uses the Radix dialog (focus, Escape, inert background)');
+assert.match(lightbox, /onWheel/, 'lightbox zooms with the wheel');
+assert.match(lightbox, /scale\(\$\{scale\}\)/, 'lightbox applies the zoom as a transform');
+const bubbleSrc = readFileSync(new URL('../src/screens/whatsapp/WhatsAppBubble.tsx', import.meta.url), 'utf8');
+assert.doesNotMatch(bubbleSrc, /target="_blank"/, 'photos never open in a new tab');
+assert.match(bubbleSrc, /whatsapp-image-open/, 'photo bubbles open the overlay');
+const screenSrc = readFileSync(new URL('../src/screens/whatsapp/WhatsApp.tsx', import.meta.url), 'utf8');
+assert.match(screenSrc, /<Lightbox src=/, 'chat pane renders the lightbox');
+assert.match(screenSrc, /whatsapp-archived/, 'list has the Archived row');
+assert.match(screenSrc, /showArchived \? c\.archived : !c\.archived/, 'Archived row toggles between live and archived chats');
+console.log('whatsapp (3b): ALL OK');

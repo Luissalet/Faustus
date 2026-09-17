@@ -249,7 +249,8 @@ function replyToOf(msg) {
   if (!ci?.stanzaId || !ci?.quotedMessage) return null;
   const [text] = textOf({ message: ci.quotedMessage });
   const from = ci.participant ? canon(ci.participant) : null;
-  return { id: ci.stanzaId, from_name: from ? (nameOf(from) || phoneOf(from)) : "", text };
+  const mine = from && state.me?.jid && (from === state.me.jid || from === canon(state.me.jid));
+  return { id: ci.stanzaId, from_name: mine ? "me" : from ? (nameOf(from) || phoneOf(from)) : "", from_me: !!mine, text };
 }
 
 function textOf(msg) {

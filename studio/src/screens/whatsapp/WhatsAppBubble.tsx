@@ -121,7 +121,7 @@ function QuotedBlock({ reply, onJump }: { reply?: WaMessage['reply_to']; onJump:
   if (!reply) return null;
   return (
     <button type="button" className="fs-wa__quote" onClick={() => onJump(reply.id)} data-testid="whatsapp-quote">
-      <strong>{reply.from_name}</strong>
+      <strong>{reply.from_me || reply.from_name === 'me' ? t('You') : reply.from_name}</strong>
       <span>{reply.text}</span>
     </button>
   );
@@ -158,16 +158,22 @@ function AudioBubble({ msg, transcript, onTranscribed, say }: { msg: WaMessage; 
   );
 }
 
-function BubbleContent({ msg, transcript, onTranscribed, say }: { msg: WaMessage; transcript?: string; onTranscribed: (id: string, text: string) => void; say: (msg: string) => void }) {
+function BubbleContent({ msg, transcript, onTranscribed, say, onOpenImage }: { msg: WaMessage; transcript?: string; onTranscribed: (id: string, text: string) => void; say: (msg: string) => void; onOpenImage?: (src: string, caption: string) => void }) {
   if (msg.deleted) return <span className="fs-wa__deleted">{t('This message was deleted')}</span>;
   if (msg.kind === 'text') return <span>{msg.text}</span>;
   if (msg.kind === 'audio' && msg.media) return <AudioBubble msg={msg} transcript={transcript} onTranscribed={onTranscribed} say={say} />;
   if (msg.kind === 'image' && msg.media) {
     return (
       <>
-        <a href={waMediaUrl(msg.media)} target="_blank" rel="noreferrer" className="fs-wa__image-link">
+        <button
+          type="button"
+          className="fs-wa__image-link"
+          onClick={() => onOpenImage?.(waMediaUrl(msg.media as string), msg.text || '')}
+          aria-label={t('Open photo')}
+          data-testid="whatsapp-image-open"
+        >
           <img src={waMediaUrl(msg.media)} className="fs-wa__image" loading="lazy" alt="" />
-        </a>
+        </button>
         {msg.text && <span>{msg.text}</span>}
       </>
     );
@@ -348,9 +354,10 @@ export interface MessageBubbleProps {
   onReply: (msg: WaMessage) => void;
   onChanged: () => void;
   onJump: (id: string) => void;
+  onOpenImage?: (src: string, caption: string) => void;
 }
 
-export function MessageBubble({ msg, showSender, transcript, onTranscribed, say, chats, onReply, onChanged, onJump }: MessageBubbleProps) {
+export function MessageBubble({ msg, showSender, transcript, onTranscribed, say, chats, onReply, onChanged, onJump, onOpenImage }: MessageBubbleProps) {
   const [editing, setEditing] = useState(false);
   return (
     <li className={`fs-wa__bubble-row${msg.from_me ? ' fs-wa__bubble-row--me' : ''}`} data-testid="whatsapp-message" id={`wa-msg-${msg.id}`}>
@@ -361,7 +368,7 @@ export function MessageBubble({ msg, showSender, transcript, onTranscribed, say,
         {editing ? (
           <EditingBubble msg={msg} onDone={() => { setEditing(false); onChanged(); }} say={say} />
         ) : (
-          <BubbleContent msg={msg} transcript={transcript} onTranscribed={onTranscribed} say={say} />
+          <BubbleContent msg={msg} transcript={transcript} onTranscribed={onTranscribed} say={say} onOpenImage={onOpenImage} />
         )}
         <Reactions reactions={msg.reactions} />
         <span className="fs-wa__bubble-foot">

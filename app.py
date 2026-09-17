@@ -248,6 +248,9 @@ _TIMEOUT_EXEMPT_PREFIXES = (
     "/api/memory/extract",  # same: one LLM pass over the whole conversation
     "/api/calendar/quick-parse",  # one LLM call on the utility model; a local 9B needs more than 45s
     "/api/workspace/pick",  # waits on the user in a native OS dialog; own 600s timeout
+    "/api/whatsapp/assist", # one LLM pass over a chat on the local model; a cold 27B needs minutes (seen live: 504 at 45s)
+    "/api/whatsapp/transcribe",  # a voice note through local Whisper; the first call loads the model
+    "/api/whatsapp/upload", # a 25 MB attachment plus an ffmpeg pass for voice notes
 )
 # Session-scoped long calls: `/api/session/{id}/condense` is one LLM pass over a
 # hand-picked range on the session's own model — a cold local 27B needs minutes

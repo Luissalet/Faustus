@@ -1,4 +1,4 @@
-import { ArrowLeft, MessageCircle, Search, Users } from 'lucide-react';
+import { Archive, ArrowLeft, MessageCircle, Search, Users } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, EmptyState, IconButton, Skeleton, Toast } from '../../components';
 import {
@@ -21,6 +21,7 @@ import { locale, t } from '../../i18n';
 import { Avatar, MessageBubble, dayLabel } from './WhatsAppBubble';
 import { Composer } from './WhatsAppComposer';
 import { AskFaustus } from './WhatsAppAssist';
+import { Lightbox } from './WhatsAppLightbox';
 import '../projects.css';
 import '../settings.css';
 import '../connectors/connectors.css';
@@ -251,6 +252,7 @@ function ChatPane({ chat, chats, onBack }: { chat: WaChat; chats: WaChat[]; onBa
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [transcripts, setTranscripts] = useState<Map<string, string>>(new Map());
   const [replyTo, setReplyTo] = useState<WaMessage | null>(null);
+  const [lightbox, setLightbox] = useState<{ src: string; caption: string } | null>(null);
   const [composerText, setComposerText] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -485,6 +487,7 @@ function ChatPane({ chat, chats, onBack }: { chat: WaChat; chats: WaChat[]; onBa
                 onReply={setReplyTo}
                 onChanged={reload}
                 onJump={jumpTo}
+                onOpenImage={(src, caption) => setLightbox({ src, caption })}
               />
             ),
           )}
@@ -500,6 +503,7 @@ function ChatPane({ chat, chats, onBack }: { chat: WaChat; chats: WaChat[]; onBa
         onSent={reload}
         say={say}
       />
+      <Lightbox src={lightbox?.src ?? null} caption={lightbox?.caption} onClose={() => setLightbox(null)} />
       {notice && <Toast>{notice}</Toast>}
     </div>
   );
@@ -574,16 +578,18 @@ export function WhatsAppScreen() {
     return () => { if (globalSearchTimer.current) window.clearTimeout(globalSearchTimer.current); };
   }, [filter, say]);
 
+  // Archived chats live behind an "Archived" row, like WhatsApp; without a
+  // filter only chats that have said something are listed — the phone knows
+  // two hundred dead groups, the person wants the live ones.
+  const [showArchived, setShowArchived] = useState(false);
+  const archivedCount = useMemo(() => (chats ?? []).filter((c) => c.archived).length, [chats]);
   const filteredChats = useMemo(() => {
     if (!chats) return [];
     const q = filter.trim().toLowerCase();
-    // Archived chats stay out (WhatsApp Web hides them too); without a filter
-    // only chats that have said something are listed — the phone knows two
-    // hundred dead groups, the person wants the live ones.
-    const live = chats.filter((c) => !c.archived && (q || (c.last_ts ?? 0) > 0));
-    if (!q) return live;
-    return live.filter((c) => (c.name || c.jid).toLowerCase().includes(q));
-  }, [chats, filter]);
+    const pool = chats.filter((c) => (showArchived ? c.archived : !c.archived) && (q || (c.last_ts ?? 0) > 0 || showArchived));
+    if (!q) return pool;
+    return pool.filter((c) => (c.name || c.jid).toLowerCase().includes(q));
+  }, [chats, filter, showArchived]);
 
   const openFromHit = useCallback((msg: WaMessage) => {
     const existing = chats?.find((c) => c.jid === msg.chat);
@@ -626,6 +632,15 @@ export function WhatsAppScreen() {
               <EmptyState icon={MessageCircle} title={t('No chats')} body={t('No chats match this filter yet.')} />
             ) : (
               <>
+                {showArchived ? (
+                  <button type="button" className="fs-wa__archived-row" onClick={() => setShowArchived(false)} data-testid="whatsapp-archived-back">
+                    <ArrowLeft size={14} aria-hidden="true" /> {t('Archived')} <span className="fs-set__help">{archivedCount}</span>
+                  </button>
+                ) : archivedCount > 0 && !filter.trim() ? (
+                  <button type="button" className="fs-wa__archived-row" onClick={() => setShowArchived(true)} data-testid="whatsapp-archived">
+                    <Archive size={14} aria-hidden="true" /> {t('Archived')} <span className="fs-set__help">{archivedCount}</span>
+                  </button>
+                ) : null}
                 <ul className="fs-wa__chat-list" data-testid="whatsapp-chat-list">
                   {filteredChats.map((c) => (
                     <ChatListItem key={c.jid} chat={c} active={selected?.jid === c.jid} onSelect={() => setSelected(c)} />
