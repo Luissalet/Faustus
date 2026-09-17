@@ -97,6 +97,14 @@ function Rail() {
   useLayoutEffect(() => {
     const nav = navRef.current;
     if (!nav) return;
+    // The bottom tab bar (mobile) hides the rail line and the sliding
+    // indicator outright (shell.css), so measuring and positioning them
+    // here would be wasted work on every route change.
+    if (platform === 'mobile') {
+      setRail(null);
+      setIndicator(null);
+      return;
+    }
 
     function centre(el: Element, navRect: DOMRect) {
       const rect = el.getBoundingClientRect();
@@ -141,7 +149,7 @@ function Rail() {
       observer.disconnect();
       window.removeEventListener('resize', place);
     };
-  }, [pathname]);
+  }, [pathname, platform]);
 
   return (
     <nav className="fs-nav" aria-label={t('Main navigation')} ref={navRef}>

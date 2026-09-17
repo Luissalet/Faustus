@@ -1,5 +1,6 @@
 import { getSettings, saveSettings } from '../../adapters/settings';
 import { t, tn, useLang } from '../../i18n';
+import { usePlatform } from '../../shell/platform';
 import { Link } from 'react-router';
 import {
   ArrowUp,
@@ -279,6 +280,7 @@ export function Composer({
   textareaRef,
 }: ComposerProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const platform = usePlatform();
   const [pendingFiles, setPendingFiles] = useState<PendingAttachment[]>([]);
   const attachmentTarget = useRef({sessionId, setAttachments});
   attachmentTarget.current = {sessionId, setAttachments};
@@ -766,7 +768,9 @@ export function Composer({
           pending
             ? t('Answer above, or type to go on…')
             : knobs.mode === 'agent'
-              ? t('Tell me what you want done…  @file · #rule · /command')
+              ? platform === 'mobile'
+                ? t('Tell me what you want done…')
+                : t('Tell me what you want done…  @file · #rule · /command')
               : t('Write a message…  /command')
         }
         aria-label={t('Message')}

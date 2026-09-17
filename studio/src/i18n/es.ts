@@ -5435,6 +5435,7 @@ export const es: Record<string, string> = {
   "Teacher": "Profesor (teacher)",
   "Team changes are available after the current turn.": "Podrás cambiar el equipo cuando termine el turno actual.",
   "Tell it something while it keeps working…": "Dile algo mientras sigue trabajando…",
+  "Tell me what you want done…": "Dime qué quieres que haga…",
   "Tell me what you want done…  @file · #rule · /command": "Dime qué quieres que haga…  @fichero · #regla · /comando",
   "Temp": "Temp.",
   "Temperature": "Temperatura",

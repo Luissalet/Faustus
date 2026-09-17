@@ -476,9 +476,75 @@ html[data-studio-shell='on'] body > *:not(#studio-root):not(#fs-overlay-root) {
     border: 0;
   }
 
-  .fs-nav__item {
-    min-inline-size: 44px;
-    min-block-size: 44px;
+  /* Bottom tab bar: five columns, icon over a short label, no connecting
+     line — the desktop rail metaphor (node + label beside it + sliding
+     line) does not fit a 56px strip and was overlapping "Home"/"Studio"/
+     "Calendar" into their neighbours. */
+  .fs-nav__rail,
+  .fs-nav__indicator {
+    display: none;
+  }
+
+  /* Same specificity fight as the grid-template-columns rule above:
+     `.fs-shell[data-nav='rail'] .fs-nav__item` (0,3,0) outranks a bare
+     `.fs-nav__item` (0,1,0) and would keep its `padding-inline: 0` and
+     `justify-content: center` regardless of source order, so every
+     `data-nav` value the shell can carry at this width is named here too. */
+  .fs-nav__item,
+  .fs-shell[data-nav='rail'] .fs-nav__item,
+  .fs-shell[data-nav='wide'] .fs-nav__item {
+    flex: 1 1 0;
+    min-inline-size: 0;
+    min-block-size: 48px;
+    flex-direction: column;
+    justify-content: center;
+    gap: 2px;
+    padding: 6px 2px;
+    margin-block: 0;
+    text-align: center;
+  }
+
+  .fs-nav__item:hover,
+  .fs-shell[data-nav='rail'] .fs-nav__item:hover {
+    translate: 0 0;
+  }
+
+  /* Icons only on the phone's tab bar (the owner's call: five labels in
+     390px read as a smear). The label stays in the DOM as the accessible
+     name — the same visually-hidden treatment the desktop compact rail
+     uses, named at the rail's specificity so it wins either way. */
+  .fs-nav__label,
+  .fs-shell[data-nav='rail'] .fs-nav__item span.fs-nav__label,
+  .fs-shell[data-nav='wide'] .fs-nav__item span.fs-nav__label {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .fs-nav__node {
+    inline-size: 22px;
+    block-size: 22px;
+    background: transparent;
+    border-color: transparent;
+  }
+
+  .fs-nav__item[aria-current='page'] .fs-nav__node {
+    background: transparent;
+    border-color: transparent;
+    color: var(--fs-brand);
+  }
+
+  /* The desktop node is 24px of icon-in-a-ring; on the phone the icon is
+     the whole tab, so give the tap target the room and the glyph the size. */
+  .fs-nav__node svg {
+    inline-size: 20px;
+    block-size: 20px;
   }
 
   .fs-main {

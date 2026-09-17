@@ -60,7 +60,7 @@ import {
 } from '../adapters/sessions';
 import { loadSessionDraft, saveSessionDraft } from '../adapters/session-draft';
 import { relativeTime } from '../adapters/home';
-import { getKeybinds, KEYBIND_LABELS, matchesCombo } from '../adapters/settings';
+import { getKeybinds, getSettings, KEYBIND_LABELS, matchesCombo } from '../adapters/settings';
 import { listCheckpoints } from '../adapters/workspace';
 import { addMemory, deleteMemory, listMemories } from '../adapters/memory';
 import { createNote, deleteNote } from '../adapters/notes';
@@ -121,6 +121,13 @@ const speak = (text: string) => import('../adapters/speech').then((m) => m.speak
 const stopSpeaking = () => void import('../adapters/speech').then((m) => m.stopSpeaking());
 
 const ROUTE_KEY = 'faustus_studio_route';
+/** The remembered model, but only when a person picked it: entries written
+ *  before `picked` existed came from whatever conversation was open last and
+ *  are ignored, so every device falls back to the server default. */
+function pickedRouteId(): string | null {
+  const stored = readJson<{ id?: string | null; picked?: boolean }>(ROUTE_KEY, {});
+  return stored.picked && stored.id ? stored.id : null;
+}
 const KNOBS_KEY = 'faustus_studio_knobs';
 const GEN_KEY = 'faustus_studio_gen';
 const PRESET_KEY = 'faustus_studio_preset';
@@ -367,11 +374,38 @@ export function StudioScreen() {
 
   const [sessions, setSessions] = useState<ChatSession[] | null>(null);
   const [routes, setRoutes] = useState<ModelRoute[]>([]);
-  const [routeId, setRouteId] = useState<string | null>(() => readJson<{ id: string | null }>(ROUTE_KEY, { id: null }).id);
+  const [routeId, setRouteId] = useState<string | null>(() => pickedRouteId());
+  /* Phone-vs-desktop divergence (bug report): with nothing in localStorage
+     the fallback used to be "whichever model sorts first" (`routes[0]`),
+     which can differ per device/browser and rarely matches the server's
+     configured default. Read the same `default_endpoint_id`/`default_model`
+     the Settings screen's "Default AI" section writes, and prefer the route
+     that matches them before falling back to `routes[0]`. */
+  const [serverDefault, setServerDefault] = useState<{ endpointId: string; model: string } | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    getSettings()
+      .then((s) => {
+        if (cancelled) return;
+        const endpointId = typeof s.default_endpoint_id === 'string' ? s.default_endpoint_id : '';
+        const model = typeof s.default_model === 'string' ? s.default_model : '';
+        if (model) setServerDefault({ endpointId, model });
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   /* The last pick as it was, so a model that has since been removed from its
      endpoint can still be NAMED ("qwen3.5:9b · not installed") instead of
      the composer quietly answering with whatever route comes first. */
   const rememberedRoute = useRef<Partial<ModelRoute>>(readJson<Partial<ModelRoute>>(ROUTE_KEY, {}));
+  /* Only a model the person PICKED (the picker, `/model`) is remembered
+     across visits. Opening an old conversation moves the composer to that
+     conversation's model — it must not silently become the model of the
+     next new chat (seen live: one voice session on a small model and every
+     new chat on every device came up on it instead of the default). */
+  const explicitPick = useRef(false);
   const [knobs, setKnobsState] = useState<Knobs>(() => ({
     ...readJson<Knobs>(KNOBS_KEY, { mode: 'agent', web: false, bash: true, plan: false, rag: false, incognito: false, research: false }),
     rag: getRagActive(),
@@ -548,8 +582,14 @@ export function StudioScreen() {
         missing: true,
       };
     }
+    if (!routeId && routes.length > 0 && serverDefault) {
+      const exact = routes.find((r) => r.endpointId === serverDefault.endpointId && r.model === serverDefault.model);
+      if (exact) return exact;
+      const byModel = routes.find((r) => r.model === serverDefault.model);
+      if (byModel) return byModel;
+    }
     return routes[0] ?? null;
-  }, [routes, routeId]);
+  }, [routes, routeId, serverDefault]);
   const current = useMemo(() => sessions?.find((s) => s.id === sessionId) ?? null, [sessions, sessionId]);
   const visibleSession = useRef(sessionId);
   visibleSession.current = sessionId;
@@ -857,6 +897,10 @@ export function StudioScreen() {
     if (!sessionId) {
       setTurns([]);
       setTitle('');
+      // A new conversation starts on the remembered pick, or — when nothing
+      // was ever picked here — on the server default; never on whatever the
+      // last opened conversation happened to use.
+      setRouteId(pickedRouteId());
       return;
     }
     setTurns(null);
@@ -998,13 +1042,15 @@ export function StudioScreen() {
   useEffect(() => writeJson(KNOBS_KEY, { ...knobs, incognito: false }), [knobs]);
   useEffect(() => {
     if (!routeId) return;
+    if (!explicitPick.current) return;
+    explicitPick.current = false;
     const live = routes.find((r) => r.id === routeId);
     if (live) {
       const snapshot = { id: live.id, model: live.model, endpointId: live.endpointId, endpointName: live.endpointName, endpointUrl: live.endpointUrl, kind: live.kind };
       rememberedRoute.current = snapshot;
-      writeJson(ROUTE_KEY, snapshot);
+      writeJson(ROUTE_KEY, { ...snapshot, picked: true });
     } else if (rememberedRoute.current.id !== routeId) {
-      writeJson(ROUTE_KEY, { id: routeId });
+      writeJson(ROUTE_KEY, { id: routeId, picked: true });
     }
   }, [routeId, routes]);
   useEffect(() => writeJson(PRESET_KEY, preset ?? {}), [preset]);
@@ -2114,6 +2160,7 @@ export function StudioScreen() {
             report(t('No model matches "{q}". /models opens the list.', { q: args }), 'warning');
             return true;
           }
+          explicitPick.current = true;
           setRouteId(hit.id);
           say(t('Model: {name}', { name: hit.model }));
           return true;
@@ -3027,7 +3074,7 @@ export function StudioScreen() {
           }}
           voiceActive={Boolean(voiceSession)}
           onNotice={say}
-          modelPicker={<ModelPicker routes={routes} current={route} onPick={(r) => setRouteId(r.id)} onRefresh={refreshModels} refreshing={refreshingModels} openSignal={modelSignal} />}
+          modelPicker={<ModelPicker routes={routes} current={route} onPick={(r) => { explicitPick.current = true; setRouteId(r.id); }} onRefresh={refreshModels} refreshing={refreshingModels} openSignal={modelSignal} />}
           behaviorModes={modeCatalog.modes}
           behaviorModeId={activeModeId}
           onPickBehaviorMode={pickBehaviorMode}

@@ -1288,7 +1288,6 @@ button.fs-studio__git-chip:hover {
 }
 
 @media (max-width: 767px) {
-  /* One stable row: tools scroll, send never wraps onto a second line. */
   .fs-studio__composer { grid-template-columns: minmax(0, 1fr); }
   .fs-studio__bar, .fs-studio__input { min-inline-size: 0; }
   .fs-studio__composer .fs-studio__attachments { max-block-size: 180px; overflow-y: auto; }
@@ -1298,6 +1297,36 @@ button.fs-studio__git-chip:hover {
 
   .fs-studio__seg button {
     padding-inline: var(--fs-space-2);
+  }
+
+  /* Below ~430px the fixed three-column grid (start | tools | end) no
+     longer has room for the Chat/Agent toggle, the tool chips, the model
+     pill and mic/send on one row — they used to overlap. Let the row wrap
+     instead: start + end share the first line, the scrolling tool chips
+     drop to their own full-width line, and mic/send stay pinned at the
+     end of whichever line they land on. */
+  .fs-studio__bar {
+    display: flex;
+    flex-wrap: wrap;
+    row-gap: var(--fs-space-2);
+    column-gap: var(--fs-space-2);
+  }
+
+  .fs-studio__bar-start {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+  }
+
+  .fs-studio__bar-end {
+    flex: 0 1 auto;
+    min-inline-size: 0;
+    margin-inline-start: auto;
+  }
+
+  .fs-studio__bar-tools {
+    order: 3;
+    flex: 1 1 100%;
+    inline-size: 100%;
   }
 
   /* Approvals/questions in the transcript (fs-studio__ask*): tappable at
@@ -4290,5 +4319,23 @@ aside.fs-panel { position: relative; }
 @media (max-width: 480px) {
   .fs-condense-dialog__range {
     grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* Composer, mobile model pill — placed last on purpose. The unconditional
+   `.fs-studio__model-control` / `.fs-studio__model-control .fs-studio__chip--model span`
+   rules above (same selector, same specificity) are declared later than the
+   767px composer-wrap block earlier in this file, so without repeating them
+   here — after those — the always-on 18ch/12ch caps would keep winning by
+   source order and the pill would never use the room the wrapped layout
+   frees up. */
+@media (max-width: 767px) {
+  .fs-studio__model-control {
+    min-inline-size: 0;
+    max-inline-size: 40vw;
+  }
+
+  .fs-studio__model-control .fs-studio__chip--model span {
+    max-inline-size: 100%;
   }
 }
