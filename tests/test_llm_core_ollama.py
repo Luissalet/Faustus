@@ -322,3 +322,14 @@ def test_stream_llm_threads_discovered_num_ctx(monkeypatch):
     assert seen["num_ctx"] == 32768
     assert seen["stream"] is True
     assert out  # we got the SSE error chunk
+
+
+def test_keep_alive_bare_number_text_goes_out_as_a_number():
+    """"-1" saved as text means 'keep loaded forever'; Ollama's duration
+    parser rejects it as a string (`missing unit in duration "-1"`, HTTP 400
+    seen live), so it must be sent as an integer. Units stay strings."""
+    from src.llm_core import _clean_gen_overrides
+    assert _clean_gen_overrides({"keep_alive": "-1"}) == {"keep_alive": -1}
+    assert _clean_gen_overrides({"keep_alive": "600"}) == {"keep_alive": 600}
+    assert _clean_gen_overrides({"keep_alive": "10m"}) == {"keep_alive": "10m"}
+    assert _clean_gen_overrides({"keep_alive": -1}) == {"keep_alive": -1}

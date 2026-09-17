@@ -3322,6 +3322,11 @@ def _clean_gen_overrides(overrides: Optional[Dict]) -> Dict:
                     continue
                 if isinstance(v, (int, float)):
                     out[k] = int(v)
+                elif re.fullmatch(r"-?\d+", str(v).strip()):
+                    # A bare number saved as text ("-1" = keep loaded forever) must go
+                    # out as a number: Ollama's duration parser rejects "-1" with
+                    # `time: missing unit in duration "-1"` (seen live, HTTP 400).
+                    out[k] = int(str(v).strip())
                 elif _KEEP_ALIVE_RE.match(str(v).strip()):
                     out[k] = str(v).strip()
         except (TypeError, ValueError):
