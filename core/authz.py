@@ -208,6 +208,17 @@ API_TOKEN_RULES: Tuple[Rule, ...] = (
     _read("/api/session/{sid}/export", "sessions",
           note="download one owned session's export (also recorded as an artifact)"),
     _read("/openapi.json", "sessions", note="generate client types against the real app"),
+
+    # Mobile lot M-A: the paired phone's own bootstrap/notifications/
+    # sessions-read/send surface. The companion pairing token is minted
+    # with scope="chat" (companion/pairing.py:COMPANION_SCOPE) on purpose —
+    # a paired phone gets exactly this surface, not the broader "sessions"
+    # scope that would also open /api/session, /api/chat_stream, etc.
+    # directly. Without this rule the deny-by-default matrix above would
+    # 403 every companion-token request before it ever reached
+    # routes/mobile_routes.py's own require_admin-equivalent gate.
+    Rule(ANY_METHOD, "/api/mobile", ("chat",), prefix=True, effect="external",
+         note="the paired phone's own bootstrap/notifications/sessions/send surface"),
 )
 
 

@@ -21,6 +21,32 @@ from src.task_action_policy import (
 logger = logging.getLogger(__name__)
 
 
+def notify_task_finished(
+    *, task_name: str, owner: str, task_id: str, status: str,
+    result: str = None, error: str = None,
+) -> None:
+    """Mobile lot M-A: push a `task_finished` event for a just-finalised
+    TaskRun. `body` is the result's (or, failing that, the error's) first
+    line, so a phone notification reads like "Weather report: 18°C, light
+    rain" rather than a bare status word. A free function (not inlined at
+    the one call site in `run`) so it can be unit-tested without driving the
+    full scheduler/DB machinery. Best-effort: never raises.
+    """
+    try:
+        from src import notifications as _notifications
+        text = (result or error or "").strip()
+        first_line = text.splitlines()[0] if text else status
+        _notifications.emit(
+            "task_finished",
+            owner=owner,
+            title=task_name,
+            body=first_line,
+            data={"task_id": task_id, "status": status},
+        )
+    except Exception:
+        logger.debug("notifications.emit(task_finished) failed", exc_info=True)
+
+
 def _utcnow() -> datetime:
     """Return naive UTC for task DB fields without using deprecated APIs."""
     return datetime.now(timezone.utc).replace(tzinfo=None)
@@ -2205,6 +2231,21 @@ class TaskScheduler:
 
             db.commit()
             logger.info(f"Task '{task.name}' completed (run {run_id})")
+
+            # Mobile lot M-A: this TaskRun just finalised (success or error —
+            # the two statuses that reach this point; the earlier `return`s
+            # for fenced/aborted/skipped/deferred runs are deliberately not
+            # covered, matching what the existing browser notification below
+            # already treats as "worth telling the user about"). Independent
+            # of the per-task `notifications_enabled` gate just below: that
+            # gate is about the in-app/browser channel's chattiness, not
+            # whether a phone that is actively watching this task should
+            # hear about it.
+            notify_task_finished(
+                task_name=task.name, owner=task.owner, task_id=task_id,
+                status=run.status, result=run.result, error=run.error,
+            )
+
             output = task.output_target or "session"
             # Per-task notification gate. Default True (notifications_enabled
             # defaults to True at column level), but skip when the user has

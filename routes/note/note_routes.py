@@ -514,6 +514,24 @@ async def dispatch_reminder(
     # `body` into a real `Notification(...)` — same surface as task-success
     # popups. Lets the user see reminders inside the app even when the
     # primary channel is email/ntfy and the tab is open.
+    # Mobile lot M-A: a reminder just fired, regardless of which channel
+    # (email/ntfy/webhook/browser) actually carried it — a phone that is not
+    # polling any of those still gets the push. Separate from the in-app
+    # `add_notification` call just below (that one feeds the browser's own
+    # poller and would otherwise double-fire this as a `task_finished`).
+    # Best-effort: never raises into the reminder dispatch.
+    try:
+        from src import notifications as _notifications
+        _notifications.emit(
+            "reminder",
+            owner=owner or None,
+            title=title or "Reminder",
+            body=(synthesis or note_body or title or "").strip(),
+            data={"note_id": note_id},
+        )
+    except Exception as _e:
+        logger.debug(f"notifications.emit(reminder) failed: {_e}")
+
     browser_sent = False
     local_browser_sent = (not queue_browser and channel == "browser")
     if queue_browser and _scheduler_ref is not None:

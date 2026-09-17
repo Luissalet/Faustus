@@ -390,6 +390,61 @@ def test_save_assistant_response_incognito_does_not_mutate_session_history():
     assert sess.history == []
 
 
+def test_save_assistant_response_emits_turn_finished_once(monkeypatch):
+    """Mobile lot M-A's single hook point: a normal (non-incognito) turn
+    fires exactly one `turn_finished` notification, named after the
+    session and bodied with the final assistant text."""
+    from src import notifications as notifications_bus
+
+    sess = _FakeSession("selected-model")
+    sess.name = "Weather chat"
+    sess.owner = "luis"
+
+    fake_session_manager = SimpleNamespace(save_sessions=lambda: None)
+
+    calls = []
+    monkeypatch.setattr(
+        notifications_bus, "emit",
+        lambda kind, **kw: calls.append((kind, kw)) or {"id": 1, **kw},
+    )
+
+    save_assistant_response(
+        sess,
+        session_manager=fake_session_manager,
+        session_id="s1",
+        full_response="The forecast is sunny.",
+        last_metrics={"model": "actual-model"},
+    )
+
+    assert len(calls) == 1
+    kind, kw = calls[0]
+    assert kind == "turn_finished"
+    assert kw["owner"] == "luis"
+    assert kw["title"] == "Weather chat"
+    assert kw["body"] == "The forecast is sunny."
+    assert kw["session_id"] == "s1"
+
+
+def test_save_assistant_response_incognito_does_not_emit_a_notification(monkeypatch):
+    """A private chat's reply never wakes a phone notification."""
+    from src import notifications as notifications_bus
+
+    sess = _FakeSession("selected-model")
+    calls = []
+    monkeypatch.setattr(notifications_bus, "emit", lambda *a, **kw: calls.append((a, kw)))
+
+    save_assistant_response(
+        sess,
+        session_manager=None,
+        session_id="s1",
+        full_response="secret",
+        last_metrics=None,
+        incognito=True,
+    )
+
+    assert calls == []
+
+
 def test_add_user_message_incognito_does_not_mutate_session_history():
     sess = _FakeSession("selected-model")
     chat_handler = SimpleNamespace(update_session_name_if_needed=lambda *_args, **_kwargs: None)

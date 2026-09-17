@@ -1408,6 +1408,12 @@ from routes.whatsapp_routes import setup_whatsapp_routes
 app.include_router(setup_whatsapp_routes())
 logger.info("Connector routes initialized")
 
+# Mobile (lot M-A, 17-09): the native Android app's server surface —
+# /api/mobile/* (bootstrap, notifications, compact sessions/messages, the
+# chat_stream send shim) and its WebSocket push. See docs/api/mobile.md.
+from routes.mobile_routes import setup_mobile_routes
+app.include_router(setup_mobile_routes())
+
 # AI Interaction tools (debates, pipelines, self-managing AI, UI control)
 from src.ai_interaction import set_session_manager as set_ai_session_manager, set_memory_manager as set_ai_memory_manager, set_rag_manager as set_ai_rag_manager
 set_ai_session_manager(session_manager)

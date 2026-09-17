@@ -1,6 +1,14 @@
 # Pendientes de cierre
 
-Actualizado: 17-09-2026 (tarde). REGLA: nunca nombres de empresas/personas del buzón de Luis en commits, docs, tests ni comentarios — ejemplos siempre ficticios. Sólo trabajo vigente; quitar cada entrada al cerrarla.
+Actualizado: 17-09-2026 (noche). REGLA: nunca nombres de empresas/personas del buzón de Luis en commits, docs, tests ni comentarios — ejemplos siempre ficticios. Sólo trabajo vigente; quitar cada entrada al cerrarla.
+
+## Noche del 17-09 (móvil, lote M-A — servidor, ver `docs/api/mobile.md`)
+
+- Servidor listo y probado (`tests/test_notifications.py`, `tests/test_mobile_routes.py`, 34 tests): bus de eventos (`src/notifications.py`), `/api/mobile/*` (bootstrap, notifications, sessions, messages, WS, shim de envío) y los cuatro enganches (fin de turno, aprobaciones, tareas, recordatorio). Falta el lote M-B (`mobile/android/**`, `scripts/mobile_*.py`) — otro agente lo estaba haciendo en paralelo; una vez esté, probar el emparejamiento real desde un móvil (QR → `GET /api/mobile/bootstrap` → WS) y no solo con pytest.
+- Dos huecos del contrato original que NO eran ciertos y quedaron corregidos en el propio código (no son deuda, ya están resueltos, pero vale la pena que quien mire el histórico lo sepa): (a) `require_admin` no aceptaba un token bearer de un usuario real (siempre pisa `current_user="api"`) — `_mobile_owner` en `routes/mobile_routes.py` lo soluciona; (b) el token de emparejamiento solo tiene el scope `chat`, no `sessions`, así que `POST /api/chat_stream` directo le daba 403 — de ahí el shim `POST /api/mobile/session/{sid}/send` (loopback interno con impersonación de owner, no duplica la lógica de streaming). `core/authz.py` ganó una regla nueva (`/api/mobile/*` → scope `chat`) sin la cual NINGÚN endpoint de este lote sería alcanzable con un token bearer — quien toque `core/authz.py` en el futuro debe saber que el test `tests/test_auth1_token_matrix.py::test_the_reachable_surface_is_exactly_this` fija la superficie completa a mano.
+- `turn_error` está declarado en `src/notifications.KINDS` pero sin enganche — ningún punto de `chat_routes.py` mapea tan limpio a "una sola llamada, una vez por fallo" como `save_assistant_response` para el éxito. Si se quiere, revisar `_safe_stream()`/los branches de error alrededor de la línea 4148 de `routes/chat_routes.py`.
+- El WS (`GET /api/mobile/ws`) no reenvía histórico al conectar (solo `hello.last_id`); un cliente que reconecta debe pedir `GET /api/mobile/notifications?since_id=` una vez y luego fiarse del socket. Documentado en `docs/api/mobile.md`, pero el lote M-B tiene que implementarlo así — no asumir que el WS manda lo perdido.
+- No se ha probado en vivo (navegador/MCP) porque no hay móvil ni build Android en este lote — verificado con pytest (34 tests nuevos + 221 existentes de alrededor sin romper) y arrancando `app.py` completo en memoria para confirmar que `/api/mobile/*` queda registrado junto a `/api/chat_stream`.
 
 ## Noche del 17-09 (WhatsApp — FAUSTUS.md §100)
 

@@ -61,6 +61,10 @@ def test_the_reachable_surface_is_exactly_this():
         "GET|HEAD|OPTIONS /api/artifacts/{artifact_id}/manifest": ("sessions",),
         "GET|HEAD|OPTIONS /api/artifacts/{artifact_id}/provenance": ("sessions",),
         "GET|HEAD|OPTIONS /openapi.json": ("sessions",),
+        # Mobile lot M-A: the companion-paired phone's own surface, opened to
+        # the "chat" scope the pairing token is minted with (not "sessions" —
+        # see core/authz.py's comment on this rule).
+        "DELETE|GET|HEAD|OPTIONS|PATCH|POST|PUT /api/mobile*": ("chat",),
     }
     assert {key for key in surface if '/api/codex/' in key} == {
         *("GET|HEAD|OPTIONS /api/codex/" + path for path in (

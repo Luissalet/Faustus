@@ -132,6 +132,7 @@ def setup_approvals_routes():
             ttl_seconds=payload.get("ttl_seconds", approval_store.DEFAULT_TTL_SECONDS),
             uses=int(payload.get("uses") or 1),
         )
+        _notify_approval("approval_pending", card, session_id=str(payload.get("session_id") or ""))
         return {"ok": True, "approval": card.to_dict()}
 
     @router.post("/check")
@@ -160,6 +161,7 @@ def setup_approvals_routes():
             approval_id, granted=True,
             by=str(body.get("by") or _current_user(request) or "the signed-in user"),
             reason=str(body.get("reason") or ""))
+        _notify_decision(approval_id, "granted", result)
         return _decision_response(result)
 
     @router.post("/{approval_id}/deny")
@@ -170,6 +172,7 @@ def setup_approvals_routes():
             approval_id, granted=False,
             by=str(body.get("by") or _current_user(request) or "the signed-in user"),
             reason=str(body.get("reason") or ""))
+        _notify_decision(approval_id, "denied", result)
         return _decision_response(result)
 
     @router.delete("/{approval_id}")
@@ -188,6 +191,53 @@ def setup_approvals_routes():
         return result
 
     return router
+
+
+def _notify_approval(kind: str, card, *, session_id: str = "") -> None:
+    """Mobile lot M-A: a card just opened. `title` is the tool/action name
+    (`plan.action`), `body` the human-readable detail the card shows —
+    exactly what a person would need on a lock-screen notification to decide
+    whether to open the app right now. Best-effort, never raises."""
+    try:
+        from src import notifications as _notifications
+        plan = card.plan
+        _notifications.emit(
+            kind,
+            owner=card.owner or None,
+            title=plan.action or "Approval needed",
+            body=plan.detail or ", ".join(plan.recipients) or plan.skill_id or "",
+            data=card.to_dict(),
+            session_id=session_id or None,
+            approval_id=card.id,
+        )
+    except Exception:
+        logger.debug("notifications.emit(%s) failed", kind, exc_info=True)
+
+
+def _notify_decision(approval_id: str, decision: str, result: dict) -> None:
+    """Mobile lot M-A: a person granted or denied a card. Only fires for an
+    actual decision — a lost race (409, another decider already won) does
+    not get its own duplicate notification."""
+    if not result.get("ok"):
+        # A failed decide() (not_found, already_*, expired, no_decider) is
+        # not a new event to push — the card's own history already reflects
+        # it, and the original approval_pending notification is what
+        # mattered.
+        return
+    try:
+        from src import notifications as _notifications
+        approval = result.get("approval") or {}
+        plan = approval.get("plan") or {}
+        _notifications.emit(
+            "approval_resolved",
+            owner=approval.get("owner") or None,
+            title=plan.get("action") or "Approval decided",
+            body=f"{decision}: {plan.get('detail') or plan.get('skill_id') or ''}".strip(": "),
+            data=approval,
+            approval_id=approval_id,
+        )
+    except Exception:
+        logger.debug("notifications.emit(approval_resolved) failed", exc_info=True)
 
 
 async def _optional_json(request: Request) -> dict:

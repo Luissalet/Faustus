@@ -1265,6 +1265,25 @@ def save_assistant_response(
     update_session_last_accessed(session_id)
     session_manager.save_sessions()
 
+    # Mobile lot M-A: a turn just landed its final assistant text. This is
+    # the single place every `/api/chat_stream` finalization branch (normal
+    # completion, image generation, the various error-recovery paths) ends
+    # up, so it is the one hook point that fires exactly once per turn
+    # regardless of which branch produced the reply. Never for incognito
+    # (already returned above) — a private chat has no business waking a
+    # phone notification. Best-effort: emit() never raises.
+    try:
+        from src import notifications as _notifications
+        _notifications.emit(
+            "turn_finished",
+            owner=getattr(sess, "owner", None),
+            title=getattr(sess, "name", "") or "Chat",
+            body=_content,
+            session_id=session_id,
+        )
+    except Exception:
+        logger.debug("notifications.emit(turn_finished) failed", exc_info=True)
+
     if wires:
         try:
             from src.side_threads import note_wires_used
