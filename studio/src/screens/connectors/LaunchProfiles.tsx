@@ -53,6 +53,9 @@ export function LaunchProfilesPanel({ onClose }: { onClose: () => void }) {
     <div className="fs-set__card fs-conn__form" data-testid="launch-profiles-panel">
       <h3 className="fs-set__card-title">{t('Launch profiles')}</h3>
       <p className="fs-set__help">{t('Only you can create or edit these. The agent cannot start programs, and cannot create or edit a profile either.')}</p>
+      <p className="fs-set__help">
+        <a href="/processes#apps">{t('Manage, launch and watch these from the Apps section of Processes.')}</a>
+      </p>
       {profiles === null ? (
         <Skeleton label={t('Loading')} count={2} height="36px" />
       ) : profiles.length === 0 ? (

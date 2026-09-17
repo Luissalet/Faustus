@@ -19,8 +19,11 @@ credential store.
 from __future__ import annotations
 
 import os
+import sys
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
+
+from src.constants import BASE_DIR
 
 
 @dataclass(frozen=True)
@@ -50,6 +53,17 @@ class ConnectorPreset:
     # Placeholders that may be declared in `values` but never make a preset
     # "unconfigured" when absent (e.g. Writer's optional WH_BRIDGE_GROUPS).
     optional_extra_env: List[str] = field(default_factory=list)
+
+
+def _implicit_defaults() -> Dict[str, str]:
+    """Placeholders every preset may use without a user ever setting them:
+    Faustus's own install directory and its own interpreter. Filled in here
+    (not in any single preset's ``defaults``) so `resolve_preset_values`
+    never reports them as missing, no matter which preset declares them."""
+    return {
+        "FAUSTUS_DIR": BASE_DIR.rstrip("/\\"),
+        "FAUSTUS_PYTHON": sys.executable or "python3",
+    }
 
 
 def _writer_token_file_default() -> str:
@@ -128,6 +142,92 @@ PRESETS: Dict[str, ConnectorPreset] = {
         # required, and its absence never makes the preset "unconfigured".
         optional_extra_env=["WH_BRIDGE_GROUPS"],
     ),
+    "dorian": ConnectorPreset(
+        id="dorian",
+        name="Dorian's Hoard",
+        purpose="Manage local credentials and sessions through Dorian's Hoard's own MCP server.",
+        capabilities=["credentials", "sessions"],
+        transport="stdio",
+        command="{DORIAN_DIR}/.venv/Scripts/python.exe",
+        args=["{DORIAN_DIR}/selfhoard/mcp_server.py", "--credential-file", "{CREDENTIAL_FILE}"],
+        env={},
+        app_url_default="http://127.0.0.1:8741",
+        health_path="/api/session",
+        health_expect={"mode": "local"},
+        ui_url_default="{APP_URL}",
+        placeholders=["DORIAN_DIR", "APP_URL", "CREDENTIAL_FILE"],
+        launch_profile_hint={
+            "kind": "process",
+            "executable": "{DORIAN_DIR}/.venv/Scripts/python.exe",
+            "argv": ["-m", "selfhoard"],
+            "cwd": "{DORIAN_DIR}",
+            "readiness": {"url": "{APP_URL}/api/session", "timeout_s": 20},
+        },
+        defaults={
+            "APP_URL": "http://127.0.0.1:8741",
+            "CREDENTIAL_FILE": "{DORIAN_DIR}/data/agent-clients/faustus.json",
+        },
+    ),
+    "gepetto": ConnectorPreset(
+        id="gepetto",
+        name="Gepetto's Hoard",
+        purpose="Drive Gepetto's Hoard's projects, analysis and jobs through its REST API.",
+        capabilities=["projects", "analysis", "jobs"],
+        transport="stdio",
+        # A bridge Faustus ships itself (bridges/rest_mcp), run with Faustus's
+        # own interpreter — this app has no MCP server of its own, so the
+        # generic REST adapter (built from its OpenAPI document, falling
+        # back to manifests/gepetto.json) stands in for one.
+        command="{FAUSTUS_PYTHON}",
+        args=["{FAUSTUS_DIR}/bridges/rest_mcp/server.py"],
+        env={
+            "REST_BASE_URL": "{APP_URL}",
+            "REST_OPENAPI_URL": "{APP_URL}/openapi.json",
+            "REST_MANIFEST": "{FAUSTUS_DIR}/bridges/rest_mcp/manifests/gepetto.json",
+            "REST_NAME": "Gepetto's Hoard",
+        },
+        app_url_default="http://127.0.0.1:8767",
+        health_path="/api/health",
+        health_expect={"application": "sculptors-hoard"},
+        ui_url_default="{APP_URL}",
+        placeholders=["GEPETTO_DIR", "APP_URL"],
+        launch_profile_hint={
+            "kind": "process",
+            "executable": "{GEPETTO_DIR}/.venv/Scripts/python.exe",
+            "argv": ["-m", "uvicorn", "backend.app:app", "--host", "127.0.0.1", "--port", "8767"],
+            "cwd": "{GEPETTO_DIR}",
+            "readiness": {"url": "{APP_URL}/api/health", "timeout_s": 20},
+        },
+        defaults={"APP_URL": "http://127.0.0.1:8767"},
+    ),
+    "platos": ConnectorPreset(
+        id="platos",
+        name="Plato's Hoard",
+        purpose="Create, edit and export documents through Plato's Hoard's editor API.",
+        capabilities=["documents", "editor", "exports"],
+        transport="stdio",
+        command="{FAUSTUS_PYTHON}",
+        args=["{FAUSTUS_DIR}/bridges/rest_mcp/server.py"],
+        env={
+            "REST_BASE_URL": "{APP_URL}",
+            "REST_MANIFEST": "{FAUSTUS_DIR}/bridges/rest_mcp/manifests/platos.json",
+            "REST_NAME": "Plato's Hoard",
+        },
+        app_url_default="http://127.0.0.1:5000",
+        health_path="/",
+        # Any 200 counts — "/" is an HTML page, not a JSON health endpoint.
+        health_expect={},
+        ui_url_default="{APP_URL}",
+        placeholders=["PLATOS_DIR", "APP_URL"],
+        launch_profile_hint={
+            "kind": "process",
+            "executable": "{PLATOS_DIR}/.venv/Scripts/python.exe",
+            "argv": ["app.py"],
+            "cwd": "{PLATOS_DIR}",
+            "readiness": {"url": "{APP_URL}/", "timeout_s": 20},
+        },
+        defaults={"APP_URL": "http://127.0.0.1:5000"},
+    ),
 }
 
 
@@ -192,6 +292,7 @@ def resolve_preset_values(preset: ConnectorPreset, values: Optional[Dict[str, st
     """
     values = {k: str(v) for k, v in (values or {}).items() if v is not None and str(v).strip()}
     merged = dict(preset.defaults)
+    merged.update(_implicit_defaults())
     merged.update(values)
     # A default may itself name another placeholder ("{JOBHUNT_DIR}/data/
     # mcp-token"); resolve those against the user's values first.
@@ -205,6 +306,7 @@ def resolve_preset_values(preset: ConnectorPreset, values: Optional[Dict[str, st
             "reasons": [f"missing value for {{{name}}}" for name in missing],
         }
 
+    command = _substitute(preset.command, merged)
     args = [_substitute(a, merged) for a in preset.args]
     env = {k: _substitute(v, merged) for k, v in preset.env.items()}
     for extra in preset.optional_extra_env:
@@ -232,7 +334,7 @@ def resolve_preset_values(preset: ConnectorPreset, values: Optional[Dict[str, st
 
     return {
         "ok": True,
-        "command": preset.command,
+        "command": command,
         "args": args,
         "env": env,
         "app_url": app_url,

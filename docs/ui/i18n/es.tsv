@@ -7789,3 +7789,33 @@ Translate to Spanish	Traducir al español
 Translate to English	Traducir al inglés
 Reset zoom	Restablecer zoom
 Open photo	Abrir foto
+Apps	Apps
+Add app	Añadir app
+Could not load apps.	No se pudieron cargar las apps.
+Loading apps	Cargando apps
+No apps yet	Aún no hay apps
+An app is one of your own local projects — a server, a desktop program or a web address — that you want to launch, watch and stop from here.	Una app es uno de tus proyectos locales — un servidor, un programa de escritorio o una dirección web — que quieres lanzar, ver en consola y parar desde aquí.
+in browser	en el navegador
+Console	Consola
+No log output yet.	Aún no hay salida en el registro.
+Could not read the log.	No se pudo leer el registro.
+A working folder is required for a server process.	Se requiere una carpeta de trabajo para un proceso de servidor.
+Edit app	Editar app
+Server process (with readiness check)	Proceso de servidor (con comprobación de disponibilidad)
+Desktop program (no readiness check)	Programa de escritorio (sin comprobación de disponibilidad)
+Web address	Dirección web
+What this app is, in a few words	Qué es esta app, en pocas palabras
+The exact program to run — never a shell string.	El programa exacto a ejecutar — nunca una cadena de shell.
+Arguments (one per line)	Argumentos (uno por línea)
+Environment (KEY=value per line)	Entorno (CLAVE=valor por línea)
+Polled until it answers, or the timeout runs out — nothing is ever killed.	Se consulta hasta que responde, o se agota el tiempo de espera — nunca se mata nada.
+Open URL (optional)	URL de apertura (opcional)
+Opened once the app is running — its own browser tab or desktop window.	Se abre en cuanto la app está en marcha — su propia pestaña del navegador o ventana de escritorio.
+Icon (absolute path to .png/.ico/.svg/.jpg)	Icono (ruta absoluta a .png/.ico/.svg/.jpg)
+Stop command (optional)	Comando de parada (opcional)
+Run instead of the default stop, e.g. a stop script.	Se ejecuta en lugar de la parada por defecto, por ejemplo un script de parada.
+Stop arguments (one per line)	Argumentos de parada (uno por línea)
+Stop working folder	Carpeta de trabajo de la parada
+Open as a desktop window	Abrir como ventana de escritorio
+Manage, launch and watch these from the Apps section of Processes.	Gestiona, lanza y observa estas desde la sección Apps de Procesos.
+This app has no address to open.	Esta app no tiene una dirección que abrir.

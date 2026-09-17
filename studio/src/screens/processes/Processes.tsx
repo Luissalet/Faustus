@@ -11,6 +11,7 @@ import {
   type StopResult,
 } from '../../adapters/processCenter';
 import { t, tn } from '../../i18n';
+import { AppsSection } from './Apps';
 import '../projects.css';
 import '../settings.css';
 import '../connectors/connectors.css';
@@ -368,6 +369,8 @@ export function ProcessesScreen() {
           <AlertTriangle size={14} aria-hidden="true" /> {t('psutil is not installed on the server; only ports are listed.')}
         </div>
       )}
+
+      <AppsSection say={say} />
 
       {failed && snap === null ? (
         <EmptyState

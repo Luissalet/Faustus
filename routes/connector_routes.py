@@ -27,7 +27,7 @@ import json
 import logging
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Response
 
 from core.database import McpServer, SessionLocal
 from core.middleware import require_admin, require_human
@@ -533,6 +533,17 @@ def setup_connector_routes(mcp_manager: McpManager) -> APIRouter:
         require_human(request)
         return launch_profiles.list_profiles()
 
+    # NOTE: registered before the `{profile_id}` routes below — Starlette
+    # matches path routes in registration order, and "status" would
+    # otherwise be swallowed as a `{profile_id}` of literally "status".
+    @router.get("/api/launch-profiles/status")
+    async def all_launch_profile_statuses_route(request: Request):
+        # Apps wave (F1.4): a read, so `require_admin` like the rest of this
+        # router's reads — only the routes that can start/stop a local
+        # process stay `require_human` (principle 4).
+        require_admin(request)
+        return {"statuses": await launch_profiles.list_statuses()}
+
     @router.get("/api/launch-profiles/{profile_id}")
     def get_launch_profile_route(profile_id: str, request: Request):
         require_human(request)
@@ -540,6 +551,65 @@ def setup_connector_routes(mcp_manager: McpManager) -> APIRouter:
         if profile is None:
             raise HTTPException(404, "Launch profile not found")
         return profile
+
+    @router.get("/api/launch-profiles/{profile_id}/status")
+    async def launch_profile_status_route(profile_id: str, request: Request):
+        require_admin(request)
+        profile = launch_profiles.get_profile(profile_id)
+        if profile is None:
+            raise HTTPException(404, "Launch profile not found")
+        return await launch_profiles.status(profile_id)
+
+    @router.post("/api/launch-profiles/{profile_id}/stop")
+    async def stop_launch_profile_route(profile_id: str, request: Request):
+        # F1.4 / principle 4: stopping a local process is `require_human`,
+        # same reasoning as launch/open above — the agent's internal-tool
+        # token must not be able to reach it.
+        require_human(request)
+        profile = launch_profiles.get_profile(profile_id)
+        if profile is None:
+            raise HTTPException(404, "Launch profile not found")
+        return await launch_profiles.stop(profile_id)
+
+    @router.post("/api/launch-profiles/{profile_id}/restart")
+    async def restart_launch_profile_route(profile_id: str, request: Request):
+        require_human(request)
+        profile = launch_profiles.get_profile(profile_id)
+        if profile is None:
+            raise HTTPException(404, "Launch profile not found")
+        return await launch_profiles.restart(profile_id)
+
+    @router.post("/api/launch-profiles/{profile_id}/open")
+    async def open_launch_profile_desktop_route(profile_id: str, request: Request):
+        # Lot D: opening a desktop window is as much "start something local"
+        # as launch/stop/restart above — same `require_human` gate.
+        require_human(request)
+        profile = launch_profiles.get_profile(profile_id)
+        if profile is None:
+            raise HTTPException(404, "Launch profile not found")
+        return launch_profiles.open_desktop(profile_id)
+
+    @router.get("/api/launch-profiles/{profile_id}/icon")
+    def launch_profile_icon_route(profile_id: str, request: Request):
+        require_admin(request)
+        profile = launch_profiles.get_profile(profile_id)
+        if profile is None:
+            raise HTTPException(404, "Launch profile not found")
+        icon = launch_profiles.icon_bytes(profile_id)
+        if icon is None:
+            raise HTTPException(404, "No icon configured for this launch profile")
+        return Response(
+            content=icon["data"], media_type=icon["content_type"],
+            headers={"Cache-Control": "private, max-age=3600"},
+        )
+
+    @router.get("/api/launch-profiles/{profile_id}/log")
+    def launch_profile_log_route(profile_id: str, request: Request, lines: int = 200):
+        require_admin(request)
+        tail = launch_profiles.log_tail(profile_id, lines=max(1, min(int(lines), 5000)))
+        if tail is None:
+            raise HTTPException(404, "Launch profile not found")
+        return {"log": tail}
 
     @router.post("/api/launch-profiles")
     async def create_launch_profile_route(request: Request):
@@ -552,6 +622,9 @@ def setup_connector_routes(mcp_manager: McpManager) -> APIRouter:
                 executable=body.get("executable") or "", argv=body.get("argv"),
                 cwd=body.get("cwd") or "", env=body.get("env"),
                 readiness=body.get("readiness"), url=body.get("url"),
+                icon=body.get("icon"), open_url=body.get("open_url"),
+                stop_cmd=body.get("stop_cmd"), description=body.get("description"),
+                desktop=body.get("desktop"),
             )
         except launch_profiles.ProfileValidationError as exc:
             raise HTTPException(400, str(exc))
@@ -563,7 +636,8 @@ def setup_connector_routes(mcp_manager: McpManager) -> APIRouter:
         try:
             updated = launch_profiles.update_profile(profile_id, **{
                 k: v for k, v in body.items()
-                if k in ("name", "kind", "executable", "argv", "cwd", "env", "readiness", "url")
+                if k in ("name", "kind", "executable", "argv", "cwd", "env", "readiness", "url",
+                          "icon", "open_url", "stop_cmd", "description", "desktop")
             })
         except launch_profiles.ProfileValidationError as exc:
             raise HTTPException(400, str(exc))

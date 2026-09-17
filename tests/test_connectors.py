@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import http.server
 import json
+import os
 import threading
 import types
 
@@ -490,6 +491,86 @@ def test_match_preset_by_service_then_title():
     assert match_preset({"service": "writers-hoard-ai-bridge"}, "") == "writer"
     assert match_preset(None, "Jubhunter's Hoard") == "jobhunter"
     assert match_preset({"service": "something-else"}, "My app") is None
+
+
+# ── the three "apps" presets (dorian, gepetto, platos) ─────────────────────
+
+def test_dorian_is_a_native_stdio_preset(tmp_path):
+    d = tmp_path / "dorian"
+    (d / "selfhoard").mkdir(parents=True)
+    (d / "selfhoard" / "mcp_server.py").write_text("# fake\n")
+    preset = connectors.get_preset("dorian")
+    assert preset.name == "Dorian's Hoard"
+    resolved = connectors.resolve_preset_values(preset, {"DORIAN_DIR": str(d)})
+    assert resolved["ok"], resolved
+    assert resolved["command"] == str(d / ".venv" / "Scripts" / "python.exe")
+    assert resolved["args"] == [
+        str(d / "selfhoard" / "mcp_server.py"),
+        "--credential-file",
+        str(d / "data" / "agent-clients" / "faustus.json"),
+    ]
+    assert resolved["app_url"] == "http://127.0.0.1:8741"
+    assert resolved["ui_url"] == "http://127.0.0.1:8741"
+    assert preset.health_path == "/api/session"
+    assert preset.health_expect == {"mode": "local"}
+
+
+def test_gepetto_and_platos_run_faustus_own_rest_bridge(tmp_path):
+    d = tmp_path / "gepetto"
+    d.mkdir()
+    preset = connectors.get_preset("gepetto")
+    assert preset.name == "Gepetto's Hoard"
+    resolved = connectors.resolve_preset_values(preset, {"GEPETTO_DIR": str(d)})
+    assert resolved["ok"], resolved
+    # {FAUSTUS_PYTHON} and {FAUSTUS_DIR} are filled in automatically — never
+    # user-supplied, never reported as missing.
+    import sys
+    from src.constants import BASE_DIR
+    assert resolved["command"] == sys.executable
+    assert resolved["args"] == [os.path.join(BASE_DIR.rstrip("/\\"), "bridges", "rest_mcp", "server.py")]
+    assert resolved["env"]["REST_BASE_URL"] == "http://127.0.0.1:8767"
+    assert resolved["env"]["REST_OPENAPI_URL"] == "http://127.0.0.1:8767/openapi.json"
+    assert resolved["env"]["REST_MANIFEST"].endswith("manifests/gepetto.json")
+    assert resolved["ui_url"] == "http://127.0.0.1:8767"
+    assert preset.health_expect == {"application": "sculptors-hoard"}
+
+    d2 = tmp_path / "platos"
+    d2.mkdir()
+    preset2 = connectors.get_preset("platos")
+    assert preset2.name == "Plato's Hoard"
+    resolved2 = connectors.resolve_preset_values(preset2, {"PLATOS_DIR": str(d2)})
+    assert resolved2["ok"], resolved2
+    assert resolved2["env"]["REST_BASE_URL"] == "http://127.0.0.1:5000"
+    assert "REST_OPENAPI_URL" not in resolved2["env"]
+    assert resolved2["env"]["REST_MANIFEST"].endswith("manifests/platos.json")
+    assert preset2.health_path == "/"
+    assert preset2.health_expect == {}
+
+
+def test_faustus_placeholders_are_never_missing():
+    """FAUSTUS_DIR/FAUSTUS_PYTHON are not declared placeholders (a user never
+    fills them in) and resolve without ever being reported as missing."""
+    preset = connectors.get_preset("gepetto")
+    assert "FAUSTUS_DIR" not in preset.placeholders
+    assert "FAUSTUS_PYTHON" not in preset.placeholders
+    resolved = connectors.resolve_preset_values(preset, {})
+    assert resolved["ok"] is False
+    assert resolved["missing"] == ["GEPETTO_DIR"]
+
+
+def test_new_presets_carry_their_own_launch_profile_hint():
+    for preset_id, dir_key in (("dorian", "DORIAN_DIR"), ("gepetto", "GEPETTO_DIR"), ("platos", "PLATOS_DIR")):
+        preset = connectors.get_preset(preset_id)
+        hint = preset.launch_profile_hint
+        assert hint["cwd"] == "{" + dir_key + "}"
+        assert hint.get("executable") or hint.get("argv") is not None
+
+
+def test_list_presets_includes_the_three_apps_presets():
+    by_id = {p["id"]: p for p in connectors.list_presets()}
+    for preset_id in ("dorian", "gepetto", "platos"):
+        assert preset_id in by_id
+        assert by_id[preset_id]["transport"] == "stdio"
 
 
 async def test_health_sends_the_bridge_token_only_after_a_401(bridge_dir, tmp_path):

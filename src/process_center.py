@@ -191,6 +191,29 @@ def _ports_by_pid() -> Dict[int, List[int]]:
     return out
 
 
+def pid_listening_on(port: int, *, ports_by_pid: Optional[Dict[int, List[int]]] = None) -> Optional[Dict[str, Any]]:
+    """Apps wave (F1.4): whatever is listening on `port` right now, as
+    ``{"pid", "created_at", "cmdline"}``, or None. `ports_by_pid` lets a
+    caller that already ran `_ports_by_pid()` for its own scan (e.g.
+    `launch_profiles.list_statuses()`, one pass for every profile) pass it
+    in instead of scanning again."""
+    table = ports_by_pid if ports_by_pid is not None else _ports_by_pid()
+    for pid, ports in table.items():
+        if port in ports:
+            created: Optional[float] = None
+            cmdline = ""
+            psutil = _psutil()
+            if psutil is not None:
+                try:
+                    proc = psutil.Process(pid)
+                    created = float(proc.create_time())
+                    cmdline = " ".join(proc.cmdline() or [])[:200]
+                except Exception:  # noqa: BLE001
+                    pass
+            return {"pid": pid, "created_at": created, "cmdline": cmdline}
+    return None
+
+
 class _Table:
     """One pass over the process list (`process_iter` with pid/ppid/name):
     the parent map every attribution question is answered from. On Windows
