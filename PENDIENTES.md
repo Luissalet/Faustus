@@ -2,6 +2,13 @@
 
 Actualizado: 17-09-2026 (noche). REGLA: nunca nombres de empresas/personas del buzón de Luis en commits, docs, tests ni comentarios — ejemplos siempre ficticios. Sólo trabajo vigente; quitar cada entrada al cerrarla.
 
+## Noche del 17-09 (voz manos libres, FAUSTUS.md §105)
+
+- Sin micrófono en el entorno: probar en vivo la interrupción (¿se pierde la primera palabra?), la guarda de eco (¿se traga una réplica rápida como «sí»?), las frases de parada y qué transcribe Whisper cuando se dice «Faustus» (ampliar la lista de variantes en `engine.ts::stripWakeWord` si hace falta).
+- Latencia «oído en»: si molesta, el siguiente paso es STT en streaming por WebSocket con parciales (decodificar cada 300-500 ms sobre ventana deslizante) en vez de esperar al silencio y subir el clip entero.
+- Voz de salida: las voces de Windows suenan a Windows. Opción local con más calidad: instalar Kokoro (ya hay proveedor «Local (Kokoro)» en Ajustes → Voz) o añadir Piper (ONNX, MIT, voces es_ES).
+- Voz desde el móvil: el bucle es el mismo (HTTPS por la VPN de malla), pero la pestaña tiene que estar en primer plano; la palabra de activación no funciona con la pantalla apagada.
+
 ## Noche del 17-09 (móvil, lotes P-A/P-B — PWA instalable + push, ver `docs/api/mobile.md`, `docs/ui/pwa.md`, FAUSTUS.md §104)
 
 - Verificado en vivo en :7000 (w100): `/sw.js` con `Service-Worker-Allowed: /` y el worker activo con ámbito `/`; `/manifest.webmanifest`; «Instalar Faustus» aparece (el navegador acepta el manifest); permiso de notificación concedido desde el diálogo del navegador; vista móvil a 500 px con cinco pestañas inferiores y sin desbordamiento horizontal; un turno enviado desde esa vista emite `turn_finished` en el bus.
