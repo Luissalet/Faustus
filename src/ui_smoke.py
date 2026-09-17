@@ -113,7 +113,9 @@ def _read_text(path: str, cap: int = 400_000) -> str:
 def _find_index_html_dir(workspace: str, max_depth: int = 2) -> Optional[str]:
     """The shallowest directory under `workspace` (workspace itself first)
     that holds an `index.html`, skipping the usual noise directories."""
-    skip = {".git", "node_modules", "__pycache__", ".venv", "venv", "env", "dist", "build"}
+    # `templates/` holds Jinja sources, not a static site: serving it with
+    # http.server yields a 200 page whose /static/* links all 404 (live 17-09).
+    skip = {".git", "node_modules", "__pycache__", ".venv", "venv", "env", "dist", "build", "templates"}
     root_depth = workspace.rstrip("/\\").count(os.sep)
     for dirpath, dirnames, filenames in os.walk(workspace):
         depth = dirpath.rstrip("/\\").count(os.sep) - root_depth
@@ -124,6 +126,28 @@ def _find_index_html_dir(workspace: str, max_depth: int = 2) -> Optional[str]:
         if "index.html" in filenames:
             return dirpath
     return None
+
+
+_LOCAL_IMPORT_RE = re.compile(r"^\s*(?:from\s+([\w.]+)\s+import|import\s+([\w.]+))", re.M)
+
+
+def _local_imports_source(workspace: str, src: str, cap: int = 6) -> str:
+    """Source of up to `cap` first-party modules the entry imports
+    (`pkg.mod` -> pkg/mod.py or pkg/__init__.py under the workspace)."""
+    out: List[str] = []
+    for m in _LOCAL_IMPORT_RE.finditer(src or ""):
+        dotted = (m.group(1) or m.group(2) or "").strip()
+        if not dotted or dotted.split(".")[0] in ("flask", "fastapi", "os", "sys", "json", "re"):
+            continue
+        rel = dotted.replace(".", os.sep)
+        for cand in (rel + ".py", os.path.join(rel, "__init__.py")):
+            path = os.path.join(workspace, cand)
+            if os.path.isfile(path):
+                out.append(_read_text(path))
+                break
+        if len(out) >= cap:
+            break
+    return "\n".join(out)
 
 
 def detect_server(workspace: str) -> Optional[Dict[str, Any]]:
@@ -140,9 +164,12 @@ def detect_server(workspace: str) -> Optional[Dict[str, Any]]:
         if not os.path.isfile(p):
             continue
         src = _read_text(p)
-        if re.search(r"\bFlask\s*\(", src):
+        # The entry often only does `from notas.api import create_app` — the
+        # `Flask(` call lives one import away (live 17-09). Look there too.
+        joined = src + "\n" + _local_imports_source(workspace, src)
+        if re.search(r"\bFlask\s*\(", joined) or re.search(r"^\s*(?:from|import)\s+flask\b", joined, re.M):
             return {"kind": "flask", "entry": entry, "source": src}
-        if re.search(r"\bFastAPI\s*\(", src):
+        if re.search(r"\bFastAPI\s*\(", joined):
             m = re.search(r"^(\w+)\s*=\s*FastAPI\s*\(", src, re.M)
             var = m.group(1) if m else "app"
             return {"kind": "fastapi", "entry": entry, "source": src, "asgi_var": var}

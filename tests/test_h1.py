@@ -290,3 +290,26 @@ def test_check_asset_js_mime_variants():
     good = ui_smoke._JS_MIME_OK
     assert "text/javascript" in good and "application/javascript" in good
     assert "text/plain" not in good
+
+
+def test_detect_server_follows_a_local_import_to_find_flask(tmp_path):
+    """Live 17-09: `app.py` only did `from notas.api import create_app`; the
+    smoke fell through to http.server on templates/ and reported 404s on
+    every asset of a working Flask app."""
+    from src import ui_smoke
+    (tmp_path / "notas").mkdir()
+    (tmp_path / "notas" / "__init__.py").write_text("", encoding="utf-8")
+    (tmp_path / "notas" / "api.py").write_text(
+        "from flask import Flask\n\ndef create_app():\n    return Flask(__name__)\n", encoding="utf-8")
+    (tmp_path / "app.py").write_text(
+        "from notas.api import create_app\n\napp = create_app()\n\nif __name__ == '__main__':\n    app.run(port=5055)\n",
+        encoding="utf-8")
+    (tmp_path / "templates").mkdir()
+    (tmp_path / "templates" / "index.html").write_text("<html></html>", encoding="utf-8")
+    spec = ui_smoke.detect_server(str(tmp_path))
+    assert spec is not None and spec["kind"] == "flask" and spec["entry"] == "app.py"
+    argv, env, cwd = ui_smoke._build_launch(spec, str(tmp_path), 5099, "python")
+    assert argv[-3:] == ["run", "--port", "5099"] and env["FLASK_APP"] == "app.py"
+    # And a bare templates/ dir is never mistaken for a static site.
+    (tmp_path / "app.py").unlink()
+    assert ui_smoke.detect_server(str(tmp_path)) is None
