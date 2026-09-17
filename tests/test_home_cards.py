@@ -81,3 +81,33 @@ def test_routes_pin_requires_an_existing_task():
     assert tid in out["cards"]
     listed = asyncio.run(routes[("GET", "/api/home/cards")](Req()))
     assert listed["cards"][0]["task_id"] == tid
+
+
+def test_manage_tasks_creates_a_watcher_task_from_params_and_pins_it():
+    from src.tools.system import do_manage_tasks
+    import json
+    out = asyncio.run(do_manage_tasks(json.dumps({
+        "action": "create", "name": "Tiempo en Alcorcón", "task_type": "action", "action_name": "weather_report",
+        "params": {"place": "Alcorcón", "when": "tomorrow"}, "schedule": "daily", "scheduled_time": "08:00",
+        "timezone": "Europe/Madrid", "pin_to_home": True}), owner="admin"))
+    assert out.get("exit_code") == 0 and out.get("pinned_to_home") is True, out
+    tid = out["task_id"]
+    from core.database import ScheduledTask, SessionLocal
+    db = SessionLocal()
+    try:
+        task = db.query(ScheduledTask).filter(ScheduledTask.id == tid).first()
+        assert task.action == "weather_report" and json.loads(task.prompt) == {"place": "Alcorcón", "when": "tomorrow"}
+    finally:
+        db.close()
+    assert hc.is_pinned("admin", tid)
+    # bare keys work too, and a plain-text prompt becomes the place
+    out2 = asyncio.run(do_manage_tasks(json.dumps({
+        "action": "create", "task_type": "action", "action_name": "watch_page", "url": "https://shop.example/p",
+        "mode": "availability", "schedule": "cron", "cron_expression": "*/30 * * * *"}), owner="admin"))
+    assert out2.get("exit_code") == 0, out2
+    db = SessionLocal()
+    try:
+        t2 = db.query(ScheduledTask).filter(ScheduledTask.id == out2["task_id"]).first()
+        assert json.loads(t2.prompt) == {"url": "https://shop.example/p", "mode": "availability"}
+    finally:
+        db.close()

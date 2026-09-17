@@ -289,6 +289,27 @@ async def do_manage_tasks(content: str, owner: Optional[str] = None) -> Dict:
     if args.get("task") and not args.get("prompt"):
         args["prompt"] = args["task"]
     action = args.get("action", "list")
+    # Watcher actions take their parameters as an object (`params`, or the
+    # bare keys) and store them as JSON in `prompt`; a model that has to
+    # nest JSON inside a tool-call string gets the quoting wrong.
+    _WATCH_KEYS = ("place", "when", "topic", "hours", "url", "mode", "text", "unread_only", "language", "items")
+    if args.get("action_name") in ("weather_report", "news_brief", "watch_page", "mail_digest"):
+        params = dict(args.get("params") or {}) if isinstance(args.get("params"), dict) else {}
+        for k in _WATCH_KEYS:
+            if args.get(k) is not None and k not in params:
+                params[k] = args[k]
+        raw_prompt = str(args.get("prompt") or "").strip()
+        if params:
+            if raw_prompt.startswith("{"):
+                try:
+                    params = {**json.loads(raw_prompt), **params}
+                except ValueError:
+                    pass
+            elif raw_prompt and "place" not in params and args.get("action_name") == "weather_report":
+                params["place"] = raw_prompt
+            elif raw_prompt and "topic" not in params and args.get("action_name") == "news_brief":
+                params["topic"] = raw_prompt
+            args["prompt"] = json.dumps(params, ensure_ascii=False)
     if args.get("description") and not args.get("prompt"):
         args["prompt"] = args["description"]
     if args.get("time") and not args.get("scheduled_time"):
