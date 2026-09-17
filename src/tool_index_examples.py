@@ -384,6 +384,11 @@ EXAMPLES: Dict[str, List[str]] = {
         "comprueba si hay errores de continuidad en la historia",
         "check if this scene contradicts something earlier in the book",
     ],
+    "review_candidature_mail": [
+        "revisa mi correo de las últimas dos semanas y actualiza qué empresas me han rechazado en jobhunter's hoard",
+        "check my mail for interview invitations, update jobhunter's hoard and put them on the calendar",
+        "qué empresas me han dado entrevista este mes",
+    ],
     "verify_claim": [
         "comprueba que esta cita es real antes de repetirla",
         "fact-check this statistic against the source",

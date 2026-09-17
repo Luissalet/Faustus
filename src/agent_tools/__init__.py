@@ -241,7 +241,7 @@ TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_fi
              # fence regex, dispatch and the non-admin blocklist all see it.
              "manage_project_context",
              "project_objectives", "manage_teach_mode", "capability_health", "branch_futures",
-             "memory_rules", "expert_review", "verify_claim",
+             "memory_rules", "expert_review", "verify_claim", "review_candidature_mail",
              "chat_with_model", "create_session", "list_sessions",
              "send_to_session",
              "pipeline",

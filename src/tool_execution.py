@@ -1958,6 +1958,23 @@ async def _execute_tool_block_impl(
         except (_review.ExpertReviewError, ValueError, TypeError,
                 json.JSONDecodeError) as exc:
             result = {"error": str(exc), "exit_code": 1}
+    elif tool == "review_candidature_mail":
+        desc = "review_candidature_mail"
+        try:
+            args = json.loads(content) if content.strip().startswith("{") else {}
+            from src import candidature_review as _cr
+            import asyncio as _aio
+            result = await _aio.to_thread(
+                _cr.review, owner=owner, days=int(args.get("days") or 14),
+                since=args.get("since") or None, until=args.get("until") or None,
+                kinds=args.get("kinds") or None, apply=bool(args.get("apply")),
+                calendar=args.get("calendar", True) is not False, account=args.get("account") or None,
+            )
+            c = result.get("counts") or {}
+            desc = (f"review_candidature_mail: {result.get('scanned')} mails, {c.get('found', 0)} replies, "
+                    f"{c.get('updated', 0)} recorded, {c.get('events', 0)} events, {c.get('manual', 0)} manual")
+        except Exception as exc:  # noqa: BLE001 - reported to the model, never raised
+            result = {"error": str(exc), "exit_code": 1}
     elif tool == "verify_claim":
         desc = "verify_claim"
         try:

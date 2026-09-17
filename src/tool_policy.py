@@ -82,6 +82,7 @@ _COMMON_TOOL_NAMES = {
     "ls",
     "manage_calendar",
     "manage_contact",
+    "review_candidature_mail",
     "manage_documents",
     "manage_endpoints",
     "manage_mcp",

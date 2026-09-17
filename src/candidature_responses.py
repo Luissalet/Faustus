@@ -73,6 +73,26 @@ _REJECTION_PATTERNS = [
     r"we have chosen to proceed with other candidates",
     r"not (been )?selected",
     r"decided to pursue other candidates",
+    # The forms a real inbox showed on 17-09 (Bluehaven, Habito, Cleverfox…).
+    r"we regret to inform",
+    r"regret to (inform|let you know)",
+    r"we regret that",
+    r"will not be proceeding",
+    r"not (to )?proceed(ing)? (further )?with your (application|candidacy)",
+    r"decided not to proceed",
+    r"not the right fit",
+    r"other candidates whose (experience|profile|skills)",
+    r"more closely (match|align)",
+    r"we have decided to move forward with other",
+    r"proceed with other (candidates|applicants)",
+    r"no seguir adelante",
+    r"no seguiremos adelante",
+    r"hemos decidido no seguir",
+    r"tu perfil no (se ajusta|encaja)",
+    r"otros candidatos (cuyo|que)",
+    r"descartad[oa]",
+    r"no podemos ofrecerte",
+    r"no hemos seleccionado tu",
 ]
 
 _OFFER_PATTERNS = [
@@ -158,6 +178,12 @@ _DATE_EN_RE = re.compile(
     r"\b(" + "|".join(_MONTHS_EN) + r")\s+(\d{1,2})(?:st|nd|rd|th)?,?\s*(\d{4})?\b",
     re.IGNORECASE,
 )
+# Day-first English ("22 September 2026", "22nd of September"), the form
+# European recruiters write.
+_DATE_EN_DAY_FIRST_RE = re.compile(
+    r"\b(\d{1,2})(?:st|nd|rd|th)?\s+(?:of\s+)?(" + "|".join(_MONTHS_EN) + r")(?:,?\s*(\d{4}))?\b",
+    re.IGNORECASE,
+)
 
 _TIME_AMPM_RE = re.compile(r"\b(1[0-2]|0?[1-9])(?::([0-5]\d))?\s*([AaPp]\.?[Mm]\.?)\b")
 _TIME_24_RE = re.compile(r"\b([01]?\d|2[0-3]):([0-5]\d)\b")
@@ -222,6 +248,16 @@ def _find_date(text: str, ref_year: int):
             return y, mo, d
         except ValueError:
             pass
+    m = _DATE_EN_DAY_FIRST_RE.search(text)
+    if m:
+        d = int(m.group(1))
+        mo = _MONTHS_EN[m.group(2).lower()]
+        y = int(m.group(3)) if m.group(3) else ref_year
+        try:
+            date(y, mo, d)
+            return y, mo, d
+        except ValueError:
+            pass
     return None
 
 
@@ -274,17 +310,27 @@ def _find_tz(text: str, date_ymd):
     return None
 
 
-def _extract_interview_datetime(text: str, ref_year: int):
+def _extract_interview_datetime(text: str, ref_year: int, default_tz: Optional[str] = None):
     """Return (iso_with_offset, tz_label) or (None, None).
 
     Requires ALL THREE of date, time and an explicit timezone to be
     resolvable — F4.3: "sin fecha/hora/zona determinadas -> interview_at=None
     ... nunca inventar". A day with no time, or a time with no stated zone,
     is exactly the ambiguous case this must refuse to guess at.
+
+    `default_tz` (an IANA name, e.g. the user's own zone) is the one
+    documented relaxation: a mail that states a date and a time but no zone
+    is resolved in that zone and the label comes back as
+    ``"<zone> (assumed)"`` so the caller can say so. Never applied by
+    default.
     """
     date_ymd = _find_date(text, ref_year)
     time_hm = _find_time(text)
     tz_info = _find_tz(text, date_ymd)
+    if date_ymd and time_hm and not tz_info and default_tz:
+        assumed = _find_tz(f"{default_tz} ", date_ymd)
+        if assumed:
+            tz_info = (f"{assumed[0]} (assumed)", assumed[1])
     if not (date_ymd and time_hm and tz_info):
         return None, None
     y, mo, d = date_ymd
@@ -305,7 +351,7 @@ def _ref_year(message: Dict[str, Any]) -> int:
     return datetime.now().year
 
 
-def classify(message: Dict[str, Any]) -> ClassifyResult:
+def classify(message: Dict[str, Any], default_tz: Optional[str] = None) -> ClassifyResult:
     """Classify one employer reply. See module docstring: deterministic,
     pattern-based, never executes the message body as instructions.
 
@@ -328,7 +374,7 @@ def classify(message: Dict[str, Any]) -> ClassifyResult:
 
     interview_m = _search_any(_INTERVIEW_PATTERNS, lower)
     if interview_m:
-        iso, tz = _extract_interview_datetime(text, ref_year)
+        iso, tz = _extract_interview_datetime(text, ref_year, default_tz)
         if iso and tz:
             return _result("interview", "high", iso, tz, _snippet(text, interview_m))
         # A date/time/zone could not all be resolved. If this also reads as

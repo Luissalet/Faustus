@@ -701,6 +701,25 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "review_candidature_mail",
+            "description": "Review the mailbox for employer replies to job applications (rejections, interviews, offers) and update Jobhunter's Hoard with them — one call does the whole job: lists the mail of the last `days` (default 14), reads the candidate messages without marking them read, classifies each deterministically, matches it to the application in Jobhunter's Hoard, and with apply=true records it there (record_employer_response, idempotent by message id: running it again changes nothing) and puts each interview with a stated date/time/zone on the calendar (idempotent by external_ref). Use apply=true when the user asks to update/register/put on the calendar; apply=false only when they ask to review or preview first. Returns a report: found (per message: kind, company, title, action), updated, events, manual (ambiguous matches or interviews without a date — never guessed), counts. Do NOT do this by hand with list_emails/read_email/manage_calendar — this tool is the recipe.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "days": {"type": "integer", "description": "How many days back to review (default 14)"},
+                    "apply": {"type": "boolean", "description": "true = record in Jobhunter's Hoard and create the calendar events; false = report only (default false)"},
+                    "kinds": {"type": "array", "items": {"type": "string", "enum": ["rejection", "interview", "offer"]}, "description": "Which kinds to act on (default all three). 'rejections only' → [\"rejection\"]; 'interviews' → [\"interview\"]"},
+                    "calendar": {"type": "boolean", "description": "Put interviews on the calendar (default true; false when the user only wants Jobhunter updated)"},
+                    "account": {"type": "string", "description": "Optional mail account id/name from list_email_accounts (default: the default account)"},
+                    "since": {"type": "string", "description": "Optional ISO 8601 start (overrides days)"},
+                    "until": {"type": "string", "description": "Optional ISO 8601 end (default now)"}
+                }
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "verify_claim",
             "description": "Check one claim against the source text it is supposed to come from, deterministically and without any model. Four layers, cheapest first: (1) the claim occurs verbatim; (2) it occurs after folding case, accents and punctuation; (3) enough of its content words occur; (4) every figure and every capitalised name in the claim occurs in the source — the layer that catches a fabricated number or an invented citation, and the only one that can settle a claim AGAINST you, naming what is missing in `unsupported_terms`. Passing layer 4 is NOT support: a paraphrase can carry the right names and still be false. Returns {supported, layer, confidence, why, unsupported_terms, label}; `layer: null` means no layer could settle it, which is 'not shown', not 'false'. THERE IS NO LAYER 5 HERE: the model-judgement rung needs a judge model and this tool is the deterministic ladder on purpose, so do not expect it to adjudicate meaning. Pass the source text you already have — nothing is fetched — and `url` only to record where that text came from.",
             "parameters": {
@@ -3198,6 +3217,8 @@ def function_call_to_tool_block(name: str, arguments: str) -> Optional[ToolBlock
     elif tool_type == "expert_review":
         content = json.dumps(args)
     elif tool_type == "verify_claim":
+        content = json.dumps(args)
+    elif tool_type == "review_candidature_mail":
         content = json.dumps(args)
     elif tool_type == "chat_with_model":
         content = args.get("model", "") + "\n" + args.get("message", "")

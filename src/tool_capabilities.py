@@ -247,6 +247,18 @@ _register(
     result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
 )
 _register(
+    # review_candidature_mail reads the user's own mailbox (READ_PRIVATE) and
+    # writes the user's own calendar events and Jobhunter's Hoard records —
+    # both private data of this user on this machine (the connector's
+    # loopback APP_URL), the same class as manage_calendar's create_event,
+    # not an outward side effect. Its result quotes mail subjects and
+    # evidence snippets, so it is EXTERNAL_UNTRUSTED like read_email.
+    {"review_candidature_mail"},
+    ToolEffect.READ_PRIVATE,
+    ToolEffect.WRITE_PRIVATE,
+    result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
+)
+_register(
     {"edit_document", "update_document"},
     ToolEffect.WRITE_PRIVATE,
     # These tools can echo stored document content that was not present in
