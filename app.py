@@ -2052,6 +2052,15 @@ async def _startup_event():
 
     _supervisor.spawn(_startup_mcp_connections(), name="mcp-connect")
 
+    # Load the default chat model into Ollama now and keep it there
+    # (src/model_warmup.py, setting `warm_default_model`): the first answer
+    # must not wait a minute for the weights.
+    try:
+        from src import model_warmup
+        model_warmup.start()
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"Model warmup not started (non-critical): {e}")
+
     # Tool index warmup is ON by default: without it the first agent turn pays
     # the index build (and, with the per-request selection timeout, usually
     # lands on keyword-only tool selection). The build runs in a worker thread
@@ -2408,6 +2417,11 @@ async def _shutdown_event():
     #    handing out new work while we drain.
     try:
         await task_scheduler.stop()
+        try:
+            from src import model_warmup
+            await model_warmup.stop()
+        except Exception:  # noqa: BLE001
+            pass
     except Exception:
         pass
 

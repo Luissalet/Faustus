@@ -28,6 +28,8 @@ Actualizado: 17-09-2026 (tarde). REGLA: nunca nombres de empresas/personas del b
 
 ## Noche del 17-09 (Apps — FAUSTUS.md §101)
 
+- Modelo por defecto precargado al arrancar (`src/model_warmup.py`, ajustes `warm_default_model*`): comprobar en el 7000 que tras el reinicio `ollama ps` muestra el 27B con expiración «Forever» y que sigue cargado tras un chat (el re-pin cada 10 min debe devolverlo a -1).
+
 - Perfiles reales en el 7000: Dorian's (python de su venv, `-m selfhoard`, stop por su `scripts/stop.ps1`), Gepetto's (su propio Electron: `node_modules/electron/dist/electron.exe desktop/main.cjs`, que levanta el servidor 8767; `desktop=false` porque ya es ventana), Plato's (`app.py`, 5000), más Jobhunter's y Writer's con icono. Conectores `dorian` (credencial creada con `scripts/connect_faustus.py` en su repo) y `platos` conectados; `gepetto` creado pero sin probar `connect` con la app arriba (el OpenAPI de FastAPI debería dar más tools que el manifiesto).
 - Un terminal de Windows quedó abierto de un arranque anterior al arreglo de `CREATE_NO_WINDOW`; cerrarlo a mano. Comprobar en el próximo Start que no aparece ninguno.
 - `GET /api/launch-profiles/status` tarda ~2 s (la tabla de puertos/procesos); si molesta en la pantalla, cachear la tabla 2–3 s en `process_center`.

@@ -165,6 +165,13 @@ DEFAULT_SETTINGS = {
     # construct the model can reason about (src/tool_clock.py).
     "agent_tool_wall_time": True,
     "agent_run_keep_alive_restore": True,
+    # Load the default chat model at startup and keep it resident
+    # (src/model_warmup.py): keep_alive "-1" = never unload; re-pinned every
+    # `warm_default_model_every_s` so a shorter keep_alive from a later call
+    # does not let it fall out of memory.
+    "warm_default_model": True,
+    "warm_default_model_keep_alive": "-1",
+    "warm_default_model_every_s": 600,
     "agent_ui_verify": True,
     "agent_inline_attachment_max_chars": 4000,
     "agent_project_todos": True,

@@ -5358,3 +5358,10 @@ El paquete de Luis no era solo M0 y M1: detrás de los 100 requisitos P0 venían
 **Verificado en vivo (7000).** Cinco apps en la rejilla con sus iconos; Start de Plato's, Dorian's y Gepetto's desde la tarjeta → servidor arriba, ventana propia con título e icono («Plato's Hoard», «Dorian's Hoard» por la shell genérica; Gepetto's con su propio Electron, que ya trae el servidor); Stop de Gepetto's cierra ventana y servidor; los servidores sobreviven a un reinicio de Faustus; conectores `platos` (12 tools) y `dorian` (10 tools, «available») conectados. Los iconos de las apps además viven ya en cada proyecto (favicon, `icon-192`, `apple-touch-icon`, `app-icon.png`; en el de Electron, `public/app-icon.ico/png`).
 
 **Ficheros.** `src/launch_profiles.py`, `routes/connector_routes.py`, `src/process_center.py` (`pid_listening_on`), `src/process_launch.py` (ledger), `server_runtime.py`, `core/platform_compat.py`, `desktop/app-shell.cjs` (+ `app-shell.test.cjs`), `bridges/rest_mcp/**`, `src/connectors.py`, `studio/src/adapters/apps.ts`, `studio/src/screens/processes/{Apps,AppForm}.tsx`, `studio/checks/apps.check.mjs`, tests `test_launch_profiles_apps.py` (33), `test_desktop_shell.py` (20), `test_rest_mcp_bridge.py` (17), `test_connectors.py` (+5), `test_server_runtime.py` (+2).
+
+
+## 102. El modelo por defecto se carga al arrancar y se queda (17-09-2026)
+
+**Pedido.** «Que al abrir Faustus se cargue por defecto el modelo por defecto y se quede cargado.»
+
+**Cómo.** `src/model_warmup.py`: al arrancar (tras MCP), si el endpoint de chat por defecto es un Ollama local, `POST /api/generate` sin prompt con `keep_alive: -1` (carga sin generar y no descarga nunca); se repite cada `warm_default_model_every_s` (600 s) para volver a fijar -1 aunque una llamada posterior pase su propio keep_alive (el pin de agente de 2 h, un valor por modelo). Ajustes `warm_default_model` (True), `warm_default_model_keep_alive` («-1»), `warm_default_model_every_s`. Endpoints remotos: nada que calentar. Nunca bloquea el arranque; `status()` para depurar. Tests `tests/test_model_warmup.py` (4).
