@@ -263,11 +263,36 @@ def classify_availability(text: str) -> Tuple[str, str]:
 
 
 def fetch_text(url: str) -> Dict[str, Any]:
-    from src.search.content import fetch_webpage_content
-    res = fetch_webpage_content(url, timeout=10) or {}
-    if res.get("error") and not res.get("content"):
-        raise WatcherError(str(res.get("error")))
-    return {"content": str(res.get("content") or ""), "title": str(res.get("title") or "")}
+    """The page as text, through the outbound policy (`src/outbound_fetch`:
+    public zone only, no private redirects, capped and ratio-bounded
+    decompression — the shop sends gzip whatever we ask)."""
+    from src import outbound_fetch as of
+    try:
+        res = of.fetch(url, profile=of.PUBLIC_UNTRUSTED, timeout=20.0, max_bytes=2_000_000,
+                       headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Faustus-watch/1.0",
+                                "Accept": "text/html,application/xhtml+xml,*/*;q=0.8", "Accept-Language": "es-ES,es;q=0.9,en;q=0.7"})
+    except Exception as exc:  # noqa: BLE001
+        raise WatcherError(str(exc)[:200])
+    if res.status_code >= 400:
+        raise WatcherError(f"HTTP {res.status_code}")
+    raw = res.content or b""
+    try:
+        html = raw.decode(res.encoding or "utf-8", errors="replace")
+    except Exception:  # noqa: BLE001
+        html = raw.decode("utf-8", errors="replace")
+    title = ""
+    try:
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(html, "html.parser")
+        title = (soup.title.get_text(strip=True) if soup.title else "")[:160]
+        for tag in soup(["script", "style", "noscript", "svg", "template"]):
+            tag.decompose()
+        text = soup.get_text(" ", strip=True)
+    except Exception:  # noqa: BLE001
+        m = re.search(r"<title[^>]*>(.*?)</title>", html, re.I | re.S)
+        title = re.sub(r"\s+", " ", m.group(1)).strip()[:160] if m else ""
+        text = re.sub(r"<[^>]+>", " ", html)
+    return {"content": re.sub(r"\s+", " ", text)[:400_000], "title": title}
 
 
 async def action_watch_page(owner: str, **kwargs) -> Tuple[str, bool]:
