@@ -190,7 +190,11 @@ def sanitize_options(raw: Any) -> Dict[str, Any]:
             text = str(value).strip()
             if not _KEEP_ALIVE_RE.match(text):
                 raise ValueError("keep_alive must be a duration like 10m, 1h, -1 or a number of seconds")
-            out[key] = text
+            # A bare number typed in the form ("-1" = keep loaded forever,
+            # "600") has to reach Ollama as a number: its duration parser
+            # rejects the text with `time: missing unit in duration "-1"`
+            # (seen live from the Load button).
+            out[key] = int(text) if re.fullmatch(r"-?\d+", text) else text
     return out
 
 

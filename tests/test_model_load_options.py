@@ -34,7 +34,8 @@ def test_sanitize_keeps_the_three_knobs_and_refuses_bad_values():
     assert mlo.sanitize_options({"num_ctx": "8192", "num_gpu": 0, "keep_alive": "10m", "temperature": 0.3}) == \
         {"num_ctx": 8192, "num_gpu": 0, "keep_alive": "10m"}
     assert mlo.sanitize_options({"keep_alive": 600}) == {"keep_alive": 600}
-    assert mlo.sanitize_options({"keep_alive": "-1"}) == {"keep_alive": "-1"}
+    # A bare number typed as text goes out as a number: Ollama rejects "-1" as a duration.
+    assert mlo.sanitize_options({"keep_alive": "-1"}) == {"keep_alive": -1}
     assert mlo.sanitize_options({"num_ctx": None, "num_gpu": ""}) == {}
     assert mlo.sanitize_options(None) == {}
     for bad in ({"num_ctx": 100}, {"num_ctx": "x"}, {"num_gpu": 5000}, {"keep_alive": "later"}, {"keep_alive": True}, "str"):

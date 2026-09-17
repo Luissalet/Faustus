@@ -80,6 +80,23 @@ def resolve_default() -> Optional[Dict[str, str]]:
     return {"url": url, "model": model, "root": root}
 
 
+def _load_options(url: str, model: str) -> Dict[str, Any]:
+    """The per-model load options Settings → Local models saved, flattened
+    like `routes/local_models_routes._set_keep_alive` does (named knobs win
+    over `extra`); keep_alive is carried by the request itself."""
+    try:
+        from src.llm_core import _model_load_defaults
+        saved = dict(_model_load_defaults(url, model) or {})
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("model warmup: load options unavailable: %s", exc)
+        return {}
+    opts = {k: v for k, v in saved.items() if k not in ("keep_alive", "extra") and v not in (None, "")}
+    extra = saved.get("extra")
+    if isinstance(extra, dict):
+        opts = {**extra, **opts}
+    return opts
+
+
 async def warm_once() -> Dict[str, Any]:
     """Ask Ollama to load the default model (no generation) and pin it."""
     cfg = _settings()
@@ -90,6 +107,14 @@ async def warm_once() -> Dict[str, Any]:
     import httpx
     import time
     body = {"model": target["model"], "keep_alive": _keep_alive_value(cfg["keep_alive"])}
+    # Build the runner the way the chats will ask for it: the saved load
+    # options (num_ctx, num_gpu, main_gpu, extra). Without them the model
+    # came up with Ollama's default context and the first real prompt made
+    # Ollama tear it down and load it again — the wait this module exists
+    # to remove.
+    load_opts = _load_options(target["url"], target["model"])
+    if load_opts:
+        body["options"] = load_opts
     try:
         async with httpx.AsyncClient(timeout=300.0, trust_env=False) as client:
             resp = await client.post(target["root"] + "/api/generate", json=body)

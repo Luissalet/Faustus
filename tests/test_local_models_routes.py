@@ -546,7 +546,7 @@ def test_unload_sends_keep_alive_zero_and_load_warms_with_the_saved_default(env)
     assert fake.generate[-1][1]["keep_alive"] == "1h"
     # an explicit keep_alive in the request wins, and is validated
     client.post("/api/local-models/load", json={"endpoint_id": "local-ollama", "name": "qwen3.5:9b", "keep_alive": "-1"}, headers=ADMIN)
-    assert fake.generate[-1][1]["keep_alive"] == "-1"
+    assert fake.generate[-1][1]["keep_alive"] == -1  # bare numbers travel as numbers
     # embedding models only answer /api/embed
     r = client.post("/api/local-models/load", json={"endpoint_id": "local-ollama", "name": "nomic-embed-text:latest"}, headers=ADMIN)
     assert r.status_code == 200 and r.json()["via"] == "/api/embed"
