@@ -881,9 +881,34 @@ async def admit(endpoint_url: str, model: str, *, owner: str = "",
     t = open_ticket(root, model, a, owner=owner)
     say({"phase": "vram_blocked", "ticket": t.id, "message": f"{model} does not fit in VRAM", **a})
     try:
-        try:
-            await asyncio.wait_for(t.event.wait(), timeout=timeout or _timeout())
-        except asyncio.TimeoutError:
+        # Wait for the answer in short slices and look at the server between
+        # them: when the model turns up resident meanwhile (the startup
+        # warm-up loaded it, or another chat did), there is nothing left to
+        # ask — seen live: a turn from an API caller sat ten minutes on a
+        # card nobody could see while the model had been loaded seconds later,
+        # and every later turn of that owner queued behind it.
+        deadline = time.time() + float(timeout or _timeout())
+        answered = False
+        while True:
+            slice_s = max(0.0, min(5.0, deadline - time.time()))
+            try:
+                await asyncio.wait_for(t.event.wait(), timeout=slice_s)
+                answered = True
+                break
+            except asyncio.TimeoutError:
+                pass
+            try:
+                again = await asyncio.to_thread(assess, root, model)
+            except Exception:  # noqa: BLE001
+                again = {}
+            if again.get("already_resident") or again.get("fits") is True:
+                _forget(t.id)
+                say({"phase": "resident", "message": f"{model} is loaded now; carrying on."})
+                _mark_wait()
+                return "proceed"
+            if time.time() >= deadline:
+                break
+        if not answered:
             say({"phase": "error", "message": f"No answer about VRAM for {model}; the load was cancelled."})
             _mark_wait()
             raise AdmissionCancelled(
