@@ -414,3 +414,16 @@ def test_brief_spanish_variant():
     b = pt.brief(tracker, language="es")
     assert "Plan activo" in b
     assert "no debe volver a pedirse" in b
+
+
+def test_plan_title_heading_is_not_a_task_and_subtasks_stay_inside_their_task():
+    from src import plan_tracker as pt
+    body = (
+        "# Plan de implementación — servicio de notas\n\nIntro.\n\n"
+        "## WP01 — Esqueleto\n\ncuerpo 1\n\n### Detalle interno\n\nmás cuerpo de WP01\n\n"
+        "## WP02 — API\n\ncuerpo 2\n\n## WP03 — Página\n\ncuerpo 3\n\n## WP04 — Docs\n\ncuerpo 4\n"
+    )
+    spec = pt.parse_plan("PLAN_NOTAS.md", body)
+    assert [t.key for t in spec.tasks] == ["WP01", "WP02", "WP03", "WP04"]
+    assert "más cuerpo de WP01" in spec.tasks[0].text
+    assert spec.title.startswith("PLAN_NOTAS.md — Plan de implementación")

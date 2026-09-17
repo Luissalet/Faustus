@@ -200,20 +200,55 @@ def _extract_depends(text: str) -> List[str]:
     return out
 
 
+def _task_heading_level(marks: List["re.Match[str]"]) -> int:
+    """Which heading level holds the TASKS. Headings above it are the plan's
+    own title / phase headers (the `# Plan de implementación` line that
+    opens every real plan is not a task). Prefer the shallowest level with
+    >= 3 headings where most carry a task key (WP03, Tarea 7, Task 2.1);
+    else the shallowest level with >= 3 headings; else the deepest level."""
+    by_level: Dict[int, List[str]] = {}
+    for m in marks:
+        by_level.setdefault(len(m.group(1)), []).append(m.group(2))
+    keyed = [lvl for lvl in sorted(by_level)
+             if len(by_level[lvl]) >= 3
+             and sum(1 for t in by_level[lvl] if _extract_key(t)) * 2 >= len(by_level[lvl])]
+    if keyed:
+        return keyed[0]
+    plural = [lvl for lvl in sorted(by_level) if len(by_level[lvl]) >= 3]
+    if plural:
+        return plural[0]
+    return max(by_level) if by_level else 1
+
+
 def _split_sections(text: str) -> List[Tuple[Optional[str], str, str]]:
     """(key_hint, section_title, section_body) by markdown headings first,
     then first-level numbered lists, then checkboxes. Empty when the text
     has none of those (unstructured attachment -> 0 tasks)."""
-    for pattern in (_HEADING_RE, _NUM_LIST_RE, _CHECKBOX_RE):
+    marks = list(_HEADING_RE.finditer(text))
+    if marks:
+        level = _task_heading_level(marks)
+        out: List[Tuple[Optional[str], str, str]] = []
+        for i, m in enumerate(marks):
+            if len(m.group(1)) != level:
+                continue
+            start = m.end()
+            end = len(text)
+            for nxt in marks[i + 1:]:
+                if len(nxt.group(1)) <= level:
+                    end = nxt.start()
+                    break
+            out.append((None, m.group(2).strip(), text[start:end]))
+        if out:
+            return out
+    for pattern in (_NUM_LIST_RE, _CHECKBOX_RE):
         marks = list(pattern.finditer(text))
         if not marks:
             continue
-        out: List[Tuple[Optional[str], str, str]] = []
+        out = []
         for i, m in enumerate(marks):
             start = m.end()
             end = marks[i + 1].start() if i + 1 < len(marks) else len(text)
-            title = m.group(2).strip()
-            out.append((None, title, text[start:end]))
+            out.append((None, m.group(2).strip(), text[start:end]))
         return out
     return []
 
@@ -227,6 +262,9 @@ def parse_plan(title: str, body: str) -> PlanSpec:
         h = hashlib.sha256(b"").hexdigest()[:16]
     plan_title = (title or "").strip() or "untitled plan"
     try:
+        _top = _HEADING_RE.search(norm)
+        if _top and len(_top.group(1)) == 1 and re.search(r"\.(md|txt|markdown)$", plan_title, re.I):
+            plan_title = f"{plan_title} — {_top.group(2).strip()[:120]}"
         sections = _split_sections(norm)
         tasks: List[PlanTask] = []
         for i, (_hint, sec_title, sec_body) in enumerate(sections, start=1):
