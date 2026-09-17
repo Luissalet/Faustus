@@ -30,3 +30,12 @@ test('a grant remembered from the prompt is enough for a later check',()=>{
   assert.equal(permissionCheck('clipboard-read',origin,origin,granted),true);
   assert.equal(permissionCheck('media',origin,origin,granted),false);
 });
+
+test('main.cjs parks the window in the tray on close and quits from the tray menu', () => {
+  const src = require('node:fs').readFileSync(require('node:path').join(__dirname, 'main.cjs'), 'utf8');
+  assert.match(src, /new Tray\(/);
+  assert.match(src, /parkInTray\(\)/);
+  assert.match(src, /Salir \/ Quit/);
+  assert.match(src, /--smoke-test.*--no-tray|--no-tray.*--smoke-test/, 'the smoke test keeps close-means-quit');
+  assert.ok(require('node:fs').existsSync(require('node:path').join(__dirname, 'tray.ico')), 'tray.ico ships with the desktop app');
+});

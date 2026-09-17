@@ -43,7 +43,7 @@ def setup_process_center_routes() -> APIRouter:
         except Exception:  # noqa: BLE001
             conns = []
         import asyncio
-        return await asyncio.to_thread(process_center.snapshot, connectors=conns, include_watched=bool(watched))
+        return await asyncio.to_thread(process_center.snapshot_cached, connectors=conns, include_watched=bool(watched))
 
     @router.post("/stop")
     async def stop(body: StopBody, request: Request) -> Dict[str, Any]:

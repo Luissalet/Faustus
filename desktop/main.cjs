@@ -1,4 +1,4 @@
-const {app,BrowserWindow,dialog,shell,session,ipcMain,net}=require('electron');
+const {app,BrowserWindow,dialog,shell,session,ipcMain,net,Tray,Menu,nativeImage}=require('electron');
 const {execFile}=require('node:child_process');
 const {promisify}=require('node:util');
 const {join,resolve}=require('node:path');
@@ -7,7 +7,12 @@ const {localNavigation,externalNavigation,permissionCheck,permissionRequest}=req
 const execute=promisify(execFile),root=resolve(__dirname,'..');
 const python=join(root,'venv',process.platform==='win32'?'Scripts/python.exe':'bin/python');
 const port=Number(process.env.FAUSTUS_PORT||7000),origin=`http://127.0.0.1:${port}`;
-let mainWindow,ownedToken='',quitting=false,startup=null,stopDesktopControl=()=>{};
+let mainWindow,tray=null,ownedToken='',quitting=false,startup=null,stopDesktopControl=()=>{};
+// Closing the window parks Faustus in the tray (hidden icons), like the chat
+// desktop apps do; the tray menu's Quit is what really stops it. The smoke
+// test keeps the old close-means-quit path so it can finish on its own.
+const trayEnabled=!process.argv.includes('--smoke-test')&&!process.argv.includes('--no-tray');
+let trayHintShown=false;
 const alive=w=>w&&!w.isDestroyed();
 const liveContents=c=>c&&!c.isDestroyed();
 const splash='data:text/html;charset=utf-8,'+encodeURIComponent(`<!doctype html><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'"><title>Faustus</title><body style="background:#17191d;color:#eee;font:18px system-ui;margin:0"><header style="height:40px;display:flex;background:#121418"><span style="-webkit-app-region:drag;flex:1;padding:8px 18px;color:#e06c75">Faustus</span><button aria-label="Close / Cerrar" onclick="window.faustusWindow.command('close')" style="background:transparent;border:0;color:inherit;padding:0 20px">×</button></header><main style="padding:48px"><h1>Faustus</h1><p>Starting your local workspace… / Iniciando tu espacio local…</p><p>You can close this window to cancel. / Puedes cerrar esta ventana para cancelar.</p></main></body>`);
@@ -94,17 +99,55 @@ function secureWindow(window){
   });
   window.webContents.on('did-create-window',secureWindow);
 }
+function showMainWindow(){
+  if(!alive(mainWindow))return;
+  if(!mainWindow.isVisible())mainWindow.show();
+  if(mainWindow.isMinimized())mainWindow.restore();
+  mainWindow.focus();
+}
+function parkInTray(){
+  if(!alive(mainWindow))return;
+  mainWindow.hide();
+  if(!trayHintShown&&tray&&process.platform==='win32'){
+    trayHintShown=true;
+    try{tray.displayBalloon({title:'Faustus',content:'Sigue en la bandeja del sistema (iconos ocultos). Click para abrir; click derecho → Salir para cerrar. / Still running in the tray. Click to open; right-click → Quit to close.',iconType:'info'});}catch{/* balloon is a courtesy */}
+  }
+}
+async function quitFromTray(){
+  if(quitting)return;
+  if(alive(mainWindow)){
+    showMainWindow();
+    const decision=await closeConfirmed(mainWindow,mainWindow.webContents.getURL());
+    if(decision==='cancel')return;
+    if(decision==='keep')ownedToken='';
+  }
+  void shutdown();
+}
+function createTray(){
+  const iconPath=join(__dirname,process.platform==='win32'?'tray.ico':'tray.png');
+  let image=nativeImage.createFromPath(iconPath);
+  if(image.isEmpty())image=nativeImage.createEmpty();
+  tray=new Tray(image);
+  tray.setToolTip('Faustus');
+  tray.setContextMenu(Menu.buildFromTemplate([
+    {label:'Abrir Faustus / Open',click:()=>showMainWindow()},
+    {type:'separator'},
+    {label:'Salir / Quit',click:()=>void quitFromTray()},
+  ]));
+  tray.on('click',()=>{if(alive(mainWindow)&&mainWindow.isVisible()&&!mainWindow.isMinimized())mainWindow.focus();else showMainWindow();});
+  tray.on('double-click',()=>showMainWindow());
+}
 async function shutdown(){
   if(quitting)return;quitting=true;stopDesktopControl();
   try{await startup;}catch{/* A failed page load must not skip server cleanup. */}
   try{if(ownedToken)await runtime(['stop','--token',ownedToken]);}
   catch(error){console.error('Faustus shutdown:',error.message);}
-  finally{app.exit(0);}
+  finally{try{tray?.destroy();}catch{/* already gone */}app.exit(0);}
 }
 if(!Number.isInteger(port)||port<1024||port>65535){app.quit();}
 else if(!app.requestSingleInstanceLock()){app.quit();}
 else{
-  app.on('second-instance',()=>{if(!alive(mainWindow)){if(!quitting)void shutdown();return;}if(mainWindow.isMinimized())mainWindow.restore();mainWindow.show();mainWindow.focus();});
+  app.on('second-instance',()=>{if(!alive(mainWindow)){if(!quitting)void shutdown();return;}showMainWindow();});
   app.on('before-quit',event=>{if(!quitting){event.preventDefault();void shutdown();}});
   app.on('window-all-closed',()=>void shutdown());
   app.whenReady().then(async()=>{
@@ -123,7 +166,7 @@ else{
       const response=await dialog.showMessageBox(mainWindow,{type:'question',title:'Faustus',message:`Allow ${permission} / ¿Permitir ${permission}?`,detail:'Only for this Faustus window. / Sólo para esta ventana de Faustus.',buttons:['Allow / Permitir','Deny / Denegar'],defaultId:1,cancelId:1});
       if(response.response===0)allowed.add(permission);callback(response.response===0);
     });
-    mainWindow=new BrowserWindow({title:'Faustus',frame:false,width:1400,height:920,minWidth:390,minHeight:600,show:true,autoHideMenuBar:true,backgroundColor:'#17191d',webPreferences:{preload:join(__dirname,'preload.cjs'),nodeIntegration:false,contextIsolation:true,sandbox:true,webSecurity:true}});
+    mainWindow=new BrowserWindow({title:'Faustus',icon:join(__dirname,process.platform==='win32'?'tray.ico':'tray.png'),frame:false,width:1400,height:920,minWidth:390,minHeight:600,show:true,autoHideMenuBar:true,backgroundColor:'#17191d',webPreferences:{preload:join(__dirname,'preload.cjs'),nodeIntegration:false,contextIsolation:true,sandbox:true,webSecurity:true}});
     ipcMain.handle('faustus:window',async(event,action)=>{
       const target=BrowserWindow.fromWebContents(event.sender);
       if(!target||event.senderFrame!==target.webContents.mainFrame||!(localNavigation(event.senderFrame.url,origin)||(target===mainWindow&&event.senderFrame.url===splash&&action==='close')))throw new Error('Untrusted window');
@@ -132,6 +175,9 @@ else{
       if(action==='maximize'){if(target.isFullScreen())target.setFullScreen(false);if(target.isMaximized())target.unmaximize();else target.maximize();}
       if(action==='fullscreen')target.setFullScreen(!target.isFullScreen());
       let closeDecision='close';
+      if(action==='close'&&trayEnabled&&target===mainWindow&&event.senderFrame.url!==splash&&!quitting){
+        parkInTray();return windowState(target);
+      }
       if(action==='close'){
         closeDecision=await closeConfirmed(target,event.senderFrame.url);
         if(closeDecision==='cancel')return windowState(target);
@@ -146,7 +192,9 @@ else{
       return state;
     });
     secureWindow(mainWindow);
+    mainWindow.on('close',event=>{if(trayEnabled&&!quitting){event.preventDefault();parkInTray();}});
     mainWindow.on('closed',()=>void shutdown());
+    if(trayEnabled)createTray();
     // The native bridge accepts only window controls from the main local page.
     await mainWindow.loadURL(splash);
     startup=(async()=>{

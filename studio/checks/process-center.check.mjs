@@ -20,7 +20,7 @@ assert.match(adapter, /'\/api\/process-center\/stop'/, 'stop calls POST /api/pro
 const screen = readFileSync(new URL('../src/screens/processes/Processes.tsx', import.meta.url), 'utf8');
 assert.match(screen, /export function ProcessesScreen/, 'ProcessesScreen exists');
 assert.match(screen, /fetchProcesses\(true\)/, 'the screen fetches with watched apps included');
-assert.match(screen, /window\.setInterval\(reload,\s*5000\)/, 'auto-refreshes every 5s');
+assert.match(screen, /if \(!document\.hidden\) reload\(\); \}, 8000\)/, 'auto-refreshes every 8s, only while the tab is visible');
 assert.match(screen, /!autoRefresh \|\| busyCount > 0/, 'auto-refresh pauses while a stop is in flight');
 assert.match(screen, /t\('Listening ports'\)/, 'renders the Listening ports section');
 assert.match(screen, /t\('Started by Faustus'\)/, 'renders the Started by Faustus section');

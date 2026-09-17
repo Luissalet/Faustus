@@ -33,7 +33,7 @@ assert.match(adapter, /credentials:\s*'same-origin'/, 'requests use credentials:
 const apps = readFileSync(new URL('../src/screens/processes/Apps.tsx', import.meta.url), 'utf8');
 assert.match(apps, /export function AppsSection/, 'AppsSection exists');
 assert.match(apps, /id="apps"/, 'the section has id="apps" (so /processes#apps scrolls to it)');
-assert.match(apps, /window\.setInterval\(reloadStatuses,\s*5000\)/, 'statuses poll every 5s');
+assert.match(apps, /if \(!document\.hidden\) reloadStatuses\(\); \}, 5000\)/, 'statuses poll every 5s');
 assert.match(apps, /appStatuses\(\)/, 'statuses come from ONE appStatuses() call, not per-card');
 assert.match(apps, /t\('Add app'\)/, 'has an Add app action');
 assert.match(apps, /testId="apps-add"/, 'Add app has testid apps-add');
@@ -49,7 +49,7 @@ assert.match(apps, /fs-modes__confirm/, 'uses the inline confirm pattern, not wi
 assert.doesNotMatch(apps, /window\.confirm/, 'never uses window.confirm');
 assert.match(apps, /appIconUrl\(/, 'card icon uses appIconUrl with an initial-letter fallback on error');
 assert.match(apps, /onError=\{\(\) => setBroken\(true\)\}/, 'icon falls back to the initial on image load error');
-assert.match(apps, /window\.setInterval\(reload,\s*3000\)/, 'the console auto-refreshes every 3s while open');
+assert.match(apps, /if \(!document\.hidden\) reload\(\); \}, 3000\)/, 'the console auto-refreshes every 3s while open');
 assert.match(apps, /appLog\(appId,\s*300\)/, 'console reads the tail via GET /log?lines=300');
 assert.match(apps, /data-console-open/, 'an open console expands its card across the full grid width');
 

@@ -267,7 +267,9 @@ export function ProcessesScreen() {
   // flight — polling mid-kill just re-races the same rows.
   useEffect(() => {
     if (!autoRefresh || busyCount > 0) return;
-    const id = window.setInterval(reload, 5000);
+    // A hidden tab must not keep scanning the process table (seen live: two
+    // background tabs made every other screen crawl).
+    const id = window.setInterval(() => { if (!document.hidden) reload(); }, 8000);
     return () => window.clearInterval(id);
   }, [autoRefresh, busyCount, reload]);
 

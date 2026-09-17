@@ -36,6 +36,7 @@ import logging
 import os
 import re
 import sys
+import threading
 import time
 from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
@@ -224,6 +225,23 @@ class _Table:
         self.ppid: Dict[int, int] = {}
         self.name: Dict[int, str] = {}
         self.kids: Dict[int, List[int]] = {}
+        # On Windows psutil answers every `ppid` by rebuilding the whole
+        # parent map (8 ms × 500 processes = 4 s per snapshot, seen live —
+        # and that starved the event loop). Build that map ONCE.
+        ppid_map = None
+        try:
+            ppid_map = psutil._psplatform.ppid_map()  # type: ignore[attr-defined]
+        except Exception:  # noqa: BLE001 - POSIX has no such helper, process_iter is cheap there
+            ppid_map = None
+        if ppid_map is not None:
+            self.ppid = dict(ppid_map)
+            for pid, ppid in self.ppid.items():
+                self.kids.setdefault(ppid, []).append(pid)
+            for proc in psutil.process_iter(["pid", "name"]):
+                info = proc.info
+                if info.get("pid") is not None:
+                    self.name[info["pid"]] = info.get("name") or ""
+            return
         for proc in psutil.process_iter(["pid", "ppid", "name"]):
             info = proc.info
             pid, ppid = info.get("pid"), info.get("ppid")
@@ -504,3 +522,27 @@ def stop_port(port: int, *, allow_protected: bool = False) -> Dict[str, Any]:
             out["port"] = port
             return out
     return {"ok": True, "code": "gone", "reason": f"nothing is listening on {port}", "port": port}
+
+
+# ── cached snapshot: several open Processes tabs share one scan ─────────────
+_SNAP_LOCK = threading.Lock()
+_SNAP_CACHE: Dict[str, Any] = {"key": None, "at": 0.0, "value": None}
+
+
+def snapshot_cached(*, ttl_s: float = 3.0, **kwargs) -> Dict[str, Any]:
+    """`snapshot(**kwargs)` at most once per `ttl_s` for the same arguments;
+    concurrent callers wait for the one scan in flight instead of starting
+    their own (two auto-refreshing tabs used to double the load, seen live)."""
+    key = repr(sorted((k, repr(v)) for k, v in kwargs.items()))
+    now = time.monotonic()
+    cached = _SNAP_CACHE
+    if cached["key"] == key and cached["value"] is not None and now - cached["at"] < ttl_s:
+        return cached["value"]
+    with _SNAP_LOCK:
+        cached = _SNAP_CACHE
+        now = time.monotonic()
+        if cached["key"] == key and cached["value"] is not None and now - cached["at"] < ttl_s:
+            return cached["value"]
+        value = snapshot(**kwargs)
+        _SNAP_CACHE.update({"key": key, "at": time.monotonic(), "value": value})
+        return value

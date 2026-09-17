@@ -78,7 +78,7 @@ function AppConsole({ appId, onClose }: { appId: string; onClose: () => void }) 
 
   useEffect(() => {
     reload();
-    const id = window.setInterval(reload, 3000);
+    const id = window.setInterval(() => { if (!document.hidden) reload(); }, 3000);
     return () => window.clearInterval(id);
   }, [reload]);
 
@@ -251,7 +251,7 @@ export function AppsSection({ say }: { say: (msg: string) => void }) {
   }, [reloadApps, reloadStatuses]);
 
   useEffect(() => {
-    const id = window.setInterval(reloadStatuses, 5000);
+    const id = window.setInterval(() => { if (!document.hidden) reloadStatuses(); }, 5000);
     return () => window.clearInterval(id);
   }, [reloadStatuses]);
 
