@@ -27,6 +27,7 @@ import {
   Columns3,
   Users,
   Scale,
+  Settings2,
   Wand2,
 } from 'lucide-react';
 
@@ -55,6 +56,22 @@ export const DESTINATIONS: Destination[] = [
   { path: '/library', label: 'Library', icon: Library },
   { path: '/automations', label: 'Automations', icon: Workflow },
   { path: '/activity', label: 'Activity', icon: Activity },
+];
+
+/**
+ * The phone bottom bar (lot P-B): five tabs, not six — a thumb-width row
+ * has no room for the desktop rail's full list, and "the previous
+ * interface replaced by Studio" habits (Home, Studio, Calendar, Notes,
+ * Settings) are what people actually reach for one-handed. Settings is a
+ * destination here even though on desktop it lives in the rail's separate
+ * foot — on a phone there is no foot, just this one row.
+ */
+export const MOBILE_DESTINATIONS: Destination[] = [
+  { path: '/', label: 'Home', icon: Home },
+  { path: '/studio', label: 'Studio', icon: Sparkles },
+  { path: '/calendar', label: 'Calendar', icon: CalendarDays },
+  { path: '/notes', label: 'Notes', icon: StickyNote },
+  { path: '/settings', label: 'Settings', icon: Settings2 },
 ];
 
 /**

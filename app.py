@@ -341,6 +341,11 @@ if AUTH_ENABLED:
         "/api/health",
         "/api/version",
         "/login",
+        # PWA install/update surface (routes/pwa_routes.py): a service
+        # worker registration and the manifest fetch both happen before any
+        # session cookie exists — the very first visit to the public shell.
+        "/sw.js",
+        "/manifest.webmanifest",
     }
     AUTH_EXEMPT_PREFIXES = ["/static"]
     # Dynamic paths whose own handler proves identity via a path-embedded

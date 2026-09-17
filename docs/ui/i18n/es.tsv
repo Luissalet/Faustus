@@ -7819,3 +7819,39 @@ Stop working folder	Carpeta de trabajo de la parada
 Open as a desktop window	Abrir como ventana de escritorio
 Manage, launch and watch these from the Apps section of Processes.	Gestiona, lanza y observa estas desde la sección Apps de Procesos.
 This app has no address to open.	Esta app no tiene una dirección que abrir.
+Could not disable notifications.	No se pudieron desactivar las notificaciones.
+Could not enable notifications.	No se pudieron activar las notificaciones.
+Could not load the subscribed devices.	No se pudieron cargar los dispositivos suscritos.
+Could not remove the device.	No se pudo eliminar el dispositivo.
+Could not send the test notification.	No se pudo enviar la notificación de prueba.
+Device name	Nombre del dispositivo
+Device name (optional)	Nombre del dispositivo (opcional)
+Device removed.	Dispositivo eliminado.
+Enable notifications on this device	Activar notificaciones en este dispositivo
+Faustus installed.	Faustus instalado.
+Faustus is already installed on this device.	Faustus ya está instalado en este dispositivo.
+Install Faustus	Instalar Faustus
+Install Faustus as an app and get notifications here when a turn finishes, an approval is waiting, or a reminder is due.	Instala Faustus como app y recibe notificaciones aquí cuando termine un turno, haya una aprobación pendiente o venza un recordatorio.
+Installation dismissed.	Instalación descartada.
+Loading devices	Cargando dispositivos
+No device is subscribed yet.	Todavía no hay ningún dispositivo suscrito.
+Notifications disabled on this device.	Notificaciones desactivadas en este dispositivo.
+Notifications enabled on this device.	Notificaciones activadas en este dispositivo.
+On iPhone or iPad: open the Share menu and choose "Add to Home Screen".	En iPhone o iPad: abre el menú Compartir y elige "Añadir a pantalla de inicio".
+Permission: {state}	Permiso: {state}
+Reaching Faustus away from this network needs the server exposed over HTTPS — a VPN or tunnel to it, set up once by whoever runs the server.	Acceder a Faustus fuera de esta red requiere que el servidor esté expuesto por HTTPS — una VPN o un túnel hacia él, configurado una vez por quien administra el servidor.
+Send a test notification	Enviar una notificación de prueba
+Subscribed devices	Dispositivos suscritos
+Test notification sent.	Notificación de prueba enviada.
+This browser does not support push notifications.	Este navegador no admite notificaciones push.
+This browser has not offered to install Faustus yet. Reload the page, or use its own menu for "Install app" / "Add to Home Screen".	Este navegador aún no ha ofrecido instalar Faustus. Recarga la página, o usa su propio menú "Instalar app" / "Añadir a pantalla de inicio".
+This device	Este dispositivo
+Unnamed device	Dispositivo sin nombre
+added {date}	añadido el {date}
+checking…	comprobando…
+denied	denegado
+granted	concedido
+not asked yet	no solicitado aún
+not subscribed on this device	sin suscribir en este dispositivo
+subscribed on this device	suscrito en este dispositivo
+{n} failed sends	{n} envíos fallidos

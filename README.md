@@ -66,6 +66,10 @@ Closing the desktop window stops the backend **only if that window started it**.
 
 Scheduled work requires a running Faustus server and an awake computer. Use web mode to leave the backend running after closing browser tabs; closing an owning desktop window stops scheduling too. In Agent chat, request a recurrence in English or Spanish, specify a time and time zone, and manage the saved task under **Automations**. Recurring tasks support IANA time zones and daylight-saving changes; existing tasks without a zone retain their UTC behavior.
 
+### Install Faustus on your phone
+
+Studio installs as a standalone app (a PWA) straight from the browser — no app store, no build step. On Chromium browsers (desktop or Android), **Settings → This device** offers an "Install Faustus" button once the browser has offered to; on iOS/iPadOS Safari, which never offers natively, the same screen shows the manual step (Share → Add to Home Screen). Once installed it opens full-screen with its own icon, keeps the shell working offline, and can receive real OS notifications — turn finished, an approval waiting, a reminder due — even with the app closed, via the standard Web Push protocol (VAPID + `aes128gcm`, implemented directly on `cryptography`, no third-party messaging service). Reaching it away from your own network still needs the server exposed over HTTPS (a VPN or tunnel to it), which "This device" mentions but does not set up. Below 767 px wide the navigation becomes a five-tab bottom bar (Home, Studio, Calendar, Notes, Settings). [Mobile API](docs/api/mobile.md) · [mobile layout notes](docs/ui/pwa.md).
+
 ### Creative tools inside the conversation
 
 - **Point-to-edit:** select a point in a captured browser frame and describe the change. An annotated screenshot and capture provenance are added to the draft, not sent automatically. The agent must inspect the current page and project; screenshot coordinates are not invented source-code mappings.

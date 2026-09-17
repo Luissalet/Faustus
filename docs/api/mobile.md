@@ -357,3 +357,81 @@ consecutive failures.
 - Full `app.py` import boots with `/api/push/vapid-key`, `/api/push/subscribe`,
   `/api/push/unsubscribe`, `/api/push/subscriptions` and `/api/push/test`
   all present in the route table.
+
+## Installing on the phone (lot P-B)
+
+The Android app (lot M-B) is one way onto a phone; Studio itself installing
+as a PWA is the other, and needs no app-store build at all — a browser tab
+becomes a home-screen icon that opens full-screen, keeps working offline
+for the shell and anything already cached, and can wake with real OS
+notifications while closed.
+
+### What ships
+
+- **`static/manifest.json`**, served at **`GET /manifest.webmanifest`**
+  (`routes/pwa_routes.py`) — name, icons (`static/pwa/icon-*.png`,
+  `maskable-*.png`), `display: "standalone"`, `start_url: "/?source=pwa"`.
+- **`static/sw.js`**, served at **`GET /sw.js`** with
+  `Service-Worker-Allowed: /` so its scope covers every Studio route, not
+  just `/static/` — registered from `static/index.html` as
+  `navigator.serviceWorker.register('/sw.js', {scope: '/'})`. Both routes
+  are unauthenticated (`app.py`'s `AUTH_EXEMPT_EXACT`): the very first
+  visit to the public shell needs them before any session cookie exists.
+- The service worker's `push` handler turns the payload shape documented
+  above into `self.registration.showNotification(...)`; `notificationclick`
+  focuses an existing Faustus tab (navigating it to the notification's
+  `url`) or opens a new one; `pushsubscriptionchange` re-subscribes and
+  re-registers with `/api/push/*` on its own if the push service ever
+  rotates a subscription's keys out from under the browser.
+
+### Installing
+
+1. Open Faustus in a Chromium browser (Chrome, Edge, Android's WebView)
+   and either use the browser's own "Install app" menu entry, or open
+   **Settings → This device** and press "Install Faustus" — that button
+   only appears once the browser has actually offered
+   (`beforeinstallprompt`, captured on load by
+   `studio/src/lib/installPrompt.ts`).
+2. **iOS/iPadOS Safari never fires that event** — there is no native
+   install button at all. "This device" instead shows the manual step:
+   Share → "Add to Home Screen".
+3. Once installed, the app opens standalone (no browser chrome) at
+   `/?source=pwa`, themed with the same dark palette as
+   `<meta name="theme-color">`.
+
+### Enabling notifications
+
+Also from **Settings → This device**:
+
+- "Enable notifications on this device" asks for `Notification` permission,
+  subscribes the browser's `PushManager` with the server's VAPID key
+  (`GET /api/push/vapid-key`), and registers the subscription
+  (`POST /api/push/subscribe`) under an editable device label.
+- "Send a test notification" round-trips through the same bus payload
+  shape every real event uses (`POST /api/push/test`).
+- The subscribed-devices list (`GET /api/push/subscriptions`) shows every
+  device that has ever enabled push for this account, with a remove
+  button per row (`POST /api/push/unsubscribe`) — useful for dropping a
+  phone that was reset or sold without ever reopening Faustus on it.
+
+### Reaching Faustus away from the local network
+
+The manifest and service worker only make the *app* installable — they do
+not, by themselves, make the server reachable from outside the network it
+runs on. A push notification still has to be delivered by the browser
+vendor's own push service (which needs outbound internet from the
+server), and *opening* Faustus from elsewhere needs the server exposed
+over HTTPS: a VPN into the home network, or a tunnel to it, set up once by
+whoever runs the server. Neither this lot nor "This device" configures
+that — it is a prerequisite the settings screen only mentions in passing.
+
+### Verification
+
+- `node studio/checks/pwa.check.mjs` — the manifest link, service-worker
+  registration/scope, the service worker's push/notificationclick/
+  pushsubscriptionchange handlers, the manifest icons on disk, the adapter's
+  exports and the Settings wiring, all checked against the shipped source.
+- `python3 -m pytest tests/test_pwa_routes.py -q` — `/sw.js` and
+  `/manifest.webmanifest` both come back 200, correctly typed, with
+  `Service-Worker-Allowed: /`, against the real `app` and **no** auth
+  headers at all.

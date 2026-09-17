@@ -11,11 +11,12 @@ import { HomeScreen } from '../screens/Home';
 import { NotFound } from '../screens/NotFound';
 
 import { BrandMark } from './BrandMark';
-import { DESTINATIONS, TOOLS } from './routes';
+import { DESTINATIONS, MOBILE_DESTINATIONS, TOOLS } from './routes';
 import { useBadges } from './badges';
 import { ensureOverlayRoot, removeOverlayRoot } from './overlayRoot';
 import { useShell } from './store';
 import { useCreatorAvailable } from '../adapters/creator';
+import { usePlatform } from './platform';
 
 /* Inicio is the eager bundle; every other screen arrives as a route chunk
    the first time it is opened, so the eager bundle stays inside the 350 KB
@@ -79,6 +80,11 @@ function Rail() {
   const badges = useBadges();
   const { pathname } = useLocation();
   const navRef = useRef<HTMLElement>(null);
+  // Lot P-B: below 767px (or an installed PWA that narrow) the rail
+  // becomes the phone's five-tab bottom bar (MOBILE_DESTINATIONS) instead
+  // of the desktop's six destinations plus a separate tools/settings foot.
+  const platform = usePlatform();
+  const destinations = platform === 'mobile' ? MOBILE_DESTINATIONS : DESTINATIONS;
   // WP05: `/creator`'s entry only shows once the one-shot capability probe
   // confirms `creator_enabled` is on (CONTRATO.md rule 5) -- `null` while
   // that check is in flight is treated as "not yet", same as `false`, so
@@ -159,7 +165,7 @@ function Rail() {
         />
       )}
 
-      {DESTINATIONS.map((destination) => (
+      {destinations.map((destination) => (
         <NavLink
           key={destination.path}
           to={destination.path}
@@ -174,30 +180,34 @@ function Rail() {
         </NavLink>
       ))}
 
-      <div className="fs-nav__tools" aria-label={t('Tools')}>
-        <p className="fs-nav__tools-head">{t('Tools')}</p>
-        {tools.map((tool) => (
-          <NavLink key={tool.path} to={tool.path} className="fs-nav__tool" data-testid={`tool-${tool.label.toLowerCase()}`}>
-            <tool.icon size={13} aria-hidden="true" />
-            <span>{t(tool.label)}</span>
-            {countFor(tool.path, badges) > 0 && (
-              <span className="fs-nav__badge" title={t('{n} for today', { n: countFor(tool.path, badges) })}>
-                {countFor(tool.path, badges)}
-              </span>
-            )}
-          </NavLink>
-        ))}
-      </div>
+      {platform !== 'mobile' && (
+        <div className="fs-nav__tools" aria-label={t('Tools')}>
+          <p className="fs-nav__tools-head">{t('Tools')}</p>
+          {tools.map((tool) => (
+            <NavLink key={tool.path} to={tool.path} className="fs-nav__tool" data-testid={`tool-${tool.label.toLowerCase()}`}>
+              <tool.icon size={13} aria-hidden="true" />
+              <span>{t(tool.label)}</span>
+              {countFor(tool.path, badges) > 0 && (
+                <span className="fs-nav__badge" title={t('{n} for today', { n: countFor(tool.path, badges) })}>
+                  {countFor(tool.path, badges)}
+                </span>
+              )}
+            </NavLink>
+          ))}
+        </div>
+      )}
 
       <div className="fs-nav__spacer" />
 
-      <div className="fs-nav__foot">
-        <NavLink to="/settings" className="fs-nav__tool fs-nav__settings" data-testid="nav-settings">
-          <Settings2 size={13} aria-hidden="true" />
-          <span>{t('Settings')}</span>
-        </NavLink>
-        <p className="fs-nav__hint">{t('Ctrl+K to search and navigate')}</p>
-      </div>
+      {platform !== 'mobile' && (
+        <div className="fs-nav__foot">
+          <NavLink to="/settings" className="fs-nav__tool fs-nav__settings" data-testid="nav-settings">
+            <Settings2 size={13} aria-hidden="true" />
+            <span>{t('Settings')}</span>
+          </NavLink>
+          <p className="fs-nav__hint">{t('Ctrl+K to search and navigate')}</p>
+        </div>
+      )}
     </nav>
   );
 }
@@ -297,6 +307,7 @@ export function AppShell() {
   const lang = useLang();
   const nav = useNavSize();
   const { theme } = useAppearance();
+  const platform = usePlatform();
   useEffect(() => {
     void syncLangFromServer();
     void syncThemeFromServer();
@@ -359,9 +370,11 @@ export function AppShell() {
             <CommandPalette />
           </Suspense>
         )}
-        <Suspense fallback={null}>
-          <Tour />
-        </Suspense>
+        {platform !== 'mobile' && (
+          <Suspense fallback={null}>
+            <Tour />
+          </Suspense>
+        )}
       </div>
     </BrowserRouter>
   );

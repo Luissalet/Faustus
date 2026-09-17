@@ -17,7 +17,7 @@
 //   - /api and non-GET: never cached.
 //
 // Bump CACHE_NAME whenever this file's logic changes.
-const CACHE_NAME = 'faustus-v400-studio';
+const CACHE_NAME = 'faustus-v401-push';
 
 // The app shell and its entry. Everything else arrives on demand.
 const PRECACHE = [
@@ -106,3 +106,97 @@ self.addEventListener('fetch', (e) => {
     return;
   }
 });
+
+// ─────────────────────────────────────────────────────────────────────────
+// Web Push (src/push.py, /api/push/*, docs/api/mobile.md).
+//
+// The payload the server encrypts and sends is always
+// `{title, body, url, kind, id}` (see `src/push.py::event_to_push_payload`).
+// A notification that fails to parse still shows something rather than
+// silently dropping — a push the OS woke the worker for and then showed
+// nothing for reads, to the person, as "notifications are broken".
+// ─────────────────────────────────────────────────────────────────────────
+
+self.addEventListener('push', (e) => {
+  let data = { title: 'Faustus', body: '', url: '/', kind: '', id: null };
+  try {
+    if (e.data) data = Object.assign(data, e.data.json());
+  } catch (err) {
+    try { data.body = e.data ? e.data.text() : ''; } catch (err2) { /* nothing usable */ }
+  }
+
+  const tag = data.kind ? `${data.kind}:${data.id ?? ''}` : undefined;
+
+  e.waitUntil(
+    self.registration.showNotification(data.title || 'Faustus', {
+      body: data.body || '',
+      icon: '/static/pwa/icon-192.png',
+      badge: '/static/pwa/icon-192.png',
+      tag,
+      // Re-showing the same kind+id (e.g. a resolved approval updating its
+      // own pending notification) should replace it quietly, not buzz again.
+      renotify: false,
+      data: { url: data.url || '/' },
+    })
+  );
+});
+
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  const url = (e.notification.data && e.notification.data.url) || '/';
+
+  e.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+      const target = new URL(url, self.registration.scope).href;
+      for (const client of list) {
+        // Any open Faustus tab/window is reused and navigated, rather than
+        // piling up a new one every time a notification is tapped.
+        if (client.url && new URL(client.url).origin === new URL(target).origin) {
+          return client.navigate(target).then((c) => c && c.focus());
+        }
+      }
+      return clients.openWindow(target);
+    })
+  );
+});
+
+// A push service can rotate a subscription's keys out from under the
+// browser (key expiry, a service-side rotation) without any code here ever
+// running `subscribe()` again — this event is the only signal that
+// happened. Re-subscribing and re-registering with the server keeps
+// notifications flowing instead of silently going dead.
+self.addEventListener('pushsubscriptionchange', (e) => {
+  e.waitUntil(
+    (async () => {
+      try {
+        const keyRes = await fetch('/api/push/vapid-key', { credentials: 'include' });
+        if (!keyRes.ok) return;
+        const { key } = await keyRes.json();
+        const applicationServerKey = urlBase64ToUint8Array(key);
+        const subscription = await self.registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey,
+        });
+        await fetch('/api/push/subscribe', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ subscription: subscription.toJSON() }),
+        });
+      } catch (err) {
+        // Best-effort: the next foreground visit's adapter call
+        // (studio/src/adapters/push.ts) will notice it is unsubscribed and
+        // let the person re-enable it from Settings.
+      }
+    })()
+  );
+});
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = atob(base64);
+  const output = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; ++i) output[i] = raw.charCodeAt(i);
+  return output;
+}

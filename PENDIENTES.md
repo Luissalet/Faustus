@@ -2,6 +2,13 @@
 
 Actualizado: 17-09-2026 (noche). REGLA: nunca nombres de empresas/personas del buzón de Luis en commits, docs, tests ni comentarios — ejemplos siempre ficticios. Sólo trabajo vigente; quitar cada entrada al cerrarla.
 
+## Noche del 17-09 (móvil, lotes P-A/P-B — PWA instalable + push, ver `docs/api/mobile.md`, `docs/ui/pwa.md`, FAUSTUS.md §104)
+
+- No verificado en vivo por falta de móvil/navegador en este entorno: instalar de verdad Faustus como PWA (Chrome/Edge de escritorio y Android, más el aviso manual de iOS), conceder el permiso de notificación, y comprobar que una notificación push real llega y despierta el service worker con la pestaña de Faustus **cerrada** (no solo `test`, que solo prueba el cifrado/envío del lado servidor). Verificado con `pytest`, `tsc` y los checks estáticos (`studio/checks/pwa.check.mjs`); falta la pasada con MCP/navegador contra un servidor corriendo.
+- `pushsubscriptionchange` en `static/sw.js` nunca se ha disparado de verdad (el navegador lo dispara raramente, cuando el servicio de push rota las claves de una suscripción); su lógica de re-suscripción está escrita según la spec pero sin caso de prueba real que la dispare.
+- El "Instalar Faustus" de Ajustes → Este dispositivo depende de que `beforeinstallprompt` llegue — algunos navegadores solo lo disparan tras cumplir sus propios criterios de "engagement" (visitas repetidas, tiempo en la página); si no aparece nunca en una prueba real, no es un bug de este lote, es el navegador decidiendo que aún no toca.
+- La barra inferior de móvil (`MOBILE_DESTINATIONS`, cinco pestañas) y `data-platform="mobile"` están verificados solo por lectura de código y `tsc`; falta comprobar visualmente a 390px con las devtools o un teléfono real que la fila de cinco pestañas y las tarjetas de aprobación caben sin desbordar.
+
 ## Noche del 17-09 (móvil, lote M-A — servidor, ver `docs/api/mobile.md`)
 
 - Servidor listo y probado (`tests/test_notifications.py`, `tests/test_mobile_routes.py`, 34 tests): bus de eventos (`src/notifications.py`), `/api/mobile/*` (bootstrap, notifications, sessions, messages, WS, shim de envío) y los cuatro enganches (fin de turno, aprobaciones, tareas, recordatorio). Falta el lote M-B (`mobile/android/**`, `scripts/mobile_*.py`) — otro agente lo estaba haciendo en paralelo; una vez esté, probar el emparejamiento real desde un móvil (QR → `GET /api/mobile/bootstrap` → WS) y no solo con pytest.

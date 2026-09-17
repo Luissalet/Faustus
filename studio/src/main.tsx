@@ -18,6 +18,13 @@
  */
 
 import stylesUrl from './styles/index.css?url';
+import { captureInstallPrompt } from './lib/installPrompt';
+
+// `beforeinstallprompt` (lot P-B) can fire before the app chunk below ever
+// finishes loading — captured here, at the very top of the entry point, so
+// Settings' "Install Faustus" button (studio/src/screens/settings/ThisDevice.tsx)
+// never misses it.
+captureInstallPrompt();
 
 const wantsGallery = new URLSearchParams(window.location.search).has('gallery');
 

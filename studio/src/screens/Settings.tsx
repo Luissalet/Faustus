@@ -24,6 +24,7 @@ import {
   Settings2,
   ShieldAlert,
   SlidersHorizontal,
+  Smartphone,
   Sparkles,
   Stethoscope,
   Theater,
@@ -69,6 +70,7 @@ import { EffectiveConfigSection } from './settings/EffectiveConfig';
 import { IntegrationsSection } from './settings/Integrations';
 import { LocalModelsSection } from './settings/LocalModels';
 import { AppearanceSection } from './settings/Appearance';
+import { ThisDeviceSection } from './settings/ThisDevice';
 import { BehaviorModesSection } from './settings/BehaviorModes';
 import { authStatus } from '../adapters/account';
 import { listActiveApprovals, revokeApproval, type Approval } from '../adapters/approvals';
@@ -93,10 +95,12 @@ import { t, tn } from '../i18n';
  * there at their tab.
  */
 
-type SectionKey = 'general' | 'models' | 'openrouter' | 'local' | 'model_router' | 'defaults' | 'voice' | 'search' | 'reminders' | 'integrations' | 'agent' | 'repositories' | 'tools' | 'modes' | 'effective_config' | 'shortcuts' | 'account' | 'users' | 'system' | 'health' | 'security';
+type SectionKey = 'general' | 'device' | 'models' | 'openrouter' | 'local' | 'model_router' | 'defaults' | 'voice' | 'search' | 'reminders' | 'integrations' | 'agent' | 'repositories' | 'tools' | 'modes' | 'effective_config' | 'shortcuts' | 'account' | 'users' | 'system' | 'health' | 'security';
 
 const SECTIONS: { key: SectionKey; label: string; icon: typeof Bot; admin?: boolean }[] = [
   { key: 'general', label: 'Appearance', icon: Palette },
+  // Lot P-B: install-as-app + push notifications for this browser/device.
+  { key: 'device', label: 'This device', icon: Smartphone },
   { key: 'models', label: 'Models', icon: Server },
   // OBJ-8 / Lote B1: per-endpoint OpenRouter routing/privacy/cost prefs
   // (docs/api/openrouter.md) — admin-only, same gate as the backend routes.
@@ -1564,6 +1568,7 @@ export function SettingsScreen() {
         </nav>
         <div className="fs-set__body">
           {section === 'general' && <AppearanceSection say={say} />}
+          {section === 'device' && <ThisDeviceSection say={say} />}
           {section === 'models' && <ModelsSection endpoints={endpoints} onChanged={loadEps} say={say} onOpenOpenRouterPrefs={openOpenRouterPrefs} />}
           {section === 'openrouter' && <OpenRouterPrefsSection endpoints={endpoints} focusEndpointId={openRouterFocusId} say={say} />}
           {section === 'local' && <LocalModelsSection admin={admin} say={say} />}

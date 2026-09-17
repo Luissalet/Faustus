@@ -1299,6 +1299,15 @@ button.fs-studio__git-chip:hover {
   .fs-studio__seg button {
     padding-inline: var(--fs-space-2);
   }
+
+  /* Approvals/questions in the transcript (fs-studio__ask*): tappable at
+     390px, same 44px minimum the composer's own controls already get. */
+  .fs-studio__ask-option {
+    min-block-size: 44px;
+  }
+  .fs-studio__ask-actions .fs-btn {
+    min-block-size: 44px;
+  }
 }
 
 /* ── Reduced motion: every animation and spring above stops. ── */
