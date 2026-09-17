@@ -211,3 +211,8 @@ assert.match(screenSrc, /<Lightbox src=/, 'chat pane renders the lightbox');
 assert.match(screenSrc, /whatsapp-archived/, 'list has the Archived row');
 assert.match(screenSrc, /showArchived \? c\.archived : !c\.archived/, 'Archived row toggles between live and archived chats');
 console.log('whatsapp (3b): ALL OK');
+
+// Dictation (speech → text) and voice note (audio sent as is) must not share an icon.
+const composerSrc = readFileSync(new URL('../src/screens/whatsapp/WhatsAppComposer.tsx', import.meta.url), 'utf8');
+assert.match(composerSrc, /icon=\{dictation \? MicOff : Mic\}/, 'dictation uses the mic like the Studio composer');
+assert.match(composerSrc, /icon=\{recording \? Square : AudioLines\}/, 'voice note uses its own icon (AudioLines)');

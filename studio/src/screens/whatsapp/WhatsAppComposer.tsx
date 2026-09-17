@@ -1,4 +1,4 @@
-import { Mic, MicOff, Paperclip, Send, Square, X } from 'lucide-react';
+import { AudioLines, Mic, MicOff, Paperclip, Send, Square, X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react';
 import { Button, IconButton } from '../../components';
 import { waSend, waTyping, waUpload, type WaMessage } from '../../adapters/whatsapp';
@@ -185,14 +185,18 @@ export function Composer({ chat, text, setText, replyTo, onClearReply, onSent, s
           onClick={() => void toggleDictation()}
           testId="whatsapp-dictate"
         />
-        <IconButton
-          icon={recording ? Square : Mic}
-          label={recording ? t('Stop recording') : t('Record voice note')}
-          size="sm"
-          disabled={!!dictation}
-          onClick={() => void toggleRecording()}
-          testId="whatsapp-record"
-        />
+        {/* Dictation keeps Faustus's own mic (speech → text, as in the Studio
+            composer); a voice note is a different thing and gets its own icon. */}
+        <span className="fs-wa__record" data-recording={recording ? '' : undefined}>
+          <IconButton
+            icon={recording ? Square : AudioLines}
+            label={recording ? t('Stop recording') : t('Record voice note')}
+            size="sm"
+            disabled={!!dictation}
+            onClick={() => void toggleRecording()}
+            testId="whatsapp-record"
+          />
+        </span>
         <Button icon={Send} label={t('Send')} loading={busy} disabled={!text.trim()} onClick={() => void send()} testId="whatsapp-send" />
       </div>
     </div>

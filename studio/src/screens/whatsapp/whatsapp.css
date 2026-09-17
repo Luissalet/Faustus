@@ -918,3 +918,31 @@
 .fs-wa__archived-row .fs-set__help {
   margin-inline-start: auto;
 }
+
+/* ── Voice note recording: a pulsing dot on the button while it records ── */
+
+.fs-wa__record {
+  position: relative;
+  display: inline-flex;
+}
+
+.fs-wa__record[data-recording]::after {
+  content: '';
+  position: absolute;
+  inset-block-start: 2px;
+  inset-inline-end: 2px;
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: 50%;
+  background: var(--fs-danger);
+  animation: fs-wa-pulse 1s ease-in-out infinite;
+}
+
+@keyframes fs-wa-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fs-wa__record[data-recording]::after { animation: none; }
+}
