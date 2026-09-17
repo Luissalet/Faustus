@@ -1390,6 +1390,11 @@ logger.info("MCP routes initialized")
 # above, never a second aggregator (see routes/connector_routes.py docstring).
 from routes.connector_routes import setup_connector_routes
 app.include_router(setup_connector_routes(mcp_manager))
+
+# Control center (17-09): what runs because of Faustus — ports, bg jobs,
+# launched profiles, MCP children, watched apps — and a human-only Stop.
+from routes.process_center_routes import setup_process_center_routes
+app.include_router(setup_process_center_routes())
 logger.info("Connector routes initialized")
 
 # AI Interaction tools (debates, pipelines, self-managing AI, UI control)
@@ -1560,6 +1565,11 @@ async def serve_skills(request: Request):
 @app.get("/source-control")
 async def serve_source_control(request: Request):
     """Studio Source control panel (OBJ-4)."""
+    return await serve_index(request)
+
+@app.get("/processes")
+async def serve_processes(request: Request):
+    """Studio control center: running processes/ports with Stop (§97)."""
     return await serve_index(request)
 
 @app.get("/connectors")

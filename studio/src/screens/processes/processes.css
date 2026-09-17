@@ -1,0 +1,188 @@
+/* Processes (control center). Shares fs-screen, fs-prose, fs-search,
+ * fs-set__*, fs-chip and fs-modes__confirm with the rest of Studio
+ * (projects.css / settings.css / connectors/connectors.css) — this file
+ * only adds the row layout, the origin badge and the stop outcome line. */
+
+.fs-proc__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--fs-space-1);
+  font-size: var(--fs-label-size);
+  color: var(--fs-text-2);
+  white-space: nowrap;
+}
+
+.fs-proc__banner {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  padding: var(--fs-space-3) var(--fs-space-4);
+  border: 1px solid var(--fs-warning);
+  border-radius: var(--fs-radius-panel);
+  background: var(--fs-surface-2);
+  color: var(--fs-warning);
+  font-size: var(--fs-label-size);
+}
+
+.fs-proc__section {
+  display: grid;
+  gap: var(--fs-space-3);
+}
+
+.fs-proc__section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--fs-space-3);
+  flex-wrap: wrap;
+}
+
+.fs-proc__section-title {
+  margin: 0;
+  font-size: var(--fs-body-size);
+  font-weight: var(--fs-label-weight);
+  color: var(--fs-text-1);
+}
+
+.fs-proc__list {
+  display: grid;
+  gap: var(--fs-space-2);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.fs-proc__row,
+.fs-proc__job-row {
+  display: grid;
+  gap: var(--fs-space-2);
+  padding: var(--fs-space-3) var(--fs-space-4);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-panel);
+  background: var(--fs-surface-1);
+}
+
+.fs-proc__row-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--fs-space-3);
+  flex-wrap: wrap;
+}
+
+.fs-proc__identity {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--fs-space-2);
+  min-inline-size: 0;
+}
+
+.fs-proc__pid {
+  color: var(--fs-text-3);
+  font-size: var(--fs-label-size);
+  font-family: var(--fs-font-mono, monospace);
+}
+
+.fs-proc-origin {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px var(--fs-space-2);
+  border-radius: var(--fs-radius-pill);
+  background: var(--fs-surface-2);
+  font-size: var(--fs-label-size);
+  font-weight: var(--fs-label-weight);
+  white-space: nowrap;
+  color: var(--fs-text-3);
+}
+
+.fs-proc-origin[data-origin='self'],
+.fs-proc-origin[data-origin='faustus'] {
+  color: var(--fs-brand);
+}
+
+.fs-proc-origin[data-origin='ollama'] {
+  color: var(--fs-warning);
+}
+
+.fs-proc__row-detail {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-3);
+  flex-wrap: wrap;
+  color: var(--fs-text-2);
+  font-size: var(--fs-label-size);
+}
+
+.fs-proc__ports {
+  display: inline-flex;
+  gap: var(--fs-space-1);
+}
+
+.fs-proc__port {
+  font-family: var(--fs-font-mono, monospace);
+}
+
+.fs-proc__mem,
+.fs-proc__uptime {
+  white-space: nowrap;
+}
+
+.fs-proc__cwd {
+  color: var(--fs-text-3);
+  max-inline-size: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fs-proc__children {
+  color: var(--fs-text-3);
+}
+
+.fs-proc__job-command {
+  margin: 0;
+  color: var(--fs-text-2);
+  font-family: var(--fs-font-mono, monospace);
+  font-size: var(--fs-label-size);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fs-proc__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  flex-wrap: wrap;
+}
+
+.fs-proc__stop {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fs-space-1);
+}
+
+.fs-proc__outcome {
+  margin: 0;
+  font-size: var(--fs-label-size);
+  color: var(--fs-text-3);
+}
+
+.fs-proc__outcome[data-ok='true'] {
+  color: var(--fs-success);
+}
+
+.fs-proc__outcome[data-ok='false'] {
+  color: var(--fs-danger);
+}
+
+@media (max-width: 480px) {
+  .fs-proc__row-main {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .fs-proc__cwd {
+    max-inline-size: 100%;
+  }
+}

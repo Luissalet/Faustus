@@ -7693,3 +7693,34 @@ Followed the app from {from} to {to}	Siguió a la app de {from} a {to}
 Hide nearby apps	Ocultar apps cercanas
 {n} app nearby	{n} app cerca
 {n} apps nearby	{n} apps cerca
++{n} children	+{n} hijos
+Auto-refresh	Actualización automática
+Confirm	Confirmar
+Could not read the process list.	No se pudo leer la lista de procesos.
+Could not stop it.	No se pudo parar.
+Faustus has not started anything else right now.	Faustus no ha iniciado nada más ahora mismo.
+Filter by name, port or path…	Filtrar por nombre, puerto o ruta…
+GET /api/process-center failed.	GET /api/process-center ha fallado.
+Last updated just now	Actualizado justo ahora
+Last updated {n}s ago	Actualizado hace {n}s
+No background jobs are running.	No hay trabajos en segundo plano en marcha.
+Not visible in the process list.	No es visible en la lista de procesos.
+Nothing else is being watched right now.	No se está vigilando nada más ahora mismo.
+Nothing is listening on a port right now.	Nada está escuchando en ningún puerto ahora mismo.
+Processes	Procesos
+Stop Ollama?	¿Parar Ollama?
+Stop all started by Faustus	Parar todo lo iniciado por Faustus
+Stop everything Faustus started?	¿Parar todo lo que Faustus inició?
+Stop {name}?	¿Parar {name}?
+Stopped ({n} processes).	Parado ({n} procesos).
+Stop…	Parar…
+What is running because of Faustus — ports, background jobs, launched apps — and a Stop for each.	Qué está en marcha por culpa de Faustus — puertos, trabajos en segundo plano, apps lanzadas — y un botón de Parar para cada uno.
+psutil is not installed on the server; only ports are listed.	psutil no está instalado en el servidor; solo se listan los puertos.
+{n} MB	{n} MB
+{n} process stopped.	{n} proceso parado.
+{n} processes stopped.	{n} procesos parados.
+Background jobs	Trabajos en segundo plano
+Listening ports	Puertos escuchando
+Other apps	Otras apps
+Refresh the list — the pid changed.	Actualiza la lista — el pid ha cambiado.
+Started by Faustus	Iniciado por Faustus

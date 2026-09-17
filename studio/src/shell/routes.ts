@@ -4,6 +4,7 @@ import {
   Brain,
   CalendarDays,
   ChefHat,
+  Cpu,
   Database,
   FolderKanban,
   Gauge,
@@ -70,6 +71,9 @@ export const TOOLS: Tool[] = [
   // CONTRATO_CONECTORES Lote F3: the Hoard presets (Jobhunter, Writer…) and
   // every other MCP server, unified — /api/app-connectors, not a second store.
   { path: '/connectors', label: 'Connectors', icon: Plug },
+  // The control center (src/process_center.py): what is running because of
+  // Faustus — ports, background jobs, launched apps — and a Stop for each.
+  { path: '/processes', label: 'Processes', icon: Cpu },
   // WP05: shown only once `useCreatorAvailable()` (adapters/creator.ts)
   // confirms `creator_enabled` is on -- the Rail filters this entry out by
   // path, same list either way so the palette and SERVER_ROUTES agree.
@@ -112,6 +116,7 @@ export const SERVER_ROUTES = [
   '/notes',
   '/source-control',
   '/connectors',
+  '/processes',
   '/memory',
   '/calendar',
   '/email',
