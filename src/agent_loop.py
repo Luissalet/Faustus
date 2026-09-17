@@ -497,6 +497,7 @@ _DOMAIN_RULES = {
     "web": """\
 ## Web rules
 - For web lookup/search/latest/current requests, use `web_search` or `web_fetch`.
+- For anything that may have changed after your training data — news, sports results, prices, releases, who holds a role, weather, schedules — call `web_search` FIRST, then answer with what you found and cite the sources. Never reply that you have no access to live data and never ask permission to search: searching is expected. Skip searching for timeless questions (math, code, definitions, the user's own files).
 - Do not use shell, Python, curl, requests, or scraping code for web lookup unless web tools are unavailable or already failed.
 - "Research X" means `trigger_research`, not a one-off `web_search`, unless the user explicitly asks for a quick lookup.""",
     "documents": """\
@@ -776,6 +777,36 @@ _HARNESS_RULE_TOOLS = frozenset({
     "read_file", "write_file", "edit_file", "apply_patch", "glob", "grep", "ls",
     "get_workspace", "bash", "python", "powershell", "todowrite",
 })
+
+def _enrich_web_sources(sources: list) -> list:
+    """Add `domain` + `favicon` to each `{title, url}` web_search result
+    before it goes out on the `web_sources` SSE event, so Studio's activity
+    rail can show a favicon per page without a second round trip. Same-origin
+    proxy path (see routes/favicon_routes.py) -- never points the client
+    straight at the source site's own favicon URL.
+    """
+    from urllib.parse import urlparse
+
+    out = []
+    for src in sources or []:
+        if not isinstance(src, dict):
+            continue
+        item = dict(src)
+        url = str(item.get("url") or "")
+        domain = str(item.get("domain") or "")
+        if not domain and url:
+            try:
+                domain = (urlparse(url).hostname or "").lower()
+                if domain.startswith("www."):
+                    domain = domain[4:]
+            except Exception:
+                domain = ""
+        if domain:
+            item["domain"] = domain
+            item.setdefault("favicon", f"/api/favicon?domain={domain}")
+        out.append(item)
+    return out
+
 
 def _domain_rules_for_tools(tool_names: set) -> list[str]:
     names = set(tool_names or set())
@@ -2664,12 +2695,25 @@ def _classify_agent_request(messages: List[Dict], last_user: str, *,
     # already non-empty).
     if _looks_like_workspace_coding_request(retrieval_query):
         domains.add("files")
+
+    # Freshness: sports results, news, prices, releases, office holders,
+    # weather, schedules, availability, explicit recent years... anything
+    # that may have changed after training. Without this the model answered
+    # "I have no live access, want me to search?" instead of just searching
+    # (see src/freshness.py). Fires on the same text used for the other
+    # heuristics above so a continuation still inherits it.
+    from src.freshness import freshness_reasons as _freshness_reasons
+    _freshness_hits = _freshness_reasons(retrieval_query)
+    if _freshness_hits:
+        domains.add("web")
+
     low_signal = not continuation and not domains
     return {
         "low_signal": low_signal,
         "continuation": continuation,
         "domains": domains,
         "retrieval_query": retrieval_query,
+        "freshness_reasons": _freshness_hits,
     }
 
 
@@ -8221,6 +8265,17 @@ async def _stream_agent_loop_body(
             ),
         })
 
+    # Freshness nudge: the intent classifier already added the "web" domain
+    # (so web_search/web_fetch are in this turn's tool set and the "web"
+    # domain rule text is in the system prompt); this is the same one-line
+    # push other domain hints use, telling the model to act instead of
+    # narrating. Only once per turn, not per round.
+    if _intent.get("freshness_reasons") and not guide_only:
+        messages.append({
+            "role": "system",
+            "content": "This question is time-sensitive: search the web before answering.",
+        })
+
     # Round budget. Hitting the cap mid-task used to end the turn with a
     # "Continue" button the user had to click (the model re-reads "you hit the
     # step limit, continue"). Local inference is completion-bound rather than
@@ -11691,6 +11746,7 @@ async def _stream_agent_loop_body(
                     if _src_end >= 0:
                         try:
                             _extracted_sources = json.loads(_src_text[_src_idx + len(_src_marker):_src_end])
+                            _extracted_sources = _enrich_web_sources(_extracted_sources)
                             yield f'data: {json.dumps({"type": "web_sources", "data": _extracted_sources})}\n\n'
                             # Strip the marker from the result so it doesn't show in chat
                             _clean = _src_text[:_src_idx].rstrip()

@@ -259,6 +259,46 @@ export interface AskUser {
 export interface WebSource {
   title: string;
   url: string;
+  /** Hostname the URL was read from (e.g. "example.com"), derived client
+   *  side when the server didn't already send one. */
+  domain?: string;
+  /** `/api/favicon?domain=<host>` — same-origin, cached, always resolvable
+   *  (a neutral placeholder SVG on failure), so the activity rail can show
+   *  it directly with no extra round trip to the source site. */
+  favicon?: string;
+}
+
+/** Best-effort hostname extraction for a source URL, used when the server
+ *  event didn't already include `domain`. Never throws. */
+export function domainOf(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '');
+  } catch {
+    return '';
+  }
+}
+
+export function faviconUrlFor(domain: string): string {
+  return domain ? `/api/favicon?domain=${encodeURIComponent(domain)}` : '';
+}
+
+/** One entry per site (by domain, falling back to the URL when no domain is
+ *  known) capped at `max`, plus how many more were dropped -- the "favicon
+ *  strip" shape used by the activity rail's collapsed summary (max 6) and
+ *  expanded body (a looser cap). Pulled out as a pure function so the
+ *  dedupe-by-site + cap rule is unit-testable without mounting the
+ *  Transcript component (see studio/checks/sources.check.mjs). */
+export function faviconStripEntries(
+  sources: WebSource[],
+  max = 6,
+): { shown: WebSource[]; extra: number } {
+  const byKey = new Map<string, WebSource>();
+  for (const s of sources) {
+    const key = s.domain || s.url;
+    if (key && !byKey.has(key)) byKey.set(key, s);
+  }
+  const list = Array.from(byKey.values());
+  return { shown: list.slice(0, max), extra: Math.max(0, list.length - max) };
 }
 
 /** `event: context_receipts` (CMP-04, `src/agent_loop.py`): a compact,
@@ -1509,7 +1549,16 @@ export function decode(raw: Record<string, unknown>, sseEvent: string | null): C
       return {
         type: 'sources',
         sources: asArray<Record<string, unknown>>(raw.data)
-          .map((s) => ({ title: str(s.title) || str(s.url), url: str(s.url) }))
+          .map((s) => {
+            const url = str(s.url);
+            const domain = str(s.domain) || domainOf(url);
+            return {
+              title: str(s.title) || url,
+              url,
+              domain: domain || undefined,
+              favicon: str(s.favicon) || faviconUrlFor(domain),
+            };
+          })
           .filter((s) => s.url),
       };
     case 'context_receipts':

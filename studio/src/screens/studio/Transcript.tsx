@@ -5,7 +5,7 @@ import { Fragment, Suspense, useCallback, useEffect, useMemo, useRef, useState, 
 import { lazyChunk } from '../../shell/lazyChunk';
 import { createPortal } from 'react-dom';
 import { Button, describeError, ExecutionTimeline, friendlyError, IconButton } from '../../components';
-import { fetchCompactionEvent, pinCompactionFragment, type AskUser, type CompactionEvent, type ContextLedger, type ContextReceipt, type DelegationTask } from '../../adapters/chat';
+import { fetchCompactionEvent, pinCompactionFragment, faviconStripEntries, type AskUser, type CompactionEvent, type ContextLedger, type ContextReceipt, type DelegationTask, type WebSource } from '../../adapters/chat';
 import { createRecipeFromRun } from '../../adapters/strategy';
 import type { EvidenceRef } from '../../adapters/evidence';
 import { attachmentUrl, isImage } from '../../adapters/composer';
@@ -495,11 +495,40 @@ function railTitle(steps: Step[], live: boolean): string {
   }).join(', ');
 }
 
+function FaviconStrip({ sources, max = 6 }: { sources: WebSource[]; max?: number }) {
+  // Dedupe by domain for display purposes only (turn.sources itself is
+  // already deduped by URL) — reading three pages off the same site should
+  // show one icon, not three.
+  const { shown, extra } = faviconStripEntries(sources, max);
+  if (!shown.length) return null;
+  const names = sources.map((s) => s.domain || s.url).join(', ');
+  return (
+    <span className="fs-studio__favicon-strip" data-testid="favicon-strip" title={t('Reading {sites}', { sites: names })}>
+      {shown.map((s) => (
+        s.favicon ? (
+          <img
+            key={s.url}
+            className="fs-studio__favicon"
+            src={s.favicon}
+            alt={s.domain || ''}
+            title={s.title}
+            width={16}
+            height={16}
+            loading="lazy"
+          />
+        ) : null
+      ))}
+      {extra > 0 && <span className="fs-studio__favicon-more">+{extra}</span>}
+    </span>
+  );
+}
+
 function ToolRail({
   steps,
   thoughts,
   live,
   sessionId,
+  sources,
   onOpenFile,
   onOpenDoc,
   onOpenEvidence,
@@ -508,6 +537,7 @@ function ToolRail({
   thoughts?: Thought[];
   live: boolean;
   sessionId?: string | null;
+  sources?: WebSource[];
   onOpenFile?: (path: string) => void;
   onOpenDoc?: (docId: string) => void;
   onOpenEvidence?: (ref: EvidenceRef) => void;
@@ -544,9 +574,15 @@ function ToolRail({
         <span className="fs-studio__tools-title" role={live ? 'status' : undefined}>
           {title}{thoughtLabel ? ` · ${thoughtLabel}` : ''}
         </span>
+        {sources && sources.length > 0 && <FaviconStrip sources={sources} />}
         <ChevronDown size={13} className="fs-studio__tools-chevron" aria-hidden="true" />
       </summary>
       <div className="fs-trace fs-studio__tools-body">
+        {sources && sources.length > 0 && (
+          <div className="fs-studio__reading-row" data-testid="reading-row">
+            <FaviconStrip sources={sources} max={12} />
+          </div>
+        )}
         {nestedThoughts.map((thought) => (
           thought.text ? (
             <div key={thought.id} className="fs-studio__thought-inline" data-testid="thought-rail">
@@ -687,6 +723,7 @@ function ActivityTrail({
   thoughts,
   live,
   sessionId,
+  sources,
   onOpenFile,
   onOpenDoc,
   onOpenEvidence,
@@ -695,6 +732,7 @@ function ActivityTrail({
   thoughts: Thought[];
   live: boolean;
   sessionId?: string | null;
+  sources?: WebSource[];
   onOpenFile?: (path: string) => void;
   onOpenDoc?: (docId: string) => void;
   onOpenEvidence?: (ref: EvidenceRef) => void;
@@ -711,6 +749,7 @@ function ActivityTrail({
           nested.some((thought) => thought.live)
           || slice.some((step) => step.state === 'running' || step.state === 'waiting')
         );
+        const hasWebStep = slice.some((step) => step.tool === 'web_search' || step.tool === 'web_fetch');
         return (
           <ToolRail
             key={`group-${item.from}-${item.to}-${item.thoughts.join('.')}`}
@@ -718,6 +757,7 @@ function ActivityTrail({
             thoughts={nested}
             live={groupLive}
             sessionId={sessionId}
+            sources={hasWebStep ? sources : undefined}
             onOpenFile={onOpenFile}
             onOpenDoc={onOpenDoc}
             onOpenEvidence={onOpenEvidence}
@@ -1591,6 +1631,7 @@ function AssistantTurn({
             }
             live={turn.streaming}
             sessionId={sessionId}
+            sources={turn.sources}
             onOpenFile={onOpenFile}
             onOpenDoc={onOpenDoc}
             onOpenEvidence={onOpenEvidence}
@@ -1628,12 +1669,16 @@ function AssistantTurn({
               // A citation's URL came from outside; a `javascript:` one is a
               // script, so it is shown as text rather than made clickable.
               const href = safeExternal(s.url);
+              const favicon = s.favicon ? (
+                <img className="fs-studio__source-favicon" src={s.favicon} alt="" width={16} height={16} loading="lazy" aria-hidden="true" />
+              ) : null;
               return href ? (
-                <a key={s.url} className="fs-link" href={href} target="_blank" rel="noreferrer">
+                <a key={s.url} className="fs-link fs-studio__source-link" href={href} target="_blank" rel="noreferrer" title={s.title}>
+                  {favicon}
                   {s.title.slice(0, 48)}
                 </a>
               ) : (
-                <span key={s.url} className="fs-studio__source-flat">{s.title.slice(0, 48)}</span>
+                <span key={s.url} className="fs-studio__source-flat">{favicon}{s.title.slice(0, 48)}</span>
               );
             })}
           </p>

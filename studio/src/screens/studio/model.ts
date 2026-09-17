@@ -2,6 +2,8 @@ import type { RunStatus } from '../../components';
 import {
   summaryFrom,
   toolEventsFrom,
+  domainOf,
+  faviconUrlFor,
   type AskUser,
   type ChatEvent,
   type ContextLedger,
@@ -921,8 +923,20 @@ export function apply(turn: Turn, event: ChatEvent): Turn {
       return turn.ask ? { ...turn, ask: undefined } : turn;
     case 'metrics':
       return { ...turn, metrics: { ...turn.metrics, ...event.metrics } };
-    case 'sources':
-      return { ...turn, sources: event.sources, research: turn.research ? { ...turn.research, done: true } : turn.research };
+    case 'sources': {
+      // A turn can call web_search/web_fetch more than once (follow-up
+      // queries in the same round trip); each call emits its own sources
+      // event. Merge rather than overwrite, deduped by URL so a repeated
+      // fetch of the same page does not produce two favicon chips.
+      const seen = new Set(turn.sources.map((s) => s.url));
+      const merged = turn.sources.slice();
+      for (const src of event.sources) {
+        if (!src.url || seen.has(src.url)) continue;
+        seen.add(src.url);
+        merged.push(src);
+      }
+      return { ...turn, sources: merged, research: turn.research ? { ...turn.research, done: true } : turn.research };
+    }
     case 'context_receipts':
       return { ...turn, contextReceipts: event.receipts };
     case 'strategy':
@@ -1264,7 +1278,16 @@ export function restoreFromMetadata(turn: Turn, meta: Record<string, unknown>): 
   const rawSources = Array.isArray(meta.web_sources) ? meta.web_sources : Array.isArray(meta.research_sources) ? meta.research_sources : null;
   const sources = rawSources
     ? (rawSources as Record<string, unknown>[])
-        .map((x) => ({ title: s(x.title) || s(x.url), url: s(x.url) }))
+        .map((x) => {
+          const url = s(x.url);
+          const domain = s(x.domain) || domainOf(url);
+          return {
+            title: s(x.title) || url,
+            url,
+            domain: domain || undefined,
+            favicon: s(x.favicon) || faviconUrlFor(domain),
+          };
+        })
         .filter((x) => x.url)
     : turn.sources;
   // The server appends the gate's question to the message's own text. Once

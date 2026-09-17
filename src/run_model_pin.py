@@ -23,12 +23,14 @@ Design notes (each one cost a bug before it was written down):
 
 from __future__ import annotations
 
+import re
+
 import asyncio
 import contextvars
 import logging
 import threading
 import uuid
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
@@ -154,13 +156,17 @@ def keep_alive_override(model: str = "") -> Optional[str]:
     return val or "2h"
 
 
-def _saved_keep_alive(endpoint: str, model: str) -> str:
+def _saved_keep_alive(endpoint: str, model: str) -> Any:
     try:
         from src.model_load_options import resolve_for_request
         opts = resolve_for_request(endpoint, model) or {}
         ka = opts.get("keep_alive")
         if ka not in (None, ""):
-            return str(ka)
+            # A bare number ("-1" = forever, 600) must reach Ollama as a
+            # number: its duration parser rejects the text with HTTP 400
+            # (seen live after every turn).
+            text = str(ka).strip()
+            return int(text) if re.fullmatch(r"-?\d+", text) else text
     except Exception:  # noqa: BLE001
         pass
     return "5m"
@@ -181,7 +187,7 @@ def _looks_like_ollama(endpoint: str) -> bool:
         return "11434" in str(endpoint or "")
 
 
-def restore_keep_alive(endpoint: str, model: str, keep_alive: str) -> bool:
+def restore_keep_alive(endpoint: str, model: str, keep_alive: Any) -> bool:
     """Best-effort ping so Ollama drops back to the saved keep_alive. Never
     raises; never talks to a non-Ollama endpoint (OpenRouter has no
     /api/generate and no weight to keep)."""

@@ -909,6 +909,50 @@ details.fs-studio__step > summary:hover .fs-trace__label {
   color: var(--fs-text-1);
 }
 
+.fs-studio__source-favicon {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.fs-studio__source-link,
+.fs-studio__source-flat {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Read-while-working favicon strip: a compact row of site icons in the
+   activity rail's collapsed "Thought for N s" summary and its expanded
+   body, so the pages a web_search/web_fetch step read are visible without
+   opening each one. */
+.fs-studio__favicon-strip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: var(--fs-space-2);
+}
+
+.fs-studio__favicon {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.fs-studio__favicon-more {
+  font-size: var(--fs-label-size);
+  color: var(--fs-text-3);
+  margin-left: 2px;
+}
+
+.fs-studio__reading-row {
+  display: flex;
+  align-items: center;
+  padding: 2px 0 var(--fs-space-2);
+}
+
 /* OBJ-4/Lote 83: `git_policy` events (a branch switch, a commit, a push the
    agent made on its own under the repo's policy) — discreet, read-only
    chips, never the width of `.fs-notice`. */

@@ -1,6 +1,13 @@
 # Pendientes de cierre
 
-Actualizado: 17-09-2026 (noche). REGLA: nunca nombres de empresas/personas del buzón de Luis en commits, docs, tests ni comentarios — ejemplos siempre ficticios. Sólo trabajo vigente; quitar cada entrada al cerrarla.
+Actualizado: 18-09-2026. REGLA: nunca nombres de empresas/personas del buzón de Luis en commits, docs, tests ni comentarios — ejemplos siempre ficticios. Sólo trabajo vigente; quitar cada entrada al cerrarla.
+
+## 18-09 (lote S: búsqueda automática en preguntas de actualidad + favicons — FAUSTUS.md §107)
+
+- **No verificado en vivo, sin servidor arriba en esta sesión.** Falta: (a) arrancar Faustus y repetir en el navegador «¿Ganó el Madrid su último partido?» en modo agente y comprobar que busca sin pedir permiso; (b) correr `python3 scripts/eval_freshness.py --base http://127.0.0.1:7000` con las 16 preguntas de la batería y revisar el informe (`docs/evals/freshness-<fecha>.md`); (c) ver el riel de actividad en Studio con favicons reales cargando desde `/api/favicon?domain=…` (la ruta usa `src.outbound_fetch.fetch`, probado solo con mocks en `tests/test_favicon_routes.py`, nunca contra un dominio real).
+- `_fetch_favicon_bytes` en `routes/favicon_routes.py` nunca hizo una petición HTTPS real a un `favicon.ico`/`<link rel=icon>` de verdad — cubierto con `fetch` mockeado. Confirmar en vivo que el flujo de fallback (favicon.ico → homepage → placeholder) funciona contra dos o tres dominios reales conocidos.
+- El aviso de una línea («This question is time-sensitive…») se añade como mensaje `role: system` justo antes del bucle de rondas; falta comprobar en un chat real que un modelo local (p. ej. qwen3.5) lo respeta y busca en la primera ronda en vez de ignorarlo.
+- `_DOMAIN_RULES["web"]` reforzado con la instrucción de buscar sin pedir permiso — no se ha medido si esto hace que el modelo busque de más en preguntas límite (p. ej. «¿qué opinas del último modelo de IA?», que mezcla opinión con actualidad). Vigilar falsos positivos del heurístico en uso real más allá de los 44 casos de `tests/test_freshness.py`.
 
 ## 18-09 (lote T: Piper, proveedores de comando, frases de parada — FAUSTUS.md §106)
 

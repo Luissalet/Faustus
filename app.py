@@ -1165,6 +1165,11 @@ app.include_router(setup_strategy_routes())
 from routes.alternatives_routes import setup_alternatives_routes
 app.include_router(setup_alternatives_routes())
 
+# Same-origin favicon proxy for Studio's activity-rail source chips
+# (GET /api/favicon?domain=<host>) -- SSRF-guarded fetch, disk cache.
+from routes.favicon_routes import setup_favicon_routes
+app.include_router(setup_favicon_routes())
+
 # Versioned requirements (ADP-18/19/20): REQ-N ids with immutable revisions,
 # implements/tests/evidences/issue links, a linked/implemented/tested/
 # verified/stale coverage matrix, and a budgeted per-task projection

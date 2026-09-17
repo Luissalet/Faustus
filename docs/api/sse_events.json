@@ -42,7 +42,7 @@
     {"type": "progress_update", "stability": "core", "fields": {"todos": "[{content,status,priority,verified}]"}},
     {"type": "harness_summary", "stability": "core", "fields": {"data": "object"}},
     {"type": "context_ledger", "stability": "core", "fields": {"data": "object"}},
-    {"type": "web_sources", "stability": "core", "fields": {"data": "[{title,url}]"}},
+    {"type": "web_sources", "stability": "core", "fields": {"data": "[{title,url,domain?,favicon?}]"}},
     {"type": "context_receipts", "stability": "core", "fields": {"data": "[{source,kind,ref,why}]"}},
     {"type": "git_policy", "stability": "core", "fields": {"action": "branch|commit|push", "ok": "bool", "branch": "string?", "sha": "string?", "detail": "string?"}},
     {"type": "strategy", "stability": "core", "fields": {"data": "object"}},

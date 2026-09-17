@@ -65,6 +65,12 @@ ALWAYS_AVAILABLE = frozenset({
     # Search/serve the tool catalog so a turn can load schemas on demand
     # instead of dumping every domain's schemas into the window.
     "lookup_tools",
+    # A model should be able to decide to search even when no keyword/
+    # freshness heuristic fired ("did Madrid win?" phrased in a way nothing
+    # else matches) instead of claiming it has no live access. web_fetch
+    # stays retrieval-based (it needs a concrete URL, which is a much
+    # stronger signal that it was actually asked for).
+    "web_search",
 })
 
 # Tools that the Personal Assistant always has access to during scheduled

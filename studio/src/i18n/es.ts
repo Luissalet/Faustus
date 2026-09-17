@@ -4345,6 +4345,7 @@ export const es: Record<string, string> = {
   "Reading the orphans": "Leyendo los huérfanos",
   "Reading the session…": "Leyendo la sesión…",
   "Reading {n} sources": "Leyendo {n} fuentes",
+  "Reading {sites}": "Leyendo {sites}",
   "Reading…": "Leyendo…",
   "Reads the last reply aloud.": "Lee en voz alta la última respuesta.",
   "Reads the whole thread and answers every point": "Lee todo el hilo y responde a cada punto",

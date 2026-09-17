@@ -204,6 +204,7 @@ ComfyUI is a separate service; model weights, custom nodes and their licences ar
 
 ### Research, documents and everyday work
 
+- **Searches the web on its own for anything time-sensitive** — sports results, news, prices, software releases, who currently holds a role, weather, schedules — instead of claiming it has no live access or asking permission first; a lightweight bilingual (Spanish/English) detector adds the web tools to the turn and nudges the model to search before answering. Sources read during a turn show up as favicons in the collapsible activity rail and next to each citation, served same-origin through a cached, SSRF-guarded favicon proxy. [Freshness battery](docs/evals/freshness.md).
 - Research with source tracking, citation checks and report export.
 - Retain labelled original-source excerpts when extraction fails, preserve the previous report if final generation is empty, and pass bounded evidence alongside summaries. Shared scheduled lookups recover from cancellation without stranding other tasks. [Diogenes adaptations](docs/design/diogenes-adaptations.md).
 - Write and edit documents; export supported content to Markdown, text, HTML, PDF, DOCX or JSON.
