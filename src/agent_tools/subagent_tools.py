@@ -2095,7 +2095,14 @@ class DelegateAgentsTool:
                     # large material re-sent.
                     receipt = delegation_receipts.receipt_for(run)
                     run.receipts = [receipt.to_dict()]
+                    # A worker whose every tool call was refused (policy,
+                    # permissions) was not lazy: a retry would hit the same
+                    # wall and double the counters the refusal report reads.
+                    _all_refused = (int(getattr(run, "tool_calls", 0) or 0) > 0
+                                    and int(getattr(run, "failed_calls", 0) or 0)
+                                    >= int(getattr(run, "tool_calls", 0) or 0))
                     if (run.role != "reviewer"
+                            and not _all_refused
                             and receipt.verdict in (delegation_receipts.VERDICT_EMPTY,
                                                      delegation_receipts.VERDICT_ACK_ONLY)
                             and delegation_receipts.looks_like_write_task(run.instruction)):
