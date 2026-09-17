@@ -171,7 +171,7 @@ DEFAULT_SETTINGS = {
     # does not let it fall out of memory.
     "warm_default_model": True,
     "warm_default_model_keep_alive": "-1",
-    "warm_default_model_every_s": 600,
+    "warm_default_model_every_s": 120,
     "agent_ui_verify": True,
     "agent_inline_attachment_max_chars": 4000,
     "agent_project_todos": True,

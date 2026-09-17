@@ -12,7 +12,7 @@ to warm. Everything here is best effort and never blocks startup.
 
 Settings: `warm_default_model` (True), `warm_default_model_keep_alive`
 ("-1" = forever; any Ollama duration works), `warm_default_model_every_s`
-(600).
+(120): another app talking to the same Ollama with its own default keep_alive (5 m) unpins the model, so the pin is renewed often.
 """
 from __future__ import annotations
 
@@ -34,10 +34,10 @@ def _settings() -> Dict[str, Any]:
         return {
             "enabled": bool(get_setting("warm_default_model", True)),
             "keep_alive": keep if keep not in (None, "") else "-1",
-            "every_s": float(get_setting("warm_default_model_every_s", 600) or 600),
+            "every_s": float(get_setting("warm_default_model_every_s", 120) or 120),
         }
     except Exception:  # noqa: BLE001
-        return {"enabled": True, "keep_alive": "-1", "every_s": 600.0}
+        return {"enabled": True, "keep_alive": "-1", "every_s": 120.0}
 
 
 def _keep_alive_value(raw: Any) -> Any:

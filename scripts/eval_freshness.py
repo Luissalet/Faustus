@@ -205,9 +205,13 @@ class FaustusClient:
         started = time.monotonic()
         try:
             session_id = self._new_session(f"eval freshness {uuid.uuid4().hex[:8]}")
+            # The compact mobile relay (routes/mobile_routes.py) drives the
+            # same turn the composer would and streams back the same SSE;
+            # a direct browser-style POST to /api/chat_stream from a script
+            # was seen to stall before the agent loop on a live server.
             resp = self.session.post(
-                f"{self.base}/api/chat_stream",
-                json={"message": message, "session": session_id, "mode": "agent"},
+                f"{self.base}/api/mobile/session/{session_id}/send",
+                json={"message": message, "mode": "agent"},
                 stream=True,
                 timeout=self.timeout,
             )
