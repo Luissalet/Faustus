@@ -41,6 +41,13 @@ MAILS = {
     "7": {"subject": "Interview invitation: Backend Engineer at Storeful", "from_name": "Storeful People",
           "from_address": "people@storeful.com", "message_id": "<m7@sf>", "date": "2026-09-07T10:00:00+00:00",
           "body": "We'd love to interview you. Please pick a slot in the link below."},
+    "8": {"subject": "Your virtual interview at Cordera for R00123456 AI Software Engineer is in one hour!",
+          "from_name": "Cordera", "from_address": "noreply@cordera.com", "message_id": "<m8@acc>",
+          "date": "2026-09-22T08:00:00+00:00",
+          "body": "Your 1 hour virtual interview is in one hour. Monday, September 22 at 10:00 AM CEST"},
+    "9": {"subject": "Cordera would like to schedule a virtual interview with you", "from_name": "Cordera",
+          "from_address": "noreply@cordera.com", "message_id": "<m9@acc>", "date": "2026-09-15T08:00:00+00:00",
+          "body": "Please pick a slot. Suggested: September 19 at 9:00 AM CEST or later."},
     "5": {"subject": "Regarding your application at Cleverfox", "from_name": "Cleverfox", "from_address": "hr@cleverfox.com",
           "message_id": "<m5@sc>", "date": "2026-09-17T08:32:00+00:00",
           "body": "After careful consideration we regret to inform you that we will not be proceeding."},
@@ -50,8 +57,9 @@ MAILS = {
 @pytest.fixture
 def fake(monkeypatch):
     recorded, events = [], []
+    from datetime import datetime
     listing = [{"uid": uid, "subject": m["subject"], "from": m["from_name"], "from_address": m["from_address"],
-                "date_epoch": 1789600000 + int(uid) * 100} for uid, m in MAILS.items()]
+                "date_epoch": datetime.fromisoformat(m["date"]).timestamp()} for uid, m in MAILS.items()]
     monkeypatch.setattr(cr, "_client", lambda owner: _Ctx())
     monkeypatch.setattr(cr, "list_mail", lambda client, since, until, account=None, folder="INBOX": listing)
     monkeypatch.setattr(cr, "read_mail", lambda client, uid, account, folder="INBOX": dict(MAILS[uid], uid=uid))
@@ -105,10 +113,11 @@ def test_dry_run_finds_rejections_and_interviews_and_records_nothing(fake):
 def test_apply_records_in_jobhunter_and_puts_the_interview_on_the_calendar(fake):
     recorded, events = fake
     rep = cr.review(owner="admin", days=14, apply=True)
-    by_job = {j: p for j, p in recorded}
-    assert by_job["j1"]["kind"] == "rejection" and by_job["j1"]["externalId"] == "<m1@bluehaven>"
-    assert by_job["j2"]["kind"] == "interview" and by_job["j2"]["interviewAt"].startswith("2026-09-22T10:00")
-    assert by_job["j2"]["calendarEventId"] == "ev-1"
+    by_ext = {p["externalId"]: (j, p) for j, p in recorded}
+    assert by_ext["<m1@bluehaven>"][0] == "j1" and by_ext["<m1@bluehaven>"][1]["kind"] == "rejection"
+    j2, acc = by_ext["<m2@acc>"]
+    assert j2 == "j2" and acc["kind"] == "interview" and acc["interviewAt"] == "2026-09-22T08:00:00Z"  # UTC for zod
+    assert acc["calendarEventId"] == "ev-1"
     assert events and events[0]["external_ref"] == "jobhunter:j2:2026-09-22T10:00:00+02:00"  # one slot, one event
     assert "Cordera" in events[0]["summary"]
     assert any(u["company"] == "Bluehaven" and u["status"] == "rejected" for u in rep["updated"])
@@ -190,3 +199,15 @@ def test_guess_company_and_title_from_real_subjects():
     assert g({"subject": "Seguimiento", "from": "noreply@example-corp.com"}) == "Example-corp"
     assert cr.guess_title({"subject": "Your virtual interview at Cordera for R00123456 AI Software Engineer | Spain"}) == "AI Software Engineer"
     assert cr.guess_title({"subject": "Thank you for applying to Cleverfox"}) == ""
+
+
+def test_the_newest_mail_fixes_the_interview_slot_and_older_times_make_no_event(fake):
+    recorded, events = fake
+    rep = cr.review(owner="admin", days=14, apply=True, kinds=["interview"])
+    acc_events = [e for e in events if "Cordera" in e["summary"]]
+    assert len(acc_events) == 1 and acc_events[0]["dtstart"] == "2026-09-22T10:00:00+02:00", events
+    invite = next(r for r in rep["found"] if r["uid"] == "9")
+    assert invite["superseded_by"] == "2026-09-22T10:00:00+02:00" and invite["interview_at"] is None
+    assert invite["action"] == "recorded"          # still a reply on the application
+    by_ext = {p["externalId"]: p for _, p in recorded}
+    assert "interviewAt" not in by_ext["<m9@acc>"] and by_ext["<m2@acc>"]["interviewAt"] == "2026-09-22T08:00:00Z"

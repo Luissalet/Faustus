@@ -306,6 +306,18 @@ def _user_zone_name() -> Optional[str]:
         return None
 
 
+def _to_utc_z(iso: str) -> str:
+    """Jobhunter validates `interviewAt`/`receivedAt` with zod's
+    `.datetime()`, which only takes UTC with a trailing Z (offsets → 400)."""
+    try:
+        dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    except Exception:  # noqa: BLE001
+        return iso
+
+
 def _iso_z(epoch: Optional[float], fallback: str = "") -> str:
     if epoch:
         return datetime.fromtimestamp(float(epoch), tz=timezone.utc).isoformat().replace("+00:00", "Z")
@@ -347,6 +359,9 @@ def review(*, owner: Optional[str], days: int = 14, since: Optional[str] = None,
             if _HINT_RE.search(head) and not _NOISE_RE.search(head):
                 candidates.append(m)
         candidates = candidates[:max_bodies]
+        # Pass 1 — read and classify. Nothing is written yet: the interview
+        # slots need the whole window first (below).
+        prepared: List[Dict[str, Any]] = []
         for m in candidates:
             uid = str(m.get("uid") or "")
             try:
@@ -371,6 +386,26 @@ def review(*, owner: Optional[str], days: int = 14, since: Optional[str] = None,
             if kind not in wanted:
                 report["skipped_kinds"][kind] = report["skipped_kinds"].get(kind, 0) + 1
                 continue
+            prepared.append({"uid": uid, "message": message, "verdict": verdict, "kind": kind})
+
+        # The interview slot an employer means is the one in its NEWEST mail:
+        # a scheduling invite lists options, the confirmation and the
+        # reminders carry the real time (Cordera, 17-09: "9:00" from the
+        # invite vs "01:00 PM CEST" from the reminder). Older, different
+        # times are superseded — recorded as replies, never as events.
+        latest_slot: Dict[str, str] = {}
+        for item in sorted(prepared, key=lambda x: x["message"]["received_at"], reverse=True):
+            if item["kind"] != "interview" or not item["verdict"].get("interview_at"):
+                continue
+            pre_mt = match(item["message"], jobs)
+            pre_job = next((j for j in jobs if j["job_id"] == pre_mt.get("job_id")), None)
+            key = _norm(pre_job["company"] if pre_job else guess_company(item["message"]))
+            if key and key not in latest_slot:
+                latest_slot[key] = item["verdict"]["interview_at"]
+
+        # Pass 2 — match, create, record, calendar.
+        for item in prepared:
+            uid, message, verdict, kind = item["uid"], item["message"], item["verdict"], item["kind"]
             mt = match(message, jobs)
             row = {
                 "uid": uid, "subject": message["subject"][:120], "from": message["from"][:80],
@@ -384,6 +419,11 @@ def review(*, owner: Optional[str], days: int = 14, since: Optional[str] = None,
                 row["company"], row["title"], row["job_status"] = job["company"], job["title"], job["status"]
             else:
                 row["company"], row["title"] = guess_company(message), guess_title(message)
+            if kind == "interview" and row["interview_at"]:
+                current = latest_slot.get(_norm(row["company"]))
+                if current and current != row["interview_at"]:
+                    row["superseded_by"] = current
+                    row["interview_at"] = None      # an older/other time: no event, no interviewAt
             report["found"].append(row)
             external_id = message["message_id"] or f"mail:{uid}"
 
@@ -452,6 +492,10 @@ def review(*, owner: Optional[str], days: int = 14, since: Optional[str] = None,
                                                      "timezone": row["timezone"]})
                         except ReviewError as exc:
                             row["calendar_error"] = str(exc)
+                elif row.get("superseded_by"):
+                    row["calendar"] = f"an earlier mail about this interview; the newest one says {row['superseded_by']}"
+                elif latest_slot.get(_norm(job["company"])):
+                    row["calendar"] = "no time in this mail; another mail of this employer fixed the slot"
                 else:
                     row["calendar"] = "no date/time stated in the mail — left for manual review"
                     report["manual"].append({"uid": uid, "subject": row["subject"], "kind": kind,
@@ -467,9 +511,9 @@ def review(*, owner: Optional[str], days: int = 14, since: Optional[str] = None,
                         pass
                 continue
             payload = {"externalId": external_id, "kind": kind, "evidence": verdict["evidence"][:2000],
-                       "receivedAt": row["received_at"] or now.isoformat().replace("+00:00", "Z")}
+                       "receivedAt": _to_utc_z(row["received_at"]) if row["received_at"] else now.isoformat().replace("+00:00", "Z")}
             if row["interview_at"]:
-                payload["interviewAt"] = row["interview_at"]
+                payload["interviewAt"] = _to_utc_z(row["interview_at"])
             if row["timezone"]:
                 payload["timezone"] = str(row["timezone"])[:64]
             if event_id:
