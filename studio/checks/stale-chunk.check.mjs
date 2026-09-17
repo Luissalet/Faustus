@@ -4,8 +4,9 @@
 // error boundary that keeps the shell on screen.
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
-const root = new URL('../src/', import.meta.url).pathname;
+const root = fileURLToPath(new URL('../src/', import.meta.url));
 function walk(dir, out = []) {
   for (const name of readdirSync(dir)) {
     const p = join(dir, name);
@@ -18,7 +19,7 @@ const bare = [];
 for (const file of walk(root)) {
   if (file.endsWith('shell/lazyChunk.tsx')) continue;
   const src = readFileSync(file, 'utf8');
-  if (/\blazy\(/.test(src) || /React\.lazy\(/.test(src)) bare.push(file.slice(root.length));
+  if (/\blazy\(/.test(src) || /React\.lazy\(/.test(src)) bare.push(file.slice(root.length).replace(/\\/g, '/'));
 }
 assert.deepEqual(bare, [], 'every lazy() must be lazyChunk(): ' + bare.join(', '));
 const chunk = readFileSync(join(root, 'shell/lazyChunk.tsx'), 'utf8');
