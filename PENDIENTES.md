@@ -4,10 +4,11 @@ Actualizado: 17-09-2026 (tarde). REGLA: nunca nombres de empresas/personas del b
 
 ## Noche del 17-09 (WhatsApp — FAUSTUS.md §100)
 
-- Emparejar: Tools → WhatsApp → Start the bridge → escanear el QR con el móvil (Dispositivos vinculados). Hasta que Luis lo escanee no se ha probado en vivo: leer, «dile a X…» con tarjeta de permiso, y la tarjeta `whatsapp_digest`.
-- Solo texto: fotos/audios/documentos se listan como `[image]`… (descargar multimedia y transcribir audios con Whisper sería el siguiente paso). Sin envío a grupos nuevos ni reacciones.
-- Los contactos llegan con la sincronización inicial de historial; un contacto que nunca ha escrito puede no resolverse por nombre (sí por teléfono).
-- El puente es un proceso Node desacoplado: aparece en `/processes` como «started by Faustus»; pararlo desde WhatsApp → Stop o desde Processes.
+- Emparejado en vivo (17-09 ~17:40). La sesión actual se vinculó antes del arreglo del historial: para bajar todo el pasado de golpe hay que Unlink → Start → escanear otra vez; si no, «Load older messages» chat a chat.
+- Tercera ola (respuestas citadas, reacciones, reenvío, edición/borrado, ticks, presencia, búsqueda, adjuntos, notas de voz grabadas, Ask Faustus) desplegada como w85: **falta la pasada en vivo** — sobre todo el permiso de micrófono de MediaRecorder en la app de escritorio, los popovers de reaccionar/reenviar, el salto a un mensaje citado que no está en la ventana cargada, y el 409 de citar/reenviar un mensaje anterior al arranque del puente (el mapa crudo vive en memoria).
+- Un contacto que solo se conoce por LID (nunca llegó `sender_pn` ni contacto sincronizado) sale sin teléfono; se resuelve al re-emparejar (los contactos traen `lid`+`phoneNumber`) o cuando escribe.
+- Mensajes propios enviados desde el móvil mientras el puente estaba parado fallan al descifrar (`MessageCounterError`) y llegan por reintento; no es un bug nuestro.
+- Ideas siguientes: reglas automáticas («si escribe X avísame por…»), crear grupos/participantes, estados, transcripción en segundo plano de audios largos, y que `/chats` sirva `archived` fiable sin re-emparejar (hoy solo llega con el historial inicial o `chats.update`).
 
 ## Noche del 17-09 (vigilantes y tarjetas de Inicio — FAUSTUS.md §99)
 
