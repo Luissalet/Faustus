@@ -427,7 +427,16 @@ async def do_manage_tasks(content: str, owner: Optional[str] = None) -> Dict:
                     pinned = True
                 except Exception as _exc:  # noqa: BLE001
                     logger.warning("pin_to_home failed: %s", _exc)
-            return {"response": f"Created task '{name}' (id: {task_id})." + (" Pinned to Home." if pinned else "") + " See /automations. Faustus must be running.",
+                # A card without content is a card the user has to poke:
+                # run the task once right away (forced — the user is here).
+                try:
+                    from src.event_bus import get_task_scheduler
+                    _sched = get_task_scheduler()
+                    if _sched:
+                        await _sched.run_task_now(task_id, force=True)
+                except Exception as _exc:  # noqa: BLE001
+                    logger.warning("first run of pinned task failed to start: %s", _exc)
+            return {"response": f"Created task '{name}' (id: {task_id})." + (" Pinned to Home and running now; the card fills in a moment." if pinned else "") + " See /automations. Faustus must be running.",
                     "task_id": task_id, "next_run": next_run.isoformat()+"Z" if next_run else None, "timezone": task.timezone or "UTC",
                     "pinned_to_home": pinned, "exit_code": 0}
 
@@ -545,7 +554,9 @@ async def do_manage_tasks(content: str, owner: Optional[str] = None) -> Dict:
             from src.event_bus import get_task_scheduler
             scheduler = get_task_scheduler()
             if scheduler:
-                started = await scheduler.run_task_now(task_id)
+                # A run the user asked for in chat is not background work to
+                # be paused for foreground activity: force it.
+                started = await scheduler.run_task_now(task_id, force=True)
                 if started:
                     return {"response": f"Task '{task.name}' triggered", "exit_code": 0}
                 else:

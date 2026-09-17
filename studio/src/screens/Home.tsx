@@ -79,7 +79,9 @@ function HomeCardTile({ card, onChanged }: { card: HomeCard; onChanged: () => vo
   const refresh = async () => {
     setBusy(true);
     try {
-      await runAutomation(card.task_id);
+      // Forced: a person pressed Refresh, so the run must not be parked
+      // behind the "wait until Faustus is idle" gate that background runs use.
+      await runAutomation(card.task_id, true);
     } catch {
       /* the next poll shows the failed run through last_status/last_error */
     } finally {
