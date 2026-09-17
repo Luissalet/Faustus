@@ -626,3 +626,7 @@ Pedido: «Revisa mi correo dos semanas y actualiza qué empresas me han rechazad
 ## OBJ-19 · Vigilantes programados y tarjetas de Inicio — HECHO (17-09-2026)
 
 Pedido: tareas programadas en lenguaje natural (tiempo diario, briefings de noticias, aviso de reposición en tienda, resumen de correo) y un panel de Inicio con las tarjetas elegidas. Hecho: cuatro acciones deterministas (`src/watchers.py`), `pin_to_home` en `manage_tasks`, tarjetas en Inicio y toggle en Automations (FAUSTUS.md §99). Verificado en vivo (tiempo desde el chat; correo, noticias y vigilancia por API; tarjetas con Refresh). **Siguiente.** Caso real de tienda con render JS (navegador integrado), tarjetas de calendario/candidaturas/precios, orden por arrastre.
+
+## OBJ-20 · WhatsApp desde Faustus — HECHO, pendiente de emparejar (17-09-2026)
+
+Pedido: conectar la cuenta de WhatsApp para leer, resumir y enviar («dile a X…»). Hecho: puente Node por el protocolo multidispositivo (QR), rutas, herramientas `whatsapp_read`/`whatsapp_send` con permiso, acción `whatsapp_digest` para Inicio, pantalla Tools → WhatsApp (FAUSTUS.md §100). **Siguiente.** Escanear el QR y verificar en vivo; multimedia y audios; respuestas automáticas con reglas (p. ej. «si escribe X avísame»).
