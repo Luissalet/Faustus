@@ -1399,6 +1399,10 @@ app.include_router(setup_process_center_routes())
 # Home cards (17-09): automations pinned to Home with their latest result.
 from routes.home_cards_routes import setup_home_cards_routes
 app.include_router(setup_home_cards_routes())
+
+# WhatsApp (17-09): personal account through the loopback bridge (bridges/whatsapp).
+from routes.whatsapp_routes import setup_whatsapp_routes
+app.include_router(setup_whatsapp_routes())
 logger.info("Connector routes initialized")
 
 # AI Interaction tools (debates, pipelines, self-managing AI, UI control)
@@ -1569,6 +1573,11 @@ async def serve_skills(request: Request):
 @app.get("/source-control")
 async def serve_source_control(request: Request):
     """Studio Source control panel (OBJ-4)."""
+    return await serve_index(request)
+
+@app.get("/whatsapp")
+async def serve_whatsapp(request: Request):
+    """Studio WhatsApp screen: pairing, chats, sending (§100)."""
     return await serve_index(request)
 
 @app.get("/processes")

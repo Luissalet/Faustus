@@ -83,6 +83,8 @@ _COMMON_TOOL_NAMES = {
     "manage_calendar",
     "manage_contact",
     "review_candidature_mail",
+    "whatsapp_read",
+    "whatsapp_send",
     "manage_documents",
     "manage_endpoints",
     "manage_mcp",

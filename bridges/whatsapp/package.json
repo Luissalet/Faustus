@@ -1,0 +1,16 @@
+{
+  "name": "faustus-whatsapp-bridge",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Loopback HTTP bridge between Faustus and a personal WhatsApp account (WhatsApp Web multi-device protocol).",
+  "type": "module",
+  "main": "server.mjs",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "6.7.21",
+    "pino": "^9.0.0",
+    "qrcode": "^1.5.4"
+  }
+}

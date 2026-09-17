@@ -388,6 +388,16 @@ EXAMPLES: Dict[str, List[str]] = {
         "comprueba si hay errores de continuidad en la historia",
         "check if this scene contradicts something earlier in the book",
     ],
+    "whatsapp_read": [
+        "qué me han dicho por whatsapp hoy",
+        "resume lo que me ha escrito Ana en el grupo",
+        "tengo mensajes sin leer en whatsapp?",
+    ],
+    "whatsapp_send": [
+        "dile a Ana por whatsapp que llego diez minutos tarde",
+        "mándale a mi madre un mensaje diciendo que ya he llegado",
+        "escríbele al grupo de amigos que el sábado no puedo",
+    ],
     "review_candidature_mail": [
         "revisa mi correo de las últimas dos semanas y actualiza qué empresas me han rechazado en jobhunter's hoard",
         "check my mail for interview invitations, update jobhunter's hoard and put them on the calendar",

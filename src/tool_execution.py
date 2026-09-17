@@ -1958,6 +1958,20 @@ async def _execute_tool_block_impl(
         except (_review.ExpertReviewError, ValueError, TypeError,
                 json.JSONDecodeError) as exc:
             result = {"error": str(exc), "exit_code": 1}
+    elif tool in ("whatsapp_read", "whatsapp_send"):
+        desc = tool
+        try:
+            args = json.loads(content) if content.strip().startswith("{") else {}
+            from src import whatsapp_tools as _wt
+            import asyncio as _aio
+            if tool == "whatsapp_send":
+                result = await _aio.to_thread(_wt.send, args)
+                desc = f"whatsapp_send: {result.get('to') or args.get('to')}" if not result.get("error") else "whatsapp_send: " + str(result.get("error"))[:60]
+            else:
+                result = await _aio.to_thread(_wt.read, args)
+                desc = f"whatsapp_read: {result.get('summary_line') or args.get('action') or 'messages'}"
+        except Exception as exc:  # noqa: BLE001
+            result = {"error": str(exc), "exit_code": 1}
     elif tool == "review_candidature_mail":
         desc = "review_candidature_mail"
         try:

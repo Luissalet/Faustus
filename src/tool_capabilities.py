@@ -247,6 +247,20 @@ _register(
     result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
 )
 _register(
+    # whatsapp_read reads the user's own messages through the local bridge;
+    # what comes back is what other people wrote: EXTERNAL_UNTRUSTED.
+    {"whatsapp_read"},
+    ToolEffect.READ_PRIVATE,
+    result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
+)
+_register(
+    # whatsapp_send posts a message to another person from the user's own
+    # account: the definition of an external side effect (approval card).
+    {"whatsapp_send"},
+    ToolEffect.EXTERNAL_SIDE_EFFECT,
+    result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
+)
+_register(
     # review_candidature_mail reads the user's own mailbox (READ_PRIVATE) and
     # writes the user's own calendar events and Jobhunter's Hoard records —
     # both private data of this user on this machine (the connector's

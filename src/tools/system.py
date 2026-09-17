@@ -292,8 +292,8 @@ async def do_manage_tasks(content: str, owner: Optional[str] = None) -> Dict:
     # Watcher actions take their parameters as an object (`params`, or the
     # bare keys) and store them as JSON in `prompt`; a model that has to
     # nest JSON inside a tool-call string gets the quoting wrong.
-    _WATCH_KEYS = ("place", "when", "topic", "hours", "url", "mode", "text", "unread_only", "language", "items")
-    if args.get("action_name") in ("weather_report", "news_brief", "watch_page", "mail_digest"):
+    _WATCH_KEYS = ("place", "when", "topic", "hours", "url", "mode", "text", "unread_only", "language", "items", "chat")
+    if args.get("action_name") in ("weather_report", "news_brief", "watch_page", "mail_digest", "whatsapp_digest"):
         params = dict(args.get("params") or {}) if isinstance(args.get("params"), dict) else {}
         for k in _WATCH_KEYS:
             if args.get(k) is not None and k not in params:

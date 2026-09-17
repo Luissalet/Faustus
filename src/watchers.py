@@ -462,15 +462,26 @@ async def action_mail_digest(owner: str, **kwargs) -> Tuple[str, bool]:
     return f"**Correo — últimas {hours} h** ({len(mails)} mensajes, {unread} sin leer) — {stamp}\n\n{summary}", True
 
 
+def _whatsapp_digest_action():
+    from src.whatsapp_tools import action_whatsapp_digest
+    return action_whatsapp_digest
+
+
+async def action_whatsapp_digest(owner: str, **kwargs) -> Tuple[str, bool]:
+    return await _whatsapp_digest_action()(owner, **kwargs)
+
+
 WATCH_ACTIONS = {
     "weather_report": action_weather_report,
     "watch_page": action_watch_page,
     "news_brief": action_news_brief,
     "mail_digest": action_mail_digest,
+    "whatsapp_digest": action_whatsapp_digest,
 }
 WATCH_ACTION_INFO = {
     "weather_report": "Weather for a place (today/tomorrow/next days) from Open-Meteo — params: {\"place\", \"when\"}",
     "watch_page": "Watch a web page and report only when it changes (stock back in shop, a text appears) — params: {\"url\", \"mode\": availability|text|change, \"text\"}",
     "news_brief": "News briefing on a topic from the last hours, summarised with sources — params: {\"topic\", \"hours\"}",
     "mail_digest": "Summary of the mail received in the last hours: what needs a reply, what is noteworthy, the bulk — params: {\"hours\", \"unread_only\"}",
+    "whatsapp_digest": "Summary of the WhatsApp messages of the last hours (paired bridge): who waits for an answer, what is new per chat — params: {\"hours\", \"chat\", \"unread_only\"}",
 }
