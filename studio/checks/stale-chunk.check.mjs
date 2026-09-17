@@ -17,7 +17,7 @@ function walk(dir, out = []) {
 }
 const bare = [];
 for (const file of walk(root)) {
-  if (file.endsWith('shell/lazyChunk.tsx')) continue;
+  if (file.replace(/\\/g, '/').endsWith('shell/lazyChunk.tsx')) continue;
   const src = readFileSync(file, 'utf8');
   if (/\blazy\(/.test(src) || /React\.lazy\(/.test(src)) bare.push(file.slice(root.length).replace(/\\/g, '/'));
 }
