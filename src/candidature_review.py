@@ -72,6 +72,17 @@ _NOISE_RE = re.compile(
 )
 
 
+#: Senders that are never an employer's reply (bulk marketing/notification
+#: domains); everything else is read.
+_BULK_SENDER_RE = re.compile(
+    r"@(?:[\w.-]*\.)?(?:amazon|amazonses|linkedin|indeed|glassdoor|infojobs|github|google|youtube|"
+    r"facebookmail|instagram|twitter|x\.com|spotify|netflix|apple|microsoft|steampowered|epicgames|"
+    r"paypal|stripe|supabase|vercel|notion|slack|discord|medium|substack|mailchimp|sendgrid|hubspot|"
+    r"mailerlite|klaviyo|unir|ebay|aliexpress|temu|shein|zara|glovo|uber|booking|airbnb|ryanair|vueling)\.",
+    re.I,
+)
+
+
 class ReviewError(Exception):
     pass
 
@@ -348,7 +359,7 @@ def _iso_z(epoch: Optional[float], fallback: str = "") -> str:
 
 def review(*, owner: Optional[str], days: int = 14, since: Optional[str] = None, until: Optional[str] = None,
            kinds: Optional[List[str]] = None, apply: bool = False, calendar: bool = True,
-           account: Optional[str] = None, folder: str = "INBOX", max_bodies: int = 120,
+           account: Optional[str] = None, folder: str = "INBOX", max_bodies: int = 400,
            create_missing: bool = True) -> Dict[str, Any]:
     """Scan, classify, match and (with `apply`) record. Returns a report the
     model can summarise: `found` rows, `updated`, `events`, `manual`, and
@@ -375,12 +386,17 @@ def review(*, owner: Optional[str], days: int = 14, since: Optional[str] = None,
     with _client(owner) as client:
         listing = list_mail(client, since_dt, until_dt, account=account, folder=folder)
         report["scanned"] = len(listing)
-        candidates = []
+        # Every non-noise mail is read: a rejection can hide under a subject
+        # that says nothing ("Seguimiento", the job title alone). The hinted
+        # ones go first so a `max_bodies` cap still reads the likeliest.
+        hinted, rest = [], []
         for m in listing:
             head = f"{m.get('from') or ''} {m.get('from_address') or ''} {m.get('subject') or ''}"
-            if _HINT_RE.search(head) and not _NOISE_RE.search(head):
-                candidates.append(m)
-        candidates = candidates[:max_bodies]
+            if _NOISE_RE.search(head) or _BULK_SENDER_RE.search(str(m.get("from_address") or "")):
+                continue
+            (hinted if _HINT_RE.search(head) else rest).append(m)
+        candidates = (hinted + rest)[:max_bodies]
+        report["read_plan"] = {"hinted": len(hinted), "other": len(rest), "cap": max_bodies}
         # Pass 1 — read and classify. Nothing is written yet: the interview
         # slots need the whole window first (below).
         prepared: List[Dict[str, Any]] = []
@@ -551,6 +567,10 @@ def review(*, owner: Optional[str], days: int = 14, since: Optional[str] = None,
                                           "status": new_status, "applied": res.get("applied", True)})
             except ReviewError as exc:
                 row["action"] = f"error: {exc}"
+    report["kinds"] = sorted(wanted)
+    if wanted != {"rejection", "interview", "offer"}:
+        report["note"] = ("only " + ", ".join(sorted(wanted)) + " were looked at; other kinds of reply were not "
+                          "classified — say so rather than 'none found'")
     report["counts"] = {
         "found": len(report["found"]), "updated": len(report["updated"]), "created": len(report["created"]),
         "events": len(report["events"]),
