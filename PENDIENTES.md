@@ -6,13 +6,14 @@ Actualizado: 17-09-2026 (madrugada). Sólo trabajo vigente; quitar cada entrada 
 
 ### Qué mirar en el 7001
 
-- **Repetido el chat #14 (17-09, 03:00): OK.** Plan de 4 WP + «Sigue implementando el plan» con el 27B: tracker parseado, 4/4 implementados con tests reales, `ui_smoke` cazó un 404 real de assets que los tests no veían y la ronda de arreglo lo cerró. Tres fallos del harness corregidos sobre la marcha (FAUSTUS.md §95, «Verificado en vivo»). Queda por repetir con un plan GRANDE (≥ 60 KB, 20+ tareas) y en un segundo chat sin adjunto («Continua»).
+- **Repetido el chat #14 (17-09, 03:00): OK.** Plan de 4 WP + «Sigue implementando el plan» con el 27B: tracker parseado, 4/4 implementados con tests reales, `ui_smoke` cazó un 404 real de assets que los tests no veían y la ronda de arreglo lo cerró. Tres fallos del harness corregidos sobre la marcha (FAUSTUS.md §95, «Verificado en vivo»). Repetido también el chat #15 (segundo chat, mismo adjunto): 4/4 cerradas con `plan_done` y evidencia, 0 mutaciones. Queda por repetir con un plan GRANDE (≥ 60 KB, 20+ tareas) y en un segundo chat SIN adjunto («Continua»).
 - **`ui_smoke` con Flask real en Windows: OK** (`flask run --port`, `app.mjs` → `text/javascript`, `style.css` → `text/css`, Playwright sin errores de consola). Falta verlo con un proyecto FastAPI y con `npm start`.
 - **Puerta dura.** Un turno con un test rojo nuevo: la tarjeta `verified` trae `gate: tests_failed` y el resumen `complete_unverified` («Not sealed as complete» en el Studio).
 - **Deriva de dependencias.** Quitar `shapely` del venv del proyecto y abrir un turno: la nota de sistema con «falta shapely — instálala con install_dependencies» tiene que llegar antes de cualquier bash.
 
 ### Limitaciones honestas
 
+- Turno de SOLO verificación sobre un plan ya hecho (chat #15 controlado): `check_completion` rechazó dos veces («creado» sobre ficheros solo leídos → correcto; «el servicio está listo» → `claims_without_mutation`, discutible). Afinar: cuando el tracker cierra 4/4 con evidencia y no hay claims de cambio, un «verificado, sin cambios» no debería costar una ronda.
 - La puerta dura solo impide sellar `complete`; no abre una ronda de arreglo propia (las de tests/smoke/review siguen siendo las que arreglan).
 - `plan_done` informa de los ficheros de la tarea que el turno no tocó, pero no ejecuta criterios tipados; el `Goal` de WP27 (`test_passes`, `http_ok`) aún no está enganchado al tracker.
 - El parser de planes es heurístico (encabezados/listas/checkboxes): un plan en prosa pura da 0 tareas y cae al recorte a TOC de §90.
