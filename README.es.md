@@ -66,6 +66,10 @@ Cerrar la ventana de escritorio detiene el backend **sólo si esa ventana lo arr
 
 Las tareas programadas necesitan un servidor Faustus en marcha y el ordenador despierto. Usa el modo web para mantener el backend funcionando tras cerrar las pestañas del navegador; cerrar una ventana de escritorio que sea la propietaria también detiene la programación. En un chat Agente, pide una recurrencia en español o inglés, indica hora y zona horaria y gestiona la tarea guardada en **Automatizaciones**. Las tareas recurrentes admiten zonas horarias IANA y cambios de horario de verano; las tareas antiguas sin zona conservan su comportamiento en UTC.
 
+### Instalar Faustus en el móvil
+
+Studio se instala como app independiente (PWA) desde el propio navegador, sin tienda ni compilación. En navegadores Chromium (escritorio o Android), **Ajustes → Este dispositivo** ofrece «Instalar Faustus» en cuanto el navegador lo permite; en Safari de iOS, que nunca lo ofrece por sí solo, la misma pantalla explica el paso manual (Compartir → Añadir a pantalla de inicio). Una vez instalada abre a pantalla completa con su icono, mantiene la interfaz operativa sin red y recibe notificaciones del sistema —turno terminado, aprobación pendiente, recordatorio— aunque la app esté cerrada, mediante Web Push estándar (VAPID + `aes128gcm` implementados sobre `cryptography`, sin servicios de mensajería de terceros). Para llegar a Faustus fuera de tu red el servidor tiene que estar expuesto por HTTPS (una VPN o un túnel), cosa que «Este dispositivo» recuerda pero no configura. Por debajo de 767 px la navegación pasa a una barra inferior de cinco pestañas (Inicio, Studio, Calendario, Notas, Ajustes). [API móvil](docs/api/mobile.md) · [notas de la vista móvil](docs/ui/pwa.md).
+
 ### Herramientas creativas dentro de la conversación
 
 - **Señalar para editar:** selecciona un punto en una captura del navegador y describe el cambio. Se añaden al borrador una captura anotada y la procedencia de la captura, sin enviarla automáticamente. El agente debe inspeccionar la página actual y el proyecto; las coordenadas de la captura no son ubicaciones inventadas en el código fuente.

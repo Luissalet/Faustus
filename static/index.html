@@ -79,6 +79,15 @@
     is how the cascade once ended up with two copies of every rule.
   -->
   <script type="module" src="/static/studio/studio.js?v={{ASSET_V:studio/studio.js}}"></script>
-  <script nonce="{{CSP_NONCE}}">if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js', {scope: '/'}).catch(function(){});}</script>
+  <script nonce="{{CSP_NONCE}}">
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(function () {});
+    // Builds before the root worker registered /static/sw.js, whose scope
+    // was only /static/. Two workers on one origin is one too many: drop it.
+    navigator.serviceWorker.getRegistrations().then(function (regs) {
+      regs.forEach(function (r) { if (/\/static\/$/.test(r.scope)) r.unregister(); });
+    }).catch(function () {});
+  }
+  </script>
 </body>
 </html>

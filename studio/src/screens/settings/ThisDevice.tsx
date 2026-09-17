@@ -28,6 +28,11 @@ export function ThisDeviceSection({ say }: { say: (t: string) => void }) {
   const [devices, setDevices] = useState<PushSubscriptionRow[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [label, setLabel] = useState('');
+  // The last failure of enable(), kept on screen: a toast is gone before
+  // anyone reads why the push service refused (seen live: a privacy-minded
+  // browser with its push service switched off says "push service error"
+  // and nothing else).
+  const [enableError, setEnableError] = useState<string | null>(null);
   const [installable, setInstallable] = useState(canInstall());
   const [installed, setInstalled] = useState(isInstalled());
 
@@ -52,6 +57,7 @@ export function ThisDeviceSection({ say }: { say: (t: string) => void }) {
 
   const enable = async () => {
     setBusy('enable');
+    setEnableError(null);
     try {
       await subscribeThisDevice(label.trim() || defaultDeviceLabel());
       setPermission('granted');
@@ -59,8 +65,18 @@ export function ThisDeviceSection({ say }: { say: (t: string) => void }) {
       say(t('Notifications enabled on this device.'));
       await refresh();
     } catch (err) {
-      say((err as Error).message || t('Could not enable notifications.'));
+      const message = (err as Error).message || t('Could not enable notifications.');
+      const pushServiceDown = /push service/i.test(message);
+      setEnableError(
+        pushServiceDown
+          ? t('The browser could not reach its push service. Some privacy-focused browsers keep it switched off by default — enable push messaging in the browser\'s privacy settings, or install Faustus from another browser.')
+          : message,
+      );
+      say(message);
     } finally {
+      // The permission may have been granted even when the subscription
+      // failed; show what the browser actually says now.
+      if (typeof Notification !== 'undefined') setPermission(Notification.permission);
       setBusy(null);
     }
   };
@@ -164,6 +180,7 @@ export function ThisDeviceSection({ say }: { say: (t: string) => void }) {
                 <Button variant="primary" size="sm" icon={Bell} label={t('Enable notifications on this device')} loading={busy === 'enable'} onClick={() => void enable()} />
               </div>
             )}
+            {enableError && <p className="fs-set__help" data-tone="bad" role="alert">{enableError}</p>}
             {subscribedHere && (
               <div className="fs-set__row-actions">
                 <Button variant="ghost" size="sm" icon={BellOff} label={t('Disable')} loading={busy === 'disable'} onClick={() => void disable()} />

@@ -7855,3 +7855,4 @@ not asked yet	no solicitado aún
 not subscribed on this device	sin suscribir en este dispositivo
 subscribed on this device	suscrito en este dispositivo
 {n} failed sends	{n} envíos fallidos
+The browser could not reach its push service. Some privacy-focused browsers keep it switched off by default — enable push messaging in the browser's privacy settings, or install Faustus from another browser.	El navegador no ha podido conectar con su servicio de push. Algunos navegadores centrados en la privacidad lo traen desactivado: activa la mensajería push en sus ajustes de privacidad o instala Faustus desde otro navegador.

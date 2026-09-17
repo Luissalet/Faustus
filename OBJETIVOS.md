@@ -619,9 +619,9 @@ Pedido el 16-09 tras el proyecto «3D modeling silhouettes»: 24 chats reales, u
 
 Pedido el 17-09: ver qué se está ejecutando (puertos, apps abiertas por el asistente, trabajos en segundo plano) y poder pararlo. Hecho dentro de Faustus (no como conector: un conector es una herramienta del modelo, y el Stop tiene que ser de una persona). FAUSTUS.md §97. **Siguiente.** Nombre del servidor MCP en las filas hijas; herramienta de solo lectura para el agente; registro de lo que el asistente lanza por Windows-MCP.
 
-## OBJ-22 · Faustus en el móvil (mando remoto del PC) — PLANIFICADO (17-09-2026)
+## OBJ-22 · Faustus en el móvil (mando remoto del PC) — HECHO como web app instalable (17-09-2026)
 
-Pedido: avisos al móvil cuando acaba cosas, ver progreso, mandar tareas y preguntar desde el móvil, todo el cómputo en el PC. Plan en `docs/spec/faustus-movil.md`: capa 1 bot de Telegram (avisos con botones de aprobación, `/status`, texto → turno, `/stop`) sobre un `src/notifications.py` común; capa 2 Studio como PWA por Tailscale con Web Push y vista de pulgar. **Siguiente.** Capa 1 completa y verificada con el bot real.
+Pedido: avisos al móvil cuando acaba cosas, ver progreso, mandar tareas y preguntar desde el móvil, todo el cómputo en el PC; «mejor una web app, como hacíamos». Hecho (FAUSTUS.md §103-§104): bus de notificaciones común (`src/notifications.py`) con ganchos en fin de turno, aprobaciones, tareas y recordatorios; API compacta `/api/mobile/*` con WebSocket; Web Push de verdad (RFC 8291/8292 con `cryptography`, claves VAPID propias, `/api/push/*`); manifest y service worker en la raíz del origen con `push` y `notificationclick`; Ajustes → Este dispositivo (instalar, activar/probar/quitar avisos); Studio con barra inferior de cinco pestañas (Inicio · Studio · Calendario · Notas · Ajustes) en pantallas estrechas. Verificado en vivo salvo la recepción de un push real (el navegador de escritorio de prueba tiene el servicio de push apagado). **Siguiente.** Prueba completa desde el móvil por la VPN de malla con HTTPS; vista de pulgar para aprobaciones en Inicio; acciones «Aprobar/Denegar» en la propia notificación; instalación guiada (QR con la URL).
 
 ## OBJ-21 · Apps: control de las apps del desarrollador desde Processes — HECHO (17-09-2026)
 

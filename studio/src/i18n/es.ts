@@ -5527,6 +5527,7 @@ export const es: Record<string, string> = {
   "The board could not be read": "No se ha podido leer la pizarra",
   "The board is empty": "La pizarra está vacía",
   "The board is empty#issue_board": "El tablero está vacío",
+  "The browser could not reach its push service. Some privacy-focused browsers keep it switched off by default — enable push messaging in the browser's privacy settings, or install Faustus from another browser.": "El navegador no ha podido conectar con su servicio de push. Algunos navegadores centrados en la privacidad lo traen desactivado: activa la mensajería push en sus ajustes de privacidad o instala Faustus desde otro navegador.",
   "The browser did not allow reading the clipboard. Paste with Ctrl+V instead.": "El navegador no dejó leer el portapapeles. Pega con Ctrl+V.",
   "The browser refused the clipboard — select the code and copy it by hand.": "El navegador rechazó el portapapeles — selecciona el código y cópialo a mano.",
   "The browser refused the clipboard — select the result and copy it by hand.": "El navegador rechazó el portapapeles — selecciona el resultado y cópialo a mano.",
