@@ -244,6 +244,8 @@ Three offline-checkable walkthroughs — a document with real review, a supervis
 
 Jarvis provides a voice session with English/Spanish recognition, spoken replies, interruption controls and a reactive visual sphere. Configure the available transcription and speech services in the app; browser microphone permission is required. Installed voices and local speech engines determine available languages and playback.
 
+Speech providers: browser (Web Speech API), system (installed Windows voices, offline), local (Kokoro TTS / faster-whisper STT), **Piper** (fully local, MIT-licensed neural TTS — install the engine and download a voice from Settings → Voice, no built-in model bundled), **command** (run your own local TTS/STT executable via a placeholder template), or a configured API endpoint. See [docs/ui/voice.md](docs/ui/voice.md).
+
 Voice input enters the same conversation and tool-permission flow as typed input. A voice session is not blanket authorization for filesystem, desktop or external actions.
 
 ## Architecture

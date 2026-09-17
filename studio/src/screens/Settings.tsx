@@ -72,6 +72,7 @@ import { LocalModelsSection } from './settings/LocalModels';
 import { AppearanceSection } from './settings/Appearance';
 import { ThisDeviceSection } from './settings/ThisDevice';
 import { BehaviorModesSection } from './settings/BehaviorModes';
+import { PiperVoices } from './settings/PiperVoices';
 import { authStatus } from '../adapters/account';
 import { listActiveApprovals, revokeApproval, type Approval } from '../adapters/approvals';
 import { addCommandAllowlistEntry, listCommandAllowlist, removeCommandAllowlistEntry, type AllowlistEntry } from '../adapters/commandGuard';
@@ -504,7 +505,7 @@ function useSaver(onSave: (patch: Settings) => Promise<void>, say: (t: string) =
   return { saving, save };
 }
 
-const VOICE_KEYS = ['tts_enabled', 'tts_provider', 'tts_model', 'tts_voice', 'tts_speed', 'stt_enabled', 'stt_provider', 'stt_model', 'stt_language', 'stt_device'];
+const VOICE_KEYS = ['tts_enabled', 'tts_provider', 'tts_model', 'tts_voice', 'tts_speed', 'tts_command_template', 'stt_enabled', 'stt_provider', 'stt_model', 'stt_language', 'stt_device', 'stt_command_template', 'voice_stop_phrases'];
 
 function VoiceSection({ settings, endpoints, onSave, say }: { settings: Settings | null; endpoints: ModelEndpoint[]; onSave: (patch: Settings) => Promise<void>; say: (t: string) => void }) {
   const { draft, set, changed, dirty } = useDraft(settings, VOICE_KEYS);
@@ -527,9 +528,19 @@ function VoiceSection({ settings, endpoints, onSave, say }: { settings: Settings
       <Field label={t('Read aloud')}>
         <div className="fs-set__inline">
           <Toggle id="tts-on" checked={bool(draft.tts_enabled)} onChange={(v) => set('tts_enabled', v)} label={t('On')} />
-          <Select id="tts-prov" value={str(draft.tts_provider, 'disabled')} onChange={(v) => set('tts_provider', v)} options={[{ value: 'disabled', label: t('Off') }, { value: 'browser', label: t('Browser') }, { value: 'system', label: t('Windows · installed voices (offline)') }, { value: 'local', label: 'Local (Kokoro)' }, ...apiOpts]} />
+          <Select id="tts-prov" value={str(draft.tts_provider, 'disabled')} onChange={(v) => set('tts_provider', v)} options={[{ value: 'disabled', label: t('Off') }, { value: 'browser', label: t('Browser') }, { value: 'system', label: t('Windows · installed voices (offline)') }, { value: 'local', label: 'Local (Kokoro)' }, { value: 'piper', label: t('Local (Piper)') }, { value: 'command', label: t('Command (advanced)') }, ...apiOpts]} />
         </div>
       </Field>
+      {str(draft.tts_provider) === 'piper' && (
+        <Field label={t('Piper voice')}>
+          <PiperVoices voice={str(draft.tts_voice)} onSelectVoice={(v) => set('tts_voice', v)} say={say} />
+        </Field>
+      )}
+      {str(draft.tts_provider) === 'command' && (
+        <Field label={t('Speech command')} htmlFor="tts-cmd" help={t('Placeholders: {input_path} {output_path} {voice} {speed} {language}. Must write a WAV file to {output_path}.')}>
+          <Text id="tts-cmd" value={str(draft.tts_command_template)} onChange={(v) => set('tts_command_template', v)} placeholder="mytts --text-file {input_path} --out {output_path} --voice {voice} --speed {speed}" />
+        </Field>
+      )}
       <div className="fs-set__grid2">
         <Field label={t('Voice model')} htmlFor="tts-model">
           <Text id="tts-model" value={str(draft.tts_model)} onChange={(v) => set('tts_model', v)} placeholder="tts-1" />
@@ -544,9 +555,14 @@ function VoiceSection({ settings, endpoints, onSave, say }: { settings: Settings
       <Field label={t('Dictation')}>
         <div className="fs-set__inline">
           <Toggle id="stt-on" checked={bool(draft.stt_enabled)} onChange={(v) => set('stt_enabled', v)} label={t('On')} />
-          <Select id="stt-prov" value={str(draft.stt_provider, 'disabled')} onChange={(v) => set('stt_provider', v)} options={[{ value: 'disabled', label: t('Off') }, { value: 'browser', label: t('Browser') }, { value: 'local', label: 'Local (Whisper)' }, ...apiOpts]} />
+          <Select id="stt-prov" value={str(draft.stt_provider, 'disabled')} onChange={(v) => set('stt_provider', v)} options={[{ value: 'disabled', label: t('Off') }, { value: 'browser', label: t('Browser') }, { value: 'local', label: 'Local (Whisper)' }, { value: 'command', label: t('Command (advanced)') }, ...apiOpts]} />
         </div>
       </Field>
+      {str(draft.stt_provider) === 'command' && (
+        <Field label={t('Transcription command')} htmlFor="stt-cmd" help={t('Placeholders: {input_path} {output_path} {language}. Prints the transcript to stdout, or writes {output_path} if present.')}>
+          <Text id="stt-cmd" value={str(draft.stt_command_template)} onChange={(v) => set('stt_command_template', v)} placeholder="mystt --audio {input_path} --lang {language}" />
+        </Field>
+      )}
       <div className="fs-set__grid2">
         <Field label={t('Dictation model')} htmlFor="stt-model" help={t(t('Local: tiny, base, small, medium, large; API: whisper-1.'))}>
           <Text id="stt-model" value={str(draft.stt_model, 'base')} onChange={(v) => set('stt_model', v)} />
@@ -558,9 +574,19 @@ function VoiceSection({ settings, endpoints, onSave, say }: { settings: Settings
       <Field label={t('Transcription device')} htmlFor="stt-device">
         <Select id="stt-device" value={str(draft.stt_device, 'auto')} onChange={v => set('stt_device', v)} options={[{ value: 'auto', label: t('Automatic') }, { value: 'cpu', label: 'CPU · int8' }, { value: 'cuda', label: 'GPU · CUDA' }]} />
       </Field>
+      <Field label={t('Stop phrases')} htmlFor="voice-stop-phrases" help={t('One per line. Said alone, these silence the current reply instead of being sent. Added to the built-in list (stop, para, cállate…), never replacing it.')}>
+        <textarea id="voice-stop-phrases" className="fs-field" rows={3} value={linesValue(draft.voice_stop_phrases)} onChange={(e) => set('voice_stop_phrases', fromLines(e.target.value))} />
+      </Field>
       <SaveBar dirty={dirty} saving={saving} onSave={() => void save(changed)} />
     </section>
   );
+}
+
+function linesValue(v: unknown): string {
+  return Array.isArray(v) ? v.join('\n') : str(v);
+}
+function fromLines(s: string): string[] {
+  return s.split('\n').map((x) => x.trim()).filter(Boolean);
 }
 
 const SEARCH_KEYS = ['search_provider', 'search_url', 'search_result_count', 'search_safesearch', 'search_fallback_chain', 'brave_api_key', 'serper_api_key', 'tavily_api_key', 'google_pse_key', 'google_pse_cx', 'firecrawl_url', 'firecrawl_api_key'];

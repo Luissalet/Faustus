@@ -59,6 +59,7 @@ class TTSService:
             "tts_model": saved.get("tts_model", "tts-1"),
             "tts_voice": saved.get("tts_voice", "alloy"),
             "tts_speed": saved.get("tts_speed", "1"),
+            "tts_command_template": saved.get("tts_command_template", ""),
         }
 
     @property
@@ -76,6 +77,11 @@ class TTSService:
         if provider == "local":
             kokoro = self._get_kokoro()
             return kokoro is not None and kokoro.available
+        if provider == "piper":
+            from .piper_voice import active_runtime, list_voices
+            return active_runtime() is not None and len(list_voices()) > 0
+        if provider == "command":
+            return bool(settings.get("tts_command_template", "").strip())
         if isinstance(provider, str) and provider.startswith("endpoint:"):
             return True  # assume reachable; errors surface at synthesis time
         return False
@@ -224,6 +230,19 @@ class TTSService:
             # System voice is cheap and language-dependent: never use shared cache.
             return synthesize_system(text, voice, language, speed)
 
+        if provider == "piper":
+            # Voice choice is language-dependent (see piper_voice.select_voice);
+            # like "system", never use the shared cache.
+            from .piper_voice import synthesize as synthesize_piper
+            return synthesize_piper(text, voice, speed, language)
+
+        if provider == "command":
+            from .command_voice import synthesize_command
+            template = settings.get("tts_command_template", "")
+            # Command output is operator-defined and may depend on state the
+            # cache key can't see; never cache it either.
+            return synthesize_command(text, template, voice, speed, language)
+
         if use_cache:
             key = self._cache_key(text, provider, model, voice, speed)
             cached = self._get_cached(key)
@@ -288,6 +307,12 @@ class TTSService:
             stats["model"] = "Kokoro-82M (GPU)" if (kokoro and kokoro.available) else "Kokoro (not loaded)"
         elif provider == "browser":
             stats["model"] = "Browser (Web Speech API)"
+        elif provider == "piper":
+            from .piper_voice import active_runtime
+            runtime = active_runtime()
+            stats["model"] = f"Piper ({runtime})" if runtime else "Piper (no runtime installed)"
+        elif provider == "command":
+            stats["model"] = "Command (local)"
         elif isinstance(provider, str) and provider.startswith("endpoint:"):
             stats["endpoint_id"] = provider.split(":", 1)[1]
 

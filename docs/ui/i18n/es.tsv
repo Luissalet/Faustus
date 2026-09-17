@@ -7864,3 +7864,19 @@ Only answer when I say Faustus first	Responder solo cuando diga «Faustus» prim
 Pause that ends your turn	Pausa que termina tu turno
 Short	Corta
 Waiting for “Faustus”	Esperando «Faustus»
+Command (advanced)	Comando (avanzado)
+Install engine	Instalar motor
+Loading Piper voices…	Cargando voces de Piper…
+Local (Piper)	Local (Piper)
+No Piper runtime found (neither the piper-tts Python package nor the engine binary).	No se encontró ningún motor de Piper (ni el paquete Python piper-tts ni el binario del motor).
+No Piper voices installed yet. Download one below.	Todavía no hay voces de Piper instaladas. Descarga una abajo.
+One per line. Said alone, these silence the current reply instead of being sent. Added to the built-in list (stop, para, cállate…), never replacing it.	Una por línea. Dichas solas, silencian la respuesta actual en lugar de enviarse. Se añaden a la lista integrada (stop, para, cállate…), nunca la sustituyen.
+Piper engine installed.	Motor de Piper instalado.
+Piper voice	Voz de Piper
+Placeholders: {input_path} {output_path} {language}. Prints the transcript to stdout, or writes {output_path} if present.	Marcadores: {input_path} {output_path} {language}. Imprime la transcripción en la salida estándar, o escribe {output_path} si está presente.
+Placeholders: {input_path} {output_path} {voice} {speed} {language}. Must write a WAV file to {output_path}.	Marcadores: {input_path} {output_path} {voice} {speed} {language}. Debe escribir un archivo WAV en {output_path}.
+Runtime: {runtime}	Motor: {runtime}
+Speech command	Comando de voz
+Stop phrases	Frases de parada
+Transcription command	Comando de transcripción
+Voice "{name}" installed.	Voz «{name}» instalada.

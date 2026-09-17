@@ -30,6 +30,12 @@ assert.equal(isStopPhrase('Espera'), true);
 assert.equal(isStopPhrase('stop talking about that'), false); // whole-utterance only
 assert.equal(isStopPhrase('can you stop'), false);
 assert.equal(isStopPhrase(''), false);
+// extra (server-configured) stop phrases merge with, never replace, the built-ins
+assert.equal(isStopPhrase('enough', ['enough', 'basta']), true);
+assert.equal(isStopPhrase('basta ya'), false); // whole-utterance only, still applies to extras
+assert.equal(isStopPhrase('stop', ['enough']), true); // built-ins still work when extras are passed
+assert.equal(isStopPhrase('nonsense', []), false);
+assert.equal(isStopPhrase('nonsense', undefined), false);
 
 // --- hallucination list ------------------------------------------------------------
 for (const phrase of HALLUCINATIONS) assert.equal(isHallucination(phrase), true, `expected hallucination: ${phrase}`);

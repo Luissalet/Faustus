@@ -40,6 +40,8 @@ class STTService:
             "stt_model": saved.get("stt_model", "base"),
             "stt_language": saved.get("stt_language", ""),
             "stt_device": saved.get("stt_device", "auto"),
+            "stt_command_template": saved.get("stt_command_template", ""),
+            "voice_stop_phrases": saved.get("voice_stop_phrases", []),
         }
 
     @property
@@ -54,6 +56,8 @@ class STTService:
             return True  # handled client-side
         if provider == "local":
             return self._get_whisper() is not None
+        if provider == "command":
+            return bool(settings.get("stt_command_template", "").strip())
         if isinstance(provider, str) and provider.startswith("endpoint:"):
             return True  # assume reachable
         return False
@@ -206,6 +210,10 @@ class STTService:
 
         if provider == "local":
             return self._transcribe_local(audio_bytes, language, metadata) if metadata is not None else self._transcribe_local(audio_bytes, language)
+        elif provider == "command":
+            from .command_stt import transcribe_command
+            template = settings.get("stt_command_template", "")
+            return transcribe_command(audio_bytes, template, language)
         elif isinstance(provider, str) and provider.startswith("endpoint:"):
             endpoint_id = provider.split(":", 1)[1]
             return self._transcribe_api(audio_bytes, endpoint_id, model, language)
@@ -232,6 +240,8 @@ class STTService:
             stats["model_loaded"] = whisper is not None
         elif provider == "browser":
             stats["model"] = "Browser (Web Speech API)"
+        elif provider == "command":
+            stats["model"] = "Command (local)"
         elif isinstance(provider, str) and provider.startswith("endpoint:"):
             stats["endpoint_id"] = provider.split(":", 1)[1]
 

@@ -223,11 +223,24 @@ DEFAULT_SETTINGS = {
     "tts_model": "tts-1",
     "tts_voice": "alloy",
     "tts_speed": "1",
+    # Command-template TTS (tts_provider = "command"): a local executable run
+    # with {input_path}/{output_path}/{voice}/{speed}/{language} substituted
+    # (services/tts/command_voice.py). Empty means the provider has nothing
+    # to run.
+    "tts_command_template": "",
     "stt_enabled": False,
     "stt_provider": "disabled",
     "stt_model": "base",
     "stt_language": "",
     "stt_device": "auto",
+    # Command-template STT (stt_provider = "command"), same placeholder set
+    # (services/stt/command_stt.py).
+    "stt_command_template": "",
+    # Whole-utterance phrases that silence the current voice reply instead of
+    # being sent to the model (studio/src/voice/engine.ts isStopPhrase). The
+    # client merges these with its own built-in list; editing this only adds
+    # to it, it never removes the built-ins.
+    "voice_stop_phrases": ["stop", "para", "cállate", "callate", "silencio", "espera", "shut up", "wait"],
     "search_provider": "searxng",
     # Default fallback chain — when the primary provider fails or
     # rate-limits, we try DuckDuckGo next. Free, no API key required, so

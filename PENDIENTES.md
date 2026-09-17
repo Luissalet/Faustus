@@ -2,11 +2,17 @@
 
 Actualizado: 17-09-2026 (noche). REGLA: nunca nombres de empresas/personas del buzón de Luis en commits, docs, tests ni comentarios — ejemplos siempre ficticios. Sólo trabajo vigente; quitar cada entrada al cerrarla.
 
+## 18-09 (lote T: Piper, proveedores de comando, frases de parada — FAUSTUS.md §106)
+
+- Piper verificado con motor y voz reales en el scratchpad de la sesión (no en el repo ni en la máquina de Luis): falta la pasada en vivo desde Ajustes → Voz en la instancia real (botón «Instalar motor», descarga de una voz, síntesis desde el panel), y confirmar que el binario de Windows (`piper_windows_amd64.zip`) instala igual de bien — solo se probó el de Linux.
+- Los proveedores «comando» se probaron con un script Python de usar y tirar, nunca con un ejecutable de terceros real — el operador que los use es quien primero validará una plantilla concreta.
+- Frases de parada: el textarea nuevo en Ajustes → Voz no se ha visto en el navegador (sin sesión admin en este entorno para llegar a Ajustes en vivo); la lógica está cubierta por `voice-jarvis.check.mjs` y por `capabilities()` devolviendo `stop_phrases`.
+
 ## Noche del 17-09 (voz manos libres, FAUSTUS.md §105)
 
 - Sin micrófono en el entorno: probar en vivo la interrupción (¿se pierde la primera palabra?), la guarda de eco (¿se traga una réplica rápida como «sí»?), las frases de parada y qué transcribe Whisper cuando se dice «Faustus» (ampliar la lista de variantes en `engine.ts::stripWakeWord` si hace falta).
 - Latencia «oído en»: si molesta, el siguiente paso es STT en streaming por WebSocket con parciales (decodificar cada 300-500 ms sobre ventana deslizante) en vez de esperar al silencio y subir el clip entero.
-- Voz de salida: las voces de Windows suenan a Windows. Opción local con más calidad: instalar Kokoro (ya hay proveedor «Local (Kokoro)» en Ajustes → Voz) o añadir Piper (ONNX, MIT, voces es_ES).
+- Voz de salida: las voces de Windows suenan a Windows. Opción local con más calidad: instalar Kokoro (ya hay proveedor «Local (Kokoro)» en Ajustes → Voz) o el nuevo proveedor Piper (FAUSTUS.md §106) — instalar el motor y descargar una voz desde Ajustes → Voz.
 - Voz desde el móvil: el bucle es el mismo (HTTPS por la VPN de malla), pero la pestaña tiene que estar en primer plano; la palabra de activación no funciona con la pantalla apagada.
 
 ## Noche del 17-09 (móvil, lotes P-A/P-B — PWA instalable + push, ver `docs/api/mobile.md`, `docs/ui/pwa.md`, FAUSTUS.md §104)

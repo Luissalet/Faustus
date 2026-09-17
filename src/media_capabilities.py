@@ -114,11 +114,12 @@ def probe_tts_kokoro() -> Dict[str, Any]:
 
 
 def probe_tts_piper() -> Dict[str, Any]:
-    """`piper` — not wired into this Faustus's own TTS provider today, but
-    named explicitly in MEDIA-01's scope as a voice engine to report on
-    honestly rather than silently omit. Checked as a CLI binary, which is how
-    piper is normally installed, alongside the Python package name in case a
-    `pip install piper-tts` provided it instead."""
+    """`piper` — the `tts_provider = "piper"` engine (`services/tts/piper_
+    voice.py`). This is the generic MEDIA-01 probe (a CLI binary on PATH, or
+    the Python package importable); `services/tts/piper_voice.active_runtime()`
+    is the authoritative check the provider itself uses, since it also looks
+    at the app-managed `data/tts/piper/bin/piper` install path this probe
+    does not know about."""
     binary = shutil.which("piper")
     package = _importable("piper")
     installed = bool(binary) or package

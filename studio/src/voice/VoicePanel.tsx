@@ -163,7 +163,7 @@ export default function VoicePanel(props: Props) {
       if (isEcho(text, lastSpoken.current.text, ECHO_GUARD_MS, performance.now() - lastSpoken.current.at)) {
         console.debug('[voice] discarded (echo of Faustus’ own speech):', text); void listen(); return;
       }
-      if (isStopPhrase(text)) { console.debug('[voice] stop phrase, not sent:', text); silence(); void listen(); return; }
+      if (isStopPhrase(text, configs.stt.stop_phrases)) { console.debug('[voice] stop phrase, not sent:', text); silence(); void listen(); return; }
       let toSend = text;
       if (wakeWord) {
         const stripped = stripWakeWord(text);

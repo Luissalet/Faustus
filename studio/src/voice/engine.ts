@@ -68,9 +68,12 @@ export function similarity(a: string, b: string): number {
 
 /** Whole-utterance, case/punctuation-insensitive: "stop it now" is not a stop phrase, "stop" and "¡para!" are. */
 export const STOP_PHRASES = ['stop', 'para', 'cállate', 'callate', 'silencio', 'espera', 'shut up', 'wait'];
-export function isStopPhrase(text: string): boolean {
+/** `extra` (e.g. the server's `voice_stop_phrases` setting) is merged in, never replacing the built-ins. */
+export function isStopPhrase(text: string, extra?: string[]): boolean {
   const clean = normalizeUtterance(text);
-  return clean.length > 0 && STOP_PHRASES.some(p => normalizeUtterance(p) === clean);
+  if (!clean.length) return false;
+  if (STOP_PHRASES.some(p => normalizeUtterance(p) === clean)) return true;
+  return !!extra && extra.some(p => normalizeUtterance(p) === clean);
 }
 
 /** Whisper's well-known silence/no-speech hallucinations, and anything too short to be real. */

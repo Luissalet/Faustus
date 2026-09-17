@@ -172,6 +172,22 @@
   max-inline-size: 140px;
 }
 
+.fs-set__piper-catalogue {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fs-space-2);
+  padding: 0;
+  margin: var(--fs-space-2) 0;
+  list-style: none;
+}
+
+.fs-set__piper-catalogue li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--fs-space-3);
+}
+
 .fs-set__row-actions {
   display: flex;
   align-items: center;

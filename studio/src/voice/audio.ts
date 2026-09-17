@@ -9,6 +9,8 @@ export interface SpeechCapabilities {
   model: string;
   language: string;
   voice: string;
+  /** Extra whole-utterance stop phrases from the `voice_stop_phrases` setting, only set on the stt capabilities. */
+  stop_phrases?: string[];
 }
 export async function capabilities(kind: 'stt' | 'tts', signal?: AbortSignal): Promise<SpeechCapabilities> {
   const response = await fetch(`/api/${kind}/capabilities`, { credentials: 'same-origin', signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15000)]) : AbortSignal.timeout(15000) });
