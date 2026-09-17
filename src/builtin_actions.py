@@ -3424,9 +3424,13 @@ BUILTIN_ACTIONS = {
     "cookbook_serve": action_cookbook_serve,
     # ping_notes removed from the registry — runs only inside `_note_pings_loop`.
 }
+# Home-card watchers (src/watchers.py): weather, page watch, news brief, mail digest.
+from src.watchers import WATCH_ACTIONS as _WATCH_ACTIONS, WATCH_ACTION_INFO as _WATCH_ACTION_INFO  # noqa: E402
+BUILTIN_ACTIONS.update(_WATCH_ACTIONS)
 
 # Descriptions for the UI/API
 BUILTIN_ACTION_INFO = {
+    **_WATCH_ACTION_INFO,
     "tidy_sessions": "Clean up empty chat sessions and auto-sort into folders",
     "tidy_documents": "Remove junk/empty documents",
     "consolidate_memory": "Remove duplicate memories",

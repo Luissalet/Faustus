@@ -1395,6 +1395,10 @@ app.include_router(setup_connector_routes(mcp_manager))
 # launched profiles, MCP children, watched apps — and a human-only Stop.
 from routes.process_center_routes import setup_process_center_routes
 app.include_router(setup_process_center_routes())
+
+# Home cards (17-09): automations pinned to Home with their latest result.
+from routes.home_cards_routes import setup_home_cards_routes
+app.include_router(setup_home_cards_routes())
 logger.info("Connector routes initialized")
 
 # AI Interaction tools (debates, pipelines, self-managing AI, UI control)

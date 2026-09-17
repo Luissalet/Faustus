@@ -300,6 +300,10 @@ EXAMPLES: Dict[str, List[str]] = {
         "busca skills relacionadas con redacción",
     ],
     "manage_tasks": [
+        "¿qué tiempo hace en Móstoles mañana? que se repita cada día",
+        "hazme un briefing diario de noticias sobre IA local",
+        "avísame cuando vuelva a haber stock de este producto en la tienda",
+        "resúmeme cada mañana los correos que he recibido",
         "hazlo cada mañana automáticamente",
         "set this up to run every day at 8am",
         "programa una tarea semanal para resumir el correo",

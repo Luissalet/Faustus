@@ -398,7 +398,17 @@ async def do_manage_tasks(content: str, owner: Optional[str] = None) -> Dict:
             )
             db.add(task)
             db.commit()
-            return {"response": f"Created task '{name}' (id: {task_id}). See /automations. Faustus must be running.", "task_id": task_id, "next_run": next_run.isoformat()+"Z" if next_run else None, "timezone": task.timezone or "UTC", "exit_code": 0}
+            pinned = False
+            if args.get("pin_to_home"):
+                try:
+                    from src import home_cards
+                    home_cards.pin(owner, task_id)
+                    pinned = True
+                except Exception as _exc:  # noqa: BLE001
+                    logger.warning("pin_to_home failed: %s", _exc)
+            return {"response": f"Created task '{name}' (id: {task_id})." + (" Pinned to Home." if pinned else "") + " See /automations. Faustus must be running.",
+                    "task_id": task_id, "next_run": next_run.isoformat()+"Z" if next_run else None, "timezone": task.timezone or "UTC",
+                    "pinned_to_home": pinned, "exit_code": 0}
 
         elif action == "edit":
             task_id = args.get("task_id")
@@ -419,6 +429,10 @@ async def do_manage_tasks(content: str, owner: Optional[str] = None) -> Dict:
                 if args.get(field) is not None:
                     setattr(task, field, args[field])
                     changed.append(field)
+            if args.get("pin_to_home") is not None:
+                from src import home_cards
+                (home_cards.pin if args["pin_to_home"] else home_cards.unpin)(owner, task.id)
+                changed.append("pin_to_home")
             if args.get("task_type") is not None:
                 task.task_type = args["task_type"]
                 changed.append("task_type")
