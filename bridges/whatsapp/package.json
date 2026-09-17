@@ -9,7 +9,7 @@
     "start": "node server.mjs"
   },
   "dependencies": {
-    "@whiskeysockets/baileys": "6.7.21",
+    "@whiskeysockets/baileys": "6.7.24",
     "pino": "^9.0.0",
     "qrcode": "^1.5.4"
   }
