@@ -397,6 +397,11 @@ EXAMPLES: Dict[str, List[str]] = {
         "dile a Ana por whatsapp que llego diez minutos tarde",
         "mándale a mi madre un mensaje diciendo que ya he llegado",
         "escríbele al grupo de amigos que el sábado no puedo",
+        "mándale a Ana el pdf del informe por whatsapp",
+    ],
+    "whatsapp_react": [
+        "ponle un corazón al último mensaje de Ana en whatsapp",
+        "reacciona con un pulgar al mensaje del grupo",
     ],
     "review_candidature_mail": [
         "revisa mi correo de las últimas dos semanas y actualiza qué empresas me han rechazado en jobhunter's hoard",

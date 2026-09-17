@@ -92,6 +92,11 @@ export interface WaChat {
   last_ts: number | null;
   last_text: string;
   unread: number;
+  /** Live and in memory only on the bridge: who is typing / online in this chat. */
+  presence?: 'available' | 'unavailable' | 'composing' | 'recording' | 'paused' | null;
+  muted?: boolean;
+  pinned?: boolean;
+  archived?: boolean;
 }
 
 export async function waChats(limit = 50): Promise<WaChat[]> {
@@ -120,6 +125,17 @@ export interface WaMessage {
   voice?: boolean;
   /** Filled by the server once the voice note went through speech-to-text. */
   transcript?: string;
+  /** Delivery/read receipt, own messages only. */
+  status?: 'pending' | 'sent' | 'delivered' | 'read' | 'played';
+  reactions?: { emoji: string; from: string; from_name: string; from_me: boolean }[];
+  /** The quoted message, when this bubble is a reply. */
+  reply_to?: { id: string; from_name: string; text: string };
+  edited?: boolean;
+  /** Revoked ("this message was deleted"): the row stays, render it as such. */
+  deleted?: boolean;
+  forwarded?: boolean;
+  /** jids mentioned in a group message. */
+  mentions?: string[];
 }
 
 /** `<img src>` for a chat's profile picture (404 when the contact has none — hide the image). */
@@ -166,7 +182,14 @@ export interface WaSendResult {
   jid: string;
   id: string;
 }
-export const waSend = (to: string, text: string) => post<WaSendResult>('/api/whatsapp/send', { to, text }, 'whatsapp/send');
+export interface WaSendOpts {
+  /** Reply-quote: the id of the message this one replies to. */
+  quote?: string;
+  /** jids mentioned in the text (group chats). */
+  mentions?: string[];
+}
+export const waSend = (to: string, text: string, opts?: WaSendOpts) =>
+  post<WaSendResult>('/api/whatsapp/send', { to, text, quote: opts?.quote, mentions: opts?.mentions }, 'whatsapp/send');
 
 /** Ask the phone for older messages of one chat; they arrive a few seconds later — poll `waMessages` again. */
 export const waHistory = (chat: string, count = 50) => post<{ ok: boolean; before_ts: number }>('/api/whatsapp/history', { chat, count }, 'whatsapp/history');
@@ -175,3 +198,66 @@ export const waHistory = (chat: string, count = 50) => post<{ ok: boolean; befor
 export const waTranscribe = (id: string) => post<{ id: string; text: string; cached: boolean }>('/api/whatsapp/transcribe', { id }, 'whatsapp/transcribe');
 
 export const waMarkRead = (chat?: string) => post<{ ok: boolean }>('/api/whatsapp/mark-read', chat ? { chat } : {}, 'whatsapp/mark-read');
+
+/* ── WhatsApp-Web-like actions: react, delete, forward, edit, typing, presence, search, upload, assist ── */
+
+/** Add (or, with `emoji: ''`, remove) a reaction on one message. */
+export const waReact = (id: string, emoji: string) => post<{ ok: boolean }>('/api/whatsapp/react', { id, emoji }, 'whatsapp/react');
+
+/** Revoke ("delete for everyone") one of your own messages. */
+export const waDelete = (id: string) => post<{ ok: boolean }>('/api/whatsapp/delete', { id }, 'whatsapp/delete');
+
+/** Forward one message to another chat. */
+export const waForward = (id: string, to: string) => post<{ ok: boolean; id: string }>('/api/whatsapp/forward', { id, to }, 'whatsapp/forward');
+
+/** Edit an own text message (WhatsApp allows this for ~15 minutes). */
+export const waEdit = (id: string, text: string) => post<{ ok: boolean }>('/api/whatsapp/edit', { id, text }, 'whatsapp/edit');
+
+/** Tell the other side you are composing/recording/paused in this chat. */
+export const waTyping = (chat: string, state: 'composing' | 'recording' | 'paused') =>
+  post<{ ok: boolean }>('/api/whatsapp/typing', { chat, state }, 'whatsapp/typing');
+
+/** Subscribe to live presence for one chat (call when it is opened). */
+export const waSubscribe = (chat: string) => post<{ ok: boolean }>('/api/whatsapp/subscribe', { chat }, 'whatsapp/subscribe');
+
+/** Substring search over message text, newest first; `chat` narrows to one chat. */
+export async function waSearch(q: string, chat?: string, limit = 50): Promise<WaMessage[]> {
+  const params = new URLSearchParams({ q });
+  if (chat) params.set('chat', chat);
+  params.set('limit', String(limit));
+  const d = await getJson<{ messages: WaMessage[] }>(`/api/whatsapp/search?${params.toString()}`);
+  return d.messages ?? [];
+}
+
+export interface WaUploadOpts {
+  filename?: string;
+  caption?: string;
+  quote?: string;
+  /** true → sent as a push-to-talk voice note rather than a plain audio file. */
+  voice?: boolean;
+}
+
+/** Send a photo, a document or a recorded voice note to one chat. */
+export async function waUpload(to: string, file: Blob, opts: WaUploadOpts = {}): Promise<WaSendResult> {
+  const form = new FormData();
+  form.append('to', to);
+  form.append('file', file, opts.filename || (file instanceof File ? file.name : 'file'));
+  if (opts.caption) form.append('caption', opts.caption);
+  if (opts.quote) form.append('quote', opts.quote);
+  if (opts.voice) form.append('voice', '1');
+  const r = await ok(await fetch('/api/whatsapp/upload', { method: 'POST', credentials: 'same-origin', body: form }), 'whatsapp/upload');
+  return (await r.json()) as WaSendResult;
+}
+
+export type WaAssistTask = 'summarize' | 'draft_reply' | 'translate' | 'custom';
+
+export interface WaAssistResult {
+  text: string;
+  messages: number;
+  task?: WaAssistTask;
+  note?: string;
+}
+
+/** Ask Faustus about one chat (summary, a draft in the owner's voice, a translation…): text back, nothing is ever sent. */
+export const waAssist = (chat: string, task: WaAssistTask, instruction?: string, hours?: number) =>
+  post<WaAssistResult>('/api/whatsapp/assist', { chat, task, instruction: instruction || '', hours: hours ?? 48 }, 'whatsapp/assist');

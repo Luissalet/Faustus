@@ -245,3 +245,78 @@ def test_media_routes_are_admin_reads_and_transcribe_exists():
     assert ("/api/whatsapp/media/{name}", ("GET",)) in paths
     assert ("/api/whatsapp/history", ("POST",)) in paths
     assert ("/api/whatsapp/transcribe", ("POST",)) in paths
+
+
+# ---------------------------------------------------------------------------
+# wave 3: replies, attachments, reactions, search, Ask Faustus
+# ---------------------------------------------------------------------------
+
+def test_send_tool_quotes_and_attaches_workspace_files(bridge, monkeypatch, tmp_path):
+    seen = {}
+    monkeypatch.setattr(wa, "_post", lambda path, body: seen.update({path: body}) or {"ok": True, "to": "Ana Pérez", "jid": "x", "id": "s9"})
+    out = wt.send({"to": "Ana Pérez", "text": "vale", "reply_to": "m1"})
+    assert out["sent"] and seen["/send"]["quote"] == "m1" and "media" not in seen["/send"]
+    pdf = tmp_path / "informe.pdf"
+    pdf.write_bytes(b"%PDF-1.4 fake")
+    out = wt.send({"to": "Ana Pérez", "text": "el informe", "attachment": str(pdf)}, resolve_path=lambda p: str(pdf))
+    assert out["sent"] and out["attachment"] == "informe.pdf"
+    media = seen["/send"]["media"]
+    assert media["mime"] == "application/pdf" and media["filename"] == "informe.pdf" and media["voice"] is False
+    # a path the resolver refuses is reported, never sent
+    def refuse(p):
+        raise ValueError("outside the allowed roots")
+    out = wt.send({"to": "Ana", "attachment": "/etc/passwd"}, resolve_path=refuse)
+    assert out["exit_code"] == 1 and "attachment" in out["error"]
+
+
+def test_voice_attachment_falls_back_when_ffmpeg_is_missing(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(wa, "_post", lambda path, body: seen.update({path: body}) or {"ok": True})
+    monkeypatch.setattr(wa, "_to_ogg_opus", lambda data: None)
+    wa.send_file("Ana", b"webm", "audio/webm", filename="v.webm", voice=True)
+    assert seen["/send"]["media"]["voice"] is False and seen["/send"]["media"]["mime"] == "audio/webm"
+    monkeypatch.setattr(wa, "_to_ogg_opus", lambda data: b"OggS")
+    wa.send_file("Ana", b"webm", "audio/webm", filename="v.webm", voice=True)
+    assert seen["/send"]["media"]["voice"] is True and seen["/send"]["media"]["mime"].startswith("audio/ogg")
+
+
+def test_react_tool_and_search_action(bridge, monkeypatch):
+    seen = {}
+    monkeypatch.setattr(wa, "_post", lambda path, body: seen.update({path: body}) or {"ok": True})
+    out = wt.react({"message_id": "m1", "emoji": "❤️"})
+    assert out["reacted"] and seen["/react"] == {"id": "m1", "emoji": "❤️"}
+    assert wt.react({})["exit_code"] == 1
+    monkeypatch.setattr(wa, "_get", lambda path, params=None: list(reversed(bridge.messages)) if path == "/search" else bridge.get(path, params))
+    out = wt.read({"action": "search", "query": "sábado"})
+    assert out["matches"] == 2 and "¿Nos vemos el sábado?" in out["transcript"] and "DATA" in out["note"]
+    assert wt.read({"action": "search"})["exit_code"] == 1
+
+
+def test_assist_never_sends_and_marks_the_transcript_as_data(bridge, monkeypatch):
+    prompts = []
+
+    async def fake_summarise(system, user, owner):
+        prompts.append((system, user))
+        return "Ana pregunta por el sábado."
+
+    import src.watchers as watchers
+    monkeypatch.setattr(watchers, "_summarise", fake_summarise)
+    out = asyncio.run(wt.assist("admin", "Ana Pérez", "draft_reply", "que sí, a las 8"))
+    assert out["text"] and out["messages"] == 1 and not bridge.sent
+    system, user = prompts[0]
+    assert "DATA" in system and "que sí, a las 8" in user and "¿Nos vemos el sábado?" in user
+    with pytest.raises(ValueError):
+        asyncio.run(wt.assist("admin", "Ana Pérez", "delete_everything"))
+
+
+def test_wave3_routes_exist_and_side_effects_are_human_only():
+    from routes import whatsapp_routes
+    router = whatsapp_routes.setup_whatsapp_routes()
+    paths = {r.path for r in router.routes}
+    for p in ("/react", "/delete", "/forward", "/edit", "/typing", "/subscribe", "/search", "/upload", "/assist"):
+        assert f"/api/whatsapp{p}" in paths
+    import inspect
+    src = inspect.getsource(whatsapp_routes)
+    for name in ("react", "delete", "forward", "edit", "upload"):
+        body = src.split(f"async def {name}(")[1].split("async def")[0]
+        assert "require_human(request)" in body, name

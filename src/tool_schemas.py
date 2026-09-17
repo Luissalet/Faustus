@@ -706,13 +706,13 @@ FUNCTION_TOOL_SCHEMAS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "action": {"type": "string", "enum": ["messages", "chats", "contacts", "status"], "description": "messages (default) | chats | contacts | status"},
+                    "action": {"type": "string", "enum": ["messages", "chats", "contacts", "status", "search"], "description": "messages (default) | chats | contacts | status | search (needs query; optional chat)"},
                     "chat": {"type": "string", "description": "A contact/group name, a phone number or a jid; omit for all chats"},
                     "hours": {"type": "number", "description": "How far back to read (default 24)"},
                     "limit": {"type": "integer", "description": "Max messages (default 100)"},
                     "unread_only": {"type": "boolean", "description": "Only messages not yet seen (default false)"},
                     "transcribe_audio": {"type": "boolean", "description": "Transcribe voice notes in the window (default true)"},
-                    "query": {"type": "string", "description": "For contacts: filter by name"}
+                    "query": {"type": "string", "description": "For contacts: filter by name. For search: the text to look for"}
                 }
             }
         }
@@ -726,9 +726,27 @@ FUNCTION_TOOL_SCHEMAS = [
                 "type": "object",
                 "properties": {
                     "to": {"type": "string", "description": "Contact name, phone number or jid"},
-                    "text": {"type": "string", "description": "The message text"}
+                    "text": {"type": "string", "description": "The message text (the caption when an attachment is given)"},
+                    "reply_to": {"type": "string", "description": "Message id (from whatsapp_read) to quote — a reply to that message"},
+                    "attachment": {"type": "string", "description": "Path of a file in the workspace to send with the text: a photo, a PDF, a document; audio/ogg or audio/webm with voice=true goes as a voice note"},
+                    "voice": {"type": "boolean", "description": "Send an audio attachment as a voice note (default false)"}
                 },
-                "required": ["to", "text"]
+                "required": ["to"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "whatsapp_react",
+            "description": "React to a WhatsApp message with an emoji (or remove the reaction with an empty emoji), by the message id whatsapp_read returned. Use it for 'ponle un corazón al mensaje de X', 'reacciona con 👍'. The user approves it.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "message_id": {"type": "string", "description": "The message id from whatsapp_read"},
+                    "emoji": {"type": "string", "description": "One emoji; empty string removes your reaction"}
+                },
+                "required": ["message_id", "emoji"]
             }
         }
     },
@@ -3263,7 +3281,7 @@ def function_call_to_tool_block(name: str, arguments: str) -> Optional[ToolBlock
         content = json.dumps(args)
     elif tool_type == "review_candidature_mail":
         content = json.dumps(args)
-    elif tool_type in ("whatsapp_read", "whatsapp_send"):
+    elif tool_type in ("whatsapp_read", "whatsapp_send", "whatsapp_react"):
         content = json.dumps(args)
     elif tool_type == "chat_with_model":
         content = args.get("model", "") + "\n" + args.get("message", "")

@@ -35,3 +35,23 @@ def test_bridge_learns_lids_groups_media_and_history():
     assert "fetchMessageHistory" in src and '"/history"' in src and "syncFullHistory: true" in src
     # the library's `error` key is serialised as a real error, not `{}`
     assert "error: pino.stdSerializers.err" in src
+
+
+def test_bridge_wave3_endpoints_and_live_event_handlers():
+    src = (_BRIDGE / "server.mjs").read_text(encoding="utf-8")
+    # new endpoints: quote/media send, reactions, revoke, forward, edit, typing, presence subscribe, search
+    for route in ('"/react"', '"/delete"', '"/forward"', '"/edit"', '"/typing"', '"/subscribe"', '"/search"'):
+        assert route in src, route
+    # /send now accepts quote/media/mentions, and /mark-read sends real read receipts
+    assert "media?.base64" in src and "quote" in src and "mentions" in src
+    assert "sock.readMessages(unreadKeys)" in src
+    # live event handlers: receipts -> status, edits, revokes, reactions, presence, chat flags
+    assert 'sock.ev.on("messages.update"' in src and "STATUS_NAME[update.status]" in src
+    assert "proto.WebMessageInfo.StubType.REVOKE" in src
+    assert 'sock.ev.on("messages.reaction"' in src and "applyReaction" in src
+    assert 'sock.ev.on("presence.update"' in src and "chatPresence" in src
+    assert 'sock.ev.on("chats.update"' in src and "cur.muted" in src and "cur.pinned" in src and "cur.archived" in src
+    assert 'sock.ev.on("message-receipt.update"' in src
+    # a bounded raw-message cache backs quote/forward/react/delete/edit, and row patches persist via `_patch`
+    assert "const rawById = new Map()" in src and "RAW_MAX" in src
+    assert "_patch: true" in src

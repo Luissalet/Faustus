@@ -85,6 +85,7 @@ _COMMON_TOOL_NAMES = {
     "review_candidature_mail",
     "whatsapp_read",
     "whatsapp_send",
+    "whatsapp_react",
     "manage_documents",
     "manage_endpoints",
     "manage_mcp",

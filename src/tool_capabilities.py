@@ -256,7 +256,7 @@ _register(
 _register(
     # whatsapp_send posts a message to another person from the user's own
     # account: the definition of an external side effect (approval card).
-    {"whatsapp_send"},
+    {"whatsapp_send", "whatsapp_react"},
     ToolEffect.EXTERNAL_SIDE_EFFECT,
     result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
 )

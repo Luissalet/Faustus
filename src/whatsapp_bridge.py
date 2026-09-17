@@ -215,7 +215,11 @@ def _get(path: str, params: Optional[Dict[str, Any]] = None) -> Any:
     if r.status_code == 409:
         raise BridgeError("ambiguous: " + ", ".join(c.get("name") or c.get("jid") for c in (r.json().get("ambiguous") or [])))
     if r.status_code >= 400:
-        raise BridgeError((r.json() or {}).get("error") or f"HTTP {r.status_code}")
+        try:
+            err = (r.json() or {}).get("error")
+        except ValueError:
+            err = None
+        raise BridgeError(err or f"HTTP {r.status_code}")
     return r.json()
 
 
@@ -263,8 +267,77 @@ def resolve(to: str) -> Dict[str, Any]:
     return _post("/resolve", {"to": to})
 
 
-def send(to: str, text: str) -> Dict[str, Any]:
-    return _post("/send", {"to": to, "text": text})
+def send(to: str, text: str = "", *, quote: Optional[str] = None, mentions: Optional[List[str]] = None,
+         media: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    body: Dict[str, Any] = {"to": to, "text": text or ""}
+    if quote:
+        body["quote"] = quote
+    if mentions:
+        body["mentions"] = list(mentions)
+    if media:
+        body["media"] = media
+    return _post("/send", body)
+
+
+def send_file(to: str, data: bytes, mime: str, *, filename: str = "", caption: str = "", quote: Optional[str] = None,
+              voice: bool = False) -> Dict[str, Any]:
+    """Photo / document / audio. A voice note must be ogg/opus: browsers record
+    webm/opus, so it goes through ffmpeg when that is installed; otherwise it
+    is sent as a plain audio message."""
+    import base64
+    if voice and not mime.startswith("audio/ogg"):
+        converted = _to_ogg_opus(data)
+        if converted:
+            data, mime = converted, "audio/ogg; codecs=opus"
+        else:
+            voice = False
+    media = {"base64": base64.b64encode(data).decode("ascii"), "mime": mime, "filename": filename,
+             "caption": caption, "voice": bool(voice)}
+    return send(to, caption, quote=quote, media=media)
+
+
+def _to_ogg_opus(data: bytes) -> Optional[bytes]:
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        return None
+    try:
+        proc = subprocess.run([ffmpeg, "-loglevel", "error", "-i", "pipe:0", "-vn", "-c:a", "libopus", "-b:a", "32k",
+                               "-ac", "1", "-ar", "48000", "-f", "ogg", "pipe:1"], input=data, capture_output=True,
+                              timeout=60)
+        return proc.stdout if proc.returncode == 0 and proc.stdout else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def react(message_id: str, emoji: str) -> Dict[str, Any]:
+    return _post("/react", {"id": message_id, "emoji": emoji})
+
+
+def delete(message_id: str) -> Dict[str, Any]:
+    return _post("/delete", {"id": message_id})
+
+
+def forward(message_id: str, to: str) -> Dict[str, Any]:
+    return _post("/forward", {"id": message_id, "to": to})
+
+
+def edit(message_id: str, text: str) -> Dict[str, Any]:
+    return _post("/edit", {"id": message_id, "text": text})
+
+
+def typing(chat: str, state: str = "composing") -> Dict[str, Any]:
+    return _post("/typing", {"chat": chat, "state": state})
+
+
+def subscribe(chat: str) -> Dict[str, Any]:
+    return _post("/subscribe", {"chat": chat})
+
+
+def search(q: str, chat: Optional[str] = None, limit: int = 50) -> List[Dict[str, Any]]:
+    params: Dict[str, Any] = {"q": q, "limit": limit}
+    if chat:
+        params["chat"] = chat
+    return _get("/search", params)
 
 
 def mark_read(chat: Optional[str] = None) -> Dict[str, Any]:

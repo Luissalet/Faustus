@@ -9,13 +9,21 @@
 // before sending.
 //
 //   GET  /status                 → {status, me, qr (data URL while pairing), counts}
-//   GET  /chats?limit=50         → [{jid, name, is_group, last_ts, last_text, unread}]
-//   GET  /messages?chat=&since=&limit=&unread=1 → [{id, chat, chat_name, from, from_name, from_me, ts, text, kind}]
+//   GET  /chats?limit=50         → [{jid, name, is_group, last_ts, last_text, unread, presence, muted, pinned, archived}]
+//   GET  /messages?chat=&since=&limit=&unread=1 → [{id, chat, chat_name, from, from_name, from_me, ts, text, kind, status?, reactions?, reply_to?, edited?, deleted?, forwarded?, mentions?}]
+//   GET  /search?q=&chat=&limit=50 → [WaMessage] newest first, substring (accent/case-insensitive) over text
 //   GET  /contacts?q=            → [{jid, name, phone}]
 //   GET  /avatar?jid=            → image/jpeg (profile picture, cached a day) | 404
 //   GET  /media/<id>.<ext>       → a voice note / photo / document already pulled
 //   POST /history {chat, count}  → asks the phone for older messages of that chat (async)
-//   POST /send {to, text}        → {ok, to, jid, id}   (to = jid | phone | contact name)
+//   POST /send {to, text?, quote?, media?, mentions?} → {ok, to, jid, id, ts} (to = jid | phone | contact name)
+//   POST /react {id, emoji}      → {ok}  (empty emoji removes the reaction)
+//   POST /delete {id}            → {ok}  (revoke for everyone, own messages only, 403 otherwise)
+//   POST /forward {id, to}       → {ok, id}
+//   POST /edit {id, text}        → {ok}  (own text messages only)
+//   POST /typing {chat, state}   → {ok}  (state = composing | recording | paused)
+//   POST /subscribe {chat}       → {ok}  (presenceSubscribe, so presence.update starts flowing for that chat)
+//   POST /mark-read {chat?}      → {ok, read: n}  (also sends real read receipts to WhatsApp)
 //   POST /resolve {to}           → {jid, name} | 409 {candidates}
 //   POST /logout                 → unlinks the account (deletes the session)
 //
@@ -35,6 +43,7 @@ import makeWASocketImport, {
   isJidGroup,
   makeCacheableSignalKeyStore,
   useMultiFileAuthState,
+  proto,
 } from "@whiskeysockets/baileys";
 
 const makeWASocket = makeWASocketImport.default ?? makeWASocketImport;
@@ -69,6 +78,47 @@ const lidMap = new Map();   // "<n>@lid" -> "<phone>@s.whatsapp.net" (WhatsApp n
 let messages = [];          // newest last
 const seenIds = new Set();
 const LID_FILE = join(DATA_DIR, "lids.json");
+
+// Raw WAMessage per id (bounded), needed to quote/forward/react/delete/edit — Baileys wants
+// the exact original key/content for those, not just what we keep in the flattened row.
+const rawById = new Map();
+const RAW_MAX = 5000;
+function rememberRaw(msg) {
+  const id = msg?.key?.id;
+  if (!id) return;
+  rawById.delete(id); rawById.set(id, msg); // re-insert to keep it fresh at the end
+  while (rawById.size > RAW_MAX) rawById.delete(rawById.keys().next().value);
+}
+
+const chatPresence = new Map(); // chat jid -> 'available'|'unavailable'|'composing'|'recording'|null, live only
+const STATUS_ORDER = ["pending", "sent", "delivered", "read", "played"];
+const STATUS_NAME = { 2: "sent", 3: "delivered", 4: "read", 5: "played" }; // proto.WebMessageInfo.Status (0 ERROR, 1 PENDING skipped)
+
+// Patch one stored row in place and append a `_patch` line so it survives a restart (loadStore merges these).
+function patchMessage(id, patch) {
+  const row = messages.find((m) => m.id === id);
+  if (!row) return null;
+  Object.assign(row, patch);
+  try { appendFileSync(MESSAGES_FILE, JSON.stringify({ id, ...patch, _patch: true }) + "\n"); } catch {}
+  return row;
+}
+
+function bumpStatus(id, status) {
+  const row = messages.find((m) => m.id === id);
+  if (!row || !row.from_me) return;
+  if (STATUS_ORDER.indexOf(status) <= STATUS_ORDER.indexOf(row.status || "pending")) return;
+  patchMessage(id, { status });
+}
+
+// Per-sender reaction list on a row: empty emoji removes that sender's reaction.
+function applyReaction(id, { emoji, from, from_name, from_me }) {
+  const row = messages.find((m) => m.id === id);
+  if (!row) return;
+  const kept = (row.reactions || []).filter((r) => r.from !== from);
+  if (emoji) kept.push({ emoji, from, from_name, from_me });
+  row.reactions = kept;
+  try { appendFileSync(MESSAGES_FILE, JSON.stringify({ id, reactions: kept, _patch: true }) + "\n"); } catch {}
+}
 
 function isLid(jid) { return typeof jid === "string" && jid.endsWith("@lid"); }
 
@@ -179,9 +229,31 @@ function touchChat(m) {
   chats.set(m.chat, cur);
 }
 
-function textOf(msg) {
+function innerOf(msg) {
   const c = msg.message || {};
-  const inner = c.ephemeralMessage?.message || c.viewOnceMessage?.message || c;
+  return c.ephemeralMessage?.message || c.viewOnceMessage?.message || c;
+}
+
+// contextInfo lives on whichever content node actually carries it (a plain quoted/mentioned
+// text is never `conversation`, it's `extendedTextMessage`, so this covers every real case).
+function contextInfoOf(msg) {
+  const inner = innerOf(msg);
+  for (const k of ["extendedTextMessage", "imageMessage", "videoMessage", "audioMessage", "documentMessage", "stickerMessage", "contactMessage", "locationMessage"]) {
+    if (inner[k]?.contextInfo) return inner[k].contextInfo;
+  }
+  return null;
+}
+
+function replyToOf(msg) {
+  const ci = contextInfoOf(msg);
+  if (!ci?.stanzaId || !ci?.quotedMessage) return null;
+  const [text] = textOf({ message: ci.quotedMessage });
+  const from = ci.participant ? canon(ci.participant) : null;
+  return { id: ci.stanzaId, from_name: from ? (nameOf(from) || phoneOf(from)) : "", text };
+}
+
+function textOf(msg) {
+  const inner = innerOf(msg);
   if (inner.conversation) return [inner.conversation, "text"];
   if (inner.extendedTextMessage?.text) return [inner.extendedTextMessage.text, "text"];
   if (inner.imageMessage) return [inner.imageMessage.caption || "", "image"];
@@ -232,6 +304,7 @@ async function fetchMedia(msg, m) {
 function ingest(msg, { unread = false } = {}) {
   const key = msg.key || {};
   if (!key.id || !key.remoteJid || key.remoteJid === "status@broadcast") return null;
+  rememberRaw(msg); // keep the raw stanza even on a dedup hit — refreshes what quote/forward/react/delete/edit can see
   if (seenIds.has(key.id)) return null;
   const [text, kind] = textOf(msg);
   if (kind === "protocol") return null;
@@ -248,6 +321,12 @@ function ingest(msg, { unread = false } = {}) {
     text: String(text || "").slice(0, 4000), kind, unread: unread && !key.fromMe,
     key: { remoteJid: key.remoteJid, fromMe: !!key.fromMe, id: key.id, ...(key.participant ? { participant: key.participant } : {}) },
   };
+  const ci = contextInfoOf(msg);
+  const reply_to = replyToOf(msg);
+  if (reply_to) m.reply_to = reply_to;
+  if (ci?.isForwarded) m.forwarded = true;
+  if (ci?.mentionedJid?.length) m.mentions = ci.mentionedJid.map((j) => canon(j));
+  if (key.fromMe) m.status = "pending"; // upgraded by messages.update / message-receipt.update as WhatsApp acks it
   if (msg.pushName && !key.fromMe && !contacts.get(from)?.name) {
     contacts.set(from, { ...(contacts.get(from) || {}), notify: msg.pushName, phone: phoneOf(from) });
   }
@@ -303,7 +382,7 @@ async function connect() {
   });
   sock.ev.on("messaging-history.set", ({ contacts: cs = [], chats: chs = [], messages: ms = [], syncType }) => {
     for (const c of cs) if (c.id) { if (c.lid) learnLid(c.lid, c.id); if (c.phoneNumber) learnLid(c.id, c.phoneNumber); const jid = canon(c.id); contacts.set(jid, { ...(contacts.get(jid) || {}), name: c.name || c.verifiedName || contacts.get(jid)?.name || "", notify: c.notify || contacts.get(jid)?.notify || "", phone: phoneOf(jid) }); }
-    for (const ch of chs) if (ch.id) { if (ch.lidJid && ch.pnJid) learnLid(ch.lidJid, ch.pnJid); const jid = canon(ch.id); const cur = chats.get(jid) || { jid, is_group: isJidGroup(jid), last_ts: 0, last_text: "", unread: 0 }; cur.name = ch.name || cur.name || ""; cur.unread = Number(ch.unreadCount || cur.unread || 0); chats.set(jid, cur); }
+    for (const ch of chs) if (ch.id) { if (ch.lidJid && ch.pnJid) learnLid(ch.lidJid, ch.pnJid); const jid = canon(ch.id); const cur = chats.get(jid) || { jid, is_group: isJidGroup(jid), last_ts: 0, last_text: "", unread: 0 }; cur.name = ch.name || cur.name || ""; cur.unread = Number(ch.unreadCount || cur.unread || 0); if (ch.archived !== undefined) cur.archived = !!ch.archived; if (ch.pinned !== undefined) cur.pinned = !!ch.pinned; if (ch.muteEndTime !== undefined) cur.muted = Number(ch.muteEndTime || 0) * 1000 > Date.now(); chats.set(jid, cur); }
     let added = 0;
     for (const m of ms) if (ingest(m, { unread: false })) added++;
     if (added) { sortMessages(); for (const m of messages) touchChat(m); compactStore(); }
@@ -317,6 +396,57 @@ async function connect() {
   sock.ev.on("contacts.update", (cs) => { for (const c of cs) if (c.id) { if (c.lid) learnLid(c.lid, c.id); if (c.phoneNumber) learnLid(c.id, c.phoneNumber); const jid = canon(c.id); const cur = contacts.get(jid) || { phone: phoneOf(jid) }; if (c.name) cur.name = c.name; if (c.notify) cur.notify = c.notify; contacts.set(jid, cur); } saveContacts(); });
   sock.ev.on("chats.upsert", (chs) => { for (const ch of chs) if (ch.id) { if (ch.lidJid && ch.pnJid) learnLid(ch.lidJid, ch.pnJid); const jid = canon(ch.id); const cur = chats.get(jid) || { jid, is_group: isJidGroup(jid), last_ts: 0, last_text: "", unread: 0 }; if (ch.name) cur.name = ch.name; chats.set(jid, cur); if (isJidGroup(jid)) void learnGroup(jid); } });
   sock.ev.on("messages.upsert", ({ messages: ms, type }) => { for (const m of ms) ingest(m, { unread: type === "notify" }); });
+
+  // Receipts (own messages, 1:1), edits and revokes all arrive as `messages.update`.
+  sock.ev.on("messages.update", (updates) => {
+    for (const { key, update } of updates || []) {
+      if (!key?.id || !update) continue;
+      if (update.messageStubType === proto.WebMessageInfo.StubType.REVOKE) { patchMessage(key.id, { deleted: true }); continue; }
+      const editedInner = update.message?.editedMessage?.message;
+      if (editedInner) { const [text] = textOf({ message: editedInner }); patchMessage(key.id, { text: String(text || "").slice(0, 4000), edited: true }); continue; }
+      if (typeof update.status === "number") { const name = STATUS_NAME[update.status]; if (name) bumpStatus(key.id, name); }
+    }
+  });
+  // Group receipts arrive per-participant here instead of `messages.update`.
+  sock.ev.on("message-receipt.update", (items) => {
+    for (const { key, receipt } of items || []) {
+      if (!key?.id || !key.fromMe) continue;
+      if (receipt?.readTimestamp) bumpStatus(key.id, "read");
+      else if (receipt?.receiptTimestamp) bumpStatus(key.id, "delivered");
+    }
+  });
+  sock.ev.on("messages.reaction", (items) => {
+    for (const { key, reaction } of items || []) {
+      if (!key?.id) continue;
+      const envelope = reaction?.key || {}; // the reaction stanza's own key carries who sent it
+      const from_me = !!envelope.fromMe;
+      const from = from_me ? (state.me?.jid || "me") : canon(envelope.participant || envelope.remoteJid);
+      const from_name = from_me ? "me" : (nameOf(from) || phoneOf(from));
+      applyReaction(key.id, { emoji: String(reaction?.text || ""), from, from_name, from_me });
+    }
+  });
+  // Local-only deletes ("delete for me" on another linked device) — still render as revoked.
+  sock.ev.on("messages.delete", (item) => {
+    const keys = Array.isArray(item) ? item : (item?.keys || []);
+    for (const k of keys) if (k?.id) patchMessage(k.id, { deleted: true });
+  });
+  sock.ev.on("presence.update", ({ id, presences }) => {
+    const chat = canon(id);
+    const vals = Object.values(presences || {}).map((p) => p?.lastKnownPresence).filter(Boolean);
+    chatPresence.set(chat, vals.find((v) => v === "composing" || v === "recording") || vals[0] || null);
+  });
+  sock.ev.on("chats.update", (updates) => {
+    for (const u of updates || []) {
+      if (!u.id) continue;
+      const jid = canon(u.id);
+      const cur = chats.get(jid) || { jid, name: "", is_group: isJidGroup(jid), last_ts: 0, last_text: "", unread: 0 };
+      if (u.muteEndTime !== undefined) cur.muted = !!u.muteEndTime && Number(u.muteEndTime) > Date.now();
+      if (u.pinned !== undefined) cur.pinned = !!u.pinned;
+      if (u.archived !== undefined) cur.archived = !!u.archived;
+      if (u.unreadCount !== undefined && u.unreadCount !== null) cur.unread = u.unreadCount < 0 ? (cur.unread || 0) + 1 : u.unreadCount;
+      chats.set(jid, cur);
+    }
+  });
 }
 
 // Profile pictures: one fetch per jid per day, kept under avatars/.
@@ -384,7 +514,20 @@ const server = createServer(async (req, res) => {
     }
     if (req.method === "GET" && url.pathname === "/chats") {
       const limit = Math.min(Number(url.searchParams.get("limit") || 50), 500);
-      const rows = [...chats.values()].map((c) => ({ ...c, name: c.name || nameOf(c.jid) })).sort((a, b) => b.last_ts - a.last_ts).slice(0, limit);
+      const rows = [...chats.values()]
+        .map((c) => ({ ...c, name: c.name || nameOf(c.jid), presence: chatPresence.get(c.jid) ?? null, muted: !!c.muted, pinned: !!c.pinned, archived: !!c.archived }))
+        .sort((a, b) => b.last_ts - a.last_ts).slice(0, limit);
+      return json(res, 200, rows);
+    }
+    if (req.method === "GET" && url.pathname === "/search") {
+      const q = norm(url.searchParams.get("q") || "");
+      const limit = Math.min(Number(url.searchParams.get("limit") || 50), 500);
+      let jid = null;
+      const chat = url.searchParams.get("chat");
+      if (chat) { const r = resolveTarget(chat); if (r.error) return json(res, 404, r); if (r.ambiguous) return json(res, 409, r); jid = r.jid; }
+      const rows = messages.filter((m) => (!jid || m.chat === jid) && (!q || norm(m.text).includes(q)))
+        .slice().reverse().slice(0, limit)
+        .map((m) => ({ ...m, chat_name: nameOf(m.chat) || m.chat_name || "", from_name: m.from_me ? "me" : (nameOf(m.from) || m.from_name || "") }));
       return json(res, 200, rows);
     }
     if (req.method === "GET" && url.pathname === "/messages") {
@@ -442,21 +585,106 @@ const server = createServer(async (req, res) => {
     }
     if (req.method === "POST" && url.pathname === "/send") {
       if (state.status !== "connected" || !sock) return json(res, 503, { error: `not connected (${state.status})` });
-      const { to, text } = await readBody(req);
-      if (!text || !String(text).trim()) return json(res, 400, { error: "text is required" });
+      const { to, text, quote, media, mentions } = await readBody(req);
+      if ((!text || !String(text).trim()) && !media) return json(res, 400, { error: "text or media is required" });
       const r = resolveTarget(to);
       if (r.error) return json(res, 404, r);
       if (r.ambiguous) return json(res, 409, r);
-      const sent = await sock.sendMessage(r.jid, { text: String(text) });
+      let quoted;
+      if (quote) {
+        quoted = rawById.get(quote);
+        if (!quoted) return json(res, 409, { error: "cannot quote a message from before the bridge started" });
+      }
+      const jids = Array.isArray(mentions) && mentions.length ? mentions.map((j) => jidNormalizedUser(j)) : undefined;
+      let content;
+      if (media?.base64) {
+        const buf = Buffer.from(String(media.base64), "base64");
+        const mime = String(media.mime || "").toLowerCase();
+        const caption = text != null ? String(text) : media.caption;
+        if (mime.startsWith("image/")) content = { image: buf, caption, mentions: jids };
+        else if (mime.startsWith("audio/") && media.voice) content = { audio: buf, ptt: true, mimetype: mime || "audio/ogg; codecs=opus" };
+        else if (mime.startsWith("audio/")) content = { audio: buf, mimetype: mime };
+        else if (mime.startsWith("video/")) content = { video: buf, caption, mentions: jids };
+        else content = { document: buf, mimetype: mime || "application/octet-stream", fileName: media.filename || "file", caption };
+      } else {
+        content = { text: String(text), mentions: jids };
+      }
+      const sent = await sock.sendMessage(r.jid, content, quoted ? { quoted } : undefined);
       const m = ingest(sent, { unread: false });
       return json(res, 200, { ok: true, to: r.name || r.jid, jid: r.jid, id: sent?.key?.id, ts: m?.ts });
     }
+    if (req.method === "POST" && url.pathname === "/react") {
+      if (state.status !== "connected" || !sock) return json(res, 503, { error: `not connected (${state.status})` });
+      const { id, emoji } = await readBody(req);
+      const row = messages.find((m) => m.id === id);
+      if (!row) return json(res, 404, { error: "unknown message id" });
+      await sock.sendMessage(row.chat, { react: { text: String(emoji || ""), key: row.key } });
+      const from = state.me?.jid || "me";
+      applyReaction(id, { emoji: String(emoji || ""), from, from_name: "me", from_me: true });
+      return json(res, 200, { ok: true });
+    }
+    if (req.method === "POST" && url.pathname === "/delete") {
+      if (state.status !== "connected" || !sock) return json(res, 503, { error: `not connected (${state.status})` });
+      const { id } = await readBody(req);
+      const row = messages.find((m) => m.id === id);
+      if (!row) return json(res, 404, { error: "unknown message id" });
+      if (!row.from_me) return json(res, 403, { error: "can only delete your own messages" });
+      await sock.sendMessage(row.chat, { delete: row.key });
+      patchMessage(id, { deleted: true });
+      return json(res, 200, { ok: true });
+    }
+    if (req.method === "POST" && url.pathname === "/forward") {
+      if (state.status !== "connected" || !sock) return json(res, 503, { error: `not connected (${state.status})` });
+      const { id, to } = await readBody(req);
+      const raw = rawById.get(id);
+      if (!raw) return json(res, 409, { error: "original message no longer available" });
+      const r = resolveTarget(to);
+      if (r.error) return json(res, 404, r);
+      if (r.ambiguous) return json(res, 409, r);
+      const sent = await sock.sendMessage(r.jid, { forward: raw });
+      ingest(sent, { unread: false });
+      return json(res, 200, { ok: true, id: sent?.key?.id });
+    }
+    if (req.method === "POST" && url.pathname === "/edit") {
+      if (state.status !== "connected" || !sock) return json(res, 503, { error: `not connected (${state.status})` });
+      const { id, text } = await readBody(req);
+      const row = messages.find((m) => m.id === id);
+      if (!row) return json(res, 404, { error: "unknown message id" });
+      if (!row.from_me) return json(res, 403, { error: "can only edit your own messages" });
+      await sock.sendMessage(row.chat, { text: String(text || ""), edit: row.key });
+      patchMessage(id, { text: String(text || "").slice(0, 4000), edited: true });
+      return json(res, 200, { ok: true });
+    }
+    if (req.method === "POST" && url.pathname === "/typing") {
+      if (state.status !== "connected" || !sock) return json(res, 503, { error: `not connected (${state.status})` });
+      const { chat, state: presenceState } = await readBody(req);
+      if (!["composing", "recording", "paused"].includes(presenceState)) return json(res, 400, { error: "state must be composing, recording or paused" });
+      const r = resolveTarget(chat);
+      if (r.error) return json(res, 404, r);
+      if (r.ambiguous) return json(res, 409, r);
+      await sock.sendPresenceUpdate(presenceState, r.jid);
+      return json(res, 200, { ok: true });
+    }
+    if (req.method === "POST" && url.pathname === "/subscribe") {
+      if (state.status !== "connected" || !sock) return json(res, 503, { error: `not connected (${state.status})` });
+      const { chat } = await readBody(req);
+      const r = resolveTarget(chat);
+      if (r.error) return json(res, 404, r);
+      if (r.ambiguous) return json(res, 409, r);
+      await sock.presenceSubscribe(r.jid);
+      return json(res, 200, { ok: true });
+    }
     if (req.method === "POST" && url.pathname === "/mark-read") {
       const { chat } = await readBody(req);
-      const r = chat ? resolveTarget(chat) : null;
+      let r = null;
+      if (chat) { r = resolveTarget(chat); if (r.error) return json(res, 404, r); if (r.ambiguous) return json(res, 409, r); }
+      const unreadKeys = messages.filter((m) => (!r || m.chat === r.jid) && !m.from_me && m.unread && m.key).map((m) => m.key);
+      if (unreadKeys.length && sock && state.status === "connected") {
+        try { await sock.readMessages(unreadKeys); } catch (e) { logger.warn({ err: e }, "readMessages failed"); }
+      }
       for (const m of messages) if (!r || m.chat === r.jid) m.unread = false;
       for (const [jid, c] of chats) if (!r || jid === r.jid) c.unread = 0;
-      return json(res, 200, { ok: true });
+      return json(res, 200, { ok: true, read: unreadKeys.length });
     }
     if (req.method === "POST" && url.pathname === "/logout") {
       stopping = true;

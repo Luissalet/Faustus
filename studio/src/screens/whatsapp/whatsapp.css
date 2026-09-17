@@ -93,10 +93,26 @@
    panes can claim the rest of the height, with the chat list and bubbles
    scrolling internally and the composer pinned at the pane's bottom. ── */
 
-.fs-wa {
+/* Doubled class: projects.css's `.fs-screen { display: grid }` can land later
+   in the bundle than this file, and a single class would lose the toss. */
+.fs-screen.fs-wa {
   display: flex;
   flex-direction: column;
-  min-block-size: calc(100dvh - 2 * var(--fs-space-7));
+  /* The screen owns its height: the shell's main pads all four sides and
+     would otherwise scroll the whole page instead of the chat. */
+  block-size: calc(100dvh - 2 * var(--fs-space-7));
+  min-block-size: 0;
+}
+
+.fs-wa > .fs-screen__head {
+  flex: none;
+}
+
+/* Setup states (stopped / QR / reconnecting) are a card, not a wall. */
+.fs-wa > .fs-wa__setup {
+  flex: none;
+  align-self: start;
+  inline-size: min(100%, 560px);
 }
 
 /* ── Two-pane layout ── */
@@ -139,12 +155,86 @@
 }
 
 .fs-wa__pane-head strong {
-  flex: 1;
   min-inline-size: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--fs-text-1);
+}
+
+.fs-wa__pane-head-title {
+  display: grid;
+  gap: 1px;
+  flex: 1;
+  min-inline-size: 0;
+}
+
+.fs-wa__presence {
+  font-size: 11px;
+  color: var(--fs-text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── In-chat search ── */
+
+.fs-wa__search-box {
+  display: grid;
+  gap: var(--fs-space-2);
+}
+
+.fs-wa__search-box > input {
+  padding: var(--fs-space-2) var(--fs-space-3);
+  border-radius: var(--fs-radius-control);
+  border: 1px solid var(--fs-border);
+  background: var(--fs-surface-1);
+  color: var(--fs-text-1);
+  font: inherit;
+  font-size: var(--fs-label-size);
+}
+
+.fs-wa__search-results {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--fs-space-1);
+  max-block-size: 200px;
+  overflow-y: auto;
+}
+
+.fs-wa__search-result {
+  display: grid;
+  gap: 2px;
+  inline-size: 100%;
+  text-align: start;
+  padding: var(--fs-space-2) var(--fs-space-3);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-control);
+  background: var(--fs-surface-1);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.fs-wa__search-result:hover {
+  background: var(--fs-surface-2);
+}
+
+/* ── Global message search, list pane ── */
+
+.fs-wa__message-hits {
+  display: grid;
+  gap: var(--fs-space-1);
+  padding-block-start: var(--fs-space-2);
+  border-block-start: 1px solid var(--fs-border);
+}
+
+.fs-wa__hits-title {
+  font-size: var(--fs-label-size);
+  font-weight: var(--fs-label-weight);
+  color: var(--fs-text-3);
 }
 
 /* ── Avatars: a round profile picture, or an initial-letter fallback ── */
@@ -272,8 +362,10 @@
 .fs-wa__bubbles {
   list-style: none;
   margin: 0;
-  padding: 0;
+  padding: 0 var(--fs-space-2);
   display: grid;
+  align-content: start;          /* rows hug their content; never stretch to fill */
+  grid-auto-rows: max-content;
   gap: var(--fs-space-2);
   overflow-y: auto;
   flex: 1;
@@ -283,6 +375,8 @@
 .fs-wa__bubble-row {
   display: flex;
   justify-content: flex-start;
+  max-width: none;               /* the shell caps every li at 65ch; a chat row spans the pane */
+  max-inline-size: none;
 }
 
 .fs-wa__bubble-row--me {
@@ -296,9 +390,13 @@
 }
 
 .fs-wa__bubble {
+  position: relative;
   display: grid;
+  align-content: start;
   gap: 2px;
-  max-inline-size: 72%;
+  max-inline-size: 65%;
+  min-inline-size: 96px;
+  overflow-wrap: anywhere;
   padding: var(--fs-space-2) var(--fs-space-3);
   border-radius: var(--fs-radius-panel);
   background: var(--fs-surface-2);
@@ -318,10 +416,212 @@
   color: var(--fs-brand);
 }
 
+.fs-wa__bubble-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--fs-space-1);
+}
+
 .fs-wa__bubble-time {
   align-self: flex-end;
   font-size: 10px;
   color: var(--fs-text-3);
+}
+
+.fs-wa__tick {
+  display: inline-flex;
+  align-items: center;
+  color: var(--fs-text-3);
+}
+
+.fs-wa__tick--read {
+  color: var(--fs-brand);
+}
+
+.fs-wa__edited-label,
+.fs-wa__forwarded-label {
+  font-size: 10px;
+  color: var(--fs-text-3);
+  font-style: italic;
+}
+
+.fs-wa__deleted {
+  color: var(--fs-text-3);
+  font-style: italic;
+}
+
+/* ── Date separators ── */
+
+.fs-wa__day-sep {
+  display: flex;
+  justify-content: center;
+  padding-block: var(--fs-space-1);
+}
+
+.fs-wa__day-sep > span {
+  padding: 2px var(--fs-space-3);
+  border-radius: var(--fs-radius-pill);
+  background: var(--fs-surface-2);
+  border: 1px solid var(--fs-border);
+  color: var(--fs-text-3);
+  font-size: 11px;
+  font-weight: var(--fs-label-weight);
+}
+
+/* ── Jump-to-message flash ── */
+
+.fs-wa__bubble-row--flash .fs-wa__bubble {
+  border-color: var(--fs-brand);
+  transition: border-color var(--fs-duration-slow) ease;
+}
+
+/* ── Quoted reply block ── */
+
+.fs-wa__quote {
+  display: grid;
+  gap: 1px;
+  padding: var(--fs-space-1) var(--fs-space-2);
+  border-inline-start: 3px solid var(--fs-brand);
+  border-radius: var(--fs-radius-control);
+  background: var(--fs-surface-1);
+  text-align: start;
+  color: var(--fs-text-2);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.fs-wa__quote > strong {
+  color: var(--fs-brand);
+  font-size: 11px;
+}
+
+/* ── Reactions ── */
+
+.fs-wa__reactions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.fs-wa__reaction {
+  padding: 0 6px;
+  border-radius: var(--fs-radius-pill);
+  background: var(--fs-surface-1);
+  border: 1px solid var(--fs-border);
+  font-size: 11px;
+}
+
+/* ── Hover/focus action toolbar on a bubble ── */
+
+.fs-wa__bubble-actions {
+  position: absolute;
+  inset-block-start: -14px;
+  inset-inline-end: var(--fs-space-2);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--fs-radius-pill);
+  background: var(--fs-surface-1);
+  border: 1px solid var(--fs-border);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--fs-duration-fast) ease;
+  z-index: 1;
+}
+
+.fs-wa__bubble:hover > .fs-wa__bubble-actions,
+.fs-wa__bubble:focus-within > .fs-wa__bubble-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.fs-wa__emoji-row {
+  display: flex;
+  gap: var(--fs-space-1);
+}
+
+.fs-wa__emoji-btn {
+  border: none;
+  background: transparent;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  padding: var(--fs-space-1);
+  border-radius: var(--fs-radius-control);
+}
+
+.fs-wa__emoji-btn:hover {
+  background: var(--fs-surface-2);
+}
+
+/* ── Forward picker ── */
+
+.fs-wa__forward-picker {
+  display: grid;
+  gap: var(--fs-space-2);
+  min-inline-size: 220px;
+}
+
+.fs-wa__forward-picker > input {
+  padding: var(--fs-space-1) var(--fs-space-2);
+  border-radius: var(--fs-radius-control);
+  border: 1px solid var(--fs-border);
+  background: var(--fs-surface-1);
+  color: var(--fs-text-1);
+  font: inherit;
+  font-size: var(--fs-label-size);
+}
+
+.fs-wa__forward-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+  max-block-size: 220px;
+  overflow-y: auto;
+}
+
+.fs-wa__forward-list button {
+  inline-size: 100%;
+  text-align: start;
+  padding: var(--fs-space-1) var(--fs-space-2);
+  border: none;
+  border-radius: var(--fs-radius-control);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: var(--fs-label-size);
+  cursor: pointer;
+}
+
+.fs-wa__forward-list button:hover {
+  background: var(--fs-surface-2);
+}
+
+/* ── Inline edit ── */
+
+.fs-wa__edit-row {
+  display: grid;
+  gap: var(--fs-space-1);
+}
+
+.fs-wa__edit-input {
+  resize: none;
+  padding: var(--fs-space-1) var(--fs-space-2);
+  border-radius: var(--fs-radius-control);
+  border: 1px solid var(--fs-border);
+  background: var(--fs-surface-1);
+  color: var(--fs-text-1);
+  font: inherit;
+  font-size: var(--fs-label-size);
+}
+
+.fs-wa__edit-actions {
+  display: flex;
+  gap: var(--fs-space-2);
 }
 
 /* ── Media in bubbles ── */
@@ -329,6 +629,10 @@
 .fs-wa__audio {
   inline-size: 240px;
   max-inline-size: 100%;
+}
+
+.fs-wa__image-link {
+  display: block;
 }
 
 .fs-wa__image {
@@ -353,6 +657,41 @@
 
 /* ── Composer ── */
 
+.fs-wa__composer-wrap {
+  flex: none;
+}
+
+.fs-wa__reply-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--fs-space-2);
+  padding: var(--fs-space-1) var(--fs-space-3);
+  border-radius: var(--fs-radius-control);
+  background: var(--fs-surface-2);
+  border-inline-start: 3px solid var(--fs-brand);
+  margin-block-end: var(--fs-space-1);
+}
+
+.fs-wa__reply-strip > span {
+  display: grid;
+  gap: 1px;
+  min-inline-size: 0;
+}
+
+.fs-wa__reply-strip strong {
+  font-size: 11px;
+  color: var(--fs-brand);
+}
+
+.fs-wa__reply-strip span span {
+  font-size: var(--fs-label-size);
+  color: var(--fs-text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .fs-wa__composer {
   display: flex;
   align-items: flex-end;
@@ -375,6 +714,68 @@
 
 .fs-wa__composer-input:focus-visible {
   border-color: var(--fs-brand);
+}
+
+/* ── Ask Faustus ── */
+
+.fs-wa__assist-popover {
+  inline-size: min(360px, 90vw);
+}
+
+.fs-wa__assist {
+  display: grid;
+  gap: var(--fs-space-3);
+}
+
+.fs-wa__assist-quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fs-space-2);
+}
+
+.fs-wa__assist-ask {
+  display: grid;
+  gap: var(--fs-space-2);
+}
+
+.fs-wa__assist-ask > textarea {
+  resize: none;
+  padding: var(--fs-space-2) var(--fs-space-3);
+  border-radius: var(--fs-radius-control);
+  border: 1px solid var(--fs-border);
+  background: var(--fs-surface-1);
+  color: var(--fs-text-1);
+  font: inherit;
+  font-size: var(--fs-label-size);
+}
+
+.fs-wa__assist-result {
+  display: grid;
+  gap: var(--fs-space-2);
+  padding: var(--fs-space-2) var(--fs-space-3);
+  border-radius: var(--fs-radius-control);
+  background: var(--fs-surface-2);
+  border: 1px solid var(--fs-border);
+}
+
+.fs-wa__assist-text {
+  margin: 0;
+  white-space: pre-wrap;
+  font-size: var(--fs-label-size);
+  color: var(--fs-text-1);
+}
+
+.fs-wa__assist-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fs-space-2);
+}
+
+.fs-wa__assist-open {
+  color: var(--fs-brand);
+  font-size: var(--fs-label-size);
+  text-decoration: underline;
+  justify-self: start;
 }
 
 @media (max-width: 900px) {
