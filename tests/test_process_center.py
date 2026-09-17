@@ -99,8 +99,9 @@ def test_stop_kills_the_tree_and_a_second_stop_is_gone(server):
 
 def test_stop_port_finds_the_listener_by_port(server):
     port, proc = server
+    family = _family(proc)          # before the kill: afterwards the child is gone
     out = pc.stop_port(port)
-    assert out["ok"] and out["port"] == port and set(out["signalled"]) & _family(proc), out
+    assert out["ok"] and out["port"] == port and set(out["signalled"]) & family, out
     proc.wait(timeout=10)
 
 
