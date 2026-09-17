@@ -1,10 +1,10 @@
 # Pendientes de cierre
 
-Actualizado: 17-09-2026 (tarde). Sólo trabajo vigente; quitar cada entrada al cerrarla.
+Actualizado: 17-09-2026 (tarde). REGLA: nunca nombres de empresas/personas del buzón de Luis en commits, docs, tests ni comentarios — ejemplos siempre ficticios. Sólo trabajo vigente; quitar cada entrada al cerrarla.
 
 ## Tarde del 17-09 (candidaturas por correo — FAUSTUS.md §98)
 
-- `review_candidature_mail` verificado en vivo tres veces (rechazos, entrevistas, ambas): Jobhunter y calendario correctos e idempotentes. Queda: Storeful (entrevista «elige un hueco» sin hora) se queda en manual — valorar un evento de día completo para entrevistas a demanda con fecha límite («complete by …»); y el modelo dijo «en menos de una hora» de una entrevista ya pasada (13:00 vs 15:07): revisar cómo llega la hora actual al prompt del 27B.
+- `review_candidature_mail` verificado en vivo tres veces (rechazos, entrevistas, ambas): Jobhunter y calendario correctos e idempotentes. Desde que se leen todos los correos no-bulk de la ventana (no solo los de asunto «candidatura»), la entrevista con confirmación de hora también sale; queda valorar un evento de día completo para entrevistas a demanda con fecha límite («complete by …»); y el modelo dijo «en menos de una hora» de una entrevista ya pasada (13:00 vs 15:07): revisar cómo llega la hora actual al prompt del 27B.
 - La receta `review-candidature-responses` decía «nunca crear candidaturas»; la herramienta las crea con `create_missing` (por defecto) porque es lo que Luis pidió. Actualizar el texto de la receta/`docs/api/candidature_recipe.md` para que lo diga.
 - El 27B con `num_ctx` 199.680 iba a 2 tok/s con el diálogo de VRAM en cada turno; ahora 65.536. Si Luis quiere más, hay que medir la KV cache primero (la admisión dice «never measured»).
 - La UI muestra «Loading the model into memory · No server signal» mientras una herramienta larga (2–3 min leyendo correos) trabaja: el estado debería decir «Running review_candidature_mail».
