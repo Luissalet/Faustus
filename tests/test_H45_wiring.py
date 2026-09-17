@@ -64,7 +64,9 @@ def test_write_file_refusal_shape_is_wired(tmp_path, monkeypatch):
     # No public setter for the active-workspace contextvar; set it directly
     # (same var `_resolve_tool_path` reads) rather than depending on a helper
     # this lot does not own and that may not exist by this name.
-    tool_execution._active_workspace.set(str(workspace))
+    _ws_token = tool_execution._active_workspace.set(str(workspace))
+    # Never leak the workspace into the next test file of the same xdist
+    # worker (it broke test_l62_edit03_bom_full_overwrite in the full suite).
     target = workspace / "big.py"
     target.write_text("\n".join(f"line {i}" for i in range(200)), encoding="utf-8")
 
@@ -79,7 +81,10 @@ def test_write_file_refusal_shape_is_wired(tmp_path, monkeypatch):
     async def _both():
         return await _write_once(), await _write_once()
 
-    first, second = asyncio.run(_both())
+    try:
+        first, second = asyncio.run(_both())
+    finally:
+        tool_execution._active_workspace.reset(_ws_token)
     assert first.get("exit_code") == 0, first  # 1st rewrite: allowed
 
     assert second.get("policy") == "rewrite_policy"
