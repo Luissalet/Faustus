@@ -1,4 +1,4 @@
-import { AlertTriangle, Check, CheckSquare, CircleStop, Copy, History as HistoryIcon, Link2, Pause, Pencil, Play, Plus, RefreshCw, Search, Sparkles, Trash2, Workflow, X } from 'lucide-react';
+import { AlertTriangle, Check, CheckSquare, CircleStop, Copy, History as HistoryIcon, Link2, Pause, Pencil, Pin, PinOff, Play, Plus, RefreshCw, Search, Sparkles, Trash2, Workflow, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { Button, Dialog, EmptyState, Skeleton, StatusBadge, Toast } from '../components';
@@ -28,6 +28,7 @@ import {
   type TriggerType,
 } from '../adapters/automations';
 import { relativeTime } from '../adapters/home';
+import { listHomeCards, pinHomeCard, unpinHomeCard } from '../adapters/homeCards';
 import { AutomationForm } from './automations/Form';
 import './projects.css';
 import './automations.css';
@@ -58,7 +59,7 @@ function runState(status: string | null | undefined): 'succeeded' | 'failed' | '
 
 /* ── One row ── */
 
-function Row({ task, on, selecting, selected, onOpen, onToggle }: { task: Automation; on: boolean; selecting: boolean; selected: boolean; onOpen: () => void; onToggle: () => void }) {
+function Row({ task, on, selecting, selected, pinned, onOpen, onToggle }: { task: Automation; on: boolean; selecting: boolean; selected: boolean; pinned: boolean; onOpen: () => void; onToggle: () => void }) {
   const active = task.status === 'active';
   return (
     <div className="fs-au__row-wrap" data-on={on || undefined}>
@@ -68,6 +69,11 @@ function Row({ task, on, selecting, selected, onOpen, onToggle }: { task: Automa
           <span className="fs-au__name">
             {task.name}
             {task.is_builtin && <span className="fs-au__builtin" title={task.is_modified ? t('Built-in, edited') : t('Built-in')}>{task.is_modified ? t('built-in · edited') : t('built-in')}</span>}
+            {pinned && (
+              <span className="fs-au__pin-badge" title={t('Pinned to Home')} data-testid="automation-pin-badge">
+                <Pin size={11} aria-hidden="true" />
+              </span>
+            )}
           </span>
           <span className="fs-au__recipe">
             {describeTrigger(task)} → {describeAction(task)}
@@ -154,7 +160,38 @@ export function AutomationsScreen() {
   const [confirm, setConfirm] = useState<{ kind: 'delete'; ids: string[] } | { kind: 'all'; verb: 'pause' | 'resume'; ids: string[] } | { kind: 'cache'; id: string; label: string } | { kind: 'revert'; id: string } | { kind: 'parallel'; id: string } | null>(null);
   const [historyKey, setHistoryKey] = useState(0);
   const [sentence, setSentence] = useState('');
+  const [pinnedIds, setPinnedIds] = useState<Set<string>>(new Set());
   const noticeTimer = useRef<number | null>(null);
+
+  const reloadPins = useCallback(() => {
+    listHomeCards()
+      .then((c) => setPinnedIds(new Set(c.map((x) => x.task_id))))
+      .catch(() => {
+        /* the pin badge/toggle just stay unset */
+      });
+  }, []);
+
+  useEffect(() => {
+    reloadPins();
+  }, [reloadPins]);
+
+  const togglePin = async (id: string) => {
+    setBusy(`pin:${id}`);
+    try {
+      if (pinnedIds.has(id)) {
+        await unpinHomeCard(id);
+        say(t('Removed from Home'));
+      } else {
+        await pinHomeCard(id);
+        say(t('Pinned to Home'));
+      }
+      reloadPins();
+    } catch (e) {
+      say((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
 
   const say = useCallback((msg: string) => {
     setNotice(msg);
@@ -390,7 +427,7 @@ export function AutomationsScreen() {
               primaryAction={tasks.length === 0 ? { label: t('New automation'), icon: Plus, onClick: () => setMode({ kind: 'new' }) } : { label: t('Show all'), onClick: () => { setCategory('all'); setState('all'); setQuery(''); } }}
             />
           ) : (
-            visible.map((x) => <Row key={x.id} task={x} on={x.id === currentId && mode.kind === 'view'} selecting={selecting} selected={selected.has(x.id)} onOpen={() => (selecting ? toggle(x.id) : open(x.id))} onToggle={() => toggle(x.id)} />)
+            visible.map((x) => <Row key={x.id} task={x} on={x.id === currentId && mode.kind === 'view'} selecting={selecting} selected={selected.has(x.id)} pinned={pinnedIds.has(x.id)} onOpen={() => (selecting ? toggle(x.id) : open(x.id))} onToggle={() => toggle(x.id)} />)
           )}
         </div>
 
@@ -476,6 +513,15 @@ export function AutomationsScreen() {
                 )}
                 <Button variant="ghost" size="sm" icon={Pencil} label={t('Edit')} onClick={() => setMode({ kind: 'form', existing: current })} testId="automation-edit" />
                 <Button variant="ghost" size="sm" icon={CircleStop} label={t('Stop')} title={t('Stops the run in progress, if there is one')} onClick={() => void act(`stop:${current.id}`, () => stopAutomation(current.id), t('Stopped'))} />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  icon={pinnedIds.has(current.id) ? PinOff : Pin}
+                  label={pinnedIds.has(current.id) ? t('Pinned to Home') : t('Pin to Home')}
+                  loading={busy === `pin:${current.id}`}
+                  onClick={() => void togglePin(current.id)}
+                  testId="automation-pin-toggle"
+                />
                 {current.is_builtin && current.is_modified && <Button variant="ghost" size="sm" icon={RefreshCw} label={t('Revert to default')} onClick={() => setConfirm({ kind: 'revert', id: current.id })} />}
                 {current.action && CACHE_LABELS[current.action] && <Button variant="ghost" size="sm" icon={Trash2} label={t('Clear cache')} onClick={() => setConfirm({ kind: 'cache', id: current.id, label: CACHE_LABELS[current.action!] })} />}
                 <Button variant="danger" size="sm" icon={Trash2} label={t('Delete')} onClick={() => setConfirm({ kind: 'delete', ids: [current.id] })} testId="automation-delete" />

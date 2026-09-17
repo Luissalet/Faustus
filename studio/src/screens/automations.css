@@ -187,6 +187,12 @@
   font-weight: 500;
 }
 
+.fs-au__pin-badge {
+  display: inline-flex;
+  align-items: center;
+  color: var(--fs-brand);
+}
+
 .fs-au__recipe {
   color: var(--fs-text-2);
   font-size: var(--fs-label-size);

@@ -275,6 +275,144 @@
   translate: 0 -1px;
 }
 
+/* ── Your cards: pinned automations, with their latest result ──
+   1 column under 640px, 2 under 1100px, 3 above — same breakpoints the
+   quickstart tiles already answer to, just coarser since a card carries
+   real content instead of a label. */
+.fs-cards {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--fs-space-4);
+}
+
+@media (min-width: 640px) {
+  .fs-cards {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 1100px) {
+  .fs-cards {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+.fs-card-home {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: var(--fs-space-3);
+  padding: var(--fs-space-4);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-panel);
+  background: var(--fs-surface-1);
+  min-block-size: 220px;
+}
+
+.fs-card-home__head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--fs-space-2);
+}
+
+.fs-card-home__icon {
+  display: grid;
+  place-items: center;
+  inline-size: 28px;
+  block-size: 28px;
+  flex: none;
+  border-radius: var(--fs-radius-control);
+  background: var(--fs-surface-3);
+  color: var(--fs-brand);
+}
+
+.fs-card-home__meta {
+  display: grid;
+  gap: 2px;
+  flex: 1;
+  min-inline-size: 0;
+}
+
+.fs-card-home__name {
+  font-weight: var(--fs-label-weight);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fs-card-home__sched {
+  font-size: var(--fs-label-size);
+  color: var(--fs-text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fs-card-home__pill {
+  flex: none;
+  padding: 2px var(--fs-space-2);
+  border-radius: var(--fs-radius-pill);
+  font-size: var(--fs-label-size);
+  font-weight: var(--fs-label-weight);
+  color: var(--fs-text-2);
+  background: var(--fs-surface-3);
+}
+
+.fs-card-home__pill[data-tone='running'] {
+  color: var(--fs-brand);
+  background: color-mix(in srgb, var(--fs-brand) 16%, transparent);
+}
+
+.fs-card-home__pill[data-tone='error'] {
+  color: var(--fs-danger);
+  background: color-mix(in srgb, var(--fs-danger) 16%, transparent);
+}
+
+.fs-card-home__pill[data-tone='muted'] {
+  color: var(--fs-text-3);
+}
+
+.fs-card-home__body {
+  overflow: hidden auto;
+  max-block-size: 220px;
+  font-size: 0.92rem;
+  color: var(--fs-text-2);
+}
+
+.fs-card-home__body .fs-rich {
+  font-size: inherit;
+}
+
+.fs-card-home__empty {
+  color: var(--fs-text-3);
+  font-size: var(--fs-label-size);
+}
+
+.fs-card-home__empty-block {
+  color: var(--fs-text-3);
+  max-inline-size: 62ch;
+}
+
+.fs-card-home__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--fs-space-2);
+  flex-wrap: wrap;
+}
+
+.fs-card-home__updated {
+  font-size: var(--fs-label-size);
+  color: var(--fs-text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.fs-card-home__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  flex-wrap: wrap;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .fs-row,
   .fs-row__go,

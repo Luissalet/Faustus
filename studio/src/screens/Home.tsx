@@ -1,13 +1,16 @@
-import { ChevronRight, Code2, FileText, Image, Inbox, Search } from 'lucide-react';
-import { useEffect, useState, type ReactNode } from 'react';
+import { Bot, ChevronRight, CloudSun, Code2, Eye, FileText, Image, Inbox, Mail, Newspaper, RefreshCw, Search } from 'lucide-react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router';
-import { EmptyState, Skeleton, StatusBadge } from '../components';
+import { Button, EmptyState, Skeleton, StatusBadge } from '../components';
 import {
   byRecency,
   loadHome,
   relativeTime,
   type HomeData,
 } from '../adapters/home';
+import { describeTrigger, runAutomation, type Automation } from '../adapters/automations';
+import { listHomeCards, unpinHomeCard, type HomeCard } from '../adapters/homeCards';
+import { Rich } from './rich';
 import { BrandMark } from '../shell/BrandMark';
 import { useSpotlight } from '../shell/useSpotlight';
 import './home.css';
@@ -45,6 +48,129 @@ function Block({
   );
 }
 
+/* ── Your cards: automations pinned to Home, with their latest result ── */
+
+const CARD_ICON: Record<string, typeof Bot> = {
+  weather_report: CloudSun,
+  news_brief: Newspaper,
+  watch_page: Eye,
+  mail_digest: Mail,
+};
+
+/** `describeTrigger` reads an Automation; a card carries the same schedule
+ *  fields, so it is built as a partial one rather than duplicating the
+ *  cron/weekday/monthly-day wording here. */
+function cardSchedule(card: HomeCard): string {
+  return describeTrigger({
+    id: card.task_id,
+    name: card.name,
+    schedule: card.schedule,
+    scheduled_time: card.scheduled_time,
+    timezone: card.timezone,
+    cron_expression: card.cron_expression,
+  } as Automation);
+}
+
+function HomeCardTile({ card, onChanged }: { card: HomeCard; onChanged: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [confirmUnpin, setConfirmUnpin] = useState(false);
+  const Icon = (card.action && CARD_ICON[card.action]) || Bot;
+
+  const refresh = async () => {
+    setBusy(true);
+    try {
+      await runAutomation(card.task_id);
+    } catch {
+      /* the next poll shows the failed run through last_status/last_error */
+    } finally {
+      onChanged();
+      setBusy(false);
+    }
+  };
+
+  const unpin = async () => {
+    setConfirmUnpin(false);
+    try {
+      await unpinHomeCard(card.task_id);
+    } finally {
+      onChanged();
+    }
+  };
+
+  return (
+    <article className="fs-card-home" data-testid="home-card">
+      <header className="fs-card-home__head">
+        <span className="fs-card-home__icon">
+          <Icon size={15} aria-hidden="true" />
+        </span>
+        <span className="fs-card-home__meta">
+          <span className="fs-card-home__name">{card.name}</span>
+          <span className="fs-card-home__sched">{cardSchedule(card)}</span>
+        </span>
+        {card.running ? (
+          <span className="fs-card-home__pill" data-tone="running" data-testid="home-card-running">
+            {t('Running…')}
+          </span>
+        ) : card.last_status === 'error' ? (
+          <span className="fs-card-home__pill" data-tone="error" title={card.last_error ?? undefined}>
+            {t('Failed')}
+          </span>
+        ) : card.last_status === 'skipped' ? (
+          <span className="fs-card-home__pill" data-tone="muted">
+            {t('No change')}
+          </span>
+        ) : null}
+      </header>
+
+      <div className="fs-card-home__body">
+        {card.result ? <Rich text={card.result} /> : <p className="fs-card-home__empty">{t('No result yet — Refresh to run it now.')}</p>}
+      </div>
+
+      <footer className="fs-card-home__foot">
+        <span className="fs-card-home__updated">{card.result_at ? t('updated {when}', { when: relativeTime(card.result_at) }) : ''}</span>
+        <span className="fs-card-home__actions">
+          {confirmUnpin ? (
+            <span className="fs-modes__confirm">
+              <span className="fs-set__help" data-tone="bad">
+                {t('Unpin?')}
+              </span>
+              <Button variant="danger-solid" size="sm" label={t('Yes')} onClick={() => void unpin()} />
+              <Button variant="ghost" size="sm" label={t('No')} onClick={() => setConfirmUnpin(false)} />
+            </span>
+          ) : (
+            <>
+              <Button variant="ghost" size="sm" icon={RefreshCw} label={t('Refresh')} loading={busy} disabled={card.running} onClick={() => void refresh()} testId="home-card-refresh" />
+              <Link className="fs-btn" data-variant="ghost" data-size="sm" to="/automations">
+                <span>{t('Open')}</span>
+              </Link>
+              <Button variant="ghost" size="sm" label={t('Unpin')} onClick={() => setConfirmUnpin(true)} testId="home-card-unpin" />
+            </>
+          )}
+        </span>
+      </footer>
+    </article>
+  );
+}
+
+function HomeCards({ cards, onChanged }: { cards: HomeCard[]; onChanged: () => void }) {
+  return (
+    <Block title={t('Your cards')} index={1}>
+      {cards.length === 0 ? (
+        <p className="fs-card-home__empty-block" data-testid="home-cards-empty">
+          {t('Pin an automation to see its result here — ask in a chat («¿qué tiempo hace en X mañana? que se repita cada día») or')}{' '}
+          <Link to="/automations">{t('pin one in Automations')}</Link>.
+        </p>
+      ) : (
+        <div className="fs-cards" data-testid="home-cards">
+          {cards.map((card) => (
+            <HomeCardTile key={card.task_id} card={card} onChanged={onChanged} />
+          ))}
+        </div>
+      )}
+    </Block>
+  );
+}
+
 /* Each way in opens Studio with the sentence already started. */
 const QUICK_STARTS = [
   { label: 'Create an image', icon: Image, draft: 'Generate an image of ' },
@@ -58,6 +184,8 @@ export function HomeScreen() {
   const navigate = useNavigate();
   const [data, setData] = useState<HomeData | null>(null);
   const [failed, setFailed] = useState(false);
+  const [cards, setCards] = useState<HomeCard[]>([]);
+  const cardsTimer = useRef<number | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -66,6 +194,33 @@ export function HomeScreen() {
       .catch(() => setFailed(true));
     return () => controller.abort();
   }, []);
+
+  const reloadCards = () => {
+    listHomeCards()
+      .then(setCards)
+      .catch(() => {
+        /* the block stays empty rather than breaking the rest of Home */
+      });
+  };
+
+  // 60 s while nothing is running; 5 s while any pinned card is mid-run, so
+  // a freshly-triggered refresh actually catches the result landing.
+  useEffect(() => {
+    reloadCards();
+    return () => {
+      if (cardsTimer.current) window.clearTimeout(cardsTimer.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    const anyRunning = cards.some((c) => c.running);
+    if (cardsTimer.current) window.clearTimeout(cardsTimer.current);
+    cardsTimer.current = window.setTimeout(reloadCards, anyRunning ? 5000 : 60000);
+    return () => {
+      if (cardsTimer.current) window.clearTimeout(cardsTimer.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cards]);
 
   if (failed) {
     return (
@@ -112,8 +267,10 @@ export function HomeScreen() {
         </p>
       </header>
 
+      <HomeCards cards={cards} onChanged={reloadCards} />
+
       {data.approvals.length > 0 && (
-        <Block title={t('Needs your decision')} index={1}>
+        <Block title={t('Needs your decision')} index={2}>
           <div className="fs-list fs-list--rail">
             {data.approvals.map((approval, index) => (
               <Link
@@ -138,7 +295,7 @@ export function HomeScreen() {
       )}
 
       {sessions.length > 0 && (
-        <Block title={t('Continue')} index={2}>
+        <Block title={t('Continue')} index={3}>
           <div className="fs-list fs-list--rail">
             {sessions.map((session) => (
               <Link
@@ -168,7 +325,7 @@ export function HomeScreen() {
       )}
 
       {projects.length > 0 && (
-        <Block title={t('Projects')} index={3}>
+        <Block title={t('Projects')} index={4}>
           <div className="fs-list fs-list--rail">
             {projects.map((project) => (
               <a
@@ -192,7 +349,7 @@ export function HomeScreen() {
         </Block>
       )}
 
-      <Block title={t('Start something')} index={4}>
+      <Block title={t('Start something')} index={5}>
         <div className="fs-quickstarts">
           {QUICK_STARTS.map((quick) => (
             <button
