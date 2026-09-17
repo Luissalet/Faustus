@@ -305,7 +305,7 @@ export function ConnectorsScreen() {
 
       <details className="fs-nearby__toggle" data-testid="nearby-apps-toggle" open={nearbyOpen} onToggle={(e) => setNearbyOpen(e.currentTarget.open)}>
         <summary className="fs-nearby__summary">
-          {nearbyOpen ? t('Nearby apps') : tn(nearbyCount, '{n} nearby', '{n} nearby')}
+          {nearbyOpen ? t('Hide nearby apps') : tn(nearbyCount, '{n} app nearby', '{n} apps nearby')}
         </summary>
         <NearbyApps
           onAdded={(c) => {

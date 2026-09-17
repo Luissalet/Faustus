@@ -7690,3 +7690,6 @@ Not a known app — add it as an MCP server	No es una app conocida — añádela
 {n} nearby	{n} cercana(s)
 Connected: {name}	Conectado: {name}
 Followed the app from {from} to {to}	Siguió a la app de {from} a {to}
+Hide nearby apps	Ocultar apps cercanas
+{n} app nearby	{n} app cerca
+{n} apps nearby	{n} apps cerca

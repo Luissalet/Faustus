@@ -490,3 +490,40 @@ def test_match_preset_by_service_then_title():
     assert match_preset({"service": "writers-hoard-ai-bridge"}, "") == "writer"
     assert match_preset(None, "Jubhunter's Hoard") == "jobhunter"
     assert match_preset({"service": "something-else"}, "My app") is None
+
+
+async def test_health_sends_the_bridge_token_only_after_a_401(bridge_dir, tmp_path):
+    """Writer's Hoard answers 401 to an anonymous /api/health: with the
+    connector's TOKEN_FILE the probe retries once with the bearer token and
+    the fingerprint check then passes."""
+    import http.server, threading
+    seen = []
+
+    class H(http.server.BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def do_GET(self):
+            seen.append(self.headers.get("Authorization"))
+            if self.headers.get("Authorization") != "Bearer sekret":
+                self.send_response(401); self.end_headers(); return
+            body = json.dumps({"service": "writers-hoard-ai-bridge"}).encode()
+            self.send_response(200); self.send_header("Content-Type", "application/json")
+            self.end_headers(); self.wfile.write(body)
+
+    httpd = http.server.HTTPServer(("127.0.0.1", 0), H)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    try:
+        tok = tmp_path / "token"; tok.write_text("sekret\n")
+        wdir = tmp_path / "writer"; (wdir / "dist-electron" / "aibridge").mkdir(parents=True)
+        (wdir / "dist-electron" / "aibridge" / "mcpStdio.cjs").write_text("// fake\n")
+        url = f"http://127.0.0.1:{httpd.server_address[1]}"
+        status = await connector_status.compute_status(
+            connectors.get_preset("writer"),
+            values={"WRITER_DIR": str(wdir), "APP_URL": url, "TOKEN_FILE": str(tok)},
+            is_enabled=True, connector_id="w1", manager_status={"status": "connected", "tool_count": 5},
+            force_check=True)
+        assert seen == [None, "Bearer sekret"]
+        assert status["state"] == "available", status
+    finally:
+        httpd.shutdown(); httpd.server_close()

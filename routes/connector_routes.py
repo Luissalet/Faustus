@@ -134,7 +134,9 @@ def setup_connector_routes(mcp_manager: McpManager) -> APIRouter:
         resolved = connectors.resolve_preset_values(preset, entry.get("values") or {})
         if not resolved["ok"]:
             return entry
-        health = await connector_status.get_health(entry["id"], resolved["app_url"], preset.health_path, force=True)
+        health = await connector_status.get_health(
+            entry["id"], resolved["app_url"], preset.health_path, force=True,
+            token=connectors.read_token_file(resolved.get("token_file") or ""))
         if health.get("reachable"):
             return entry
         try:
@@ -323,7 +325,9 @@ def setup_connector_routes(mcp_manager: McpManager) -> APIRouter:
             server = db.query(McpServer).filter(McpServer.id == entry["server_id"]).first()
         finally:
             db.close()
-        status = await _connector_status_for(entry, server, force_check=False)
+        # A real first check: the card must not open on "unknown" for an app
+        # that is answering right now (adopt from the nearby list, 17-09).
+        status = await _connector_status_for(entry, server, force_check=True)
         return _entry_view(connector_sidecar.get_connector(entry["id"], redact=True), server, status)
 
     @router.patch("/api/app-connectors/{connector_id}")

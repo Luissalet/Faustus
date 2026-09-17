@@ -22,7 +22,7 @@ import time
 from typing import Any, Dict, Optional
 from urllib.parse import urlsplit
 
-from src.connectors import ConnectorPreset, resolve_preset_values
+from src.connectors import ConnectorPreset, read_token_file, resolve_preset_values
 from src.contracts.base import now_iso
 
 logger = logging.getLogger(__name__)
@@ -46,14 +46,16 @@ def _port_of(url: str) -> str:
         return ""
 
 
-async def _fetch_health(app_url: str, health_path: str) -> Dict[str, Any]:
+async def _fetch_health(app_url: str, health_path: str, token: Optional[str] = None) -> Dict[str, Any]:
     """One real GET against ``app_url + health_path``. Never raises: every
     failure — refused connection, timeout, DNS, TLS — comes back as
     ``reachable: False`` with the failure recorded in ``detail``; anything
     else that answers at all (including a non-200 status) is
     ``reachable: True`` (F1.1: old-build compatibility), whatever the body
-    turned out to be. Never sends a token — this is a liveness probe against
-    the app's own port, not an authenticated API call."""
+    turned out to be. Sends the app's own bearer token when the connector
+    has a TOKEN_FILE and the bridge asks for it (Writer's Hoard answers 401
+    to an anonymous /api/health, 17-09): first anonymously, then once more
+    with the token only on a 401."""
     import httpx
 
     url = app_url.rstrip("/") + health_path
@@ -61,6 +63,8 @@ async def _fetch_health(app_url: str, health_path: str) -> Dict[str, Any]:
     try:
         async with httpx.AsyncClient(follow_redirects=False, timeout=HEALTH_TIMEOUT_S) as client:
             resp = await client.get(url)
+            if resp.status_code == 401 and token:
+                resp = await client.get(url, headers={"Authorization": f"Bearer {token}"})
     except (httpx.ConnectError, httpx.ConnectTimeout, httpx.TimeoutException, httpx.TransportError) as exc:
         return {
             "reachable": False, "checked_at": now_iso(), "latency_ms": None,
@@ -89,7 +93,8 @@ async def _fetch_health(app_url: str, health_path: str) -> Dict[str, Any]:
     }
 
 
-async def get_health(connector_id: str, app_url: str, health_path: str, *, force: bool) -> Dict[str, Any]:
+async def get_health(connector_id: str, app_url: str, health_path: str, *, force: bool,
+                     token: Optional[str] = None) -> Dict[str, Any]:
     """The cached or freshly-checked app health for one connector.
 
     Returns ``None`` (not a dict) when nothing has ever been checked and
@@ -100,7 +105,7 @@ async def get_health(connector_id: str, app_url: str, health_path: str, *, force
     if force:
         if cached is not None and (time.monotonic() - cached[0]) < CACHE_DEBOUNCE_S:
             return cached[1]
-        health = await _fetch_health(app_url, health_path)
+        health = await _fetch_health(app_url, health_path, token)
         _health_cache[connector_id] = (time.monotonic(), health)
         return health
     if cached is not None:
@@ -153,7 +158,8 @@ async def compute_status(
         return {"state": "unconfigured", "app": empty_app, "adapter": adapter, "reasons": reasons}
 
     app_url = resolved["app_url"]
-    health = await get_health(connector_id, app_url, preset.health_path, force=force_check)
+    token = read_token_file(resolved.get("token_file") or "")
+    health = await get_health(connector_id, app_url, preset.health_path, force=force_check, token=token)
     return _finish_status(preset, app_url, health, adapter, reasons)
 
 

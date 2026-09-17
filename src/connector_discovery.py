@@ -15,7 +15,7 @@ Two jobs, both born on 17-09 from Jobhunter's Hoard:
   Connectors screen renders that as a pairing list with one-click Add.
 
 Only loopback ports are considered, only ``GET`` on ``/api/health`` and ``/``
-are sent, never with a token, and nothing is written anywhere: this module
+are sent (the app's own bearer token only after a 401), and nothing is written anywhere: this module
 observes. psutil is optional — without it the port list comes from
 ``netstat`` and the process column stays empty.
 """
@@ -31,7 +31,7 @@ import time
 from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Optional
 
-from src.connectors import PRESETS, ConnectorPreset
+from src.connectors import PRESETS, ConnectorPreset, default_token_files, read_token_file
 
 logger = logging.getLogger(__name__)
 
@@ -158,7 +158,7 @@ def _netstat_ports() -> List[ListeningPort]:
 # who is it
 # ---------------------------------------------------------------------------
 
-async def probe(url: str, health_path: str = "/api/health") -> Dict[str, Any]:
+async def probe(url: str, health_path: str = "/api/health", tokens: Optional[List[str]] = None) -> Dict[str, Any]:
     """``{"health": dict|None, "title": str, "latency_ms": int|None}`` for one
     loopback app. `health` is the parsed JSON of ``health_path`` when it
     answered 200 with an object; `title` the ``<title>`` of ``/`` when it is
@@ -172,6 +172,18 @@ async def probe(url: str, health_path: str = "/api/health") -> Dict[str, Any]:
             try:
                 resp = await client.get(url.rstrip("/") + health_path)
                 result["latency_ms"] = int((time.monotonic() - started) * 1000)
+                if resp.status_code == 401:
+                    # A bridge that wants its own token (Writer's Hoard): try
+                    # the tokens the presets know how to find on this machine.
+                    for tok in tokens or ():
+                        try:
+                            again = await client.get(url.rstrip("/") + health_path,
+                                                     headers={"Authorization": f"Bearer {tok}"})
+                        except Exception:  # noqa: BLE001
+                            continue
+                        if again.status_code == 200:
+                            resp = again
+                            break
                 if resp.status_code == 200:
                     try:
                         body = resp.json()
@@ -184,7 +196,7 @@ async def probe(url: str, health_path: str = "/api/health") -> Dict[str, Any]:
             try:
                 root = await client.get(url.rstrip("/") + "/")
                 ctype = root.headers.get("content-type", "")
-                if "html" in ctype:
+                if root.status_code == 200 and "html" in ctype:
                     m = re.search(r"<title[^>]*>(.*?)</title>", root.text[:20000], re.I | re.S)
                     if m:
                         result["title"] = re.sub(r"\s+", " ", m.group(1)).strip()[:120]
@@ -240,10 +252,19 @@ def suggested_values(preset: ConnectorPreset, url: str, cwd: str) -> Dict[str, s
     return values
 
 
-async def _probe_port(lp: ListeningPort, sem: asyncio.Semaphore) -> Optional[Candidate]:
+def _known_tokens() -> List[str]:
+    out = []
+    for path in default_token_files().values():
+        tok = read_token_file(path)
+        if tok:
+            out.append(tok)
+    return out
+
+
+async def _probe_port(lp: ListeningPort, sem: asyncio.Semaphore, tokens: Optional[List[str]] = None) -> Optional[Candidate]:
     url = f"http://127.0.0.1:{lp.port}"
     async with sem:
-        probed = await probe(url)
+        probed = await probe(url, tokens=tokens)
     if probed["health"] is None and not probed["title"]:
         return None
     preset_id = match_preset(probed["health"], probed["title"])
@@ -262,7 +283,8 @@ async def discover(*, ports: Optional[List[ListeningPort]] = None, exclude: Opti
     skip = set(SKIP_PORTS) | _own_ports() | set(exclude or ())
     listing = [lp for lp in (ports if ports is not None else listening_ports()) if lp.port not in skip]
     sem = asyncio.Semaphore(MAX_PARALLEL_PROBES)
-    results = await asyncio.gather(*(_probe_port(lp, sem) for lp in listing), return_exceptions=True)
+    tokens = _known_tokens()
+    results = await asyncio.gather(*(_probe_port(lp, sem, tokens) for lp in listing), return_exceptions=True)
     found = [r for r in results if isinstance(r, Candidate)]
     found.sort(key=lambda c: (c.preset_id is None, c.port))
     return found

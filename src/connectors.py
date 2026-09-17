@@ -237,4 +237,30 @@ def resolve_preset_values(preset: ConnectorPreset, values: Optional[Dict[str, st
         "env": env,
         "app_url": app_url,
         "ui_url": ui_url,
+        "token_file": merged.get("TOKEN_FILE") or "",
     }
+
+
+def read_token_file(path: str) -> Optional[str]:
+    """The bearer token an app's bridge writes for its own clients, or None.
+    Read only — never logged, never stored anywhere else."""
+    if not path or not os.path.isfile(path):
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            token = f.read().strip()
+        return token or None
+    except OSError:
+        return None
+
+
+def default_token_files() -> Dict[str, str]:
+    """Preset id -> default TOKEN_FILE that needs no user value (Writer's
+    Hoard writes it under %APPDATA%). Used by discovery to identify an app
+    that answers 401 without a token."""
+    out: Dict[str, str] = {}
+    for preset in PRESETS.values():
+        path = preset.defaults.get("TOKEN_FILE") or ""
+        if path and "{" not in path and os.path.isfile(path):
+            out[preset.id] = path
+    return out
