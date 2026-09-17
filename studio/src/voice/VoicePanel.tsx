@@ -15,14 +15,37 @@ const labels: Record<VoicePhase, string> = {
 };
 interface Props { busy: boolean; turn?: Turn; sessionName: string; onSend(text: string): void; onStop(): void; onClose(): void }
 
+/* A conversation, not a dictation form: by default the panel listens as
+   soon as it opens, sends what it heard when you stop talking, reads the
+   answer and listens again. The three switches stay in "Voice options" for
+   whoever wants to review each transcript; what you choose is kept. */
+const PREFS_KEY = 'faustus_voice_prefs';
+interface VoicePrefs { continuous: boolean; autoSend: boolean; readAloud: boolean | null }
+function readPrefs(): VoicePrefs {
+  try {
+    const raw = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}') as Partial<VoicePrefs>;
+    return { continuous: raw.continuous ?? true, autoSend: raw.autoSend ?? true, readAloud: raw.readAloud ?? null };
+  } catch { return { continuous: true, autoSend: true, readAloud: null }; }
+}
+function writePrefs(patch: Partial<VoicePrefs>): void {
+  try { localStorage.setItem(PREFS_KEY, JSON.stringify({ ...readPrefs(), ...patch })); } catch { /* private mode */ }
+}
+
 export default function VoicePanel(props: Props) {
   const [phase, setPhase] = useState<VoicePhase>(props.busy ? 'thinking' : 'idle');
   const [configs, setConfigs] = useState<{ stt: SpeechCapabilities; tts: SpeechCapabilities } | null>(null);
   const [error, setError] = useState('');
   const [transcript, setTranscript] = useState('');
-  const [continuous, setContinuous] = useState(false);
-  const [autoSend, setAutoSend] = useState(false);
-  const [readAloud, setReadAloud] = useState(true);
+  const prefs = useRef(readPrefs());
+  const [continuous, setContinuousState] = useState(prefs.current.continuous);
+  const [autoSend, setAutoSendState] = useState(prefs.current.autoSend);
+  const [readAloud, setReadAloud] = useState(prefs.current.readAloud ?? true);
+  /* Only the person's own toggles are remembered: the panel also switches
+     `continuous` off by itself when a turn errors or asks for approval,
+     and that must not become the default for tomorrow. */
+  const chooseContinuous = (on: boolean) => { setContinuousState(on); writePrefs({ continuous: on }); };
+  const chooseAutoSend = (on: boolean) => { setAutoSendState(on); writePrefs({ autoSend: on }); };
+  const setContinuous = setContinuousState;
   const [deviceId, setDeviceId] = useState('');
   const [language, setLanguage] = useState('auto');
   const heardLanguage = useRef(locale());
@@ -36,6 +59,7 @@ export default function VoicePanel(props: Props) {
   const latest = useRef({ ...props, continuous, autoSend, readAloud }); latest.current = { ...props, continuous, autoSend, readAloud };
   const reply = useRef({ id: props.turn?.id, controller: new AbortController(), buffer: new SentenceBuffer(), queue: [] as string[], draining: false, muted: false });
   const engaged = useRef(false);
+  const autoStart = useRef(false);
   const nextListen = useRef<() => void>(() => {});
   const phaseRef = useRef(phase); phaseRef.current = phase;
 
@@ -51,7 +75,15 @@ export default function VoicePanel(props: Props) {
     alive.current = true;
     const controller = new AbortController();
     Promise.all([capabilities('stt', controller.signal), capabilities('tts', controller.signal)])
-      .then(([stt, tts]) => { if (!controller.signal.aborted) { setConfigs({ stt, tts }); setReadAloud(tts.configured && tts.dependency_installed); } })
+      .then(([stt, tts]) => {
+        if (controller.signal.aborted) return;
+        setConfigs({ stt, tts });
+        const speakable = tts.configured && tts.dependency_installed;
+        setReadAloud(speakable && (prefs.current.readAloud ?? true));
+        // Hands-free from the first second: the person opened voice mode
+        // to talk, so start listening unless a task is already running.
+        if (stt.configured && stt.dependency_installed && !latest.current.busy && prefs.current.continuous) autoStart.current = true;
+      })
       .catch(e => { if (!controller.signal.aborted) { setError(e.message); setPhase('error'); } });
     const hidden = () => { if (document.hidden) pause(); };
     document.addEventListener('visibilitychange', hidden);
@@ -103,6 +135,14 @@ export default function VoicePanel(props: Props) {
     }
   }, [configs, deviceId, language, silence, commit]);
   nextListen.current = () => void listen();
+  // `listen` closes over `configs`, so the first listen waits for the
+  // render that has them.
+  useEffect(() => {
+    if (!configs || !autoStart.current) return;
+    autoStart.current = false;
+    engaged.current = true;
+    void listen();
+  }, [configs, listen]);
 
   const drain = useCallback(async () => {
     const run = reply.current;
@@ -196,9 +236,9 @@ export default function VoicePanel(props: Props) {
         {props.busy && <button type="button" onClick={() => { pause(); props.onStop(); }}>{t('Cancel task')}</button>}
       </div>
       <details className="fs-voice__settings"><summary><Settings2 size={14} />{t('Voice options & privacy')}</summary>
-        <label><input type="checkbox" checked={readAloud} disabled={!configs?.tts.configured || !configs.tts.dependency_installed} onChange={e => { setReadAloud(e.target.checked); if (!e.target.checked) { silence(); if (phaseRef.current === 'speaking') setPhase(props.busy ? 'thinking' : 'idle'); } }} />{t('Read responses aloud')}</label>
-        <label><input type="checkbox" checked={continuous} onChange={e => setContinuous(e.target.checked)} />{t('Listen again after each response')}</label>
-        <label><input type="checkbox" checked={autoSend} onChange={e => setAutoSend(e.target.checked)} />{t('Send without reviewing transcription')}</label>
+        <label><input type="checkbox" checked={readAloud} disabled={!configs?.tts.configured || !configs.tts.dependency_installed} onChange={e => { setReadAloud(e.target.checked); writePrefs({ readAloud: e.target.checked }); if (!e.target.checked) { silence(); if (phaseRef.current === 'speaking') setPhase(props.busy ? 'thinking' : 'idle'); } }} />{t('Read responses aloud')}</label>
+        <label><input type="checkbox" checked={continuous} onChange={e => chooseContinuous(e.target.checked)} />{t('Listen again after each response')}</label>
+        <label><input type="checkbox" checked={autoSend} onChange={e => chooseAutoSend(e.target.checked)} />{t('Send without reviewing transcription')}</label>
         {devices.length > 0 && <label>{t('Microphone')}<select value={deviceId} disabled={captureActive} onChange={e => setDeviceId(e.target.value)}><option value="">{t('System default')}</option>{devices.map((d, i) => <option key={d.deviceId || i} value={d.deviceId}>{d.label || `${t('Microphone')} ${i + 1}`}</option>)}</select></label>}
         {configs?.stt.execution === 'browser' && <p>{t('Browser recognition may send audio to its speech service. Choose Whisper for local transcription.')}</p>}
         <p>{t('Audio capture is temporary. Voice replies skip the disk cache. Final messages follow this chat’s history settings. Endpoint retention depends on its provider.')}</p>

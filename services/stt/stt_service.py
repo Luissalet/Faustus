@@ -5,6 +5,7 @@ import io
 import logging
 import httpx
 import tempfile
+import time
 import threading
 from pathlib import Path
 from typing import Optional, Dict, Any
@@ -114,12 +115,25 @@ class STTService:
                 tmp.write(audio_bytes)
                 tmp_path = tmp.name
 
-            kwargs = {}
+            # Conversation, not dictation of a lecture: greedy decoding is
+            # several times faster than the 5-beam default and just as good
+            # on short utterances; the VAD trims the silence around them
+            # (and drops the "You"/"Thank you" a Whisper model hallucinates
+            # on pure silence). No context carried between calls — one
+            # bad turn must not colour the next.
+            kwargs = {"beam_size": 1, "condition_on_previous_text": False}
             if language:
                 kwargs["language"] = language
 
-            segments, info = model.transcribe(tmp_path, **kwargs)
-            text = " ".join(seg.text.strip() for seg in segments)
+            started = time.perf_counter()
+            try:
+                segments, info = model.transcribe(tmp_path, vad_filter=True, **kwargs)
+                text = " ".join(seg.text.strip() for seg in segments)
+            except Exception as vad_error:  # noqa: BLE001 — the VAD needs an extra runtime some installs lack
+                logger.warning("Local STT: VAD unavailable (%s); transcribing without it", vad_error)
+                segments, info = model.transcribe(tmp_path, **kwargs)
+                text = " ".join(seg.text.strip() for seg in segments)
+            logger.info("Local STT took %.2fs", time.perf_counter() - started)
             if metadata is not None:
                 metadata["language"] = info.language
 
