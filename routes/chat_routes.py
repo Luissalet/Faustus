@@ -2013,6 +2013,27 @@ def setup_chat_routes(
         # not chats we quietly promoted for a notes/calendar intent.
         user_requested_agent = (chat_mode == "agent")
         _search_enabled = web_search_enabled_for_turn(allow_web_search, use_web)
+        # Search first, don't ask (FAUSTUS §107): a question about anything
+        # that may have changed after the model's training — a result, a
+        # price, the news, who holds a role — turns the web tools on by
+        # itself when the person left the toggle untouched. An explicit
+        # "off" (allow_web_search=false) still wins; a timeless question
+        # leaves the toggle as it was.
+        _auto_web = False
+        if (not _search_enabled and allow_web_search in (None, "")
+                and not is_web_search_explicitly_denied(allow_web_search) and isinstance(message, str)):
+            try:
+                from src.freshness import looks_time_sensitive
+                _auto_web = looks_time_sensitive(message)
+            except Exception:  # noqa: BLE001
+                _auto_web = False
+            if _auto_web:
+                _search_enabled = True
+                if chat_mode == "agent":
+                    allow_web_search = "true"
+                else:
+                    use_web = "true"
+                logger.info("[freshness] time-sensitive question: web search enabled for this turn")
         _explicit_web_intent = False
         _explicit_browser_intent = False
         if isinstance(message, str):

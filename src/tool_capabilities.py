@@ -565,9 +565,13 @@ _register(
     result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED,
 )
 _register(
-    # Catalog helper: reads Faustus's own tool index, executes nothing.
+    # Catalog helper: reads Faustus's own tool index (names and schemas,
+    # nothing of the person's), executes nothing. Public, so a run that
+    # already saw external context can still find the tool it needs
+    # instead of stopping at an approval card (seen live: the very first
+    # call of a web question was gated).
     {"lookup_tools"},
-    ToolEffect.READ_PRIVATE,
+    ToolEffect.READ_PUBLIC,
 )
 _register(
     # Code Mode (A10/A11): runs model-written code that composes other tool
