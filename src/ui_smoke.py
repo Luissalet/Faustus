@@ -190,10 +190,10 @@ def _build_launch(spec: Dict[str, Any], workspace: str, port: int,
     env_extra = {"PORT": str(port), "FLASK_RUN_PORT": str(port)}
     if kind == "flask":
         entry = spec["entry"]
-        if re.search(r"\bapp\.run\s*\(", spec.get("source") or ""):
-            # The app reads its own port; PORT/FLASK_RUN_PORT above is the
-            # best we can do generically, but most templates honor it.
-            return [python_exe, entry], env_extra, workspace
+        # Always `flask run --port N` with FLASK_APP=<entry>: the module's
+        # `app` / `create_app` is discovered by Flask itself, and a hard-coded
+        # `app.run(port=5055)` in the entry is ignored (live 17-09: running
+        # `python app.py` left the smoke probing a port the app never bound).
         flask_exe = shutil.which("flask")
         env_extra["FLASK_APP"] = entry
         if flask_exe:
