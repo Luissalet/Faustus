@@ -613,5 +613,5 @@ Pedido el 16-09 tras el proyecto «3D modeling silhouettes»: 24 chats reales, u
 
 **Hecho.** Los seis módulos y su cableado en `agent_loop`/`agent_harness`/`tool_execution`/`filesystem_tools`, tests de módulo y de bucle (LLM guionizado), Studio (estados nuevos en la lista de checks, evento `plan_tracker`), settings y catálogo SSE.
 
-**Siguiente.** Repetir el chat #14 («Sigue implementando el plan» + plan de 172 KB) contra el 27B en el 7001 y medir: prompt < 12 KB, ≥ 1 tool call, `plan_status` usado. Enganchar los criterios tipados de `Goal` (WP27) a `plan_done`. Ronda de arreglo cuando la puerta dura degrada un turno (hoy solo impide sellar). Diarización/idioma por segmento no tiene que ver aquí — es OBJ-14.
+**Hecho en vivo (17-09).** Chat #14 repetido en forma controlada contra el 27B: 4/4 tareas con tests reales, `ui_smoke` cazó un bug real que los tests no veían; tres fallos del harness corregidos sobre la marcha (§95). **Siguiente.** Repetirlo con un plan grande (≥ 60 KB) y con un segundo chat sin adjunto («Continua»). Enganchar los criterios tipados de `Goal` (WP27) a `plan_done`. Ronda de arreglo cuando la puerta dura degrada un turno (hoy solo impide sellar). Diarización/idioma por segmento no tiene que ver aquí — es OBJ-14.
 
