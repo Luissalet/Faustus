@@ -172,11 +172,30 @@ def serve(port,token):
     try:server.run()
     finally:
         finished.set()
-        # These are this server's descendants, not all Python/venv processes.
-        for child in psutil.Process().children(recursive=True):
+        # These are this server's descendants, not all Python/venv processes —
+        # minus the ones launched to outlive us (the WhatsApp bridge, launch
+        # profiles): src.process_launch keeps their pids in data/runtime/detached.json.
+        for child in _children_to_terminate():
             try:child.terminate()
             except psutil.Error:pass
         if read_record().get("token")==token:RECORD.unlink(missing_ok=True)
+
+
+def _children_to_terminate():
+    keep=set()
+    try:
+        ledger=json.loads((RUNTIME / "detached.json").read_text(encoding="utf-8"))
+        for pid,rec in (ledger or {}).items():
+            try:
+                proc=psutil.Process(int(pid))
+                if abs(proc.create_time()-float(rec.get("created") or 0))<=.01:
+                    keep.add(proc.pid)
+                    keep.update(c.pid for c in proc.children(recursive=True))
+            except (psutil.Error,ValueError,TypeError):pass
+    except (OSError,ValueError):pass
+    try:children=psutil.Process().children(recursive=True)
+    except psutil.Error:children=[]
+    return [c for c in children if c.pid not in keep]
 
 
 def main():

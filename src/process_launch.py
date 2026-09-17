@@ -20,6 +20,7 @@ without a real OS process (tests substitute `subprocess.Popen`).
 from __future__ import annotations
 
 import logging
+import json
 import os
 import subprocess
 import time
@@ -99,7 +100,44 @@ def spawn_detached(
         log_handle.close()
     process_ownership.note_started(proc, command=" ".join(argv), owner=owner)
     spawned_at = process_ownership.creation_time(proc.pid)
+    _note_detached(proc.pid, spawned_at, " ".join(argv))
     return LaunchResult(pid=proc.pid, log_path=log_path, spawned_at=spawned_at)
+
+
+def detached_ledger_path() -> str:
+    """`data/runtime/detached.json`: {pid: {created, command}} of the children
+    meant to outlive this server. `server_runtime.serve` reads it on shutdown
+    and leaves those (and their descendants) alone — on Windows a detached
+    child still lists us as its parent, so a blanket `children(recursive=True)`
+    terminate took the WhatsApp bridge and every launch profile down with
+    each restart (seen live)."""
+    from src.constants import BASE_DIR  # type: ignore
+    return os.path.join(BASE_DIR, "data", "runtime", "detached.json")
+
+
+def _note_detached(pid: int, created: Optional[float], command: str) -> None:
+    path = detached_ledger_path()
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        try:
+            with open(path, encoding="utf-8") as fh:
+                ledger = json.load(fh)
+            if not isinstance(ledger, dict):
+                ledger = {}
+        except (OSError, ValueError):
+            ledger = {}
+        # prune what is gone (or was recycled into another process)
+        for old_pid, rec in list(ledger.items()):
+            try:
+                if abs(process_ownership.creation_time(int(old_pid)) - float(rec.get("created") or 0)) > 0.01:
+                    ledger.pop(old_pid, None)
+            except Exception:  # noqa: BLE001
+                ledger.pop(old_pid, None)
+        ledger[str(pid)] = {"created": created, "command": command[:200]}
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(ledger, fh)
+    except Exception as exc:  # noqa: BLE001 - the ledger is a courtesy, never load-bearing
+        logger.debug("detached ledger not updated: %s", exc)
 
 
 def poll_readiness(check_ready, *, timeout_s: float, interval_s: float = 0.5) -> bool:
