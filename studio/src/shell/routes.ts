@@ -15,6 +15,7 @@ import {
   Library,
   ListChecks,
   Mail,
+  MessageCircle,
   Network,
   Plug,
   Sparkles,
@@ -71,6 +72,9 @@ export const TOOLS: Tool[] = [
   // CONTRATO_CONECTORES Lote F3: the Hoard presets (Jobhunter, Writer…) and
   // every other MCP server, unified — /api/app-connectors, not a second store.
   { path: '/connectors', label: 'Connectors', icon: Plug },
+  // The WhatsApp bridge screen (routes/whatsapp_routes.py, src/whatsapp_bridge.py):
+  // read chats from your own linked account and answer from within Faustus.
+  { path: '/whatsapp', label: 'WhatsApp', icon: MessageCircle },
   // The control center (src/process_center.py): what is running because of
   // Faustus — ports, background jobs, launched apps — and a Stop for each.
   { path: '/processes', label: 'Processes', icon: Cpu },
@@ -116,6 +120,7 @@ export const SERVER_ROUTES = [
   '/notes',
   '/source-control',
   '/connectors',
+  '/whatsapp',
   '/processes',
   '/memory',
   '/calendar',

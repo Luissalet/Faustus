@@ -1,0 +1,309 @@
+/* WhatsApp. Shares fs-screen, fs-prose, fs-search, fs-set__*, fs-modes__confirm
+ * with the rest of Studio (projects.css / settings.css / connectors/connectors.css)
+ * — this file only adds the status pill, the setup panel, the two-pane chat
+ * layout and the bubbles. */
+
+.fs-wa__pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  padding: var(--fs-space-1) var(--fs-space-3);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-pill);
+  background: var(--fs-surface-1);
+  font-size: var(--fs-label-size);
+  font-weight: var(--fs-label-weight);
+  color: var(--fs-text-2);
+  white-space: nowrap;
+}
+
+.fs-wa__pill-dot {
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: 50%;
+  background: var(--fs-text-3);
+}
+
+.fs-wa__pill[data-status='connected'] .fs-wa__pill-dot {
+  background: var(--fs-success);
+}
+
+.fs-wa__pill[data-status='qr'] .fs-wa__pill-dot,
+.fs-wa__pill[data-status='starting'] .fs-wa__pill-dot {
+  background: var(--fs-warning);
+}
+
+.fs-wa__pill[data-status='disconnected'] .fs-wa__pill-dot,
+.fs-wa__pill[data-status='logged_out'] .fs-wa__pill-dot {
+  background: var(--fs-danger);
+}
+
+.fs-wa__setup {
+  display: grid;
+  gap: var(--fs-space-3);
+  justify-items: start;
+}
+
+.fs-wa__setup--connected {
+  padding-block: var(--fs-space-2);
+}
+
+.fs-wa__warn {
+  margin: 0;
+  color: var(--fs-danger);
+  font-size: var(--fs-label-size);
+}
+
+.fs-wa__spinner {
+  inline-size: 20px;
+  block-size: 20px;
+  border-radius: 50%;
+  border: 2px solid var(--fs-border);
+  border-top-color: var(--fs-brand);
+  animation: fs-spin var(--fs-duration-slow) linear infinite;
+}
+
+.fs-wa__qr {
+  inline-size: 280px;
+  block-size: 280px;
+  border-radius: var(--fs-radius-panel);
+  border: 1px solid var(--fs-border);
+  background: var(--fs-surface-2);
+  padding: var(--fs-space-3);
+}
+
+.fs-wa__steps {
+  margin: 0;
+  padding-inline-start: var(--fs-space-5);
+  color: var(--fs-text-2);
+  font-size: var(--fs-label-size);
+  display: grid;
+  gap: var(--fs-space-1);
+}
+
+/* ── Two-pane layout ── */
+
+.fs-wa__panes {
+  display: grid;
+  grid-template-columns: 300px 1fr;
+  gap: var(--fs-space-4);
+  min-block-size: 480px;
+  flex: 1;
+}
+
+.fs-wa__pane {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fs-space-3);
+  min-inline-size: 0;
+  min-block-size: 0;
+}
+
+.fs-wa__pane--list {
+  border-inline-end: 1px solid var(--fs-border);
+  padding-inline-end: var(--fs-space-4);
+}
+
+.fs-wa__pane--chat {
+  padding-block-end: 0;
+}
+
+.fs-wa__pane--empty {
+  align-items: center;
+  justify-content: center;
+}
+
+.fs-wa__pane-head {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  flex-wrap: wrap;
+}
+
+.fs-wa__pane-head strong {
+  flex: 1;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fs-text-1);
+}
+
+/* ── Chat list ── */
+
+.fs-wa__chat-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--fs-space-1);
+  overflow-y: auto;
+}
+
+.fs-wa__chat-item {
+  display: grid;
+  gap: var(--fs-space-1);
+  padding: var(--fs-space-2) var(--fs-space-3);
+  border: 1px solid transparent;
+  border-radius: var(--fs-radius-control);
+  background: transparent;
+  text-align: start;
+  cursor: pointer;
+  inline-size: 100%;
+  font: inherit;
+  color: inherit;
+}
+
+.fs-wa__chat-item:hover {
+  background: var(--fs-surface-2);
+}
+
+.fs-wa__chat-item[data-active='true'] {
+  background: var(--fs-surface-2);
+  border-color: var(--fs-border);
+}
+
+.fs-wa__chat-item-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--fs-space-2);
+}
+
+.fs-wa__chat-name {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--fs-space-1);
+  font-weight: var(--fs-label-weight);
+  color: var(--fs-text-1);
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fs-wa__chat-item-body {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--fs-space-2);
+}
+
+.fs-wa__chat-last {
+  color: var(--fs-text-3);
+  font-size: var(--fs-label-size);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-inline-size: 0;
+}
+
+.fs-wa__unread {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-inline-size: 18px;
+  block-size: 18px;
+  padding-inline: 5px;
+  border-radius: var(--fs-radius-pill);
+  background: var(--fs-brand);
+  color: var(--fs-surface-1);
+  font-size: 11px;
+  font-weight: var(--fs-label-weight);
+}
+
+/* ── Bubbles ── */
+
+.fs-wa__bubbles {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--fs-space-2);
+  overflow-y: auto;
+  flex: 1;
+  min-block-size: 0;
+}
+
+.fs-wa__bubble-row {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.fs-wa__bubble-row--me {
+  justify-content: flex-end;
+}
+
+.fs-wa__bubble {
+  display: grid;
+  gap: 2px;
+  max-inline-size: 72%;
+  padding: var(--fs-space-2) var(--fs-space-3);
+  border-radius: var(--fs-radius-panel);
+  background: var(--fs-surface-2);
+  border: 1px solid var(--fs-border);
+  font-size: var(--fs-label-size);
+  color: var(--fs-text-1);
+}
+
+.fs-wa__bubble[data-mine='true'] {
+  background: color-mix(in srgb, var(--fs-brand) 16%, var(--fs-surface-2));
+  border-color: color-mix(in srgb, var(--fs-brand) 40%, var(--fs-border));
+}
+
+.fs-wa__bubble-sender {
+  font-size: 11px;
+  font-weight: var(--fs-label-weight);
+  color: var(--fs-brand);
+}
+
+.fs-wa__bubble-time {
+  align-self: flex-end;
+  font-size: 10px;
+  color: var(--fs-text-3);
+}
+
+/* ── Composer ── */
+
+.fs-wa__composer {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--fs-space-2);
+  padding-block-start: var(--fs-space-2);
+  border-block-start: 1px solid var(--fs-border);
+}
+
+.fs-wa__composer-input {
+  flex: 1;
+  resize: none;
+  padding: var(--fs-space-2) var(--fs-space-3);
+  border-radius: var(--fs-radius-control);
+  border: 1px solid var(--fs-border);
+  background: var(--fs-surface-1);
+  color: var(--fs-text-1);
+  font: inherit;
+  font-size: var(--fs-label-size);
+}
+
+.fs-wa__composer-input:focus-visible {
+  border-color: var(--fs-brand);
+}
+
+@media (max-width: 900px) {
+  .fs-wa__panes {
+    grid-template-columns: 1fr;
+  }
+
+  .fs-wa__panes[data-open='list'] .fs-wa__pane--chat {
+    display: none;
+  }
+
+  .fs-wa__panes[data-open='chat'] .fs-wa__pane--list {
+    display: none;
+  }
+
+  .fs-wa__pane--list {
+    border-inline-end: none;
+    padding-inline-end: 0;
+  }
+}

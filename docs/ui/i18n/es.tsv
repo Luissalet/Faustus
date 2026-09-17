@@ -7732,3 +7732,29 @@ yours	tuyo
 …or upload a file	…o sube un archivo
 ≥ {lower} GB (incomplete: {reason})	≥ {lower} GB (incompleto: {reason})
 ⟨insert⟩	⟨insertar⟩
+Connected as {name}	Conectado como {name}
+Could not load messages.	No se pudieron cargar los mensajes.
+Filter chats…	Filtrar chats…
+GET /api/whatsapp/messages failed.	GET /api/whatsapp/messages falló.
+Installing the bridge (first time)… this can take a few minutes.	Instalando el puente (primera vez)… puede tardar unos minutos.
+Node.js is not installed — the bridge cannot start.	Node.js no está instalado — el puente no puede iniciarse.
+Nothing in the last 48 h	Nada en las últimas 48 h
+Open WhatsApp on your phone	Abre WhatsApp en tu teléfono
+Pick a chat	Elige un chat
+Reconnecting…	Reconectando…
+Scan this code	Escanea este código
+Settings → Linked devices → Link a device	Ajustes → Dispositivos vinculados → Vincular un dispositivo
+Start the bridge	Iniciar el puente
+Stop the bridge?	¿Detener el puente?
+The first start installs the bridge (Node.js needed) and can take a few minutes.	El primer inicio instala el puente (necesita Node.js) y puede tardar unos minutos.
+This unlinks the phone; you will need to scan again.	Esto desvincula el teléfono; tendrás que escanear de nuevo.
+Unlinked — start again to get a new QR.	Desvinculado — inicia de nuevo para obtener un nuevo QR.
+WhatsApp	WhatsApp
+WhatsApp QR code	Código QR de WhatsApp
+Write a message…	Escribe un mensaje…
+Your own account through a local bridge, like WhatsApp Web: nothing runs until you start it, and it stays on this machine.	Tu propia cuenta a través de un puente local, como WhatsApp Web: nada se ejecuta hasta que lo inicies, y se queda en esta máquina.
+Your own account through a local bridge: read what people wrote, answer from a chat, get a daily digest card.	Tu propia cuenta a través de un puente local: lee lo que escribió la gente, responde desde un chat, recibe una tarjeta de resumen diario.
+{chats} chats · {messages} messages	{chats} chats · {messages} mensajes
+No messages arrived in this chat during that window.	No llegaron mensajes a este chat en ese periodo.
+No chats match this filter yet.	Ningún chat coincide con este filtro todavía.
+Select a chat on the left to read and answer it.	Selecciona un chat a la izquierda para leerlo y responderlo.
