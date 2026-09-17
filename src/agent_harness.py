@@ -1503,7 +1503,8 @@ class TurnLedger:
             reasons.append("intent_without_action")
         if permission:
             reasons.append("asked_instead_of_continuing")
-        if self.needs_ui_verify() and not self.has_browser_evidence():
+        if (self.needs_ui_verify() and not self.has_browser_evidence()
+                and not self.has_ui_smoke_evidence()):
             reasons.append("ui_unverified")
         if self.plan_active and not self.events:
             try:
@@ -1601,8 +1602,13 @@ class TurnLedger:
             )
         if "ui_unverified" in check["reasons"]:
             lines.append(
-                "- UI files changed this turn but no browser snapshot/evaluate ran. "
-                "Open the editor in the browser MCP (browser_navigate + browser_snapshot). "
+                "- UI files changed this turn but no browser snapshot/evaluate ran"
+                + (" and the harness smoke test of the page FAILED: "
+                   + str((self.ui_smoke or {}).get("summary") or "")[:200]
+                   if self.ui_smoke and self.ui_smoke.get("ran") and not self.ui_smoke.get("ok")
+                   else "")
+                + ". Open the page ONCE in the browser MCP (browser_navigate, then ONE "
+                "browser_snapshot) — one pass is enough; do not repeat screenshots. "
                 "Do not start Flask/python app.py in the foreground; use #!bg if the server is down."
             )
         if "plan_without_action" in check["reasons"]:

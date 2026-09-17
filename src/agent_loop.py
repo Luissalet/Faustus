@@ -10122,6 +10122,38 @@ async def _stream_agent_loop_body(
                 full_response += "\n\n"
                 yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
                 continue
+            # H1 before the claims check: when the turn touched UI files and
+            # no browser evidence exists, run the harness's own smoke crawl
+            # NOW, so `ui_unverified` only fires when the smoke could not
+            # vouch for the page either (live 17-09: a 27B that had finished
+            # 4/4 plan tasks with green tests was sent to take screenshots
+            # in a loop because the smoke had not run yet at this point).
+            if (_hc_text and _ledger.mutations and workspace
+                    and bool(get_setting("agent_ui_smoke", True))
+                    and _ledger.needs_ui_verify(_last_user) and not _ledger.has_browser_evidence()
+                    and _ledger.ui_smoke_runs < 3
+                    and len(_ledger.mutations) != _ledger.ui_smoke_mutations_at_run):
+                _ledger.ui_smoke_runs += 1
+                _ledger.ui_smoke_mutations_at_run = len(_ledger.mutations)
+                try:
+                    from src import ui_smoke as _ui_smoke_early
+                    _usres_early = await asyncio.to_thread(
+                        _ui_smoke_early.run_for_turn, workspace, _ledger.mutated_paths(),
+                    )
+                    _ledger.ui_smoke = _ui_smoke_early.compact(_usres_early)
+                    if _usres_early and _usres_early.get("ran"):
+                        logger.info("[harness] ui_smoke (pre-check) ok=%s: %s",
+                                    _usres_early.get("ok"), str(_usres_early.get("summary") or "")[:160])
+                        yield (
+                            "data: " + json.dumps({
+                                "type": "harness_check",
+                                "status": "ui_smoke_ok" if _usres_early.get("ok") else "ui_smoke_failed",
+                                "round": round_num, "ui_smoke": _ledger.ui_smoke,
+                                "mutations": _ledger.mutated_paths(),
+                            }) + "\n\n"
+                        )
+                except Exception as _us_err:
+                    logger.debug("[harness] ui_smoke (pre-check) failed to run: %s", _us_err)
             if _hc_text and (_harness_scope_active or _ledger.events):
                 try:
                     _check = _ledger.check_completion(_hc_text)

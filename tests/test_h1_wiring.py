@@ -80,3 +80,21 @@ def test_summary_includes_ui_smoke():
     ledger.ui_smoke = {"ran": True, "ok": True, "summary": "ui_smoke ok"}
     summary = ledger.summary()
     assert summary.get("ui_smoke") == ledger.ui_smoke
+
+
+def test_passing_ui_smoke_satisfies_the_completion_check_without_a_browser():
+    """Live 17-09: the model finished every plan task with green tests and
+    was still rejected `ui_unverified`, then looped on screenshots. A smoke
+    pass the harness ran itself is evidence enough for check_completion."""
+    ledger = TurnLedger(workspace=".")
+    ledger.events = [
+        {"tool": "edit_file", "ok": True, "kind": "mutation", "paths": ["static/app.mjs"]},
+    ]
+    ledger.ui_smoke = None
+    assert "ui_unverified" in ledger.check_completion("Hecho: he cambiado static/app.mjs.")["reasons"]
+    ledger.ui_smoke = {"ran": True, "ok": True, "summary": "ui_smoke ok"}
+    assert "ui_unverified" not in ledger.check_completion("Hecho: he cambiado static/app.mjs.")["reasons"]
+    ledger.ui_smoke = {"ran": True, "ok": False, "summary": "ui_smoke FAILED: app.mjs content_type"}
+    check = ledger.check_completion("Hecho: he cambiado static/app.mjs.")
+    assert "ui_unverified" in check["reasons"]
+    assert "smoke test of the page FAILED" in ledger.rejection_message(check)
