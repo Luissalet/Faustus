@@ -7857,3 +7857,10 @@ not subscribed on this device	sin suscribir en este dispositivo
 subscribed on this device	suscrito en este dispositivo
 {n} failed sends	{n} envíos fallidos
 The browser could not reach its push service. Some privacy-focused browsers keep it switched off by default — enable push messaging in the browser's privacy settings, or install Faustus from another browser.	El navegador no ha podido conectar con su servicio de push. Algunos navegadores centrados en la privacidad lo traen desactivado: activa la mensajería push en sus ajustes de privacidad o instala Faustus desde otro navegador.
+Go ahead	Adelante
+Heard in {heard}s · first reply audio in {first}s	Escuchado en {heard}s · primer audio de respuesta en {first}s
+Long	Larga
+Only answer when I say Faustus first	Responder solo cuando diga «Faustus» primero
+Pause that ends your turn	Pausa que termina tu turno
+Short	Corta
+Waiting for “Faustus”	Esperando «Faustus»

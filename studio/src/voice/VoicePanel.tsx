@@ -3,8 +3,8 @@ import { Link } from 'react-router';
 import { Mic, Square, VolumeX, X, Send, Settings2 } from 'lucide-react';
 import { locale, t } from '../i18n';
 import type { Turn } from '../screens/studio/model';
-import { capabilities, capture, playSpeech, type Capture, type SpeechCapabilities } from './audio';
-import { SentenceBuffer, speechLanguage, type VoicePhase } from './engine';
+import { capabilities, capture, openMic, playSpeech, watchForSpeech, type Capture, type OpenMic, type SpeechCapabilities } from './audio';
+import { SentenceBuffer, isEcho, isHallucination, isStopPhrase, speechLanguage, stripWakeWord, type VoicePhase } from './engine';
 import { VoiceOrb } from './VoiceOrb';
 import './voice.css';
 
@@ -20,13 +20,19 @@ interface Props { busy: boolean; turn?: Turn; sessionName: string; onSend(text: 
    answer and listens again. The three switches stay in "Voice options" for
    whoever wants to review each transcript; what you choose is kept. */
 const PREFS_KEY = 'faustus_voice_prefs';
-interface VoicePrefs { continuous: boolean; autoSend: boolean; readAloud: boolean | null }
+type SilenceMs = 600 | 900 | 1500;
+interface VoicePrefs { continuous: boolean; autoSend: boolean; readAloud: boolean | null; silenceMs: SilenceMs; wakeWord: boolean }
 function readPrefs(): VoicePrefs {
   try {
     const raw = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}') as Partial<VoicePrefs>;
-    return { continuous: raw.continuous ?? true, autoSend: raw.autoSend ?? true, readAloud: raw.readAloud ?? null };
-  } catch { return { continuous: true, autoSend: true, readAloud: null }; }
+    const silenceMs: SilenceMs = raw.silenceMs === 600 || raw.silenceMs === 1500 ? raw.silenceMs : 900;
+    return { continuous: raw.continuous ?? true, autoSend: raw.autoSend ?? true, readAloud: raw.readAloud ?? null, silenceMs, wakeWord: raw.wakeWord ?? false };
+  } catch { return { continuous: true, autoSend: true, readAloud: null, silenceMs: 900, wakeWord: false }; }
 }
+// A short pool of the last things Faustus said, so a barge-in (or an
+// utterance heard right after TTS stops) that is actually the mic
+// re-hearing Faustus itself can be told apart from a real interruption.
+const ECHO_GUARD_MS = 1500;
 function writePrefs(patch: Partial<VoicePrefs>): void {
   try { localStorage.setItem(PREFS_KEY, JSON.stringify({ ...readPrefs(), ...patch })); } catch { /* private mode */ }
 }
@@ -46,6 +52,12 @@ export default function VoicePanel(props: Props) {
   const chooseContinuous = (on: boolean) => { setContinuousState(on); writePrefs({ continuous: on }); };
   const chooseAutoSend = (on: boolean) => { setAutoSendState(on); writePrefs({ autoSend: on }); };
   const setContinuous = setContinuousState;
+  const [silenceMs, setSilenceMsState] = useState<SilenceMs>(prefs.current.silenceMs);
+  const chooseSilenceMs = (ms: SilenceMs) => { setSilenceMsState(ms); writePrefs({ silenceMs: ms }); };
+  const [wakeWord, setWakeWordState] = useState(prefs.current.wakeWord);
+  const chooseWakeWord = (on: boolean) => { setWakeWordState(on); writePrefs({ wakeWord: on }); };
+  const [interrupted, setInterrupted] = useState(false);
+  const [latency, setLatency] = useState('');
   const [deviceId, setDeviceId] = useState('');
   const [language, setLanguage] = useState('auto');
   const heardLanguage = useRef(locale());
@@ -57,11 +69,25 @@ export default function VoicePanel(props: Props) {
   const input = useRef<AbortController | null>(null);
   const alive = useRef(true);
   const latest = useRef({ ...props, continuous, autoSend, readAloud }); latest.current = { ...props, continuous, autoSend, readAloud };
-  const reply = useRef({ id: props.turn?.id, controller: new AbortController(), buffer: new SentenceBuffer(), queue: [] as string[], draining: false, muted: false });
+  const reply = useRef({ id: props.turn?.id, controller: new AbortController(), buffer: new SentenceBuffer(), queue: [] as string[], draining: false, muted: false, speechEndAt: 0, heardMs: 0, firstAudioLogged: false });
   const engaged = useRef(false);
   const autoStart = useRef(false);
   const nextListen = useRef<() => void>(() => {});
   const phaseRef = useRef(phase); phaseRef.current = phase;
+  // The hot microphone shared by every hands-free turn and by the barge-in
+  // watcher, so neither has to wait on a fresh permission/device round trip.
+  const mic = useRef<OpenMic | null>(null);
+  // Last few seconds of Faustus's own speech, for the echo guard.
+  const lastSpoken = useRef({ text: '', at: 0 });
+  // end-of-speech timestamp for the in-flight utterance, used for the
+  // "heard in / first reply audio in" latency readout.
+  const timing = useRef({ endOfSpeech: 0, heardMs: 0 });
+  const pendingTiming = useRef<{ speechEndAt: number; heardMs: number } | null>(null);
+
+  const ensureMic = useCallback(async (): Promise<OpenMic | null> => {
+    if (mic.current) return mic.current;
+    try { mic.current = await openMic(deviceId); return mic.current; } catch { return null; }
+  }, [deviceId]);
 
   const silence = useCallback(() => {
     reply.current.muted = true; reply.current.queue = []; reply.current.controller.abort(); reply.current.draining = false;
@@ -70,6 +96,7 @@ export default function VoicePanel(props: Props) {
   const pause = useCallback(() => {
     engaged.current = false; input.current?.abort(); input.current = null;
     recording.current = null; silence(); setPhase('idle'); setContinuous(false);
+    mic.current?.close(); mic.current = null;
   }, [silence]);
   useEffect(() => {
     alive.current = true;
@@ -90,6 +117,7 @@ export default function VoicePanel(props: Props) {
     return () => {
       alive.current = false; controller.abort(); input.current?.abort(); reply.current.controller.abort();
       document.removeEventListener('visibilitychange', hidden);
+      mic.current?.close(); mic.current = null;
     };
   }, [pause]);
   useEffect(() => {
@@ -101,6 +129,7 @@ export default function VoicePanel(props: Props) {
 
   const commit = useCallback((text: string) => {
     if (!text.trim() || latest.current.busy) return;
+    pendingTiming.current = { speechEndAt: timing.current.endOfSpeech, heardMs: timing.current.heardMs };
     engaged.current = true; setTranscript(''); setPhase('thinking'); setError('');
     latest.current.onSend(text.trim());
   }, []);
@@ -109,12 +138,14 @@ export default function VoicePanel(props: Props) {
     if (!configs || recording.current || phaseRef.current === 'starting' || phaseRef.current === 'transcribing') return;
     silence(); input.current?.abort();
     const controller = new AbortController(); input.current = controller;
-    setError(''); setTranscript(''); setPhase('starting');
+    setError(''); setTranscript(''); setPhase('starting'); setInterrupted(false);
+    const openedMic = await ensureMic();
     try {
       const cap = await capture(configs.stt, {
         signal: controller.signal, deviceId, autoStop: true, lang: language,
+        mic: openedMic ?? undefined, silenceMs,
         onPartial: text => { if (!controller.signal.aborted) setTranscript(text); },
-        onTranscribing: () => { if (!controller.signal.aborted) { setPhase('transcribing'); setAnalyser(null); } },
+        onTranscribing: () => { if (!controller.signal.aborted) { timing.current.endOfSpeech = performance.now(); setPhase('transcribing'); setAnalyser(null); } },
       });
       if (controller.signal.aborted) { cap.cancel(); return; }
       recording.current = cap; setAnalyser(cap.analyser); setPhase('listening');
@@ -123,9 +154,24 @@ export default function VoicePanel(props: Props) {
       if (controller.signal.aborted || !alive.current) return;
       recording.current = null; setAnalyser(null);
       heardLanguage.current = cap.language || (language === 'auto' ? locale() : language);
+      timing.current.heardMs = timing.current.endOfSpeech ? performance.now() - timing.current.endOfSpeech : 0;
       if (!text) { setPhase('idle'); setError(t('I did not hear anything. Try again closer to the microphone.')); setContinuous(false); return; }
-      setTranscript(text);
-      if (latest.current.autoSend && !latest.current.busy) commit(text);
+      // Discard silently and keep listening: Whisper's own silence
+      // hallucinations, the mic re-hearing Faustus (echo), and anything
+      // that is only a "stop talking" instruction never reach the model.
+      if (isHallucination(text)) { console.debug('[voice] discarded (hallucination):', text); void listen(); return; }
+      if (isEcho(text, lastSpoken.current.text, ECHO_GUARD_MS, performance.now() - lastSpoken.current.at)) {
+        console.debug('[voice] discarded (echo of Faustus’ own speech):', text); void listen(); return;
+      }
+      if (isStopPhrase(text)) { console.debug('[voice] stop phrase, not sent:', text); silence(); void listen(); return; }
+      let toSend = text;
+      if (wakeWord) {
+        const stripped = stripWakeWord(text);
+        if (!stripped.matched) { console.debug('[voice] no wake word, discarded:', text); void listen(); return; }
+        toSend = stripped.text || text;
+      }
+      setTranscript(toSend);
+      if (latest.current.autoSend && !latest.current.busy) commit(toSend);
       else setPhase('review');
     } catch (e) {
       if (!controller.signal.aborted && alive.current) {
@@ -133,7 +179,7 @@ export default function VoicePanel(props: Props) {
         setError((e as Error).name === 'NotAllowedError' ? t('Microphone permission was denied. Allow it in your browser and retry.') : (e as Error).message);
       }
     }
-  }, [configs, deviceId, language, silence, commit]);
+  }, [configs, deviceId, language, silence, commit, ensureMic, silenceMs, wakeWord]);
   nextListen.current = () => void listen();
   // `listen` closes over `configs`, so the first listen waits for the
   // render that has them.
@@ -152,9 +198,23 @@ export default function VoicePanel(props: Props) {
       while (run.queue.length && !run.controller.signal.aborted) {
         const text = run.queue.shift()!;
         setPhase('thinking');
+        lastSpoken.current = { text, at: performance.now() };
         const responseLanguage = speechLanguage(latest.current.turn?.text || text, heardLanguage.current);
         await playSpeech(text, { ...configs.tts, language: responseLanguage }, run.controller.signal, (node, playing) => {
-          if (alive.current && !run.controller.signal.aborted) { setAnalyser(node); if (playing) setPhase('speaking'); }
+          if (alive.current && !run.controller.signal.aborted) {
+            setAnalyser(node);
+            if (playing) {
+              setPhase('speaking');
+              if (!run.firstAudioLogged && run.speechEndAt) {
+                run.firstAudioLogged = true;
+                const heardSec = (run.heardMs / 1000).toFixed(1);
+                const firstSec = ((performance.now() - run.speechEndAt) / 1000).toFixed(1);
+                const label = t('Heard in {heard}s · first reply audio in {first}s', { heard: heardSec, first: firstSec });
+                setLatency(label);
+                console.debug('[voice]', label);
+              }
+            }
+          }
         });
       }
     } catch (e) {
@@ -182,7 +242,11 @@ export default function VoicePanel(props: Props) {
     if (!turn) return;
     if (reply.current.id !== turn.id) {
       reply.current.controller.abort();
-      reply.current = { id: turn.id, controller: new AbortController(), buffer: new SentenceBuffer(), queue: [], draining: false, muted: false };
+      const timingForTurn = pendingTiming.current; pendingTiming.current = null;
+      reply.current = {
+        id: turn.id, controller: new AbortController(), buffer: new SentenceBuffer(), queue: [], draining: false, muted: false,
+        speechEndAt: timingForTurn?.speechEndAt ?? 0, heardMs: timingForTurn?.heardMs ?? 0, firstAudioLogged: false,
+      };
       setShortened(false);
     }
     const run = reply.current;
@@ -209,11 +273,27 @@ export default function VoicePanel(props: Props) {
     return () => window.removeEventListener('keydown', key);
   }, [pause]);
 
+  // Barge-in: while Faustus is speaking, keep watching the (already hot)
+  // microphone; sustained speech cuts the reply off and starts recording
+  // that utterance immediately, on the same open stream.
+  useEffect(() => {
+    if (phase !== 'speaking' || !continuous || !mic.current) return;
+    const controller = new AbortController();
+    watchForSpeech(mic.current.analyser, controller.signal, () => {
+      if (controller.signal.aborted) return;
+      silence();
+      setInterrupted(true);
+      window.setTimeout(() => setInterrupted(false), 1500);
+      void listen();
+    });
+    return () => controller.abort();
+  }, [phase, continuous, silence, listen]);
+
   const captureActive = ['starting', 'listening', 'transcribing'].includes(phase);
   const providerLabel = (cap: SpeechCapabilities) => cap.execution === 'local' ? t('On this server') : cap.execution === 'browser' ? t('Browser') : cap.execution === 'endpoint' ? t('Configured endpoint · may be remote') : t('Disabled');
   const tool = props.turn?.steps.slice().reverse().find(s => s.state === 'running');
   return <section className="fs-voice" aria-label={t('Voice conversation')} data-phase={phase} data-testid="voice-panel">
-    <div className="fs-voice__visual"><VoiceOrb analyser={analyser} phase={phase} /><span className="fs-voice__micstate">{t(phase === 'listening' ? 'Microphone active' : 'Microphone off')}</span></div>
+    <div className="fs-voice__visual"><VoiceOrb analyser={analyser} phase={phase} /><span className="fs-voice__micstate">{t(phase === 'listening' || (phase === 'speaking' && continuous) ? 'Microphone active' : 'Microphone off')}</span></div>
     <div className="fs-voice__body">
       <div className="fs-voice__heading"><h2>{t('Talk to Faustus')}</h2><button type="button" className="fs-voice__icon" onClick={props.onClose} aria-label={t('Close voice mode')}><X size={18} /></button></div>
       <p className="fs-voice__context">{props.sessionName} · {t('Same chat, same tools')}</p>
@@ -222,7 +302,9 @@ export default function VoicePanel(props: Props) {
         <option value="auto">{t('Automatic · English / Spanish')}</option><option value="es">Español</option><option value="en">English</option>
       </select></label>
       {configs?.stt.execution === 'browser' && language === 'auto' && <p className="fs-voice__hint">{t('Browser recognition needs a fixed language. Choose English or Spanish; automatic detection uses local Whisper.')}</p>}
-      <div className="fs-voice__status" role="status"><strong>{t(labels[phase])}</strong>{elapsed > 0 && <span>{elapsed}s</span>}</div>
+      <div className="fs-voice__status" role="status"><strong>{interrupted ? t('Go ahead') : t(labels[phase])}</strong>{elapsed > 0 && <span>{elapsed}s</span>}</div>
+      {wakeWord && !interrupted && (phase === 'listening' || phase === 'starting') && <p className="fs-voice__hint">{t('Waiting for “Faustus”')}</p>}
+      {latency && <p className="fs-voice__hint fs-voice__latency">{latency}</p>}
       {phase === 'thinking' && <p className="fs-voice__hint">{tool ? `${t('Using tool')}: ${tool.label || tool.tool}` : t('The model may need time to load. You can keep using the app.')}</p>}
       {phase === 'approval' && <p>{t('Review the approval in the chat. Spoken answers cannot approve sensitive actions.')}</p>}
       {error && <p className="fs-voice__error" role="alert">{error}</p>}
@@ -239,6 +321,12 @@ export default function VoicePanel(props: Props) {
         <label><input type="checkbox" checked={readAloud} disabled={!configs?.tts.configured || !configs.tts.dependency_installed} onChange={e => { setReadAloud(e.target.checked); writePrefs({ readAloud: e.target.checked }); if (!e.target.checked) { silence(); if (phaseRef.current === 'speaking') setPhase(props.busy ? 'thinking' : 'idle'); } }} />{t('Read responses aloud')}</label>
         <label><input type="checkbox" checked={continuous} onChange={e => chooseContinuous(e.target.checked)} />{t('Listen again after each response')}</label>
         <label><input type="checkbox" checked={autoSend} onChange={e => chooseAutoSend(e.target.checked)} />{t('Send without reviewing transcription')}</label>
+        <label><input type="checkbox" checked={wakeWord} onChange={e => chooseWakeWord(e.target.checked)} />{t('Only answer when I say Faustus first')}</label>
+        <fieldset className="fs-voice__silence"><legend>{t('Pause that ends your turn')}</legend>
+          <label><input type="radio" name="fs-voice-silence" checked={silenceMs === 600} onChange={() => chooseSilenceMs(600)} />{t('Short')}</label>
+          <label><input type="radio" name="fs-voice-silence" checked={silenceMs === 900} onChange={() => chooseSilenceMs(900)} />{t('Normal')}</label>
+          <label><input type="radio" name="fs-voice-silence" checked={silenceMs === 1500} onChange={() => chooseSilenceMs(1500)} />{t('Long')}</label>
+        </fieldset>
         {devices.length > 0 && <label>{t('Microphone')}<select value={deviceId} disabled={captureActive} onChange={e => setDeviceId(e.target.value)}><option value="">{t('System default')}</option>{devices.map((d, i) => <option key={d.deviceId || i} value={d.deviceId}>{d.label || `${t('Microphone')} ${i + 1}`}</option>)}</select></label>}
         {configs?.stt.execution === 'browser' && <p>{t('Browser recognition may send audio to its speech service. Choose Whisper for local transcription.')}</p>}
         <p>{t('Audio capture is temporary. Voice replies skip the disk cache. Final messages follow this chat’s history settings. Endpoint retention depends on its provider.')}</p>

@@ -32,6 +32,10 @@
 .fs-voice__settings { padding-top: 6px; font-size: 12px; }
 .fs-voice__settings summary { display: flex; align-items: center; gap: 7px; cursor: pointer; width: fit-content; color: var(--fs-text-2); }
 .fs-voice__settings label { display: flex; align-items: center; gap: 8px; margin: 12px 0; }
+.fs-voice__silence { border: 1px solid var(--fs-border); border-radius: 8px; padding: 10px 12px; margin: 12px 0; }
+.fs-voice__silence legend { padding: 0 4px; color: var(--fs-text-2); }
+.fs-voice__silence label { margin: 6px 0; }
+.fs-voice__latency { font-variant-numeric: tabular-nums; }
 .fs-voice input { accent-color: var(--fs-brand); }
 .fs-voice a { color: var(--fs-focus); text-underline-offset: 3px; }
 @media (max-width: 640px) {

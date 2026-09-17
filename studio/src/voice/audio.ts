@@ -1,5 +1,5 @@
 import { locale, t } from '../i18n';
-import { TurnDetector, spokenText } from './engine';
+import { BARGE_IN_MS, BARGE_IN_THRESHOLD, TurnDetector, spokenText } from './engine';
 
 export interface SpeechCapabilities {
   provider: string;
@@ -40,11 +40,68 @@ export interface Capture {
   cancel(): void;
   analyser: AnalyserNode | null;
 }
+export interface OpenMic {
+  stream: MediaStream;
+  ctx: AudioContext;
+  analyser: AnalyserNode;
+  close(): void;
+}
+/** Opens the microphone once and keeps it hot: reused across an entire
+ * hands-free session (listening turns and the barge-in watch while Faustus
+ * speaks) so a new turn never waits on a fresh permission/device round trip,
+ * and the first words of a barge-in are not lost to setup latency. */
+export async function openMic(deviceId?: string): Promise<OpenMic> {
+  if (!navigator.mediaDevices?.getUserMedia) throw new Error(t('Microphone access needs HTTPS or localhost and a supported browser.'));
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: {
+    echoCancellation: true, noiseSuppression: true, autoGainControl: true,
+    ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
+  } });
+  const ctx = new AudioContext();
+  await ctx.resume();
+  const source = ctx.createMediaStreamSource(stream);
+  const analyser = ctx.createAnalyser(); analyser.fftSize = 512;
+  source.connect(analyser);
+  let closed = false;
+  return {
+    stream, ctx, analyser,
+    close() {
+      if (closed) return; closed = true;
+      stream.getTracks().forEach(track => track.stop());
+      source.disconnect();
+      if (ctx.state !== 'closed') void ctx.close();
+    },
+  };
+}
+
+/** Polls `analyser` and fires `onSpeech` once energy stays above
+ * BARGE_IN_THRESHOLD for BARGE_IN_MS straight (debounced by any dip below
+ * threshold). Used both to detect barge-in while Faustus is speaking and,
+ * more generally, as a cheap "someone started talking" watcher. */
+export function watchForSpeech(analyser: AnalyserNode, signal: AbortSignal, onSpeech: () => void): void {
+  let voicedSince = 0;
+  const timer = window.setInterval(() => {
+    if (signal.aborted) { clearInterval(timer); return; }
+    const level = audioLevel(analyser);
+    const now = performance.now();
+    if (level > BARGE_IN_THRESHOLD) {
+      if (!voicedSince) voicedSince = now;
+      if (now - voicedSince >= BARGE_IN_MS) { clearInterval(timer); onSpeech(); }
+    } else {
+      voicedSince = 0;
+    }
+  }, 30);
+  signal.addEventListener('abort', () => clearInterval(timer), { once: true });
+}
+
 export interface CaptureOptions {
   signal: AbortSignal;
   deviceId?: string;
   autoStop?: boolean;
   lang?: string;
+  /** 'silence' duration (ms) the built-in TurnDetector waits before ending the turn. Defaults to TurnDetector's own default. */
+  silenceMs?: number;
+  /** Reuse an already-open microphone (see `openMic`) instead of requesting a fresh one: skips the permission/device round trip. Not applicable to browser speech recognition. */
+  mic?: OpenMic;
   onPartial?: (text: string) => void;
   onTranscribing?: () => void;
 }
@@ -77,33 +134,40 @@ export async function capture(config: SpeechCapabilities, options: CaptureOption
     return { done, stop: () => rec.stop(), cancel, analyser: null, language: rec.lang };
   }
   if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) throw new Error(t('Microphone access needs HTTPS or localhost and a supported browser.'));
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: {
+  const reused = options.mic;
+  const stream = reused?.stream ?? await navigator.mediaDevices.getUserMedia({ audio: {
     echoCancellation: true, noiseSuppression: true, autoGainControl: true,
     ...(options.deviceId ? { deviceId: { exact: options.deviceId } } : {}),
   } });
-  if (signal.aborted) { stream.getTracks().forEach(t => t.stop()); throw aborted(); }
+  if (signal.aborted) { if (!reused) stream.getTracks().forEach(t => t.stop()); throw aborted(); }
   let ctx: AudioContext | null = null;
   try {
-    ctx = new AudioContext();
-    await ctx.resume();
-    signal.throwIfAborted();
-    const source = ctx.createMediaStreamSource(stream);
-    const analyser = ctx.createAnalyser(); analyser.fftSize = 512;
-    source.connect(analyser);
+    let analyser: AnalyserNode;
+    let source: MediaStreamAudioSourceNode | null = null;
+    if (reused) {
+      analyser = reused.analyser;
+    } else {
+      ctx = new AudioContext();
+      await ctx.resume();
+      signal.throwIfAborted();
+      source = ctx.createMediaStreamSource(stream);
+      analyser = ctx.createAnalyser(); analyser.fftSize = 512;
+      source.connect(analyser);
+    }
     const mime = ['audio/webm;codecs=opus', 'audio/ogg;codecs=opus', 'audio/mp4'].find(x => MediaRecorder.isTypeSupported(x));
     const recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
     const chunks: Blob[] = [];
     let bytes = 0, resolve!: (s: string) => void, reject!: (e: Error) => void;
     const done = new Promise<string>((yes, no) => { resolve = yes; reject = no; });
     done.catch(() => undefined);
-    const detector = new TurnDetector();
+    const detector = new TurnDetector(options.silenceMs);
     const start = performance.now();
     let voiced = false, cancelled = false, detectedLanguage = '';
     const stop = () => { if (recorder.state !== 'inactive') recorder.stop(); };
     const cancel = () => { cancelled = true; stop(); reject(aborted()); cleanup(); };
     const cleanup = () => {
       clearInterval(timer); signal.removeEventListener('abort', cancel);
-      stream.getTracks().forEach(t => { t.onended = null; t.stop(); }); source.disconnect();
+      if (!reused) { stream.getTracks().forEach(t => { t.onended = null; t.stop(); }); source?.disconnect(); }
       if (ctx?.state !== 'closed') void ctx?.close();
     };
     const timer = window.setInterval(() => {
@@ -138,7 +202,7 @@ export async function capture(config: SpeechCapabilities, options: CaptureOption
     recorder.start(250);
     return { done, stop, cancel, analyser, get language() { return detectedLanguage; } };
   } catch (e) {
-    stream.getTracks().forEach(t => t.stop());
+    if (!reused) stream.getTracks().forEach(t => t.stop());
     if (ctx?.state !== 'closed') void ctx?.close();
     throw e;
   }
