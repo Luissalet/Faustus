@@ -618,3 +618,7 @@ Pedido el 16-09 tras el proyecto «3D modeling silhouettes»: 24 chats reales, u
 ## OBJ-17 · Centro de control de procesos — HECHO (17-09-2026)
 
 Pedido el 17-09: ver qué se está ejecutando (puertos, apps abiertas por el asistente, trabajos en segundo plano) y poder pararlo. Hecho dentro de Faustus (no como conector: un conector es una herramienta del modelo, y el Stop tiene que ser de una persona). FAUSTUS.md §97. **Siguiente.** Nombre del servidor MCP en las filas hijas; herramienta de solo lectura para el agente; registro de lo que el asistente lanza por Windows-MCP.
+
+## OBJ-18 · Candidaturas desde el correo (Jobhunter's Hoard + calendario) — HECHO, en verificación (17-09-2026)
+
+Pedido: «Revisa mi correo dos semanas y actualiza qué empresas me han rechazado / me han dado entrevistas en jobhunter's hoard y ponlas en el calendario», que funcione con el 27B local. Hecho como una herramienta determinista (`review_candidature_mail`, FAUSTUS.md §98) que hace la receta entera en una llamada. Verificado en vivo: rechazos registrados en Jobhunter y resumidos por el modelo. **Siguiente.** Confirmar la segunda pasada de entrevistas (candidatura creada + evento), evento de día completo para entrevistas a demanda con fecha límite, texto de la receta.

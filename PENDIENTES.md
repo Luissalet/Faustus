@@ -2,6 +2,13 @@
 
 Actualizado: 17-09-2026 (tarde). Sólo trabajo vigente; quitar cada entrada al cerrarla.
 
+## Tarde del 17-09 (candidaturas por correo — FAUSTUS.md §98)
+
+- `review_candidature_mail` verificado en vivo con rechazos (3 empresas a `rejected` en Jobhunter). Entrevistas: la segunda pasada con `create_missing` se lanzó al final de la sesión — comprobar en Jobhunter que Cordera existe con estado `interview` y que el evento «Entrevista · Cordera» está en el calendario (Personal); si el correo de Cordera es una entrevista a demanda (HireVue) sin hora, queda en manual: valorar un evento de día completo con la fecha límite («complete by …»).
+- La receta `review-candidature-responses` decía «nunca crear candidaturas»; la herramienta las crea con `create_missing` (por defecto) porque es lo que Luis pidió. Actualizar el texto de la receta/`docs/api/candidature_recipe.md` para que lo diga.
+- El 27B con `num_ctx` 199.680 iba a 2 tok/s con el diálogo de VRAM en cada turno; ahora 65.536. Si Luis quiere más, hay que medir la KV cache primero (la admisión dice «never measured»).
+- La UI muestra «Loading the model into memory · No server signal» mientras una herramienta larga (2–3 min leyendo correos) trabaja: el estado debería decir «Running review_candidature_mail».
+
 ## Tarde del 17-09 (centro de control — FAUSTUS.md §97)
 
 - `/processes` en el Studio: falta cruzar los hijos MCP con la tabla `McpServer` para mostrar el nombre del servidor en vez de la línea de comandos, y decidir si el agente recibe una herramienta de **solo lectura** sobre la lista (nunca el Stop).
