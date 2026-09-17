@@ -615,3 +615,6 @@ Pedido el 16-09 tras el proyecto «3D modeling silhouettes»: 24 chats reales, u
 
 **Hecho en vivo (17-09).** Chat #14 repetido en forma controlada contra el 27B: 4/4 tareas con tests reales, `ui_smoke` cazó un bug real que los tests no veían; tres fallos del harness corregidos sobre la marcha (§95). **Siguiente.** Repetirlo con un plan grande (≥ 60 KB) y con un segundo chat sin adjunto («Continua»). Enganchar los criterios tipados de `Goal` (WP27) a `plan_done`. Ronda de arreglo cuando la puerta dura degrada un turno (hoy solo impide sellar). Diarización/idioma por segmento no tiene que ver aquí — es OBJ-14.
 
+## OBJ-17 · Centro de control de procesos — HECHO (17-09-2026)
+
+Pedido el 17-09: ver qué se está ejecutando (puertos, apps abiertas por el asistente, trabajos en segundo plano) y poder pararlo. Hecho dentro de Faustus (no como conector: un conector es una herramienta del modelo, y el Stop tiene que ser de una persona). FAUSTUS.md §97. **Siguiente.** Nombre del servidor MCP en las filas hijas; herramienta de solo lectura para el agente; registro de lo que el asistente lanza por Windows-MCP.

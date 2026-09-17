@@ -1,6 +1,11 @@
 # Pendientes de cierre
 
-Actualizado: 17-09-2026 (mediodía). Sólo trabajo vigente; quitar cada entrada al cerrarla.
+Actualizado: 17-09-2026 (tarde). Sólo trabajo vigente; quitar cada entrada al cerrarla.
+
+## Tarde del 17-09 (centro de control — FAUSTUS.md §97)
+
+- `/processes` en el Studio: falta cruzar los hijos MCP con la tabla `McpServer` para mostrar el nombre del servidor en vez de la línea de comandos, y decidir si el agente recibe una herramienta de **solo lectura** sobre la lista (nunca el Stop).
+- Las apps que el asistente abre por Windows-MCP (Cursor, ChatGPT) salen en «Other apps» por nombre; no hay forma de saber quién las abrió. Si hace falta, el asistente puede anotar en Faustus lo que lanza (`POST` a un registro) — no hecho.
 
 ## Mediodía del 17-09 (conectores — FAUSTUS.md §96)
 
