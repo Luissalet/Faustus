@@ -39,18 +39,18 @@
 .fs-music__mode button {
   padding: 4px 10px;
   border-radius: 6px;
-  border: 1px solid var(--fs-border, #3a3a42);
+  border: 1px solid var(--fs-border);
   background: transparent;
   color: inherit;
 }
 
 .fs-music__mode button[aria-selected='true'] {
-  background: var(--fs-accent, #6ea8fe);
-  color: #06121f;
+  background: var(--fs-brand);
+  color: var(--fs-on-brand);
 }
 
 .fs-music__error {
-  color: var(--fs-danger, #e5534b);
+  color: var(--fs-danger);
 }
 
 .fs-music__sections {
@@ -60,7 +60,7 @@
 }
 
 .fs-music__section {
-  border: 1px solid var(--fs-border, #3a3a42);
+  border: 1px solid var(--fs-border);
   border-radius: 8px;
   padding: 8px;
   display: flex;
@@ -109,7 +109,7 @@
   flex-direction: column;
   gap: 2px;
   font-size: 0.8rem;
-  color: var(--fs-muted, #8a8a94);
+  color: var(--fs-text-3);
 }
 
 .fs-music__generate {
@@ -120,7 +120,7 @@
 
 .fs-music__gen-state {
   font-size: 0.85rem;
-  color: var(--fs-muted, #8a8a94);
+  color: var(--fs-text-3);
 }
 
 .fs-music__takes ul {
@@ -133,7 +133,7 @@
 }
 
 .fs-music__take {
-  border: 1px solid var(--fs-border, #3a3a42);
+  border: 1px solid var(--fs-border);
   border-radius: 8px;
   padding: 8px;
   display: flex;
@@ -142,7 +142,7 @@
 }
 
 .fs-music__take--selected {
-  border-color: var(--fs-accent, #6ea8fe);
+  border-color: var(--fs-brand);
 }
 
 .fs-music__take audio {
@@ -153,7 +153,7 @@
   display: flex;
   gap: 10px;
   font-size: 0.8rem;
-  color: var(--fs-muted, #8a8a94);
+  color: var(--fs-text-3);
 }
 
 .fs-music__take-actions {

@@ -6,11 +6,10 @@
   flex-direction: column;
   gap: 8px;
   min-height: 0;
-  outline: none;
 }
 
 .fs-timeline:focus-visible {
-  outline: 2px solid var(--fs-accent, #6ea8fe);
+  outline: 2px solid var(--fs-focus);
   outline-offset: 2px;
 }
 
@@ -22,12 +21,12 @@
 }
 
 .fs-timeline__muted {
-  color: var(--fs-muted, #8a8a94);
+  color: var(--fs-text-3);
   font-size: 0.8rem;
 }
 
 .fs-timeline__error {
-  color: var(--fs-danger, #e5534b);
+  color: var(--fs-danger);
   font-size: 0.85rem;
 }
 
@@ -38,19 +37,19 @@
 }
 
 .fs-timeline__validation--ok {
-  background: var(--fs-success-bg, #1b3a2b);
-  color: var(--fs-success, #4cc38a);
+  background: color-mix(in srgb, var(--fs-success) 20%, transparent);
+  color: var(--fs-success);
 }
 
 .fs-timeline__validation--error {
-  background: var(--fs-danger-bg, #3a1b1b);
-  color: var(--fs-danger, #e5534b);
+  background: color-mix(in srgb, var(--fs-danger) 20%, transparent);
+  color: var(--fs-danger);
 }
 
 .fs-timeline__scroll {
   overflow-x: auto;
   overflow-y: hidden;
-  border: 1px solid var(--fs-border, #2a2a33);
+  border: 1px solid var(--fs-border);
   border-radius: 10px;
   padding: 8px;
   position: relative;
@@ -68,7 +67,7 @@
   top: 0;
   bottom: 0;
   width: 2px;
-  background: var(--fs-accent, #6ea8fe);
+  background: var(--fs-brand);
   z-index: 2;
   pointer-events: none;
 }
@@ -85,7 +84,7 @@
   flex-direction: column;
   justify-content: center;
   font-size: 0.72rem;
-  color: var(--fs-muted, #8a8a94);
+  color: var(--fs-text-3);
 }
 
 .fs-timeline__track-kind {
@@ -95,24 +94,24 @@
 
 .fs-timeline__track-lane {
   flex: 1;
-  background: var(--fs-surface-alt, #16161c);
+  background: var(--fs-surface-3);
   border-radius: 6px;
 }
 
 .fs-timeline__clip {
-  fill: var(--fs-accent-muted, #2c3b57);
-  stroke: var(--fs-accent, #6ea8fe);
+  fill: color-mix(in srgb, var(--fs-brand) 30%, transparent);
+  stroke: var(--fs-brand);
   stroke-width: 1;
   cursor: grab;
 }
 
 .fs-timeline__clip:focus-visible {
-  outline: 2px solid var(--fs-accent, #6ea8fe);
+  outline: 2px solid var(--fs-focus);
   outline-offset: 1px;
 }
 
 .fs-timeline__clip--selected {
-  fill: var(--fs-accent, #6ea8fe);
+  fill: var(--fs-brand);
 }
 
 .fs-timeline__clip--dragging {
@@ -121,7 +120,7 @@
 }
 
 .fs-timeline__clip-label {
-  fill: var(--fs-text, #e8e8ec);
+  fill: var(--fs-text-1);
   font-size: 10px;
   user-select: none;
 }
@@ -135,11 +134,11 @@
   width: 320px;
   max-height: calc(100vh - 96px);
   overflow-y: auto;
-  background: var(--fs-surface, #1b1b22);
-  border: 1px solid var(--fs-border, #2a2a33);
+  background: var(--fs-surface-2);
+  border: 1px solid var(--fs-border);
   border-radius: 10px;
   padding: 12px 14px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--fs-shadow-overlay);
   z-index: 40;
   display: flex;
   flex-direction: column;
@@ -162,13 +161,13 @@
   flex-direction: column;
   gap: 4px;
   font-size: 12px;
-  color: var(--fs-muted, #8a8a94);
+  color: var(--fs-text-3);
 }
 
 .fs-render-panel__field select {
-  background: var(--fs-surface-alt, #16161c);
-  color: var(--fs-text, #e8e8ec);
-  border: 1px solid var(--fs-border, #2a2a33);
+  background: var(--fs-surface-3);
+  color: var(--fs-text-1);
+  border: 1px solid var(--fs-border);
   border-radius: 6px;
   padding: 6px 8px;
 }
@@ -182,7 +181,7 @@
 }
 
 .fs-render-panel__plan dt {
-  color: var(--fs-muted, #8a8a94);
+  color: var(--fs-text-3);
 }
 
 .fs-render-panel__plan dd {
@@ -191,7 +190,7 @@
 }
 
 .fs-render-panel__error {
-  color: var(--fs-danger, #f87171);
+  color: var(--fs-danger);
   font-size: 12px;
   margin: 0;
 }
@@ -206,19 +205,19 @@
 .fs-render-panel__progress-bar {
   flex: 1;
   height: 6px;
-  background: var(--fs-surface-alt, #16161c);
+  background: var(--fs-surface-3);
   border-radius: 3px;
   overflow: hidden;
 }
 
 .fs-render-panel__progress-fill {
   height: 100%;
-  background: var(--fs-accent, #6ea8fe);
-  transition: width 0.2s ease;
+  background: var(--fs-brand);
+  transition: width var(--fs-duration-normal) var(--fs-ease);
 }
 
 .fs-render-panel__result {
   font-size: 12px;
-  color: var(--fs-text, #e8e8ec);
+  color: var(--fs-text-1);
   margin: 0;
 }

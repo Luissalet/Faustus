@@ -6,7 +6,11 @@
   flex-direction: column;
   gap: 8px;
   min-height: 0;
-  outline: none;
+}
+
+.fs-canvas:focus-visible {
+  outline: 2px solid var(--fs-focus);
+  outline-offset: 2px;
 }
 
 .fs-canvas__toolbar {
@@ -17,12 +21,12 @@
 }
 
 .fs-canvas__muted {
-  color: var(--fs-muted, #8a8a94);
+  color: var(--fs-text-3);
   font-size: 0.8rem;
 }
 
 .fs-canvas__error {
-  color: var(--fs-danger, #e5534b);
+  color: var(--fs-danger);
   font-size: 0.85rem;
 }
 
@@ -35,9 +39,9 @@
 
 .fs-canvas__stage {
   background:
-    linear-gradient(45deg, var(--fs-surface-alt, #16161c) 25%, transparent 25%) 0 0/16px 16px,
-    linear-gradient(-45deg, var(--fs-surface-alt, #16161c) 25%, transparent 25%) 0 0/16px 16px;
-  border: 1px solid var(--fs-border, #2a2a33);
+    linear-gradient(45deg, var(--fs-surface-3) 25%, transparent 25%) 0 0/16px 16px,
+    linear-gradient(-45deg, var(--fs-surface-3) 25%, transparent 25%) 0 0/16px 16px;
+  border: 1px solid var(--fs-border);
   border-radius: 6px;
   overflow: hidden;
   flex-shrink: 0;
@@ -74,7 +78,7 @@
 }
 
 .fs-canvas__layer--selected {
-  background: var(--fs-accent-muted, #2c3b57);
+  background: color-mix(in srgb, var(--fs-brand) 24%, transparent);
 }
 
 .fs-canvas__inspector {
@@ -82,7 +86,7 @@
   flex-direction: column;
   gap: 8px;
   padding-top: 8px;
-  border-top: 1px solid var(--fs-border, #2a2a33);
+  border-top: 1px solid var(--fs-border);
 }
 
 .fs-canvas__inspector label {
@@ -93,6 +97,6 @@
 }
 
 .fs-canvas__hint {
-  color: var(--fs-muted, #8a8a94);
+  color: var(--fs-text-3);
   font-size: 0.78rem;
 }

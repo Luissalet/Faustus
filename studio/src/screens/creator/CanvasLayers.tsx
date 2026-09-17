@@ -24,6 +24,16 @@ export interface LoadedImage {
 
 const HANDLE_SIZE = 10;
 
+/** Reads a design token at draw time — canvas painting has no CSS cascade,
+ * so this is the one legitimate escape hatch (faustus-css-gotchas). No
+ * literal colour lives here: an unset token falls back to `currentColor`,
+ * never a hex guess. */
+function fsToken(name: string): string {
+  if (typeof document === 'undefined') return 'currentColor';
+  const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return value || 'currentColor';
+}
+
 export interface CanvasLayersProps {
   content: CanvasDocContent;
   baseImageUrl: string;
@@ -126,10 +136,10 @@ export function CanvasLayers({
       if (layer.id === selectedLayerId) {
         const b = layerBounds({ ...layer, offset, scale }, { w: loaded.width, h: loaded.height });
         ctx.save();
-        ctx.strokeStyle = '#6ea8fe';
+        ctx.strokeStyle = fsToken('--fs-brand');
         ctx.lineWidth = 1 / zoom;
         ctx.strokeRect(b.x, b.y, b.w, b.h);
-        ctx.fillStyle = '#6ea8fe';
+        ctx.fillStyle = fsToken('--fs-brand');
         const handleSize = HANDLE_SIZE / zoom;
         ctx.fillRect(b.x + b.w - handleSize / 2, b.y + b.h - handleSize / 2, handleSize, handleSize);
         ctx.restore();
@@ -138,14 +148,18 @@ export function CanvasLayers({
 
     if (maskMode && polygonPoints.length > 0) {
       ctx.save();
-      ctx.strokeStyle = '#ffb020';
-      ctx.fillStyle = 'rgba(255, 176, 32, 0.25)';
+      const maskColor = fsToken('--fs-warning');
+      ctx.strokeStyle = maskColor;
+      ctx.fillStyle = maskColor;
       ctx.lineWidth = 2 / zoom;
       ctx.beginPath();
       ctx.moveTo(polygonPoints[0].x, polygonPoints[0].y);
       for (const p of polygonPoints.slice(1)) ctx.lineTo(p.x, p.y);
       if (polygonPoints.length > 2) ctx.closePath();
+      ctx.save();
+      ctx.globalAlpha = 0.25;
       ctx.fill();
+      ctx.restore();
       ctx.stroke();
       for (const p of polygonPoints) {
         ctx.beginPath();
