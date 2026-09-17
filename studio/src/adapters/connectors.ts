@@ -110,6 +110,10 @@ export interface Connector {
   preset: ConnectorPreset | null;
   server: ConnectorServerInfo;
   status: ConnectorStatus;
+  /** Set by `check`/`?check=1` when the app moved port and the connector
+   *  followed it: the old URL it used to answer at. `app_url` is already
+   *  the new one — this is only shown so the switch is not silent. */
+  relocated_from?: string | null;
 }
 
 const STATE_LABEL: Record<ConnectorState, string> = {
@@ -244,3 +248,44 @@ export function saveLaunchProfile(id: string | null, body: LaunchProfileInput): 
     : post<LaunchProfile>('/api/launch-profiles', body, 'launch-profiles/create');
 }
 export const deleteLaunchProfile = (id: string) => del(`/api/launch-profiles/${encodeURIComponent(id)}`, 'launch-profiles/delete');
+
+/* ── Nearby apps (discovery/adopt) ──
+ * "Nearby apps" scans local ports the way a Bluetooth panel scans for
+ * devices: `discoverApps()` is read-only and safe to call on mount and on
+ * every "Scan" click; `adoptApp()` is the one write, turning a discovered
+ * process into a real Connector via the same shape `createConnector`
+ * already returns. */
+
+export interface DiscoveredApp {
+  port: number;
+  url: string;
+  pid: number | null;
+  process: string;
+  cwd: string | null;
+  title: string | null;
+  health: string;
+  preset_id: string | null;
+  preset_name: string | null;
+  latency_ms: number | null;
+  values: Record<string, string>;
+  connector_id: string | null;
+  missing: string[];
+}
+
+export interface DiscoverAppsResult {
+  apps: DiscoveredApp[];
+  scanned_at: string;
+}
+
+export async function discoverApps(): Promise<DiscoverAppsResult> {
+  return getJson<DiscoverAppsResult>('/api/app-connectors/discover');
+}
+
+export interface AdoptAppInput {
+  port: number;
+  preset_id?: string;
+  values?: Record<string, string>;
+  name?: string;
+  launch_profile_id?: string | null;
+}
+export const adoptApp = (body: AdoptAppInput) => post<Connector>('/api/app-connectors/adopt', body, 'connectors/adopt');

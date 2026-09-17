@@ -3606,6 +3606,7 @@ Say what this really was	Di qué era esto en realidad
 Say what to write — "my name is Ana López, today's date, tick the first box" — and a vision model places the text where the blanks are. You can move or delete anything afterwards.	Di qué escribir —«me llamo Ana López, la fecha de hoy, marca la primera casilla»— y un modelo de visión coloca el texto donde están los huecos. Después puedes mover o borrar lo que quieras.
 Say which folder the workers may touch	Di qué carpeta pueden tocar los workers
 Scale, rotate and flip the layer (Ctrl+Alt+T)	Escalar, girar y voltear la capa (Ctrl+Alt+T)
+Scan	Escanear
 Scan it with the authenticator app, or type the secret by hand:	Escanéalo con la app de autenticación, o escribe el secreto a mano:
 Scanned {scanned} · reindexed {reindexed} · removed {removed} · {symbols} symbols in {ms} ms	Escaneados {scanned} · reindexados {reindexed} · eliminados {removed} · {symbols} símbolos en {ms} ms
 Scanning	Revisando
@@ -7674,3 +7675,18 @@ the UI smoke test fails	la prueba de humo de UI falla
 the checkpoint contradicts what was claimed	el checkpoint contradice lo afirmado
 nothing backs what was claimed	nada respalda lo afirmado
 an active plan was to be executed, but no tool was called	había que ejecutar un plan activo, pero no llamó a ninguna herramienta
+This screen changed under you	Esta pantalla ha cambiado mientras la tenías abierta
+This screen crashed	Esta pantalla ha fallado
+Faustus was updated while this window was open; reload to get the new version.	Faustus se actualizó con esta ventana abierta; recarga para tener la versión nueva.
+Nearby apps	Aplicaciones cercanas
+Last scan: {time}	Último escaneo: {time}
+Not scanned yet.	Aún sin escanear.
+Could not scan for nearby apps.	No se pudieron buscar aplicaciones cercanas.
+GET /api/app-connectors/discover failed.	GET /api/app-connectors/discover falló.
+Nothing found	Nada encontrado
+Nothing answering on this machine's ports	Nada responde en los puertos de esta máquina
+Add…	Añadir…
+Not a known app — add it as an MCP server	No es una app conocida — añádela como servidor MCP
+{n} nearby	{n} cercana(s)
+Connected: {name}	Conectado: {name}
+Followed the app from {from} to {to}	Siguió a la app de {from} a {to}

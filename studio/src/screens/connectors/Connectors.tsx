@@ -23,6 +23,7 @@ import {
 } from '../../adapters/connectors';
 import { t, tn } from '../../i18n';
 import { NewConnectorForm } from './NewConnectorForm';
+import { NearbyApps } from './NearbyApps';
 import { LaunchProfilesPanel } from './LaunchProfiles';
 import { ConnectorToolsDrawer } from './ToolsDrawer';
 import '../projects.css';
@@ -121,6 +122,12 @@ function ConnectorRow({
         <StateChip state={c.status.state} />
       </div>
 
+      {c.relocated_from && (
+        <div className="fs-conn__relocated" data-testid="connector-relocated">
+          {t('Followed the app from {from} to {to}', { from: c.relocated_from, to: c.app_url ?? '' })}
+        </div>
+      )}
+
       <div className="fs-conn__row-detail">
         <span className="fs-set__help">{statusLine(c.status)}</span>
         {c.status.reasons.length > 0 && (
@@ -213,8 +220,11 @@ export function ConnectorsScreen() {
   const [failed, setFailed] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
-  const [form, setForm] = useState<{ preset: ConnectorPreset; existing?: Connector } | null>(null);
+  const [form, setForm] = useState<{ preset: ConnectorPreset; existing?: Connector; initialValues?: Record<string, string> } | null>(null);
   const [showProfiles, setShowProfiles] = useState(false);
+  const [nearbyOpen, setNearbyOpen] = useState(false);
+  const [nearbyCount, setNearbyCount] = useState(0);
+  const nearbyDefaultSet = useRef(false);
   const noticeTimer = useRef<number | null>(null);
 
   const say = useCallback((msg: string) => {
@@ -239,6 +249,15 @@ export function ConnectorsScreen() {
   useEffect(() => {
     reload(true);
   }, [reload]);
+
+  // Open by default when there is nothing to pair yet; once connectors
+  // exist, start collapsed (a count says how many are waiting) and leave
+  // the person's own toggle alone from then on.
+  useEffect(() => {
+    if (connectors === null || nearbyDefaultSet.current) return;
+    nearbyDefaultSet.current = true;
+    setNearbyOpen(connectors.length === 0);
+  }, [connectors]);
 
   const drawerId = params.get('id');
   const drawerConnector = useMemo(() => (connectors ?? []).find((c) => c.id === drawerId) ?? null, [connectors, drawerId]);
@@ -284,11 +303,30 @@ export function ConnectorsScreen() {
         </div>
       )}
 
+      <details className="fs-nearby__toggle" data-testid="nearby-apps-toggle" open={nearbyOpen} onToggle={(e) => setNearbyOpen(e.currentTarget.open)}>
+        <summary className="fs-nearby__summary">
+          {nearbyOpen ? t('Nearby apps') : tn(nearbyCount, '{n} nearby', '{n} nearby')}
+        </summary>
+        <NearbyApps
+          onAdded={(c) => {
+            say(t('Connected: {name}', { name: c.server.name || c.id }));
+            reload(true);
+          }}
+          onNotice={say}
+          onScanned={setNearbyCount}
+          onRequestForm={(presetId, values) => {
+            const preset = presets.find((p) => p.id === presetId);
+            if (preset) setForm({ preset, initialValues: values });
+          }}
+        />
+      </details>
+
       {form && (
         <div className="fs-set__card fs-conn__form" data-testid="connector-form">
           <NewConnectorForm
             preset={form.preset}
             existing={form.existing}
+            initialValues={form.initialValues}
             onClose={() => setForm(null)}
             onSaved={(c) => {
               setForm(null);

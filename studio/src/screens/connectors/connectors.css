@@ -154,3 +154,128 @@
     justify-content: flex-start;
   }
 }
+
+/* "Followed the app" note (relocated_from) — a quiet aside, not a warning:
+ * the connector already re-pointed itself, this just says so. */
+.fs-conn__relocated {
+  color: var(--fs-text-3);
+  font-size: var(--fs-label-size);
+}
+
+/* Nearby apps — a Bluetooth-pairing-style scan list. Every selector here
+ * is scoped under .fs-nearby; colours are tokens only, same rule as the
+ * rest of this file. */
+.fs-nearby__toggle {
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-panel);
+  background: var(--fs-surface-1);
+  padding: var(--fs-space-3) var(--fs-space-4);
+}
+
+.fs-nearby__summary {
+  cursor: pointer;
+  font-weight: var(--fs-label-weight);
+  color: var(--fs-text-1);
+  list-style: none;
+}
+
+.fs-nearby__summary::-webkit-details-marker {
+  display: none;
+}
+
+.fs-nearby__toggle[open] .fs-nearby__summary {
+  margin-block-end: var(--fs-space-3);
+}
+
+.fs-nearby {
+  display: grid;
+  gap: var(--fs-space-3);
+}
+
+.fs-nearby__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--fs-space-3);
+  flex-wrap: wrap;
+}
+
+.fs-nearby__head-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.fs-nearby__title {
+  margin: 0;
+  font-size: var(--fs-body-size);
+  font-weight: var(--fs-label-weight);
+  color: var(--fs-text-1);
+}
+
+.fs-nearby__list {
+  display: grid;
+  gap: var(--fs-space-2);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.fs-nearby__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--fs-space-3);
+  padding: var(--fs-space-3);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-panel);
+  background: var(--fs-surface-2);
+  flex-wrap: wrap;
+}
+
+.fs-nearby__row-main {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-3);
+  min-inline-size: 0;
+  flex-wrap: wrap;
+}
+
+.fs-nearby__identity {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+}
+
+.fs-nearby__port {
+  font-family: var(--fs-font-mono, monospace);
+}
+
+.fs-nearby__cwd {
+  color: var(--fs-text-3);
+  font-size: var(--fs-label-size);
+  max-inline-size: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fs-nearby__row-action {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.fs-nearby__added {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--fs-space-1);
+  color: var(--fs-success);
+}
+
+@media (max-width: 480px) {
+  .fs-nearby__row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

@@ -23,18 +23,23 @@ import { t } from '../../i18n';
 export function NewConnectorForm({
   preset,
   existing,
+  initialValues,
   onClose,
   onSaved,
 }: {
   preset: ConnectorPreset;
   existing?: Connector;
+  /** Prefills from a "Nearby apps" discovery hit: what discovery could
+   *  already fill in, merged over the preset's own defaults. Only the
+   *  fields discovery listed in `missing` are usually still empty. */
+  initialValues?: Record<string, string>;
   onClose: () => void;
   onSaved: (c: Connector) => void;
 }) {
   const [name, setName] = useState(existing?.server.name ?? preset.name);
   const [values, setValues] = useState<Record<string, string>>(() => {
     const v: Record<string, string> = {};
-    for (const p of preset.placeholders) v[p] = existing?.values[p] ?? preset.defaults?.[p] ?? '';
+    for (const p of preset.placeholders) v[p] = existing?.values[p] ?? initialValues?.[p] ?? preset.defaults?.[p] ?? '';
     return v;
   });
   // Which user-made launch profile "Start the app" / "Open the app" run
