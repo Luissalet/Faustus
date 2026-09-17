@@ -28,7 +28,22 @@ COMMAND_TIMEOUT_S = 120
 
 
 def _split_template(template: str) -> list:
-    return shlex.split(template, posix=(os.name != "nt"))
+    """The template as an argv list, never a shell string.
+
+    POSIX: shlex with its own quoting rules. Windows: shlex in non-POSIX
+    mode keeps backslash paths intact but also keeps the quotes around a
+    quoted argument (`-c "import x"` arrives as `"import x"`, quotes and
+    all, which the child then sees literally — seen live as a syntax error
+    in the test command); strip one matching pair per argument, which is
+    what the OS argument parser would have done."""
+    if os.name != "nt":
+        return shlex.split(template, posix=True)
+    out = []
+    for tok in shlex.split(template, posix=False):
+        if len(tok) >= 2 and tok[0] == tok[-1] and tok[0] in ('"', "'"):
+            tok = tok[1:-1]
+        out.append(tok)
+    return out
 
 
 def transcribe_command(audio_bytes: bytes, template: str, language: str = "") -> Optional[str]:

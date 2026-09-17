@@ -31,9 +31,22 @@ PLACEHOLDERS = ("{input_path}", "{output_path}", "{voice}", "{speed}", "{languag
 
 
 def _split_template(template: str) -> list:
-    # shlex.split(posix=False) keeps Windows-style backslash paths intact;
-    # POSIX keeps its own quoting/escaping rules.
-    return shlex.split(template, posix=(os.name != "nt"))
+    """The template as an argv list, never a shell string.
+
+    POSIX: shlex with its own quoting rules. Windows: shlex in non-POSIX
+    mode keeps backslash paths intact but also keeps the quotes around a
+    quoted argument (`-c "import x"` arrives as `"import x"`, quotes and
+    all, which the child then sees literally — seen live as a syntax error
+    in the test command); strip one matching pair per argument, which is
+    what the OS argument parser would have done."""
+    if os.name != "nt":
+        return shlex.split(template, posix=True)
+    out = []
+    for tok in shlex.split(template, posix=False):
+        if len(tok) >= 2 and tok[0] == tok[-1] and tok[0] in ('"', "'"):
+            tok = tok[1:-1]
+        out.append(tok)
+    return out
 
 
 def synthesize_command(text: str, template: str, voice: str = "", speed: float = 1.0, language: str = "") -> Optional[bytes]:
