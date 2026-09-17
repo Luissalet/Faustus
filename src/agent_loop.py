@@ -12506,6 +12506,34 @@ async def _stream_agent_loop_body(
         logger.info("[harness] turn summary: stop=%s tools=%s mutations=%s failed=%s rejections=%s",
                     _hsum["stop_reason"], _hsum["tool_calls"], _hsum["mutations"],
                     _hsum["failed_calls"], _hsum["rejections"])
+        # P1: close plan tasks the turn evidently finished (completed todos
+        # naming them, or all their files present and written this turn)
+        # even when the model never called plan_done.
+        try:
+            if _plan_tracker is not None and _ledger.mutations:
+                from src import plan_tracker as _pt_end
+                from src.agent_tools.coding_tools import load_todos as _load_todos_end
+                _todos_end = _load_todos_end(session_id) if session_id else []
+                _auto_done = _pt_end.reconcile(
+                    _plan_scope, _plan_tracker, todos=_todos_end,
+                    mutated_paths=_ledger.mutated_paths(), workspace=workspace,
+                    turn=_context_turn_id,
+                )
+                if _auto_done:
+                    _ledger.notes.append("plan_tracker:auto_done=" + ",".join(_auto_done))
+                    _hsum["notes"] = _ledger.notes
+                    _prog_end = _pt_end.progress(_plan_tracker)
+                    _cur_end = _pt_end.current_task(_plan_tracker) or {}
+                    yield (
+                        "data: " + json.dumps({
+                            "type": "plan_tracker",
+                            "hash": _plan_tracker.get("hash"), "title": _plan_tracker.get("title"),
+                            "done": _prog_end.get("done"), "total": _prog_end.get("total"),
+                            "current": _cur_end.get("key") or _cur_end.get("id"),
+                        }) + "\n\n"
+                    )
+        except Exception as _pt_end_err:
+            logger.debug("[harness] plan_tracker reconcile skipped: %s", _pt_end_err)
         try:
             _ws_pid = str(_hopts.get("project_id") or "").strip()
             if _ws_pid and bool(get_setting("agent_project_todos", True)) and _ledger.events:

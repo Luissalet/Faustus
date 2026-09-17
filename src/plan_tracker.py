@@ -450,6 +450,69 @@ def mark(
     return tracker
 
 
+def _norm_path(path: str) -> str:
+    return str(path or "").replace("\\", "/").strip().strip("/").lower()
+
+
+def _task_matches_todo(task: Dict[str, Any], todo: Dict[str, Any]) -> bool:
+    content = str(todo.get("content") or "").strip().lower()
+    if not content:
+        return False
+    key = str(task.get("key") or "").strip().lower()
+    title = str(task.get("title") or "").strip().lower()
+    if key and re.search(r"\b" + re.escape(key) + r"\b", content):
+        return True
+    return bool(title) and (title in content or content in title)
+
+
+def reconcile(
+    scope: str, tracker: Dict[str, Any], *,
+    todos: Optional[List[Dict[str, Any]]] = None,
+    mutated_paths: Optional[List[str]] = None,
+    workspace: Optional[str] = None,
+    turn: Optional[Any] = None,
+) -> List[str]:
+    """Close plan tasks the turn evidently finished even though the model
+    never called plan_done (live 17-09: the 27B did all four WPs through
+    todowrite/update_plan and the tracker still said 0/4).
+
+    A pending task becomes ``done`` when EITHER a completed todo names its
+    key/title, OR every file the task lists exists in the workspace and at
+    least one of them was mutated this turn. Evidence is recorded as such;
+    returns the ids marked. Never raises."""
+    marked: List[str] = []
+    try:
+        state = tracker.setdefault("state", {})
+        done_todos = [t for t in (todos or []) if isinstance(t, dict)
+                      and str(t.get("status") or "").lower() in ("completed", "done")]
+        muts = {_norm_path(p) for p in (mutated_paths or []) if p}
+        for task in tracker.get("tasks", []):
+            st = state.get(task["id"], {}).get("status")
+            if st in ("done", "skipped"):
+                continue
+            evidence = ""
+            if any(_task_matches_todo(task, td) for td in done_todos):
+                evidence = "todo completed: " + next(
+                    str(td.get("content") or "")[:120] for td in done_todos if _task_matches_todo(task, td))
+            elif task.get("files") and workspace and muts:
+                files = [str(f) for f in task.get("files") or []]
+                exist = all(os.path.isfile(os.path.join(workspace, f.replace("/", os.sep))) for f in files)
+                touched = [f for f in files if _norm_path(f) in muts
+                           or any(m.endswith("/" + _norm_path(f)) for m in muts)]
+                if exist and touched:
+                    evidence = "files present and written this turn: " + ", ".join(touched[:6])
+            if evidence:
+                state[task["id"]] = {"status": "done", "evidence": evidence,
+                                     "updated_at": time.time(), "turn": turn, "auto": True}
+                marked.append(task["id"])
+        if marked:
+            tracker["last_seen_at"] = time.time()
+            save(scope, tracker)
+    except Exception:
+        return marked
+    return marked
+
+
 def progress(tracker: Dict[str, Any]) -> Dict[str, int]:
     tasks = tracker.get("tasks", [])
     state = tracker.get("state", {})

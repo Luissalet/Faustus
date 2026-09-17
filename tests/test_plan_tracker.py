@@ -427,3 +427,26 @@ def test_plan_title_heading_is_not_a_task_and_subtasks_stay_inside_their_task():
     assert [t.key for t in spec.tasks] == ["WP01", "WP02", "WP03", "WP04"]
     assert "más cuerpo de WP01" in spec.tasks[0].text
     assert spec.title.startswith("PLAN_NOTAS.md — Plan de implementación")
+
+
+def test_reconcile_closes_tasks_from_completed_todos_or_written_files(tmp_path, monkeypatch):
+    from src import plan_tracker as pt
+    monkeypatch.setattr(pt, "PLAN_TRACKER_DIR", str(tmp_path / "pt"), raising=False)
+    scope = "proj-rec"
+    tracker = pt.upsert_from_attachment(scope, "plan.md", FAUSTUS_CREATOR_PLAN)
+    assert tracker and pt.progress(tracker)["done"] == 0
+    ws = tmp_path / "ws"
+    (ws / "src").mkdir(parents=True)
+    (ws / "src" / "rewrite_policy.py").write_text("x", encoding="utf-8")
+    todos = [{"content": "WP03 — Dependency drift check", "status": "completed"},
+             {"content": "WP05 — Test debt journal", "status": "pending"}]
+    marked = pt.reconcile(scope, tracker, todos=todos, mutated_paths=["src/rewrite_policy.py"],
+                          workspace=str(ws), turn="t1")
+    # WP03 by todo, WP04 by its only file existing and written this turn; WP05 stays.
+    keys = {t["key"] for t in tracker["tasks"] if t["id"] in marked}
+    assert keys == {"WP03", "WP04"}, keys
+    assert pt.progress(pt.load(scope, tracker["hash"]))["done"] == 2
+    assert pt.current_task(tracker)["key"] == "WP05"
+    # Idempotent: nothing new on a second pass.
+    assert pt.reconcile(scope, tracker, todos=todos, mutated_paths=["src/rewrite_policy.py"],
+                        workspace=str(ws), turn="t1") == []

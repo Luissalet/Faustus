@@ -110,3 +110,41 @@ def test_plan_brief_is_not_a_reason_to_reject_a_pure_question(ws, monkeypatch):
     _scripted_stream(monkeypatch, [("WP03 compara requirements con el venv.", "stop")])
     events = _run(ws, user="¿Qué hace la tarea WP03?", harness_options={"project_id": "proj-sil3"})
     assert not [e for e in events if e.get("type") == "harness_check" and e.get("status") == "rejected"]
+
+
+def test_turn_end_reconciles_plan_tasks_from_completed_todos_and_written_files(ws, monkeypatch):
+    """The live 17-09 gap: the 27B finished four WPs through todowrite and
+    edit_file and never called plan_done, so the tracker still said 0/4."""
+    import os
+    from src import plan_tracker as pt
+    from src.agent_tools import coding_tools as ct
+    scope = pt.scope_for("proj-sil4", ws)
+    assert pt.upsert_from_attachment(scope, "plan.md", _big_plan_text())
+    os.makedirs(os.path.join(ws, "src"), exist_ok=True)
+    for f in ("src/dependency_drift.py", "tests/test_dependency_drift.py", "requirements.txt"):
+        os.makedirs(os.path.dirname(os.path.join(ws, f)) or ws, exist_ok=True)
+        open(os.path.join(ws, f), "w", encoding="utf-8").write("x = 1\n")
+
+    def _exec(block):
+        if block.tool_type == "edit_file":
+            return {"output": "Edited src/dependency_drift.py (1 replacement)", "exit_code": 0,
+                    "diff": {"added": 1, "removed": 1}}
+        if block.tool_type == "todowrite":
+            todos = [{"content": "WP03 — Dependency drift check", "status": "completed"}]
+            ct.save_todos("sess-func", todos)
+            return {"output": "ok", "exit_code": 0, "todos": todos}
+        return None
+
+    _patch_common(monkeypatch, settings={"agent_project_tests": False, "agent_ui_smoke": False}, tool_exec=_exec)
+    _scripted_stream(monkeypatch, [
+        ('```edit_file\n{"path": "src/dependency_drift.py", "old_string": "x = 1", "new_string": "x = 2"}\n```', "tool_calls"),
+        ('```todowrite\n[{"content": "WP03 — Dependency drift check", "status": "completed"}]\n```', "tool_calls"),
+        ("WP03 hecho: src/dependency_drift.py cambiado.", "stop"),
+    ])
+    events = _run(ws, user="Sigue con el plan", harness_options={"project_id": "proj-sil4"})
+    pt_events = [e for e in events if e.get("type") == "plan_tracker"]
+    assert pt_events and pt_events[-1]["done"] == 1 and pt_events[-1]["current"] == "WP04", pt_events
+    reloaded = pt.active(scope)
+    assert reloaded["state"]["t01"]["status"] == "done"
+    summary = next(e for e in events if e.get("type") == "harness_summary")["data"]
+    assert any(n.startswith("plan_tracker:auto_done=") for n in summary["notes"])
