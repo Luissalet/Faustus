@@ -122,16 +122,18 @@ def detached_popen_kwargs() -> dict:
     it outlives the request/stream that launched it.
 
     POSIX: ``start_new_session=True`` (setsid) — new session + process group.
-    Windows: ``CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS`` — the child gets
+    Windows: ``CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW`` — the child gets
     its own process group (so it isn't killed when the parent's console closes)
-    and is detached from any console.
+    and a hidden console of its own.
     """
     if IS_WINDOWS:
-        # CREATE_NO_WINDOW as well: a console child (a python/node server)
-        # started from the desktop app otherwise pops a terminal window on
-        # the person's screen (seen live with a launch profile).
+        # CREATE_NO_WINDOW (a hidden console the child and ITS children share)
+        # rather than DETACHED_PROCESS (no console at all): a detached server
+        # that spawns anything — Flask's multiprocessing, a `whoami` — makes
+        # Windows open a brand-new visible terminal for that child (seen live
+        # with two launch profiles). A hidden console is inherited quietly.
+        # CREATE_NEW_PROCESS_GROUP keeps the parent's Ctrl+C away from it.
         flags = (getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200)
-                 | getattr(subprocess, "DETACHED_PROCESS", 0x00000008)
                  | getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000))
         return {"creationflags": flags}
     return {"start_new_session": True}
