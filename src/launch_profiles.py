@@ -455,7 +455,9 @@ async def _check_ready_once(readiness: Dict[str, Any]) -> bool:
     expect = (readiness or {}).get("expect") or {}
     import httpx
     try:
-        async with httpx.AsyncClient(follow_redirects=False, timeout=2.0) as client:
+        # trust_env=False: a proxy variable in the environment must not route
+        # a loopback probe (seen live: 2 s per profile, 10 s for the screen).
+        async with httpx.AsyncClient(follow_redirects=False, timeout=1.5, trust_env=False) as client:
             resp = await client.get(url)
     except Exception:  # noqa: BLE001
         return False
@@ -666,23 +668,27 @@ async def _status_for(profile: Dict[str, Any], *,
         out["ready"] = await _check_ready_once(readiness) if readiness.get("url") else True
         return out
 
-    if readiness.get("url") and await _check_ready_once(readiness):
+    # Port table first: when nothing listens on the readiness port there is
+    # no point (and no time) in an HTTP probe; when something does, the probe
+    # tells "ready" apart from "still starting".
+    found = None
+    if port:
+        from src import process_center
+        found = process_center.pid_listening_on(port, ports_by_pid=ports_by_pid)
+    if found:
+        out["running"] = True
+        out["source"] = "port"
+        out["pid"] = found.get("pid")
+        out["created_at"] = found.get("created_at")
+        out["pid_command"] = found.get("cmdline") or None
+        out["ready"] = await _check_ready_once(readiness) if readiness.get("url") else True
+        return out
+
+    if readiness.get("url") and (port is None or ports_by_pid is None) and await _check_ready_once(readiness):
         out["running"] = True
         out["ready"] = True
         out["source"] = "readiness"
         return out
-
-    if port:
-        from src import process_center
-        found = process_center.pid_listening_on(port, ports_by_pid=ports_by_pid)
-        if found:
-            out["running"] = True
-            out["ready"] = True
-            out["source"] = "port"
-            out["pid"] = found.get("pid")
-            out["created_at"] = found.get("created_at")
-            out["pid_command"] = found.get("cmdline") or None
-            return out
 
     return out
 
@@ -706,11 +712,10 @@ async def list_statuses() -> Dict[str, Dict[str, Any]]:
     """`status()` for every profile, in one `_ports_by_pid()` scan."""
     from src import process_center
     profiles = list_profiles()
-    ports_by_pid = process_center._ports_by_pid()
-    out: Dict[str, Dict[str, Any]] = {}
-    for profile in profiles:
-        out[profile["id"]] = await _status_for(profile, ports_by_pid=ports_by_pid)
-    return out
+    import asyncio
+    ports_by_pid = await asyncio.to_thread(process_center._ports_by_pid)
+    results = await asyncio.gather(*(_status_for(p, ports_by_pid=ports_by_pid) for p in profiles))
+    return {p["id"]: r for p, r in zip(profiles, results)}
 
 
 # ── stop / restart ──────────────────────────────────────────────────────────
