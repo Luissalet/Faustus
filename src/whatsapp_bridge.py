@@ -466,22 +466,47 @@ def _fmt_ts(ts: Any) -> str:
         return ""
 
 
+def _line(m: Dict[str, Any]) -> str:
+    who = "yo" if m.get("from_me") else (m.get("from_name") or m.get("from") or "?")
+    kind = m.get("kind")
+    if m.get("deleted"):
+        text = "[message deleted]"
+    elif kind == "audio":
+        secs = int(m.get("seconds") or 0)
+        label = f"[voice note {secs // 60}:{secs % 60:02d}]" if secs else "[voice note]"
+        text = f"{label} {m['transcript']}" if m.get("transcript") else f"{label} (not transcribed)"
+    elif kind == "text":
+        text = m.get("text") or ""
+    else:
+        text = f"[{kind}] {m.get('text') or ''}".rstrip()
+    reply = m.get("reply_to") or {}
+    if reply.get("text") or reply.get("from_name"):
+        quoted = str(reply.get("text") or "")[:60]
+        text = f"(replying to {'yo' if reply.get('from_me') else reply.get('from_name') or '?'}: «{quoted}») {text}"
+    reactions = m.get("reactions") or []
+    if reactions:
+        text += "  [reactions: " + ", ".join(f"{r.get('emoji')} by {'yo' if r.get('from_me') else r.get('from_name') or '?'}" for r in reactions) + "]"
+    return f"[{_fmt_ts(m.get('ts'))}] {who}: {text}"
+
+
 def transcript(rows: List[Dict[str, Any]], *, max_chars: int = 12000) -> str:
-    """Messages as `[dd/mm HH:MM] chat · sender: text` lines, oldest first."""
-    lines = []
+    """Messages grouped **per chat** (a `### ` header naming the chat, then its
+    lines oldest first). One interleaved stream mixed people and chats up in
+    the model's summary (seen live: a group message attributed to a 1:1 chat);
+    the grouping makes 'who said what where' unambiguous."""
+    groups: Dict[str, List[Dict[str, Any]]] = {}
+    names: Dict[str, str] = {}
     for m in rows:
-        who = "yo" if m.get("from_me") else (m.get("from_name") or m.get("from") or "?")
-        chat = m.get("chat_name") or m.get("chat") or ""
-        kind = m.get("kind")
-        if kind == "audio":
-            secs = int(m.get("seconds") or 0)
-            label = f"[voice note {secs // 60}:{secs % 60:02d}]" if secs else "[voice note]"
-            text = f"{label} {m['transcript']}" if m.get("transcript") else f"{label} (not transcribed)"
-        elif kind == "text":
-            text = m.get("text") or ""
-        else:
-            text = f"[{kind}] {m.get('text') or ''}".rstrip()
-        prefix = f"{chat} · " if chat and chat != who else ""
-        lines.append(f"[{_fmt_ts(m.get('ts'))}] {prefix}{who}: {text}")
-    out = "\n".join(lines)
+        jid = str(m.get("chat") or "")
+        groups.setdefault(jid, []).append(m)
+        if m.get("chat_name"):
+            names[jid] = str(m["chat_name"])
+    blocks = []
+    for jid, ms in groups.items():
+        ms = sorted(ms, key=lambda x: float(x.get("ts") or 0))
+        is_group = jid.endswith("@g.us")
+        title = names.get(jid) or jid
+        header = f"### {'Group' if is_group else 'Chat'}: {title} ({len(ms)} messages)"
+        blocks.append(header + "\n" + "\n".join(_line(m) for m in ms))
+    out = "\n\n".join(blocks)
     return out[-max_chars:]

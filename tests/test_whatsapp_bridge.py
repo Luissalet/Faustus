@@ -321,3 +321,20 @@ def test_wave3_routes_exist_and_side_effects_are_human_only():
     for name in ("react", "delete", "forward", "edit", "upload"):
         body = src.split(f"async def {name}(")[1].split("async def")[0]
         assert "require_human(request)" in body, name
+
+
+def test_transcript_groups_messages_per_chat_so_people_are_not_mixed_up():
+    now = time.time()
+    rows = [
+        {"id": "a", "chat": "1@s.whatsapp.net", "chat_name": "Ana Pérez", "from_name": "Ana Pérez", "from_me": False, "ts": now - 30, "text": "Vaya", "kind": "text",
+         "reactions": [{"emoji": "😐", "from": "1@s.whatsapp.net", "from_name": "Ana Pérez", "from_me": False}]},
+        {"id": "b", "chat": "g@g.us", "chat_name": "Cuadrilla", "from_name": "Pablo", "from_me": False, "ts": now - 20, "text": "Hola a todos", "kind": "text"},
+        {"id": "c", "chat": "1@s.whatsapp.net", "chat_name": "Ana Pérez", "from_name": "me", "from_me": True, "ts": now - 10, "text": "https://example.org/job", "kind": "text",
+         "reply_to": {"id": "a", "from_name": "Ana Pérez", "text": "Vaya"}},
+    ]
+    out = wa.transcript(rows)
+    ana, cuadrilla = out.split("### Group: Cuadrilla")
+    assert ana.startswith("### Chat: Ana Pérez (2 messages)")
+    assert "Ana Pérez: Vaya  [reactions: 😐 by Ana Pérez]" in ana
+    assert "yo: (replying to Ana Pérez: «Vaya») https://example.org/job" in ana
+    assert "Pablo: Hola a todos" in cuadrilla and "Pablo" not in ana

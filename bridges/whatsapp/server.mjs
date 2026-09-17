@@ -309,6 +309,7 @@ function ingest(msg, { unread = false } = {}) {
   if (seenIds.has(key.id)) return null;
   const [text, kind] = textOf(msg);
   if (kind === "protocol") return null;
+  if (kind === "reaction") return null;   // applied to the target row by messages.reaction, never a row of its own
   // learn LID ↔ phone pairs the stanza carries before choosing identities
   if (key.senderPn && !key.fromMe) learnLid(key.participant || key.remoteJid, key.senderPn);
   if (key.participantPn && key.participant) learnLid(key.participant, key.participantPn);
