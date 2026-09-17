@@ -93,6 +93,15 @@ _REJECTION_PATTERNS = [
     r"descartad[oa]",
     r"no podemos ofrecerte",
     r"no hemos seleccionado tu",
+    r"no ha sido preseleccionad",
+    r"no has sido preseleccionad",
+    r"hemos avanzado con otr[ao]s candidat",
+    r"avanzar con otr[ao]s candidat",
+    r"we('| ha)?ve decided to move forward with other",
+    r"decided to move forward with other (candidates|applicants)",
+    r"move forward with other (candidates|applicants)",
+    r"not (to )?move forward (at this stage|with your)",
+    r"we will not be moving forward",
 ]
 
 _OFFER_PATTERNS = [
@@ -161,27 +170,35 @@ _MONTHS_ES = {
     "enero": 1, "febrero": 2, "marzo": 3, "abril": 4, "mayo": 5, "junio": 6,
     "julio": 7, "agosto": 8, "septiembre": 9, "setiembre": 9, "octubre": 10,
     "noviembre": 11, "diciembre": 12,
+    # the abbreviations calendar invites use ("lun 7 de sept de 2026")
+    "ene": 1, "feb": 2, "mar": 3, "abr": 4, "may": 5, "jun": 6, "jul": 7, "ago": 8,
+    "sep": 9, "sept": 9, "oct": 10, "nov": 11, "dic": 12,
 }
 _MONTHS_EN = {
     "january": 1, "february": 2, "march": 3, "april": 4, "may": 5, "june": 6,
     "july": 7, "august": 8, "september": 9, "october": 10, "november": 11,
     "december": 12,
+    # "Sep 7, 2026 4:00pm" (Greenhouse confirmations)
+    "jan": 1, "feb": 2, "mar": 3, "apr": 4, "jun": 6, "jul": 7, "aug": 8,
+    "sep": 9, "sept": 9, "oct": 10, "nov": 11, "dec": 12,
 }
 
 _DATE_ISO_RE = re.compile(r"\b(\d{4})-(\d{2})-(\d{2})\b")
 _DATE_SLASH_RE = re.compile(r"\b(\d{1,2})/(\d{1,2})/(\d{4})\b")
+_MONTHS_ES_ALT = "|".join(sorted(_MONTHS_ES, key=len, reverse=True))
+_MONTHS_EN_ALT = "|".join(sorted(_MONTHS_EN, key=len, reverse=True))
 _DATE_ES_RE = re.compile(
-    r"\b(\d{1,2})\s+de\s+(" + "|".join(_MONTHS_ES) + r")(?:\s+de\s+(\d{4}))?\b",
+    r"\b(\d{1,2})\s+de\s+(" + _MONTHS_ES_ALT + r")\.?(?:\s+de\s+(\d{4}))?\b",
     re.IGNORECASE,
 )
 _DATE_EN_RE = re.compile(
-    r"\b(" + "|".join(_MONTHS_EN) + r")\s+(\d{1,2})(?:st|nd|rd|th)?,?\s*(\d{4})?\b",
+    r"\b(" + _MONTHS_EN_ALT + r")\.?\s+(\d{1,2})(?:st|nd|rd|th)?,?\s*(\d{4})?\b",
     re.IGNORECASE,
 )
 # Day-first English ("22 September 2026", "22nd of September"), the form
 # European recruiters write.
 _DATE_EN_DAY_FIRST_RE = re.compile(
-    r"\b(\d{1,2})(?:st|nd|rd|th)?\s+(?:of\s+)?(" + "|".join(_MONTHS_EN) + r")(?:,?\s*(\d{4}))?\b",
+    r"\b(\d{1,2})(?:st|nd|rd|th)?\s+(?:of\s+)?(" + _MONTHS_EN_ALT + r")\.?(?:,?\s*(\d{4}))?\b",
     re.IGNORECASE,
 )
 
@@ -299,6 +316,15 @@ def _find_tz(text: str, date_ymd):
                 return zone_name, offset_str
         except Exception:
             pass
+    # "(GMT+02:00) Madrid" / "UTC+1": the explicit offset beats the bare
+    # abbreviation it is attached to (GMT alone would read as +00:00).
+    m = re.search(r"\b(?:UTC|GMT)\s*([+-])\s*(\d{1,2})(?::?(\d{2}))?\b", text)
+    if m:
+        hours = int(m.group(2))
+        mins = int(m.group(3) or 0)
+        if hours <= 14:
+            offset_str = f"{m.group(1)}{hours:02d}:{mins:02d}"
+            return f"UTC{offset_str}", offset_str
     m = _TZ_ABBR_RE.search(text)
     if m:
         abbr = m.group(1).upper()
@@ -360,7 +386,9 @@ def classify(message: Dict[str, Any], default_tz: Optional[str] = None) -> Class
     """
     subject = str(message.get("subject") or "")
     body = str(message.get("body") or "")
-    text = f"{subject}\n{body}"
+    # Curly quotes are what real mail carries ("we’ve decided"); the
+    # patterns are written with the straight apostrophe.
+    text = f"{subject}\n{body}".replace("\u2019", "'").replace("\u2018", "'").replace("\u00a0", " ")
     lower = text.lower()
     ref_year = _ref_year(message)
 

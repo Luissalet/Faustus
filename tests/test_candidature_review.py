@@ -211,3 +211,38 @@ def test_the_newest_mail_fixes_the_interview_slot_and_older_times_make_no_event(
     assert invite["action"] == "recorded"          # still a reply on the application
     by_ext = {p["externalId"]: p for _, p in recorded}
     assert "interviewAt" not in by_ext["<m9@acc>"] and by_ext["<m2@acc>"]["interviewAt"] == "2026-09-22T08:00:00Z"
+
+
+@pytest.mark.parametrize("subject,body,company", [
+    ("Regarding your application at Habito",
+     "Thank you for your interest in the Applied AI Engineer position at Habito. After reviewing your application, we’ve decided not to move forward at this stage.", "Habito"),
+    ("Hi, Thank you for your interest in Smallbird",
+     "After reviewing your application, we’ve decided to move forward with other candidates for this specific position.", "Smallbird"),
+    ("Proceso de selección - TALENTIA",
+     "Comunicarte que tu candidatura no ha sido preseleccionada para continuar en el proceso de AI Engineer. Hemos avanzado con otras candidaturas.", "Talentia"),
+    ("AI/ML Engineer (GenAI) - Clear Concepts",
+     "Unfortunately, this time, we will not be moving forward with your candidacy for the position of AI/ML Engineer (GenAI).", "Clear Concepts"),
+    ("Seguimiento oferta empleo",
+     "Tras revisar tu perfil, sentimos comunicarte que en esta ocasión no seguiremos adelante con tu candidatura.", ""),
+])
+def test_real_rejection_forms_are_read_hinted_classified_and_named(subject, body, company):
+    """The 17-09 inbox: curly apostrophes, 'preseleccionada', 'move forward
+    with other candidates', a job title as the whole subject."""
+    from src import candidature_responses as resp
+    assert cr._HINT_RE.search(subject), "the gate must let this mail be read"
+    assert resp.classify({"subject": subject, "body": body})["kind"] == "rejection"
+    if company:
+        assert cr.guess_company({"subject": subject, "from": "Someone <x@y.com>"}) == company
+
+
+def test_interview_confirmations_with_gmt_offsets_and_short_months_resolve():
+    from src import candidature_responses as resp
+    conf = resp.classify({"subject": "Your meeting confirmation with Flapp & Storeful!",
+                          "body": "You're confirmed for your interview on: Date/Time: Sep 7, 2026 4:00pm-4:30pm (GMT+02:00) Madrid",
+                          "received_at": "2026-09-04T10:00:00Z"})
+    assert conf["kind"] == "interview" and conf["interview_at"] == "2026-09-07T16:00:00+02:00"
+    inv = resp.classify({"subject": "Invitación: Interview with Storeful lun 7 de sept de 2026 4pm - 4:30pm (CEST)",
+                         "body": "", "received_at": "2026-09-04T10:00:00Z"})
+    assert inv["interview_at"] == "2026-09-07T16:00:00+02:00"
+    assert cr._HINT_RE.search("Your meeting confirmation with Flapp & Storeful!")
+    assert cr.guess_company({"subject": "x", "from": "Ana Pérez - Talentia <p@x.com>"}) == "Talentia"

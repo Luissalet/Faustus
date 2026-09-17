@@ -54,7 +54,13 @@ _HINT_RE = re.compile(
     r"gracias por (?:tu inter[eé]s|aplicar|postular|tu candidatura)|update on|actualizaci[oó]n|"
     r"unfortunately|lamentamos|regret|no continuar|descartad|selected|seleccionad|"
     r"greenhouse|lever\.co|workday|smartrecruiters|teamtailor|ashby|bamboohr|workable|recruitee|personio|"
-    r"careers|jobs@|talent@|hr@|people@|noreply@.*(?:jobs|careers|talent)",
+    r"careers|jobs@|talent@|hr@|people@|noreply@.*(?:jobs|careers|talent)|"
+    # a job title in the subject ("AI/ML Engineer (GenAI) - Clear Concepts")
+    r"engineer|developer|ingenier|desarrollad|scientist|analyst|analista|consultant|consultor|architect|arquitect|"
+    r"devops|backend|frontend|full[- ]?stack|data\b|\bml\b|\bai\b|\bia\b|genai|python|java\b|"
+    # meetings and confirmations (Greenhouse: "Your meeting confirmation with…")
+    r"meeting|reuni[oó]n|\bcall\b|llamada|confirmation|confirmaci[oó]n|invitation|invitaci[oó]n|schedul|agenda|"
+    r"greenhouse-mail|lever\.co|teamtailor|workablemail|smartrecruiters|myworkday|ashbyhq|personio|recruitee",
     re.I,
 )
 #: Mails that mention a job but are not an employer's reply to an application.
@@ -192,9 +198,11 @@ _GENERIC_SENDER = re.compile(
     r"\b(talent|team|careers?|recruit\w*|hr|people|jobs?|hiring|noreply|no-reply|notifications?|"
     r"acquisition|recruitment|do not reply|equipo|seleccion|selección|rrhh|candidat\w*)\b", re.I)
 _SUBJECT_COMPANY_RES = [
-    re.compile(r"(?:\bat|\bwith|\bto|\bfrom|\ben|\bcon|\bde)\s+([A-Z][\w&.'’-]*(?:\s+[A-Z][\w&.'’-]*){0,3})(?=\s*(?:[!.,:;—–|-]|\bfor\b|\bpara\b|$))"),
+    re.compile(r"(?:\bat|\bwith|\bto|\bfrom|\bin|\ben|\bcon|\bde)\s+([A-Z][\w&.'’-]*(?:\s+[A-Z][\w&.'’-]*){0,3})(?=\s*(?:[!.,:;—–|-]|\bfor\b|\bpara\b|$))"),
     re.compile(r"&\s+([A-Z][\w&.'’-]*(?:\s+[A-Z][\w&.'’-]*){0,3})\s*[—–-]"),
     re.compile(r"^([A-Z][\w&.'’-]*(?:\s+[A-Z][\w&.'’-]*){0,2})\s*[—–:|-]\s"),
+    # "AI/ML Engineer (GenAI) - Clear Concepts", "Proceso de selección - TALENTIA"
+    re.compile(r"\s[—–|-]\s*([A-Z][\w&.'’-]*(?:\s+[A-Z][\w&.'’-]*){0,3})\s*$"),
 ]
 _SUBJECT_TITLE_RES = [
     re.compile(r"(?:application|candidatura|candidature)\s*(?:for the|for|para|:)\s+(.+?)(?:\s+(?:at|en)\b|[!.,—–]|$)", re.I),
@@ -214,9 +222,12 @@ def guess_company(message: Dict[str, Any]) -> str:
         if m:
             cand = m.group(1).strip(" .,!-—–")
             if cand and not _GENERIC_SENDER.fullmatch(cand) and cand.lower() not in {"your", "the", "tu", "el", "la"}:
-                return cand
+                return cand.title() if cand.isupper() and len(cand) > 3 else cand
     sender = str(message.get("from") or "")
     name = re.sub(r"<.*?>", "", sender).strip(" \"'")
+    # "Ana Pérez - Talentia", "Talent Acquisition Team - RLM Group": the company is after the dash
+    if re.search(r"\s[—–-]\s", name):
+        name = re.split(r"\s[—–-]\s", name)[-1]
     name = _GENERIC_SENDER.sub("", name).strip(" -|,@")
     name = re.sub(r"\s{2,}", " ", name)
     if name and "@" not in name and "." not in name and len(name) > 1:
