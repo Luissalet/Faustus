@@ -191,40 +191,80 @@ def _ports_by_pid() -> Dict[int, List[int]]:
     return out
 
 
-def _row_for(psutil, proc, *, self_pid: int, self_ancestors: Set[int],
+class _Table:
+    """One pass over the process list (`process_iter` with pid/ppid/name):
+    the parent map every attribution question is answered from. On Windows
+    `Process.children(recursive=True)` and `parents()` each rescan the whole
+    table, and a 45-port / 90-app snapshot took 20 s that way (17-09)."""
+
+    def __init__(self, psutil):
+        self.ppid: Dict[int, int] = {}
+        self.name: Dict[int, str] = {}
+        self.kids: Dict[int, List[int]] = {}
+        for proc in psutil.process_iter(["pid", "ppid", "name"]):
+            info = proc.info
+            pid, ppid = info.get("pid"), info.get("ppid")
+            if pid is None:
+                continue
+            self.name[pid] = info.get("name") or ""
+            if ppid is not None:
+                self.ppid[pid] = ppid
+                self.kids.setdefault(ppid, []).append(pid)
+
+    def ancestors(self, pid: int) -> List[int]:
+        out: List[int] = []
+        seen = {pid}
+        while pid in self.ppid and self.ppid[pid] not in seen:
+            pid = self.ppid[pid]
+            seen.add(pid)
+            out.append(pid)
+        return out
+
+    def descendants(self, pid: int) -> List[int]:
+        out: List[int] = []
+        frontier = list(self.kids.get(pid, []))
+        seen = {pid}
+        while frontier:
+            p = frontier.pop()
+            if p in seen:
+                continue
+            seen.add(p)
+            out.append(p)
+            frontier.extend(self.kids.get(p, []))
+        return out
+
+
+def _row_for(psutil, proc, *, table: _Table, self_pid: int, self_ancestors: Set[int],
              ports: Dict[int, List[int]], jobs: Dict[int, str], profiles: Dict[int, str],
-             conn_ports: Dict[int, str], now: float) -> Optional[ProcRow]:
+             conn_ports: Dict[int, str], now: float, detail: bool = True) -> Optional[ProcRow]:
     try:
         with proc.oneshot():
             name = proc.name()
             created = float(proc.create_time())
             row = ProcRow(pid=proc.pid, name=name, created_at=created)
-            try:
-                row.cmdline = " ".join(proc.cmdline() or [])[:400]
-            except Exception:  # noqa: BLE001
-                pass
-            try:
-                row.cwd = proc.cwd() or ""
-            except Exception:  # noqa: BLE001
-                pass
-            try:
-                row.exe = proc.exe() or ""
-            except Exception:  # noqa: BLE001
-                pass
+            base = _base_name(name)
+            system = base in OS_PROCESSES or proc.pid <= 4
+            if detail and not system:
+                try:
+                    row.cmdline = " ".join(proc.cmdline() or [])[:400]
+                except Exception:  # noqa: BLE001
+                    pass
+                try:
+                    row.cwd = proc.cwd() or ""
+                except Exception:  # noqa: BLE001
+                    pass
+                try:
+                    row.exe = proc.exe() or ""
+                except Exception:  # noqa: BLE001
+                    pass
             try:
                 row.rss_mb = round(proc.memory_info().rss / (1024 * 1024), 1)
             except Exception:  # noqa: BLE001
                 pass
-            try:
-                row.parent_pid = proc.ppid()
-            except Exception:  # noqa: BLE001
-                pass
-            try:
-                row.children = len(proc.children(recursive=True))
-            except Exception:  # noqa: BLE001
-                pass
     except Exception:  # noqa: BLE001 - gone / access denied
         return None
+    row.parent_pid = table.ppid.get(proc.pid)
+    row.children = len(table.descendants(proc.pid))
     row.uptime_s = int(max(0.0, now - created))
     row.ports = sorted(ports.get(proc.pid, []))
     base = _base_name(name)
@@ -247,7 +287,7 @@ def _row_for(psutil, proc, *, self_pid: int, self_ancestors: Set[int],
         row.origin = "ollama"
         row.label = "Ollama (local models)"
         row.protected, row.protected_reason = True, "the local model runtime; stop it only on purpose"
-    elif self_pid in _ancestors(psutil, proc.pid):
+    elif self_pid in table.ancestors(proc.pid):
         row.origin = "faustus"
         row.label = "started by Faustus (agent shell, MCP server or tool)"
     return row
@@ -278,10 +318,11 @@ def snapshot(*, connectors: Optional[Iterable[Dict[str, Any]]] = None,
         return out
 
     self_pid = os.getpid()
-    self_anc = set(_ancestors(psutil, self_pid))
+    table = _Table(psutil)
+    self_anc = set(table.ancestors(self_pid))
     ports = _ports_by_pid()
     seen: Set[int] = set()
-    kw = dict(self_pid=self_pid, self_ancestors=self_anc, ports=ports, jobs=jobs_map,
+    kw = dict(table=table, self_pid=self_pid, self_ancestors=self_anc, ports=ports, jobs=jobs_map,
               profiles=profiles, conn_ports=conn_ports, now=now)
 
     # 1. whoever holds a listening port
@@ -298,11 +339,13 @@ def snapshot(*, connectors: Optional[Iterable[Dict[str, Any]]] = None,
 
     # 2. this server's own descendants (agent shells, MCP servers, tools)
     try:
-        me = psutil.Process(self_pid)
-        for child in me.children(recursive=True):
-            if child.pid in seen:
+        for child_pid in table.descendants(self_pid):
+            if child_pid in seen:
                 continue
-            row = _row_for(psutil, child, **kw)
+            try:
+                row = _row_for(psutil, psutil.Process(child_pid), **kw)
+            except Exception:  # noqa: BLE001
+                row = None
             if row is None:
                 continue
             if row.origin == "other":
@@ -315,22 +358,33 @@ def snapshot(*, connectors: Optional[Iterable[Dict[str, Any]]] = None,
     # 3. watched app families: the top-most process of each name
     if include_watched:
         names = set(watchlist())
-        candidates: Dict[int, Any] = {}
-        for proc in psutil.process_iter(["pid", "name", "ppid"]):
-            try:
-                base = _base_name(proc.info.get("name") or "")
-            except Exception:  # noqa: BLE001
+        candidates: Dict[int, str] = {}
+        for pid, name in table.name.items():
+            base = _base_name(name)
+            if base in names and pid not in seen and pid != self_pid:
+                candidates[pid] = base
+        for pid, base in candidates.items():
+            if pid in seen:
                 continue
-            if base in names and proc.pid not in seen and proc.pid != self_pid:
-                candidates[proc.pid] = (proc, base)
-        for pid, (proc, base) in candidates.items():
-            ppid = proc.info.get("ppid")
+            ppid = table.ppid.get(pid)
             # family root: parent is not the same app (Electron/Chrome spawn many)
-            if ppid in candidates and candidates[ppid][1] == base:
+            if ppid in candidates and candidates[ppid] == base:
                 continue
-            row = _row_for(psutil, proc, **kw)
+            try:
+                row = _row_for(psutil, psutil.Process(pid), **kw)
+            except Exception:  # noqa: BLE001
+                row = None
             if row is None:
                 continue
+            # a family's memory is the sum of its members, so Cursor reads
+            # as one app and not as its 14 renderers
+            fam = [p for p in table.descendants(pid) if candidates.get(p) == base]
+            for p in fam:
+                seen.add(p)
+                try:
+                    row.rss_mb = round((row.rss_mb or 0) + psutil.Process(p).memory_info().rss / (1024 * 1024), 1)
+                except Exception:  # noqa: BLE001
+                    pass
             out["watched"].append(row.to_dict())
             seen.add(pid)
         out["watched"].sort(key=lambda r: (r["origin"] != "faustus", r["name"].lower(), r["pid"]))
