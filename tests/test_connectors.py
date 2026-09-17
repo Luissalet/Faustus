@@ -503,11 +503,12 @@ def test_dorian_is_a_native_stdio_preset(tmp_path):
     assert preset.name == "Dorian's Hoard"
     resolved = connectors.resolve_preset_values(preset, {"DORIAN_DIR": str(d)})
     assert resolved["ok"], resolved
-    assert resolved["command"] == str(d / ".venv" / "Scripts" / "python.exe")
-    assert resolved["args"] == [
-        str(d / "selfhoard" / "mcp_server.py"),
+    norm = lambda x: str(x).replace("\\", "/")   # presets join with "/" whatever the OS
+    assert norm(resolved["command"]) == norm(d / ".venv" / "Scripts" / "python.exe")
+    assert [norm(a) for a in resolved["args"]] == [
+        norm(d / "selfhoard" / "mcp_server.py"),
         "--credential-file",
-        str(d / "data" / "agent-clients" / "faustus.json"),
+        norm(d / "data" / "agent-clients" / "faustus.json"),
     ]
     assert resolved["app_url"] == "http://127.0.0.1:8741"
     assert resolved["ui_url"] == "http://127.0.0.1:8741"
@@ -527,7 +528,7 @@ def test_gepetto_and_platos_run_faustus_own_rest_bridge(tmp_path):
     import sys
     from src.constants import BASE_DIR
     assert resolved["command"] == sys.executable
-    assert resolved["args"] == [os.path.join(BASE_DIR.rstrip("/\\"), "bridges", "rest_mcp", "server.py")]
+    assert [a.replace("\\", "/") for a in resolved["args"]] == [BASE_DIR.rstrip("/\\").replace("\\", "/") + "/bridges/rest_mcp/server.py"]
     assert resolved["env"]["REST_BASE_URL"] == "http://127.0.0.1:8767"
     assert resolved["env"]["REST_OPENAPI_URL"] == "http://127.0.0.1:8767/openapi.json"
     assert resolved["env"]["REST_MANIFEST"].endswith("manifests/gepetto.json")

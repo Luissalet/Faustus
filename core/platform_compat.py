@@ -127,9 +127,12 @@ def detached_popen_kwargs() -> dict:
     and is detached from any console.
     """
     if IS_WINDOWS:
-        flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200) | getattr(
-            subprocess, "DETACHED_PROCESS", 0x00000008
-        )
+        # CREATE_NO_WINDOW as well: a console child (a python/node server)
+        # started from the desktop app otherwise pops a terminal window on
+        # the person's screen (seen live with a launch profile).
+        flags = (getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200)
+                 | getattr(subprocess, "DETACHED_PROCESS", 0x00000008)
+                 | getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000))
         return {"creationflags": flags}
     return {"start_new_session": True}
 

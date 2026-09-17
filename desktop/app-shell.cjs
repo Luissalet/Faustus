@@ -29,7 +29,7 @@
 // does, main is always the test file instead).
 'use strict';
 const {join, resolve} = require('node:path');
-const {existsSync, mkdirSync, readFileSync, writeFileSync} = require('node:fs');
+const {existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync} = require('node:fs');
 const {localNavigation, externalNavigation} = require('./policy.cjs');
 
 const root = resolve(__dirname, '..');
@@ -144,7 +144,10 @@ module.exports = {
 };
 
 // ── Electron entry point — only runs when launched as the main script ──────
-if (require.main === module) {
+// Electron does not make its main script `require.main` (seen live: the
+// block never ran and no window ever appeared); the process type is the
+// reliable signal, and plain `node --test` never has it.
+if (process.versions.electron && process.type === 'browser') {
   const {app, BrowserWindow, Menu, shell, net} = require('electron');
 
   const args = parseArgs(process.argv.slice(2));
@@ -166,6 +169,15 @@ if (require.main === module) {
       mkdirSync(profile, {recursive: true});
       app.setPath('userData', profile);
       app.setPath('sessionData', profile);
+      // Electron on Windows swallows console output unless --enable-logging;
+      // a plain file next to the window state is what a person can read.
+      const logFile = join(profile, 'shell.log');
+      const log = line => {
+        try { appendFileSync(logFile, new Date().toISOString() + ' ' + line + '\n'); } catch { /* best effort */ }
+      };
+      process.on('uncaughtException', e => log('uncaughtException ' + (e && e.stack || e)));
+      process.on('unhandledRejection', e => log('unhandledRejection ' + (e && e.stack || e)));
+      log('start url=' + args.url + ' title=' + args.title + ' icon=' + (args.icon || '-') + ' electron=' + process.versions.electron);
 
       let win = null;
       let saveTimer = null;
@@ -227,6 +239,7 @@ if (require.main === module) {
       }
 
       app.whenReady().then(async () => {
+        log('ready');
         const state = loadWindowState(args.slug);
         win = new BrowserWindow({
           title: args.title,
@@ -245,14 +258,18 @@ if (require.main === module) {
         win.on('close', scheduleSave);
         win.webContents.on('page-title-updated', event => event.preventDefault());
 
-        await win.loadURL(splashHtml(args.title));
+        log('window created ' + JSON.stringify(state));
+        win.once('ready-to-show', () => log('ready-to-show'));
+        await win.loadURL(splashHtml(args.title)).catch(e => log('splash failed ' + e));
         const up = await waitForUrl(args.url);
         if (win.isDestroyed()) return;
         if (!up) {
+          log(args.url + ' did not answer within 60s');
           console.error('app-shell: ' + args.url + ' did not answer within 60s');
         }
-        await win.loadURL(args.url);
-      });
+        await win.loadURL(args.url).catch(e => log('load failed ' + e));
+        log('loaded ' + args.url);
+      }).catch(e => log('whenReady failed ' + (e && e.stack || e)));
 
       app.on('window-all-closed', () => app.quit());
     }
