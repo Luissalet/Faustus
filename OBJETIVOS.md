@@ -619,6 +619,10 @@ Pedido el 16-09 tras el proyecto «3D modeling silhouettes»: 24 chats reales, u
 
 Pedido el 17-09: ver qué se está ejecutando (puertos, apps abiertas por el asistente, trabajos en segundo plano) y poder pararlo. Hecho dentro de Faustus (no como conector: un conector es una herramienta del modelo, y el Stop tiene que ser de una persona). FAUSTUS.md §97. **Siguiente.** Nombre del servidor MCP en las filas hijas; herramienta de solo lectura para el agente; registro de lo que el asistente lanza por Windows-MCP.
 
+## OBJ-22 · Faustus en el móvil (mando remoto del PC) — PLANIFICADO (17-09-2026)
+
+Pedido: avisos al móvil cuando acaba cosas, ver progreso, mandar tareas y preguntar desde el móvil, todo el cómputo en el PC. Plan en `docs/spec/faustus-movil.md`: capa 1 bot de Telegram (avisos con botones de aprobación, `/status`, texto → turno, `/stop`) sobre un `src/notifications.py` común; capa 2 Studio como PWA por Tailscale con Web Push y vista de pulgar. **Siguiente.** Capa 1 completa y verificada con el bot real.
+
 ## OBJ-21 · Apps: control de las apps del desarrollador desde Processes — HECHO (17-09-2026)
 
 Pedido: conectar tres apps más, un menú para lanzarlas/pararlas/reiniciarlas con iconos y estado, «como Processes pero universal», con consola, alta y baja libres, y que todas abran en ventana de escritorio. Hecho (FAUSTUS.md §101): perfiles con icono/descr./stop/desktop, estado por pid o puerto, ventana Electron genérica con identidad propia en la barra, sección Apps en Processes, adaptador REST→MCP genérico y presets `dorian`/`gepetto`/`platos`. **Siguiente.** Arrancar apps al arrancar Faustus (autostart por perfil), agrupar por proyecto, exportar/importar perfiles, y que el agente tenga una herramienta de solo lectura sobre el estado de las apps.
