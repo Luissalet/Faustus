@@ -112,7 +112,21 @@ export interface WaMessage {
   text: string;
   kind: WaMessageKind;
   unread: boolean;
+  /** Pulled attachment (voice note, photo, document): file name under the bridge's media store. */
+  media?: string;
+  mime?: string;
+  /** Voice notes: duration in seconds and whether it was recorded as push-to-talk. */
+  seconds?: number;
+  voice?: boolean;
+  /** Filled by the server once the voice note went through speech-to-text. */
+  transcript?: string;
 }
+
+/** `<img src>` for a chat's profile picture (404 when the contact has none — hide the image). */
+export const waAvatarUrl = (jid: string) => `/api/whatsapp/avatar?jid=${encodeURIComponent(jid)}`;
+
+/** `<audio src>` / `<img src>` / download link for a pulled attachment. */
+export const waMediaUrl = (name: string) => `/api/whatsapp/media/${encodeURIComponent(name)}`;
 
 export interface WaMessagesInput {
   chat?: string;
@@ -153,5 +167,11 @@ export interface WaSendResult {
   id: string;
 }
 export const waSend = (to: string, text: string) => post<WaSendResult>('/api/whatsapp/send', { to, text }, 'whatsapp/send');
+
+/** Ask the phone for older messages of one chat; they arrive a few seconds later — poll `waMessages` again. */
+export const waHistory = (chat: string, count = 50) => post<{ ok: boolean; before_ts: number }>('/api/whatsapp/history', { chat, count }, 'whatsapp/history');
+
+/** Voice note → text through Faustus's speech provider (cached per message). */
+export const waTranscribe = (id: string) => post<{ id: string; text: string; cached: boolean }>('/api/whatsapp/transcribe', { id }, 'whatsapp/transcribe');
 
 export const waMarkRead = (chat?: string) => post<{ ok: boolean }>('/api/whatsapp/mark-read', chat ? { chat } : {}, 'whatsapp/mark-read');

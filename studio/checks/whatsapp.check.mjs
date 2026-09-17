@@ -32,6 +32,10 @@ assert.match(adapter, /\/api\/whatsapp\/contacts\?q=/, 'calls GET /api/whatsapp/
 assert.match(adapter, /'\/api\/whatsapp\/send'/, 'calls POST /api/whatsapp/send');
 assert.match(adapter, /'\/api\/whatsapp\/mark-read'/, 'calls POST /api/whatsapp/mark-read');
 assert.match(adapter, /credentials:\s*'same-origin'/, 'requests use credentials: same-origin');
+assert.match(adapter, /export const waAvatarUrl/, 'waAvatarUrl() exists');
+assert.match(adapter, /export const waMediaUrl/, 'waMediaUrl() exists');
+assert.match(adapter, /export const waHistory/, 'waHistory() exists');
+assert.match(adapter, /export const waTranscribe/, 'waTranscribe() exists');
 
 const screen = readFileSync(new URL('../src/screens/whatsapp/WhatsApp.tsx', import.meta.url), 'utf8');
 assert.match(screen, /export function WhatsAppScreen/, 'WhatsAppScreen exists');
@@ -46,14 +50,25 @@ assert.match(screen, /window\.setInterval\(reloadStatus,\s*fast \? 2000 : 15000\
 assert.match(screen, /window\.setInterval\(reload,\s*10000\)/, 'refreshes the open chat every 10s');
 assert.match(screen, /fs-wa__panes/, 'renders the two-pane layout');
 assert.match(screen, /Pick a chat/, 'empty state: no chat selected');
-assert.match(screen, /Nothing in the last 48 h/, 'empty state: no messages');
+assert.match(screen, /No messages in this chat yet/, 'empty state: no messages (full history, not just 48h)');
 assert.match(screen, /e\.key === 'Enter' && !e\.shiftKey/, 'Enter sends, Shift+Enter is a newline');
 assert.match(screen, /KIND_LABEL/, 'non-text kinds render a [kind] placeholder');
 assert.match(screen, /Mark as read/, 'has a Mark as read action');
+assert.match(screen, /waMessages\(\{\s*chat:\s*chat\.jid,\s*hours:\s*24 \* 365,\s*limit:\s*300\s*\}\)/, 'requests a full year of history, not just 48h');
+assert.match(screen, /Load older messages/, 'has a Load older messages action');
+assert.match(screen, /waHistory\(chat\.jid,\s*100\)/, 'Load older calls waHistory');
+assert.match(screen, /waAvatarUrl\(/, 'renders avatars via waAvatarUrl');
+assert.match(screen, /waMediaUrl\(/, 'renders media via waMediaUrl');
+assert.match(screen, /waTranscribe\(/, 'can transcribe a voice note via waTranscribe');
+assert.match(screen, /<audio/, 'audio messages render an <audio> element');
+assert.match(screen, /whatsapp-dictate/, 'composer has a dictation control');
+assert.match(screen, /startDictation/, 'dictation reuses the shared speech adapter');
+assert.match(screen, /onError=\{\(\) => setFailed\(true\)\}/, 'avatar falls back to an initial on image error');
 
 const appShell = readFileSync(new URL('../src/shell/AppShell.tsx', import.meta.url), 'utf8');
 assert.match(appShell, /const WhatsAppScreen = lazyChunk\(\(\) => import\('\.\.\/screens\/whatsapp\/WhatsApp'\)\.then\(\(m\) => \(\{ default: m\.WhatsAppScreen \}\)\)\)/, 'AppShell lazy-loads the WhatsApp screen');
 assert.match(appShell, /<Route path="\/whatsapp" element=\{<WhatsAppScreen \/>\}/, 'AppShell routes /whatsapp');
+assert.match(appShell, /pathname\.startsWith\('\/whatsapp'\)/, "AppShell's wide-screen list includes /whatsapp");
 
 const routes = readFileSync(new URL('../src/shell/routes.ts', import.meta.url), 'utf8');
 assert.match(routes, /\{ path: '\/whatsapp', label: 'WhatsApp', icon: MessageCircle \}/, 'TOOLS lists /whatsapp right after Connectors');

@@ -44,8 +44,15 @@
   justify-items: start;
 }
 
+.fs-wa__head {
+  align-items: center;
+}
+
 .fs-wa__setup--connected {
-  padding-block: var(--fs-space-2);
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--fs-space-2);
 }
 
 .fs-wa__warn {
@@ -81,14 +88,25 @@
   gap: var(--fs-space-1);
 }
 
+/* ── Fill the viewport: the shell's .fs-main pads all sides by
+   var(--fs-space-7) and scrolls; the screen itself becomes a column so the
+   panes can claim the rest of the height, with the chat list and bubbles
+   scrolling internally and the composer pinned at the pane's bottom. ── */
+
+.fs-wa {
+  display: flex;
+  flex-direction: column;
+  min-block-size: calc(100dvh - 2 * var(--fs-space-7));
+}
+
 /* ── Two-pane layout ── */
 
 .fs-wa__panes {
   display: grid;
-  grid-template-columns: 300px 1fr;
+  grid-template-columns: 320px 1fr;
   gap: var(--fs-space-4);
-  min-block-size: 480px;
   flex: 1;
+  min-block-size: 0;
 }
 
 .fs-wa__pane {
@@ -129,6 +147,35 @@
   color: var(--fs-text-1);
 }
 
+/* ── Avatars: a round profile picture, or an initial-letter fallback ── */
+
+.fs-wa__avatar {
+  flex-shrink: 0;
+  border-radius: 50%;
+  object-fit: cover;
+  background: var(--fs-surface-3);
+  border: 1px solid var(--fs-border);
+}
+
+.fs-wa__avatar[data-size='list'] {
+  inline-size: 40px;
+  block-size: 40px;
+}
+
+.fs-wa__avatar[data-size='head'] {
+  inline-size: 32px;
+  block-size: 32px;
+}
+
+.fs-wa__avatar--fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--fs-text-2);
+  font-weight: var(--fs-label-weight);
+  font-size: var(--fs-label-size);
+}
+
 /* ── Chat list ── */
 
 .fs-wa__chat-list {
@@ -141,8 +188,9 @@
 }
 
 .fs-wa__chat-item {
-  display: grid;
-  gap: var(--fs-space-1);
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
   padding: var(--fs-space-2) var(--fs-space-3);
   border: 1px solid transparent;
   border-radius: var(--fs-radius-control);
@@ -161,6 +209,13 @@
 .fs-wa__chat-item[data-active='true'] {
   background: var(--fs-surface-2);
   border-color: var(--fs-border);
+}
+
+.fs-wa__chat-item-main {
+  display: grid;
+  gap: var(--fs-space-1);
+  min-inline-size: 0;
+  flex: 1;
 }
 
 .fs-wa__chat-item-head {
@@ -234,6 +289,12 @@
   justify-content: flex-end;
 }
 
+.fs-wa__load-older {
+  display: flex;
+  justify-content: center;
+  padding-block-end: var(--fs-space-2);
+}
+
 .fs-wa__bubble {
   display: grid;
   gap: 2px;
@@ -261,6 +322,33 @@
   align-self: flex-end;
   font-size: 10px;
   color: var(--fs-text-3);
+}
+
+/* ── Media in bubbles ── */
+
+.fs-wa__audio {
+  inline-size: 240px;
+  max-inline-size: 100%;
+}
+
+.fs-wa__image {
+  max-inline-size: 320px;
+  max-block-size: 320px;
+  border-radius: var(--fs-radius-control);
+  object-fit: cover;
+}
+
+.fs-wa__transcript {
+  margin: 0;
+  color: var(--fs-text-2);
+  font-size: var(--fs-label-size);
+  font-style: italic;
+}
+
+.fs-wa__doc-link {
+  color: var(--fs-brand);
+  text-decoration: underline;
+  word-break: break-word;
 }
 
 /* ── Composer ── */

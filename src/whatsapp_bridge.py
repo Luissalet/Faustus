@@ -275,6 +275,112 @@ def logout() -> Dict[str, Any]:
     return _post("/logout", {})
 
 
+def history(chat: str, count: int = 50) -> Dict[str, Any]:
+    """Ask the phone for older messages of one chat (they arrive asynchronously)."""
+    return _post("/history", {"chat": chat, "count": int(count)})
+
+
+def _get_bytes(path: str, params: Optional[Dict[str, Any]] = None, timeout: float = 30.0) -> Optional[tuple]:
+    try:
+        r = httpx.get(base_url() + path, params=params or {}, headers=_headers(), timeout=timeout)
+    except Exception as exc:  # noqa: BLE001
+        raise BridgeError(f"WhatsApp bridge is not running ({exc.__class__.__name__}); start it in Tools → WhatsApp")
+    if r.status_code == 404:
+        return None
+    if r.status_code >= 400:
+        raise BridgeError(f"HTTP {r.status_code}")
+    return r.content, r.headers.get("content-type", "application/octet-stream")
+
+
+def avatar(jid: str) -> Optional[tuple]:
+    """(bytes, content_type) of the profile picture, or None when there is none."""
+    return _get_bytes("/avatar", {"jid": jid}, timeout=15.0)
+
+
+def media(name: str) -> Optional[tuple]:
+    """(bytes, content_type) of a pulled voice note / photo / document."""
+    if not name or "/" in name or "\\" in name or ".." in name:
+        return None
+    return _get_bytes(f"/media/{name}")
+
+
+# ---------------------------------------------------------------------------
+# voice notes → text (Faustus's own speech-to-text, cached per message)
+# ---------------------------------------------------------------------------
+
+def _transcripts_path() -> str:
+    return os.path.join(data_dir(), "transcripts.json")
+
+
+def _load_transcripts() -> Dict[str, str]:
+    try:
+        with open(_transcripts_path(), encoding="utf-8") as fh:
+            data = json.load(fh)
+            return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def cached_transcript(message_id: str) -> Optional[str]:
+    return _load_transcripts().get(message_id)
+
+
+def transcribe(message: Dict[str, Any]) -> Optional[str]:
+    """Text of a voice note (or any audio message), through the configured
+    speech provider; cached so a chat is transcribed once. None when the
+    message has no audio or no provider is available."""
+    mid = str(message.get("id") or "")
+    name = message.get("media")
+    if not mid or not name or message.get("kind") != "audio":
+        return None
+    cache = _load_transcripts()
+    if mid in cache:
+        return cache[mid]
+    try:
+        from services.stt import get_stt_service
+        svc = get_stt_service()
+        if not svc.available:
+            return None
+        got = media(str(name))
+        if not got:
+            return None
+        text = svc.transcribe(got[0]) or ""
+    except BridgeError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[whatsapp] transcription failed for %s: %s", mid, exc)
+        return None
+    text = text.strip()
+    cache = _load_transcripts()
+    cache[mid] = text
+    with _LOCK:
+        try:
+            with open(_transcripts_path(), "w", encoding="utf-8") as fh:
+                json.dump(cache, fh, ensure_ascii=False)
+        except OSError:
+            pass
+    return text
+
+
+def with_transcripts(rows: List[Dict[str, Any]], *, max_new: int = 8) -> List[Dict[str, Any]]:
+    """Attach `transcript` to audio rows: cached ones always, up to `max_new`
+    fresh transcriptions per call (voice notes are short; keep a read bounded)."""
+    cache = _load_transcripts()
+    fresh = 0
+    for m in rows:
+        if m.get("kind") != "audio" or not m.get("media"):
+            continue
+        mid = str(m.get("id") or "")
+        if mid in cache:
+            m["transcript"] = cache[mid]
+        elif fresh < max_new:
+            fresh += 1
+            text = transcribe(m)
+            if text is not None:
+                m["transcript"] = text
+    return rows
+
+
 # ---------------------------------------------------------------------------
 # text helpers for tools / cards
 # ---------------------------------------------------------------------------
@@ -293,7 +399,15 @@ def transcript(rows: List[Dict[str, Any]], *, max_chars: int = 12000) -> str:
     for m in rows:
         who = "yo" if m.get("from_me") else (m.get("from_name") or m.get("from") or "?")
         chat = m.get("chat_name") or m.get("chat") or ""
-        text = m.get("text") or f"[{m.get('kind')}]"
+        kind = m.get("kind")
+        if kind == "audio":
+            secs = int(m.get("seconds") or 0)
+            label = f"[voice note {secs // 60}:{secs % 60:02d}]" if secs else "[voice note]"
+            text = f"{label} {m['transcript']}" if m.get("transcript") else f"{label} (not transcribed)"
+        elif kind == "text":
+            text = m.get("text") or ""
+        else:
+            text = f"[{kind}] {m.get('text') or ''}".rstrip()
         prefix = f"{chat} · " if chat and chat != who else ""
         lines.append(f"[{_fmt_ts(m.get('ts'))}] {prefix}{who}: {text}")
     out = "\n".join(lines)

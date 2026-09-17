@@ -1,19 +1,24 @@
-import { ArrowLeft, MessageCircle, Send, Users } from 'lucide-react';
+import { ArrowLeft, MessageCircle, Mic, MicOff, Send, Users } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Button, EmptyState, Skeleton, Toast } from '../../components';
+import { Button, EmptyState, IconButton, Skeleton, Toast } from '../../components';
 import {
+  waAvatarUrl,
   waChats,
+  waHistory,
   waLogout,
   waMarkRead,
+  waMediaUrl,
   waMessages,
   waSend,
   waStart,
   waStatus,
   waStop,
+  waTranscribe,
   type WaChat,
   type WaMessage,
   type WhatsAppStatus,
 } from '../../adapters/whatsapp';
+import type { Dictation } from '../../adapters/speech';
 import { relativeTime } from '../../adapters/home';
 import { t } from '../../i18n';
 import '../projects.css';
@@ -66,6 +71,13 @@ function formatTime(ts: number): string {
   }
 }
 
+function formatDuration(seconds: number | undefined): string {
+  const total = Math.max(0, Math.round(seconds ?? 0));
+  const mm = Math.floor(total / 60);
+  const ss = String(total % 60).padStart(2, '0');
+  return `${mm}:${ss}`;
+}
+
 function StatusPill({ status }: { status: WhatsAppStatus }) {
   const label =
     status.status === 'connected' && status.me?.name
@@ -82,6 +94,30 @@ function StatusPill({ status }: { status: WhatsAppStatus }) {
         </span>
       )}
     </span>
+  );
+}
+
+/* ── Avatar: a chat's profile picture, or an initial-letter fallback ── */
+
+function Avatar({ jid, name, size = 'list' }: { jid: string; name: string; size?: 'list' | 'head' }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) {
+    const initial = (name || jid || '?').trim().charAt(0).toUpperCase() || '?';
+    return (
+      <span className="fs-wa__avatar fs-wa__avatar--fallback" data-size={size} aria-hidden="true">
+        {initial}
+      </span>
+    );
+  }
+  return (
+    <img
+      className="fs-wa__avatar"
+      data-size={size}
+      src={waAvatarUrl(jid)}
+      alt=""
+      loading="lazy"
+      onError={() => setFailed(true)}
+    />
   );
 }
 
@@ -193,29 +229,27 @@ function SetupPanel({ status, onChanged, say }: { status: WhatsAppStatus; onChan
     );
   }
 
-  // connected
+  // connected — a single compact row: title + status pill + Stop/Unlink.
   return (
-    <div className="fs-set__card fs-wa__setup fs-wa__setup--connected" data-testid="whatsapp-setup-connected">
-      <div className="fs-set__row-actions">
-        {!confirmStop ? (
-          <Button size="sm" variant="ghost" label={t('Stop')} disabled={busy} onClick={() => setConfirmStop(true)} testId="whatsapp-stop" />
-        ) : (
-          <span className="fs-modes__confirm" data-testid="whatsapp-stop-confirm">
-            {t('Stop the bridge?')}
-            <Button size="sm" variant="danger" label={t('Confirm')} loading={busy} onClick={() => void doStop()} />
-            <Button size="sm" variant="ghost" label={t('Cancel')} disabled={busy} onClick={() => setConfirmStop(false)} />
-          </span>
-        )}
-        {!confirmUnlink ? (
-          <Button size="sm" variant="ghost" label={t('Unlink')} disabled={busy} onClick={() => setConfirmUnlink(true)} testId="whatsapp-unlink" />
-        ) : (
-          <span className="fs-modes__confirm" data-testid="whatsapp-unlink-confirm">
-            {t('This unlinks the phone; you will need to scan again.')}
-            <Button size="sm" variant="danger" label={t('Confirm')} loading={busy} onClick={() => void doUnlink()} />
-            <Button size="sm" variant="ghost" label={t('Cancel')} disabled={busy} onClick={() => setConfirmUnlink(false)} />
-          </span>
-        )}
-      </div>
+    <div className="fs-wa__setup--connected" data-testid="whatsapp-setup-connected">
+      {!confirmStop ? (
+        <Button size="sm" variant="ghost" label={t('Stop')} disabled={busy} onClick={() => setConfirmStop(true)} testId="whatsapp-stop" />
+      ) : (
+        <span className="fs-modes__confirm" data-testid="whatsapp-stop-confirm">
+          {t('Stop the bridge?')}
+          <Button size="sm" variant="danger" label={t('Confirm')} loading={busy} onClick={() => void doStop()} />
+          <Button size="sm" variant="ghost" label={t('Cancel')} disabled={busy} onClick={() => setConfirmStop(false)} />
+        </span>
+      )}
+      {!confirmUnlink ? (
+        <Button size="sm" variant="ghost" label={t('Unlink')} disabled={busy} onClick={() => setConfirmUnlink(true)} testId="whatsapp-unlink" />
+      ) : (
+        <span className="fs-modes__confirm" data-testid="whatsapp-unlink-confirm">
+          {t('This unlinks the phone; you will need to scan again.')}
+          <Button size="sm" variant="danger" label={t('Confirm')} loading={busy} onClick={() => void doUnlink()} />
+          <Button size="sm" variant="ghost" label={t('Cancel')} disabled={busy} onClick={() => setConfirmUnlink(false)} />
+        </span>
+      )}
     </div>
   );
 }
@@ -226,15 +260,18 @@ function ChatListItem({ chat, active, onSelect }: { chat: WaChat; active: boolea
   return (
     <li>
       <button type="button" className="fs-wa__chat-item" data-active={active} onClick={onSelect} data-testid="whatsapp-chat-item">
-        <span className="fs-wa__chat-item-head">
-          <span className="fs-wa__chat-name">
-            {chat.is_group && <Users size={12} aria-hidden="true" />} {chat.name || chat.jid}
+        <Avatar jid={chat.jid} name={chat.name || chat.jid} size="list" />
+        <span className="fs-wa__chat-item-main">
+          <span className="fs-wa__chat-item-head">
+            <span className="fs-wa__chat-name">
+              {chat.is_group && <Users size={12} aria-hidden="true" />} {chat.name || chat.jid}
+            </span>
+            {chat.last_ts != null && <span className="fs-set__help">{relativeTime(chat.last_ts)}</span>}
           </span>
-          {chat.last_ts != null && <span className="fs-set__help">{relativeTime(chat.last_ts)}</span>}
-        </span>
-        <span className="fs-wa__chat-item-body">
-          <span className="fs-wa__chat-last">{chat.last_text}</span>
-          {chat.unread > 0 && <span className="fs-wa__unread" data-testid="whatsapp-unread-badge">{chat.unread}</span>}
+          <span className="fs-wa__chat-item-body">
+            <span className="fs-wa__chat-last">{chat.last_text}</span>
+            {chat.unread > 0 && <span className="fs-wa__unread" data-testid="whatsapp-unread-badge">{chat.unread}</span>}
+          </span>
         </span>
       </button>
     </li>
@@ -243,13 +280,62 @@ function ChatListItem({ chat, active, onSelect }: { chat: WaChat; active: boolea
 
 /* ── Message bubble ── */
 
-function MessageBubble({ msg, showSender }: { msg: WaMessage; showSender: boolean }) {
-  const isMedia = msg.kind !== 'text';
+function AudioBubble({ msg, transcript, onTranscribed, say }: { msg: WaMessage; transcript?: string; onTranscribed: (id: string, text: string) => void; say: (msg: string) => void }) {
+  const [busy, setBusy] = useState(false);
+  const text = transcript ?? msg.transcript;
+
+  const doTranscribe = async () => {
+    setBusy(true);
+    try {
+      const r = await waTranscribe(msg.id);
+      onTranscribed(msg.id, r.text);
+    } catch (e) {
+      say((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <>
+      {msg.media && <audio controls preload="none" src={waMediaUrl(msg.media)} className="fs-wa__audio" data-testid="whatsapp-audio" />}
+      <span className="fs-set__help">{formatDuration(msg.seconds)}</span>
+      {text ? (
+        <p className="fs-wa__transcript">{text}</p>
+      ) : (
+        <Button size="sm" variant="ghost" label={t('Transcribe')} loading={busy} onClick={() => void doTranscribe()} testId="whatsapp-transcribe" />
+      )}
+    </>
+  );
+}
+
+function BubbleContent({ msg, transcript, onTranscribed, say }: { msg: WaMessage; transcript?: string; onTranscribed: (id: string, text: string) => void; say: (msg: string) => void }) {
+  if (msg.kind === 'text') return <span>{msg.text}</span>;
+  if (msg.kind === 'audio' && msg.media) return <AudioBubble msg={msg} transcript={transcript} onTranscribed={onTranscribed} say={say} />;
+  if (msg.kind === 'image' && msg.media) {
+    return (
+      <>
+        <img src={waMediaUrl(msg.media)} className="fs-wa__image" loading="lazy" alt="" />
+        {msg.text && <span>{msg.text}</span>}
+      </>
+    );
+  }
+  if (msg.kind === 'document' && msg.media) {
+    return (
+      <a href={waMediaUrl(msg.media)} download className="fs-wa__doc-link">
+        {msg.text || msg.media}
+      </a>
+    );
+  }
+  return <span className="fs-set__help">{messageBody(msg)}</span>;
+}
+
+function MessageBubble({ msg, showSender, transcript, onTranscribed, say }: { msg: WaMessage; showSender: boolean; transcript?: string; onTranscribed: (id: string, text: string) => void; say: (msg: string) => void }) {
   return (
     <li className={`fs-wa__bubble-row${msg.from_me ? ' fs-wa__bubble-row--me' : ''}`} data-testid="whatsapp-message">
       <div className="fs-wa__bubble" data-mine={msg.from_me}>
         {showSender && !msg.from_me && <span className="fs-wa__bubble-sender">{msg.from_name}</span>}
-        <span className={isMedia ? 'fs-set__help' : undefined}>{messageBody(msg)}</span>
+        <BubbleContent msg={msg} transcript={transcript} onTranscribed={onTranscribed} say={say} />
         <span className="fs-wa__bubble-time">{formatTime(msg.ts)}</span>
       </div>
     </li>
@@ -261,6 +347,12 @@ function MessageBubble({ msg, showSender }: { msg: WaMessage; showSender: boolea
 function Composer({ chat, onSent, say }: { chat: string; onSent: () => void; say: (msg: string) => void }) {
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
+  const [dictation, setDictation] = useState<Dictation | null>(null);
+  const [transcribing, setTranscribing] = useState(false);
+  const dictationController = useRef<AbortController | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => () => { dictationController.current?.abort(); }, [chat]);
 
   const send = async () => {
     const value = text.trim();
@@ -277,9 +369,42 @@ function Composer({ chat, onSent, say }: { chat: string; onSent: () => void; say
     }
   };
 
+  const toggleDictation = async () => {
+    if (dictation) {
+      dictation.stop();
+      setTranscribing(true);
+      return;
+    }
+    try {
+      // The speech adapter (recorder + browser fallbacks) loads on first use.
+      const { startDictation } = await import('../../adapters/speech');
+      const controller = new AbortController();
+      dictationController.current?.abort();
+      dictationController.current = controller;
+      const d = await startDictation(undefined, controller.signal);
+      if (controller.signal.aborted) { d.cancel(); return; }
+      setDictation(d);
+      d.done
+        .then((value) => {
+          if (controller.signal.aborted) return;
+          if (value) setText((cur) => (cur ? `${cur.trimEnd()} ${value}` : value));
+          else say(t('I did not hear anything.'));
+        })
+        .catch((e: Error) => { if (!controller.signal.aborted) say(e.message); })
+        .finally(() => {
+          setDictation(null);
+          setTranscribing(false);
+          requestAnimationFrame(() => textareaRef.current?.focus());
+        });
+    } catch (e) {
+      say((e as Error).message);
+    }
+  };
+
   return (
     <div className="fs-wa__composer">
       <textarea
+        ref={textareaRef}
         className="fs-wa__composer-input"
         value={text}
         placeholder={t('Write a message…')}
@@ -293,6 +418,14 @@ function Composer({ chat, onSent, say }: { chat: string; onSent: () => void; say
         rows={2}
         data-testid="whatsapp-composer-input"
       />
+      <IconButton
+        icon={dictation ? MicOff : Mic}
+        label={dictation ? t('Stop dictating') : transcribing ? t('Transcribing…') : t('Dictate')}
+        size="sm"
+        disabled={transcribing}
+        onClick={() => void toggleDictation()}
+        testId="whatsapp-dictate"
+      />
       <Button icon={Send} label={t('Send')} loading={busy} disabled={!text.trim()} onClick={() => void send()} testId="whatsapp-send" />
     </div>
   );
@@ -304,8 +437,12 @@ function ChatPane({ chat, onBack }: { chat: WaChat; onBack: () => void }) {
   const [messages, setMessages] = useState<WaMessage[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [transcripts, setTranscripts] = useState<Map<string, string>>(new Map());
   const noticeTimer = useRef<number | null>(null);
   const listRef = useRef<HTMLUListElement>(null);
+  const pendingScroll = useRef<number | null>(null);
+  const olderTimers = useRef<number[]>([]);
 
   const say = useCallback((msg: string) => {
     setNotice(msg);
@@ -314,10 +451,19 @@ function ChatPane({ chat, onBack }: { chat: WaChat; onBack: () => void }) {
   }, []);
 
   const reload = useCallback(() => {
-    waMessages({ chat: chat.jid, hours: 48, limit: 200 })
+    const el = listRef.current;
+    const nearBottom = !el || el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+    const atTop = el ? el.scrollTop < 24 : false;
+    const oldScrollHeight = el?.scrollHeight ?? 0;
+    waMessages({ chat: chat.jid, hours: 24 * 365, limit: 300 })
       .then((m) => {
         setMessages(m);
         setFailed(false);
+        if (atTop && el) {
+          pendingScroll.current = oldScrollHeight;
+        } else if (nearBottom) {
+          pendingScroll.current = -1; // signal: scroll to bottom
+        }
       })
       .catch((e) => {
         setFailed(true);
@@ -327,7 +473,13 @@ function ChatPane({ chat, onBack }: { chat: WaChat; onBack: () => void }) {
 
   useEffect(() => {
     setMessages(null);
+    setTranscripts(new Map());
+    pendingScroll.current = -1; // scroll to bottom once the chat just opened
     reload();
+    return () => {
+      olderTimers.current.forEach((id) => window.clearTimeout(id));
+      olderTimers.current = [];
+    };
   }, [reload]);
 
   useEffect(() => {
@@ -337,7 +489,14 @@ function ChatPane({ chat, onBack }: { chat: WaChat; onBack: () => void }) {
 
   useEffect(() => {
     const el = listRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
+    if (!el || pendingScroll.current === null) return;
+    if (pendingScroll.current === -1) {
+      el.scrollTop = el.scrollHeight;
+    } else {
+      const oldScrollHeight = pendingScroll.current;
+      el.scrollTop += el.scrollHeight - oldScrollHeight;
+    }
+    pendingScroll.current = null;
   }, [messages]);
 
   const markRead = async () => {
@@ -349,6 +508,31 @@ function ChatPane({ chat, onBack }: { chat: WaChat; onBack: () => void }) {
     }
   };
 
+  const loadOlder = async () => {
+    setLoadingOlder(true);
+    say(t('Asking your phone…'));
+    try {
+      await waHistory(chat.jid, 100);
+      const t1 = window.setTimeout(reload, 3000);
+      const t2 = window.setTimeout(() => {
+        reload();
+        setLoadingOlder(false);
+      }, 8000);
+      olderTimers.current.push(t1, t2);
+    } catch (e) {
+      setLoadingOlder(false);
+      say((e as Error).message);
+    }
+  };
+
+  const onTranscribed = useCallback((id: string, text: string) => {
+    setTranscripts((prev) => {
+      const next = new Map(prev);
+      next.set(id, text);
+      return next;
+    });
+  }, []);
+
   return (
     <div className="fs-wa__pane fs-wa__pane--chat" data-testid="whatsapp-chat-pane">
       <div className="fs-wa__pane-head">
@@ -357,6 +541,7 @@ function ChatPane({ chat, onBack }: { chat: WaChat; onBack: () => void }) {
             and returns to the list pane, which is fine there too — the
             two-pane layout below 900px is what needs it to escape the
             single-column chat view (see whatsapp.css). */}
+        <Avatar jid={chat.jid} name={chat.name || chat.jid} size="head" />
         <strong>{chat.name || chat.jid}</strong>
         <Button size="sm" variant="ghost" label={t('Mark as read')} onClick={() => void markRead()} testId="whatsapp-mark-read" />
       </div>
@@ -366,11 +551,21 @@ function ChatPane({ chat, onBack }: { chat: WaChat; onBack: () => void }) {
       ) : failed ? (
         <EmptyState title={t('Could not load messages.')} body={t('GET /api/whatsapp/messages failed.')} primaryAction={{ label: t('Try again'), onClick: reload }} />
       ) : messages.length === 0 ? (
-        <EmptyState icon={MessageCircle} title={t('Nothing in the last 48 h')} body={t('No messages arrived in this chat during that window.')} />
+        <EmptyState icon={MessageCircle} title={t('No messages in this chat yet')} body={t('Nothing has arrived in this chat.')} />
       ) : (
         <ul className="fs-wa__bubbles" ref={listRef} data-testid="whatsapp-bubbles">
+          <li className="fs-wa__load-older">
+            <Button size="sm" variant="ghost" label={t('Load older messages')} loading={loadingOlder} onClick={() => void loadOlder()} testId="whatsapp-load-older" />
+          </li>
           {messages.map((m, i) => (
-            <MessageBubble key={m.id} msg={m} showSender={chat.is_group && (i === 0 || messages[i - 1].from !== m.from)} />
+            <MessageBubble
+              key={m.id}
+              msg={m}
+              showSender={chat.is_group && (i === 0 || messages[i - 1].from !== m.from)}
+              transcript={transcripts.get(m.id)}
+              onTranscribed={onTranscribed}
+              say={say}
+            />
           ))}
         </ul>
       )}
@@ -442,12 +637,13 @@ export function WhatsAppScreen() {
 
   return (
     <div className="fs-screen fs-wa" data-testid="whatsapp-screen">
-      <header className="fs-screen__head">
+      <header className="fs-screen__head fs-wa__head">
         <div>
           <h1 className="fs-screen__title">{t('WhatsApp')}</h1>
           <p className="fs-prose">{t('Your own account through a local bridge: read what people wrote, answer from a chat, get a daily digest card.')}</p>
         </div>
         {status && <StatusPill status={status} />}
+        {status && connected && <SetupPanel status={status} onChanged={reloadStatus} say={say} />}
       </header>
 
       {status === null ? (
@@ -455,41 +651,38 @@ export function WhatsAppScreen() {
       ) : !connected ? (
         <SetupPanel status={status} onChanged={reloadStatus} say={say} />
       ) : (
-        <>
-          <SetupPanel status={status} onChanged={reloadStatus} say={say} />
-          <div className="fs-wa__panes" data-testid="whatsapp-panes" data-open={selected ? 'chat' : 'list'}>
-            <div className="fs-wa__pane fs-wa__pane--list">
-              <label className="fs-search" data-testid="whatsapp-filter">
-                <input
-                  type="search"
-                  value={filter}
-                  placeholder={t('Filter chats…')}
-                  aria-label={t('Filter')}
-                  onChange={(e) => setFilter(e.target.value)}
-                />
-              </label>
-              {chats === null ? (
-                <Skeleton label={t('Loading')} count={4} height="52px" />
-              ) : filteredChats.length === 0 ? (
-                <EmptyState icon={MessageCircle} title={t('No chats')} body={t('No chats match this filter yet.')} />
-              ) : (
-                <ul className="fs-wa__chat-list" data-testid="whatsapp-chat-list">
-                  {filteredChats.map((c) => (
-                    <ChatListItem key={c.jid} chat={c} active={selected?.jid === c.jid} onSelect={() => setSelected(c)} />
-                  ))}
-                </ul>
-              )}
-            </div>
-
-            {selected ? (
-              <ChatPane chat={selected} onBack={() => setSelected(null)} />
+        <div className="fs-wa__panes" data-testid="whatsapp-panes" data-open={selected ? 'chat' : 'list'}>
+          <div className="fs-wa__pane fs-wa__pane--list">
+            <label className="fs-search" data-testid="whatsapp-filter">
+              <input
+                type="search"
+                value={filter}
+                placeholder={t('Filter chats…')}
+                aria-label={t('Filter')}
+                onChange={(e) => setFilter(e.target.value)}
+              />
+            </label>
+            {chats === null ? (
+              <Skeleton label={t('Loading')} count={4} height="52px" />
+            ) : filteredChats.length === 0 ? (
+              <EmptyState icon={MessageCircle} title={t('No chats')} body={t('No chats match this filter yet.')} />
             ) : (
-              <div className="fs-wa__pane fs-wa__pane--empty">
-                <EmptyState icon={MessageCircle} title={t('Pick a chat')} body={t('Select a chat on the left to read and answer it.')} />
-              </div>
+              <ul className="fs-wa__chat-list" data-testid="whatsapp-chat-list">
+                {filteredChats.map((c) => (
+                  <ChatListItem key={c.jid} chat={c} active={selected?.jid === c.jid} onSelect={() => setSelected(c)} />
+                ))}
+              </ul>
             )}
           </div>
-        </>
+
+          {selected ? (
+            <ChatPane chat={selected} onBack={() => setSelected(null)} />
+          ) : (
+            <div className="fs-wa__pane fs-wa__pane--empty">
+              <EmptyState icon={MessageCircle} title={t('Pick a chat')} body={t('Select a chat on the left to read and answer it.')} />
+            </div>
+          )}
+        </div>
       )}
 
       {notice && <Toast>{notice}</Toast>}

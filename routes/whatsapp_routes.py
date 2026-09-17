@@ -13,6 +13,7 @@ import logging
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import Response
 from pydantic import BaseModel
 
 from core.middleware import require_admin, require_human
@@ -28,6 +29,15 @@ class SendBody(BaseModel):
 
 class ChatBody(BaseModel):
     chat: Optional[str] = None
+
+
+class HistoryBody(BaseModel):
+    chat: str
+    count: int = 50
+
+
+class IdBody(BaseModel):
+    id: str
 
 
 def _owner(request: Request) -> str:
@@ -93,6 +103,60 @@ def setup_whatsapp_routes() -> APIRouter:
             return await asyncio.to_thread(wa.send, body.to, body.text)
         except wa.BridgeError as exc:
             raise HTTPException(409 if str(exc).startswith("ambiguous") else 503, str(exc))
+
+    @router.get("/avatar")
+    async def avatar(request: Request, jid: str) -> Response:
+        require_admin(request)
+        try:
+            got = await asyncio.to_thread(wa.avatar, jid)
+        except wa.BridgeError:
+            got = None
+        if not got:
+            raise HTTPException(404, "no picture")
+        return Response(content=got[0], media_type=got[1], headers={"Cache-Control": "private, max-age=3600"})
+
+    @router.get("/media/{name}")
+    async def media(request: Request, name: str) -> Response:
+        require_admin(request)
+        try:
+            got = await asyncio.to_thread(wa.media, name)
+        except wa.BridgeError as exc:
+            raise HTTPException(503, str(exc))
+        if not got:
+            raise HTTPException(404, "no such media")
+        return Response(content=got[0], media_type=got[1], headers={"Cache-Control": "private, max-age=86400"})
+
+    @router.post("/history")
+    async def history(body: HistoryBody, request: Request) -> Dict[str, Any]:
+        require_admin(request)
+        try:
+            return await asyncio.to_thread(wa.history, body.chat, body.count)
+        except wa.BridgeError as exc:
+            raise HTTPException(409 if str(exc).startswith("ambiguous") else 503, str(exc))
+
+    @router.post("/transcribe")
+    async def transcribe(body: IdBody, request: Request) -> Dict[str, Any]:
+        """Text of one voice note through Faustus's speech provider (cached)."""
+        require_admin(request)
+        cached = wa.cached_transcript(body.id)
+        if cached is not None:
+            return {"id": body.id, "text": cached, "cached": True}
+        try:
+            rows = await asyncio.to_thread(wa.messages, None, since_hours=24 * 365, limit=2000)
+        except wa.BridgeError as exc:
+            raise HTTPException(503, str(exc))
+        row = next((m for m in rows if m.get("id") == body.id), None)
+        if not row:
+            raise HTTPException(404, "no such message")
+        if row.get("kind") != "audio" or not row.get("media"):
+            raise HTTPException(400, "not a voice note, or its audio was not pulled")
+        try:
+            text = await asyncio.to_thread(wa.transcribe, row)
+        except wa.BridgeError as exc:
+            raise HTTPException(503, str(exc))
+        if text is None:
+            raise HTTPException(503, "no speech-to-text provider available (Settings → Voice)")
+        return {"id": body.id, "text": text, "cached": False}
 
     @router.post("/mark-read")
     async def mark_read(body: ChatBody, request: Request) -> Dict[str, Any]:

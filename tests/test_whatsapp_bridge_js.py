@@ -20,3 +20,18 @@ def test_bridge_script_parses_and_package_pins_baileys():
     pkg = json.loads((_BRIDGE / "package.json").read_text(encoding="utf-8"))
     assert "@whiskeysockets/baileys" in pkg["dependencies"] and pkg["type"] == "module"
     assert (_BRIDGE / ".gitignore").read_text().strip().startswith("node_modules")
+
+
+def test_bridge_learns_lids_groups_media_and_history():
+    src = (_BRIDGE / "server.mjs").read_text(encoding="utf-8")
+    # LID ↔ phone mapping: chats and contacts are filed under the phone identity
+    assert "function learnLid" in src and "lids.json" in src and "chats.phoneNumberShare" in src
+    # group subjects from metadata, fetched for all groups on connect and lazily per group
+    assert "groupFetchAllParticipating" in src and "groupMetadata(jid)" in src
+    # voice notes / photos / documents pulled once under media/, served by /media/<id>.<ext>
+    assert "downloadMediaMessage" in src and '"/media/"' in src and "MEDIA_MAX_BYTES" in src
+    # profile pictures cached under avatars/ and older messages on demand
+    assert "profilePictureUrl" in src and '"/avatar"' in src
+    assert "fetchMessageHistory" in src and '"/history"' in src and "syncFullHistory: true" in src
+    # the library's `error` key is serialised as a real error, not `{}`
+    assert "error: pino.stdSerializers.err" in src

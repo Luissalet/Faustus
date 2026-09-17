@@ -171,3 +171,77 @@ def test_tools_are_registered():
     assert {"whatsapp_read", "whatsapp_send"} <= names and {"whatsapp_read", "whatsapp_send"} <= set(TOOL_TAGS)
     assert tc.ToolEffect.EXTERNAL_SIDE_EFFECT in tc.capabilities_for_tool("whatsapp_send").effects
     assert tc.ToolEffect.READ_PRIVATE in tc.capabilities_for_tool("whatsapp_read").effects
+
+
+# ---------------------------------------------------------------------------
+# voice notes, media, history (the second wave)
+# ---------------------------------------------------------------------------
+
+def test_voice_notes_are_transcribed_once_and_read_as_text(bridge, monkeypatch):
+    now = time.time()
+    bridge.messages.append({"id": "v1", "chat": "34600000001@s.whatsapp.net", "chat_name": "Ana Pérez",
+                            "from": "34600000001@s.whatsapp.net", "from_name": "Ana Pérez", "from_me": False,
+                            "ts": now - 600, "text": "", "kind": "audio", "unread": True,
+                            "media": "v1.ogg", "mime": "audio/ogg; codecs=opus", "seconds": 72, "voice": True})
+    calls = []
+
+    class Svc:
+        available = True
+
+        def transcribe(self, audio, **kw):
+            calls.append(audio)
+            return "  llego a las nueve  "
+
+    import types, sys
+    fake = types.ModuleType("services.stt")
+    fake.get_stt_service = lambda: Svc()
+    monkeypatch.setitem(sys.modules, "services.stt", fake)
+    monkeypatch.setattr(wa, "media", lambda name: (b"OGG", "audio/ogg"))
+
+    out = wt.read({"hours": 2})
+    assert out["voice_notes"] == 1 and out["voice_notes_transcribed"] == 1
+    assert "[voice note 1:12] llego a las nueve" in out["transcript"]
+    # second read hits the cache: the speech service is not called again
+    wt.read({"hours": 2})
+    assert len(calls) == 1
+    assert wa.cached_transcript("v1") == "llego a las nueve"
+    # opting out leaves the note untranscribed but visible
+    bridge.messages[-1].pop("transcript", None)   # the fake hands out the same dicts
+    out = wt.read({"hours": 2, "transcribe_audio": False})
+    assert "[voice note 1:12] (not transcribed)" in out["transcript"]
+
+
+def test_voice_note_without_a_speech_provider_stays_untranscribed(bridge, monkeypatch):
+    bridge.messages.append({"id": "v2", "chat": "34600000001@s.whatsapp.net", "from": "34600000001@s.whatsapp.net",
+                            "from_name": "Ana Pérez", "from_me": False, "ts": time.time() - 60, "text": "",
+                            "kind": "audio", "unread": True, "media": "v2.ogg"})
+    import types, sys
+
+    class Svc:
+        available = False
+
+    fake = types.ModuleType("services.stt")
+    fake.get_stt_service = lambda: Svc()
+    monkeypatch.setitem(sys.modules, "services.stt", fake)
+    out = wt.read({"hours": 1})
+    assert out["voice_notes"] == 1 and out["voice_notes_transcribed"] == 0
+    assert wa.cached_transcript("v2") is None
+
+
+def test_media_names_are_validated_and_history_is_a_post(bridge, monkeypatch):
+    assert wa.media("../token") is None
+    assert wa.media("a/b.ogg") is None
+    seen = {}
+    monkeypatch.setattr(wa, "_post", lambda path, body: seen.update({path: body}) or {"ok": True})
+    wa.history("Ana Pérez", 80)
+    assert seen == {"/history": {"chat": "Ana Pérez", "count": 80}}
+
+
+def test_media_routes_are_admin_reads_and_transcribe_exists():
+    from routes import whatsapp_routes
+    router = whatsapp_routes.setup_whatsapp_routes()
+    paths = {(r.path, tuple(sorted(r.methods))) for r in router.routes}
+    assert ("/api/whatsapp/avatar", ("GET",)) in paths
+    assert ("/api/whatsapp/media/{name}", ("GET",)) in paths
+    assert ("/api/whatsapp/history", ("POST",)) in paths
+    assert ("/api/whatsapp/transcribe", ("POST",)) in paths

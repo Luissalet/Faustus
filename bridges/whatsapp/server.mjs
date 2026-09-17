@@ -12,13 +12,16 @@
 //   GET  /chats?limit=50         → [{jid, name, is_group, last_ts, last_text, unread}]
 //   GET  /messages?chat=&since=&limit=&unread=1 → [{id, chat, chat_name, from, from_name, from_me, ts, text, kind}]
 //   GET  /contacts?q=            → [{jid, name, phone}]
+//   GET  /avatar?jid=            → image/jpeg (profile picture, cached a day) | 404
+//   GET  /media/<id>.<ext>       → a voice note / photo / document already pulled
+//   POST /history {chat, count}  → asks the phone for older messages of that chat (async)
 //   POST /send {to, text}        → {ok, to, jid, id}   (to = jid | phone | contact name)
 //   POST /resolve {to}           → {jid, name} | 409 {candidates}
 //   POST /logout                 → unlinks the account (deletes the session)
 //
 // Status values: starting | qr | connected | disconnected | logged_out.
 import { createServer } from "node:http";
-import { existsSync, mkdirSync, readFileSync, appendFileSync, writeFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, appendFileSync, writeFileSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";
@@ -26,6 +29,7 @@ import pino from "pino";
 import QRCode from "qrcode";
 import makeWASocketImport, {
   DisconnectReason,
+  downloadMediaMessage,
   fetchLatestBaileysVersion,
   jidNormalizedUser,
   isJidGroup,
@@ -50,7 +54,10 @@ if (!TOKEN) {
 mkdirSync(AUTH_DIR, { recursive: true });
 mkdirSync(DATA_DIR, { recursive: true });
 
-const logger = pino({ level: process.env.WA_LOG_LEVEL || "warn" });
+// The library logs failures under `error` (not pino's `err`), which serialises an Error as `{}`;
+// map both keys so the log says what actually broke.
+const logger = pino({ level: process.env.WA_LOG_LEVEL || "warn",
+  serializers: { err: pino.stdSerializers.err, error: pino.stdSerializers.err } });
 const MESSAGES_FILE = join(DATA_DIR, "messages.jsonl");
 const CONTACTS_FILE = join(DATA_DIR, "contacts.json");
 
@@ -58,24 +65,68 @@ const CONTACTS_FILE = join(DATA_DIR, "contacts.json");
 const state = { status: "starting", qr: null, me: null, lastError: null, connectedAt: null };
 const contacts = new Map(); // jid -> {name, notify, phone}
 const chats = new Map();    // jid -> {name, is_group, last_ts, last_text, unread}
+const lidMap = new Map();   // "<n>@lid" -> "<phone>@s.whatsapp.net" (WhatsApp now addresses people by an opaque LID)
 let messages = [];          // newest last
 const seenIds = new Set();
+const LID_FILE = join(DATA_DIR, "lids.json");
+
+function isLid(jid) { return typeof jid === "string" && jid.endsWith("@lid"); }
+
+// The phone-number jid for a LID when we have learnt it; otherwise the jid itself.
+function canon(jid) {
+  if (!jid) return jid;
+  const n = jidNormalizedUser(jid);
+  return lidMap.get(n) || n;
+}
+
+function learnLid(lid, pn) {
+  if (!lid || !pn || !isLid(lid) || isLid(pn)) return;
+  const l = jidNormalizedUser(lid), p = jidNormalizedUser(pn);
+  if (lidMap.get(l) === p) return;
+  lidMap.set(l, p);
+  // fold anything filed under the LID into the phone-number identity
+  const c = contacts.get(l);
+  if (c) { contacts.set(p, { ...(contacts.get(p) || {}), ...c, phone: p.split("@")[0] }); contacts.delete(l); }
+  const ch = chats.get(l);
+  if (ch) { const cur = chats.get(p); if (!cur || ch.last_ts >= cur.last_ts) chats.set(p, { ...(cur || {}), ...ch, jid: p }); chats.delete(l); }
+  for (const m of messages) { if (m.chat === l) m.chat = p; if (m.from === l) m.from = p; }
+  try { writeFileSync(LID_FILE, JSON.stringify(Object.fromEntries(lidMap))); } catch {}
+}
 
 function loadStore() {
   try {
+    const raw = JSON.parse(readFileSync(LID_FILE, "utf8"));
+    for (const [lid, pn] of Object.entries(raw)) lidMap.set(lid, pn);
+  } catch {}
+  try {
     const raw = JSON.parse(readFileSync(CONTACTS_FILE, "utf8"));
-    for (const [jid, c] of Object.entries(raw)) contacts.set(jid, c);
+    for (const [jid, c] of Object.entries(raw)) contacts.set(canon(jid), c);
   } catch {}
   try {
     const cutoff = Date.now() / 1000 - KEEP_DAYS * 86400;
     const lines = readFileSync(MESSAGES_FILE, "utf8").split("\n").filter(Boolean);
-    for (const line of lines.slice(-MAX_MESSAGES)) {
+    const byId = new Map();
+    for (const line of lines.slice(-MAX_MESSAGES * 2)) {
       try {
         const m = JSON.parse(line);
-        if (m.ts >= cutoff && !seenIds.has(m.id)) { messages.push(m); seenIds.add(m.id); touchChat(m); }
+        if (m._patch) { const cur = byId.get(m.id); if (cur) { delete m._patch; Object.assign(cur, m); } continue; }
+        m.chat = canon(m.chat); m.from = canon(m.from);
+        if (m.ts >= cutoff && !seenIds.has(m.id)) { messages.push(m); seenIds.add(m.id); byId.set(m.id, m); }
       } catch {}
     }
+    sortMessages();
+    for (const m of messages) touchChat(m);
   } catch {}
+}
+
+function sortMessages() {
+  messages.sort((a, b) => a.ts - b.ts);
+  if (messages.length > MAX_MESSAGES) { const drop = messages.splice(0, messages.length - MAX_MESSAGES); for (const d of drop) seenIds.delete(d.id); }
+}
+
+// Rewrite messages.jsonl from memory (after history pulls, which insert old rows).
+function compactStore() {
+  try { writeFileSync(MESSAGES_FILE, messages.map((m) => JSON.stringify(m)).join("\n") + (messages.length ? "\n" : "")); } catch {}
 }
 
 function saveContacts() {
@@ -89,7 +140,36 @@ function nameOf(jid) {
   if (c?.notify) return c.notify;
   const ch = chats.get(jid);
   if (ch?.name) return ch.name;
+  if (isLid(jid)) return "";          // an opaque id is not a name
+  if (isJidGroup(jid)) return "";     // group subject comes from metadata
   return jid.split("@")[0];
+}
+
+function phoneOf(jid) {
+  const c = canon(jid);
+  return isLid(c) ? "" : c.split("@")[0];
+}
+
+// Group subjects: fetched once for all groups on connect, lazily for new ones.
+const groupsAsked = new Set();
+async function learnGroup(jid) {
+  if (!sock || !isJidGroup(jid) || groupsAsked.has(jid)) return;
+  groupsAsked.add(jid);
+  try {
+    const meta = await sock.groupMetadata(jid);
+    if (meta?.subject) { const cur = chats.get(jid) || { jid, is_group: true, last_ts: 0, last_text: "", unread: 0 }; cur.name = meta.subject; chats.set(jid, cur); }
+    for (const p of meta?.participants || []) if (p.id && p.phoneNumber) learnLid(p.id, p.phoneNumber);
+  } catch (e) { groupsAsked.delete(jid); logger.warn({ jid, err: e }, "group metadata failed"); }
+}
+async function learnAllGroups() {
+  try {
+    const all = await sock.groupFetchAllParticipating();
+    for (const [jid, meta] of Object.entries(all || {})) {
+      groupsAsked.add(jid);
+      if (meta?.subject) { const cur = chats.get(jid) || { jid, is_group: true, last_ts: 0, last_text: "", unread: 0 }; cur.name = meta.subject; chats.set(jid, cur); }
+      for (const p of meta?.participants || []) if (p.id && p.phoneNumber) learnLid(p.id, p.phoneNumber);
+    }
+  } catch (e) { logger.warn({ err: e }, "group list failed"); }
 }
 
 function touchChat(m) {
@@ -116,26 +196,66 @@ function textOf(msg) {
   return ["", "other"];
 }
 
+const MEDIA_DIR = join(DATA_DIR, "media");
+const MEDIA_MAX_BYTES = Number(process.env.WA_MEDIA_MAX_BYTES || 25 * 1024 * 1024);
+const MEDIA_EXT = { audio: "ogg", image: "jpg", video: "mp4", sticker: "webp", document: "" };
+mkdirSync(MEDIA_DIR, { recursive: true });
+
+function mediaNode(msg) {
+  const c = msg.message || {};
+  const inner = c.ephemeralMessage?.message || c.viewOnceMessage?.message || c;
+  return inner.audioMessage || inner.imageMessage || inner.videoMessage || inner.stickerMessage || inner.documentMessage || null;
+}
+
+// Voice notes, photos and documents are pulled once and kept under media/<id>.<ext>
+// so Faustus can play, show or transcribe them without touching WhatsApp again.
+async function fetchMedia(msg, m) {
+  const node = mediaNode(msg);
+  if (!node || !sock) return;
+  const size = Number(node.fileLength?.low ?? node.fileLength ?? 0);
+  if (size > MEDIA_MAX_BYTES) return;
+  const ext = m.kind === "document" ? (String(node.fileName || "").split(".").pop() || "bin").toLowerCase().replace(/[^a-z0-9]/g, "") : MEDIA_EXT[m.kind];
+  if (!ext) return;
+  const file = join(MEDIA_DIR, `${m.id}.${ext}`);
+  if (!existsSync(file)) {
+    try {
+      const buf = await downloadMediaMessage(msg, "buffer", {}, { logger, reuploadRequest: sock.updateMediaMessage });
+      writeFileSync(file, buf);
+    } catch (e) { logger.warn({ id: m.id, err: e }, "media download failed"); return; }
+  }
+  m.media = `${m.id}.${ext}`; m.mime = String(node.mimetype || "");
+  if (node.seconds) m.seconds = Number(node.seconds);
+  if (node.ptt) m.voice = true;
+  try { appendFileSync(MESSAGES_FILE, JSON.stringify({ id: m.id, media: m.media, mime: m.mime, seconds: m.seconds, voice: m.voice, _patch: true }) + "\n"); } catch {}
+}
+
 function ingest(msg, { unread = false } = {}) {
   const key = msg.key || {};
   if (!key.id || !key.remoteJid || key.remoteJid === "status@broadcast") return null;
   if (seenIds.has(key.id)) return null;
   const [text, kind] = textOf(msg);
   if (kind === "protocol") return null;
-  const chat = jidNormalizedUser(key.remoteJid);
-  const from = key.fromMe ? (state.me?.jid || "me") : jidNormalizedUser(key.participant || key.remoteJid);
+  // learn LID ↔ phone pairs the stanza carries before choosing identities
+  if (key.senderPn && !key.fromMe) learnLid(key.participant || key.remoteJid, key.senderPn);
+  if (key.participantPn && key.participant) learnLid(key.participant, key.participantPn);
+  if (key.senderLid && !isLid(key.remoteJid) && !key.fromMe) learnLid(key.senderLid, key.remoteJid);
+  const chat = canon(key.remoteJid);
+  const from = key.fromMe ? (state.me?.jid || "me") : canon(key.participant || key.remoteJid);
   const m = {
     id: key.id, chat, chat_name: msg.pushName && !key.fromMe && !isJidGroup(chat) ? msg.pushName : nameOf(chat),
     from, from_name: key.fromMe ? "me" : (msg.pushName || nameOf(from)), from_me: !!key.fromMe,
     ts: Number(msg.messageTimestamp?.low ?? msg.messageTimestamp ?? Math.floor(Date.now() / 1000)),
     text: String(text || "").slice(0, 4000), kind, unread: unread && !key.fromMe,
+    key: { remoteJid: key.remoteJid, fromMe: !!key.fromMe, id: key.id, ...(key.participant ? { participant: key.participant } : {}) },
   };
   if (msg.pushName && !key.fromMe && !contacts.get(from)?.name) {
-    contacts.set(from, { ...(contacts.get(from) || {}), notify: msg.pushName, phone: from.split("@")[0] });
+    contacts.set(from, { ...(contacts.get(from) || {}), notify: msg.pushName, phone: phoneOf(from) });
   }
   messages.push(m); seenIds.add(m.id); touchChat(m);
   if (messages.length > MAX_MESSAGES) { const drop = messages.splice(0, messages.length - MAX_MESSAGES); for (const d of drop) seenIds.delete(d.id); }
   try { appendFileSync(MESSAGES_FILE, JSON.stringify(m) + "\n"); } catch {}
+  if (isJidGroup(chat)) void learnGroup(chat);
+  if (mediaNode(msg)) void fetchMedia(msg, m);
   return m;
 }
 
@@ -152,7 +272,7 @@ async function connect() {
     logger,
     printQRInTerminal: false,
     browser: ["Faustus", "Desktop", "1.0"],
-    syncFullHistory: false,
+    syncFullHistory: true,          // pull old conversations at pairing time
     markOnlineOnConnect: false,
   });
   sock.ev.on("creds.update", saveCreds);
@@ -165,6 +285,8 @@ async function connect() {
       state.status = "connected"; state.qr = null; state.connectedAt = Date.now();
       const me = sock.user || {};
       state.me = { jid: jidNormalizedUser(me.id || ""), name: me.name || "" };
+      if (me.lid) learnLid(me.lid, me.id);
+      void learnAllGroups();
     }
     if (u.connection === "close") {
       const code = u.lastDisconnect?.error?.output?.statusCode;
@@ -179,16 +301,41 @@ async function connect() {
       }
     }
   });
-  sock.ev.on("messaging-history.set", ({ contacts: cs = [], chats: chs = [], messages: ms = [] }) => {
-    for (const c of cs) if (c.id) contacts.set(jidNormalizedUser(c.id), { name: c.name || c.verifiedName || "", notify: c.notify || "", phone: c.id.split("@")[0] });
-    for (const ch of chs) if (ch.id) { const jid = jidNormalizedUser(ch.id); const cur = chats.get(jid) || { jid, is_group: isJidGroup(jid), last_ts: 0, last_text: "", unread: 0 }; cur.name = ch.name || cur.name || ""; cur.unread = Number(ch.unreadCount || cur.unread || 0); chats.set(jid, cur); }
-    for (const m of ms) ingest(m, { unread: false });
+  sock.ev.on("messaging-history.set", ({ contacts: cs = [], chats: chs = [], messages: ms = [], syncType }) => {
+    for (const c of cs) if (c.id) { if (c.lid) learnLid(c.lid, c.id); if (c.phoneNumber) learnLid(c.id, c.phoneNumber); const jid = canon(c.id); contacts.set(jid, { ...(contacts.get(jid) || {}), name: c.name || c.verifiedName || contacts.get(jid)?.name || "", notify: c.notify || contacts.get(jid)?.notify || "", phone: phoneOf(jid) }); }
+    for (const ch of chs) if (ch.id) { if (ch.lidJid && ch.pnJid) learnLid(ch.lidJid, ch.pnJid); const jid = canon(ch.id); const cur = chats.get(jid) || { jid, is_group: isJidGroup(jid), last_ts: 0, last_text: "", unread: 0 }; cur.name = ch.name || cur.name || ""; cur.unread = Number(ch.unreadCount || cur.unread || 0); chats.set(jid, cur); }
+    let added = 0;
+    for (const m of ms) if (ingest(m, { unread: false })) added++;
+    if (added) { sortMessages(); for (const m of messages) touchChat(m); compactStore(); }
+    state.history = { at: Date.now(), added, syncType: String(syncType ?? "") };
     saveContacts();
   });
-  sock.ev.on("contacts.upsert", (cs) => { for (const c of cs) if (c.id) contacts.set(jidNormalizedUser(c.id), { ...(contacts.get(jidNormalizedUser(c.id)) || {}), name: c.name || c.verifiedName || contacts.get(jidNormalizedUser(c.id))?.name || "", notify: c.notify || "", phone: c.id.split("@")[0] }); saveContacts(); });
-  sock.ev.on("contacts.update", (cs) => { for (const c of cs) if (c.id) { const jid = jidNormalizedUser(c.id); const cur = contacts.get(jid) || { phone: jid.split("@")[0] }; if (c.name) cur.name = c.name; if (c.notify) cur.notify = c.notify; contacts.set(jid, cur); } saveContacts(); });
-  sock.ev.on("chats.upsert", (chs) => { for (const ch of chs) if (ch.id) { const jid = jidNormalizedUser(ch.id); const cur = chats.get(jid) || { jid, is_group: isJidGroup(jid), last_ts: 0, last_text: "", unread: 0 }; if (ch.name) cur.name = ch.name; chats.set(jid, cur); } });
+  sock.ev.on("groups.upsert", (gs) => { for (const g of gs) if (g.id && g.subject) { const cur = chats.get(g.id) || { jid: g.id, is_group: true, last_ts: 0, last_text: "", unread: 0 }; cur.name = g.subject; chats.set(g.id, cur); groupsAsked.add(g.id); } });
+  sock.ev.on("groups.update", (gs) => { for (const g of gs) if (g.id && g.subject) { const cur = chats.get(g.id); if (cur) cur.name = g.subject; } });
+  sock.ev.on("chats.phoneNumberShare", ({ lid, jid }) => learnLid(lid, jid));
+  sock.ev.on("contacts.upsert", (cs) => { for (const c of cs) if (c.id) { if (c.lid) learnLid(c.lid, c.id); if (c.phoneNumber) learnLid(c.id, c.phoneNumber); const jid = canon(c.id); contacts.set(jid, { ...(contacts.get(jid) || {}), name: c.name || c.verifiedName || contacts.get(jid)?.name || "", notify: c.notify || contacts.get(jid)?.notify || "", phone: phoneOf(jid) }); } saveContacts(); });
+  sock.ev.on("contacts.update", (cs) => { for (const c of cs) if (c.id) { if (c.lid) learnLid(c.lid, c.id); if (c.phoneNumber) learnLid(c.id, c.phoneNumber); const jid = canon(c.id); const cur = contacts.get(jid) || { phone: phoneOf(jid) }; if (c.name) cur.name = c.name; if (c.notify) cur.notify = c.notify; contacts.set(jid, cur); } saveContacts(); });
+  sock.ev.on("chats.upsert", (chs) => { for (const ch of chs) if (ch.id) { if (ch.lidJid && ch.pnJid) learnLid(ch.lidJid, ch.pnJid); const jid = canon(ch.id); const cur = chats.get(jid) || { jid, is_group: isJidGroup(jid), last_ts: 0, last_text: "", unread: 0 }; if (ch.name) cur.name = ch.name; chats.set(jid, cur); if (isJidGroup(jid)) void learnGroup(jid); } });
   sock.ev.on("messages.upsert", ({ messages: ms, type }) => { for (const m of ms) ingest(m, { unread: type === "notify" }); });
+}
+
+// Profile pictures: one fetch per jid per day, kept under avatars/.
+const AVATAR_DIR = join(DATA_DIR, "avatars");
+mkdirSync(AVATAR_DIR, { recursive: true });
+const avatarMiss = new Map(); // jid -> ts of last failed lookup
+async function avatarFile(jid) {
+  const file = join(AVATAR_DIR, `${jid.replace(/[^A-Za-z0-9]/g, "_")}.jpg`);
+  try { const st = statSync(file); if (Date.now() - st.mtimeMs < 86400_000) return file; } catch {}
+  if (Date.now() - (avatarMiss.get(jid) || 0) < 3600_000) return existsSync(file) ? file : null;
+  if (!sock || state.status !== "connected") return existsSync(file) ? file : null;
+  try {
+    const u = await sock.profilePictureUrl(jid, "image", 8000);
+    if (!u) throw new Error("none");
+    const r = await fetch(u);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    writeFileSync(file, Buffer.from(await r.arrayBuffer()));
+    return file;
+  } catch { avatarMiss.set(jid, Date.now()); return existsSync(file) ? file : null; }
 }
 
 // ----------------------------------------------------------------- http ---
@@ -248,12 +395,43 @@ const server = createServer(async (req, res) => {
       let jid = null;
       if (chat) { const r = resolveTarget(chat); if (r.error) return json(res, 404, r); if (r.ambiguous) return json(res, 409, r); jid = r.jid; }
       const rows = messages.filter((m) => (!jid || m.chat === jid) && m.ts >= since && (!unread || m.unread)).slice(-limit)
-        .map((m) => ({ ...m, chat_name: m.chat_name || nameOf(m.chat), from_name: m.from_me ? "me" : (m.from_name || nameOf(m.from)) }));
+        .map((m) => ({ ...m, chat_name: nameOf(m.chat) || m.chat_name || "", from_name: m.from_me ? "me" : (nameOf(m.from) || m.from_name || "") }));
       return json(res, 200, rows);
+    }
+    if (req.method === "GET" && url.pathname === "/avatar") {
+      const r = resolveTarget(url.searchParams.get("jid") || "");
+      if (r.error || r.ambiguous) return json(res, 404, { error: "unknown jid" });
+      const file = await avatarFile(r.jid);
+      if (!file) return json(res, 404, { error: "no picture" });
+      res.writeHead(200, { "content-type": "image/jpeg", "cache-control": "private, max-age=3600" });
+      return res.end(readFileSync(file));
+    }
+    if (req.method === "GET" && url.pathname.startsWith("/media/")) {
+      const name = decodeURIComponent(url.pathname.slice("/media/".length));
+      if (!/^[A-Za-z0-9_-]+\.[a-z0-9]{1,8}$/.test(name)) return json(res, 400, { error: "bad media name" });
+      const file = join(MEDIA_DIR, name);
+      if (!existsSync(file)) return json(res, 404, { error: "no such media" });
+      const m = messages.find((x) => x.media === name);
+      const ext = name.split(".").pop();
+      const type = m?.mime?.split(";")[0] || ({ ogg: "audio/ogg", jpg: "image/jpeg", mp4: "video/mp4", webp: "image/webp", pdf: "application/pdf" }[ext] || "application/octet-stream");
+      res.writeHead(200, { "content-type": type, "cache-control": "private, max-age=86400" });
+      return res.end(readFileSync(file));
+    }
+    if (req.method === "POST" && url.pathname === "/history") {
+      // Ask the phone for older messages of one chat; they land through messaging-history.set.
+      if (state.status !== "connected" || !sock) return json(res, 503, { error: `not connected (${state.status})` });
+      const { chat, count } = await readBody(req);
+      const r = resolveTarget(chat);
+      if (r.error) return json(res, 404, r);
+      if (r.ambiguous) return json(res, 409, r);
+      const oldest = messages.find((m) => m.chat === r.jid && m.key);
+      if (!oldest) return json(res, 404, { error: "no message of that chat to anchor the request" });
+      const id = await sock.fetchMessageHistory(Math.min(Number(count || 50), 500), oldest.key, oldest.ts * 1000);
+      return json(res, 200, { ok: true, requested: id, before_ts: oldest.ts, chat: r.jid });
     }
     if (req.method === "GET" && url.pathname === "/contacts") {
       const q = norm(url.searchParams.get("q") || "");
-      const rows = [...contacts.entries()].map(([jid, c]) => ({ jid, name: c.name || c.notify || "", phone: c.phone || jid.split("@")[0] }))
+      const rows = [...contacts.entries()].map(([jid, c]) => ({ jid, name: c.name || c.notify || "", phone: phoneOf(jid) }))
         .filter((c) => c.name && (!q || norm(c.name).includes(q))).sort((a, b) => a.name.localeCompare(b.name)).slice(0, 500);
       return json(res, 200, rows);
     }
