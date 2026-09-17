@@ -176,6 +176,70 @@ def jobhunter_jobs(base: str) -> List[Dict[str, Any]]:
     return out
 
 
+def jobhunter_capture(base: str, *, company: str, title: str, description: str) -> Dict[str, Any]:
+    """Create the application Jobhunter's Hoard did not have (its own
+    `POST /api/jobs` = `capture_job`; a company+title duplicate is returned
+    instead of created)."""
+    payload = {"title": title[:300], "company": company[:300], "description": description[:4000],
+               "source": "mail", "tags": ["from-mail"]}
+    r = httpx.post(base + "/api/jobs", json=payload, timeout=15.0)
+    if r.status_code != 200:
+        raise ReviewError(f"capture_job failed ({r.status_code}): {r.text[:200]}")
+    return r.json()
+
+
+_GENERIC_SENDER = re.compile(
+    r"\b(talent|team|careers?|recruit\w*|hr|people|jobs?|hiring|noreply|no-reply|notifications?|"
+    r"acquisition|recruitment|do not reply|equipo|seleccion|selección|rrhh|candidat\w*)\b", re.I)
+_SUBJECT_COMPANY_RES = [
+    re.compile(r"(?:\bat|\bwith|\bto|\bfrom|\ben|\bcon|\bde)\s+([A-Z][\w&.'’-]*(?:\s+[A-Z][\w&.'’-]*){0,3})(?=\s*(?:[!.,:;—–|-]|\bfor\b|\bpara\b|$))"),
+    re.compile(r"&\s+([A-Z][\w&.'’-]*(?:\s+[A-Z][\w&.'’-]*){0,3})\s*[—–-]"),
+    re.compile(r"^([A-Z][\w&.'’-]*(?:\s+[A-Z][\w&.'’-]*){0,2})\s*[—–:|-]\s"),
+]
+_SUBJECT_TITLE_RES = [
+    re.compile(r"(?:application|candidatura|candidature)\s*(?:for the|for|para|:)\s+(.+?)(?:\s+(?:at|en)\b|[!.,—–]|$)", re.I),
+    re.compile(r"(?:for the|para el puesto de|para la posición de|puesto de|posición de|position of|role of)\s+(.+?)\s+(?:at|en|position|role|puesto)\b", re.I),
+    re.compile(r"\bfor\s+(?=[A-Z0-9-]*\d)[A-Z0-9-]{6,}\s+(.+?)(?:\s*[|—–]|$)"),
+]
+_TITLE_JUNK = re.compile(r"^(?:the|your|tu|mi|our|job|the position of|position of|puesto de)\s+", re.I)
+
+
+def guess_company(message: Dict[str, Any]) -> str:
+    """The employer's name for a reply Jobhunter has no application for:
+    the subject first ("…at Bluehaven!", "& Folding Forks—"), then the
+    sender's display name minus the generic words, then the sender domain."""
+    subject = str(message.get("subject") or "")
+    for rx in _SUBJECT_COMPANY_RES:
+        m = rx.search(subject)
+        if m:
+            cand = m.group(1).strip(" .,!-—–")
+            if cand and not _GENERIC_SENDER.fullmatch(cand) and cand.lower() not in {"your", "the", "tu", "el", "la"}:
+                return cand
+    sender = str(message.get("from") or "")
+    name = re.sub(r"<.*?>", "", sender).strip(" \"'")
+    name = _GENERIC_SENDER.sub("", name).strip(" -|,@")
+    name = re.sub(r"\s{2,}", " ", name)
+    if name and "@" not in name and "." not in name and len(name) > 1:
+        return name
+    m = re.search(r"@([\w-]+)\.[\w.]+", sender)
+    if m:
+        return m.group(1).capitalize()
+    return ""
+
+
+def guess_title(message: Dict[str, Any]) -> str:
+    subject = str(message.get("subject") or "")
+    for rx in _SUBJECT_TITLE_RES:
+        m = rx.search(subject)
+        if m:
+            t = m.group(1).strip(" .,!-—–")
+            for _ in range(3):
+                t = _TITLE_JUNK.sub("", t).strip()
+            if 2 < len(t) <= 120 and not re.match(r"^(?:to|a|at|en)\s", t, re.I):
+                return t
+    return ""
+
+
 def jobhunter_record(base: str, job_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
     r = httpx.post(f"{base}/api/jobs/{job_id}/responses", json=payload, timeout=15.0)
     if r.status_code != 200:
@@ -250,7 +314,8 @@ def _iso_z(epoch: Optional[float], fallback: str = "") -> str:
 
 def review(*, owner: Optional[str], days: int = 14, since: Optional[str] = None, until: Optional[str] = None,
            kinds: Optional[List[str]] = None, apply: bool = False, calendar: bool = True,
-           account: Optional[str] = None, folder: str = "INBOX", max_bodies: int = 120) -> Dict[str, Any]:
+           account: Optional[str] = None, folder: str = "INBOX", max_bodies: int = 120,
+           create_missing: bool = True) -> Dict[str, Any]:
     """Scan, classify, match and (with `apply`) record. Returns a report the
     model can summarise: `found` rows, `updated`, `events`, `manual`, and
     counts. Never raises for one bad message; a broken dependency (mail,
@@ -268,9 +333,11 @@ def review(*, owner: Optional[str], days: int = 14, since: Optional[str] = None,
     report: Dict[str, Any] = {
         "default_timezone": default_tz,
         "window": {"since": since_dt.isoformat(), "until": until_dt.isoformat()},
-        "apply": bool(apply), "jobhunter": base, "jobs_known": len(jobs),
-        "scanned": 0, "read": 0, "found": [], "updated": [], "events": [], "manual": [], "skipped_kinds": {},
+        "apply": bool(apply), "create_missing": bool(create_missing), "jobhunter": base, "jobs_known": len(jobs),
+        "scanned": 0, "read": 0, "found": [], "updated": [], "created": [], "events": [], "manual": [],
+        "skipped_kinds": {},
     }
+    events_done: Dict[str, str] = {}      # external_ref -> event uid (one event per interview slot)
     with _client(owner) as client:
         listing = list_mail(client, since_dt, until_dt, account=account, folder=folder)
         report["scanned"] = len(listing)
@@ -315,44 +382,96 @@ def review(*, owner: Optional[str], days: int = 14, since: Optional[str] = None,
             job = next((j for j in jobs if j["job_id"] == row["job_id"]), None)
             if job:
                 row["company"], row["title"], row["job_status"] = job["company"], job["title"], job["status"]
+            else:
+                row["company"], row["title"] = guess_company(message), guess_title(message)
             report["found"].append(row)
-            if not row["job_id"]:
+            external_id = message["message_id"] or f"mail:{uid}"
+
+            if not row["job_id"] and row["ambiguous"]:
                 row["action"] = "manual"
                 report["manual"].append({"uid": uid, "subject": row["subject"], "kind": kind,
-                                         "reason": "ambiguous: " + ", ".join(row["ambiguous"]) if row["ambiguous"]
-                                         else "no application in Jobhunter's Hoard matches this employer"})
+                                         "company": row["company"], "interview_at": row["interview_at"],
+                                         "reason": "ambiguous: two or more applications at this employer (" +
+                                                   ", ".join(row["ambiguous"]) + ")"})
                 continue
-            external_id = message["message_id"] or f"mail:{uid}"
-            if external_id in (job or {}).get("responses", []):
+            if not row["job_id"]:
+                if not (apply and create_missing and row["company"]):
+                    row["action"] = "manual" if not apply else "would_create"
+                    if not apply:
+                        row["action"] = "would_create" if (create_missing and row["company"]) else "would_skip"
+                    report["manual"].append({"uid": uid, "subject": row["subject"], "kind": kind,
+                                             "company": row["company"], "interview_at": row["interview_at"],
+                                             "reason": "no application in Jobhunter's Hoard matches this employer"
+                                                       + ("" if row["company"] else " and the employer's name could not be read")})
+                    continue
+                # --- create the application Jobhunter did not have ---
+                try:
+                    title = row["title"] or f"Candidatura ({message['subject'][:60]})"
+                    cap = jobhunter_capture(base, company=row["company"], title=title,
+                                            description=f"Creada desde el correo «{message['subject']}» ({row['received_at']}).")
+                    new_job = cap.get("job") or cap
+                    job = {"job_id": new_job.get("id"), "company": new_job.get("company") or row["company"],
+                           "title": new_job.get("title") or title, "url": new_job.get("url") or "",
+                           "external_id": "", "status": new_job.get("status") or "", "thread_message_ids": [],
+                           "responses": [str(x.get("externalId") or "") for x in (new_job.get("responses") or [])]}
+                    jobs.append(job)
+                    row["job_id"], row["title"], row["match"] = job["job_id"], job["title"], "created"
+                    report["created"].append({"company": job["company"], "title": job["title"],
+                                              "duplicate": bool(cap.get("duplicate"))})
+                except ReviewError as exc:
+                    row["action"] = f"error: {exc}"
+                    continue
+
+            if external_id in job.get("responses", []):
                 row["action"] = "already_recorded"
-                continue
-            if not apply:
+                # the calendar can still be missing (an earlier run without calendar=true)
+                if not (kind == "interview" and calendar and apply and row["interview_at"]):
+                    continue
+            elif not apply:
                 row["action"] = "would_record"
                 continue
             # --- apply ---
             event_id = None
             if kind == "interview" and calendar:
-                if row["interview_at"] and row["timezone"]:
-                    try:
-                        ev = create_calendar_event(
-                            client, summary=f"Entrevista · {job['company']} — {job['title']}",
-                            dtstart=row["interview_at"], description=f"{message['subject']}\n\n{verdict['evidence'][:400]}",
-                            external_ref=f"jobhunter:{job['job_id']}:{external_id}"[:200])
-                        event_id = ev.get("uid")
-                        report["events"].append({"uid": event_id, "created": ev.get("created"),
-                                                 "company": job["company"], "at": row["interview_at"]})
-                    except ReviewError as exc:
-                        row["calendar_error"] = str(exc)
+                if row["interview_at"]:
+                    ref = f"jobhunter:{job['job_id']}:{row['interview_at']}"[:200]
+                    if ref in events_done:
+                        event_id = events_done[ref]
+                    else:
+                        try:
+                            ev = create_calendar_event(
+                                client, summary=f"Entrevista · {job['company']} — {job['title']}",
+                                dtstart=row["interview_at"],
+                                description=f"{message['subject']}\n\n{verdict['evidence'][:400]}"
+                                            + ("\n\nZona horaria asumida (el correo no la indica)." if "(assumed)" in str(row["timezone"]) else ""),
+                                external_ref=ref)
+                            event_id = ev.get("uid")
+                            events_done[ref] = str(event_id)
+                            report["events"].append({"uid": event_id, "created": ev.get("created"),
+                                                     "company": job["company"], "at": row["interview_at"],
+                                                     "timezone": row["timezone"]})
+                        except ReviewError as exc:
+                            row["calendar_error"] = str(exc)
                 else:
-                    row["calendar"] = "no date/time/zone stated in the mail — left for manual review"
+                    row["calendar"] = "no date/time stated in the mail — left for manual review"
                     report["manual"].append({"uid": uid, "subject": row["subject"], "kind": kind,
-                                             "reason": "interview without a resolvable date/time/zone"})
+                                             "company": job["company"], "interview_at": None,
+                                             "reason": "interview without a resolvable date/time (on-demand or to be scheduled)"})
+            if row.get("action") == "already_recorded":
+                if event_id:
+                    try:
+                        jobhunter_record(base, job["job_id"], {"externalId": external_id, "kind": kind,
+                                                               "evidence": verdict["evidence"][:2000],
+                                                               "receivedAt": row["received_at"], "calendarEventId": str(event_id)})
+                    except ReviewError:
+                        pass
+                continue
             payload = {"externalId": external_id, "kind": kind, "evidence": verdict["evidence"][:2000],
                        "receivedAt": row["received_at"] or now.isoformat().replace("+00:00", "Z")}
             if row["interview_at"]:
                 payload["interviewAt"] = row["interview_at"]
             if row["timezone"]:
-                payload["timezone"] = row["timezone"]
+                payload["timezone"] = str(row["timezone"])[:64]
             if event_id:
                 payload["calendarEventId"] = str(event_id)
             try:
@@ -361,12 +480,14 @@ def review(*, owner: Optional[str], days: int = 14, since: Optional[str] = None,
                 new_status = (res.get("job") or {}).get("status")
                 if new_status:
                     row["job_status_after"] = new_status
+                job["responses"].append(external_id)
                 report["updated"].append({"company": job["company"], "title": job["title"], "kind": kind,
                                           "status": new_status, "applied": res.get("applied", True)})
             except ReviewError as exc:
                 row["action"] = f"error: {exc}"
     report["counts"] = {
-        "found": len(report["found"]), "updated": len(report["updated"]), "events": len(report["events"]),
+        "found": len(report["found"]), "updated": len(report["updated"]), "created": len(report["created"]),
+        "events": len(report["events"]),
         "manual": len(report["manual"]),
         "by_kind": {k: sum(1 for r in report["found"] if r["kind"] == k) for k in wanted},
     }

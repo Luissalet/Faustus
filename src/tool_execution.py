@@ -1969,10 +1969,12 @@ async def _execute_tool_block_impl(
                 since=args.get("since") or None, until=args.get("until") or None,
                 kinds=args.get("kinds") or None, apply=bool(args.get("apply")),
                 calendar=args.get("calendar", True) is not False, account=args.get("account") or None,
+                create_missing=args.get("create_missing", True) is not False,
             )
             c = result.get("counts") or {}
             desc = (f"review_candidature_mail: {result.get('scanned')} mails, {c.get('found', 0)} replies, "
-                    f"{c.get('updated', 0)} recorded, {c.get('events', 0)} events, {c.get('manual', 0)} manual")
+                    f"{c.get('updated', 0)} recorded, {c.get('created', 0)} created, {c.get('events', 0)} events, "
+                    f"{c.get('manual', 0)} manual")
         except Exception as exc:  # noqa: BLE001 - reported to the model, never raised
             result = {"error": str(exc), "exit_code": 1}
     elif tool == "verify_claim":

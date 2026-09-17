@@ -35,6 +35,12 @@ MAILS = {
           "body": "Thanks for applying! We have received your application and will review it."},
     "4": {"subject": "Nuevas alertas de empleo en Madrid", "from_name": "Portal", "from_address": "alerts@portal.com",
           "message_id": "<m4@p>", "date": "2026-09-17T04:56:00+00:00", "body": "50 nuevas ofertas."},
+    "6": {"subject": "Regarding your application at Habito", "from_name": "Habito", "from_address": "talent@habito.io",
+          "message_id": "<m6@dw>", "date": "2026-09-17T08:32:00+00:00",
+          "body": "Unfortunately we will not be moving forward with your application."},
+    "7": {"subject": "Interview invitation: Backend Engineer at Storeful", "from_name": "Storeful People",
+          "from_address": "people@storeful.com", "message_id": "<m7@sf>", "date": "2026-09-07T10:00:00+00:00",
+          "body": "We'd love to interview you. Please pick a slot in the link below."},
     "5": {"subject": "Regarding your application at Cleverfox", "from_name": "Cleverfox", "from_address": "hr@cleverfox.com",
           "message_id": "<m5@sc>", "date": "2026-09-17T08:32:00+00:00",
           "body": "After careful consideration we regret to inform you that we will not be proceeding."},
@@ -51,6 +57,16 @@ def fake(monkeypatch):
     monkeypatch.setattr(cr, "read_mail", lambda client, uid, account, folder="INBOX": dict(MAILS[uid], uid=uid))
     monkeypatch.setattr(cr, "jobhunter_base_url", lambda: "http://127.0.0.1:5178")
     monkeypatch.setattr(cr, "jobhunter_jobs", lambda base: [dict(j, responses=list(j["responses"])) for j in JOBS])
+
+    captured = []
+
+    def _capture(base, company, title, description):
+        captured.append((company, title))
+        return {"job": {"id": f"new-{len(captured)}", "company": company, "title": title, "status": "saved"},
+                "duplicate": False}
+
+    monkeypatch.setattr(cr, "jobhunter_capture", _capture)
+    cr._TEST_CAPTURED = captured
 
     def _record(base, job_id, payload):
         recorded.append((job_id, payload))
@@ -93,7 +109,7 @@ def test_apply_records_in_jobhunter_and_puts_the_interview_on_the_calendar(fake)
     assert by_job["j1"]["kind"] == "rejection" and by_job["j1"]["externalId"] == "<m1@bluehaven>"
     assert by_job["j2"]["kind"] == "interview" and by_job["j2"]["interviewAt"].startswith("2026-09-22T10:00")
     assert by_job["j2"]["calendarEventId"] == "ev-1"
-    assert events and events[0]["external_ref"] == "jobhunter:j2:<m2@acc>"
+    assert events and events[0]["external_ref"] == "jobhunter:j2:2026-09-22T10:00:00+02:00"  # one slot, one event
     assert "Cordera" in events[0]["summary"]
     assert any(u["company"] == "Bluehaven" and u["status"] == "rejected" for u in rep["updated"])
 
@@ -141,3 +157,36 @@ def test_tool_is_registered_everywhere():
     assert "review_candidature_mail" in TOOL_DESCRIPTIONS
     caps = tool_capabilities.capabilities_for_tool("review_candidature_mail")
     assert caps.known and tool_capabilities.ToolEffect.WRITE_PRIVATE in caps.effects
+
+
+def test_an_employer_jobhunter_does_not_know_is_created_and_recorded(fake):
+    recorded, events = fake
+    rep = cr.review(owner="admin", days=14, apply=True, kinds=["rejection", "interview"])
+    assert ("Habito", "Candidatura (Regarding your application at Habito)") in cr._TEST_CAPTURED or \
+        any(c == "Habito" for c, _ in cr._TEST_CAPTURED)
+    habito = next(r for r in rep["found"] if r["uid"] == "6")
+    assert habito["match"] == "created" and habito["action"] == "recorded"
+    assert any(u["company"] == "Habito" and u["kind"] == "rejection" for u in rep["updated"])
+    assert rep["counts"]["created"] >= 1
+    # the interview without a date: application created, response recorded, no event, manual note
+    shop = next(r for r in rep["found"] if r["uid"] == "7")
+    assert shop["kind"] == "interview" and shop["action"] == "recorded" and shop["interview_at"] is None
+    assert any(m["uid"] == "7" and "without a resolvable date" in m["reason"] for m in rep["manual"])
+    assert not any("Storeful" in e["summary"] for e in events)
+
+
+def test_create_missing_false_leaves_unknown_employers_for_manual_review(fake):
+    recorded, events = fake
+    rep = cr.review(owner="admin", days=14, apply=True, kinds=["rejection"], create_missing=False)
+    assert not cr._TEST_CAPTURED
+    assert any(m["uid"] == "6" and "no application" in m["reason"] for m in rep["manual"])
+
+
+def test_guess_company_and_title_from_real_subjects():
+    g = cr.guess_company
+    assert g({"subject": "Update on your application for the AI Engineer at Bluehaven!", "from": "Bluehaven Talent <jobs@bluehaven.com>"}) == "Bluehaven"
+    assert g({"subject": "Applicant & Folding Forks—Application received", "from": "no-reply@foldingforks.com"}) == "Folding Forks"
+    assert g({"subject": "Seguimiento oferta empleo", "from": "RLM Group Talent Acquisition <talent@rlmgroup.com>"}) == "RLM Group"
+    assert g({"subject": "Seguimiento", "from": "noreply@example-corp.com"}) == "Example-corp"
+    assert cr.guess_title({"subject": "Your virtual interview at Cordera for R00123456 AI Software Engineer | Spain"}) == "AI Software Engineer"
+    assert cr.guess_title({"subject": "Thank you for applying to Cleverfox"}) == ""
