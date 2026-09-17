@@ -17,6 +17,8 @@ const alive=w=>w&&!w.isDestroyed();
 const liveContents=c=>c&&!c.isDestroyed();
 const splash='data:text/html;charset=utf-8,'+encodeURIComponent(`<!doctype html><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'"><title>Faustus</title><body style="background:#17191d;color:#eee;font:18px system-ui;margin:0"><header style="height:40px;display:flex;background:#121418"><span style="-webkit-app-region:drag;flex:1;padding:8px 18px;color:#e06c75">Faustus</span><button aria-label="Close / Cerrar" onclick="window.faustusWindow.command('close')" style="background:transparent;border:0;color:inherit;padding:0 20px">×</button></header><main style="padding:48px"><h1>Faustus</h1><p>Starting your local workspace… / Iniciando tu espacio local…</p><p>You can close this window to cancel. / Puedes cerrar esta ventana para cancelar.</p></main></body>`);
 app.setName('Faustus');
+// Its own identity on the Windows taskbar: the window (and a pinned shortcut) group under Faustus's logo, not Electron's.
+if(process.platform==='win32')app.setAppUserModelId('faustus.desktop');
 // Per-checkout cookies stay separate from browsers and from other installations.
 const profile=join(root,'data','desktop-profile');mkdirSync(profile,{recursive:true});
 app.setPath('userData',profile);app.setPath('sessionData',profile);
