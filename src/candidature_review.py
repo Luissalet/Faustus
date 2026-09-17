@@ -262,6 +262,11 @@ def jobhunter_record(base: str, job_id: str, payload: Dict[str, Any]) -> Dict[st
 # matching (company alone when it is unambiguous)
 # ---------------------------------------------------------------------------
 
+#: Statuses that mean "an application was sent": an employer's reply belongs
+#: to one of these before an `inbox`/`saved` duplicate of the same posting.
+_ACTIVE_STATUSES = {"applied", "answered", "interview", "offer", "submitted"}
+
+
 def _norm(s: str) -> str:
     s = (s or "").lower()
     s = re.sub(r"\b(s\.?l\.?|s\.?a\.?|inc\.?|ltd\.?|llc|gmbh|group|technologies|technology|labs?)\b", " ", s)
@@ -274,7 +279,7 @@ def match(message: Dict[str, Any], jobs: List[Dict[str, Any]]) -> Dict[str, Any]
     title, so a company that names exactly ONE application matches on the
     company alone; several → narrow by title; still several → ambiguous."""
     strict = cr.match_job(message, jobs)
-    if strict.get("job_id") or strict.get("ambiguous"):
+    if strict.get("job_id"):
         return strict
     hay = _norm(f"{message.get('from', '')}\n{message.get('subject', '')}\n{message.get('body', '')}")
     by_company: Dict[str, List[Dict[str, Any]]] = {}
@@ -294,7 +299,13 @@ def match(message: Dict[str, Any], jobs: List[Dict[str, Any]]) -> Dict[str, Any]
     titled = [j for j in cands if _norm(j.get("title") or "") and _norm(j.get("title") or "") in hay]
     if len(titled) == 1:
         return {"job_id": titled[0]["job_id"], "how": "company_title", "ambiguous": []}
-    return {"job_id": None, "how": None, "ambiguous": [j["job_id"] for j in cands]}
+    pool = titled or cands
+    # The same posting captured twice (two URLs, one title): the one the
+    # user actually applied to is the one the employer is answering.
+    active = [j for j in pool if str(j.get("status") or "").lower() in _ACTIVE_STATUSES]
+    if len(active) == 1:
+        return {"job_id": active[0]["job_id"], "how": "company_active", "ambiguous": []}
+    return {"job_id": None, "how": None, "ambiguous": [j["job_id"] for j in pool]}
 
 
 # ---------------------------------------------------------------------------

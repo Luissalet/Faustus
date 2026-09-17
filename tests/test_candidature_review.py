@@ -246,3 +246,13 @@ def test_interview_confirmations_with_gmt_offsets_and_short_months_resolve():
     assert inv["interview_at"] == "2026-09-07T16:00:00+02:00"
     assert cr._HINT_RE.search("Your meeting confirmation with Flapp & Storeful!")
     assert cr.guess_company({"subject": "x", "from": "Ana Pérez - Talentia <p@x.com>"}) == "Talentia"
+
+
+def test_the_same_posting_captured_twice_resolves_to_the_one_applied_to():
+    msg = {"subject": "AI/ML Engineer (GenAI) - Clear Concepts", "from": "Someone <s@clearconcepts.example>",
+           "body": "we will not be moving forward with your candidacy for the position of AI/ML Engineer (GenAI)."}
+    jobs = [{"job_id": "p1", "company": "Clear Concepts", "title": "AI/ML Engineer (GenAI)", "status": "inbox"},
+            {"job_id": "p2", "company": "Clear Concepts", "title": "AI/ML Engineer (GenAI)", "status": "applied"}]
+    assert cr.match(msg, jobs) == {"job_id": "p2", "how": "company_active", "ambiguous": []}
+    both = [dict(j, status="applied") for j in jobs]
+    assert cr.match(msg, both)["ambiguous"] == ["p1", "p2"]
