@@ -295,8 +295,9 @@ def test_react_tool_and_search_action(bridge, monkeypatch):
 def test_assist_never_sends_and_marks_the_transcript_as_data(bridge, monkeypatch):
     prompts = []
 
-    async def fake_summarise(system, user, owner):
+    async def fake_summarise(system, user, owner, *, foreground=False):
         prompts.append((system, user))
+        assert foreground, "a person is waiting on assist: it must skip the interactive-quiet gate"
         return "Ana pregunta por el sábado."
 
     import src.watchers as watchers

@@ -364,11 +364,11 @@ def _search(topic: str, time_filter: str, max_pages: int = 5):
     return comprehensive_web_search(topic, max_pages=max_pages, time_filter=time_filter, return_sources=True)
 
 
-async def _summarise(system: str, user: str, owner: Optional[str]) -> str:
+async def _summarise(system: str, user: str, owner: Optional[str], *, foreground: bool = False) -> str:
     from src.task_endpoint import task_llm_call_async
     from src.text_helpers import strip_think
     out = await task_llm_call_async([{"role": "system", "content": system}, {"role": "user", "content": user}],
-                                    owner=owner, temperature=0.2)
+                                    owner=owner, temperature=0.2, foreground=foreground)
     return strip_think(str(out or "")).strip()
 
 

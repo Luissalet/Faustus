@@ -81,9 +81,16 @@ async def task_llm_call_async(
     fallback_model=None,
     fallback_headers=None,
     owner=None,
+    foreground=False,
     **kwargs,
 ):
-    """Call the shared background-task LLM candidate chain."""
+    """Call the shared background-task LLM candidate chain.
+
+    `foreground=True` is for a call the person is waiting on right now (a
+    button in a screen): it skips the interactive-quiet gate, which would
+    otherwise hold the call while that same screen keeps polling (seen live:
+    'Ask Faustus' sat on 'Thinking…' for minutes with the model never loaded).
+    """
     candidates = resolve_task_candidates(
         fallback_url=fallback_url,
         fallback_model=fallback_model,
@@ -92,6 +99,7 @@ async def task_llm_call_async(
     )
     if not candidates:
         raise RuntimeError("No LLM endpoint available for background task")
-    await wait_for_interactive_quiet("background task LLM")
-    kwargs.setdefault("workload", "background")
+    if not foreground:
+        await wait_for_interactive_quiet("background task LLM")
+    kwargs.setdefault("workload", "interactive" if foreground else "background")
     return await llm_call_async_with_fallback(candidates, messages=messages, **kwargs)

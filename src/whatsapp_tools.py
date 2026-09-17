@@ -180,5 +180,6 @@ async def assist(owner: str, chat: str, task: str, instruction: str = "", hours:
     else:
         system = base + " Do what the owner asks about this chat."
         user = f"Chat:\n{transcript}\n\nRequest: {instruction or 'summarise'}"
-    text = await _summarise(system, user, owner)
+    # The person is looking at the screen waiting for this: foreground, no quiet gate.
+    text = await _summarise(system, user, owner, foreground=True)
     return {"text": text, "messages": len(rows), "task": task}
