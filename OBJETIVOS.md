@@ -619,6 +619,10 @@ Pedido el 16-09 tras el proyecto «3D modeling silhouettes»: 24 chats reales, u
 
 Pedido el 17-09: ver qué se está ejecutando (puertos, apps abiertas por el asistente, trabajos en segundo plano) y poder pararlo. Hecho dentro de Faustus (no como conector: un conector es una herramienta del modelo, y el Stop tiene que ser de una persona). FAUSTUS.md §97. **Siguiente.** Nombre del servidor MCP en las filas hijas; herramienta de solo lectura para el agente; registro de lo que el asistente lanza por Windows-MCP.
 
+## OBJ-21 · Apps: control de las apps del desarrollador desde Processes — HECHO (17-09-2026)
+
+Pedido: conectar tres apps más, un menú para lanzarlas/pararlas/reiniciarlas con iconos y estado, «como Processes pero universal», con consola, alta y baja libres, y que todas abran en ventana de escritorio. Hecho (FAUSTUS.md §101): perfiles con icono/descr./stop/desktop, estado por pid o puerto, ventana Electron genérica con identidad propia en la barra, sección Apps en Processes, adaptador REST→MCP genérico y presets `dorian`/`gepetto`/`platos`. **Siguiente.** Arrancar apps al arrancar Faustus (autostart por perfil), agrupar por proyecto, exportar/importar perfiles, y que el agente tenga una herramienta de solo lectura sobre el estado de las apps.
+
 ## OBJ-18 · Candidaturas desde el correo (Jobhunter's Hoard + calendario) — HECHO (17-09-2026)
 
 Pedido: «Revisa mi correo dos semanas y actualiza qué empresas me han rechazado / me han dado entrevistas en jobhunter's hoard y ponlas en el calendario», que funcione con el 27B local. Hecho como una herramienta determinista (`review_candidature_mail`, FAUSTUS.md §98) que hace la receta entera en una llamada. Verificado en vivo tres veces con el 27B: rechazos y entrevista registrados en Jobhunter (estado y mensajes), evento único en el calendario, tercera pasada idempotente en 44 s. **Siguiente.** Evento de día completo para entrevistas a demanda con fecha límite, texto de la receta, hora actual en el prompt.
