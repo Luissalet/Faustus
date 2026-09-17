@@ -567,6 +567,19 @@ def review(*, owner: Optional[str], days: int = 14, since: Optional[str] = None,
                                           "status": new_status, "applied": res.get("applied", True)})
             except ReviewError as exc:
                 row["action"] = f"error: {exc}"
+    # One line per application for the model to relay verbatim: the model
+    # otherwise summarises "4 rejections" out of eight.
+    seen_lines: Dict[str, str] = {}
+    for r in report["found"]:
+        key = r.get("job_id") or f"{r.get('company')}|{r.get('kind')}"
+        state = r.get("job_status_after") or r.get("job_status") or ""
+        when = (r.get("interview_at") or r.get("received_at") or "")[:16]
+        line = f"{r.get('company') or '?'} — {r.get('title') or '?'}: {r['kind']}"
+        line += f" ({state})" if state else ""
+        line += f" · {when}" if when else ""
+        line += f" · {r.get('action')}" if r.get("action") else ""
+        seen_lines.setdefault(key, line)
+    report["summary"] = sorted(seen_lines.values())
     report["kinds"] = sorted(wanted)
     if wanted != {"rejection", "interview", "offer"}:
         report["note"] = ("only " + ", ".join(sorted(wanted)) + " were looked at; other kinds of reply were not "
