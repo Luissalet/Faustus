@@ -862,12 +862,50 @@ def _is_ollama_native_url(url: str) -> bool:
     return _is_declared_ollama_host(url)
 
 
+def _is_loopback_url(url: str) -> bool:
+    """True when `url`'s host is this machine (localhost/127.0.0.1/::1/
+    0.0.0.0) regardless of port — used to gate provider-agnostic local-only
+    behaviour (e.g. forwarding llama.cpp sampler fields to a non-Ollama
+    OpenAI-compatible server) that would be unsafe to guess for a remote
+    provider."""
+    try:
+        parsed = urlparse(str(url or "").strip())
+    except ValueError:
+        return False
+    host = (parsed.hostname or "").lower()
+    return host in {"localhost", "127.0.0.1", "0.0.0.0", "::1"}
+
+
 def _is_declared_ollama_host(url: str) -> bool:
     try:
         from src.model_load_options import is_declared_ollama_host
         return is_declared_ollama_host(url)
     except Exception:  # noqa: BLE001 — never worth failing a request
         return False
+
+
+def _is_local_ollama_target(url: str) -> bool:
+    """True when `url` is definitively a local Ollama server for the
+    purposes of applying Ollama-specific behaviour (the sampler floor, the
+    /v1 -> native reroute) WITHOUT an explicit admin declaration: the
+    default port (11434) on Ollama's own OpenAI-compatible surface, or a
+    host/port the admin declared by saving Local models options for it.
+
+    Deliberately narrower than `_is_ollama_openai_compat_url` (which — like
+    `_is_ollama_native_url` — treats ANY loopback host as Ollama regardless
+    of port, matching Ollama's own default listen address): an arbitrary
+    loopback dev server on some other port must not be silently assumed to
+    be Ollama and have Ollama-only fields injected into its requests just
+    because it also serves an OpenAI-shaped /v1 path.
+    """
+    try:
+        parsed = urlparse(str(url or "").strip())
+        port = parsed.port
+    except ValueError:
+        return False
+    if port == 11434 and _is_ollama_openai_compat_url(url):
+        return True
+    return _is_declared_ollama_host(url)
 
 
 def _is_ollama_openai_compat_url(url: str) -> bool:
@@ -3485,6 +3523,35 @@ def _model_load_defaults(url: str, model: str) -> Dict:
                 defaults["main_gpu"] = idx
         except Exception as e:  # noqa: BLE001
             logger.debug("gpu placement policy unavailable for %s: %s", model, e)
+    # The `local_repeat_penalty_default`/`local_min_p_default` floor must
+    # reach EVERY local Ollama model, not only ones with a saved per-model
+    # `extra` block: previously these two knobs were only applied inside
+    # `_apply_gen_overrides_ollama`, which only ever runs once a request has
+    # already been routed to the native `/api/chat` surface — and routing
+    # only rerouted a `/v1` request when `gen_overrides` already carried a
+    # native-only key. A model with no saved `extra` and no per-turn override
+    # therefore stayed on `/v1/chat/completions`, which Ollama serves with
+    # its own defaults (repeat_penalty 1.0, min_p 0 — no repetition guard at
+    # all) and can decode into sustained garbage at long context. Folding the
+    # floor in here, ahead of the routing decision, makes it part of
+    # `gen_overrides` early enough to both trigger the native reroute
+    # (`_route_for_gen_overrides` treats `repeat_penalty`/`min_p` as
+    # native-only keys) and land in the request either way. An explicit
+    # per-model `extra` or per-turn override set later in the merge chain
+    # (`_with_model_defaults`: defaults -> caller) still wins over this.
+    if _is_local_ollama_target(url):
+        # A saved per-model `extra` block (checked here, not just the
+        # top-level knobs) already carries these two: don't let the floor
+        # shadow it once `_apply_gen_overrides_ollama` applies `extra`
+        # first and the named-key loop second — that loop writes THIS
+        # dict's value over whatever `extra` set, so the floor must not be
+        # added here when `extra` already answers for the field.
+        extra_block = defaults.get("extra")
+        extra_block = extra_block if isinstance(extra_block, dict) else {}
+        if "repeat_penalty" not in defaults and "repeat_penalty" not in extra_block:
+            defaults["repeat_penalty"] = _local_sampler_default("local_repeat_penalty_default", 1.05)
+        if "min_p" not in defaults and "min_p" not in extra_block:
+            defaults["min_p"] = _local_sampler_default("local_min_p_default", 0.05)
     return defaults
 
 
@@ -3526,6 +3593,16 @@ def _apply_gen_overrides_openai(payload: Dict, overrides: Dict, url: str) -> Non
     if _is_ollama_openai_compat_url(url):
         if "think" in overrides:
             payload["think"] = overrides["think"]
+        for k in ("top_k", "repeat_penalty", "min_p"):
+            if k in overrides:
+                payload[k] = overrides[k]
+    elif _is_loopback_url(url):
+        # A non-Ollama local OpenAI-compatible server (llama-server et al.)
+        # also accepts these as top-level fields on /v1/chat/completions and
+        # a broken sampler there degenerates the same way a fresh Ollama
+        # session does. Restricted to loopback: an arbitrary remote OpenAI
+        # provider may 400 on an unknown field, and there is no way to know
+        # from the URL alone whether it will.
         for k in ("top_k", "repeat_penalty", "min_p"):
             if k in overrides:
                 payload[k] = overrides[k]
