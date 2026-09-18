@@ -1077,10 +1077,28 @@ def setup_local_models_routes() -> APIRouter:
                                 # Load button on a reservation bookkeeping race.
                                 logger.warning("load: reserve missed twice for %s; loading without a reservation", name)
             if verdict.get("fits") is False:
-                raise HTTPException(409, {
-                    "message": f"{name} does not fit in VRAM next to what is loaded",
-                    "admission": verdict,
-                })
+                # X-D, same rule as the chat door: the default model steps
+                # aside on its own for a model the person explicitly asked
+                # to load, when that frees enough room. Only when it would
+                # not is the card shown (with the default listed in it).
+                yielded = False
+                try:
+                    if not vram_admission.is_default_model(ep["root"], name):
+                        plan_names, plan_freed, uses_default = vram_admission._default_yield_plan(
+                            ep["root"], verdict.get("residents") or [], int(verdict.get("shortfall_bytes") or 0))
+                        if uses_default and plan_freed >= int(verdict.get("shortfall_bytes") or 0):
+                            logger.info("load: default model steps aside for %s (unloading %s)", name, ", ".join(plan_names))
+                            left = await vram_admission.unload_and_wait(ep["root"], plan_names)
+                            yielded = not left
+                            if left:
+                                logger.warning("load: could not unload %s before loading %s", ", ".join(left), name)
+                except Exception as e:  # noqa: BLE001 — the card is the fallback, never a crash
+                    logger.debug("load: yield attempt failed: %s", e)
+                if not yielded:
+                    raise HTTPException(409, {
+                        "message": f"{name} does not fit in VRAM next to what is loaded",
+                        "admission": verdict,
+                    })
         saved = dict(mlo.get_options(ep["id"], name))
         if "main_gpu" not in saved:
             # the placement policy (fill card N first) — same rule every chat
