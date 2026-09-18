@@ -2,6 +2,14 @@
 
 Actualizado: 18-09-2026. REGLA: nunca nombres de empresas/personas del buzón de Luis en commits, docs, tests ni comentarios — ejemplos siempre ficticios. Sólo trabajo vigente; quitar cada entrada al cerrarla.
 
+## 18-09 noche — el turno de agente ya no debería terminar en silencio (FAUSTUS.md §115)
+
+- No verificado en vivo: repetir la tarea larga y repetitiva (la de la Pokédex u otra similar) contra el llama-server real y confirmar que las rondas se extienden solas con la línea de progreso («continúa: unidad N») en vez de la tarjeta «Allow this task to continue?», y que si el modelo se atasca de verdad aparece una pregunta concreta (`ask_user`) en vez de la tarjeta o el silencio.
+- No verificado en vivo: confirmar en el Studio que el bloque «Tareas grandes» del system prompt aparece en una sesión con workspace activo (se puede ver con el inspector de prompt si existe, o comprobando el comportamiento: el modelo debería mencionar unidades/cursor sin que se le pida).
+- Pendiente crear en la máquina de Luis `data/skills/general/iterative-cursor-loop/SKILL.md` con `owner: "*"` en el frontmatter (antes puede que exista sin ese campo, o con un valor distinto) y confirmar que aparece en `manage_skills action=list` para un usuario que no sea quien la escribió.
+- Pendiente confirmar que una nota de memoria procedural guardada con dueño global (`owner=""`) aparece en el bloque de «memoria aprendida» de un chat de un usuario distinto — el mecanismo ya existía (`scoped_items`), solo se confirmó con tests unitarios, nunca contra el store real en disco.
+- No se pudo aislar una causa única y reproducible de «media turno corta tras 0-1 llamadas a herramienta» — se implementaron las mejoras pedidas (auto-continuación por progreso, pregunta final, nudge de ronda vacía desde la ronda 1) igualmente porque son correctas de por sí, pero si el síntoma original vuelve a verse en vivo, revisar también el detector de bucles inline (`_stuck_rounds`/`_tool_call_signature` en `src/agent_loop.py`) y `src/loop_breaker.py` (documentado pero todavía sin cablear a la ejecución real).
+
 ## 18-09 noche — llama-server en el PC (FAUSTUS.md §114)
 - `/think on` no llega a la petición de llama-server: la sesión sigue con `<think></think>` precerrado y sin `reasoning_budget`. La decisión de `_resolve_think_decision` sí funciona por ajuste/override, pero el comando de barra no la alimenta en ese endpoint. Revisar `slash_think` → overrides del turno.
 - Con llama-server sirviendo el q8 (47 GB) el keeper (`warm_default_model`) queda en false y Ollama solo tiene el 4b de utilidad; al volver a Ollama para el 27B: `D:\LocalAI\Stop-LlamaServer.ps1` y `warm_default_model=true`.
