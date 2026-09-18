@@ -5529,6 +5529,8 @@ Tres cambios, mismos ficheros de siempre:
 
 ---
 
+**Vuelta del modelo por defecto.** El guardián (`model_warmup`) no se limita a esperar: cuando el default no cabe porque lo estorban modelos sin pin que llevan más de `warm_default_model_yield_minutes` sin usarse (o nunca se usaron desde que cargaron), los descarga (los más grandes primero, solo los que hagan falta) y recarga el default. Un modelo ocupado nunca se toca desde aquí. Verificado en vivo (w113/w114): el botón Load del q8 hizo que el q4 se apartara solo (sin tarjeta) y el q8 cargó con su contexto; el q4 vuelve cuando el q8 lleva 10 min ocioso.
+
 ## 110. El prompt ya no lleva los 210 tools MCP en cada turno (18-09-2026)
 
 **Confirmado en vivo.** En cada turno del agente, incluido un simple «hola», el prompt llevaba un bloque de contexto no fiable etiquetado `"MCP tools"` de **14.657 tokens** (`src/agent_loop.py::_build_system_prompt` llamaba a `MCPManager.get_tool_descriptions_for_prompt()`, que volcaba TODOS los tools de TODOS los servidores MCP conectados — esta máquina tiene ~210 tools MCP en ~10 servidores). La línea del ledger de contexto lo confirmaba con nombre y número: `sources: MCP tools 14657; available skills index 309; saved memory: pinned context 207`. Mientras tanto, la selección de tools del propio turno (tool-RAG, `[tool-rag] Retrieved tools for query`) ya elegía los tools MCP relevantes por embedding y mandaba sus esquemas completos como funciones nativas (`tools_sent`) — el volcado del prompt era pura redundancia, y encima envenenaba a los modelos locales, que a veces contestaban con el propio separador de contexto o entraban en bucle.

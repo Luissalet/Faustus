@@ -51,7 +51,7 @@ import asyncio
 import logging
 import time
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import List, Any, Dict, Optional
 from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
@@ -271,6 +271,45 @@ def _active_non_default_resident(ps: Dict[str, Any], target: Dict[str, str],
     return None, None
 
 
+def _idle_unpinned_residents(ps: Dict[str, Any], target: Dict[str, str], yield_minutes: float,
+                             fit: Dict[str, Any]) -> List[str]:
+    """Resident local models (not the default, not embeddings, not pinned by
+    a person) that have been idle longer than `yield_minutes` — or were
+    never used since they loaded — biggest first, enough of them to cover
+    the default's shortfall. Empty when the shortfall cannot be covered
+    with idle models alone (a busy model is never evicted here)."""
+    try:
+        from src import vram_admission
+    except Exception:  # noqa: BLE001
+        return []
+    want_default = _norm_model(target["model"])
+    cutoff = max(0.0, yield_minutes) * 60.0
+    shortfall = int(fit.get("shortfall_bytes") or 0)
+    by_name = {str(r.get("name") or ""): int(r.get("in_vram_bytes") or 0) for r in (fit.get("residents") or [])}
+    idle: List[tuple] = []
+    for m in ps.get("models") or []:
+        name = str(m.get("name") or m.get("model") or "")
+        if not name or _norm_model(name) == want_default or _looks_like_embedding_model(name):
+            continue
+        if vram_admission.is_pinned(target["root"], name) and not vram_admission.is_default_model(target["root"], name):
+            continue
+        age = vram_admission.last_active_seconds(target["root"], name)
+        if age is not None and age < cutoff:
+            continue
+        idle.append((by_name.get(name, 0), name))
+    idle.sort(reverse=True)
+    picked: List[str] = []
+    freed = 0
+    for size, name in idle:
+        if shortfall and freed >= shortfall:
+            break
+        picked.append(name)
+        freed += size
+    if shortfall and freed < shortfall:
+        return []
+    return picked
+
+
 async def _api_ps(root: str) -> Optional[Dict[str, Any]]:
     import httpx
     try:
@@ -368,6 +407,26 @@ async def check_once() -> Dict[str, Any]:
             logger.debug("model warmup: fit check failed: %s", exc)
             fit = {}
         if fit.get("fits") is False:
+            # The model in the way is not the owner's active pick any more
+            # (it went idle past `yield_minutes`, or was never used) and is
+            # not pinned: the default takes its room back — the other half
+            # of "steps aside … and comes back after".
+            idle_names = _idle_unpinned_residents(ps, target, cfg["yield_minutes"], fit)
+            if idle_names:
+                logger.info("model warmup: reclaiming room for the default model — unloading idle %s", ", ".join(idle_names))
+                try:
+                    left = await vram_admission.unload_and_wait(target["root"], idle_names)
+                except Exception as exc:  # noqa: BLE001
+                    logger.debug("model warmup: reclaim failed: %s", exc)
+                    left = idle_names
+                if not left:
+                    _keeper["waiting_for_room"] = False
+                    _fit_wait_logged = False
+                    await warm_once()
+                    _keeper["reloads"] += 1
+                    _keeper["resident"] = True
+                    _keeper["expires_at"] = ""
+                    return dict(_keeper)
             _keeper["waiting_for_room"] = True
             if not _fit_wait_logged:
                 logger.info("model warmup: default model would not fit next to what is resident — waiting")
