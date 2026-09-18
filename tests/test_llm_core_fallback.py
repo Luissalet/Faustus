@@ -1039,10 +1039,13 @@ def test_native_stream_adapters_report_actual_model_and_usage(
 
 def test_degenerate_stream_error_is_not_availability_evidence():
     guard = llm_core._DegenerateStreamGuard("looping-model")
-    chunk = guard.check("repeat " * 100)
+    with pytest.raises(llm_core.DegenerateOutput) as excinfo:
+        guard.check("repeat " * 100)
 
-    assert chunk is not None
-    assert json.loads(chunk.split("data: ", 1)[1])["fallback_eligible"] is False
+    chunk = llm_core._degenerate_output_error_chunk(excinfo.value)
+    payload = json.loads(chunk.split("data: ", 1)[1])
+    assert payload["fallback_eligible"] is False
+    assert payload["error_class"] == llm_core.DEGENERATE_OUTPUT_ERROR_CLASS
 
 
 @pytest.mark.parametrize(

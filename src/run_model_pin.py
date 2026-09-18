@@ -187,12 +187,36 @@ def _looks_like_ollama(endpoint: str) -> bool:
         return "11434" in str(endpoint or "")
 
 
+def _is_default_model(endpoint: str, model: str) -> bool:
+    """The owner's rule: whatever Settings → Default AI names must never be
+    handed a keep_alive shorter than forever by THIS code path — an agent run
+    ending is routine, not a reason to let the residency keeper's job lapse
+    even for the few seconds until its next cycle."""
+    try:
+        from src import model_warmup
+        target = model_warmup.resolve_default()
+    except Exception:  # noqa: BLE001
+        return False
+    if not target:
+        return False
+    return (_root(endpoint) == _root(target["url"])
+            and _norm_model(model) == _norm_model(target["model"]))
+
+
 def restore_keep_alive(endpoint: str, model: str, keep_alive: Any) -> bool:
     """Best-effort ping so Ollama drops back to the saved keep_alive. Never
     raises; never talks to a non-Ollama endpoint (OpenRouter has no
-    /api/generate and no weight to keep)."""
+    /api/generate and no weight to keep); never sends the default model a
+    keep_alive shorter than forever (skips a shorter one entirely — no ping
+    at all needed since it is already pinned by the residency keeper)."""
     if not endpoint or not model or not _looks_like_ollama(endpoint):
         return False
+    if _is_default_model(endpoint, model):
+        ka_text = str(keep_alive).strip()
+        if ka_text not in ("-1", "-1.0"):
+            logger.debug("restore_keep_alive: %s is the default model — keeping it pinned at -1 instead of %r",
+                         model, keep_alive)
+            keep_alive = -1
     url = _root(endpoint) + "/api/generate"
     try:
         import httpx

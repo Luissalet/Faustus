@@ -159,10 +159,19 @@ def build_ledger(messages: Optional[List[Dict[str, Any]]],
 
     by_key: Dict[str, int] = {}
     counts: Dict[str, int] = {}
+    # Which labelled sources make up the retrieved context, by tokens — the
+    # only way to see WHAT a "retrieved 14657" is made of without dumping
+    # the prompt (seen live: that figure on every turn, including "hola").
+    by_source: Dict[str, int] = {}
     for i, msg in enumerate(messages):
         key = classify(msg, is_last_user=(i == last_user))
-        by_key[key] = by_key.get(key, 0) + estimate_tokens([msg])
+        tokens = estimate_tokens([msg])
+        by_key[key] = by_key.get(key, 0) + tokens
         counts[key] = counts.get(key, 0) + 1
+        meta = msg.get("metadata")
+        if isinstance(meta, dict) and meta.get("trusted") is False:
+            label = str(meta.get("source") or "untrusted (unlabelled)")[:60]
+            by_source[label] = by_source.get(label, 0) + tokens
 
     tool_count = len(list(tool_schemas)) if tool_schemas else 0
     tool_tokens = _tool_tokens(tool_schemas)
@@ -186,6 +195,10 @@ def build_ledger(messages: Optional[List[Dict[str, Any]]],
         "model": model or "",
         "tool_count": tool_count,
         "sections": sections,
+        "sources": sorted(
+            ({"source": k, "tokens": v} for k, v in by_source.items()),
+            key=lambda x: x["tokens"], reverse=True,
+        )[:12],
         "advice": _advice(by_key, total, int(context_length or 0), tool_count),
         # CTX-03: which EvidenceRefs (exact read windows, compaction sources —
         # see evidence_for_read / context_compactor.compact_with_integrity)
@@ -202,7 +215,11 @@ def summary_line(ledger: Dict[str, Any], top: int = 3) -> str:
     if ledger.get("context_length"):
         head += f"/{ledger['context_length']} {ledger.get('context_pct')}%"
     bits = [f"{s['key']} {s['tokens']}" for s in (ledger.get("sections") or [])[:top]]
-    return " · ".join([head] + bits)
+    srcs = [f"{s['source']} {s['tokens']}" for s in (ledger.get("sources") or [])[:5]]
+    line = " · ".join([head] + bits)
+    if srcs:
+        line += " · sources: " + "; ".join(srcs)
+    return line
 
 
 def should_emit(previous: Optional[Dict[str, Any]],

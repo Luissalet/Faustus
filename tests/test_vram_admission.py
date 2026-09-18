@@ -226,6 +226,35 @@ def test_auto_mode_evicts_the_suggestion_itself(blocked):
     assert not va._PENDING
 
 
+def test_auto_mode_never_evicts_a_pinned_model_even_as_last_resort(blocked):
+    """X-B: the default model (or anything pinned from Settings → Local
+    models) must only ever be unloaded by a person explicitly naming it —
+    "auto" mode has nobody watching, so it must leave it alone even when it
+    is the only resident and the only thing that would free the shortfall."""
+    va.pin_model(ROOT, Q8["name"])
+    try:
+        assert asyncio.run(va.admit(EP, Q4["name"], mode="auto")) == "proceed"
+        assert blocked["evicted"] == []  # nothing unloaded — loaded anyway, spilling
+    finally:
+        va.unpin_model(ROOT, Q8["name"])
+
+
+def test_ask_mode_still_lets_a_person_explicitly_unload_a_pinned_model(blocked):
+    """The protection is against SILENT eviction, not against the person who
+    owns the machine choosing to unload the pinned model themselves."""
+    va.pin_model(ROOT, Q8["name"])
+    try:
+        async def run():
+            gate = asyncio.create_task(va.admit(EP, Q4["name"], owner="luis", mode="ask", timeout=5))
+            await _answer_later("unload", [Q8["name"]])
+            return await gate
+
+        assert asyncio.run(run()) == "proceed"
+        assert blocked["evicted"] == [Q8["name"]]
+    finally:
+        va.unpin_model(ROOT, Q8["name"])
+
+
 def test_off_mode_does_not_even_look(blocked, monkeypatch):
     def _boom(*a, **k):
         raise AssertionError("assess() must not run when the gate is off")

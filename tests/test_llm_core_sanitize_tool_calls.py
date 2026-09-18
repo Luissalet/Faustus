@@ -120,16 +120,19 @@ def test_sanitize_merges_search_results_and_user_query():
 
     out = _sanitize_llm_messages(messages)
 
-    # Assert that role alternation is preserved without merging guard text into
-    # the current visible user request.
-    assert len(out) == 4
+    # No synthetic assistant message: a local model on Ollama was seen
+    # parroting it back verbatim as its whole answer. Instead the untrusted
+    # block and the real question are folded into ONE user message (which
+    # also satisfies role alternation for every provider, Anthropic included).
+    assert len(out) == 2
     assert out[0] == {"role": "system", "content": "You are a helpful assistant."}
     assert out[1]["role"] == "user"
     assert out[1]["content"] == (
-        "UNTRUSTED SOURCE DATA\nSource: web search results\n<<<UNTRUSTED_SOURCE_DATA>>>\nHere are some web search results about python.\n<<<END_UNTRUSTED_SOURCE_DATA>>>"
+        "UNTRUSTED SOURCE DATA\nSource: web search results\n<<<UNTRUSTED_SOURCE_DATA>>>\n"
+        "Here are some web search results about python.\n<<<END_UNTRUSTED_SOURCE_DATA>>>\n\n"
+        "--- Your message ---\n\n"
+        "What is the latest version of python?"
     )
-    assert out[2] == {"role": "assistant", "content": "<<faustus_ctx_ack>>"}
-    assert out[3] == {"role": "user", "content": "What is the latest version of python?"}
 
 
 def test_sanitize_labels_current_request_after_untrusted_context():
@@ -150,11 +153,27 @@ def test_sanitize_labels_current_request_after_untrusted_context():
 
     out = _sanitize_llm_messages(messages)
 
-    assert [m["role"] for m in out] == ["system", "user", "assistant", "user"]
-    assert out[2] == {"role": "assistant", "content": "<<faustus_ctx_ack>>"}
-    assert out[3]["content"] == "Why do I do this?"
-    assert "UNTRUSTED SOURCE DATA" not in out[3]["content"]
-    assert "prompt-injection" not in out[3]["content"]
+    assert [m["role"] for m in out] == ["system", "user"]
+    assert out[1]["content"].endswith("--- Your message ---\n\nWhy do I do this?")
+    assert "prompt-injection" not in out[1]["content"].split("--- Your message ---")[1]
+
+
+def test_sanitize_inserts_boundary_only_for_strict_alternation_provider_on_unmergeable_content():
+    # A multimodal (image) turn right after untrusted context can't be folded
+    # into one user message — only then, and only for a provider whose API
+    # truly rejects consecutive same-role messages (Anthropic), does the old
+    # synthetic-assistant separator still apply.
+    messages = [
+        {"role": "user", "content": "UNTRUSTED SOURCE DATA\nSource: doc\n<<<UNTRUSTED_SOURCE_DATA>>>\nbody\n<<<END_UNTRUSTED_SOURCE_DATA>>>"},
+        {"role": "user", "content": [{"type": "image_url", "image_url": {"url": "data:image/png;base64,xx"}}]},
+    ]
+
+    out_ollama = _sanitize_llm_messages(messages, provider="ollama")
+    assert [m["role"] for m in out_ollama] == ["user", "user"]
+
+    out_anthropic = _sanitize_llm_messages(messages, provider="anthropic")
+    assert [m["role"] for m in out_anthropic] == ["user", "assistant", "user"]
+    assert out_anthropic[1] == {"role": "assistant", "content": "<<faustus_ctx_ack>>"}
 
 
 def test_sanitize_rewrites_legacy_reference_context_echo_in_history():

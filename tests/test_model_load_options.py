@@ -257,7 +257,10 @@ def test_keep_alive_is_validated_like_the_other_overrides():
     assert llm_core._clean_gen_overrides({"keep_alive": True}) == {}
     payload = {"model": "m", "messages": []}
     llm_core._apply_gen_overrides_ollama(payload, {"keep_alive": "-1"})
-    assert payload["keep_alive"] == "-1" and "options" not in payload
+    # `options` is never empty any more: repeat_penalty/min_p default in
+    # whenever neither a saved nor an explicit override set them (B2).
+    assert payload["keep_alive"] == "-1"
+    assert payload["options"] == {"repeat_penalty": 1.05, "min_p": 0.05}
 
 
 def test_the_chat_route_still_does_not_accept_keep_alive_from_clients():
@@ -301,4 +304,7 @@ def test_main_gpu_is_an_ollama_native_only_override():
     assert llm_core._clean_gen_overrides({"main_gpu": "1"}) == {"main_gpu": 1}
     payload = {}
     llm_core._apply_gen_overrides_ollama(payload, {"main_gpu": 0, "num_ctx": 4096})
-    assert payload["options"] == {"num_ctx": 4096, "main_gpu": 0}
+    assert payload["options"] == {
+        "num_ctx": 4096, "main_gpu": 0,
+        "repeat_penalty": 1.05, "min_p": 0.05,
+    }

@@ -10,6 +10,7 @@ import asyncio
 import json
 
 import src.agent_loop as al
+from src.prompt_security import UNTRUSTED_CONTEXT_HEADER
 from src.tool_capabilities import ToolGateDecision
 
 
@@ -159,6 +160,57 @@ def test_continue_after_reference_context_echo_is_forced_to_act(monkeypatch, tmp
     assert nudge is not None, events
     assert nudge.get("reason") == "reference_context_echo"
     assert round_no >= 2
+
+
+def test_echo_twice_in_a_row_triggers_clean_retry_dropping_untrusted_context(monkeypatch, tmp_path):
+    """A plain re-nudge only gets one bounded try. When the model echoes the
+    boundary marker AGAIN right after being nudged, the fix is not a third
+    nudge — it's dropping the untrusted-context blocks and asking with a
+    clean prompt, since most answers never needed that context at all.
+    """
+    _patch_common(monkeypatch)
+    monkeypatch.setattr(al, "blocked_tools_for_owner", lambda owner: set(), raising=False)
+    monkeypatch.setattr(
+        al, "_agent_route_tool_mode", lambda *args, **kwargs: (True, False, True),
+        raising=False,
+    )
+    round_no = 0
+
+    async def _fake_stream(_candidates, messages, **kwargs):
+        nonlocal round_no
+        round_no += 1
+        if round_no <= 2:
+            yield f'data: {json.dumps({"delta": "<<faustus_ctx_ack>>"})}\n\n'
+            yield f'data: {json.dumps({"type": "finish", "finish_reason": "stop"})}\n\n'
+        else:
+            yield f'data: {json.dumps({"delta": "Here is the real answer, no context needed."})}\n\n'
+            yield f'data: {json.dumps({"type": "finish", "finish_reason": "stop"})}\n\n'
+        yield "data: [DONE]\n\n"
+
+    monkeypatch.setattr(al, "stream_llm_with_fallback", _fake_stream, raising=False)
+    events = _types(_collect(al.stream_agent_loop(
+        "http://127.0.0.1:11434/v1", "qwen3.8:27b-q4_K_M",
+        [
+            {"role": "user", "content": "Implement the zip plan for the project"},
+            {
+                "role": "user",
+                "content": UNTRUSTED_CONTEXT_HEADER + "\nblah\n",
+                "metadata": {"trusted": False, "source": "test"},
+            },
+            {"role": "user", "content": "Continua"},
+        ],
+        workspace=str(tmp_path),
+        max_rounds=5,
+        relevant_tools={"read_file", "apply_patch", "python"},
+    )))
+
+    clean_retry = next(
+        (e for e in events if e.get("type") == "harness_check"
+         and e.get("reason") == "reference_context_echo_clean_retry"),
+        None,
+    )
+    assert clean_retry is not None, events
+    assert round_no == 3
 
 
 def test_wrong_reply_language_is_nudged_on_workspace_turn(monkeypatch, tmp_path):

@@ -558,14 +558,77 @@ def _stream_delta_event(text: str, *, thinking: bool = False) -> str:
 
 _DEGENERATE_WORD_RE = re.compile(r"[A-Za-z0-9_\u0370-\u03ff\u0400-\u04ff]+")
 
+# Minimum span (characters) a raw repeated unit must cover before it counts
+# as a degenerate collapse rather than legitimate repetitive-looking content
+# (a long hash, a run of coincidentally-similar digits, an ASCII rule of
+# dashes). Chosen so it never fires on ordinary prose but reliably beats
+# Ollama's own abort, which on a local 27B model was observed only after a
+# much longer runaway ("0000000000..." until Ollama itself returned
+# "prediction aborted, token repeat limit reached", HTTP 400 mid-stream).
+_DEGENERATE_RAW_REPEAT_MIN_CHARS = 120
+# How much trailing raw text the guard keeps to look for a repeated unit.
+# Must be >= min-chars + the longest unit checked, with slack for chunking.
+_DEGENERATE_RAW_TAIL_WINDOW = 240
+DEGENERATE_OUTPUT_ERROR_CLASS = "degenerate_output"
+
+
+class DegenerateOutput(Exception):
+    """Raised by `_DegenerateStreamGuard.check` when the model's streamed
+    output has collapsed into a repeated character/token/phrase loop.
+
+    Raised client-side, mid-stream, the moment the collapse is recognized \u2014
+    deliberately not waiting for the provider's own error. Ollama's native
+    "prediction aborted, token repeat limit reached" (HTTP 400) only arrives
+    after a much longer run of degenerate output on a local model, and by
+    then a lot of "0000000000\u2026" has already reached the UI and the context
+    window. Carries `reason` (a short human-readable description, safe to
+    show) and `model` for logging/telemetry.
+    """
+
+    def __init__(self, reason: str, model: str = ""):
+        self.reason = reason
+        self.model = model or "model"
+        super().__init__(reason)
+
+
+def is_degenerate_output_error(error_data) -> bool:
+    """True when a stream error is a token-repeat collapse \u2014 either this
+    runtime's own client-side guard (`DegenerateOutput`/`error_class`) or
+    Ollama's own native abort message ("prediction aborted, token repeat
+    limit reached", HTTP 400 mid-stream)."""
+    if not isinstance(error_data, dict):
+        return False
+    if str(error_data.get("error_class") or "") == DEGENERATE_OUTPUT_ERROR_CLASS:
+        return True
+    return "token repeat limit" in str(error_data.get("error") or "").lower()
+
+
+def _degenerate_output_error_chunk(exc: "DegenerateOutput") -> str:
+    """Typed `event: error` SSE chunk for a `DegenerateOutput` abort, tagged
+    with `error_class` so `is_degenerate_output_error` (and the agent
+    harness's targeted retry) can tell it apart from an ordinary transport
+    failure without string-matching the human-readable message."""
+    logger.warning("[degenerate-stream] aborting model=%s reason=%s", exc.model, exc.reason)
+    message = (
+        f"Stopped generation: {exc.model} started repeating tokens "
+        f"({exc.reason}). Try a different model or lower temperature."
+    )
+    return f'event: error\ndata: {json.dumps({"status": 502, "text": message, "error": message, "error_class": DEGENERATE_OUTPUT_ERROR_CLASS, "fallback_eligible": False})}\n\n'
+
 
 class _DegenerateStreamGuard:
     """Detect local-model token collapse before it floods the UI.
 
     Some self-hosted models fail by repeating one token forever ("Var Var Var",
-    "Summer Summer ..."). This is not a useful response and can burn context,
-    browser memory, and GPU time. Keep the guard conservative: only fire on long
-    same-token runs or a very dominant repeated token in the recent window.
+    "Summer Summer ..."), or \u2014 with the default Ollama sampler (repeat_penalty
+    1.0, min_p 0) on a fresh session \u2014 by decoding into a single repeated
+    character or very short unit forever ("0000000000\u2026"). This is not a
+    useful response and can burn context, browser memory, and GPU time. Keep
+    the guard conservative: only fire on long same-token runs, a very
+    dominant repeated token in the recent window, or >= 120 raw characters of
+    a repeated <=4-char unit \u2014 never on legitimately repetitive-looking
+    content like a long hash or a decimal expansion, which do not consist of
+    one small unit repeated over that whole span.
     """
 
     def __init__(self, model: str):
@@ -574,14 +637,37 @@ class _DegenerateStreamGuard:
         self.same_run = 0
         self.recent_tokens: List[str] = []
         self.total_chars = 0
+        self.tail = ""
 
-    def check(self, text: str) -> Optional[str]:
+    def _raw_repeat_reason(self) -> Optional[str]:
+        t = self.tail
+        if len(t) < _DEGENERATE_RAW_REPEAT_MIN_CHARS:
+            return None
+        for unit_len in range(1, 5):
+            unit = t[-unit_len:]
+            if not unit.strip():
+                continue
+            count = 0
+            i = len(t)
+            while i - unit_len >= 0 and t[i - unit_len:i] == unit:
+                count += 1
+                i -= unit_len
+            span = count * unit_len
+            if span >= _DEGENERATE_RAW_REPEAT_MIN_CHARS:
+                return f"repeated unit {unit!r} {count} times ({span} chars)"
+        return None
+
+    def check(self, text: str) -> None:
+        """Feed the next streamed chunk of text. Raises `DegenerateOutput`
+        the moment a collapse is recognized; returns normally otherwise."""
         if not text:
-            return None
+            return
         self.total_chars += len(text)
+        self.tail = (self.tail + text)[-_DEGENERATE_RAW_TAIL_WINDOW:]
+
+        reason = self._raw_repeat_reason()
+
         tokens = [t.lower() for t in _DEGENERATE_WORD_RE.findall(text) if len(t) >= 2]
-        if not tokens:
-            return None
         for token in tokens:
             if token == self.last_token:
                 self.same_run += 1
@@ -592,10 +678,9 @@ class _DegenerateStreamGuard:
         if len(self.recent_tokens) > 96:
             self.recent_tokens = self.recent_tokens[-96:]
 
-        reason = None
-        if self.same_run >= 28 and self.total_chars >= 100:
+        if not reason and self.same_run >= 28 and self.total_chars >= 100:
             reason = f"repeated '{self.last_token}' {self.same_run} times"
-        elif len(self.recent_tokens) >= 72:
+        elif not reason and len(self.recent_tokens) >= 72:
             top = max(set(self.recent_tokens), key=self.recent_tokens.count)
             count = self.recent_tokens.count(top)
             if count >= 60 and count / max(len(self.recent_tokens), 1) >= 0.78:
@@ -613,15 +698,8 @@ class _DegenerateStreamGuard:
                 if gram_count >= 10:
                     reason = f"repeated phrase '{' '.join(top_gram)}' {gram_count} times"
 
-        if not reason:
-            return None
-
-        logger.warning("[degenerate-stream] aborting model=%s reason=%s", self.model, reason)
-        message = (
-            f"Stopped generation: {self.model} started repeating tokens "
-            f"({reason}). Try a different model or lower temperature."
-        )
-        return f'event: error\ndata: {json.dumps({"status": 502, "text": message, "error": message, "fallback_eligible": False})}\n\n'
+        if reason:
+            raise DegenerateOutput(reason, self.model)
 
 
 def _model_activity_key(url: str, model: str) -> str:
@@ -2088,7 +2166,48 @@ def strip_reference_context_echo(text: str) -> str:
     return raw
 
 
-def _sanitize_llm_messages(messages: List[Dict]) -> List[Dict]:
+# Providers whose API rejects two consecutive same-role messages outright
+# (Anthropic's Messages API). Everywhere else — OpenAI-compatible endpoints,
+# Ollama's native API, local/self-hosted servers — consecutive user messages
+# are accepted, so there is no protocol reason to separate them with a
+# synthetic assistant message a small local model can (and does) parrot back
+# as its entire answer.
+_STRICT_ALTERNATION_PROVIDERS = {"anthropic"}
+
+
+def _merge_untrusted_and_user(last: Dict, item: Dict) -> Optional[Dict]:
+    """Fold an untrusted-context user message and the following real user
+    turn into a single user message.
+
+    This is the preferred fix for role alternation: it satisfies "no two
+    consecutive user messages" for every provider (Anthropic included)
+    without inventing an assistant turn that never happened, which is what a
+    local model on Ollama was parroting verbatim as its whole answer
+    (``<<faustus_ctx_ack>>`` as 100% of the completion, sometimes twice in a
+    row). The untrusted wrapper (header/guard markers) stays first, followed
+    by a clear separator and the user's own text, so the model still reads
+    the untrusted block as data rather than as something to answer to.
+
+    Returns None when the content shapes cannot be merged this way (e.g.
+    multimodal block lists on either side) so the caller can fall back.
+    """
+    lc = last.get("content")
+    ic = item.get("content")
+    if isinstance(lc, list) or isinstance(ic, list):
+        return None
+    last_str = str(lc) if lc is not None else ""
+    item_str = str(ic) if ic is not None else ""
+    if not last_str and not item_str:
+        return None
+    merged = dict(last)
+    if item_str:
+        merged["content"] = f"{last_str}\n\n--- Your message ---\n\n{item_str}"
+    else:
+        merged["content"] = last_str
+    return merged
+
+
+def _sanitize_llm_messages(messages: List[Dict], provider: Optional[str] = None) -> List[Dict]:
     """Strip Faustus-only metadata before sending messages to providers.
 
     Per the OpenAI chat format: user/system messages must have content; a tool
@@ -2209,7 +2328,16 @@ def _sanitize_llm_messages(messages: List[Dict]) -> List[Dict]:
         last = merged[-1]
         if last.get("role") == "user" and item.get("role") == "user":
             if _is_untrusted_context_content(last.get("content")):
-                merged.append({"role": "assistant", "content": _REFERENCE_CONTEXT_BOUNDARY})
+                merged_msg = _merge_untrusted_and_user(last, item)
+                if merged_msg is not None:
+                    merged[-1] = merged_msg
+                    continue
+                # Content shape couldn't be merged (e.g. multimodal blocks).
+                # Only strict-alternation providers (Anthropic) require a
+                # separator message here; everyone else can simply carry two
+                # consecutive user messages.
+                if provider in _STRICT_ALTERNATION_PROVIDERS:
+                    merged.append({"role": "assistant", "content": _REFERENCE_CONTEXT_BOUNDARY})
                 merged.append(item)
                 continue
             last_copy = dict(last)
@@ -2420,7 +2548,7 @@ def llm_call(url: str, model: str, messages: List[Dict], temperature: float = LL
     if isinstance(headers, dict):
         h.update(headers)
 
-    messages_copy = _sanitize_llm_messages(messages)
+    messages_copy = _sanitize_llm_messages(messages, provider=_detect_provider(url))
 
     # Consolidate multiple system messages into one at the start.
     sys_parts = []
@@ -2832,7 +2960,7 @@ async def llm_call_async(
                         model, False if _native_think_off else None)
             url = _routed_schema
     provider = _detect_provider(url)
-    messages_copy = _sanitize_llm_messages(messages)
+    messages_copy = _sanitize_llm_messages(messages, provider=provider)
 
     # Consolidate multiple system messages into one at the start.
     sys_parts = []
@@ -3279,7 +3407,7 @@ def _stream_target_url(url: str) -> str:
 # Sampling/runtime knobs a user may pin per chat session (model controls in
 # the chat UI / slash commands). Only these keys are honoured; anything else is
 # dropped so a client cannot smuggle arbitrary provider fields.
-GEN_OVERRIDE_KEYS = frozenset({"top_p", "top_k", "seed", "think", "num_ctx", "num_gpu",
+GEN_OVERRIDE_KEYS = frozenset({"top_p", "top_k", "min_p", "seed", "think", "num_ctx", "num_gpu",
                                "repeat_penalty", "presence_penalty", "frequency_penalty",
                                "reasoning_effort", "keep_alive", "main_gpu",
                                # per-model block of further Ollama `options`
@@ -3288,7 +3416,7 @@ GEN_OVERRIDE_KEYS = frozenset({"top_p", "top_k", "seed", "think", "num_ctx", "nu
 
 # Ollama `options` / top-level knobs with no OpenAI equivalent: a request that
 # carries one of these has to go to the native /api/chat.
-_OLLAMA_NATIVE_ONLY_KEYS = ("top_k", "repeat_penalty", "num_ctx", "num_gpu", "keep_alive", "main_gpu", "extra")
+_OLLAMA_NATIVE_ONLY_KEYS = ("top_k", "min_p", "repeat_penalty", "num_ctx", "num_gpu", "keep_alive", "main_gpu", "extra")
 _KEEP_ALIVE_RE = re.compile(r"^-?\d+(ms|s|m|h)?$")
 
 
@@ -3307,7 +3435,7 @@ def _clean_gen_overrides(overrides: Optional[Dict]) -> Dict:
                 cleaned = sanitize_extra(v) if isinstance(v, dict) else {}
                 if cleaned:
                     out[k] = cleaned
-            elif k in ("top_p", "repeat_penalty", "presence_penalty", "frequency_penalty"):
+            elif k in ("top_p", "min_p", "repeat_penalty", "presence_penalty", "frequency_penalty"):
                 out[k] = float(v)
             elif k in ("top_k", "seed", "num_ctx", "num_gpu", "main_gpu"):
                 out[k] = int(v)
@@ -3398,28 +3526,53 @@ def _apply_gen_overrides_openai(payload: Dict, overrides: Dict, url: str) -> Non
     if _is_ollama_openai_compat_url(url):
         if "think" in overrides:
             payload["think"] = overrides["think"]
-        for k in ("top_k", "repeat_penalty"):
+        for k in ("top_k", "repeat_penalty", "min_p"):
             if k in overrides:
                 payload[k] = overrides[k]
 
 
+def _local_sampler_default(setting_key: str, fallback: float) -> float:
+    """Read a `local_*_default` sampler setting, falling back safely."""
+    try:
+        from src.settings import get_setting
+        raw = get_setting(setting_key, fallback)
+    except Exception:
+        return fallback
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return fallback
+
+
 def _apply_gen_overrides_ollama(payload: Dict, overrides: Dict) -> None:
-    """Apply pinned sampling params to a native Ollama /api/chat payload."""
+    """Apply pinned sampling params to a native Ollama /api/chat payload.
+
+    Also floors `repeat_penalty`/`min_p` to non-degenerate defaults
+    (`local_repeat_penalty_default` / `local_min_p_default`, settings.py) when
+    neither a saved per-model option nor an explicit per-request override set
+    them. Ollama's own defaults (repeat_penalty 1.0, min_p 0) let a fresh
+    session decode into a single repeated token — "0000…" — until Ollama
+    itself aborted the stream with "prediction aborted, token repeat limit
+    reached" (HTTP 400 mid-stream, seen live with a local 27B model). An
+    explicit saved or per-request value always wins over this floor.
+    """
     options = payload.setdefault("options", {})
     # The per-model `extra` block first, so the named knobs below (a `/ctx`
     # in the chat, a saved num_gpu) still win over it.
     extra = overrides.get("extra")
     if isinstance(extra, dict):
         options.update(extra)
-    for k in ("top_p", "top_k", "seed", "num_ctx", "num_gpu", "main_gpu", "repeat_penalty", "presence_penalty", "frequency_penalty"):
+    for k in ("top_p", "top_k", "min_p", "seed", "num_ctx", "num_gpu", "main_gpu", "repeat_penalty", "presence_penalty", "frequency_penalty"):
         if k in overrides:
             options[k] = overrides[k]
     if "think" in overrides:
         payload["think"] = overrides["think"]
     if "keep_alive" in overrides:
         payload["keep_alive"] = overrides["keep_alive"]
-    if not options:
-        payload.pop("options", None)
+    if "repeat_penalty" not in options:
+        options["repeat_penalty"] = _local_sampler_default("local_repeat_penalty_default", 1.05)
+    if "min_p" not in options:
+        options["min_p"] = _local_sampler_default("local_min_p_default", 0.05)
 
 
 def _ollama_native_url_for_compat(url: str) -> str:
@@ -3752,7 +3905,7 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
         _budget = RetryBudget(LLMConfig.RETRY_TIME_BUDGET)
         _budget.start()
     provider = _detect_provider(url)
-    messages_copy = _sanitize_llm_messages(messages)
+    messages_copy = _sanitize_llm_messages(messages, provider=provider)
 
     # Consolidate multiple system messages into one at the start.
     # Some models (e.g. Qwen3.5) reject system messages that aren't first.
@@ -3933,9 +4086,10 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                     if evt == "response.output_text.delta":
                         delta = data.get("delta") or ""
                         if delta:
-                            _degenerate = degenerate_guard.check(delta)
-                            if _degenerate:
-                                yield _degenerate
+                            try:
+                                degenerate_guard.check(delta)
+                            except DegenerateOutput as _degenerate:
+                                yield _degenerate_output_error_chunk(_degenerate)
                                 return
                             _delta_emitted = True
                             yield f'data: {json.dumps({"delta": delta})}\n\n'
@@ -4172,7 +4326,15 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                         err = j.get("error")
                         status = _provider_stream_error_status(err, default=400)
                         text = err.get("message") if isinstance(err, dict) else str(err)
-                        yield f'event: error\ndata: {json.dumps({"error": text or "Ollama request failed", "status": status})}\n\n'
+                        error_payload = {"error": text or "Ollama request failed", "status": status}
+                        # Ollama's own guard for the same failure mode this runtime's
+                        # client-side DegenerateOutput guard targets: tag it the same
+                        # way so is_degenerate_output_error()/the agent harness treat
+                        # both alike (client-side abort is the common case; this is
+                        # the fallback for whatever slips past it).
+                        if "token repeat limit" in str(text or "").lower():
+                            error_payload["error_class"] = DEGENERATE_OUTPUT_ERROR_CLASS
+                        yield f'event: error\ndata: {json.dumps(error_payload)}\n\n'
                         return
                     reported_model = _reported_model_name(j.get("model"))
                     if reported_model:
@@ -4185,10 +4347,20 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                     message = j.get("message") or {}
                     thinking = message.get("thinking") or ""
                     if thinking:
+                        try:
+                            degenerate_guard.check(thinking)
+                        except DegenerateOutput as _degenerate:
+                            yield _degenerate_output_error_chunk(_degenerate)
+                            return
                         _delta_emitted = True
                         yield _stream_delta_event(thinking, thinking=True)
                     content = message.get("content") or ""
                     if content:
+                        try:
+                            degenerate_guard.check(content)
+                        except DegenerateOutput as _degenerate:
+                            yield _degenerate_output_error_chunk(_degenerate)
+                            return
                         for part, is_thinking in _harmony_router.feed(content):
                             _delta_emitted = True
                             yield _stream_delta_event(part, thinking=is_thinking)
@@ -4932,9 +5104,10 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                                                 reasoning = (reasoning + thinking_part) if reasoning else thinking_part
                                             content = text_part
                                         if reasoning:
-                                            _degenerate = degenerate_guard.check(reasoning)
-                                            if _degenerate:
-                                                yield _degenerate
+                                            try:
+                                                degenerate_guard.check(reasoning)
+                                            except DegenerateOutput as _degenerate:
+                                                yield _degenerate_output_error_chunk(_degenerate)
                                                 return
                                             _delta_emitted = True
                                             yield _stream_delta_event(reasoning, thinking=True)
@@ -4945,9 +5118,10 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                                             content = _strip_visible_chat_template_artifacts(content)
                                             if not content:
                                                 continue
-                                            _degenerate = degenerate_guard.check(content)
-                                            if _degenerate:
-                                                yield _degenerate
+                                            try:
+                                                degenerate_guard.check(content)
+                                            except DegenerateOutput as _degenerate:
+                                                yield _degenerate_output_error_chunk(_degenerate)
                                                 return
                                             content = re.sub(r"<mm:think(\s+[^>]*)?>", r"<think\1>", content, flags=re.IGNORECASE)
                                             content = re.sub(r"</mm:think>", "</think>", content, flags=re.IGNORECASE)

@@ -2676,6 +2676,7 @@ export const es: Record<string, string> = {
   "Keeps the first N messages and deletes the rest.": "Conserva los N primeros mensajes y borra el resto.",
   "Keeps this exact message out of future compaction passes.": "Mantiene este mensaje exacto fuera de futuras compactaciones.",
   "Keeps {rounds}, {sources} and {parts}": "Conserva {rounds}, {sources} y {parts}",
+  "Kept loaded by Faustus (default model)": "Faustus lo mantiene cargado (modelo por defecto)",
   "Kept the first {n} messages. /versions recovers the deleted ones.": "Conservados los {n} primeros mensajes. /versions recupera los borrados.",
   "Key combo": "Combinación de teclas",
   "Key file": "Fichero de la clave",

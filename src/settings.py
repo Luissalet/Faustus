@@ -166,12 +166,15 @@ DEFAULT_SETTINGS = {
     "agent_tool_wall_time": True,
     "agent_run_keep_alive_restore": True,
     # Load the default chat model at startup and keep it resident
-    # (src/model_warmup.py): keep_alive "-1" = never unload; re-pinned every
-    # `warm_default_model_every_s` so a shorter keep_alive from a later call
-    # does not let it fall out of memory.
+    # (src/model_warmup.py): keep_alive "-1" = never unload; re-checked every
+    # `warm_default_model_every_s` (a residency keeper, not just a startup
+    # warmup any more) so a shorter keep_alive from another client, or the
+    # model vanishing from `ollama ps` entirely, gets caught fast — the phone
+    # (routes/mobile_routes.py) can ask a question at any moment and must not
+    # pay a cold load. 20s default; the old 120s value is still accepted.
     "warm_default_model": True,
     "warm_default_model_keep_alive": "-1",
-    "warm_default_model_every_s": 120,
+    "warm_default_model_every_s": 20,
     "agent_ui_verify": True,
     "agent_inline_attachment_max_chars": 4000,
     "agent_project_todos": True,
@@ -442,6 +445,15 @@ DEFAULT_SETTINGS = {
     # {"num_ctx", "num_gpu", "keep_alive"}}. Applied under explicit
     # per-request overrides on every Ollama request for that model.
     "model_load_options": {},
+    # Sampler floor for a native Ollama chat request when the saved per-model
+    # options (above) carry neither knob: Ollama's own default (repeat_penalty
+    # 1.0, no min_p) let a fresh session degenerate into a repeated token
+    # ("0000…") until Ollama itself aborted with "prediction aborted, token
+    # repeat limit reached" (HTTP 400 mid-stream) — seen live on a local 27B
+    # model. Applied in src.llm_core._with_model_defaults; an explicit saved
+    # or per-request value always wins over these.
+    "local_repeat_penalty_default": 1.05,
+    "local_min_p_default": 0.05,
     # Standing instructions from the repo (AGENTS.md / CLAUDE.md / …) in the
     # system prompt, and the repository map (files + symbols) before the
     # user's message (src/project_instructions.py, src/repo_map.py).

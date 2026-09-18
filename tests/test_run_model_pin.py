@@ -129,6 +129,49 @@ def test_with_model_defaults_pin_beats_saved_keep_alive(monkeypatch):
     pin.unpin_for_run("r4", tok)
 
 
+def test_restore_never_shortens_the_default_model_below_forever(monkeypatch):
+    """Owner's rule: whatever an agent run pinned, restoring afterwards must
+    never leave the DEFAULT model with a keep_alive shorter than -1 — the
+    residency keeper re-pins it too, but this path must not even try."""
+    pin.reset_for_tests()
+    monkeypatch.undo()
+    posted = []
+
+    class _Resp:
+        def json(self):
+            return {"models": [{"name": "qwen3.8:27b"}]}
+
+    class _Http:
+        @staticmethod
+        def post(url, **kw):
+            posted.append((url, kw.get("json")))
+
+        @staticmethod
+        def get(url, **kw):
+            return _Resp()
+
+    import sys
+    from src import model_warmup
+
+    monkeypatch.setitem(sys.modules, "httpx", _Http)
+    monkeypatch.setattr(model_warmup, "resolve_default", lambda: {
+        "url": "http://127.0.0.1:11434/v1", "model": "qwen3.8:27b", "root": "http://127.0.0.1:11434",
+    })
+    # Something (a saved per-model keep_alive, another app's default) tries
+    # to restore the default model to a short-lived "5m" — it must land as -1.
+    assert pin.restore_keep_alive("http://127.0.0.1:11434/v1", "qwen3.8:27b", "5m") is True
+    assert len(posted) == 1
+    url, body = posted[0]
+    assert url == "http://127.0.0.1:11434/api/generate"
+    assert body["keep_alive"] == -1
+
+    # A different (non-default) model is restored to whatever was asked.
+    posted.clear()
+    monkeypatch.setattr(_Resp, "json", lambda self: {"models": [{"name": "coder:7b"}]})
+    assert pin.restore_keep_alive("http://127.0.0.1:11434/v1", "coder:7b", "5m") is True
+    assert posted[0][1]["keep_alive"] == "5m"
+
+
 def test_restore_skips_a_model_that_is_no_longer_resident(monkeypatch):
     """An empty-prompt generate LOADS a model: never restore keep_alive on
     one Ollama already unloaded (that would pull 18 GB back for nothing)."""

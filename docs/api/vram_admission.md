@@ -146,6 +146,45 @@ aparece como `used` en la siguiente lectura real que `assess()`/
 `admit_bytes()` hagan — no se devuelve capacidad fantasma solo por haber
 reiniciado.
 
+## El modelo por defecto está protegido, no solo priorizado (X-B, §109)
+
+`pin_model(root, model)` (§HW-03) ya hacía que un modelo con pin fuera el
+último candidato de `assess()`'s `suggestion`, ofrecido solo cuando nada
+sin pin bastaba para liberar el hueco (`suggestion_protected_used`). Desde
+el lote X-B (FAUSTUS.md §109) `src/model_warmup.py` fija ese pin sobre el
+modelo por defecto (Ajustes → Default AI) en cada ciclo de su guardián de
+residencia, y dos caminos que antes podían tocar ese "último recurso" sin
+que nadie mirara quedan cerrados del todo en vez de solo desincentivados:
+
+- **`admit()` en modo `"auto"`** filtra `suggestion_protected_used` de la
+  lista que de verdad descarga — un modelo con pin nunca sale expulsado
+  por un camino que actúa sin que una persona lo vea, ni siquiera como
+  último recurso.
+- **`admit_bytes`** (`_ollama_suggestion_candidates`, lanzamientos de
+  Cookbook `serve`) excluye los modelos con pin de sus candidatos por
+  completo — ni se sugieren, ni un ticket de admisión deja elegirlos.
+
+El modo `"ask"` de `admit()` sigue sin cambios: una persona puede elegir
+explícitamente descargar un modelo con pin desde la tarjeta de admisión
+(`resolve(action="unload", names=[...])`), igual que el botón «Unload» de
+Ajustes → Local models (que no pasa por `vram_admission` en absoluto). La
+protección es contra la expulsión SILENCIOSA, nunca contra el dueño de la
+máquina.
+
+`src/run_model_pin.py::restore_keep_alive` (el ping que devuelve el
+`keep_alive` guardado al terminar una ejecución de agente) tiene la misma
+regla por su lado: si el modelo que va a restaurar es el modelo por
+defecto, el valor nunca baja de `-1`, sea cual sea el `keep_alive`
+guardado para él.
+
+**Recomendado, cinturón y tirantes, fuera de este repositorio.** Arrancar
+el servicio de Ollama con `OLLAMA_KEEP_ALIVE=-1` en su entorno hace que
+cualquier carga sin `keep_alive` explícito — de cualquier cliente, no solo
+Faustus — nazca ya sin caducidad. No sustituye al guardián de
+`src/model_warmup.py` (otro cliente puede seguir mandando su propio
+`keep_alive` corto de forma explícita, que sigue ganando esa petición
+concreta), pero reduce cuántas veces hace falta que el guardián actúe.
+
 ## Lo que esta puerta jamás hace
 
 - Matar o descargar un proceso que no sea un modelo Ollama (`keep_alive:

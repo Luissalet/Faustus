@@ -1240,6 +1240,15 @@ def save_assistant_response(
     else:
         _content = full_response
 
+    # A round whose entire text is the synthetic (or legacy) untrusted-context
+    # boundary marker is never a real answer — a local model on Ollama has
+    # been seen parroting it back verbatim as the whole completion. Strip it
+    # here too (agent_loop already retries live, but any path that reaches
+    # save_assistant_response directly must not persist the marker either),
+    # so the person never sees `<<faustus_ctx_ack>>` in their history.
+    from src.llm_core import strip_reference_context_echo
+    _content = strip_reference_context_echo(_content)
+
     stamp_behavior_mode_metadata(md, behavior_mode, _content, getattr(sess, "owner", None))
 
     # CONTRATO_CONECTORES F2.4: advisory only, never a fallback — if this

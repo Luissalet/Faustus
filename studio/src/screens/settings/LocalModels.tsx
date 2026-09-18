@@ -542,6 +542,9 @@ export function LocalModelsSection({ admin, say }: { admin: boolean; say: (t: st
               cards={cards}
               admin={admin}
               working={working}
+              defaultModel={defaultModel}
+              defaultEndpointId={defaultEndpointId}
+              endpointId={data.endpoint_id}
               onUnload={(m) => void act(
                 () => unloadModel(data.endpoint_id, m.name, false),
                 t('Unloaded {name}', { name: m.name }),
@@ -765,7 +768,7 @@ type LoadedModelHw02 = LoadedModel & {
   kv?: { state: 'measured' | 'unknown'; bytes_per_token?: number; context_length?: number; total_bytes?: number };
 };
 
-function LoadedList({ loaded, cards, admin, working = '', onUnload }: { loaded: LoadedModelHw02[]; cards: GpuCard[]; admin: boolean; working?: string; onUnload: (m: LoadedModel) => void }) {
+function LoadedList({ loaded, cards, admin, working = '', defaultModel = '', defaultEndpointId = '', endpointId = '', onUnload }: { loaded: LoadedModelHw02[]; cards: GpuCard[]; admin: boolean; working?: string; defaultModel?: string; defaultEndpointId?: string; endpointId?: string; onUnload: (m: LoadedModel) => void }) {
   if (!loaded.length) return <p className="fs-set__help">{t('Nothing is loaded right now.')}</p>;
   // Two large models resident at once is how the machine went down on
   // 08-09-2026 (two 27B against the commit limit). Say it here, where the
@@ -784,6 +787,13 @@ function LoadedList({ loaded, cards, admin, working = '', onUnload }: { loaded: 
         const gpu = m.gpu_pct ?? 0;
         const spill = gpu < 100 && (m.size_cpu ?? 0) > 0;
         const busy = working === m.name;
+        // src/model_warmup.py's residency keeper re-pins this exact model to
+        // keep_alive -1 every few seconds — "kept loaded" alone reads like an
+        // accident of a long keep_alive; naming Faustus says it is on purpose
+        // and will come back even if something else shortens it.
+        const isKeeperDefault = !!defaultModel && defaultModel === m.name
+          && (!defaultEndpointId || defaultEndpointId === endpointId);
+        const until = untilText(m.expires_at);
         return (
           <li key={m.name} className="fs-lm__row" data-busy={busy || undefined} aria-busy={busy || undefined}>
             <span className="fs-lm__main">
@@ -803,7 +813,11 @@ function LoadedList({ loaded, cards, admin, working = '', onUnload }: { loaded: 
                   : t('kv: unknown')}
               </span>
               {m.context_length ? <span className="fs-set__help">ctx {fmtCtx(m.context_length)}</span> : null}
-              {untilText(m.expires_at) && <span className="fs-set__help" title={m.expires_at ?? undefined}>{untilText(m.expires_at)}</span>}
+              {until && (
+                <span className="fs-set__help" title={m.expires_at ?? undefined}>
+                  {isKeeperDefault && until === t('kept loaded') ? t('Kept loaded by Faustus (default model)') : until}
+                </span>
+              )}
             </span>
             {admin && (
               <Button

@@ -13,6 +13,7 @@ import functools
 import hashlib
 import inspect
 import json
+import random
 import re
 import time
 import logging
@@ -28,6 +29,7 @@ from src.llm_core import (
     _normalize_http_status,
     _normalize_usage_counts,
     is_empty_completion_error,
+    is_degenerate_output_error,
     is_reference_context_echo,
     strip_reference_context_echo,
 )
@@ -43,7 +45,7 @@ from src.context_compactor import (
 from src.settings import get_setting
 from src import autonomy_budget
 from src import plan_state
-from src.prompt_security import untrusted_context_message
+from src.prompt_security import untrusted_context_message, UNTRUSTED_CONTEXT_HEADER
 from src.chat_helpers import is_vision_model, model_supports_vision
 from src.tool_security import (
     PLAN_MODE_READONLY_TOOLS,
@@ -3325,6 +3327,175 @@ _BUDGET_STOP_CLAIM_RE = re.compile(
     r"presupuesto\s+agotado|se\s+qued[oó]\s+sin\s+presupuesto)",
     re.IGNORECASE,
 )
+
+
+def _is_untrusted_context_message(message: dict) -> bool:
+    """True for a `messages` entry built by `untrusted_context_message`.
+
+    Used to strip untrusted-context blocks (skills, memory, documents, search
+    results, …) from the prompt for the "clean retry" after a local model
+    echoes the context-boundary marker twice in a row — most answers never
+    needed that context at all. Checks the metadata `untrusted_context_message`
+    stamps (`trusted: False`) and falls back to the wrapper's own header text
+    for any older message that predates the metadata convention.
+    """
+    if not isinstance(message, dict) or message.get("role") != "user":
+        return False
+    metadata = message.get("metadata")
+    if isinstance(metadata, dict) and metadata.get("trusted") is False:
+        return True
+    content = message.get("content")
+    if isinstance(content, str):
+        return content.startswith(UNTRUSTED_CONTEXT_HEADER)
+    return False
+
+
+_RECOVERY_STEP2_MAX_TOKENS = 1024
+
+
+async def _recovery_step_completion(url, model, headers, messages, temperature, max_tokens,
+                                     gen_overrides, session_id, agent_stream_timeout):
+    """One tools-off, no-harness completion for a recovery-ladder step.
+
+    Returns ``(text, reasoning, degenerate, error)``: ``text``/``reasoning``
+    are whatever the model produced (``text`` un-stripped); ``degenerate`` is
+    True on a token-repeat collapse (client-side guard or Ollama's own "token
+    repeat limit" abort); ``error`` is True on ANY `event: error` (transport
+    failure included), so the caller can tell "produced nothing worth
+    keeping" from "endpoint unreachable" apart from a plain empty answer.
+    """
+    text = ""
+    reasoning = ""
+    degenerate = False
+    error = False
+    async for chunk in stream_llm_with_fallback(
+        [(url, model, headers)],
+        messages,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        tools=None,
+        timeout=agent_stream_timeout,
+        session_id=session_id,
+        gen_overrides=gen_overrides,
+        fallback_on_empty=False,
+    ):
+        if chunk.startswith("event: error"):
+            error = True
+            try:
+                error_line = next(
+                    line[6:] for line in chunk.splitlines() if line.startswith("data: ")
+                )
+                error_data = json.loads(error_line)
+            except Exception:
+                error_data = {}
+            if is_degenerate_output_error(error_data):
+                degenerate = True
+            break
+        if chunk.startswith("data: ") and not chunk.startswith("data: [DONE]"):
+            try:
+                data = json.loads(chunk[6:])
+            except Exception:
+                continue
+            if "delta" in data:
+                if data.get("thinking"):
+                    reasoning += data.get("delta") or ""
+                else:
+                    text += data.get("delta") or ""
+    return text, reasoning, degenerate, error
+
+
+async def _recovery_ladder(*, reason: str, endpoint_url: str, model: str, headers,
+                            messages: List[Dict], temperature: float, max_tokens: int,
+                            gen_overrides: Optional[Dict], session_id: Optional[str],
+                            owner: Optional[str], agent_stream_timeout: int):
+    """Steps 2-3 of the "never end a degenerate/ctx_ack round with an error"
+    recovery ladder (the owner: "If a model is loaded, the person gets an
+    answer, however long it takes"). Step 1 — bumped `repeat_penalty`/
+    `temperature`, untrusted-context blocks dropped, same tools/system
+    prompt/endpoint — is the caller's existing single retry and is NOT
+    redone here; this only runs once step 1 has ALSO failed (a second
+    degenerate collapse, or a third consecutive `<<faustus_ctx_ack>>` echo).
+
+      2. Same sampler push as step 1, PLUS: no tools at all, the system
+         prompt collapsed to the smallest one this loop already builds
+         (`_assemble_prompt(set(), compact=True)` — no tool sections, no
+         domain rules), a fresh random seed, and `num_predict` capped at
+         1024. Same endpoint/model.
+      3. Same shape as step 2, but routed to the utility endpoint
+         (`src.endpoint_resolver.resolve_endpoint("utility", ...)`) — a
+         different model, usually already resident — with a one-line note
+         prepended to the answer so the person knows it did not come from
+         their chosen model.
+
+    Yields ``("event", sse_chunk)`` for anything the caller should forward
+    to the client (a `harness_check` with `status: "recovery"` per step),
+    and exactly one final ``("result", {...})``:
+    ``{"ok": True, "text", "reasoning", "model", "endpoint_id",
+    "endpoint_label", "note"}`` on success, or ``{"ok": False}`` when every
+    step failed (the caller falls back to the plain error text — the one
+    case this ladder cannot avoid: no model answered at all).
+    """
+    base_messages = [m for m in messages if not _is_untrusted_context_message(m)]
+    compact_prompt = _assemble_prompt(set(), compact=True)
+    step_messages = [{"role": "system", "content": compact_prompt}] + [
+        m for m in base_messages if m.get("role") != "system"
+    ]
+    step_overrides = dict(gen_overrides or {})
+    step_overrides["repeat_penalty"] = max(
+        1.15, float(step_overrides.get("repeat_penalty") or 0) or 1.15
+    )
+    step_temperature = max(0.7, float(temperature or 0))
+    step_max_tokens = min(max_tokens or _RECOVERY_STEP2_MAX_TOKENS, _RECOVERY_STEP2_MAX_TOKENS)
+
+    # ── Step 2: same endpoint/model, everything trimmed ──
+    step2_overrides = dict(step_overrides)
+    step2_overrides["seed"] = random.randint(1, 2**31 - 1)
+    logger.warning("[recovery] step=2 reason=%s model=%s", reason, model)
+    yield ("event", "data: " + json.dumps({
+        "type": "harness_check", "status": "recovery", "step": 2,
+        "reason": reason, "model": model,
+    }) + "\n\n")
+    text, reasoning, degenerate, _error = await _recovery_step_completion(
+        endpoint_url, model, headers, step_messages, step_temperature, step_max_tokens,
+        step2_overrides, session_id, agent_stream_timeout,
+    )
+    if text.strip() and not degenerate and not is_reference_context_echo(text.strip()):
+        yield ("result", {
+            "ok": True, "text": text, "reasoning": reasoning, "model": model,
+            "endpoint_id": None, "endpoint_label": None, "note": None,
+        })
+        return
+
+    # ── Step 3: the utility endpoint — a different, usually-resident model ──
+    try:
+        from src.endpoint_resolver import resolve_endpoint
+        util_url, util_model, util_headers = resolve_endpoint("utility", owner=owner)
+    except Exception:
+        util_url = util_model = util_headers = None
+    if util_url and util_model and (util_url, util_model) != (endpoint_url, model):
+        logger.warning("[recovery] step=3 reason=%s model=%s", reason, util_model)
+        yield ("event", "data: " + json.dumps({
+            "type": "harness_check", "status": "recovery", "step": 3,
+            "reason": reason, "model": util_model,
+        }) + "\n\n")
+        step3_overrides = dict(step_overrides)
+        step3_overrides["seed"] = random.randint(1, 2**31 - 1)
+        text3, reasoning3, degenerate3, _error3 = await _recovery_step_completion(
+            util_url, util_model, util_headers or {}, step_messages, step_temperature,
+            step_max_tokens, step3_overrides, session_id, agent_stream_timeout,
+        )
+        if text3.strip() and not degenerate3 and not is_reference_context_echo(text3.strip()):
+            note = f"(answered by {util_model} after the default model looped)"
+            yield ("result", {
+                "ok": True, "text": f"{note}\n\n{text3.strip()}", "reasoning": reasoning3,
+                "model": util_model, "endpoint_id": None, "endpoint_label": None,
+                "note": note,
+            })
+            return
+
+    # ── Step 4: nothing worked — the caller shows the plain error text ──
+    logger.warning("[recovery] step=4 reason=%s model=unreachable", reason)
+    yield ("result", {"ok": False})
 
 
 def _looks_like_budget_exhausted_stop(text: str) -> bool:
@@ -7764,6 +7935,26 @@ async def _stream_agent_loop_body(
     _unknown_tool_nudges = 0
     _empty_round_nudges = 0
     _echo_nudges = 0
+    # Two consecutive marker-only rounds mean the nudge itself isn't working
+    # (seen live: the model echoed `<<faustus_ctx_ack>>` twice in a row even
+    # after being told to answer). At that point re-nudging a third time is
+    # pointless; instead the next attempt drops the untrusted-context blocks
+    # from `messages` entirely and asks again with a clean prompt, since most
+    # answers never needed that context at all. Bounded to once per turn.
+    _consecutive_echo_rounds = 0
+    _echo_clean_retry_done = False
+    # DegenerateOutput (src.llm_core) / Ollama's own "token repeat limit"
+    # abort — a local model decoding into a repeated character/token loop
+    # ("0000000000…"). Retried exactly once per turn: bump the sampler away
+    # from the degenerate regime and drop the untrusted-context blocks (the
+    # loop is not something more context fixes).
+    _degenerate_output_retried = False
+    # Recovery ladder (owner requirement, 18-09-2026): "a degenerate or
+    # marker-only round must NEVER end the turn with an error message, if a
+    # model is loaded". Once per turn — steps 2/3 of `_recovery_ladder`
+    # already try a second sampler push and a second endpoint; there is no
+    # value in running that whole ladder twice for one turn.
+    _recovery_ladder_used = False
     _project_objective_nudges = 0
     _project_objective_unavailable_nudges = 0
 
@@ -8963,6 +9154,8 @@ async def _stream_agent_loop_body(
         _round_first_token_logged = False
         _think_first_ts = None
         _think_runaway = False
+        _degenerate_output_hit = False
+        _degenerate_output_reason = ""
         _round_actual_model = model
         _round_actual_endpoint_id = actual_endpoint_id
         _round_actual_endpoint_label = actual_endpoint_label
@@ -9150,6 +9343,21 @@ async def _stream_agent_loop_body(
                     )
                 except Exception:
                     pass
+                # A repeated-token collapse ("0000000000…") — this runtime's
+                # own client-side DegenerateOutput guard, or Ollama's native
+                # "prediction aborted, token repeat limit reached" — is not an
+                # ordinary transport failure either. Retry once with the
+                # sampler pushed out of the degenerate regime and the
+                # untrusted-context blocks removed, instead of ending the
+                # turn with a raw HTTP-400 message.
+                if (
+                    is_degenerate_output_error(error_data)
+                    and not _degenerate_output_retried
+                    and round_num < max_rounds
+                ):
+                    _degenerate_output_hit = True
+                    _degenerate_output_reason = str(error_data.get("error") or "")[:200]
+                    break
                 # A clean empty completion is not a transport failure. The
                 # harness already nudges silent give-ups; treating this 502 as
                 # fatal is what killed Silhouettes turns after a tool round
@@ -9173,15 +9381,61 @@ async def _stream_agent_loop_body(
                     )
                     _recover_empty_completion = True
                     break
-                terminal_error = {
-                    "message": (
-                        f"Model request failed (HTTP {terminal_status})"
-                        if terminal_status is not None
-                        else "Model request failed"
-                    ),
-                    "status": terminal_status,
-                }
-                if full_response.strip() or round_reasoning.strip() or tool_events or round_texts:
+                if is_degenerate_output_error(error_data) and not _recovery_ladder_used:
+                    # Step 1 (the branch above) already ran once and didn't
+                    # help. The owner's requirement is that a loaded model
+                    # never ends a degenerate round with an error — run
+                    # steps 2/3 (no tools, minimal prompt, then the utility
+                    # endpoint) before giving up.
+                    _recovery_ladder_used = True
+                    if round_response and full_response.endswith(round_response):
+                        full_response = full_response[:-len(round_response)]
+                    _recovery_result = None
+                    async for _rk, _rpayload in _recovery_ladder(
+                        reason="degenerate", endpoint_url=endpoint_url, model=model,
+                        headers=headers, messages=messages, temperature=temperature,
+                        max_tokens=max_tokens, gen_overrides=gen_overrides,
+                        session_id=session_id, owner=owner,
+                        agent_stream_timeout=agent_stream_timeout,
+                    ):
+                        if _rk == "event":
+                            yield _rpayload
+                        else:
+                            _recovery_result = _rpayload
+                    if _recovery_result and _recovery_result.get("ok"):
+                        round_response = _recovery_result["text"]
+                        full_response += round_response
+                        if _recovery_result.get("model") and _recovery_result["model"] != actual_model:
+                            _round_actual_model = _recovery_result["model"]
+                        native_tool_calls = []
+                        _round_finish_reason = "stop"
+                        yield f'data: {json.dumps({"type": "response_replace", "text": full_response.strip()})}\n\n'
+                        break
+                    # Every step failed (model unreachable) — this is the
+                    # one case the ladder cannot avoid; fall through to the
+                    # plain error text below.
+                    terminal_error = {
+                        "message": "The model looped; try rephrasing or another model",
+                        "status": terminal_status,
+                    }
+                elif is_degenerate_output_error(error_data):
+                    terminal_error = {
+                        "message": "The model looped; try rephrasing or another model",
+                        "status": terminal_status,
+                    }
+                else:
+                    terminal_error = {
+                        "message": (
+                            f"Model request failed (HTTP {terminal_status})"
+                            if terminal_status is not None
+                            else "Model request failed"
+                        ),
+                        "status": terminal_status,
+                    }
+                if (
+                    full_response.strip() or round_reasoning.strip() or tool_events
+                    or round_texts or _recovery_ladder_used
+                ):
                     _finalize_round_usage(include_empty=False)
                     partial_round = strip_tool_blocks(
                         round_response,
@@ -9193,6 +9447,10 @@ async def _stream_agent_loop_body(
                     ).strip()
                     if _ody_qwen_finetune_model:
                         partial_round = _strip_doc_model_artifacts(partial_round).strip()
+                    if is_degenerate_output_error(error_data):
+                        # Never show/persist the collapsed output itself
+                        # ("0000000000…") — only the fact that it happened.
+                        partial_round = ""
                     failure_note = f"[Agent stopped: {terminal_error['message']}]"
                     terminal_round = (
                         f"{partial_round}\n\n{failure_note}"
@@ -9559,6 +9817,39 @@ async def _stream_agent_loop_body(
             yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
             continue
 
+        if _degenerate_output_hit:
+            # Repeated-token collapse mid-stream. Drop whatever garbage
+            # ("0000000000…") already reached full_response for this round —
+            # it is never a real answer and must not be persisted — bump the
+            # sampler away from the degenerate regime, drop the
+            # untrusted-context blocks (a loop is not something more context
+            # fixes), and retry the same round exactly once.
+            _degenerate_output_retried = True
+            logger.warning(
+                "[harness] round %s hit a token-repeat collapse (%s) — retrying "
+                "with repeat_penalty raised and untrusted context dropped",
+                round_num, _degenerate_output_reason or "degenerate output",
+            )
+            if round_response and full_response.endswith(round_response):
+                full_response = full_response[:-len(round_response)]
+            _ledger.notes.append(f"degenerate_output_retry@{round_num}")
+            gen_overrides = dict(gen_overrides or {})
+            gen_overrides["repeat_penalty"] = max(1.15, float(gen_overrides.get("repeat_penalty") or 0) or 1.15)
+            temperature = max(0.7, float(temperature or 0))
+            _dropped_untrusted = sum(1 for m in messages if _is_untrusted_context_message(m))
+            messages[:] = [m for m in messages if not _is_untrusted_context_message(m)]
+            _rounds_budget += 1  # the retry must not eat the task's step budget
+            yield f'data: {json.dumps({"type": "response_replace", "text": full_response.strip()})}\n\n'
+            yield (
+                "data: " + json.dumps({
+                    "type": "harness_check", "status": "auto_continue",
+                    "reason": "degenerate_output_retry", "round": round_num,
+                    "dropped_untrusted_context": _dropped_untrusted,
+                }) + "\n\n"
+            )
+            yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
+            continue
+
         logger.info(
             "[agent-timing] round_stream_done round=%s elapsed=%.3fs text_chars=%s tool_calls=%s first_event=%s first_token=%s",
             round_num,
@@ -9890,6 +10181,10 @@ async def _stream_agent_loop_body(
             _hc_text = strip_reference_context_echo(_hc_raw).strip()
             _boundary_echo_only = is_reference_context_echo(_hc_raw)
             if _boundary_echo_only:
+                _consecutive_echo_rounds += 1
+            else:
+                _consecutive_echo_rounds = 0
+            if _boundary_echo_only:
                 cleaned_round = ""
                 round_response = ""
                 # Streaming already appended the echo to full_response; drop the
@@ -9898,6 +10193,110 @@ async def _stream_agent_loop_body(
                 full_response = (_fr + "\n\n") if _fr else ""
                 if round_texts and is_reference_context_echo(_strip_think_blocks(round_texts[-1] or "").strip()):
                     round_texts[-1] = ""
+                # Two marker-only rounds in a row mean a plain nudge is not
+                # working — re-nudging a third time would just ask for the
+                # same echo again. Drop the untrusted-context blocks from the
+                # prompt entirely and retry once with a clean conversation
+                # (system + real history + the user's turn): most answers
+                # never needed that context, and the ones that did will still
+                # have it available again on the next natural turn.
+                if (
+                    _consecutive_echo_rounds >= 2
+                    and not _echo_clean_retry_done
+                    and round_num < max_rounds
+                ):
+                    _echo_clean_retry_done = True
+                    _dropped_untrusted = sum(
+                        1 for m in messages if _is_untrusted_context_message(m)
+                    )
+                    messages[:] = [
+                        m for m in messages if not _is_untrusted_context_message(m)
+                    ]
+                    _ledger.notes.append(f"echo_clean_retry@{round_num}")
+                    logger.warning(
+                        "[harness] round %s echoed the context separator twice in a "
+                        "row — retrying with %s untrusted-context block(s) removed",
+                        round_num, _dropped_untrusted,
+                    )
+                    messages.append({
+                        "role": "user",
+                        "content": (
+                            "[Harness check — automatic runtime message, not a new "
+                            "user request] Answer the person's request directly now."
+                        ),
+                    })
+                    yield (
+                        "data: " + json.dumps({
+                            "type": "harness_check", "status": "no_action", "round": round_num,
+                            "attempt": 1, "max_attempts": 1,
+                            "reason": "reference_context_echo_clean_retry",
+                        }) + "\n\n"
+                    )
+                    full_response += "\n\n"
+                    yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
+                    continue
+                elif _consecutive_echo_rounds >= 3 and not _recovery_ladder_used:
+                    # The clean retry (step 1) ALSO came back as only the
+                    # marker. Owner requirement: a degenerate/marker-only
+                    # round must never end with an error while a model is
+                    # loaded — run steps 2/3 (no tools, minimal prompt, then
+                    # the utility endpoint) before giving up.
+                    _recovery_ladder_used = True
+                    _recovery_result = None
+                    async for _rk, _rpayload in _recovery_ladder(
+                        reason="ctx_ack", endpoint_url=endpoint_url, model=model,
+                        headers=headers, messages=messages, temperature=temperature,
+                        max_tokens=max_tokens, gen_overrides=gen_overrides,
+                        session_id=session_id, owner=owner,
+                        agent_stream_timeout=agent_stream_timeout,
+                    ):
+                        if _rk == "event":
+                            yield _rpayload
+                        else:
+                            _recovery_result = _rpayload
+                    if _recovery_result and _recovery_result.get("ok"):
+                        round_response = _recovery_result["text"]
+                        cleaned_round = round_response
+                        full_response += round_response
+                        if round_texts:
+                            round_texts[-1] = cleaned_round
+                        _boundary_echo_only = False
+                        _hc_text = cleaned_round
+                        if _recovery_result.get("model") and _recovery_result["model"] != actual_model:
+                            _round_actual_model = _recovery_result["model"]
+                        yield f'data: {json.dumps({"type": "response_replace", "text": full_response.strip()})}\n\n'
+                    else:
+                        # Every step failed (model unreachable) — the one
+                        # case this ladder cannot avoid.
+                        logger.warning(
+                            "[harness] round %s: recovery ladder exhausted for a "
+                            "repeated context-boundary echo", round_num,
+                        )
+                        _finalize_round_usage(include_empty=False)
+                        _failure_message = "The model looped; try rephrasing or another model"
+                        failure_note = f"[Agent stopped: {_failure_message}]"
+                        terminal_metadata = {
+                            "failed": True,
+                            "failure": {"message": _failure_message, "status": None},
+                            "model": actual_model,
+                            "requested_model": requested_model,
+                            "endpoint_id": actual_endpoint_id,
+                            "endpoint_label": actual_endpoint_label,
+                            "requested_endpoint_id": requested_endpoint_id,
+                            "requested_endpoint_label": requested_endpoint_label,
+                            "tool_events": tool_events,
+                            "round_texts": [*round_texts, failure_note],
+                            "round_models": [*round_models, _round_actual_model],
+                            "round_endpoint_ids": [*round_endpoint_ids, _round_actual_endpoint_id],
+                            "round_endpoint_labels": [*round_endpoint_labels, _round_actual_endpoint_label],
+                            **_usage_bucket_summary(usage_buckets),
+                        }
+                        yield f'data: {json.dumps({"type": "agent_terminal", "data": terminal_metadata})}\n\n'
+                        yield (
+                            "event: error\n"
+                            f"data: {json.dumps({'error': _failure_message, 'status': 502, 'fallback_eligible': False})}\n\n"
+                        )
+                        return
             elif _hc_text != _hc_raw:
                 # Prose that started by parroting the separator — keep the body.
                 cleaned_round = _hc_text

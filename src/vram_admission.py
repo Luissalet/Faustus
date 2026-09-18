@@ -866,7 +866,14 @@ async def admit(endpoint_url: str, model: str, *, owner: str = "",
                 len(a["residents"]), mode)
 
     if mode == "auto":
-        names = list(a.get("suggestion") or [])
+        # "auto" acts with nobody watching, so it may only take what `assess()`
+        # offered as freely evictable — never a pinned resident (the default
+        # model, or anything a person pinned from Settings → Local models),
+        # even the ones `suggestion` names as a last resort when nothing else
+        # would free the shortfall. Those only ever go through the person
+        # explicitly naming them in "ask" mode below.
+        protected = set(a.get("suggestion_protected_used") or [])
+        names = [n for n in (a.get("suggestion") or []) if n not in protected]
         if not names:
             say({"phase": "warning", "message": f"{model} does not fit and nothing can be unloaded to make room."})
             _mark_wait()
@@ -1063,6 +1070,16 @@ def _ollama_suggestion_candidates(
             if wanted and not (idxs & wanted):
                 continue  # resident on a different card than the one requested
             row = {"name": name, "root": root, "in_vram_bytes": in_vram, "gpus": sorted(idxs)}
+            # A serve launch never has a person naming which model to unload
+            # the way the Local models screen's own Unload button does — this
+            # path either acts on its own (`auto`) or offers a ticket whose
+            # `names` must come from `residents`, so a pinned model (the
+            # default chat model, or anything pinned from the settings
+            # screen) is left out of both entirely rather than merely
+            # de-prioritized: nothing here counts as the explicit human
+            # action that is the only thing allowed to evict it.
+            if is_pinned(root, name):
+                continue
             residents.append(row)
             candidates.append(row)
     # Biggest first: one large model freed beats several small ones (same
