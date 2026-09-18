@@ -470,6 +470,17 @@ DEFAULT_SETTINGS = {
     # or per-request value always wins over these.
     "local_repeat_penalty_default": 1.05,
     "local_min_p_default": 0.05,
+    # Gibberish-script guard (src.llm_core._DegenerateStreamGuard): over a
+    # sliding window of `local_gibberish_window_chars` streamed characters,
+    # abort as degenerate when more than this fraction of alphabetic
+    # characters fall outside the Latin script (Spanish/English conversation
+    # expected: Latin letters incl. accents, digits, punctuation, emoji).
+    # Catches a collapse into pure Cyrillic/CJK runs that never repeats one
+    # short unit, so the repeat-based checks above miss it. Never evaluated
+    # before the window fills, so a short quoted foreign phrase inside an
+    # otherwise-Latin answer cannot trip it.
+    "local_gibberish_script_threshold": 0.40,
+    "local_gibberish_window_chars": 300,
     # Standing instructions from the repo (AGENTS.md / CLAUDE.md / …) in the
     # system prompt, and the repository map (files + symbols) before the
     # user's message (src/project_instructions.py, src/repo_map.py).

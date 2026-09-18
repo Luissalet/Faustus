@@ -3407,7 +3407,8 @@ async def _recovery_step_completion(url, model, headers, messages, temperature, 
 async def _recovery_ladder(*, reason: str, endpoint_url: str, model: str, headers,
                             messages: List[Dict], temperature: float, max_tokens: int,
                             gen_overrides: Optional[Dict], session_id: Optional[str],
-                            owner: Optional[str], agent_stream_timeout: int):
+                            owner: Optional[str], agent_stream_timeout: int,
+                            skip_same_model_retry: bool = False):
     """Steps 2-3 of the "never end a degenerate/ctx_ack round with an error"
     recovery ladder (the owner: "If a model is loaded, the person gets an
     answer, however long it takes"). Step 1 — bumped `repeat_penalty`/
@@ -3420,12 +3421,25 @@ async def _recovery_ladder(*, reason: str, endpoint_url: str, model: str, header
          prompt collapsed to the smallest one this loop already builds
          (`_assemble_prompt(set(), compact=True)` — no tool sections, no
          domain rules), a fresh random seed, and `num_predict` capped at
-         1024. Same endpoint/model.
+         `_RECOVERY_STEP2_MAX_TOKENS` so a broken model cannot burn minutes
+         of GPU time before this same guard re-checks it. Same endpoint/
+         model. Skipped entirely when `skip_same_model_retry` is set (see
+         below).
       3. Same shape as step 2, but routed to the utility endpoint
          (`src.endpoint_resolver.resolve_endpoint("utility", ...)`) — a
          different model, usually already resident — with a one-line note
          prepended to the answer so the person knows it did not come from
          their chosen model.
+
+    `skip_same_model_retry`: by the time this is called for `reason ==
+    "degenerate"`, the SAME model has already degenerated twice this turn
+    (the round's own first abort, then the caller's step-1 retry) — a third
+    same-model attempt (step 2) is throwing good GPU time after bad, so the
+    caller passes `skip_same_model_retry=True` and step 2 is skipped in
+    favour of going straight to the utility model (step 3). The `ctx_ack`
+    caller has not exhausted the same-model budget the same way (a marker
+    echo is not a degenerate collapse) and keeps the default, still trying
+    step 2 first.
 
     Yields ``("event", sse_chunk)`` for anything the caller should forward
     to the client (a `harness_check` with `status: "recovery"` per step),
@@ -3448,23 +3462,33 @@ async def _recovery_ladder(*, reason: str, endpoint_url: str, model: str, header
     step_max_tokens = min(max_tokens or _RECOVERY_STEP2_MAX_TOKENS, _RECOVERY_STEP2_MAX_TOKENS)
 
     # ── Step 2: same endpoint/model, everything trimmed ──
-    step2_overrides = dict(step_overrides)
-    step2_overrides["seed"] = random.randint(1, 2**31 - 1)
-    logger.warning("[recovery] step=2 reason=%s model=%s", reason, model)
-    yield ("event", "data: " + json.dumps({
-        "type": "harness_check", "status": "recovery", "step": 2,
-        "reason": reason, "model": model,
-    }) + "\n\n")
-    text, reasoning, degenerate, _error = await _recovery_step_completion(
-        endpoint_url, model, headers, step_messages, step_temperature, step_max_tokens,
-        step2_overrides, session_id, agent_stream_timeout,
-    )
-    if text.strip() and not degenerate and not is_reference_context_echo(text.strip()):
-        yield ("result", {
-            "ok": True, "text": text, "reasoning": reasoning, "model": model,
-            "endpoint_id": None, "endpoint_label": None, "note": None,
-        })
-        return
+    # Skipped when the caller says the same model has already degenerated
+    # twice this turn (see `skip_same_model_retry` on the docstring): a third
+    # same-model attempt is not worth the GPU minutes, so go straight to the
+    # utility model at step 3.
+    if not skip_same_model_retry:
+        step2_overrides = dict(step_overrides)
+        step2_overrides["seed"] = random.randint(1, 2**31 - 1)
+        logger.warning("[recovery] step=2 reason=%s model=%s", reason, model)
+        yield ("event", "data: " + json.dumps({
+            "type": "harness_check", "status": "recovery", "step": 2,
+            "reason": reason, "model": model,
+        }) + "\n\n")
+        text, reasoning, degenerate, _error = await _recovery_step_completion(
+            endpoint_url, model, headers, step_messages, step_temperature, step_max_tokens,
+            step2_overrides, session_id, agent_stream_timeout,
+        )
+        if text.strip() and not degenerate and not is_reference_context_echo(text.strip()):
+            yield ("result", {
+                "ok": True, "text": text, "reasoning": reasoning, "model": model,
+                "endpoint_id": None, "endpoint_label": None, "note": None,
+            })
+            return
+    else:
+        logger.warning(
+            "[recovery] step=2 skipped reason=%s model=%s (already degenerated twice this turn)",
+            reason, model,
+        )
 
     # ── Step 3: the utility endpoint — a different, usually-resident model ──
     try:
@@ -9405,6 +9429,11 @@ async def _stream_agent_loop_body(
                         max_tokens=max_tokens, gen_overrides=gen_overrides,
                         session_id=session_id, owner=owner,
                         agent_stream_timeout=agent_stream_timeout,
+                        # This model has already degenerated twice this turn
+                        # (the round's own abort, then the step-1 retry) —
+                        # skip a third same-model attempt and go straight to
+                        # the utility model.
+                        skip_same_model_retry=True,
                     ):
                         if _rk == "event":
                             yield _rpayload

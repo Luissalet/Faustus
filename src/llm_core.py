@@ -10,6 +10,7 @@ import threading
 import re
 import os
 import math
+import unicodedata
 from contextlib import asynccontextmanager
 from fastapi import HTTPException
 from typing import Any, Optional, Dict, List, Tuple, Callable, Mapping
@@ -571,6 +572,57 @@ _DEGENERATE_RAW_REPEAT_MIN_CHARS = 120
 _DEGENERATE_RAW_TAIL_WINDOW = 240
 DEGENERATE_OUTPUT_ERROR_CLASS = "degenerate_output"
 
+# Gibberish-script guard defaults (overridable via `local_gibberish_*`
+# settings — see settings.py for the rationale). Catches a collapse into a
+# run of a DIFFERENT script each token (Cyrillic, CJK, ...) that never
+# repeats one short unit and so slips past the repeat-based checks above —
+# seen live: "lis the lis the" degrading into sustained Cyrillic runs with no
+# Ollama repeat-limit abort at all.
+_GIBBERISH_WINDOW_CHARS_DEFAULT = 300
+_GIBBERISH_THRESHOLD_DEFAULT = 0.40
+
+
+def _unexpected_script_fraction(text: str) -> float:
+    """Fraction of the ALPHABETIC characters in `text` that are not Latin
+    script. Digits, punctuation, whitespace and emoji are ignored entirely
+    (they are "expected" in every language and would only dilute the
+    signal); an accented Latin letter (`unicodedata.name` starting
+    "LATIN...") counts as expected."""
+    if not text:
+        return 0.0
+    unexpected = 0
+    counted = 0
+    for ch in text:
+        if not ch.isalpha():
+            continue
+        counted += 1
+        try:
+            name = unicodedata.name(ch)
+        except ValueError:
+            continue  # unnamed codepoint — never penalize what we can't classify
+        if not name.startswith("LATIN"):
+            unexpected += 1
+    return (unexpected / counted) if counted else 0.0
+
+
+def _gibberish_guard_settings() -> Tuple[int, float]:
+    """(window_chars, threshold) from settings, falling back safely."""
+    try:
+        from src.settings import get_setting
+        window = int(get_setting("local_gibberish_window_chars", _GIBBERISH_WINDOW_CHARS_DEFAULT))
+    except Exception:
+        window = _GIBBERISH_WINDOW_CHARS_DEFAULT
+    try:
+        from src.settings import get_setting
+        threshold = float(get_setting("local_gibberish_script_threshold", _GIBBERISH_THRESHOLD_DEFAULT))
+    except Exception:
+        threshold = _GIBBERISH_THRESHOLD_DEFAULT
+    if window <= 0:
+        window = _GIBBERISH_WINDOW_CHARS_DEFAULT
+    if not (0.0 < threshold <= 1.0):
+        threshold = _GIBBERISH_THRESHOLD_DEFAULT
+    return window, threshold
+
 
 class DegenerateOutput(Exception):
     """Raised by `_DegenerateStreamGuard.check` when the model's streamed
@@ -638,6 +690,8 @@ class _DegenerateStreamGuard:
         self.recent_tokens: List[str] = []
         self.total_chars = 0
         self.tail = ""
+        self.script_tail = ""
+        self._gibberish_window, self._gibberish_threshold = _gibberish_guard_settings()
 
     def _raw_repeat_reason(self) -> Optional[str]:
         t = self.tail
@@ -697,6 +751,22 @@ class _DegenerateStreamGuard:
                 gram_count = grams.count(top_gram)
                 if gram_count >= 10:
                     reason = f"repeated phrase '{' '.join(top_gram)}' {gram_count} times"
+
+        if not reason:
+            # Pure gibberish that never repeats one short unit — a run of
+            # Cyrillic/CJK/etc. tokens on what should be a Latin-script
+            # (Spanish/English) conversation. Only evaluated once the window
+            # is full, so a short foreign quote inside an otherwise-Latin
+            # answer cannot trip it (spec: never on legitimately
+            # multilingual content shorter than the window).
+            self.script_tail = (self.script_tail + text)[-self._gibberish_window:]
+            if len(self.script_tail) >= self._gibberish_window:
+                frac = _unexpected_script_fraction(self.script_tail)
+                if frac > self._gibberish_threshold:
+                    reason = (
+                        f"{frac:.0%} non-Latin characters over the last "
+                        f"{len(self.script_tail)} chars"
+                    )
 
         if reason:
             raise DegenerateOutput(reason, self.model)
