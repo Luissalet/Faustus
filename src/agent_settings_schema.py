@@ -655,6 +655,18 @@ GROUPS: list[dict[str, Any]] = [
                   "HOME, TEMP, the Windows essentials and its own declared variables — not every provider "
                   "API key in the app. Servers you already have keep the full environment either way; "
                   "change one on its own card."),
+            _int("agent_mcp_prompt_budget_tokens", "MCP prompt budget (tokens)",
+                 "The MCP tools block in the prompt is scoped to this turn's selected MCP tools (one "
+                 "line each — they already have native schemas) plus one \"N more tools\" line per "
+                 "server with nothing selected, capped at this many tokens. lookup_tools and tool-RAG "
+                 "still find every MCP tool regardless — this only trims what the prompt text repeats. "
+                 "0 turns the block off entirely.",
+                 0, 20000),
+            _bool("agent_mcp_prompt_full_listing", "Full MCP tool listing every turn",
+                  "Restores the old behaviour: every connected server's every tool, full description, "
+                  "dumped into the prompt on every turn, instead of the scoped block. Off by default — "
+                  "it was costing thousands of prompt tokens on a bare \"hola\" and confusing small "
+                  "local models with tools nobody selected."),
         ],
     ),
     _group(

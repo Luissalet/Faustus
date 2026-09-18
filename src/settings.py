@@ -375,6 +375,17 @@ DEFAULT_SETTINGS = {
     # executable; lookup_tools loads full schemas on demand. Set false to
     # send every selected schema like before.
     "agent_tool_catalog": True,
+    # MCP tool descriptions in the prompt (src/mcp_manager.py
+    # get_tool_descriptions_for_prompt): scoped by default to this turn's
+    # selected MCP tools (they already have native schemas — this is a
+    # one-line reminder) plus a "N more tools" line per server with nothing
+    # selected. agent_mcp_prompt_full_listing=True restores the old behaviour of
+    # dumping every connected server's every tool, every turn. The scoped
+    # block itself is capped at agent_mcp_prompt_budget_tokens (0 disables it).
+    # lookup_tools / tool-RAG are unaffected either way — they read the tool
+    # index, not this prompt text.
+    "agent_mcp_prompt_budget_tokens": 1500,
+    "agent_mcp_prompt_full_listing": False,
     "agent_tool_rerank": False,
     # ── Reliability harness (src/agent_harness.py and friends) ──
     # Claims-vs-evidence checks, syntax check, fabricated-path detection.

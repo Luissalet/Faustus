@@ -2061,24 +2061,10 @@ class McpManager:
     _cached_prompt_desc = None
     _cached_prompt_desc_key = None
 
-    def get_tool_descriptions_for_prompt(self, disabled_map: Optional[Dict[str, set]] = None) -> str:
-        """Generate text describing MCP tools for the agent system prompt. Cached."""
-        cache_key = (
-            frozenset((k, frozenset(v)) for k, v in (disabled_map or {}).items()),
-            len(self._tools),
-            self._generation,
-            # The browser policy (toggle / code-execution opt-in) is read
-            # from settings; the prompt must follow it without a restart.
-            frozenset(builtin_browser_policy_disabled()) if BROWSER_MCP_SERVER_ID in self._tools else None,
-        )
-        if self._cached_prompt_desc is not None and self._cached_prompt_desc_key == cache_key:
-            return self._cached_prompt_desc
+    def _grouped_prompt_tools(self, disabled_map: Optional[Dict[str, set]] = None) -> Dict[str, List[Dict]]:
+        """MCP tools eligible for the prompt, grouped by server display name."""
         tools = self.get_all_tools(disabled_map)
-        if not tools:
-            return ""
-
-        lines = ["\n\nYou also have access to external MCP tool servers. These tools are called via native function calling:"]
-        by_server = {}
+        by_server: Dict[str, List[Dict]] = {}
         for t in tools:
             # Skip builtin Python servers — they're already in the agent prompt
             # But include NPX-based builtins (like browser) which aren't hardcoded
@@ -2087,13 +2073,76 @@ class McpManager:
             if t.get("is_disabled"):
                 continue
             sn = t["server_name"]
-            if sn not in by_server:
-                by_server[sn] = []
-            by_server[sn].append(t)
+            by_server.setdefault(sn, []).append(t)
+        return by_server
 
+    def get_tool_descriptions_for_prompt(
+        self,
+        disabled_map: Optional[Dict[str, set]] = None,
+        relevant_tools: Optional[Set[str]] = None,
+    ) -> str:
+        """Generate text describing MCP tools for the agent system prompt. Cached.
+
+        With no ``relevant_tools`` (or with the ``agent_mcp_prompt_full_listing``
+        setting on), this is the historical behaviour: every non-disabled MCP
+        tool, full descriptions, every turn. ``index_mcp_tools`` (tool-RAG's
+        indexer) relies on exactly that full text and always calls this with
+        ``relevant_tools=None`` — lookup_tools/tool-RAG keep working off the
+        index regardless of what the prompt itself is scoped down to.
+
+        With ``relevant_tools`` given and full-listing off, the block is
+        scoped to this turn's selected MCP tools (one line each — they
+        already have native schemas, so a one-line reminder is enough) plus
+        one "N more tools" line per connected server with nothing selected,
+        capped by the ``agent_mcp_prompt_budget_tokens`` setting.
+        """
+        try:
+            from src.settings import get_setting
+            full_listing = bool(get_setting("agent_mcp_prompt_full_listing", False))
+            budget = int(get_setting("agent_mcp_prompt_budget_tokens", 1500) or 0)
+        except Exception:
+            full_listing = False
+            budget = 1500
+
+        # relevant_tools=None means "give me everything" — that is what the
+        # tool-RAG indexer (index_mcp_tools) always passes, on purpose, so it
+        # keeps indexing every MCP tool no matter how the live prompt is
+        # scoped. The agent-prompt call site always passes a set (possibly
+        # empty), even when tool-RAG picked nothing.
+        scoped = relevant_tools is not None and not full_listing
+        if scoped and budget <= 0:
+            # agent_mcp_prompt_budget_tokens=0 turns the block off entirely.
+            return ""
+
+        cache_key = (
+            frozenset((k, frozenset(v)) for k, v in (disabled_map or {}).items()),
+            len(self._tools),
+            self._generation,
+            # The browser policy (toggle / code-execution opt-in) is read
+            # from settings; the prompt must follow it without a restart.
+            frozenset(builtin_browser_policy_disabled()) if BROWSER_MCP_SERVER_ID in self._tools else None,
+            full_listing,
+            budget,
+            frozenset(relevant_tools) if relevant_tools is not None else None,
+        )
+        if self._cached_prompt_desc is not None and self._cached_prompt_desc_key == cache_key:
+            return self._cached_prompt_desc
+
+        by_server = self._grouped_prompt_tools(disabled_map)
         if not by_server:
             return ""
 
+        if relevant_tools is not None and not full_listing:
+            result = self._scoped_tool_descriptions(by_server, relevant_tools, budget)
+        else:
+            result = self._full_tool_descriptions(by_server)
+
+        self._cached_prompt_desc = result
+        self._cached_prompt_desc_key = cache_key
+        return result
+
+    def _full_tool_descriptions(self, by_server: Dict[str, List[Dict]]) -> str:
+        lines = ["\n\nYou also have access to external MCP tool servers. These tools are called via native function calling:"]
         for server_name, server_tools in by_server.items():
             # Include identity (e.g. email address) if available
             sid = server_tools[0]["server_id"] if server_tools else ""
@@ -2108,8 +2157,59 @@ class McpManager:
                 # alone (issue #2509).
                 args_hint = _format_mcp_params(t.get("input_schema"))
                 lines.append(f"  - {t['qualified_name']}: {desc}{args_hint}")
+        return "\n".join(lines)
 
-        result = "\n".join(lines)
-        self._cached_prompt_desc = result
-        self._cached_prompt_desc_key = cache_key
-        return result
+    def _scoped_tool_descriptions(
+        self,
+        by_server: Dict[str, List[Dict]],
+        relevant_tools: Set[str],
+        budget_tokens: int,
+    ) -> str:
+        """One line per selected tool (grouped by server) + one line per
+        connected server with nothing selected this turn. Hard-capped at
+        ``budget_tokens`` (rough chars/4 estimate) so a turn that selected a
+        lot of MCP tools still can't blow the window back up.
+        """
+        lines = [
+            "\n\nExternal MCP tools relevant to this turn (already sent as native "
+            "function schemas — this is just a one-line reminder of what each "
+            "does). Other connected servers are summarized below; call "
+            "`lookup_tools` to search and load any of their tools by name or "
+            "description."
+        ]
+        char_budget = max(0, budget_tokens) * 4
+        used = len(lines[0])
+
+        def _add(line: str) -> bool:
+            nonlocal used
+            # +1 accounts for the "\n" the final "\n".join adds between lines.
+            if budget_tokens and used + len(line) + 1 > char_budget:
+                return False
+            lines.append(line)
+            used += len(line) + 1
+            return True
+
+        for server_name, server_tools in by_server.items():
+            selected = [t for t in server_tools if t["qualified_name"] in relevant_tools]
+            if not selected:
+                continue
+            sid = server_tools[0]["server_id"] if server_tools else ""
+            identity = self._connections.get(sid, {}).get("identity", "")
+            label = f"{server_name} ({identity})" if identity else server_name
+            if not _add(f"\n**{label}:**"):
+                break
+            for t in selected:
+                desc = t['description'][:120] + '...' if len(t['description']) > 120 else t['description']
+                if not _add(f"  - {t['qualified_name']}: {desc}"):
+                    break
+
+        for server_name, server_tools in by_server.items():
+            represented = any(t["qualified_name"] in relevant_tools for t in server_tools)
+            if represented:
+                continue
+            n = len(server_tools)
+            _add(f"\n{server_name}: {n} more tool{'s' if n != 1 else ''} — call lookup_tools to load them")
+
+        if len(lines) == 1:
+            return ""
+        return "\n".join(lines)

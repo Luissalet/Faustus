@@ -750,25 +750,56 @@ async def execute_api_call(
 # System prompt helper
 # ---------------------------------------------------------------------------
 
-def get_integrations_prompt() -> str:
-    """Return a string describing all enabled integrations for system prompt injection.
+_INTEGRATIONS_PROMPT_BUDGET_TOKENS = 400
+
+
+def get_integrations_prompt(relevant_tools=None) -> str:
+    """Return a string describing enabled integrations for system prompt injection.
 
     Returns empty string if no integrations are enabled.
+
+    All integrations are called through the single ``api_call`` tool, so
+    there is no per-integration "selected" line the way there is for MCP
+    tools. Instead: with ``relevant_tools`` given and ``api_call`` NOT in it,
+    this only lists integration names (the agent isn't calling any of them
+    this turn) capped at ``_INTEGRATIONS_PROMPT_BUDGET_TOKENS``. With
+    ``relevant_tools`` omitted (legacy callers), or with ``api_call`` in the
+    selected set (the agent is about to use it and needs to know what's
+    there), full descriptions are returned as before.
     """
     integrations = load_integrations()
     enabled = [i for i in integrations if i.get("enabled", True)]
     if not enabled:
         return ""
 
-    lines = ["You have access to the following API integrations via the api_call tool:\n"]
+    names_only = relevant_tools is not None and "api_call" not in relevant_tools
+    if not names_only:
+        lines = ["You have access to the following API integrations via the api_call tool:\n"]
+        for integ in enabled:
+            name = integ.get("name", integ.get("id", "unknown"))
+            lines.append(f"## {name} (id: {integ['id']})")
+            desc = integ.get("description", "")
+            if desc:
+                lines.append(desc)
+            lines.append("")
+        return "\n".join(lines)
+
+    lines = [
+        "You have API integrations configured (called via the api_call tool). "
+        "Names only below; call lookup_tools or api_call to use one:\n"
+    ]
+    char_budget = _INTEGRATIONS_PROMPT_BUDGET_TOKENS * 4
+    used = len(lines[0])
     for integ in enabled:
         name = integ.get("name", integ.get("id", "unknown"))
-        lines.append(f"## {name} (id: {integ['id']})")
-        desc = integ.get("description", "")
-        if desc:
-            lines.append(desc)
-        lines.append("")
+        line = f"  - {name} (id: {integ['id']})"
+        if used + len(line) > char_budget:
+            break
+        lines.append(line)
+        used += len(line)
 
+    if len(lines) == 1:
+        return ""
     return "\n".join(lines)
 
 

@@ -4397,7 +4397,12 @@ def _build_system_prompt(
     if not suppress_local_context:
         try:
             from src.integrations import get_integrations_prompt
-            _integ_prompt = get_integrations_prompt()
+            try:
+                _integ_prompt = get_integrations_prompt(relevant_tools=relevant_tools)
+            except TypeError:
+                # Back-compat with callers/test doubles that patch in a
+                # zero-arg get_integrations_prompt.
+                _integ_prompt = get_integrations_prompt()
             if _integ_prompt:
                 _integ_message = untrusted_context_message(
                     "integrations",
@@ -4409,7 +4414,10 @@ def _build_system_prompt(
     # MCP tool descriptions — sourced from external servers, must not be in system role.
     if mcp_mgr:
         try:
-            _mcp_desc = mcp_mgr.get_tool_descriptions_for_prompt(mcp_disabled_map or {})
+            _mcp_desc = mcp_mgr.get_tool_descriptions_for_prompt(
+                mcp_disabled_map or {},
+                relevant_tools=relevant_tools,
+            )
             if _mcp_desc:
                 _mcp_desc_message = untrusted_context_message(
                     "MCP tools",

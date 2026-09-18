@@ -144,6 +144,8 @@ Project identity is stored independently of the sidebar folder name. An agent ca
 
 The context engine retrieves and budgets relevant material from project sources, history and memory. It tracks provenance, conflicts and compact context capsules instead of trying to place an entire disk in a model's prompt. Persistent storage extends what can be retrieved, **not the model's native context window**.
 
+The MCP tools and integrations blocks in the prompt are scoped the same way: only the tools already selected for the turn get a one-line reminder (they already carry a full native schema), every other connected server collapses to a single "N more tools — call lookup_tools" line, and the whole block is capped by `agent_mcp_prompt_budget_tokens` (0 turns it off). Tool discovery (`lookup_tools`, tool-RAG) reads the full tool index regardless, so nothing becomes unreachable — this only trims what repeats in the prompt text. A full listing every turn is still available behind `agent_mcp_prompt_full_listing`.
+
 Use **Skip memory recall** in the composer to suppress automatic personal-memory retrieval for subsequent messages, including live context compilation. Existing chat history and project sources remain available. This does not disable memory tools or saving the chat; use Incognito for its separate privacy behavior.
 
 In Agent mode, **Agent context** also lets you skip automatic skills and select a soft input-token budget before sending. These controls travel with the turn without changing global settings. The budget is an estimate, remains bounded by the selected model's context window, and is not a billing cap. Explicit tools and project instructions remain available when automatic skills are skipped.

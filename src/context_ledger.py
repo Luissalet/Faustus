@@ -30,6 +30,8 @@ SECTIONS: Tuple[Tuple[str, str], ...] = (
     ("system", "System prompt"),
     ("tools", "Tool schemas"),
     ("instructions", "Project instructions"),
+    ("mcp", "MCP tools"),
+    ("integrations", "Integrations"),
     ("skills", "Skills"),
     ("memory", "Memories"),
     ("documents", "Documents & files"),
@@ -45,6 +47,8 @@ _LABELS = dict(SECTIONS)
 # Untrusted context carries `metadata.source` (see prompt_security). Matched in
 # order, first hit wins, so the specific rules come before the broad ones.
 _LABEL_RULES: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
+    ("mcp", ("mcp",)),
+    ("integrations", ("integration",)),
     ("skills", ("skill",)),
     ("memory", ("memor",)),
     ("instructions", ("instruction", "agents.md", "repository map", "repo map")),
@@ -56,7 +60,7 @@ _LABEL_RULES: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
 
 # "Retrieved" for the advice rule: everything pulled in on the user's behalf.
 _RETRIEVED = ("skills", "memory", "documents", "web", "attachments",
-              "retrieved", "instructions")
+              "retrieved", "instructions", "mcp", "integrations")
 
 
 def classify(message: Dict[str, Any], *, is_last_user: bool = False) -> str:
