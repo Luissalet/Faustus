@@ -481,6 +481,13 @@ DEFAULT_SETTINGS = {
     # otherwise-Latin answer cannot trip it.
     "local_gibberish_script_threshold": 0.40,
     "local_gibberish_window_chars": 300,
+    # Output cap for a self-hosted OpenAI-compatible endpoint that is NOT
+    # Ollama (llama.cpp's llama-server, vLLM, LM Studio-style servers —
+    # src.llm_core._apply_local_generation_stability) when neither a saved
+    # nor a per-turn max_tokens is set. `max_tokens` absent/-1 means
+    # "unbounded" on these servers the same way it does on Ollama; seen live
+    # on llama-server: an uncapped turn ran 15 minutes for 7800+ tokens.
+    "local_openai_max_tokens_default": 8192,
     # Standing instructions from the repo (AGENTS.md / CLAUDE.md / …) in the
     # system prompt, and the repository map (files + symbols) before the
     # user's message (src/project_instructions.py, src/repo_map.py).

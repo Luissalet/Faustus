@@ -1563,30 +1563,73 @@ def _is_local_minimax_mlx_request(url: str, model: str) -> bool:
 
 
 def _apply_local_generation_stability(payload: Dict, url: str, model: str) -> None:
-    if not _is_local_minimax_mlx_request(url, model):
+    """Sampling/output-length safety net for a local OpenAI-compatible
+    server's JSON body, applied AFTER `_apply_gen_overrides_openai` (an
+    explicit saved/per-turn value always wins — everything here is
+    `setdefault`).
+
+    Two local families are covered, each gated on its own detector so one
+    does not leak the other's defaults:
+      * MiniMax MLX quantized ports (`_is_local_minimax_mlx_request`) — the
+        original, unchanged conservative preset below (issue predates the
+        generic branch).
+      * Any OTHER self-hosted OpenAI-compatible endpoint
+        (`_is_self_hosted_openai_compatible`: llama.cpp's llama-server,
+        vLLM, LM Studio-style servers, ... — never a cloud provider, never
+        Ollama, which has its own native-endpoint floor in
+        `_model_load_defaults`/`_apply_gen_overrides_ollama`). Verified
+        live: a llama-server chat turn with none of this arrived with
+        `max_tokens=-1, repeat_penalty=1.0, min_p=0` and ran unbounded for
+        15 minutes / 7800+ tokens — llama-server accepts `min_p`/
+        `repeat_penalty`/`top_k` as top-level OpenAI-schema extensions (the
+        same fields `_apply_gen_overrides_openai` already forwards when an
+        override sets them), and `-1`/absent `max_tokens` is "no limit" the
+        same way it is for Ollama. There is no per-model `extra` concept for
+        a generic custom endpoint the way there is for Ollama
+        (`model_load_options` is Ollama-only), so the SAME
+        `local_repeat_penalty_default`/`local_min_p_default` floor settings
+        apply directly here.
+    """
+    if _is_local_minimax_mlx_request(url, model):
+        if "temperature" in payload:
+            try:
+                # MiniMax MLX quantized ports are very sensitive to chat/agent
+                # harness size. Character presets can ask for a warmer voice, but
+                # local MiniMax needs a final compatibility clamp or trivial
+                # prompts can fall into visible reasoning/repetition loops.
+                payload["temperature"] = min(float(payload.get("temperature") or 0.2), 0.2)
+            except (TypeError, ValueError):
+                payload["temperature"] = 0.2
+        payload.setdefault("top_p", 0.9)
+        payload.setdefault("top_k", 20)
+        payload.setdefault("repetition_penalty", 1.12)
+        payload.setdefault("repetition_context_size", 256)
+        payload.setdefault("frequency_penalty", 0.08)
+        payload.setdefault("frequency_context_size", 256)
+        payload.setdefault("presence_penalty", 0.02)
+        payload.setdefault("presence_context_size", 256)
+        payload.setdefault("stop", ["<|im_end|>", "<|endoftext|>", "</s>"])
+        # A max_tokens of 0 means "server default/unbounded" for many local
+        # endpoints. Keep simple chats from running forever when the model loops.
+        if not payload.get("max_tokens") and not payload.get("max_completion_tokens"):
+            payload["max_tokens"] = 2048
         return
-    if "temperature" in payload:
-        try:
-            # MiniMax MLX quantized ports are very sensitive to chat/agent
-            # harness size. Character presets can ask for a warmer voice, but
-            # local MiniMax needs a final compatibility clamp or trivial
-            # prompts can fall into visible reasoning/repetition loops.
-            payload["temperature"] = min(float(payload.get("temperature") or 0.2), 0.2)
-        except (TypeError, ValueError):
-            payload["temperature"] = 0.2
-    payload.setdefault("top_p", 0.9)
-    payload.setdefault("top_k", 20)
-    payload.setdefault("repetition_penalty", 1.12)
-    payload.setdefault("repetition_context_size", 256)
-    payload.setdefault("frequency_penalty", 0.08)
-    payload.setdefault("frequency_context_size", 256)
-    payload.setdefault("presence_penalty", 0.02)
-    payload.setdefault("presence_context_size", 256)
-    payload.setdefault("stop", ["<|im_end|>", "<|endoftext|>", "</s>"])
-    # A max_tokens of 0 means "server default/unbounded" for many local
-    # endpoints. Keep simple chats from running forever when the model loops.
-    if not payload.get("max_tokens") and not payload.get("max_completion_tokens"):
-        payload["max_tokens"] = 2048
+
+    if _is_self_hosted_openai_compatible(url) and not _is_local_ollama_target(url):
+        # Real Ollama /v1 traffic never reaches this branch on the actual
+        # request path (`_route_for_gen_overrides` already moves it to the
+        # native `/api/chat` endpoint, which takes the `ollama` provider
+        # branch instead) — the exclusion is a belt-and-braces guard against
+        # double-applying the floor if this helper is ever called directly
+        # or the reroute is bypassed.
+        payload.setdefault("repeat_penalty", _local_sampler_default("local_repeat_penalty_default", 1.05))
+        payload.setdefault("min_p", _local_sampler_default("local_min_p_default", 0.05))
+        if not payload.get("max_tokens") and not payload.get("max_completion_tokens"):
+            try:
+                cap = int(_local_sampler_default("local_openai_max_tokens_default", 8192))
+            except (TypeError, ValueError):
+                cap = 8192
+            payload["max_tokens"] = cap if cap > 0 else 8192
 
 
 def _provider_headers(provider: str, headers: Optional[Dict] = None) -> Dict[str, str]:
