@@ -488,6 +488,15 @@ DEFAULT_SETTINGS = {
     # "unbounded" on these servers the same way it does on Ollama; seen live
     # on llama-server: an uncapped turn ran 15 minutes for 7800+ tokens.
     "local_openai_max_tokens_default": 8192,
+    # Reasoning-token budget sent as a top-level `reasoning_budget` alongside
+    # `chat_template_kwargs.enable_thinking: true` for a self-hosted
+    # OpenAI-compatible endpoint that is NOT Ollama (src.llm_core, the same
+    # `_is_self_hosted_openai_compatible(...) and not _is_local_ollama_target(...)`
+    # gate as the sampler floor). llama.cpp's server (recent builds) accepts
+    # `reasoning_budget` at the top level; unknown fields are ignored
+    # elsewhere, so this is safe to always send when thinking is on. 0
+    # (or any non-positive value) omits the field entirely.
+    "local_openai_reasoning_budget_default": 4096,
     # Standing instructions from the repo (AGENTS.md / CLAUDE.md / …) in the
     # system prompt, and the repository map (files + symbols) before the
     # user's message (src/project_instructions.py, src/repo_map.py).

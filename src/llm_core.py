@@ -1987,6 +1987,27 @@ def _supports_thinking(model: str) -> bool:
     m = model.lower()
     return any(p in m for p in _THINKING_MODEL_PATTERNS)
 
+
+def _resolve_think_decision(model: str, overrides: Optional[Dict]) -> Optional[bool]:
+    """The same explicit-override-else-default-suppress decision the Ollama
+    branches already make (an explicit `/think on|off`, the harness'
+    runaway-thinking retry, or any other caller that set `think` in
+    `gen_overrides` always wins; otherwise a thinking-capable model defaults
+    to thinking OFF, so tool calls aren't swallowed inside `<think>` blocks
+    and a chat template that opens every turn with `<think>` by default
+    doesn't burn the whole output cap reasoning).
+
+    Returns `True`/`False` when a decision applies, `None` when nothing
+    about thinking should be sent at all (model has no thinking mode and
+    nothing pinned one).
+    """
+    ov = overrides if isinstance(overrides, dict) else {}
+    if "think" in ov and ov["think"] is not None:
+        return bool(ov["think"])
+    if _supports_thinking(model):
+        return False
+    return None
+
 def _normalize_mistral_content(content):
     """Mistral returns content as a structured array when reasoning is on:
         [{"type": "thinking", "thinking": [{"type": "text", "text": "..."}], "closed": true},
@@ -4160,6 +4181,32 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
         # <think> blocks. Ollama /v1 accepts "think": false as a top-level param.
         if _is_ollama_openai_compat_url(url) and _supports_thinking(model):
             payload["think"] = False
+        # A self-hosted, non-Ollama OpenAI-compatible endpoint (llama-server,
+        # vLLM) needs the SAME think decision Ollama gets above, carried
+        # through a different field: llama.cpp's --jinja Qwen3 template opens
+        # every assistant turn with <think> unconditionally, so without this
+        # a turn burns the whole output cap reasoning every round. Verified
+        # live: 4 rounds, 40 minutes, no answer against llama-server; the
+        # Ollama native path (think=False reaching it) finished the same
+        # turn in 158s. `chat_template_kwargs.enable_thinking` is llama.cpp/
+        # vLLM's equivalent; `reasoning_budget` (llama.cpp, recent builds)
+        # caps how much of the output cap thinking itself can spend, only
+        # sent when thinking is actually on.
+        if _is_self_hosted_openai_compatible(url) and not _is_local_ollama_target(url):
+            _think_decision = _resolve_think_decision(model, _overrides)
+            if _think_decision is not None:
+                _ctk = payload.get("chat_template_kwargs")
+                if not isinstance(_ctk, dict):
+                    _ctk = {}
+                    payload["chat_template_kwargs"] = _ctk
+                _ctk["enable_thinking"] = _think_decision
+                if _think_decision:
+                    try:
+                        _budget = int(_local_sampler_default("local_openai_reasoning_budget_default", 4096))
+                    except (TypeError, ValueError):
+                        _budget = 4096
+                    if _budget > 0:
+                        payload["reasoning_budget"] = _budget
         if _overrides:
             _apply_gen_overrides_openai(payload, _overrides, url)
         _apply_local_cache_affinity(payload, url, session_id)
