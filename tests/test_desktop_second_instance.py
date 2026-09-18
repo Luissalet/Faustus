@@ -25,9 +25,14 @@ def test_second_instance_does_not_touch_a_destroyed_window():
     handler = _second_instance_handler()
     assert "alive(mainWindow)" in handler
     alive_at = handler.index("alive(mainWindow)")
-    assert handler.index("isMinimized()") > alive_at
-    assert handler.index(".show()") > alive_at
-    assert handler.index(".focus()") > alive_at
+    # Since the tray shell, showing the window is one helper (showMainWindow)
+    # that does the isMinimized/show/focus dance itself, guarded by alive().
+    assert handler.index("showMainWindow()") > alive_at
+    helper = MAIN_CJS[MAIN_CJS.index("function showMainWindow(){"):]
+    helper = helper[: helper.index("\n}") + 2]
+    assert helper.index("alive(mainWindow)") < helper.index("isMinimized()")
+    assert helper.index("alive(mainWindow)") < helper.index(".show()")
+    assert helper.index("alive(mainWindow)") < helper.index(".focus()")
 
 
 def test_permission_handlers_do_not_call_geturl_on_a_destroyed_contents():

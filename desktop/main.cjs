@@ -12,7 +12,7 @@ let mainWindow,tray=null,ownedToken='',quitting=false,startup=null,stopDesktopCo
 // desktop apps do; the tray menu's Quit is what really stops it. The smoke
 // test keeps the old close-means-quit path so it can finish on its own.
 const trayEnabled=!process.argv.includes('--smoke-test')&&!process.argv.includes('--no-tray');
-let trayHintShown=false;
+
 const alive=w=>w&&!w.isDestroyed();
 const liveContents=c=>c&&!c.isDestroyed();
 const splash='data:text/html;charset=utf-8,'+encodeURIComponent(`<!doctype html><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'"><title>Faustus</title><body style="background:#17191d;color:#eee;font:18px system-ui;margin:0"><header style="height:40px;display:flex;background:#121418"><span style="-webkit-app-region:drag;flex:1;padding:8px 18px;color:#e06c75">Faustus</span><button aria-label="Close / Cerrar" onclick="window.faustusWindow.command('close')" style="background:transparent;border:0;color:inherit;padding:0 20px">×</button></header><main style="padding:48px"><h1>Faustus</h1><p>Starting your local workspace… / Iniciando tu espacio local…</p><p>You can close this window to cancel. / Puedes cerrar esta ventana para cancelar.</p></main></body>`);
@@ -47,47 +47,13 @@ const windowState=window=>({maximized:alive(window)&&window.isMaximized(),fullsc
 // server would already let this window in; any failure (auth off in a way
 // that still 403s a bare fetch, server mid-restart, timeout) degrades to an
 // unknown count rather than blocking the close dialog on it.
-async function activeTaskCount(){
-  try{
-    const controller=new AbortController();
-    const timer=setTimeout(()=>controller.abort(),2000);
-    const response=await net.fetch(origin+'/api/queue',{signal:controller.signal});
-    clearTimeout(timer);
-    if(!response.ok)return null;
-    const body=await response.json();
-    return Array.isArray(body.items)?body.items.length:null;
-  }catch{return null;}
-}
 async function closeConfirmed(target,senderUrl){
+  // No questions, ever (the owner's rule): the X parks the window in the
+  // tray; Quit from the tray closes the window and stops the server this
+  // window started. A window on a shared server just closes and leaves the
+  // server to the others.
   if(target!==mainWindow||senderUrl===splash||process.argv.includes('--smoke-test'))return 'close';
-  const owned=!!ownedToken;
-  if(!owned){
-    const {response}=await dialog.showMessageBox(target,{
-      type:'question',title:'Faustus',
-      message:'Close window? / ¿Cerrar la ventana?',
-      detail:'This window uses a server shared with other Faustus windows. Closing it does not stop that server: the turn keeps running there. / Esta ventana usa un servidor compartido con otras ventanas de Faustus. Cerrarla no lo detiene: el turno sigue en el servidor.',
-      buttons:['Cancel / Cancelar','Close / Cerrar'],
-      defaultId:1,cancelId:0,
-    });
-    return response===1?'close':'cancel';
-  }
-  const count=await activeTaskCount();
-  const countEn=count===null?'it may still have work in progress (could not check)'
-    :count>0?`this stops ${count} task${count===1?'':'s'} still in progress`
-    :'nothing is in progress on it right now';
-  const countEs=count===null?'puede seguir con trabajo en marcha (no se pudo comprobar)'
-    :count>0?`esto detiene ${count} tarea${count===1?'':'s'} en marcha`
-    :'no hay nada en marcha en él ahora mismo';
-  const {response}=await dialog.showMessageBox(target,{
-    type:'warning',
-    title:'Faustus',
-    message:'Close window? / ¿Cerrar la ventana?',
-    detail:`This window started its own local server; ${countEn}. Keep the server running to leave that work alone. / Esta ventana inició su propio servidor local; ${countEs}. Mantén el servidor en marcha para no interrumpir ese trabajo.`,
-    buttons:['Cancel / Cancelar','Keep the server running / Mantener el servidor','Close and stop the server / Cerrar y detener el servidor'],
-    defaultId:0,
-    cancelId:0,
-  });
-  return response===2?'stop':response===1?'keep':'cancel';
+  return ownedToken?'stop':'close';
 }
 function secureWindow(window){
   for(const event of ['maximize','unmaximize','enter-full-screen','leave-full-screen'])window.on(event,()=>{if(!alive(window))return;window.webContents.send('faustus:window-state',windowState(window));});
@@ -109,20 +75,13 @@ function showMainWindow(){
 }
 function parkInTray(){
   if(!alive(mainWindow))return;
+  // Silently: no balloon, no hint. The tray icon is the whole message.
   mainWindow.hide();
-  if(!trayHintShown&&tray&&process.platform==='win32'){
-    trayHintShown=true;
-    try{tray.displayBalloon({title:'Faustus',content:'Sigue en la bandeja del sistema (iconos ocultos). Click para abrir; click derecho → Salir para cerrar. / Still running in the tray. Click to open; right-click → Quit to close.',iconType:'info'});}catch{/* balloon is a courtesy */}
-  }
 }
 async function quitFromTray(){
+  // Quit means quit: close the window and stop the server this window
+  // started, without asking (the owner's rule: "always yes, no prompts").
   if(quitting)return;
-  if(alive(mainWindow)){
-    showMainWindow();
-    const decision=await closeConfirmed(mainWindow,mainWindow.webContents.getURL());
-    if(decision==='cancel')return;
-    if(decision==='keep')ownedToken='';
-  }
   void shutdown();
 }
 function createTray(){

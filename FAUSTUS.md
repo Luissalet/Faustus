@@ -5536,3 +5536,11 @@ El paquete de Luis no era solo M0 y M1: detrás de los 100 requisitos P0 venían
 
 **Ficheros.** `src/mcp_manager.py`, `src/integrations.py`, `src/agent_loop.py`, `src/context_ledger.py`, `src/settings.py`, `src/agent_settings_schema.py`, `tests/test_mcp_prompt_scope.py`.
 
+## 111. La app de escritorio no pregunta nada al cerrar (18-09-2026)
+
+**Pedido.** «Quita la burrada de avisos: le doy a la X y me sale un popup, se va a la bandeja y me avisa, en la bandeja click derecho → cerrar y otro aviso de si quiero cerrar el servidor. Siempre es sí. Ningún aviso.»
+
+**Hecho (`desktop/main.cjs`).** La X esconde la ventana en la bandeja sin globo ni pista (se quita `displayBalloon` y `trayHintShown`). «Salir» en la bandeja cierra y detiene el servidor que esa ventana arrancó, sin diálogo (`quitFromTray` → `shutdown()`). `closeConfirmed` deja de abrir `showMessageBox`: devuelve `stop` si la ventana es dueña del servidor y `close` si el servidor es compartido con otras ventanas (se cierra la ventana, el servidor sigue). Se elimina `activeTaskCount` (solo servía para el texto del diálogo). Quedan los únicos avisos que tienen sentido: el de permisos del navegador (micrófono/cámara, una vez) y el error fatal de instalación. Los cambios de Electron entran al reabrir la app.
+
+**Verificado.** `node --check`, `tests/test_desktop_shell.py`, `test_adp08_desktop_semantics.py`, `test_sec_lote16_sec07_electron.py`, `test_desktop_second_instance.py` (este último actualizado: comprobaba el `isMinimized()` dentro del handler de segunda instancia, que desde la bandeja vive en `showMainWindow`; fallaba ya antes de este cambio).
+
