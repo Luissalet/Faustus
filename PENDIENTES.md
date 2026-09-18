@@ -2,6 +2,11 @@
 
 Actualizado: 18-09-2026. REGLA: nunca nombres de empresas/personas del buzón de Luis en commits, docs, tests ni comentarios — ejemplos siempre ficticios. Sólo trabajo vigente; quitar cada entrada al cerrarla.
 
+## 18-09 noche — llama-server en el PC (FAUSTUS.md §114)
+- `/think on` no llega a la petición de llama-server: la sesión sigue con `<think></think>` precerrado y sin `reasoning_budget`. La decisión de `_resolve_think_decision` sí funciona por ajuste/override, pero el comando de barra no la alimenta en ese endpoint. Revisar `slash_think` → overrides del turno.
+- Con llama-server sirviendo el q8 (47 GB) el keeper (`warm_default_model`) queda en false y Ollama solo tiene el 4b de utilidad; al volver a Ollama para el 27B: `D:\LocalAI\Stop-LlamaServer.ps1` y `warm_default_model=true`.
+- Pendiente de decidir: modelo por defecto en el endpoint "llama.cpp (local)" o en Ollama; hoy sigue `qwen3.8:27b-q8_0` en Ollama.
+
 ## 18-09 noche, segunda corrección (llama-server pensaba sin parar con `--jinja` — FAUSTUS.md §114 «Segunda corrección»)
 
 - No verificado en vivo: falta repetir la conversación exacta contra el llama-server real y confirmar en `/slots` que `chat_template_kwargs.enable_thinking` llega en `false` por defecto, que ya no se agota el tope de 8192 razonando (antes 4 rondas, 40 minutos, sin respuesta), y probar un `/think on` explícito para confirmar que el razonamiento sigue disponible cuando se pide a propósito (con `reasoning_budget: 4096`).
