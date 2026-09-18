@@ -155,7 +155,11 @@ edición de una línea fue `read_file` → `write_file` sin pregunta.
   `{question, header, options:[{label, description}], multi:false, recommended}`,
   descrita al modelo con cuándo usarla y cuándo NO (no para lo que tiene
   valor por defecto obvio; una sola pregunta por turno).
-- Ruta `POST /api/questions/{id}` con la respuesta; fase SSE `question`.
+- Hecho, pero distinto de lo planeado aquí: la respuesta va por el propio
+  `chat_stream` (con `question_id`/`option_ids`/`revision` en el cuerpo,
+  `routes/chat_routes.py::question_store.resolve_question`), no por una ruta
+  `POST /api/questions/{id}` dedicada; `GET /api/questions` lista las
+  abiertas y la fase SSE `question` sigue igual.
 - Tarjeta en Transcript con radio/checkbox, campo libre y «Responder».
 - Comprobar en vivo con qwen3.8 27B que la USA cuando toca: pedirle algo
   ambiguo («impleméntame auth») y ver si pregunta o se lanza.
