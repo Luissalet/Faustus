@@ -2,6 +2,12 @@
 
 Actualizado: 18-09-2026. REGLA: nunca nombres de empresas/personas del buzón de Luis en commits, docs, tests ni comentarios — ejemplos siempre ficticios. Sólo trabajo vigente; quitar cada entrada al cerrarla.
 
+## 18-09 (renombrado interno completo y traslado a D:\LocalAI\faustus — FAUSTUS.md §112)
+- Revisar: `studio/src/shell/notifications-tray.tsx` + `notifications.ts` están implementados y con backend (`routes/notifications_routes.py`) pero no se montan en `AppShell.tsx`. Decidir: cablear o borrar.
+- Revisar: los nombres de colecciones vectoriales y las columnas `odysseus_kind`/`odysseus_ref` siguen con el prefijo antiguo a propósito; si algún día se hace una migración de datos, es el momento de renombrarlos.
+- Revisar: `origin/dev` sigue existiendo en GitHub y `origin/HEAD` apunta a él en el clon; si la rama remota ya no sirve, borrarla (push de Luis).
+- Comprobar en el PC: los dos servidores MCP «Hoard» fallan al conectar con WinError 2 desde el 17-09 (antes del renombrado): la ruta del comando ya no existe.
+
 ## 18-09 (bloque MCP del prompt recortado a lo seleccionado — FAUSTUS.md §110)
 
 - Todo lo de este lote está probado con un `McpManager` de mentira (3 servidores × 20 tools de prueba) y con `src.settings.get_setting` parcheado — nunca contra los ~10 servidores MCP reales de la máquina de Luis. Falta, en vivo: (1) mandar «hola» y mirar el ledger de contexto (o los logs) para confirmar que la sección `mcp` bajó de los 14.657 tokens confirmados en vivo a algo cercano al tope de 1500 (o a 0 si nada se seleccionó ese turno); (2) un turno que sí necesita un tool MCP concreto (p. ej. un servidor de archivos o de navegador) sigue pudiendo llamarlo sin fricción, con su esquema nativo intacto — no solo en test; (3) `lookup_tools` con el nombre de un tool MCP que no estuviera en el conjunto seleccionado de ese turno, y confirmar que lo sigue encontrando y cargando pese al recorte del prompt; (4) activar `agent_mcp_prompt_full_listing` desde Ajustes y confirmar que el volcado completo de siempre vuelve tal cual estaba, por si alguien lo necesita para depurar un servidor MCP concreto.
