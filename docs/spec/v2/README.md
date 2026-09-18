@@ -9,8 +9,7 @@ Ubicación en el repo: `docs/spec/v2/`. Baseline auditada: `b824057e` (master, 1
 4. Elegir un incremento vertical y aplicar su definición de terminado.
 
 ## Contenido
-- `Faustus_Especificacion_Integral_v2.docx`: documento editable y maquetado (43 páginas en la revisión renderizada).
-- Markdown: especificación integral equivalente al cuerpo del DOCX.
+- `Faustus_Especificacion_Integral_v2.md`: especificación integral (fuente; 43 páginas en la revisión renderizada original).
 - `backlog.json`: 187 requisitos, prioridades, backend, frontend, aceptación y dependencias.
 - `tool_catalog.json`: 192 contratos lógicos propuestos, no inventario de funciones actuales.
 - `acceptance_scenarios.json`: 48 escenarios de pruebas; no ejecutados contra Faustus.
