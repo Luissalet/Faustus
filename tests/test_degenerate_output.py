@@ -87,6 +87,58 @@ def test_is_degenerate_output_error_matches_ollamas_own_abort_message():
     assert not llm_core.is_degenerate_output_error(None)
 
 
+# ── gibberish-script guard (pure gibberish that never repeats one unit) ────
+
+def test_guard_raises_on_sustained_cyrillic_run_that_never_repeats_a_unit():
+    # The live failure: "lis the lis the" degrading into a DIFFERENT
+    # Cyrillic word each token — no small repeated unit, so the repeat-based
+    # checks above would never fire, yet it is still garbage.
+    guard = llm_core._DegenerateStreamGuard("qwen3.8:27b-q8_0")
+    cyrillic_words = [
+        "привет", "мир", "собака", "кошка", "дерево", "солнце", "вода",
+        "гора", "река", "облако", "звезда", "дорога", "город", "человек",
+    ]
+    with pytest.raises(llm_core.DegenerateOutput) as excinfo:
+        for i in range(60):
+            guard.check(cyrillic_words[i % len(cyrillic_words)] + " ")
+    assert "non-Latin" in excinfo.value.reason
+
+
+def test_guard_does_not_raise_on_normal_spanish_with_accents_and_emoji():
+    guard = llm_core._DegenerateStreamGuard("model")
+    text = (
+        "¡Hola! Aquí tienes un resumen del estado del proyecto 🎉. "
+        "La migración a la nueva versión terminó sin incidencias y el "
+        "equipo revisó los cambios en la reunión de ayer. Todo salió bien "
+        "y quedamos en continuar mañana con la siguiente fase del trabajo. "
+        "Gracias por la paciencia y hasta luego 👋."
+    )
+    guard.check(text)  # no exception
+
+
+def test_guard_does_not_raise_on_a_short_russian_quote_inside_english_text():
+    guard = llm_core._DegenerateStreamGuard("model")
+    text = (
+        "The document explains the concept clearly. In Russian, the word "
+        "for hello is 'привет', which is a common, friendly greeting used "
+        "casually among friends and family across most of the country. "
+        "The rest of this answer continues entirely in English, as "
+        "requested, so the short quoted phrase above should not trip any "
+        "kind of language-mismatch detector at all."
+    )
+    guard.check(text)  # no exception — short quote, mostly Latin overall
+
+
+def test_unexpected_script_fraction_ignores_digits_punctuation_and_emoji():
+    assert llm_core._unexpected_script_fraction("123 456 !!! ... 🎉🎉🎉") == 0.0
+    assert llm_core._unexpected_script_fraction("") == 0.0
+
+
+def test_gibberish_threshold_and_window_are_registered_settings():
+    assert DEFAULT_SETTINGS["local_gibberish_script_threshold"] == 0.40
+    assert DEFAULT_SETTINGS["local_gibberish_window_chars"] == 300
+
+
 # ── settings defaults ───────────────────────────────────────────────────────
 
 def test_local_sampler_defaults_are_registered():
@@ -203,25 +255,35 @@ def test_degenerate_round_is_retried_once_with_bumped_sampler(monkeypatch, tmp_p
     assert seen_overrides[1].get("repeat_penalty") == 1.15
 
 
-def test_degenerate_on_step1_retry_then_ladder_step2_answers(monkeypatch, tmp_path):
+def test_degenerate_on_step1_retry_skips_same_model_and_answers_via_utility(monkeypatch, tmp_path):
     """Initial round degenerates, the existing single retry (ladder step 1)
-    degenerates AGAIN, and ladder step 2 (no tools, minimal prompt, same
-    endpoint) finally answers. The turn must end with that answer, never an
-    error — the owner's "never end with an error while a model is loaded".
+    degenerates AGAIN — two degenerate aborts of the SAME model this turn.
+    The ladder must not spend a third same-model attempt (step 2 is
+    skipped): it goes straight to the utility endpoint (step 3), which
+    answers. The turn must end with that answer, never an error — the
+    owner's "never end with an error while a model is loaded".
     """
     _patch_common(monkeypatch)
+
+    def _fake_resolve_endpoint(prefix, *args, **kwargs):
+        if prefix == "utility":
+            return ("http://127.0.0.1:11434/v1", "utility-model", {})
+        return (None, None, None)
+    monkeypatch.setattr("src.endpoint_resolver.resolve_endpoint", _fake_resolve_endpoint)
+
     call_no = 0
 
     async def _fake_stream(_candidates, messages, **kwargs):
         nonlocal call_no
         call_no += 1
-        if call_no <= 2:
-            yield f'data: {json.dumps({"delta": "0000000000"})}\n\n'
-            yield _degenerate_error_chunk()
-        else:
-            yield f'data: {json.dumps({"delta": "Real answer from the ladder."})}\n\n'
+        cand_model = _candidates[0][1] if _candidates else None
+        if cand_model == "utility-model":
+            yield f'data: {json.dumps({"delta": "Real answer from the utility model."})}\n\n'
             yield f'data: {json.dumps({"type": "finish", "finish_reason": "stop"})}\n\n'
             yield "data: [DONE]\n\n"
+        else:
+            yield f'data: {json.dumps({"delta": "0000000000"})}\n\n'
+            yield _degenerate_error_chunk()
 
     monkeypatch.setattr(al, "stream_llm_with_fallback", _fake_stream, raising=False)
     raw_chunks = _collect(al.stream_agent_loop(
@@ -233,15 +295,20 @@ def test_degenerate_on_step1_retry_then_ladder_step2_answers(monkeypatch, tmp_pa
     events = _types(raw_chunks)
 
     # call 1: initial round degenerates. call 2: step-1 retry degenerates
-    # too. call 3: ladder step 2 (fresh, tools-off, minimal-prompt
-    # completion) answers.
+    # too (same model, second abort). call 3: ladder step 3 — the utility
+    # model, reached WITHOUT a third same-model attempt — answers.
     assert call_no == 3
-    assert any(
+    assert not any(
         e.get("type") == "harness_check" and e.get("status") == "recovery" and e.get("step") == 2
         for e in events
     ), events
+    step3 = next(
+        (e for e in events if e.get("type") == "harness_check" and e.get("status") == "recovery" and e.get("step") == 3),
+        None,
+    )
+    assert step3 is not None, events
     joined = "".join(raw_chunks)
-    assert "Real answer from the ladder." in joined
+    assert "Real answer from the utility model." in joined
     assert not any(c.startswith("event: error") for c in raw_chunks), raw_chunks
     terminal_events = [e for e in events if e.get("type") == "agent_terminal"]
     assert not terminal_events, terminal_events  # a real answer is not a terminal failure
@@ -318,7 +385,9 @@ def test_degenerate_round_ends_the_turn_with_plain_message_after_the_whole_ladde
     """When EVERY rung of the ladder degenerates (no utility endpoint is
     configured in this test env, so step 3 can't even be tried), the turn
     still ends with the plain-language message — never a bare HTTP-400 —
-    and the collapsed output is never what gets persisted.
+    and the collapsed output is never what gets persisted. Step 2 (a third
+    same-model attempt) is skipped outright: the model has already
+    degenerated twice by the time the ladder runs.
     """
     _patch_common(monkeypatch)
     round_no = 0
@@ -337,16 +406,17 @@ def test_degenerate_round_ends_the_turn_with_plain_message_after_the_whole_ladde
         relevant_tools={"read_file"},
     ))
 
-    # round 1 (initial) -> step 1 retry (round 2) -> ladder step 2 (round 3,
-    # same endpoint/model) -> step 3 has no utility endpoint in this test
-    # environment, so it can't even be tried -> step 4 gives up.
-    assert round_no == 3
+    # round 1 (initial) -> step 1 retry (round 2, still the same model) ->
+    # ladder: step 2 is skipped (second same-model degenerate abort already
+    # happened) -> step 3 has no utility endpoint in this test environment,
+    # so it can't even be tried -> step 4 gives up. Only 2 actual model
+    # calls happen.
+    assert round_no == 2
     joined = "".join(chunks)
     assert "looped" in joined.lower()
-    assert any(
-        json.loads(c[6:]).get("step") == 2
+    assert not any(
+        c.startswith("data: ") and '"status": "recovery"' in c and json.loads(c[6:]).get("step") == 2
         for c in chunks
-        if c.startswith("data: ") and '"status": "recovery"' in c
     ), chunks
     # The raw delta chunk that already reached the "wire" before the error
     # fired can't be unsent (inherent to streaming) — but the PERSISTED
@@ -358,3 +428,80 @@ def test_degenerate_round_ends_the_turn_with_plain_message_after_the_whole_ladde
     )
     persisted_text = " ".join(terminal["data"].get("round_texts") or [])
     assert "0000000000" not in persisted_text
+
+
+# ── recovery ladder: skip_same_model_retry and the hard output cap ─────────
+
+def test_recovery_ladder_skip_same_model_retry_omits_step2(monkeypatch, tmp_path):
+    """`skip_same_model_retry=True` never runs step 2 (no step=2 harness_check
+    event, and `stream_llm_with_fallback` is never called for the original
+    model) and goes straight to step 3 against the utility endpoint."""
+    _patch_common(monkeypatch)
+    calls = []
+
+    def _fake_resolve_endpoint(prefix, *args, **kwargs):
+        if prefix == "utility":
+            return ("http://127.0.0.1:11434/v1", "utility-model", {})
+        return (None, None, None)
+    monkeypatch.setattr("src.endpoint_resolver.resolve_endpoint", _fake_resolve_endpoint)
+
+    async def _fake_stream(_candidates, messages, **kwargs):
+        model = _candidates[0][1] if _candidates else None
+        calls.append(model)
+        yield f'data: {json.dumps({"delta": "Utility answer."})}\n\n'
+        yield "data: [DONE]\n\n"
+
+    monkeypatch.setattr(al, "stream_llm_with_fallback", _fake_stream, raising=False)
+
+    events = []
+    result = None
+    async def _run():
+        nonlocal result
+        async for kind, payload in al._recovery_ladder(
+            reason="degenerate", endpoint_url="http://127.0.0.1:11434/v1",
+            model="looping-model", headers={}, messages=[{"role": "user", "content": "hi"}],
+            temperature=0.7, max_tokens=512, gen_overrides=None, session_id="s1",
+            owner=None, agent_stream_timeout=60, skip_same_model_retry=True,
+        ):
+            if kind == "event":
+                events.append(json.loads(payload.split("data: ", 1)[1]))
+            else:
+                result = payload
+
+    asyncio.run(_run())
+    assert calls == ["utility-model"]  # never called for "looping-model" (step 2 skipped)
+    assert not any(e.get("step") == 2 for e in events)
+    assert any(e.get("step") == 3 for e in events)
+    assert result["ok"] is True
+    assert result["model"] == "utility-model"
+    assert result["note"] == "(answered by utility-model after the default model looped)"
+    assert result["text"] == f"{result['note']}\n\nUtility answer."
+
+
+def test_recovery_ladder_step2_caps_output_tokens(monkeypatch, tmp_path):
+    """Every recovery step (2 and 3) caps num_predict/max_tokens at
+    `_RECOVERY_STEP2_MAX_TOKENS` regardless of the turn's own max_tokens, so
+    a broken model cannot burn minutes of GPU time before the guard/cap ends
+    it."""
+    _patch_common(monkeypatch)
+    seen_max_tokens = []
+
+    async def _fake_stream(_candidates, messages, *, max_tokens=None, **kwargs):
+        seen_max_tokens.append(max_tokens)
+        yield f'data: {json.dumps({"delta": "ok"})}\n\n'
+        yield "data: [DONE]\n\n"
+
+    monkeypatch.setattr(al, "stream_llm_with_fallback", _fake_stream, raising=False)
+
+    async def _run():
+        async for _kind, _payload in al._recovery_ladder(
+            reason="degenerate", endpoint_url="http://127.0.0.1:11434/v1",
+            model="looping-model", headers={}, messages=[{"role": "user", "content": "hi"}],
+            temperature=0.7, max_tokens=8000, gen_overrides=None, session_id="s1",
+            owner=None, agent_stream_timeout=60, skip_same_model_retry=False,
+        ):
+            pass
+
+    asyncio.run(_run())
+    assert seen_max_tokens
+    assert all(mt <= al._RECOVERY_STEP2_MAX_TOKENS for mt in seen_max_tokens)

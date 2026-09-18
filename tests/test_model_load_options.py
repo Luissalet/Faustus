@@ -176,16 +176,34 @@ def test_explicit_overrides_sit_above_the_saved_defaults(store, monkeypatch):
     assert client.payload["options"]["num_ctx"] == 32768
 
 
-def test_no_saved_defaults_leaves_the_request_alone(store, monkeypatch):
+def test_no_saved_defaults_still_gets_the_sampler_floor(store, monkeypatch):
+    """No saved model_load_options at all: the request still moves to the
+    native endpoint and carries the repeat_penalty/min_p floor — the
+    `local_*_default` settings must reach EVERY local Ollama model, not only
+    ones with a saved per-model `extra` block (the q8 degenerate-stream root
+    cause: previously this model would have stayed on /v1 with none of
+    Ollama's own repetition guard). Nothing ELSE saved leaks in."""
     client = _stream(monkeypatch, "http://127.0.0.1:11434/v1", "qwen3.5:9b")
-    assert client.url.endswith("/v1/chat/completions")
-    assert "options" not in client.payload and "keep_alive" not in client.payload
+    assert client.url.endswith("/api/chat")
+    assert client.payload["options"]["repeat_penalty"] == 1.05
+    assert client.payload["options"]["min_p"] == 0.05
+    # num_ctx here comes from the discovered context length (_stream's own
+    # get_context_length stub), not a saved default — no num_gpu/keep_alive
+    # was ever saved for this model, so neither appears.
+    assert "num_gpu" not in client.payload["options"]
+    assert "keep_alive" not in client.payload
 
 
 def test_defaults_for_another_model_do_not_leak(store, monkeypatch):
     mlo.set_options("local-ollama", "qwen3.8:27b-q8_0", {"num_ctx": 16384})
     client = _stream(monkeypatch, "http://127.0.0.1:11434/v1", "qwen3.5:9b")
-    assert "options" not in client.payload
+    # 16384 was saved for the OTHER model (qwen3.8:27b-q8_0) and must not
+    # leak; the 262144 seen here is _stream's own get_context_length stub.
+    assert client.payload["options"]["num_ctx"] != 16384
+    # the sampler floor is unconditional (every local Ollama model), not a
+    # saved per-model default, so it is expected here regardless
+    assert client.payload["options"]["repeat_penalty"] == 1.05
+    assert client.payload["options"]["min_p"] == 0.05
 
 
 def test_saved_defaults_apply_off_the_default_port_when_the_admin_declared_the_server(store, monkeypatch):
@@ -308,3 +326,69 @@ def test_main_gpu_is_an_ollama_native_only_override():
         "num_ctx": 4096, "main_gpu": 0,
         "repeat_penalty": 1.05, "min_p": 0.05,
     }
+
+
+# ── CALL-06 audit: sampling floor always reaches a local Ollama runner ─────
+
+def test_merge_order_defaults_then_extra_then_turn_override(store, monkeypatch):
+    """The full merge chain for one field: global `local_*_default` ->
+    per-model `model_load_options[...].extra` -> per-turn override, later
+    always wins."""
+    # Global floor only (nothing saved for this model).
+    client = _stream(monkeypatch, "http://127.0.0.1:11434/v1", "qwen3.8:27b-q8_0")
+    assert client.payload["options"]["repeat_penalty"] == 1.05
+
+    # A saved per-model `extra.repeat_penalty` beats the global floor.
+    mlo.set_options("local-ollama", "qwen3.8:27b-q8_0", {"extra": {"repeat_penalty": 1.2}})
+    client = _stream(monkeypatch, "http://127.0.0.1:11434/v1", "qwen3.8:27b-q8_0")
+    assert client.payload["options"]["repeat_penalty"] == 1.2
+
+    # An explicit per-turn override beats both.
+    client = _stream(
+        monkeypatch, "http://127.0.0.1:11434/v1", "qwen3.8:27b-q8_0",
+        gen_overrides={"repeat_penalty": 1.3},
+    )
+    assert client.payload["options"]["repeat_penalty"] == 1.3
+
+
+def test_routing_local_ollama_v1_url_always_moves_to_native(store, monkeypatch):
+    """A local Ollama /v1 request always resolves to the native /api/chat
+    endpoint, even with no saved options and no explicit per-turn override:
+    the global sampler floor alone must be enough to trigger the reroute,
+    because it is the only surface that carries repeat_penalty/min_p."""
+    assert llm_core._model_load_defaults("http://127.0.0.1:11434/v1", "qwen3.5:9b") == {
+        "repeat_penalty": 1.05, "min_p": 0.05,
+    }
+    routed = llm_core._route_for_gen_overrides(
+        "http://127.0.0.1:11434/v1",
+        llm_core._clean_gen_overrides(
+            llm_core._model_load_defaults("http://127.0.0.1:11434/v1", "qwen3.5:9b")
+        ),
+        "qwen3.5:9b",
+    )
+    assert routed == "http://127.0.0.1:11434/api/chat"
+    # An undeclared local port is NOT assumed to be Ollama for this purpose —
+    # only the default port or an admin-declared host.
+    assert llm_core._model_load_defaults("http://127.0.0.1:8080/v1", "qwen3.5:9b") == {}
+
+
+def test_llama_server_loopback_gets_min_p_and_repeat_penalty_top_level(monkeypatch):
+    """A non-Ollama OpenAI-compatible local server (llama-server) accepts
+    min_p/repeat_penalty/top_k as top-level fields on /v1/chat/completions —
+    forwarded only for loopback, never guessed for a remote OpenAI provider."""
+    payload = {}
+    llm_core._apply_gen_overrides_openai(
+        payload, {"min_p": 0.05, "repeat_penalty": 1.05, "top_k": 40, "top_p": 0.9},
+        "http://127.0.0.1:8081/v1",
+    )
+    assert payload["min_p"] == 0.05
+    assert payload["repeat_penalty"] == 1.05
+    assert payload["top_k"] == 40
+    assert payload["top_p"] == 0.9  # already forwarded unconditionally
+
+    remote_payload = {}
+    llm_core._apply_gen_overrides_openai(
+        remote_payload, {"min_p": 0.05, "repeat_penalty": 1.05}, "https://api.openai.com/v1",
+    )
+    assert "min_p" not in remote_payload
+    assert "repeat_penalty" not in remote_payload
