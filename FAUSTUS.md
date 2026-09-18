@@ -64,7 +64,7 @@ Detecta el runner (comando del proyecto → pytest → npm test → cargo/go/mak
 Un **repositorio git sombra** por workspace (git-dir en `data/checkpoints/…`, work-tree = la carpeta del usuario; nunca toca el `.git` del usuario, funciona en carpetas sin git). Antes de la primera escritura de cada turno se hace un snapshot; el turno guarda su `sha`. Con eso: **diff por fichero respecto al inicio del turno**, contenido previo de cualquier fichero, **Restore to before this turn** (borra lo creado, restaura lo modificado) y **Commit these changes…** en el git del usuario con un mensaje propuesto y solo los ficheros del turno. Excluye carpetas vendored y ficheros grandes; tope de tamaño del repo sombra; bloqueo por workspace. Rutas `/api/workspace/checkpoint/{status,changes,file,restore,list,reset}`, `/api/workspace/commit/proposal`, `POST /api/workspace/commit`.
 
 ### 3.3 Instrucciones del proyecto — `src/project_instructions.py`
-`AGENTS.md` / `CLAUDE.md` / `.odysseus/INSTRUCTIONS.md` / `.cursorrules` / … del workspace se inyectan en el **prompt de sistema** de cada turno (caché por mtime, tope de tamaño con aviso de truncado).
+`AGENTS.md` / `CLAUDE.md` / `.faustus/INSTRUCTIONS.md` / `.cursorrules` / … del workspace se inyectan en el **prompt de sistema** de cada turno (caché por mtime, tope de tamaño con aviso de truncado). Un proyecto anterior al renombrado que aún tenga `.odysseus/INSTRUCTIONS.md` se sigue leyendo (solo lectura) si no existe ya `.faustus/INSTRUCTIONS.md`.
 
 ### 3.4 Mapa del repositorio — `src/repo_map.py`
 Estilo Aider: árbol compacto + símbolos de nivel superior (Python por `ast`; JS/TS/Go/Rust/Java/C#/Ruby/PHP por regex) de los ficheros más relevantes para la petición, con presupuesto de tokens (`agent_repo_map_tokens`). Se inyecta una vez por turno como dato de referencia (no dispara la puerta de aprobación). Menos rondas de `glob/grep`, menos rutas inventadas.
@@ -551,7 +551,7 @@ El problema real: el estado de un plan vivía dentro de un chat. Al cerrar un tu
 y ese "falta X" se perdía en el scroll; para saber por dónde iba un proyecto había que entrar en la sesión y
 leer hacia atrás.
 
-- **Almacén** (`services/objectives.py`): `<workspace>/.odysseus/objectives.jsonl` como verdad versionable —
+- **Almacén** (`services/objectives.py`): `<workspace>/.faustus/objectives.jsonl` como verdad versionable —
   una línea por objetivo y las **dependencias como aristas separadas** (el modelo de `beads_rust`), más
   `objectives_log.jsonl` append-only con cada delta, conflicto y evidencia. Escritura atómica, fichero
   corrupto → `.corrupt` y arranque en vacío: nunca rompe un mensaje.
@@ -1425,7 +1425,7 @@ inalcanzable **desde el propio bash del agente**.
   hoy se escribieron como instrucciones para un modelo, no como capacidades, y tratar un documento
   como si hubiera pedido el disco porque no dijo lo contrario es cómo una carpeta de skills se
   convierte en superficie de ataque.
-- **La procedencia no eleva.** La misma skill en `.claude/skills` y en `.odysseus/skills` da un
+- **La procedencia no eleva.** La misma skill en `.claude/skills` y en `.faustus/skills` da un
   manifiesto con la **misma huella**. Si el sitio donde está un fichero cambiara sus permisos, la
   forma de conseguir un permiso sería mover el fichero.
 
@@ -2780,7 +2780,7 @@ por el motivo equivocado.
 ## 53. Context Engine: un solo compilador decide qué se le cuenta al modelo (06-09-2026)
 
 Faustus nunca tuvo un problema de almacenamiento. Tenía memoria aprendida con madurez y
-antipatrones, memoria de proyecto en `.odysseus/`, objetivos con log tipado, RAG de documentos,
+antipatrones, memoria de proyecto en `.faustus/`, objetivos con log tipado, RAG de documentos,
 corpus de expertos, un grafo de procedencia, changesets y el veredicto de `prove`. Lo que no
 tenía era **una sola respuesta** a la pregunta que todos esos subsistemas venían contestando por
 su cuenta, cada uno en su formato y con su propia idea del presupuesto:
@@ -5571,3 +5571,11 @@ Tres cambios, mismos ficheros de siempre:
 **Limpieza.** Fuera `RESEARCH_FAILURE_HANDOFF.md` (su fallo ya estaba corregido en `research_handler._probe_endpoint`), el `.docx` duplicado de la spec v2, `scripts/fix_paths.py` (no-op), `scripts/faustus_rename.py` y `tests/test_faustus_brand.py` (herramientas de la política anterior); `.gitignore` cubre `.pytest_cache/` e `.impeccable/`. `PENDIENTES.md` pierde 88 líneas de entradas cerradas; `OBJETIVOS.md` corrige una ruta inexistente. En el PC: 9 ramas locales ya fusionadas y una worktree huérfana borradas, logs de más de una semana fuera. Código muerto real encontrado: casi ninguno (`connector_outbox` sí se usa); queda por decidir la bandeja de notificaciones de Studio (`shell/notifications-tray.tsx`), implementada y con backend pero sin montar en `AppShell`.
 
 **Verificado.** ~2.900 tests dirigidos en verde en la nube (4 fallos previos conocidos, ajenos), 74 en el PC tras el traslado, build de Studio, servidor y app de escritorio arrancando desde la nueva carpeta con `/api/health` sano.
+
+**Actualización (18-09-2026, tarde).** Este renombrado completo se revirtió (commit `301d008d`): las variables de entorno, la cookie de sesión y las claves de `localStorage` habían cambiado de nombre pero los datos ya guardados en `data/` seguían con los identificadores antiguos, así que una instalación en marcha dejaba de ver sus propios conectores, procesos y correo. Ver §113 para la pieza que sí se reintroduce, por separado y sin ese riesgo.
+
+## 113. Vuelve la carpeta de convención `.faustus/` (18-09-2026, noche)
+
+**Hecho.** De todo lo revertido en §112, se reintroduce solo la carpeta de convención por proyecto que Faustus crea/lee dentro del workspace del usuario (skills, objetivos, `INSTRUCTIONS.md`, story bible, marcador de identidad, lista de exclusión de snapshots): pasa a llamarse `.faustus/`, con compatibilidad de solo lectura hacia una `.odysseus/` ya existente en disco. Nada se migra ni se borra. Regla: toda escritura o creación va a `.faustus/`; toda lectura o descubrimiento mira primero en `.faustus/` y, si no existe, en `.odysseus/`. Un único helper centraliza la resolución — `src/project_conventions.py: convention_dir(root, create=False)` — y cada módulo que nombraba la carpeta pasa a llamarlo en vez de repetir la comprobación: `services/projects.py` (memoria del proyecto), `services/objective_locations.py` / `services/objectives.py` (objetivos), `src/story_bible.py` (story bible), `src/project_instructions.py` / `src/workspace_trust.py` (AGENTS.md y compañía), `src/skills_runtime/discovery.py` / `src/skill_import_review.py` (skills de proyecto), `src/context_engine/blocks.py` y el resto de `src/context_engine/` (memoria importada al context engine), `src/project_export.py` (export/import de proyectos) y `src/project_identity.py`, `src/agent_harness.py`, `src/dispatch.py`, `src/tool_capabilities.py`, `src/agent_loop.py`, `src/tools/system.py`, `routes/context_engine_routes.py`, `routes/skills_routes.py` (listas de exclusión, comentarios y docstrings). Nada más de §112 vuelve: ni las variables de entorno, ni la cookie, ni `localStorage`, ni los scripts de `scripts/`, ni la carpeta de instalación — esas siguen como antes de §112, porque son justo lo que rompió la instalación en marcha.
+
+**Verificado.** `python -m pytest -q tests/test_skills_runtime.py tests/test_project_conventions.py tests/test_project_instructions_atomic_remember.py tests/test_project_instructions_remember.py tests/test_workspace_trust.py tests/test_workspace_trust_routes.py tests/test_agent_loop_workspace_trust.py tests/test_objective_locations.py tests/test_folderless_objectives.py tests/test_dispatch_objective_ordering.py tests/test_objective_delta_validation.py tests/test_objective_tool_schema.py tests/test_objectives.py tests/test_objectives_concurrency.py tests/test_state_objective_identity.py tests/test_state_objective_reads.py tests/test_story_bible.py tests/test_dispatch*.py tests/test_skill_importer*.py tests/test_projects.py tests/test_p1_media_edit_projects.py tests/test_context_engine_*.py tests/test_p1_ops_ops04_project_export.py tests/test_provenance_graph.py tests/test_readme_ascii_fenced.py tests/test_readme_media_is_committed.py` → 1.177 en verde. Nueva prueba `tests/test_project_conventions.py` (el helper solo) y `tests/test_skills_runtime.py::test_a_pre_rename_odysseus_skills_folder_is_still_discovered` (proyecto con solo `.odysseus/` sigue descubriéndose); `tests/test_projects.py::test_memory_is_scaffolded_inside_the_workspace` cubre el caso contrario, un proyecto nuevo recibe `.faustus/`. `grep -rn "\.odysseus" src routes services core scripts studio/src` solo devuelve el propio helper, las listas de skip que cubren ambos nombres y menciones ajenas a la carpeta (media type, cabecera de email, nombre de fichero de backup, ruta de caché de builds congeladas).

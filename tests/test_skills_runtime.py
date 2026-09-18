@@ -6,7 +6,7 @@ Two rules carry the package, and both are tested by trying to break them:
   none, which means no backend, which means nothing can run it. That reads
   like a bug the first time and it is the point;
 * **provenance never elevates** — the same file in `.claude/skills` and in
-  `.odysseus/skills` produces the same manifest, byte for byte, because where
+  `.faustus/skills` produces the same manifest, byte for byte, because where
   a file sits is not a statement about what it may do.
 
 The third thing checked here is smaller and cost a rewrite: the frontmatter
@@ -111,7 +111,7 @@ def test_the_same_skill_in_three_folders_gets_the_same_manifest(tmp_path):
 
 def test_being_found_next_to_the_work_does_not_grant_anything(tmp_path):
     (tmp_path / ".git").mkdir()                     # the walk stops here
-    near = tmp_path / "project" / ".odysseus" / "skills"
+    near = tmp_path / "project" / ".faustus" / "skills"
     far = tmp_path / ".claude" / "skills"
     near.mkdir(parents=True)
     far.mkdir(parents=True)
@@ -120,7 +120,7 @@ def test_being_found_next_to_the_work_does_not_grant_anything(tmp_path):
 
     found = discovery.discover(str(tmp_path / "project"))
     assert [f.distance for f in found] == [0, 1]        # nearest first
-    assert found[0].origin.endswith(os.path.join(".odysseus", "skills"))
+    assert found[0].origin.endswith(os.path.join(".faustus", "skills"))
     assert found[1].origin.endswith(os.path.join(".claude", "skills"))
 
     a, b = manifest_of(found[0].path), manifest_of(found[1].path)
@@ -192,9 +192,9 @@ def test_the_walk_stops_at_the_repository_and_never_reaches_your_home(tmp_path):
 
 def test_discovery_walks_up_and_records_where_each_one_came_from(tmp_path):
     (tmp_path / ".git").mkdir()
-    (tmp_path / ".odysseus" / "skills").mkdir(parents=True)
+    (tmp_path / ".faustus" / "skills").mkdir(parents=True)
     (tmp_path / "a" / "b" / ".claude" / "skills").mkdir(parents=True)
-    write_skill(tmp_path / ".odysseus" / "skills", "top")
+    write_skill(tmp_path / ".faustus" / "skills", "top")
     write_skill(tmp_path / "a" / "b" / ".claude" / "skills", "deep")
 
     found = {f.name: f for f in discovery.discover(str(tmp_path / "a" / "b"))}
@@ -206,7 +206,7 @@ def test_discovery_walks_up_and_records_where_each_one_came_from(tmp_path):
 
 def test_a_name_in_two_places_is_reported_rather_than_silently_picked(tmp_path):
     (tmp_path / ".git").mkdir()
-    for origin in (".odysseus/skills", ".claude/skills"):
+    for origin in (".faustus/skills", ".claude/skills"):
         folder = tmp_path / origin
         folder.mkdir(parents=True)
         write_skill(folder, "duplicated")
@@ -219,7 +219,7 @@ def test_a_name_in_two_places_is_reported_rather_than_silently_picked(tmp_path):
 
 
 def test_a_document_too_big_to_be_one_is_listed_and_not_loaded(tmp_path, monkeypatch):
-    folder = tmp_path / ".odysseus" / "skills"
+    folder = tmp_path / ".faustus" / "skills"
     folder.mkdir(parents=True)
     path = write_skill(folder, "huge")
     monkeypatch.setattr(discovery, "MAX_SKILL_BYTES", 10)
@@ -231,7 +231,7 @@ def test_a_document_too_big_to_be_one_is_listed_and_not_loaded(tmp_path, monkeyp
 def test_the_nested_category_layout_is_found_too(tmp_path):
     """`data/skills/<category>/<name>/SKILL.md` and `<folder>/<name>/SKILL.md`
     are both real layouts in this repo."""
-    folder = tmp_path / ".odysseus" / "skills" / "writing"
+    folder = tmp_path / ".faustus" / "skills" / "writing"
     folder.mkdir(parents=True)
     write_skill(folder, "outline")
     found = discovery.discover(str(tmp_path))
@@ -258,3 +258,16 @@ def test_the_survey_separates_valid_from_runnable(tmp_path):
     assert results["loud"].ok is True                 # runnable depends on docker
     assert results["broken"].ok is False
     assert "version" in results["broken"].error_path
+
+
+def test_a_pre_rename_odysseus_skills_folder_is_still_discovered(tmp_path):
+    """A project created before the identifier rename still has its skills
+    under `.odysseus/skills`; discovery must find them read-only when no
+    `.faustus/skills` folder exists yet."""
+    legacy = tmp_path / ".odysseus" / "skills"
+    legacy.mkdir(parents=True)
+    write_skill(legacy, "legacy-skill")
+
+    found = {f.name: f for f in discovery.discover(str(tmp_path))}
+    assert set(found) == {"legacy-skill"}
+    assert found["legacy-skill"].origin.endswith(os.path.join(".odysseus", "skills"))

@@ -31,9 +31,11 @@ import logging
 import os
 from typing import Any, Dict, Optional
 
+from src.project_conventions import CONVENTION_DIR_NAMES, CONVENTION_DIRNAME
+
 logger = logging.getLogger(__name__)
 
-MARKER_DIRNAME = ".faustus"
+MARKER_DIRNAME = CONVENTION_DIRNAME
 MARKER_FILENAME = "project.json"
 MARKER_SCHEMA_VERSION = 1
 
@@ -42,9 +44,8 @@ MARKER_SCHEMA_VERSION = 1
 # new `.git` commit must not look like "a different folder".
 IGNORED_DIR_NAMES = frozenset({
     ".git", ".hg", ".svn", "node_modules", "__pycache__", ".venv", "venv",
-    MARKER_DIRNAME, ".odysseus", ".pytest_cache", ".mypy_cache", ".tox",
-    ".idea", ".vscode",
-})
+    ".pytest_cache", ".mypy_cache", ".tox", ".idea", ".vscode",
+} | set(CONVENTION_DIR_NAMES))
 # A bounded walk: a relocate on a huge tree costs a capped scan, not a full
 # index. Past this many files the hash still runs, it just stops widening —
 # a large project's structure is still meaningfully fingerprinted by its
@@ -232,7 +233,7 @@ def relocate(project_id: str, new_path: str, *, owner: Optional[str] = None,
     old_workspace = str(project.get("workspace") or "")
     # Read BEFORE `ProjectStore.update()` runs: `update()` calls
     # `services.objectives.preserve_for_rebinding`, which takes a lock file
-    # under `<old_workspace>/.odysseus/` and — as a side effect of acquiring
+    # under `<old_workspace>/.faustus/` and — as a side effect of acquiring
     # it — recreates that directory tree even when the old workspace is
     # otherwise gone. Checking afterwards would report "present" for a path
     # that was actually missing at the moment relocate was called.

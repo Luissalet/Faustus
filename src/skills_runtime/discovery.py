@@ -3,12 +3,12 @@ skills_runtime/discovery.py — finding skills next to the work, without letting
 where they were found mean anything.
 
 The masterplan asks for explicit discovery of local skill folders —
-`.odysseus/skills`, `.agents/skills`, `.claude/skills` — walking up from the
+`.faustus/skills`, `.agents/skills`, `.claude/skills` — walking up from the
 workspace to the repository root, loading instructions on demand and **never
 elevating permissions because of where a skill came from**.
 
 That last clause is the whole design. It is easy to write a loader that trusts
-`.odysseus/` more than `.claude/` because one of them is "ours", and the
+`.faustus/` more than `.claude/` because one of them is "ours", and the
 moment it does, the way to get a permission is to move a file. So discovery
 here returns *where* a skill was found as a fact for the audit, and the bridge
 that turns it into a manifest never reads that field.
@@ -41,9 +41,11 @@ logger = logging.getLogger(__name__)
 #: In priority order — nearer the work wins over further away, and within one
 #: directory this is the tie-break. It is an ordering, not a trust level.
 SKILL_DIR_NAMES = (
-    os.path.join(".odysseus", "skills"),
+    os.path.join(".faustus", "skills"),
     os.path.join(".agents", "skills"),
     os.path.join(".claude", "skills"),
+    # Read-only compat: a project folder created before the rename.
+    os.path.join(".odysseus", "skills"),
 )
 
 #: A SKILL.md is a document. Anything past this is not one, and reading it

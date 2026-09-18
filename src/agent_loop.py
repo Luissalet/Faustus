@@ -4130,7 +4130,7 @@ def _build_system_prompt(
         except Exception:
             pass
         # Standing instructions kept in the repo itself (AGENTS.md / CLAUDE.md /
-        # .odysseus/INSTRUCTIONS.md): conventions, how to run the tests, what
+        # .faustus/INSTRUCTIONS.md): conventions, how to run the tests, what
         # not to touch. Cached by mtime — byte-identical until the file changes.
         #
         # These files travel with a clone, and this is the one input that reaches

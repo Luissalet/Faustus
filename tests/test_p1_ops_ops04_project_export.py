@@ -81,7 +81,7 @@ def test_is_secret_name(name, is_secret):
 
 def test_export_includes_memory_files_and_excludes_secrets(db, store, workspace):
     project = store.create("Demo", workspace=workspace)
-    mem_dir = os.path.join(workspace, ".odysseus")
+    mem_dir = os.path.join(workspace, ".faustus")
     os.makedirs(mem_dir, exist_ok=True)
     with open(os.path.join(mem_dir, "MEMORY.md"), "w") as f:
         f.write("# decisions\n- picked FastAPI")
@@ -91,11 +91,11 @@ def test_export_includes_memory_files_and_excludes_secrets(db, store, workspace)
     bundle_path = pex.export_project(project["id"])
     with zipfile.ZipFile(bundle_path) as zf:
         names = zf.namelist()
-        assert "files/.odysseus/MEMORY.md" in names
-        assert "files/.odysseus/.env" not in names
+        assert "files/.faustus/MEMORY.md" in names
+        assert "files/.faustus/.env" not in names
         manifest = json.loads(zf.read("manifest.json"))
         assert manifest["project_id"] == project["id"]
-        assert ".odysseus/.env" in manifest["excluded_for_secrets"]
+        assert ".faustus/.env" in manifest["excluded_for_secrets"]
         assert "skills" in manifest["not_covered"]
 
 
@@ -122,8 +122,8 @@ def test_export_unknown_project_raises(db, store):
 
 def test_preview_import_reports_a_file_the_zip_no_longer_actually_has(db, store, workspace):
     project = store.create("Demo", workspace=workspace)
-    os.makedirs(os.path.join(workspace, ".odysseus"), exist_ok=True)
-    with open(os.path.join(workspace, ".odysseus", "MEMORY.md"), "w") as f:
+    os.makedirs(os.path.join(workspace, ".faustus"), exist_ok=True)
+    with open(os.path.join(workspace, ".faustus", "MEMORY.md"), "w") as f:
         f.write("notes")
     bundle_path = pex.export_project(project["id"])
 
@@ -132,18 +132,18 @@ def test_preview_import_reports_a_file_the_zip_no_longer_actually_has(db, store,
     tampered = bundle_path + ".tampered.zip"
     with zipfile.ZipFile(bundle_path) as src, zipfile.ZipFile(tampered, "w") as dst:
         for name in src.namelist():
-            if name == "files/.odysseus/MEMORY.md":
+            if name == "files/.faustus/MEMORY.md":
                 continue
             dst.writestr(name, src.read(name))
 
     preview = pex.preview_import(tampered)
-    assert preview["lost_references"] == [".odysseus/MEMORY.md"]
+    assert preview["lost_references"] == [".faustus/MEMORY.md"]
 
 
 def test_preview_import_clean_bundle_has_no_lost_references(db, store, workspace):
     project = store.create("Demo", workspace=workspace)
-    os.makedirs(os.path.join(workspace, ".odysseus"), exist_ok=True)
-    with open(os.path.join(workspace, ".odysseus", "MEMORY.md"), "w") as f:
+    os.makedirs(os.path.join(workspace, ".faustus"), exist_ok=True)
+    with open(os.path.join(workspace, ".faustus", "MEMORY.md"), "w") as f:
         f.write("notes")
     bundle_path = pex.export_project(project["id"])
     preview = pex.preview_import(bundle_path)
@@ -156,8 +156,8 @@ def test_preview_import_clean_bundle_has_no_lost_references(db, store, workspace
 
 def test_dry_run_import_writes_nothing(db, store, workspace, tmp_path):
     project = store.create("Demo", workspace=workspace)
-    os.makedirs(os.path.join(workspace, ".odysseus"), exist_ok=True)
-    with open(os.path.join(workspace, ".odysseus", "MEMORY.md"), "w") as f:
+    os.makedirs(os.path.join(workspace, ".faustus"), exist_ok=True)
+    with open(os.path.join(workspace, ".faustus", "MEMORY.md"), "w") as f:
         f.write("notes")
     bundle_path = pex.export_project(project["id"])
 
@@ -165,7 +165,7 @@ def test_dry_run_import_writes_nothing(db, store, workspace, tmp_path):
     target.mkdir()
     report = pex.import_project(bundle_path, target_workspace=str(target), dry_run=True)
     assert report["dry_run"] is True
-    assert not os.path.exists(os.path.join(str(target), ".odysseus", "MEMORY.md"))
+    assert not os.path.exists(os.path.join(str(target), ".faustus", "MEMORY.md"))
     assert not os.path.isfile(project_identity.marker_path(str(target)))
 
 
@@ -179,8 +179,8 @@ def test_import_onto_a_fresh_machine_writes_files_and_reports_new_id_honestly(db
     project id -- not merely a different workspace path on the same store,
     so a second, empty store is installed right before the import call."""
     project = store.create("Demo", workspace=workspace)
-    os.makedirs(os.path.join(workspace, ".odysseus"), exist_ok=True)
-    with open(os.path.join(workspace, ".odysseus", "MEMORY.md"), "w") as f:
+    os.makedirs(os.path.join(workspace, ".faustus"), exist_ok=True)
+    with open(os.path.join(workspace, ".faustus", "MEMORY.md"), "w") as f:
         f.write("# notes\ndecision: use sqlite")
     _add_session(db, "s1", project_id=project["id"], messages=[("user", "hi")])
     bundle_path = pex.export_project(project["id"])
@@ -197,7 +197,7 @@ def test_import_onto_a_fresh_machine_writes_files_and_reports_new_id_honestly(db
     assert report["project_id"] != project["id"]
     assert report["files_written"] == 1
     assert report["chats_imported"] == 1
-    with open(os.path.join(str(target), ".odysseus", "MEMORY.md")) as f:
+    with open(os.path.join(str(target), ".faustus", "MEMORY.md")) as f:
         assert f.read() == "# notes\ndecision: use sqlite"
     marker = project_identity.read_marker(str(target))
     assert marker["project_id"] == report["project_id"]
@@ -219,8 +219,8 @@ def test_import_onto_the_same_registered_project_preserves_identity(db, store, w
     """The case OPS-04's acceptance text is actually about: the SAME project
     (same id, already known to this store) moved to a new path."""
     project = store.create("Demo", workspace=workspace)
-    os.makedirs(os.path.join(workspace, ".odysseus"), exist_ok=True)
-    with open(os.path.join(workspace, ".odysseus", "MEMORY.md"), "w") as f:
+    os.makedirs(os.path.join(workspace, ".faustus"), exist_ok=True)
+    with open(os.path.join(workspace, ".faustus", "MEMORY.md"), "w") as f:
         f.write("notes")
     bundle_path = pex.export_project(project["id"])
 

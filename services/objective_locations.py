@@ -11,6 +11,7 @@ import stat
 import threading
 
 from core.kernel_file_lock import KernelFileLock
+from src.project_conventions import convention_dir
 
 MARKER = 'managed.v1'
 _held = threading.local()
@@ -61,7 +62,7 @@ def directory(project):
     base = managed_dir(project)
     if base and (not workspace or active(project)):
         return base
-    return os.path.join(workspace, '.odysseus') if workspace else ''
+    return convention_dir(workspace)
 
 
 @contextmanager

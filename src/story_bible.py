@@ -11,7 +11,7 @@ extraction, and read back on every review pass.
 
 Why it is built this way
 ------------------------
-* **Storage is one JSON file inside the workspace** (``<workspace>/.odysseus/
+* **Storage is one JSON file inside the workspace** (``<workspace>/.faustus/
   story_bible.json``), beside the project's objectives and memory: greppable,
   hand-editable, travels with the folder, survives a database wipe.
 * **Atomic writes** (tmp + ``os.replace``); a corrupt file is renamed to
@@ -46,9 +46,11 @@ import time
 import unicodedata
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
+from src.project_conventions import convention_dir
+
 logger = logging.getLogger(__name__)
 
-BIBLE_DIRNAME = ".odysseus"
+BIBLE_DIRNAME = ".faustus"
 BIBLE_FILENAME = "story_bible.json"
 
 SECTIONS = ("characters", "timeline", "facts", "places")
@@ -102,7 +104,7 @@ def empty_bible() -> Dict[str, Any]:
 
 def bible_dir(project: Dict[str, Any]) -> str:
     ws = (project or {}).get("workspace") or ""
-    return os.path.join(ws, BIBLE_DIRNAME) if ws else ""
+    return convention_dir(ws)
 
 
 def bible_path(project: Dict[str, Any]) -> str:

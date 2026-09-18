@@ -80,7 +80,7 @@ def test_delete_forgets_the_binding_not_the_files(store, workspace):
     assert store.delete(p["id"]) is True
     assert store.list() == []
     # The folder and its memory are the user's work, not ours to remove.
-    assert os.path.isfile(os.path.join(workspace, ".odysseus", "notas.md"))
+    assert os.path.isfile(os.path.join(workspace, ".faustus", "notas.md"))
 
 
 def test_legacy_rows_gain_project_organisation_defaults(tmp_path):
@@ -156,7 +156,7 @@ def test_system_block_explains_editable_work_roots_and_project_chat_search(store
 
 def test_memory_is_scaffolded_inside_the_workspace(store, workspace):
     store.create("Covernet", workspace=workspace)
-    assert os.path.isfile(os.path.join(workspace, ".odysseus", "MEMORY.md"))
+    assert os.path.isfile(os.path.join(workspace, ".faustus", "MEMORY.md"))
 
 
 def test_memory_filenames_cannot_escape_the_memory_dir(store, workspace):
