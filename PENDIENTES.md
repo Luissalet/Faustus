@@ -2,6 +2,11 @@
 
 Actualizado: 18-09-2026. REGLA: nunca nombres de empresas/personas del buzón de Luis en commits, docs, tests ni comentarios — ejemplos siempre ficticios. Sólo trabajo vigente; quitar cada entrada al cerrarla.
 
+## 18-09 noche, segunda corrección (llama-server pensaba sin parar con `--jinja` — FAUSTUS.md §114 «Segunda corrección»)
+
+- No verificado en vivo: falta repetir la conversación exacta contra el llama-server real y confirmar en `/slots` que `chat_template_kwargs.enable_thinking` llega en `false` por defecto, que ya no se agota el tope de 8192 razonando (antes 4 rondas, 40 minutos, sin respuesta), y probar un `/think on` explícito para confirmar que el razonamiento sigue disponible cuando se pide a propósito (con `reasoning_budget: 4096`).
+- No se ha probado contra vLLM, solo contra la descripción de llama-server del incidente — confirmar que `chat_template_kwargs.enable_thinking` también surte efecto ahí si algún día se usa como endpoint.
+
 ## 18-09 noche, corrección (llama-server local seguía sin suelo de sampler ni tope — FAUSTUS.md §114 «Corrección»)
 
 - No verificado en vivo contra el llama-server real de Luis: falta repetir la conversación que corrió 15 minutos (7800+ tokens) y confirmar en `/slots` que `max_tokens`/`repeat_penalty`/`min_p` ya llegan correctos, y que el tope de 8192 (`local_openai_max_tokens_default`) no corta una respuesta legítima larga.
