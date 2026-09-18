@@ -2,6 +2,11 @@
 
 Actualizado: 18-09-2026. REGLA: nunca nombres de empresas/personas del buzón de Luis en commits, docs, tests ni comentarios — ejemplos siempre ficticios. Sólo trabajo vigente; quitar cada entrada al cerrarla.
 
+## 18-09 noche, corrección (llama-server local seguía sin suelo de sampler ni tope — FAUSTUS.md §114 «Corrección»)
+
+- No verificado en vivo contra el llama-server real de Luis: falta repetir la conversación que corrió 15 minutos (7800+ tokens) y confirmar en `/slots` que `max_tokens`/`repeat_penalty`/`min_p` ya llegan correctos, y que el tope de 8192 (`local_openai_max_tokens_default`) no corta una respuesta legítima larga.
+- Confirmar en pantalla que el razonamiento de llama-server (`--jinja`, Qwen3) sigue yendo al panel de pensamiento del Studio y no se mezcla con la respuesta final — el manejo de `reasoning_content` ya existía y solo se confirmó con tests, nunca en vivo contra este servidor concreto.
+
 ## 18-09 noche (el sampler local no llegaba a un modelo sin `extra` guardado — FAUSTUS.md §114)
 
 - Todo lo de este lote está probado con un `_FakeClient`/streams SSE enlatados, nunca contra el Ollama real de la máquina de Luis. Falta, en vivo: (1) repetir la conversación exacta que degeneró con `qwen3.8:27b-q8_0` (endpoint `/v1/chat/completions`, `num_ctx` 235008) y confirmar que ahora sale coherente desde el primer token; (2) confirmar en el log que la petición se mueve a `/api/chat` nativo para ese modelo aunque no tenga `extra` guardado; (3) forzar un colapso real y confirmar que la escalera de recuperación salta el escalón 2 (mismo modelo) y responde desde el modelo de utilidad en mucho menos de los 12 minutos del incidente original; (4) probar el mismo modelo por llama-server local si está configurado, y confirmar que `min_p`/`repeat_penalty` llegan como campos de primer nivel en `/v1/chat/completions`; (5) provocar en vivo una racha de gibberish (prompt adversarial, temperatura muy alta) y confirmar que el guardia corta antes de los 300 caracteres de ventana.
