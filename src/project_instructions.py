@@ -7,7 +7,7 @@ that file into the system prompt of every turn that has a workspace, so a
 local model does not have to rediscover (or invent) the rules each time.
 
 Lookup order (first existing file wins, unless the setting lists otherwise):
-    AGENTS.md, CLAUDE.md, .odysseus/INSTRUCTIONS.md, ODYSSEUS.md,
+    AGENTS.md, CLAUDE.md, .faustus/INSTRUCTIONS.md, FAUSTUS.md,
     .cursorrules, CONVENTIONS.md, .github/copilot-instructions.md
 
 The block is byte-identical across turns until the file changes (KV-cache
@@ -36,8 +36,10 @@ from typing import Any, Dict, List, Optional, Tuple
 logger = logging.getLogger(__name__)
 
 DEFAULT_FILES = (
-    "AGENTS.md", "CLAUDE.md", os.path.join(".odysseus", "INSTRUCTIONS.md"), "ODYSSEUS.md",
+    "AGENTS.md", "CLAUDE.md", os.path.join(".faustus", "INSTRUCTIONS.md"), "FAUSTUS.md",
     ".cursorrules", "CONVENTIONS.md", os.path.join(".github", "copilot-instructions.md"),
+    # Read-only compat: a project folder created before the rename.
+    os.path.join(".odysseus", "INSTRUCTIONS.md"),
 )
 DEFAULT_MAX_CHARS = 6000
 # (root, trusted) → (checked_at, path, mtime, block). `trusted` is part of the

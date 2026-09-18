@@ -3,7 +3,7 @@
 Date: 04-09-2026. Branch: `feat/studio-ui`. Commit: measured against the
 UI before any Studio changes.
 
-Test harness: `ODYSSEUS_E2E=1 python -m pytest tests/e2e/test_studio_baseline.py -q`
+Test harness: `FAUSTUS_E2E=1 python -m pytest tests/e2e/test_studio_baseline.py -q`
 (Playwright 1.62, headless Chromium, scripted fake model, temp data dir, no auth).
 
 Screenshots: `docs/ui/baseline/` — three viewports per step (1400×900 desktop,

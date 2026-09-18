@@ -17,7 +17,7 @@ This spec covers mail and contacts in:
 - document signed-reply flows in canonical `routes/document/document_routes.py` and document `source_email_*` fields;
 - reminder/task email senders in `routes/note_routes.py` and `src/task_scheduler.py`;
 - email/contact agent surfaces in `src/tool_implementations.py`, `src/tool_schemas.py`, `src/tool_index.py`, and `src/agent_loop.py`;
-- CLI wrappers `scripts/odysseus-mail` and `scripts/odysseus-contacts`;
+- CLI wrappers `scripts/faustus-mail` and `scripts/faustus-contacts`;
 - frontend modules `static/js/emailInbox.js`, `static/js/emailLibrary.js`, `static/js/emailLibrary/*`, `static/js/emailShared.js`, `static/js/chatStream.js`, `static/js/document.js`, and `static/js/settings.js`;
 - tests under `tests/test_email_*`, `tests/test_contacts_*`, `tests/test_mail_cli_*`, `tests/test_mcp_email_*`, `tests/test_schedule_email_*`, email/contact JS tests, and email security regressions.
 
@@ -44,7 +44,7 @@ Exactly one default account per owner is enforced as a serialized database trans
 - IMAP/SMTP connection helpers and related transport utilities;
 - Google OAuth2 state signing/verification, token refresh, and XOAUTH2 framing;
 - SMTP security modes (`ssl`, `starttls`, `none`);
-- envelope recipients and Odysseus headers;
+- envelope recipients and Faustus headers;
 - attachment extraction helpers;
 - email pre-retrieval context for AI reply drafting;
 - scheduled email, summary, reply, tag, calendar extraction, urgency, and signature-boundary side databases.
@@ -90,7 +90,7 @@ IMAP helpers quote mailbox names, raise the Python IMAP line cap for large messa
 
 Scheduled email rows live in `data/scheduled_emails.db` and are owner-scoped. Scheduled send times are normalized before storage.
 
-`routes.email_pollers` owns the scheduled-send poller and single-shot/task/CLI automation passes. Before SMTP work, each poller atomically claims a due row with a conditional `pending` to `sending` update; concurrent in-process/CLI pollers that lose the claim skip the row instead of sending a duplicate. Only the scheduled-send poller starts in-process by default when `ODYSSEUS_INPROCESS_POLLERS` allows it; Docker forwards that gate. Background email automation can also consult the foreground activity gate so auto actions do not compete with active browser/model work. Native cron/systemd can drive one-shot pollers through `scripts/odysseus-mail`.
+`routes.email_pollers` owns the scheduled-send poller and single-shot/task/CLI automation passes. Before SMTP work, each poller atomically claims a due row with a conditional `pending` to `sending` update; concurrent in-process/CLI pollers that lose the claim skip the row instead of sending a duplicate. Only the scheduled-send poller starts in-process by default when `FAUSTUS_INPROCESS_POLLERS` allows it; Docker forwards that gate. Background email automation can also consult the foreground activity gate so auto actions do not compete with active browser/model work. Native cron/systemd can drive one-shot pollers through `scripts/faustus-mail`.
 
 Manual and scheduled summaries use the shared LLM adapter and owner-scoped cache instead of constructing provider calls locally. Scheduled summaries use background fallback policy and yield to foreground work; provider exception text is shaped before it can reach the browser.
 
@@ -116,9 +116,9 @@ List/read route caches are owner/account-aware. Helper-side summary, AI-reply, t
 
 ## Attachments And Signed Replies
 
-Compose uploads live under `ODYSSEUS_MAIL_ATTACHMENTS_DIR`; missing staged files are skipped with warnings. Attachment-to-document supports PDF, DOCX, TXT, and MD. DOCX depends on `python-docx`; PDF form/open-in-doc flows can depend on optional PyMuPDF.
+Compose uploads live under `FAUSTUS_MAIL_ATTACHMENTS_DIR`; missing staged files are skipped with warnings. Attachment-to-document supports PDF, DOCX, TXT, and MD. DOCX depends on `python-docx`; PDF form/open-in-doc flows can depend on optional PyMuPDF.
 
-Email attachment-as-document flows stamp `Document.source_email_*` provenance. `GET /api/email/attachments-download/{uid}` builds an owner-scoped ZIP of visible non-signature attachments using safe names. `compose-from-odysseus` and `compose-from-odysseus-zip` can stage owner-visible documents and gallery images as compose uploads, preserving legacy session fallback only where the source object remains visible to the owner. `prepare-signed-reply` verifies document ownership, reconstructs reply headers, flattens/stages signed PDFs as compose uploads, and leaves final send/draft review to the compose flow.
+Email attachment-as-document flows stamp `Document.source_email_*` provenance. `GET /api/email/attachments-download/{uid}` builds an owner-scoped ZIP of visible non-signature attachments using safe names. `compose-from-faustus` and `compose-from-faustus-zip` can stage owner-visible documents and gallery images as compose uploads, preserving legacy session fallback only where the source object remains visible to the owner. `prepare-signed-reply` verifies document ownership, reconstructs reply headers, flattens/stages signed PDFs as compose uploads, and leaves final send/draft review to the compose flow.
 
 Email bodies and attachments are untrusted model context.
 
@@ -132,16 +132,16 @@ When the email reader is active, browser chat sends selected-message metadata. `
 
 ## MCP Email
 
-`mcp_servers/email_server.py` exposes email tools for MCP/agent use. It has its own account discovery, IMAP/SMTP, attachment, cache, and send paths, but account visibility now mirrors the HTTP owner policy. The active owner comes from a hidden `_odysseus_owner` argument when the caller provides one, or from `ODYSSEUS_MCP_EMAIL_OWNER` / `ODYSSEUS_EMAIL_OWNER`. If any enabled account is owner-scoped and no current/configured owner exists, email MCP returns an owner-scope error instead of listing global accounts.
+`mcp_servers/email_server.py` exposes email tools for MCP/agent use. It has its own account discovery, IMAP/SMTP, attachment, cache, and send paths, but account visibility now mirrors the HTTP owner policy. The active owner comes from a hidden `_faustus_owner` argument when the caller provides one, or from `FAUSTUS_MCP_EMAIL_OWNER` / `FAUSTUS_EMAIL_OWNER`. If any enabled account is owner-scoped and no current/configured owner exists, email MCP returns an owner-scope error instead of listing global accounts.
 
 MCP email account filtering includes owner-owned rows and legacy ownerless rows
 whose mailbox/from-address matches the owner. Confirmation-first `send_email`
 resolves the selected account before stashing an `agent_draft`, so drafts cannot
 be staged against another owner's account. MCP-created draft documents use the
-resolved hidden/configured owner when available, with `ODYSSEUS_DOCUMENT_OWNER`
+resolved hidden/configured owner when available, with `FAUSTUS_DOCUMENT_OWNER`
 and single-admin fallback only as document-visibility compatibility.
 
-MCP email send behavior is confirmation-first by default: `send_email` and reply send paths stash a `scheduled_emails` row with `status='agent_draft'` when `agent_email_confirm` is true, and browser routes expose pending drafts for approval or cancellation. Separate MCP draft tools create Odysseus compose documents for user review without sending.
+MCP email send behavior is confirmation-first by default: `send_email` and reply send paths stash a `scheduled_emails` row with `status='agent_draft'` when `agent_email_confirm` is true, and browser routes expose pending drafts for approval or cancellation. Separate MCP draft tools create Faustus compose documents for user review without sending.
 
 MCP email remains a separate local/admin trust boundary. Public and non-admin users must not see or execute email MCP tools. It still needs route-helper parity audits for attachment path containment, sanitization, transport behavior, and pending-draft result text, but global all-account behavior is no longer the current owner model.
 

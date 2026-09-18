@@ -42,13 +42,13 @@ from core.database import ModelEndpoint, SessionLocal
 from core.middleware import require_admin
 from src.auth_helpers import require_user
 from src import model_identity as mi
-from src import settings as odysseus_settings
+from src import settings as faustus_settings
 
 logger = logging.getLogger(__name__)
 
 
 def _creator_enabled_or_404() -> None:
-    if not odysseus_settings.get_setting("creator_enabled", False):
+    if not faustus_settings.get_setting("creator_enabled", False):
         raise HTTPException(404, "Creator is not enabled")
 
 

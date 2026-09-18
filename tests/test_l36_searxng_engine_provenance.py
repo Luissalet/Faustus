@@ -52,7 +52,7 @@ def test_searxng_results_carry_engine_provenance(monkeypatch):
         }),
     )
 
-    results = providers.searxng_search_api("odysseus", count=3)
+    results = providers.searxng_search_api("faustus", count=3)
 
     assert len(results) == 3
     assert results[0]["_engine"] == "bing"

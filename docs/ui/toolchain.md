@@ -69,7 +69,7 @@ uvicorn start:
 
 ```powershell
 # ── Build Studio UI if stale ──────────────────────────────────
-$studioScript = Join-Path $OdysseusRoot "scripts\build-studio.js"
+$studioScript = Join-Path $FaustusRoot "scripts\build-studio.js"
 if (Test-Path $studioScript) {
     Write-Host "Checking Studio bundle..." -ForegroundColor Cyan
     $buildResult = & node $studioScript 2>&1

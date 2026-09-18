@@ -4,7 +4,7 @@ The baseline in docs/ui/baseline/ photographed the OLD interface. This is its
 counterpart: the same journey, the same sizes, so "the new one is better" is
 something you can look at instead of something someone claims.
 
-    ODYSSEUS_STUDIO_URL=http://127.0.0.1:7001 venv\\Scripts\\python.exe scripts/shot_studio.py
+    FAUSTUS_STUDIO_URL=http://127.0.0.1:7001 venv\\Scripts\\python.exe scripts/shot_studio.py
 
 Point it at a running instance; it does not start one.
 """
@@ -17,9 +17,9 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
-BASE = os.environ.get("ODYSSEUS_STUDIO_URL", "http://127.0.0.1:7001")
+BASE = os.environ.get("FAUSTUS_STUDIO_URL", "http://127.0.0.1:7001")
 OUT = Path(
-    os.environ.get("ODYSSEUS_STUDIO_OUT")
+    os.environ.get("FAUSTUS_STUDIO_OUT")
     or Path(__file__).resolve().parents[1] / "docs" / "ui" / "after"
 )
 
@@ -38,13 +38,13 @@ SCREENS = {
     "06_automations": "/automations",
     "07_library": "/library",
     "08_studio_empty": "/studio",
-    # A real session: ODYSSEUS_STUDIO_SESSION picks it, else the newest.
+    # A real session: FAUSTUS_STUDIO_SESSION picks it, else the newest.
     "09_studio_session": "/studio?s=__SESSION__",
 }
 
 
 def newest_session(page) -> str:
-    wanted = os.environ.get("ODYSSEUS_STUDIO_SESSION")
+    wanted = os.environ.get("FAUSTUS_STUDIO_SESSION")
     if wanted:
         return wanted
     sessions = page.evaluate("fetch('/api/sessions').then(r => r.json())")
@@ -61,7 +61,7 @@ def main() -> int:
             # theme every manual pass saw is dark, so the evidence matches it.
             context = browser.new_context(
                 viewport={"width": width, "height": height},
-                color_scheme=os.environ.get("ODYSSEUS_STUDIO_SCHEME", "dark"),
+                color_scheme=os.environ.get("FAUSTUS_STUDIO_SCHEME", "dark"),
             )
             page = context.new_page()
             # The flag lives in localStorage, so the first URL must set it.

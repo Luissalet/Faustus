@@ -173,7 +173,7 @@ Contexto completo en FAUSTUS.md §85. Lo que queda abierto:
   `list_for(owner)` y `revoke(owner, workspace)`, pero no hay dónde verlas ni
   quitarlas. Sitio natural: Settings › Security, junto a las aprobaciones. Hasta
   entonces la única forma de revocar es borrar la fila de
-  `<ODYSSEUS_DATA_DIR>/tool_approval_grants.json`.
+  `<FAUSTUS_DATA_DIR>/tool_approval_grants.json`.
 - **La herencia es por subárbol y eso hay que verlo.** Conceder sobre
   `C:\Users\luism\Desktop\Proyectos independientes` cubre TODO lo que cuelgue de
   ahí. La tarjeta lo dice, pero la pantalla de arriba debería enseñar la ruta
@@ -615,8 +615,8 @@ deep-link de workflows, recetas desde un run real) ya no aparece aquí.
   palabra «solo» y el modelo contestó (en italiano) sobre el bloque de
   memoria en vez de decir «seis» — stopwords en español y tokens con
   acentos; tras el arreglo: «Seis.». Al aplicar w39 se borró
-  `D:\LocalAI\odysseus\data\settings.json` (el `data/` del repo, no el
-  `odysseus-dev-data` del 7001): si ese fichero importaba, está en los
+  `D:\LocalAI\faustus\data\settings.json` (el `data/` del repo, no el
+  `faustus-dev-data` del 7001): si ese fichero importaba, está en los
   backups de `backups/` anteriores al 12-09; los scripts de transferencia ya
   no lo tocan.
 - **11-09-2026, QA en vivo de las olas ADP/CMP/W3 + W4-A (master

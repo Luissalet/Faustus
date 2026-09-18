@@ -33,7 +33,7 @@ def _block(**over):
 # ── contract ───────────────────────────────────────────────────────────────
 
 def test_block_round_trips_through_its_own_contract(ce_db):
-    created = _block(source_refs=["file:.odysseus/MEMORY.md"])
+    created = _block(source_refs=["file:.faustus/MEMORY.md"])
     assert blocks.ContextBlock.parse(created.to_dict()) == created
     assert blocks.get_block(created.id) == created
 
@@ -303,7 +303,7 @@ def test_import_project_memory_only_proposes_by_default(ce_db, tmp_path):
     assert report["created"] == []
     assert blocks.list_blocks(owner="luis", project_id="p1") == []
     assert sorted(p["path"] for p in report["proposed"]) == [
-        ".odysseus/MEMORY.md", ".odysseus/decisions.md"]
+        ".faustus/MEMORY.md", ".faustus/decisions.md"]
     # §7.3: no Markdown note is migrated to always_loaded automatically.
     assert all(p["always_loaded"] is False for p in report["proposed"])
     assert {p["type"] for p in report["proposed"]} == {"project_rules", "decision_log"}
@@ -331,9 +331,9 @@ def test_import_refuses_a_note_that_carries_a_credential(ce_db, tmp_path):
 
     report = blocks.import_project_memory(project, owner="luis", dry_run=False)
 
-    assert ".odysseus/env.md" not in [p["path"] for p in report["proposed"]]
+    assert ".faustus/env.md" not in [p["path"] for p in report["proposed"]]
     reasons = {s["path"]: s["reason"] for s in report["skipped"]}
-    assert "client_secret" in reasons[".odysseus/env.md"]
+    assert "client_secret" in reasons[".faustus/env.md"]
 
 
 def test_import_without_a_workspace_says_so_instead_of_raising(ce_db):

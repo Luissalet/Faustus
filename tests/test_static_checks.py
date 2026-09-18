@@ -29,7 +29,7 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 @pytest.fixture
 def data_dir(tmp_path, monkeypatch):
     d = tmp_path / "data"
-    monkeypatch.setenv("ODYSSEUS_DATA_DIR", str(d))
+    monkeypatch.setenv("FAUSTUS_DATA_DIR", str(d))
     import src.constants as consts
     monkeypatch.setattr(consts, "DATA_DIR", str(d), raising=False)
     return d
@@ -590,7 +590,7 @@ def _loop(workspace, user, harness_options=None, max_rounds=8):
 @pytest.fixture
 def project(tmp_path, monkeypatch):
     """A tiny green pytest project, so the tests stage is a clean signal."""
-    monkeypatch.setenv("ODYSSEUS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("FAUSTUS_DATA_DIR", str(tmp_path / "data"))
     import src.constants as consts
     monkeypatch.setattr(consts, "DATA_DIR", str(tmp_path / "data"), raising=False)
     root = tmp_path / "proj"

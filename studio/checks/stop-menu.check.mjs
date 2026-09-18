@@ -31,7 +31,7 @@ const { stopChat, pauseChat, steerChat } = await import(pathToFileURL(out).href)
   assert.equal(ok, true);
   assert.equal(captured.url, '/api/chat/stop/s1');
   assert.equal(captured.options.body, undefined, 'an unscoped stop must send no body, exactly as before');
-  assert.equal(captured.options.headers['X-Odysseus-Run-Id'], 'run-1');
+  assert.equal(captured.options.headers['X-Faustus-Run-Id'], 'run-1');
 }
 
 // 2) scope="generation": pauses rather than cancelling; reads `paused` back.
@@ -72,7 +72,7 @@ for (const scope of ['task', 'work']) {
   assert.equal(ok, true);
   assert.equal(captured.url, '/api/chat/pause/s4');
   assert.equal(captured.options.method, 'POST');
-  assert.equal(captured.options.headers['X-Odysseus-Run-Id'], 'run-4');
+  assert.equal(captured.options.headers['X-Faustus-Run-Id'], 'run-4');
 }
 {
   globalThis.fetch = async () => new Response(JSON.stringify({ paused: false }));
@@ -103,7 +103,7 @@ for (const scope of ['task', 'work']) {
   const ok = await steerChat('s6', 'send this when done', { mode: 'queue', runId: 'run-6' });
   assert.equal(ok, true);
   assert.deepEqual(JSON.parse(captured.options.body), { text: 'send this when done', mode: 'queue' });
-  assert.equal(captured.options.headers['X-Odysseus-Run-Id'], 'run-6');
+  assert.equal(captured.options.headers['X-Faustus-Run-Id'], 'run-6');
 }
 
 // 6) A 404 (no active run) is reported as false, not thrown.

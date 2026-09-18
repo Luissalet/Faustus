@@ -20,10 +20,10 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-_tmp_data = tempfile.mkdtemp(prefix="odysseus-auto02-dst-test-")
+_tmp_data = tempfile.mkdtemp(prefix="faustus-auto02-dst-test-")
 os.environ.setdefault("DATA_DIR", _tmp_data)
 os.environ.setdefault("DATABASE_URL", f"sqlite:///{_tmp_data}/app.db")
-os.environ["ODYSSEUS_INPROCESS_POLLERS"] = "0"
+os.environ["FAUSTUS_INPROCESS_POLLERS"] = "0"
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -219,7 +219,7 @@ def _make_overdue_task(db_session, *, task_id, misfire_policy):
 async def test_misfire_skip_abandons_the_missed_occurrences_and_jumps_to_the_future(monkeypatch):
     from core.database import SessionLocal, ScheduledTask
 
-    monkeypatch.setenv("ODYSSEUS_INPROCESS_POLLERS", "0")
+    monkeypatch.setenv("FAUSTUS_INPROCESS_POLLERS", "0")
     db = SessionLocal()
     try:
         tid = f"auto02-misfire-skip-{uuid.uuid4()}"
@@ -251,7 +251,7 @@ async def test_misfire_skip_abandons_the_missed_occurrences_and_jumps_to_the_fut
 async def test_misfire_fire_immediately_is_the_unchanged_default(monkeypatch):
     from core.database import SessionLocal, ScheduledTask
 
-    monkeypatch.setenv("ODYSSEUS_INPROCESS_POLLERS", "0")
+    monkeypatch.setenv("FAUSTUS_INPROCESS_POLLERS", "0")
     db = SessionLocal()
     try:
         tid = f"auto02-misfire-default-{uuid.uuid4()}"

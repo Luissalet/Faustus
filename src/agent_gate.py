@@ -829,7 +829,7 @@ def _handler_class():
                 from core.middleware import INTERNAL_TOOL_HEADER
                 internal = bool(self.headers.get(INTERNAL_TOOL_HEADER))
             except Exception:  # noqa: BLE001 - standalone use
-                internal = bool(self.headers.get("X-Odysseus-Internal-Token"))
+                internal = bool(self.headers.get("X-Faustus-Internal-Token"))
             status, body = handle_hook(
                 token, payload,
                 client_host=(self.client_address[0] if self.client_address else ""),

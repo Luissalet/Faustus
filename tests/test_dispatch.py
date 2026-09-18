@@ -473,7 +473,7 @@ def test_config_route_says_where_a_job_would_run(box, monkeypatch):
 
 def test_the_workers_skill_ships_inside_the_claude_code_bundle(monkeypatch):
     """Luis: "guárdala en una carpeta localizable" (dicho cuando el fork aún
-    llevaba el nombre de upstream). The skill lives next to the `odysseus` one,
+    llevaba el nombre de upstream). The skill lives next to the `faustus` one,
     so /api/claude/plugin.zip (Settings → Integrations → Add a Claude Agent)
     drops it into ~/.claude/skills/ too."""
     import io
@@ -493,4 +493,4 @@ def test_the_workers_skill_ships_inside_the_claude_code_bundle(monkeypatch):
     r = TestClient(app).get("/api/claude/plugin.zip")
     assert r.status_code == 200
     names = zipfile.ZipFile(io.BytesIO(r.content)).namelist()
-    assert "skills/faustus-workers/SKILL.md" in names and "skills/odysseus/SKILL.md" in names
+    assert "skills/faustus-workers/SKILL.md" in names and "skills/faustus/SKILL.md" in names

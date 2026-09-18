@@ -520,7 +520,7 @@ def test_reference_discovery_covers_all_durable_upload_stores(
             owner="alice",
             title="Photo note",
             image_url=f"/api/upload/{note_upload_id}",
-            color=f"odysseus://attachment/{note_color_id}",
+            color=f"faustus://attachment/{note_color_id}",
         ))
         db.add(CalendarCal(
             id="calendar-1",
@@ -535,7 +535,7 @@ def test_reference_discovery_covers_all_durable_upload_stores(
             dtstart=datetime(2026, 7, 10, 12, 0),
             dtend=datetime(2026, 7, 10, 13, 0),
             color=f"/api/upload/{event_upload_id}",
-            description=f"Notes: odysseus://attachment/{event_description_id}",
+            description=f"Notes: faustus://attachment/{event_description_id}",
             location=f"/api/upload/{event_location_id}",
         ))
         db.commit()
@@ -576,7 +576,7 @@ def test_write_reservation_extracts_only_explicit_internal_references():
     assert extract_internal_upload_ids(f"sha={checksum_like_text}") == set()
     assert extract_internal_upload_ids({
         "image": f"/api/upload/{upload_id}",
-        "nested": [f"odysseus://attachment/{upload_id}"],
+        "nested": [f"faustus://attachment/{upload_id}"],
     }) == {upload_id}
     assert extract_internal_upload_ids(
         f'<!-- pdf_source upload_id="{upload_id}" -->'
@@ -589,7 +589,7 @@ def test_write_reservation_extracts_only_explicit_internal_references():
         f"See /api/upload/{extensionless_id}. Then continue."
     ) == {extensionless_id}
     assert extract_internal_upload_ids(
-        f"Attachment: odysseus://attachment/{extensionless_id}: ready"
+        f"Attachment: faustus://attachment/{extensionless_id}: ready"
     ) == {extensionless_id}
     assert extract_internal_upload_ids(f"/api/upload/{upload_id}/extra") == set()
 
@@ -607,12 +607,12 @@ def test_reservation_never_uses_admin_override(tmp_path):
     assert reserve_upload_references(
         handler,
         "alice",
-        f"odysseus://attachment/{upload_id}",
+        f"faustus://attachment/{upload_id}",
     ) is None
     assert reserve_upload_references(
         handler,
         "admin",
-        f"odysseus://attachment/{upload_id}",
+        f"faustus://attachment/{upload_id}",
     ) == upload_id
     assert handler.reserve_upload(
         upload_id,
@@ -790,7 +790,7 @@ def test_note_calendar_and_document_routes_reserve_before_database_writes(monkey
             EventCreate(
                 summary="Photo",
                 dtstart="2026-07-10T12:00:00",
-                color=f"odysseus://attachment/{upload_id}",
+                color=f"faustus://attachment/{upload_id}",
             ),
         ))
     assert calendar_error.value.status_code == 409

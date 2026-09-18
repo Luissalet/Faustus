@@ -6,7 +6,7 @@ measurable starting point.
 
 Run with the same harness as the other E2E tests:
 
-    ODYSSEUS_E2E=1 python -m pytest tests/e2e/test_studio_baseline.py -q
+    FAUSTUS_E2E=1 python -m pytest tests/e2e/test_studio_baseline.py -q
 """
 from __future__ import annotations
 

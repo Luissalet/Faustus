@@ -42,7 +42,7 @@ def _load_or_create_key() -> bytes:
     _KEY_PATH.write_bytes(key)
     # POSIX: 0600. Windows: an explicit owner-only ACL — this key decrypts
     # every stored secret, and "the data dir is under the user profile" stops
-    # being true the moment ODYSSEUS_DATA_DIR points at another volume.
+    # being true the moment FAUSTUS_DATA_DIR points at another volume.
     restrict_to_owner(_KEY_PATH)
     logger.info(f"Generated new app key at {_KEY_PATH}")
     return key

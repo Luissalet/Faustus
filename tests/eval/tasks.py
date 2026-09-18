@@ -145,7 +145,7 @@ REFACTOR = Task(
 # ---------------------------------------------------------------------------
 
 _SOURCE_TEXT = (
-    "Faustus es un fork de Odysseus. A fecha del lote 29, el mapa de "
+    "Faustus es un fork de Faustus. A fecha del lote 29, el mapa de "
     "reutilizacion listaba 23 requisitos P0 en estado 'existente' sobre un "
     "total de 100 requisitos P0 auditados.\n"
 )

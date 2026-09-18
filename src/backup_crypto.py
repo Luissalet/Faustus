@@ -229,7 +229,7 @@ def decrypt_file(src: Any, dst: Any, passphrase: str) -> Dict[str, Any]:
         return {"ok": True, "sha256": reader.sha256, "path": str(dst)}
 
 
-def passphrase_from_env(names=("FAUSTUS_BACKUP_PASSPHRASE", "ODYSSEUS_BACKUP_PASSPHRASE")) -> Optional[str]:
+def passphrase_from_env(names=("FAUSTUS_BACKUP_PASSPHRASE",)) -> Optional[str]:
     """The passphrase an unattended snapshot uses, if the operator set one.
 
     An environment variable, not a setting: a passphrase kept in `settings.json`

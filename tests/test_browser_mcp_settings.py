@@ -47,10 +47,10 @@ def _load_builtin_mcp(monkeypatch):
 
 @pytest.fixture
 def builtin_mcp(monkeypatch):
-    monkeypatch.setenv("ODYSSEUS_BROWSER_EXECUTABLE", "/usr/bin/chromium")
-    monkeypatch.delenv("ODYSSEUS_BROWSER_ISOLATED", raising=False)
-    monkeypatch.delenv("ODYSSEUS_BROWSER_NO_SANDBOX", raising=False)
-    monkeypatch.delenv("ODYSSEUS_BROWSER_PROFILE_DIR", raising=False)
+    monkeypatch.setenv("FAUSTUS_BROWSER_EXECUTABLE", "/usr/bin/chromium")
+    monkeypatch.delenv("FAUSTUS_BROWSER_ISOLATED", raising=False)
+    monkeypatch.delenv("FAUSTUS_BROWSER_NO_SANDBOX", raising=False)
+    monkeypatch.delenv("FAUSTUS_BROWSER_PROFILE_DIR", raising=False)
     return _load_builtin_mcp(monkeypatch)
 
 
@@ -127,7 +127,7 @@ def test_cdp_endpoint_replaces_launch_flags(builtin_mcp):
 
 
 def test_env_no_sandbox_override_kept(builtin_mcp, monkeypatch):
-    monkeypatch.setenv("ODYSSEUS_BROWSER_NO_SANDBOX", "0")
+    monkeypatch.setenv("FAUSTUS_BROWSER_NO_SANDBOX", "0")
     args = builtin_mcp._browser_mcp_args(BASE, settings={})
     assert "--no-sandbox" not in args
 

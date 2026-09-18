@@ -82,7 +82,7 @@ resto de su Delta (reconciliar MOD-05/`execution_router.py`, UI de
 - **README/ACKNOWLEDGMENTS/THIRD_PARTY_NOTICES** ya cubren buena parte de
   ADP-02/ADP-30: hay manifiesto de terceros real (`ACKNOWLEDGMENTS.md`) con
   repo, commit, licencia y destino por adaptación, y el README ya distingue
-  Faustus de Odysseus y conserva nombres internos por compatibilidad.
+  Faustus de Faustus y conserva nombres internos por compatibilidad.
   `THIRD_PARTY_NOTICES.md` + `docs/adaptations/provenance.json` (ambos
   nuevos, W1-B) añaden el registro estructurado que ADP-02 pedía sin
   reemplazar el narrativo.

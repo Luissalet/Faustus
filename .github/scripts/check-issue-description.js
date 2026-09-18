@@ -41,16 +41,16 @@ module.exports = async ({ github, context, core }) => {
       break;
 
     case 'bug': {
-      const revisionText = section('Odysseus Revision');
+      const revisionText = section('Faustus Revision');
       if (!/^[0-9a-f]{12} \(\d{4}-\d{2}-\d{2}\)$/i.test(revisionText)) {
         failures.push(
-          '**Odysseus Revision** — paste the 12-character commit SHA and date, ' +
+          '**Faustus Revision** — paste the 12-character commit SHA and date, ' +
           'for example `1fef4929cf1d (2026-08-11)`',
         );
       }
 
       if (!section('Install Method')) {
-        failures.push('**Install Method** — select how you installed Odysseus');
+        failures.push('**Install Method** — select how you installed Faustus');
       }
 
       if (!section('Operating System')) {

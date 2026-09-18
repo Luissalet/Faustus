@@ -16,7 +16,7 @@ from starlette.testclient import TestClient
 
 from src import model_capabilities as mc
 from src import model_identity as mi
-from src import settings as odysseus_settings
+from src import settings as faustus_settings
 from src.creator import capabilities as cap
 from src.creator import params as pr
 import routes.creator_capability_routes as ccr
@@ -248,7 +248,7 @@ def app_client(tmp_path, monkeypatch):
     db_path = tmp_path / "model_identity.db"
     test_store = mi.ModelIdentityStore(db_path=str(db_path))
     monkeypatch.setattr(mi, "default_store", lambda: test_store)
-    monkeypatch.setattr(odysseus_settings, "get_setting",
+    monkeypatch.setattr(faustus_settings, "get_setting",
                         lambda k, default=None: True if k == "creator_enabled" else default)
 
     app = FastAPI()
@@ -317,7 +317,7 @@ def test_routes_404_when_creator_disabled(tmp_path, monkeypatch):
     db_path = tmp_path / "model_identity.db"
     test_store = mi.ModelIdentityStore(db_path=str(db_path))
     monkeypatch.setattr(mi, "default_store", lambda: test_store)
-    monkeypatch.setattr(odysseus_settings, "get_setting", lambda k, default=None: default)
+    monkeypatch.setattr(faustus_settings, "get_setting", lambda k, default=None: default)
 
     app = FastAPI()
     app.include_router(ccr.setup_creator_capability_routes())

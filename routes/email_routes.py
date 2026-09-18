@@ -71,7 +71,7 @@ from routes.email_pollers import _start_poller
 
 logger = logging.getLogger(__name__)
 
-ODYSSEUS_MAIL_ORIGIN = "odysseus-ui"
+FAUSTUS_MAIL_ORIGIN = "faustus-ui"
 EMAIL_READ_ATTACHMENT_VERSION = 2
 _GOOGLE_OAUTH_IMAP_HOST = "imap.gmail.com"
 _GOOGLE_OAUTH_SMTP_HOST = "smtp.gmail.com"
@@ -1359,12 +1359,12 @@ def _move_email_message(conn, uid: str, dest: str, role: str = "") -> bool:
     return False
 
 
-def _apply_odysseus_headers(msg, kind: str | None = None, ref_id: str | None = None):
-    msg["X-Odysseus-Origin"] = ODYSSEUS_MAIL_ORIGIN
+def _apply_faustus_headers(msg, kind: str | None = None, ref_id: str | None = None):
+    msg["X-Faustus-Origin"] = FAUSTUS_MAIL_ORIGIN
     if kind:
-        msg["X-Odysseus-Kind"] = re.sub(r"[^A-Za-z0-9_.-]", "-", kind)[:64]
+        msg["X-Faustus-Kind"] = re.sub(r"[^A-Za-z0-9_.-]", "-", kind)[:64]
     if ref_id:
-        msg["X-Odysseus-Ref"] = re.sub(r"[^A-Za-z0-9_.:-]", "-", ref_id)[:128]
+        msg["X-Faustus-Ref"] = re.sub(r"[^A-Za-z0-9_.:-]", "-", ref_id)[:128]
 
 
 def _normalize_addr_field(field: str) -> str:
@@ -1834,7 +1834,7 @@ def setup_email_routes():
         owner_key = re.sub(r"[^A-Za-z0-9_.-]", "-", owner or "default")
         return {
             "uid": uid,
-            "message_id": f"<fixture-email-{uid}-{owner_key}@fixtures.odysseus.local>",
+            "message_id": f"<fixture-email-{uid}-{owner_key}@fixtures.faustus.local>",
             "subject": subject,
             "from_name": sender_name or sender_addr or sender,
             "from_address": sender_addr,
@@ -1968,7 +1968,7 @@ def setup_email_routes():
                 # so ordinary emails containing "Reminder" don't get mixed in.
                 status, data = _imap_uid_search(
                     conn,
-                    f'(OR HEADER X-Odysseus-Kind "reminder" SUBJECT "Reminder (Faustus):"{from_clause})',
+                    f'(OR HEADER X-Faustus-Kind "reminder" SUBJECT "Reminder (Faustus):"{from_clause})',
                 )
             elif filter_ == "pending_30d":
                 # "What's pending in the last month" — UNANSWERED + delivered
@@ -2749,8 +2749,8 @@ def setup_email_routes():
             msg_out["From"] = email.utils.formataddr((cfg.get("display_name") or "", cfg["from_address"]))
             msg_out["To"] = target
             msg_out["Subject"] = subject
-            msg_out["Message-ID"] = email.utils.make_msgid(domain="odysseus.local")
-            _apply_odysseus_headers(msg_out, "unsubscribe", uid)
+            msg_out["Message-ID"] = email.utils.make_msgid(domain="faustus.local")
+            _apply_faustus_headers(msg_out, "unsubscribe", uid)
             _send_smtp_message(cfg, cfg["from_address"], [target], msg_out.as_string())
             moved = False
             if move_to_spam:
@@ -3925,8 +3925,8 @@ def setup_email_routes():
             logger.error(f"Failed to permanently delete email {uid}: {e}")
             return {"success": False, "error": "Mail operation failed"}
 
-    @router.delete("/odysseus/reminders")
-    async def delete_odysseus_reminder_emails(
+    @router.delete("/faustus/reminders")
+    async def delete_faustus_reminder_emails(
         account_id: str | None = Query(None),
         permanent: bool = Query(False),
         owner: str = Depends(require_owner),
@@ -3969,7 +3969,7 @@ def setup_email_routes():
                         # Match the Reminders filter: new messages have the
                         # explicit kind header, and subject fallback catches
                         # clients/providers that stripped custom headers.
-                        uids.update(_search_uids(conn, f'(HEADER X-Odysseus-Kind {_search_quote("reminder")})'))
+                        uids.update(_search_uids(conn, f'(HEADER X-Faustus-Kind {_search_quote("reminder")})'))
                         uids.update(_search_uids(conn, f'(SUBJECT {_search_quote("Reminder (Faustus):")})'))
                         for addr in own_addrs:
                             addr_q = _search_quote(addr)
@@ -3997,7 +3997,7 @@ def setup_email_routes():
             _invalidate_list_cache(account_id)
             return {"success": True, "deleted": deleted, "folders_checked": folders_checked}
         except Exception as e:
-            logger.error(f"delete_odysseus_reminder_emails failed: {e}")
+            logger.error(f"delete_faustus_reminder_emails failed: {e}")
             return {"success": False, "error": "Mail operation failed"}
 
     @router.post("/move/{uid}")
@@ -4173,7 +4173,7 @@ def setup_email_routes():
             "size": row["size"],
         }
 
-    def _load_odysseus_attachment_source(db, kind: str, item_id: str, owner: str):
+    def _load_faustus_attachment_source(db, kind: str, item_id: str, owner: str):
         from core.database import Document as _Doc, GalleryImage as _GI
         from core.database import Session as _Sess
 
@@ -4219,8 +4219,8 @@ def setup_email_routes():
 
         raise HTTPException(status_code=400, detail="Unknown attachment kind")
 
-    @router.post("/compose-from-odysseus")
-    async def compose_from_odysseus(data: dict, owner: str = Depends(require_owner)):
+    @router.post("/compose-from-faustus")
+    async def compose_from_faustus(data: dict, owner: str = Depends(require_owner)):
         """Stage an Faustus document or gallery image as a compose upload."""
         kind = str(data.get("kind") or "").strip().lower()
         item_id = str(data.get("id") or "").strip()
@@ -4231,7 +4231,7 @@ def setup_email_routes():
 
             db = _SL()
             try:
-                src = _load_odysseus_attachment_source(db, kind, item_id, owner)
+                src = _load_faustus_attachment_source(db, kind, item_id, owner)
                 if "path" in src:
                     return _stage_compose_file(src["filename"], src["path"], owner)
                 return _stage_compose_bytes(src["filename"], src["content"], owner)
@@ -4243,8 +4243,8 @@ def setup_email_routes():
             logger.error(f"Failed to stage Faustus attachment {kind}/{item_id}: {e}")
             return {"success": False, "error": "Mail operation failed"}
 
-    @router.post("/compose-from-odysseus-zip")
-    async def compose_from_odysseus_zip(data: dict, owner: str = Depends(require_owner)):
+    @router.post("/compose-from-faustus-zip")
+    async def compose_from_faustus_zip(data: dict, owner: str = Depends(require_owner)):
         """Stage several Faustus documents/gallery images as one zip attachment."""
         raw_items = data.get("items") or []
         if not isinstance(raw_items, list) or not raw_items:
@@ -4277,7 +4277,7 @@ def setup_email_routes():
                         item_id = str(item.get("id") or "").strip()
                         if kind not in {"document", "gallery"} or not item_id:
                             continue
-                        src = _load_odysseus_attachment_source(db, kind, item_id, owner)
+                        src = _load_faustus_attachment_source(db, kind, item_id, owner)
                         zname = unique_name(src["filename"])
                         if "path" in src:
                             zf.write(src["path"], arcname=zname)
@@ -4286,7 +4286,7 @@ def setup_email_routes():
                 content = buf.getvalue()
                 if not content:
                     raise HTTPException(status_code=400, detail="No valid attachments")
-                return _stage_compose_bytes("odysseus-attachments.zip", content, owner)
+                return _stage_compose_bytes("faustus-attachments.zip", content, owner)
             finally:
                 db.close()
         except HTTPException:
@@ -4380,7 +4380,7 @@ def setup_email_routes():
             outer["Cc"] = cc
         outer["Subject"] = subject or ""
         outer["Date"] = utcnow_naive().strftime("%a, %d %b %Y %H:%M:%S +0000")
-        _apply_odysseus_headers(outer, odysseus_kind or "scheduled", odysseus_ref)
+        _apply_faustus_headers(outer, odysseus_kind or "scheduled", odysseus_ref)
         if in_reply_to:
             outer["In-Reply-To"] = in_reply_to
         if references:
@@ -4690,14 +4690,14 @@ def setup_email_routes():
             outer["Cc"] = req.cc
         outer["Subject"] = req.subject
         outer["Date"] = utcnow_naive().strftime("%a, %d %b %Y %H:%M:%S +0000")
-        outer["Message-ID"] = email.utils.make_msgid(domain="odysseus.local")
+        outer["Message-ID"] = email.utils.make_msgid(domain="faustus.local")
 
         if req.in_reply_to:
             outer["In-Reply-To"] = req.in_reply_to
         if req.references:
             outer["References"] = req.references
         if req.odysseus_kind:
-            _apply_odysseus_headers(outer, req.odysseus_kind)
+            _apply_faustus_headers(outer, req.odysseus_kind)
 
         # Plain + HTML body. Escape user content so a `<script>` or
         # `<img onerror=...>` paste in compose doesn't end up as live HTML
@@ -4898,7 +4898,7 @@ def setup_email_routes():
         recipients = _envelope_recipients(to, cc, bcc)
         if not recipients:
             return {"ok": False, "reason": "no_recipients"}
-        message_id = email.utils.make_msgid(domain="odysseus.local")
+        message_id = email.utils.make_msgid(domain="faustus.local")
         payload = {
             "to": to, "cc": cc, "bcc": bcc, "subject": req.subject, "body": req.body,
             "body_html": req.body_html, "in_reply_to": req.in_reply_to,
@@ -4934,7 +4934,7 @@ def setup_email_routes():
         if payload.get("references"):
             outer["References"] = payload["references"]
         if payload.get("odysseus_kind"):
-            _apply_odysseus_headers(outer, payload["odysseus_kind"])
+            _apply_faustus_headers(outer, payload["odysseus_kind"])
         outer.attach(MIMEText(payload["body"], "plain", "utf-8"))
         html_part = (_sanitize_email_html(payload["body_html"]) if payload.get("body_html") else None) \
             or _md_to_email_html(payload["body"])

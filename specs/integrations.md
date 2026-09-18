@@ -12,7 +12,7 @@ This spec covers external integration surfaces in:
 - `routes/auth_routes.py` integration CRUD/test routes;
 - `src/integrations.py` and `data/integrations.json`;
 - canonical `routes/webhook/webhook_routes.py` plus its top-level compatibility shim, and `src/webhook_manager.py`;
-- task webhook generation/triggering in canonical `routes/task/task_routes.py`, its top-level compatibility shim, `app.py`, `static/js/tasks.js`, and `scripts/odysseus-webhook`;
+- task webhook generation/triggering in canonical `routes/task/task_routes.py`, its top-level compatibility shim, `app.py`, `static/js/tasks.js`, and `scripts/faustus-webhook`;
 - companion/mobile pairing in `companion/routes.py` and `companion/pairing.py`;
 - provider OAuth/device-flow endpoint links in `routes/copilot_routes.py`, `routes/chatgpt_subscription_routes.py`, `routes/device_flow.py`, and `ProviderAuthSession` rows;
 - integration UI surfaces in `static/js/settings.js` and `static/js/admin.js`;
@@ -45,7 +45,7 @@ Runtime behavior:
 - email send and destructive actions remain described as confirmation-required behavior in bundled agent instructions.
 - Cookbook adopt/stop paths validate stored remote SSH host and port before interpolating them into SSH commands.
 
-The local integration skill/helper files require `ODYSSEUS_URL` and `ODYSSEUS_API_TOKEN`. They must use `/api/codex/*` and must not bypass Settings/token scopes through SSH, Docker, direct DB access, local files, MCP internals, or app imports. Helper scripts refuse non-`/api/codex/*` paths.
+The local integration skill/helper files require `FAUSTUS_URL` and `FAUSTUS_API_TOKEN`. They must use `/api/codex/*` and must not bypass Settings/token scopes through SSH, Docker, direct DB access, local files, MCP internals, or app imports. Helper scripts refuse non-`/api/codex/*` paths.
 
 ## Bundle Distribution
 
@@ -120,7 +120,7 @@ Current webhook event emitters include session creation, chat message/completion
 
 Task webhook triggers are separate inbound webhooks. `app.py` exempts only `/api/tasks/{task_id}/webhook/{token}` from normal auth so external callers can trigger tasks without cookies. `routes.task.task_routes` owns token generation/regeneration and validates task id, token, and active status before queueing a run; the top-level route module is a compatibility alias.
 
-`static/js/tasks.js` displays the live task webhook URL. `scripts/odysseus-webhook url` now emits the same route with percent-encoded task/token path segments; the CLI still reads and mutates task rows directly for list/show/rotate/revoke rather than delegating to HTTP route policy.
+`static/js/tasks.js` displays the live task webhook URL. `scripts/faustus-webhook url` now emits the same route with percent-encoded task/token path segments; the CLI still reads and mutates task rows directly for list/show/rotate/revoke rather than delegating to HTTP route policy.
 
 Event-triggered tasks use `src.event_bus`; task execution and scheduling ownership lives in `calendar-tasks-notes.md`.
 
@@ -162,7 +162,7 @@ This spec owns the cross-integration framing and agent/token/webhook surfaces. D
 - Webhook URLs are validated at create and delivery time, redirects are disabled,
   and delivery connects to the IP set validated immediately before the request.
 - Companion LAN detection is best-effort and falls back to local host/port defaults unless a valid `COMPANION_BASE_URL` is configured.
-- `ODYSSEUS_URL` must be reachable from the external coding agent; no Docker/native URL rewrite is performed.
+- `FAUSTUS_URL` must be reachable from the external coding agent; no Docker/native URL rewrite is performed.
 
 ## Security And Provenance
 
@@ -170,7 +170,7 @@ This spec owns the cross-integration framing and agent/token/webhook surfaces. D
 - Codex/Claude plugin zips must not expose secrets beyond source instructions and helper files.
 - Webhook list responses expose `has_secret`, not the secret value.
 - Webhook secrets are encrypted when an API key manager is available; plaintext fallback is legacy/degraded behavior.
-- Outgoing webhook signatures use `X-Odysseus-Signature`.
+- Outgoing webhook signatures use `X-Faustus-Signature`.
 - Generic integration API keys are encrypted at rest and masked in API responses.
 - Generic integration base URLs are admin-configured and not the same public-only policy as webhook URLs.
 - `api_call` output and remote integration responses are untrusted model context.

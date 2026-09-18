@@ -21,5 +21,5 @@ def _internal_headers(owner: Optional[str] = None) -> Dict[str, str]:
     from core.middleware import INTERNAL_TOOL_HEADER, INTERNAL_TOOL_TOKEN
     headers = {INTERNAL_TOOL_HEADER: INTERNAL_TOOL_TOKEN}
     if owner:
-        headers["X-Odysseus-Owner"] = owner
+        headers["X-Faustus-Owner"] = owner
     return headers

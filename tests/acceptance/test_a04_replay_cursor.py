@@ -88,7 +88,7 @@ async def test_resume_with_cursor_has_no_gap_no_dup_one_terminal_one_model_call(
     req = _RouteRequest("chat")
     req._form["compare_mode"] = "false"
     send_response = await send_endpoint(req)
-    run_id = send_response.headers["X-Odysseus-Run-Id"]
+    run_id = send_response.headers["X-Faustus-Run-Id"]
     assert send_response.headers[api_version.API_VERSION_HEADER] == api_version.API_VERSION
 
     live = send_response.body_iterator
@@ -113,7 +113,7 @@ async def test_resume_with_cursor_has_no_gap_no_dup_one_terminal_one_model_call(
     # still running (it is blocked in resume_point.wait()).
     assert agent_runs.get_active_run("session-1") is not None
     resume_response = await resume_endpoint(_ResumeReq(), "session-1", cursor=cursor)
-    assert resume_response.headers["X-Odysseus-Run-Id"] == run_id
+    assert resume_response.headers["X-Faustus-Run-Id"] == run_id
 
     # Let the model produce the rest now that a subscriber is attached again.
     resume_point.set()

@@ -1,6 +1,6 @@
 # Roadmap / Help Wanted
 
-Odysseus is on a voyage, but not home yet. It works great for me (lol), but this ship is moving fast and feedback/help would be appreciated! (I don't know what I'm doing, help).
+Faustus is on a voyage, but not home yet. It works great for me (lol), but this ship is moving fast and feedback/help would be appreciated! (I don't know what I'm doing, help).
 
 If you see weird CSS, strange layout behavior, or a suspiciously murky corner of
 the codebase, you are probably right to stay away.
@@ -32,7 +32,7 @@ the codebase, you are probably right to stay away.
   before the user request really starts. We need slimmer prompts, better tool
   selection, smaller default tool sets, and clearer guidance for models with
   4k/8k/16k context windows.
-- Local model speculative decoding support. For Odysseus-tuned local models,
+- Local model speculative decoding support. For Faustus-tuned local models,
   plan to ship or recommend a small same-tokenizer draft model when the serving
   backend supports it. Early vLLM testing showed a generic `Qwen3-0.6B` draft
   beside `Qwen3-8B` can materially reduce wall time, while an unsupported

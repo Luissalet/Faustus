@@ -14,7 +14,7 @@ plan técnico («No migrar a React/Tailwind»). Ver §1.
 
 - `static/index.html` 260 KB, `static/style.css` 1,52 MB, `static/app.js`
   200 KB: las cifras del plan son correctas.
-- `tests/e2e/` **es Playwright real**, opt-in con `ODYSSEUS_E2E=1`, con servidor
+- `tests/e2e/` **es Playwright real**, opt-in con `FAUSTUS_E2E=1`, con servidor
   propio y modelo falso. Playwright 1.62 está en `venv`.
 - No hay bundler de ningún tipo: `static/js/package.json` es literalmente
   `{"type": "module"}`, el `package.json` raíz sólo declara una devDependency

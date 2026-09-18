@@ -59,7 +59,7 @@ export interface PanelState {
 }
 
 export const MAX_FRAMES = 8;
-const AUTO_KEY = 'odysseus.browserView.auto'; // shared with the legacy panel
+const AUTO_KEY = 'faustus.browserView.auto'; // shared with the legacy panel
 
 export function autoOpenEnabled(): boolean {
   try {

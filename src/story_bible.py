@@ -11,7 +11,7 @@ extraction, and read back on every review pass.
 
 Why it is built this way
 ------------------------
-* **Storage is one JSON file inside the workspace** (``<workspace>/.odysseus/
+* **Storage is one JSON file inside the workspace** (``<workspace>/.faustus/
   story_bible.json``), beside the project's objectives and memory: greppable,
   hand-editable, travels with the folder, survives a database wipe.
 * **Atomic writes** (tmp + ``os.replace``); a corrupt file is renamed to
@@ -48,7 +48,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
-BIBLE_DIRNAME = ".odysseus"
+BIBLE_DIRNAME = ".faustus"
 BIBLE_FILENAME = "story_bible.json"
 
 SECTIONS = ("characters", "timeline", "facts", "places")
@@ -102,7 +102,15 @@ def empty_bible() -> Dict[str, Any]:
 
 def bible_dir(project: Dict[str, Any]) -> str:
     ws = (project or {}).get("workspace") or ""
-    return os.path.join(ws, BIBLE_DIRNAME) if ws else ""
+    if not ws:
+        return ""
+    faustus_dir = os.path.join(ws, BIBLE_DIRNAME)
+    # Read-only compat: a project whose bible was created before the rename
+    # and still has a pre-rename `.odysseus/` folder keeps using it.
+    legacy_dir = os.path.join(ws, ".odysseus")
+    if not os.path.isdir(faustus_dir) and os.path.isdir(legacy_dir):
+        return legacy_dir
+    return faustus_dir
 
 
 def bible_path(project: Dict[str, Any]) -> str:

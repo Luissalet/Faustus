@@ -113,7 +113,7 @@ def test_does_not_strip_bash_or_python_code_examples():
 def test_does_not_strip_invalid_inline_json_metadata():
     for example in (
         '```list_email_accounts {title="setup"}\n```',
-        '```web_search {query="odysseus"}\n```',
+        '```web_search {query="faustus"}\n```',
     ):
         assert _strip_live_exec_fences(example) == example
 

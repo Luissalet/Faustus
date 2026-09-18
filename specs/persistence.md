@@ -17,14 +17,14 @@ This spec covers durable state in:
   `routes/upload_routes.py` for durable upload references and retention;
 - JSON stores managed by `core/auth.py`, `src/settings.py`, `src/api_key_manager.py`, `src/preset_manager.py`, `src/integrations.py`, `src/upload_handler.py`, `src/personal_docs.py`, `src/research_handler.py`, `src/bg_jobs.py`, `routes/prefs_routes.py`, canonical `routes/contacts/contacts_routes.py` and `routes/vault/vault_routes.py` plus their shims, `routes/cookbook_routes.py`, and memory/skills managers;
 - `routes/email_helpers.py` scheduled-email storage;
-- `routes/backup_routes.py` and `scripts/odysseus-backup`;
+- `routes/backup_routes.py` and `scripts/faustus-backup`;
 - runtime data under `data/`.
 
 ## Database Shape
 
 `core/database.py` owns SQLAlchemy models and startup migrations. `src/database.py` is a compatibility re-export for legacy imports. Route and service code commonly owns its own `SessionLocal()` lifecycle instead of using one central unit-of-work wrapper.
 
-The default database is SQLite at `DATA_DIR/app.db`. `src.runtime_paths` and `src.constants` own the data-dir default: source runs use the repository `data/` directory, frozen builds default to `~/.odysseus/data`, and `ODYSSEUS_DATA_DIR` overrides both. SQLAlchemy can point at a non-SQLite `DATABASE_URL`, but current startup migrations/backfills are SQLite-first and often use `sqlite3`, `PRAGMA`, or SQLite catalog queries. External DBs are not fully migration-compatible unless those helpers are made backend-neutral.
+The default database is SQLite at `DATA_DIR/app.db`. `src.runtime_paths` and `src.constants` own the data-dir default: source runs use the repository `data/` directory, frozen builds default to `~/.faustus/data`, and `FAUSTUS_DATA_DIR` overrides both. SQLAlchemy can point at a non-SQLite `DATABASE_URL`, but current startup migrations/backfills are SQLite-first and often use `sqlite3`, `PRAGMA`, or SQLite catalog queries. External DBs are not fully migration-compatible unless those helpers are made backend-neutral.
 
 After `Base.metadata.create_all()`, `init_db()` resolves file-backed SQLite
 paths from SQLAlchemy's parsed engine URL and attempts to restrict the main
@@ -65,7 +65,7 @@ Email default-account state is serialized per owner. Startup normalizes legacy d
 
 ## Migration Policy
 
-Odysseus does not use Alembic. `core.database.init_db()` runs at module import, before FastAPI lifespan startup. `Base.metadata.create_all()` creates missing tables; hand-written `_migrate_*` functions add or reshape legacy columns.
+Faustus does not use Alembic. `core.database.init_db()` runs at module import, before FastAPI lifespan startup. `Base.metadata.create_all()` creates missing tables; hand-written `_migrate_*` functions add or reshape legacy columns.
 
 Runtime behavior:
 
@@ -117,7 +117,7 @@ Persisted memories, skills, documents, email, RAG chunks, notes, and other user-
 
 `routes/backup_routes.py` owns narrow admin HTTP JSON export/import for memories, presets, skills, settings, features, and prefs. Skill import writes through the disk-backed skills manager API. This is not a full system restore path.
 
-`scripts/odysseus-backup` owns local `data/` snapshot/restore, with some large/runtime subtrees such as deep research and mail attachments behind flags. It uses SQLite backup APIs, includes secret-bearing key files and stores, validates restore archives against path escapes and link entries, and skips list entries that disappear or become unstatable during directory iteration. Backup artifacts should be treated as sensitive.
+`scripts/faustus-backup` owns local `data/` snapshot/restore, with some large/runtime subtrees such as deep research and mail attachments behind flags. It uses SQLite backup APIs, includes secret-bearing key files and stores, validates restore archives against path escapes and link entries, and skips list entries that disappear or become unstatable during directory iteration. Backup artifacts should be treated as sensitive.
 
 ## Transitional Notes
 

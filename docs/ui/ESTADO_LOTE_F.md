@@ -20,13 +20,13 @@ uso diario del compositor, del transcript y de la lista de conversaciones.
 | `#regla` | `Studio.tsx` | `POST /api/workspace/instructions/remember` |
 
 Estado compartido con la interfaz anterior, en sus claves exactas:
-`odysseus-workspace` (carpeta, en crudo) y `odysseus-rag-active`. Cambiar de
+`faustus-workspace` (carpeta, en crudo) y `faustus-rag-active`. Cambiar de
 shell no pierde la carpeta.
 
 ## Verificado en el 7001
 
 - `/he` → lista → Tab → `/help` → aviso con los comandos.
-- Diálogo de carpeta: `D:\LocalAI\odysseus`, árbol, «Usar esta carpeta».
+- Diálogo de carpeta: `D:\LocalAI\faustus`, árbol, «Usar esta carpeta».
 - `Resume @app.p` → lista difusa (`app.py`, `tests/test_app.py`…) → Tab →
   `@app.py ` → enviado en agente con la carpeta; el modelo lo leyó.
 - Editar el último mensaje con «Guardar y regenerar» (Ctrl+Enter): el
@@ -48,7 +48,7 @@ shell no pierde la carpeta.
 - **CSS por duplicado.** Vite volvía a enlazar `index.css` sin `?v=` y la
   segunda copia ganaba los empates de especificidad (el anillo de foco
   legacy reapareció). La hoja se enlaza una vez desde la entrada.
-- **`odysseus-workspace` es crudo, no JSON.** El primer intento escribía
+- **`faustus-workspace` es crudo, no JSON.** El primer intento escribía
   con comillas y la anterior habría leído `"D:\…"`.
 
 ## Tamaño

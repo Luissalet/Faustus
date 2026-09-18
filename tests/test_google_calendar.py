@@ -158,14 +158,14 @@ async def test_authorize_builds_url_with_scopes_and_valid_state():
     from routes.email_helpers import verify_oauth_state
 
     authorize = _route("GET", "/oauth/google/authorize")
-    resp = await authorize(request=_FakeRequest(host="odysseus.example.ts.net:7443"), account_id="")
+    resp = await authorize(request=_FakeRequest(host="faustus.example.ts.net:7443"), account_id="")
     loc = resp.headers["location"]
     assert loc.startswith("https://accounts.google.com/o/oauth2/v2/auth?")
     query = urllib.parse.parse_qs(urllib.parse.urlparse(loc).query)
     assert query["scope"] == ["https://www.googleapis.com/auth/calendar openid email"]
     assert query["access_type"] == ["offline"]
     assert query["prompt"] == ["consent"]
-    assert query["redirect_uri"] == ["http://odysseus.example.ts.net:7443/api/calendar/oauth/google/callback"]
+    assert query["redirect_uri"] == ["http://faustus.example.ts.net:7443/api/calendar/oauth/google/callback"]
     payload = verify_oauth_state(query["state"][0])
     assert payload is not None
     assert payload["a"] == "calendar"

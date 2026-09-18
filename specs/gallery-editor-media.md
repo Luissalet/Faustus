@@ -21,7 +21,7 @@ This spec covers media surfaces in:
 - database models `GalleryImage`, `GalleryAlbum`, `EditorDraft`, and `Signature`;
 - generated files under `data/generated_images`;
 - frontend modules `static/js/gallery.js`, `static/js/galleryEditor.js`, `static/js/editor/*`, `static/js/signature.js`, `static/js/emojiPicker.js`, `static/js/chatRenderer.js`, `static/js/document.js`, `static/js/markdown.js`, and `static/js/theme.js`;
-- CLI surfaces `scripts/odysseus-gallery` and `scripts/odysseus-signature`;
+- CLI surfaces `scripts/faustus-gallery` and `scripts/faustus-signature`;
 - tests covering gallery helpers/routes, generated-image serving, editor drafts, signatures, visual reports, fonts, upload limits, and image endpoint security.
 
 ## Current Call Sites Include

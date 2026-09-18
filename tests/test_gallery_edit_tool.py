@@ -39,7 +39,7 @@ async def test_routes_owner_and_confirmed_gallery_result(service, action, path):
     assert result['exit_code'] == 0, result
     assert service[0][0].endswith('/api/image/' + path)
     assert service[1][0].endswith('/api/gallery/upload')
-    assert all(call[1]['headers']['X-Odysseus-Owner'] == 'alice' for call in service)
+    assert all(call[1]['headers']['X-Faustus-Owner'] == 'alice' for call in service)
     assert result['image_id'] == 'edited-id'
     assert result['source_image_id'] == 'source'
     assert result['image_url'] == '/api/generated-image/edited.png'

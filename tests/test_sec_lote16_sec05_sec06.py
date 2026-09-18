@@ -30,11 +30,9 @@ def test_build_server_env_inherit_mode_never_leaks_the_internal_token(monkeypatc
     real internal token IS in os.environ (every running Faustus process has
     it), so this is the path that actually matters, not a synthetic case."""
     monkeypatch.setenv("FAUSTUS_INTERNAL_TOKEN", "the-real-secret-token")
-    monkeypatch.setenv("ODYSSEUS_INTERNAL_TOKEN", "legacy-secret-alias")
     env = mcp_manager.build_server_env({"MY_SERVER_VAR": "hello"}, inherit_env=True)
     assert env is not None
     assert "FAUSTUS_INTERNAL_TOKEN" not in env
-    assert "ODYSSEUS_INTERNAL_TOKEN" not in env
     assert "the-real-secret-token" not in env.values()
     assert env["MY_SERVER_VAR"] == "hello"  # the server's own declared var still arrives
 

@@ -31,7 +31,7 @@ SENTINELS = {
     "ANTHROPIC_API_KEY": "sk-sentinel-anthropic",
     "AWS_SECRET_ACCESS_KEY": "sentinel-aws",
     "GITHUB_TOKEN": "ghp-sentinel",
-    "ODYSSEUS_INTERNAL_TOKEN": "sentinel-loopback",
+    "FAUSTUS_INTERNAL_TOKEN": "sentinel-loopback",
     "SOME_APP_SECRET": "hunter2",
 }
 
@@ -103,11 +103,11 @@ def test_the_internal_token_never_leaves_this_process(monkeypatch, planted, name
 def test_inherit_all_is_wide_but_not_unconditional(planted):
     env = profile_environment(PROFILE_AGENT, inherit_all=True)
     assert env["GITHUB_TOKEN"] == SENTINELS["GITHUB_TOKEN"]  # that is what it means
-    assert "ODYSSEUS_INTERNAL_TOKEN" not in env
+    assert "FAUSTUS_INTERNAL_TOKEN" not in env
 
 
 def test_scrub_private_leaves_everything_else_alone():
-    assert scrub_private({"A": "1", "ODYSSEUS_INTERNAL_TOKEN": "x"}) == {"A": "1"}
+    assert scrub_private({"A": "1", "FAUSTUS_INTERNAL_TOKEN": "x"}) == {"A": "1"}
 
 
 # ── the two consumers ─────────────────────────────────────────────────────
@@ -159,7 +159,7 @@ def test_a_legacy_mcp_server_keeps_its_environment_minus_the_token(planted):
     env = mm.build_server_env({"MY_SERVER_TOKEN": "abc"}, inherit_env=True)
     assert env["MY_SERVER_TOKEN"] == "abc"
     assert env["OPENAI_API_KEY"] == SENTINELS["OPENAI_API_KEY"]  # migration promise
-    assert "ODYSSEUS_INTERNAL_TOKEN" not in env
+    assert "FAUSTUS_INTERNAL_TOKEN" not in env
 
 
 def test_a_minimal_mcp_server_gets_the_shared_structural_list(planted):

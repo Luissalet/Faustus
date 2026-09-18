@@ -56,13 +56,13 @@ def test_the_live_run_endpoints_have_a_caller(endpoint):
 
 
 def test_stop_sends_the_run_id_back():
-    """`agent_runs.stop()` is fail-closed: no `X-Odysseus-Run-Id`, no cancel.
+    """`agent_runs.stop()` is fail-closed: no `X-Faustus-Run-Id`, no cancel.
 
     Stop used to POST without it, so it always answered `stopped: false`. The
     stream closed in the browser and the model kept generating — a button
     that only hid the evidence."""
     chat = (_SRC / "adapters" / "chat.ts").read_text(encoding="utf-8")
-    assert "X-Odysseus-Run-Id" in chat
+    assert "X-Faustus-Run-Id" in chat
     body = chat[chat.index("export async function stopChat"):]
     body = body[: body.index("\n}\n") + 3]
     assert "RUN_ID_HEADER" in body, "stopChat must send the run id header"

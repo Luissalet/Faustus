@@ -72,9 +72,9 @@ from routes.cookbook_helpers import (
 
 _HF_TOKEN_STATUS_SNIPPET = (
     'if [ -n "$HF_TOKEN" ]; then '
-    'echo "[odysseus] HF token: applied"; '
+    'echo "[faustus] HF token: applied"; '
     'else '
-    'echo "[odysseus] HF token: NOT SET — gated/private models will be denied. '
+    'echo "[faustus] HF token: NOT SET — gated/private models will be denied. '
     'Add one in Faustus Cookbook -> Settings -> HuggingFace Token."; '
     'fi'
 )
@@ -200,18 +200,18 @@ def _bash_hf_grant_lines(grant_ref: str) -> list[str]:
     every gated download on a box whose `stat` we cannot parse.
     """
     return [
-        f"ODYSSEUS_HF_GRANT={grant_ref}",
-        "trap 'rm -f \"$ODYSSEUS_HF_GRANT\"' EXIT HUP INT TERM",
-        'if [ -f "$ODYSSEUS_HF_GRANT" ]; then',
-        '  ODYSSEUS_HF_MODE="$(stat -c %a "$ODYSSEUS_HF_GRANT" 2>/dev/null '
-        '|| stat -f %Lp "$ODYSSEUS_HF_GRANT" 2>/dev/null || echo 600)"',
-        '  if [ "$ODYSSEUS_HF_MODE" = "600" ]; then',
-        '    . "$ODYSSEUS_HF_GRANT"; export HF_TOKEN',
+        f"FAUSTUS_HF_GRANT={grant_ref}",
+        "trap 'rm -f \"$FAUSTUS_HF_GRANT\"' EXIT HUP INT TERM",
+        'if [ -f "$FAUSTUS_HF_GRANT" ]; then',
+        '  FAUSTUS_HF_MODE="$(stat -c %a "$FAUSTUS_HF_GRANT" 2>/dev/null '
+        '|| stat -f %Lp "$FAUSTUS_HF_GRANT" 2>/dev/null || echo 600)"',
+        '  if [ "$FAUSTUS_HF_MODE" = "600" ]; then',
+        '    . "$FAUSTUS_HF_GRANT"; export HF_TOKEN',
         '  else',
-        '    echo "[odysseus] HF token grant refused: mode $ODYSSEUS_HF_MODE, not 600"',
+        '    echo "[faustus] HF token grant refused: mode $FAUSTUS_HF_MODE, not 600"',
         '  fi',
-        '  rm -f "$ODYSSEUS_HF_GRANT"',
-        '  unset ODYSSEUS_HF_MODE',
+        '  rm -f "$FAUSTUS_HF_GRANT"',
+        '  unset FAUSTUS_HF_MODE',
         'fi',
     ]
 
@@ -227,15 +227,15 @@ def _ps_hf_grant_lines(remote_grant: str) -> list[str]:
     """
     quoted = str(remote_grant).replace("'", "''")
     return [
-        f"$odysseusHfGrant = Join-Path $HOME '{quoted}'",
-        "if (Test-Path -LiteralPath $odysseusHfGrant) {",
+        f"$faustusHfGrant = Join-Path $HOME '{quoted}'",
+        "if (Test-Path -LiteralPath $faustusHfGrant) {",
         "  try {",
-        '    icacls $odysseusHfGrant /inheritance:r /grant:r "$($env:USERNAME):(F)" | Out-Null',
-        "    $odysseusHfRaw = Get-Content -LiteralPath $odysseusHfGrant -Raw",
-        "    $env:HF_TOKEN = (($odysseusHfRaw -split '=', 2)[1]).Trim().Trim(\"'\")",
+        '    icacls $faustusHfGrant /inheritance:r /grant:r "$($env:USERNAME):(F)" | Out-Null',
+        "    $faustusHfRaw = Get-Content -LiteralPath $faustusHfGrant -Raw",
+        "    $env:HF_TOKEN = (($faustusHfRaw -split '=', 2)[1]).Trim().Trim(\"'\")",
         "  } finally {",
-        "    $odysseusHfRaw = $null",
-        "    Remove-Item -Force -LiteralPath $odysseusHfGrant -ErrorAction SilentlyContinue",
+        "    $faustusHfRaw = $null",
+        "    Remove-Item -Force -LiteralPath $faustusHfGrant -ErrorAction SilentlyContinue",
         "  }",
         "}",
     ]
@@ -314,7 +314,7 @@ def _append_mlx_image_server_script(runner_lines: list[str]) -> None:
     except Exception as e:
         logger.warning("Failed to read mlx_image_server.py: %s", e)
         runner_lines.append('echo "ERROR: Faustus could not prepare the MLX image server helper."')
-        runner_lines.append('ODYSSEUS_PREFLIGHT_EXIT=127')
+        runner_lines.append('FAUSTUS_PREFLIGHT_EXIT=127')
         return
     runner_lines.append('mkdir -p scripts')
     runner_lines.append("cat > scripts/mlx_image_server.py <<'PY'")
@@ -361,10 +361,10 @@ def _append_openai_port_preflight_lines(lines: list[str], *, cmd: str, expected_
     port = _serve_port_from_cmd(cmd)
     if not port:
         return
-    lines.append(f"ODYSSEUS_SERVE_PORT='{_bash_squote(port)}'")
-    lines.append(f"ODYSSEUS_EXPECTED_MODEL='{_bash_squote(expected_model)}'")
-    lines.append("if [ -n \"$ODYSSEUS_SERVE_PORT\" ]; then")
-    lines.append("  python3 - \"$ODYSSEUS_SERVE_PORT\" \"$ODYSSEUS_EXPECTED_MODEL\" <<'PY'")
+    lines.append(f"FAUSTUS_SERVE_PORT='{_bash_squote(port)}'")
+    lines.append(f"FAUSTUS_EXPECTED_MODEL='{_bash_squote(expected_model)}'")
+    lines.append("if [ -n \"$FAUSTUS_SERVE_PORT\" ]; then")
+    lines.append("  python3 - \"$FAUSTUS_SERVE_PORT\" \"$FAUSTUS_EXPECTED_MODEL\" <<'PY'")
     lines.append("import json, sys, urllib.request")
     lines.append("port = sys.argv[1]")
     lines.append("expected = (sys.argv[2] or '').strip()")
@@ -385,7 +385,7 @@ def _append_openai_port_preflight_lines(lines: list[str], *, cmd: str, expected_
     lines.append("raise SystemExit(98)")
     lines.append("PY")
     lines.append("  _ody_port_ec=$?")
-    lines.append("  if [ \"$_ody_port_ec\" -ne 0 ]; then ODYSSEUS_PREFLIGHT_EXIT=\"$_ody_port_ec\"; fi")
+    lines.append("  if [ \"$_ody_port_ec\" -ne 0 ]; then FAUSTUS_PREFLIGHT_EXIT=\"$_ody_port_ec\"; fi")
     lines.append("fi")
 
 _OLLAMA_SIDECAR_CONTAINERS = {"ollama-test", "ollama-rocm"}
@@ -481,26 +481,26 @@ def _remote_posix_path_prefix() -> str:
 def _remote_tmux_command(*args: str) -> str:
     """Shell command for remote tmux when non-login SSH has a thin PATH."""
     tmux = (
-        'ODYSSEUS_TMUX="$(command -v tmux '
+        'FAUSTUS_TMUX="$(command -v tmux '
         '|| command -v /opt/homebrew/bin/tmux '
         '|| command -v /usr/local/bin/tmux '
         '|| command -v /usr/bin/tmux '
         '|| true)"; '
-        'if [ -z "$ODYSSEUS_TMUX" ]; then echo "tmux not found" >&2; exit 127; fi; '
+        'if [ -z "$FAUSTUS_TMUX" ]; then echo "tmux not found" >&2; exit 127; fi; '
     )
     quoted = " ".join(shlex.quote(str(arg)) for arg in args)
-    return f'{_remote_posix_path_prefix()}{tmux}"$ODYSSEUS_TMUX" {quoted}'
+    return f'{_remote_posix_path_prefix()}{tmux}"$FAUSTUS_TMUX" {quoted}'
 
 
 def _remote_tmux_launch_command(session_id: str, runner: str) -> str:
     """Shell command that chmods a runner and starts it in remote tmux."""
     tmux = (
-        'ODYSSEUS_TMUX="$(command -v tmux '
+        'FAUSTUS_TMUX="$(command -v tmux '
         '|| command -v /opt/homebrew/bin/tmux '
         '|| command -v /usr/local/bin/tmux '
         '|| command -v /usr/bin/tmux '
         '|| true)"; '
-        'if [ -z "$ODYSSEUS_TMUX" ]; then echo "tmux not found" >&2; exit 127; fi; '
+        'if [ -z "$FAUSTUS_TMUX" ]; then echo "tmux not found" >&2; exit 127; fi; '
     )
     sid = shlex.quote(str(session_id))
     runner_q = shlex.quote(str(runner))
@@ -508,8 +508,8 @@ def _remote_tmux_launch_command(session_id: str, runner: str) -> str:
     return (
         f'{_remote_posix_path_prefix()}{tmux}'
         f'chmod +x {runner_q} && '
-        f'"$ODYSSEUS_TMUX" set-option -g history-limit 100000 2>/dev/null; '
-        f'"$ODYSSEUS_TMUX" new-session -d -s {sid} {runner_exec}'
+        f'"$FAUSTUS_TMUX" set-option -g history-limit 100000 2>/dev/null; '
+        f'"$FAUSTUS_TMUX" new-session -d -s {sid} {runner_exec}'
     )
 
 
@@ -580,19 +580,19 @@ def _append_local_ollama_download_command_lines(
     docker_fallback_blocked: bool,
 ) -> None:
     lines.append('if command -v ollama >/dev/null 2>&1; then')
-    lines.append(f'  ODYSSEUS_OLLAMA_PULL_CMD={shlex.quote(ollama_cmd)}')
+    lines.append(f'  FAUSTUS_OLLAMA_PULL_CMD={shlex.quote(ollama_cmd)}')
     if docker_fallback_available:
         lines.append('elif command -v docker >/dev/null 2>&1; then')
-        lines.append("  ODYSSEUS_OLLAMA_CONTAINER=\"$(docker ps --format '{{.Names}}' 2>/dev/null | grep -E '^(ollama-rocm|ollama-test)$' | head -1)\"")
-        lines.append('  if [ -n "$ODYSSEUS_OLLAMA_CONTAINER" ]; then')
-        lines.append(f'    ODYSSEUS_OLLAMA_PULL_CMD={shlex.quote("docker exec ${ODYSSEUS_OLLAMA_CONTAINER} " + ollama_cmd)}')
+        lines.append("  FAUSTUS_OLLAMA_CONTAINER=\"$(docker ps --format '{{.Names}}' 2>/dev/null | grep -E '^(ollama-rocm|ollama-test)$' | head -1)\"")
+        lines.append('  if [ -n "$FAUSTUS_OLLAMA_CONTAINER" ]; then')
+        lines.append(f'    FAUSTUS_OLLAMA_PULL_CMD={shlex.quote("docker exec ${FAUSTUS_OLLAMA_CONTAINER} " + ollama_cmd)}')
         lines.append('  fi')
     elif docker_fallback_blocked:
         hint = shlex.quote("ERROR: " + HOST_DOCKER_ACCESS_HINT)
         lines.append('else')
         lines.append(f"  printf '%s\\n' {hint}; exit 127")
     lines.append('fi')
-    lines.append('if [ -z "$ODYSSEUS_OLLAMA_PULL_CMD" ]; then echo "ERROR: Ollama not found on this server. Install Ollama or start an ollama-rocm/ollama-test container."; exit 127; fi')
+    lines.append('if [ -z "$FAUSTUS_OLLAMA_PULL_CMD" ]; then echo "ERROR: Ollama not found on this server. Install Ollama or start an ollama-rocm/ollama-test container."; exit 127; fi')
 
 
 # INF-02 §07: which implementation actually ran, for the `LaunchReceipt`'s
@@ -1185,7 +1185,7 @@ def setup_cookbook_routes() -> APIRouter:
             # which_tool so the .exe is found even when PATHEXT is unusual.
             ssh_keygen = which_tool("ssh-keygen") or "ssh-keygen"
             proc = await asyncio.create_subprocess_exec(
-                ssh_keygen, "-t", "ed25519", "-N", "", "-C", "odysseus-cookbook", "-f", str(key_path),
+                ssh_keygen, "-t", "ed25519", "-N", "", "-C", "faustus-cookbook", "-f", str(key_path),
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
@@ -1534,7 +1534,7 @@ def setup_cookbook_routes() -> APIRouter:
             # ── Windows remote: generate .ps1 runner, use Start-Process for background ──
             remote_runner = f".{session_id}_run.ps1"
             ps_lines = []
-            ps_lines.append('$sessionDir = "$env:TEMP\\odysseus-sessions"')
+            ps_lines.append('$sessionDir = "$env:TEMP\\faustus-sessions"')
             ps_lines.append('New-Item -ItemType Directory -Force -Path $sessionDir | Out-Null')
             if req.hf_token:
                 grant_path = _write_hf_grant(session_id, req.hf_token)
@@ -1595,7 +1595,7 @@ def setup_cookbook_routes() -> APIRouter:
             _trust = ssh_trust.option_flags()
             # Start-Process creates a fully detached process that survives SSH disconnect
             launch_ps = (
-                "$sd = \\\"$env:TEMP\\odysseus-sessions\\\"; "
+                "$sd = \\\"$env:TEMP\\faustus-sessions\\\"; "
                 f"Start-Process powershell -ArgumentList '-ExecutionPolicy','Bypass','-File','$HOME\\{remote_runner}' "
                 f"-RedirectStandardOutput \\\"$sd\\{session_id}.log\\\" "
                 f"-RedirectStandardError \\\"$sd\\{session_id}.err.log\\\" "
@@ -1640,42 +1640,42 @@ def setup_cookbook_routes() -> APIRouter:
                 )
             # Ensure pip-user scripts (e.g. hf CLI installed via --user) are on PATH
             runner_lines.append('export PATH="$HOME/.local/bin:$HOME/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"')
-            runner_lines.append('ODYSSEUS_PY="$(command -v python3 || command -v python || true)"')
-            runner_lines.append('if [ -z "$ODYSSEUS_PY" ]; then echo "ERROR: python3/python not found on this server."; exit 127; fi')
+            runner_lines.append('FAUSTUS_PY="$(command -v python3 || command -v python || true)"')
+            runner_lines.append('if [ -z "$FAUSTUS_PY" ]; then echo "ERROR: python3/python not found on this server."; exit 127; fi')
             # Install hf CLI + optional hf_transfer best-effort. Retries disable
             # hf_transfer because the Rust parallel path is fast but has been
             # flaky near the end of very large multi-file downloads.
             # Use --break-system-packages on PEP-668 systems (Arch, newer Debian) so it doesn't bail.
             if is_ollama_download:
                 runner_lines.append('if command -v ollama >/dev/null 2>&1; then')
-                runner_lines.append(f'  ODYSSEUS_OLLAMA_PULL_CMD={shlex.quote(ollama_cmd)}')
+                runner_lines.append(f'  FAUSTUS_OLLAMA_PULL_CMD={shlex.quote(ollama_cmd)}')
                 runner_lines.append('elif command -v docker >/dev/null 2>&1; then')
-                runner_lines.append('  ODYSSEUS_OLLAMA_CONTAINER="$(docker ps --format \'{{.Names}}\' 2>/dev/null | grep -E \'^(ollama-rocm|ollama-test)$\' | head -1)"')
-                runner_lines.append('  if [ -n "$ODYSSEUS_OLLAMA_CONTAINER" ]; then')
-                runner_lines.append(f'    ODYSSEUS_OLLAMA_PULL_CMD={shlex.quote("docker exec ${ODYSSEUS_OLLAMA_CONTAINER} " + ollama_cmd)}')
+                runner_lines.append('  FAUSTUS_OLLAMA_CONTAINER="$(docker ps --format \'{{.Names}}\' 2>/dev/null | grep -E \'^(ollama-rocm|ollama-test)$\' | head -1)"')
+                runner_lines.append('  if [ -n "$FAUSTUS_OLLAMA_CONTAINER" ]; then')
+                runner_lines.append(f'    FAUSTUS_OLLAMA_PULL_CMD={shlex.quote("docker exec ${FAUSTUS_OLLAMA_CONTAINER} " + ollama_cmd)}')
                 runner_lines.append('  fi')
                 runner_lines.append('fi')
-                runner_lines.append('if [ -z "$ODYSSEUS_OLLAMA_PULL_CMD" ]; then echo "ERROR: Ollama not found on this server. Install Ollama or start an ollama-rocm/ollama-test container."; exit 127; fi')
+                runner_lines.append('if [ -z "$FAUSTUS_OLLAMA_PULL_CMD" ]; then echo "ERROR: Ollama not found on this server. Install Ollama or start an ollama-rocm/ollama-test container."; exit 127; fi')
             else:
                 hf_hub_install = _pip_install_fallback_chain(
                     "huggingface_hub",
-                    python_cmd='"$ODYSSEUS_PY" -m pip',
+                    python_cmd='"$FAUSTUS_PY" -m pip',
                     upgrade=True,
                 )
                 runner_lines.append(f"command -v hf >/dev/null 2>&1 || command -v huggingface-cli >/dev/null 2>&1 || {hf_hub_install}")
                 runner_lines.append('hash -r 2>/dev/null || true')
-                runner_lines.append('ODYSSEUS_HF_CLI="$(command -v hf || command -v huggingface-cli || true)"')
-                runner_lines.append('if [ -z "$ODYSSEUS_HF_CLI" ]; then echo "ERROR: HF CLI not found after installing huggingface_hub."; exit 127; fi')
+                runner_lines.append('FAUSTUS_HF_CLI="$(command -v hf || command -v huggingface-cli || true)"')
+                runner_lines.append('if [ -z "$FAUSTUS_HF_CLI" ]; then echo "ERROR: HF CLI not found after installing huggingface_hub."; exit 127; fi')
                 if req.disable_hf_transfer:
                     runner_lines.append("export HF_HUB_ENABLE_HF_TRANSFER=0")
                     runner_lines.append("export HF_HUB_DOWNLOAD_MAX_WORKERS=4")
                 else:
                     hf_transfer_install = _pip_install_fallback_chain(
                         "hf_transfer",
-                        python_cmd='"$ODYSSEUS_PY" -m pip',
+                        python_cmd='"$FAUSTUS_PY" -m pip',
                     )
-                    runner_lines.append(f"\"$ODYSSEUS_PY\" -c 'import hf_transfer' 2>/dev/null || {hf_transfer_install}")
-                    runner_lines.append("\"$ODYSSEUS_PY\" -c 'import hf_transfer' 2>/dev/null && export HF_HUB_ENABLE_HF_TRANSFER=1")
+                    runner_lines.append(f"\"$FAUSTUS_PY\" -c 'import hf_transfer' 2>/dev/null || {hf_transfer_install}")
+                    runner_lines.append("\"$FAUSTUS_PY\" -c 'import hf_transfer' 2>/dev/null && export HF_HUB_ENABLE_HF_TRANSFER=1")
                     runner_lines.append("export HF_HUB_DOWNLOAD_MAX_WORKERS=8")
                 # Surface whether the HF token actually reached THIS server, so a gated
                 # download's "not authorized" failure can be told apart from a missing
@@ -1688,9 +1688,9 @@ def setup_cookbook_routes() -> APIRouter:
             runner_lines.append('while [ $_attempt -lt $_max_retries ]; do')
             runner_lines.append('  _attempt=$((_attempt+1))')
             if is_ollama_download:
-                runner_lines.append('  eval "$ODYSSEUS_OLLAMA_PULL_CMD" < /dev/null')
+                runner_lines.append('  eval "$FAUSTUS_OLLAMA_PULL_CMD" < /dev/null')
             else:
-                runner_lines.append(f'  "$ODYSSEUS_HF_CLI" {hf_download_args} < /dev/null')
+                runner_lines.append(f'  "$FAUSTUS_HF_CLI" {hf_download_args} < /dev/null')
             runner_lines.append('  _ec=$?')
             runner_lines.append('  if [ $_ec -eq 0 ]; then break; fi')
             runner_lines.append('  if [ $_attempt -lt $_max_retries ]; then')
@@ -1732,7 +1732,7 @@ def setup_cookbook_routes() -> APIRouter:
             if not is_ollama_download:
                 lines.append(_HF_TOKEN_STATUS_SNIPPET)
             # Retry loop — same rationale as the remote-bash path. Issue #2722.
-            _hf_invoke = 'eval "$ODYSSEUS_OLLAMA_PULL_CMD" < /dev/null' if is_ollama_download else (hf_cmd if IS_WINDOWS else f"{hf_cmd} < /dev/null")
+            _hf_invoke = 'eval "$FAUSTUS_OLLAMA_PULL_CMD" < /dev/null' if is_ollama_download else (hf_cmd if IS_WINDOWS else f"{hf_cmd} < /dev/null")
             lines.append('_max_retries=10; _attempt=0; _ec=0')
             lines.append('while [ $_attempt -lt $_max_retries ]; do')
             lines.append('  _attempt=$((_attempt+1))')
@@ -2217,7 +2217,7 @@ def setup_cookbook_routes() -> APIRouter:
             port = 8080  # llama.cpp's llama-server default — the Apple Silicon path
 
         # Determine host. The cookbook tmux for `local=true` serves runs INSIDE
-        # the odysseus container — so the right URL for the in-container
+        # the faustus container — so the right URL for the in-container
         # backend to reach it is `localhost`, NOT `host.docker.internal`
         # (the latter points at the docker HOST, which doesn't have a server
         # on that port). The previous host.docker.internal fallback only made
@@ -2244,7 +2244,7 @@ def setup_cookbook_routes() -> APIRouter:
             home_match = re.search(r"((?:/Users|/home)/[^/\s'\"]+)", req.cmd or "")
             remote_home = home_match.group(1) if home_match else ""
             if remote_home:
-                mlx_shim_model_id = f"{remote_home}/.cache/odysseus/mlx-shims/{short_name}"
+                mlx_shim_model_id = f"{remote_home}/.cache/faustus/mlx-shims/{short_name}"
 
         # If the serve command opts models into OpenAI tool-calling, record it so
         # agent_loop trusts emitted tool_calls instead of the name heuristic.
@@ -2652,7 +2652,7 @@ def setup_cookbook_routes() -> APIRouter:
             # ── Windows remote: generate .ps1 serve runner ──
             remote_runner = f".{session_id}_run.ps1"
             ps_lines = []
-            ps_lines.append('$sessionDir = "$env:TEMP\\odysseus-sessions"')
+            ps_lines.append('$sessionDir = "$env:TEMP\\faustus-sessions"')
             ps_lines.append('New-Item -ItemType Directory -Force -Path $sessionDir | Out-Null')
             if req.hf_token:
                 grant_path = _write_hf_grant(session_id, req.hf_token)
@@ -2693,7 +2693,7 @@ def setup_cookbook_routes() -> APIRouter:
             # its own quoting, the trust flags come from ssh_trust.
             _trust = ssh_trust.option_flags()
             launch_ps = (
-                "$sd = \\\"$env:TEMP\\odysseus-sessions\\\"; "
+                "$sd = \\\"$env:TEMP\\faustus-sessions\\\"; "
                 f"Start-Process powershell -ArgumentList '-ExecutionPolicy','Bypass','-File','$HOME\\{remote_runner}' "
                 f"-RedirectStandardOutput \\\"$sd\\{session_id}.log\\\" "
                 f"-RedirectStandardError \\\"$sd\\{session_id}.err.log\\\" "
@@ -2724,13 +2724,13 @@ def setup_cookbook_routes() -> APIRouter:
             # the post-crash interactive shell's neofetch banner ALSO gets
             # teed into the log file and `tail -N` returns ONLY the banner —
             # the actual traceback ends up earlier than the tail window.
-            runner_lines.append("mkdir -p /tmp/odysseus-tmux 2>/dev/null || true")
+            runner_lines.append("mkdir -p /tmp/faustus-tmux 2>/dev/null || true")
             runner_lines.append("exec 3>&1 4>&2")
             runner_lines.append(
-                f"exec > >(tee -a /tmp/odysseus-tmux/{session_id}.log) 2>&1"
+                f"exec > >(tee -a /tmp/faustus-tmux/{session_id}.log) 2>&1"
             )
             runner_lines.extend(_user_shell_path_bootstrap())
-            runner_lines.append('ODYSSEUS_PREFLIGHT_EXIT=""')
+            runner_lines.append('FAUSTUS_PREFLIGHT_EXIT=""')
             # Put Faustus's own venv bin on PATH (local runs only) so the serve
             # shell resolves the bundled python3/hf, mirroring the download flow.
             if not remote:
@@ -2808,7 +2808,7 @@ def setup_cookbook_routes() -> APIRouter:
                 # Source the env file the prebuilt-download path writes so
                 # LD_LIBRARY_PATH includes the directory holding libllama.so
                 # and friends. No-op when prebuilt wasn't used.
-                runner_lines.append('  [ -r ~/.config/odysseus-llama-cpp-env ] && . ~/.config/odysseus-llama-cpp-env')
+                runner_lines.append('  [ -r ~/.config/faustus-llama-cpp-env ] && . ~/.config/faustus-llama-cpp-env')
                 # Auto-upgrade pip llama-cpp-python to the CUDA-enabled
                 # wheel when (a) NVIDIA hardware is present and (b) the
                 # currently-installed wheel is CPU-only. Without this the
@@ -2818,10 +2818,10 @@ def setup_cookbook_routes() -> APIRouter:
                 # 12.4+ including the cu13.x line.
                 runner_lines.append('  if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi -L 2>/dev/null | grep -q "GPU " && python3 -c "import llama_cpp" 2>/dev/null; then')
                 runner_lines.append('    if ! python3 -c "import llama_cpp; import sys; sys.exit(0 if llama_cpp.llama_supports_gpu_offload() else 1)" 2>/dev/null; then')
-                runner_lines.append('      echo "[odysseus] NVIDIA detected but installed llama-cpp-python is CPU-only — reinstalling with CUDA wheel index for GPU offload..."')
-                runner_lines.append('      python3 -m pip install --user --break-system-packages --force-reinstall --no-cache-dir "llama-cpp-python[server]" --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu124 2>&1 | tail -8 || echo "[odysseus] WARNING: CUDA wheel reinstall failed — Python server will stay CPU-only (slow). Manual fix: pip install --user --force-reinstall \'llama-cpp-python[server]\' --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu124"')
+                runner_lines.append('      echo "[faustus] NVIDIA detected but installed llama-cpp-python is CPU-only — reinstalling with CUDA wheel index for GPU offload..."')
+                runner_lines.append('      python3 -m pip install --user --break-system-packages --force-reinstall --no-cache-dir "llama-cpp-python[server]" --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu124 2>&1 | tail -8 || echo "[faustus] WARNING: CUDA wheel reinstall failed — Python server will stay CPU-only (slow). Manual fix: pip install --user --force-reinstall \'llama-cpp-python[server]\' --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu124"')
                 runner_lines.append('      if python3 -c "import llama_cpp; import sys; sys.exit(0 if llama_cpp.llama_supports_gpu_offload() else 1)" 2>/dev/null; then')
-                runner_lines.append('        echo "[odysseus] llama-cpp-python now supports GPU offload."')
+                runner_lines.append('        echo "[faustus] llama-cpp-python now supports GPU offload."')
                 runner_lines.append('      fi')
                 runner_lines.append('    fi')
                 runner_lines.append('  fi')
@@ -2866,7 +2866,7 @@ def setup_cookbook_routes() -> APIRouter:
                 runner_lines.append('exec python3 -m llama_cpp.server "${ARGS[@]}"')
                 runner_lines.append('_ODY_LLAMA_SHIM_EOF')
                 runner_lines.append('    chmod +x ~/bin/llama-server')
-                runner_lines.append('    echo "[odysseus] Created llama-server shim → python -m llama_cpp.server (no native binary needed)"')
+                runner_lines.append('    echo "[faustus] Created llama-server shim → python -m llama_cpp.server (no native binary needed)"')
                 runner_lines.append('  fi')
                 runner_lines.append('  # If the native build failed, fall back to the Python bindings.')
                 runner_lines.append('  if ! command -v llama-server &>/dev/null && ! python3 -c "import llama_cpp" 2>/dev/null; then')
@@ -2875,7 +2875,7 @@ def setup_cookbook_routes() -> APIRouter:
                 runner_lines.append('  fi')
                 runner_lines.append('  if ! command -v llama-server &>/dev/null && ! python3 -c "import llama_cpp" 2>/dev/null; then')
                 runner_lines.append('    echo "ERROR: llama.cpp serving is not available after install/build attempts."')
-                runner_lines.append('    ODYSSEUS_PREFLIGHT_EXIT=127')
+                runner_lines.append('    FAUSTUS_PREFLIGHT_EXIT=127')
                 runner_lines.append('  fi')
                 runner_lines.append('fi')
             elif re.search(r"\bollama\s+serve\b", req.cmd):
@@ -2890,13 +2890,13 @@ def setup_cookbook_routes() -> APIRouter:
                 # ollama on 11434), scan upward for a free one rather than
                 # silently reattaching to an external service that Stop
                 # can't reach.
-                runner_lines.append(f'ODYSSEUS_OLLAMA_HOST={_bash_squote(_ollama_host)}')
-                runner_lines.append(f'ODYSSEUS_OLLAMA_PORT="{_ollama_port}"')
+                runner_lines.append(f'FAUSTUS_OLLAMA_HOST={_bash_squote(_ollama_host)}')
+                runner_lines.append(f'FAUSTUS_OLLAMA_PORT="{_ollama_port}"')
                 runner_lines.append('for _ody_off in 0 1 2 3 4 5 6 7 8 9; do')
-                runner_lines.append('  _ody_try_port=$((ODYSSEUS_OLLAMA_PORT + _ody_off))')
+                runner_lines.append('  _ody_try_port=$((FAUSTUS_OLLAMA_PORT + _ody_off))')
                 runner_lines.append('  if ! (exec 3<>/dev/tcp/127.0.0.1/$_ody_try_port) 2>/dev/null; then')
                 runner_lines.append('    exec 3<&-; exec 3>&-')
-                runner_lines.append('    ODYSSEUS_OLLAMA_PORT="$_ody_try_port"')
+                runner_lines.append('    FAUSTUS_OLLAMA_PORT="$_ody_try_port"')
                 runner_lines.append('    break')
                 runner_lines.append('  fi')
                 runner_lines.append('  exec 3<&-; exec 3>&-')
@@ -2910,12 +2910,12 @@ def setup_cookbook_routes() -> APIRouter:
                 runner_lines.append('  echo "=== Process exited with code 127 ==="')
                 runner_lines.append('  exec bash -i')
                 runner_lines.append('fi')
-                runner_lines.append('ODYSSEUS_OLLAMA_URL="http://${ODYSSEUS_OLLAMA_HOST}:${ODYSSEUS_OLLAMA_PORT}"')
+                runner_lines.append('FAUSTUS_OLLAMA_URL="http://${FAUSTUS_OLLAMA_HOST}:${FAUSTUS_OLLAMA_PORT}"')
                 if remote and _ollama_host in ("0.0.0.0", "::"):
-                    runner_lines.append('echo "[odysseus] WARNING: remote Ollama will bind to ${ODYSSEUS_OLLAMA_HOST}:${ODYSSEUS_OLLAMA_PORT} so Faustus can reach it from this host."')
-                    runner_lines.append('echo "[odysseus] Ollama has no built-in authentication; expose this only on a trusted LAN/VPN or provide an explicit OLLAMA_HOST with your own access controls."')
-                runner_lines.append('echo "Starting ollama server on ${ODYSSEUS_OLLAMA_HOST}:${ODYSSEUS_OLLAMA_PORT}..."')
-                runner_lines.append('OLLAMA_HOST="${ODYSSEUS_OLLAMA_HOST}:${ODYSSEUS_OLLAMA_PORT}" ollama serve')
+                    runner_lines.append('echo "[faustus] WARNING: remote Ollama will bind to ${FAUSTUS_OLLAMA_HOST}:${FAUSTUS_OLLAMA_PORT} so Faustus can reach it from this host."')
+                    runner_lines.append('echo "[faustus] Ollama has no built-in authentication; expose this only on a trusted LAN/VPN or provide an explicit OLLAMA_HOST with your own access controls."')
+                runner_lines.append('echo "Starting ollama server on ${FAUSTUS_OLLAMA_HOST}:${FAUSTUS_OLLAMA_PORT}..."')
+                runner_lines.append('OLLAMA_HOST="${FAUSTUS_OLLAMA_HOST}:${FAUSTUS_OLLAMA_PORT}" ollama serve')
                 runner_lines.append('_ody_exit=$?')
                 runner_lines.append('echo')
                 runner_lines.append('echo "=== Process exited with code ${_ody_exit} ==="')
@@ -2924,7 +2924,7 @@ def setup_cookbook_routes() -> APIRouter:
                 # vLLM is CUDA/ROCm-only and does not run on macOS at all.
                 runner_lines.append('if [ "$(uname -s)" = "Darwin" ]; then')
                 runner_lines.append('  echo "ERROR: vLLM does not run on macOS. Use Ollama or llama.cpp (Metal) instead."')
-                runner_lines.append('  ODYSSEUS_PREFLIGHT_EXIT=1')
+                runner_lines.append('  FAUSTUS_PREFLIGHT_EXIT=1')
                 runner_lines.append('fi')
                 # Put ~/.local/bin on PATH first — without a venv, vllm installs
                 # there via --user and the non-login serve shell otherwise can't
@@ -2932,11 +2932,11 @@ def setup_cookbook_routes() -> APIRouter:
                 runner_lines.append('export PATH="$HOME/.local/bin:$PATH"')
                 runner_lines.append('if ! command -v vllm &>/dev/null; then')
                 runner_lines.append('  echo "ERROR: vLLM is not installed."')
-                runner_lines.append('  ODYSSEUS_PREFLIGHT_EXIT=127')
+                runner_lines.append('  FAUSTUS_PREFLIGHT_EXIT=127')
                 runner_lines.append('fi')
-                runner_lines.append(f"ODYSSEUS_SERVE_CMD='{_bash_squote(req.cmd)}'")
-                runner_lines.append('if [ -z "$ODYSSEUS_PREFLIGHT_EXIT" ]; then')
-                runner_lines.append('  ODYSSEUS_VLLM_HELP_CMD="$(python3 - "$ODYSSEUS_SERVE_CMD" <<\'PY\'')
+                runner_lines.append(f"FAUSTUS_SERVE_CMD='{_bash_squote(req.cmd)}'")
+                runner_lines.append('if [ -z "$FAUSTUS_PREFLIGHT_EXIT" ]; then')
+                runner_lines.append('  FAUSTUS_VLLM_HELP_CMD="$(python3 - "$FAUSTUS_SERVE_CMD" <<\'PY\'')
                 runner_lines.append('import shlex, sys')
                 runner_lines.append('parts = shlex.split(sys.argv[1])')
                 runner_lines.append('try:')
@@ -2947,17 +2947,17 @@ def setup_cookbook_routes() -> APIRouter:
                 runner_lines.append('    print(shlex.join(parts[:serve_i + 1] + ["--help"]))')
                 runner_lines.append('PY')
                 runner_lines.append(')"')
-                runner_lines.append('  ODYSSEUS_VLLM_SUPPORTS_SWAP=0')
-                runner_lines.append('  if eval "$ODYSSEUS_VLLM_HELP_CMD" 2>&1 | grep -q -- "--swap-space"; then ODYSSEUS_VLLM_SUPPORTS_SWAP=1; fi')
+                runner_lines.append('  FAUSTUS_VLLM_SUPPORTS_SWAP=0')
+                runner_lines.append('  if eval "$FAUSTUS_VLLM_HELP_CMD" 2>&1 | grep -q -- "--swap-space"; then FAUSTUS_VLLM_SUPPORTS_SWAP=1; fi')
                 runner_lines.append('fi')
-                runner_lines.append('if [ -z "$ODYSSEUS_PREFLIGHT_EXIT" ] && [ "${ODYSSEUS_VLLM_SUPPORTS_SWAP:-0}" = "1" ] && ! printf "%s" "$ODYSSEUS_SERVE_CMD" | grep -q -- "--swap-space"; then')
-                runner_lines.append('  echo "[odysseus] Setting vLLM --swap-space 0 so the runtime does not reserve CPU swap per GPU."')
-                runner_lines.append('  ODYSSEUS_SERVE_CMD="${ODYSSEUS_SERVE_CMD} --swap-space 0"')
+                runner_lines.append('if [ -z "$FAUSTUS_PREFLIGHT_EXIT" ] && [ "${FAUSTUS_VLLM_SUPPORTS_SWAP:-0}" = "1" ] && ! printf "%s" "$FAUSTUS_SERVE_CMD" | grep -q -- "--swap-space"; then')
+                runner_lines.append('  echo "[faustus] Setting vLLM --swap-space 0 so the runtime does not reserve CPU swap per GPU."')
+                runner_lines.append('  FAUSTUS_SERVE_CMD="${FAUSTUS_SERVE_CMD} --swap-space 0"')
                 runner_lines.append('fi')
-                runner_lines.append('if [ -z "$ODYSSEUS_PREFLIGHT_EXIT" ] && [ "${ODYSSEUS_VLLM_SUPPORTS_SWAP:-0}" != "1" ]; then')
-                runner_lines.append('  if printf "%s" "$ODYSSEUS_SERVE_CMD" | grep -q -- "--swap-space"; then')
-                runner_lines.append('    echo "[odysseus] vLLM serve does not expose --swap-space; removing the flag and patching the runtime default to 0."')
-                runner_lines.append('    ODYSSEUS_SERVE_CMD="$(python3 - "$ODYSSEUS_SERVE_CMD" <<\'PY\'')
+                runner_lines.append('if [ -z "$FAUSTUS_PREFLIGHT_EXIT" ] && [ "${FAUSTUS_VLLM_SUPPORTS_SWAP:-0}" != "1" ]; then')
+                runner_lines.append('  if printf "%s" "$FAUSTUS_SERVE_CMD" | grep -q -- "--swap-space"; then')
+                runner_lines.append('    echo "[faustus] vLLM serve does not expose --swap-space; removing the flag and patching the runtime default to 0."')
+                runner_lines.append('    FAUSTUS_SERVE_CMD="$(python3 - "$FAUSTUS_SERVE_CMD" <<\'PY\'')
                 runner_lines.append('import shlex, sys')
                 runner_lines.append('parts = shlex.split(sys.argv[1])')
                 runner_lines.append('out = []')
@@ -2976,12 +2976,12 @@ def setup_cookbook_routes() -> APIRouter:
                 runner_lines.append('PY')
                 runner_lines.append(')"')
                 runner_lines.append('  fi')
-                runner_lines.append('  ODYSSEUS_SERVE_CMD="$(python3 - "$ODYSSEUS_SERVE_CMD" <<\'PY\'')
+                runner_lines.append('  FAUSTUS_SERVE_CMD="$(python3 - "$FAUSTUS_SERVE_CMD" <<\'PY\'')
                 runner_lines.append('import shlex, sys')
                 runner_lines.append('parts = shlex.split(sys.argv[1])')
                 runner_lines.append('patch = r"""import inspect, sys')
                 runner_lines.append('from vllm.engine.arg_utils import EngineArgs, AsyncEngineArgs')
-                runner_lines.append('def _odysseus_swap0(cls):')
+                runner_lines.append('def _faustus_swap0(cls):')
                 runner_lines.append('    params = list(inspect.signature(cls).parameters)')
                 runner_lines.append('    if "swap_space" not in params:')
                 runner_lines.append('        return')
@@ -2993,19 +2993,19 @@ def setup_cookbook_routes() -> APIRouter:
                 runner_lines.append('    fields = getattr(cls, "__dataclass_fields__", {})')
                 runner_lines.append('    if "swap_space" in fields:')
                 runner_lines.append('        fields["swap_space"].default = 0')
-                runner_lines.append('_odysseus_swap0(EngineArgs)')
-                runner_lines.append('_odysseus_swap0(AsyncEngineArgs)')
+                runner_lines.append('_faustus_swap0(EngineArgs)')
+                runner_lines.append('_faustus_swap0(AsyncEngineArgs)')
                 runner_lines.append('try:')
                 runner_lines.append('    from vllm.config import CacheConfig')
                 runner_lines.append('    CacheConfig.swap_space = 0')
                 runner_lines.append('except Exception:')
                 runner_lines.append('    pass')
                 runner_lines.append('_orig_create_engine_config = EngineArgs.create_engine_config')
-                runner_lines.append('def _odysseus_create_engine_config(self, *args, **kwargs):')
+                runner_lines.append('def _faustus_create_engine_config(self, *args, **kwargs):')
                 runner_lines.append('    self.swap_space = 0')
                 runner_lines.append('    return _orig_create_engine_config(self, *args, **kwargs)')
-                runner_lines.append('EngineArgs.create_engine_config = _odysseus_create_engine_config')
-                runner_lines.append('AsyncEngineArgs.create_engine_config = _odysseus_create_engine_config')
+                runner_lines.append('EngineArgs.create_engine_config = _faustus_create_engine_config')
+                runner_lines.append('AsyncEngineArgs.create_engine_config = _faustus_create_engine_config')
                 runner_lines.append('from vllm.entrypoints.cli.main import main')
                 runner_lines.append('sys.exit(main())"""')
                 runner_lines.append('try:')
@@ -3022,12 +3022,12 @@ def setup_cookbook_routes() -> APIRouter:
                 runner_lines.append('    print(shlex.join(parts))')
                 runner_lines.append('PY')
                 runner_lines.append(')"')
-                runner_lines.append('  echo "[odysseus] Patched vLLM internal swap_space default to 0 for this runtime."')
+                runner_lines.append('  echo "[faustus] Patched vLLM internal swap_space default to 0 for this runtime."')
                 runner_lines.append('fi')
             elif "sglang.launch_server" in req.cmd:
                 runner_lines.append('export PATH="$HOME/.local/bin:$PATH"')
-                runner_lines.append(f"ODYSSEUS_SERVE_CMD='{_bash_squote(req.cmd)}'")
-                runner_lines.append('ODYSSEUS_SGLANG_CMD_PY="$(python3 - "$ODYSSEUS_SERVE_CMD" <<\'PY\'')
+                runner_lines.append(f"FAUSTUS_SERVE_CMD='{_bash_squote(req.cmd)}'")
+                runner_lines.append('FAUSTUS_SGLANG_CMD_PY="$(python3 - "$FAUSTUS_SERVE_CMD" <<\'PY\'')
                 runner_lines.append('import shlex, sys')
                 runner_lines.append('parts = shlex.split(sys.argv[1])')
                 runner_lines.append('py = "python3"')
@@ -3038,20 +3038,20 @@ def setup_cookbook_routes() -> APIRouter:
                 runner_lines.append('print(py)')
                 runner_lines.append('PY')
                 runner_lines.append(')"')
-                runner_lines.append('if ! "$ODYSSEUS_SGLANG_CMD_PY" -c "import sglang" &>/dev/null; then')
+                runner_lines.append('if ! "$FAUSTUS_SGLANG_CMD_PY" -c "import sglang" &>/dev/null; then')
                 runner_lines.append('  if ! command -v sglang &>/dev/null; then')
                 runner_lines.append('    echo "ERROR: SGLang is not installed."')
                 runner_lines.append('  else')
                 runner_lines.append('    echo "ERROR: SGLang is installed but failed to import in the launch Python."')
                 runner_lines.append('  fi')
-                runner_lines.append('  ODYSSEUS_SGLANG_IMPORT_ERROR="$("$ODYSSEUS_SGLANG_CMD_PY" -c "import sglang" 2>&1)"')
-                runner_lines.append('  printf "%s\\n" "$ODYSSEUS_SGLANG_IMPORT_ERROR"')
-                runner_lines.append('  ODYSSEUS_PREFLIGHT_EXIT=127')
+                runner_lines.append('  FAUSTUS_SGLANG_IMPORT_ERROR="$("$FAUSTUS_SGLANG_CMD_PY" -c "import sglang" 2>&1)"')
+                runner_lines.append('  printf "%s\\n" "$FAUSTUS_SGLANG_IMPORT_ERROR"')
+                runner_lines.append('  FAUSTUS_PREFLIGHT_EXIT=127')
                 runner_lines.append('fi')
             elif "mlx_lm.server" in req.cmd:
                 runner_lines.append('export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"')
-                runner_lines.append(f"ODYSSEUS_SERVE_CMD='{_bash_squote(req.cmd)}'")
-                runner_lines.append('ODYSSEUS_MLX_CMD_PY="$(python3 - "$ODYSSEUS_SERVE_CMD" <<\'PY\'')
+                runner_lines.append(f"FAUSTUS_SERVE_CMD='{_bash_squote(req.cmd)}'")
+                runner_lines.append('FAUSTUS_MLX_CMD_PY="$(python3 - "$FAUSTUS_SERVE_CMD" <<\'PY\'')
                 runner_lines.append('import shlex, sys')
                 runner_lines.append('parts = shlex.split(sys.argv[1])')
                 runner_lines.append('py = "python3"')
@@ -3062,13 +3062,13 @@ def setup_cookbook_routes() -> APIRouter:
                 runner_lines.append('print(py)')
                 runner_lines.append('PY')
                 runner_lines.append(')"')
-                runner_lines.append('if ! ODYSSEUS_MLX_IMPORT_ERROR="$("$ODYSSEUS_MLX_CMD_PY" -c "import mlx_lm" 2>&1)"; then')
-                runner_lines.append('  echo "ERROR: MLX LM is not installed in the launch Python: $ODYSSEUS_MLX_CMD_PY"')
-                runner_lines.append('  printf "%s\\n" "$ODYSSEUS_MLX_IMPORT_ERROR"')
-                runner_lines.append('  ODYSSEUS_PREFLIGHT_EXIT=127')
+                runner_lines.append('if ! FAUSTUS_MLX_IMPORT_ERROR="$("$FAUSTUS_MLX_CMD_PY" -c "import mlx_lm" 2>&1)"; then')
+                runner_lines.append('  echo "ERROR: MLX LM is not installed in the launch Python: $FAUSTUS_MLX_CMD_PY"')
+                runner_lines.append('  printf "%s\\n" "$FAUSTUS_MLX_IMPORT_ERROR"')
+                runner_lines.append('  FAUSTUS_PREFLIGHT_EXIT=127')
                 runner_lines.append('fi')
-                runner_lines.append('if [ -z "$ODYSSEUS_PREFLIGHT_EXIT" ]; then')
-                runner_lines.append('  ODYSSEUS_SERVE_CMD="$("$ODYSSEUS_MLX_CMD_PY" - "$ODYSSEUS_SERVE_CMD" <<\'PY\'')
+                runner_lines.append('if [ -z "$FAUSTUS_PREFLIGHT_EXIT" ]; then')
+                runner_lines.append('  FAUSTUS_SERVE_CMD="$("$FAUSTUS_MLX_CMD_PY" - "$FAUSTUS_SERVE_CMD" <<\'PY\'')
                 runner_lines.append('import json, os, shlex, sys')
                 runner_lines.append('from pathlib import Path')
                 runner_lines.append('parts = shlex.split(sys.argv[1])')
@@ -3102,7 +3102,7 @@ def setup_cookbook_routes() -> APIRouter:
                 runner_lines.append('            if mtime > best_mtime:')
                 runner_lines.append('                best, best_mtime = path, mtime')
                 runner_lines.append('    if best:')
-                runner_lines.append('        print("[odysseus] MLX using cached snapshot:", best, file=sys.stderr)')
+                runner_lines.append('        print("[faustus] MLX using cached snapshot:", best, file=sys.stderr)')
                 runner_lines.append('        launch_model = best')
                 runner_lines.append('        if "deepseek-v4" in model.lower():')
                 runner_lines.append('            try:')
@@ -3113,26 +3113,26 @@ def setup_cookbook_routes() -> APIRouter:
                 runner_lines.append('                utils_needle = \'        def class_predicate(p, m):\\n            # Handle custom per layer quantizations\\n            if p in config["quantization"]:\\n                return config["quantization"][p]\\n            if not hasattr(m, "to_quantized"):\\n                return False\\n            return f"{p}.scales" in weights\\n\'')
                 runner_lines.append('                utils_repl = \'        def class_predicate(p, m):\\n            # Faustus: DeepSeek-V4 MXFP4 switch layers may already be quantized.\\n            if type(m).__name__ == "QuantizedSwitchLinear":\\n                return False\\n            # Handle custom per layer quantizations\\n            if p in config["quantization"]:\\n                return config["quantization"][p]\\n            if not hasattr(m, "to_quantized"):\\n                return False\\n            return f"{p}.scales" in weights\\n\'')
                 runner_lines.append('                if utils_repl not in utils_text and utils_needle in utils_text:')
-                runner_lines.append('                    bak = utils_path.with_suffix(utils_path.suffix + ".odysseus_bak")')
+                runner_lines.append('                    bak = utils_path.with_suffix(utils_path.suffix + ".faustus_bak")')
                 runner_lines.append('                    if not bak.exists(): bak.write_text(utils_text)')
                 runner_lines.append('                    utils_path.write_text(utils_text.replace(utils_needle, utils_repl))')
-                runner_lines.append('                    print("[odysseus] Patched MLX-LM QuantizedSwitchLinear double-quantization guard.", file=sys.stderr)')
+                runner_lines.append('                    print("[faustus] Patched MLX-LM QuantizedSwitchLinear double-quantization guard.", file=sys.stderr)')
                 runner_lines.append('                dsv4_path = Path(dsv4.__file__)')
                 runner_lines.append('                dsv4_text = dsv4_path.read_text()')
                 runner_lines.append('                dsv4_needle = \'            for sub in ("attn", "ffn"):\\n                for p in ("fn", "base", "scale"):\\n                    nk = nk.replace(f".hc_{sub}_{p}", f".hc_{sub}.{p}")\\n            for wo, wn in w_remap.items():\\n\'')
                 runner_lines.append('                dsv4_repl = \'            for sub in ("attn", "ffn"):\\n                for p in ("fn", "base", "scale"):\\n                    nk = nk.replace(f".hc_{sub}_{p}", f".hc_{sub}.{p}")\\n            # Faustus: normalize alternate hyper-connection key aliases.\\n            nk = nk.replace(".attn_hc.", ".hc_attn.")\\n            nk = nk.replace(".ffn_hc.", ".hc_ffn.")\\n            for wo, wn in w_remap.items():\\n\'')
                 runner_lines.append('                if dsv4_repl not in dsv4_text and dsv4_needle in dsv4_text:')
-                runner_lines.append('                    bak = dsv4_path.with_suffix(dsv4_path.suffix + ".odysseus_bak")')
+                runner_lines.append('                    bak = dsv4_path.with_suffix(dsv4_path.suffix + ".faustus_bak")')
                 runner_lines.append('                    if not bak.exists(): bak.write_text(dsv4_text)')
                 runner_lines.append('                    dsv4_path.write_text(dsv4_text.replace(dsv4_needle, dsv4_repl))')
-                runner_lines.append('                    print("[odysseus] Patched MLX-LM DeepSeek-V4 hyper-connection key aliases.", file=sys.stderr)')
+                runner_lines.append('                    print("[faustus] Patched MLX-LM DeepSeek-V4 hyper-connection key aliases.", file=sys.stderr)')
                 runner_lines.append('            except Exception as e:')
-                runner_lines.append('                print("[odysseus] WARNING: failed to apply MLX DeepSeek-V4 compatibility patch:", e, file=sys.stderr)')
+                runner_lines.append('                print("[faustus] WARNING: failed to apply MLX DeepSeek-V4 compatibility patch:", e, file=sys.stderr)')
                 runner_lines.append('            try:')
                 runner_lines.append('                src = Path(best)')
-                runner_lines.append('                shim = Path.home() / ".cache" / "odysseus" / "mlx-shims" / src.name')
+                runner_lines.append('                shim = Path.home() / ".cache" / "faustus" / "mlx-shims" / src.name')
                 runner_lines.append('                if len(src.name) > 20:')
-                runner_lines.append('                    shim = Path.home() / ".cache" / "odysseus" / "mlx-shims" / model.split("/")[-1]')
+                runner_lines.append('                    shim = Path.home() / ".cache" / "faustus" / "mlx-shims" / model.split("/")[-1]')
                 runner_lines.append('                shim.mkdir(parents=True, exist_ok=True)')
                 runner_lines.append('                for child in src.iterdir():')
                 runner_lines.append('                    target = shim / child.name')
@@ -3148,12 +3148,12 @@ def setup_cookbook_routes() -> APIRouter:
                 runner_lines.append('                        tc.pop("tool_parser_type", None)')
                 runner_lines.append('                    (shim / "tokenizer_config.json").write_text(json.dumps(tc, indent=2, ensure_ascii=False))')
                 runner_lines.append('                    launch_model = str(shim)')
-                runner_lines.append('                    print("[odysseus] MLX DeepSeek-V4 using sanitized shim:", launch_model, file=sys.stderr)')
+                runner_lines.append('                    print("[faustus] MLX DeepSeek-V4 using sanitized shim:", launch_model, file=sys.stderr)')
                 runner_lines.append('            except Exception as e:')
-                runner_lines.append('                print("[odysseus] WARNING: failed to create MLX DeepSeek-V4 shim:", e, file=sys.stderr)')
+                runner_lines.append('                print("[faustus] WARNING: failed to create MLX DeepSeek-V4 shim:", e, file=sys.stderr)')
                 runner_lines.append('        parts[i + 1] = launch_model')
                 runner_lines.append('    else:')
-                runner_lines.append('        print("[odysseus] MLX cached snapshot not found for:", model, file=sys.stderr)')
+                runner_lines.append('        print("[faustus] MLX cached snapshot not found for:", model, file=sys.stderr)')
                 runner_lines.append('print(shlex.join(parts))')
                 runner_lines.append('PY')
                 runner_lines.append(')"')
@@ -3161,8 +3161,8 @@ def setup_cookbook_routes() -> APIRouter:
             elif "scripts/mlx_image_server.py" in req.cmd or ".mlx_image_server.py" in req.cmd:
                 _append_mlx_image_server_script(runner_lines)
                 runner_lines.append('export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"')
-                runner_lines.append(f"ODYSSEUS_SERVE_CMD='{_bash_squote(req.cmd)}'")
-                runner_lines.append('ODYSSEUS_MLX_IMAGE_CMD_PY="$(python3 - "$ODYSSEUS_SERVE_CMD" <<\'PY\'')
+                runner_lines.append(f"FAUSTUS_SERVE_CMD='{_bash_squote(req.cmd)}'")
+                runner_lines.append('FAUSTUS_MLX_IMAGE_CMD_PY="$(python3 - "$FAUSTUS_SERVE_CMD" <<\'PY\'')
                 runner_lines.append('import shlex, sys')
                 runner_lines.append('parts = shlex.split(sys.argv[1])')
                 runner_lines.append('py = "python3"')
@@ -3173,13 +3173,13 @@ def setup_cookbook_routes() -> APIRouter:
                 runner_lines.append('print(py)')
                 runner_lines.append('PY')
                 runner_lines.append(')"')
-                runner_lines.append('ODYSSEUS_MLX_IMAGE_BIN_DIR="$(dirname "$ODYSSEUS_MLX_IMAGE_CMD_PY" 2>/dev/null || true)"')
-                runner_lines.append('if [ -n "$ODYSSEUS_MLX_IMAGE_BIN_DIR" ]; then export PATH="$ODYSSEUS_MLX_IMAGE_BIN_DIR:$PATH"; fi')
-                runner_lines.append('if ! "$ODYSSEUS_MLX_IMAGE_CMD_PY" -c "import fastapi, uvicorn, multipart" >/dev/null 2>&1; then')
-                runner_lines.append('  echo "ERROR: MLX image serving requires FastAPI + uvicorn + python-multipart in the launch Python: $ODYSSEUS_MLX_IMAGE_CMD_PY. Install the MLX image dependencies in Cookbook Dependencies."')
-                runner_lines.append('  ODYSSEUS_PREFLIGHT_EXIT=127')
+                runner_lines.append('FAUSTUS_MLX_IMAGE_BIN_DIR="$(dirname "$FAUSTUS_MLX_IMAGE_CMD_PY" 2>/dev/null || true)"')
+                runner_lines.append('if [ -n "$FAUSTUS_MLX_IMAGE_BIN_DIR" ]; then export PATH="$FAUSTUS_MLX_IMAGE_BIN_DIR:$PATH"; fi')
+                runner_lines.append('if ! "$FAUSTUS_MLX_IMAGE_CMD_PY" -c "import fastapi, uvicorn, multipart" >/dev/null 2>&1; then')
+                runner_lines.append('  echo "ERROR: MLX image serving requires FastAPI + uvicorn + python-multipart in the launch Python: $FAUSTUS_MLX_IMAGE_CMD_PY. Install the MLX image dependencies in Cookbook Dependencies."')
+                runner_lines.append('  FAUSTUS_PREFLIGHT_EXIT=127')
                 runner_lines.append('fi')
-                runner_lines.append('ODYSSEUS_MLX_IMAGE_MODEL="$(python3 - "$ODYSSEUS_SERVE_CMD" <<\'PY\'')
+                runner_lines.append('FAUSTUS_MLX_IMAGE_MODEL="$(python3 - "$FAUSTUS_SERVE_CMD" <<\'PY\'')
                 runner_lines.append('import shlex, sys')
                 runner_lines.append('parts = shlex.split(sys.argv[1])')
                 runner_lines.append('model = ""')
@@ -3190,67 +3190,67 @@ def setup_cookbook_routes() -> APIRouter:
                 runner_lines.append('print(model)')
                 runner_lines.append('PY')
                 runner_lines.append(')"')
-                runner_lines.append('if printf "%s" "$ODYSSEUS_MLX_IMAGE_MODEL" | grep -qi hidream; then')
-                runner_lines.append('  if ! "$ODYSSEUS_MLX_IMAGE_CMD_PY" -c "import mlx, mlx_vlm, transformers, huggingface_hub, safetensors, numpy, PIL" >/dev/null 2>&1; then')
-                runner_lines.append('    echo "ERROR: HiDream MLX serving needs the model requirements in the launch Python: $ODYSSEUS_MLX_IMAGE_CMD_PY."')
-                runner_lines.append('    echo "Install with: $ODYSSEUS_MLX_IMAGE_CMD_PY -m pip install -U fastapi uvicorn python-multipart mlx mlx-vlm \'transformers>=4.57.0,<6.0\' huggingface_hub safetensors numpy pillow tqdm sentencepiece hf_transfer"')
-                runner_lines.append('    ODYSSEUS_PREFLIGHT_EXIT=127')
+                runner_lines.append('if printf "%s" "$FAUSTUS_MLX_IMAGE_MODEL" | grep -qi hidream; then')
+                runner_lines.append('  if ! "$FAUSTUS_MLX_IMAGE_CMD_PY" -c "import mlx, mlx_vlm, transformers, huggingface_hub, safetensors, numpy, PIL" >/dev/null 2>&1; then')
+                runner_lines.append('    echo "ERROR: HiDream MLX serving needs the model requirements in the launch Python: $FAUSTUS_MLX_IMAGE_CMD_PY."')
+                runner_lines.append('    echo "Install with: $FAUSTUS_MLX_IMAGE_CMD_PY -m pip install -U fastapi uvicorn python-multipart mlx mlx-vlm \'transformers>=4.57.0,<6.0\' huggingface_hub safetensors numpy pillow tqdm sentencepiece hf_transfer"')
+                runner_lines.append('    FAUSTUS_PREFLIGHT_EXIT=127')
                 runner_lines.append('  fi')
-                runner_lines.append('elif printf "%s" "$ODYSSEUS_MLX_IMAGE_MODEL" | grep -qi boogu; then')
-                runner_lines.append('  if ! "$ODYSSEUS_MLX_IMAGE_CMD_PY" -c "import boogu_image_mlx, mlx, huggingface_hub, safetensors, numpy, PIL" >/dev/null 2>&1; then')
-                runner_lines.append('    echo "ERROR: Boogu MLX serving needs boogu-image-mlx in the launch Python: $ODYSSEUS_MLX_IMAGE_CMD_PY."')
-                runner_lines.append('    echo "Install with: $ODYSSEUS_MLX_IMAGE_CMD_PY -m pip install -U git+https://github.com/xocialize/boogu-image-mlx.git fastapi uvicorn python-multipart pillow"')
-                runner_lines.append('    ODYSSEUS_PREFLIGHT_EXIT=127')
+                runner_lines.append('elif printf "%s" "$FAUSTUS_MLX_IMAGE_MODEL" | grep -qi boogu; then')
+                runner_lines.append('  if ! "$FAUSTUS_MLX_IMAGE_CMD_PY" -c "import boogu_image_mlx, mlx, huggingface_hub, safetensors, numpy, PIL" >/dev/null 2>&1; then')
+                runner_lines.append('    echo "ERROR: Boogu MLX serving needs boogu-image-mlx in the launch Python: $FAUSTUS_MLX_IMAGE_CMD_PY."')
+                runner_lines.append('    echo "Install with: $FAUSTUS_MLX_IMAGE_CMD_PY -m pip install -U git+https://github.com/xocialize/boogu-image-mlx.git fastapi uvicorn python-multipart pillow"')
+                runner_lines.append('    FAUSTUS_PREFLIGHT_EXIT=127')
                 runner_lines.append('  fi')
-                runner_lines.append('elif printf "%s" "$ODYSSEUS_MLX_IMAGE_MODEL" | grep -Eqi "ddcolor"; then')
-                runner_lines.append('  if ! "$ODYSSEUS_MLX_IMAGE_CMD_PY" -c "import PIL" >/dev/null 2>&1; then')
-                runner_lines.append('    echo "ERROR: DDColor MLX serving needs Pillow in the launch Python: $ODYSSEUS_MLX_IMAGE_CMD_PY."')
-                runner_lines.append('    echo "Install with: $ODYSSEUS_MLX_IMAGE_CMD_PY -m pip install -U fastapi uvicorn python-multipart pillow huggingface_hub"')
-                runner_lines.append('    ODYSSEUS_PREFLIGHT_EXIT=127')
+                runner_lines.append('elif printf "%s" "$FAUSTUS_MLX_IMAGE_MODEL" | grep -Eqi "ddcolor"; then')
+                runner_lines.append('  if ! "$FAUSTUS_MLX_IMAGE_CMD_PY" -c "import PIL" >/dev/null 2>&1; then')
+                runner_lines.append('    echo "ERROR: DDColor MLX serving needs Pillow in the launch Python: $FAUSTUS_MLX_IMAGE_CMD_PY."')
+                runner_lines.append('    echo "Install with: $FAUSTUS_MLX_IMAGE_CMD_PY -m pip install -U fastapi uvicorn python-multipart pillow huggingface_hub"')
+                runner_lines.append('    FAUSTUS_PREFLIGHT_EXIT=127')
                 runner_lines.append('  fi')
-                runner_lines.append('  if ! command -v odysseus-mlx-colorize >/dev/null 2>&1 && ! command -v mlx-ddcolor-serve >/dev/null 2>&1; then')
-                runner_lines.append('    echo "ERROR: DDColor MLX serving requires the Faustus mlx-ddcolor-swift bridge on PATH: odysseus-mlx-colorize or mlx-ddcolor-serve."')
-                runner_lines.append('    echo "Build it from swift/odysseus-mlx-image-bridge in Cookbook Dependencies."')
-                runner_lines.append('    ODYSSEUS_PREFLIGHT_EXIT=127')
+                runner_lines.append('  if ! command -v faustus-mlx-colorize >/dev/null 2>&1 && ! command -v mlx-ddcolor-serve >/dev/null 2>&1; then')
+                runner_lines.append('    echo "ERROR: DDColor MLX serving requires the Faustus mlx-ddcolor-swift bridge on PATH: faustus-mlx-colorize or mlx-ddcolor-serve."')
+                runner_lines.append('    echo "Build it from swift/faustus-mlx-image-bridge in Cookbook Dependencies."')
+                runner_lines.append('    FAUSTUS_PREFLIGHT_EXIT=127')
                 runner_lines.append('  fi')
-                runner_lines.append('  ODYSSEUS_DDCOLOR_BIN="$(command -v odysseus-mlx-colorize 2>/dev/null || command -v mlx-ddcolor-serve 2>/dev/null || true)"')
-                runner_lines.append('  if [ -n "$ODYSSEUS_DDCOLOR_BIN" ]; then')
-                runner_lines.append('    ODYSSEUS_DDCOLOR_DIR="$(dirname "$ODYSSEUS_DDCOLOR_BIN")"')
-                runner_lines.append('    if [ ! -f "$ODYSSEUS_DDCOLOR_DIR/mlx.metallib" ] && [ ! -f "$ODYSSEUS_DDCOLOR_DIR/default.metallib" ]; then')
+                runner_lines.append('  FAUSTUS_DDCOLOR_BIN="$(command -v faustus-mlx-colorize 2>/dev/null || command -v mlx-ddcolor-serve 2>/dev/null || true)"')
+                runner_lines.append('  if [ -n "$FAUSTUS_DDCOLOR_BIN" ]; then')
+                runner_lines.append('    FAUSTUS_DDCOLOR_DIR="$(dirname "$FAUSTUS_DDCOLOR_BIN")"')
+                runner_lines.append('    if [ ! -f "$FAUSTUS_DDCOLOR_DIR/mlx.metallib" ] && [ ! -f "$FAUSTUS_DDCOLOR_DIR/default.metallib" ]; then')
                 runner_lines.append('      echo "ERROR: DDColor MLX serving found the Swift runner, but mlx.metallib/default.metallib is missing next to it."')
                 runner_lines.append('      echo "Run the DDColor MLX image editing dependency install again; it copies mlx.metallib from the launch Python MLX package."')
-                runner_lines.append('      ODYSSEUS_PREFLIGHT_EXIT=127')
+                runner_lines.append('      FAUSTUS_PREFLIGHT_EXIT=127')
                 runner_lines.append('    fi')
                 runner_lines.append('  fi')
-                runner_lines.append('elif printf "%s" "$ODYSSEUS_MLX_IMAGE_MODEL" | grep -Eqi "mi-gan|migan|lama"; then')
-                runner_lines.append('  if ! "$ODYSSEUS_MLX_IMAGE_CMD_PY" -c "import PIL" >/dev/null 2>&1; then')
-                runner_lines.append('    echo "ERROR: LaMa / MI-GAN MLX serving needs Pillow in the launch Python: $ODYSSEUS_MLX_IMAGE_CMD_PY."')
-                runner_lines.append('    echo "Install with: $ODYSSEUS_MLX_IMAGE_CMD_PY -m pip install -U fastapi uvicorn python-multipart pillow huggingface_hub"')
-                runner_lines.append('    ODYSSEUS_PREFLIGHT_EXIT=127')
+                runner_lines.append('elif printf "%s" "$FAUSTUS_MLX_IMAGE_MODEL" | grep -Eqi "mi-gan|migan|lama"; then')
+                runner_lines.append('  if ! "$FAUSTUS_MLX_IMAGE_CMD_PY" -c "import PIL" >/dev/null 2>&1; then')
+                runner_lines.append('    echo "ERROR: LaMa / MI-GAN MLX serving needs Pillow in the launch Python: $FAUSTUS_MLX_IMAGE_CMD_PY."')
+                runner_lines.append('    echo "Install with: $FAUSTUS_MLX_IMAGE_CMD_PY -m pip install -U fastapi uvicorn python-multipart pillow huggingface_hub"')
+                runner_lines.append('    FAUSTUS_PREFLIGHT_EXIT=127')
                 runner_lines.append('  fi')
-                runner_lines.append('  if ! command -v odysseus-mlx-inpaint >/dev/null 2>&1 && ! command -v mlx-lama-serve >/dev/null 2>&1; then')
-                runner_lines.append('    echo "ERROR: LaMa / MI-GAN MLX serving requires the Faustus mlx-lama-swift bridge on PATH: odysseus-mlx-inpaint or mlx-lama-serve."')
-                runner_lines.append('    echo "Build it from swift/odysseus-mlx-image-bridge in Cookbook Dependencies."')
-                runner_lines.append('    ODYSSEUS_PREFLIGHT_EXIT=127')
+                runner_lines.append('  if ! command -v faustus-mlx-inpaint >/dev/null 2>&1 && ! command -v mlx-lama-serve >/dev/null 2>&1; then')
+                runner_lines.append('    echo "ERROR: LaMa / MI-GAN MLX serving requires the Faustus mlx-lama-swift bridge on PATH: faustus-mlx-inpaint or mlx-lama-serve."')
+                runner_lines.append('    echo "Build it from swift/faustus-mlx-image-bridge in Cookbook Dependencies."')
+                runner_lines.append('    FAUSTUS_PREFLIGHT_EXIT=127')
                 runner_lines.append('  fi')
-                runner_lines.append('  ODYSSEUS_INPAINT_BIN="$(command -v odysseus-mlx-inpaint 2>/dev/null || command -v mlx-lama-serve 2>/dev/null || true)"')
-                runner_lines.append('  if [ -n "$ODYSSEUS_INPAINT_BIN" ]; then')
-                runner_lines.append('    ODYSSEUS_INPAINT_DIR="$(dirname "$ODYSSEUS_INPAINT_BIN")"')
-                runner_lines.append('    if [ ! -f "$ODYSSEUS_INPAINT_DIR/mlx.metallib" ] && [ ! -f "$ODYSSEUS_INPAINT_DIR/default.metallib" ]; then')
+                runner_lines.append('  FAUSTUS_INPAINT_BIN="$(command -v faustus-mlx-inpaint 2>/dev/null || command -v mlx-lama-serve 2>/dev/null || true)"')
+                runner_lines.append('  if [ -n "$FAUSTUS_INPAINT_BIN" ]; then')
+                runner_lines.append('    FAUSTUS_INPAINT_DIR="$(dirname "$FAUSTUS_INPAINT_BIN")"')
+                runner_lines.append('    if [ ! -f "$FAUSTUS_INPAINT_DIR/mlx.metallib" ] && [ ! -f "$FAUSTUS_INPAINT_DIR/default.metallib" ]; then')
                 runner_lines.append('      echo "ERROR: LaMa / MI-GAN MLX serving found the Swift runner, but mlx.metallib/default.metallib is missing next to it."')
                 runner_lines.append('      echo "Run the LaMa / MI-GAN MLX image editing dependency install again; it copies mlx.metallib from the launch Python MLX package."')
-                runner_lines.append('      ODYSSEUS_PREFLIGHT_EXIT=127')
+                runner_lines.append('      FAUSTUS_PREFLIGHT_EXIT=127')
                 runner_lines.append('    fi')
                 runner_lines.append('  fi')
                 runner_lines.append('elif ! command -v mflux-generate >/dev/null 2>&1 && ! command -v mflux-generate-qwen >/dev/null 2>&1; then')
-                runner_lines.append('  echo "ERROR: mflux-compatible MLX image serving requires mflux-generate or mflux-generate-qwen in PATH for launch Python: $ODYSSEUS_MLX_IMAGE_CMD_PY."')
-                runner_lines.append('  echo "Install with: $ODYSSEUS_MLX_IMAGE_CMD_PY -m pip install -U mflux fastapi uvicorn python-multipart"')
-                runner_lines.append('  ODYSSEUS_PREFLIGHT_EXIT=127')
+                runner_lines.append('  echo "ERROR: mflux-compatible MLX image serving requires mflux-generate or mflux-generate-qwen in PATH for launch Python: $FAUSTUS_MLX_IMAGE_CMD_PY."')
+                runner_lines.append('  echo "Install with: $FAUSTUS_MLX_IMAGE_CMD_PY -m pip install -U mflux fastapi uvicorn python-multipart"')
+                runner_lines.append('  FAUSTUS_PREFLIGHT_EXIT=127')
                 runner_lines.append('fi')
             elif "scripts/diffusion_server.py" in req.cmd or ".diffusion_server.py" in req.cmd:
                 runner_lines.append('export PATH="$HOME/.local/bin:$PATH"')
-                runner_lines.append(f"ODYSSEUS_SERVE_CMD='{_bash_squote(req.cmd)}'")
-                runner_lines.append('ODYSSEUS_DIFFUSION_CMD_PY="$(python3 - "$ODYSSEUS_SERVE_CMD" <<\'PY\'')
+                runner_lines.append(f"FAUSTUS_SERVE_CMD='{_bash_squote(req.cmd)}'")
+                runner_lines.append('FAUSTUS_DIFFUSION_CMD_PY="$(python3 - "$FAUSTUS_SERVE_CMD" <<\'PY\'')
                 runner_lines.append('import shlex, sys')
                 runner_lines.append('parts = shlex.split(sys.argv[1])')
                 runner_lines.append('py = "python3"')
@@ -3261,10 +3261,10 @@ def setup_cookbook_routes() -> APIRouter:
                 runner_lines.append('print(py)')
                 runner_lines.append('PY')
                 runner_lines.append(')"')
-                runner_lines.append('if ! ODYSSEUS_DIFFUSION_IMPORT_ERROR="$("$ODYSSEUS_DIFFUSION_CMD_PY" -c "import torch, torchvision, diffusers" 2>&1)"; then')
-                runner_lines.append('  echo "ERROR: Diffusion serving requires PyTorch + Torchvision + diffusers in the launch Python: $ODYSSEUS_DIFFUSION_CMD_PY."')
-                runner_lines.append('  printf "%s\\n" "$ODYSSEUS_DIFFUSION_IMPORT_ERROR"')
-                runner_lines.append('  ODYSSEUS_PREFLIGHT_EXIT=127')
+                runner_lines.append('if ! FAUSTUS_DIFFUSION_IMPORT_ERROR="$("$FAUSTUS_DIFFUSION_CMD_PY" -c "import torch, torchvision, diffusers" 2>&1)"; then')
+                runner_lines.append('  echo "ERROR: Diffusion serving requires PyTorch + Torchvision + diffusers in the launch Python: $FAUSTUS_DIFFUSION_CMD_PY."')
+                runner_lines.append('  printf "%s\\n" "$FAUSTUS_DIFFUSION_IMPORT_ERROR"')
+                runner_lines.append('  FAUSTUS_PREFLIGHT_EXIT=127')
                 runner_lines.append('fi')
 
             handled_ollama_sidecar_probe = False
@@ -3280,7 +3280,7 @@ def setup_cookbook_routes() -> APIRouter:
                 runner_lines.append('echo')
                 runner_lines.append('echo "=== Process exited with code ${_ody_exit} ==="')
                 runner_lines.append('if [ "$_ody_exit" -eq 0 ]; then')
-                runner_lines.append('  echo "[odysseus] Ollama sidecar model is available; keeping Cookbook task attached to the persistent Ollama daemon."')
+                runner_lines.append('  echo "[faustus] Ollama sidecar model is available; keeping Cookbook task attached to the persistent Ollama daemon."')
                 runner_lines.append('  while true; do sleep 3600; done')
                 runner_lines.append('fi')
                 runner_lines.append('exec bash -i')
@@ -3291,7 +3291,7 @@ def setup_cookbook_routes() -> APIRouter:
                     keep_shell_open=not local_windows,
                 )
                 if "vllm serve" in req.cmd or "mlx_lm.server" in req.cmd:
-                    runner_lines.append('eval "$ODYSSEUS_SERVE_CMD"')
+                    runner_lines.append('eval "$FAUSTUS_SERVE_CMD"')
                 elif is_pip_install:
                     if not is_windows and (req.platform or "").lower() in {"darwin", "macos"}:
                         req.cmd = _pip_install_command_without_break_system_packages(req.cmd)
@@ -3532,7 +3532,7 @@ def setup_cookbook_routes() -> APIRouter:
             # Also create the session directory for background tasks
             setup_script = (
                 'powershell -Command "'
-                "New-Item -ItemType Directory -Force -Path $env:TEMP\\odysseus-sessions | Out-Null; "
+                "New-Item -ItemType Directory -Force -Path $env:TEMP\\faustus-sessions | Out-Null; "
                 "try { python --version } catch { Write-Host 'ERROR: Python not found — install from python.org'; exit 1 }; "
                 "python -m pip install -q huggingface-hub 2>$null; "
                 "python -c \\\"from huggingface_hub import snapshot_download; print('OK')\\\""
@@ -4623,7 +4623,7 @@ def setup_cookbook_routes() -> APIRouter:
                 async with _httpx.AsyncClient(timeout=8, follow_redirects=True) as client:
                     resp = await client.get(
                         "https://ollama.com/search?sort=popular",
-                        headers={"User-Agent": "odysseus-cookbook/1.0"},
+                        headers={"User-Agent": "faustus-cookbook/1.0"},
                     )
                 if resp.status_code == 200:
                     html = resp.text
@@ -5048,7 +5048,7 @@ def setup_cookbook_routes() -> APIRouter:
                     continue
             if task_platform == "windows" and remote:
                 # Windows: check PID file + Get-Process, read log tail
-                sd = "$env:TEMP\\odysseus-sessions"
+                sd = "$env:TEMP\\faustus-sessions"
                 ssh_base = ssh_trust.ssh_argv(remote, _tport)
                 check_cmd = ssh_base + [
                     "powershell",
@@ -5067,7 +5067,7 @@ def setup_cookbook_routes() -> APIRouter:
                 # Capture 500 lines (was 50) so a Python traceback survives
                 # the post-crash neofetch banner + bash prompt that otherwise
                 # fills the visible tail. Without this, output_tail ends up
-                # as just "Locale: C / Ubuntu_Odysseus ❯" and the agent
+                # as just "Locale: C / Ubuntu_Faustus ❯" and the agent
                 # can't diagnose the actual error.
                 capture_cmd = ssh_base + [_remote_tmux_command("capture-pane", "-t", session_id, "-p", "-S", "-500")]
             elif IS_WINDOWS:

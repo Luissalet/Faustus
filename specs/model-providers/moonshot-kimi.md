@@ -12,7 +12,7 @@ model-specific behavior in `src/llm_core.py`.
 
 Model lists use the general OpenAI-compatible identity shape unless a richer
 account response is returned. Official Kimi K2.5/K2.6 fixes temperature by
-thinking mode, so Odysseus omits `temperature` rather than sending an invalid
+thinking mode, so Faustus omits `temperature` rather than sending an invalid
 value (#3960). Thinking tool-call continuation requires preservation of
 assistant `reasoning_content` (#3118). Kimi Code negotiates a small exact
 User-Agent set on 403 and caches the accepted value; this is provider transport,

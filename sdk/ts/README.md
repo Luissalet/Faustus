@@ -100,7 +100,7 @@ resolves to `{reason, lastSequence, error?}` — `reason` is one of `'done'`
   happened; omit `clientMessageId` and the library mints one with
   `crypto.randomUUID()`).
 - `turn.cancel(scope?)` calls `POST /api/chat/stop` using `turn.runId` as
-  the fencing token (`X-Odysseus-Run-Id`) — without a known `runId` the
+  the fencing token (`X-Faustus-Run-Id`) — without a known `runId` the
   server intentionally cancels nothing. It does not itself stop your
   iteration; the stream ends on its own once the server closes it.
   `scope: 'generation'` pauses (resumable); `'task'`/`'work'` really cancel,

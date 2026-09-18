@@ -36,7 +36,7 @@ from routes.integrations_routes import setup_integrations_routes
 
 @pytest.fixture()
 def client(tmp_path, monkeypatch):
-    monkeypatch.setenv("ODYSSEUS_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("FAUSTUS_DATA_DIR", str(tmp_path))
     import src.constants as constants
     monkeypatch.setattr(constants, "DATA_DIR", str(tmp_path))
     monkeypatch.setattr(constants, "INTEGRATIONS_FILE", str(tmp_path / "integrations.json"))

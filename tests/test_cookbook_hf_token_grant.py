@@ -52,7 +52,7 @@ def sentinel() -> str:
 @pytest.fixture
 def staging(tmp_path, monkeypatch) -> Path:
     """Point the runner staging directory at a disposable one."""
-    directory = tmp_path / "odysseus-tmux"
+    directory = tmp_path / "faustus-tmux"
     monkeypatch.setattr(cookbook_routes, "TMUX_LOG_DIR", directory)
     # Reset the per-process memo so this directory really gets locked down.
     # `raising=False` keeps the fixture usable against a build without the
@@ -178,8 +178,8 @@ async def test_remote_linux_download_keeps_the_token_out_of_the_runner(
     runner = next(blob for name, blob in seen["staged"].items() if name.endswith("_run.sh"))
     assert sentinel.encode() not in runner
     # The script names the grant and burns it; it never spells the value.
-    assert b'ODYSSEUS_HF_GRANT="$HOME/.' in runner
-    assert b'rm -f "$ODYSSEUS_HF_GRANT"' in runner
+    assert b'FAUSTUS_HF_GRANT="$HOME/.' in runner
+    assert b'rm -f "$FAUSTUS_HF_GRANT"' in runner
     assert b"trap " in runner
 
     # argv is world-readable in the node's process table, so the value goes on
@@ -243,8 +243,8 @@ async def test_remote_windows_download_keeps_the_token_out_of_the_ps1(
     assert body["ok"] is True
     runner = next(blob for name, blob in seen["staged"].items() if name.endswith("_run.ps1"))
     assert sentinel.encode() not in runner
-    assert b"$odysseusHfGrant" in runner
-    assert b"Remove-Item -Force -LiteralPath $odysseusHfGrant" in runner
+    assert b"$faustusHfGrant" in runner
+    assert b"Remove-Item -Force -LiteralPath $faustusHfGrant" in runner
     assert sentinel not in seen["cmd"]
 
     carriers = _carriers(seen["staged"], sentinel)
@@ -270,7 +270,7 @@ async def test_local_posix_download_reads_a_grant_the_wrapper_does_not_contain(
     assert body["ok"] is True
     wrapper = next(blob for name, blob in seen["staged"].items() if name.endswith(".sh"))
     assert sentinel.encode() not in wrapper
-    assert b"ODYSSEUS_HF_GRANT=" in wrapper
+    assert b"FAUSTUS_HF_GRANT=" in wrapper
 
     carriers = _carriers(seen["staged"], sentinel)
     assert len(carriers) == 1 and carriers[0].endswith(".hfenv"), carriers
@@ -353,7 +353,7 @@ async def test_remote_linux_serve_keeps_the_token_out_of_the_runner(
     assert body["ok"] is True
     runner = next(blob for name, blob in seen["staged"].items() if name.endswith("_run.sh"))
     assert sentinel.encode() not in runner
-    assert b'ODYSSEUS_HF_GRANT="$HOME/.' in runner
+    assert b'FAUSTUS_HF_GRANT="$HOME/.' in runner
     assert sentinel not in seen["cmd"]
     assert "umask 077" in seen["cmd"]
 
@@ -377,7 +377,7 @@ async def test_remote_windows_serve_keeps_the_token_out_of_the_ps1(
     assert body["ok"] is True
     runner = next(blob for name, blob in seen["staged"].items() if name.endswith("_run.ps1"))
     assert sentinel.encode() not in runner
-    assert b"$odysseusHfGrant" in runner
+    assert b"$faustusHfGrant" in runner
     assert sentinel not in seen["cmd"]
     assert _leftovers(staging, sentinel) == []
 

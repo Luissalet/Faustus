@@ -154,7 +154,7 @@ def test_rate_limit_accommodates_a_full_batch():
     # the batch size rejects one legitimate multi-file attach mid-way through
     # (issue #1346: "5 attachments work, 6 fail").
     h = UploadHandler.__new__(UploadHandler)
-    UploadHandler.__init__(h, base_dir="/tmp", upload_dir="/tmp/_odysseus_test_uploads_cfg")
+    UploadHandler.__init__(h, base_dir="/tmp", upload_dir="/tmp/_faustus_test_uploads_cfg")
     assert h.upload_rate_limit >= _ORDINARY_BATCH * 2, (
         "the per-minute file cap must clear an ordinary batch with headroom, "
         "or a single attach trips it"

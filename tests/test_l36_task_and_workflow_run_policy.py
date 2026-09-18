@@ -22,7 +22,7 @@ import uuid
 # `src.task_scheduler` import time, from `src.constants.DATA_DIR` — this must
 # run BEFORE that import, and `setdefault` so an earlier test module's choice
 # (whichever imports first) always wins instead of two tmp dirs disagreeing.
-_tmp_data = tempfile.mkdtemp(prefix="odysseus-l36-task-policy-test-")
+_tmp_data = tempfile.mkdtemp(prefix="faustus-l36-task-policy-test-")
 os.environ.setdefault("DATA_DIR", _tmp_data)
 
 from types import SimpleNamespace

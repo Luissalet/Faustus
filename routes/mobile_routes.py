@@ -332,7 +332,7 @@ def setup_mobile_routes() -> APIRouter:
         base = internal_api_base()
         headers = {
             INTERNAL_TOOL_HEADER: INTERNAL_TOOL_TOKEN,
-            "X-Odysseus-Owner": owner,
+            "X-Faustus-Owner": owner,
             "Content-Type": "application/json",
         }
 

@@ -74,7 +74,7 @@ export async function backupList(): Promise<string> {
     '| --- | ---: | --- |',
     ...list.slice(0, 12).map((s) => row([`\`${str(s.name)}\``, bytes(s.bytes), age(s.age_hours)])),
     '',
-    t('`/backup now` takes one · `/backup verify N` checks that snapshot N would really restore. Restoring is manual and destructive: stop Faustus, then `python scripts/odysseus-backup restore <file> --yes`.'),
+    t('`/backup now` takes one · `/backup verify N` checks that snapshot N would really restore. Restoring is manual and destructive: stop Faustus, then `python scripts/faustus-backup restore <file> --yes`.'),
   ];
   return lines.join('\n');
 }

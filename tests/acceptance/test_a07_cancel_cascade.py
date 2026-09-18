@@ -35,7 +35,7 @@ from src.tool_capabilities import capabilities_for_action
 
 class _Req:
     def __init__(self, body=None, run_id=None, user="alice"):
-        self.headers = {"X-Odysseus-Run-Id": run_id} if run_id else {}
+        self.headers = {"X-Faustus-Run-Id": run_id} if run_id else {}
         self.app = SimpleNamespace(state=SimpleNamespace(auth_manager=None))
         self.state = SimpleNamespace(current_user=user)
         self._body = body

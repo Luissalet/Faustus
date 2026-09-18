@@ -115,7 +115,7 @@ def _data_dir() -> Finding:
     if not os.path.isdir(DATA_DIR):
         return Finding("runtime", "data directory", "fail",
                        f"{DATA_DIR} does not exist",
-                       fix="run setup.py, or point ODYSSEUS_DATA_DIR at the right "
+                       fix="run setup.py, or point FAUSTUS_DATA_DIR at the right "
                            "folder — a Faustus with the wrong data directory looks "
                            "empty rather than broken")
     writable = os.access(DATA_DIR, os.W_OK)

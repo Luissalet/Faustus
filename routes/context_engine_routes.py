@@ -544,7 +544,7 @@ def setup_context_engine_routes():
 
     @router.post("/blocks/import-project-memory")
     async def import_project_memory(request: Request):
-        """Propose one block per `.odysseus/` note; import them only when a
+        """Propose one block per `.faustus/` note; import them only when a
         person says so.
 
         `dry_run` is the default and stays admin, because a proposal costs

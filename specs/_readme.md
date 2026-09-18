@@ -2,7 +2,7 @@
 
 Last updated: dev@e71f8ce | 2026-08-25
 
-This folder is the compact implementation-truth map for humans and coding agents working on Odysseus. Read this file first, then open only the subsystem specs that match the work.
+This folder is the compact implementation-truth map for humans and coding agents working on Faustus. Read this file first, then open only the subsystem specs that match the work.
 
 Specs are living notes about current code shape and intended contracts. They are not product marketing, not PR planning, not templates, and not a replacement for source inspection or tests.
 
@@ -39,7 +39,7 @@ project documentation.
 - Keep specs dense but readable. Prefer current facts and invariants over broad explanation.
 - Every non-index `specs/*.md` file should appear exactly once in the Subsystem Map with a one-line description and no dead link.
 - Specs contain implementation truth. Planning, research, branch notes, and decisions belong in tracked project docs. Drafts, audit reports, raw exports, and exploratory gap lists are not authoritative until promoted into tracked docs or specs.
-- Use repo source and these specs as the authority for Odysseus architecture. Do not treat global skill registries or external agent metadata as repo ground truth.
+- Use repo source and these specs as the authority for Faustus architecture. Do not treat global skill registries or external agent metadata as repo ground truth.
 
 ## Subsystem Map
 

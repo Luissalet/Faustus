@@ -246,7 +246,7 @@ def _run_baseline_tree(workspace: str, checkpoint_sha: str, spec: Dict[str, Any]
         from src import workspace_checkpoints as wc
     except Exception:  # pragma: no cover - defensive, matches project_tests style
         return None
-    tmp = tempfile.mkdtemp(prefix="odysseus-verifier-")
+    tmp = tempfile.mkdtemp(prefix="faustus-verifier-")
     try:
         if not wc.export_tree(workspace, checkpoint_sha, tmp):
             return None

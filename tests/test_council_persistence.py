@@ -49,7 +49,7 @@ def _store() -> P.CouncilStore:
 def _session(owner: str = "alice", **over) -> C.CouncilSession:
     payload = {"id": "council_1", "owner": owner, "title": "Implement OAuth",
                "policy": "collaborate", "status": "active",
-               "workspace": "D:/LocalAI/odysseus"}
+               "workspace": "D:/LocalAI/faustus"}
     payload.update(over)
     return _store().create_session(C.CouncilSession.parse(payload))
 

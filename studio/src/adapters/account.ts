@@ -50,7 +50,7 @@ export async function logout(): Promise<void> {
     /* the cookie is gone anyway */
   }
   try {
-    const keep = new Set(['odysseus-last-user']);
+    const keep = new Set(['faustus-last-user']);
     const drop: string[] = [];
     for (let i = 0; i < window.localStorage.length; i++) {
       const k = window.localStorage.key(i);

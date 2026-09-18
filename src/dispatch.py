@@ -140,7 +140,7 @@ STREAM_MARGIN_S = 120.0
 _SNAPSHOT_MAX_FILES = 60_000
 _SNAPSHOT_SKIP = frozenset({".git", "node_modules", "__pycache__", ".venv", "venv", "env", ".mypy_cache", ".pytest_cache",
                             ".ruff_cache", ".tox", "dist", "build", ".idea", ".vscode", "target", ".next", ".cache",
-                            ".odysseus_checkpoints", ".faustus"})
+                            ".faustus_checkpoints", ".odysseus_checkpoints", ".faustus"})
 
 _jobs: Dict[str, "DispatchJob"] = {}
 _lock = asyncio.Lock()

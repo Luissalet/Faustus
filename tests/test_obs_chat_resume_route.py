@@ -62,7 +62,7 @@ async def test_no_version_header_is_unaffected(routes, monkeypatch):
     # it is given explicitly here rather than asserting on the unresolved
     # Query() sentinel object.
     resp = await resume(_Req(), "sid", cursor=None)
-    assert resp.headers["X-Odysseus-Run-Id"] == "run-42"
+    assert resp.headers["X-Faustus-Run-Id"] == "run-42"
     assert resp.headers[api_version.API_VERSION_HEADER] == api_version.API_VERSION
     assert seen["from_sequence"] is None
 
@@ -95,7 +95,7 @@ async def test_a_compatible_client_version_is_accepted(routes, monkeypatch):
 
     resume = routes("/api/chat/resume/{session_id}", "GET")
     resp = await resume(_Req(headers={api_version.CLIENT_VERSION_HEADER: api_version.API_VERSION}), "sid")
-    assert resp.headers["X-Odysseus-Run-Id"] == "run-42"
+    assert resp.headers["X-Faustus-Run-Id"] == "run-42"
 
 
 @pytest.mark.asyncio

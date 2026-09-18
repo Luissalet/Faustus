@@ -61,7 +61,16 @@ def directory(project):
     base = managed_dir(project)
     if base and (not workspace or active(project)):
         return base
-    return os.path.join(workspace, '.odysseus') if workspace else ''
+    if not workspace:
+        return ''
+    faustus_dir = os.path.join(workspace, '.faustus')
+    # Read-only compat: a workspace whose objectives were created before the
+    # pre-rename `.odysseus/` folder keeps using it, so an existing project
+    # is not orphaned.
+    legacy_dir = os.path.join(workspace, '.odysseus')
+    if not os.path.isdir(faustus_dir) and os.path.isdir(legacy_dir):
+        return legacy_dir
+    return faustus_dir
 
 
 @contextmanager

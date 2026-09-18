@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 
 # uploads.json is a read-modify-write store guarded only by a threading.Lock,
 # which orders writers inside one interpreter and nothing else. Every extra
-# uvicorn worker, `odysseus` CLI invocation and cron job builds its own
+# uvicorn worker, `faustus` CLI invocation and cron job builds its own
 # UploadHandler over the same directory, so two of them can each read the
 # index, add a different row and replace the file in turn: the second write
 # drops the first row and leaves its bytes orphaned on disk. An advisory lock
@@ -51,7 +51,7 @@ UPLOAD_INDEX_LOCK_FILENAME = "uploads.json.lock"
 
 try:
     UPLOAD_INDEX_LOCK_TIMEOUT = float(
-        os.environ.get("ODYSSEUS_UPLOAD_INDEX_LOCK_TIMEOUT") or 30.0
+        os.environ.get("FAUSTUS_UPLOAD_INDEX_LOCK_TIMEOUT") or 30.0
     )
 except (TypeError, ValueError):
     UPLOAD_INDEX_LOCK_TIMEOUT = 30.0
@@ -201,7 +201,7 @@ UPLOAD_ID_TOKEN_RE = re.compile(
     r"(?<![0-9a-fA-F])([0-9a-fA-F]{32}(?:\.[A-Za-z0-9]+)?)(?![A-Za-z0-9])"
 )
 INTERNAL_UPLOAD_URL_RE = re.compile(
-    r"(?:odysseus://attachment/|/api/upload/)"
+    r"(?:faustus://attachment/|/api/upload/)"
     r"([0-9a-fA-F]{32}(?:\.[A-Za-z0-9]+)?)"
     r"(?=$|[\s\"'<>\[\](){},;!?:&#]|\.(?![A-Za-z0-9]))"
 )

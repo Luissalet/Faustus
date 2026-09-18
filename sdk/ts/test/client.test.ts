@@ -41,7 +41,7 @@ test('turns.create() sends JSON with `session` (never `session_id`) and compare_
     assert.equal(body.compare_mode, 'false');
     assert.equal(body.mode, 'agent');
     assert.ok(typeof body.client_message_id === 'string' && body.client_message_id.length > 0);
-    return streamResponse(textStream([SSE_DONE]), { headers: { 'X-Odysseus-Run-Id': 'run-1' } });
+    return streamResponse(textStream([SSE_DONE]), { headers: { 'X-Faustus-Run-Id': 'run-1' } });
   });
   const client = new FaustusClient({ baseUrl: 'http://sdk-test', fetch });
   const turn = await client.turns.create('s1', { message: 'hi', mode: 'agent' });
@@ -64,7 +64,7 @@ test('turns.create() switches to multipart/form-data when attachments are presen
 
 test('headers: Authorization from token, no Cookie sent alongside it', async () => {
   const { fetch, calls } = fakeFetch(() => jsonResponse({ version: '9', build: {}, served_studio: null, client_adaptation_notice: null }));
-  const client = new FaustusClient({ baseUrl: 'http://sdk-test', token: 'ody_abc', cookie: 'odysseus_session=zzz', fetch });
+  const client = new FaustusClient({ baseUrl: 'http://sdk-test', token: 'ody_abc', cookie: 'faustus_session=zzz', fetch });
   await client.version();
   const call = calls[0];
   assert.ok(call);
@@ -75,9 +75,9 @@ test('headers: Authorization from token, no Cookie sent alongside it', async () 
 
 test('headers: Cookie is sent when there is no token', async () => {
   const { fetch, calls } = fakeFetch(() => jsonResponse({ version: '9', build: {}, served_studio: null, client_adaptation_notice: null }));
-  const client = new FaustusClient({ baseUrl: 'http://sdk-test', cookie: 'odysseus_session=zzz', fetch });
+  const client = new FaustusClient({ baseUrl: 'http://sdk-test', cookie: 'faustus_session=zzz', fetch });
   await client.version();
-  assert.equal(headerValue(calls[0]!.init, 'Cookie'), 'odysseus_session=zzz');
+  assert.equal(headerValue(calls[0]!.init, 'Cookie'), 'faustus_session=zzz');
 });
 
 test('426 → UpgradeRequiredError, on both a plain request and a turn POST', async () => {

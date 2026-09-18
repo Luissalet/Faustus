@@ -183,7 +183,7 @@ app.state.task_supervisor = background_supervisor
 # a backup is meant to be reported as interrupted rather than waited out, since
 # the alternative is holding the port open for minutes on every restart.
 try:
-    SHUTDOWN_DRAIN_TIMEOUT_S = float(os.getenv("ODYSSEUS_SHUTDOWN_DRAIN_SECONDS", "5") or 5)
+    SHUTDOWN_DRAIN_TIMEOUT_S = float(os.getenv("FAUSTUS_SHUTDOWN_DRAIN_SECONDS", "5") or 5)
 except (TypeError, ValueError):
     SHUTDOWN_DRAIN_TIMEOUT_S = 5.0
 
@@ -201,8 +201,8 @@ app.add_middleware(
         "Content-Type",
         "X-API-Key",
         "X-Auth-Token",
-        "X-Odysseus-Internal-Token",
-        "X-Odysseus-Owner",
+        "X-Faustus-Internal-Token",
+        "X-Faustus-Owner",
         "X-Requested-With",
         "X-TZ-Offset",
     ],
@@ -301,7 +301,7 @@ class _SlowRequestLogMiddleware(_BaseHTTPMiddleware):
         finally:
             elapsed = time.perf_counter() - start
             try:
-                threshold = float(os.getenv("ODYSSEUS_SLOW_REQUEST_LOG_SECONDS", "0.75") or "0.75")
+                threshold = float(os.getenv("FAUSTUS_SLOW_REQUEST_LOG_SECONDS", "0.75") or "0.75")
             except Exception:
                 threshold = 0.75
             if elapsed >= threshold:
@@ -469,10 +469,10 @@ if AUTH_ENABLED:
                 _hdr = request.headers.get(INTERNAL_TOOL_HEADER)
                 if _hdr and secrets.compare_digest(_hdr, _ITT) and _is_trusted_loopback(request):
                     # Impersonation: when the agent's loopback call sets
-                    # X-Odysseus-Owner, attribute the request to that user only
+                    # X-Faustus-Owner, attribute the request to that user only
                     # if they exist. Authorization checks remain separate; this
                     # is just owner attribution for notes/calendar/etc.
-                    _impersonate = (request.headers.get("X-Odysseus-Owner") or "").strip()
+                    _impersonate = (request.headers.get("X-Faustus-Owner") or "").strip()
                     _auth_mgr = getattr(request.app.state, "auth_manager", None) or auth_manager
                     if _impersonate and _impersonate in getattr(_auth_mgr, "users", {}):
                         request.state.current_user = _impersonate
@@ -2087,8 +2087,8 @@ async def _startup_event():
     # the index build (and, with the per-request selection timeout, usually
     # lands on keyword-only tool selection). The build runs in a worker thread
     # and, with the on-disk embedding cache, costs one fastembed model load.
-    # ODYSSEUS_TOOL_INDEX_WARMUP=0 (or the all-warmups opt-out
-    # ODYSSEUS_STARTUP_WARMUPS=0) turns it off.
+    # FAUSTUS_TOOL_INDEX_WARMUP=0 (or the all-warmups opt-out
+    # FAUSTUS_STARTUP_WARMUPS=0) turns it off.
     async def _warmup_tool_index():
         try:
             from src.tool_index import get_tool_index
@@ -2103,7 +2103,7 @@ async def _startup_event():
     if _tool_index_warmup_enabled():
         _supervisor.spawn(_warmup_tool_index(), name="tool-index-warmup")
     else:
-        logger.info("Tool index warmup disabled (ODYSSEUS_TOOL_INDEX_WARMUP=0)")
+        logger.info("Tool index warmup disabled (FAUSTUS_TOOL_INDEX_WARMUP=0)")
 
     # Endpoint warmups stay opt-in. They ping every discovered model endpoint,
     # which competes with the first seconds of real UI use on slow or busy
@@ -2125,16 +2125,16 @@ async def _startup_event():
         except Exception as e:
             logger.debug(f"Warmup ping skipped: {e}")
 
-    _startup_warmups_enabled = str(os.getenv("ODYSSEUS_STARTUP_WARMUPS", "")).lower() in {"1", "true", "yes", "on"}
+    _startup_warmups_enabled = str(os.getenv("FAUSTUS_STARTUP_WARMUPS", "")).lower() in {"1", "true", "yes", "on"}
     if _startup_warmups_enabled:
         _supervisor.spawn(_warmup_endpoints(), name="endpoint-warmup")
     else:
-        logger.info("Endpoint warmup pings disabled (set ODYSSEUS_STARTUP_WARMUPS=1 to enable)")
+        logger.info("Endpoint warmup pings disabled (set FAUSTUS_STARTUP_WARMUPS=1 to enable)")
 
     # Keep-alive is opt-in. The ping path performs model discovery, and when
     # stale LAN endpoints are configured it can add periodic backend pressure
     # that delays unrelated UI requests such as Notes/Documents.
-    _keepalive_enabled = str(os.getenv("ODYSSEUS_MODEL_KEEPALIVE", "")).lower() in {"1", "true", "yes", "on"}
+    _keepalive_enabled = str(os.getenv("FAUSTUS_MODEL_KEEPALIVE", "")).lower() in {"1", "true", "yes", "on"}
     if _keepalive_enabled:
         async def _keepalive_loop():
             while True:
@@ -2218,13 +2218,13 @@ async def _startup_event():
 
     # Start scheduled task runner — skip when running under a cron-driven
     # deployment where an external worker drives task firing. Mirrors
-    # `ODYSSEUS_INPROCESS_POLLERS` from the email pollers.
-    _tasks_inprocess = os.environ.get("ODYSSEUS_INPROCESS_TASKS", "1").strip().lower()
+    # `FAUSTUS_INPROCESS_POLLERS` from the email pollers.
+    _tasks_inprocess = os.environ.get("FAUSTUS_INPROCESS_TASKS", "1").strip().lower()
     if _tasks_inprocess not in ("0", "false", "no", "off", ""):
         await task_scheduler.start()
     else:
         logger.info(
-            "In-process task scheduler disabled (ODYSSEUS_INPROCESS_TASKS=0); "
+            "In-process task scheduler disabled (FAUSTUS_INPROCESS_TASKS=0); "
             "drive task firing externally (e.g. cron)."
         )
     # Periodic null-owner sweep — re-runs the legacy-owner assignment hourly

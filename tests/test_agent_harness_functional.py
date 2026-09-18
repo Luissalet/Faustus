@@ -109,7 +109,7 @@ def _real_edit(workspace):
 @pytest.fixture
 def project(tmp_path, monkeypatch):
     """A tiny pytest project: src/calc.py + tests/test_calc.py."""
-    monkeypatch.setenv("ODYSSEUS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("FAUSTUS_DATA_DIR", str(tmp_path / "data"))
     import src.constants as consts
     monkeypatch.setattr(consts, "DATA_DIR", str(tmp_path / "data"), raising=False)
     ws = tmp_path / "ws"

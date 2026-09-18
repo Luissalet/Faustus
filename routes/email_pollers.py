@@ -1412,9 +1412,9 @@ def _scheduled_poll_once() -> dict:
             try:
                 # Atomically claim this row before doing any work. Two
                 # pollers can race here (the in-process asyncio task and an
-                # externally cron-driven `odysseus-mail poll-scheduled`, or
+                # externally cron-driven `faustus-mail poll-scheduled`, or
                 # an admin running the CLI manually alongside the in-process
-                # one despite the ODYSSEUS_INPROCESS_POLLERS=0 guidance) -
+                # one despite the FAUSTUS_INPROCESS_POLLERS=0 guidance) -
                 # both can SELECT the same 'pending' row before either has
                 # updated its status. The UPDATE...WHERE status='pending' is
                 # the atomicity boundary: only the poller whose UPDATE
@@ -1450,9 +1450,9 @@ def _scheduled_poll_once() -> dict:
                     outer["Cc"] = r[2]
                 outer["Subject"] = r[4] or ""
                 outer["Date"] = utcnow_naive().strftime("%a, %d %b %Y %H:%M:%S +0000")
-                outer["X-Odysseus-Origin"] = "odysseus-ui"
-                outer["X-Odysseus-Kind"] = re.sub(r"[^A-Za-z0-9_.-]", "-", odysseus_kind or "scheduled")[:64]
-                outer["X-Odysseus-Ref"] = sid
+                outer["X-Faustus-Origin"] = "faustus-ui"
+                outer["X-Faustus-Kind"] = re.sub(r"[^A-Za-z0-9_.-]", "-", odysseus_kind or "scheduled")[:64]
+                outer["X-Faustus-Ref"] = sid
                 if r[6]:
                     outer["In-Reply-To"] = r[6]
                 if r[7]:
@@ -1503,7 +1503,7 @@ def _scheduled_poll_once() -> dict:
 async def _scheduled_email_poller():
     """Background task that checks for due scheduled emails every 30
     seconds. Each tick delegates to `_scheduled_poll_once`, which is
-    also exposed via the `odysseus-mail poll-scheduled` CLI for
+    also exposed via the `faustus-mail poll-scheduled` CLI for
     cron-driven deployments."""
     import asyncio
 
@@ -1519,13 +1519,13 @@ _poller_task = None
 _summarize_task = None
 
 def _inprocess_pollers_enabled() -> bool:
-    """Honour `ODYSSEUS_INPROCESS_POLLERS` — set to `0`/`false`/`no`/`off`
+    """Honour `FAUSTUS_INPROCESS_POLLERS` — set to `0`/`false`/`no`/`off`
     to disable the asyncio tasks so a cron / systemd-timer setup driving
-    `odysseus-mail poll-scheduled` is the sole external driver. The legacy
+    `faustus-mail poll-scheduled` is the sole external driver. The legacy
     auto-summary/reply poller no longer starts here; scheduled Tasks own that
     work so Email settings are only feature gates, not a second scheduler."""
     import os
-    raw = os.environ.get("ODYSSEUS_INPROCESS_POLLERS", "1").strip().lower()
+    raw = os.environ.get("FAUSTUS_INPROCESS_POLLERS", "1").strip().lower()
     return raw not in ("0", "false", "no", "off", "")
 
 
@@ -1533,13 +1533,13 @@ def _start_poller():
     """Start background pollers. Called at module load; if no event loop is
     running yet (common at import time), defer via a first-request hook.
 
-    Skipped entirely when `ODYSSEUS_INPROCESS_POLLERS=0` — use that when
+    Skipped entirely when `FAUSTUS_INPROCESS_POLLERS=0` — use that when
     you're driving polling from cron / systemd to avoid two copies of
     `_scheduled_poll_once` racing on the same SQLite."""
     if not _inprocess_pollers_enabled():
         logger.info(
-            "In-process email pollers disabled (ODYSSEUS_INPROCESS_POLLERS=0); "
-            "drive `odysseus-mail poll-scheduled` externally."
+            "In-process email pollers disabled (FAUSTUS_INPROCESS_POLLERS=0); "
+            "drive `faustus-mail poll-scheduled` externally."
         )
         return
     import asyncio

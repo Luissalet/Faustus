@@ -152,7 +152,7 @@ def _pre_migration_dir() -> Path:
     """Same directory `backup_service.backup_dir()` resolves to, computed
     independently so this module never has to import that one (see
     `_wal_safe_copy`)."""
-    override = os.getenv("ODYSSEUS_BACKUP_DIR") or os.getenv("FAUSTUS_BACKUP_DIR")
+    override = os.getenv("FAUSTUS_BACKUP_DIR")
     if override:
         root = Path(override)
     else:

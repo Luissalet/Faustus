@@ -1,4 +1,4 @@
-"""cmd_add (scripts/odysseus-memory) must tolerate a non-dict row in the
+"""cmd_add (scripts/faustus-memory) must tolerate a non-dict row in the
 existing store. Every other command funnels load_all() through
 `_memory_entries()` (which drops non-dicts), but cmd_add iterated the raw
 list in its dedup check: `any(e.get("id") == ... for e in all_entries)`
@@ -20,8 +20,8 @@ def _load_cli(monkeypatch):
     svc = types.ModuleType("services.memory.memory")
     svc.MemoryManager = MagicMock()
     monkeypatch.setitem(sys.modules, "services.memory.memory", svc)
-    path = ROOT / "scripts" / "odysseus-memory"
-    loader = importlib.machinery.SourceFileLoader("odysseus_memory_cli_add", str(path))
+    path = ROOT / "scripts" / "faustus-memory"
+    loader = importlib.machinery.SourceFileLoader("faustus_memory_cli_add", str(path))
     spec = importlib.util.spec_from_loader(loader.name, loader)
     module = importlib.util.module_from_spec(spec)
     loader.exec_module(module)

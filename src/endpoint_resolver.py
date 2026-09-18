@@ -101,7 +101,7 @@ def _is_mlx_deepseek_v4_repo_id(model_id: str) -> bool:
 
 
 def _is_mlx_deepseek_v4_shim_id(model_id: str) -> bool:
-    return "/.cache/odysseus/mlx-shims/deepseek-v4" in str(model_id or "").lower()
+    return "/.cache/faustus/mlx-shims/deepseek-v4" in str(model_id or "").lower()
 
 
 def _filter_mlx_deepseek_v4_repo_when_shimmed(model_ids) -> list:
@@ -337,7 +337,7 @@ def build_headers(api_key: Optional[str], base: str) -> Dict[str, str]:
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
     if provider == "openrouter":
-        headers.setdefault("HTTP-Referer", "https://github.com/odysseus-dev/odysseus")
+        headers.setdefault("HTTP-Referer", "https://github.com/faustus-dev/faustus")
         headers.setdefault("X-OpenRouter-Title", "Faustus")
     if _is_kimi_code_url(base):
         headers.setdefault("User-Agent", KIMI_CODE_USER_AGENT)

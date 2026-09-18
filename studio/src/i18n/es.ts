@@ -6623,7 +6623,7 @@ export const es: Record<string, string> = {
   "Zoom out": "Alejar",
   "[Settings](/settings?s=shortcuts) is where they change.": "Se cambian en [Ajustes](/settings?s=shortcuts).",
   "[attachment]": "[adjunto]",
-  "`/backup now` takes one · `/backup verify N` checks that snapshot N would really restore. Restoring is manual and destructive: stop Faustus, then `python scripts/odysseus-backup restore <file> --yes`.": "`/backup now` hace una · `/backup verify N` comprueba que la copia N restauraría de verdad. Restaurar es manual y destructivo: para Faustus y luego `python scripts/odysseus-backup restore <fichero> --yes`.",
+  "`/backup now` takes one · `/backup verify N` checks that snapshot N would really restore. Restoring is manual and destructive: stop Faustus, then `python scripts/faustus-backup restore <file> --yes`.": "`/backup now` hace una · `/backup verify N` comprueba que la copia N restauraría de verdad. Restaurar es manual y destructivo: para Faustus y luego `python scripts/faustus-backup restore <fichero> --yes`.",
   "`/help name` explains one command, its aliases and its subcommands.": "`/help nombre` explica un comando, sus alias y sus subcomandos.",
   "`/memory delete id` removes one; [Memory](/memory) is the screen.": "`/memory delete id` borra uno; la pantalla es [Memoria](/memory).",
   "`/researchfit apply` writes them.": "`/researchfit apply` los escribe.",

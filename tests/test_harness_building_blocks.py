@@ -18,7 +18,7 @@ _HAS_GIT = shutil.which("git") is not None
 @pytest.fixture
 def data_dir(tmp_path, monkeypatch):
     d = tmp_path / "data"
-    monkeypatch.setenv("ODYSSEUS_DATA_DIR", str(d))
+    monkeypatch.setenv("FAUSTUS_DATA_DIR", str(d))
     import src.constants as consts
     monkeypatch.setattr(consts, "DATA_DIR", str(d), raising=False)
     return d

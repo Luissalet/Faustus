@@ -57,7 +57,7 @@ TOKEN = "sk-abcdef123456"
 EPOCH = 1_700_000_000.0
 STAMP = "2023-11-14T22:13:20Z"
 
-SCOPE = Scope(owner="ada", project_id="odysseus", workspace="")
+SCOPE = Scope(owner="ada", project_id="faustus", workspace="")
 
 
 def boom(*_args: Any, **_kwargs: Any) -> Any:
@@ -100,7 +100,7 @@ def _clean_caches() -> Any:
 # -- workspace -------------------------------------------------------------
 
 def _workspace_scope(path: Any) -> Scope:
-    return Scope(owner="ada", project_id="odysseus", workspace=str(path))
+    return Scope(owner="ada", project_id="faustus", workspace=str(path))
 
 
 def _fake_git(monkeypatch, *, branch: str = "", changes: Any = None,

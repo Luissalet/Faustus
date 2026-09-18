@@ -123,7 +123,7 @@ ahora es `t('edited')`.
   anidadas y una ordenada más adentro, lista de tareas con las dos casillas,
   valla `python` con su insignia de lenguaje y su botón de copiar,
   `snake_case_word` sin cursiva.
-- **Transcript** (`/studio`, qwen3.5:9b en modo chat, carpeta `odysseus`
+- **Transcript** (`/studio`, qwen3.5:9b en modo chat, carpeta `faustus`
   vinculada): el turno del usuario dibuja `@README.md` y `@app.py` como
   fichas; clic en `@README.md` abre la pestaña «Fichero» del panel lateral
   con el README real (421 líneas). La respuesta del modelo, una tabla

@@ -65,11 +65,11 @@ def _uid_fetch_rows(data) -> list:
 # flat keys when no DB row matches (legacy single-account behaviour).
 
 _ACCOUNT_CACHE: dict = {}  # key = normalized account selector -> config dict
-_MCP_OWNER_ARG = "_odysseus_owner"
+_MCP_OWNER_ARG = "_faustus_owner"
 _CURRENT_OWNER: ContextVar[str | None] = ContextVar("email_mcp_owner", default=None)
-_OWNER_ENV_KEYS = ("ODYSSEUS_MCP_EMAIL_OWNER", "ODYSSEUS_EMAIL_OWNER")
+_OWNER_ENV_KEYS = ("FAUSTUS_MCP_EMAIL_OWNER", "FAUSTUS_EMAIL_OWNER")
 _OWNER_SCOPE_ERROR = (
-    "Error: email MCP requires an authenticated owner or ODYSSEUS_MCP_EMAIL_OWNER "
+    "Error: email MCP requires an authenticated owner or FAUSTUS_MCP_EMAIL_OWNER "
     "when owner-scoped email accounts are configured."
 )
 
@@ -187,7 +187,7 @@ def _default_document_owner() -> str | None:
     but the document library is owner-filtered. Stamp drafts to the configured
     single/default admin so assistant-created email drafts are visible.
     """
-    owner = os.environ.get("ODYSSEUS_DOCUMENT_OWNER", "").strip()
+    owner = os.environ.get("FAUSTUS_DOCUMENT_OWNER", "").strip()
     if owner:
         return owner
     try:
@@ -863,7 +863,7 @@ def _fixture_email_record(row: dict, uid_num: int, owner: str) -> dict:
     uid = str(uid_num)
     return {
         "uid": uid,
-        "message_id": f"<fixture-email-{uid}-{owner_key}@fixtures.odysseus.local>",
+        "message_id": f"<fixture-email-{uid}-{owner_key}@fixtures.faustus.local>",
         "subject": subject,
         "from": sender_name or sender_addr or sender,
         "from_address": sender_addr,
@@ -906,11 +906,11 @@ def _fixture_account_rows() -> list[dict]:
     owner = _current_owner()
     owners = []
     for row in _fixture_email_rows(owner or None):
-        email_addr = row.get("account_email") or owner or "fixture@fixtures.odysseus.local"
+        email_addr = row.get("account_email") or owner or "fixture@fixtures.faustus.local"
         if email_addr not in owners:
             owners.append(email_addr)
     if not owners:
-        owners = [owner or "fixture@fixtures.odysseus.local"]
+        owners = [owner or "fixture@fixtures.faustus.local"]
     return [
         {
             "id": "fixture-email",

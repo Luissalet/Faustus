@@ -19,7 +19,7 @@ import tempfile
 import uuid
 from types import SimpleNamespace
 
-_tmp_data = tempfile.mkdtemp(prefix="odysseus-auto02-budget-test-")
+_tmp_data = tempfile.mkdtemp(prefix="faustus-auto02-budget-test-")
 os.environ.setdefault("DATA_DIR", _tmp_data)
 os.environ.setdefault("DATABASE_URL", f"sqlite:///{_tmp_data}/app.db")
 

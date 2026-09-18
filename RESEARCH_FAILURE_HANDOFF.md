@@ -1,6 +1,6 @@
 # Deep Research failure — handoff to Claude
 
-Workspace: `D:\LocalAI\odysseus`. Diagnose/fix the existing implementation; preserve the uncommitted UI and desktop-control work. No fix for this failure has been applied in this handoff.
+Workspace: `D:\LocalAI\faustus`. Diagnose/fix the existing implementation; preserve the uncommitted UI and desktop-control work. No fix for this failure has been applied in this handoff.
 
 ## Confirmed failure
 

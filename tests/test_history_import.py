@@ -557,7 +557,7 @@ def test_a_corrupt_database_is_moved_aside_and_recreated(store, exports, caplog)
 
 def test_the_store_is_its_own_file_and_never_the_apps(store):
     assert history.db_path().endswith("history.db")
-    assert os.path.basename(history.db_path()) not in ("odysseus.db", "memory_engine.db")
+    assert os.path.basename(history.db_path()) not in ("faustus.db", "memory_engine.db")
 
 
 def test_the_unique_key_is_source_plus_external_id(store, tmp_path):

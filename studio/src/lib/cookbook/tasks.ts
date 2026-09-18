@@ -112,12 +112,12 @@ function winPs(t: Task, ps: string): string {
 
 function winStopTree(t: Task): string {
   const host = taskHost(t);
-  const sd = host ? '$env:TEMP\\odysseus-sessions' : '$env:TEMP\\odysseus-tmux';
+  const sd = host ? '$env:TEMP\\faustus-sessions' : '$env:TEMP\\faustus-tmux';
   const sid = t.sessionId;
   const fn = `function Stop-Tree([int]$Id) { Get-CimInstance Win32_Process -Filter ('ParentProcessId = ' + $Id) -ErrorAction SilentlyContinue | ForEach-Object { Stop-Tree ([int]$_.ProcessId) }; Stop-Process -Id $Id -Force -ErrorAction SilentlyContinue }`;
   return host
     ? `${fn}; $p = Get-Content '${sd}\\${sid}.pid' -ErrorAction SilentlyContinue; if ($p -match '^\\d+$') { Stop-Tree ([int]$p) }; Remove-Item '${sd}\\${sid}.*' -Force -ErrorAction SilentlyContinue`
-    : `${fn}; $p = Get-Content (Join-Path $env:TEMP 'odysseus-tmux\\${sid}.pid') -ErrorAction SilentlyContinue; if ($p -match '^\\d+$') { Stop-Tree ([int]$p) }; Remove-Item (Join-Path $env:TEMP 'odysseus-tmux\\${sid}.*') -Force -ErrorAction SilentlyContinue`;
+    : `${fn}; $p = Get-Content (Join-Path $env:TEMP 'faustus-tmux\\${sid}.pid') -ErrorAction SilentlyContinue; if ($p -match '^\\d+$') { Stop-Tree ([int]$p) }; Remove-Item (Join-Path $env:TEMP 'faustus-tmux\\${sid}.*') -Force -ErrorAction SilentlyContinue`;
 }
 
 /** Ctrl-C, two seconds, then kill the session. */
@@ -141,7 +141,7 @@ export function forceKillCmd(t: Task, hostPlatform: string): string {
 export function captureCmd(t: Task, hostPlatform: string, lines = 500): string {
   if (taskIsWindows(t, hostPlatform)) {
     const host = taskHost(t);
-    const ps = host ? `Get-Content '$env:TEMP\\odysseus-sessions\\${t.sessionId}.log' -Tail ${lines} -ErrorAction SilentlyContinue` : `Get-Content (Join-Path $env:TEMP 'odysseus-tmux\\${t.sessionId}.log') -Tail ${lines} -ErrorAction SilentlyContinue`;
+    const ps = host ? `Get-Content '$env:TEMP\\faustus-sessions\\${t.sessionId}.log' -Tail ${lines} -ErrorAction SilentlyContinue` : `Get-Content (Join-Path $env:TEMP 'faustus-tmux\\${t.sessionId}.log') -Tail ${lines} -ErrorAction SilentlyContinue`;
     return winPs(t, ps);
   }
   const host = taskHost(t);

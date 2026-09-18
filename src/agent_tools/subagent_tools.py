@@ -176,12 +176,12 @@ class _LockGuard:
         self.bypass = bypass
 
 
-_LOCK_CTX: contextvars.ContextVar[Optional[_LockGuard]] = contextvars.ContextVar("odysseus_subagent_locks", default=None)
+_LOCK_CTX: contextvars.ContextVar[Optional[_LockGuard]] = contextvars.ContextVar("faustus_subagent_locks", default=None)
 #: The running worker's derived permissions (src/subagent_permissions.py), set
 #: alongside the lock guard in `_run_subagent` and inherited by every tool task
 #: the agent loop spawns. None outside a definition-driven worker, which is
 #: what keeps every existing delegation on exactly its old path.
-_PERMS_CTX: contextvars.ContextVar[Any] = contextvars.ContextVar("odysseus_subagent_perms", default=None)
+_PERMS_CTX: contextvars.ContextVar[Any] = contextvars.ContextVar("faustus_subagent_perms", default=None)
 _WRITE_TOOLS = frozenset({"write_file", "edit_file", "apply_patch", "transform_media"})
 #: Tools whose first argument is ONE path this module can read out with
 #: certainty. `grep`/`glob`/`ls` take a root plus a pattern and answer about a

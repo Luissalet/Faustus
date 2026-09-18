@@ -47,7 +47,7 @@ DATA_DIR = _DEFAULT_DATA_DIR
 # never answers; without a bound the agent turn hangs forever instead of taking
 # the reconnect path below. Generous: Playwright's own navigation timeout is
 # 60 s and long pages / slow sites need headroom.
-MCP_CALL_TIMEOUT_S = float(os.environ.get("ODYSSEUS_MCP_CALL_TIMEOUT", "180") or 180)
+MCP_CALL_TIMEOUT_S = float(os.environ.get("FAUSTUS_MCP_CALL_TIMEOUT", "180") or 180)
 
 # How long disconnect waits for the owner task to tear a server down.
 _MCP_CLOSE_TIMEOUT_S = 15.0

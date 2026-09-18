@@ -9,7 +9,7 @@ from services.tts.tts_service import TTSService
 def test_cache_under_limit(tmp_path, monkeypatch):
     """Test that writing a file under the size limit does not trigger eviction."""
     # Set a tiny limit: 100 bytes
-    monkeypatch.setenv("ODYSSEUS_TTS_CACHE_MAX_BYTES", "100")
+    monkeypatch.setenv("FAUSTUS_TTS_CACHE_MAX_BYTES", "100")
     
     # Initialize service with pytest's temporary directory
     service = TTSService(cache_dir=str(tmp_path))
@@ -25,7 +25,7 @@ def test_cache_under_limit(tmp_path, monkeypatch):
 def test_cache_exceeds_limit_triggers_eviction(tmp_path, monkeypatch):
     """Test that exceeding the limit evicts the oldest files down to 80% capacity."""
     # Set limit to 100 bytes. 80% target capacity will be 80 bytes.
-    monkeypatch.setenv("ODYSSEUS_TTS_CACHE_MAX_BYTES", "100")
+    monkeypatch.setenv("FAUSTUS_TTS_CACHE_MAX_BYTES", "100")
     service = TTSService(cache_dir=str(tmp_path))
     
     # 1. Setup: Manually create two older files (40 bytes each)
@@ -59,7 +59,7 @@ def test_cache_exceeds_limit_triggers_eviction(tmp_path, monkeypatch):
 
 def test_cache_limit_disabled(tmp_path, monkeypatch):
     """Test that setting max bytes to 0 disables eviction."""
-    monkeypatch.setenv("ODYSSEUS_TTS_CACHE_MAX_BYTES", "0")
+    monkeypatch.setenv("FAUSTUS_TTS_CACHE_MAX_BYTES", "0")
     service = TTSService(cache_dir=str(tmp_path))
     
     # Write 3 large files that would normally trigger eviction

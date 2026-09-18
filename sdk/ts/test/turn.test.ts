@@ -22,7 +22,7 @@ test('Turn: a dropped connection reconnects by cursor, deduplicates the overlap,
       assert.ok(call.url.endsWith('/api/chat_stream'));
       return streamResponse(
         breakingStream([sseFrame({ type: 'agent_step', round: 1, sequence: 1 }), sseFrame({ delta: 'hi', sequence: 2 })]),
-        { headers: { 'X-Odysseus-Run-Id': 'run-1' } },
+        { headers: { 'X-Faustus-Run-Id': 'run-1' } },
       );
     }
     if (i === 1) {
@@ -35,7 +35,7 @@ test('Turn: a dropped connection reconnects by cursor, deduplicates the overlap,
           sseFrame({ delta: 'again', sequence: 3 }),
           SSE_DONE,
         ]),
-        { headers: { 'X-Odysseus-Run-Id': 'run-1' } },
+        { headers: { 'X-Faustus-Run-Id': 'run-1' } },
       );
     }
     throw new Error(`unexpected call ${i}: ${call.url}`);
@@ -99,15 +99,15 @@ test('Turn: silence past idleTimeoutMs is treated as a broken connection and rec
   assert.ok(calls[1]?.url.includes('cursor=1'));
 });
 
-test('Turn.cancel(): sends X-Odysseus-Run-Id and a JSON {scope} body, and never repeats the POST', async () => {
+test('Turn.cancel(): sends X-Faustus-Run-Id and a JSON {scope} body, and never repeats the POST', async () => {
   const { fetch, calls } = fakeFetch((call, i) => {
     if (i === 0) {
-      return streamResponse(textStream([SSE_DONE]), { headers: { 'X-Odysseus-Run-Id': 'run-xyz' } });
+      return streamResponse(textStream([SSE_DONE]), { headers: { 'X-Faustus-Run-Id': 'run-xyz' } });
     }
     if (i === 1) {
       assert.equal(call.method, 'POST');
       assert.ok(call.url.endsWith('/api/chat/stop/s1'));
-      assert.equal(headerValue(call.init, 'X-Odysseus-Run-Id'), 'run-xyz');
+      assert.equal(headerValue(call.init, 'X-Faustus-Run-Id'), 'run-xyz');
       assert.equal(headerValue(call.init, 'Content-Type'), 'application/json');
       assert.deepEqual(JSON.parse(String(call.init.body)), { scope: 'task' });
       return jsonResponse({ scope: 'task', stopped: true, cancelled_at: 123, what_ran_before: [], cleanup: {} });
@@ -125,7 +125,7 @@ test('Turn.cancel(): sends X-Odysseus-Run-Id and a JSON {scope} body, and never 
 
 test('client.turns.stop(): standalone stop with an explicit runId', async () => {
   const { fetch, calls } = fakeFetch((call) => {
-    assert.equal(headerValue(call.init, 'X-Odysseus-Run-Id'), 'run-abc');
+    assert.equal(headerValue(call.init, 'X-Faustus-Run-Id'), 'run-abc');
     return jsonResponse({ stopped: true });
   });
   const client = new FaustusClient({ baseUrl: 'http://sdk-test', fetch });

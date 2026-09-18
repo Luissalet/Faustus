@@ -12,7 +12,7 @@ Why it is built this way
   change: the sidebar folder *is* the project's chat group. One project owns one
   folder name.
 
-* **Project memory is Markdown on disk** under ``<workspace>/.odysseus/`` rather
+* **Project memory is Markdown on disk** under ``<workspace>/.faustus/`` rather
   than rows in the ``memories`` table. Files are greppable, hand-editable,
   survive a database wipe, travel with the folder when it moves — and the agent
   already has read/write tools confined to the project's work roots, so it can
@@ -38,7 +38,7 @@ from typing import Any, Dict, List, Mapping, Optional, Tuple
 logger = logging.getLogger(__name__)
 
 # Directory created inside a project's workspace to hold its memory.
-MEMORY_DIRNAME = ".odysseus"
+MEMORY_DIRNAME = ".faustus"
 MEMORY_INDEX = "MEMORY.md"
 
 # Caps. The injected block rides in the system prompt of every turn, and Luis's
@@ -1185,7 +1185,15 @@ class ProjectStore:
 
     def memory_dir(self, project: Dict[str, Any]) -> str:
         ws = (project or {}).get("workspace") or ""
-        return os.path.join(ws, MEMORY_DIRNAME) if ws else ""
+        if not ws:
+            return ""
+        faustus_dir = os.path.join(ws, MEMORY_DIRNAME)
+        # Read-only compat: a project whose memory was created before the
+        # rename and still has a pre-rename `.odysseus/` folder keeps using it.
+        legacy_dir = os.path.join(ws, ".odysseus")
+        if not os.path.isdir(faustus_dir) and os.path.isdir(legacy_dir):
+            return legacy_dir
+        return faustus_dir
 
     def _memory_path(self, project: Dict[str, Any], filename: str) -> str:
         """Resolve a memory filename to an absolute path, refusing anything
@@ -1203,7 +1211,7 @@ class ProjectStore:
         return full
 
     def scaffold_memory(self, project: Dict[str, Any]) -> str:
-        """Create <workspace>/.odysseus/MEMORY.md if it isn't there yet."""
+        """Create <workspace>/.faustus/MEMORY.md if it isn't there yet."""
         base = self.memory_dir(project)
         if not base:
             return ""

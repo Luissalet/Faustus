@@ -37,7 +37,7 @@ def test_register_pending_prunes_abandoned_flows():
     assert old.cancelled()
 
 
-def test_build_provider_has_odysseus_client_metadata():
+def test_build_provider_has_faustus_client_metadata():
     p = mcp_oauth.build_provider("srv-1", "https://example.com/mcp")
     md = p.context.client_metadata
     assert md.client_name == "Faustus"
@@ -166,9 +166,9 @@ def test_redirect_base_prefers_the_explicit_origin(monkeypatch):
     # Only an operator-supplied origin can be right behind a TLS proxy, so it
     # outranks the derived default — and its trailing slash is trimmed.
     resolved = _resolve_base(
-        monkeypatch, OAUTH_REDIRECT_BASE_URL="https://odysseus.example/", APP_PORT="7860"
+        monkeypatch, OAUTH_REDIRECT_BASE_URL="https://faustus.example/", APP_PORT="7860"
     )
-    assert resolved == "https://odysseus.example"
+    assert resolved == "https://faustus.example"
 
 
 def test_redirect_base_accepts_app_public_url_as_the_alias(monkeypatch):
@@ -186,7 +186,7 @@ def _authorize_page():
     return _oauth_authorize_page(
         "https://accounts.google.com/o/oauth2/v2/auth?state=srv-1",
         "srv-1",
-        "https://odysseus.example.com/api/mcp/oauth/callback",
+        "https://faustus.example.com/api/mcp/oauth/callback",
     )
 
 
@@ -229,7 +229,7 @@ def test_redirect_base_override_is_forwarded_into_the_container():
     for name in _COMPOSE_FILES:
         path = _repo_root() / name
         compose = yaml.safe_load(path.read_text(encoding="utf-8"))
-        environment = set(compose["services"]["odysseus"]["environment"])
+        environment = set(compose["services"]["faustus"]["environment"])
         assert "OAUTH_REDIRECT_BASE_URL=${OAUTH_REDIRECT_BASE_URL:-}" in environment, name
 
 

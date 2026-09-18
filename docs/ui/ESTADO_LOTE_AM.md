@@ -45,7 +45,7 @@ instante y funciona sin red.
 
 No era de la interfaz anterior: es el mecanismo por el que Studio soporta
 los dieciséis temas de fábrica y los personalizados (misma clave
-`odysseus-theme`, mismos cinco colores). Se ha renombrado y reescrito el
+`faustus-theme`, mismos cinco colores). Se ha renombrado y reescrito el
 comentario, porque quien escribe esas variables ahora es `appearance.ts`.
 
 ### Rutas viejas que siguen vivas

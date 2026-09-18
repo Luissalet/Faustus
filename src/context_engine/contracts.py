@@ -89,7 +89,7 @@ MANDATORY_SECTIONS: Tuple[str, ...] = (
 
 SOURCE_TYPES: Tuple[str, ...] = (
     "memory",          # src.memory_engine / src.memory
-    "project_memory",  # <workspace>/.odysseus/*.md
+    "project_memory",  # <workspace>/.faustus/*.md
     "objective",       # services.objectives
     "decision",        # a recorded, binding decision
     "file",            # a file in the workspace

@@ -84,7 +84,7 @@ def test_log_excerpt_redacts_api_keys_and_bearer_tokens(isolated_data_dir, monke
         "Authorization: Bearer abcdefghij1234567890.zzzz\n"
         "line four\n"
     )
-    monkeypatch.setenv("ODYSSEUS_LOG_FILE", str(log_file))
+    monkeypatch.setenv("FAUSTUS_LOG_FILE", str(log_file))
     excerpt = sb.sanitized_log_excerpt()
     assert "sk-abcdefghijklmnopqrstuvwxyz" not in excerpt
     assert "[redacted]" in excerpt
@@ -92,7 +92,6 @@ def test_log_excerpt_redacts_api_keys_and_bearer_tokens(isolated_data_dir, monke
 
 
 def test_log_excerpt_empty_when_unconfigured(monkeypatch):
-    monkeypatch.delenv("ODYSSEUS_LOG_FILE", raising=False)
     monkeypatch.delenv("FAUSTUS_LOG_FILE", raising=False)
     assert sb.sanitized_log_excerpt() == ""
 

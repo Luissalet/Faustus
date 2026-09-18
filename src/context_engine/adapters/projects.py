@@ -1,7 +1,7 @@
 """
 context_engine/adapters/projects.py — the project's own words, one file at a time.
 
-``<workspace>/.odysseus/`` is where a project writes down what it expects of
+``<workspace>/.faustus/`` is where a project writes down what it expects of
 anyone working in it: ``MEMORY.md`` as the index, one markdown file per topic
 beside it, and the project's standing instructions stored on the record itself.
 All of it is ``project_rules``, all of it is ``human_explicit``, and none of it
@@ -9,7 +9,7 @@ was found by a search — a rule does not become less binding because the curren
 question does not mention it.
 
 The decision that shapes this module: **one candidate per file, never a dump.**
-A single blob of every ``.md`` in ``.odysseus/`` is one item the budget can
+A single blob of every ``.md`` in ``.faustus/`` is one item the budget can
 only take or leave whole, one ``source_ref`` for six different documents, and
 one receipt that cannot say which of them the model actually used.  Per file,
 the compiler can drop the stale one, the manifest names the file that produced
@@ -25,7 +25,7 @@ is nothing to rank against and the index is the file a reader would open first.
 ``source_ref`` schemes:
 
     project:instructions        the project's standing instructions block
-    project:<filename.md>       one file under <workspace>/.odysseus/
+    project:<filename.md>       one file under <workspace>/.faustus/
 """
 
 from __future__ import annotations

@@ -9,7 +9,7 @@ Three things are pinned here, and each is a real failure mode:
 * `list_tools()` must return all eight with a schema a client can actually
   validate against — a tool whose `inputSchema` is not an object with typed
   properties is a tool the model guesses at;
-* a write with no `ODYSSEUS_MCP_CONTEXT_OWNER` must be refused and must say so
+* a write with no `FAUSTUS_MCP_CONTEXT_OWNER` must be refused and must say so
   in a sentence naming the variable. A block written into the wrong owner's
   scope is a sentence pasted into somebody else's prompts, and nothing
   afterwards can tell that it was not theirs.
@@ -70,7 +70,7 @@ def test_a_write_without_an_owner_is_refused_and_says_which_variable():
     action, not on what the store says afterwards."""
     out = _call("context_blocks", {"action": "create", "type": "project_rules",
                                    "title": "Rules", "content": "Keep it simple."})
-    assert "ODYSSEUS_MCP_CONTEXT_OWNER" in out[0].text
+    assert "FAUSTUS_MCP_CONTEXT_OWNER" in out[0].text
     assert "create" in out[0].text
     assert ces._initialized is False
 
@@ -80,7 +80,7 @@ def test_a_write_without_an_owner_is_refused_and_says_which_variable():
         ("context_code_index", {"action": "refresh", "workspace": "/repo"}),
     ):
         refused = _call(name, arguments)
-        assert "ODYSSEUS_MCP_CONTEXT_OWNER" in refused[0].text, name
+        assert "FAUSTUS_MCP_CONTEXT_OWNER" in refused[0].text, name
 
 
 def test_an_unknown_tool_is_a_message_not_an_exception():

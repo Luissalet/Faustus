@@ -466,12 +466,12 @@ class WebhookManager:
         body = json.dumps({"event": event, "timestamp": _utcnow().isoformat(), "data": payload})
         headers = {
             "Content-Type": "application/json",
-            "X-Odysseus-Event": event,
+            "X-Faustus-Event": event,
             "User-Agent": "Faustus-Webhook/1.0",
         }
         if secret:
             sig = hmac.new(secret.encode(), body.encode(), hashlib.sha256).hexdigest()
-            headers["X-Odysseus-Signature"] = sig
+            headers["X-Faustus-Signature"] = sig
 
         db = SessionLocal()
         try:

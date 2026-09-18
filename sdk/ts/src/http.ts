@@ -20,7 +20,7 @@ import { str } from './util.js';
 export const CLIENT_API_VERSION = '2.0';
 export const CLIENT_VERSION_HEADER = 'X-Faustus-Client-Version';
 export const API_VERSION_HEADER = 'X-Faustus-Api-Version';
-export const RUN_ID_HEADER = 'X-Odysseus-Run-Id';
+export const RUN_ID_HEADER = 'X-Faustus-Run-Id';
 export const IDEMPOTENT_REPLAY_HEADER = 'X-Faustus-Idempotent-Replay';
 
 /** Combines any number of possibly-absent `AbortSignal`s into one that

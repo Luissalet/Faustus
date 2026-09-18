@@ -313,7 +313,7 @@ export const PERSONAS: { value: string; label: string }[] = [
   { value: 'razor', label: 'Razor' },
   { value: 'nietzsche', label: 'Nietzsche' },
   { value: 'spark', label: 'Spark' },
-  { value: 'odysseus', label: 'Faustus' },
+  { value: 'faustus', label: 'Faustus' },
 ];
 
 export interface Preset {

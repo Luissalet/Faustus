@@ -116,7 +116,7 @@ Approval replay injects the sealed first tool result before the resumed model ro
 
 ## Internal Loopback
 
-`do_app_api()` is implemented in `src.tools.system` and re-exported by `src.tool_implementations`. It owns generic app API loopback, OpenAPI discovery, method/path blocklists, and fixed local target behavior. `_internal_headers()` adds the process-secret internal-tool token and optional `X-Odysseus-Owner`; `core.middleware.require_admin()` and auth middleware own the corresponding bypass and owner-stamping rules. Route-specific owner handling must still be audited.
+`do_app_api()` is implemented in `src.tools.system` and re-exported by `src.tool_implementations`. It owns generic app API loopback, OpenAPI discovery, method/path blocklists, and fixed local target behavior. `_internal_headers()` adds the process-secret internal-tool token and optional `X-Faustus-Owner`; `core.middleware.require_admin()` and auth middleware own the corresponding bypass and owner-stamping rules. Route-specific owner handling must still be audited.
 
 ## MCP
 
@@ -140,13 +140,13 @@ When an email reader is active, browser chat passes active email metadata and th
   vectors cached in `DATA_DIR/tool_index_cache.json` (keyed by model + text)
   so a restart re-embeds only changed descriptions. Chroma lanes are still
   used when reachable. The index is pre-built at startup by default
-  (`ODYSSEUS_TOOL_INDEX_WARMUP=0` disables it); `get_tool_index()` never
+  (`FAUSTUS_TOOL_INDEX_WARMUP=0` disables it); `get_tool_index()` never
   blocks on a build in flight and caches an "unavailable" answer with backoff.
 - ToolIndex can still degrade to keyword selection when no embedder exists
   at all (fastembed missing) or a vector retrieval times out.
 - Agent mode can degrade from native function schemas to prompted fenced-block parsing based on provider/tool-support heuristics. Local Ollama `/v1` and native `/api` endpoints default to text tools unless the endpoint explicitly advertises `supports_tools`; `gpt-oss` remains text-tool by default unless the endpoint opts in.
 - MCP startup failure is non-critical; route/status surfaces expose per-server errors.
-- `ODYSSEUS_DISABLE_MCP`, missing `mcp`, uncached browser MCP packages, and per-server disabled tools can remove tools without blocking the app.
+- `FAUSTUS_DISABLE_MCP`, missing `mcp`, uncached browser MCP packages, and per-server disabled tools can remove tools without blocking the app.
 - Global `builtin_browser` disable behavior may not currently match qualified `mcp__builtin_browser__*` tool names.
 
 ## Current Gaps

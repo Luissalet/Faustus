@@ -1,6 +1,6 @@
 """`app_api` must not reach /api/workspace.
 
-The `app_api` tool loops back over HTTP with `X-Odysseus-Internal-Token`, which
+The `app_api` tool loops back over HTTP with `X-Faustus-Internal-Token`, which
 skips BOTH the auth layer and the per-tool approval gate the user sees before a
 write_file or a bash. /api/workspace is the browser UI's file-mutation surface
 (revert, checkpoint restore/reset, commit, AGENTS.md, open_editor, reveal), and

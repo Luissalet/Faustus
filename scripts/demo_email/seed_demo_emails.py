@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Seed a throwaway, local-only mailbox with fake demo emails.
 
-This populates the `demo@odysseus.local` Dovecot account (which has NO mbsync
+This populates the `demo@faustus.local` Dovecot account (which has NO mbsync
 channel, so nothing here ever touches a real server) with a curated, obviously
 fake but realistic set of messages — varied senders, read/unread/flagged mix, a
 reply thread, an attachment, a newsletter, a calendar invite, an urgent one, and
@@ -33,12 +33,12 @@ import os
 
 HOST = os.getenv("DEMO_IMAP_HOST", "localhost")
 PORT = int(os.getenv("DEMO_IMAP_PORT", "31143"))
-USER = os.getenv("DEMO_IMAP_USER", "demo@odysseus.local")
+USER = os.getenv("DEMO_IMAP_USER", "demo@faustus.local")
 PASSWORD = os.getenv("DEMO_IMAP_PASSWORD", "demodemo")
 
 # Marker header on every message we create — lets a human (or a future cleanup)
 # tell demo mail apart at a glance.
-MARKER = ("X-Odysseus-Demo", "1")
+MARKER = ("X-Faustus-Demo", "1")
 
 DEMO_OWNER_ADDR = USER  # the demo "you"
 
@@ -46,7 +46,7 @@ DEMO_OWNER_ADDR = USER  # the demo "you"
 # pre-seed a matching cached AI reply (keyed by Message-ID) in the app's email
 # cache DB — the read path attaches it as cached_ai_reply. This makes the
 # "my agent already looked it up and drafted the answer" beat reliable on stage.
-LOOKUP_MSGID = "<demo-lookup-deepseek@odysseus.local>"
+LOOKUP_MSGID = "<demo-lookup-deepseek@faustus.local>"
 # The app's email cache lives at <repo>/data/scheduled_emails.db (email_summaries,
 # email_ai_replies, ... keyed by Message-ID).
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -115,7 +115,7 @@ def _msg(*, frm, to=None, subject, text, html=None, days_ago=0, hours_ago=0,
     m["Subject"] = subject
     when = datetime.now(timezone.utc) - timedelta(days=days_ago, hours=hours_ago)
     m["Date"] = formatdate(when.timestamp(), localtime=False)
-    m["Message-ID"] = msg_id or make_msgid(domain="odysseus.local")
+    m["Message-ID"] = msg_id or make_msgid(domain="faustus.local")
     if in_reply_to:
         m["In-Reply-To"] = in_reply_to
         m["References"] = references or in_reply_to
@@ -157,7 +157,7 @@ def build_dataset() -> list[dict]:
     # 1b. The "could've just been a search" email — unread, newest (top of inbox).
     #     Fixed Message-ID so we can pre-seed the agent's researched reply.
     add("INBOX", "", _msg(
-        frm="Greg <greg@odysseus-demo.example>",
+        frm="Greg <greg@faustus-demo.example>",
         subject="quick q for the slide — DeepSeek-V3 param count?",
         msg_id=LOOKUP_MSGID, days_ago=0, hours_ago=0,
         text=("hey! sorry to bug you — in a meeting and someone asked and i'm "
@@ -181,7 +181,7 @@ def build_dataset() -> list[dict]:
               "Unsubscribe any time.")))
 
     # 3. Reply thread — original is in Sent, the reply lands unread in INBOX.
-    orig_id = make_msgid(domain="odysseus.local")
+    orig_id = make_msgid(domain="faustus.local")
     add("Sent", "(\\Seen)", _msg(
         frm=f"You <{DEMO_OWNER_ADDR}>",
         to="Alex <alex@creator.example>",
@@ -223,10 +223,10 @@ def build_dataset() -> list[dict]:
 
     # 6. Urgent — flagged + unread.
     add("INBOX", "(\\Flagged)", _msg(
-        frm="Ops Bot <ops@odysseus-demo.example>",
-        subject="[URGENT] prod is on fire 🔥 — odysseus-ui 502s",
+        frm="Ops Bot <ops@faustus-demo.example>",
+        subject="[URGENT] prod is on fire 🔥 — faustus-ui 502s",
         days_ago=0, hours_ago=1,
-        text=("PAGE: odysseus-ui is returning 502s on the /api/chat endpoint.\n"
+        text=("PAGE: faustus-ui is returning 502s on the /api/chat endpoint.\n"
               "Error rate 38% over the last 5 min. Last deploy was 12 min ago.\n\n"
               "Need eyes ASAP. Reply here or join the incident call.")))
 
@@ -287,7 +287,7 @@ def _seed_cache() -> None:
             "(message_id, uid, folder, subject, sender, summary, model_used, created_at) "
             "VALUES (?,?,?,?,?,?,?,?)",
             (LOOKUP_MSGID, "", "INBOX", "quick q for the slide — DeepSeek-V3 param count?",
-             "greg@odysseus-demo.example", summary, "demo", now))
+             "greg@faustus-demo.example", summary, "demo", now))
         con.commit()
         print("  pre-seeded cached AI reply + summary for the lookup email.")
     finally:
@@ -326,7 +326,7 @@ def _wipe(conn: imaplib.IMAP4) -> int:
     account — otherwise a misconfigured DEMO_IMAP_USER/HOST could irreversibly
     wipe a real mailbox. Override only with DEMO_ALLOW_WIPE=1 (you must mean it).
     """
-    safe_target = USER.endswith("@odysseus.local") or HOST in ("localhost", "127.0.0.1", "::1")
+    safe_target = USER.endswith("@faustus.local") or HOST in ("localhost", "127.0.0.1", "::1")
     if not safe_target and os.getenv("DEMO_ALLOW_WIPE") != "1":
         raise SystemExit(
             f"refusing to wipe non-demo target {USER}@{HOST}:{PORT} — "

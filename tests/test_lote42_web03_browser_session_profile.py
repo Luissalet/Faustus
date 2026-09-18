@@ -52,7 +52,7 @@ def _load_builtin_mcp(monkeypatch):
 def test_without_owner_and_task_the_shared_profile_is_used(monkeypatch):
     """No capability lost (rule 3): a caller that never asks for a session
     keeps landing on the single global profile, unchanged."""
-    monkeypatch.setenv("ODYSSEUS_BROWSER_EXECUTABLE", "/usr/bin/chromium")
+    monkeypatch.setenv("FAUSTUS_BROWSER_EXECUTABLE", "/usr/bin/chromium")
     builtin_mcp = _load_builtin_mcp(monkeypatch)
 
     args = builtin_mcp._browser_mcp_args(["-y", "@playwright/mcp@latest"], settings={})
@@ -63,7 +63,7 @@ def test_without_owner_and_task_the_shared_profile_is_used(monkeypatch):
 
 
 def test_owner_and_task_use_the_session_profile_not_the_shared_one(monkeypatch):
-    monkeypatch.setenv("ODYSSEUS_BROWSER_EXECUTABLE", "/usr/bin/chromium")
+    monkeypatch.setenv("FAUSTUS_BROWSER_EXECUTABLE", "/usr/bin/chromium")
     builtin_mcp = _load_builtin_mcp(monkeypatch)
 
     args = builtin_mcp._browser_mcp_args(
@@ -77,7 +77,7 @@ def test_owner_and_task_use_the_session_profile_not_the_shared_one(monkeypatch):
 
 
 def test_session_profile_is_isolated_per_owner_and_task(monkeypatch):
-    monkeypatch.setenv("ODYSSEUS_BROWSER_EXECUTABLE", "/usr/bin/chromium")
+    monkeypatch.setenv("FAUSTUS_BROWSER_EXECUTABLE", "/usr/bin/chromium")
     builtin_mcp = _load_builtin_mcp(monkeypatch)
 
     args_a = builtin_mcp._browser_mcp_args(
@@ -95,8 +95,8 @@ def test_isolated_profile_setting_still_wins_over_a_session(monkeypatch):
     """`browser_profile: isolated` means "no persisted profile at all" --
     that must still hold even when owner_id/task_id are passed; WEB-03 asks
     for isolation, not for overriding an explicit no-profile choice."""
-    monkeypatch.setenv("ODYSSEUS_BROWSER_EXECUTABLE", "/usr/bin/chromium")
-    monkeypatch.delenv("ODYSSEUS_BROWSER_ISOLATED", raising=False)
+    monkeypatch.setenv("FAUSTUS_BROWSER_EXECUTABLE", "/usr/bin/chromium")
+    monkeypatch.delenv("FAUSTUS_BROWSER_ISOLATED", raising=False)
     builtin_mcp = _load_builtin_mcp(monkeypatch)
 
     args = builtin_mcp._browser_mcp_args(
@@ -110,7 +110,7 @@ def test_isolated_profile_setting_still_wins_over_a_session(monkeypatch):
 
 
 def test_npx_server_launch_threads_owner_and_task_through(monkeypatch):
-    monkeypatch.setenv("ODYSSEUS_BROWSER_EXECUTABLE", "/usr/bin/chromium")
+    monkeypatch.setenv("FAUSTUS_BROWSER_EXECUTABLE", "/usr/bin/chromium")
     builtin_mcp = _load_builtin_mcp(monkeypatch)
 
     args, _env = builtin_mcp._npx_server_launch(
@@ -121,7 +121,7 @@ def test_npx_server_launch_threads_owner_and_task_through(monkeypatch):
 
 
 def test_close_browser_session_for_task_delegates_to_browser_sessions(monkeypatch):
-    monkeypatch.setenv("ODYSSEUS_BROWSER_EXECUTABLE", "/usr/bin/chromium")
+    monkeypatch.setenv("FAUSTUS_BROWSER_EXECUTABLE", "/usr/bin/chromium")
     builtin_mcp = _load_builtin_mcp(monkeypatch)
 
     assert builtin_mcp.close_browser_session_for_task("alice", "task-1") is False  # nothing open yet

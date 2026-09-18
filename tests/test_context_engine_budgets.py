@@ -207,7 +207,7 @@ def test_an_unmapped_model_gets_the_conservative_lane_and_says_so():
 
 
 def test_a_broken_tokenizer_map_does_not_take_the_turn_down(monkeypatch):
-    monkeypatch.setenv("ODYSSEUS_TOKENIZER_MAP", "{not json at all")
+    monkeypatch.setenv("FAUSTUS_TOKENIZER_MAP", "{not json at all")
     budgets.reset_estimator_cache()
     assert budgets.estimator_for("anything").name == "heuristic"
     budgets.reset_estimator_cache()

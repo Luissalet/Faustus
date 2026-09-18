@@ -38,7 +38,7 @@ forma parte del árbol de Faustus). Documentos citados en esta carpeta:
   `CONTRATO_PARIDAD_1.md`.
 - El baseline general de capacidades (`01_FAUSTUS_BASELINE.md` del paquete)
   fue auditado contra un checkout distinto (commit `98b9f17...`, ruta
-  `D:/LocalAI/odysseus`); sus citas de fichero:línea se han vuelto a
+  `D:/LocalAI/faustus`); sus citas de fichero:línea se han vuelto a
   comprobar de forma puntual contra este árbol antes de reutilizarlas en
   `MATRIZ_PARIDAD.md` — donde no se pudieron recomprobar todas, la fila lo
   dice explícitamente en vez de heredar una cita sin verificar.

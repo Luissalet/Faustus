@@ -4,7 +4,7 @@ from tests.helpers.db_stubs import make_core_db_stub
 
 def test_mask_token_handles_short_values(monkeypatch):
     make_core_db_stub(monkeypatch, models=["ScheduledTask"])
-    cli = load_script("odysseus-webhook")
+    cli = load_script("faustus-webhook")
 
     assert cli._mask_token("") == ""
     assert cli._mask_token("short") == "***"
@@ -14,7 +14,7 @@ def test_mask_token_handles_short_values(monkeypatch):
 
 def test_task_webhook_url_matches_live_route_and_escapes_path_parts(monkeypatch):
     make_core_db_stub(monkeypatch, models=["ScheduledTask"])
-    cli = load_script("odysseus-webhook")
+    cli = load_script("faustus-webhook")
 
     url = cli._task_webhook_url(
         "https://ody.example/",
@@ -30,7 +30,7 @@ def test_task_webhook_url_matches_live_route_and_escapes_path_parts(monkeypatch)
 
 def test_default_task_webhook_url_uses_current_task_prefix(monkeypatch):
     make_core_db_stub(monkeypatch, models=["ScheduledTask"])
-    cli = load_script("odysseus-webhook")
+    cli = load_script("faustus-webhook")
 
     assert cli._task_webhook_url(None, "task-1", "secret") == (
         "http://localhost:7000/api/tasks/task-1/webhook/secret"

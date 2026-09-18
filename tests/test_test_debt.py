@@ -1,7 +1,7 @@
 """src/test_debt.py — H5, persistent debt journal for tests exempted as
 pre-existing/exempt across turns.
 
-Uses a real filesystem (tmp_path, via ODYSSEUS_DATA_DIR / src.constants
+Uses a real filesystem (tmp_path, via FAUSTUS_DATA_DIR / src.constants
 monkeypatch) — the module reads/writes DATA_DIR/test_debt/<hash>.json for
 real, no fakes."""
 from __future__ import annotations

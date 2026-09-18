@@ -27,7 +27,7 @@ GIB = 2**30
 
 @pytest.fixture
 def staging(tmp_path, monkeypatch):
-    directory = tmp_path / "odysseus-tmux"
+    directory = tmp_path / "faustus-tmux"
     monkeypatch.setattr(cookbook_routes, "TMUX_LOG_DIR", directory)
     monkeypatch.setattr(cookbook_routes, "_staging_dirs_restricted", set(), raising=False)
     return directory

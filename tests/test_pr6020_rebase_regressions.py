@@ -87,7 +87,7 @@ def _run_probe(messages, *, relevant_tools, **kwargs):
     )
 
 
-def test_odysseus_notes_mode_clamps_and_reenables_all_personal_managers(monkeypatch):
+def test_faustus_notes_mode_clamps_and_reenables_all_personal_managers(monkeypatch):
     prompt_calls, _ = _install_route_probe(monkeypatch)
 
     _run_probe(
@@ -103,7 +103,7 @@ def test_odysseus_notes_mode_clamps_and_reenables_all_personal_managers(monkeypa
     )
 
 
-def test_odysseus_general_mode_disables_every_tool(monkeypatch):
+def test_faustus_general_mode_disables_every_tool(monkeypatch):
     from src.tool_policy import known_tool_names
 
     prompt_calls, _ = _install_route_probe(monkeypatch)
@@ -118,7 +118,7 @@ def test_odysseus_general_mode_disables_every_tool(monkeypatch):
     assert known_tool_names() <= route["disabled_tools"]
 
 
-def test_odysseus_calendar_intent_uses_notes_mode(monkeypatch):
+def test_faustus_calendar_intent_uses_notes_mode(monkeypatch):
     prompt_calls, _ = _install_route_probe(monkeypatch)
 
     _run_probe(
@@ -129,7 +129,7 @@ def test_odysseus_calendar_intent_uses_notes_mode(monkeypatch):
     assert prompt_calls[0]["relevant_tools"] == NOTES_TOOLS
 
 
-def test_odysseus_calendar_followup_keeps_notes_mode(monkeypatch):
+def test_faustus_calendar_followup_keeps_notes_mode(monkeypatch):
     prompt_calls, _ = _install_route_probe(monkeypatch)
     messages = [
         {"role": "user", "content": "Add lunch tomorrow to my calendar."},
@@ -170,7 +170,7 @@ def test_agent_route_passes_workspace_to_system_prompt(monkeypatch):
     assert prompt_calls[0]["workspace"] == "/tmp/example-repo"
 
 
-def test_odysseus_qwen_temperature_is_capped_for_agent_requests(monkeypatch):
+def test_faustus_qwen_temperature_is_capped_for_agent_requests(monkeypatch):
     _, stream_calls = _install_route_probe(monkeypatch)
 
     _run_probe(

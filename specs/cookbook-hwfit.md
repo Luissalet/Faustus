@@ -15,7 +15,7 @@ This spec covers model setup/serving and hardware fit in:
 - `routes/hwfit_routes.py`;
 - `services/hwfit/*` and `services/hwfit/data/hf_models.json`;
 - durable Cookbook state through `routes.cookbook_helpers.COOKBOOK_STATE_FILE`;
-- helper/CLI scripts `scripts/odysseus-cookbook`, `scripts/add_hwfit_models.py`, `scripts/hf_download.py`, and `scripts/diffusion_server.py`;
+- helper/CLI scripts `scripts/faustus-cookbook`, `scripts/add_hwfit_models.py`, `scripts/hf_download.py`, and `scripts/diffusion_server.py`;
 - Docker overlays `docker-compose.gpu-*.yml`, `docker/gpu.*.yml`, `docker/host-docker.yml`, `scripts/check-docker-gpu.sh`, and `scripts/check-docker-amd-gpu.sh`;
 - frontend modules `static/js/cookbook*.js`, including Cookbook running, serve, download, diagnosis, progress, and HW Fit modules;
 - tests covering Cookbook helpers, routes, CLI state, package detection, frontend progress, HW Fit services, serve profiles, Docker GPU overlays, and GPU diagnostic scripts.
@@ -30,7 +30,7 @@ This spec covers model setup/serving and hardware fit in:
 - image-model recommendations for diffusion serving;
 - APFEL/local platform dependency paths where supported;
 - Docker GPU helper scripts and compose overlays;
-- the `odysseus-cookbook` CLI using the same Cookbook state file.
+- the `faustus-cookbook` CLI using the same Cookbook state file.
 
 ## Cookbook Runtime
 
@@ -46,10 +46,10 @@ Access policy is split by surface:
 Runtime behavior:
 
 - POSIX and most remote flows run detached through tmux;
-- local Windows uses detached process/log/pid behavior under `%TEMP%\\odysseus-tmux`; Python first publishes a valid Win32 fallback PID, then Git Bash may replace it with `/proc/$$/winpid` after a ready-file handoff, so PowerShell `Stop-Tree` can terminate the actual serving shell and children instead of receiving an MSYS PID. Frontend PowerShell venv activation is quoted safely and the local Git Bash runner converts a valid `Scripts\\Activate.ps1` prefix into `source <git-bash-path>/Scripts/activate` so the selected environment actually supplies the serve binary;
+- local Windows uses detached process/log/pid behavior under `%TEMP%\\faustus-tmux`; Python first publishes a valid Win32 fallback PID, then Git Bash may replace it with `/proc/$$/winpid` after a ready-file handoff, so PowerShell `Stop-Tree` can terminate the actual serving shell and children instead of receiving an MSYS PID. Frontend PowerShell venv activation is quoted safely and the local Git Bash runner converts a valid `Scripts\\Activate.ps1` prefix into `source <git-bash-path>/Scripts/activate` so the selected environment actually supplies the serve binary;
 - remote Windows uses PowerShell runner scripts;
 - missing `tmux`, `docker`, or serve-engine binaries return shaped errors where possible;
-- local Docker inside the Odysseus container is available only when the Docker CLI exists, `ODYSSEUS_ENABLE_HOST_DOCKER=true`, and `/var/run/docker.sock` is actually mounted as a socket; otherwise Cookbook should show the host-Docker access hint and prefer remote SSH Docker workflows;
+- local Docker inside the Faustus container is available only when the Docker CLI exists, `FAUSTUS_ENABLE_HOST_DOCKER=true`, and `/var/run/docker.sock` is actually mounted as a socket; otherwise Cookbook should show the host-Docker access hint and prefer remote SSH Docker workflows;
 - model serve auto-registers LLM or image `ModelEndpoint` rows immediately, then frontend readiness probing can repair/create fallback endpoints;
 - diffusion-server serves are registered as image endpoints;
 - MLX image serves use `scripts/mlx_image_server.py`, which pins generation/edit dispatch to the model chosen at process start and ignores OpenAI-compatible per-request model selectors;
@@ -79,7 +79,7 @@ These are admin-only code-execution surfaces and should be reviewed with Cookboo
 
 ## State, Secrets, And Provenance
 
-Cookbook state lives under the shared data dir through the `COOKBOOK_STATE_FILE` constant, normally `data/cookbook_state.json`. Routes and the `odysseus-cookbook` CLI use the same state path.
+Cookbook state lives under the shared data dir through the `COOKBOOK_STATE_FILE` constant, normally `data/cookbook_state.json`. Routes and the `faustus-cookbook` CLI use the same state path.
 
 State behavior:
 

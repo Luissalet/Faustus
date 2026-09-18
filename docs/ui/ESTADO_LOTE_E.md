@@ -98,5 +98,5 @@ en el árbol: las guardas siguen en verde (18/18).
 
 `docs/ui/after/` (oscuro) y `docs/ui/after-light/` (claro), tres viewports,
 nueve pantallas: se añaden `08_studio_empty` y `09_studio_session`.
-`scripts/shot_studio.py` acepta `ODYSSEUS_STUDIO_SESSION` y
-`ODYSSEUS_STUDIO_OUT`.
+`scripts/shot_studio.py` acepta `FAUSTUS_STUDIO_SESSION` y
+`FAUSTUS_STUDIO_OUT`.

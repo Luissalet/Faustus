@@ -43,8 +43,8 @@ const deepEqual = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 function repo(over) {
   return {
     id: 'r1',
-    path: 'D:/LocalAI/odysseus',
-    name: 'odysseus',
+    path: 'D:/LocalAI/faustus',
+    name: 'faustus',
     project_id: 'p1',
     project_name: 'LocalAI',
     root_folder: 'D:/LocalAI',
@@ -64,8 +64,8 @@ function repo(over) {
 
 // ── dedupeRepos: same path -> one row, projects folded, first repo wins ──
 {
-  const a = repo({ id: 'a', path: 'D:/LocalAI/odysseus', project_id: 'p1', project_name: 'LocalAI' });
-  const b = repo({ id: 'b', path: 'D:/LocalAI/odysseus', project_id: 'p2', project_name: "Writer's Hoard" });
+  const a = repo({ id: 'a', path: 'D:/LocalAI/faustus', project_id: 'p1', project_name: 'LocalAI' });
+  const b = repo({ id: 'b', path: 'D:/LocalAI/faustus', project_id: 'p2', project_name: "Writer's Hoard" });
   const out = g.dedupeRepos([a, b]);
   assert(out.length === 1, `two entries at the same path collapse to one — got ${out.length}`);
   assert(out[0].id === 'a', 'the first-seen repo stays the base (id/project_id/project_name compatibility)');

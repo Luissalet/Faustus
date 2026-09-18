@@ -30,7 +30,7 @@ const { sendTurn, pendingOutboxFor, clearOutboxFor } = await import(pathToFileUR
 // pending outbox entry: the server saw it, so there is nothing left to retry.
 {
   store.clear();
-  globalThis.fetch = async () => new Response('data: [DONE]\n\n', { headers: { 'X-Odysseus-Run-Id': 'run-1' } });
+  globalThis.fetch = async () => new Response('data: [DONE]\n\n', { headers: { 'X-Faustus-Run-Id': 'run-1' } });
   for await (const _event of sendTurn({ sessionId: 's1', message: 'hello', mode: 'chat' })) {
     // drain
   }

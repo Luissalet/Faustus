@@ -156,7 +156,7 @@ _register(
         "list_email_accounts",
         "list_emails",
         # project_objectives' writes are typed deltas to the project's own
-        # .odysseus/objectives.jsonl (validated by a deterministic compiler,
+        # .faustus/objectives.jsonl (validated by a deterministic compiler,
         # never free-form file content), so it is classed with the project
         # readers rather than the workspace writers — a turn-end status
         # update must not trip the file-write approval gate.
@@ -166,7 +166,7 @@ _register(
         # workspace — same reasoning as project_objectives above.
         "memory_rules",
         # expert_review reads the user's own text and the expert's local
-        # corpus, and its only write is the project's own .odysseus/
+        # corpus, and its only write is the project's own .faustus/
         # story_bible.json through a validated ADD/EDIT/KILL compiler — never
         # free-form file content. Same class as project_objectives above.
         # The result is EXTERNAL_UNTRUSTED because it carries corpus excerpts

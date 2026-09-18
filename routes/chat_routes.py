@@ -2538,7 +2538,7 @@ def setup_chat_routes(
                 _replay_run_id = agent_runs.get_run_id(session) or _existing_outbox.get("run_id") or ""
                 _replay_headers = {"X-Faustus-Idempotent-Replay": "1"}
                 if _replay_run_id:
-                    _replay_headers["X-Odysseus-Run-Id"] = _replay_run_id
+                    _replay_headers["X-Faustus-Run-Id"] = _replay_run_id
                 return StreamingResponse(
                     _idempotent_replay_stream(
                         session, owner=owner, client_message_id=client_message_id,
@@ -4261,7 +4261,7 @@ def setup_chat_routes(
             agent_runs.subscribe(session, _detached_run),
             media_type="text/event-stream",
             headers={
-                "X-Odysseus-Run-Id": _detached_run.run_id,
+                "X-Faustus-Run-Id": _detached_run.run_id,
                 api_version.API_VERSION_HEADER: api_version.API_VERSION,
             },
         )
@@ -4286,7 +4286,7 @@ def setup_chat_routes(
             agent_runs.subscribe(session_id, _active_run, from_sequence=cursor),
             media_type="text/event-stream",
             headers={
-                "X-Odysseus-Run-Id": _active_run.run_id,
+                "X-Faustus-Run-Id": _active_run.run_id,
                 api_version.API_VERSION_HEADER: api_version.API_VERSION,
             },
         )
@@ -4312,7 +4312,7 @@ def setup_chat_routes(
     @router.post("/api/chat/stop/{session_id}")
     async def chat_stop(request: Request, session_id: str) -> Dict[str, Any]:
         _verify_session_owner(request, session_id)
-        _expected_run_id = request.headers.get("X-Odysseus-Run-Id")
+        _expected_run_id = request.headers.get("X-Faustus-Run-Id")
         try:
             _stop_body = await request.json()
         except Exception:
@@ -4599,7 +4599,7 @@ def setup_chat_routes(
     @router.post("/api/chat/pause/{session_id}")
     async def chat_pause(request: Request, session_id: str) -> Dict[str, Any]:
         _verify_session_owner(request, session_id)
-        _expected_run_id = request.headers.get("X-Odysseus-Run-Id")
+        _expected_run_id = request.headers.get("X-Faustus-Run-Id")
         paused = agent_runs.request_pause(session_id, _expected_run_id)
         return {"paused": paused}
 
@@ -4631,7 +4631,7 @@ def setup_chat_routes(
             str(_steer_body.get("mode") or "steer").strip().lower()
             if isinstance(_steer_body, dict) else "steer"
         )
-        _expected_run_id = request.headers.get("X-Odysseus-Run-Id")
+        _expected_run_id = request.headers.get("X-Faustus-Run-Id")
         if _mode == "queue":
             ok = agent_runs.queue_send_after(session_id, _text[:4000],
                                               expected_run_id=_expected_run_id)

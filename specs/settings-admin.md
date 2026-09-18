@@ -12,7 +12,7 @@ This spec covers settings and admin surfaces in:
 - `src/settings.py` and `src/settings_scrub.py`;
 - `routes/prefs_routes.py`;
 - `src/preset_manager.py` and `routes/preset_routes.py`;
-- `routes/backup_routes.py` and `scripts/odysseus-backup`;
+- `routes/backup_routes.py` and `scripts/faustus-backup`;
 - `routes/diagnostics_routes.py`;
 - canonical `routes/admin_wipe/admin_wipe_routes.py`, `routes/cleanup/cleanup_routes.py`, and `routes/vault/vault_routes.py` plus their top-level compatibility shims;
 - `src/cleanup_service.py` and vault-related tool implementations;
@@ -21,7 +21,7 @@ This spec covers settings and admin surfaces in:
 - `src/agent_tools/admin_tools.py`, `src/tool_implementations.py`, `src/tool_execution.py`, `src/tool_schemas.py`, and `src/tool_index.py` for `manage_settings`;
 - `src/agent_loop.py` for stale agent prompt references to settings APIs;
 - frontend modules `static/js/appConfig.js`, `static/js/settings.js`, `static/js/settings/{registry,navigation,lifecycle,search,dom,sidebar}.js`, `static/js/admin.js`, `static/js/presets.js`, `static/js/theme.js`, and `static/js/storage.js`;
-- CLI helpers `scripts/odysseus-preset` and `scripts/odysseus-theme`.
+- CLI helpers `scripts/faustus-preset` and `scripts/faustus-theme`.
 
 Generic API integrations are cross-referenced in `integrations.md`. Model endpoint CRUD and endpoint cleanup are covered in `llm-models.md`. Email/contact/calendar legacy setting fallbacks stay with their domain specs.
 
@@ -93,7 +93,7 @@ Runtime behavior:
 - frontend activation combines persisted `custom.enabled` with local selected-preset UI state;
 - presets, user templates, and group presets are currently shared stores, not owner-scoped stores.
 
-`scripts/odysseus-preset` is a local CLI for preset store maintenance and backup of `presets.json`.
+`scripts/faustus-preset` is a local CLI for preset store maintenance and backup of `presets.json`.
 
 ## Tools Settings
 
@@ -118,7 +118,7 @@ HTTP export is secret-bearing because it includes raw settings. Treat exported f
 
 HTTP import is best-effort and section-based. It rejects invalid top-level JSON, ignores unrecognized or wrongly typed sections, merges recognized sections, and may partially write earlier sections before a later failure. Memory dedup is scoped to the importing user; imported memories/skills without owners are stamped to the caller, while explicit owner fields are preserved. Skill import writes through the disk-backed `SkillsManager.add_skill()` API, not the removed JSON-era `save()` shape.
 
-`scripts/odysseus-backup` is a separate local `data/` snapshot/restore tool, with some large/runtime subtrees behind flags. It uses SQLite backup where applicable, rejects archives written inside `data/`, validates restore members, refuses links/special files, and skips entries that disappear or become unstatable while a backup directory listing is assembled.
+`scripts/faustus-backup` is a separate local `data/` snapshot/restore tool, with some large/runtime subtrees behind flags. It uses SQLite backup where applicable, rejects archives written inside `data/`, validates restore members, refuses links/special files, and skips entries that disappear or become unstatable while a backup directory listing is assembled.
 
 ## Diagnostics, Cleanup, And Wipe
 

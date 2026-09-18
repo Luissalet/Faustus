@@ -353,7 +353,7 @@ export async function deleteEmail(uid: string, c: Ctx, permanent = false): Promi
 
 /** Removes the reminder mails Faustus sent itself (the "Reminders" filter). */
 export async function deleteReminderMails(accountId: string | null, permanent = false): Promise<number> {
-  const r = await ok(await fetch(`/api/email/odysseus/reminders${q({ account_id: accountId, permanent })}`, { method: 'DELETE', credentials: 'same-origin' }), 'email/reminders');
+  const r = await ok(await fetch(`/api/email/faustus/reminders${q({ account_id: accountId, permanent })}`, { method: 'DELETE', credentials: 'same-origin' }), 'email/reminders');
   const d = must((await r.json()) as { success?: boolean; error?: string; deleted?: number }, t('Could not delete the reminders.'));
   return Number(d.deleted ?? 0);
 }
@@ -519,12 +519,12 @@ export async function uploadAttachment(file: File): Promise<StagedAttachment> {
 
 /** A library document or a gallery image, staged by the server. */
 export async function attachFromLibrary(kind: 'document' | 'gallery', id: string): Promise<StagedAttachment> {
-  const d = must(await postJson<{ success?: boolean; error?: string; token?: string; filename?: string; size?: number }>('/api/email/compose-from-odysseus', { kind, id }, 'email/compose-from-odysseus'), t('Could not attach.'));
+  const d = must(await postJson<{ success?: boolean; error?: string; token?: string; filename?: string; size?: number }>('/api/email/compose-from-faustus', { kind, id }, 'email/compose-from-faustus'), t('Could not attach.'));
   return { token: d.token ?? '', filename: d.filename ?? '', size: d.size ?? 0 };
 }
 
 export async function attachManyAsZip(items: { kind: 'document' | 'gallery'; id: string }[]): Promise<StagedAttachment> {
-  const d = must(await postJson<{ success?: boolean; error?: string; token?: string; filename?: string; size?: number }>('/api/email/compose-from-odysseus-zip', { items }, 'email/compose-from-odysseus-zip'), t('Could not attach.'));
+  const d = must(await postJson<{ success?: boolean; error?: string; token?: string; filename?: string; size?: number }>('/api/email/compose-from-faustus-zip', { items }, 'email/compose-from-faustus-zip'), t('Could not attach.'));
   return { token: d.token ?? '', filename: d.filename ?? 'attachments.zip', size: d.size ?? 0 };
 }
 

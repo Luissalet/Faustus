@@ -412,10 +412,10 @@ def test_vllm_preflight_reports_cli_and_version():
     script = "\n".join(lines)
 
     assert 'export PATH="$HOME/.local/bin:$PATH"' in script
-    assert 'ODYSSEUS_VLLM_BIN="$(command -v vllm 2>/dev/null || true)"' in script
-    assert 'echo "[odysseus] vLLM CLI: $ODYSSEUS_VLLM_BIN"' in script
-    assert '"$ODYSSEUS_VLLM_BIN" --version' in script
-    assert 'ODYSSEUS_PREFLIGHT_EXIT=127' in script
+    assert 'FAUSTUS_VLLM_BIN="$(command -v vllm 2>/dev/null || true)"' in script
+    assert 'echo "[faustus] vLLM CLI: $FAUSTUS_VLLM_BIN"' in script
+    assert '"$FAUSTUS_VLLM_BIN" --version' in script
+    assert 'FAUSTUS_PREFLIGHT_EXIT=127' in script
 
 
 def test_venv_safe_local_pip_install_strips_user_flags_only_for_local_venv():
@@ -531,16 +531,16 @@ def test_serve_preflight_failure_keeps_tmux_pane_visible():
     capture the helpful error, leaving users with a blank "crashed" card.
     """
     runner_lines = [
-        'ODYSSEUS_PREFLIGHT_EXIT=""',
+        'FAUSTUS_PREFLIGHT_EXIT=""',
         'echo "ERROR: vLLM is not installed. Open Cookbook -> Dependencies and install vllm on this server, then launch again."',
-        'ODYSSEUS_PREFLIGHT_EXIT=127',
+        'FAUSTUS_PREFLIGHT_EXIT=127',
     ]
     _append_serve_preflight_exit_lines(runner_lines, keep_shell_open=True)
     script = "\n".join(runner_lines)
 
     assert "ERROR: vLLM is not installed" in script
-    assert 'ODYSSEUS_PREFLIGHT_EXIT=127' in script
-    assert 'echo "=== Process exited with code $ODYSSEUS_PREFLIGHT_EXIT ==="' in script
+    assert 'FAUSTUS_PREFLIGHT_EXIT=127' in script
+    assert 'echo "=== Process exited with code $FAUSTUS_PREFLIGHT_EXIT ==="' in script
     assert 'exec "${SHELL:-/bin/bash}"' in script
     assert "exit 127" not in script
 
@@ -551,8 +551,8 @@ def test_serve_runner_preserves_command_exit_code():
     _append_serve_exit_code_lines(runner_lines, keep_shell_open=True)
     script = "\n".join(runner_lines)
 
-    assert "ODYSSEUS_CMD_EXIT=$?" in script
-    assert 'echo "=== Process exited with code $ODYSSEUS_CMD_EXIT ==="' in script
+    assert "FAUSTUS_CMD_EXIT=$?" in script
+    assert 'echo "=== Process exited with code $FAUSTUS_CMD_EXIT ==="' in script
     assert 'echo "=== Process exited with code $? ==="' not in script
 
 
@@ -564,7 +564,7 @@ def test_pip_serve_runner_emits_download_ok_before_exit_marker():
 
     assert 'echo "DOWNLOAD_OK"' in script
     assert script.index('echo "DOWNLOAD_OK"') < script.index("=== Process exited with code")
-    assert 'exit "$ODYSSEUS_CMD_EXIT"' in script
+    assert 'exit "$FAUSTUS_CMD_EXIT"' in script
 
 
 def test_validate_serve_cmd_accepts_vllm_kv_cache_dtype():
@@ -699,7 +699,7 @@ def test_llama_cpp_linux_bootstrap_checks_cudart_before_cuda_build():
     _append_llama_cpp_linux_accel_build_lines(runner_lines)
     script = "\n".join(runner_lines)
 
-    assert '_odysseus_has_cudart' in script
+    assert '_faustus_has_cudart' in script
     assert "grep -q 'libcudart\\.so'" in script
     # lib64 and lib variants for CUDA_HOME and /usr/local/cuda
     assert '$_cuh/lib64/libcudart.so' in script
@@ -709,7 +709,7 @@ def test_llama_cpp_linux_bootstrap_checks_cudart_before_cuda_build():
     # pip-installed nvidia runtime wheel sibling path
     assert 'cuda_runtime/lib/libcudart.so' in script
     # entire helper definition precedes the CUDA cmake invocation
-    assert script.index('_odysseus_has_cudart') < script.index('DGGML_CUDA=ON')
+    assert script.index('_faustus_has_cudart') < script.index('DGGML_CUDA=ON')
 
 
 def test_llama_cpp_linux_bootstrap_cuda_cmake_present_when_cudart_found():
@@ -865,7 +865,7 @@ def test_cached_model_scan_uses_ollama_api_before_cli_and_windows_opt_in():
     assert "scan_ollama_api()\nscan_ollama()" in script
     assert "if any(m.get('is_ollama') for m in models): return" in script
     assert "os.name == 'nt'" in script
-    assert "ODYSSEUS_ALLOW_OLLAMA_CLI_SCAN" in script
+    assert "FAUSTUS_ALLOW_OLLAMA_CLI_SCAN" in script
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows Ollama CLI startup guard")
@@ -893,7 +893,7 @@ def test_cached_model_scan_does_not_launch_ollama_cli_on_windows(tmp_path):
     env["USERPROFILE"] = str(empty_home)
     env["LOCALAPPDATA"] = str(empty_home)
     env.pop("OLLAMA_MODELS", None)
-    env.pop("ODYSSEUS_ALLOW_OLLAMA_CLI_SCAN", None)
+    env.pop("FAUSTUS_ALLOW_OLLAMA_CLI_SCAN", None)
     proc = subprocess.run(
         [sys.executable, str(scan_py)],
         check=True,
@@ -1079,7 +1079,7 @@ def _inf01_admin_request() -> Request:
 def _inf01_serve_harness(monkeypatch, tmp_path):
     monkeypatch.setattr(cookbook_routes, "require_admin", lambda request: None)
     monkeypatch.setattr(cookbook_routes, "IS_WINDOWS", False)
-    monkeypatch.setattr(cookbook_routes, "TMUX_LOG_DIR", tmp_path / "odysseus-tmux")
+    monkeypatch.setattr(cookbook_routes, "TMUX_LOG_DIR", tmp_path / "faustus-tmux")
     monkeypatch.setattr(cookbook_routes, "_staging_dirs_restricted", set(), raising=False)
     # INF-02: model_serve files a launch receipt; keep it out of the real
     # DATA_DIR (27 stray receipts from earlier runs, and a receipt at

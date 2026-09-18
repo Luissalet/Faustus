@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Rama `master` en `D:\LocalAI\odysseus`. No tocar el `.git` de Silhouettes.
+- Rama `master` en `D:\LocalAI\faustus`. No tocar el `.git` de Silhouettes.
 - Windows-first: los tests de detached POSIX se parametrizan; no se asume Linux.
 - No autowitch de modelo. No convertir silenciosamente un Flask en `#!bg`.
 - Settings nuevos con default que cambia el comportamiento **solo** en los casos que hoy fallan (Windows+nohup, turnos UI, runs locales).

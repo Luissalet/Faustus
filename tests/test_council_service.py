@@ -148,7 +148,7 @@ def _svc(**kw) -> service_mod.CouncilService:
 
 def _room(svc, *, owner="alice", policy="chat", participants=None, **over):
     payload = {"owner": owner, "title": "Secret refactor", "policy": policy,
-               "workspace": "D:/LocalAI/odysseus",
+               "workspace": "D:/LocalAI/faustus",
                "participants": participants if participants is not None else [
                    {"display_name": "Claude", "model": "claude-x", "roles": ["critic"]}]}
     payload.update(over)

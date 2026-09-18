@@ -24,9 +24,9 @@ def _env_example():
     return ENV_EXAMPLE_PATH.read_text(encoding="utf-8")
 
 
-def _odysseus_environment(path):
+def _faustus_environment(path):
     compose = yaml.safe_load(path.read_text(encoding="utf-8"))
-    return set(compose["services"]["odysseus"]["environment"])
+    return set(compose["services"]["faustus"]["environment"])
 
 
 @pytest.mark.parametrize(
@@ -40,7 +40,7 @@ def _odysseus_environment(path):
 def test_google_oauth_setting_is_forwarded(key):
     expected = f"{key}=${{{key}:-}}"
     for path in COMPOSE_PATHS:
-        assert expected in _odysseus_environment(path), path.name
+        assert expected in _faustus_environment(path), path.name
 
 
 @pytest.mark.parametrize(

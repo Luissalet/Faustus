@@ -52,8 +52,8 @@ _OBJECTIVES = [
 def workspace(tmp_path):
     """A folder with an objectives file, the way a project's workspace has one."""
     ws = tmp_path / "covernet"
-    (ws / ".odysseus").mkdir(parents=True)
-    with open(ws / ".odysseus" / "objectives.jsonl", "w", encoding="utf-8") as fh:
+    (ws / ".faustus").mkdir(parents=True)
+    with open(ws / ".faustus" / "objectives.jsonl", "w", encoding="utf-8") as fh:
         for record in _OBJECTIVES:
             fh.write(json.dumps(record) + "\n")
     return str(ws)
@@ -132,8 +132,8 @@ def test_ordering_never_raises_into_a_job(tasks, ws):
 
 def test_a_corrupt_objectives_file_costs_the_ordering_not_the_job(tmp_path):
     ws = tmp_path / "broken"
-    (ws / ".odysseus").mkdir(parents=True)
-    with open(ws / ".odysseus" / "objectives.jsonl", "w", encoding="utf-8") as fh:
+    (ws / ".faustus").mkdir(parents=True)
+    with open(ws / ".faustus" / "objectives.jsonl", "w", encoding="utf-8") as fh:
         fh.write('{"t":"obj","id":"OBJ-1"\nNOT JSON AT ALL\n')
     tasks = _tasks("finish OBJ-2", "finish OBJ-1")
     assert dispatch.order_tasks_by_impact(tasks, str(ws)) == (tasks, None)

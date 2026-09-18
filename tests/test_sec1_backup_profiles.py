@@ -47,7 +47,6 @@ def install(tmp_path, monkeypatch):
     monkeypatch.setattr(backup_service, "data_dir", lambda: data)
     monkeypatch.setattr(backup_service, "backup_dir", lambda: backups)
     monkeypatch.delenv("FAUSTUS_BACKUP_PASSPHRASE", raising=False)
-    monkeypatch.delenv("ODYSSEUS_BACKUP_PASSPHRASE", raising=False)
     return {"data": data, "backups": backups}
 
 

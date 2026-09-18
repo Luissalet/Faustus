@@ -57,7 +57,7 @@ def _pil_image_to_b64(img, *, fmt: str = "PNG") -> str:
 
 
 def _load_sam_backend():
-    model_id = os.getenv("ODYSSEUS_SAM_MODEL", "facebook/sam-vit-base")
+    model_id = os.getenv("FAUSTUS_SAM_MODEL", "facebook/sam-vit-base")
     cached = _SAM_STATE.get(model_id)
     if cached:
         return cached
@@ -93,7 +93,7 @@ def _load_sam_backend():
 
 
 def _load_grounding_backend():
-    model_id = os.getenv("ODYSSEUS_GROUNDING_MODEL", "google/owlvit-base-patch32")
+    model_id = os.getenv("FAUSTUS_GROUNDING_MODEL", "google/owlvit-base-patch32")
     cached = _GROUNDING_STATE.get(model_id)
     if cached:
         return cached

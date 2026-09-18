@@ -3,7 +3,7 @@
 ## ADP-25 — manifest, hash and diff before a discovered skill runs
 
 `src.skills_runtime.discovery`/`.bridge` turn any `SKILL.md` found under a
-project workspace's `.odysseus/skills`, `.agents/skills` or `.claude/skills`
+project workspace's `.faustus/skills`, `.agents/skills` or `.claude/skills`
 folder into a `SkillManifest`. That is a **read** — listing and describing a
 skill costs nothing and grants nothing. What must not follow automatically
 is treating the skill as **runnable**: the masterplan's rule is that a

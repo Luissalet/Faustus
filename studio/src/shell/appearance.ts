@@ -7,14 +7,14 @@ import { reapplyThemeChoice } from './theme';
  *
  * A theme is `{ name, colors, font, density, textSize, frosted, bgPattern,
  * bgEffectColor, bgEffectIntensity, bgEffectSize }` stored under the same
- * localStorage key (`odysseus-theme`) and server pref (`theme`) the old
+ * localStorage key (`faustus-theme`) and server pref (`theme`) the old
  * editor used, so a theme picked there is the theme here and vice versa.
  * Colours land on <html> as `--bg --fg --panel --border --red`, exactly as
  * before, and Studio reads them through `user-theme.css` when the root
  * carries `data-theme-source="faustus"`. `name: 'studio'` (the default)
  * means Studio's own palette: no variables, no attribute.
  *
- * Custom themes: `odysseus-custom-themes` + `/api/prefs/custom-themes`, up
+ * Custom themes: `faustus-custom-themes` + `/api/prefs/custom-themes`, up
  * to eight, as before.
  */
 
@@ -114,8 +114,8 @@ export async function loadCustomFonts(): Promise<Record<string, FontVariant[]>> 
   return customFonts;
 }
 
-const KEY = 'odysseus-theme';
-const CUSTOM_KEY = 'odysseus-custom-themes';
+const KEY = 'faustus-theme';
+const CUSTOM_KEY = 'faustus-custom-themes';
 export const MAX_CUSTOM = 8;
 
 function readJson<T>(key: string, fallback: T): T {

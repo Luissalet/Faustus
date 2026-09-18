@@ -24,7 +24,7 @@ from starlette.testclient import TestClient
 
 from src import model_calibration as mcal
 from src import model_identity as mi
-from src import settings as odysseus_settings
+from src import settings as faustus_settings
 import routes.model_identity_routes as mir
 
 
@@ -219,7 +219,7 @@ def test_save_tested_legacy_key_still_reads_back_unchanged(tmp_path):
 
 
 def test_save_tested_records_deployment_evidence_when_creator_enabled_and_deployment_id_given(tmp_path, monkeypatch):
-    monkeypatch.setattr(odysseus_settings, "get_setting", lambda k, default=None: True if k == "creator_enabled" else default)
+    monkeypatch.setattr(faustus_settings, "get_setting", lambda k, default=None: True if k == "creator_enabled" else default)
     db_path = tmp_path / "model_identity.db"
     test_store = mi.ModelIdentityStore(db_path=str(db_path))
     monkeypatch.setattr(mi, "default_store", lambda: test_store)
@@ -242,7 +242,7 @@ def test_save_tested_records_deployment_evidence_when_creator_enabled_and_deploy
 
 
 def test_save_tested_falls_back_to_legacy_unknown_scope_without_a_deployment_id(tmp_path, monkeypatch):
-    monkeypatch.setattr(odysseus_settings, "get_setting", lambda k, default=None: True if k == "creator_enabled" else default)
+    monkeypatch.setattr(faustus_settings, "get_setting", lambda k, default=None: True if k == "creator_enabled" else default)
     db_path = tmp_path / "model_identity.db"
     test_store = mi.ModelIdentityStore(db_path=str(db_path))
     monkeypatch.setattr(mi, "default_store", lambda: test_store)
@@ -258,7 +258,7 @@ def test_save_tested_falls_back_to_legacy_unknown_scope_without_a_deployment_id(
 
 
 def test_save_tested_writes_nothing_to_model_identity_when_creator_disabled(tmp_path, monkeypatch):
-    monkeypatch.setattr(odysseus_settings, "get_setting", lambda k, default=None: default)  # creator_enabled -> False
+    monkeypatch.setattr(faustus_settings, "get_setting", lambda k, default=None: default)  # creator_enabled -> False
     db_path = tmp_path / "model_identity.db"
     test_store = mi.ModelIdentityStore(db_path=str(db_path))
     monkeypatch.setattr(mi, "default_store", lambda: test_store)
@@ -277,7 +277,7 @@ def app_client(tmp_path, monkeypatch):
     db_path = tmp_path / "model_identity.db"
     test_store = mi.ModelIdentityStore(db_path=str(db_path))
     monkeypatch.setattr(mi, "default_store", lambda: test_store)
-    monkeypatch.setattr(odysseus_settings, "get_setting",
+    monkeypatch.setattr(faustus_settings, "get_setting",
                         lambda k, default=None: True if k == "creator_enabled" else default)
     _patch_module_ollama(monkeypatch)
 
@@ -369,7 +369,7 @@ def test_routes_404_when_creator_disabled(tmp_path, monkeypatch):
     db_path = tmp_path / "model_identity.db"
     test_store = mi.ModelIdentityStore(db_path=str(db_path))
     monkeypatch.setattr(mi, "default_store", lambda: test_store)
-    monkeypatch.setattr(odysseus_settings, "get_setting", lambda k, default=None: default)  # creator_enabled -> False
+    monkeypatch.setattr(faustus_settings, "get_setting", lambda k, default=None: default)  # creator_enabled -> False
     _patch_module_ollama(monkeypatch)
 
     app = FastAPI()

@@ -9,8 +9,8 @@ tokens go to planning and review:
     {
       "mcpServers": {
         "faustus-workers": {
-          "command": "D:/LocalAI/odysseus/venv/Scripts/python.exe",
-          "args": ["D:/LocalAI/odysseus/mcp_servers/workers_server.py"],
+          "command": "D:/LocalAI/faustus/venv/Scripts/python.exe",
+          "args": ["D:/LocalAI/faustus/mcp_servers/workers_server.py"],
           "env": {"FAUSTUS_URL": "http://127.0.0.1:7000",
                   "FAUSTUS_API_TOKEN": "ody_...",      # Settings → API tokens → profile "fable_workers"
                   "FAUSTUS_MCP_FORMAT": "toon"}        # toon (default) | text
@@ -1006,7 +1006,7 @@ TOOLS: List[Tool] = [
             "Audit every stored skill as a CAPABILITY rather than as a document: which "
             "ones can describe themselves with a manifest, which of those any backend "
             "could actually run, and the exact field that rejected the rest. Also lists "
-            "the skills discoverable from a workspace (.odysseus/.agents/.claude), with "
+            "the skills discoverable from a workspace (.faustus/.agents/.claude), with "
             "where each came from — a fact for the audit that never grants anything. "
             "Read it before assuming a skill is usable: valid and not runnable is the "
             "normal state, because a skill that declares no backend may not run anywhere."

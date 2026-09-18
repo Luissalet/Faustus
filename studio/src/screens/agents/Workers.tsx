@@ -27,7 +27,7 @@ import { locale, t, tn } from '../../i18n';
  * over SSE when the server streams, polled every 3 s otherwise.
  */
 
-const FOLDER_KEY = 'odysseus-workers-folder';
+const FOLDER_KEY = 'faustus-workers-folder';
 
 function fmtDur(s: number): string {
   const n = Math.round(s);
@@ -256,7 +256,7 @@ export function Workers({ agent: agentParam, runner: runnerParam }: WorkersProps
   const [text, setText] = useState('');
   const [workspace, setWorkspace] = useState(() => {
     try {
-      return localStorage.getItem(FOLDER_KEY) || localStorage.getItem('odysseus-workspace') || '';
+      return localStorage.getItem(FOLDER_KEY) || localStorage.getItem('faustus-workspace') || '';
     } catch {
       return '';
     }

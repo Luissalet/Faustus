@@ -18,7 +18,7 @@ Two constraints shape everything here:
 * **stdout is the JSON-RPC stream.** One stray print from the app code this
   server imports corrupts it and kills the session, so `src/stdio_guard.py` is
   raised before anything else is imported.
-* **the engine is scoped by owner.** `ODYSSEUS_MCP_CONTEXT_OWNER` says whose
+* **the engine is scoped by owner.** `FAUSTUS_MCP_CONTEXT_OWNER` says whose
   context this server may touch. Without it the reads degrade to install-wide,
   which is what a single-user install already means, but every write is refused
   with a message that names the variable: a block written into the wrong
@@ -52,10 +52,10 @@ server = Server("context")
 _engine: dict = {}
 _initialized = False
 
-_OWNER_ENV_KEYS = ("ODYSSEUS_MCP_CONTEXT_OWNER", "ODYSSEUS_CONTEXT_OWNER")
+_OWNER_ENV_KEYS = ("FAUSTUS_MCP_CONTEXT_OWNER", "FAUSTUS_CONTEXT_OWNER")
 _OWNER_SCOPE_ERROR = (
     "Error: the Context Engine MCP server has no owner configured, so it cannot "
-    "tell whose context this is. Set ODYSSEUS_MCP_CONTEXT_OWNER for this server. "
+    "tell whose context this is. Set FAUSTUS_MCP_CONTEXT_OWNER for this server. "
     "Reads would be ambiguous and a write would put standing context into "
     "somebody else's prompts."
 )

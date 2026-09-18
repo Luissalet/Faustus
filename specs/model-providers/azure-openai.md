@@ -22,5 +22,5 @@ limits are deployment scoped.
 ## Fallback And Current Gaps
 
 Known `*.openai.azure.com` hosts select Azure OpenAI; other Azure gateways need
-explicit kind. Odysseus lacks a native Azure deployment catalog reader and
+explicit kind. Faustus lacks a native Azure deployment catalog reader and
 structured API-version persistence in the canonical record.

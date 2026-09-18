@@ -52,12 +52,12 @@ was promoted.
 
 
 def _write_dep_skill(workspace, body: str) -> str:
-    """Write a real `dep_skill` under `workspace/.odysseus/skills/` (the
+    """Write a real `dep_skill` under `workspace/.faustus/skills/` (the
     same layout `src.skills_runtime.discovery` walks in production) and
     return its REAL digest — `skill_digest` hashes actual bytes on disk, so
     calling this twice with different `body` genuinely changes the return
     value; nothing here fakes "the dependency changed"."""
-    folder = workspace / ".odysseus" / "skills" / "dep_skill"
+    folder = workspace / ".faustus" / "skills" / "dep_skill"
     folder.mkdir(parents=True, exist_ok=True)
     (folder / "SKILL.md").write_text(
         "---\nname: dep_skill\ncategory: demo\nversion: 1.0.0\n---\n\n"

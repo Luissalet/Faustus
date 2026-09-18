@@ -60,7 +60,7 @@ export interface Turn extends AsyncIterable<SseEvent> {
   readonly sessionId: string;
   readonly lastSequence: number;
   /** Cancels the run server-side. Uses `runId` as the fencing token
-   *  (`X-Odysseus-Run-Id`) — without one known, the server fails closed and
+   *  (`X-Faustus-Run-Id`) — without one known, the server fails closed and
    *  cancels nothing (a stale caller must not cancel a run it never started
    *  or resumed). Does not itself stop this `Turn`'s own iteration; the
    *  stream ends on its own once the server closes it. */

@@ -13,7 +13,7 @@ import tempfile
 
 import pytest
 
-_tmp_data = tempfile.mkdtemp(prefix="odysseus-conn02-test-")
+_tmp_data = tempfile.mkdtemp(prefix="faustus-conn02-test-")
 os.environ.setdefault("DATA_DIR", _tmp_data)
 os.environ.setdefault("DATABASE_URL", f"sqlite:///{_tmp_data}/app.db")
 

@@ -19,7 +19,7 @@ from src.creator import resources as creator_resources
 @pytest.fixture()
 def route_client(tmp_path, monkeypatch):
     monkeypatch.setenv("AUTH_ENABLED", "false")
-    monkeypatch.setenv("ODYSSEUS_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("FAUSTUS_DATA_DIR", str(tmp_path))
     from src import constants
     monkeypatch.setattr(constants, "DATA_DIR", str(tmp_path))
 

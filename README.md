@@ -37,7 +37,7 @@ docker compose up -d --build
 
 On PowerShell, use `Copy-Item .env.example .env` instead of `cp`.
 
-Open **http://localhost:7000**. The initial administrator password is printed in `docker compose logs odysseus`. Compose includes the search and vector-store services; it does not download a language model for you.
+Open **http://localhost:7000**. The initial administrator password is printed in `docker compose logs faustus`. Compose includes the search and vector-store services; it does not download a language model for you.
 
 1. Connect your model server in Settings or Cookbook. For Ollama running on the Docker host, configure its reachable address using the [setup guide](website/setup.md).
 2. Create a project and attach the files, documents or sources it should know.
@@ -266,7 +266,7 @@ Voice input enters the same conversation and tool-permission flow as typed input
 
 The artifact store separates content-addressed bytes from owned output occurrences. Additive migration preserves historical identifiers and metadata; removal markers prevent deleted occurrences from being recreated by migration.
 
-Internal names such as `odysseus`, `ODYSSEUS_*`, existing API paths and storage keys are retained for compatibility. The product name is Faustus.
+Internal identifiers were renamed from `odysseus`/`ODYSSEUS_*` to `faustus`/`FAUSTUS_*` (2026-09-18). The only remaining compatibility is read-only: a project folder's pre-rename `.odysseus/` convention directory and an existing checkpoint's pre-rename marker are still recognized.
 
 ## Development and verification
 

@@ -46,5 +46,5 @@ def test_get_default_data_dir_frozen():
     """Verify that get_default_data_dir resolves to a persistent user path under ~ when frozen."""
     with mock.patch.object(sys, "frozen", True, create=True):
         res = get_default_data_dir()
-        expected = os.path.join(os.path.expanduser("~"), ".odysseus", "data")
+        expected = os.path.join(os.path.expanduser("~"), ".faustus", "data")
         assert res == expected

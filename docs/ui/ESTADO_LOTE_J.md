@@ -27,7 +27,7 @@ Fecha: 05-09-2026. Rama `feat/studio-ui`. Verificado en el 7001.
   - Orden manual: arrastrar (HTML5, solo sin filtros) o subir/bajar;
     `POST /api/notes/reorder`.
   - Filtros: «Hoy» (vencidas o de hoy), objetivos, por etiqueta. Lista o
-    cuadrícula (misma clave `odysseus-notes-view`).
+    cuadrícula (misma clave `faustus-notes-view`).
   - «Resolver con el agente»: `/studio?draft=…&mode=agent&send=1&note=<id>`.
     Studio lo envía en cuanto hay ruta y enlaza la conversación a la nota
     (`agent_session_id`); la tarjeta muestra «agente» y abre ese chat.
