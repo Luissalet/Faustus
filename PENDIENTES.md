@@ -2,6 +2,11 @@
 
 Actualizado: 18-09-2026. REGLA: nunca nombres de empresas/personas del buzón de Luis en commits, docs, tests ni comentarios — ejemplos siempre ficticios. Sólo trabajo vigente; quitar cada entrada al cerrarla.
 
+## 18-09 tarde — renombrado interno REVERTIDO (commit 301d008d)
+- El renombrado de identificadores (§112) se desplegó y la app dejó de ver conversaciones, conectores, procesos y correo: los datos en `data/` estaban intactos, pero la cookie de sesión, las claves de `localStorage` y valores guardados (tipo `odysseus` en integraciones) ya no coincidían con lo que buscaba el código. Se revirtió entero; la carpeta sigue siendo `D:\LocalAI\faustus` (eso no depende del código).
+- Para retomarlo: (1) inventariar todo identificador que viva en `data/` (ficheros JSON, columnas, valores de tipo, claves de `localStorage`, nombre de cookie) y escribir una migración idempotente; (2) hacer la cookie y las claves de `localStorage` con lectura del nombre antiguo durante una versión, no corte limpio; (3) probar contra una COPIA de `data/` real antes de tocar la instalación.
+- La migración de `localStorage` del renombrado borró las claves antiguas en los navegadores que abrieron Studio entre medias: workspace y último usuario se resetean una vez.
+
 ## 18-09 (renombrado interno completo y traslado a D:\LocalAI\faustus — FAUSTUS.md §112)
 - Revisar: `studio/src/shell/notifications-tray.tsx` + `notifications.ts` están implementados y con backend (`routes/notifications_routes.py`) pero no se montan en `AppShell.tsx`. Decidir: cablear o borrar.
 - Revisar: los nombres de colecciones vectoriales y las columnas `odysseus_kind`/`odysseus_ref` siguen con el prefijo antiguo a propósito; si algún día se hace una migración de datos, es el momento de renombrarlos.
