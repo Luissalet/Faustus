@@ -18,7 +18,7 @@ import re
 import time
 import logging
 import os
-from typing import Any, AsyncGenerator, Callable, List, Dict, NamedTuple, Optional, Sequence, Set, Tuple
+from typing import Any, AsyncGenerator, Callable, Iterable, List, Dict, NamedTuple, Optional, Sequence, Set, Tuple
 from urllib.parse import urlparse
 
 from src.llm_core import (
@@ -2109,6 +2109,25 @@ def _workspace_coding_rules(workspace: Optional[str]) -> str:
     )
 
 
+def _big_task_strategy_block() -> str:
+    """FAUSTUS §115: permanent agent-mode strategy for long/repetitive tasks
+    ("create one folder per pokemon evolution line", etc.) — the fix for a
+    turn that silently gives up after 0-1 tool calls instead of working
+    through the whole task. Agent-mode only (gated on `workspace`, same as
+    `_workspace_coding_rules` just above), under ~120 tokens so it is cheap
+    on every turn."""
+    return (
+        "\n\n## Tareas grandes\n"
+        "- Si la tarea tiene muchas unidades repetidas (una por elemento de una lista larga), "
+        "descompón y haz UNA unidad completa (mirar -> decidir -> actuar -> verificar -> guardar "
+        "cursor en `.faustus/`) antes de pasar a la siguiente.\n"
+        "- Reporta progreso por lotes; si te interrumpen, reanuda desde el cursor guardado.\n"
+        "- Nunca adivines un dato que puedas consultar. Si algo es ambiguo, haz UNA pregunta concreta "
+        "con `ask_user` en vez de parar en silencio.\n"
+        "- No termines el turno sin un resultado o una pregunta concreta."
+    )
+
+
 _REPOS_BLOCK_CACHE: Dict[Tuple[str, str], Tuple[float, str]] = {}
 _REPOS_BLOCK_TTL = 20.0
 _REPOS_BLOCK_MAX_REPOS = 12
@@ -3404,6 +3423,72 @@ async def _recovery_step_completion(url, model, headers, messages, temperature, 
     return text, reasoning, degenerate, error
 
 
+def _end_turn_with_question(*, reason: str, round_num: int, session_id: Optional[str],
+                             owner: Optional[str], ledger) -> Iterable:
+    """Build and register a concrete question from the turn's own ledger
+    state, and yield the SSE chunk(s) that end the turn asking it — never a
+    bare placeholder. Owner requirement, 18-09-2026: a large/repetitive task
+    that has to stop (no more auto-continue budget, or too many rounds with
+    no progress) must ask ONE concrete question, built from what is already
+    known (the next open objective, or how many units are already done),
+    instead of ending with nothing under the card.
+
+    Goes through the same `question_store` a real `ask_user` tool call uses
+    (CALL-07/TASK-04) and the same `{"type": "ask_user", "data": ...}` SSE
+    shape the client already renders — reusing the spec-v2 mechanism rather
+    than inventing a second "end the turn" shape.
+
+    Yields ``("event", sse_chunk)`` tuples, mirroring `_recovery_ladder`'s
+    protocol so a caller can loop the same way. Never raises: a failure to
+    register the question in `question_store` still yields the card (the
+    streamed SSE event is the source of truth for the live chat either way).
+    """
+    import uuid as _uuid
+
+    _open = [t.get("content") for t in (getattr(ledger, "progress", None) or [])
+             if t.get("status") != "completed"]
+    _done = len(ledger.mutated_paths()) if hasattr(ledger, "mutated_paths") else 0
+    if _open:
+        question = (
+            f"Llevo {_done} elemento(s) completado(s) en {round_num - 1} ronda(s) sin poder "
+            f"seguir automáticamente. La siguiente unidad pendiente es: {_open[0]}. "
+            "¿Continúo con esta unidad, o prefieres otra prioridad?"
+        )
+    elif _done:
+        question = (
+            f"Llevo {_done} elemento(s) completado(s) en {round_num - 1} ronda(s) sin poder "
+            "seguir automáticamente. ¿Cuál es la siguiente unidad concreta a completar?"
+        )
+    else:
+        question = (
+            f"No pude avanzar en {round_num - 1} ronda(s) de esta tarea. "
+            "¿Puedes darme una unidad concreta y pequeña por la que empezar?"
+        )
+    question_id = f"qst_{_uuid.uuid4().hex[:20]}"
+    auq = {
+        "question": question,
+        "options": [],
+        "multi": False,
+        "allow_free_text": True,
+        "question_id": question_id,
+    }
+    try:
+        from src import question_store
+        qrow = question_store.open_question(
+            question, session_id=session_id, owner=owner or "",
+            options=[], multi=False, allow_free_text=True,
+            question_id=question_id,
+        )
+        auq["revision"] = qrow["revision"]
+    except Exception as _qerr:  # noqa: BLE001 — never cost a turn
+        logger.debug("[agent] _end_turn_with_question: question_store.open skipped: %s", _qerr)
+    if hasattr(ledger, "notes"):
+        ledger.notes.append(f"ended_with_question@{round_num}:{reason}")
+    if hasattr(ledger, "stop_reason"):
+        ledger.stop_reason = reason
+    yield ("event", "data: " + json.dumps({"type": "ask_user", "data": auq}) + "\n\n")
+
+
 async def _recovery_ladder(*, reason: str, endpoint_url: str, model: str, headers,
                             messages: List[Dict], temperature: float, max_tokens: int,
                             gen_overrides: Optional[Dict], session_id: Optional[str],
@@ -4178,6 +4263,10 @@ def _build_system_prompt(
             agent_prompt += _pinstr.block(workspace, trusted=_instr_trusted)
         except Exception as _pi_err:
             logger.debug("[instructions] injection failed: %s", _pi_err)
+        try:
+            agent_prompt += _big_task_strategy_block()
+        except Exception:
+            pass
     elif (
         relevant_tools
         and not suppress_local_context
@@ -7965,6 +8054,10 @@ async def _stream_agent_loop_body(
         _open_thought = None
 
     _unknown_tool_nudges = 0
+    try:
+        _empty_round_max_nudges = max(1, int(get_setting("agent_empty_round_max_nudges", 3) or 3))
+    except (TypeError, ValueError):
+        _empty_round_max_nudges = 3
     _empty_round_nudges = 0
     _echo_nudges = 0
     # Two consecutive marker-only rounds mean the nudge itself isn't working
@@ -8513,6 +8606,29 @@ async def _stream_agent_loop_body(
             _auto_cycles_left = int(get_setting("agent_auto_continue_cycles", 1) or 0) if _harness_enabled else 0
         except (TypeError, ValueError):
             _auto_cycles_left = 0
+    # "Keep going while there is progress" (owner requirement, 18-09-2026,
+    # field observation on a long repetitive task with a custom local
+    # endpoint): once the configured auto-continue cycles run out — the case
+    # that used to end the turn with only a "Continue" affordance — a turn
+    # that is STILL making real progress (a tool call actually ran since the
+    # last check) keeps going anyway, up to a hard ceiling, instead of
+    # stopping the person's large batch job mid-way. `_no_progress_streak`
+    # counts consecutive round-budget checks with no new ledger event; three
+    # in a row (K=3) means the turn is genuinely stuck, not merely long, and
+    # THEN it stops — with a concrete question (`_end_turn_with_question`),
+    # never a bare placeholder.
+    try:
+        _agent_auto_continue_on_progress = bool(get_setting("agent_auto_continue_on_progress", True))
+    except Exception:
+        _agent_auto_continue_on_progress = True
+    try:
+        _agent_auto_continue_max_rounds = int(get_setting("agent_auto_continue_max_rounds", 200) or 200)
+    except (TypeError, ValueError):
+        _agent_auto_continue_max_rounds = 200
+    _no_progress_streak = 0
+    _progress_events_at_last_check = len(_ledger.events)
+    _progress_unit_count = 0
+    _progress_extension_used = False
     if (
         _harness_enabled and _harness_scope_active and session_id
         and not _todo_refresh_nudged
@@ -8712,16 +8828,35 @@ async def _stream_agent_loop_body(
             yield _budget_exhausted_event(_budget_exhaustion)
             break
         if round_num > _rounds_budget:
+            # Progress tracking for the K=3 no-progress rule: a round that
+            # added no new ledger event (no tool call actually ran) since
+            # the last time this check ran extends the streak; any new event
+            # resets it — the same "a single differing result is progress,
+            # never penalized" rule loop_breaker.py documents, applied here
+            # to the whole-turn budget instead of one tool's call signature.
+            _events_now = len(_ledger.events)
+            if _events_now > _progress_events_at_last_check:
+                _no_progress_streak = 0
+            else:
+                _no_progress_streak += 1
+            _progress_events_at_last_check = _events_now
+            _progress_gate_open = (
+                _agent_auto_continue_on_progress
+                and _no_progress_streak < 3
+                and round_num <= _agent_auto_continue_max_rounds
+            )
             # Unlimited local execution is completion-bound, not permission to
             # spin forever. Once the loop breaker has identified a stalled
             # tool family, reaching the current cycle cap must return control
             # instead of granting another identical cycle.
-            if _auto_cycles_left != 0 and not _loop_recovery_active:
+            if (_auto_cycles_left != 0 or _progress_gate_open) and not _loop_recovery_active:
+                _used_progress_gate = _auto_cycles_left == 0 and _progress_gate_open
                 if _auto_cycles_left > 0:
                     _auto_cycles_left -= 1
                 _rounds_budget += max_rounds
-                logger.info("[harness] step limit (%s) reached mid-task — auto-continuing with %s more rounds",
-                            round_num - 1, max_rounds)
+                logger.info("[harness] step limit (%s) reached mid-task — auto-continuing with %s more rounds%s",
+                            round_num - 1, max_rounds,
+                            " (progress-based extension)" if _used_progress_gate else "")
                 _auto_continue_text = (
                     "[Harness check — automatic message from the runtime, not from the user] "
                     f"You used {round_num - 1} steps and the task is not finished. "
@@ -8752,12 +8887,41 @@ async def _stream_agent_loop_body(
                         "max_attempts": None if _auto_cycles_left < 0 else 1,
                     }) + "\n\n"
                 )
+                if _used_progress_gate:
+                    # A large/repetitive task ("keep going while there is
+                    # progress") gets a visible progress line of its own,
+                    # not the generic budget-cycle message — the person
+                    # watching a long batch job sees WHICH unit it is on,
+                    # not just "still going".
+                    _progress_extension_used = True
+                    _progress_unit_count = len(_ledger.mutated_paths())
+                    yield (
+                        "data: " + json.dumps({
+                            "type": "harness_check", "status": "auto_continue",
+                            "reason": "progress_continue", "round": round_num - 1,
+                            "message": f"continúa: unidad {_progress_unit_count}",
+                        }) + "\n\n"
+                    )
                 full_response += "\n\n"
             else:
                 # Every allowed round ran WITHOUT a "done" break: the agent kept
                 # working until it ran out of rounds — offer Continue instead of
                 # stopping silently. Covers all exhaustion paths (verifier /
                 # harness `continue` on the final round included).
+                if _progress_extension_used and _agent_auto_continue_on_progress:
+                    # This turn was already being kept alive by the progress
+                    # gate above — it must not now end in silence (or a bare
+                    # "Continue" click) just because the gate finally closed
+                    # (K=3 no-progress rounds, or the hard ceiling). Ask a
+                    # concrete question built from the ledger instead.
+                    for _rk, _rpayload in _end_turn_with_question(
+                        reason=("no_progress_streak" if _no_progress_streak >= 3
+                                else "auto_continue_ceiling"),
+                        round_num=round_num, session_id=session_id, owner=owner,
+                        ledger=_ledger,
+                    ):
+                        yield _rpayload
+                    _awaiting_user = True
                 _exhausted_rounds = True
                 break
         # Steering: text queued while the previous round ran (or while a tool
@@ -10428,17 +10592,29 @@ async def _stream_agent_loop_body(
                 continue
             # ── (1c) Silent give-up: no text, no tool, in a turn where the
             # model was supposed to act (workspace / coding request / open
-            # objectives). One bounded nudge; then the turn ends as before.
-            if (
+            # objectives). Up to `agent_empty_round_max_nudges` (default 3)
+            # bounded nudges; once exhausted, the turn ends with a concrete
+            # question to the user (below) instead of silently.
+            # No blanket `round_num > 1` gate here (FAUSTUS §115): a round
+            # that is empty on the very FIRST attempt, in an active harness
+            # scope (workspace present, an in-progress objective, or already
+            # mid-recovery), must nudge immediately too — "must never give
+            # up thinking without producing output" applies from round 1,
+            # not from round 2. The one carve-out is `_boundary_echo_only`:
+            # that round already has its own ladder just above (nudge once,
+            # then a clean retry on the 2nd consecutive echo, then the
+            # recovery ladder on the 3rd) and must run its course before the
+            # generic empty-round give-up ever competes with it.
+            _empty_give_up = (
                 not _hc_text
+                and not _boundary_echo_only
                 and (
                     _recover_empty_completion
                     or _harness_scope_active
                     or (_ledger.progress and any(t.get("status") != "completed" for t in _ledger.progress))
                 )
-                and _empty_round_nudges < 1
-                and (round_num > 1 or _recover_empty_completion)
-            ):
+            )
+            if _empty_give_up and _empty_round_nudges < _empty_round_max_nudges:
                 _empty_round_nudges += 1
                 _open = [t.get("content") for t in (_ledger.progress or []) if t.get("status") != "completed"]
                 logger.warning("[harness] round %s ended with no text and no tool call — nudging (open objectives: %s)",
@@ -10451,17 +10627,31 @@ async def _stream_agent_loop_body(
                         "Your last message was EMPTY: no text and no tool call, so nothing happened. "
                         + (f"Open objectives: {'; '.join(str(o) for o in _open[:4])}. " if _open else "")
                         + "Either continue the task by calling a tool now, or write the final answer "
-                        "stating exactly what was done and what remains."
+                        "stating exactly what was done and what remains. "
+                        "Continúa con la siguiente unidad. Si algo no está claro, haz UNA pregunta concreta."
                     ),
                 })
                 yield (
                     "data: " + json.dumps({
                         "type": "harness_check", "status": "empty_round", "round": round_num,
-                        "open": _open[:6], "attempt": 1, "max_attempts": 1,
+                        "open": _open[:6], "attempt": _empty_round_nudges, "max_attempts": _empty_round_max_nudges,
                     }) + "\n\n"
                 )
                 yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
                 continue
+            if _empty_give_up and _empty_round_nudges >= _empty_round_max_nudges:
+                # Every nudge came back empty too: never end in silence — ask
+                # the user a concrete question built from the last known
+                # state, through the same question_store mechanism a real
+                # ask_user tool call uses.
+                for _rk, _rpayload in _end_turn_with_question(
+                    reason="empty_rounds_exhausted",
+                    round_num=round_num, session_id=session_id, owner=owner,
+                    ledger=_ledger,
+                ):
+                    yield _rpayload
+                _awaiting_user = True
+                break
             # ── (2a) Wrong reply language — before no_action, so a Spanish
             # "Voy a…" on an English turn is corrected specifically instead of
             # only being treated as a missing tool call.

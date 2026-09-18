@@ -497,6 +497,19 @@ DEFAULT_SETTINGS = {
     # elsewhere, so this is safe to always send when thinking is on. 0
     # (or any non-positive value) omits the field entirely.
     "local_openai_reasoning_budget_default": 4096,
+    # "Keep going while there is progress" (src/agent_loop.py, the round-budget
+    # check): when the round/cycle budget is hit but recent rounds each made
+    # progress (a tool call actually ran, ledger events grew), extend the
+    # budget automatically instead of ending the turn — up to the hard
+    # ceiling below. Only stops early after `_no_progress_streak` reaches 3
+    # consecutive rounds with no progress, and even then ends with a concrete
+    # question (question_store), never a bare placeholder.
+    "agent_auto_continue_on_progress": True,
+    "agent_auto_continue_max_rounds": 200,
+    # How many times the empty-round nudge (no text, no tool call) retries
+    # before giving up and asking the user a concrete question instead of
+    # ending the turn silently. Was hardcoded to 1.
+    "agent_empty_round_max_nudges": 3,
     # Standing instructions from the repo (AGENTS.md / CLAUDE.md / …) in the
     # system prompt, and the repository map (files + symbols) before the
     # user's message (src/project_instructions.py, src/repo_map.py).

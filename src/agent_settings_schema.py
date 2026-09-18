@@ -107,6 +107,17 @@ GROUPS: list[dict[str, Any]] = [
                  "When the step cap hits mid-task, the harness continues by itself this many times "
                  "(each grants another Max steps) before showing the Continue button. 0 = always ask.",
                  0, 10),
+            _bool("agent_auto_continue_on_progress", "Keep going while there is progress",
+                  "When the round budget is hit but recent rounds each made progress, extend the budget "
+                  "automatically instead of ending the turn, up to the hard ceiling below."),
+            _int("agent_auto_continue_max_rounds", "Auto-continue hard ceiling (rounds)",
+                 "Highest round number the progress-based auto-continue above may reach before it stops "
+                 "extending, even if progress is still happening.",
+                 1, 2000),
+            _int("agent_empty_round_max_nudges", "Empty-round nudges before asking",
+                 "A round with no text and no tool call gets nudged to continue this many times before "
+                 "the turn ends with a concrete question instead of silence.",
+                 1, 10),
             _bool("agent_harness_checks", "Reliability harness",
                   "Claims-vs-evidence check, syntax check and fabricated-path detection after each turn."),
             _bool("agent_tool_rerank", "Rerank tool candidates",

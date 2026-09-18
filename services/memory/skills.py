@@ -29,6 +29,16 @@ from .skill_format import Skill, slugify
 
 logger = logging.getLogger(__name__)
 
+#: Explicit "every user sees this" sentinel for `owner:` in SKILL.md
+#: frontmatter (FAUSTUS §115). A BLANK/missing owner stays hidden from
+#: `load(owner=...)` on purpose (see the SECURITY note there — that was a
+#: real leak of unstamped legacy skills, closed deliberately). This sentinel
+#: is the opt-in replacement: a skill meant for every user, such as a
+#: procedure for long/repetitive agent tasks installed once for the whole
+#: machine (`data/skills/general/<name>/SKILL.md`), declares `owner: "*"`
+#: and is then visible to every `load(owner=...)` call, never by omission.
+GLOBAL_SKILL_OWNER = "*"
+
 
 # ---------------------------------------------------------------------------
 # Token / similarity helpers (kept for the relevance fallback)
@@ -284,7 +294,16 @@ class SkillsManager:
         # leaked legacy / un-stamped skills to every authenticated user.
         # Hide them now; the owner needs to be backfilled on disk if those
         # skills should be visible to a specific user.
-        return [s for s in entries if s.get("owner") == owner]
+        #
+        # The one deliberate exception (FAUSTUS §115) is GLOBAL_SKILL_OWNER:
+        # a skill that explicitly declares `owner: "*"` opts into being
+        # visible to every user, same as an owner-matched skill. This is
+        # opt-in per skill, never by a blank/missing owner, so it does not
+        # reopen the leak the strict filter above was written to close.
+        return [
+            s for s in entries
+            if s.get("owner") == owner or s.get("owner") == GLOBAL_SKILL_OWNER
+        ]
 
     # ----------------------------------------------------------------------
     # CRUD — disk-backed
