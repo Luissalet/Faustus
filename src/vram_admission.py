@@ -369,6 +369,58 @@ def pinned_models(root: str) -> List[str]:
         return sorted(_PINS.get(_canonical_root(root), set()))
 
 
+def last_active_seconds(root: str, model: str) -> Optional[float]:
+    """Public wrapper around `_seconds_since_active` for callers outside this
+    module (`src/model_warmup.py`'s residency keeper) that need to know
+    whether a resident model is genuinely in use, without reaching into a
+    private helper directly."""
+    return _seconds_since_active(root, model)
+
+
+def is_default_model(root: str, model: str) -> bool:
+    """X-D: is `(root, model)` the owner's default chat model? Delegates to
+    `src.model_warmup.is_default` — the one place that knows how "default"
+    is resolved (Settings → Default AI) — so this module never re-derives
+    that answer on its own. Lazy import: `model_warmup` never needs to
+    import this module at load time, but keeping the import local avoids
+    tying either module's import order to the other's."""
+    try:
+        from src import model_warmup
+        return model_warmup.is_default(root, model)
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _default_yield_plan(root: str, residents: List[Dict[str, Any]],
+                        shortfall: int) -> "tuple[List[str], int, bool]":
+    """X-D, the owner's rule verbatim: the default model stays resident
+    unless the person explicitly picked something else that does not fit
+    next to it — in which case the default yields on its own, no card.
+
+    Biggest-first fill across every resident that is NOT a user-pinned
+    (Settings → Local models) model OTHER than the default itself — i.e.
+    freely-evictable residents plus the default, never another person's
+    pin. Returns `(names_to_unload, bytes_freed, uses_default)`; a caller
+    only auto-yields when `uses_default` is True AND `bytes_freed >=
+    shortfall` — the default moving for nothing (free residents alone
+    would already have covered it) is not this rule, and neither is the
+    default moving without covering the shortfall."""
+    def _other_pin(r: Dict[str, Any]) -> bool:
+        return is_pinned(root, r["name"]) and not is_default_model(root, r["name"])
+
+    pool = sorted((r for r in residents if not _other_pin(r)),
+                 key=lambda r: r["in_vram_bytes"], reverse=True)
+    picked: List[str] = []
+    freed = 0
+    for r in pool:
+        if freed >= shortfall:
+            break
+        picked.append(r["name"])
+        freed += r["in_vram_bytes"]
+    uses_default = any(is_default_model(root, n) for n in picked)
+    return picked, freed, uses_default
+
+
 def residency_status(root: str, residents: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """`residents` (as returned inside `assess()`) enriched with pin/last-active
     for a status panel -- never fetched on its own, always derived from a
@@ -523,6 +575,11 @@ def assess(root: str, model: str) -> Dict[str, Any]:
             "name": n, "key": key, "total_bytes": total, "in_vram_bytes": in_vram,
             "spill_bytes": max(0, total - in_vram) if in_vram else 0, "ctx": ctx,
             "expires_at": str(m.get("expires_at") or ""),
+            # X-D: the Studio card tags this row "default — kept loaded by
+            # Faustus" instead of just another pinned model, so the person
+            # understands why it is protected and can still tick it when
+            # the automatic yield below was not enough on its own.
+            "default": is_default_model(root, n),
         })
     residents.sort(key=lambda r: r["in_vram_bytes"], reverse=True)
     out["residents"] = residents
@@ -865,6 +922,36 @@ async def admit(endpoint_url: str, model: str, *, owner: str = "",
                 model, a["need_bytes"] / 2**30, a["budget_alongside_bytes"] / 2**30,
                 len(a["residents"]), mode)
 
+    # X-D correction (the owner's rule, verbatim): the default model stays
+    # resident whenever Faustus is open and no other model was explicitly
+    # asked for; when the person picks a model that does not fit next to it,
+    # the default yields ON ITS OWN — no ticket, no card, in EVERY mode
+    # including "ask" — and comes back once the other one is gone (the
+    # residency keeper in src/model_warmup.py). Only when even unloading the
+    # default (together with whatever else is freely evictable) still would
+    # not free enough room does this fall through to the normal ticket/auto
+    # path below, where the default appears in the card tagged `"default"`.
+    if not is_default_model(root, model):
+        plan_names, plan_freed, uses_default = _default_yield_plan(
+            root, a["residents"], a["shortfall_bytes"])
+        if uses_default and plan_freed >= a["shortfall_bytes"]:
+            default_row = next((r for r in a["residents"] if r.get("default")), None)
+            default_name = default_row["name"] if default_row else "the default model"
+            say({"phase": "yielding", "message": f"{default_name} steps aside for {model}"})
+            left = await unload_and_wait(root, plan_names, on_progress=on_progress)
+            if not left:
+                # Same contract the person-driven "unload" answer in "ask"
+                # mode below has: once the chosen models are confirmed gone
+                # from `/api/ps`, the caller proceeds — no second fit check
+                # against a card reading that a mock (or a slower card under
+                # real load) cannot be expected to reflect the unload on yet.
+                _mark_wait()
+                return "proceed"
+            say({"phase": "error", "message": f"Could not unload {', '.join(left)}; the load was cancelled."})
+            _mark_wait()
+            raise AdmissionCancelled(f"{', '.join(left)} stayed resident after the unload; "
+                                     f"{model} was not loaded.")
+
     if mode == "auto":
         # "auto" acts with nobody watching, so it may only take what `assess()`
         # offered as freely evictable — never a pinned resident (the default
@@ -1069,16 +1156,23 @@ def _ollama_suggestion_candidates(
             idxs = {int(i) for i in (info.get("gpus") or [])}
             if wanted and not (idxs & wanted):
                 continue  # resident on a different card than the one requested
-            row = {"name": name, "root": root, "in_vram_bytes": in_vram, "gpus": sorted(idxs)}
+            is_default = is_default_model(root, name)
+            row = {"name": name, "root": root, "in_vram_bytes": in_vram, "gpus": sorted(idxs),
+                  "default": is_default}
             # A serve launch never has a person naming which model to unload
             # the way the Local models screen's own Unload button does — this
             # path either acts on its own (`auto`) or offers a ticket whose
-            # `names` must come from `residents`, so a pinned model (the
-            # default chat model, or anything pinned from the settings
-            # screen) is left out of both entirely rather than merely
-            # de-prioritized: nothing here counts as the explicit human
-            # action that is the only thing allowed to evict it.
-            if is_pinned(root, name):
+            # `names` must come from `residents`. A model a PERSON pinned
+            # from the settings screen stays out of both entirely (nothing
+            # here counts as the explicit human action that is the only
+            # thing allowed to evict it). The default is different (X-D): it
+            # always stays VISIBLE in `residents` — a serve request that
+            # only has the default resident must not present as "0 models
+            # loaded" — and it is offered as a `candidate` too, since the
+            # owner's rule is that the default yields on its own once it is
+            # what stands between the picked model and fitting.
+            if is_pinned(root, name) and not is_default:
+                residents.append(row)
                 continue
             residents.append(row)
             candidates.append(row)

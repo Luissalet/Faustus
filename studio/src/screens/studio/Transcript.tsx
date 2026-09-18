@@ -1974,6 +1974,7 @@ function ResearchLine({ research }: { research: NonNullable<Turn['research']> })
     loading_model: t('loading the model into memory'),
     vram_blocked: t('no room in VRAM — waiting for you to choose what to unload'),
     unloading_model: t('unloading models to make room'),
+    yielding: t('the default model is stepping aside'),
     planning: t('planning'),
     searching: t('searching'),
     reading: t('reading {n} sources', { n: research.totalSources }),

@@ -1008,6 +1008,17 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* X-D: "default — kept loaded by Faustus" tag next to a resident row. */
+.fs-vram__tag {
+  font-size: var(--fs-text-xs, 0.8125rem);
+  color: var(--fs-text-2);
+  background: var(--fs-surface-2, transparent);
+  border: 1px solid var(--fs-border, currentColor);
+  border-radius: var(--fs-radius-sm, 4px);
+  padding: 0 var(--fs-space-2);
+  white-space: nowrap;
+}
+
 .fs-vram__sum {
   font-variant-numeric: tabular-nums;
   color: var(--fs-text-1);

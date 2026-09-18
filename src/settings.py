@@ -175,6 +175,11 @@ DEFAULT_SETTINGS = {
     "warm_default_model": True,
     "warm_default_model_keep_alive": "-1",
     "warm_default_model_every_s": 20,
+    # X-D correction: how long a resident, non-default, non-embedding local
+    # model that was actually used counts as "the owner explicitly picked
+    # this one" — the keeper waits out this window before reloading the
+    # default back in once that model is gone or idle.
+    "warm_default_model_yield_minutes": 10,
     "agent_ui_verify": True,
     "agent_inline_attachment_max_chars": 4000,
     "agent_project_todos": True,

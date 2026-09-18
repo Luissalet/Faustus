@@ -14,6 +14,15 @@ export interface VramResident {
   totalBytes: number;
   spillBytes: number;
   ctx: number;
+  /** X-D: this is the owner's default chat model — Faustus keeps it loaded
+   *  on its own and it yields automatically rather than needing a tick. */
+  isDefault: boolean;
+}
+
+/** X-D: `phase: "yielding"` — the default model is stepping aside for a
+ *  model the person explicitly picked; a one-line status, never a dialog. */
+export interface VramYielding {
+  message: string;
 }
 
 export interface VramBlocked {
@@ -43,6 +52,12 @@ export interface VramBlocked {
 
 export type AdmissionAction = 'unload' | 'proceed' | 'cancel';
 
+/** Parse a `yielding` progress event; undefined for anything else. */
+export function vramYieldingFrom(raw: Record<string, unknown>): VramYielding | undefined {
+  if (raw.phase !== 'yielding') return undefined;
+  return { message: String(raw.message ?? '') };
+}
+
 function num(v: unknown): number {
   return typeof v === 'number' && Number.isFinite(v) ? v : 0;
 }
@@ -69,6 +84,7 @@ export function vramBlockedFrom(raw: Record<string, unknown>): VramBlocked | und
       totalBytes: num(r.total_bytes),
       spillBytes: num(r.spill_bytes),
       ctx: num(r.ctx),
+      isDefault: r.default === true,
     })).filter((r) => r.name),
     suggestion: asArray<unknown>(raw, 'suggestion').map(String),
     suggestionEnough: raw.suggestion_enough === true,

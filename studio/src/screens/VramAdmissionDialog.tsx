@@ -109,6 +109,11 @@ export function VramAdmissionDialog({ blocked, onDone, say, onDecide }: {
                   aria-label={t('Unload {name}', { name: r.name })}
                 />
                 <span className="fs-vram__name">{r.name}</span>
+                {r.isDefault && (
+                  <span className="fs-vram__tag" data-testid="vram-admission-default-tag">
+                    {t('default — kept loaded by Faustus')}
+                  </span>
+                )}
               </label>
               <span className="fs-vram__meta">
                 {fmtGb(r.inVramBytes)} {t('in VRAM')}

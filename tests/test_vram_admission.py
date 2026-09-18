@@ -255,6 +255,86 @@ def test_ask_mode_still_lets_a_person_explicitly_unload_a_pinned_model(blocked):
         va.unpin_model(ROOT, Q8["name"])
 
 
+# ── X-D correction: the default yields to an explicitly-picked model ───────
+
+def test_default_model_yields_automatically_in_ask_mode_without_a_ticket(blocked, monkeypatch):
+    """The regression of 09-2026: the owner picks a bigger local model that
+    does not fit next to the default. The default (Q8 here) must step aside
+    on its own -- no ticket, no card -- in "ask" mode too."""
+    monkeypatch.setattr(va, "is_default_model", lambda root, name: name == Q8["name"])
+    events = []
+    result = asyncio.run(va.admit(EP, Q4["name"], mode="ask", timeout=5, on_progress=events.append))
+    assert result == "proceed"
+    assert blocked["evicted"] == [Q8["name"]]
+    assert not va._PENDING  # never asked anyone
+    phases = [e["phase"] for e in events]
+    assert phases[0] == "yielding"
+    assert Q8["name"] in events[0]["message"] and Q4["name"] in events[0]["message"]
+
+
+def test_default_model_yields_automatically_in_auto_mode_too(blocked, monkeypatch):
+    monkeypatch.setattr(va, "is_default_model", lambda root, name: name == Q8["name"])
+    assert asyncio.run(va.admit(EP, Q4["name"], mode="auto")) == "proceed"
+    assert blocked["evicted"] == [Q8["name"]]
+
+
+def test_default_appears_tagged_in_the_card_when_yielding_is_not_enough(monkeypatch):
+    """Some load is so large that even the default stepping aside does not
+    make room -- the ticket must still name the default, tagged, so the
+    person can tick it themselves."""
+    HUGE = {"name": "monster:200b", "size": 200 * GIB, "digest": "d-huge"}
+    state = {"ps": [{"name": Q8["name"], "digest": "d-q8", "size": 33 * GIB,
+                     "size_vram": 26 * GIB, "context_length": 65536}],
+             "evicted": []}
+
+    def _get(root, path, timeout):
+        return {"models": [Q8, HUGE]} if path == "/api/tags" else {"models": state["ps"]}
+
+    def _evict(root, name):
+        state["evicted"].append(name)
+        state["ps"] = [m for m in state["ps"] if m["name"] != name]
+        return True
+
+    monkeypatch.setattr(va, "_get", _get)
+    monkeypatch.setattr(va, "_evict", _evict)
+    monkeypatch.setattr("src.gpu_shared_memory.vram_snapshot", lambda: _card(28, 27))
+    monkeypatch.setattr("src.gpu_placement.placement", lambda root, loaded, gpus: {})
+    monkeypatch.setattr(va, "is_default_model", lambda root, name: name == Q8["name"])
+    _real_sleep = asyncio.sleep
+    monkeypatch.setattr(asyncio, "sleep", lambda *_a, **_k: _real_sleep(0))
+
+    async def run():
+        gate = asyncio.create_task(va.admit(EP, HUGE["name"], mode="ask", timeout=5))
+        deadline = asyncio.get_event_loop().time() + 5.0
+        while not va._PENDING and asyncio.get_event_loop().time() < deadline:
+            await asyncio.sleep(0.01)
+        assert va._PENDING, "admit() never opened a ticket"
+        tid = next(iter(va._PENDING))
+        ticket = va.get_ticket(tid)
+        default_row = next(r for r in ticket.assessment["residents"] if r["name"] == Q8["name"])
+        assert default_row["default"] is True
+        va.resolve(tid, action="cancel")
+        return await gate
+
+    with pytest.raises(va.AdmissionCancelled):
+        asyncio.run(run())
+    # Nothing was unloaded: the auto-yield attempt would not have been
+    # enough on its own, so it never touched the default either.
+    assert state["evicted"] == []
+
+
+def test_user_pinned_non_default_model_is_never_auto_yielded(blocked, monkeypatch):
+    """A person's own pin (Settings → Local models) is not the default and
+    must stay protected even when the default also yields."""
+    va.pin_model(ROOT, Q8["name"])
+    monkeypatch.setattr(va, "is_default_model", lambda root, name: False)  # Q8 is a user pin, not default
+    try:
+        assert asyncio.run(va.admit(EP, Q4["name"], mode="auto")) == "proceed"
+        assert blocked["evicted"] == []  # loaded anyway, spilling -- the pin held
+    finally:
+        va.unpin_model(ROOT, Q8["name"])
+
+
 def test_off_mode_does_not_even_look(blocked, monkeypatch):
     def _boom(*a, **k):
         raise AssertionError("assess() must not run when the gate is off")

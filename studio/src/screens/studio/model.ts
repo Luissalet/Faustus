@@ -827,7 +827,13 @@ export function apply(turn: Turn, event: ChatEvent): Turn {
         ? t('No room in VRAM — waiting for you to choose what to unload')
         : event.phase === 'unloading_model'
           ? event.message || t('Unloading models to make room')
-          : event.message || undefined;
+          // X-D: the default model steps aside on its own for the model the
+          // person picked — a one-line status, never the "tick what to
+          // unload" dialog (which `blocked` above only carries for
+          // `vram_blocked`, so this phase never opens it).
+          : event.phase === 'yielding'
+            ? event.message || t('The default model is stepping aside')
+            : event.message || undefined;
       return { ...turn, vram: blocked, live: livePhase(live, now, 'waiting', label) };
     }
     case 'tool_start': {

@@ -67,11 +67,18 @@ def test_settings_defaults_exist():
 _TARGET = {"url": "http://127.0.0.1:11434/v1", "model": "qwen3.8:27b", "root": "http://127.0.0.1:11434"}
 
 
+def _reset_state():
+    mw._keeper.update({"last_check": None, "resident": None, "expires_at": "", "reloads": 0,
+                       "repins": 0, "yielding_to": None, "waiting_for_room": False})
+    mw._yield_logged = False
+    mw._fit_wait_logged = False
+
+
 @pytest.fixture(autouse=True)
 def _reset_keeper():
-    mw._keeper.update({"last_check": None, "resident": None, "expires_at": "", "reloads": 0, "repins": 0})
+    _reset_state()
     yield
-    mw._keeper.update({"last_check": None, "resident": None, "expires_at": "", "reloads": 0, "repins": 0})
+    _reset_state()
 
 
 def _fake_ps(models):
@@ -86,6 +93,7 @@ def test_check_once_reloads_when_not_resident(monkeypatch):
     monkeypatch.setattr(mw, "_pin", lambda root, model: None)
     monkeypatch.setattr(mw, "_load_in_flight", lambda model: False)
     monkeypatch.setattr(mw, "_api_ps", _fake_ps([]))  # gone from /api/ps
+    monkeypatch.setattr("src.vram_admission.assess", lambda root, model: {"fits": True})
 
     async def fake_warm_once():
         warmed.append(True)
@@ -165,3 +173,120 @@ def test_check_once_pins_the_default_model(monkeypatch):
         [{"name": "qwen3.8:27b", "expires_at": "0001-01-01T00:00:00Z"}]))
     asyncio.run(mw.check_once())
     assert pinned == [(_TARGET["root"], _TARGET["model"])]
+
+
+# ── X-D: the default yields to an explicitly-picked model, on its own ──────
+
+def test_embedding_name_heuristic():
+    assert mw._looks_like_embedding_model("nomic-embed-text") is True
+    assert mw._looks_like_embedding_model("mxbai-embed-large:latest") is True
+    assert mw._looks_like_embedding_model("bge-m3") is True
+    assert mw._looks_like_embedding_model("qwen3.8:27b") is False
+
+
+def test_check_once_waits_while_another_active_model_is_resident(monkeypatch):
+    """The owner explicitly picked another model (X-D, 08-09-2026 regression):
+    it is resident, was used seconds ago, and is neither the default nor an
+    embedding model — the keeper must not reload the default over it."""
+    warmed = []
+    monkeypatch.setattr(mw, "resolve_default", lambda: dict(_TARGET))
+    monkeypatch.setattr(mw, "_pin", lambda root, model: None)
+    monkeypatch.setattr(mw, "_load_in_flight", lambda model: False)
+    monkeypatch.setattr(mw, "_api_ps", _fake_ps(
+        [{"name": "qwen3-coder:30b-q8_0"}]))  # default itself gone
+    monkeypatch.setattr("src.vram_admission.last_active_seconds",
+                        lambda root, model: 5.0 if model == "qwen3-coder:30b-q8_0" else None)
+
+    async def fake_warm_once():
+        warmed.append(True)
+        return {"ok": True}
+    monkeypatch.setattr(mw, "warm_once", fake_warm_once)
+
+    out = asyncio.run(mw.check_once())
+    assert warmed == []
+    assert out["resident"] is False
+    assert out["reloads"] == 0
+    assert out["yielding_to"] == "qwen3-coder:30b-q8_0"
+
+
+def test_check_once_ignores_an_active_embedding_model(monkeypatch):
+    """An embedding model resident and busy is not "the owner picked another
+    chat model" — the default reloads normally."""
+    warmed = []
+    monkeypatch.setattr(mw, "resolve_default", lambda: dict(_TARGET))
+    monkeypatch.setattr(mw, "_pin", lambda root, model: None)
+    monkeypatch.setattr(mw, "_load_in_flight", lambda model: False)
+    monkeypatch.setattr(mw, "_api_ps", _fake_ps([{"name": "nomic-embed-text"}]))
+    monkeypatch.setattr("src.vram_admission.last_active_seconds", lambda root, model: 1.0)
+    monkeypatch.setattr("src.vram_admission.assess", lambda root, model: {"fits": True})
+
+    async def fake_warm_once():
+        warmed.append(True)
+        return {"ok": True}
+    monkeypatch.setattr(mw, "warm_once", fake_warm_once)
+
+    out = asyncio.run(mw.check_once())
+    assert warmed == [True]
+    assert out["reloads"] == 1
+    assert out["yielding_to"] is None
+
+
+def test_check_once_reloads_after_the_other_model_goes_idle(monkeypatch):
+    """Past `warm_default_model_yield_minutes`, the other model no longer
+    counts as active — the default comes back."""
+    warmed = []
+    monkeypatch.setattr(mw, "resolve_default", lambda: dict(_TARGET))
+    monkeypatch.setattr(mw, "_pin", lambda root, model: None)
+    monkeypatch.setattr(mw, "_load_in_flight", lambda model: False)
+    monkeypatch.setattr(mw, "_settings", lambda: {"enabled": True, "keep_alive": "-1",
+                                                   "every_s": 20.0, "yield_minutes": 10.0})
+    monkeypatch.setattr(mw, "_api_ps", _fake_ps([{"name": "qwen3-coder:30b-q8_0"}]))
+    # 700s > 600s (10 minutes): no longer "active".
+    monkeypatch.setattr("src.vram_admission.last_active_seconds", lambda root, model: 700.0)
+    monkeypatch.setattr("src.vram_admission.assess", lambda root, model: {"fits": True})
+
+    async def fake_warm_once():
+        warmed.append(True)
+        return {"ok": True}
+    monkeypatch.setattr(mw, "warm_once", fake_warm_once)
+
+    out = asyncio.run(mw.check_once())
+    assert warmed == [True]
+    assert out["reloads"] == 1
+    assert out["yielding_to"] is None
+
+
+def test_check_once_waits_when_default_would_not_fit(monkeypatch):
+    """Even once the other model is gone/idle, never reload into a
+    shortfall — wait and retry next cycle instead of spilling to CPU/PCIe."""
+    warmed = []
+    monkeypatch.setattr(mw, "resolve_default", lambda: dict(_TARGET))
+    monkeypatch.setattr(mw, "_pin", lambda root, model: None)
+    monkeypatch.setattr(mw, "_load_in_flight", lambda model: False)
+    monkeypatch.setattr(mw, "_api_ps", _fake_ps([]))  # nothing resident at all
+    monkeypatch.setattr("src.vram_admission.assess", lambda root, model: {"fits": False})
+
+    async def fake_warm_once():
+        warmed.append(True)
+        return {"ok": True}
+    monkeypatch.setattr(mw, "warm_once", fake_warm_once)
+
+    out = asyncio.run(mw.check_once())
+    assert warmed == []
+    assert out["reloads"] == 0
+    assert out["waiting_for_room"] is True
+
+    # Retried next cycle: once it fits, it reloads.
+    monkeypatch.setattr("src.vram_admission.assess", lambda root, model: {"fits": True})
+    out2 = asyncio.run(mw.check_once())
+    assert warmed == [True]
+    assert out2["reloads"] == 1
+    assert out2["waiting_for_room"] is False
+
+
+def test_is_default_matches_run_model_pin_and_vram_admission(monkeypatch):
+    monkeypatch.setattr(mw, "resolve_default", lambda: dict(_TARGET))
+    assert mw.is_default("http://127.0.0.1:11434", "qwen3.8:27b") is True
+    assert mw.is_default("http://127.0.0.1:11434/v1/chat/completions", "qwen3.8:27b:latest") is True
+    assert mw.is_default("http://127.0.0.1:11434", "some-other-model") is False
+    assert mw.is_default("http://10.0.0.5:11434", "qwen3.8:27b") is False

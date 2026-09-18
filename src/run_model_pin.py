@@ -191,16 +191,16 @@ def _is_default_model(endpoint: str, model: str) -> bool:
     """The owner's rule: whatever Settings → Default AI names must never be
     handed a keep_alive shorter than forever by THIS code path — an agent run
     ending is routine, not a reason to let the residency keeper's job lapse
-    even for the few seconds until its next cycle."""
+    even for the few seconds until its next cycle.
+
+    Delegates to `src.model_warmup.is_default` (X-D: the shared helper
+    `src.vram_admission.is_default_model` also uses) instead of re-deriving
+    the comparison here."""
     try:
         from src import model_warmup
-        target = model_warmup.resolve_default()
+        return model_warmup.is_default(endpoint, model)
     except Exception:  # noqa: BLE001
         return False
-    if not target:
-        return False
-    return (_root(endpoint) == _root(target["url"])
-            and _norm_model(model) == _norm_model(target["model"]))
 
 
 def restore_keep_alive(endpoint: str, model: str, keep_alive: Any) -> bool:
