@@ -128,14 +128,14 @@ def a23_server():
     data_dir = tempfile.mkdtemp(prefix="faustus-a23-data-")
     env = dict(os.environ)
     env.update({
-        "FAUSTUS_DATA_DIR": data_dir,
+        "ODYSSEUS_DATA_DIR": data_dir,
         "DATABASE_URL": "sqlite:///" + (data_dir.replace("\\", "/") + "/app.db"),
         "APP_PORT": str(port),
         "AUTH_ENABLED": "true",
         "LOCALHOST_BYPASS": "false",
-        "FAUSTUS_INPROCESS_POLLERS": "0",
-        "FAUSTUS_INPROCESS_TASKS": "0",
-        "FAUSTUS_STARTUP_WARMUPS": "0",
+        "ODYSSEUS_INPROCESS_POLLERS": "0",
+        "ODYSSEUS_INPROCESS_TASKS": "0",
+        "ODYSSEUS_STARTUP_WARMUPS": "0",
         "PYTHONUNBUFFERED": "1",
         "PYTHONIOENCODING": "utf-8",
         "PYTHONUTF8": "1",
@@ -156,7 +156,7 @@ def a23_server():
         assert status == 200 and body.get("ok") is True, (status, body)
         set_cookie = headers.get("Set-Cookie") or ""
         cookie = set_cookie.split(";", 1)[0]
-        assert cookie.startswith("faustus_session="), set_cookie
+        assert cookie.startswith("odysseus_session="), set_cookie
 
         yield {"base": base, "cookie": cookie, "data_dir": data_dir}
     finally:

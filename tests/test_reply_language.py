@@ -20,9 +20,9 @@ from src.reply_language import (
 )
 from src.research_citations import detect_language, language_signal
 
-ENGLISH = ("In the faustus open source code, we have created the mode projects. "
+ENGLISH = ("In the odysseus open source code, we have created the mode projects. "
            "We now need to add options to delete chats inside the projects.")
-SPANISH = ("En el código de faustus hemos creado el modo proyectos. Ahora hay que "
+SPANISH = ("En el código de odysseus hemos creado el modo proyectos. Ahora hay que "
            "añadir opciones para borrar los chats de dentro de los proyectos.")
 
 
@@ -73,7 +73,7 @@ def test_the_same_request_in_spanish_is_read_as_spanish():
     assert language_of(SPANISH) == "es"
 
 
-@pytest.mark.parametrize("text", ["Hazlo", "D:\\LocalAI\\faustus\\src", "", "   ", "ok"])
+@pytest.mark.parametrize("text", ["Hazlo", "D:\\LocalAI\\odysseus\\src", "", "   ", "ok"])
 def test_a_message_with_no_function_words_settles_nothing(text):
     """Silence beats a guess: pinning English off "Hazlo" would flip a Spanish
     conversation into English on its shortest turn."""

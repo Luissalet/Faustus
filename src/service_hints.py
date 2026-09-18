@@ -33,7 +33,7 @@ _TABLE: Dict[str, Dict[str, Dict[str, str]]] = {
                     "Faustus started, so document RAG and vector memory are "
                     "keyword-only for this whole run. Start ChromaDB, then restart "
                     "Faustus; Reconnect cannot build a store that does not exist yet.",
-            "command": "docker start faustus-chromadb",
+            "command": "docker start odysseus-chromadb",
         },
         "partial": {
             "text": "One vector store lost its collection. Reconnect re-initializes "
@@ -44,7 +44,7 @@ _TABLE: Dict[str, Dict[str, Dict[str, str]]] = {
             "text": "ChromaDB is not answering, so document RAG and vector memory "
                     "silently fall back to keyword matching. Start the container, "
                     "then press Reconnect.",
-            "command": "docker start faustus-chromadb",
+            "command": "docker start odysseus-chromadb",
         },
     },
     "searxng": {

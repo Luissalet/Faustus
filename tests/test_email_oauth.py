@@ -473,11 +473,11 @@ async def test_callback_redirect_uri_follows_the_request_scheme(scheme, monkeypa
         callback = _callback_endpoint()
         await callback(
             code="4/code", state=state, error=None,
-            request=_FakeRequest(scheme=scheme, host="faustus.example.ts.net:7443"),
+            request=_FakeRequest(scheme=scheme, host="odysseus.example.ts.net:7443"),
         )
 
     assert _posted_redirect_uri(mock_post) == (
-        f"{scheme}://faustus.example.ts.net:7443/api/email/oauth/google/callback"
+        f"{scheme}://odysseus.example.ts.net:7443/api/email/oauth/google/callback"
     )
 
 
@@ -529,13 +529,13 @@ async def test_authorize_redirect_uri_follows_the_request_scheme(scheme, monkeyp
     authorize = _authorize_endpoint()
     resp = await authorize(
         account_id="acct-a",
-        request=_FakeRequest(scheme=scheme, host="faustus.example.ts.net:7443"),
+        request=_FakeRequest(scheme=scheme, host="odysseus.example.ts.net:7443"),
         owner="",
     )
 
     query = urllib.parse.parse_qs(urllib.parse.urlparse(resp.headers["location"]).query)
     assert query["redirect_uri"] == [
-        f"{scheme}://faustus.example.ts.net:7443/api/email/oauth/google/callback"
+        f"{scheme}://odysseus.example.ts.net:7443/api/email/oauth/google/callback"
     ]
 
 

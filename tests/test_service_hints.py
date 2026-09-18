@@ -37,7 +37,7 @@ class TestChromaDB:
             hint = hint_for(svc("chromadb", status, rag=None, memory=None))
             assert "restart" in hint["text"].lower()
             assert "keyword-only" in hint["text"]
-            assert hint["command"] == "docker start faustus-chromadb"
+            assert hint["command"] == "docker start odysseus-chromadb"
 
     def test_one_store_down_points_at_reconnect(self):
         hint = hint_for(svc("chromadb", "degraded", rag=True, memory=False))

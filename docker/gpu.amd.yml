@@ -10,7 +10,7 @@
 # engines — install ROCm-compatible builds of vLLM / llama-cpp-python
 # via Cookbook -> Dependencies (or pip) before serving GPU models.
 services:
-  faustus:
+  odysseus:
     devices:
       - /dev/kfd
       - /dev/dri

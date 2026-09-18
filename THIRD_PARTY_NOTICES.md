@@ -12,11 +12,11 @@ forget to keep in sync with the code.
 
 ## Upstream
 
-- **[Faustus](https://github.com/faustus-dev/faustus)** — Faustus is a
-  personal fork of Faustus. **AGPL-3.0-or-later**, the same license as
+- **[Odysseus](https://github.com/odysseus-dev/odysseus)** — Faustus is a
+  personal fork of Odysseus. **AGPL-3.0-or-later**, the same license as
   this repository (see [`LICENSE`](LICENSE)). The codebase before
-  Faustus's own changes is upstream Faustus source; internal names
-  (`faustus`, `FAUSTUS_*`, existing API paths, storage keys) are
+  Faustus's own changes is upstream Odysseus source; internal names
+  (`odysseus`, `ODYSSEUS_*`, existing API paths, storage keys) are
   retained for compatibility rather than renamed — see `README.md`.
 
 ## Adapted pieces (technique/idea, not vendored code)
@@ -84,7 +84,7 @@ forget to keep in sync with the code.
   budget/degradation vocabulary (`parser: regex` when tree-sitter is
   absent); no graph-ranking library was introduced.
 
-*(Faustus descends from Faustus, whose own `ACKNOWLEDGMENTS.md` already
+*(Faustus descends from Odysseus, whose own `ACKNOWLEDGMENTS.md` already
 lists several vendored/adapted pieces — Diogenes, opencode, llmfit, Tongyi
 DeepResearch, bundled front-end JS libraries, Docker Compose images,
 fonts. Those entries are unchanged by this file; see `ACKNOWLEDGMENTS.md`

@@ -11,21 +11,21 @@ This directory contains the Claude Code skill bundle for Faustus.
 5. Configure the terminal Claude Code session:
 
 ```bash
-export FAUSTUS_URL=http://your-faustus-host:7000
-export FAUSTUS_API_TOKEN=ody_generated_token
+export ODYSSEUS_URL=http://your-odysseus-host:7000
+export ODYSSEUS_API_TOKEN=ody_generated_token
 mkdir -p ~/.claude
-curl -fsSL -H "Authorization: Bearer $FAUSTUS_API_TOKEN" "$FAUSTUS_URL/api/claude/plugin.zip" -o /tmp/faustus-claude-skill.zip
-python3 -m zipfile -e /tmp/faustus-claude-skill.zip ~/.claude/
+curl -fsSL -H "Authorization: Bearer $ODYSSEUS_API_TOKEN" "$ODYSSEUS_URL/api/claude/plugin.zip" -o /tmp/odysseus-claude-skill.zip
+python3 -m zipfile -e /tmp/odysseus-claude-skill.zip ~/.claude/
 ```
 
-Claude Code auto-loads anything under `~/.claude/skills/`, so the `faustus` skill is
-available in any session that has `FAUSTUS_URL` and `FAUSTUS_API_TOKEN` in its
+Claude Code auto-loads anything under `~/.claude/skills/`, so the `odysseus` skill is
+available in any session that has `ODYSSEUS_URL` and `ODYSSEUS_API_TOKEN` in its
 environment.
 
 ## What's in the bundle
 
-- `skills/faustus/SKILL.md` — the skill definition Claude Code reads.
-- `skills/faustus/scripts/faustus_api.py` — small helper that calls the scoped
+- `skills/odysseus/SKILL.md` — the skill definition Claude Code reads.
+- `skills/odysseus/scripts/odysseus_api.py` — small helper that calls the scoped
   `/api/codex/*` endpoints (these are the canonical scope-gated agent API; the
   `codex` path is historic and shared by all agent integrations).
 

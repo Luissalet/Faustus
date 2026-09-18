@@ -1,7 +1,7 @@
 """workspace_trust.py — trust-on-first-use for a folder's own instruction files (FAUSTUS).
 
 `src/project_instructions.py` reads AGENTS.md / CLAUDE.md / .cursorrules /
-CONVENTIONS.md / .github/copilot-instructions.md / .faustus/INSTRUCTIONS.md out
+CONVENTIONS.md / .github/copilot-instructions.md / .odysseus/INSTRUCTIONS.md out
 of the linked folder and `src/agent_loop.py` appends that text to the **system
 prompt** of every turn with a workspace. Its docstring states the assumption out
 loud — *"This is the USER's own AGENTS.md"* — and that assumption holds for a
@@ -46,7 +46,7 @@ wrong removal is far worse than a missed check. Silently blanking a user's own
 standing instructions because a JSON file would not parse is a bug that looks
 like the model going senile; failing to gate a folder is the status quo ante.
 
-Not covered here, and deliberately: ``<workspace>/.faustus/objectives.jsonl``
+Not covered here, and deliberately: ``<workspace>/.odysseus/objectives.jsonl``
 also travels with a clone and also reaches the project system prompt
 (`services/objectives.py:objectives_block`, injected by `services/projects.py`
 and re-injected by `src/context_compactor.py`). It is left out of the digest
@@ -156,10 +156,9 @@ def instruction_files(workspace: str) -> List[str]:
         from src.project_instructions import candidate_files
         rels = candidate_files()
     except Exception:  # noqa: BLE001 - fall back to the documented default set
-        rels = ["AGENTS.md", "CLAUDE.md", os.path.join(".faustus", "INSTRUCTIONS.md"),
-                "FAUSTUS.md", ".cursorrules", "CONVENTIONS.md",
-                os.path.join(".github", "copilot-instructions.md"),
-                os.path.join(".odysseus", "INSTRUCTIONS.md")]
+        rels = ["AGENTS.md", "CLAUDE.md", os.path.join(".odysseus", "INSTRUCTIONS.md"),
+                "ODYSSEUS.md", ".cursorrules", "CONVENTIONS.md",
+                os.path.join(".github", "copilot-instructions.md")]
     found: Dict[str, str] = {}
     for rel in rels:
         try:

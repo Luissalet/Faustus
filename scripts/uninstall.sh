@@ -34,14 +34,14 @@ done
 echo "Uninstalling Faustus service/runtime from $SCRIPT_DIR ..."
 
 if command -v systemctl >/dev/null 2>&1; then
-  if systemctl list-unit-files 2>/dev/null | grep -q '^faustus-ui\.service'; then
-    echo "[+] Stopping and disabling faustus-ui.service"
-    sudo systemctl stop faustus-ui 2>/dev/null || true
-    sudo systemctl disable faustus-ui 2>/dev/null || true
-    sudo rm -f /etc/systemd/system/faustus-ui.service
+  if systemctl list-unit-files 2>/dev/null | grep -q '^odysseus-ui\.service'; then
+    echo "[+] Stopping and disabling odysseus-ui.service"
+    sudo systemctl stop odysseus-ui 2>/dev/null || true
+    sudo systemctl disable odysseus-ui 2>/dev/null || true
+    sudo rm -f /etc/systemd/system/odysseus-ui.service
     sudo systemctl daemon-reload 2>/dev/null || true
   else
-    echo "[i] No faustus-ui.service installed; skipping service removal."
+    echo "[i] No odysseus-ui.service installed; skipping service removal."
   fi
 else
   echo "[i] systemctl not found; skipping service removal (not on this platform)."

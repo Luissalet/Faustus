@@ -38,7 +38,7 @@ def _populated():
         C.CouncilSession(
             id="council_1", owner="alice", title="Implement OAuth",
             policy="collaborate", status="active", phase="execution",
-            parent_session_id="chat_9", workspace="D:/LocalAI/faustus",
+            parent_session_id="chat_9", workspace="D:/LocalAI/odysseus",
             project_id="faustus", participants=("p_claude", "p_codex"),
             budgets=C.CouncilBudgets(max_parallel=3),
             activity_completion_mode="greedy",
@@ -479,7 +479,7 @@ def test_a_session_written_before_the_newer_fields_existed_still_parses():
     legacy = {
         "id": "council_1", "owner": "alice", "title": "Implement OAuth",
         "policy": "collaborate", "status": "active", "phase": "execution",
-        "parent_session_id": "chat_9", "workspace": "D:/LocalAI/faustus",
+        "parent_session_id": "chat_9", "workspace": "D:/LocalAI/odysseus",
         "participants": ["p_claude"], "budgets": {"max_rounds": 4},
         "created_at": "2026-09-06T10:00:00Z", "updated_at": "2026-09-06T10:00:00Z",
         "revision": 7,

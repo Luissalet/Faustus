@@ -88,7 +88,7 @@ class SetAdminRequest(BaseModel):
 class SetOpenRegistrationRequest(BaseModel):
     enabled: bool
 
-SESSION_COOKIE = "faustus_session"
+SESSION_COOKIE = "odysseus_session"
 
 
 def _secure_cookie(request: Request) -> bool:
@@ -202,7 +202,7 @@ def setup_auth_routes(auth_manager: AuthManager) -> APIRouter:
     # ------------------------------------------------------------------
     # Corporate OIDC login (A22) — Authorization Code + PKCE. A separate
     # mechanism from /login above, but it finishes the exact same way: a
-    # `create_session_trusted` call sets the same `faustus_session` cookie.
+    # `create_session_trusted` call sets the same `odysseus_session` cookie.
     # ------------------------------------------------------------------
 
     def _default_oidc_redirect_uri(request: Request) -> str:
@@ -982,9 +982,9 @@ def setup_auth_routes(auth_manager: AuthManager) -> APIRouter:
             import httpx
             from urllib.parse import urlparse
             # Strip any path/query the user accidentally pasted in the
-            # base URL (e.g. `http://host:8091/faustus`) — otherwise
+            # base URL (e.g. `http://host:8091/odysseus`) — otherwise
             # the topic gets appended after the path and we publish to
-            # `/faustus/faustus` (which ntfy 404s on). ntfy itself
+            # `/odysseus/odysseus` (which ntfy 404s on). ntfy itself
             # only ever serves from the root.
             raw_base = (integ.get("base_url") or "").strip()
             parsed = urlparse(raw_base)

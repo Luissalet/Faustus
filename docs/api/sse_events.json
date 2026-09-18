@@ -15,7 +15,7 @@
     "schema_version": "string, \"2.0\""
   },
   "headers": {
-    "X-Faustus-Run-Id": "response header on chat_stream/resume; request header on stop (fencing token)",
+    "X-Odysseus-Run-Id": "response header on chat_stream/resume; request header on stop (fencing token)",
     "X-Faustus-Api-Version": "server API version on every /api/* response",
     "X-Faustus-Client-Version": "optional request header; 426 when below the server floor",
     "X-Faustus-Idempotent-Replay": "\"1\" when a repeated client_message_id re-attached to the existing run"

@@ -229,7 +229,7 @@ def test_a_real_stdio_session_survives_a_stray_print(tmp_path):
     pytest.importorskip("mcp")
     script = tmp_path / "server_with_a_stray_print.py"
     script.write_text(_STRAY_PRINT_SERVER.format(root=str(REPO)), encoding="utf-8")
-    env = {**os.environ, "PYTHONPATH": str(REPO), "FAUSTUS_DATA_DIR": str(tmp_path / "data")}
+    env = {**os.environ, "PYTHONPATH": str(REPO), "ODYSSEUS_DATA_DIR": str(tmp_path / "data")}
     proc = subprocess.Popen([sys.executable, str(script)], cwd=str(REPO), env=env, text=True,
                             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     request = {"jsonrpc": "2.0", "id": 1, "method": "initialize",

@@ -1161,15 +1161,15 @@ def tool_index_warmup_enabled(env: Optional[Dict[str, str]] = None) -> bool:
 
     On by default: building it costs one fastembed model load (the document
     vectors come from the on-disk cache) and it removes the first-request
-    penalty. ``FAUSTUS_TOOL_INDEX_WARMUP=0`` turns it off; an explicit
-    ``FAUSTUS_STARTUP_WARMUPS=0`` (the opt-out for all warmups) is honoured
+    penalty. ``ODYSSEUS_TOOL_INDEX_WARMUP=0`` turns it off; an explicit
+    ``ODYSSEUS_STARTUP_WARMUPS=0`` (the opt-out for all warmups) is honoured
     too unless the tool-index switch says otherwise.
     """
     env = os.environ if env is None else env
-    explicit = (env.get("FAUSTUS_TOOL_INDEX_WARMUP") or "").strip().lower()
+    explicit = (env.get("ODYSSEUS_TOOL_INDEX_WARMUP") or "").strip().lower()
     if explicit:
         return explicit in _TRUTHY
-    legacy = (env.get("FAUSTUS_STARTUP_WARMUPS") or "").strip().lower()
+    legacy = (env.get("ODYSSEUS_STARTUP_WARMUPS") or "").strip().lower()
     if legacy in _FALSY:
         return False
     return True

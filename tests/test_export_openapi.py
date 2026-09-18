@@ -32,7 +32,7 @@ def test_export_openapi_writes_the_real_apps_document(tmp_path):
     before = set(real_data_dir.iterdir()) if real_data_dir.is_dir() else set()
 
     env = os.environ.copy()
-    env.pop("FAUSTUS_DATA_DIR", None)
+    env.pop("ODYSSEUS_DATA_DIR", None)
     env.pop("DATABASE_URL", None)
 
     result = subprocess.run(
@@ -53,7 +53,7 @@ def test_export_openapi_writes_the_real_apps_document(tmp_path):
     assert "/api/chat_stream" in spec["paths"]
     assert "/api/session" in spec["paths"]
 
-    # No new file in the real data/ dir — the script pointed FAUSTUS_DATA_DIR
+    # No new file in the real data/ dir — the script pointed ODYSSEUS_DATA_DIR
     # / DATABASE_URL at a throwaway temp location instead of the repo's own.
     after = set(real_data_dir.iterdir()) if real_data_dir.is_dir() else set()
     assert after == before, f"export_openapi.py wrote into the real data/ dir: {after - before}"
@@ -62,7 +62,7 @@ def test_export_openapi_writes_the_real_apps_document(tmp_path):
 def test_export_openapi_reports_the_output_path_and_summary(tmp_path):
     out_path = tmp_path / "nested" / "openapi.json"
     env = os.environ.copy()
-    env.pop("FAUSTUS_DATA_DIR", None)
+    env.pop("ODYSSEUS_DATA_DIR", None)
     env.pop("DATABASE_URL", None)
 
     result = subprocess.run(

@@ -15,7 +15,7 @@
  *
  * The second is what keeps the sixteen presets and every custom theme
  * working, including the ones people made in the interface Studio replaced:
- * same key (`faustus-theme`), same five colours. Every mapping falls back
+ * same key (`odysseus-theme`), same five colours. Every mapping falls back
  * to the Studio token, so a half-defined theme degrades instead of breaking.
  */
 

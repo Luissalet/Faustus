@@ -9,7 +9,7 @@ Fecha: 04-09-2026. Rama `feat/studio-ui`. Verificado en el 7001 con
   - Menú ⇅ (`QuickMenu`, sin dependencias: Radix Menu metería 80 KB de
     floating-ui en el bundle principal): ordenar por última actividad, fecha
     de creación, nombre o por carpeta (grupos plegables con contador); misma
-    clave `faustus-session-sort` que la anterior.
+    clave `odysseus-session-sort` que la anterior.
   - «Seleccionar varias»: casillas por fila, «todas», barra con Zip
     (`/api/sessions/export?fmt=zip&ids=`), Archivar y Borrar (con
     confirmación, `/api/sessions/bulk-delete`).

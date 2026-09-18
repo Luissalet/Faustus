@@ -25,7 +25,7 @@ endpoint scoped and do not merge it globally with the base checkpoint.
 vLLM's supported API surface is broad, but actual behavior depends on the
 loaded model task, chat template, multimodal assets, tool-call parser,
 reasoning parser, structured-output configuration, and launch flags. Current
-Faustus reasoning regressions cover structured `reasoning`, legacy
+Odysseus reasoning regressions cover structured `reasoning`, legacy
 `reasoning_content`, and compatible fields (#602). These response channels are
 transport evidence, not a claim that every vLLM model reasons.
 

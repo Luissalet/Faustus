@@ -28,7 +28,7 @@ def test_creating_routing_lock_does_not_activate_managed_storage(tmp_path):
     with locations.routing_guard(project):
         with locations.routing_guard(dict(project)):
             assert not locations.active(project)
-            assert locations.directory(project) == str(tmp_path / 'workspace' / '.faustus')
+            assert locations.directory(project) == str(tmp_path / 'workspace' / '.odysseus')
 
 
 @pytest.mark.parametrize('filename', ['routing.lock', locations.MARKER])

@@ -36,7 +36,7 @@ This spec covers current security and trust-boundary behavior in:
 
 ## Trust Boundary
 
-Faustus is a trusted-user private-network app. Admins intentionally have powerful local capabilities: shell, files, email, calendar, MCP, model serving, vault, settings, and API token management. The security model prevents unauthenticated access, non-admin escalation, prompt-injection through untrusted content, and accidental exposure of internal services.
+Odysseus is a trusted-user private-network app. Admins intentionally have powerful local capabilities: shell, files, email, calendar, MCP, model serving, vault, settings, and API token management. The security model prevents unauthenticated access, non-admin escalation, prompt-injection through untrusted content, and accidental exposure of internal services.
 
 `THREAT_MODEL.md` owns high-level security framing, but implementation claims here should be verified against current code when the threat model is stale. This spec records the implementation map that contributors should check before changing auth or untrusted-context flows. Security-header runtime details live in `runtime.md`.
 
@@ -68,7 +68,7 @@ Admin promotion/demotion is a live auth flag change through `AuthManager.set_adm
 
 Cookie requests use the real username. Bearer-token requests are stamped as `request.state.current_user = "api"` plus `api_token_owner`, `api_token_scopes`, and token id. Routes that support API-token access must explicitly use `effective_user()` or route-local scope helpers instead of treating `"api"` as an owner.
 
-Internal loopback calls may stamp `current_user = "internal-tool"` or a validated `X-Faustus-Owner` username. Network/proxy validation for that bypass lives in `app.py`; `require_admin()` trusts the stamped sentinel or raw internal header and should be used behind equivalent middleware control.
+Internal loopback calls may stamp `current_user = "internal-tool"` or a validated `X-Odysseus-Owner` username. Network/proxy validation for that bypass lives in `app.py`; `require_admin()` trusts the stamped sentinel or raw internal header and should be used behind equivalent middleware control.
 
 Missing-owner values remain state-dependent at legacy call sites, but new storage-facing code has one normalization contract:
 
@@ -148,7 +148,7 @@ Current untrusted surfaces include fetched URLs, web results, emails, memories, 
 
 `scripts/mlx_image_server.py` serves exactly the model selected when the process starts. OpenAI-compatible request `model` fields are accepted but ignored for generation and edits, so an unauthenticated caller cannot select another local directory or Hugging Face repository and drive model-specific script/bridge execution.
 
-Host Docker socket access is a high-trust admin/deployment choice, not a normal container capability. Default Docker Compose does not mount `/var/run/docker.sock`; `src.host_docker_access` only reports local Docker available inside a container when `FAUSTUS_ENABLE_HOST_DOCKER=true` and the socket exists. Remote SSH Docker/Cookbook workflows remain the safer default.
+Host Docker socket access is a high-trust admin/deployment choice, not a normal container capability. Default Docker Compose does not mount `/var/run/docker.sock`; `src.host_docker_access` only reports local Docker available inside a container when `ODYSSEUS_ENABLE_HOST_DOCKER=true` and the socket exists. Remote SSH Docker/Cookbook workflows remain the safer default.
 
 ## Degraded And Compatibility Behavior
 

@@ -23,7 +23,7 @@ from src.creator import resources
 
 @pytest.fixture(autouse=True)
 def clean_admission(tmp_path, monkeypatch):
-    monkeypatch.setenv("FAUSTUS_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("ODYSSEUS_DATA_DIR", str(tmp_path))
     from src import constants
     monkeypatch.setattr(constants, "DATA_DIR", str(tmp_path))
     resource_admission.reset_all()

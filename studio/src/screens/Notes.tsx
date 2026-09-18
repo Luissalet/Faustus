@@ -72,7 +72,7 @@ import { t, tn } from '../i18n';
  * loop), so nothing rings twice.
  */
 
-const VIEW_KEY = 'faustus-notes-view';
+const VIEW_KEY = 'odysseus-notes-view';
 const FIRED_KEY = 'faustus_studio_notes_fired';
 
 type View = 'list' | 'grid';

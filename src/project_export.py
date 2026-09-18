@@ -10,7 +10,7 @@ Reuses, does not reimplement:
   * the DB's ``Session``/``ChatMessage`` rows, scoped by ``Session.
     project_id`` — chats are not files, exporting them means querying the
     same tables the chat UI reads, not inventing a parallel chat store;
-  * ``<workspace>/.faustus/`` — per ``services/projects.py``'s own module
+  * ``<workspace>/.odysseus/`` — per ``services/projects.py``'s own module
     docstring, "project memory is Markdown on disk" there already. Exporting
     it is copying files that already exist at a stable, workspace-relative
     location — not a new memory format.
@@ -21,7 +21,7 @@ another disk, another machine, or another username still applies cleanly
 (OPS-04's acceptance criterion: "mover un proyecto a otro disco mantiene
 identidad y enlaces").
 
-Secrets are excluded by default: any file under ``.faustus/`` whose name
+Secrets are excluded by default: any file under ``.odysseus/`` whose name
 matches a common credential pattern (``.env``, ``*.key``, ``*.pem``,
 ``*credentials*``, ``*token*``, ``*secret*``) is skipped and named in the
 manifest's ``excluded_for_secrets`` list — visible, never silently dropped.
@@ -54,7 +54,7 @@ logger = logging.getLogger(__name__)
 
 BUNDLE_SCHEMA_VERSION = 1
 
-# Filenames under .faustus/ that never leave the machine by default, even
+# Filenames under .odysseus/ that never leave the machine by default, even
 # when the rest of the memory tree is exported. Matched case-insensitively
 # against the basename only — a real secret's path, not its content, is
 # what this module can see without reading (and possibly leaking) it.
@@ -77,7 +77,7 @@ def _relpath(root: str, path: str) -> str:
 
 
 def _iter_memory_files(workspace: str):
-    """Files under <workspace>/.faustus/, relative paths, secret-named ones
+    """Files under <workspace>/.odysseus/, relative paths, secret-named ones
     filtered out before they are ever read."""
     from services.projects import MEMORY_DIRNAME
     mem_root = os.path.join(workspace, MEMORY_DIRNAME)

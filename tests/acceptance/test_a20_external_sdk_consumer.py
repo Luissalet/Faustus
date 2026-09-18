@@ -62,7 +62,7 @@ ADMIN_PASSWORD = "a20-admin-password-1"
 # ---------------------------------------------------------------------------
 # Small HTTP helpers (copied in spirit from tests/e2e/conftest.py — this
 # file deliberately does not import that conftest, which skips this whole
-# directory globally without FAUSTUS_E2E).
+# directory globally without ODYSSEUS_E2E).
 # ---------------------------------------------------------------------------
 
 
@@ -273,14 +273,14 @@ def a20_server(node_bin, fake_model):
     data_dir = tempfile.mkdtemp(prefix="faustus-a20-data-")
     env = dict(os.environ)
     env.update({
-        "FAUSTUS_DATA_DIR": data_dir,
+        "ODYSSEUS_DATA_DIR": data_dir,
         "DATABASE_URL": "sqlite:///" + (data_dir.replace("\\", "/") + "/app.db"),
         "APP_PORT": str(port),
         "AUTH_ENABLED": "true",
         "LOCALHOST_BYPASS": "false",
-        "FAUSTUS_INPROCESS_POLLERS": "0",
-        "FAUSTUS_INPROCESS_TASKS": "0",
-        "FAUSTUS_STARTUP_WARMUPS": "0",
+        "ODYSSEUS_INPROCESS_POLLERS": "0",
+        "ODYSSEUS_INPROCESS_TASKS": "0",
+        "ODYSSEUS_STARTUP_WARMUPS": "0",
         "PYTHONUNBUFFERED": "1",
         "PYTHONIOENCODING": "utf-8",
         "PYTHONUTF8": "1",
@@ -301,7 +301,7 @@ def a20_server(node_bin, fake_model):
         assert status == 200 and body.get("ok") is True, (status, body)
         set_cookie = headers.get("Set-Cookie") or ""
         cookie = set_cookie.split(";", 1)[0]
-        assert cookie.startswith("faustus_session="), set_cookie
+        assert cookie.startswith("odysseus_session="), set_cookie
         auth_headers = {"Cookie": cookie}
 
         status, ep, _ = _post_form(base + "/api/model-endpoints", {

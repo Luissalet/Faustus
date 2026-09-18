@@ -2,7 +2,7 @@
 
 Roadmap, backend: *"Backup/restore guide and helper flow for `data/`."*
 
-`scripts/faustus-backup` already does manual snapshots well. The gap is that
+`scripts/odysseus-backup` already does manual snapshots well. The gap is that
 nobody runs a CLI by hand: the machine that has never been backed up is always
 the one with the chats, memories, projects, skills and gallery on it. So this
 adds the three things a personal install actually needs.
@@ -14,7 +14,7 @@ adds the three things a personal install actually needs.
    a temp dir and run through `PRAGMA integrity_check`. A backup that would not
    restore is reported as broken *at backup time*, not on the day you need it.
 3. **Same format as the CLI.** Entries are `data/...`, exactly what
-   `faustus-backup restore` expects, so either tool can read the other's
+   `odysseus-backup restore` expects, so either tool can read the other's
    output. Only the DB check is extracted during verification — never the whole
    archive, which can be gigabytes of gallery images.
 
@@ -51,7 +51,7 @@ from src.backup_crypto import (
 logger = logging.getLogger(__name__)
 
 PREFIX = "faustus-backup-"
-_LEGACY_PREFIXES = ("faustus-backup-",)
+_LEGACY_PREFIXES = ("odysseus-backup-",)
 SUFFIX = ".tar.gz"
 # Directory names inside data/ that are caches or bulk, skipped by default.
 SKIP_DEFAULT = ("deep_research", "mail-attachments")
@@ -94,7 +94,7 @@ def data_dir() -> Path:
 
 
 def backup_dir() -> Path:
-    override = os.getenv("FAUSTUS_BACKUP_DIR")
+    override = os.getenv("ODYSSEUS_BACKUP_DIR") or os.getenv("FAUSTUS_BACKUP_DIR")
     if override:
         return Path(override)
     from src.runtime_paths import get_app_root
@@ -263,7 +263,7 @@ def _tar_data_dir(src_root: Path, out: Path, *, include_research: bool,
                     excluded.append(rel.as_posix())
                     continue
                 source = staged.get(path, path)
-                # Always "data/..." so `faustus-backup restore` accepts it,
+                # Always "data/..." so `odysseus-backup restore` accepts it,
                 # even when the live directory is named something else.
                 tar.add(source, arcname=str(PurePosixPath("data", *rel.parts)))
                 files += 1
@@ -757,10 +757,10 @@ def restore_command(name: str) -> str:
     """
     path = backup_dir() / name
     if str(name).endswith(ENCRYPTED_SUFFIX):
-        return (f"Stop Faustus, then run:  python scripts/faustus-backup restore "
+        return (f"Stop Faustus, then run:  python scripts/odysseus-backup restore "
                 f"\"{path}\" --yes --passphrase-env FAUSTUS_BACKUP_PASSPHRASE"
                 f"   (active sessions are invalidated by the restore)")
-    return (f"Stop Faustus, then run:  python scripts/faustus-backup restore "
+    return (f"Stop Faustus, then run:  python scripts/odysseus-backup restore "
             f"\"{path}\" --yes   (active sessions are invalidated by the restore)")
 
 

@@ -1,6 +1,6 @@
 """Startup warmup default and the agent loop's index-init timeout.
 
-The tool index warmup used to be gated behind FAUSTUS_STARTUP_WARMUPS (off by
+The tool index warmup used to be gated behind ODYSSEUS_STARTUP_WARMUPS (off by
 default), so the first agent turn always paid the index build and, with the
 per-request selection timeout, landed on always-available tools only. Now the
 tool index warms by default (its own switch to disable it), and an index init
@@ -19,15 +19,15 @@ def test_tool_index_warmup_is_on_by_default_and_can_be_disabled():
     from src.tool_index import tool_index_warmup_enabled
 
     assert tool_index_warmup_enabled(env={}) is True
-    assert tool_index_warmup_enabled(env={"FAUSTUS_TOOL_INDEX_WARMUP": "0"}) is False
-    assert tool_index_warmup_enabled(env={"FAUSTUS_TOOL_INDEX_WARMUP": "false"}) is False
-    assert tool_index_warmup_enabled(env={"FAUSTUS_TOOL_INDEX_WARMUP": "1"}) is True
+    assert tool_index_warmup_enabled(env={"ODYSSEUS_TOOL_INDEX_WARMUP": "0"}) is False
+    assert tool_index_warmup_enabled(env={"ODYSSEUS_TOOL_INDEX_WARMUP": "false"}) is False
+    assert tool_index_warmup_enabled(env={"ODYSSEUS_TOOL_INDEX_WARMUP": "1"}) is True
     # an explicit opt-out of all startup warmups still covers the tool index …
-    assert tool_index_warmup_enabled(env={"FAUSTUS_STARTUP_WARMUPS": "0"}) is False
+    assert tool_index_warmup_enabled(env={"ODYSSEUS_STARTUP_WARMUPS": "0"}) is False
     # … unless the tool-index switch says otherwise
-    assert tool_index_warmup_enabled(env={"FAUSTUS_STARTUP_WARMUPS": "0", "FAUSTUS_TOOL_INDEX_WARMUP": "1"}) is True
+    assert tool_index_warmup_enabled(env={"ODYSSEUS_STARTUP_WARMUPS": "0", "ODYSSEUS_TOOL_INDEX_WARMUP": "1"}) is True
     # the legacy flag being merely unset/empty does not turn it off
-    assert tool_index_warmup_enabled(env={"FAUSTUS_STARTUP_WARMUPS": ""}) is True
+    assert tool_index_warmup_enabled(env={"ODYSSEUS_STARTUP_WARMUPS": ""}) is True
 
 
 def test_app_startup_gates_tool_index_warmup_on_the_helper():
@@ -36,7 +36,7 @@ def test_app_startup_gates_tool_index_warmup_on_the_helper():
         src = fh.read()
     assert "tool_index_warmup_enabled" in src
     # the endpoint pings stay opt-in
-    assert "FAUSTUS_STARTUP_WARMUPS" in src
+    assert "ODYSSEUS_STARTUP_WARMUPS" in src
 
 
 # ── agent loop: a slow index build must not strip the tools the query named ──

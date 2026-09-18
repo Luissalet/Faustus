@@ -45,7 +45,7 @@ def _write_objectives(workspace):
     """Two live objectives with one declared dependency edge, plus a dropped
     one that must NOT reach the graph (services/objectives.py leaves dropped
     objectives out of the prompt block and the impact scores too)."""
-    path = os.path.join(workspace, ".faustus", "objectives.jsonl")
+    path = os.path.join(workspace, ".odysseus", "objectives.jsonl")
     rows = [
         {"t": "obj", "id": "OBJ-1", "title": "Ship the provenance graph",
          "status": "in_progress", "priority": 1, "owner": "user",
@@ -66,7 +66,7 @@ def _write_objectives(workspace):
 
 
 def _write_objective_log(workspace):
-    path = os.path.join(workspace, ".faustus", "objectives_log.jsonl")
+    path = os.path.join(workspace, ".odysseus", "objectives_log.jsonl")
     rows = [
         {"ts": "2026-09-02T09:00:00Z", "kind": "delta", "actor": "agent", "op": "EDIT",
          "id": "OBJ-2", "fields": {"status": "done"}, "rationale": "tests green",
@@ -134,7 +134,7 @@ def _add_memory(workspace):
 def store(tmp_path, monkeypatch):
     """A disposable workspace + data dir holding every source the graph reads."""
     workspace = tmp_path / "ws"
-    (workspace / ".faustus").mkdir(parents=True)
+    (workspace / ".odysseus").mkdir(parents=True)
     data = tmp_path / "data"
     (data / "dispatch").mkdir(parents=True)
 
@@ -332,7 +332,7 @@ def test_impact_is_reachability_along_reversed_depends_on_and_changed(store):
 
 def test_impact_is_transitive(store):
     """OBJ-3 → OBJ-1 → OBJ-2: touching OBJ-2 threatens both."""
-    path = os.path.join(store.workspace, ".faustus", "objectives.jsonl")
+    path = os.path.join(store.workspace, ".odysseus", "objectives.jsonl")
     with open(path, "a", encoding="utf-8") as fh:
         fh.write(json.dumps({"t": "obj", "id": "OBJ-3", "title": "Draw the page",
                              "status": "open", "priority": 3, "owner": "user",
@@ -498,7 +498,7 @@ def test_a_missing_memory_database_yields_a_smaller_graph(tmp_path, monkeypatch,
 
 
 def test_a_missing_objectives_file_yields_a_smaller_graph(store):
-    os.remove(os.path.join(store.workspace, ".faustus", "objectives.jsonl"))
+    os.remove(os.path.join(store.workspace, ".odysseus", "objectives.jsonl"))
     graph = _build(store)
     assert [n for n in graph["nodes"] if n["kind"] == "objective"] == []
     assert graph["sources"]["objectives"]["available"] is True
@@ -509,7 +509,7 @@ def test_a_missing_objectives_file_yields_a_smaller_graph(store):
 
 
 def test_a_corrupt_objectives_file_does_not_raise(store):
-    path = os.path.join(store.workspace, ".faustus", "objectives.jsonl")
+    path = os.path.join(store.workspace, ".odysseus", "objectives.jsonl")
     with open(path, "w", encoding="utf-8") as fh:
         fh.write("{not json at all\n")
     graph = _build(store)

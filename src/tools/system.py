@@ -779,7 +779,7 @@ _APP_API_BLOCKLIST_METHOD_PATH = (
     # from the UI; the generic bridge is not the door for them.
     ("DELETE", "/api/context"),
     # Importing project notes for real (`dry_run: false`) turns every Markdown
-    # file under .faustus/ into standing context that is pasted into prompts
+    # file under .odysseus/ into standing context that is pasted into prompts
     # from then on. The route is already `require_human`, which this token does
     # not open; listed anyway, because the reason is a decision and not an
     # accident of which gate happens to be on the handler today.

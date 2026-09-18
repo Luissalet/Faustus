@@ -5,7 +5,7 @@ from tests.helpers.cli_loader import load_script
 
 
 def _load_cli():
-    return load_script("faustus-research")
+    return load_script("odysseus-research")
 
 
 def test_list_skips_non_object_research_records(tmp_path, monkeypatch):

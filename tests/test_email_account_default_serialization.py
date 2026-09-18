@@ -434,7 +434,7 @@ def test_rename_serializes_old_and_new_owner_and_stale_set_default_fails_closed(
 
     monkeypatch.setattr(core_db, "lock_email_account_owner_mutations", controlled_lock)
     request = SimpleNamespace(
-        cookies={"faustus_session": "admin-token"},
+        cookies={"odysseus_session": "admin-token"},
         app=SimpleNamespace(
             state=SimpleNamespace(
                 invalidate_token_cache=lambda: None,

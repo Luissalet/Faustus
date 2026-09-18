@@ -38,7 +38,7 @@ below, and the uninstall scripts' safety property.
 Two real tools, same `data/…` archive shape so either can read the
 other's output:
 
-- `scripts/faustus-backup snapshot` — the shipped CLI: tars `data/`
+- `scripts/odysseus-backup snapshot` — the shipped CLI: tars `data/`
   (SQLite DBs copied via `.backup()` so a live app can't corrupt the
   snapshot), verifies the archive, supports encryption
   (`src/backup_crypto.py`) and profiles (`src/backup_service.py`).
@@ -50,7 +50,7 @@ other's output:
 
 ## 4. Restore
 
-- `scripts/faustus-backup restore PATH --yes` — the shipped CLI. Requires
+- `scripts/odysseus-backup restore PATH --yes` — the shipped CLI. Requires
   `--yes` (restore is destructive: it overwrites `data/` in place, first
   moving the current one aside to `data.before-restore-<timestamp>/`).
   Deliberately has no HTTP endpoint (`src/backup_service.py`'s module

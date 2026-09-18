@@ -98,7 +98,7 @@ def _turn(content: str = "Rebut these two proposals") -> CouncilTurn:
 
 def _session(**over) -> CouncilSession:
     payload = {"id": "council_1", "owner": "alice", "title": "OAuth",
-               "policy": "collaborate", "workspace": "D:/LocalAI/faustus"}
+               "policy": "collaborate", "workspace": "D:/LocalAI/odysseus"}
     payload.update(over)
     return CouncilSession.parse(payload)
 
@@ -329,7 +329,7 @@ async def test_the_executor_starts_a_dispatch_job_and_translates_its_summary():
     assert engine.started, "the executor must call dispatch.start, not run a worker itself"
     assert engine.waits == 1 and engine.compacts == 1
     body = engine.started[0]["body"]
-    assert body["workspace"] == "D:/LocalAI/faustus"
+    assert body["workspace"] == "D:/LocalAI/odysseus"
     assert body["tasks"][0]["instruction"] == "Add the OAuth callback route"
     assert body["tasks"][0]["files"] == ["src/a.py"]
     assert result["ok"] is True

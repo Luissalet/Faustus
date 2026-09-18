@@ -2,29 +2,29 @@
 layout: default
 ---
 
-# Faustus Setup Guide
+# Odysseus Setup Guide
 
 This page keeps the detailed install, deployment, troubleshooting, and configuration notes out of the front README.
 
 ## Quick Start
 
-> **Branch note:** `dev` is the default branch and contains the latest development changes, but it may be unstable. For the more stable curated branch, use [`main`](https://github.com/faustus-dev/faustus/tree/main).
+> **Branch note:** `dev` is the default branch and contains the latest development changes, but it may be unstable. For the more stable curated branch, use [`main`](https://github.com/odysseus-dev/odysseus/tree/main).
 
 Defaults work out of the box: clone, run, then configure models/search/email
 inside **Settings**. Only edit `.env` for deployment-level overrides like
 `APP_BIND`, `APP_PORT`, `AUTH_ENABLED`, `DATABASE_URL`, or a pre-seeded admin password.
 
-On first setup, Faustus creates an admin account (`admin` unless
-`FAUSTUS_ADMIN_USER` is set) and prints a temporary password in the terminal.
-For Docker installs, the same line is in `docker compose logs faustus`.
+On first setup, Odysseus creates an admin account (`admin` unless
+`ODYSSEUS_ADMIN_USER` is set) and prints a temporary password in the terminal.
+For Docker installs, the same line is in `docker compose logs odysseus`.
 Use that for the first login, then change it in **Settings**.
 
-Contributing? See [CONTRIBUTING.md](https://github.com/faustus-dev/faustus/blob/dev/CONTRIBUTING.md) for setup, testing, and pull request guidelines.
+Contributing? See [CONTRIBUTING.md](https://github.com/odysseus-dev/odysseus/blob/dev/CONTRIBUTING.md) for setup, testing, and pull request guidelines.
 
 ### Docker (recommended)
 ```bash
-git clone https://github.com/faustus-dev/faustus.git
-cd faustus
+git clone https://github.com/odysseus-dev/odysseus.git
+cd odysseus
 cp .env.example .env       # optional, but recommended for explicit defaults
 docker compose up -d --build
 ```
@@ -41,8 +41,8 @@ only when you intentionally want LAN/reverse-proxy access.
 
 ### Native Linux / macOS
 ```bash
-git clone https://github.com/faustus-dev/faustus.git
-cd faustus
+git clone https://github.com/odysseus-dev/odysseus.git
+cd odysseus
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
@@ -56,18 +56,18 @@ connect to API or remote model servers instead. Use `--host 0.0.0.0` only when y
 
 ### Apple Silicon
 Docker on macOS cannot use the Metal GPU. For GPU-accelerated Cookbook on an
-M-series Mac, run Faustus natively:
+M-series Mac, run Odysseus natively:
 
 ```bash
-git clone https://github.com/faustus-dev/faustus.git
-cd faustus
+git clone https://github.com/odysseus-dev/odysseus.git
+cd odysseus
 ./start-macos.sh
 ```
 
 It launches at `http://127.0.0.1:7860`. To expose it to your phone over a trusted LAN/VPN such as Tailscale, bind all interfaces:
 
 ```bash
-FAUSTUS_HOST=0.0.0.0 ./start-macos.sh
+ODYSSEUS_HOST=0.0.0.0 ./start-macos.sh
 # then open http://<tailscale-ip>:7860
 ```
 
@@ -84,8 +84,8 @@ expose this port directly to the public internet. To build a clickable app wrapp
 <details>
 <summary>Cookbook, GPU, Ollama, and troubleshooting notes</summary>
 
-**Docker bundled services.** Compose starts Faustus, ChromaDB, SearXNG, and
-ntfy. Faustus and the bundled service ports bind to `127.0.0.1` by default, so
+**Docker bundled services.** Compose starts Odysseus, ChromaDB, SearXNG, and
+ntfy. Odysseus and the bundled service ports bind to `127.0.0.1` by default, so
 they are reachable from the host but not exposed to your LAN/public internet
 unless you opt in.
 
@@ -95,7 +95,7 @@ serve engines live in `./data/local` (`~/.local` in the container), so they
 survive container recreation.
 
 **Remote servers.** In **Cookbook -> Settings -> Servers**, generate the
-Faustus SSH key and add the public key to the remote server's
+Odysseus SSH key and add the public key to the remote server's
 `~/.ssh/authorized_keys`. From the host you can also run:
 
 ```bash
@@ -103,7 +103,7 @@ ssh-copy-id -i data/ssh/id_ed25519.pub user@server
 ```
 
 **Host Docker access (explicit opt-in).** Default Docker Compose intentionally
-does not mount `/var/run/docker.sock`. You can still connect Faustus to
+does not mount `/var/run/docker.sock`. You can still connect Odysseus to
 existing Ollama, vLLM, and other OpenAI-compatible endpoints without Docker
 socket access.
 
@@ -155,7 +155,7 @@ scripts/check-docker-gpu.sh --install-nvidia-toolkit --enable-nvidia-overlay
 ```
 #### Arch Linux NVIDIA Docker notes
 
-On Arch Linux, verify the host NVIDIA driver and Docker GPU passthrough before enabling the Faustus NVIDIA overlay.
+On Arch Linux, verify the host NVIDIA driver and Docker GPU passthrough before enabling the Odysseus NVIDIA overlay.
 
 Install the required packages:
 
@@ -184,17 +184,17 @@ Verify Docker GPU passthrough:
 docker run --rm --gpus all nvidia/cuda:12.9.0-base-ubuntu22.04 nvidia-smi
 ```
 
-Then enable the Faustus NVIDIA compose overlay:
+Then enable the Odysseus NVIDIA compose overlay:
 
 ```env
 COMPOSE_FILE=docker-compose.yml:docker/gpu.nvidia.yml
 ```
 
-Rebuild and verify the GPU inside the Faustus container:
+Rebuild and verify the GPU inside the Odysseus container:
 
 ```bash
 docker compose up -d --build
-docker compose exec faustus nvidia-smi -L
+docker compose exec odysseus nvidia-smi -L
 ```
 
 For first-time local model testing on 8 GB laptop GPUs, start with GGUF/Q4 models on llama.cpp before trying GPTQ/AWQ models on vLLM or SGLang. This keeps the first run simpler while confirming GPU passthrough works.
@@ -277,8 +277,8 @@ source of truth; the standalone files mirror them for single-file deployments.
 Verify after enabling either overlay:
 
 ```bash
-docker compose exec faustus nvidia-smi -L   # NVIDIA
-docker compose exec faustus sh -lc 'test -e /dev/kfd && test -d /dev/dri && ls -l /dev/kfd /dev/dri/renderD*'  # AMD
+docker compose exec odysseus nvidia-smi -L   # NVIDIA
+docker compose exec odysseus sh -lc 'test -e /dev/kfd && test -d /dev/dri && ls -l /dev/kfd /dev/dri/renderD*'  # AMD
 ```
 
 > **GPU passthrough ≠ llama.cpp CUDA.** `nvidia-smi` passing inside the
@@ -292,7 +292,7 @@ docker compose exec faustus sh -lc 'test -e /dev/kfd && test -d /dev/dri && ls -
 > The same split applies to AMD/ROCm: seeing `/dev/kfd` and `/dev/dri` inside
 > the container confirms device passthrough, not ROCm userspace or a
 > ROCm-enabled vLLM/llama.cpp build. `rocm-smi` and `rocminfo` are not expected
-> inside the slim Faustus image.
+> inside the slim Odysseus image.
 
 **Ollama with Docker.** If Ollama runs on the host, add this endpoint in
 Settings:
@@ -307,11 +307,11 @@ Ollama must listen outside its own loopback interface:
 OLLAMA_HOST=0.0.0.0:11434 ollama serve
 ```
 
-This connects Faustus in Docker to an Ollama server that is already running on
+This connects Odysseus in Docker to an Ollama server that is already running on
 your host machine; it does not start Ollama inside the container.
 `host.docker.internal` is Docker's hostname for the host machine from inside the
 container. Cookbook **Serve** is a separate workflow for serving downloaded
-models through Faustus/llama.cpp, so Windows users with an existing Ollama
+models through Odysseus/llama.cpp, so Windows users with an existing Ollama
 install usually only need to add the endpoint in Settings.
 
 **Tool calls not firing on a manually-added Ollama `/v1` endpoint.** By
@@ -344,14 +344,14 @@ to the Auto heuristic.
 
 ```bash
 docker compose ps
-docker compose logs --tail=120 faustus
-docker compose logs faustus | grep -E 'ChromaDB|MemoryVectorStore|DEGRADED'
+docker compose logs --tail=120 odysseus
+docker compose logs odysseus | grep -E 'ChromaDB|MemoryVectorStore|DEGRADED'
 ```
 
 **macOS details.** `start-macos.sh` installs Homebrew deps, creates the venv,
 runs setup, and starts uvicorn on port `7860` because AirPlay often holds
 `7000`. It uses llama.cpp/Ollama for Metal. vLLM/SGLang are CUDA/ROCm-only and
-do not run on macOS. MLX-only models are not served by Faustus.
+do not run on macOS. MLX-only models are not served by Odysseus.
 
 </details>
 
@@ -361,16 +361,16 @@ do not run on macOS. MLX-only models are not served by Faustus.
 server; safe to re-run):
 
 ```powershell
-git clone https://github.com/faustus-dev/faustus.git
-cd faustus
+git clone https://github.com/odysseus-dev/odysseus.git
+cd odysseus
 powershell -ExecutionPolicy Bypass -File .\launch-windows.ps1
 ```
 
 Or do it by hand:
 
 ```powershell
-git clone https://github.com/faustus-dev/faustus.git
-cd faustus
+git clone https://github.com/odysseus-dev/odysseus.git
+cd odysseus
 py -3.11 -m venv venv
 venv\Scripts\Activate.ps1
 pip install -r requirements.txt
@@ -382,7 +382,7 @@ If `python` points at an older interpreter, use `py -3.12` (or another installed
 3.11+ version) for the venv step.
 
 **Exposing on a LAN/Tailscale (Windows):** the launcher binds to `127.0.0.1` and
-does **not** read `APP_BIND` / `FAUSTUS_HOST` from `.env`, so editing `.env`
+does **not** read `APP_BIND` / `ODYSSEUS_HOST` from `.env`, so editing `.env`
 alone leaves the native Windows server on loopback. Pass the launcher's
 `-BindHost` flag instead:
 
@@ -399,7 +399,7 @@ email, calendar, deep research) runs fully native. For full **Cookbook** backgro
 model downloads and the agent shell tool, also install
 [Git for Windows](https://git-scm.com/download/win) (provides `bash.exe`).
 Local GPU *serving* of vLLM/SGLang needs Linux/WSL2; for a local model on Windows,
-[Ollama](https://ollama.com/download) is the easiest path — point Faustus at
+[Ollama](https://ollama.com/download) is the easiest path — point Odysseus at
 `http://localhost:11434/v1` in Settings.
 
 Open `http://localhost:7000`, log in with the generated admin password,
@@ -408,7 +408,7 @@ and configure everything else inside **Settings**.
 ## Troubleshooting & Advanced Setup
 
 ### `chromadb-client` conflicts with embedded ChromaDB
-If `chromadb-client` (the lightweight HTTP-only package) is installed alongside the full `chromadb` package, Faustus starts but ChromaDB silently falls back to HTTP-only mode and fails.
+If `chromadb-client` (the lightweight HTTP-only package) is installed alongside the full `chromadb` package, Odysseus starts but ChromaDB silently falls back to HTTP-only mode and fails.
 
 **Fix:** uninstall `chromadb-client` and force-reinstall the full package:
 ```bash
@@ -417,8 +417,8 @@ If `chromadb-client` (the lightweight HTTP-only package) is installed alongside 
 ```
 
 ### HTTPS + LAN/Tailscale exposure
-To expose Faustus on a local network or Tailscale with HTTPS:
-1. Change the bind address to `0.0.0.0` in `.env` (`APP_BIND=0.0.0.0` or `FAUSTUS_HOST=0.0.0.0`).
+To expose Odysseus on a local network or Tailscale with HTTPS:
+1. Change the bind address to `0.0.0.0` in `.env` (`APP_BIND=0.0.0.0` or `ODYSSEUS_HOST=0.0.0.0`).
 2. Generate a locally-trusted cert for your LAN/Tailscale IPs using [mkcert](https://github.com/FiloSottile/mkcert):
    ```bash
    mkcert -install
@@ -428,17 +428,17 @@ To expose Faustus on a local network or Tailscale with HTTPS:
    ```bash
    python -m uvicorn app:app --host 0.0.0.0 --port 7000 --ssl-certfile=cert.pem --ssl-keyfile=key.pem
    ```
-4. Install the `mkcert` CA on any other device you want to access Faustus from (e.g., for iOS, email the `rootCA.pem` to yourself, install the profile, and trust it in Certificate Trust Settings).
+4. Install the `mkcert` CA on any other device you want to access Odysseus from (e.g., for iOS, email the `rootCA.pem` to yourself, install the profile, and trust it in Certificate Trust Settings).
 
 ### Common self-host traps (30-second fixes)
 A grab-bag of small gotchas that otherwise turn into long debugging sessions.
 
-- **`AUTH_ENABLED=false` is ignored / you're still forced to log in (Windows).** If you edited `.env` in Notepad it may have saved a UTF-8 **BOM**, turning the first key into `﻿AUTH_ENABLED` so it is never matched. Faustus loads `.env` with `encoding="utf-8-sig"` to tolerate a leading BOM, but the safe fix is to re-save `.env` as **UTF-8 without BOM** (VS Code: *Save with Encoding → UTF-8*).
+- **`AUTH_ENABLED=false` is ignored / you're still forced to log in (Windows).** If you edited `.env` in Notepad it may have saved a UTF-8 **BOM**, turning the first key into `﻿AUTH_ENABLED` so it is never matched. Odysseus loads `.env` with `encoding="utf-8-sig"` to tolerate a leading BOM, but the safe fix is to re-save `.env` as **UTF-8 without BOM** (VS Code: *Save with Encoding → UTF-8*).
 - **macOS: the app isn't at `http://localhost:7000`.** macOS AirPlay Receiver usually holds port `7000`, so the macOS start script serves on **`7860`** instead — open `http://localhost:7860`. To use `7000`, free it (System Settings → General → AirDrop & Handoff → turn off *AirPlay Receiver*) and set `APP_PORT=7000`.
 - **Copy buttons do nothing over a plain-HTTP Tailscale/LAN URL.** Browsers only expose the clipboard API (`navigator.clipboard`) on **secure origins** — HTTPS, or `localhost`. Over `http://100.x.y.z:7860` it is blocked. Serve over HTTPS (see *HTTPS + LAN/Tailscale exposure* above); `localhost` is exempt, so copy still works on the host itself.
 - **Self-hosted ntfy reminders don't reach your phone.** Two things: (1) the bundled ntfy binds to loopback by default — to reach it from your phone set `NTFY_BIND` to your host/Tailscale IP and `NTFY_BASE_URL` to the same server URL in `.env`, then recreate the ntfy container (see the `NTFY_*` block in `.env.example`); (2) in the ntfy **Android** app, subscribe to the topic with **Instant delivery** enabled — non-`ntfy.sh` servers don't get instant push otherwise.
 - **Local mail (Dovecot) login fails: "Plaintext authentication disallowed on non-encrypted connections."** Your IMAP/SMTP server is refusing cleartext auth over an unencrypted link. Prefer enabling TLS on the mail server; on a trusted LAN only, you can allow cleartext (Dovecot: `disable_plaintext_auth = no`).
-- **Calendar/contacts (Radicale) won't sync.** Point Faustus at the **full collection URL** with its trailing slash — e.g. `http://host:5232/<user>/<collection-id>/` — not just the server root. Radicale shows this address for each calendar/address book in its web UI.
+- **Calendar/contacts (Radicale) won't sync.** Point Odysseus at the **full collection URL** with its trailing slash — e.g. `http://host:5232/<user>/<collection-id>/` — not just the server root. Radicale shows this address for each calendar/address book in its web UI.
 
 ### Optional Dependencies
 `requirements-optional.txt` contains packages that unlock extra features. It is not installed by default.
@@ -446,7 +446,7 @@ A grab-bag of small gotchas that otherwise turn into long debugging sessions.
 | Package | Feature unlocked |
 |---------|-----------------|
 | `faster-whisper` | Local speech-to-text (microphone -> text) via the "local" STT provider. |
-| `kokoro`, `soundfile` | Local Kokoro-82M text-to-speech on a CUDA GPU. The pinned Kokoro release supports Faustus installs on Python 3.11-3.12; these packages are intentionally skipped on Python 3.13+ (including the Python 3.14 container image). |
+| `kokoro`, `soundfile` | Local Kokoro-82M text-to-speech on a CUDA GPU. The pinned Kokoro release supports Odysseus installs on Python 3.11-3.12; these packages are intentionally skipped on Python 3.13+ (including the Python 3.14 container image). |
 | `ddgs` | DuckDuckGo as a search provider option. |
 | `PyMuPDF` | PDF page rendering in the side viewer panel and form-filling. (Note: AGPL-3.0) |
 | `markitdown` | Office/EPUB document text extraction (converts .docx/.xlsx/.pptx/.xls/.epub to Markdown). |
@@ -457,7 +457,7 @@ Install the optional set only when you need these features:
 pip install -r requirements-optional.txt
 ```
 
-The default Docker image currently uses Python 3.14, while Kokoro 0.9.4 declares Python `>=3.10,<3.13`. Faustus itself continues to support Python 3.11+, but this pinned optional local-TTS feature requires a native Python 3.11 or 3.12 environment. Kokoro declares `torch`, but the local provider only activates when that torch build has CUDA and a GPU is visible; install the CUDA build appropriate for your host. Browser and configured endpoint TTS remain available on Python 3.13+ and in the container image.
+The default Docker image currently uses Python 3.14, while Kokoro 0.9.4 declares Python `>=3.10,<3.13`. Odysseus itself continues to support Python 3.11+, but this pinned optional local-TTS feature requires a native Python 3.11 or 3.12 environment. Kokoro declares `torch`, but the local provider only activates when that torch build has CUDA and a GPU is visible; install the CUDA build appropriate for your host. Browser and configured endpoint TTS remain available on Python 3.13+ and in the container image.
 
 ### Faster, reproducible installs with uv (optional)
 [uv](https://docs.astral.sh/uv/) works as a drop-in replacement for the
@@ -479,17 +479,17 @@ uv pip sync requirements.lock                          # reproduce it exactly la
 `requirements.lock` is gitignored and platform-specific (compile it on the OS you deploy to). Regenerate it deliberately when you want to take upgrades. The plain `uv pip install -r requirements.txt` keeps following the unpinned requirements like pip does.
 
 ### Outlook / Office 365 email
-Faustus email accounts currently use IMAP/SMTP username-password auth. Outlook
+Odysseus email accounts currently use IMAP/SMTP username-password auth. Outlook
 and Microsoft 365 generally require OAuth instead, so normal Microsoft mailbox
 passwords will fail. See [the Outlook email guide](email-outlook.md) for the
 current limitation and the planned integration direction.
 
 ## Security Notes
-Faustus is a self-hosted workspace with powerful local tools: shell access, file uploads, model downloads, web research, email/calendar integrations, and API tokens. Treat it like an admin console.
+Odysseus is a self-hosted workspace with powerful local tools: shell access, file uploads, model downloads, web research, email/calendar integrations, and API tokens. Treat it like an admin console.
 
 - Keep `AUTH_ENABLED=true` for any network-accessible deployment.
 - Keep `LOCALHOST_BYPASS=false` outside local development.
-- Leave `SECURE_COOKIES` unset unless you need to override it: session cookies are marked `Secure` whenever the request arrives over HTTPS. Use `SECURE_COOKIES=true` to force it on for a proxy whose scheme Faustus cannot see, or `SECURE_COOKIES=false` to force it off while you still serve plain HTTP alongside HTTPS.
+- Leave `SECURE_COOKIES` unset unless you need to override it: session cookies are marked `Secure` whenever the request arrives over HTTPS. Use `SECURE_COOKIES=true` to force it on for a proxy whose scheme Odysseus cannot see, or `SECURE_COOKIES=false` to force it off while you still serve plain HTTP alongside HTTPS.
 - Do not expose it directly to the public internet without HTTPS and a trusted reverse proxy or private access layer.
 - Keep `.env`, `data/`, `logs/`, databases, uploads, generated media, backups, auth/session files, API keys, and model/provider tokens out of Git and private shares. They are ignored by default.
 - Review `data/auth.json` after first boot: disable open signup unless you intentionally want it, make only your own account admin, and keep demo/test accounts non-admin.
@@ -497,7 +497,7 @@ Faustus is a self-hosted workspace with powerful local tools: shell access, file
 - Rotate any API keys or tokens that were ever pasted into a shared chat, demo, screenshot, or log.
 - If you enable API tokens or webhooks, create separate tokens per integration and delete unused ones.
 - Prefer binding manual development runs to `127.0.0.1`; bind to `0.0.0.0` only when you intentionally want LAN/reverse-proxy access.
-- Keep ChromaDB, SearXNG, ntfy, Ollama, vLLM, llama.cpp, databases, and raw model/provider APIs internal-only. Expose only the authenticated Faustus web/API entrypoint through your trusted proxy or private access layer.
+- Keep ChromaDB, SearXNG, ntfy, Ollama, vLLM, llama.cpp, databases, and raw model/provider APIs internal-only. Expose only the authenticated Odysseus web/API entrypoint through your trusted proxy or private access layer.
 - Before publishing a fork, run `git status --short` and confirm no private files from `.env`, `data/`, `logs/`, uploads, backups, or local databases are staged.
 
 > **Upgrading an existing install:** `SECURE_COOKIES` used to default to
@@ -509,14 +509,14 @@ Faustus is a self-hosted workspace with powerful local tools: shell access, file
 > alongside HTTPS and want the escape hatch.
 
 ### Private or proxied deployments
-Faustus serves plain HTTP on its app port. Docker Compose binds Faustus and the bundled services to `127.0.0.1` by default, so a typical production/private setup is:
+Odysseus serves plain HTTP on its app port. Docker Compose binds Odysseus and the bundled services to `127.0.0.1` by default, so a typical production/private setup is:
 
-1. Keep Faustus on localhost, for example `127.0.0.1:7000`.
+1. Keep Odysseus on localhost, for example `127.0.0.1:7000`.
 2. Terminate HTTPS at a trusted reverse proxy or private access gateway.
-3. Put the authenticated Faustus web/API entrypoint behind that layer.
+3. Put the authenticated Odysseus web/API entrypoint behind that layer.
 4. Keep raw service and model ports internal-only.
 
-Cloudflare Access, Tailscale, Caddy, nginx, and Traefik can all fit this pattern; none are required by Faustus. If your access layer reaches Faustus on the same host, proxy to `http://127.0.0.1:7000` and keep `AUTH_ENABLED=true` and `LOCALHOST_BYPASS=false`. Any proxy that forwards `X-Forwarded-Proto: https` gets `Secure` session cookies without configuration, so `SECURE_COOKIES` only needs setting when you want to override that — force it on for a proxy that forwards no scheme at all, or off while you still serve plain HTTP.
+Cloudflare Access, Tailscale, Caddy, nginx, and Traefik can all fit this pattern; none are required by Odysseus. If your access layer reaches Odysseus on the same host, proxy to `http://127.0.0.1:7000` and keep `AUTH_ENABLED=true` and `LOCALHOST_BYPASS=false`. Any proxy that forwards `X-Forwarded-Proto: https` gets `Secure` session cookies without configuration, so `SECURE_COOKIES` only needs setting when you want to override that — force it on for a proxy that forwards no scheme at all, or off while you still serve plain HTTP.
 `ALLOWED_ORIGINS` lists exact permitted origins for cross-origin browser/API clients; ordinary same-origin reverse-proxy access usually does not need a special CORS entry.
 
 #### Faster over the network: HTTP/2
@@ -529,7 +529,7 @@ costs almost nothing. Over a LAN, VPN, or remote link it can become a major
 part of load time, especially as latency increases.
 
 HTTP/2 multiplexes them onto one connection and the serialisation disappears.
-Faustus needs no changes for this — uvicorn keeps speaking HTTP/1.1 on
+Odysseus needs no changes for this — uvicorn keeps speaking HTTP/1.1 on
 loopback and the proxy speaks HTTP/2 to the browser. Mainstream browsers
 negotiate HTTP/2 for normal web pages over TLS; they do not use the cleartext
 h2c mode here, so browser-facing HTTP/2 requires a certificate. The
@@ -540,13 +540,13 @@ HTTPS but not HTTP/2 — uvicorn does not speak it.
 for your platform; on macOS, `brew install caddy`.
 
 **2. Write a `Caddyfile`.** Pick the block that matches how you reach the
-machine. Replace `7000` if Faustus listens elsewhere — the macOS start script
+machine. Replace `7000` if Odysseus listens elsewhere — the macOS start script
 uses `7860`.
 
 Public domain, Caddy obtains and renews the certificate itself:
 
 ```
-faustus.example.com {
+odysseus.example.com {
 	reverse_proxy 127.0.0.1:7000
 }
 ```
@@ -568,7 +568,7 @@ myhost.tailnet-name.ts.net {
 LAN with your own certificate — same shape, your own files:
 
 ```
-faustus.lan {
+odysseus.lan {
 	tls /path/to/cert.pem /path/to/key.pem
 	reverse_proxy 127.0.0.1:7000
 }
@@ -576,7 +576,7 @@ faustus.lan {
 
 Give `tls` absolute paths: a service starts in a working directory you did not
 choose. If port 443 is already taken, append a port to the site address
-(`faustus.example.com:8443`) and use it in the URL. That alone does not free
+(`odysseus.example.com:8443`) and use it in the URL. That alone does not free
 port 80 — Caddy still binds it for the HTTP-to-HTTPS redirect, and fails to
 start with `listen tcp :80: bind: address already in use` if something else
 holds it. Turn the redirect off with a global block at the top of the file:
@@ -600,19 +600,19 @@ brew services start caddy          # macOS — reads $(brew --prefix)/etc/Caddyf
 sudo systemctl enable --now caddy  # Linux, if your package installed the unit
 ```
 
-Faustus's own service is unchanged; the proxy runs alongside it. Under Docker,
+Odysseus's own service is unchanged; the proxy runs alongside it. Under Docker,
 run the proxy as another container, or on the host pointing at the published
 port.
 
-**4. Point Faustus at the new origin** in `.env`, then restart it.
+**4. Point Odysseus at the new origin** in `.env`, then restart it.
 
-A proxy that exposes the HTTPS request scheme to Faustus needs no `SECURE_COOKIES` setting. Only force it on when the proxy cannot expose that scheme:
+A proxy that exposes the HTTPS request scheme to Odysseus needs no `SECURE_COOKIES` setting. Only force it on when the proxy cannot expose that scheme:
 
 ```bash
-# only if the proxy cannot expose the external HTTPS scheme to Faustus:
+# only if the proxy cannot expose the external HTTPS scheme to Odysseus:
 SECURE_COOKIES=true
 # only if you use remote MCP servers with OAuth:
-OAUTH_REDIRECT_BASE_URL=https://faustus.example.com
+OAUTH_REDIRECT_BASE_URL=https://odysseus.example.com
 ```
 
 Gmail OAuth needs nothing here when the proxy runs on the same host: the
@@ -622,7 +622,7 @@ scheme from `X-Forwarded-Proto` for proxies it trusts — by default only
 trusted, so pin the URI there:
 
 ```bash
-GOOGLE_OAUTH_REDIRECT_URI=https://faustus.example.com/api/email/oauth/google/callback
+GOOGLE_OAUTH_REDIRECT_URI=https://odysseus.example.com/api/email/oauth/google/callback
 ```
 
 (uvicorn's own `FORWARDED_ALLOW_IPS` widens that trust, but it has to be in the
@@ -632,7 +632,7 @@ late for it to take effect.)
 **5. Confirm HTTP/2 is really on:**
 
 ```bash
-curl -s -o /dev/null -w '%{http_version}\n' https://faustus.example.com/
+curl -s -o /dev/null -w '%{http_version}\n' https://odysseus.example.com/
 # 2
 ```
 
@@ -644,7 +644,7 @@ enable it by right-clicking the column headers.
 
 Three things bite when moving an existing install behind TLS:
 
-- Leave `SECURE_COOKIES` unset when Faustus can see the external HTTPS scheme;
+- Leave `SECURE_COOKIES` unset when Odysseus can see the external HTTPS scheme;
   the cookie then follows the request automatically. If your proxy cannot expose
   that scheme, set `SECURE_COOKIES=true` **at the same time** you stop serving
   plain HTTP, not before. An explicit `true` applies to every login, so while an
@@ -654,10 +654,10 @@ Three things bite when moving an existing install behind TLS:
   Gmail redirect URI it cannot be derived from a request — it is registered
   with each MCP authorization server up front — so set it to the external
   origin if you use remote MCP servers over OAuth.
-- Faustus sends `Strict-Transport-Security` once it sees `X-Forwarded-Proto:
+- Odysseus sends `Strict-Transport-Security` once it sees `X-Forwarded-Proto:
   https`. HSTS applies to the whole hostname and ignores the port, so any other
   plain-HTTP service on that same hostname becomes unreachable in browsers that
-  have visited Faustus. Give Faustus its own hostname, or strip the header at
+  have visited Odysseus. Give Odysseus its own hostname, or strip the header at
   the proxy (`header_down -Strict-Transport-Security` in Caddy).
 
 Server-sent events are not buffered by this configuration, so chat streaming
@@ -676,7 +676,7 @@ Common internal-only ports from the default docs/compose setup:
 
 | Port | Service |
 |---|---|
-| `7000` | Faustus raw app port |
+| `7000` | Odysseus raw app port |
 | `8080` | SearXNG |
 | `8091` | ntfy |
 | `8100` | ChromaDB host port for manual/compose access |
@@ -707,20 +707,20 @@ Key settings:
 | `CHROMADB_HOST` | `localhost` | ChromaDB host for vector memory. Docker overrides this to `chromadb`. |
 | `CHROMADB_PORT` | `8100` | ChromaDB port for manual host runs. Docker overrides this to `8000`. |
 | `EMBEDDING_URL` | -- | OpenAI-compatible embeddings endpoint |
-| `FAUSTUS_CHAT_UPLOAD_MAX_BYTES` | `10485760` | Chat/agent attachment cap in bytes. Raise for larger local PDFs or text documents. |
-| `FAUSTUS_GALLERY_UPLOAD_MAX_BYTES` | `104857600` | Gallery image upload cap in bytes (100 MB). |
-| `FAUSTUS_GALLERY_TRANSFORM_UPLOAD_MAX_BYTES` | `26214400` | Gallery transform input cap in bytes (25 MB). |
-| `FAUSTUS_MEMORY_IMPORT_MAX_BYTES` | `10485760` | Memory import file cap in bytes (10 MB). |
-| `FAUSTUS_PERSONAL_UPLOAD_MAX_BYTES` | `26214400` | Personal document upload cap in bytes (25 MB). |
-| `FAUSTUS_EMAIL_COMPOSE_UPLOAD_MAX_BYTES` | `26214400` | Email compose attachment cap in bytes (25 MB). |
-| `FAUSTUS_STT_MAX_AUDIO_BYTES` | `26214400` | Speech-to-text audio cap in bytes (25 MB). |
-| `FAUSTUS_ICS_MAX_BYTES` | `10485760` | Calendar `.ics` import cap in bytes (10 MB). |
+| `ODYSSEUS_CHAT_UPLOAD_MAX_BYTES` | `10485760` | Chat/agent attachment cap in bytes. Raise for larger local PDFs or text documents. |
+| `ODYSSEUS_GALLERY_UPLOAD_MAX_BYTES` | `104857600` | Gallery image upload cap in bytes (100 MB). |
+| `ODYSSEUS_GALLERY_TRANSFORM_UPLOAD_MAX_BYTES` | `26214400` | Gallery transform input cap in bytes (25 MB). |
+| `ODYSSEUS_MEMORY_IMPORT_MAX_BYTES` | `10485760` | Memory import file cap in bytes (10 MB). |
+| `ODYSSEUS_PERSONAL_UPLOAD_MAX_BYTES` | `26214400` | Personal document upload cap in bytes (25 MB). |
+| `ODYSSEUS_EMAIL_COMPOSE_UPLOAD_MAX_BYTES` | `26214400` | Email compose attachment cap in bytes (25 MB). |
+| `ODYSSEUS_STT_MAX_AUDIO_BYTES` | `26214400` | Speech-to-text audio cap in bytes (25 MB). |
+| `ODYSSEUS_ICS_MAX_BYTES` | `10485760` | Calendar `.ics` import cap in bytes (10 MB). |
 
 All upload-limit vars are validated (must be a positive integer) and optional; an invalid value fails fast at startup.
 
 ### Built-in MCP servers (optional setup)
 
-Faustus auto-registers a few built-in MCP servers at startup. The npx-based ones (currently the browser server, `@playwright/mcp`) only start when their npm package is already in the local npx cache. If a package isn't cached, that server is skipped with a startup log message explaining what to do, so a fresh install does not block on a multi-minute npm download or hang if Playwright system deps are missing.
+Odysseus auto-registers a few built-in MCP servers at startup. The npx-based ones (currently the browser server, `@playwright/mcp`) only start when their npm package is already in the local npx cache. If a package isn't cached, that server is skipped with a startup log message explaining what to do, so a fresh install does not block on a multi-minute npm download or hang if Playwright system deps are missing.
 
 To enable the browser MCP (page navigation, screenshots, vision), run once:
 
@@ -728,7 +728,7 @@ To enable the browser MCP (page navigation, screenshots, vision), run once:
 npx -y @playwright/mcp@latest --version
 ```
 
-That installs `@playwright/mcp` plus Playwright (~300MB total). Restart Faustus and the server will register at startup.
+That installs `@playwright/mcp` plus Playwright (~300MB total). Restart Odysseus and the server will register at startup.
 
 ## Architecture
 ```

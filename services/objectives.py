@@ -4,7 +4,7 @@ never by rewriting the list.
 
 Why it is built this way
 ------------------------
-* **Storage is JSONL inside the workspace** (``<workspace>/.faustus/``), the
+* **Storage is JSONL inside the workspace** (``<workspace>/.odysseus/``), the
   same place project memory lives: greppable, hand-editable, survives a
   database wipe, and travels with the folder. ``objectives.jsonl`` is the
   current state (one record per objective, plus separate dependency-edge
@@ -46,8 +46,8 @@ from services import objective_locations as _locations
 
 logger = logging.getLogger(__name__)
 
-# Files live beside the project memory in <workspace>/.faustus/.
-OBJECTIVES_DIRNAME = ".faustus"
+# Files live beside the project memory in <workspace>/.odysseus/.
+OBJECTIVES_DIRNAME = ".odysseus"
 OBJECTIVES_FILENAME = "objectives.jsonl"
 OBJECTIVES_LOG_FILENAME = "objectives_log.jsonl"
 

@@ -379,11 +379,11 @@ export const AGENT_CONFIGS: Record<'codex' | 'claude', { label: string; word: st
     namePrefix: 'codex agent',
     defaultName: 'Codex Agent',
     pluginPath: '/api/codex/plugin.zip',
-    buildSetup: (origin, token) => `export FAUSTUS_URL=${origin}
-export FAUSTUS_API_TOKEN='${token}'
+    buildSetup: (origin, token) => `export ODYSSEUS_URL=${origin}
+export ODYSSEUS_API_TOKEN='${token}'
 mkdir -p ~/plugins
-curl -fsSL -H "Authorization: Bearer $FAUSTUS_API_TOKEN" "$FAUSTUS_URL/api/codex/plugin.zip" -o /tmp/faustus-codex-plugin.zip
-python3 -m zipfile -e /tmp/faustus-codex-plugin.zip ~/plugins
+curl -fsSL -H "Authorization: Bearer $ODYSSEUS_API_TOKEN" "$ODYSSEUS_URL/api/codex/plugin.zip" -o /tmp/odysseus-codex-plugin.zip
+python3 -m zipfile -e /tmp/odysseus-codex-plugin.zip ~/plugins
 python3 - <<'PY'
 import json
 from pathlib import Path
@@ -399,16 +399,16 @@ data.setdefault("name", "personal")
 data.setdefault("interface", {}).setdefault("displayName", "Personal")
 plugins = data.setdefault("plugins", [])
 entry = {
-    "name": "faustus",
-    "source": {"source": "local", "path": "./plugins/faustus"},
+    "name": "odysseus",
+    "source": {"source": "local", "path": "./plugins/odysseus"},
     "policy": {"installation": "AVAILABLE", "authentication": "ON_INSTALL"},
     "category": "Productivity",
 }
-data["plugins"] = [item for item in plugins if item.get("name") != "faustus"] + [entry]
+data["plugins"] = [item for item in plugins if item.get("name") != "odysseus"] + [entry]
 p.write_text(json.dumps(data, indent=2) + "\\n")
 PY
-codex plugin add faustus@personal
-python3 ~/plugins/faustus/scripts/faustus_api.py capabilities`,
+codex plugin add odysseus@personal
+python3 ~/plugins/odysseus/scripts/odysseus_api.py capabilities`,
   },
   claude: {
     label: 'Claude agent',
@@ -416,12 +416,12 @@ python3 ~/plugins/faustus/scripts/faustus_api.py capabilities`,
     namePrefix: 'claude agent',
     defaultName: 'Claude Agent',
     pluginPath: '/api/claude/plugin.zip',
-    buildSetup: (origin, token) => `export FAUSTUS_URL=${origin}
-export FAUSTUS_API_TOKEN='${token}'
+    buildSetup: (origin, token) => `export ODYSSEUS_URL=${origin}
+export ODYSSEUS_API_TOKEN='${token}'
 mkdir -p ~/.claude
-curl -fsSL -H "Authorization: Bearer $FAUSTUS_API_TOKEN" "$FAUSTUS_URL/api/claude/plugin.zip" -o /tmp/faustus-claude-skill.zip
-python3 -m zipfile -e /tmp/faustus-claude-skill.zip ~/.claude/
-python3 ~/.claude/skills/faustus/scripts/faustus_api.py capabilities`,
+curl -fsSL -H "Authorization: Bearer $ODYSSEUS_API_TOKEN" "$ODYSSEUS_URL/api/claude/plugin.zip" -o /tmp/odysseus-claude-skill.zip
+python3 -m zipfile -e /tmp/odysseus-claude-skill.zip ~/.claude/
+python3 ~/.claude/skills/odysseus/scripts/odysseus_api.py capabilities`,
   },
 };
 export async function listTokens(): Promise<ApiToken[]> {

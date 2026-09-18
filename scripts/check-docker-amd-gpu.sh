@@ -13,7 +13,7 @@ FAIL=0
 WARN=0
 RENDER_GID=""
 VIDEO_GID=""
-TEST_IMAGE="${FAUSTUS_AMD_TEST_IMAGE:-alpine:3.20}"
+TEST_IMAGE="${ODYSSEUS_AMD_TEST_IMAGE:-alpine:3.20}"
 
 _pass() { printf '\033[32m[PASS]\033[0m %s\n' "$*"; PASS=$((PASS + 1)); }
 _fail() { printf '\033[31m[FAIL]\033[0m %s\n' "$*"; FAIL=$((FAIL + 1)); }
@@ -34,7 +34,7 @@ Checks:
   - Docker can pass AMD device nodes into a small container
 
 Environment:
-  FAUSTUS_AMD_TEST_IMAGE   Docker image for the passthrough smoke
+  ODYSSEUS_AMD_TEST_IMAGE   Docker image for the passthrough smoke
                             (default: alpine:3.20)
 USAGE
 }
@@ -184,7 +184,7 @@ _print_next_steps() {
     fi
     echo
     echo "After restarting Faustus, verify the slim app container sees devices:"
-    echo "  docker compose exec faustus sh -lc 'test -e /dev/kfd && test -d /dev/dri && ls -l /dev/kfd /dev/dri/renderD*'"
+    echo "  docker compose exec odysseus sh -lc 'test -e /dev/kfd && test -d /dev/dri && ls -l /dev/kfd /dev/dri/renderD*'"
     echo
     echo "Note: rocm-smi/rocminfo are not expected inside the slim Faustus image."
     echo "Device passthrough is necessary but not sufficient for GPU serving; vLLM and"

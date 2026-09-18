@@ -116,7 +116,7 @@ def migrate_settings(path: Path) -> bool:
     else:
         updated = _add_block_default_inheritance(contents, text, root)
     fd, temporary_name = tempfile.mkstemp(
-        prefix=f".{path.name}.faustus-", dir=path.parent
+        prefix=f".{path.name}.odysseus-", dir=path.parent
     )
     temporary = Path(temporary_name)
     try:

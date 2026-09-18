@@ -37,9 +37,9 @@ literal y absoluto ("ningun boton critico fuera de alcance") y esas dos
 cosas lo incumplen de verdad, una de ellas en un fichero que este lote no
 puede tocar.
 
-Requiere `FAUSTUS_E2E=1` (misma convencion que tests/e2e/) + playwright +
+Requiere `ODYSSEUS_E2E=1` (misma convencion que tests/e2e/) + playwright +
 chromium instalados; sin eso, se salta con un motivo claro en vez de dar un
-falso verde. Con `FAUSTUS_E2E=1`, EJECUTA `scripts/ui_a11y.py` de verdad
+falso verde. Con `ODYSSEUS_E2E=1`, EJECUTA `scripts/ui_a11y.py` de verdad
 (subprocess) contra un servidor real, no una version recortada.
 """
 import json
@@ -55,7 +55,7 @@ pytestmark = pytest.mark.qa_state("xfail")
 
 REPO = Path(__file__).resolve().parents[2]
 SCRIPT = REPO / "scripts" / "ui_a11y.py"
-E2E = os.environ.get("FAUSTUS_E2E", "").strip().lower() in {"1", "true", "yes", "on"}
+E2E = os.environ.get("ODYSSEUS_E2E", "").strip().lower() in {"1", "true", "yes", "on"}
 
 try:  # pragma: no cover - import guard, mirrors tests/e2e/conftest.py
     import playwright  # noqa: F401
@@ -75,7 +75,7 @@ def test_ui_a11y_script_exists_and_documents_the_manual_walkthrough():
     assert compiled.returncode == 0, compiled.stdout + compiled.stderr
 
 
-@pytest.mark.skipif(not (E2E and _HAS_PW and shutil.which("node")), reason="set FAUSTUS_E2E=1 with playwright+chromium installed to run the real keyboard/zoom walkthrough")
+@pytest.mark.skipif(not (E2E and _HAS_PW and shutil.which("node")), reason="set ODYSSEUS_E2E=1 with playwright+chromium installed to run the real keyboard/zoom walkthrough")
 @pytest.mark.xfail(
     strict=True,
     reason="Real, reproducible gaps remain at 200% zoom: WorkspaceDialog.tsx "

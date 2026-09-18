@@ -88,7 +88,7 @@ def known_hosts_path() -> Path:
     other ssh client on the box and wiped entry-by-entry by ``ssh-keygen -R``,
     so a key Faustus paired could disappear -- or be replaced -- without
     Faustus ever observing it. Resolved per call rather than at import so tests
-    (and a relocated FAUSTUS_DATA_DIR) can point it somewhere disposable.
+    (and a relocated ODYSSEUS_DATA_DIR) can point it somewhere disposable.
     """
     override = (os.getenv("FAUSTUS_SSH_KNOWN_HOSTS") or "").strip()
     if override:

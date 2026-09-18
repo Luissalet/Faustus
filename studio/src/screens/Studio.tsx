@@ -694,7 +694,7 @@ export function StudioScreen() {
   }, [sessionId]);
   const project = useMemo(() => (current?.folder ? projects.find((p) => p.folder === current.folder) ?? null : null), [projects, current]);
   useEffect(() => {
-    const AUTO = 'faustus-project-workspace';
+    const AUTO = 'odysseus-project-workspace';
     let applied = '';
     try {
       applied = localStorage.getItem(AUTO) ?? '';

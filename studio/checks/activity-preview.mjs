@@ -70,7 +70,7 @@ createServer(async (req, res) => {
     });
     if (url.pathname === '/api/sessions') return json(sessions);
     if (url.pathname === '/api/chat/stop/working') {
-      if (req.headers['x-faustus-run-id'] !== 'run-working') return json({stopped:false}, 409);
+      if (req.headers['x-odysseus-run-id'] !== 'run-working') return json({stopped:false}, 409);
       stopped = true; return json({stopped:true});
     }
     if (url.pathname === '/api/questions') return json({ questions: [{

@@ -55,7 +55,7 @@ Current untrusted context sources include:
 
 Live multimodal provider blocks can contain data URLs, but persisted and
 tool-facing context uses stable attachment references. Tool manifests carry an
-`faustus://attachment/<id>` URI and owner-checked read policy; local paths are
+`odysseus://attachment/<id>` URI and owner-checked read policy; local paths are
 compatibility data added only after owner and root-confinement checks. Persisted
 chat context keeps readable text/reference lines rather than reinserting raw
 media bytes into later turns or search state.

@@ -17,7 +17,7 @@ This spec covers persistent memory and user skills in:
 - skill routes in `routes/skills_routes.py`;
 - prompt/tool call sites in `src/chat_processor.py`, `src/agent_loop.py`, `src/ai_interaction.py`, `src/tool_implementations.py`, `src/tool_execution.py`, `src/tool_schemas.py`, and `src/tool_security.py`;
 - MCP and Codex surfaces in `mcp_servers/memory_server.py` and `routes/codex_routes.py`;
-- backup/admin/CLI surfaces in `routes/backup_routes.py`, canonical `routes/admin_wipe/admin_wipe_routes.py` plus its shim, `scripts/faustus-memory`, `scripts/faustus-skills`, and `scripts/faustus-backup`;
+- backup/admin/CLI surfaces in `routes/backup_routes.py`, canonical `routes/admin_wipe/admin_wipe_routes.py` plus its shim, `scripts/odysseus-memory`, `scripts/odysseus-skills`, and `scripts/odysseus-backup`;
 - frontend modules `static/js/memory.js` and `static/js/skills.js`;
 - tests under `tests/test_memory_*`, `tests/test_builtin_memory_consolidation.py`, `tests/test_skill_*`, and `tests/test_skills_*`.
 
@@ -57,13 +57,13 @@ Agent skill behavior:
 
 ## Tools, MCP, And Backup
 
-Native `manage_memory` and `manage_skills` tool paths pass owner context and use in-process policy gates. `manage_skills` requires an explicit action instead of silently defaulting a malformed call. Manual memory add can choose a category, and route-side manual add validates the source session owner before attaching session-derived memories. `mcp_servers/memory_server.py` lazy-initializes `src` managers and exposes list/add/edit/delete/search. It can scope to `FAUSTUS_MCP_MEMORY_OWNER` or `FAUSTUS_MEMORY_OWNER`; if the JSON store contains owner-bearing entries and no owner env is configured, it returns an owner-scope error instead of listing or mutating across owners. Ownerless stores remain ownerless compatibility mode.
+Native `manage_memory` and `manage_skills` tool paths pass owner context and use in-process policy gates. `manage_skills` requires an explicit action instead of silently defaulting a malformed call. Manual memory add can choose a category, and route-side manual add validates the source session owner before attaching session-derived memories. `mcp_servers/memory_server.py` lazy-initializes `src` managers and exposes list/add/edit/delete/search. It can scope to `ODYSSEUS_MCP_MEMORY_OWNER` or `ODYSSEUS_MEMORY_OWNER`; if the JSON store contains owner-bearing entries and no owner env is configured, it returns an owner-scope error instead of listing or mutating across owners. Ownerless stores remain ownerless compatibility mode.
 
-The direct `faustus-memory add` CLI tolerates non-object legacy/corrupt rows
+The direct `odysseus-memory add` CLI tolerates non-object legacy/corrupt rows
 when checking whether its newly added entry is already present; it ignores
 those rows instead of calling mapping methods on them and crashing the add.
 
-`/api/export` owner-filters memories and skills. `/api/import` imports skills through current disk-backed `SkillsManager` APIs, stamping missing owners to the importer and preserving supported skill metadata. Full data snapshots through `scripts/faustus-backup` preserve on-disk skill trees, memory JSON, and caches differently from JSON import/export.
+`/api/export` owner-filters memories and skills. `/api/import` imports skills through current disk-backed `SkillsManager` APIs, stamping missing owners to the importer and preserving supported skill metadata. Full data snapshots through `scripts/odysseus-backup` preserve on-disk skill trees, memory JSON, and caches differently from JSON import/export.
 
 ## Compatibility State
 

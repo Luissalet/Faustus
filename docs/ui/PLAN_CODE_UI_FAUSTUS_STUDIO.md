@@ -6,7 +6,7 @@
 > la deuda de identificadores de artefacto.
 
 Fecha: 04-09-2026  
-Destino: agentes de código que trabajen sobre `D:\LocalAI\faustus`.  
+Destino: agentes de código que trabajen sobre `D:\LocalAI\odysseus`.  
 Documento de producto relacionado: `UI_OVERHAUL_FAUSTUS_STUDIO.md`.
 
 Fuentes estudiadas:

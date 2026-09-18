@@ -11,7 +11,7 @@
 # running Docker in the `video` and `render` groups. Set RENDER_GID to your
 # host's numeric render group id when needed. See docker/gpu.amd.yml for details.
 services:
-  faustus:
+  odysseus:
     build: .
     ports:
       - "${APP_BIND:-127.0.0.1}:${APP_PORT:-7000}:7000"
@@ -25,7 +25,7 @@ services:
       # container, so persist its HuggingFace cache under ./data/huggingface.
       - ${APP_DATA_DIR:-./data}/huggingface:/app/.cache/huggingface:z
       # Cookbook-installed Python CLIs/packages (vLLM, llama-cpp-python, etc.)
-      # land under /app/.local for the faustus user. Persist them so a
+      # land under /app/.local for the odysseus user. Persist them so a
       # container recreate does not silently remove installed serve engines.
       - ${APP_DATA_DIR:-./data}/local:/app/.local:z
     extra_hosts:
@@ -47,8 +47,8 @@ services:
       - AUTH_ENABLED=${AUTH_ENABLED:-true}
       - LOCALHOST_BYPASS=${LOCALHOST_BYPASS:-false}
       - COMPANION_BASE_URL=${COMPANION_BASE_URL:-}
-      - FAUSTUS_ADMIN_USER=${FAUSTUS_ADMIN_USER:-admin}
-      - FAUSTUS_ADMIN_PASSWORD=${FAUSTUS_ADMIN_PASSWORD:-}
+      - ODYSSEUS_ADMIN_USER=${ODYSSEUS_ADMIN_USER:-admin}
+      - ODYSSEUS_ADMIN_PASSWORD=${ODYSSEUS_ADMIN_PASSWORD:-}
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost,http://127.0.0.1}
       - SECURE_COOKIES=${SECURE_COOKIES:-}
       - EMBEDDING_URL=${EMBEDDING_URL:-}
@@ -57,22 +57,22 @@ services:
       - FASTEMBED_MODEL=${FASTEMBED_MODEL:-sentence-transformers/all-MiniLM-L6-v2}
       - FASTEMBED_CACHE_PATH=${FASTEMBED_CACHE_PATH:-}
       - CLEANUP_INTERVAL_HOURS=${CLEANUP_INTERVAL_HOURS:-24}
-      - FAUSTUS_INPROCESS_POLLERS=${FAUSTUS_INPROCESS_POLLERS:-1}
-      - FAUSTUS_INPROCESS_TASKS=${FAUSTUS_INPROCESS_TASKS:-1}
-      - FAUSTUS_SCRIPT_HOST=${FAUSTUS_SCRIPT_HOST:-localhost}
-      - FAUSTUS_CHAT_UPLOAD_MAX_BYTES=${FAUSTUS_CHAT_UPLOAD_MAX_BYTES:-10485760}
-      - FAUSTUS_GALLERY_UPLOAD_MAX_BYTES=${FAUSTUS_GALLERY_UPLOAD_MAX_BYTES:-104857600}
-      - FAUSTUS_GALLERY_TRANSFORM_UPLOAD_MAX_BYTES=${FAUSTUS_GALLERY_TRANSFORM_UPLOAD_MAX_BYTES:-26214400}
-      - FAUSTUS_MEMORY_IMPORT_MAX_BYTES=${FAUSTUS_MEMORY_IMPORT_MAX_BYTES:-10485760}
-      - FAUSTUS_PERSONAL_UPLOAD_MAX_BYTES=${FAUSTUS_PERSONAL_UPLOAD_MAX_BYTES:-26214400}
-      - FAUSTUS_EMAIL_COMPOSE_UPLOAD_MAX_BYTES=${FAUSTUS_EMAIL_COMPOSE_UPLOAD_MAX_BYTES:-26214400}
+      - ODYSSEUS_INPROCESS_POLLERS=${ODYSSEUS_INPROCESS_POLLERS:-1}
+      - ODYSSEUS_INPROCESS_TASKS=${ODYSSEUS_INPROCESS_TASKS:-1}
+      - ODYSSEUS_SCRIPT_HOST=${ODYSSEUS_SCRIPT_HOST:-localhost}
+      - ODYSSEUS_CHAT_UPLOAD_MAX_BYTES=${ODYSSEUS_CHAT_UPLOAD_MAX_BYTES:-10485760}
+      - ODYSSEUS_GALLERY_UPLOAD_MAX_BYTES=${ODYSSEUS_GALLERY_UPLOAD_MAX_BYTES:-104857600}
+      - ODYSSEUS_GALLERY_TRANSFORM_UPLOAD_MAX_BYTES=${ODYSSEUS_GALLERY_TRANSFORM_UPLOAD_MAX_BYTES:-26214400}
+      - ODYSSEUS_MEMORY_IMPORT_MAX_BYTES=${ODYSSEUS_MEMORY_IMPORT_MAX_BYTES:-10485760}
+      - ODYSSEUS_PERSONAL_UPLOAD_MAX_BYTES=${ODYSSEUS_PERSONAL_UPLOAD_MAX_BYTES:-26214400}
+      - ODYSSEUS_EMAIL_COMPOSE_UPLOAD_MAX_BYTES=${ODYSSEUS_EMAIL_COMPOSE_UPLOAD_MAX_BYTES:-26214400}
       # PERF-05: chunked, resumable uploads (src/upload_limits.py).
-      - FAUSTUS_CHUNKED_UPLOAD_MAX_BYTES=${FAUSTUS_CHUNKED_UPLOAD_MAX_BYTES:-2147483648}
-      - FAUSTUS_CHUNKED_UPLOAD_DEFAULT_CHUNK_BYTES=${FAUSTUS_CHUNKED_UPLOAD_DEFAULT_CHUNK_BYTES:-8388608}
-      - FAUSTUS_CHUNKED_UPLOAD_MAX_CHUNK_BYTES=${FAUSTUS_CHUNKED_UPLOAD_MAX_CHUNK_BYTES:-33554432}
-      - FAUSTUS_STT_MAX_AUDIO_BYTES=${FAUSTUS_STT_MAX_AUDIO_BYTES:-26214400}
-      - FAUSTUS_ICS_MAX_BYTES=${FAUSTUS_ICS_MAX_BYTES:-10485760}
-      - FAUSTUS_TTS_CACHE_MAX_BYTES=${FAUSTUS_TTS_CACHE_MAX_BYTES}
+      - ODYSSEUS_CHUNKED_UPLOAD_MAX_BYTES=${ODYSSEUS_CHUNKED_UPLOAD_MAX_BYTES:-2147483648}
+      - ODYSSEUS_CHUNKED_UPLOAD_DEFAULT_CHUNK_BYTES=${ODYSSEUS_CHUNKED_UPLOAD_DEFAULT_CHUNK_BYTES:-8388608}
+      - ODYSSEUS_CHUNKED_UPLOAD_MAX_CHUNK_BYTES=${ODYSSEUS_CHUNKED_UPLOAD_MAX_CHUNK_BYTES:-33554432}
+      - ODYSSEUS_STT_MAX_AUDIO_BYTES=${ODYSSEUS_STT_MAX_AUDIO_BYTES:-26214400}
+      - ODYSSEUS_ICS_MAX_BYTES=${ODYSSEUS_ICS_MAX_BYTES:-10485760}
+      - ODYSSEUS_TTS_CACHE_MAX_BYTES=${ODYSSEUS_TTS_CACHE_MAX_BYTES}
       - DATA_BRAVE_API_KEY=${DATA_BRAVE_API_KEY:-}
       - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
       - GOOGLE_PSE_CX=${GOOGLE_PSE_CX:-}
@@ -121,7 +121,7 @@ services:
     restart: unless-stopped
 
   searxng:
-    # Pinned, not :latest — faustus waits on searxng's healthcheck
+    # Pinned, not :latest — odysseus waits on searxng's healthcheck
     # (depends_on: condition: service_healthy), so a broken upstream `latest`
     # tag blocks the whole app from starting. 2026.6.2 crashes on boot with
     # `KeyError: 'default_doi_resolver'`, failing the healthcheck (issue #1414).
@@ -132,7 +132,7 @@ services:
       - -c
       - |
         set -eu
-        if [ ! -s /etc/searxng/settings.yml ] || grep -q 'faustus-local-searxng-json-2026-05-30\|__SEARXNG_SECRET__' /etc/searxng/settings.yml; then
+        if [ ! -s /etc/searxng/settings.yml ] || grep -q 'odysseus-local-searxng-json-2026-05-30\|__SEARXNG_SECRET__' /etc/searxng/settings.yml; then
           secret="$${SEARXNG_SECRET:-}"
           if [ -z "$$secret" ]; then
             secret="$$(python -c 'import secrets; print(secrets.token_urlsafe(48))')"

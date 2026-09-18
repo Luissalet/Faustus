@@ -43,7 +43,7 @@ const context = {
     action,
     issue: { number: 42, state: 'closed', body: '', labels: [] },
   },
-  repo: { owner: 'faustus-dev', repo: 'faustus' },
+  repo: { owner: 'odysseus-dev', repo: 'odysseus' },
 };
 const core = {
   warning: unexpected('core.warning'),
@@ -70,7 +70,7 @@ checkIssueDescription({ github, context, core })
 
 
 def _run_bug_issue(revision):
-    body = f"""# Faustus Revision
+    body = f"""# Odysseus Revision
 {revision}
 
 # Install Method
@@ -80,7 +80,7 @@ Docker
 Linux
 
 # Steps to Reproduce
-1. Start Faustus.
+1. Start Odysseus.
 
 # Expected Behaviour
 The application starts normally.
@@ -111,7 +111,7 @@ const context = {
     action: 'opened',
     issue: { number: 42, state: 'open', body, labels: [{ name: 'bug' }] },
   },
-  repo: { owner: 'faustus-dev', repo: 'faustus' },
+  repo: { owner: 'odysseus-dev', repo: 'odysseus' },
 };
 const core = {
   warning: (message) => calls.push({ method: 'warning', message }),
@@ -146,7 +146,7 @@ def test_bug_template_requires_exact_revision():
     template = yaml.safe_load(_BUG_TEMPLATE.read_text(encoding="utf-8"))
     revision = next(item for item in template["body"] if item.get("id") == "revision")
     assert revision["type"] == "input"
-    assert revision["attributes"]["label"] == "Faustus Revision"
+    assert revision["attributes"]["label"] == "Odysseus Revision"
     assert "git show -s --abbrev=12 --format='%h (%cs)' HEAD" in revision["attributes"]["description"]
     assert revision["attributes"]["placeholder"] == "1fef4929cf1d (2026-08-11)"
     assert revision["validations"]["required"] is True
@@ -174,7 +174,7 @@ def test_bug_checker_accepts_exact_revision():
 def test_bug_checker_rejects_missing_or_malformed_revision(revision):
     calls = _run_bug_issue(revision)
     comment = next(call["params"]["body"] for call in calls if call["method"] == "createComment")
-    assert "**Faustus Revision**" in comment
+    assert "**Odysseus Revision**" in comment
     assert any(call["method"] == "setFailed" for call in calls)
 
 
@@ -184,8 +184,8 @@ def test_closed_issue_only_drops_ready_for_review(action):
         {
             "method": "removeLabel",
             "params": {
-                "owner": "faustus-dev",
-                "repo": "faustus",
+                "owner": "odysseus-dev",
+                "repo": "odysseus",
                 "issue_number": 42,
                 "name": "ready for review",
             },

@@ -19,7 +19,7 @@ export interface ClientOptions {
    *  scope. Mutually usable with `cookie`; when `token` is set, no cookie
    *  credentials are sent (see the constructor's own doc comment). */
   token?: string;
-  /** Sent verbatim as the `Cookie` request header — `'faustus_session=…'`.
+  /** Sent verbatim as the `Cookie` request header — `'odysseus_session=…'`.
    *  Useful from Node, where there is no browser cookie jar. In a browser,
    *  pass `credentials` instead and let the browser manage the cookie. */
   cookie?: string;

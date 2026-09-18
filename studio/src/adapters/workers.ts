@@ -551,7 +551,7 @@ function defFrom(raw: Record<string, unknown>): AgentDef {
 /** The bound folder, so the repo's own definitions are asked for too. */
 export function activeWorkspace(): string {
   try {
-    return localStorage.getItem('faustus-workspace') || '';
+    return localStorage.getItem('odysseus-workspace') || '';
   } catch {
     return '';
   }

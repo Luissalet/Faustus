@@ -20,7 +20,7 @@ Fecha: 04-09-2026. Rama `feat/studio-ui`. Verificado en el 7001 con
   capa por encima en pantallas más estrechas; botón en la cabecera):
   - **Navegador**: fotogramas de `browser_view` y de las capturas de
     `tool_output`, título y URL, tira de los últimos 8, «en vivo» mientras
-    el turno corre, «abrir solo» con la clave `faustus.browserView.auto`.
+    el turno corre, «abrir solo» con la clave `odysseus.browserView.auto`.
   - **Documento**: se abre cuando el agente escribe (`doc_stream_open`,
     `doc_stream_delta`, `doc_update`) y trae un editor real: guardar (PUT,
     versiona), renombrar (PATCH), vista previa, versiones y restaurar, PDF,

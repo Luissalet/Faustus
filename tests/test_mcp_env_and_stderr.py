@@ -28,7 +28,7 @@ from src import mcp_manager as mm
 SECRET_KEYS = {
     "OPENAI_API_KEY": "sk-not-yours",
     "ANTHROPIC_API_KEY": "sk-ant-not-yours",
-    "FAUSTUS_INTERNAL_TOKEN": "loopback-token",
+    "ODYSSEUS_INTERNAL_TOKEN": "loopback-token",
     "SOME_OTHER_APP_SECRET": "hunter2",
 }
 
@@ -103,7 +103,7 @@ def test_inherited_env_is_the_old_expression_minus_our_own_token(secrets):
     declared = {"MY_SERVER_TOKEN": "abc"}
     assert mm.build_server_env(declared, inherit_env=True) == scrub_private(
         {**os.environ, **declared})
-    assert "FAUSTUS_INTERNAL_TOKEN" not in mm.build_server_env(declared, inherit_env=True)
+    assert "ODYSSEUS_INTERNAL_TOKEN" not in mm.build_server_env(declared, inherit_env=True)
     # And the no-declared-env case still hands the SDK None, so it builds its
     # own default — exactly what `if env else None` did before.
     assert mm.build_server_env({}, inherit_env=True) is None
@@ -113,7 +113,7 @@ def test_inherited_env_is_the_old_expression_minus_our_own_token(secrets):
 def test_inherited_env_reaches_every_secret_except_our_own(secrets):
     env = mm.build_server_env({"X": "1"}, inherit_env=True)
     for key, value in SECRET_KEYS.items():
-        if key == "FAUSTUS_INTERNAL_TOKEN":
+        if key == "ODYSSEUS_INTERNAL_TOKEN":
             assert key not in env
             continue
         assert env[key] == value
@@ -259,7 +259,7 @@ def test_the_subprocess_env_is_everything_but_our_token_when_inherit_env_is_true
     for key, value in SECRET_KEYS.items():
         # SEC-1 (B-008): inheritance keeps every variable the operator had —
         # except Faustus's own loopback token, which is a key to this app.
-        if key == "FAUSTUS_INTERNAL_TOKEN":
+        if key == "ODYSSEUS_INTERNAL_TOKEN":
             assert key not in captured["env"]
             continue
         assert captured["env"][key] == value

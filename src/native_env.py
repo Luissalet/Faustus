@@ -215,9 +215,11 @@ def native_host_environment(base: Optional[Mapping[str, str]] = None, *,
 #: internal token authenticates the in-process tool loopback: a child holding
 #: it can call privileged routes as Faustus itself.
 FAUSTUS_PRIVATE_NAMES: Tuple[str, ...] = (
+    "ODYSSEUS_INTERNAL_TOKEN",
     "FAUSTUS_INTERNAL_TOKEN",
 )
 FAUSTUS_PRIVATE_PREFIXES: Tuple[str, ...] = (
+    "ODYSSEUS_INTERNAL",
     "FAUSTUS_INTERNAL",
 )
 

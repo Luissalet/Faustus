@@ -17,10 +17,10 @@ import tempfile
 
 import pytest
 
-_tmp_data = tempfile.mkdtemp(prefix="faustus-conn02-http-test-")
+_tmp_data = tempfile.mkdtemp(prefix="odysseus-conn02-http-test-")
 os.environ.setdefault("DATA_DIR", _tmp_data)
 os.environ.setdefault("DATABASE_URL", f"sqlite:///{_tmp_data}/app.db")
-os.environ["FAUSTUS_INPROCESS_POLLERS"] = "0"
+os.environ["ODYSSEUS_INPROCESS_POLLERS"] = "0"
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient

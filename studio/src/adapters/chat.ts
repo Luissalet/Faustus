@@ -975,7 +975,7 @@ export async function listModels(signal?: AbortSignal, refresh = false): Promise
 
 /** The header both `/api/chat_stream` and `/api/chat/resume` answer with,
  *  and the one `/api/chat/stop` demands before it cancels anything. */
-export const RUN_ID_HEADER = 'X-Faustus-Run-Id';
+export const RUN_ID_HEADER = 'X-Odysseus-Run-Id';
 
 /** Set on a `/api/chat_stream` response that answered a duplicate
  *  `client_message_id` from the outbox instead of starting a new turn

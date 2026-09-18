@@ -662,7 +662,7 @@ class FakeProjectStore:
         return self.files.get(filename, "")
 
     def memory_dir(self, project):
-        return os.path.join(project.get("workspace", ""), ".faustus")
+        return os.path.join(project.get("workspace", ""), ".odysseus")
 
 
 def projects_module(store, monkeypatch, *, instructions=""):

@@ -22,7 +22,7 @@ import { t, tn } from '../../i18n';
 const SessionDialog = lazyChunk(() => import('./SessionDialog'));
 
 export type SortMode = 'active' | 'created' | 'name' | 'group';
-const SORT_KEY = 'faustus-session-sort'; // shared with the previous interface
+const SORT_KEY = 'odysseus-session-sort'; // shared with the previous interface
 
 export function readSortMode(): SortMode {
   try {

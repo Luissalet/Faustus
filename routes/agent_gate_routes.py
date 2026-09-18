@@ -59,7 +59,7 @@ def setup_agent_gate_routes() -> APIRouter:
             from core.middleware import INTERNAL_TOOL_HEADER
             internal = bool(request.headers.get(INTERNAL_TOOL_HEADER))
         except Exception:  # noqa: BLE001
-            internal = bool(request.headers.get("X-Faustus-Internal-Token"))
+            internal = bool(request.headers.get("X-Odysseus-Internal-Token"))
         # A proxy header means the connection came through something, so the
         # loopback client address is the proxy's and proves nothing about who
         # is really calling.

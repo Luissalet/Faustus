@@ -142,7 +142,7 @@ def recent_events(*, limit: int = 200, max_files: int = 5) -> List[Dict[str, Any
 def sanitized_log_excerpt(*, max_lines: int = 500) -> str:
     """The tail of this process's OWN configured log file, secret-redacted.
     Empty when no log file is configured — never a search for one."""
-    log_path = os.getenv("FAUSTUS_LOG_FILE") or ""
+    log_path = os.getenv("ODYSSEUS_LOG_FILE") or os.getenv("FAUSTUS_LOG_FILE") or ""
     if not log_path or not os.path.isfile(log_path):
         return ""
     try:

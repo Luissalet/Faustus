@@ -2,7 +2,7 @@
 src/context_engine — the one place that decides what a model is told.
 
 Faustus never lacked storage.  It had learned memory with maturity and
-anti-patterns, project memory in `.faustus/`, objectives with a typed log,
+anti-patterns, project memory in `.odysseus/`, objectives with a typed log,
 document RAG, expert corpora, a provenance graph, changesets and a `prove`
 verdict.  What it lacked was a single answer to the question every one of those
 systems was quietly answering on its own, in its own format, with its own idea

@@ -2601,7 +2601,7 @@ def test_direct_low_signal_fallback_estimates_winning_route_prompt(
     terminal_error,
 ):
     primary = ("https://selected.example/v1", "generic-model", {})
-    backup = ("https://backup.example/v1", "faustus-qwen-backup", {})
+    backup = ("https://backup.example/v1", "odysseus-qwen-backup", {})
     candidate_requests = []
 
     monkeypatch.setattr(agent_loop, "get_setting", lambda key, default=None: default)
@@ -3534,7 +3534,7 @@ def test_skill_activation_reaches_later_fallback_request_and_pinned_round(monkey
     requests_by_round = []
     round_number = 0
     primary = ("https://selected.example/v1", "selected-model", {})
-    backup = ("https://backup.example/v1", "faustus-qwen-backup", {})
+    backup = ("https://backup.example/v1", "odysseus-qwen-backup", {})
 
     monkeypatch.setattr(agent_loop, "get_setting", lambda key, default=None: default)
     monkeypatch.setattr(agent_loop, "get_mcp_manager", lambda: None)
@@ -3644,14 +3644,14 @@ def test_skill_activation_reaches_later_fallback_request_and_pinned_round(monkey
     assert "grep" in primary_schema_names
     assert round_two_requests[1]["kwargs"]["tools"] is None
     assert any(
-        "route=faustus-qwen-backup; tools=grep,manage_skills" in (message.get("content") or "")
+        "route=odysseus-qwen-backup; tools=grep,manage_skills" in (message.get("content") or "")
         for message in round_two_requests[1]["messages"]
     )
 
     round_three_candidates, round_three_requests = requests_by_round[2]
     assert round_three_candidates == [backup]
     assert any(
-        "route=faustus-qwen-backup; tools=grep,manage_skills" in (message.get("content") or "")
+        "route=odysseus-qwen-backup; tools=grep,manage_skills" in (message.get("content") or "")
         for message in round_three_requests[0]["messages"]
     )
     assert any('"delta": "pinned backup answer"' in chunk for chunk in chunks)

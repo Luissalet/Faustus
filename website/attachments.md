@@ -4,7 +4,7 @@ layout: default
 
 # Attachment References and Upload Storage
 
-Faustus stores uploaded bytes once under the configured upload directory and
+Odysseus stores uploaded bytes once under the configured upload directory and
 passes stable references through chat history, tools, and future artifact work.
 The goal is to avoid duplicating large inline media payloads in
 `chat_messages.content` or the SQLite FTS index.
@@ -44,7 +44,7 @@ the current turn. Persistence is different:
 ## Tool Access
 
 Agent/tool context receives upload entries as `attachment_ref` manifests with an
-`faustus://attachment/<id>` URI and `read_policy: "owner_checked_upload"`.
+`odysseus://attachment/<id>` URI and `read_policy: "owner_checked_upload"`.
 
 For compatibility with existing built-in tools, a local `path` may be included
 only after all of these checks pass:

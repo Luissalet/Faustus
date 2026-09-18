@@ -11,8 +11,8 @@ import { t } from '../i18n';
 
 /* ── Workspace: the same key the legacy pill uses ── */
 
-const WORKSPACE_KEY = 'faustus-workspace';
-const RAG_KEY = 'faustus-rag-active';
+const WORKSPACE_KEY = 'odysseus-workspace';
+const RAG_KEY = 'odysseus-rag-active';
 
 function readLegacy(key: string): string {
   try {
@@ -39,7 +39,7 @@ export function setWorkspace(path: string): void {
     if (path) localStorage.setItem(WORKSPACE_KEY, path);
     else localStorage.removeItem(WORKSPACE_KEY);
     document.dispatchEvent(
-      new CustomEvent('faustus:workspace-change', { detail: { workspace: path } }),
+      new CustomEvent('odysseus:workspace-change', { detail: { workspace: path } }),
     );
   } catch {
     /* private mode */

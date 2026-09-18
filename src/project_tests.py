@@ -772,7 +772,7 @@ def compare_with_baseline(workspace: str, checkpoint_sha: Optional[str], spec: D
         from src import workspace_checkpoints as wc
     except Exception:
         return res
-    tmp = tempfile.mkdtemp(prefix="faustus-baseline-")
+    tmp = tempfile.mkdtemp(prefix="odysseus-baseline-")
     try:
         if not wc.export_tree(workspace, checkpoint_sha, tmp):
             res["baseline"] = {"ran": False, "summary": "checkpoint export failed"}

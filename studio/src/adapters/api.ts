@@ -11,7 +11,7 @@
  * ARCH-01: the wire version this build speaks, and the header names the
  * negotiation runs over (src/api_version.py is the server's half — kept in
  * sync by hand, the same way RUN_ID_HEADER in chat.ts already mirrors
- * X-Faustus-Run-Id). Sending it costs nothing against an endpoint that
+ * X-Odysseus-Run-Id). Sending it costs nothing against an endpoint that
  * doesn't look at it; a server that predates this scheme just ignores an
  * unknown header, exactly like every other additive field in this lot.
  */

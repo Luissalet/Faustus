@@ -3104,9 +3104,9 @@ class TaskScheduler:
             msg["From"] = from_addr
             msg["To"] = to_addr
             msg["Subject"] = f"[Task] {task.name}"
-            msg["X-Faustus-Origin"] = "faustus-ui"
-            msg["X-Faustus-Kind"] = "task"
-            msg["X-Faustus-Ref"] = str(task.id)
+            msg["X-Odysseus-Origin"] = "odysseus-ui"
+            msg["X-Odysseus-Kind"] = "task"
+            msg["X-Odysseus-Ref"] = str(task.id)
             msg.set_content(result or "")
             await asyncio.to_thread(
                 _send_smtp_message, cfg, from_addr, [to_addr], msg.as_string(), timeout=30)
@@ -3551,9 +3551,9 @@ class TaskScheduler:
             "subject": f"[Task] {task.name}",
             "body": result,
             "headers": {
-                "X-Faustus-Origin": "faustus-ui",
-                "X-Faustus-Kind": "task",
-                "X-Faustus-Ref": str(task.id),
+                "X-Odysseus-Origin": "odysseus-ui",
+                "X-Odysseus-Kind": "task",
+                "X-Odysseus-Ref": str(task.id),
             },
         }
         if recipient:

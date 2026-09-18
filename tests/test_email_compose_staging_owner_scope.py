@@ -251,7 +251,7 @@ async def test_scheduled_send_leases_the_attachment_past_the_draft_ttl(
 _CHILD_STAGE = r"""
 import os, sys
 sys.path.insert(0, sys.argv[1])
-os.environ["FAUSTUS_MAIL_ATTACHMENTS_DIR"] = sys.argv[2]
+os.environ["ODYSSEUS_MAIL_ATTACHMENTS_DIR"] = sys.argv[2]
 import routes.email_helpers as H
 print(H.register_compose_upload("alice", "persisted.txt", content=b"survive")["id"])
 """

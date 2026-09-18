@@ -35,7 +35,7 @@ from src import browser_sessions as bs
 def _isolated_sessions(tmp_path, monkeypatch):
     import src.constants as constants
     monkeypatch.setattr(constants, "DATA_DIR", str(tmp_path))
-    monkeypatch.setenv("FAUSTUS_BROWSER_EXECUTABLE", "/usr/bin/chromium")
+    monkeypatch.setenv("ODYSSEUS_BROWSER_EXECUTABLE", "/usr/bin/chromium")
     bs._SESSIONS.clear()
     yield
     bs._SESSIONS.clear()

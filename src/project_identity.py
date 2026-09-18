@@ -42,7 +42,7 @@ MARKER_SCHEMA_VERSION = 1
 # new `.git` commit must not look like "a different folder".
 IGNORED_DIR_NAMES = frozenset({
     ".git", ".hg", ".svn", "node_modules", "__pycache__", ".venv", "venv",
-    MARKER_DIRNAME, ".faustus", ".odysseus", ".pytest_cache", ".mypy_cache", ".tox",
+    MARKER_DIRNAME, ".odysseus", ".pytest_cache", ".mypy_cache", ".tox",
     ".idea", ".vscode",
 })
 # A bounded walk: a relocate on a huge tree costs a capped scan, not a full
@@ -232,7 +232,7 @@ def relocate(project_id: str, new_path: str, *, owner: Optional[str] = None,
     old_workspace = str(project.get("workspace") or "")
     # Read BEFORE `ProjectStore.update()` runs: `update()` calls
     # `services.objectives.preserve_for_rebinding`, which takes a lock file
-    # under `<old_workspace>/.faustus/` and — as a side effect of acquiring
+    # under `<old_workspace>/.odysseus/` and — as a side effect of acquiring
     # it — recreates that directory tree even when the old workspace is
     # otherwise gone. Checking afterwards would report "present" for a path
     # that was actually missing at the moment relocate was called.

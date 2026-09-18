@@ -160,8 +160,8 @@ def test_ollama_cookbook_runner_does_not_force_public_bind():
     """
     route = Path("routes/cookbook_routes.py").read_text(encoding="utf-8")
     serve_ts = Path("studio/src/lib/cookbook/serve.ts").read_text(encoding="utf-8")
-    assert 'OLLAMA_HOST="0.0.0.0:${FAUSTUS_OLLAMA_PORT}" ollama serve' not in route
-    assert 'OLLAMA_HOST="${FAUSTUS_OLLAMA_HOST}:${FAUSTUS_OLLAMA_PORT}" ollama serve' in route
+    assert 'OLLAMA_HOST="0.0.0.0:${ODYSSEUS_OLLAMA_PORT}" ollama serve' not in route
+    assert 'OLLAMA_HOST="${ODYSSEUS_OLLAMA_HOST}:${ODYSSEUS_OLLAMA_PORT}" ollama serve' in route
     assert '_ollama_default_host = "0.0.0.0" if remote else "127.0.0.1"' in route
     assert "WARNING: remote Ollama will bind" in route
     # The command builder picks the bind from whether there IS a remote host.
@@ -566,26 +566,26 @@ def test_require_user_rejects_unauthenticated(monkeypatch):
 
 
 def test_inprocess_pollers_gate(monkeypatch):
-    """The FAUSTUS_INPROCESS_POLLERS env var must let operators kill
+    """The ODYSSEUS_INPROCESS_POLLERS env var must let operators kill
     the asyncio pollers when cron / systemd is driving the one-shot
-    `faustus-mail poll-*` CLI subcommands instead. Two pollers racing
+    `odysseus-mail poll-*` CLI subcommands instead. Two pollers racing
     on the same SQLite would mark scheduled rows as 'sent' twice."""
     import sys as _sys
     _sys.modules.pop("routes.email_pollers", None)
     from routes.email_pollers import _inprocess_pollers_enabled  # noqa: WPS433
 
     # Defaults to enabled (preserves single-process deployments).
-    monkeypatch.delenv("FAUSTUS_INPROCESS_POLLERS", raising=False)
+    monkeypatch.delenv("ODYSSEUS_INPROCESS_POLLERS", raising=False)
     assert _inprocess_pollers_enabled() is True
 
     # Any of the off-values disables.
     for off in ("0", "false", "no", "off", "FALSE", "Off"):
-        monkeypatch.setenv("FAUSTUS_INPROCESS_POLLERS", off)
+        monkeypatch.setenv("ODYSSEUS_INPROCESS_POLLERS", off)
         assert _inprocess_pollers_enabled() is False, f"{off!r} should disable"
 
     # Explicit on-values stay enabled.
     for on in ("1", "true", "yes", "anything-truthy"):
-        monkeypatch.setenv("FAUSTUS_INPROCESS_POLLERS", on)
+        monkeypatch.setenv("ODYSSEUS_INPROCESS_POLLERS", on)
         assert _inprocess_pollers_enabled() is True, f"{on!r} should enable"
 
 
@@ -841,7 +841,7 @@ def _load_search_content_for_test(monkeypatch, name="services.search.content_und
     analytics.RateLimitError = RuntimeError
     analytics.error_logger = _types.SimpleNamespace(error=lambda *a, **k: None)
     cache = _types.ModuleType("services.search.cache")
-    cache.CONTENT_CACHE_DIR = Path("/tmp/faustus-test-content-cache")
+    cache.CONTENT_CACHE_DIR = Path("/tmp/odysseus-test-content-cache")
     cache.content_cache_index = {}
     cache.generate_cache_key = lambda url: "test-cache-key"
     cache.cleanup_cache = lambda: None
@@ -1086,14 +1086,14 @@ def _import_mcp_routes():
 
 
 def test_google_mcp_oauth_uses_configured_redirect_base(monkeypatch):
-    monkeypatch.setenv("OAUTH_REDIRECT_BASE_URL", "https://faustus.example/app/")
+    monkeypatch.setenv("OAUTH_REDIRECT_BASE_URL", "https://odysseus.example/app/")
     monkeypatch.delenv("APP_PUBLIC_URL", raising=False)
     sys.modules.pop("src.mcp_oauth", None)
     mcp_routes = _import_mcp_routes()
 
     assert (
         mcp_routes._mcp_oauth_redirect_uri()
-        == "https://faustus.example/app/api/mcp/oauth/callback"
+        == "https://odysseus.example/app/api/mcp/oauth/callback"
     )
 
 

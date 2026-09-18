@@ -17,7 +17,7 @@ from src import backup_service as bs
 
 @pytest.fixture()
 def seeded_install(tmp_path, monkeypatch):
-    """Patches `src.constants.DATA_DIR` directly, not the `FAUSTUS_DATA_DIR`
+    """Patches `src.constants.DATA_DIR` directly, not the `ODYSSEUS_DATA_DIR`
     env var: that constant is read once, at `src.constants` import time —
     which has usually already happened by the time a test fixture runs — so
     setting the env var here would silently do nothing and `bs.snapshot()`

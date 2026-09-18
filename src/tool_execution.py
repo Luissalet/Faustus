@@ -594,7 +594,7 @@ _MCP_TOOL_MAP = {
     "web_fetch":      ("web_fetch",  "web_fetch"),
     "generate_image": ("image_gen",  "generate_image"),
 }
-_EMAIL_MCP_OWNER_ARG = "_faustus_owner"
+_EMAIL_MCP_OWNER_ARG = "_odysseus_owner"
 
 
 def _parse_qualified_mcp_args(tool: str, content: str) -> tuple[Dict, Optional[str]]:

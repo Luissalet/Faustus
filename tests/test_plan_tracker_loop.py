@@ -26,7 +26,7 @@ def _big_plan_text() -> str:
 
 @pytest.fixture
 def ws(tmp_path, monkeypatch):
-    monkeypatch.setenv("FAUSTUS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("ODYSSEUS_DATA_DIR", str(tmp_path / "data"))
     import src.constants as consts
     from src import plan_tracker as pt
     monkeypatch.setattr(consts, "DATA_DIR", str(tmp_path / "data"), raising=False)

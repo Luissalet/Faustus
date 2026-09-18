@@ -26,7 +26,7 @@ from unittest.mock import MagicMock
 # pytest process and does a real `import src.agent_tools` got this mock
 # back instead of the real module, silently breaking whatever it tested
 # (14 tests across test_misfenced_read_file_tool_call.py,
-# test_faustus_doc_fence_normalization.py,
+# test_odysseus_doc_fence_normalization.py,
 # test_plain_ui_control_open_panel.py and test_redos_xml_tool_parsers.py —
 # each imports `src.agent_tools`/`src.tool_parsing` directly and needs the
 # real thing). Saving and restoring the previous sys.modules entry around

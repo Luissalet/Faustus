@@ -68,7 +68,7 @@ CORPUS = [
     ("carriage-return", "windows\r\nline"),
     ("tab", "col\tcol"),
     ("quote", 'he said "no"'),
-    ("backslash", "C:\\LocalAI\\faustus"),
+    ("backslash", "C:\\LocalAI\\odysseus"),
     ("dash-item", "- not an item"),
     ("unicode", "añadió la validación · 中文 · €"),
     ("flat-object", {"a": 1, "b": "two", "c": None, "d": True, "e": 1.25}),

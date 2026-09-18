@@ -83,7 +83,7 @@ _BUILTIN_SERVERS = {
     "email":      ("mcp_servers/email_server.py",      "Built-in: Email"),
     # The context engine: compile a packet and read its manifest, explain why a
     # source was or was not in it, and reach the stores the compiler draws from.
-    # Owner-scoped through FAUSTUS_MCP_CONTEXT_OWNER, like the memory server.
+    # Owner-scoped through ODYSSEUS_MCP_CONTEXT_OWNER, like the memory server.
     "context":    ("mcp_servers/context_engine_server.py", "Built-in: Context Engine"),
 }
 
@@ -117,8 +117,8 @@ _LAUNCH_ONLY_FLAGS = ("--headless", "--isolated", "--no-sandbox", "--sandbox")
 _LAUNCH_ONLY_VALUED_FLAGS = ("--user-data-dir", "--executable-path")
 
 # Global flag to disable MCP if there are compatibility issues
-MCP_DISABLED = os.environ.get("FAUSTUS_DISABLE_MCP", "").lower() in ("1", "true", "yes")
-BROWSER_MCP_REQUIRE_CACHE = os.environ.get("FAUSTUS_BROWSER_MCP_REQUIRE_CACHE", "").lower() in ("1", "true", "yes")
+MCP_DISABLED = os.environ.get("ODYSSEUS_DISABLE_MCP", "").lower() in ("1", "true", "yes")
+BROWSER_MCP_REQUIRE_CACHE = os.environ.get("ODYSSEUS_BROWSER_MCP_REQUIRE_CACHE", "").lower() in ("1", "true", "yes")
 
 
 # Strong references to the fire-and-forget startup tasks scheduled below.
@@ -142,7 +142,7 @@ def _find_browser_executable() -> str:
     Chrome/Chromium in a conventional location. If nothing is found, return an
     empty string and let Playwright MCP use its own default browser/channel.
     """
-    configured = os.environ.get("FAUSTUS_BROWSER_EXECUTABLE", "").strip()
+    configured = os.environ.get("ODYSSEUS_BROWSER_EXECUTABLE", "").strip()
     if configured:
         return configured
     for name in ("google-chrome", "chromium", "chromium-browser"):
@@ -193,7 +193,7 @@ def _truthy(value) -> bool:
 
 def _browser_profile_dir() -> str:
     """On-disk profile used when browser_profile == "persistent"."""
-    configured = os.environ.get("FAUSTUS_BROWSER_PROFILE_DIR", "").strip()
+    configured = os.environ.get("ODYSSEUS_BROWSER_PROFILE_DIR", "").strip()
     if configured:
         return configured
     try:
@@ -254,8 +254,8 @@ def _browser_mcp_args(args: list[str], settings=None, *, owner_id=None, task_id=
     """Return Playwright MCP args for the built-in browser.
 
     Settings (src/settings.py) decide headless / vision caps / profile /
-    CDP endpoint; the legacy env overrides FAUSTUS_BROWSER_EXECUTABLE,
-    FAUSTUS_BROWSER_ISOLATED and FAUSTUS_BROWSER_NO_SANDBOX still win when
+    CDP endpoint; the legacy env overrides ODYSSEUS_BROWSER_EXECUTABLE,
+    ODYSSEUS_BROWSER_ISOLATED and ODYSSEUS_BROWSER_NO_SANDBOX still win when
     they are set explicitly. Flags already present in `args` are respected.
 
     ``owner_id``/``task_id`` (WEB-03, lote 42): when BOTH are given (and the
@@ -298,7 +298,7 @@ def _browser_mcp_args(args: list[str], settings=None, *, owner_id=None, task_id=
 
     # Profile: explicit env wins, else the setting. "persistent" pins the
     # profile under DATA_DIR so cookies and logins survive restarts.
-    isolated_env = os.environ.get("FAUSTUS_BROWSER_ISOLATED")
+    isolated_env = os.environ.get("ODYSSEUS_BROWSER_ISOLATED")
     if isolated_env is not None and isolated_env.strip() != "":
         isolated = _truthy(isolated_env)
     else:
@@ -311,7 +311,7 @@ def _browser_mcp_args(args: list[str], settings=None, *, owner_id=None, task_id=
         else:
             out.extend(["--user-data-dir", _browser_profile_dir()])
 
-    if os.environ.get("FAUSTUS_BROWSER_NO_SANDBOX", "1").lower() not in ("0", "false", "no"):
+    if os.environ.get("ODYSSEUS_BROWSER_NO_SANDBOX", "1").lower() not in ("0", "false", "no"):
         if "--no-sandbox" not in out and "--sandbox" not in out:
             out.append("--no-sandbox")
     return out
@@ -324,7 +324,7 @@ def browser_launch_args(settings=None) -> list[str]:
 
 def _browser_env(base_dir: str) -> dict[str, str]:
     cache_home = os.environ.get(
-        "FAUSTUS_BROWSER_MCP_CACHE",
+        "ODYSSEUS_BROWSER_MCP_CACHE",
         os.path.join(base_dir, "data", "local", "playwright-mcp-cache"),
     )
     os.makedirs(cache_home, exist_ok=True)
@@ -559,7 +559,7 @@ def builtin_python_env(base_dir: str) -> dict[str, str]:
 async def register_builtin_servers(mcp_manager):
     """Connect all built-in MCP servers to the manager."""
     if MCP_DISABLED:
-        logger.info("Built-in MCP servers disabled via FAUSTUS_DISABLE_MCP")
+        logger.info("Built-in MCP servers disabled via ODYSSEUS_DISABLE_MCP")
         return
 
     base_dir = get_app_root()
@@ -602,7 +602,7 @@ async def register_builtin_servers(mcp_manager):
             # Browser automation is a shipped built-in, so the default path
             # lets `npx -y` install @playwright/mcp on first start. Locked-down
             # installs can opt back into the old no-network startup behavior
-            # with FAUSTUS_BROWSER_MCP_REQUIRE_CACHE=1.
+            # with ODYSSEUS_BROWSER_MCP_REQUIRE_CACHE=1.
             pkg_spec = _npx_package_from_args(list(cfg["args"]))
             if BROWSER_MCP_REQUIRE_CACHE and pkg_spec and not await _is_npx_package_cached(npx_path, pkg_spec):
                 logger.warning(
@@ -611,7 +611,7 @@ async def register_builtin_servers(mcp_manager):
                     f"  Impact: tools provided by this MCP server will be unavailable.\n"
                     f"  Fix:    {os.path.basename(npx_path)} -y {pkg_spec} --version\n"
                     f"          (run once, then restart Faustus)\n"
-                    f"  Notes:  FAUSTUS_BROWSER_MCP_REQUIRE_CACHE=1 is set, "
+                    f"  Notes:  ODYSSEUS_BROWSER_MCP_REQUIRE_CACHE=1 is set, "
                     f"so Faustus will not install browser automation on startup."
                 )
                 continue

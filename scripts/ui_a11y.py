@@ -358,14 +358,14 @@ def main() -> int:
     port = _free_port()
     env = dict(os.environ)
     env.update({
-        "FAUSTUS_DATA_DIR": data_dir,
+        "ODYSSEUS_DATA_DIR": data_dir,
         "DATABASE_URL": "sqlite:///" + (data_dir.replace("\\", "/") + "/app.db"),
         "APP_PORT": str(port),
         "LOCALHOST_BYPASS": "true",
         "AUTH_ENABLED": "false",
-        "FAUSTUS_INPROCESS_POLLERS": "0",
-        "FAUSTUS_INPROCESS_TASKS": "0",
-        "FAUSTUS_STARTUP_WARMUPS": "0",
+        "ODYSSEUS_INPROCESS_POLLERS": "0",
+        "ODYSSEUS_INPROCESS_TASKS": "0",
+        "ODYSSEUS_STARTUP_WARMUPS": "0",
         "PYTHONUNBUFFERED": "1",
     })
     log_path = Path(data_dir) / "server.log"
@@ -409,7 +409,7 @@ def main() -> int:
             page = ctx.new_page()
             page.set_default_timeout(20000)
             page.goto(base + "/", wait_until="domcontentloaded")
-            page.evaluate("ws => localStorage.setItem('faustus-workspace', ws)", str(ws_dir))
+            page.evaluate("ws => localStorage.setItem('odysseus-workspace', ws)", str(ws_dir))
             try:
                 run(page, base, new_session, report)
             except Exception as e:  # noqa: BLE001

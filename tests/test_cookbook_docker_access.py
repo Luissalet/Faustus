@@ -70,7 +70,7 @@ async def test_container_opt_in_with_unix_socket_is_allowed(monkeypatch, tmp_pat
             None,
             None,
             in_container=True,
-            environ={"FAUSTUS_ENABLE_HOST_DOCKER": "true"},
+            environ={"ODYSSEUS_ENABLE_HOST_DOCKER": "true"},
             socket_path=str(socket_path),
         )
 
@@ -320,7 +320,7 @@ def test_local_ollama_download_probe_omits_docker_commands_when_blocked():
     assert "command -v docker" not in rendered
     assert "docker ps" not in rendered
     assert "docker exec" not in rendered
-    assert "FAUSTUS_OLLAMA_PULL_CMD" in rendered
+    assert "ODYSSEUS_OLLAMA_PULL_CMD" in rendered
     assert "docker/host-docker.yml" in rendered
     assert "exit 127" in rendered
 
@@ -338,5 +338,5 @@ def test_local_ollama_download_probe_keeps_docker_fallback_when_allowed():
     rendered = "\n".join(lines)
 
     assert "docker ps" in rendered
-    assert "docker exec ${FAUSTUS_OLLAMA_CONTAINER}" in rendered
-    assert "FAUSTUS_OLLAMA_PULL_CMD" in rendered
+    assert "docker exec ${ODYSSEUS_OLLAMA_CONTAINER}" in rendered
+    assert "ODYSSEUS_OLLAMA_PULL_CMD" in rendered

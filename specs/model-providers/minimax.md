@@ -6,7 +6,7 @@ Last updated: dev@28d27ee | 2026-07-17
 
 Canonical provider ID `minimax`; international host `api.minimax.io`, China
 host `api.minimaxi.com`; current OpenAI-compatible and recommended
-Anthropic-compatible text transports. Faustus contains MiniMax-oriented tool
+Anthropic-compatible text transports. Odysseus contains MiniMax-oriented tool
 output handling and local-serving guidance but no dedicated catalog reader.
 
 ## Catalog Shape

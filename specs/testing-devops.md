@@ -12,12 +12,12 @@ This spec covers development and validation surfaces in:
 - `requirements.txt` and `requirements-optional.txt`;
 - `package.json` and `package-lock.json`;
 - `Dockerfile`, `docker-compose.yml`, `docker/gpu.nvidia.yml`, `docker/gpu.amd.yml`, `docker/host-docker.yml`, top-level standalone GPU compose files, and `docker/entrypoint.sh`;
-- `scripts/`, `scripts/faustus`, `scripts/_lib/cli.py`, `scripts/_completion/*`, `scripts/pr_blocker_audit.py`, and `scripts/faustus-*`;
+- `scripts/`, `scripts/odysseus`, `scripts/_lib/cli.py`, `scripts/_completion/*`, `scripts/pr_blocker_audit.py`, and `scripts/odysseus-*`;
 - GPU helper scripts `scripts/check-docker-gpu.sh` and `scripts/check-docker-amd-gpu.sh`;
 - `.github/` templates, workflows, and description-check scripts;
 - contributor workflow docs in `CONTRIBUTING.md` and `docs/pr-blocker-audit.md`;
-- platform launchers `launch-windows.ps1`, `launcher.py`, `Faustus.spec`, `build-windows-portable.ps1`, `start-macos.sh`, `build-macos-app.sh`, and `update_windows.bat`;
-- setup/service files such as `setup.py`, `install-service.sh`, and `faustus-ui.service`.
+- platform launchers `launch-windows.ps1`, `launcher.py`, `Odysseus.spec`, `build-windows-portable.ps1`, `start-macos.sh`, `build-macos-app.sh`, and `update_windows.bat`;
+- setup/service files such as `setup.py`, `install-service.sh`, and `odysseus-ui.service`.
 
 ## Test Runtime
 
@@ -83,18 +83,18 @@ Docker Compose is the primary deployment path:
 ```bash
 docker compose up -d --build
 docker compose ps
-docker compose logs --tail=120 faustus
+docker compose logs --tail=120 odysseus
 ```
 
-`docker-compose.yml` starts Faustus, ChromaDB, SearXNG, and ntfy. It binds services to loopback by default through `APP_BIND`, `CHROMADB_BIND`, and `NTFY_BIND`, persists configurable `APP_DATA_DIR`/`APP_LOGS_DIR`, SSH identity, HuggingFace cache, and user-local Python installs, and gives the Faustus container host-loopback reachability through `host.docker.internal`.
+`docker-compose.yml` starts Odysseus, ChromaDB, SearXNG, and ntfy. It binds services to loopback by default through `APP_BIND`, `CHROMADB_BIND`, and `NTFY_BIND`, persists configurable `APP_DATA_DIR`/`APP_LOGS_DIR`, SSH identity, HuggingFace cache, and user-local Python installs, and gives the Odysseus container host-loopback reachability through `host.docker.internal`.
 
-Compose variants forward `FAUSTUS_TTS_CACHE_MAX_BYTES`, defaulting in the service to 500 MiB, and run the mounted `scripts/migrate_searxng_settings.py` helper so retained SearXNG YAML gains default inheritance without replacement. The helper preserves file metadata and formatting where possible and writes atomically; migration failure is non-fatal to the wrapper command. MCP OAuth callback setup follows `OAUTH_REDIRECT_BASE_URL`, `APP_PUBLIC_URL`, or the launcher/bind `APP_PORT`, so externally remapped deployments should set a public base explicitly.
+Compose variants forward `ODYSSEUS_TTS_CACHE_MAX_BYTES`, defaulting in the service to 500 MiB, and run the mounted `scripts/migrate_searxng_settings.py` helper so retained SearXNG YAML gains default inheritance without replacement. The helper preserves file metadata and formatting where possible and writes atomically; migration failure is non-fatal to the wrapper command. MCP OAuth callback setup follows `OAUTH_REDIRECT_BASE_URL`, `APP_PUBLIC_URL`, or the launcher/bind `APP_PORT`, so externally remapped deployments should set a public base explicitly.
 
 `Dockerfile` builds a Python 3.14 slim image with Node/npm, tmux, OpenSSH client, git/cmake, the pinned Docker CLI `29.6.2`, `gosu`, `libmagic1`, and the image-only `python-magic` wrapper.
 
 `docker/entrypoint.sh` owns writable path ownership repair, PUID/PGID user/group creation and privilege drop, optional host-Docker socket group handling, vLLM/CUDA environment defaults, idempotent `setup.py`, and final uvicorn execution.
 
-Docker does not mount the host Docker socket by default. Mounting it would grant powerful host access and is outside the default trust boundary. `docker/host-docker.yml` is the explicit opt-in overlay and sets `FAUSTUS_ENABLE_HOST_DOCKER=true`; tests guard that the default and GPU compose files do not enable host Docker accidentally.
+Docker does not mount the host Docker socket by default. Mounting it would grant powerful host access and is outside the default trust boundary. `docker/host-docker.yml` is the explicit opt-in overlay and sets `ODYSSEUS_ENABLE_HOST_DOCKER=true`; tests guard that the default and GPU compose files do not enable host Docker accidentally.
 
 ## GPU And Platform
 
@@ -116,14 +116,14 @@ AMD helper behavior:
 Native platform launchers:
 
 - `launch-windows.ps1` requires Python 3.11+, creates `venv`, installs `requirements.txt`, runs `setup.py`, discovers per-user Git Bash installs where possible, warns when Git Bash is missing, and starts uvicorn on port 7000 by default.
-- `launcher.py`, `Faustus.spec`, and `build-windows-portable.ps1` own the PyInstaller-style portable Windows launcher path, including app-root/data-dir differences covered by `src.runtime_paths`.
+- `launcher.py`, `Odysseus.spec`, and `build-windows-portable.ps1` own the PyInstaller-style portable Windows launcher path, including app-root/data-dir differences covered by `src.runtime_paths`.
 - `start-macos.sh` reads `.env`, defaults to port 7860 to avoid AirPlay conflicts, prefers Homebrew arm64 Python, installs/tolerates Homebrew Cookbook deps, handles Chroma package conflicts, starts ChromaDB for native runs, runs `setup.py`, and starts uvicorn.
-- `build-macos-app.sh` builds a launcher app around the existing repo venv and logs to `logs/faustus-app.log`.
+- `build-macos-app.sh` builds a launcher app around the existing repo venv and logs to `logs/odysseus-app.log`.
 - `update_windows.bat` owns the tested Windows Docker update flow.
 
 ## Scripts And CLI
 
-`scripts/faustus` is the umbrella dispatcher for executable `scripts/faustus-*` commands. It discovers subcommands and executes them through the project venv Python when available.
+`scripts/odysseus` is the umbrella dispatcher for executable `scripts/odysseus-*` commands. It discovers subcommands and executes them through the project venv Python when available.
 
 `scripts/_lib/cli.py` owns shared CLI behavior:
 
@@ -139,7 +139,7 @@ Native platform launchers:
 and applies it to root, console, rotating-file, and direct-uvicorn logging.
 Shell completions in `scripts/_completion/` introspect CLI `--help` output through the venv and cache subcommands.
 
-`scripts/faustus-*` provide local CLI surfaces for backup, calendar, contacts, Cookbook, docs, gallery, logs, mail, MCP, memory, notes, personal docs, presets, research, sessions, signatures, skills, tasks, theme, and webhooks.
+`scripts/odysseus-*` provide local CLI surfaces for backup, calendar, contacts, Cookbook, docs, gallery, logs, mail, MCP, memory, notes, personal docs, presets, research, sessions, signatures, skills, tasks, theme, and webhooks.
 
 When route/API behavior changes, check whether a matching CLI script depends on the old shape. There is no central CLI scrubber: each credential/log/mail/task/backup/MCP/webhook script owns its own sensitive-output behavior.
 
@@ -192,7 +192,7 @@ Common local checks:
 node --check static/js/changed-file.js
 docker compose config
 docker compose up -d --build
-docker compose logs --tail=120 faustus
+docker compose logs --tail=120 odysseus
 ```
 
 Run the app for user-facing or integration changes. Unit tests and syntax checks do not replace end-to-end verification for UI, Docker, provider, auth, or routing behavior.

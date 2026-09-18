@@ -46,7 +46,7 @@ Studio; colores por token.
 ## Qué entra
 
 - `adapters/compare.ts`: modos y su ayuda, `EVAL_PROMPTS` (22 prompts de la
-  anterior), votos (`faustus-compare-votes`, mismo formato), marcador por
+  anterior), votos (`odysseus-compare-votes`, mismo formato), marcador por
   modo, fondo de exclusiones, opciones por modo (`fs-compare-options`),
   `searchWith` (`/api/search/query`), `synthesisPrompt`, `gradeAnswer`,
   `probeRoutes` (`/api/probe-selected`), `metricsLine`.

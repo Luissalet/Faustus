@@ -4,7 +4,7 @@ Opt-in: they start a real Faustus server (temp data dir, localhost bypass,
 no auth) plus a scripted fake model endpoint, and drive the UI in headless
 Chromium. Run with:
 
-    FAUSTUS_E2E=1 python -m pytest tests/e2e -q
+    ODYSSEUS_E2E=1 python -m pytest tests/e2e -q
 
 Requirements: `pip install playwright` + `playwright install chromium` (or
 PLAYWRIGHT_BROWSERS_PATH pointing at an installed Chromium). Skipped otherwise.
@@ -25,7 +25,7 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parents[2]
-E2E = os.environ.get("FAUSTUS_E2E", "").strip().lower() in {"1", "true", "yes", "on"}
+E2E = os.environ.get("ODYSSEUS_E2E", "").strip().lower() in {"1", "true", "yes", "on"}
 
 try:  # pragma: no cover - import guard
     from playwright.sync_api import sync_playwright  # noqa: F401
@@ -37,7 +37,7 @@ except Exception:  # noqa: BLE001
 def pytest_collection_modifyitems(config, items):
     if E2E and _HAS_PW:
         return
-    reason = "set FAUSTUS_E2E=1 to run the browser flows" if not E2E else "playwright is not installed"
+    reason = "set ODYSSEUS_E2E=1 to run the browser flows" if not E2E else "playwright is not installed"
     skip = pytest.mark.skip(reason=reason)
     here = str(Path(__file__).resolve().parent)
     for item in items:
@@ -124,17 +124,17 @@ class AppServer:
 @pytest.fixture(scope="session")
 def app_server(fake_llm):
     port = _free_port()
-    data_dir = tempfile.mkdtemp(prefix="faustus-e2e-data-")
+    data_dir = tempfile.mkdtemp(prefix="odysseus-e2e-data-")
     env = dict(os.environ)
     env.update({
-        "FAUSTUS_DATA_DIR": data_dir,
+        "ODYSSEUS_DATA_DIR": data_dir,
         "DATABASE_URL": "sqlite:///" + (data_dir.replace("\\", "/") + "/app.db"),
         "APP_PORT": str(port),
         "LOCALHOST_BYPASS": "true",
         "AUTH_ENABLED": "false",
-        "FAUSTUS_INPROCESS_POLLERS": "0",
-        "FAUSTUS_INPROCESS_TASKS": "0",
-        "FAUSTUS_STARTUP_WARMUPS": "0",
+        "ODYSSEUS_INPROCESS_POLLERS": "0",
+        "ODYSSEUS_INPROCESS_TASKS": "0",
+        "ODYSSEUS_STARTUP_WARMUPS": "0",
         "PYTHONUNBUFFERED": "1",
         "PYTHONIOENCODING": "utf-8",
         "PYTHONUTF8": "1",
@@ -159,8 +159,8 @@ def app_server(fake_llm):
         except subprocess.TimeoutExpired:
             proc.kill()
         log.close()
-        if os.environ.get("FAUSTUS_E2E_KEEP_LOG"):
-            shutil.copyfile(os.path.join(data_dir, "server.log"), os.environ["FAUSTUS_E2E_KEEP_LOG"])
+        if os.environ.get("ODYSSEUS_E2E_KEEP_LOG"):
+            shutil.copyfile(os.path.join(data_dir, "server.log"), os.environ["ODYSSEUS_E2E_KEEP_LOG"])
         shutil.rmtree(data_dir, ignore_errors=True)
 
 
@@ -196,7 +196,7 @@ def workspace(tmp_path):
 def open_chat(page, app_server: AppServer, session_id: str, workspace: str | None) -> None:
     page.goto(app_server.base + "/", wait_until="domcontentloaded")
     if workspace:
-        page.evaluate("ws => localStorage.setItem('faustus-workspace', ws)", workspace)
+        page.evaluate("ws => localStorage.setItem('odysseus-workspace', ws)", workspace)
     page.goto(app_server.base + "/#" + session_id, wait_until="domcontentloaded")
     page.wait_for_selector("#message:visible")
     # Wait for the app to have SELECTED the hash session, not for a fixed

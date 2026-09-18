@@ -150,10 +150,10 @@ def test_parse_client_secret_json_rejects_garbage(text):
 # ── src/google_oauth_client.py: redirect_uris resolution ──────────────────
 
 def test_redirect_uris_inferred_from_request():
-    uris = goc.redirect_uris(_FakeRequest(scheme="https", host="faustus.example.ts.net:7443"))
-    assert uris["calendar"] == "https://faustus.example.ts.net:7443/api/calendar/oauth/google/callback"
-    assert uris["email"] == "https://faustus.example.ts.net:7443/api/email/oauth/google/callback"
-    assert uris["origin"] == "https://faustus.example.ts.net:7443"
+    uris = goc.redirect_uris(_FakeRequest(scheme="https", host="odysseus.example.ts.net:7443"))
+    assert uris["calendar"] == "https://odysseus.example.ts.net:7443/api/calendar/oauth/google/callback"
+    assert uris["email"] == "https://odysseus.example.ts.net:7443/api/email/oauth/google/callback"
+    assert uris["origin"] == "https://odysseus.example.ts.net:7443"
 
 
 def test_redirect_uris_prefers_forwarded_headers():

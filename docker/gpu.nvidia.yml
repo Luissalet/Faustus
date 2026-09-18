@@ -21,7 +21,7 @@
 # engines — install vLLM / llama-cpp-python / SGLang via
 # Cookbook -> Dependencies (or pip) before serving GPU models.
 services:
-  faustus:
+  odysseus:
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility

@@ -89,7 +89,7 @@ const context = {
       draft: input.draft,
     },
   },
-  repo: { owner: 'faustus-dev', repo: 'faustus' },
+  repo: { owner: 'odysseus-dev', repo: 'odysseus' },
 };
 const core = {
   warning: (message) => calls.push({ method: 'warning', message }),

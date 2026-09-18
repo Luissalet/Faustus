@@ -1,7 +1,7 @@
 # Faustus workers — the skill for Fable / Claude / any coordinating model
 
 The skill lives at **`integrations/claude/skills/faustus-workers/SKILL.md`**
-(next to the `faustus` skill, so the Claude Code bundle ships it too).
+(next to the `odysseus` skill, so the Claude Code bundle ships it too).
 
 How to give it to a model:
 

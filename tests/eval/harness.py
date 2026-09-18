@@ -125,7 +125,7 @@ class EvalApp:
     reused verbatim."""
 
     def __init__(self) -> None:
-        self.data_dir = tempfile.mkdtemp(prefix="faustus-eval-data-")
+        self.data_dir = tempfile.mkdtemp(prefix="odysseus-eval-data-")
         self.port = _free_port()
         self.base = f"http://127.0.0.1:{self.port}"
         self._fake_llm_port = _free_port()
@@ -140,14 +140,14 @@ class EvalApp:
 
         env = dict(os.environ)
         env.update({
-            "FAUSTUS_DATA_DIR": self.data_dir,
+            "ODYSSEUS_DATA_DIR": self.data_dir,
             "DATABASE_URL": "sqlite:///" + self.data_dir.replace("\\", "/") + "/app.db",
             "APP_PORT": str(self.port),
             "LOCALHOST_BYPASS": "true",
             "AUTH_ENABLED": "false",
-            "FAUSTUS_INPROCESS_POLLERS": "0",
-            "FAUSTUS_INPROCESS_TASKS": "0",
-            "FAUSTUS_STARTUP_WARMUPS": "0",
+            "ODYSSEUS_INPROCESS_POLLERS": "0",
+            "ODYSSEUS_INPROCESS_TASKS": "0",
+            "ODYSSEUS_STARTUP_WARMUPS": "0",
             "PYTHONUNBUFFERED": "1",
             "PYTHONIOENCODING": "utf-8",
             "PYTHONUTF8": "1",

@@ -15,7 +15,7 @@ This spec covers deep research behavior in:
 - search/fetch dependencies in `src.search`, `services.search`, and the `src.search.content` compatibility alias;
 - compatibility/public service code in `services/research/research_handler.py` and `services/research/service.py`;
 - agent tools in `src/tool_implementations.py`, `src/tool_execution.py`, and `src/tool_index.py`;
-- research CLI access in `scripts/faustus-research`;
+- research CLI access in `scripts/odysseus-research`;
 - frontend modules `static/js/research/panel.js`, `static/js/research/jobs.js`, `static/js/researchSynapse.js`, `static/js/chat.js`, `static/js/chatRenderer.js`, `static/js/chatStream.js`, `static/js/documentLibrary.js`, `static/js/sessions.js`, and compare stream research UI;
 - persisted reports under `data/deep_research/*.json`;
 - tests under `tests/test_research_*`, `tests/test_deep_research_*`, `tests/test_visual_report*.py`, `tests/test_services_research_low_quality_sources.py`, `tests/test_svc_research_sources_nondict.py`, research auth regressions, endpoint fallback tests, and research CLI tests.
@@ -148,7 +148,7 @@ Coverage is still thin around live job route ownership, `/api/research/start` ro
 ## Current Gaps
 
 - Consolidate, retire, or clearly deprecate `services/research/research_handler.py`.
-- Decide whether direct JSON access by `manage_research` and `scripts/faustus-research` must be owner-filtered like browser routes or is local/tool-only.
+- Decide whether direct JSON access by `manage_research` and `scripts/odysseus-research` must be owner-filtered like browser routes or is local/tool-only.
 - Spinoff endpoint fallback needs continued owner-scoped endpoint regression coverage.
 - Spinoff research context is preserved during trimming through metadata, but the system-message primer still needs an explicit policy decision versus the shared untrusted-context role/metadata wrapper.
 - Research search/fetch logic does not yet share a single result shape with chat prefetch and agent tools.

@@ -547,7 +547,7 @@ def _augment_sse_fields(ev: str, fields: Dict[str, Any]) -> str:
 def _observability_fields(run: _Run, *, sequence: int) -> Dict[str, Any]:
     """OBS-01/QA-09 fields every SSE event of this run's stream carries,
     additively: `trace_id` (one per turn -- the run's own opaque identity,
-    already the value handed to the client as X-Faustus-Run-Id, so nothing
+    already the value handed to the client as X-Odysseus-Run-Id, so nothing
     new to correlate), `step_id` (one per round, from the round this
     module's own `_observe_activity` already tracks), `sequence`/`stream_id`
     (QA-09 replay: a stream IS one detached run, so its run_id doubles as

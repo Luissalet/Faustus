@@ -103,7 +103,7 @@ function makeFakeServer() {
       });
       return new Response(stream, {
         status: 200,
-        headers: { 'X-Faustus-Run-Id': `run_${token}`, 'Content-Type': 'text/event-stream' },
+        headers: { 'X-Odysseus-Run-Id': `run_${token}`, 'Content-Type': 'text/event-stream' },
       });
     }
 

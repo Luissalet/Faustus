@@ -23,7 +23,7 @@ from src.creator import resources
 def clean_admission(tmp_path, monkeypatch):
     """A private DATA_DIR per test (so resources.db never leaks between
     tests) and a clean resource_admission/ledger state before and after."""
-    monkeypatch.setenv("FAUSTUS_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("ODYSSEUS_DATA_DIR", str(tmp_path))
     from src import constants
     monkeypatch.setattr(constants, "DATA_DIR", str(tmp_path))
     resource_admission.reset_all()

@@ -1,4 +1,4 @@
-# Adapted from daixiheguu / Faustus ce04dc1d, via Diogenes; AGPL-3.0-or-later.
+# Adapted from daixiheguu / Odysseus ce04dc1d, via Diogenes; AGPL-3.0-or-later.
 import asyncio
 
 import pytest

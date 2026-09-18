@@ -202,7 +202,7 @@ async def test_real_playwright_server_reconnects_after_kill(monkeypatch, tmp_pat
     import src.settings as settings_mod
 
     monkeypatch.setattr(settings_mod, "load_settings", lambda: {"browser_profile": "isolated"})
-    monkeypatch.setenv("FAUSTUS_BROWSER_MCP_CACHE", str(tmp_path / "cache"))
+    monkeypatch.setenv("ODYSSEUS_BROWSER_MCP_CACHE", str(tmp_path / "cache"))
     if os.path.isdir("/opt/pw-browsers"):
         monkeypatch.setenv("PLAYWRIGHT_BROWSERS_PATH", "/opt/pw-browsers")
     mgr = McpManager()

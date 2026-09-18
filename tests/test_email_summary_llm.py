@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 
-_TMP_DATA = Path(tempfile.mkdtemp(prefix="faustus-email-summary-"))
+_TMP_DATA = Path(tempfile.mkdtemp(prefix="odysseus-email-summary-"))
 os.environ.setdefault("DATA_DIR", str(_TMP_DATA))
 os.environ.setdefault("DATABASE_URL", f"sqlite:///{_TMP_DATA / 'app.db'}")
 
@@ -135,7 +135,7 @@ async def test_scheduled_local_summary_is_preempted_by_foreground_call(monkeypat
     never_release = asyncio.Event()
     observed_workloads = []
 
-    monkeypatch.setenv("FAUSTUS_LOCAL_MODEL_GATE", "true")
+    monkeypatch.setenv("ODYSSEUS_LOCAL_MODEL_GATE", "true")
     monkeypatch.setenv("BACKGROUND_TASK_FOREGROUND_GATE", "false")
     monkeypatch.setattr(llm_core, "_LOCAL_MODEL_LOCK", asyncio.Lock())
     monkeypatch.setattr(llm_core, "_LOCAL_MODEL_CURRENT", {})

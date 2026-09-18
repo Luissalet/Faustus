@@ -64,7 +64,7 @@ def test_red_test_turn_closes_complete_unverified_end_to_end(tmp_path, monkeypat
     from tests.test_agent_harness_functional import (
         _patch_common, _scripted_stream, _run, _real_edit, _edit_call,
     )
-    monkeypatch.setenv("FAUSTUS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("ODYSSEUS_DATA_DIR", str(tmp_path / "data"))
     import src.constants as consts
     monkeypatch.setattr(consts, "DATA_DIR", str(tmp_path / "data"), raising=False)
     ws = tmp_path / "ws"

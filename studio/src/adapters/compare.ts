@@ -61,9 +61,9 @@ export const MODE_HELP: Record<CompareMode, string> = {
 };
 
 export const MAX_PANES = 8;
-export const VOTES_KEY = 'faustus-compare-votes';
+export const VOTES_KEY = 'odysseus-compare-votes';
 const VOTES_MAX = 500;
-const EXCLUDED_KEY = 'faustus-compare-excluded';
+const EXCLUDED_KEY = 'odysseus-compare-excluded';
 const OPTIONS_KEY = 'fs-compare-options';
 
 export interface Vote {

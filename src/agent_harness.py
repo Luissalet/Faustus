@@ -330,7 +330,7 @@ _PATH_STOPWORDS = {
 _IGNORED_DIRS = {
     ".git", "node_modules", "venv", ".venv", "env", "__pycache__", ".mypy_cache",
     ".pytest_cache", ".ruff_cache", "dist", "build", ".next", ".nuxt", "target",
-    ".idea", ".vscode", "coverage", ".tox", ".cache", "site-packages", ".faustus", ".odysseus",
+    ".idea", ".vscode", "coverage", ".tox", ".cache", "site-packages", ".odysseus",
 }
 _INDEX_MAX_FILES = 60000
 _INDEX_TTL_S = 20.0

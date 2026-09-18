@@ -51,6 +51,6 @@ tools, vision, or reasoning.
 - Official List/Get Models resources define the catalog fields.
 - Official Chat v2, Reasoning, and Compatibility API resources define the
   transport and thinking controls.
-- Faustus has no direct Cohere request adapter, canonical reader, or sanitized
+- Odysseus has no direct Cohere request adapter, canonical reader, or sanitized
   canonical fixtures yet; both normalization and runtime integration remain
   follow-up work.

@@ -12,7 +12,7 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
-_TMP = Path(tempfile.mkdtemp(prefix="faustus-settings-test-"))
+_TMP = Path(tempfile.mkdtemp(prefix="odysseus-settings-test-"))
 os.environ.setdefault("DATA_DIR", str(_TMP))
 os.environ.setdefault("DATABASE_URL", f"sqlite:///{_TMP / 'app.db'}")
 

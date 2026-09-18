@@ -192,7 +192,7 @@ class TokenizerEstimator(_BaseEstimator):
     Deliberately *not* a download: this project runs offline by design, and a
     context compiler that blocks on a network fetch during the hot path is a
     worse failure than an approximate count.  Point
-    `FAUSTUS_TOKENIZER_MAP` at a JSON `{"model-substring": "path/to/tokenizer.json"}`
+    `ODYSSEUS_TOKENIZER_MAP` at a JSON `{"model-substring": "path/to/tokenizer.json"}`
     and matching models get counted exactly; everything else falls back and
     says so."""
 
@@ -220,7 +220,7 @@ _APP_PARITY = AppParityEstimator()
 
 
 def _tokenizer_map() -> Dict[str, str]:
-    raw = os.getenv("FAUSTUS_TOKENIZER_MAP", "").strip()
+    raw = os.getenv("ODYSSEUS_TOKENIZER_MAP", "").strip()
     if not raw:
         return {}
     try:

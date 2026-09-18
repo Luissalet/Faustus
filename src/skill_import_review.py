@@ -1,6 +1,6 @@
 """
 skill_import_review.py — ADP-25: a skill discovered under a project's
-`.faustus/skills` (or `.agents/skills`, `.claude/skills`) folder is content
+`.odysseus/skills` (or `.agents/skills`, `.claude/skills`) folder is content
 someone else wrote; sitting next to an already-approved skill must not be
 enough to run it.
 

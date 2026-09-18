@@ -158,7 +158,7 @@ overrides anything in the body). Response: the identical `text/event-stream`
 SSE wire `POST /api/chat_stream` emits (`docs/api/sse_events.json`) — this
 route does not re-implement any of that logic, it loopbacks to the real
 endpoint over HTTP using the internal-tool token with owner impersonation
-(`X-Faustus-Internal-Token` + `X-Faustus-Owner`, the exact mechanism
+(`X-Odysseus-Internal-Token` + `X-Odysseus-Owner`, the exact mechanism
 `src/builtin_actions.py`'s Cookbook actions already use for admin-gated
 loopback calls) and relays the upstream bytes back to the phone unchanged.
 

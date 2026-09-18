@@ -49,8 +49,8 @@ MCP settings of Cowork / Claude Code):
 {
   "mcpServers": {
     "faustus-workers": {
-      "command": "D:/LocalAI/faustus/venv/Scripts/python.exe",
-      "args": ["D:/LocalAI/faustus/mcp_servers/workers_server.py"],
+      "command": "D:/LocalAI/odysseus/venv/Scripts/python.exe",
+      "args": ["D:/LocalAI/odysseus/mcp_servers/workers_server.py"],
       "env": {
         "FAUSTUS_URL": "http://127.0.0.1:7000",
         "FAUSTUS_API_TOKEN": "ody_…",

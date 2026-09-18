@@ -4,7 +4,7 @@ context_engine/blocks.py — the context you connect on purpose, not by accident
 The failure this exists to fix has two halves, and they are the same mistake
 seen from both ends.
 
-Half one: project memory under `.faustus/` grows.  Six notes become twenty,
+Half one: project memory under `.odysseus/` grows.  Six notes become twenty,
 `services.projects` injects the index into the system prompt of every turn,
 and on a 32k local model the window is a third gone before the user has typed
 anything.  Nobody decided that.  It happened one Markdown file at a time.
@@ -34,7 +34,7 @@ Three more rules earned the hard way:
   prompt; a key in here is a key on its way to a model endpoint.
 
 * **Import proposes, a person disposes.**  `import_project_memory()` defaults
-  to `dry_run=True`, proposes one block per `.faustus/` file and marks none of
+  to `dry_run=True`, proposes one block per `.odysseus/` file and marks none of
   them `always_loaded`, because §7.3 of the plan says in as many words: do not
   automatically migrate every Markdown note to `always_loaded`.
 """
@@ -163,7 +163,7 @@ MUTABLE_FIELDS: Tuple[str, ...] = (
     "always_loaded", "trust_class", "source_refs",
 )
 
-PROJECT_MEMORY_DIRNAME = ".faustus"
+PROJECT_MEMORY_DIRNAME = ".odysseus"
 MAX_IMPORT_FILES = 50
 
 
@@ -896,7 +896,7 @@ def _import_type(filename: str) -> str:
 
 def import_project_memory(project: Mapping[str, Any], *, owner: str = "",
                           dry_run: bool = True) -> Dict[str, Any]:
-    """Propose one block per `.faustus/` note.  Conservative by construction.
+    """Propose one block per `.odysseus/` note.  Conservative by construction.
 
     §7.3 of the plan states the rule outright: do not automatically migrate
     every Markdown note to `always_loaded`.  So: `dry_run=True` by default,
@@ -926,12 +926,6 @@ def import_project_memory(project: Mapping[str, Any], *, owner: str = "",
         return report
 
     root = os.path.join(workspace, PROJECT_MEMORY_DIRNAME)
-    if not os.path.isdir(root):
-        # Read-only compat: a project whose notes were created before the
-        # rename and still has a pre-rename `.odysseus/` folder keeps using it.
-        legacy_root = os.path.join(workspace, ".odysseus")
-        if os.path.isdir(legacy_root):
-            root = legacy_root
     try:
         names = sorted(n for n in os.listdir(root) if n.lower().endswith(".md"))
     except OSError as exc:
@@ -941,9 +935,8 @@ def import_project_memory(project: Mapping[str, Any], *, owner: str = "",
     existing = {ref for block in list_blocks(owner=owner, project_id=project_id, limit=1000)
                 for ref in block.source_refs}
 
-    root_dirname = os.path.basename(root) or PROJECT_MEMORY_DIRNAME
     for name in names[:MAX_IMPORT_FILES]:
-        rel = f"{root_dirname}/{name}"
+        rel = f"{PROJECT_MEMORY_DIRNAME}/{name}"
         source_ref = f"file:{rel}"
         if source_ref in existing:
             report["skipped"].append({"path": rel, "reason": "already imported"})

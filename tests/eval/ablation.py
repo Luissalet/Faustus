@@ -10,7 +10,7 @@ not a single point estimate, per the acceptance line's own frontend ask.
 
 Each dimension's setting override is written to `<data_dir>/settings.json`
 BEFORE `EvalApp.start()` launches its subprocess — the running app reads
-real settings (`src/settings.py`) at startup from `FAUSTUS_DATA_DIR`,
+real settings (`src/settings.py`) at startup from `ODYSSEUS_DATA_DIR`,
 which `EvalApp` already points at that directory; this module never pokes
 a setting into a live process, it decides what the NEXT process boots with.
 
@@ -105,7 +105,7 @@ def run_dimension(dimension: str, task, *, repeats: int = 1,
         app.start()
         try:
             import tempfile
-            with tempfile.TemporaryDirectory(prefix="faustus-eval-ws-") as ws:
+            with tempfile.TemporaryDirectory(prefix="odysseus-eval-ws-") as ws:
                 app.script(task.script)
                 session_id = app.new_session(f"ablation-{dimension}")
                 t0 = time.monotonic()

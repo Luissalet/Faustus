@@ -41,7 +41,7 @@ def world(tmp_path, monkeypatch):
     monkeypatch.setattr(artifact_store, "ARTIFACT_STORE_DIR", str(tmp_path / "store"))
     monkeypatch.setattr(artifact_store, "ARTIFACT_RUNS_DIR", str(tmp_path / "runs"))
 
-    monkeypatch.setenv("FAUSTUS_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("ODYSSEUS_DATA_DIR", str(tmp_path))
     from src import constants
     monkeypatch.setattr(constants, "DATA_DIR", str(tmp_path))
 

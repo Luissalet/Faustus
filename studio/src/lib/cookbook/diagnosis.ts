@@ -42,16 +42,16 @@ const hfRepoFrom = (text: string) => {
 };
 
 export const GPU_CLEANUP_COMMAND = `set -u
-echo "[faustus] Clearing GPU compute processes..."
+echo "[odysseus] Clearing GPU compute processes..."
 if command -v nvidia-smi >/dev/null 2>&1; then
   pids="$(nvidia-smi --query-compute-apps=pid --format=csv,noheader,nounits 2>/dev/null | tr -d " " | grep -E "^[0-9]+$" | sort -u)"
   if [ -z "$pids" ]; then
-    echo "[faustus] No NVIDIA compute processes found."
+    echo "[odysseus] No NVIDIA compute processes found."
     exit 0
   fi
-  echo "[faustus] GPU PIDs: $pids"
+  echo "[odysseus] GPU PIDs: $pids"
   ps -fp $pids 2>/dev/null || true
-  echo "[faustus] Sending TERM..."
+  echo "[odysseus] Sending TERM..."
   kill -TERM $pids || true
   sleep 3
   alive=""
@@ -59,23 +59,23 @@ if command -v nvidia-smi >/dev/null 2>&1; then
     if kill -0 "$pid" 2>/dev/null; then alive="$alive $pid"; fi
   done
   if [ -n "$alive" ]; then
-    echo "[faustus] Force killing remaining GPU PIDs:$alive"
+    echo "[odysseus] Force killing remaining GPU PIDs:$alive"
     kill -KILL $alive || true
   fi
   sleep 1
   remaining="$(nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv,noheader,nounits 2>/dev/null | sed "/^$/d" || true)"
   if [ -n "$remaining" ]; then
-    echo "[faustus] GPU processes still remain:"
+    echo "[odysseus] GPU processes still remain:"
     echo "$remaining"
     exit 2
   fi
-  echo "[faustus] GPU cleanup complete. No NVIDIA compute processes remain."
+  echo "[odysseus] GPU cleanup complete. No NVIDIA compute processes remain."
 else
-  echo "[faustus] nvidia-smi not found; falling back to common model-server process cleanup."
+  echo "[odysseus] nvidia-smi not found; falling back to common model-server process cleanup."
   pkill -TERM -f "sglang.launch_server|vllm|llama-server|text-generation-launcher|aphrodite" || true
   sleep 3
   pkill -KILL -f "sglang.launch_server|vllm|llama-server|text-generation-launcher|aphrodite" || true
-  echo "[faustus] Fallback cleanup complete."
+  echo "[odysseus] Fallback cleanup complete."
 fi`;
 
 const tp = (label: string, n: string): Fix => ({ label, kind: 'retry-replace', flag: '--tensor-parallel-size', value: n });

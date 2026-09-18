@@ -102,7 +102,7 @@ from unittest.mock import MagicMock
 # process-global, so any test file that ran later in the same pytest
 # process and did a real `import src.agent_tools` got this mock back
 # instead of the real module (14 tests across test_misfenced_read_file_
-# tool_call.py, test_faustus_doc_fence_normalization.py,
+# tool_call.py, test_odysseus_doc_fence_normalization.py,
 # test_plain_ui_control_open_panel.py and test_redos_xml_tool_parsers.py
 # — each needs the real `src.agent_tools`/`src.tool_parsing`). Saving and
 # restoring the previous sys.modules entry around just this import is the

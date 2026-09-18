@@ -221,7 +221,7 @@ PARSER_DEGRADED = "parser_degraded"
 #: `{"a": "b"}` into a source tree holding a file called `a` -- so the caller
 #: says which it meant, with `sources.stash(payload, media_type=...)`, and this
 #: module never sniffs.
-CODE_TREE_MEDIA_TYPE = "application/vnd.faustus.code-tree+json"
+CODE_TREE_MEDIA_TYPE = "application/vnd.odysseus.code-tree+json"
 
 #: Manifests whose dependency lists become `dependency:` elements. Matched on
 #: the base name, since a monorepo has one per package.

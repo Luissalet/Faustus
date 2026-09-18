@@ -1,7 +1,7 @@
 """
 agent_loop.py
 
-Streaming agent loop for faustus-ui.
+Streaming agent loop for odysseus-ui.
 Wraps stream_llm() with multi-round tool execution.
 The LLM decides when to use tools by writing fenced code blocks.
 """
@@ -4130,7 +4130,7 @@ def _build_system_prompt(
         except Exception:
             pass
         # Standing instructions kept in the repo itself (AGENTS.md / CLAUDE.md /
-        # .faustus/INSTRUCTIONS.md): conventions, how to run the tests, what
+        # .odysseus/INSTRUCTIONS.md): conventions, how to run the tests, what
         # not to touch. Cached by mtime — byte-identical until the file changes.
         #
         # These files travel with a clone, and this is the one input that reaches

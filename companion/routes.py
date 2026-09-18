@@ -89,7 +89,7 @@ def setup_companion_routes() -> APIRouter:
         from core.constants import APP_VERSION
         return {
             "ok": True,
-            "name": "faustus",
+            "name": "odysseus",
             "version": APP_VERSION,
             "auth": "token" if getattr(request.state, "api_token", False) else "session",
         }
@@ -100,7 +100,7 @@ def setup_companion_routes() -> APIRouter:
         identity (the token's owner for bearer callers)."""
         from core.constants import APP_VERSION
         return {
-            "name": "faustus",
+            "name": "odysseus",
             "version": APP_VERSION,
             "owner": token_owner(request),
             "capabilities": {"chat": True, "streaming": True},

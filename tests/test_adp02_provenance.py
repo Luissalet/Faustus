@@ -119,7 +119,7 @@ def test_third_party_notices_file_exists_and_lists_expected_sources():
     assert os.path.isfile(NOTICES_PATH), "THIRD_PARTY_NOTICES.md is missing"
     with open(NOTICES_PATH, "r", encoding="utf-8") as f:
         text = f.read()
-    assert "Faustus" in text
+    assert "Odysseus" in text
     assert "AGPL" in text
     assert "aigraphstudio" in text
     assert "MIT" in text

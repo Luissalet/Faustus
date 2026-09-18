@@ -212,14 +212,14 @@ def a21_server(node_bin, fake_model, static_embed_server):
     data_dir = tempfile.mkdtemp(prefix="faustus-a21-data-")
     env = dict(os.environ)
     env.update({
-        "FAUSTUS_DATA_DIR": data_dir,
+        "ODYSSEUS_DATA_DIR": data_dir,
         "DATABASE_URL": "sqlite:///" + (data_dir.replace("\\", "/") + "/app.db"),
         "APP_PORT": str(port),
         "AUTH_ENABLED": "true",
         "LOCALHOST_BYPASS": "false",
-        "FAUSTUS_INPROCESS_POLLERS": "0",
-        "FAUSTUS_INPROCESS_TASKS": "0",
-        "FAUSTUS_STARTUP_WARMUPS": "0",
+        "ODYSSEUS_INPROCESS_POLLERS": "0",
+        "ODYSSEUS_INPROCESS_TASKS": "0",
+        "ODYSSEUS_STARTUP_WARMUPS": "0",
         # The static server for example.html (see `_StaticServerThread`)
         # runs on a different origin — this is the wiring A21's design
         # calls for (studio/embed/README.md's "CORS" section): no new
@@ -245,7 +245,7 @@ def a21_server(node_bin, fake_model, static_embed_server):
         assert status == 200 and body.get("ok") is True, (status, body)
         set_cookie = headers.get("Set-Cookie") or ""
         cookie = set_cookie.split(";", 1)[0]
-        assert cookie.startswith("faustus_session="), set_cookie
+        assert cookie.startswith("odysseus_session="), set_cookie
         auth_headers = {"Cookie": cookie}
 
         status, ep, _ = _post_form(base + "/api/model-endpoints", {
@@ -296,7 +296,7 @@ def a21_server(node_bin, fake_model, static_embed_server):
         assert status == 200 and login_body.get("ok") is True, login_body
         set_cookie_b = login_headers.get("Set-Cookie") or ""
         cookie_b = set_cookie_b.split(";", 1)[0]
-        assert cookie_b.startswith("faustus_session="), set_cookie_b
+        assert cookie_b.startswith("odysseus_session="), set_cookie_b
         auth_headers_b = {"Cookie": cookie_b}
 
         status, tok_b, _ = _post_form(base + "/api/tokens", {"name": "embed-a21-b", "profile": "sdk"}, headers=auth_headers_b)

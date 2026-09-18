@@ -59,7 +59,7 @@ def test_existing_workspace_storage_remains_compatible_until_rebinding(store, tm
     project = store.create('Legacy', owner='alice', workspace=str(workspace))
     add(project, 'Keep legacy goal')
     original = Path(obj.objectives_path(project))
-    assert original == workspace / '.faustus' / 'objectives.jsonl'
+    assert original == workspace / '.odysseus' / 'objectives.jsonl'
     original_bytes = original.read_bytes()
     detached = store.update(project['id'], {'workspace': ''}, owner='alice')
     assert obj.load_state(detached)['objectives']['OBJ-1']['title'] == 'Keep legacy goal'
@@ -74,7 +74,7 @@ def test_rebinding_to_different_folder_preserves_project_goals(store, tmp_path):
     add(project, 'Portable goal')
     rebound = store.update(project['id'], {'workspace': str(second)}, owner='alice')
     assert obj.load_state(rebound)['objectives']['OBJ-1']['title'] == 'Portable goal'
-    assert not (second / '.faustus' / 'objectives.jsonl').exists()
+    assert not (second / '.odysseus' / 'objectives.jsonl').exists()
 
 
 def test_failed_migration_keeps_original_binding_and_goals(store, tmp_path, monkeypatch):

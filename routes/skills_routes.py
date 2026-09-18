@@ -1944,7 +1944,7 @@ def setup_skills_routes(skills_manager: SkillsManager) -> APIRouter:
         results = skills_manager.get_relevant_skills(query, skills, max_items=10)
         return {"skills": results, "query": query, "count": len(results)}
 
-    # -- ADP-25: manifest/hash/diff review for `.faustus|.agents|.claude/
+    # -- ADP-25: manifest/hash/diff review for `.odysseus|.agents|.claude/
     # skills` folder skills (src.skills_runtime), separate from the
     # SkillsManager library above -- `{id}` here is a discovered
     # SkillManifest.id ("category.name"), never a SkillsManager name, and is

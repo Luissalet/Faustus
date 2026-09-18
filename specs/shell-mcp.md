@@ -19,7 +19,7 @@ This spec covers shell and MCP behavior in:
 - admin MCP/tool helpers in `src/agent_tools/admin_tools.py`;
 - built-in servers in `mcp_servers/*.py`;
 - Settings/Admin UI in `static/js/settings.js` and `static/js/admin.js`;
-- CLI helper `scripts/faustus-mcp`;
+- CLI helper `scripts/odysseus-mcp`;
 - Docker/native dependency context in `Dockerfile` and `docker-compose.yml`.
 
 Cookbook model-serving shell flows are covered in `cookbook-hwfit.md`; this spec owns the shared shell and MCP surfaces they reuse.
@@ -80,11 +80,11 @@ and status as one completed unit. If initialization or tool discovery fails
 before registration, the partial `AsyncExitStack` is closed so transports do
 not leak into later reconnect attempts.
 
-`src.agent_tools.admin_tools.do_manage_mcp()` is the agent/admin tool path for MCP config and is re-exported lazily through `src.tool_implementations` for compatibility. It is narrower than the HTTP routes: add is stdio-only, command values are checked against an allowlist/denylist before persistence, and enable/disable primarily flips DB config. `scripts/faustus-mcp` is config-only; it reads and mutates database rows, redacts env values by default, and does not report live manager connection state.
+`src.agent_tools.admin_tools.do_manage_mcp()` is the agent/admin tool path for MCP config and is re-exported lazily through `src.tool_implementations` for compatibility. It is narrower than the HTTP routes: add is stdio-only, command values are checked against an allowlist/denylist before persistence, and enable/disable primarily flips DB config. `scripts/odysseus-mcp` is config-only; it reads and mutates database rows, redacts env values by default, and does not report live manager connection state.
 
 ## Built-In MCP Servers
 
-`src.builtin_mcp` owns startup registration of built-in MCP servers unless `FAUSTUS_DISABLE_MCP` is enabled.
+`src.builtin_mcp` owns startup registration of built-in MCP servers unless `ODYSSEUS_DISABLE_MCP` is enabled.
 
 Python stdio built-ins:
 
@@ -102,8 +102,8 @@ tool-call failure. User-configured MCP servers return the call failure instead
 of automatic reconnect.
 
 The built-in email MCP server is owner-aware when an owner is supplied by the
-caller or configured through `FAUSTUS_MCP_EMAIL_OWNER` /
-`FAUSTUS_EMAIL_OWNER`; if owner-scoped email accounts exist and no owner is
+caller or configured through `ODYSSEUS_MCP_EMAIL_OWNER` /
+`ODYSSEUS_EMAIL_OWNER`; if owner-scoped email accounts exist and no owner is
 available, email MCP fails closed instead of exposing global accounts. Other
 built-in servers remain process-global/admin trust-boundary tools unless their
 own subsystem spec says otherwise.
@@ -134,7 +134,7 @@ After model-visible external/workspace context, arbitrary MCP actions classify f
 - Missing Python `mcp` dependency degrades attempted MCP connections to error status.
 - Missing or uncached browser NPX package is optional and log-only during built-in startup; startup should not perform an implicit package download.
 - Windows does not support POSIX PTY/tmux paths; streaming falls back to pipes or detached logfile behavior.
-- Docker images include selected shell dependencies and the Docker CLI, but host Docker socket access from inside the app container remains unavailable unless the operator explicitly enables `docker/host-docker.yml`/`FAUSTUS_ENABLE_HOST_DOCKER=true` and mounts a real socket.
+- Docker images include selected shell dependencies and the Docker CLI, but host Docker socket access from inside the app container remains unavailable unless the operator explicitly enables `docker/host-docker.yml`/`ODYSSEUS_ENABLE_HOST_DOCKER=true` and mounts a real socket.
 - OAuth supports Google `installed` or `web` key shapes, a remote paste-back exchange page, and generic Streamable HTTP OAuth token storage through encrypted `McpServer.oauth_tokens`. Valid JSON values that are not objects are treated as empty token state and replaced by an object on the next write. Google and generic MCP OAuth share `src.mcp_oauth.REDIRECT_URI`, built from `OAUTH_REDIRECT_BASE_URL`, then `APP_PUBLIC_URL`, then `http://localhost:${APP_PORT:-7000}`, plus `/api/mcp/oauth/callback`. Reverse proxies, public domains, and Docker host-port mappings should set an explicit public base because container bind state cannot infer the browser origin.
 - `services.shell.service` remains a transitional/simple facade separate from route-level compatibility behavior.
 

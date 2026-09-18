@@ -16,7 +16,7 @@
   <meta name="format-detection" content="telephone=no, date=no, address=no, email=no">
   <link rel="apple-touch-icon" href="/static/pwa/apple-touch-icon.png">
   <script nonce="{{CSP_NONCE}}">
-  window._faustusLoadTime = Date.now();
+  window._odysseusLoadTime = Date.now();
   /*
    * Before the first paint.
    *
@@ -35,7 +35,7 @@
       if (choice === 'light' || choice === 'dark') html.setAttribute('data-theme', choice);
     } catch (e) { /* a private window just gets the system palette */ }
     try {
-      var t = JSON.parse(localStorage.getItem('faustus-theme') || 'null');
+      var t = JSON.parse(localStorage.getItem('odysseus-theme') || 'null');
       var own = !t || !t.colors || t.name === 'studio';
       html.setAttribute('data-theme-source', own ? 'studio' : 'faustus');
       if (!own) {

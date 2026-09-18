@@ -7,7 +7,7 @@ this repo: `import app` and read what FastAPI actually built from the
 mounted routers, not a hand-maintained copy of the surface. Unlike those
 (read-only checks against the developer's own already-initialised `data/`),
 this one is meant to run in a clean checkout or CI, so it points
-`FAUSTUS_DATA_DIR`/`DATABASE_URL` at a throwaway temp location BEFORE
+`ODYSSEUS_DATA_DIR`/`DATABASE_URL` at a throwaway temp location BEFORE
 importing `app` — `core/database.py` creates its data dir and opens its
 database as an import-time side effect, and the real `data/` (or whatever a
 caller already exported) must never be that side effect. Both are set with
@@ -34,15 +34,15 @@ sys.path.insert(0, str(REPO_ROOT))
 def _prepare_isolated_environment() -> None:
     """Point the app's data dir and database at a throwaway temp location
     before `import app` runs its module-level init. `setdefault` so a
-    caller's own `FAUSTUS_DATA_DIR`/`DATABASE_URL` (a real CI database, an
+    caller's own `ODYSSEUS_DATA_DIR`/`DATABASE_URL` (a real CI database, an
     already-exported location) is never overridden."""
-    os.environ.setdefault("FAUSTUS_DATA_DIR", tempfile.mkdtemp(prefix="faustus-openapi-export-"))
+    os.environ.setdefault("ODYSSEUS_DATA_DIR", tempfile.mkdtemp(prefix="faustus-openapi-export-"))
     os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
     # Matches the test suite's own defaults (tests/conftest.py) for a clean,
     # network-free import: no real Chroma/MCP process needed just to read
     # the OpenAPI document off the mounted routers.
     os.environ.setdefault("CHROMADB_CONNECT_TIMEOUT", "0.01")
-    os.environ.setdefault("FAUSTUS_DISABLE_MCP", "1")
+    os.environ.setdefault("ODYSSEUS_DISABLE_MCP", "1")
     os.environ.setdefault("AUTH_ENABLED", "true")
 
 

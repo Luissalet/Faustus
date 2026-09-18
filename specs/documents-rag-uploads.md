@@ -70,7 +70,7 @@ Structured references remain in message attachment metadata, and chat FTS
 triggers omit inline media while startup migration scrubs legacy indexed data
 URLs.
 
-Agent/tool manifests expose `faustus://attachment/<id>` with
+Agent/tool manifests expose `odysseus://attachment/<id>` with
 `read_policy: "owner_checked_upload"`. A compatibility filesystem path is
 included only after owner-aware upload resolution, upload-root confinement, and
 tool-readable-root checks; the stable contract for external tools is the URI

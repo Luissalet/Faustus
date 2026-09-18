@@ -2,7 +2,7 @@
 context_engine/candidates.py — federating eleven stores without becoming one.
 
 Faustus already knows things.  It knows them in ``memory_engine.db``, in
-``<workspace>/.faustus/*.md``, in ``objectives.jsonl``, in a Chroma
+``<workspace>/.odysseus/*.md``, in ``objectives.jsonl``, in a Chroma
 collection, in one ``index.json`` per expert, in a provenance graph rebuilt on
 demand, and on disk in the files themselves.  The temptation, when a compiler
 needs all of that at once, is to build a twelfth store that mirrors the eleven
