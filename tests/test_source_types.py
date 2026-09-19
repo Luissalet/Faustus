@@ -279,3 +279,10 @@ def test_fetch_webpage_content_error_page_gets_quality_note(monkeypatch):
     assert "extraction_quality" in result
     assert "error_page" in result["extraction_quality"]["flags"]
     assert result.get("quality_note")
+
+
+def test_hosted_docs_domains_are_docs():
+    from src.source_types import classify_source
+    assert classify_source("https://python.readthedocs.io/fr/latest/x.html")["source_type"] == "docs"
+    assert classify_source("https://www.boe.es/diario_boe/")["is_official"] is True
+    assert classify_source("https://www.europapress.es/economia/x")["source_type"] == "news"

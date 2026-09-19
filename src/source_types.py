@@ -56,6 +56,7 @@ _ACADEMIC_HOSTS = {
 }
 
 _DOCS_HOST_PREFIXES = ("docs.", "developer.", "developers.", "learn.", "api.")
+_DOCS_DOMAINS = ("readthedocs.io", "readthedocs.org", "gitbook.io", "mintlify.app")
 
 _CODE_HOSTS = {
     "github.com", "www.github.com", "raw.githubusercontent.com",
@@ -177,7 +178,7 @@ def classify_source(url: str, title: str = "") -> Dict[str, object]:
         return {"source_type": "official", "is_official": True, "reason": "government TLD/suffix"}
 
     # 2. Docs -- official product/project documentation subdomains.
-    if any(host.startswith(p) for p in _DOCS_HOST_PREFIXES):
+    if any(host.startswith(p) for p in _DOCS_HOST_PREFIXES) or _on_domain(host, _DOCS_DOMAINS):
         return {"source_type": "docs", "is_official": True, "reason": "docs-like host prefix"}
 
     # 3. Code hosts.
