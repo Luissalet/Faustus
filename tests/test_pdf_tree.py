@@ -322,3 +322,18 @@ async def test_pdf_outline_tool_path_outside_workspace(tmp_path):
     result = await tool.execute(json.dumps({"path": "/etc/passwd"}), {})
     assert result["exit_code"] == 1
     assert result["error_class"] == "pdf_tree.invalid"
+
+
+
+def test_outline_titles_are_whitespace_normalised(tmp_path):
+    from pypdf import PdfWriter
+    pdf_tree.clear_cache()
+    path = str(tmp_path / "nl.pdf")
+    writer = PdfWriter()
+    for _ in range(3):
+        writer.add_blank_page(width=200, height=200)
+    writer.add_outline_item("1.\r\nIntroduction  ", 0)
+    with open(path, "wb") as fh:
+        writer.write(fh)
+    tree = pdf_tree.build_tree(path)
+    assert tree["nodes"][0]["title"] == "1. Introduction"

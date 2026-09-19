@@ -167,7 +167,7 @@ def _walk_outline(items: List[Any], reader: Any, level: int) -> List[Dict[str, A
             # Keep resolvable children even if this entry itself is broken.
             nodes.extend(children)
             continue
-        title = str(getattr(item, "title", "") or "").strip() or "Untitled"
+        title = " ".join(str(getattr(item, "title", "") or "").split()) or "Untitled"
         nodes.append({"title": title, "level": level, "start_page": page0 + 1, "children": children})
     return nodes
 
