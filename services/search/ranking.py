@@ -1,9 +1,31 @@
-"""Search result ranking based on relevance, source quality, and recency."""
+"""Search result ranking based on relevance, source quality, and recency.
+
+On top of the original relevance/authority/recency scoring, this module adds
+four explainable, deterministic guards (documented inline where each is
+applied):
+
+1. Every ranked result carries ``score`` and ``score_reasons`` so a caller
+   can show *why* a result landed where it did.
+2. Multi-engine agreement: when a result was returned by several search
+   engines (SearXNG's own merge, or several providers merged upstream and
+   deduplicated here by canonical URL), it gets a bounded reciprocal-rank
+   fusion (RRF, k=60) boost over an equally-relevant single-engine result.
+3. Anti-junk guards: a result that shares none of the query's content words
+   is demoted below every result that shares at least one (never below all
+   of them, if none share any); and, for very short (<=2 content word)
+   queries, shop/store-looking domains are demoted unless the query itself
+   carries purchase intent.
+4. A freshness window: for a query ``src/freshness.py`` flags as
+   time-sensitive, results whose parsed date is older than the window are
+   demoted, with a conservative floor so demotion never empties the top of
+   the list.
+"""
 
 import re
 import logging
+import unicodedata
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
@@ -17,6 +39,20 @@ def _utcnow_naive() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
+def _parse_age(age_str: Optional[str]) -> Optional[datetime]:
+    """Parse a result's ``age``/date field with the same formats ``recency_score``
+    accepts. Returns ``None`` when it isn't a recognizable date (not an error —
+    plenty of providers never send one)."""
+    if not age_str:
+        return None
+    for fmt in _AGE_FORMATS:
+        try:
+            return datetime.strptime(age_str, fmt)
+        except Exception:
+            continue
+    return None
+
+
 def recency_score(age_str: Optional[str], now: Optional[datetime] = None) -> float:
     """Score how recent a result is: 1.0 for <=7 days old, 0.0 for >=30 days.
 
@@ -25,15 +61,7 @@ def recency_score(age_str: Optional[str], now: Optional[datetime] = None) -> flo
     skewed by the host's UTC offset; it was also a latent crash once neighbouring
     code moves to timezone-aware datetimes (#1116). ``now`` is injectable for tests.
     """
-    if not age_str:
-        return 0.0
-    dt = None
-    for fmt in _AGE_FORMATS:
-        try:
-            dt = datetime.strptime(age_str, fmt)
-            break
-        except Exception:
-            dt = None
+    dt = _parse_age(age_str)
     if not dt:
         return 0.0
     now = now or _utcnow_naive()
@@ -89,12 +117,245 @@ def _has_word(text: str, term: str) -> bool:
     return re.search(rf"\b{re.escape(term)}\b", text) is not None
 
 
+# ---------------------------------------------------------------------------
+# Guard 1: explainability plumbing is inline in rank_search_results below.
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Guard 2: multi-engine agreement (reciprocal rank fusion).
+# ---------------------------------------------------------------------------
+
+_RRF_K = 60
+# Scales the raw RRF increment (a fraction like 0.03) up into a score range
+# comparable to the other weighted terms below, capped so agreement can never
+# swamp genuine relevance/authority.
+_RRF_SCALE = 10.0
+_RRF_CAP = 0.6
+
+try:
+    # Reused, not reimplemented: this is the same canonical-URL normalizer
+    # `src/research_citations.py` uses to decide whether two fetches are one
+    # source (case-folds scheme/host, drops default port/fragment/trailing
+    # slash/tracking params). No network, no LLM, pure stdlib — safe to share.
+    from src.research_citations import canonical_url as _canonical_url
+except Exception:  # pragma: no cover - defensive, keeps ranking usable standalone
+    def _canonical_url(url):  # type: ignore
+        return (str(url or "")).strip().lower()
+
+
+def _result_engines(result: dict) -> List[str]:
+    """Every engine/provider name attached to a single raw result dict.
+
+    SearXNG's own merge puts the list under ``engines`` (raw JSON) or
+    ``_engines``/``_engine`` (as normalized by ``providers.searxng_search_api``).
+    A plain single-provider result (Brave, Tavily, ...) carries none of these,
+    which is correctly read as "one engine, unknown name".
+    """
+    names: List[str] = []
+    for key in ("_engines", "engines"):
+        val = result.get(key)
+        if isinstance(val, (list, tuple)):
+            names.extend(str(v) for v in val if v)
+    single = result.get("_engine") or result.get("engine") or result.get("provider")
+    if single:
+        names.append(str(single))
+    return names or ["engine-unknown"]
+
+
+def _dedupe_and_fuse(results: List[dict]) -> List[Tuple[dict, List[str], int]]:
+    """Group raw results by canonical URL and compute each survivor's combined
+    engine list plus its rank (0-based position of first occurrence).
+
+    This is the "dedupe by canonical URL before fusing" step: when the same
+    page comes back more than once (SearXNG already merged its own engines
+    per result, but nothing stops two providers merged upstream from handing
+    back the same page twice), the duplicates collapse into one result whose
+    engine list is the union of all the copies' engines, and its rank is
+    wherever it first appeared.
+    """
+    order: List[str] = []
+    by_key: Dict[str, dict] = {}
+    engines_by_key: Dict[str, List[str]] = {}
+    rank_by_key: Dict[str, int] = {}
+
+    for idx, result in enumerate(results):
+        url = result.get("url", "")
+        key = _canonical_url(url) or f"__no_url_{idx}"
+        engines = _result_engines(result)
+        if key not in by_key:
+            by_key[key] = result
+            engines_by_key[key] = list(dict.fromkeys(engines))
+            rank_by_key[key] = idx
+            order.append(key)
+        else:
+            # Same page seen again (either a second engine inside one SearXNG
+            # response somehow slipped through unmerged, or a second
+            # provider's copy): fold its engines in, keep the first-seen
+            # result dict/rank so ordering stays deterministic.
+            existing = engines_by_key[key]
+            for eng in engines:
+                if eng not in existing:
+                    existing.append(eng)
+
+    return [(by_key[k], engines_by_key[k], rank_by_key[k]) for k in order]
+
+
+def _rrf_boost(engine_count: int, rank_index: int) -> float:
+    """Bounded reciprocal-rank-fusion boost for a result ``engine_count``
+    engines agreed on, at merged rank ``rank_index`` (0-based).
+
+    True RRF sums ``1/(k+rank)`` per engine using that engine's *own* rank of
+    the result; the per-engine rank isn't available once SearXNG (or an
+    upstream merge) has already fused the list into one ordering, so every
+    agreeing engine is credited at the same merged rank plus a small per-extra-
+    engine offset — this keeps a result several engines picked out ranked
+    above an equally-relevant single-engine result without needing per-engine
+    position data that doesn't exist here.
+    """
+    if engine_count <= 1:
+        return 0.0
+    total = sum(1.0 / (_RRF_K + rank_index + i) for i in range(engine_count))
+    single = 1.0 / (_RRF_K + rank_index)
+    raw = total - single
+    return min(_RRF_CAP, raw * _RRF_SCALE)
+
+
+# ---------------------------------------------------------------------------
+# Guard 3: anti-junk — zero query-term overlap, and brand/shop collisions.
+# ---------------------------------------------------------------------------
+
+_STOPWORDS_EN = frozenset(
+    "a an the and or of to in is are was were that this these those for with "
+    "as it its on at from by be been what how why when which who not no do "
+    "does did have has had can could should would will about between than "
+    "more most best".split()
+)
+_STOPWORDS_ES = frozenset(
+    "el la los las un una unos unas y o de del que en por para con como es "
+    "son era sobre segun que cual cuales cuanto cuanta cuantos donde como "
+    "porque al se no ni hay mas entre desde tienen tiene sus su este esta "
+    "estos estas".split()
+)
+
+
+def _fold_accents(text: str) -> str:
+    """Accent-fold to plain ASCII-ish lowercase (``precio``/``PRECIO``/``prècio``
+    all compare equal) without pulling in a locale library."""
+    normalized = unicodedata.normalize("NFKD", text)
+    return "".join(ch for ch in normalized if not unicodedata.combining(ch)).lower()
+
+
+def _content_terms(query_terms: List[str]) -> List[str]:
+    """Query terms with ES/EN stopwords removed, accent-folded.
+
+    Only used for the anti-junk guards below (overlap + brand collision) —
+    the original relevance scoring below still uses the raw, un-stripped
+    ``query_terms`` so existing behaviour there is unchanged.
+    """
+    terms = []
+    for term in query_terms:
+        folded = _fold_accents(term)
+        if not folded or folded in _STOPWORDS_EN or folded in _STOPWORDS_ES:
+            continue
+        terms.append(folded)
+    return terms
+
+
+# A fixed penalty rather than an absolute rank floor: this reliably sinks a
+# genuinely off-topic result below on-topic ones while still letting a very
+# strong authority/relevance signal on other axes (e.g. a trusted domain the
+# news-quality adjustment already likes) outweigh it in close calls, instead
+# of a hard rule silently overriding every other factor in this file.
+_ZERO_OVERLAP_DEMOTION = 2.0
+
+
+def _has_overlap(text: str, content_terms: List[str]) -> bool:
+    if not content_terms:
+        return True  # nothing to check against -> don't penalize anyone
+    folded = _fold_accents(text)
+    return any(_has_word(folded, term) for term in content_terms)
+
+
+_SHOP_TLDS = (".shop", ".store", ".buy")
+_SHOP_TOKENS = ("shop", "store", "tienda", "comprar", "buy", "cart")
+_PURCHASE_INTENT_TERMS = frozenset(
+    "buy price precio comprar tienda store shop cart purchase cheap barato "
+    "oferta comprando".split()
+)
+
+
+def _looks_shop_like(url: str) -> bool:
+    netloc = _domain(url)
+    if not netloc:
+        return False
+    if netloc.endswith(_SHOP_TLDS):
+        return True
+    try:
+        path = urlparse(url).path.lower()
+    except Exception:
+        path = ""
+    haystack = f"{netloc} {path}"
+    return any(_has_word(haystack.replace(".", " ").replace("/", " "), tok) for tok in _SHOP_TOKENS)
+
+
+def _has_purchase_intent(content_terms: List[str]) -> bool:
+    return any(term in _PURCHASE_INTENT_TERMS for term in content_terms)
+
+
+# ---------------------------------------------------------------------------
+# Guard 4: freshness window (time-sensitive queries only).
+# ---------------------------------------------------------------------------
+
+# Maps a src/freshness.py reason label to how strict its staleness window is.
+# "day" queries (live scores, breaking news, weather, availability) go stale
+# fastest; "week" queries (a release, an office holder) tolerate more age;
+# anything else falls back to the default 30-day window.
+_FRESHNESS_REASON_WINDOW = {
+    "sports_result": "day",
+    "news_events": "day",
+    "prices_markets": "day",
+    "weather": "day",
+    "schedules": "day",
+    "availability": "day",
+    "releases_versions": "week",
+    "office_status": "week",
+}
+_WINDOW_DAYS = {"day": 2, "week": 10, "default": 30}
+_STALE_DEMOTION = 4.0
+
+
+def _freshness_window_days(query: str) -> Optional[int]:
+    """Days after which a result is "stale" for this query, or ``None`` if the
+    query isn't time-sensitive at all (``src/freshness.py`` found no reason)."""
+    try:
+        from src.freshness import freshness_reasons
+    except Exception:  # pragma: no cover - defensive, ranking must not hard-depend on it
+        return None
+    reasons = freshness_reasons(query)
+    if not reasons:
+        return None
+    categories = {_FRESHNESS_REASON_WINDOW.get(r, "default") for r in reasons}
+    if "day" in categories:
+        return _WINDOW_DAYS["day"]
+    if "week" in categories:
+        return _WINDOW_DAYS["week"]
+    return _WINDOW_DAYS["default"]
+
+
 def rank_search_results(query: str, results: List[dict]) -> List[dict]:
-    """Rank search results by title relevance, snippet quality, domain authority, and recency."""
+    """Rank search results by title relevance, snippet quality, domain authority,
+    and recency, then apply the multi-engine, anti-junk and freshness guards.
+
+    Every returned dict keeps its original keys plus ``score`` (float) and
+    ``score_reasons`` (list[str], short human-readable factors).
+    """
     query_terms = [t.lower() for t in re.findall(r"\b\w+\b", query)]
     query_lc = query.lower()
     is_news_query = any(term in _NEWS_HINTS for term in query_terms)
     is_sports_query = bool(_SPORTS_HINT_RE.search(query_lc))
+    content_terms = _content_terms(query_terms)
+    purchase_intent = _has_purchase_intent(content_terms)
+    freshness_window = _freshness_window_days(query)
 
     def title_score(title: str) -> float:
         if not title:
@@ -102,6 +363,13 @@ def rank_search_results(query: str, results: List[dict]) -> List[dict]:
         title_lc = title.lower()
         matches = sum(1 for term in query_terms if _has_word(title_lc, term))
         return matches / len(query_terms) if query_terms else 0.0
+
+    def title_reason(title: str) -> Optional[str]:
+        if not query_terms or not title:
+            return None
+        title_lc = title.lower()
+        matches = sum(1 for term in query_terms if _has_word(title_lc, term))
+        return f"title match {matches}/{len(query_terms)}"
 
     def snippet_score(snippet: str) -> float:
         if not snippet:
@@ -144,21 +412,109 @@ def rank_search_results(query: str, results: List[dict]) -> List[dict]:
             adjustment -= 1.0
         return adjustment
 
-    ranked = []
-    for result in results:
+    # --- dedupe by canonical URL + base score + multi-engine boost ---------
+    fused = _dedupe_and_fuse(results)
+
+    scored = []  # (base_score, reasons, result, engine_count, input_rank)
+    for result, engines, rank_index in fused:
         title = result.get("title", "")
         snippet = result.get("snippet", "")
         url = result.get("url", "")
         age = result.get("age", None)
 
-        score = (
+        reasons: List[str] = []
+        t_reason = title_reason(title)
+        if t_reason:
+            reasons.append(t_reason)
+
+        dscore = domain_score(url)
+        if dscore >= 1.0:
+            reasons.append("authority +1.0 (trusted/edu/gov)")
+        elif dscore >= 0.7:
+            reasons.append("authority +0.7 (.org)")
+
+        rscore = recency_score(age)
+        if rscore >= 1.0:
+            reasons.append("recent (<=7 d)")
+        elif rscore > 0.0:
+            reasons.append("recency partial")
+
+        engine_count = len(engines)
+        rrf = _rrf_boost(engine_count, rank_index)
+        if engine_count > 1:
+            reasons.append(f"multi-engine x{engine_count}")
+
+        base = (
             2.0 * title_score(title)
             + 1.0 * snippet_score(snippet)
-            + 1.5 * domain_score(url)
-            + 1.0 * recency_score(age)
+            + 1.5 * dscore
+            + 1.0 * rscore
             + news_quality_adjustment(title, snippet, url)
+            + rrf
         )
-        ranked.append((score, result))
+        scored.append({
+            "score": base,
+            "reasons": reasons,
+            "result": result,
+            "url": url,
+            "title": title,
+            "snippet": snippet,
+            "age": age,
+        })
 
-    ranked.sort(key=lambda x: x[0], reverse=True)
-    return [r for _, r in ranked]
+    # --- anti-junk guard (a): zero content-term overlap demotion -----------
+    if content_terms:
+        overlaps = [
+            _has_overlap(f"{item['title']} {item['snippet']}", content_terms)
+            for item in scored
+        ]
+        any_overlap = any(overlaps)
+        if any_overlap:
+            for item, has_overlap in zip(scored, overlaps):
+                if not has_overlap:
+                    item["score"] -= _ZERO_OVERLAP_DEMOTION
+                    item["reasons"].append("no term overlap")
+
+    # --- anti-junk guard (b): brand/shop collision for very short queries --
+    if len(content_terms) <= 2 and content_terms and not purchase_intent:
+        for item in scored:
+            if _looks_shop_like(item["url"]):
+                item["score"] -= 3.0
+                item["reasons"].append("brand-collision (shop-like domain)")
+    elif purchase_intent:
+        for item in scored:
+            if _looks_shop_like(item["url"]):
+                item["reasons"].append("purchase intent (not penalized)")
+
+    # --- freshness window ---------------------------------------------------
+    if freshness_window is not None:
+        now = _utcnow_naive()
+        stale_flags = []
+        for item in scored:
+            dt = _parse_age(item["age"])
+            if dt is None:
+                stale_flags.append((False, None))
+                continue
+            age_days = (now - dt).days
+            stale_flags.append((age_days > freshness_window, age_days))
+        non_stale = sum(1 for is_stale, _ in stale_flags if not is_stale)
+        # Conservative fallback: only demote stale results when at least 3
+        # non-stale ones remain to fill the top of the list — otherwise
+        # demoting everything just empties the top for no benefit, and
+        # nothing is removed either way.
+        if non_stale >= 3:
+            for item, (is_stale, age_days) in zip(scored, stale_flags):
+                if is_stale:
+                    item["score"] -= _STALE_DEMOTION
+                    item["reasons"].append(f"stale ({age_days} d)")
+
+    # --- final sort (stable: original/fused order breaks ties) -------------
+    scored.sort(key=lambda item: item["score"], reverse=True)
+
+    ranked = []
+    for item in scored:
+        out = dict(item["result"])
+        out["score"] = round(item["score"], 4)
+        out["score_reasons"] = item["reasons"]
+        ranked.append(out)
+    return ranked
