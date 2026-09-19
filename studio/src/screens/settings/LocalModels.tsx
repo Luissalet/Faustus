@@ -819,9 +819,9 @@ function EnginesSection({ admin, say, defaultModel }: { admin: boolean; say: (t:
                   {status?.context_length ? <span className="fs-set__help"> · {fmtCtx(status.context_length)}</span> : null}
                   {status?.footprint_bytes ? <span className="fs-set__help"> · {fmtGb(status.footprint_bytes)}</span> : null}
                   <div className="fs-set__help">{engine.host}:{engine.port ?? '—'} · {engine.model_path || t('no model configured')}</div>
-                  {engine.mtp && (engine.parallel ?? 1) > 1 && (
+                  {engine.mtp && (engine.parallel ?? 4) > 1 && (
                     <div className="fs-set__help" data-testid="engine-mtp-parallel-hint">
-                      {t('Parallel slots > 1 cancel most of the MTP gain')}
+                      {t('Parallel slots > 1 cancel most of the MTP gain — add -np 1 to the extra arguments')}
                     </div>
                   )}
                 </div>
