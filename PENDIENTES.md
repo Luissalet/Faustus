@@ -710,3 +710,15 @@ deep-link de workflows, recetas desde un run real) ya no aparece aquí.
   desincroniza del run real durante un turno de cientos de rondas — no se
   pudo descartar del todo un desajuste de `run_id` específico de la UI sin
   esa máquina.**
+
+- **FAUSTUS.md §117.** Muestreo local expuesto en Ajustes → Default AI (5
+  campos, recorte cliente + servidor) y guardián nuevo para trabajos
+  programados (`src/background_job_guard.py`, ajuste `background_jobs_may_load_models`,
+  `False` por defecto) que pospone en vez de cargar un modelo no residente.
+  **Pendiente:** (1) confirmar en el Studio real el grupo «Muestreo local»
+  con placeholders correctos y que un campo vacío no viaja en el `PATCH`;
+  (2) dejar pasar la hora de auditoría nocturna real con el modelo de
+  utilidad descargado y confirmar la línea `scheduled skill_audit: postponed,
+  would load <modelo>` sin que Ollama cargue nada (`ollama ps` sin cambios);
+  (3) confirmar que activar `background_jobs_may_load_models` deja correr la
+  auditoría igualmente esa noche.

@@ -485,6 +485,17 @@ DEFAULT_SETTINGS = {
     "local_temperature_default": 0.6,
     "local_top_p_default": 0.8,
     "local_top_k_default": 20,
+    # Real incident: a 02:00 scheduled skill audit resolved to a 32B model
+    # and loaded it into VRAM (37.5 GB) while the owner's main model was
+    # mid-task on another engine — an unattended job must never swap what is
+    # resident. `src.background_job_guard.should_run_with_model` is the
+    # choke point every scheduled/background job calls right before it
+    # spends a model call: with this OFF (default), a job that is not
+    # user-initiated and would need to LOAD a model that isn't already
+    # resident on the local Ollama runner is skipped (logged, not silently
+    # dropped) instead of loading it. A user-initiated run (a button click)
+    # is never affected by this setting.
+    "background_jobs_may_load_models": False,
     # Gibberish-script guard (src.llm_core._DegenerateStreamGuard): over a
     # sliding window of `local_gibberish_window_chars` streamed characters,
     # abort as degenerate when more than this fraction of alphabetic

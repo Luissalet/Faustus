@@ -1134,7 +1134,22 @@ def _resolve_audit_models(owner=None):
         _avail = list_model_ids(url, headers=headers)
         if _avail and model not in _avail:
             _base = _os.path.basename((model or "").rstrip("/"))
-            model = next((a for a in _avail if _os.path.basename(a.rstrip("/")) == _base), None) or _avail[0]
+            _match = next((a for a in _avail if _os.path.basename(a.rstrip("/")) == _base), None)
+            if _match is None:
+                # BUG (real incident): this used to fall back to `_avail[0]`
+                # — whatever model the endpoint happened to list first, with
+                # no regard for size or relevance (this is how a nightly
+                # audit ended up loading a 32B model). The audit must never
+                # choose a model on its own: if the configured Utility/
+                # Default model isn't actually on the endpoint, that is a
+                # configuration problem to surface, not guess around.
+                raise ValueError(
+                    f"Configured audit model '{model}' is not available on its endpoint — "
+                    "check the Default/Utility model in Settings."
+                )
+            model = _match
+    except ValueError:
+        raise
     except Exception:
         pass
 
@@ -1173,6 +1188,13 @@ async def run_scheduled_skill_audit(skills_manager: SkillsManager,
     except ValueError as e:
         logger.info(f"Scheduled skill audit skipped — {e}")
         return {"status": "skipped", "reason": str(e)}
+
+    # Unattended run — never load a model on the owner's behalf. See
+    # src/background_job_guard.py and FAUSTUS.md §117 for the incident this
+    # closes (a 02:00 audit loaded a 32B model on the local runner).
+    from src.background_job_guard import should_run_with_model
+    if not should_run_with_model("skill_audit", url, model, user_initiated=False):
+        return {"status": "skipped", "reason": f"would load {model}"}
 
     skills = skills_manager.load(owner=owner)
     # Oldest-audited first (never-audited sort to the very front via -1), so each
