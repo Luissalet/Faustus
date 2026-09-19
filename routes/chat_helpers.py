@@ -150,6 +150,14 @@ class PresetInfo:
     max_tokens: Optional[int]
     system_prompt: Optional[str]
     character_name: Optional[str]
+    # True only when `temperature` is a real user/preset choice (a preset
+    # JSON that sets its own "temperature" key), not the engine's bare
+    # DEFAULT_TEMPERATURE fallback (LLMConfig.DEFAULT_TEMPERATURE, 1.0) —
+    # see `validate_and_extract_preset`. Local-endpoint temperature floors
+    # (`local_temperature_default`) must not shadow this; a mere default
+    # must not shadow the floor either. Mirrors `_temperature_explicit` in
+    # chat_routes.py, which OR's this in for a session-level `/temp`.
+    temperature_explicit: bool = False
 
 
 @dataclass
@@ -385,7 +393,7 @@ def project_system_prompt(sess, owner, preset_prompt):
 
 def extract_preset(chat_handler, preset_id) -> PresetInfo:
     """Extract preset parameters via chat_handler."""
-    temperature, max_tokens, system_prompt, char_name = (
+    temperature, max_tokens, system_prompt, char_name, temperature_explicit = (
         chat_handler.validate_and_extract_preset(preset_id)
     )
     return PresetInfo(
@@ -393,6 +401,7 @@ def extract_preset(chat_handler, preset_id) -> PresetInfo:
         max_tokens=max_tokens,
         system_prompt=system_prompt,
         character_name=char_name,
+        temperature_explicit=temperature_explicit,
     )
 
 

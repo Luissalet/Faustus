@@ -81,7 +81,18 @@ class ChatHandler:
     # ------------------------------------------------------------------
 
     def validate_and_extract_preset(self, preset_id: Optional[str]) -> tuple:
-        """Returns (temperature, max_tokens, preset_system_prompt, character_name)."""
+        """Returns (temperature, max_tokens, preset_system_prompt, character_name,
+        temperature_explicit).
+
+        `temperature_explicit` is True only when a preset JSON actually sets
+        its own "temperature" key — a real authored choice — never for the
+        bare `DEFAULT_TEMPERATURE` (1.0) fallback used when there is no
+        preset or the preset doesn't mention temperature. Callers use this
+        to decide whether a local-endpoint temperature floor
+        (`local_temperature_default`) is allowed to apply: a mere default
+        must not shadow the floor, but an explicit preset choice must win
+        over it.
+        """
         if preset_id and preset_id not in self.preset_manager.presets:
             raise HTTPException(400, f"Invalid preset_id: {preset_id}")
 
@@ -89,12 +100,13 @@ class ChatHandler:
         max_tokens = DEFAULT_MAX_TOKENS
         preset_system_prompt = None
         character_name = ""
+        temperature_explicit = False
 
         if preset_id and preset_id in self.preset_manager.presets:
             preset = self.preset_manager.presets[preset_id]
             if preset.get("enabled") is False:
                 logger.info(f"Preset {preset_id} is disabled, using defaults")
-                return temperature, max_tokens, preset_system_prompt, character_name
+                return temperature, max_tokens, preset_system_prompt, character_name, temperature_explicit
             if preset.get("system_prompt"):
                 preset_system_prompt = preset["system_prompt"]
             character_name = preset.get("character_name", "")
@@ -106,11 +118,12 @@ class ChatHandler:
                     preset_system_prompt = name_line
             if "temperature" in preset:
                 temperature = preset["temperature"]
+                temperature_explicit = True
             if "max_tokens" in preset:
                 max_tokens = preset["max_tokens"]
 
         logger.info(f"Preset {preset_id}: temp={temperature}, max_tokens={max_tokens}")
-        return temperature, max_tokens, preset_system_prompt, character_name
+        return temperature, max_tokens, preset_system_prompt, character_name, temperature_explicit
 
     def enhance_message_if_needed(self, message: str) -> str:
         """CoT enhancement disabled — modern models reason natively."""

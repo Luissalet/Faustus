@@ -2,6 +2,12 @@
 
 Actualizado: 18-09-2026. REGLA: nunca nombres de empresas/personas del buzón de Luis en commits, docs, tests ni comentarios — ejemplos siempre ficticios. Sólo trabajo vigente; quitar cada entrada al cerrarla.
 
+## 19-09 — el suelo de temperatura local no llegaba al modo chat (FAUSTUS.md §117, tercera parte)
+
+- No verificado en vivo: repetir la sonda contra `llama-server` (`/slots` a mitad de una petición) en modo chat llano, sin `/temp` ni preset, y confirmar `temperature=0.6` en la petición real (antes llegaba 1.0).
+- No verificado en vivo: confirmar que un `/temp 0.9` de turno en modo chat sigue ganando sobre el suelo (0.9 en `/slots`).
+- No verificado en vivo: confirmar que un preset con temperatura propia gana sobre el suelo en modo chat real (no solo en el test unitario que fingía `ChatHandler`).
+
 ## 18-09 noche — residencia deja de ser solo-Ollama (FAUSTUS.md §118)
 
 - No verificado en vivo: con `llama-server` real sirviendo `qwen3.8-27b-q8-llamacpp` en `:8081` (registrado como endpoint), abrir el Studio y confirmar que el widget de Vitals muestra el nombre del modelo en vez de «no model», y que Ajustes → Local models lo lista en «Loaded now» con «servido por» y sin botón Unload.

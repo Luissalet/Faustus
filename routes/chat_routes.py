@@ -20,6 +20,7 @@ from src.llm_core import (
     _normalize_http_status,
     llm_call_async,
     llm_call_async_with_route_fallback,
+    local_temperature_floor,
     stream_llm,
     stream_llm_with_fallback,
 )
@@ -1807,6 +1808,15 @@ def setup_chat_routes(
                     owner=owner,
                 )
             requested_model = sess.model
+            # Same local-endpoint temperature floor as the streaming chat
+            # path (see the `chat_mode == "chat"` branch below) — this
+            # legacy non-streaming endpoint has no per-turn gen_overrides,
+            # so only the preset's own explicit choice can outrank the floor.
+            _chat_temp_floor = local_temperature_floor(
+                sess.endpoint_url, bool(getattr(ctx.preset, "temperature_explicit", False))
+            )
+            if _chat_temp_floor is not None:
+                ctx.preset.temperature = _chat_temp_floor
             reply, actual_candidate, actual_model = await llm_call_async_with_route_fallback(
                 foreground_candidates,
                 request_messages,
@@ -2609,7 +2619,11 @@ def setup_chat_routes(
             _gen_overrides = _parse_gen_overrides(
                 form_data.get("gen_overrides") or (body or {}).get("gen_overrides")
             )
-            _temperature_explicit = False
+            # A preset that authored its own "temperature" is as much an
+            # explicit choice as a per-turn `/temp` override (rule: only a
+            # bare DEFAULT_TEMPERATURE fallback may be shadowed by the local
+            # floor). `or` below never downgrades a per-turn override.
+            _temperature_explicit = bool(getattr(ctx.preset, "temperature_explicit", False))
             if _gen_overrides:
                 if "temperature" in _gen_overrides:
                     ctx.preset.temperature = _gen_overrides.pop("temperature")
@@ -3216,6 +3230,18 @@ def setup_chat_routes(
                     _active_streams.pop(session, None)
                     return
                 elif chat_mode == "chat":
+                    # Plain chat calls stream_llm_with_fallback directly,
+                    # never _stream_agent_loop_body — so it must apply
+                    # `local_temperature_default` itself, the same floor
+                    # agent mode gets. Without this, ctx.preset.temperature
+                    # (DEFAULT_TEMPERATURE=1.0 when nothing explicit set it)
+                    # reaches llm_core as an already-set payload key, and
+                    # `_apply_local_generation_stability`'s `setdefault`
+                    # never fires (measured live: local endpoint chat turns
+                    # ran at temperature=1.0 despite the floor setting).
+                    _chat_temp_floor = local_temperature_floor(sess.endpoint_url, _temperature_explicit)
+                    if _chat_temp_floor is not None:
+                        ctx.preset.temperature = _chat_temp_floor
                     _chat_start = time.time()
                     _chat_start_monotonic = time.monotonic()  # INF-03: execution metrics' clock
                     _answered_by = None  # set if the selected model failed and a fallback answered
