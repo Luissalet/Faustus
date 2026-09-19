@@ -5965,7 +5965,7 @@ Las etiquetas llegan al exterior por tres vías: el evento `phase="planning"` ah
 
 **Verificado.** `tests/test_research_perspectives.py` (nuevo, 13 pruebas): parseo de una respuesta buena y de una con basura/forma incorrecta, deduplicación por solapamiento manteniendo las preguntas generales, tope al presupuesto de la ronda 1, que las preguntas generales nunca se pierden aunque superen el tope, que las etiquetas llegan a `self.perspective_plan` y al evento `phase="planning"`, que con el ajuste apagado `_create_plan` hace exactamente la misma llamada que antes (mismo número de llamadas al modelo, cero llamadas de perspectivas), y que un fallo en la llamada de perspectivas cae en silencio al plan plano de siempre. `pytest tests/test_research_perspectives.py` + las 39 suites existentes que tocan `deep_research`/`DeepResearcher` (657 pruebas) en verde. `guard.sh tests/test_research_perspectives.py <suites de deep research>`: cero fallos nuevos frente a la base. Se corrigió de paso un `AttributeError` latente en `_emit()` (no comprobaba `self._progress` con `getattr`) que varios tests ya construían un `DeepResearcher` con `__new__` sin ese atributo — ahora `_emit` es tan tolerante como `_note_failure`.
 
-**No verificable sin la máquina en vivo.** Esta ronda no tuvo acceso de red a un servidor llama.cpp real (127.0.0.1:8082) desde el entorno de la tarea, así que la llamada real al modelo local (`qwen2.5-3b-helper`) no se ha ejecutado aquí — la cobertura es por test con un `_llm` simulado. Para probarlo en vivo: `scripts/preview_research_perspectives.py` (nuevo) ejecuta SOLO el paso de planificación (sin búsqueda web) y imprime las preguntas etiquetadas; ver el bloque siguiente.
+**Verificado en vivo.** En la máquina Windows, contra `qwen2.5-3b-helper` real, `scripts/preview_research_perspectives.py` produjo 6 preguntas generales más 3 preguntas de la perspectiva «Practitioner» — el plan por perspectivas se generó, se fusionó con las preguntas planas y llegó etiquetado hasta el resultado. Esa misma corrida en vivo dejó dos arreglos: **54d2a932** garantiza un hueco por perspectiva cuando las preguntas planas ya agotan el presupuesto de la ronda 1 (antes una perspectiva con suerte podía quedarse sin ninguna pregunta suya); **058c6af2** cambia la deduplicación de solapamiento de tokens crudo a comparar por lo que cada pregunta de perspectiva AÑADE sobre el tema — ignora las palabras del propio tema con una raíz simple (stemming rudimentario) y compara por Jaccard, para no descartar como «duplicada» una pregunta de perspectiva que solo compartía con una general las palabras del tema en sí.
 
 **Cómo probarlo en vivo desde un script de Windows**, contra un servidor llama.cpp local en `http://127.0.0.1:8082` con el alias de modelo `qwen2.5-3b-helper`:
 
@@ -5994,3 +5994,137 @@ for item in researcher.perspective_plan:
 `preview_perspectives()` construye un `DeepResearcher` con `research_perspectives=True`, llama solo a `_create_plan()` (que a su vez llama a `_apply_perspective_plan()`) y devuelve el objeto sin abrir ninguna búsqueda web ni tocar `bg_jobs` — la forma más barata de ver qué preguntas etiquetadas produciría una investigación real antes de lanzarla entera.
 
 **Ficheros.** `src/deep_research.py`, `src/settings.py`, `src/research_handler.py`, `tests/test_research_perspectives.py` (nuevo), `scripts/preview_research_perspectives.py` (nuevo).
+
+## 134. Cinco afinamientos pequeños del agente: calibración de tokens, ciclos de bucle, reintento de push, esfuerzo por tarea delegada, salida de comandos comprimida (19-09-2026)
+
+**Pedido.** Cinco mejoras pequeñas y autocontenidas de calidad del agente: que el presupuesto de contexto deje de fiarse solo de un conteo por caracteres cuando el proveedor ya dice cuántos tokens tuvo el prompt; que el freno de bucles no solo pare repeticiones exactas sino también ciclos A-B-A-B; que una notificación push no se pierda por un fallo de red pasajero; que delegar en un subagente pueda pedir menos o más esfuerzo según la tarea; y que la salida de comandos largos no llene el contexto del modelo sin perder lo importante.
+
+**Hecho.** **Calibración de tokens por modelo** (`src/token_calibration.py`, `9be7b551`): cada llamada trazada compara el recuento de tokens del prompt que reporta el proveedor (ignorando un acierto de caché de Ollama) con la estimación por caracteres de esa misma petición, y mantiene una media móvil por modelo; tras tres muestras sensatas, las puertas de compactación y de presión de contexto usan la estimación calibrada (acotada a 0.6-1.8×) — `GET /api/token-calibration` la lista por modelo. **Ciclos de bucle** (`src/loop_breaker.py`, `f2a7db04`): detecta un ciclo de periodo 2 a 4 (A-B-A-B, A-B-C-A-B-C) con el mismo resultado, con su propia escalera de aviso/bloqueo/parada, contado aparte de las repeticiones exactas. **Cola de reintento de push** (`src/push.py`, `1d373fe3`): un error de red, 429 o 5xx ya no pierde el envío — va a una cola en disco reintentada a los 30 s, 2 min, 10 min y 30 min, nunca más allá del TTL propio del mensaje; 404/410 son finales. **Esfuerzo por tarea delegada** (`src/effort_profile.py`, `a19e17e1`): `delegate_agents` acepta `effort: low|medium|high` por tarea — `low` apaga el razonamiento y pide respuesta directa, `high` lo enciende con presupuesto mayor y pide verificación, sin especificar se comporta igual que antes. **Salida de comandos comprimida** (`src/command_output_filters.py`, `a76418da`): filtros por tipo de comando (runners de test conservan fallos/tracebacks/resumen, `git diff` conserva cabeceras y líneas cambiadas, `git status`/`grep` agrupan y acotan rutas); nunca se descarta una línea con error/fallo/aviso, la salida nunca se alarga, y cualquier fallo del filtro cae a la salida original. La salida cruda completa se sigue descargando primero; `raw: true` o `command_output_compression=false` la salta.
+
+**Verificado.** `tests/test_token_calibration.py`, `tests/test_loop_breaker_cycles.py`, `tests/test_push.py`, `tests/test_delegate_effort.py`, `tests/test_command_output_filters.py` — cada uno cubre su propio módulo, sin regresión en las suites de agente/push/settings existentes.
+
+**No verificable sin la máquina en vivo.** Ninguna de las cinco se ha ejercitado contra un modelo o servidor push real en esta ronda; la cobertura es por test con dobles deterministas.
+
+**Ficheros.** `src/token_calibration.py` (nuevo), `routes/token_calibration_routes.py` (nuevo), `src/loop_breaker.py`, `src/push.py`, `src/effort_profile.py` (nuevo), `src/command_output_filters.py` (nuevo), `src/agent_loop.py`, `src/agent_settings_schema.py`, `src/settings.py`, `src/tool_schemas.py`, `src/tool_execution.py`, `src/llm_core.py`, `src/agent_tools/subagent_tools.py`, `src/agent_tools/subprocess_tools.py`, `src/context_compactor.py`, `src/context_ledger.py`, `src/llm_trace.py`.
+
+## 135. Banco de pruebas de regresión para la búsqueda de memoria (`222514b6`, 19-09-2026)
+
+**Pedido.** Que la calidad de la búsqueda de memoria (la que decide qué recuerdos se traen a un turno) tenga un número vigilable entre cambios, no solo "funciona a ojo".
+
+**Hecho.** `src/bench/memory_recall.py` (nuevo): un corpus fijo y con semilla (56 recuerdos en español e inglés, con casi-duplicados, ítems superados o caducados, y otros dueños/proyectos mezclados) y 36 consultas se pasan por la búsqueda de memoria real de producción, en un directorio de datos aislado y con un embebedor determinista. Reporta hit@k, recall@k, MRR, fugas (ítems que nunca deberían salir) y latencia; compara corridas guardadas (`python -m src.bench.memory_recall`).
+
+**Verificado.** Corrida base: hit@5 0.969, MRR 0.891, 0 fugas. `tests/test_bench_memory_recall.py` fija esos números (redondeados) como suelo para que una regresión futura falle el test en vez de pasar desapercibida.
+
+**No verificable sin la máquina en vivo.** El banco corre contra la búsqueda real pero con datos sintéticos aislados; no se ha corrido todavía contra la memoria real de una máquina en vivo.
+
+**Ficheros.** `src/bench/memory_recall.py` (nuevo), `tests/test_bench_memory_recall.py` (nuevo).
+
+## 136. El grafo de código aprende qué archivos cambian juntos, no solo qué archivos se llaman (`3762e6b6`, 19-09-2026)
+
+**Pedido.** El impacto de un cambio (`code_graph_impact`) solo seguía el grafo de llamadas/imports; un archivo que en la práctica siempre cambia junto a otro (acoplamiento no visible en el código, p. ej. tipos hermanos o tests paralelos) no aparecía.
+
+**Hecho.** `code_graph_cochanges` (nuevo, `src/code_graph/cochange.py`) lee el historial de commits reciente una sola vez (descarta merges, commits que tocan más de 50 archivos y lockfiles/generados) y ordena los archivos que cambiaron junto a una ruta dada por soporte, confianza y una puntuación ponderada por recencia. `impact()` añade los mejores que el grafo de llamadas no alcanzaba ya, etiquetados como «history» y no como «dependency» (`include_history` para excluirlos). Resultado cacheado por `HEAD`.
+
+**Verificado.** `tests/test_code_graph_cochange.py` (440 líneas): soporte/confianza/recencia por separado, exclusión de merges y ficheros generados, caché por `HEAD`, integración con `impact()`.
+
+**No verificable sin la máquina en vivo.** No se ha corrido todavía sobre el historial de commits real de este mismo repo desde la herramienta del agente en una sesión en vivo.
+
+**Ficheros.** `src/code_graph/cochange.py` (nuevo), `src/code_graph/query.py`, `src/code_graph/__init__.py`, `src/agent_tools/code_graph_tools.py`, `docs/spec/code_graph.md`, `tests/test_code_graph_cochange.py` (nuevo).
+
+## 137. Búsqueda y reescritura estructural de código, por patrón de sintaxis (`1dc65d5a`, `27254449`, 19-09-2026)
+
+**Pedido.** Una búsqueda por texto o regex no entiende sintaxis: no distingue una llamada de una definición, ni deja escribir un patrón con "cualquier expresión aquí". Añadir búsqueda y reescritura por patrón de AST con variables.
+
+**Hecho.** `structural_search`/`structural_rewrite` (`src/structural_search.py`, nuevo) ejecutan patrones de AST con metavariables (`$VAR`, `$$$ARGS`) a través del CLI de `ast-grep` cuando está instalado (dependencia opcional en `requirements-optional.txt`). Las reescrituras se previsualizan como diff por defecto; con `apply`, las escribe el propio Faustus dentro del confinamiento del workspace (nunca el CLI) — aplicar exige una ruta explícita y cuenta como escritura de workspace a efectos de aprobaciones y política. **Corrección (`27254449`).** `ast-grep` reporta desplazamientos en bytes, pero los ficheros se leían en modo texto (que pliega CRLF a LF), lo que desalineaba cada reemplazo en Windows; ahora se respeta el fin de línea original del fichero.
+
+**Verificado.** `tests/test_structural_search.py` (306 líneas + 12 del arreglo CRLF): patrones con metavariables, previsualización en diff, aplicación real y confinamiento de workspace, y el caso CRLF con un fichero de línea Windows.
+
+**No verificable sin la máquina en vivo.** Requiere `ast-grep` instalado; no se ha probado en una sesión en vivo con el binario real disponible.
+
+**Ficheros.** `src/structural_search.py` (nuevo), `src/agent_tools/structural_search_tools.py` (nuevo), `requirements-optional.txt`, `src/tool_capabilities.py`, `src/tool_index.py`, `src/tool_index_examples.py`, `src/tool_schemas.py`, `tests/test_structural_search.py` (nuevo).
+
+## 138. Puntuación de riesgo de un cambio antes de tocarlo (`4c4bafde`, 19-09-2026)
+
+**Pedido.** Antes de editar un archivo, saber si es un cambio tranquilo o uno que puede romper media aplicación — no solo el impacto (qué otros archivos toca) sino un riesgo con motivo.
+
+**Hecho.** `code_graph_risk` (`src/code_graph/risk.py`, nuevo) puntúa un cambio de 0 a 100 (bajo/medio/alto) a partir de siete factores normalizados: llamadores a menos de dos saltos, archivos alcanzados, tests que lo alcanzan, churn (frecuencia de cambio histórico), acoplamiento con archivos fuera del cambio propuesto (sus propios tests excluidos), tamaño del diff y cuántos módulos lo importan. Devuelve los tres motivos principales y sugerencias concretas; reusa el índice de impacto y el paso de co-cambios del §136, y `impact()` lleva ahora un bloque de riesgo compacto.
+
+**Verificado.** `tests/test_code_graph_risk.py` (365 líneas): cada factor por separado, las tres bandas (bajo/medio/alto), los motivos devueltos y la integración con `impact()`.
+
+**No verificable sin la máquina en vivo.** No se ha probado todavía contra un cambio real grande de este mismo repo desde la herramienta del agente en una sesión en vivo.
+
+**Ficheros.** `src/code_graph/risk.py` (nuevo), `src/code_graph/query.py`, `src/code_graph/__init__.py`, `src/agent_tools/code_graph_tools.py`, `src/tool_capabilities.py`, `src/tool_index.py`, `src/tool_index_examples.py`, `src/tool_schemas.py`, `tests/test_code_graph_risk.py` (nuevo).
+
+## 139. Comprobar que lo que dice la documentación sigue siendo verdad del código (`e3e3dbd8`, `8dc7bd89`, 19-09-2026)
+
+**Pedido.** Que la documentación en Markdown deje de poder mentir en silencio: rutas, símbolos, claves de ajustes y rutas de API citadas en un documento, comprobadas contra el workspace real, y aviso cuando el código citado cambió después de escribirse la sección.
+
+**Hecho.** `src/doc_claims.py` (nuevo, 863 líneas): extrae afirmaciones de ruta/símbolo/clave de ajuste/ruta de API de los docs en Markdown, las contrasta con el workspace y marca referencias rotas más secciones cuyo código citado cambió después que el doc (deriva). Expuesto como herramienta `doc_claims` del agente, `GET /api/doc-claims` y un CLI (`python -m src.doc_claims`). **Rendimiento (`8dc7bd89`).** La primera versión leía el historial de git y el `blame` por cada afirmación por separado; ahora se leen una sola vez por corrida completa — de 74 s a 8 s en la corrida de referencia.
+
+**Verificado.** `tests/test_doc_claims.py` (534 líneas): extracción de cada tipo de afirmación, detección de rotura, detección de deriva, y el CLI/ruta de API.
+
+**Verificado en vivo.** Corrida real sobre este mismo repositorio: 2.496 afirmaciones extraídas, 133 rotas, 83 con deriva; 13 s en la máquina Windows.
+
+**Ficheros.** `src/doc_claims.py` (nuevo), `routes/doc_claims_routes.py` (nuevo), `src/agent_tools/doc_claims_tool.py` (nuevo), `src/tool_capabilities.py`, `src/tool_index.py`, `src/tool_index_examples.py`, `src/tool_schemas.py`, `app.py`, `tests/test_doc_claims.py` (nuevo).
+
+## 140. Decisiones internas que leen probabilidades de opción, no texto generado y luego parseado (`76371b49`, 19-09-2026)
+
+**Pedido.** Cuando el código interno solo necesita que el modelo elija entre unas pocas opciones fijas, generar texto libre y parsearlo es lento y frágil. Que pueda pedir la elección directamente de las probabilidades del modelo sobre esas opciones.
+
+**Hecho.** `src/typed_choice.py` (nuevo): una sola pasada hacia adelante con `max_tokens=1`, gramática de letra y `top logprobs`, en vez de generar y parsear texto; las puntuaciones se etiquetan explícitamente como «uncalibrated option scores» (no probabilidades calibradas). `POST /api/typed-choice` (con un modo de comparación contra la generación normal), un banco pequeño (`src/bench/typed_choice.py`) y una capa 5 de juez opcional para `verify_claim`, tras el ajuste `typed_choice_logprobs` (apagado por defecto).
+
+**Verificado.** `tests/test_typed_choice.py` (406 líneas de pruebas).
+
+**Verificado en vivo.** Contra `qwen2.5-3b-helper` real: 100% de acuerdo entre la elección por logprobs y la generación normal, ambas con 83% de exactitud sobre 12 fixtures; 582 ms (logprobs) frente a 646 ms (generación) por decisión.
+
+**Ficheros.** `src/typed_choice.py` (nuevo), `routes/typed_choice_routes.py` (nuevo), `src/bench/typed_choice.py` (nuevo), `src/tool_execution.py`, `src/settings.py`, `app.py`, `tests/test_typed_choice.py` (nuevo).
+
+## 141. Un script de Code Mode se pausa para pedir aprobación y sigue donde estaba (`d1159b51`, 19-09-2026)
+
+**Pedido.** Cuando un script de Code Mode llama a una herramienta que exige aprobación humana por llamada, que se pause de verdad, espere a la persona, y siga exactamente donde estaba — no que se salte la puerta ni que rompa el script entero.
+
+**Hecho.** Una llamada de Code Mode que choca con la puerta de aprobación de escritorio por llamada abre una pregunta, espera a la persona (sin contar ese tiempo contra el tiempo de reloj del script) y, si se aprueba, ejecuta esa llamada exacta una vez a través de una aprobación sellada de una sola acción; denegar o agotar el tiempo devuelve un error limpio al script. `tools.list()` reporta `requires_approval`, los recibos de `run_code` llevan `result_chars` y un registro de aprobaciones, y las preguntas abiertas bajo sesiones sintéticas (`code_mode:`, `mcp:`) se responden desde la bandeja de Actividad mediante una ruta de solo-resolución (`POST /api/questions/{id}/answer`).
+
+**Verificado.** `tests/test_code_mode_approval_pause.py` (289 líneas), `tests/test_synthetic_question_answer_route.py` (150 líneas).
+
+**Verificado en vivo.** Una pausa real duró 274 s, aprobada desde la ruta de solo-resolución; el script siguió tras la aprobación y el tiempo de espera no se cargó al tiempo de reloj total del script. Nota: solo las puertas de aprobación por llamada del escritorio son pausables así — el guardia de acciones destructivas y la puerta de contexto no confiable no lo son.
+
+**Ficheros.** `src/code_mode/bridge.py`, `src/code_mode/runner.py`, `routes/chat_routes.py`, `src/agent_settings_schema.py`, `src/settings.py`, `src/tool_schemas.py`, `studio/src/adapters/activity.ts`, `tests/test_code_mode_approval_pause.py` (nuevo), `tests/test_synthetic_question_answer_route.py` (nuevo).
+
+## 142. Tipo de fuente y calidad de extracción en los resultados web (`05689802`, `cd65d281`, 19-09-2026)
+
+**Pedido.** Que un resultado de búsqueda o una página descargada diga qué TIPO de fuente es (oficial, docs, foro, tienda, blog...) y si la extracción de esa página salió bien o quedó pobre — no solo el texto.
+
+**Hecho.** `src/source_types.py` (nuevo, 340 líneas): heurística determinista por URL que clasifica en 10 tipos de fuente (official, docs, code, academic, news, reference, forum, social, shop, blog); las páginas descargadas ganan una puntuación de calidad de extracción con avisos (delgada, boilerplate, granja de enlaces, login/paywall, requiere JavaScript, página de error). El ranking de búsqueda (§129) gana un empujón explicado hacia fuentes oficiales/docs/académicas/de referencia y en contra de tiendas en consultas sin intención de compra; `web_fetch` avisa al modelo cuando una página parece incompleta; las citas de investigación guardan el tipo de fuente. **Corrección (`cd65d281`).** Dominios de documentación alojada (hosted docs) y más dominios oficiales/de noticias añadidos a la lista tras verlos mal clasificados.
+
+**Verificado.** `tests/test_source_types.py` (281 líneas + 7 del arreglo).
+
+**Verificado en vivo.** Una búsqueda real clasificó el BOE como `official`, una página de docs.python.org como `docs`, una página caída como `404` con su nota, y el empujón de ranking apareció explicado en `score_reasons` de los resultados.
+
+**Ficheros.** `src/source_types.py` (nuevo), `services/search/content.py`, `services/search/ranking.py`, `src/agent_tools/web_tools.py`, `src/research_citations.py`, `tests/test_source_types.py` (nuevo), `tests/test_research_citations.py`.
+
+## 143. Segundo servidor MCP de navegador con DevTools, para rendimiento y depuración (`4c4d0cfa`, 19-09-2026)
+
+**Pedido.** El servidor de navegador integrado ya cubre navegación y control; faltaba una vía para trazas de rendimiento, inspección de red/consola y auditorías de página — sin encenderla por defecto.
+
+**Hecho.** Un segundo servidor MCP de navegador integrado, apagado por defecto (`browser_devtools_mcp`), añade trazas de rendimiento, inspección de red y consola, y auditorías de página. Sus argumentos de lanzamiento siguen los ajustes de navegador ya existentes (headless, perfil aislado, endpoint CDP, ejecutable detectado); guardar el interruptor lo arranca o lo para, y sus herramientas pasan por la misma puerta genérica de MCP no confiable que cualquier otro servidor externo.
+
+**Verificado.** `tests/test_builtin_devtools_mcp.py` (316 líneas de pruebas).
+
+**Verificado en vivo.** Conectado en ~4 s con 29 herramientas listadas; se capturó una traza de rendimiento real de una página.
+
+**Ficheros.** `src/builtin_mcp.py`, `src/mcp_manager.py`, `routes/auth_routes.py`, `routes/mcp/mcp_routes.py`, `src/agent_settings_schema.py`, `src/settings.py`, `src/tool_capabilities.py`, `src/tool_policy.py`, `tests/test_builtin_devtools_mcp.py` (nuevo).
+
+## 144. Revisión ciega de un informe de investigación terminado (`3fefe1e5`, 19-09-2026)
+
+**Pedido.** Que un informe de Deep Research terminado pueda pasar por un segundo modelo que lo juzgue sin conocer el plan, la traza ni la identidad de quien lo escribió — solo la pregunta, el informe y las fuentes citadas.
+
+**Hecho.** `src/research_review.py` (nuevo): con `research_blind_review` activo, un modelo revisor puntúa el informe final a partir de la pregunta, el informe con sus secciones de proceso y autoevaluación quitadas, y solo las fuentes citadas — nunca el plan, la traza ni la identidad de quien escribió el informe. Guarda el rubro, las debilidades, las afirmaciones sin respaldo y la brecha entre la nota de evidencia de quien escribió y la puntuación del revisor junto con el resultado de la investigación; un fallo del revisor se registra, nunca interrumpe la investigación.
+
+**Verificado.** `tests/test_research_review.py` (330 líneas de pruebas).
+
+**Verificado en vivo.** Contra `qwen2.5-3b-helper` real, con una afirmación sin respaldo plantada a propósito en el informe: el revisor la detectó, con `calibration_gap` 0.5 entre la nota de quien escribió y la del revisor.
+
+**No verificable sin la máquina en vivo.** No existe todavía una vista en el Studio para el resultado de la revisión — hoy es un dato que viaja con el resultado de la investigación, no una pantalla propia (mismo patrón que el §129).
+
+**Ficheros.** `src/research_review.py` (nuevo), `src/research_handler.py`, `src/settings.py`, `tests/test_research_review.py` (nuevo).

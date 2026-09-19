@@ -2,6 +2,14 @@
 
 Actualizado: 19-09-2026. REGLA: nunca nombres de empresas/personas del buzÃ³n de Luis en commits, docs, tests ni comentarios â€” ejemplos siempre ficticios. SÃ³lo trabajo vigente; quitar cada entrada al cerrarla.
 
+## 19-09 noche — radar (FAUSTUS.md §133-…)
+
+- (a) En la comprobación en vivo, la bandeja de Actividad no llegó a pintar la pregunta de Code Mode (§141) porque la pestaña de Chrome estaba oculta (`visibilityState` en `hidden`) — se respondió por la ruta de API, no desde la bandeja visualmente. Repetir con la pestaña visible.
+- (b) La instancia de desarrollo en el puerto 7001 estaba leyendo el directorio de datos real porque su script de arranque fijaba una variable que el código ya no lee — arreglado en el script de arranque local fijando `ODYSSEUS_DATA_DIR`. Comprobaciones en vivo anteriores pueden haber tocado datos reales (los ajustes se revirtieron). El directorio de datos de desarrollo recibió una copia de la clave/fichero de autenticación real para poder reusar la sesión del navegador (backups `*.devbak`) — aun así el navegador seguía mostrando sin autenticar en 7001, así que las comprobaciones visuales de interruptores de Ajustes en 7001 necesitan iniciar sesión.
+- (c) La revisión ciega de investigación (§144) no tiene vista propia todavía; la vista de informe de investigación tampoco muestra los veredictos de las citas.
+- (d) #170 enrutado de modelo por schema no aplica hasta que exista una herramienta de extracción a schema de cara al usuario.
+- (e) Los modelos pequeños a veces devuelven solo 1 perspectiva en la planificación por perspectivas (§133) en vez de las 2-4 esperadas.
+
 ## 19-09 — reglas de política por argumento, panel de Ajustes sin ver en vivo (FAUSTUS.md §132)
 
 - No verificado en vivo: arrancar Studio de verdad, entrar en Ajustes → Tools → "Argument rules", dar de alta una regla desde el formulario, editarla, borrarla, y usar la caja "Test" con una herramienta y JSON real — todo se probó por API (`curl` contra el servidor real) y por `tsc`, no con clics reales en el navegador. El entorno de esta tarea no tiene acceso de red desde la extensión de Chrome hacia el `localhost` del contenedor donde corre el servidor.

@@ -646,3 +646,11 @@ Pedido: conectar la cuenta de WhatsApp para leer, resumir y enviar («dile a X�
 ## OBJ-23 · Ola de radar frente a otros workspaces de LLM — HECHO (19-09-2026)
 
 Pedido implícito en la comparación continua con otros entornos de trabajo para LLM: cerrar diez huecos concretos encontrados en esa comparación. Hecho en una ronda (FAUSTUS.md §121-130): motores llama.cpp bajo demanda con apagado por inactividad (§121), decodificación especulativa MTP detectada del propio GGUF (§122), búsqueda de texto completo en resultados descargados con `artifact_search` (§123), consultas de impacto en el grafo de código con alias resueltos e indexado de todo el workspace (§124), independencia de fuentes sindicadas en Deep Research (§125), traza de cada llamada al modelo con bifurcación a otro modelo (§126), aviso de conflictos en memoria aprendida (§127), navegación de PDF por su propia estructura (§128), ranking de búsqueda web explicable (§129) y auditoría de accesibilidad/rendimiento en el smoke de UI (§130). **Siguiente.** Medir tok/s con MTP on/off en el 27B real (PENDIENTES.md, 19-09 tarde); decidir si se integra la idea del modelo pequeño de tool-calling on-device (aplazada, ver PENDIENTES.md).
+
+## OBJ-24 · Extracción estructurada a un schema del usuario (herramienta de extracción + enrutado por complejidad del schema) — PENDIENTE
+
+El enrutado de modelo por schema (#170) queda sin destino mientras no exista una herramienta de cara al usuario que extraiga texto/documentos a un schema propio. Falta definir la herramienta de extracción y, a partir de ahí, decidir el enrutado por complejidad del schema.
+
+## OBJ-25 · Mostrar en Research los veredictos de citas y la revisión ciega — PENDIENTE
+
+La revisión ciega de informes (FAUSTUS.md §144) y los veredictos de verificación de citas existen como datos que viajan con el resultado de la investigación, pero la vista de informe de Research no los muestra todavía. Falta la pantalla.
