@@ -3703,7 +3703,7 @@ def _stream_target_url(url: str) -> str:
 # dropped so a client cannot smuggle arbitrary provider fields.
 GEN_OVERRIDE_KEYS = frozenset({"top_p", "top_k", "min_p", "seed", "think", "num_ctx", "num_gpu",
                                "repeat_penalty", "presence_penalty", "frequency_penalty",
-                               "reasoning_effort", "keep_alive", "main_gpu",
+                               "reasoning_effort", "reasoning_budget", "keep_alive", "main_gpu",
                                # per-model block of further Ollama `options`
                                # (src/model_load_options.EXTRA_OPTION_KEYS)
                                "extra"})
@@ -3731,7 +3731,7 @@ def _clean_gen_overrides(overrides: Optional[Dict]) -> Dict:
                     out[k] = cleaned
             elif k in ("top_p", "min_p", "repeat_penalty", "presence_penalty", "frequency_penalty"):
                 out[k] = float(v)
-            elif k in ("top_k", "seed", "num_ctx", "num_gpu", "main_gpu"):
+            elif k in ("top_k", "seed", "num_ctx", "num_gpu", "main_gpu", "reasoning_budget"):
                 out[k] = int(v)
             elif k == "think":
                 out[k] = bool(v) if not isinstance(v, str) else v.strip().lower() in ("1", "true", "on", "yes")
@@ -4458,10 +4458,20 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                     payload["chat_template_kwargs"] = _ctk
                 _ctk["enable_thinking"] = _think_decision
                 if _think_decision:
-                    try:
-                        _budget = int(_local_sampler_default("local_openai_reasoning_budget_default", 4096))
-                    except (TypeError, ValueError):
-                        _budget = 4096
+                    # An explicit per-request budget (e.g. delegate_agents'
+                    # `effort: "high"`, src/effort_profile.py) wins over the
+                    # saved setting default, the same way `think` itself
+                    # already does above.
+                    if "reasoning_budget" in _overrides:
+                        try:
+                            _budget = int(_overrides["reasoning_budget"])
+                        except (TypeError, ValueError):
+                            _budget = 4096
+                    else:
+                        try:
+                            _budget = int(_local_sampler_default("local_openai_reasoning_budget_default", 4096))
+                        except (TypeError, ValueError):
+                            _budget = 4096
                     if _budget > 0:
                         payload["reasoning_budget"] = _budget
         if _overrides:

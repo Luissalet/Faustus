@@ -377,7 +377,8 @@ FUNCTION_TOOL_SCHEMAS = [
                             "properties": {
                                 "name": {"type": "string", "description": "Short label shown in the UI"},
                                 "team_member": {"type": "string", "description": "Configured chat team member ID. Required when the user enabled a chat team; routes and restrictions come from that member."},
-                                "instruction": {"type": "string", "description": "Complete instruction for the worker"}
+                                "instruction": {"type": "string", "description": "Complete instruction for the worker"},
+                                "effort": {"type": "string", "enum": ["low", "medium", "high"], "description": "How hard this worker should think. Optional, defaults to medium (current behaviour). Use 'low' for routine/mechanical work (rename, grep, summarize) to keep it fast and cheap. Use 'high' for hard or risky work that needs careful reasoning and verification."}
                             },
                             "required": ["instruction"]
                         }

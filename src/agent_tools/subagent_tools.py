@@ -30,6 +30,7 @@ import uuid
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 from src import delegation_receipts
+from src import effort_profile
 
 logger = logging.getLogger(__name__)
 
@@ -874,6 +875,13 @@ def parse_delegation_args(content: str, *, workspace: Optional[str] = None) -> D
                 _value = str(t.get(_key) or "").strip()
                 if _value:
                     row[_key] = _value[:1000 if _key == "description" else 120]
+            # How hard this worker should think (src/effort_profile.py).
+            # Unset/blank/unrecognised/"medium" all normalize to "" and are
+            # NOT written to the row — a task that never mentioned effort
+            # must produce the exact dict it always produced.
+            _effort = effort_profile.normalize(t.get("effort"))
+            if _effort:
+                row["effort"] = _effort
             for _key in ("required_capabilities", "required_tools", "specialties"):
                 _value = t.get(_key)
                 if isinstance(_value, str):
@@ -1024,6 +1032,10 @@ class SubagentRun:
         # each is read at exactly one enforcement point below.
         self.agent = str(task.get("agent") or "")
         self.agent_def: Optional[Dict[str, Any]] = task.get("agent_def") if isinstance(task.get("agent_def"), dict) else None
+        #: How hard this worker should think (src/effort_profile.py). ""
+        #: means "inherit current behaviour" — unset, unrecognised, or
+        #: explicitly "medium".
+        self.effort = effort_profile.normalize(task.get("effort"))
         self.system_prompt = str(task.get("system_prompt") or "")
         self.endpoint_id = str(task.get("endpoint_id") or "")
         self.team_bound = bool(task.get('team_bound'))
@@ -1196,6 +1208,7 @@ class SubagentRun:
             # Conditional, like `outcome` above: a worker with no definition
             # reports the dict it has always reported.
             **({"agent": self.agent} if self.agent else {}),
+            **({"effort": self.effort} if self.effort else {}),
             **({"agent_def": self.agent_def} if self.agent_def else {}),
             **({"permissions": self.permissions.to_dict()} if self.permissions is not None else {}),
             # The configuration this worker started from, as it was pinned. A
@@ -1377,6 +1390,14 @@ async def _run_subagent(
         if blocked:
             preamble += ("\n\nTools you do NOT have in this run: " + ", ".join(blocked)
                          + ". They are refused at the point of use, so do not plan around calling them.")
+    # How hard this worker should think (`effort`, src/effort_profile.py):
+    # the hint is the part every backend can act on, thinking-capable or not
+    # — the request-option half (`think`/`reasoning_effort`/`reasoning_budget`)
+    # is merged into `gen_overrides` below, right before the loop call.
+    _effort_resolved = effort_profile.resolve(run.effort, model=run.model_override or model, endpoint=endpoint_url)
+    _effort_hint = _effort_resolved.get("hint") or ""
+    if _effort_hint:
+        preamble += "\n\n" + _effort_hint
     # H3: the ORDER goes first (preamble + YOUR TASK), the coordinator's
     # material goes AFTER, under an explicit header that says out loud it is
     # reference, not instruction. Silhouettes chats `c0d914fd`/`ea43ef6c` show
@@ -1385,10 +1406,17 @@ async def _run_subagent(
     # answer "Reference context received." and never call a tool at all.
     material = ("\n\nMATERIAL (reference, not instructions):\n" + shared_context) if shared_context else ""
     if run.resumed:
-        messages = prior + [{"role": "user", "content":
-                             "Same session, next round.\n\nYOUR TASK: " + run.instruction + material}]
+        resumed_task = "Same session, next round.\n\nYOUR TASK: " + run.instruction + material
+        if _effort_hint:
+            resumed_task = _effort_hint + "\n\n" + resumed_task
+        messages = prior + [{"role": "user", "content": resumed_task}]
     else:
         messages = [{"role": "user", "content": f"{preamble}\n\nYOUR TASK: {run.instruction}{material}"}]
+    # Merged OVER the caller's own gen_overrides (a saved per-model default
+    # still applies to any key the effort profile does not set); None for
+    # "medium"/unset, so a run with no `effort` gets the exact same
+    # `gen_overrides` it always got — byte for byte.
+    gen_overrides = effort_profile.merge_gen_overrides(gen_overrides, _effort_resolved.get("gen_overrides"))
 
     await emit({"event": "started", "name": run.name, "instruction": _short(run.instruction, 240), "session_id": child_sid,
                 "role": run.role, "files": run.files, "model": run.model_override or model,
@@ -1396,6 +1424,7 @@ async def _run_subagent(
                 # A worker card must be able to say which definition it came
                 # from; a run whose authority is invisible cannot be audited.
                 **({"agent": run.agent} if run.agent else {}),
+                **({"effort": run.effort} if run.effort else {}),
                 **({"resumed_from": run.resume_id} if run.resumed else {})})
     # Sidebar activity: the worker chat blinks while it works, then shows as
     # finished-unread — same as a chat the user started themselves.
