@@ -1655,6 +1655,7 @@ function CondensedTurn({
 
 function AssistantTurn({
   turn: liveTurn,
+  last = false,
   busy,
   enter,
   sessionId,
@@ -1676,6 +1677,8 @@ function AssistantTurn({
   modeName,
 }: {
   turn: Turn;
+  /** Last row of the transcript: the one place a session-wide panel shows. */
+  last?: boolean;
   busy: boolean;
   /** See `UserTurn`'s doc comment for the same prop. */
   enter?: boolean;
@@ -1903,6 +1906,9 @@ function AssistantTurn({
           );
         })()}
         {turn.ledger && <Ledger ledger={turn.ledger} sessionId={sessionId} role="assistant" content={turn.text} />}
+        {/* Plain chat turns carry no context ledger; the model-call trace
+            still exists for them, so it gets its own disclosure. */}
+        {!turn.ledger && !turn.streaming && sessionId && last && <ModelCallsInspector sessionId={sessionId} />}
         {/* The heartbeat, last of all: it sits exactly where the turn's own
             numbers will appear when it finishes. */}
         {turn.streaming && turn.live && !(turn.research && !turn.research.done) && !(turn.live.phase === 'tool' && turn.steps.length > 0) && (
@@ -2297,6 +2303,7 @@ export function Transcript({ turns, busy, sessionId, onApproval, onAnswer, onEdi
             ) : (
               <AssistantTurn
                 turn={turn}
+                last={index === turns.length - 1}
                 busy={busy}
                 enter={enter}
                 sessionId={sessionId}
