@@ -343,6 +343,8 @@
 .fs-set__form label { display: grid; gap: 6px; font-size: var(--fs-label-size); font-weight: 600; min-inline-size: 0; }
 .fs-set__form input, .fs-set__form textarea { font: inherit; font-weight: 400; background: var(--fs-surface-1); color: var(--fs-text-1); border: 1px solid var(--fs-border); border-radius: var(--fs-radius-control); padding: 6px 8px; inline-size: 100%; box-sizing: border-box; }
 .fs-set__form textarea { min-block-size: 72px; resize: vertical; }
+.fs-set__form label.fs-set__check { display: flex; align-items: center; gap: 8px; }
+.fs-set__form label.fs-set__check input { inline-size: auto; }
 .fs-set__form .fs-set__row-actions { flex-wrap: wrap; }
 @media (max-width: 600px) { .fs-set__form input, .fs-set__form textarea { font-size: 16px; min-block-size: 40px; } }
 

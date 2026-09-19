@@ -931,7 +931,7 @@ function EngineEditor({ engine, onCancel, onSave }: {
         />
       </label>
       <div className="fs-set__row-actions">
-        <label>
+        <label className="fs-set__check">
           <input
             type="checkbox"
             data-testid="engine-mtp-checkbox"
