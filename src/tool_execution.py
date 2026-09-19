@@ -1130,16 +1130,73 @@ _NO_LAYER_5 = ("layer 5 (model judgement) is not available from this tool: it ne
                "means nothing here could show the claim, which is not the same as false")
 
 
-def _verify_claim_action(content: str) -> Dict:
-    """One `verify_claim` call: the deterministic ladder of src/claim_verify.py
-    over the claim and the source the model already has.
+async def _verify_claim_with_optional_judge(claim: str, source: str) -> Dict[str, Any]:
+    """Layers 1-4 of ``src/claim_verify.py``, plus an OPT-IN layer 5.
 
-    No judge is injected, on purpose — layers 1 to 4 need no model, and layer 5
-    would put a model's opinion where a caller reads a deterministic score.
+    By default (``typed_choice_logprobs`` off — the historical behaviour) no
+    judge is ever injected, for the reason the module docstring above always
+    gave: layers 1 to 4 need no model, and a model's opinion does not belong
+    where a caller reads a deterministic score. When the setting is on, and
+    only when nothing deterministic could settle the claim, this asks a
+    ``src.typed_choice`` judge the exact same question
+    (``claim_verify.JUDGE_QUESTION``) in one constrained forward pass rather
+    than a free-text generation, and hands its answer to
+    ``claim_verify.verify``'s own ``judge`` seam — so the result is labelled
+    and scored exactly the way any other layer-5 judgement is (``label``:
+    "model judgement, not deterministic evidence"; the deterministic
+    ``confidence`` stays 0.0; the model's own number lives in
+    ``judgement.confidence``). Any trouble with the typed-choice call itself
+    (endpoint down, no usable letter, ...) falls back to the unsettled
+    deterministic verdict — never raises, never blocks the tool call.
+    """
+    from src import claim_verify
+    try:
+        from src.settings import get_setting
+        use_typed_choice = bool(get_setting("typed_choice_logprobs", False))
+    except Exception:  # noqa: BLE001
+        use_typed_choice = False
+    if not use_typed_choice:
+        return claim_verify.verify(claim, source)
+
+    probe = claim_verify.verify(claim, source)
+    if probe.get("layer") is not None:
+        return probe  # a deterministic layer already settled it; no model needed
+
+    try:
+        from src.typed_choice import typed_choice
+        tc_result = await typed_choice(
+            claim_verify.JUDGE_QUESTION, ["supported", "not supported"],
+            context=f"CLAIM:\n{claim}\n\nSOURCE:\n{source[:6000]}",
+        )
+    except Exception as exc:  # noqa: BLE001 - never let the judge break the tool
+        logger.debug("[verify_claim] typed_choice judge failed: %s", exc)
+        return probe
+    if tc_result.get("error"):
+        return probe
+
+    choice = tc_result.get("choice")
+    probabilities = tc_result.get("probabilities") or {}
+    method = tc_result.get("method")
+
+    def _judge(_claim: str, _source: str) -> Dict[str, Any]:
+        return {
+            "supported": choice == "supported",
+            "confidence": float(probabilities.get(choice, 0.5) or 0.5),
+            "why": (f"typed-choice judge ({method}): '{choice}' at option "
+                    f"probability {float(probabilities.get(choice, 0.0) or 0.0):.2f}"),
+        }
+
+    return claim_verify.verify(claim, source, judge=_judge)
+
+
+async def _verify_claim_action(content: str) -> Dict:
+    """One `verify_claim` call: the deterministic ladder of src/claim_verify.py
+    over the claim and the source the model already has, plus the opt-in
+    typed-choice layer 5 above.
+
     The module itself never raises; what can go wrong here is the CALL: junk
     instead of JSON, or a call with nothing to check.
     """
-    from src import claim_verify
     args = json.loads(content or "{}")
     if not isinstance(args, dict):
         raise ValueError("verify_claim arguments must be an object with 'claim' and 'source'")
@@ -1152,7 +1209,7 @@ def _verify_claim_action(content: str) -> Dict:
     if not source.strip():
         raise ValueError("verify_claim: 'source' is required — the text the claim must be "
                          "supported by. Nothing is fetched: pass the text you already have")
-    verdict = claim_verify.verify(claim, source)
+    verdict = await _verify_claim_with_optional_judge(claim, source)
     out: Dict = {
         "supported": verdict["supported"],
         "layer": verdict["layer"],
@@ -2028,7 +2085,7 @@ async def _execute_tool_block_impl(
     elif tool == "verify_claim":
         desc = "verify_claim"
         try:
-            result = _verify_claim_action(content)
+            result = await _verify_claim_action(content)
             desc = f"verify_claim: layer {result.get('layer')}" if "layer" in result else desc
         except (ValueError, TypeError, json.JSONDecodeError) as exc:
             result = {"error": str(exc), "exit_code": 1}

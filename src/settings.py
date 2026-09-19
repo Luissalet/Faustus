@@ -512,6 +512,15 @@ DEFAULT_SETTINGS = {
     # Never applied to a request that also carries tools (Ollama does not
     # combine `format` with `tools` reliably), so the agent loop is untouched.
     "local_structured_output": "auto",
+    # Typed choice decisions (src/typed_choice.py): let a tool-less internal
+    # pass that needs to pick among a small fixed set of options (currently:
+    # the verify_claim tool's optional layer-5 judge, src/tool_execution.py)
+    # read the option letters' log-probabilities from ONE constrained
+    # forward pass instead of generating a sentence and parsing it. Off by
+    # default — the pass keeps its exact current behaviour (no judge for
+    # verify_claim) until this is turned on; falls back to the previous
+    # behaviour whenever the typed-choice call itself errors.
+    "typed_choice_logprobs": False,
     # Per-model load defaults for Ollama models (Settings → Local models →
     # Options…, src/model_load_options.py): {"<endpoint_id>|<model>":
     # {"num_ctx", "num_gpu", "keep_alive"}}. Applied under explicit
