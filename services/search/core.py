@@ -44,6 +44,17 @@ from .content import (
 
 logger = logging.getLogger(__name__)
 
+
+def _plain_text_for_summary(content: str) -> str:
+    """Markdown stripped back to plain text for the sentence-oriented
+    summary helpers (TL;DR, quotes, stats). Falls back to the raw content
+    on any failure -- a broken strip must not drop the summary entirely."""
+    try:
+        from src.html_markdown import markdown_to_text
+        return markdown_to_text(content) or content
+    except Exception:
+        return content
+
 # ========= CONFIG =========
 SEARCH_CONFIG: Dict[str, Any] = {
     "primary_provider": "searxng",
@@ -441,24 +452,33 @@ def comprehensive_web_search(
                 text += "... [truncated]"
             output_parts.append(text)
 
+            # extract_key_points wants literal "- "/"1. " bullet lines, which
+            # Markdown content (the default fetch format) already has -- run
+            # it on the raw content. The sentence-oriented helpers below
+            # (TL;DR, quotes, stats) need plain prose instead: Markdown
+            # syntax (headings with no closing punctuation, table pipes,
+            # code fences) would otherwise show up as bogus "sentences", so
+            # they run on the Markdown stripped back to text.
             key_points = extract_key_points(content["content"])
             if key_points:
                 output_parts.append("\nKey Points:")
                 for pt in key_points[:5]:
                     output_parts.append(f"- {pt}")
 
-            tldr = get_tldr(content["content"])
+            plain_text = _plain_text_for_summary(content["content"])
+
+            tldr = get_tldr(plain_text)
             if tldr:
                 output_parts.append("\nTL;DR:")
                 output_parts.append(tldr)
 
-            quotes = extract_quotes(content["content"])
+            quotes = extract_quotes(plain_text)
             if quotes:
                 output_parts.append("\nImportant Quotes:")
                 for q in quotes[:3]:
                     output_parts.append(f"\u201c{q}\u201d")
 
-            stats = extract_statistics(content["content"])
+            stats = extract_statistics(plain_text)
             if stats:
                 output_parts.append("\nData / Statistics:")
                 for s in stats[:5]:

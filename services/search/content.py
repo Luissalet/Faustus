@@ -199,6 +199,9 @@ def _empty_result(url: str, error: str = "") -> dict:
         "url": url,
         "title": "",
         "content": "",
+        "format": "text",
+        "links": [],
+        "headings": [],
         "lists": [],
         "tables": [],
         "code_blocks": [],
@@ -217,6 +220,13 @@ def _empty_result(url: str, error: str = "") -> dict:
     return result
 
 
+# Below this link-count / word-count ratio, a page with many links is more
+# likely genuine prose that happens to cite a lot of sources than a link
+# farm; above it, the links dominate the page.
+_LINK_FARM_DENSITY = 0.15
+_LINK_FARM_MIN_LINKS = 15
+
+
 def _annotate_source_quality(result: dict, extra_flags=None) -> dict:
     """Attach ``source_type``/``is_official`` (from the URL) and
     ``extraction_quality`` (from the extracted text) to a fetch result dict
@@ -225,6 +235,13 @@ def _annotate_source_quality(result: dict, extra_flags=None) -> dict:
 
     ``extra_flags`` adds flags the text heuristic can't see on its own (e.g.
     "error_page" for a failed HTTP fetch with no body at all).
+
+    When the content is Markdown and came with a structured ``links`` list
+    (rather than the pseudo-line-splitting the plain-text heuristic has to
+    guess with), that list is a more accurate link-farm signal: Markdown's
+    own syntax (headings, list markers) makes the text heuristic's "lots of
+    short lines" trigger too easily on ordinary structured content, so the
+    flag is recomputed here from real link density instead of trusted as-is.
     """
     url = result.get("url", "")
     title = result.get("title", "")
@@ -232,8 +249,20 @@ def _annotate_source_quality(result: dict, extra_flags=None) -> dict:
     result["source_type"] = source_info.get("source_type", "unknown")
     result["is_official"] = bool(source_info.get("is_official"))
 
-    quality = _extraction_quality(result.get("content", ""))
+    content = result.get("content", "")
+    quality = _extraction_quality(content)
     flags = list(quality.get("flags", []))
+
+    links = result.get("links")
+    if result.get("format") == "markdown" and isinstance(links, list):
+        word_count = len(content.split()) or 1
+        density = len(links) / word_count
+        is_link_farm = len(links) >= _LINK_FARM_MIN_LINKS and density > _LINK_FARM_DENSITY
+        if is_link_farm and "link_farm" not in flags:
+            flags.append("link_farm")
+        elif not is_link_farm and "link_farm" in flags:
+            flags.remove("link_farm")
+
     for flag in extra_flags or []:
         if flag not in flags:
             flags.append(flag)
@@ -242,7 +271,13 @@ def _annotate_source_quality(result: dict, extra_flags=None) -> dict:
     if result.get("js_rendered") and "js_required" not in flags:
         flags.append("js_required")
 
-    result["extraction_quality"] = {"quality": quality.get("quality", 1.0), "flags": flags}
+    from src.source_types import _QUALITY_PENALTIES  # local import: internal table, avoid a hard module-level coupling
+    score = 1.0
+    for flag in flags:
+        score -= _QUALITY_PENALTIES.get(flag, 0.0)
+    score = max(0.0, min(1.0, score))
+
+    result["extraction_quality"] = {"quality": round(score, 4), "flags": flags}
     note = _quality_note(flags)
     if note:
         result["quality_note"] = note
@@ -253,18 +288,28 @@ def _annotate_source_quality(result: dict, extra_flags=None) -> dict:
 # Main content fetcher
 # ----------------------------------------------------------------------
 def fetch_webpage_content(url: str, timeout: int = 5, retry_attempt: int = 0,
-                          max_bytes: int = None) -> dict:
+                          max_bytes: int = None, format: str = "markdown") -> dict:
     """Fetch and extract meaningful content from a webpage with caching.
 
     ``max_bytes`` raises the download budget per call (clamped to the hard
     cap); the default is the soft cap. When the body is cut short the result
     carries ``truncated``/``fetched_bytes``/``total_bytes`` so callers can
     tell the model the content is partial (#3812).
+
+    ``format`` controls how an HTML page's body is rendered: ``"markdown"``
+    (the default) keeps headings, lists, tables, code blocks and links as
+    structured Markdown (``src.html_markdown``); ``"text"`` keeps the
+    original flat-text extraction. Non-HTML bodies (PDF, plain text,
+    Markdown files, JSON) are unaffected -- there is no markup to structure.
+    The result always carries ``result["format"]`` so a caller can tell
+    which one it got.
     """
+    format = format if format in ("markdown", "text") else "markdown"
     effective_cap = min(max_bytes or WEB_FETCH_SOFT_MAX_BYTES, WEB_FETCH_HARD_MAX_BYTES)
-    # The cap is part of the cache identity: a truncated soft-cap fetch must
-    # not be served to a later full-budget request for the same URL.
-    cache_key = generate_cache_key(f"{url}#cap={effective_cap}")
+    # The cap and format are part of the cache identity: a truncated
+    # soft-cap fetch, or a flat-text fetch, must not be served to a later
+    # full-budget / markdown request for the same URL.
+    cache_key = generate_cache_key(f"{url}#cap={effective_cap}#fmt={format}")
     cache_file = CONTENT_CACHE_DIR / f"{cache_key}.cache"
 
     # Check cache
@@ -358,6 +403,9 @@ def fetch_webpage_content(url: str, timeout: int = 5, retry_attempt: int = 0,
             "url": url,
             "title": os.path.basename(url),
             "content": pdf_text,
+            "format": "text",
+            "links": [],
+            "headings": [],
             "lists": [],
             "tables": [],
             "code_blocks": [],
@@ -394,6 +442,9 @@ def fetch_webpage_content(url: str, timeout: int = 5, retry_attempt: int = 0,
             "url": url,
             "title": os.path.basename(url_path) or url,
             "content": text_body,
+            "format": "text",
+            "links": [],
+            "headings": [],
             "lists": [],
             "tables": [],
             "code_blocks": [],
@@ -439,40 +490,66 @@ def fetch_webpage_content(url: str, timeout: int = 5, retry_attempt: int = 0,
     js_rendered = _detect_js_frameworks(soup)
     js_message = "Page appears to be rendered by a JavaScript framework; content may be incomplete." if js_rendered else ""
 
-    # Main textual content (heuristic): prefer semantic / "content"-classed
-    # containers to skip nav/footer/boilerplate; tuned for article pages.
-    main_content = ""
-    content_areas = soup.find_all(
-        ["main", "article", "section", "div"],
-        class_=re.compile("content|main|body|article|post|entry|text", re.I),
-    )
-    if content_areas:
-        for area in content_areas[:3]:
-            main_content += area.get_text(separator=" ", strip=True) + " "
-    main_content = re.sub(r"\s+", " ", main_content).strip()
+    links: List[dict] = []
+    headings: List[dict] = []
+    markdown_tables = 0
 
-    # If the heuristic finds only a tiny wrapper, fall back to body text with
-    # obvious boilerplate stripped so UI/deep-research search results do not
-    # look empty for app/landing pages.
-    THIN_CONTENT_CHARS = 600
-    if len(main_content) < THIN_CONTENT_CHARS:
-        body = soup.find("body")
-        if body:
-            body_copy = copy.copy(body)
-            for noise in body_copy.find_all(
-                ["script", "style", "noscript", "template", "nav", "header", "footer", "aside"]
-            ):
-                noise.extract()
-            body_text = re.sub(r"\s+", " ", body_copy.get_text(separator=" ", strip=True)).strip()
-            if len(body_text) > len(main_content):
-                main_content = body_text
+    if format == "markdown":
+        # Structured Markdown (headings, lists, GFM tables, fenced code,
+        # resolved links) so structure survives for the model and for
+        # citations, instead of a flat get_text() dump. Falls back to the
+        # old flat-text heuristic on any conversion failure -- a broken
+        # converter must never turn a fetchable page into an empty one.
+        try:
+            from src.html_markdown import html_to_markdown
+            md_result = html_to_markdown(response.text, base_url=url)
+            main_content = md_result["markdown"]
+            links = md_result["links"]
+            headings = md_result["headings"]
+            markdown_tables = md_result["tables"]
+        except Exception as e:
+            logger.warning(f"Markdown conversion failed for {url}, falling back to text: {e}")
+            format = "text"
+
+    if format == "text":
+        # Main textual content (heuristic): prefer semantic / "content"-classed
+        # containers to skip nav/footer/boilerplate; tuned for article pages.
+        main_content = ""
+        content_areas = soup.find_all(
+            ["main", "article", "section", "div"],
+            class_=re.compile("content|main|body|article|post|entry|text", re.I),
+        )
+        if content_areas:
+            for area in content_areas[:3]:
+                main_content += area.get_text(separator=" ", strip=True) + " "
+        main_content = re.sub(r"\s+", " ", main_content).strip()
+
+        # If the heuristic finds only a tiny wrapper, fall back to body text with
+        # obvious boilerplate stripped so UI/deep-research search results do not
+        # look empty for app/landing pages.
+        THIN_CONTENT_CHARS = 600
+        if len(main_content) < THIN_CONTENT_CHARS:
+            body = soup.find("body")
+            if body:
+                body_copy = copy.copy(body)
+                for noise in body_copy.find_all(
+                    ["script", "style", "noscript", "template", "nav", "header", "footer", "aside"]
+                ):
+                    noise.extract()
+                body_text = re.sub(r"\s+", " ", body_copy.get_text(separator=" ", strip=True)).strip()
+                if len(body_text) > len(main_content):
+                    main_content = body_text
 
     result = {
         "url": url,
         "title": title_text,
         "content": main_content,
+        "format": format,
+        "links": links,
+        "headings": headings,
         "lists": _extract_lists(soup),
         "tables": _extract_tables(soup),
+        "markdown_tables": markdown_tables,
         "code_blocks": _extract_code_blocks(soup),
         "meta_description": meta_info.get("description", ""),
         "meta_keywords": meta_info.get("keywords", ""),

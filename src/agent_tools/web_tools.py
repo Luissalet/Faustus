@@ -235,6 +235,16 @@ class WebFetchTool:
         response["extraction_quality"] = extraction_quality
         if quality_note:
             response["quality_note"] = quality_note
+        # Structured page shape (Markdown by default): a caller doing
+        # citations/evidence matching can use these instead of re-parsing
+        # `output`'s Markdown syntax itself.
+        response["format"] = result.get("format") or "text"
+        links = result.get("links")
+        if links:
+            response["links"] = links
+        headings = result.get("headings")
+        if headings:
+            response["headings"] = headings
         response["truncated"] = download_truncated or output_truncated
         if download_truncated:
             response["kept_bytes"] = fetched_bytes
