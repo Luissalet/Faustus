@@ -4507,20 +4507,36 @@ def _build_system_prompt(
             if _mem_engine.injection_enabled():
                 _mem_budget = _mem_engine.injection_budget()
                 if _mem_budget > 0:
-                    _mem_detail = _mem_engine.pack_detail(
+                    # Job A: frozen once per session (memory_snapshot_per_session)
+                    # instead of rebuilt every turn — see
+                    # `memory_engine.pack_for_session`'s docstring.
+                    _mem_detail = _mem_engine.pack_for_session(
+                        session_id,
                         owner or "",
                         workspace or "",
                         _extract_last_user_message(messages) or "",
                         _mem_budget,
                     )
                     if _mem_detail.get("text"):
+                        _mem_note = ""
+                        if _mem_detail.get("snapshot"):
+                            _mem_note = (
+                                f"\n\n_(snapshot taken {_mem_detail.get('snapshot_taken_at')}; "
+                                "written since then appears next session)_"
+                            )
+                        if _mem_detail.get("dropped_count"):
+                            _mem_note += (
+                                f"\n\n_({_mem_detail['dropped_count']} lower-priority item(s) "
+                                f"omitted — the block is capped at {_mem_detail.get('cap_chars')} "
+                                "chars)_"
+                            )
                         _memory_message = untrusted_context_message(
                             "learned memory",
                             "These were learned from earlier turns and scored by what happened "
                             "afterwards. Follow the rules; treat anti-patterns as things that "
                             "already went wrong. Correct one with `memory_rules` "
                             "(action='feedback') when it turns out to be right or wrong.\n\n"
-                            + _mem_detail["text"],
+                            + _mem_detail["text"] + _mem_note,
                         )
                         _mem_engine.note_injected(session_id, _mem_detail.get("ids") or [])
         except Exception as _mem_err:  # noqa: BLE001 - prompt path, never raise

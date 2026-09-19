@@ -31,6 +31,7 @@ import {
   curateRules,
   deleteMemory,
   deleteRule,
+  editRuleText,
   exportMemories,
   extractFromSession,
   forgetRule,
@@ -43,12 +44,14 @@ import {
   listRules,
   MEMORY_CATEGORIES,
   pinMemory,
+  pinRule,
   previewPack,
   recordDecision,
   registerFailure,
   RULE_LEVELS,
   ruleFeedback,
   setPref,
+  suppressRule,
   updateMemory,
   type CuratorReport,
   type Decision,
@@ -256,20 +259,22 @@ function SuggestionsDialog({ title, items, onClose, onSave }: { title: string; i
  *  refuted hypothesis stays obsolete no matter how the trust math moves). */
 const CONFIDENCE_LABEL: Record<string, string> = { confirmed: 'confirmed', inferred: 'inferred', obsolete: 'obsolete' };
 
-function RuleRow({ rule, onFeedback, onDelete, onForget }: { rule: LearnedRule; onFeedback: (kind: 'helpful' | 'harmful') => void; onDelete: () => void; onForget: () => void }) {
+function RuleRow({ rule, injected, onFeedback, onDelete, onForget, onEdit, onPin, onSuppress }: { rule: LearnedRule; injected: boolean; onFeedback: (kind: 'helpful' | 'harmful') => void; onDelete: () => void; onForget: () => void; onEdit: () => void; onPin: () => void; onSuppress: () => void }) {
   const pct = Math.max(0, Math.min(100, Math.round(rule.effectiveScore * 100)));
   const harm = Math.round(rule.harmfulRatio * 100);
   return (
-    <article className="fs-rule" data-status={rule.status} data-testid="rule-row">
+    <article className="fs-rule" data-status={rule.status} data-pinned={rule.pinned || undefined} data-suppressed={rule.suppressed || undefined} data-testid="rule-row">
       <div className="fs-rule__main">
         {rule.status === 'anti_pattern' && <span className="fs-rule__avoid">EVITAR</span>}
         <span className="fs-rule__text">{rule.text}</span>
+        {injected && <span className="fs-rule__chip" data-testid="rule-injected" title={t('Currently going into the prompt')}>{t('injected')}</span>}
       </div>
       <div className="fs-rule__meta">
         <span className="fs-rule__chip" data-level={rule.level}>
           {rule.level}
         </span>
         <span className="fs-rule__chip">{rule.maturity}</span>
+        <span className="fs-rule__chip" title={t('Scope')}>{rule.scope || t('global')}</span>
         {rule.trustClass && <span className="fs-rule__trust">{rule.trustClass}</span>}
         <span className="fs-rule__confidence" data-state={rule.confidenceState} data-testid="rule-confidence" title={t('How sure Faustus is this still holds — confirmed by a human, only inferred so far, or retired')}>
           {t(CONFIDENCE_LABEL[rule.confidenceState] ?? rule.confidenceState)}
@@ -289,6 +294,9 @@ function RuleRow({ rule, onFeedback, onDelete, onForget }: { rule: LearnedRule; 
         <span className="fs-rule__actions">
           <IconButton icon={ThumbsUp} label={t('This rule helped')} size="sm" onClick={() => onFeedback('helpful')} />
           <IconButton icon={ThumbsDown} label={t('This rule did harm')} size="sm" onClick={() => onFeedback('harmful')} />
+          <IconButton icon={Check} label={t('Edit the text')} size="sm" onClick={onEdit} testId="rule-edit" />
+          <IconButton icon={rule.pinned ? PinOff : Pin} label={rule.pinned ? t('Unpin (stops always going into the prompt)') : t('Pin (always goes into the prompt regardless of score)')} size="sm" onClick={onPin} testId="rule-pin" />
+          <IconButton icon={rule.suppressed ? CheckSquare : Zap} label={rule.suppressed ? t('Un-suppress (eligible for the prompt again)') : t('Suppress (never goes into the prompt, kept on record)')} size="sm" onClick={onSuppress} testId="rule-suppress" />
           <IconButton icon={EyeOff} label={t('Forget (never let this text come back on its own)')} size="sm" onClick={onForget} testId="rule-forget" />
           <IconButton icon={X} label={t('Delete the rule')} size="sm" onClick={onDelete} />
         </span>
@@ -307,6 +315,11 @@ function LearnedRules({ say }: { say: (text: string) => void }) {
   const [report, setReport] = useState<CuratorReport | null>(null);
   const [pack, setPack] = useState<{ text: string; chars: number; budget: number; degraded: boolean } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  // Job C: "which items are currently being injected into prompts" —
+  // the id set of `pack_detail()`'s no-query block, refreshed alongside the
+  // list so a pinned/suppressed change is reflected without opening the
+  // "see the block" dialog.
+  const [injectedIds, setInjectedIds] = useState<Set<string>>(new Set());
 
   const load = useCallback((signal?: AbortSignal) => {
     listRules(signal)
@@ -320,6 +333,9 @@ function LearnedRules({ say }: { say: (text: string) => void }) {
         setRules([]);
         setFailed((err as { status?: number })?.status === 403 ? t('Only the administrator sees the learned rules.') : t('Could not read the learned rules.'));
       });
+    previewPack('')
+      .then((p) => setInjectedIds(new Set(p.ids)))
+      .catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -435,6 +451,7 @@ function LearnedRules({ say }: { say: (text: string) => void }) {
             <RuleRow
               key={r.id}
               rule={r}
+              injected={injectedIds.has(r.id)}
               onFeedback={(kind) =>
                 void ruleFeedback(r.id, kind)
                   .then((u) => {
@@ -455,6 +472,35 @@ function LearnedRules({ say }: { say: (text: string) => void }) {
                     say(t('Forgotten — it will not come back through a later reindex or import.'));
                   })
                   .catch(() => say(t('Could not forget the rule.')))
+              }
+              onEdit={() => {
+                const next = window.prompt(t('New text for this rule:'), r.text);
+                if (next === null) return;
+                const value = next.trim();
+                if (!value || value === r.text) return;
+                void editRuleText(r.id, value)
+                  .then((u) => {
+                    replace(u);
+                    say(t('Rule edited (the original is tombstoned, not reused).'));
+                    load();
+                  })
+                  .catch(() => say(t('Could not edit the rule.')));
+              }}
+              onPin={() =>
+                void pinRule(r.id, !r.pinned)
+                  .then((u) => {
+                    replace(u);
+                    load();
+                  })
+                  .catch(() => say(t('Could not pin the rule.')))
+              }
+              onSuppress={() =>
+                void suppressRule(r.id, !r.suppressed)
+                  .then((u) => {
+                    replace(u);
+                    load();
+                  })
+                  .catch(() => say(t('Could not suppress the rule.')))
               }
             />
           ))}

@@ -74,6 +74,14 @@ class CorrectBody(BaseModel):
     reason: Optional[str] = None
 
 
+class PinBody(BaseModel):
+    pinned: bool = True
+
+
+class SuppressBody(BaseModel):
+    suppressed: bool = True
+
+
 class FailureBody(BaseModel):
     """MEM-03: one occurrence of a failure."""
     signature: str
@@ -163,6 +171,9 @@ def setup_memory_engine_routes() -> APIRouter:
             )
         except engine.MemoryEngineError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
+        # Job A: a human write must be visible in the NEXT session, not
+        # hidden behind whatever block another live session already froze.
+        engine.invalidate_all_snapshots()
         return {"status": "success", "item": engine.public_item(item)}
 
     @router.post("/items/{item_id}/feedback")
@@ -176,6 +187,7 @@ def setup_memory_engine_routes() -> APIRouter:
             raise HTTPException(status_code=400, detail=str(exc))
         if not item:
             raise HTTPException(status_code=404, detail="no such memory item")
+        engine.invalidate_all_snapshots()
         return {"status": "success", "item": engine.public_item(item)}
 
     @router.delete("/items/{item_id}")
@@ -184,6 +196,7 @@ def setup_memory_engine_routes() -> APIRouter:
         from src import memory_engine as engine
         if not engine.delete_item(item_id):
             raise HTTPException(status_code=404, detail="no such memory item")
+        engine.invalidate_all_snapshots()
         return {"status": "success", "deleted": True, "id": item_id}
 
     @router.delete("/items/{item_id}/forget")
@@ -198,6 +211,7 @@ def setup_memory_engine_routes() -> APIRouter:
         tombstone = engine.forget(item_id, reason=reason or "", ref=f"human:{item_id}")
         if tombstone is None:
             raise HTTPException(status_code=404, detail="no such memory item")
+        engine.invalidate_all_snapshots()
         return {"status": "success", "forgotten": True, "id": item_id, "tombstone": tombstone}
 
     @router.post("/items/{item_id}/correct")
@@ -224,6 +238,33 @@ def setup_memory_engine_routes() -> APIRouter:
             raise HTTPException(status_code=400, detail=str(exc))
         if item is None:
             raise HTTPException(status_code=404, detail="no such memory item")
+        engine.invalidate_all_snapshots()
+        return {"status": "success", "item": engine.public_item(item)}
+
+    @router.post("/items/{item_id}/pin")
+    async def pin_item(item_id: str, body: PinBody,
+                       _admin: None = Depends(require_admin)) -> Dict[str, Any]:
+        """Job C (owner review panel): pin/unpin — a pinned item is always in
+        `pack_detail()` ahead of the rest of its section, regardless of
+        score. Goes through `engine.set_pinned`, never a raw store write."""
+        from src import memory_engine as engine
+        item = engine.set_pinned(item_id, body.pinned)
+        if item is None:
+            raise HTTPException(status_code=404, detail="no such memory item")
+        engine.invalidate_all_snapshots()
+        return {"status": "success", "item": engine.public_item(item)}
+
+    @router.post("/items/{item_id}/suppress")
+    async def suppress_item(item_id: str, body: SuppressBody,
+                            _admin: None = Depends(require_admin)) -> Dict[str, Any]:
+        """Job C: suppress/unsuppress — a suppressed item is excluded from
+        every pack section and from search(), without being deleted or
+        tombstoned. Use DELETE .../forget instead to never bring it back."""
+        from src import memory_engine as engine
+        item = engine.set_suppressed(item_id, body.suppressed)
+        if item is None:
+            raise HTTPException(status_code=404, detail="no such memory item")
+        engine.invalidate_all_snapshots()
         return {"status": "success", "item": engine.public_item(item)}
 
     @router.post("/curate")

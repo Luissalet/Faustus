@@ -882,6 +882,7 @@ def setup_auth_routes(auth_manager: AuthManager) -> APIRouter:
             # 0 = do not send (see src/llm_core._apply_local_generation_stability
             # and _model_load_defaults, which treat 0/empty as "no floor").
             "local_top_k_default": (0, 200),
+            "memory_block_max_chars": (200, 50000),
         }
         # Sampler floors for local endpoints (src/settings.py): 0 means "do not
         # send" for each, so the lower bound stays 0 rather than the field's

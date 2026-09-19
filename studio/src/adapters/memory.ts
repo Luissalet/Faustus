@@ -182,6 +182,12 @@ export interface LearnedRule {
    *  never stored, never set by this adapter. A refuted hypothesis reads obsolete forever;
    *  a human's own word is the only way something reads confirmed. */
   confidenceState: 'confirmed' | 'inferred' | 'obsolete' | string;
+  /** Job C: always injected (pinned) or never injected (suppressed) regardless of score. */
+  pinned: boolean;
+  suppressed: boolean;
+  /** `global` / `project:<id>` / `session:<id>` — engine._compute_scope. */
+  scope: string;
+  lastAccessed: string;
 }
 
 export interface RuleStats {
@@ -209,6 +215,10 @@ function ruleFrom(raw: Record<string, unknown>): LearnedRule {
     harmful: num(raw.harmful_count),
     sensitivity: typeof raw.sensitivity === 'string' && raw.sensitivity ? raw.sensitivity : 'normal',
     confidenceState: typeof raw.confidence_state === 'string' && raw.confidence_state ? raw.confidence_state : 'inferred',
+    pinned: raw.pinned === true,
+    suppressed: raw.suppressed === true,
+    scope: typeof raw.scope === 'string' ? raw.scope : '',
+    lastAccessed: typeof raw.last_accessed === 'string' ? raw.last_accessed : '',
   };
 }
 
@@ -270,6 +280,42 @@ export async function forgetRule(id: string, reason?: string): Promise<void> {
   );
 }
 
+/** Job C: replace an item's text — same tombstone-and-recreate guarantee as
+ *  `forgetRule`, exposed here as "edit" since that is what the owner did. */
+export async function editRuleText(id: string, text: string, reason?: string): Promise<LearnedRule> {
+  const response = await ok(
+    await fetch(`/api/memory-engine/items/${encodeURIComponent(id)}/correct`, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, reason: reason || 'edited by owner' }),
+    }),
+    'memory-engine/correct',
+  );
+  const data = (await response.json()) as { item?: Record<string, unknown> };
+  return ruleFrom(data.item ?? {});
+}
+
+/** Job C: pin — always injected regardless of score. */
+export async function pinRule(id: string, pinned: boolean): Promise<LearnedRule> {
+  const response = await ok(
+    await fetch(`/api/memory-engine/items/${encodeURIComponent(id)}/pin`, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pinned }) }),
+    'memory-engine/pin',
+  );
+  const data = (await response.json()) as { item?: Record<string, unknown> };
+  return ruleFrom(data.item ?? {});
+}
+
+/** Job C: suppress — never injected, without deleting or tombstoning it. */
+export async function suppressRule(id: string, suppressed: boolean): Promise<LearnedRule> {
+  const response = await ok(
+    await fetch(`/api/memory-engine/items/${encodeURIComponent(id)}/suppress`, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ suppressed }) }),
+    'memory-engine/suppress',
+  );
+  const data = (await response.json()) as { item?: Record<string, unknown> };
+  return ruleFrom(data.item ?? {});
+}
+
 export interface CuratorReport {
   deduped: number;
   inverted: number;
@@ -290,9 +336,9 @@ export async function curateRules(): Promise<CuratorReport> {
   return { deduped: n('deduped'), inverted: n('inverted'), promoted: n('promoted'), demoted: n('demoted'), pruned: n('pruned'), totalActive: n('total_active') };
 }
 
-export async function previewPack(query = ''): Promise<{ text: string; chars: number; budget: number; degraded: boolean }> {
-  const data = await getJson<{ pack?: string; chars?: number; budget?: number; degraded?: boolean }>(`/api/memory-engine/pack?query=${encodeURIComponent(query)}`);
-  return { text: data.pack ?? '', chars: data.chars ?? 0, budget: data.budget ?? 0, degraded: Boolean(data.degraded) };
+export async function previewPack(query = ''): Promise<{ text: string; chars: number; budget: number; degraded: boolean; ids: string[] }> {
+  const data = await getJson<{ pack?: string; chars?: number; budget?: number; degraded?: boolean; ids?: string[] }>(`/api/memory-engine/pack?query=${encodeURIComponent(query)}`);
+  return { text: data.pack ?? '', chars: data.chars ?? 0, budget: data.budget ?? 0, degraded: Boolean(data.degraded), ids: Array.isArray(data.ids) ? data.ids.map(String) : [] };
 }
 
 /* ── MEM-03: failure memory, controlled promotion ─────────────────────────

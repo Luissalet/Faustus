@@ -170,6 +170,12 @@ MAX_REASON_CHARS = 300
 MAX_EVENTS = 200
 DEFAULT_PACK_CHARS = 1800
 
+# Job B: the hard cap the injected memory block must never exceed, regardless
+# of what a caller asks pack_detail() for. `injection_budget()` clamps to
+# this; the module-level default doubles as the fallback when the setting
+# is unreadable.
+DEFAULT_BLOCK_MAX_CHARS = 6000
+
 PACK_RULES_HEADER = "## Learned rules"
 PACK_MEMORIES_HEADER = "## Relevant memories"
 PACK_ANTI_HEADER = "## Known anti-patterns"
@@ -339,7 +345,7 @@ _COLUMNS = (
     "confidence", "status", "maturity", "evidence", "helpful", "harmful",
     "inverted_from", "created_at", "updated_at", "last_accessed", "access_count",
     "type", "scope", "session_id", "valid_from", "valid_until", "provenance",
-    "sensitivity",
+    "sensitivity", "pinned", "suppressed",
 )
 
 _TOMBSTONE_COLUMNS = (
@@ -363,6 +369,14 @@ _MEM01_MIGRATIONS: Tuple[Tuple[str, str, Optional[str]], ...] = (
     ("valid_until", "TEXT NOT NULL DEFAULT ''", None),
     ("provenance", "TEXT NOT NULL DEFAULT '{}'", None),
     ("sensitivity", "TEXT NOT NULL DEFAULT 'normal'", None),
+    # Job C (owner review panel): a pinned item is always included in
+    # pack_detail() ahead of everything else in its section regardless of
+    # score; a suppressed one is excluded from every pack section and from
+    # search() results used to build one, without being deleted or
+    # tombstoned — the owner can un-suppress it later. Neither flag changes
+    # effective_score/harmful_ratio, which stay pure functions of feedback.
+    ("pinned", "INTEGER NOT NULL DEFAULT 0", None),
+    ("suppressed", "INTEGER NOT NULL DEFAULT 0", None),
 )
 
 
@@ -478,6 +492,8 @@ def _row_to_item(row: sqlite3.Row) -> Dict[str, Any]:
         item[key] = _loads(item.get(key))
     item["provenance"] = _load_provenance(item.get("provenance"))
     item["access_count"] = int(item.get("access_count") or 0)
+    item["pinned"] = bool(item.get("pinned"))
+    item["suppressed"] = bool(item.get("suppressed"))
     for key in ("trust", "confidence"):
         try:
             item[key] = float(item.get(key) or 0.0)
@@ -849,6 +865,39 @@ def resolve_id(prefix: Any) -> Optional[str]:
         rows = conn.execute("SELECT id FROM items WHERE id LIKE ? LIMIT 2",
                             (prefix.replace("%", "") + "%",)).fetchall()
     return str(rows[0]["id"]) if len(rows) == 1 else None
+
+
+def _set_flag(item_id: Any, column: str, value: bool,
+             now: Optional[datetime] = None) -> Optional[Dict[str, Any]]:
+    """Shared body of `set_pinned`/`set_suppressed`: flip one boolean column,
+    bump `updated_at`, return the item as stored, or None if it does not
+    exist. Never touches score-bearing fields."""
+    item_id = str(item_id or "")
+    stamp = _iso(now or _utcnow())
+    with _db() as conn:
+        cursor = conn.execute(
+            f"UPDATE items SET {column} = ?, updated_at = ? WHERE id = ?",
+            (1 if value else 0, stamp, item_id),
+        )
+        if cursor.rowcount == 0:
+            return None
+        row = conn.execute("SELECT * FROM items WHERE id = ?", (item_id,)).fetchone()
+    return _row_to_item(row) if row else None
+
+
+def set_pinned(item_id: Any, pinned: bool,
+               now: Optional[datetime] = None) -> Optional[Dict[str, Any]]:
+    """Job C: always include this item in `pack_detail()`, ahead of the rest
+    of its section, for as long as it stays pinned."""
+    return _set_flag(item_id, "pinned", bool(pinned), now)
+
+
+def set_suppressed(item_id: Any, suppressed: bool,
+                   now: Optional[datetime] = None) -> Optional[Dict[str, Any]]:
+    """Job C: stop this item from ever entering a pack or a search result,
+    without deleting or tombstoning it — the owner can lift this later. Use
+    `forget()` instead when the item should never come back at all."""
+    return _set_flag(item_id, "suppressed", bool(suppressed), now)
 
 
 def delete_item(item_id: Any) -> bool:
@@ -1293,6 +1342,29 @@ def _pack_line(item: Dict[str, Any]) -> str:
     return f"- [{str(item.get('id') or '')[:8]}] {item.get('text') or ''} ({item.get('maturity')})"
 
 
+def _truncate_at_sentence(text: str, limit: int) -> str:
+    """Job B: cut `text` to at most `limit` chars, backing up to the last
+    sentence boundary so the ONE fallback truncation this module ever does
+    never ends mid-word. A hard cut with an ellipsis only when no boundary
+    exists within the room available; `""` when there is no room at all."""
+    limit = max(0, int(limit))
+    if limit <= 0:
+        return ""
+    if len(text) <= limit:
+        return text
+    window = text[:limit]
+    best = -1
+    for mark in (". ", "! ", "? "):
+        idx = window.rfind(mark)
+        if idx > best:
+            best = idx
+    if best > 0:
+        return window[:best + 1]
+    if limit > 1:
+        return window[:-1] + "…"
+    return window
+
+
 def pack_detail(
     owner: Optional[str] = None,
     project: Optional[str] = None,
@@ -1306,28 +1378,49 @@ def pack_detail(
     Deterministic: same store + same clock → byte-identical output, which is
     what makes it safe to put in a prompt (KV-cache) and to attribute the
     turn's outcome back to exactly these ids.
+
+    Job B: the result never exceeds ``memory_block_max_chars`` (default
+    ``DEFAULT_BLOCK_MAX_CHARS``), regardless of what `char_budget` asks for —
+    it is clamped, never merely respected. Items that do not fit are dropped
+    WHOLE, in the same priority/maturity order the sections are already built
+    in (pinned first, then effective_score, then id); nothing is truncated
+    mid-item except the very first item overall, when even that alone would
+    not fit — that one gets cut at a sentence boundary
+    (`_truncate_at_sentence`) so the block is never simply empty. The receipt
+    (`dropped_ids`/`dropped_count`/`cap_chars`/`truncated_item`) records how
+    many were dropped and why, the same way `note_injected` already records
+    which ids went in.
     """
     now = now or _utcnow()
-    budget = max(0, int(char_budget or 0))
+    hard_cap = block_max_chars()
+    budget = max(0, min(int(char_budget or 0), hard_cap))
     if budget <= 0:
-        return {"text": "", "ids": [], "items": [], "degraded": False}
+        return {"text": "", "ids": [], "items": [], "degraded": False,
+               "dropped_ids": [], "dropped_count": 0, "cap_chars": hard_cap,
+               "truncated_item": False}
 
     everything = scoped_items(owner, project, ("active", "anti_pattern"))
     everything = [item for item in everything if is_valid_now(item, now)]
     everything = [item for item in everything if item.get("sensitivity") != "secret"]
+    # Job C: a suppressed item never enters a pack, pinned or not — that is
+    # what "suppress" means. Filtered here, once, so every section below
+    # (rules, anti-patterns, search hits) honours it the same way.
+    everything = [item for item in everything if not item.get("suppressed")]
     by_id = {item["id"]: item for item in everything}
 
     rules = [public_item(item, now) for item in everything
              if item.get("status") == "active" and item.get("level") == "procedural"]
-    rules = [row for row in rules if row["effective_score"] > 0]
-    rules.sort(key=lambda row: (-row["effective_score"], row["id"]))
+    # A pinned rule is kept regardless of score; an unpinned one still needs
+    # effective_score > 0 to earn its place.
+    rules = [row for row in rules if row["pinned"] or row["effective_score"] > 0]
+    rules.sort(key=lambda row: (0 if row["pinned"] else 1, -row["effective_score"], row["id"]))
 
     # Anti-patterns are never score-filtered: an inverted rule has a deeply
     # negative score BY CONSTRUCTION (that is why it was inverted), and the
     # warning is the whole point of keeping it.
     antis = [public_item(item, now) for item in everything
              if item.get("status") == "anti_pattern"]
-    antis.sort(key=lambda row: (-row["effective_score"], row["id"]))
+    antis.sort(key=lambda row: (0 if row["pinned"] else 1, -row["effective_score"], row["id"]))
 
     hits: List[Dict[str, Any]] = []
     degraded = False
@@ -1335,8 +1428,10 @@ def pack_detail(
         hits = search(query, owner, project, k=8, now=now,
                       levels=("semantic", "episodic", "working"),
                       statuses=("active",), touch_hits=False)
+        hits = [row for row in hits if not row.get("suppressed")]
         degraded = bool(hits and hits[0].get("degraded"))
-        hits = [row for row in hits if row["effective_score"] > 0]
+        hits = [row for row in hits if row.get("pinned") or row["effective_score"] > 0]
+        hits.sort(key=lambda row: (0 if row.get("pinned") else 1, -row["effective_score"]))
 
     sections = (
         (PACK_RULES_HEADER, rules),
@@ -1345,24 +1440,45 @@ def pack_detail(
     )
     lines: List[str] = []
     ids: List[str] = []
+    dropped_ids: List[str] = []
+    truncated_item = False
     for header, entries in sections:
         pending_header = True
-        for row in entries:
+        for i, row in enumerate(entries):
             extra = ([""] if lines else []) + ([header] if pending_header else [])
             extra.append(_pack_line(row))
             if len("\n".join(lines + extra)) > budget:
+                if not ids:
+                    # Not even the single highest-priority item fits: the
+                    # Job B fallback, once, instead of an empty block.
+                    prefix = [header] if pending_header else []
+                    overhead = len("\n".join(prefix)) + (1 if prefix else 0)
+                    fallback = _truncate_at_sentence(_pack_line(row), budget - overhead)
+                    if fallback:
+                        lines.extend(prefix + [fallback])
+                        ids.append(row["id"])
+                        truncated_item = True
+                        pending_header = False
+                        continue
+                dropped_ids.extend(r["id"] for r in entries[i:] if r["id"] not in ids)
                 break               # this section is full; a shorter one may still fit
             lines.extend(extra)
             ids.append(row["id"])
             pending_header = False
 
     if not ids:
-        return {"text": "", "ids": [], "items": [], "degraded": degraded}
+        return {"text": "", "ids": [], "items": [], "degraded": degraded,
+               "dropped_ids": dropped_ids, "dropped_count": len(dropped_ids),
+               "cap_chars": hard_cap, "truncated_item": False}
     return {
         "text": "\n".join(lines),
         "ids": ids,
         "degraded": degraded,
         "items": [by_id[i] for i in ids if i in by_id],
+        "dropped_ids": dropped_ids,
+        "dropped_count": len(dropped_ids),
+        "cap_chars": hard_cap,
+        "truncated_item": truncated_item,
     }
 
 
@@ -1381,6 +1497,151 @@ def pack(
     except Exception as exc:  # noqa: BLE001 - hot path
         logger.debug("memory engine: pack failed (%s); no block this turn", exc)
         return ""
+
+
+# ---------------------------------------------------------------------------
+# Job A: a frozen memory snapshot per session
+#
+# `pack_detail()` above is pure and cheap to call, but calling it on every
+# turn still means the memory block's TEXT changes turn to turn as feedback
+# and the clock move the ranking — which churns the model's prompt prefix
+# (and its KV-cache) for no benefit within one session. `pack_for_session`
+# builds the block once per session and hands back the same text for every
+# later turn of that same session, the same posture the reference agent
+# this project was benchmarked against already takes.
+#
+# Anything written during the session (a new rule, feedback, a pin/suppress)
+# still shows up — in the NEXT session, exactly like that reference
+# implementation: the snapshot is invalidated on write (`_invalidate_on_write`,
+# called from every mutating function below), when the session is reopened
+# (`invalidate_snapshot`, called by the caller that detects the reopen), or
+# explicitly. A snapshot is never mistaken for live state: every receipt
+# carries `snapshot: True` and `snapshot_taken_at`, an ISO timestamp a turn
+# can show next to the block.
+# ---------------------------------------------------------------------------
+
+_SNAPSHOT_LOCK = threading.Lock()
+_SNAPSHOTS: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
+SNAPSHOT_MAX_SESSIONS = 512
+#: A session with no turn for this long reads as "reopened" rather than
+#: "still going" — nothing in this module is told when a tab is closed and
+#: reopened, so elapsed time is the signal available. A caller that DOES
+#: know the moment of reopening should still call `invalidate_snapshot`
+#: explicitly rather than wait for this.
+SNAPSHOT_IDLE_TTL_S = 1800.0
+
+
+def snapshot_enabled() -> bool:
+    try:
+        from src.settings import get_setting
+        return bool(get_setting("memory_snapshot_per_session", True))
+    except Exception:  # noqa: BLE001
+        return True
+
+
+def invalidate_snapshot(session_id: Any) -> None:
+    """Drop one session's frozen block(s) — call this when that session is
+    reopened, so the next turn rebuilds fresh instead of reusing whatever
+    was frozen last time this session ran. Cache keys are
+    ``f"{session_id}\\x00{query}"`` (one snapshot per query a session has
+    asked pack_for_session() with), so this drops every key for the
+    session, not just the no-query one."""
+    sid = str(session_id or "").strip()
+    if not sid:
+        return
+    prefix = sid + "\x00"
+    with _SNAPSHOT_LOCK:
+        for key in [k for k in _SNAPSHOTS if k == sid or k.startswith(prefix)]:
+            _SNAPSHOTS.pop(key, None)
+
+
+def invalidate_all_snapshots() -> None:
+    """Drop every session's frozen block. Called from every function below
+    that writes memory a human or the agent explicitly asked for — a
+    written item must be visible somewhere; for a live session it will be
+    in the NEXT session (Job A's contract), which starting from an empty
+    cache guarantees, at the cost of one rebuild per open session."""
+    with _SNAPSHOT_LOCK:
+        _SNAPSHOTS.clear()
+
+
+def _sweep_snapshots() -> None:
+    """Caller holds the lock. Same bounded-cache shape as `_sweep_injected`."""
+    while len(_SNAPSHOTS) > SNAPSHOT_MAX_SESSIONS:
+        _SNAPSHOTS.popitem(last=False)
+
+
+def pack_for_session(
+    session_id: Any,
+    owner: Optional[str] = None,
+    project: Optional[str] = None,
+    query: Any = "",
+    char_budget: int = DEFAULT_PACK_CHARS,
+    *,
+    now: Optional[datetime] = None,
+    force_refresh: bool = False,
+) -> Dict[str, Any]:
+    """`pack_detail()`, frozen once per session when Job A's setting is on.
+
+    With no `session_id`, the setting off, or `force_refresh=True` (an
+    explicit reopen), this is exactly `pack_detail()` plus
+    `snapshot: False`. Otherwise the FIRST call for a given `(session_id,
+    query)` builds and caches the block; every later call for the same pair
+    returns that cached receipt with `snapshot: True` and the original
+    `snapshot_taken_at`, until the cache is invalidated. NEVER raises: same
+    hot-path posture as `pack()`.
+    """
+    sid = str(session_id or "").strip()
+    if force_refresh and sid:
+        invalidate_snapshot(sid)
+    if not sid or not snapshot_enabled():
+        try:
+            detail = pack_detail(owner, project, query, char_budget, now=now)
+        except Exception as exc:  # noqa: BLE001 - hot path
+            logger.debug("memory engine: pack_for_session failed (%s); no block", exc)
+            detail = {"text": "", "ids": [], "items": [], "degraded": False,
+                     "dropped_ids": [], "dropped_count": 0,
+                     "cap_chars": block_max_chars(), "truncated_item": False}
+        out = dict(detail)
+        out["snapshot"] = False
+        out["snapshot_taken_at"] = None
+        return out
+
+    cache_key = f"{sid}\x00{str(query or '')}"
+    now_ts = (now or _utcnow()).timestamp()
+    with _SNAPSHOT_LOCK:
+        cached = _SNAPSHOTS.get(cache_key)
+        if cached is not None:
+            age = now_ts - float(cached.get("ts") or 0.0)
+            if age > SNAPSHOT_IDLE_TTL_S:
+                # Idle long enough to read as a reopen (see
+                # SNAPSHOT_IDLE_TTL_S) — rebuild instead of reusing it.
+                _SNAPSHOTS.pop(cache_key, None)
+                cached = None
+            else:
+                _SNAPSHOTS.move_to_end(cache_key)
+    if cached is not None:
+        out = dict(cached["detail"])
+        out["snapshot"] = True
+        out["snapshot_taken_at"] = cached["taken_at"]
+        return out
+
+    try:
+        detail = pack_detail(owner, project, query, char_budget, now=now)
+    except Exception as exc:  # noqa: BLE001 - hot path
+        logger.debug("memory engine: pack_for_session failed (%s); no block", exc)
+        detail = {"text": "", "ids": [], "items": [], "degraded": False,
+                 "dropped_ids": [], "dropped_count": 0,
+                 "cap_chars": block_max_chars(), "truncated_item": False}
+    stamp = _iso(now or _utcnow())
+    with _SNAPSHOT_LOCK:
+        _SNAPSHOTS[cache_key] = {"detail": dict(detail), "taken_at": stamp, "ts": now_ts}
+        _SNAPSHOTS.move_to_end(cache_key)
+        _sweep_snapshots()
+    out = dict(detail)
+    out["snapshot"] = True
+    out["snapshot_taken_at"] = stamp
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -1520,13 +1781,25 @@ def injection_enabled() -> bool:
         return True
 
 
+def block_max_chars() -> int:
+    """Job B: the hard cap `pack_detail()` clamps every call to, no matter
+    what `char_budget` asks for. Never raises; an unreadable setting falls
+    back to `DEFAULT_BLOCK_MAX_CHARS`, never to "no cap"."""
+    try:
+        from src.settings import get_setting
+        value = int(get_setting("memory_block_max_chars", DEFAULT_BLOCK_MAX_CHARS))
+    except Exception:  # noqa: BLE001
+        value = DEFAULT_BLOCK_MAX_CHARS
+    return max(1, min(50000, value))
+
+
 def injection_budget() -> int:
     try:
         from src.settings import get_setting
         value = int(get_setting("agent_learned_memory_chars", DEFAULT_PACK_CHARS))
     except Exception:  # noqa: BLE001
         value = DEFAULT_PACK_CHARS
-    return max(0, min(20000, value))
+    return max(0, min(block_max_chars(), value))
 
 
 def curate(owner: Optional[str] = None, project: Optional[str] = None,

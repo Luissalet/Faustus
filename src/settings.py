@@ -593,6 +593,15 @@ DEFAULT_SETTINGS = {
     # keeps whatever it already learned.
     "agent_learned_memory": True,
     "agent_learned_memory_chars": 1800,
+    # Job B: the hard cap the injected memory block (memory_engine.pack_detail)
+    # never exceeds, regardless of agent_learned_memory_chars — items are
+    # dropped whole in priority order rather than truncated mid-item.
+    "memory_block_max_chars": 6000,
+    # Job A: build the memory block once per session and reuse it for the
+    # rest of that session, instead of rebuilding it every turn. Off = the
+    # old per-turn rebuild. Invalidated when the session is reopened, when
+    # memory is written, or explicitly (memory_engine.invalidate_snapshot).
+    "memory_snapshot_per_session": True,
     # Specialist experts (services/experts.py): a local agent with its own
     # corpus — a rubric, the user's own PDFs on disk, and citations that
     # resolve back to the page they came from. Off = no expert block is

@@ -721,7 +721,13 @@ def test_the_settings_exist_and_are_described(store, monkeypatch):
     monkeypatch.setattr("src.settings.get_setting",
                         lambda key, default=None: values.get(key, default))
     assert engine.injection_enabled() is False
-    assert engine.injection_budget() == 20000        # clamped, never unbounded
+    # Job B: injection_budget() is now clamped to memory_block_max_chars
+    # (block_max_chars(), default DEFAULT_BLOCK_MAX_CHARS) instead of a bare
+    # 20000 — the hard cap on the injected block applies here too, never
+    # only inside pack_detail() itself.
+    assert engine.injection_budget() == engine.DEFAULT_BLOCK_MAX_CHARS
+    values["memory_block_max_chars"] = 9000
+    assert engine.injection_budget() == 9000
 
 
 def test_the_budget_setting_is_what_pack_gets(store, monkeypatch):
@@ -928,3 +934,198 @@ def test_mcp_memory_pack_renders_the_block(monkeypatch):
     assert "injection is OFF" in ws.render_pack({"pack": "x", "enabled": False})
     assert "semantic lane unavailable" in ws.render_pack(
         {"pack": "x", "enabled": True, "degraded": True, "chars": 1, "budget": 10})
+
+
+# ── Job A: a frozen memory snapshot per session ─────────────────────────
+
+
+def test_pack_for_session_freezes_the_block(store, monkeypatch):
+    monkeypatch.setattr("src.settings.get_setting",
+                        lambda k, d=None: True if k == "memory_snapshot_per_session" else d)
+    item = engine.add_item("Rule one", owner="o", project="p", level="procedural",
+                           trust_class="human_explicit")
+    engine.add_feedback(item["id"], "helpful")
+
+    first = engine.pack_for_session("sess-a", "o", "p", "", 6000)
+    assert first["snapshot"] is True
+    assert first["snapshot_taken_at"]
+
+    # A write happens mid-session (add_item alone does not auto-invalidate;
+    # that is the caller/route's job — see test below for the route path).
+    item2 = engine.add_item("Rule two, added later", owner="o", project="p",
+                            level="procedural", trust_class="human_explicit")
+    engine.add_feedback(item2["id"], "helpful")
+
+    second = engine.pack_for_session("sess-a", "o", "p", "", 6000)
+    assert second["text"] == first["text"]
+    assert second["snapshot_taken_at"] == first["snapshot_taken_at"]
+    assert item2["id"] not in second["ids"]
+
+    engine.invalidate_snapshot("sess-a")
+    third = engine.pack_for_session("sess-a", "o", "p", "", 6000)
+    assert item2["id"] in third["ids"]
+
+    # A different session gets its own, independent snapshot.
+    other = engine.pack_for_session("sess-b", "o", "p", "", 6000)
+    assert item2["id"] in other["ids"]
+
+
+def test_pack_for_session_off_rebuilds_every_call(store, monkeypatch):
+    monkeypatch.setattr("src.settings.get_setting",
+                        lambda k, d=None: False if k == "memory_snapshot_per_session" else d)
+    item = engine.add_item("Rule one", owner="o", project="p", level="procedural",
+                           trust_class="human_explicit")
+    engine.add_feedback(item["id"], "helpful")
+    first = engine.pack_for_session("sess-c", "o", "p", "", 6000)
+    assert first["snapshot"] is False
+    assert first["snapshot_taken_at"] is None
+
+    item2 = engine.add_item("Rule two", owner="o", project="p", level="procedural",
+                            trust_class="human_explicit")
+    engine.add_feedback(item2["id"], "helpful")
+    second = engine.pack_for_session("sess-c", "o", "p", "", 6000)
+    assert item2["id"] in second["ids"]  # no caching: sees the new write immediately
+
+
+def test_pack_for_session_with_no_session_id_is_never_cached(store):
+    item = engine.add_item("Rule one", owner="o", project="p", level="procedural",
+                           trust_class="human_explicit")
+    engine.add_feedback(item["id"], "helpful")
+    out = engine.pack_for_session("", "o", "p", "", 6000)
+    assert out["snapshot"] is False
+
+
+def test_write_routes_invalidate_snapshots(store, monkeypatch):
+    """The human-facing write routes call invalidate_all_snapshots(), so a
+    write made through the API — not the bare engine function — always
+    shows up in the next pack_for_session() call, same session or not."""
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from core.middleware import require_admin
+    from routes import memory_engine_routes
+
+    monkeypatch.setattr("src.settings.get_setting",
+                        lambda k, d=None: True if k == "memory_snapshot_per_session" else d)
+    app = FastAPI()
+    app.include_router(memory_engine_routes.setup_memory_engine_routes())
+    app.dependency_overrides[require_admin] = lambda: None
+    client = TestClient(app)
+
+    first = engine.pack_for_session("sess-d", "", "", "", 6000)
+    assert first["ids"] == []
+
+    resp = client.post("/api/memory-engine/items",
+                       json={"text": "Written through the API", "level": "procedural"})
+    assert resp.status_code == 200
+    new_id = resp.json()["item"]["id"]
+    engine.add_feedback(new_id, "helpful")
+
+    second = engine.pack_for_session("sess-d", "", "", "", 6000)
+    assert new_id in second["ids"]
+
+
+# ── Job B: a hard character cap on the injected memory block ────────────
+
+
+def test_pack_detail_never_exceeds_the_setting_cap(store, monkeypatch):
+    monkeypatch.setattr("src.settings.get_setting",
+                        lambda k, d=None: 500 if k == "memory_block_max_chars" else d)
+    for i in range(20):
+        it = engine.add_item(f"Rule {i}: " + ("word " * 20), owner="o", project="p",
+                             level="procedural", trust_class="human_explicit")
+        engine.add_feedback(it["id"], "helpful")
+    detail = engine.pack_detail("o", "p", "", 6000)  # asks for more than the cap
+    assert detail["cap_chars"] == 500
+    assert len(detail["text"]) <= 500
+    assert detail["dropped_count"] > 0
+    # Every dropped id is a real item that was NOT included.
+    assert set(detail["dropped_ids"]).isdisjoint(set(detail["ids"]))
+
+
+def test_pack_detail_truncates_one_item_at_a_sentence_boundary(store, monkeypatch):
+    monkeypatch.setattr("src.settings.get_setting",
+                        lambda k, d=None: 6000 if k == "memory_block_max_chars" else d)
+    it = engine.add_item(
+        "First sentence here. Second sentence follows after that one.",
+        owner="o3", project="p3", level="procedural", trust_class="human_explicit",
+    )
+    engine.add_feedback(it["id"], "helpful")
+    detail = engine.pack_detail("o3", "p3", "", 40)
+    assert len(detail["text"]) <= 40
+    assert detail["truncated_item"] is True
+    assert detail["ids"] == [it["id"]]
+
+
+def test_pack_detail_with_zero_budget_is_empty_not_an_error(store):
+    detail = engine.pack_detail("o", "p", "", 0)
+    assert detail["text"] == ""
+    assert detail["dropped_count"] == 0
+
+
+def test_block_max_chars_falls_back_on_bad_setting(store, monkeypatch):
+    monkeypatch.setattr("src.settings.get_setting",
+                        lambda k, d=None: "not-a-number" if k == "memory_block_max_chars" else d)
+    assert engine.block_max_chars() == engine.DEFAULT_BLOCK_MAX_CHARS
+
+
+# ── Job C: pin / suppress ────────────────────────────────────────────────
+
+
+def test_pin_keeps_a_zero_score_item_in_the_pack(store):
+    it = engine.add_item("Harmful but pinned", owner="o", project="p",
+                         level="procedural", trust_class="human_explicit")
+    # Enough harmful feedback to push effective_score to/below 0, so it
+    # would normally be excluded from the pack.
+    for _ in range(3):
+        engine.add_feedback(it["id"], "harmful")
+    detail = engine.pack_detail("o", "p", "", 6000)
+    assert it["id"] not in detail["ids"]
+
+    pinned = engine.set_pinned(it["id"], True)
+    assert pinned["pinned"] is True
+    detail2 = engine.pack_detail("o", "p", "", 6000)
+    assert it["id"] in detail2["ids"]
+
+
+def test_suppress_excludes_even_a_pinned_item(store):
+    it = engine.add_item("Pinned then suppressed", owner="o", project="p",
+                         level="procedural", trust_class="human_explicit")
+    engine.set_pinned(it["id"], True)
+    engine.set_suppressed(it["id"], True)
+    detail = engine.pack_detail("o", "p", "", 6000)
+    assert it["id"] not in detail["ids"]
+    # Un-suppressing brings the (still pinned) item back.
+    engine.set_suppressed(it["id"], False)
+    detail2 = engine.pack_detail("o", "p", "", 6000)
+    assert it["id"] in detail2["ids"]
+
+
+def test_set_pinned_and_suppressed_on_missing_item_returns_none(store):
+    assert engine.set_pinned("nope", True) is None
+    assert engine.set_suppressed("nope", True) is None
+
+
+def test_pin_and_suppress_routes(store, monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from core.middleware import require_admin
+    from routes import memory_engine_routes
+
+    app = FastAPI()
+    app.include_router(memory_engine_routes.setup_memory_engine_routes())
+    app.dependency_overrides[require_admin] = lambda: None
+    client = TestClient(app)
+
+    resp = client.post("/api/memory-engine/items", json={"text": "Pin me", "level": "procedural"})
+    item_id = resp.json()["item"]["id"]
+
+    r1 = client.post(f"/api/memory-engine/items/{item_id}/pin", json={"pinned": True})
+    assert r1.status_code == 200
+    assert r1.json()["item"]["pinned"] is True
+
+    r2 = client.post(f"/api/memory-engine/items/{item_id}/suppress", json={"suppressed": True})
+    assert r2.status_code == 200
+    assert r2.json()["item"]["suppressed"] is True
+
+    r3 = client.post("/api/memory-engine/items/does-not-exist/pin", json={"pinned": True})
+    assert r3.status_code == 404
