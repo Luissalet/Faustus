@@ -10,6 +10,7 @@ import {
   PinOff,
   Plus,
   Search,
+  ShieldAlert,
   Sparkles,
   ThumbsDown,
   ThumbsUp,
@@ -36,6 +37,7 @@ import {
   exportMemories,
   extractFromSession,
   forgetRule,
+  getGrounding,
   getPref,
   importFromFile,
   invalidateDecision,
@@ -63,6 +65,7 @@ import {
   type LearnedRule,
   type Memory,
   type MemoryConflict,
+  type MemoryGroundingFinding,
   type RuleStats,
 } from '../adapters/memory';
 import './projects.css';
@@ -646,6 +649,102 @@ function MemoryConflicts({ say }: { say: (text: string) => void }) {
                   .catch(() => say(t('Could not resolve the conflict.')))
               }
             />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+/* ── Grounding lint (src/memory_grounding.py): a compiled memory's concrete
+ * claims — numbers, dates, quotes, names — checked against the evidence it
+ * cites. Flags items that say more than their evidence backs up; items with
+ * no evidence at all are counted separately and never flagged here. */
+
+const GROUNDING_TYPE_LABEL: Record<string, string> = {
+  number: 'number', percent: 'percentage', currency: 'amount',
+  date: 'date', quote: 'quote', proper_noun: 'name', url: 'URL', email: 'email',
+};
+
+function MemoryGroundingRow({
+  finding,
+  onOpen,
+}: {
+  finding: MemoryGroundingFinding;
+  onOpen: () => void;
+}) {
+  return (
+    <article className="fs-conflict">
+      <span className="fs-conflict__reason">
+        <ShieldAlert size={13} />
+        {tn(finding.missing.length, '{n} unsupported detail', '{n} unsupported details')}
+      </span>
+      <div className="fs-conflict__item">
+        <span className="fs-conflict__text">{finding.text}</span>
+      </div>
+      <ul className="fs-grounding__missing">
+        {finding.missing.map((m, i) => (
+          <li key={i}>
+            <span className="fs-grounding__type">{t(GROUNDING_TYPE_LABEL[m.type] ?? m.type)}</span>
+            {' '}
+            <span className="fs-grounding__value">&ldquo;{m.value}&rdquo;</span>
+          </li>
+        ))}
+      </ul>
+      <div className="fs-conflict__actions">
+        <Button variant="ghost" size="sm" label={t('Open item')} onClick={onOpen} />
+      </div>
+    </article>
+  );
+}
+
+function MemoryGrounding({ onOpenItem }: { onOpenItem: (finding: MemoryGroundingFinding) => void }) {
+  const [report, setReport] = useState<{ findings: MemoryGroundingFinding[]; unverifiable: number } | null>(null);
+  const [failed, setFailed] = useState<string | null>(null);
+
+  const load = useCallback((signal?: AbortSignal) => {
+    getGrounding(signal)
+      .then((r) => {
+        setReport({ findings: r.findings, unverifiable: r.unverifiable });
+        setFailed(null);
+      })
+      .catch((err: unknown) => {
+        if ((err as { name?: string })?.name === 'AbortError') return;
+        setReport({ findings: [], unverifiable: 0 });
+        setFailed(t('Could not read the grounding report.'));
+      });
+  }, []);
+
+  useEffect(() => {
+    const c = new AbortController();
+    load(c.signal);
+    return () => c.abort();
+  }, [load]);
+
+  if (!failed && report && report.findings.length === 0) return null;
+
+  return (
+    <section className="fs-rules" aria-labelledby="fs-grounding-title">
+      <header className="fs-rules__head">
+        <div>
+          <h2 id="fs-grounding-title" className="fs-rules__title">
+            {t('Grounding')} <span className="fs-rules__count">{report?.findings.length ?? 0}</span>
+          </h2>
+          <p className="fs-prose">
+            {t('A memory states a specific its cited evidence does not contain.')}
+            {report && report.unverifiable > 0
+              ? ` ${tn(report.unverifiable, '{n} other item has no evidence to check.', '{n} other items have no evidence to check.')}`
+              : ''}
+          </p>
+        </div>
+      </header>
+
+      {failed && <p className="fs-rules__error">{failed}</p>}
+      {!report && !failed && <Skeleton label={t('Loading grounding report')} count={1} height="48px" />}
+      {report && report.findings.length > 0 && (
+        <div className="fs-rules__list">
+          {report.findings.map((f) => (
+            <MemoryGroundingRow key={f.id} finding={f} onOpen={() => onOpenItem(f)} />
           ))}
         </div>
       )}
@@ -1288,6 +1387,13 @@ export function MemoryScreen() {
       <LearnedRules say={say} />
 
       <MemoryConflicts say={say} />
+
+      <MemoryGrounding
+        onOpenItem={(f) => {
+          setParams(new URLSearchParams(), { replace: true });
+          setQuery(f.text.slice(0, 60));
+        }}
+      />
 
       <FailureCandidates say={say} />
 

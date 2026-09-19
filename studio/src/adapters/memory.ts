@@ -556,3 +556,62 @@ export async function resolveConflict(id: string, keep: 'new' | 'old' | 'both'):
   const data = (await response.json()) as { conflict?: Record<string, unknown> };
   return conflictFrom(data.conflict ?? {});
 }
+
+/* ── grounding lint (src/memory_grounding.py) ───────────────────────────────
+ * A compiled memory's concrete claims (numbers, dates, quotes, names...)
+ * checked against the evidence it cites. Flags items whose claims say more
+ * than their evidence backs up; items with no evidence at all are counted
+ * separately, not flagged. */
+
+export interface MemoryGroundingMiss {
+  type: string;
+  value: string;
+}
+
+export interface MemoryGroundingFinding {
+  id: string;
+  text: string;
+  category: string;
+  missing: MemoryGroundingMiss[];
+  checked: number;
+  evidenceCount: number;
+  updatedAt: string;
+}
+
+export interface MemoryGroundingReport {
+  findings: MemoryGroundingFinding[];
+  unverifiable: number;
+  checkedItems: number;
+  totalItems: number;
+}
+
+function groundingFindingFrom(raw: Record<string, unknown>): MemoryGroundingFinding {
+  const missing = Array.isArray(raw.missing) ? raw.missing : [];
+  return {
+    id: String(raw.id ?? ''),
+    text: typeof raw.text === 'string' ? raw.text : '',
+    category: typeof raw.category === 'string' ? raw.category : '',
+    missing: missing.map((m) => {
+      const row = (m ?? {}) as Record<string, unknown>;
+      return { type: String(row.type ?? ''), value: String(row.value ?? '') };
+    }),
+    checked: typeof raw.checked === 'number' ? raw.checked : 0,
+    evidenceCount: typeof raw.evidence_count === 'number' ? raw.evidence_count : 0,
+    updatedAt: typeof raw.updated_at === 'string' ? raw.updated_at : '',
+  };
+}
+
+export async function getGrounding(signal?: AbortSignal): Promise<MemoryGroundingReport> {
+  const data = await getJson<{
+    findings?: Record<string, unknown>[];
+    unverifiable?: number;
+    checked_items?: number;
+    total_items?: number;
+  }>('/api/memory/grounding', signal);
+  return {
+    findings: (data.findings ?? []).map(groundingFindingFrom),
+    unverifiable: data.unverifiable ?? 0,
+    checkedItems: data.checked_items ?? 0,
+    totalItems: data.total_items ?? 0,
+  };
+}

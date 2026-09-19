@@ -1230,6 +1230,11 @@ app.include_router(setup_scorecard_routes())
 from routes.memory_engine_routes import setup_memory_engine_routes
 app.include_router(setup_memory_engine_routes())
 
+# Grounding lint: compiled memory checked against the evidence it cites
+# (src/memory_grounding.py).
+from routes.memory_grounding_routes import setup_memory_grounding_routes
+app.include_router(setup_memory_grounding_routes())
+
 # Specialist experts: a local agent with its own corpus — profile + rubric,
 # the user's own PDFs on disk, and citations that resolve back to the page
 # (services/experts.py).

@@ -570,6 +570,38 @@
   gap: var(--fs-space-2);
 }
 
+/* ── Grounding lint (src/memory_grounding.py) ── */
+
+.fs-grounding__missing {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fs-grounding__missing li {
+  font-size: 12px;
+  color: var(--fs-text-2);
+  overflow-wrap: anywhere;
+}
+
+.fs-grounding__type {
+  padding: 1px 8px;
+  border-radius: var(--fs-radius-pill);
+  background: var(--fs-highlight);
+  color: var(--fs-text-3);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.fs-grounding__value {
+  color: var(--fs-text-1);
+}
+
 /* ── What the tidy did ── */
 
 .fs-tidy {
