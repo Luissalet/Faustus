@@ -87,6 +87,11 @@ DEFAULT_SETTINGS = {
     # ON — the write is fire-and-forget on a background thread and never
     # blocks or breaks a real call.
     "llm_trace_enabled": True,
+    # Per-model calibration of src.model_context.estimate_tokens (see
+    # src/token_calibration.py): each real call's actual prompt-token usage
+    # is fed back into an EMA ratio for that model, off the hot path and
+    # never able to break or slow a call. Default ON.
+    "token_calibration_enabled": True,
     # A request whose messages exceed this many characters is not stored
     # verbatim (a sha256 fingerprint + size note is kept instead), so one
     # huge turn cannot balloon a trace file or the debugging UI that lists it.

@@ -21,6 +21,8 @@ import json
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from src.model_context import estimate_tokens
+from src.token_calibration import get_info as _calibration_info
+from src.token_calibration import MIN_SAMPLES_FOR_FACTOR as _CALIBRATION_MIN_SAMPLES
 from src.contracts.base import now_iso
 from src.contracts.tool import EvidenceLocator, EvidenceRef
 
@@ -204,6 +206,10 @@ def build_ledger(messages: Optional[List[Dict[str, Any]]],
             key=lambda x: x["tokens"], reverse=True,
         )[:12],
         "advice": _advice(by_key, total, int(context_length or 0), tool_count),
+        # Per-model calibration of the estimate above (src/token_calibration.py):
+        # factor 1.0/samples 0 means "not enough real usage observed yet, raw
+        # chars*0.3 estimate used as-is".
+        "calibration": _calibration_info(model) if model else {"factor": 1.0, "samples": 0},
         # CTX-03: which EvidenceRefs (exact read windows, compaction sources —
         # see evidence_for_read / context_compactor.compact_with_integrity)
         # are actually part of THIS round's context, keyed by evidence_id.
@@ -223,6 +229,10 @@ def summary_line(ledger: Dict[str, Any], top: int = 3) -> str:
     line = " · ".join([head] + bits)
     if srcs:
         line += " · sources: " + "; ".join(srcs)
+    calibration = ledger.get("calibration") or {}
+    samples = int(calibration.get("samples") or 0)
+    if samples >= _CALIBRATION_MIN_SAMPLES:
+        line += f" · token estimate calibrated ×{calibration.get('factor', 1.0):.2f} (n={samples})"
     return line
 
 

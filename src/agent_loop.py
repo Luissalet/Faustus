@@ -7726,9 +7726,14 @@ async def _stream_agent_loop_body(
             # fallback for exactly that case, and for any error here.
             try:
                 from src.model_context import get_context_length
+                from src.token_calibration import estimate_tokens_for
                 _ctx_len_for_compaction = get_context_length(candidate_url, candidate_model)
+                # Calibrated: candidate_model is known here, so this
+                # compaction-threshold gate uses its real chars->tokens
+                # ratio (src/token_calibration.py) instead of the generic
+                # chars*0.3 guess.
                 _pct_for_compaction = (
-                    (estimate_tokens(compacted_source) / _ctx_len_for_compaction)
+                    (estimate_tokens_for(compacted_source, candidate_model) / _ctx_len_for_compaction)
                     if _ctx_len_for_compaction else 0
                 )
                 if _pct_for_compaction >= COMPACT_THRESHOLD:

@@ -331,6 +331,17 @@ def record_call(
             "error": error,
         }
         _EXECUTOR.submit(_record_on_thread, str(session_id), record)
+        try:
+            from src import token_calibration
+            token_calibration.observe(
+                model=model,
+                request_messages=req.get("messages"),
+                tools=req.get("tools"),
+                usage=usage,
+                provider_kind=record["provider"],
+            )
+        except Exception:
+            logger.debug("[llm_trace] token_calibration observe failed", exc_info=True)
     except Exception:
         logger.warning("[llm_trace] record_call failed", exc_info=True)
 

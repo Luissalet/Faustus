@@ -1360,6 +1360,9 @@ from routes.agent_progress_routes import setup_agent_progress_routes
 app.include_router(setup_agent_progress_routes())
 from routes.llm_trace_routes import setup_llm_trace_routes
 app.include_router(setup_llm_trace_routes())
+# Per-model estimate_tokens() calibration state (admin) — src/token_calibration.py.
+from routes.token_calibration_routes import setup_token_calibration_routes
+app.include_router(setup_token_calibration_routes())
 # Who holds which resource lease right now, and any refused/conflicting
 # claims — "who edits what" for the Agents screen (PLAN-03).
 from routes.agent_leases_routes import setup_agent_leases_routes
