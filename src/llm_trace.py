@@ -122,6 +122,14 @@ _SECRET_KEY_RE = re.compile(
     r"bearer|x-api-key|cookie)",
     re.IGNORECASE,
 )
+# Counters and sampling knobs that merely contain "token": `max_tokens`,
+# `num_tokens`, `prompt_tokens`, `tokenizer`... Redacting them broke forks
+# (a "[REDACTED]" max_tokens went back to the model as a string).
+_NOT_SECRET_KEY_RE = re.compile(r"(_tokens$|^tokens$|tokens_|tokenizer|^n_?tok)", re.IGNORECASE)
+
+
+def _is_secret_key(key: str) -> bool:
+    return bool(_SECRET_KEY_RE.search(key)) and not _NOT_SECRET_KEY_RE.search(key)
 _BEARER_STR_RE = re.compile(r"Bearer\s+[A-Za-z0-9\-._~+/]+=*", re.IGNORECASE)
 _REDACTED = "[REDACTED]"
 
@@ -145,7 +153,7 @@ def redact(value: Any, *, _depth: int = 0) -> Any:
     if isinstance(value, dict):
         out: Dict[str, Any] = {}
         for k, v in value.items():
-            if isinstance(k, str) and _SECRET_KEY_RE.search(k):
+            if isinstance(k, str) and _is_secret_key(k):
                 out[k] = _REDACTED
             else:
                 out[k] = redact(v, _depth=_depth + 1)

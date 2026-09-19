@@ -70,8 +70,13 @@ def setup_llm_trace_routes() -> APIRouter:
                 "(see request.messages_omitted for the fingerprint).",
             )
         messages = req.get("messages") or []
-        temperature = req.get("temperature")
-        max_tokens = req.get("max_tokens")
+        def _num(value):
+            # Only real numbers go back to the model; anything else (an old
+            # record with a redacted placeholder, say) falls back to defaults.
+            return value if isinstance(value, (int, float)) and not isinstance(value, bool) else None
+
+        temperature = _num(req.get("temperature"))
+        max_tokens = _num(req.get("max_tokens"))
         tools = req.get("tools")
 
         owner = effective_user(request) or None

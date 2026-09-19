@@ -392,3 +392,13 @@ def test_api_fork(isolated_traces_dir, monkeypatch):
     assert body["original"]["response_text"] == "original reply"
     assert body["fork"]["model"] == "gpt-forked"
     assert body["fork"]["text"] == "forked reply"
+
+
+def test_redaction_keeps_token_counters_and_sampling_knobs():
+    from src import llm_trace
+    out = llm_trace.redact({"max_tokens": 512, "usage": {"prompt_tokens": 3, "completion_tokens": 4},
+                            "tokenizer": "x", "api_key": "sk-1", "access_token": "abc", "refresh_token": "d"})
+    assert out["max_tokens"] == 512
+    assert out["usage"] == {"prompt_tokens": 3, "completion_tokens": 4}
+    assert out["tokenizer"] == "x"
+    assert out["api_key"] == out["access_token"] == out["refresh_token"] == "[REDACTED]"
