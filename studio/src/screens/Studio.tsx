@@ -3056,6 +3056,8 @@ export function StudioScreen() {
           onClearWorkspace={() => setWorkspace('')}
           gen={gen}
           onClearGen={() => setGen({})}
+          onSetGen={setGen}
+          modelName={route?.model ?? null}
           attachments={attachments}
           setAttachments={(update) => setAttachments(update)}
           sessionId={sessionId}

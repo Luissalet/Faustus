@@ -171,6 +171,7 @@ A versioned spec for this project: every requirement carries who proposed it, wh
 A window that stays open has no one-task, one-exit invocation.	Una ventana que se queda abierta no tiene invocación de una tarea, una salida.
 A workflow definition, this module’s canonical export, or an aigraphstudio-shaped graph…	Una definición de workflow, la exportación canónica de este módulo, o un grafo con forma de aigraphstudio…
 A working folder (cwd) is required for a program with a readiness check.	Se requiere una carpeta de trabajo (cwd) para un programa con comprobación de disponibilidad.
+A working folder is required for a server process.	Se requiere una carpeta de trabajo para un proceso de servidor.
 ACTIVE — {reason}. Chat, files and settings still work normally.	ACTIVO — {reason}. El chat, los archivos y los ajustes siguen funcionando con normalidad.
 AGENTS.md written (no test runner detected) — edit it in the folder.	AGENTS.md escrito (sin tests detectados) — edítalo en la carpeta.
 AGENTS.md written (test command detected) — edit it in the folder.	AGENTS.md escrito (comando de tests detectado) — edítalo en la carpeta.
@@ -257,6 +258,7 @@ Add an endpoint whose base URL is openrouter.ai under Models, then come back her
 Add an event in your own words…	Añade un evento en tus palabras…
 Add an instruction it picks up before its next step.	Añade una instrucción que aplicará antes de su próximo paso.
 Add an objective…	Añadir un objetivo…
+Add app	Añadir app
 Add argument	Añadir argumento
 Add as a draft	Añadir como borrador
 Add between 1 and 80 subtitle segments.	Añade entre 1 y 80 segmentos de subtítulos.
@@ -400,6 +402,7 @@ An absolute path to the executable is required.	Se requiere una ruta absoluta al
 An adjustment layer on {layer}: the pixels stay untouched and you can change or remove it later.	Una capa de ajuste sobre {layer}: los píxeles no se tocan y puedes cambiarla o quitarla después.
 An admin account, a model provider and the data folder are all in place. Start a chat, or open Diagnostics for the full picture.	Ya hay una cuenta de administrador, un proveedor de modelos y la carpeta de datos. Empieza un chat, o abre Diagnóstico para ver el panorama completo.
 An agent is a file: what it may use, what it may touch, where it runs. Put its slug on a dispatched task and the worker starts under it.	Un agente es un fichero: qué puede usar, qué puede tocar, dónde corre. Pon su slug en una tarea despachada y el worker arranca bajo él.
+An app is one of your own local projects — a server, a desktop program or a web address — that you want to launch, watch and stop from here.	Una app es uno de tus proyectos locales — un servidor, un programa de escritorio o una dirección web — que quieres lanzar, ver en consola y parar desde aquí.
 An app-specific password from appleid.apple.com — not your Apple ID password.	Una contraseña específica de aplicación de appleid.apple.com, no tu contraseña de Apple ID.
 An arrow points at the record that accounts for its source — follow it and you walk towards the proof.	Una flecha apunta al registro que respalda su origen: síguela y caminas hacia la prueba.
 An automation is a recipe: when it fires, what it does and where it delivers.	Una automatización es una receta: cuándo se dispara, qué hace y dónde entrega.
@@ -480,6 +483,7 @@ Approve the whole task	Aprobar toda la tarea
 Approved	Aprobada
 Approved — unpublish	Aprobada — despublicar
 Approved.	Aprobado.
+Apps	Apps
 Architecture: unknown (metadata unavailable)	Arquitectura: desconocida (metadatos no disponibles)
 Architecture: {kind} · {params} · source {source}	Arquitectura: {kind} · {params} · fuente {source}
 Archive	Archivar
@@ -503,6 +507,7 @@ Argument error	Error de argumento
 Argument {n}	Argumento {n}
 Arguments (JSON)	Argumentos (JSON)
 Arguments (one per box; passed literally, never through a shell)	Argumentos (uno por casilla; se pasan literalmente, nunca por una shell)
+Arguments (one per line)	Argumentos (uno por línea)
 Arrange	Ordenar
 Artifact	Artefacto
 As a worker	Como worker
@@ -511,7 +516,9 @@ As itself	Como él mismo
 As one zip	En un solo zip
 Ascending	Ascendente
 Ask	Preguntar
+Ask Faustus	Preguntar a Faustus
 Ask a real question. Research does several rounds of searching and reading before it answers.	Haz una pregunta de verdad. Research da varias rondas de búsqueda y lectura antes de contestar.
+Ask anything about this chat	Pregunta lo que quieras sobre este chat
 Ask for a synthesis	Pedir una síntesis
 Ask for approval	Preguntar
 Ask something worth several searches. Faustus plans, reads, reflects and writes a report with its sources.	Pregunta algo que merezca varias búsquedas. Faustus planifica, lee, reflexiona y escribe un informe con sus fuentes.
@@ -527,6 +534,7 @@ Asked for, and it happened.	Se pidió y ocurrió.
 Asking each model for one token…	Pidiendo un token a cada modelo…
 Asking each model for one token… ({n} so far)	Pidiendo un token a cada modelo… ({n} hasta ahora)
 Asking the endpoints…	Preguntando a los endpoints…
+Asking your phone…	Preguntando a tu teléfono…
 Asks before anything with an external or destructive effect; medium budgets.	Pregunta antes de cualquier efecto externo o destructivo; presupuestos medios.
 Asks each model for one token to see which really answer.	Pide un token a cada modelo para ver cuáles responden de verdad.
 Asks the eight ball.	Le pregunta a la bola ocho.
@@ -551,6 +559,7 @@ At most 4 sub-agents per call. Merge tasks or repeat /agents afterwards.	Como mu
 At once	A la vez
 Attach	Adjuntar
 Attach a PNG copy without sending a message. Layers and masks stay in the editor draft.	Adjunta una copia PNG sin enviar un mensaje. Las capas y máscaras se conservan en el borrador del editor.
+Attach a file	Adjuntar un archivo
 Attach files	Adjuntar archivos
 Attach from the library	Adjuntar desde la biblioteca
 Attach result to chat	Adjuntar resultado al chat
@@ -750,6 +759,7 @@ Camera	Cámara
 Cancel	Cancelar
 Cancel / stop	Cancelar / parar
 Cancel all work	Cancelar todo el trabajo
+Cancel reply	Cancelar respuesta
 Cancel requested.	Cancelación solicitada.
 Cancel run	Cancelar ejecución
 Cancel selection, crop or transform	Cancelar selección, recorte o transformación
@@ -975,6 +985,7 @@ Comma-separated provider ids OpenRouter must never route to.	Ids de proveedor se
 Comma-separated provider ids, tried in this order first.	Ids de proveedor separados por comas, probados primero en este orden.
 Comma-separated — what this device actually has right now.	Separados por comas — lo que este dispositivo tiene de verdad ahora mismo.
 Command	Comando
+Command (advanced)	Comando (avanzado)
 Command already applied (deduped).	El comando ya se había aplicado (deduplicado).
 Command applied.	Comando aplicado.
 Command completed.	Comando terminado.
@@ -1069,6 +1080,7 @@ Connect this block	Conectar este bloque
 Connect with Google	Conectar con Google
 Connect {name}	Conectar {name}
 Connected ({n} tools)	Conectado ({n} herramientas)
+Connected as {name}	Conectado como {name}
 Connected through Google OAuth.	Conectado con OAuth de Google.
 Connected. Refresh the model picker and select the new connection. Your current model has not changed.	Conectado. Abre el selector de modelos y elige la nueva conexión. Tu modelo actual no ha cambiado.
 Connected. Your selected models are now available in the chat picker.	Conectado. Tus modelos elegidos ya están disponibles en el selector del chat.
@@ -1085,6 +1097,7 @@ Connections to this server will be refused until you verify and pair its identit
 Connectors	Conectores
 Connectors for this conversation	Conectores de esta conversación
 Connectors saved for {name}.	Conectores guardados para {name}.
+Console	Consola
 Constellations	Constelaciones
 Contact	Contacto
 Contacts	Contactos
@@ -1211,10 +1224,12 @@ Could not delete the rule.	No he podido borrar la regla.
 Could not delete the template	No se pudo borrar la plantilla
 Could not delete {name}	No he podido borrar {name}
 Could not delete.	No he podido borrar.
+Could not disable notifications.	No se pudieron desactivar las notificaciones.
 Could not discard.	No se ha podido descartar.
 Could not draft	No se ha podido redactar
 Could not draft it	No se ha podido redactar
 Could not draft the reply.	No se ha podido redactar la respuesta.
+Could not enable notifications.	No se pudieron activar las notificaciones.
 Could not expand that summary	No se pudo expandir ese resumen
 Could not expand the prompt	No se ha podido expandir el prompt
 Could not export	No se ha podido exportar
@@ -1227,6 +1242,8 @@ Could not import the file.	No he podido importar el fichero.
 Could not inspect this host. Check its address, port and network, then retry.	No se ha podido inspeccionar el servidor. Comprueba su dirección, puerto y red, y vuelve a intentarlo.
 Could not interpret it	No he podido interpretarlo
 Could not invalidate the decision.	No se pudo invalidar la decisión.
+Could not load apps.	No se pudieron cargar las apps.
+Could not load messages.	No se pudieron cargar los mensajes.
 Could not load repositories	No he podido cargar los repositorios
 Could not load the DOCX library	No se pudo cargar la biblioteca DOCX
 Could not load the Model Explorer	No se pudo cargar el Explorador de modelos
@@ -1239,6 +1256,7 @@ Could not load the gallery image ({status}).	No se ha podido cargar la imagen de
 Could not load the library	No se pudo cargar la biblioteca
 Could not load the neighborhood.	No se pudo cargar el vecindario.
 Could not load the side threads.	No he podido cargar los excursos.
+Could not load the subscribed devices.	No se pudieron cargar los dispositivos suscritos.
 Could not load the team. Reopen the conversation to retry.	No se ha podido cargar el equipo. Abre de nuevo la conversación para reintentarlo.
 Could not load this model	No se pudo cargar este modelo
 Could not load this tool.	No se pudo cargar esta herramienta.
@@ -1285,6 +1303,7 @@ Could not read the learned rules.	No he podido leer las reglas aprendidas.
 Could not read the library	No he podido leer la biblioteca
 Could not read the lint findings	No se pudieron leer los hallazgos del lint
 Could not read the local models.	No se han podido leer los modelos locales.
+Could not read the log.	No se pudo leer el registro.
 Could not read the mail accounts	No he podido leer las cuentas de correo
 Could not read the mail settings.	No se han podido leer los ajustes del correo.
 Could not read the mail.	No he podido leer el correo.
@@ -1319,6 +1338,7 @@ Could not register the failure.	No se pudo registrar el fallo.
 Could not reindex	No he podido reindexar
 Could not reload the models.	No he podido releer los modelos.
 Could not remove it.	No he podido quitarlo.
+Could not remove the device.	No se pudo eliminar el dispositivo.
 Could not remove the material.	No se pudo eliminar el material.
 Could not remove the note.	No se pudo eliminar la nota.
 Could not remove the reference.	No he podido quitar el cable.
@@ -1360,6 +1380,7 @@ Could not scan for nearby apps.	No se pudieron buscar aplicaciones cercanas.
 Could not scan the folder.	No se ha podido revisar la carpeta.
 Could not schedule.	No se ha podido programar.
 Could not send the message.	No he podido enviar el mensaje.
+Could not send the test notification.	No se pudo enviar la notificación de prueba.
 Could not send.	No se ha podido enviar.
 Could not set the behaviour mode.	No se pudo fijar el modo de comportamiento.
 Could not set the reminder	No se ha podido crear el recordatorio
@@ -1534,6 +1555,8 @@ Delete everything	Borrarlo todo
 Delete experiment	Eliminar experimento
 Delete expert	Borrar experto
 Delete failed	No se pudo borrar
+Delete for everyone	Eliminar para todos
+Delete for everyone?	¿Eliminar para todos?
 Delete for good?	¿Borrar definitivamente?
 Delete from disk	Borrar del disco
 Delete from the corpus	Borrar del corpus
@@ -1632,6 +1655,7 @@ Deselect	Deseleccionar
 Design	Diseño
 Design a plan, simulate it structurally, then authorize a real run — the same definition throughout.	Diseña un plan, simúlalo estructuralmente y después autoriza una ejecución real — la misma definición en todo momento.
 Desktop	Escritorio
+Desktop program (no readiness check)	Programa de escritorio (sin comprobación de disponibilidad)
 Detail	Detalle
 Details	Detalles
 Detect	Detectar
@@ -1640,6 +1664,9 @@ Detected for this model	Detectado para este modelo
 Detecting the hardware	Detectando el hardware
 Deterministic steps	Pasos deterministas
 Device map	Mapa de dispositivos
+Device name	Nombre del dispositivo
+Device name (optional)	Nombre del dispositivo (opcional)
+Device removed.	Dispositivo eliminado.
 Devices	Dispositivos
 Diagnostic copied	Diagnóstico copiado
 Dictate	Dictar
@@ -1718,6 +1745,7 @@ Downloads a whole folder as a .zip.	Descarga una carpeta entera en .zip.
 Downloads this conversation.	Descarga esta conversación.
 Draft	Borrador
 Draft AGENTS.md for `{ws}`. `/agentsmd write` saves it.	Borrador de AGENTS.md para `{ws}`. `/agentsmd write` lo guarda.
+Draft a reply	Redactar una respuesta
 Draft again with AI	Redactar de nuevo con IA
 Draft inserted ({model}).	Borrador insertado ({model}).
 Draft it	Redactarla
@@ -1787,6 +1815,7 @@ Edit SKILL.md	Editar SKILL.md
 Edit adjustment	Editar ajuste
 Edit and relaunch	Editar y relanzar
 Edit and retry	Editar y reintentar
+Edit app	Editar app
 Edit connector	Editar conector
 Edit document	Editar documento
 Edit image and masks: {name}	Editar imagen y máscaras: {name}
@@ -1836,6 +1865,7 @@ Enable	Activar
 Enable a speech output provider in Settings → Voice.	Activa un proveedor de síntesis en Ajustes → Voz.
 Enable a speech recognition provider in Settings → Voice.	Activa un proveedor de reconocimiento en Ajustes → Voz.
 Enable external agent runners in Settings before connecting a client.	Activa los ejecutores de agentes externos en Ajustes antes de conectar un cliente.
+Enable notifications on this device	Activar notificaciones en este dispositivo
 Enable the router	Activar el router
 Enable web search	Activar la búsqueda web
 Enabled	Activado
@@ -1871,6 +1901,7 @@ Env (JSON object)	Env (objeto JSON)
 Env (KEY=VAL …)	Entorno (CLAVE=VALOR …)
 Environment	Entorno
 Environment (JSON object)	Entorno (objeto JSON)
+Environment (KEY=value per line)	Entorno (CLAVE=valor por línea)
 Environment mode saved.	Modo de entorno guardado.
 Environment must be a JSON object.	El entorno debe ser un objeto JSON.
 Environment path	Ruta del entorno
@@ -2037,6 +2068,8 @@ Fastmail needs an app password (Settings → Privacy & Security → App password
 Faustus can pick rounds, timeouts and concurrency for the GPU it finds, and fix a search provider that would leave it with nothing to read.	Faustus puede elegir rondas, tiempos de espera y concurrencia para la GPU que encuentre, y arreglar un buscador que lo dejaría sin nada que leer.
 Faustus has not established a licence for this one. It says so rather than guess.	Faustus no ha establecido la licencia de este. Lo dice en vez de adivinar.
 Faustus has not started anything else right now.	Faustus no ha iniciado nada más ahora mismo.
+Faustus installed.	Faustus instalado.
+Faustus is already installed on this device.	Faustus ya está instalado en este dispositivo.
 Faustus is ready	Faustus está listo
 Faustus is speaking	Faustus está hablando
 Faustus is working	Faustus está trabajando
@@ -2093,6 +2126,7 @@ Filter by node kind	Filtrar por tipo de nodo
 Filter by status	Filtrar por estado
 Filter by text or id…	Filtrar por texto o id…
 Filter by type	Filtrar por tipo
+Filter chats…	Filtrar chats…
 Filter images	Filtrar imágenes
 Filter options…	Filtrar opciones…
 Filter projects	Filtrar proyectos
@@ -2177,6 +2211,7 @@ Formats: {list}.	Formatos: {list}.
 Formatting	Formato
 Fortune cookie	Galleta de la suerte
 Forward	Reenviar
+Forwarded	Reenviado
 Forwarded message	Mensaje reenviado
 Found this call ID, but it has no events, artifacts or receipt on record.	Se encontró este ID de llamada, pero no tiene eventos, artefactos ni recibo registrados.
 Free	Libre
@@ -2213,6 +2248,7 @@ GET /api/openrouter/endpoints/{id}/prefs failed.	GET /api/openrouter/endpoints/{
 GET /api/process-center failed.	GET /api/process-center ha fallado.
 GET /api/tools failed.	GET /api/tools falló.
 GET /api/tools/catalog failed.	GET /api/tools/catalog falló.
+GET /api/whatsapp/messages failed.	GET /api/whatsapp/messages falló.
 GGUF	GGUF
 GGUF file	Archivo GGUF
 GGUF quant	Cuantización GGUF
@@ -2253,6 +2289,7 @@ Generated image	Imagen generada
 Generated tokens	Tokens generados
 Generating…	Generando…
 Generation	Generación
+Generation settings	Ajustes de generación
 Generation settings applied to this chat.	Ajustes de generación aplicados a este chat.
 Generation settings of this chat (/temp, /maxtokens, /topp, /think, /gen)	Ajustes de generación de este chat (/temp, /maxtokens, /topp, /think, /gen)
 Generation settings removed.	Ajustes de generación retirados.
@@ -2279,6 +2316,7 @@ Give {name} another role	Dar otro rol a {name}
 Global default	Valor global
 Gmail needs an App Password (Google account → Security → 2-Step Verification → App passwords), not your normal password.	Gmail necesita una contraseña de aplicación (cuenta de Google → Seguridad → Verificación en dos pasos → Contraseñas de aplicación), no la normal.
 Go	Ir
+Go ahead	Adelante
 Go home	Ir al inicio
 Go to	Ir a
 Go to Activity.	Ir a Actividad.
@@ -2347,6 +2385,7 @@ Heading 1	Título 1
 Heading 2	Título 2
 Heading 3	Título 3
 Health	Salud
+Heard in {heard}s · first reply audio in {first}s	Escuchado en {heard}s · primer audio de respuesta en {first}s
 Height	Alto
 Held by {who} · {state}	En manos de {who} · {state}
 Held still, and checked	Se mantuvo, y se comprobó
@@ -2426,6 +2465,7 @@ I do not know /{name}. Type /help to see the commands.	No conozco /{name}. Escri
 I'm away until {date} and will answer when I'm back.	Estoy fuera hasta el {date} y responderé a la vuelta.
 IANA timezone, for example Europe/Madrid. Recurring jobs keep their local time through daylight-saving changes.	Zona horaria IANA, por ejemplo Europe/Madrid. Las tareas recurrentes mantienen su hora local con los cambios de horario de verano e invierno.
 IMAP/SMTP, Google, writing style and urgency.	IMAP/SMTP, Google, estilo de escritura y urgencia.
+Icon (absolute path to .png/.ico/.svg/.jpg)	Icono (ruta absoluta a .png/.ico/.svg/.jpg)
 Id	Id
 Id (slug, e.g. "socratic")	Id (slug, p. ej. «socratic»)
 Idea	Idea
@@ -2516,16 +2556,21 @@ Inspect host fingerprints	Inspeccionar huellas del servidor
 Inspector	Inspector
 Install	Instalar
 Install / launch	Instalar / lanzar
+Install Faustus	Instalar Faustus
+Install Faustus as an app and get notifications here when a turn finishes, an approval is waiting, or a reminder is due.	Instala Faustus como app y recibe notificaciones aquí cuando termine un turno, haya una aprobación pendiente o venza un recordatorio.
+Install engine	Instalar motor
 Install failed	La instalación falló
 Install from Cookbook	Instalar desde el Cookbook
 Install it first: {cmd}	Instálalo primero: {cmd}
 Install tmux and the build basics over SSH; detects the platform	Instala tmux y lo básico para compilar por SSH; detecta la plataforma
 Install {list}	Instalar {list}
+Installation dismissed.	Instalación descartada.
 Installation values. What is not here (users, tokens, vault, 2FA) is still in the previous interface.	Valores de la instalación. Lo que no está aquí (usuarios, tokens, bóveda, 2FA) sigue en la interfaz anterior.
 Installation values; for administrators, the log, the backup and the wipes.	Valores de la instalación; para administradores, el registro, la copia de seguridad y los borrados.
 Installed	Instalados
 Installed models	Modelos instalados
 Installing	Instalando
+Installing the bridge (first time)… this can take a few minutes.	Instalando el puente (primera vez)… puede tardar unos minutos.
 Instruction	Instrucción
 Instructions	Instrucciones
 Instructions — the standing orders it reviews by	Instrucciones — las órdenes con las que revisa
@@ -2783,6 +2828,7 @@ Load anyway (dangerous)	Cargar igual (peligroso)
 Load into VRAM now	Cargar en la VRAM ahora
 Load more	Cargar más
 Load more commits	Cargar más commits
+Load older messages	Cargar mensajes anteriores
 Load project	Cargar proyecto
 Load remote images in every mail	Cargar las imágenes remotas en todos los correos
 Load the model first — calibration never loads one on its own	Cárgalo primero — la calibración nunca carga un modelo por su cuenta
@@ -2792,8 +2838,10 @@ Loaded the newer version; your draft was discarded.	Se cargó la versión más r
 Loaded {name}	{name} cargado
 Loading	Cargando
 Loading OpenRouter preferences	Cargando preferencias de OpenRouter
+Loading Piper voices…	Cargando voces de Piper…
 Loading anyway would put {spill} in system RAM ({free} of {total} free).	Cargar igual pondría {spill} en la RAM del sistema ({free} de {total} libres).
 Loading anyway would put {spill} in system RAM, and only {free} of {total} is free: that is the shape of the crash of 08-09-2026. Unload something instead.	Cargar igual pondría {spill} en la RAM del sistema, y solo hay {free} de {total} libres: es la forma exacta de la caída del 08-09-2026. Descarga algo en su lugar.
+Loading apps	Cargando apps
 Loading archived	Cargando archivadas
 Loading attachments…	Cargando adjuntos…
 Loading automations	Cargando automatizaciones
@@ -2806,6 +2854,7 @@ Loading commit graph	Cargando el grafo de commits
 Loading conversations	Cargando conversaciones
 Loading decisions	Cargando decisiones
 Loading deployments	Cargando deployments
+Loading devices	Cargando dispositivos
 Loading diff for {path}	Cargando el diff de {path}
 Loading documents	Cargando documentos
 Loading drafts	Cargando borradores
@@ -2885,6 +2934,7 @@ Loading {name} anyway…	Cargando {name} de todos modos…
 Loading {name}…	Cargando {name}…
 Loading…	Cargando…
 Local	Local
+Local (Piper)	Local (Piper)
 Local latency	Latencia local
 Local model speed for research (tokens/s)	Velocidad del modelo local para research (tokens/s)
 Local models	Modelos locales
@@ -2907,6 +2957,7 @@ Log out	Cerrar sesión
 Logged in	Sesión iniciada
 Logged out	Sesión cerrada
 Logs	Registro
+Long	Larga
 Look again	Mirar otra vez
 Look up	Buscar
 Looking up…	Buscando…
@@ -2961,6 +3012,7 @@ Manage connectors…	Gestionar conectores…
 Manage documents	Gestionar documentos
 Manage modes…	Gestionar modos…
 Manage sources	Gestionar las fuentes
+Manage, launch and watch these from the Apps section of Processes.	Gestiona, lanza y observa estas desde la sección Apps de Procesos.
 Manual only	Solo a mano
 Margin	Margen
 Marginal	Justo
@@ -3274,6 +3326,8 @@ No GPU detected	Sin GPU detectada
 No GPU detected.	No se detectó ninguna GPU.
 No GPU reading available on this machine.	No hay lectura de GPU disponible en esta máquina.
 No OpenRouter endpoint yet	Aún no hay ningún endpoint de OpenRouter
+No Piper runtime found (neither the piper-tts Python package nor the engine binary).	No se encontró ningún motor de Piper (ni el paquete Python piper-tts ni el binario del motor).
+No Piper voices installed yet. Download one below.	Todavía no hay voces de Piper instaladas. Descarga una abajo.
 No SSH identities found yet.	Todavía no se encontró ninguna identidad SSH.
 No SSH identity — using https/none	Sin identidad SSH — usando https/ninguna
 No VRAM reading for this endpoint.	Sin lectura de VRAM para este endpoint.
@@ -3287,6 +3341,7 @@ No agents have worked in this conversation yet. Configure a team beside the mode
 No album	Sin álbum
 No alternatives yet. Add one to start comparing approaches.	Aún no hay alternativas. Añade una para empezar a comparar enfoques.
 No answer.	Sin respuesta.
+No apps yet	Aún no hay apps
 No archived chats	Sin chats archivados
 No archived conversations with that name.	No hay conversaciones archivadas con ese nombre.
 No archived conversations.	No hay conversaciones archivadas.
@@ -3304,6 +3359,7 @@ No changes	Sin cambios
 No changes.	Sin cambios.
 No chat, file or job record ends this chain — nothing stored says where this came from.	Ningún chat, archivo o trabajo cierra esta cadena: nada guardado dice de dónde salió.
 No chats	Sin chats
+No chats match this filter yet.	Ningún chat coincide con este filtro todavía.
 No chats yet. Start one from the brief and it will stay grouped here.	Aún no hay conversaciones. Empieza una desde el resumen y quedará agrupada aquí.
 No checkpoints in this folder yet.	No hay puntos de control en esta carpeta todavía.
 No citation — nothing in the corpus was named.	Sin cita — no se nombró nada del corpus.
@@ -3330,6 +3386,7 @@ No decisions recorded yet.	Todavía no hay decisiones registradas.
 No definition matches that search.	Ninguna definición coincide con esa búsqueda.
 No description yet — say what this expert knows.	Sin descripción aún — di qué sabe este experto.
 No description.	Sin descripción.
+No device is subscribed yet.	Todavía no hay ningún dispositivo suscrito.
 No diagram renderer is wired in yet — this is the Mermaid source. Paste it into a Mermaid live editor to see it drawn.	Todavía no hay un renderizador de diagramas conectado — esto es el código fuente Mermaid. Pégalo en un editor Mermaid en vivo para verlo dibujado.
 No differences.	Sin diferencias.
 No document open	No hay ningún documento abierto
@@ -3367,6 +3424,7 @@ No links yet.	Todavía no hay enlaces.
 No links.	Sin enlaces.
 No local browser voice for this language. Configure a speech output provider.	No hay una voz local del navegador para este idioma. Configura un proveedor de síntesis.
 No local model chosen	Ningún modelo local elegido
+No log output yet.	Aún no hay salida en el registro.
 No longer a favourite.	Ya no es favorita.
 No mail accounts	Sin cuentas de correo
 No matches	Sin coincidencias
@@ -3375,6 +3433,8 @@ No media recipes are installed.	No hay recetas multimedia instaladas.
 No memories yet. `/memory add text` saves one.	Todavía no hay recuerdos. `/memory add texto` guarda uno.
 No memory yet	Sin memoria todavía
 No message matches.	Ningún mensaje coincide.
+No messages arrived in this chat during that window.	No llegaron mensajes a este chat en ese periodo.
+No messages in this chat yet	Aún no hay mensajes en este chat
 No messages were readable in this conversation.	No se pudo leer ningún mensaje de esta conversación.
 No microphone available, or permission was not given.	No hay micrófono disponible o no has dado permiso.
 No mmap	Sin mmap
@@ -3494,6 +3554,7 @@ Node	Nodo
 Node activations	Activaciones de nodo
 Node activations, model calls and external operations are different things — a "deliver" or "artifact_store" node is an external operation, never a model call.	Las activaciones de nodo, las llamadas de modelo y las operaciones externas son cosas distintas — un nodo "deliver" o "artifact_store" es una operación externa, nunca una llamada de modelo.
 Node budget	Presupuesto de nodos
+Node.js is not installed — the bridge cannot start.	Node.js no está instalado — el puente no puede iniciarse.
 Nodes nothing points at: no stored record vouches for them.	Nodos a los que nada apunta: ningún registro guardado los respalda.
 None	Ninguno
 None of that group’s models is available now.	Ninguno de los modelos de ese grupo está disponible ahora.
@@ -3562,6 +3623,7 @@ Nothing else is being watched right now.	No se está vigilando nada más ahora m
 Nothing executable came out of that import — see the rejected entries.	Esa importación no produjo nada ejecutable — revisa las entradas rechazadas.
 Nothing fires until you resume them.	No se dispara nada hasta que las reanudes.
 Nothing found	Nada encontrado
+Nothing has arrived in this chat.	Aún no ha llegado nada a este chat.
 Nothing has been compared yet	Todavía no se ha comparado nada
 Nothing has been decided yet	Todavía no se ha decidido nada
 Nothing has been decided.	No se ha decidido nada.
@@ -3579,6 +3641,7 @@ Nothing here yet	Nada por aquí todavía
 Nothing here.	No hay nada aquí.
 Nothing imported yet	Aún no hay nada importado
 Nothing in the catalogue matches "{q}". You can still type its exact name above and pull it.	Nada del catálogo coincide con «{q}». Puedes escribir su nombre exacto arriba y descargarlo.
+Nothing in the last 48 h	Nada en las últimas 48 h
 Nothing in the memory matches "{q}".	Nada en la memoria coincide con «{q}».
 Nothing in the next 60 days	Nada en los próximos 60 días
 Nothing in this corpus matches {what}.	Nada en este corpus coincide con {what}.
@@ -3625,6 +3688,7 @@ Nothing to match against.	No hay con qué comparar.
 Nothing to open	Nada que abrir
 Nothing to outpaint: the canvas is fully covered.	No hay nada que extender: el lienzo está cubierto del todo.
 Nothing to show	Nada que mostrar
+Nothing to show.	Nada que mostrar.
 Nothing to tidy	Nada que ordenar
 Nothing to tidy.	Nada que ordenar.
 Nothing to unsubscribe from	Nada de lo que darse de baja
@@ -3645,6 +3709,8 @@ Nothing written.	No se ha escrito nada.
 Nothing — I will fill it in	Nada: lo relleno yo
 Nothing.	Nada.
 Notifications	Avisos
+Notifications disabled on this device.	Notificaciones desactivadas en este dispositivo.
+Notifications enabled on this device.	Notificaciones activadas en este dispositivo.
 Notify me when it finishes	Avisarme cuando termine
 Now	Ahora
 Nowhere — it just runs	A ningún sitio — solo se ejecuta
@@ -3691,6 +3757,7 @@ On an event	Con un evento
 On demand	Bajo demanda
 On disk now	Ahora en disco
 On for port 143/587; off for 993.	Activado para el puerto 143/587; apagado para el 993.
+On iPhone or iPad: open the Share menu and choose "Add to Home Screen".	En iPhone o iPad: abre el menú Compartir y elige "Añadir a pantalla de inicio".
 On the {layer} layer, funded from the {line} line. Refusing it is never destructive: the candidate keeps its evidence and its score, and what it should lose is only the chance to come back without new evidence.	En la capa {layer}, financiado desde la línea {line}. Rechazarlo nunca destruye nada: el candidato conserva su evidencia y su puntuación, y lo único que debería perder es la posibilidad de volver sin evidencia nueva.
 On the {layer} layer, funded from the {line} line. Refusing it is recorded, never destructive: the candidate keeps its evidence and its score, and what the record loses is only the chance to bring it back without new evidence.	En la capa {layer}, financiado desde la línea {line}. Rechazarlo se registra y nunca destruye nada: el candidato conserva su evidencia y su puntuación, y lo único que pierde el registro es la posibilidad de traerlo de vuelta sin evidencia nueva.
 On this machine	En esta máquina
@@ -3709,6 +3776,7 @@ One line per question a reader has, written by the server and printed here uncha
 One note did not change.	Una nota no ha cambiado.
 One of your linked project folders — a new folder is created inside it for this repository.	Una de tus carpetas de proyecto enlazadas — se crea una carpeta nueva dentro para este repositorio.
 One pane at a time, so a single GPU is not shared	Un panel cada vez, para no repartir una sola GPU
+One per line. Said alone, these silence the current reply instead of being sent. Added to the built-in list (stop, para, cállate…), never replacing it.	Una por línea. Dichas solas, silencian la respuesta actual en lugar de enviarse. Se añaden a la lista integrada (stop, para, cállate…), nunca la sustituyen.
 One prompt, several models, side by side. Write it here.	Un prompt, varios modelos, en paralelo. Escríbelo aquí.
 One rule per line. Without a rubric a local corrector rambles.	Una regla por línea. Sin rúbrica, un corrector local divaga.
 One search lane was unavailable; these are the lexical hits alone.	Una vía de búsqueda no estaba disponible; estos son solo los resultados léxicos.
@@ -3716,6 +3784,7 @@ One thing left before Faustus is ready	Falta una cosa para que Faustus esté lis
 Only Ollama request options are accepted (num_batch, num_thread, min_p, top_k, repeat_penalty, seed, stop…). llama-server flags such as --jinja, --spec-* or --cache-type-* are not per-request options; set them where Ollama starts its runner.	Solo se aceptan opciones de petición de Ollama (num_batch, num_thread, min_p, top_k, repeat_penalty, seed, stop…). Los flags de llama-server como --jinja, --spec-* o --cache-type-* no son opciones por petición; configúralos donde Ollama arranca su runner.
 Only a measured (evaluated or recommended) profile can be activated	Solo se puede activar un perfil medido (evaluado o recomendado)
 Only a signed-in administrator can change host trust.	Sólo un administrador con sesión iniciada puede cambiar la confianza del servidor.
+Only answer when I say Faustus first	Responder solo cuando diga «Faustus» primero
 Only available when the candidate is a measured improvement	Solo disponible cuando el candidato es una mejora medida
 Only for Log in / Unlock; it is never stored.	Solo para Iniciar sesión / Desbloquear; nunca se guarda.
 Only for a GitHub Enterprise Server of your own; leave it empty for github.com.	Solo para un GitHub Enterprise Server propio; déjalo vacío para github.com.
@@ -3750,15 +3819,19 @@ Open Local models	Abrir Modelos locales
 Open Settings	Abrir Ajustes
 Open Source control	Abrir Control de versiones
 Open URL	Abrir URL
+Open URL (optional)	URL de apertura (opcional)
+Open WhatsApp on your phone	Abre WhatsApp en tu teléfono
 Open a council room	Abrir una sala de consejo
 Open a document to see comments anchored on it, and to review what it links to.	Abre un documento para ver los comentarios anclados en él y revisar a qué enlaza.
 Open a picture from the library, start a blank canvas, or pick up a draft.	Abre una imagen de la biblioteca, empieza un lienzo en blanco o retoma un borrador.
 Open a project file…	Abrir un archivo de proyecto…
+Open as a desktop window	Abrir como ventana de escritorio
 Open as a document	Abrir como documento
 Open automatically	Abrir automáticamente
 Open conversation	Abrir conversación
 Open from the library	Abrir desde la biblioteca
 Open full screen	Abrir a pantalla completa
+Open in Faustus	Abrir en Faustus
 Open in Studio	Abrir en Studio
 Open in a chat	Abrir en una conversación
 Open in its chat	Abrir en su chat
@@ -3771,6 +3844,7 @@ Open licence: you can run it without buying an account.	Licencia abierta: puedes
 Open on Hugging Face	Abrir en Hugging Face
 Open one from the library on the left, or start a new one.	Abre uno desde la biblioteca de la izquierda, o crea uno nuevo.
 Open one to see what went into it, and what did not.	Abre uno para ver qué entró y qué se quedó fuera.
+Open photo	Abrir foto
 Open results	Abrir resultados
 Open signup	Registro abierto
 Open source	Abrir fuente
@@ -3812,6 +3886,7 @@ OpenRouter preferences	Preferencias de OpenRouter
 OpenRouter preferences saved.	Preferencias de OpenRouter guardadas.
 OpenRouter.	OpenRouter.
 Opened	Abierta
+Opened once the app is running — its own browser tab or desktop window.	Se abre en cuanto la app está en marcha — su propia pestaña del navegador o ventana de escritorio.
 Opening a file needs a working folder.	Para abrir un fichero hace falta una carpeta de trabajo.
 Opening microphone…	Abriendo el micrófono…
 Opening voice mode…	Abriendo el modo de voz…
@@ -3940,6 +4015,7 @@ Pause (nothing new starts; what is running finishes)	Pausar (no arranca nada nue
 Pause all	Pausar todas
 Pause all {n} active automations?	¿Pausar las {n} automatizaciones activas?
 Pause mail notifications while active	Pausar las notificaciones de correo mientras esté activa
+Pause that ends your turn	Pausa que termina tu turno
 Pause {n} active automation?	¿Pausar {n} automatización activa?
 Paused	En pausa
 Paused by you. Work already in flight finishes and is recorded.	Pausada por ti. Lo que ya estaba en marcha termina y queda anotado.
@@ -3954,6 +4030,7 @@ Perfect	Perfecto
 Perlin flow	Flujo Perlin
 Permission answered	Permiso respondido
 Permission receipt	Recibo de permiso
+Permission: {state}	Permiso: {state}
 Permissions	Permisos
 Persona	Persona
 Persona for {model}	Personaje para {model}
@@ -3968,6 +4045,7 @@ Photo on the note	Foto de la nota
 Physical GPUs	GPU físicas
 Physical identity (uuid/bus id), never an index — an index is only a runtime slot, and can point at a different card after a reconnect.	Identidad física (uuid/bus id), nunca un índice — un índice es solo una ranura en tiempo de ejecución y puede apuntar a otra tarjeta tras reconectar.
 Pick a changed file or a commit to see its diff.	Elige un fichero modificado o un commit para ver su diff.
+Pick a chat	Elige un chat
 Pick a deployment from the list to see its full ficha.	Elige un despliegue de la lista para ver su ficha completa.
 Pick a layer to transform.	Elige una capa para transformar.
 Pick a message.	Elige un mensaje.
@@ -4006,8 +4084,12 @@ Pinned summary	Resumen fijado
 Pinned to Home	Fijada en Inicio
 Pinning…	Fijando…
 Pipeline	Pipeline
+Piper engine installed.	Motor de Piper instalado.
+Piper voice	Voz de Piper
 Pitfalls	Trampas
 Place	Colocar
+Placeholders: {input_path} {output_path} {language}. Prints the transcript to stdout, or writes {output_path} if present.	Marcadores: {input_path} {output_path} {language}. Imprime la transcripción en la salida estándar, o escribe {output_path} si está presente.
+Placeholders: {input_path} {output_path} {voice} {speed} {language}. Must write a WAV file to {output_path}.	Marcadores: {input_path} {output_path} {voice} {speed} {language}. Debe escribir un archivo WAV en {output_path}.
 Placement	Ubicación
 Placement: auto	Ubicación: auto
 Placement: fill GPU {n} first	Ubicación: llenar primero la GPU {n}
@@ -4017,10 +4099,12 @@ Plan steps	Pasos del plan
 Plan, execute, review, verify. This room may change things.	Planificar, ejecutar, revisar, verificar. Esta sala sí puede cambiar cosas.
 Planning the research…	Planificando la investigación…
 Platform	Plataforma
+Played	Reproducido
 Playhead: {t}	Cabezal: {t}
 Point this project at a new folder — refuses one that does not exist, and keeps its memories and relations.	Apunta este proyecto a una carpeta nueva — rechaza una que no exista, y conserva sus memorias y relaciones.
 Point to a change	Señalar un cambio
 Polled every 0.5s until it answers, or the timeout runs out — nothing is ever killed.	Se comprueba cada 0,5 s hasta que responde o se agota el tiempo; nunca se mata el proceso.
+Polled until it answers, or the timeout runs out — nothing is ever killed.	Se consulta hasta que responde, o se agota el tiempo de espera — nunca se mata nada.
 Polygon mask	Máscara poligonal
 Port	Puerto
 Portrait 1024 × 1536	Vertical 1024 × 1536
@@ -4205,6 +4289,8 @@ Re-observe everything that has aged past its guarantee.	Volver a observar todo l
 Re-read installed and loaded models	Releer los modelos instalados y cargados
 Re-reads the skills folder.	Vuelve a leer la carpeta de skills.
 Reachable from the network	Accesible desde la red
+Reaching Faustus away from this network needs the server exposed over HTTPS — a VPN or tunnel to it, set up once by whoever runs the server.	Acceder a Faustus fuera de esta red requiere que el servidor esté expuesto por HTTPS — una VPN o un túnel hacia él, configurado una vez por quien administra el servidor.
+React	Reaccionar
 Reactivate	Reactivar
 Reactivated	Reactivado
 Reactivated.	Reactivado.
@@ -4255,6 +4341,7 @@ Reading the observations	Leyendo las observaciones
 Reading the orphans	Leyendo los huérfanos
 Reading the session…	Leyendo la sesión…
 Reading {n} sources	Leyendo {n} fuentes
+Reading {sites}	Leyendo {sites}
 Reading…	Leyendo…
 Reads the last reply aloud.	Lee en voz alta la última respuesta.
 Reads the whole thread and answers every point	Lee todo el hilo y responde a cada punto
@@ -4264,6 +4351,7 @@ Real, authorized execution	Ejecución real autorizada
 Really delete {what}?	¿Seguro que borras {what}?
 Reason	Motivo
 Reasoning	Razonamiento
+Reasoning (think)	Razonamiento (think)
 Reasoning / thinking mode	Modo de razonamiento
 Reasoning cut off	Razonamiento cortado
 Reasoning parser	Parser de razonamiento
@@ -4289,11 +4377,13 @@ Reconcile	Reconciliar
 Reconciliation ran. {n} conflict(s) were settled.	La reconciliación se ejecutó. Se resolvieron {n} conflicto(s).
 Reconnect	Reconectar
 Reconnect with Google	Reconectar con Google
+Reconnecting…	Reconectando…
 Record	Registrar
 Record a technical decision and why…	Registra una decisión técnica y por qué…
 Record it	Registrarlo
 Record that this was classified wrongly, and why.	Registra que esto se clasificó mal, y por qué.
 Record the refusal	Registrar el rechazo
+Record voice note	Grabar nota de voz
 Recorded against {ref}	Se anotará contra {ref}
 Recorded rather than decided: when two sources disagree the mirror keeps both claims and says what would settle it, because a wrong answer chosen silently is worse than a disagreement shown plainly.	Registrado en vez de decidido: cuando dos fuentes discrepan el espejo guarda ambas afirmaciones y dice qué lo resolvería, porque una respuesta equivocada elegida en silencio es peor que un desacuerdo mostrado con claridad.
 Recorded with no reference	Se anotará sin referencia
@@ -4498,6 +4588,7 @@ Researching	Investigando
 Reset	Restablecer
 Reset to defaults	Restablecer valores por defecto
 Reset view	Restablecer vista
+Reset zoom	Restablecer zoom
 Resize	Redimensionar
 Resize the panel	Cambiar el tamaño del panel
 Resolution	Resolución
@@ -4605,6 +4696,7 @@ Run another beside it	Lanzar otra al lado
 Run authorized probe (one token)	Ejecutar sonda autorizada (un token)
 Run by Faustus in the folder after the workers — their own claims are never the proof. Empty = the project's test runner is detected (pytest, npm test, cargo, go, make test)	Lo corre Faustus en la carpeta después de los workers — sus propias afirmaciones nunca son la prueba. Vacío = se detecta el runner de tests del proyecto (pytest, npm test, cargo, go, make test)
 Run enabled tools without approval prompts. Tool and account restrictions still apply.	Ejecuta herramientas activadas sin pedir permiso. Se mantienen las restricciones de herramientas y de la cuenta.
+Run instead of the default stop, e.g. a stop script.	Se ejecuta en lugar de la parada por defecto, por ejemplo un script de parada.
 Run it	Ejecutarla
 Run it now, rather than only recording the request	Ejecutarlo ahora, en vez de solo registrar la petición
 Run maintenance	Ejecutar mantenimiento
@@ -4640,6 +4732,7 @@ Runs the skill on a task of its own, with the agent, and grades the result. Acti
 Runs without asking except for irreversible effects; higher budgets.	No pregunta salvo por efectos irreversibles; presupuestos más altos.
 Runtime	Runtime
 Runtime buffers	Búferes en tiempo de ejecución
+Runtime: {runtime}	Motor: {runtime}
 SHA-256	SHA-256
 SKILL.md saved	SKILL.md guardado
 SSH host	Host SSH
@@ -4747,6 +4840,7 @@ Say which folder the workers may touch	Di qué carpeta pueden tocar los workers
 Scale, rotate and flip the layer (Ctrl+Alt+T)	Escalar, girar y voltear la capa (Ctrl+Alt+T)
 Scan	Escanear
 Scan it with the authenticator app, or type the secret by hand:	Escanéalo con la app de autenticación, o escribe el secreto a mano:
+Scan this code	Escanea este código
 Scanned PDF — only the pages, not searchable text, were extracted.	PDF escaneado — solo se extrajeron las páginas, no texto buscable.
 Scanned {scanned} · reindexed {reindexed} · removed {removed} · {symbols} symbols in {ms} ms	Escaneados {scanned} · reindexados {reindexed} · eliminados {removed} · {symbols} símbolos en {ms} ms
 Scanning	Revisando
@@ -4793,10 +4887,12 @@ Search experts…	Buscar expertos…
 Search findings…	Buscar hallazgos…
 Search health	Salud de la búsqueda
 Search in files	Buscar en ficheros
+Search in this chat	Buscar en este chat
 Search in this conversation	Buscar en esta conversación
 Search in this conversation…	Buscar en esta conversación…
 Search in {folder}…	Buscar en {folder}…
 Search lint findings	Buscar hallazgos del lint
+Search messages…	Buscar mensajes…
 Search model or family…	Buscar modelo o familia…
 Search models	Buscar modelos
 Search model…	Buscar modelo…
@@ -4848,6 +4944,7 @@ Seed	Semilla
 Seen	Visto
 Segment	Segmento
 Select	Seleccionar
+Select a chat on the left to read and answer it.	Selecciona un chat a la izquierda para leerlo y responderlo.
 Select a model	Selecciona un modelo
 Select a model first.	Selecciona primero un modelo.
 Select a node in the plan to inspect its contract.	Selecciona un nodo del plan para inspeccionar su contrato.
@@ -4873,6 +4970,7 @@ Selection to mask	Selección a máscara
 Selective recall	Recuperación selectiva
 Send	Enviar
 Send a message to another chat	Envía un mensaje a otro chat
+Send a test notification	Enviar una notificación de prueba
 Send after	Enviar después
 Send anyway	Enviar igualmente
 Send as email	Enviar por correo
@@ -4893,6 +4991,7 @@ Send your query and public built-in tool descriptions to your configured reranke
 Send {n} comment to the agent as a task	Enviar {n} comentario al agente como tarea
 Send {n} comments to the agent as a task	Enviar {n} comentarios al agente como tarea
 Send {n} picked	Enviar {n} marcadas
+Sending…	Enviando…
 Sends a single real request (max_tokens: 1) to the running model. Continue?	Envía una única petición real (max_tokens: 1) al modelo en ejecución. ¿Continuar?
 Sends each commit to the remote right after it is made.	Envía cada commit al remoto justo después de hacerlo.
 Sent	Enviados
@@ -4910,6 +5009,7 @@ Server	Servidor
 Server URL	URL del servidor
 Server added	Servidor añadido
 Server error	Error del servidor
+Server process (with readiness check)	Proceso de servidor (con comprobación de disponibilidad)
 Server removed	Servidor quitado
 Servers	Servidores
 Services	Servicios
@@ -4944,6 +5044,7 @@ Settings already match this profile.	Los ajustes ya coinciden con este perfil.
 Settings is one screen with sections down the side. Each has its own address.	Ajustes es una pantalla con secciones al lado. Cada una tiene su propia dirección.
 Settings to review	Configuración que revisar
 Settings → Agent	Ajustes → Agente
+Settings → Linked devices → Link a device	Ajustes → Dispositivos vinculados → Vincular un dispositivo
 Setup & settings	Configuración y ajustes
 Setup and sign-in help	Ayuda de instalación e inicio de sesión
 Several models in one conversation, each as itself or wearing a persona. They answer you and each other.	Varios modelos en una conversación, cada uno como él mismo o con un personaje. Te responden a ti y entre ellos.
@@ -4966,6 +5067,7 @@ Shell	Terminal
 Shell / Python / Files	Terminal / Python / Ficheros
 Shift	Mayús
 Shipped with Faustus. Put a file with the same slug under DATA_DIR/agents to replace it.	Viene con Faustus. Un fichero con el mismo slug en DATA_DIR/agents lo sustituye.
+Short	Corta
 Short and to the point	Corto y al grano
 Short by {n}.	Faltan {n}.
 Short sentences, warm, signs with a first name…	Frases cortas, cercano, firma con el nombre de pila…
@@ -5113,6 +5215,7 @@ Speculative MTP	MTP especulativo
 Speculative decoding	Decodificación especulativa
 Speculative method	Método especulativo
 Speculative tokens	Tokens especulativos
+Speech command	Comando de voz
 Speech output failed. The full response is still in the chat.	Falló la síntesis de voz. La respuesta completa sigue en el chat.
 Speech playback timed out.	Se ha agotado el tiempo de reproducción de voz.
 Speed	Velocidad
@@ -5156,6 +5259,7 @@ Start something	Empezar algo
 Start speaking	Empezar a hablar
 Start the app	Iniciar la app
 Start the audit	Empezar la auditoría
+Start the bridge	Iniciar el puente
 Start turn	Turno inicial
 Start workflow	Iniciar workflow
 Started	En marcha
@@ -5169,6 +5273,7 @@ Starting	Iniciando
 Starting…	Arrancando…
 Starts	Empieza
 Starts a new conversation.	Empieza una conversación nueva.
+Starts from your default; changing a control overrides it for this chat only.	Empieza desde tu valor por defecto; cambiar un control lo sobrescribe solo para esta conversación.
 State	Estado
 State Mirror	Espejo de estado
 State integrity	Integridad del estado
@@ -5191,13 +5296,19 @@ Stop Ollama?	¿Parar Ollama?
 Stop all	Parar todos
 Stop all started by Faustus	Parar todo lo iniciado por Faustus
 Stop and remove	Parar y quitar
+Stop arguments (one per line)	Argumentos de parada (uno por línea)
+Stop command (optional)	Comando de parada (opcional)
 Stop dictating	Parar el dictado
 Stop everything Faustus started?	¿Parar todo lo que Faustus inició?
 Stop generation	Parar la generación
+Stop phrases	Frases de parada
 Stop placing	Dejar de colocar
 Stop reading	Parar la lectura
+Stop recording	Detener grabación
 Stop selecting	Dejar de seleccionar
+Stop the bridge?	¿Detener el puente?
 Stop this run	Detener esta ejecución
+Stop working folder	Carpeta de trabajo de la parada
 Stop {name}	Parar a {name}
 Stop {name}?	¿Parar {name}?
 Stopped	Detenida
@@ -5241,6 +5352,7 @@ Subfolder (optional)	Subcarpeta (opcional)
 Subject	Asunto
 Subject or character	Sujeto o personaje
 Submit	Enviar
+Subscribed devices	Dispositivos suscritos
 Subscription	Suscripción
 Subscription session detected	Sesión de suscripción detectada
 Subtitle controls	Controles de subtítulos
@@ -5259,6 +5371,7 @@ Suggestions from {name}	Sugerencias de {name}
 Suite	Suite
 Summarise	Resumir
 Summarise long mails	Resumir los correos largos
+Summarise this chat	Resumir este chat
 Summarise with AI	Resumir con IA
 Summarises the old messages into one.	Resume los mensajes antiguos en uno.
 Summarizing with {model}…	Resumiendo con {model}…
@@ -5357,6 +5470,7 @@ Test a decision	Probar decisión
 Test command	Comando de tests
 Test every visible skill, fix the weak ones with the teacher, flag what still fails	Probar todas las skills visibles, arreglar las flojas con el profesor y marcar las que sigan fallando
 Test file	Fichero de prueba
+Test notification sent.	Notificación de prueba enviada.
 Test prompt	Mensaje de prueba
 Test prompts	Prompts de prueba
 Test the search now	Probar la búsqueda ahora
@@ -5379,6 +5493,7 @@ That file is not an image.	Ese archivo no es una imagen.
 That is not a review result	Eso no es un resultado de revisión
 That is not a theme JSON.	Eso no es un JSON de tema.
 That is not valid JSON.	Eso no es JSON válido.
+That message is not loaded — try Load older messages.	Ese mensaje no está cargado — prueba «Cargar mensajes anteriores».
 That path is outside the project workspace — it was not linked.	Esa ruta está fuera del workspace del proyecto — no se enlazó.
 That path will not do as a working folder (it does not exist, is a file, or is a protected root).	Esa ruta no vale como carpeta de trabajo (no existe, es un fichero, o es una raíz protegida).
 That reference name is already used in this project.	Ese nombre de referencia ya se usa en este proyecto.
@@ -5432,6 +5547,7 @@ The blocks could not be read	No se han podido leer los bloques
 The board could not be read	No se ha podido leer la pizarra
 The board is empty	La pizarra está vacía
 The board is empty#issue_board	El tablero está vacío
+The browser could not reach its push service. Some privacy-focused browsers keep it switched off by default — enable push messaging in the browser's privacy settings, or install Faustus from another browser.	El navegador no ha podido conectar con su servicio de push. Algunos navegadores centrados en la privacidad lo traen desactivado: activa la mensajería push en sus ajustes de privacidad o instala Faustus desde otro navegador.
 The browser did not allow reading the clipboard. Paste with Ctrl+V instead.	El navegador no dejó leer el portapapeles. Pega con Ctrl+V.
 The browser refused the clipboard — select the code and copy it by hand.	El navegador rechazó el portapapeles — selecciona el código y cópialo a mano.
 The browser refused the clipboard — select the result and copy it by hand.	El navegador rechazó el portapapeles — selecciona el resultado y cópialo a mano.
@@ -5490,11 +5606,13 @@ The engine is off: nothing here is being compiled for a real turn.	El motor est�
 The engine is off: nothing is compiled and nothing is recorded. Turn Context Engine on in Settings — shadow mode first, which changes nothing the model sees.	El motor está apagado: no se compila nada y no se registra nada. Enciende el motor de contexto en Ajustes; primero el modo sombra, que no cambia nada de lo que ve el modelo.
 The engine is on but has not compiled anything in this scope yet. The first turn it handles will land here.	El motor está encendido pero todavía no ha compilado nada en este ámbito. El primer turno que atienda aterrizará aquí.
 The estimate follows your edits. Live readings describe the loaded model; saving applies the new context on its next request.	La estimación cambia al editar. La medición corresponde al modelo cargado; al guardar, el contexto nuevo se aplica en su siguiente petición.
+The exact program to run — never a shell string.	El programa exacto a ejecutar — nunca una cadena de shell.
 The experiences could not be read	No se han podido leer las experiencias
 The feedback could not be recorded	No se ha podido anotar la valoración
 The file changed outside this editor. Your draft is preserved.	El archivo ha cambiado fuera de este editor. Tu borrador se conserva.
 The file goes with it. This cannot be undone.	El archivo se va con ella. No se puede deshacer.
 The file has no layers.	El archivo no tiene capas.
+The first start installs the bridge (Node.js needed) and can take a few minutes.	El primer inicio instala el puente (necesita Node.js) y puede tardar unos minutos.
 The folder `{ws}` does not belong to a project.	La carpeta `{ws}` no es de ningún proyecto.
 The folder already has {file}; nothing written.	La carpeta ya tiene {file}; no se ha escrito nada.
 The folder has moved…	La carpeta se ha movido…
@@ -5734,14 +5852,17 @@ This account cannot see the local models.	Esta cuenta no puede ver los modelos l
 This account cannot see the model router.	Esta cuenta no puede ver el router de modelos.
 This account cannot see the tool catalog.	Esta cuenta no puede ver el catálogo de herramientas.
 This account has no SMTP or OAuth set up, so it cannot send. Check Settings → Integrations.	Esta cuenta no tiene SMTP ni OAuth configurados, así que no puede enviar. Míralo en Ajustes → Integraciones.
+This app has no address to open.	Esta app no tiene una dirección que abrir.
 This apply needs a human: these files changed on both sides since the experiment started, and nothing was written.	Este apply necesita a una persona: estos ficheros cambiaron en ambos lados desde que empezó el experimento, y no se escribió nada.
 This arrives as an instruction from you, and it does not change what that seat is allowed to do.	Esto llega como una instrucción tuya y no cambia lo que ese asiento tiene permitido hacer.
 This block is what Faustus prepends to every conversation of this project. It was available in the API and no screen showed it: knowing what it knows before asking for anything is half of trusting it.	Este bloque es el que Faustus antepone a cada conversación de este proyecto. Estaba disponible en la API y no lo enseñaba ninguna pantalla: saber qué sabe antes de pedirle nada es la mitad de confiar en él.
 This branch has no history to show.	Esta rama no tiene historial que mostrar.
 This branch is not fully merged into the current one — deleting it may lose commits.	Esta rama no está completamente fusionada en la actual: borrarla puede perder commits.
 This browser cannot transcribe speech. Choose local Whisper in Settings → Voice.	Este navegador no puede transcribir voz. Elige Whisper local en Ajustes → Voz.
+This browser does not support push notifications.	Este navegador no admite notificaciones push.
 This browser has no speech output.	Este navegador no dispone de síntesis de voz.
 This browser has no speech recognition and the server is in browser mode.	Este navegador no reconoce voz y el servidor está en modo navegador.
+This browser has not offered to install Faustus yet. Reload the page, or use its own menu for "Install app" / "Add to Home Screen".	Este navegador aún no ha ofrecido instalar Faustus. Recarga la página, o usa su propio menú "Instalar app" / "Añadir a pantalla de inicio".
 This build does not yet store the refusal: the server checks the improvement and echoes your reason back without changing its status, so the same improvement can be proposed again next round. The screen will say which of the two happened.	Esta versión todavía no almacena el rechazo: el servidor comprueba la mejora y devuelve tu motivo sin cambiar su estado, así que la misma mejora puede proponerse otra vez en la siguiente ronda. La pantalla dirá cuál de las dos cosas ocurrió.
 This build has no council engine: rooms open and read, and no turn runs.	Esta build no trae motor de consejo: las salas se abren y se leen, y no corre ningún turno.
 This build sent no policy for it.	Esta versión no envió ninguna política para él.
@@ -5758,6 +5879,7 @@ This connector is disabled.	Este conector está deshabilitado.
 This conversation	Esta conversación
 This conversation belongs to this project.	Esta conversación pertenece a este proyecto.
 This conversation was still working — picking it up live.	Esta conversación seguía trabajando: la retomo en directo.
+This device	Este dispositivo
 This diff was too large and was truncated.	Este diff era demasiado grande y se ha recortado.
 This document changed elsewhere. Your edits are kept here — choose how to continue.	Este documento cambió en otro sitio. Tus cambios se conservan aquí — elige cómo continuar.
 This document changed since you loaded it. The server now has revision {n}.	Este documento cambió desde que lo cargaste. El servidor tiene ahora la revisión {n}.
@@ -5779,6 +5901,7 @@ This machine	Esta máquina
 This machine and the SSH boxes	Esta máquina y las cajas SSH
 This marker is not in the block the model was given	Este marcador no está en el bloque que se le dio al modelo
 This message opens with «{prefix}». It was written by {who} and nothing about that changed.	Este mensaje empieza por «{prefix}». Lo escribió {who} y eso no ha cambiado.
+This message was deleted	Se eliminó este mensaje
 This message's outcome is uncertain — checking…	El resultado de este mensaje es incierto: comprobando…
 This mode has no checks configured.	Este modo no tiene comprobaciones configuradas.
 This model does not support tools; connectors will not be used.	Este modelo no admite herramientas; los conectores no se usarán.
@@ -5817,6 +5940,7 @@ This text appears {n} time — choose which one.	Este texto aparece {n} vez — 
 This text appears {n} times — choose which one.	Este texto aparece {n} veces — elige cuál.
 This tool publishes no JSON schema — enter raw JSON arguments.	Esta herramienta no publica un esquema JSON: introduce los argumentos como JSON en bruto.
 This turn is {state}	Este turno está en {state}
+This unlinks the phone; you will need to scan again.	Esto desvincula el teléfono; tendrás que escanear de nuevo.
 This week	Esta semana
 This work runs on the server. You can use other chats while it continues.	Este trabajo se ejecuta en el servidor. Puedes usar otros chats mientras continúa.
 Thorough draft	Borrador completo
@@ -5901,17 +6025,21 @@ Tournament	Torneo
 Trace a tool call	Trazar una llamada a herramienta
 Traced to	Rastreado hasta
 Track {id} clips	Clips de la pista {id}
+Transcribe	Transcribir
 Transcribe locally	Transcribir en local
 Transcribe with existing Whisper weights, then edit or translate the segments yourself. Dubbing uses an installed Windows voice and replaces the original audio; it does not clone voices or synchronize lips.	Transcribe con pesos de Whisper ya instalados y después edita o traduce los segmentos. El doblaje usa una voz instalada de Windows y sustituye el audio original; no clona voces ni sincroniza labios.
 Transcribing locally…	Transcribiendo en local…
 Transcribing…	Transcribiendo…
 Transcript in Studio	Transcripción en Studio
 Transcript or translation	Transcripción o traducción
+Transcription command	Comando de transcripción
 Transcription device	Dispositivo de transcripción
 Transcription failed. Check Settings → Voice and try again.	Falló la transcripción. Revisa Ajustes → Voz e inténtalo de nuevo.
 Transform	Transformar
 Transformation	Transformación
 Translate	Traducir
+Translate to English	Traducir al inglés
+Translate to Spanish	Traducir al español
 Translated to {language}	Traducido al {language}
 Translations default to {language}.	Las traducciones van por defecto al {language}.
 Translucent surfaces with the paper showing through.	Superficies translúcidas con el fondo asomando.
@@ -5995,6 +6123,7 @@ Unknown tool	Herramienta desconocida
 Unknown — never shown as zero or free	Desconocido — nunca se muestra como cero o gratis
 Unknown: {ids}	Desconocido: {ids}
 Unlink	Desvincular
+Unlinked — start again to get a new QR.	Desvinculado — inicia de nuevo para obtener un nuevo QR.
 Unlinked. The source itself was not deleted.	Desvinculado. La fuente en sí no se ha borrado.
 Unload	Descargar de memoria
 Unload and continue	Descargar y continuar
@@ -6010,6 +6139,7 @@ Unloading {name}…	Descargando {name}…
 Unloading…	Descargando…
 Unlock	Desbloquear
 Unnamed	Sin nombre
+Unnamed device	Dispositivo sin nombre
 Unpin	Desfijar
 Unpin (stops going in the context every time)	Desfijar (deja de ir siempre en el contexto)
 Unpin {name}	Dejar de fijar {name}
@@ -6094,6 +6224,7 @@ Use "{name}"	Usar «{name}»
 Use 1–48 letters, numbers, underscores or hyphens for the reference name.	Usa entre 1 y 48 letras, números, guiones bajos o guiones en el nombre.
 Use @file for explicit references and Docs for indexed documents. Project context stays attached to the project.	Usa @archivo para referencias explícitas y Docs para documentos indexados. El contexto del proyecto sigue vinculado al proyecto.
 Use an API key. API usage is billed separately from chat subscriptions; provider limits and free tiers may apply.	Usa una clave de API. Su consumo se factura aparte de la suscripción del chat; puede haber límites y planes gratuitos del proveedor.
+Use as draft	Usar como borrador
 Use as reference	Usar como referencia
 Use case	Uso
 Use estimated maximum	Usar máximo estimado
@@ -6191,6 +6322,7 @@ Visual references	Referencias visuales
 Visual report	Informe visual
 Visual style	Estilo visual
 Voice	Voz
+Voice "{name}" installed.	Voz «{name}» instalada.
 Voice conversation	Conversación por voz
 Voice excerpt finished. The complete answer, including code and tables, is in the chat.	Ha terminado el extracto hablado. La respuesta completa, con código y tablas, está en el chat.
 Voice model	Modelo de voz
@@ -6213,6 +6345,7 @@ Waiting for your answer	Esperando tu respuesta
 Waiting for your approval	Esperando tu aprobación
 Waiting for your permission	Esperando tu permiso
 Waiting for {slot}…	Esperando a {slot}…
+Waiting for “Faustus”	Esperando «Faustus»
 Waiting on	Esperando a
 Waiting on another run to finish	Esperando a que termine otra ejecución
 Waiting to upload…	Esperando para subir…
@@ -6220,6 +6353,7 @@ Wall-clock time in the timezone below.	Hora local en la zona horaria indicada ab
 Was not running	No estaba en marcha
 Web	Web
 Web & research	Web e investigación
+Web address	Dirección web
 Web search	Búsqueda web
 Web search on or off.	Búsqueda web encendida o apagada.
 Web search, the terminal, your indexed documents, proposal mode: each one on its own, per conversation.	Búsqueda web, terminal, tus documentos indexados, modo propuesta: cada uno por su cuenta, en cada conversación.
@@ -6301,6 +6435,7 @@ What the machine is doing: GPU, VRAM, the model that is loaded. Click it for the
 What the model receives, literally	Lo que recibe el modelo, literalmente
 What the model sees	Lo que ve el modelo
 What the tidy did	Lo que ha hecho la limpieza
+What this app is, in a few words	Qué es esta app, en pocas palabras
 What this cannot promise:	Lo que esto no puede prometer:
 What this comparison could not do	Lo que esta comparación no pudo hacer
 What this expert knows	Qué sabe este experto
@@ -6325,6 +6460,8 @@ What you archive from a note appears here and can be recovered.	Lo que archives 
 What you asked for	Lo que pediste
 What you want to achieve (the steps go below)	Qué quieres conseguir (los pasos van abajo)
 Whatever a seat asks for, this room grants at most {ceiling}: the ceiling is the policy’s, and the server lowers a profile and never raises one.	Pida lo que pida un asiento, esta sala concede como mucho {ceiling}: el techo es el de la política, y el servidor baja un perfil pero nunca lo sube.
+WhatsApp	WhatsApp
+WhatsApp QR code	Código QR de WhatsApp
 When	Cuándo
 When a model does not fit in VRAM	Cuando un modelo no cabe en VRAM
 When a task, a render or an agent does something, it will appear here with its state and how long it took.	Cuando una tarea, un render o un agente hagan algo, aparecerá aquí con su estado y lo que tardó.
@@ -6416,6 +6553,7 @@ Write	Escribir
 Write 	Escribe 
 Write SKILL.md from its fields	Escribir SKILL.md a partir de sus campos
 Write a comment…	Escribe un comentario…
+Write a message…	Escribe un mensaje…
 Write a message…  /command	Escribe un mensaje…  /comando
 Write a question above and press Start. Reports land in the Library too.	Escribe una pregunta arriba y pulsa Empezar. Los informes van también a la Biblioteca.
 Write a script that sorts my downloads by type	Escribe un script que ordene mis descargas por tipo
@@ -6466,6 +6604,8 @@ Your indexed documents on or off.	Tus documentos indexados encendidos o apagados
 Your local time.	Tu hora local.
 Your message	Tu mensaje
 Your official clients	Tus clientes oficiales
+Your own account through a local bridge, like WhatsApp Web: nothing runs until you start it, and it stays on this machine.	Tu propia cuenta a través de un puente local, como WhatsApp Web: nada se ejecuta hasta que lo inicies, y se queda en esta máquina.
+Your own account through a local bridge: read what people wrote, answer from a chat, get a daily digest card.	Tu propia cuenta a través de un puente local: lee lo que escribió la gente, responde desde un chat, recibe una tarjeta de resumen diario.
 Your reason is stored against the improvement itself, not against this decision — so this record keeps showing that it was offered here and turned down, and future runs stop proposing it. If anything fails to store, the screen says so instead of claiming otherwise.	Tu motivo se guarda contra la mejora en sí, no contra esta decisión — así que este registro sigue mostrando que se ofreció aquí y se rechazó, y las ejecuciones futuras dejan de proponerla. Si algo no llega a guardarse, la pantalla lo dice en vez de afirmar lo contrario.
 Your rooms	Tus salas
 Your tags	Tus etiquetas
@@ -6479,6 +6619,7 @@ Zoom blur…	Desenfoque de zoom…
 Zoom in	Acercar
 Zoom out	Alejar
 [Settings](/settings?s=shortcuts) is where they change.	Se cambian en [Ajustes](/settings?s=shortcuts).
+[attachment]	[adjunto]
 `/backup now` takes one · `/backup verify N` checks that snapshot N would really restore. Restoring is manual and destructive: stop Faustus, then `python scripts/odysseus-backup restore <file> --yes`.	`/backup now` hace una · `/backup verify N` comprueba que la copia N restauraría de verdad. Restaurar es manual y destructivo: para Faustus y luego `python scripts/odysseus-backup restore <fichero> --yes`.
 `/help name` explains one command, its aliases and its subcommands.	`/help nombre` explica un comando, sus alias y sus subcomandos.
 `/memory delete id` removes one; [Memory](/memory) is the screen.	`/memory delete id` borra uno; la pantalla es [Memoria](/memory).
@@ -6512,6 +6653,7 @@ active	activas
 actual tool calls: {v}	llamadas a herramientas reales: {v}
 actual: {n} tool call(s)	real: {n} llamada(s) a herramienta(s)
 added	añadidos
+added {date}	añadido el {date}
 admin	admin
 ageing	envejeciendo
 agent	agente
@@ -6598,6 +6740,7 @@ chars	caracteres
 chat	chat
 chat with the control board. Ctrl+Enter runs.	con el tablero. Ctrl+Intro lanza.
 checked by: {what}	comprobado por: {what}
+checking…	comprobando…
 choose a project	elige un proyecto
 chorus	estribillo
 chunks	fragmentos
@@ -6643,9 +6786,9 @@ date unknown	fecha desconocida
 deduped	deduplicado
 deep review	revisión intensiva
 default	por defecto
-default — kept loaded by Faustus	por defecto — Faustus lo mantiene cargado
 default model	modelo por defecto
 default search	búsqueda por defecto
+default — kept loaded by Faustus	por defecto — Faustus lo mantiene cargado
 deferred: {why}	aplazado: {why}
 definition (optional)	definición (opcional)
 degraded	degradado
@@ -6653,6 +6796,7 @@ delegation depth ceiling	techo de delegación
 deleted	borrados
 deltas: {what}	deltas: {what}
 demoted	degradadas
+denied	denegado
 depends on a capability that is not healthy	depende de una capacidad que no está sana
 deployment_id	deployment_id
 derived	derivado
@@ -6761,6 +6905,7 @@ git repository	repositorio git
 global default	por defecto global
 good for	va bien para
 gpu-box	gpu-box
+granted	concedido
 granted by {who} · {n} use(s) left	concedido por {who} · quedan {n} uso(s)
 guard	guardia
 hands back	entrega
@@ -6789,6 +6934,7 @@ imported	importado
 imported {c} conversations and {m} messages — {created} new, {updated} already here	importadas {c} conversaciones y {m} mensajes: {created} nuevas, {updated} ya estaban
 imports, calls, definitions, tests	imports, llamadas, definiciones, tests
 in VRAM	en VRAM
+in browser	en el navegador
 in its proof.	en su prueba.
 in parallel	en paralelo
 in progress	en curso
@@ -6933,6 +7079,7 @@ none	ninguna
 none — a root node	ninguno — un nodo raíz
 none: measures the running configuration	ninguno: mide la configuración en marcha
 not answering	no responde
+not asked yet	no solicitado aún
 not audited	sin auditar
 not available	no disponible
 not checked	sin comprobar
@@ -6947,6 +7094,7 @@ not read	no leído
 not reported	no reportado
 not set up	sin configurar
 not stated	sin indicar
+not subscribed on this device	sin suscribir en este dispositivo
 not tested	sin probar
 not wired	sin cablear
 nothing	nada
@@ -6991,6 +7139,7 @@ outro	outro
 outside	fuera
 outside the envelope	fuera del sobre
 over	sobre
+override	sobrescrito
 page unknown	página desconocida
 page {n}	página {n}
 page {v}	página {v}
@@ -7123,6 +7272,7 @@ stalled	atascado
 starting…	arrancando…
 stopped	parado
 structure	estructura
+subscribed on this device	suscrito en este dispositivo
 subscription	suscripción
 supervisor	supervisor
 system RAM, over PCIe	RAM del sistema, por PCIe
@@ -7142,7 +7292,6 @@ text generation, by downloads	generación de texto, por descargas
 that	eso
 the UI smoke test fails	la prueba de humo de UI falla
 the ask, and nothing else	lo pedido, y nada más
-the default model is stepping aside	el modelo por defecto se está apartando
 the ask, and what a professional would not ship without	lo pedido, y lo que un profesional no entregaría sin ello
 the ask, plus adjacent work with a real return	lo pedido, más trabajo adyacente con retorno real
 the ask, plus ambition	lo pedido, más ambición
@@ -7155,6 +7304,7 @@ the confidence stored on this edge	la confianza guardada en esta arista
 the core did not complete	el núcleo no se completó
 the cup, the dog…	la taza, el perro…
 the database, its write-ahead log included	la base de datos, con su registro de escritura anticipada incluido
+the default model is stepping aside	el modelo por defecto se está apartando
 the disk or the tests say otherwise	el disco o las pruebas dicen lo contrario
 the effect itself is denied here	el efecto en sí está denegado aquí
 the evidence aged out and did not revalidate	la evidencia caducó y no se revalidó
@@ -7293,6 +7443,7 @@ yours	tuyo
 {base} — narrow: may be an external enclosure, verify manually (heuristic)	{base} — estrecho: puede ser una caja externa, verifica manualmente (heurística)
 {before} memories before, {after} after.	{before} recuerdos antes, {after} después.
 {bytes} ({source})	{bytes} ({source})
+{chats} chats · {messages} messages	{chats} chats · {messages} mensajes
 {count} options in {groups} groups.	{count} opciones en {groups} grupos.
 {covered} covered, {thin} thin, {pending} not yet	{covered} cubiertos, {thin} insuficientes, {pending} pendientes
 {covered} covered, {thin} thin, {pending} pending	{covered} cubiertos, {thin} insuficientes, {pending} pendientes
@@ -7315,6 +7466,7 @@ yours	tuyo
 {kind} · schema {schema} · revision {revision} · namespace {namespace}	{kind} · esquema {schema} · revisión {revision} · espacio {namespace}
 {kind} · {n} field(s) · {unknown} never observed	{kind} · {n} campo(s) · {unknown} nunca observados
 {k} known, {a} announced	{k} conocidas, {a} anunciadas
+{label} value	valor de {label}
 {login} (active)	{login} (activa)
 {lower}–{upper} GB	{lower}–{upper} GB
 {mb} MB · {p}% of its GPU memory	{mb} MB · {p}% de su memoria de GPU
@@ -7451,6 +7603,7 @@ yours	tuyo
 {n} failed	{n} fallidos
 {n} failed report removed	{n} informe fallido eliminado
 {n} failed reports removed	{n} informes fallidos eliminados
+{n} failed sends	{n} envíos fallidos
 {n} field filled	{n} campo relleno
 {n} field(s) sampled	{n} campo(s) muestreados
 {n} field(s), a complete snapshot	{n} campo(s), una instantánea completa
@@ -7739,151 +7892,3 @@ yours	tuyo
 …or upload a file	…o sube un archivo
 ≥ {lower} GB (incomplete: {reason})	≥ {lower} GB (incompleto: {reason})
 ⟨insert⟩	⟨insertar⟩
-Connected as {name}	Conectado como {name}
-Could not load messages.	No se pudieron cargar los mensajes.
-Filter chats…	Filtrar chats…
-GET /api/whatsapp/messages failed.	GET /api/whatsapp/messages falló.
-Installing the bridge (first time)… this can take a few minutes.	Instalando el puente (primera vez)… puede tardar unos minutos.
-Node.js is not installed — the bridge cannot start.	Node.js no está instalado — el puente no puede iniciarse.
-Nothing in the last 48 h	Nada en las últimas 48 h
-Open WhatsApp on your phone	Abre WhatsApp en tu teléfono
-Pick a chat	Elige un chat
-Reconnecting…	Reconectando…
-Scan this code	Escanea este código
-Settings → Linked devices → Link a device	Ajustes → Dispositivos vinculados → Vincular un dispositivo
-Start the bridge	Iniciar el puente
-Stop the bridge?	¿Detener el puente?
-The first start installs the bridge (Node.js needed) and can take a few minutes.	El primer inicio instala el puente (necesita Node.js) y puede tardar unos minutos.
-This unlinks the phone; you will need to scan again.	Esto desvincula el teléfono; tendrás que escanear de nuevo.
-Unlinked — start again to get a new QR.	Desvinculado — inicia de nuevo para obtener un nuevo QR.
-WhatsApp	WhatsApp
-WhatsApp QR code	Código QR de WhatsApp
-Write a message…	Escribe un mensaje…
-Your own account through a local bridge, like WhatsApp Web: nothing runs until you start it, and it stays on this machine.	Tu propia cuenta a través de un puente local, como WhatsApp Web: nada se ejecuta hasta que lo inicies, y se queda en esta máquina.
-Your own account through a local bridge: read what people wrote, answer from a chat, get a daily digest card.	Tu propia cuenta a través de un puente local: lee lo que escribió la gente, responde desde un chat, recibe una tarjeta de resumen diario.
-{chats} chats · {messages} messages	{chats} chats · {messages} mensajes
-No messages arrived in this chat during that window.	No llegaron mensajes a este chat en ese periodo.
-No chats match this filter yet.	Ningún chat coincide con este filtro todavía.
-Select a chat on the left to read and answer it.	Selecciona un chat a la izquierda para leerlo y responderlo.
-Transcribe	Transcribir
-Load older messages	Cargar mensajes anteriores
-Asking your phone…	Preguntando a tu teléfono…
-No messages in this chat yet	Aún no hay mensajes en este chat
-Nothing has arrived in this chat.	Aún no ha llegado nada a este chat.
-Ask Faustus	Preguntar a Faustus
-Ask anything about this chat	Pregunta lo que quieras sobre este chat
-Attach a file	Adjuntar un archivo
-Cancel reply	Cancelar respuesta
-Delete for everyone	Eliminar para todos
-Delete for everyone?	¿Eliminar para todos?
-Forwarded	Reenviado
-Nothing to show.	Nada que mostrar.
-Open in Faustus	Abrir en Faustus
-Played	Reproducido
-React	Reaccionar
-Record voice note	Grabar nota de voz
-Search in this chat	Buscar en este chat
-Search messages…	Buscar mensajes…
-Sending…	Enviando…
-Stop recording	Detener grabación
-That message is not loaded — try Load older messages.	Ese mensaje no está cargado — prueba «Cargar mensajes anteriores».
-This message was deleted	Se eliminó este mensaje
-Use as draft	Usar como borrador
-[attachment]	[adjunto]
-Summarise this chat	Resumir este chat
-Draft a reply	Redactar una respuesta
-Translate to Spanish	Traducir al español
-Translate to English	Traducir al inglés
-Reset zoom	Restablecer zoom
-Open photo	Abrir foto
-Apps	Apps
-Add app	Añadir app
-Could not load apps.	No se pudieron cargar las apps.
-Loading apps	Cargando apps
-No apps yet	Aún no hay apps
-An app is one of your own local projects — a server, a desktop program or a web address — that you want to launch, watch and stop from here.	Una app es uno de tus proyectos locales — un servidor, un programa de escritorio o una dirección web — que quieres lanzar, ver en consola y parar desde aquí.
-in browser	en el navegador
-Console	Consola
-No log output yet.	Aún no hay salida en el registro.
-Could not read the log.	No se pudo leer el registro.
-A working folder is required for a server process.	Se requiere una carpeta de trabajo para un proceso de servidor.
-Edit app	Editar app
-Server process (with readiness check)	Proceso de servidor (con comprobación de disponibilidad)
-Desktop program (no readiness check)	Programa de escritorio (sin comprobación de disponibilidad)
-Web address	Dirección web
-What this app is, in a few words	Qué es esta app, en pocas palabras
-The exact program to run — never a shell string.	El programa exacto a ejecutar — nunca una cadena de shell.
-Arguments (one per line)	Argumentos (uno por línea)
-Environment (KEY=value per line)	Entorno (CLAVE=valor por línea)
-Polled until it answers, or the timeout runs out — nothing is ever killed.	Se consulta hasta que responde, o se agota el tiempo de espera — nunca se mata nada.
-Open URL (optional)	URL de apertura (opcional)
-Opened once the app is running — its own browser tab or desktop window.	Se abre en cuanto la app está en marcha — su propia pestaña del navegador o ventana de escritorio.
-Icon (absolute path to .png/.ico/.svg/.jpg)	Icono (ruta absoluta a .png/.ico/.svg/.jpg)
-Stop command (optional)	Comando de parada (opcional)
-Run instead of the default stop, e.g. a stop script.	Se ejecuta en lugar de la parada por defecto, por ejemplo un script de parada.
-Stop arguments (one per line)	Argumentos de parada (uno por línea)
-Stop working folder	Carpeta de trabajo de la parada
-Open as a desktop window	Abrir como ventana de escritorio
-Manage, launch and watch these from the Apps section of Processes.	Gestiona, lanza y observa estas desde la sección Apps de Procesos.
-This app has no address to open.	Esta app no tiene una dirección que abrir.
-Could not disable notifications.	No se pudieron desactivar las notificaciones.
-Could not enable notifications.	No se pudieron activar las notificaciones.
-Could not load the subscribed devices.	No se pudieron cargar los dispositivos suscritos.
-Could not remove the device.	No se pudo eliminar el dispositivo.
-Could not send the test notification.	No se pudo enviar la notificación de prueba.
-Device name	Nombre del dispositivo
-Device name (optional)	Nombre del dispositivo (opcional)
-Device removed.	Dispositivo eliminado.
-Enable notifications on this device	Activar notificaciones en este dispositivo
-Faustus installed.	Faustus instalado.
-Faustus is already installed on this device.	Faustus ya está instalado en este dispositivo.
-Install Faustus	Instalar Faustus
-Install Faustus as an app and get notifications here when a turn finishes, an approval is waiting, or a reminder is due.	Instala Faustus como app y recibe notificaciones aquí cuando termine un turno, haya una aprobación pendiente o venza un recordatorio.
-Installation dismissed.	Instalación descartada.
-Loading devices	Cargando dispositivos
-No device is subscribed yet.	Todavía no hay ningún dispositivo suscrito.
-Notifications disabled on this device.	Notificaciones desactivadas en este dispositivo.
-Notifications enabled on this device.	Notificaciones activadas en este dispositivo.
-On iPhone or iPad: open the Share menu and choose "Add to Home Screen".	En iPhone o iPad: abre el menú Compartir y elige "Añadir a pantalla de inicio".
-Permission: {state}	Permiso: {state}
-Reaching Faustus away from this network needs the server exposed over HTTPS — a VPN or tunnel to it, set up once by whoever runs the server.	Acceder a Faustus fuera de esta red requiere que el servidor esté expuesto por HTTPS — una VPN o un túnel hacia él, configurado una vez por quien administra el servidor.
-Send a test notification	Enviar una notificación de prueba
-Subscribed devices	Dispositivos suscritos
-Test notification sent.	Notificación de prueba enviada.
-This browser does not support push notifications.	Este navegador no admite notificaciones push.
-This browser has not offered to install Faustus yet. Reload the page, or use its own menu for "Install app" / "Add to Home Screen".	Este navegador aún no ha ofrecido instalar Faustus. Recarga la página, o usa su propio menú "Instalar app" / "Añadir a pantalla de inicio".
-This device	Este dispositivo
-Unnamed device	Dispositivo sin nombre
-added {date}	añadido el {date}
-checking…	comprobando…
-denied	denegado
-granted	concedido
-not asked yet	no solicitado aún
-not subscribed on this device	sin suscribir en este dispositivo
-subscribed on this device	suscrito en este dispositivo
-{n} failed sends	{n} envíos fallidos
-The browser could not reach its push service. Some privacy-focused browsers keep it switched off by default — enable push messaging in the browser's privacy settings, or install Faustus from another browser.	El navegador no ha podido conectar con su servicio de push. Algunos navegadores centrados en la privacidad lo traen desactivado: activa la mensajería push en sus ajustes de privacidad o instala Faustus desde otro navegador.
-Go ahead	Adelante
-Heard in {heard}s · first reply audio in {first}s	Escuchado en {heard}s · primer audio de respuesta en {first}s
-Long	Larga
-Only answer when I say Faustus first	Responder solo cuando diga «Faustus» primero
-Pause that ends your turn	Pausa que termina tu turno
-Short	Corta
-Waiting for “Faustus”	Esperando «Faustus»
-Command (advanced)	Comando (avanzado)
-Install engine	Instalar motor
-Loading Piper voices…	Cargando voces de Piper…
-Local (Piper)	Local (Piper)
-No Piper runtime found (neither the piper-tts Python package nor the engine binary).	No se encontró ningún motor de Piper (ni el paquete Python piper-tts ni el binario del motor).
-No Piper voices installed yet. Download one below.	Todavía no hay voces de Piper instaladas. Descarga una abajo.
-One per line. Said alone, these silence the current reply instead of being sent. Added to the built-in list (stop, para, cállate…), never replacing it.	Una por línea. Dichas solas, silencian la respuesta actual en lugar de enviarse. Se añaden a la lista integrada (stop, para, cállate…), nunca la sustituyen.
-Piper engine installed.	Motor de Piper instalado.
-Piper voice	Voz de Piper
-Placeholders: {input_path} {output_path} {language}. Prints the transcript to stdout, or writes {output_path} if present.	Marcadores: {input_path} {output_path} {language}. Imprime la transcripción en la salida estándar, o escribe {output_path} si está presente.
-Placeholders: {input_path} {output_path} {voice} {speed} {language}. Must write a WAV file to {output_path}.	Marcadores: {input_path} {output_path} {voice} {speed} {language}. Debe escribir un archivo WAV en {output_path}.
-Runtime: {runtime}	Motor: {runtime}
-Speech command	Comando de voz
-Stop phrases	Frases de parada
-Transcription command	Comando de transcripción
-Voice "{name}" installed.	Voz «{name}» instalada.
-Reading {sites}	Leyendo {sites}

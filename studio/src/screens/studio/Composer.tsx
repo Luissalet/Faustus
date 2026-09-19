@@ -61,11 +61,17 @@ import {
   attachmentUrl,
   basename,
   describeGen,
+  genEffectiveValue,
+  genFieldSource,
+  genWithOverride,
+  genWithoutOverride,
   isImage,
   searchWorkspaceFiles,
+  supportsThinking,
   uploadFiles,
   type Attachment,
   type GenOverrides,
+  type SamplingDefaults,
   type WorkspaceFile,
 } from '../../adapters/composer';
 import type { Suggestion } from './commands';
@@ -132,6 +138,13 @@ export interface ComposerProps {
   onClearWorkspace: () => void;
   gen: GenOverrides;
   onClearGen: () => void;
+  /** CMP-GEN: a control in the sampling panel changing one field, or the
+   *  slash commands (`/temp`, `/gen`…) — same state, same setter. */
+  onSetGen: (update: GenOverrides) => void;
+  /** The active model name, so the panel knows whether to show the think
+   *  switch (`supportsThinking`, adapters/composer.ts) — `null` while the
+   *  route has not resolved yet. */
+  modelName: string | null;
   attachments: Attachment[];
   setAttachments: (update: (list: Attachment[]) => Attachment[]) => void;
   sessionId: string | null;
@@ -257,6 +270,8 @@ export function Composer({
   onClearWorkspace,
   gen,
   onClearGen,
+  onSetGen,
+  modelName,
   attachments,
   setAttachments,
   sessionId,
@@ -914,16 +929,14 @@ export function Composer({
             <EyeOff size={13} aria-hidden="true" /> {t('Incognito')}
           </button>
           {presetChip}
-          {genLabel && (
-            <span className="fs-studio__chipgroup">
-              <span className="fs-studio__chip" aria-pressed="true" title={t('Generation settings of this chat (/temp, /maxtokens, /topp, /think, /gen)')}>
-                <SlidersHorizontal size={13} aria-hidden="true" /> {genLabel}
-              </span>
+          <span className="fs-studio__chipgroup">
+            <GenSettingsPopover gen={gen} onSetGen={onSetGen} modelName={modelName} genLabel={genLabel} />
+            {genLabel && (
               <button type="button" className="fs-studio__chip-x" aria-label={t('Remove the generation settings')} onClick={onClearGen}>
                 <X size={11} aria-hidden="true" />
               </button>
-            </span>
-          )}
+            )}
+          </span>
         </div>
           </div>
         </Popover>
@@ -1482,4 +1495,149 @@ function ApprovalSelector({ disabled, onNotice }: { disabled: boolean; onNotice:
       {choices.map(choice => <button key={choice.value} type="button" role="radio" aria-checked={mode === choice.value} disabled={saving || disabled} onClick={() => void choose(choice.value)}><strong>{choice.label}</strong><span>{choice.detail}</span></button>)}
     </div>
   </Popover>;
+}
+
+/**
+ * CMP-GEN: the generation chip opens real controls instead of only showing
+ * `describeGen`'s read-only summary. Same pattern the "Agent context"
+ * Popover above uses (a trigger chip + a labelled form inside), same
+ * settings-fetch pattern `ApprovalSelector` uses just above for its own
+ * global setting.
+ *
+ * Every control's effective value is the explicit per-chat override when
+ * one exists, else the global default (SET-07's `local_*_default`
+ * settings) — `adapters/composer.ts`'s `genEffectiveValue`/`genFieldSource`
+ * make that same default-vs-override decision the slash commands' own
+ * `genFromArgs` never had to. Changing a control writes ONE field through
+ * `onSetGen` (the same `GenOverrides` the slash commands write); a
+ * per-control "Reset" removes just that field; the chip's outer X
+ * (`onClearGen`, in the caller) still clears every override at once.
+ */
+function GenSettingsPopover({ gen, onSetGen, modelName, genLabel }: {
+  gen: GenOverrides;
+  onSetGen: (update: GenOverrides) => void;
+  modelName: string | null;
+  genLabel: string;
+}) {
+  const [defaults, setDefaults] = useState<SamplingDefaults>({});
+  useEffect(() => {
+    let live = true;
+    void getSettings().then((s) => {
+      if (!live) return;
+      setDefaults({
+        temperature: typeof s.local_temperature_default === 'number' ? s.local_temperature_default : undefined,
+        top_p: typeof s.local_top_p_default === 'number' ? s.local_top_p_default : undefined,
+        top_k: typeof s.local_top_k_default === 'number' ? s.local_top_k_default : undefined,
+      });
+    }).catch(() => { /* the panel still works with no defaults shown */ });
+    return () => { live = false; };
+  }, []);
+
+  const thinkApplies = supportsThinking(modelName);
+  const set = (key: 'temperature' | 'max_tokens' | 'top_p' | 'top_k' | 'think', value: number | boolean) =>
+    onSetGen(genWithOverride(gen, key, value));
+  const reset = (key: 'temperature' | 'max_tokens' | 'top_p' | 'top_k' | 'think') =>
+    onSetGen(genWithoutOverride(gen, key));
+
+  const Row = ({
+    id, label, keyName, value, min, max, step, unit, onChange,
+  }: {
+    id: string; label: string; keyName: 'temperature' | 'max_tokens' | 'top_p' | 'top_k';
+    value: number | undefined; min: number; max: number; step: number;
+    unit?: string; onChange: (v: number) => void;
+  }) => {
+    const source = genFieldSource(keyName, gen);
+    const shown = value ?? '';
+    return (
+      <div className="fs-gen-panel__row">
+        <label htmlFor={id}>
+          {label}
+          <span className="fs-gen-panel__src" data-source={source}>
+            {source === 'override' ? t('override') : t('default')}
+          </span>
+        </label>
+        <div className="fs-gen-panel__controls">
+          <input
+            id={id} type="range" min={min} max={max} step={step}
+            value={value ?? (min + max) / 2}
+            onChange={(e) => onChange(Number(e.target.value))}
+            aria-describedby={`${id}-value`}
+          />
+          <input
+            id={`${id}-value`} type="number" min={min} max={max} step={step}
+            value={shown} placeholder={t('auto')}
+            aria-label={t('{label} value', { label })}
+            onChange={(e) => { const v = Number(e.target.value); if (!Number.isNaN(v)) onChange(v); }}
+          />
+          {unit && <span className="fs-gen-panel__unit">{unit}</span>}
+          {source === 'override' && (
+            <button type="button" className="fs-gen-panel__reset" onClick={() => reset(keyName)}>
+              {t('Reset')}
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const temperature = genEffectiveValue('temperature', gen, defaults) as number | undefined;
+  const topP = genEffectiveValue('top_p', gen, defaults) as number | undefined;
+  const topK = genEffectiveValue('top_k', gen, defaults) as number | undefined;
+  const maxTokens = genEffectiveValue('max_tokens', gen, defaults) as number | undefined;
+  const thinkSource = genFieldSource('think', gen);
+  const thinkValue = Boolean(genEffectiveValue('think', gen, defaults));
+
+  return (
+    <Popover
+      placement="composer"
+      className="fs-gen-panel"
+      testId="studio-gen-menu"
+      trigger={
+        <button type="button" className="fs-studio__chip" aria-pressed={Boolean(genLabel)}
+          title={t('Generation settings of this chat (/temp, /maxtokens, /topp, /think, /gen)')}
+          data-testid="studio-gen-chip">
+          <SlidersHorizontal size={13} aria-hidden="true" /> {genLabel || t('Generation')}
+        </button>
+      }
+    >
+      <section aria-label={t('Generation settings')}>
+        <h3>{t('Generation settings')}</h3>
+        <p>{t('Starts from your default; changing a control overrides it for this chat only.')}</p>
+        <Row id="gen-temperature" label={t('Temperature')} keyName="temperature"
+          value={temperature} min={0} max={2} step={0.05}
+          onChange={(v) => set('temperature', Math.min(2, Math.max(0, v)))} />
+        <Row id="gen-top-p" label="top_p" keyName="top_p"
+          value={topP} min={0} max={1} step={0.05}
+          onChange={(v) => set('top_p', Math.min(1, Math.max(0, v)))} />
+        <Row id="gen-top-k" label="top_k" keyName="top_k"
+          value={topK} min={0} max={200} step={1}
+          onChange={(v) => set('top_k', Math.round(Math.min(200, Math.max(0, v))))} />
+        <Row id="gen-max-tokens" label={t('Max tokens')} keyName="max_tokens"
+          value={maxTokens} min={0} max={32768} step={64} unit={t('tokens')}
+          onChange={(v) => set('max_tokens', Math.round(Math.max(0, v)))} />
+        {thinkApplies && (
+          <div className="fs-gen-panel__row fs-gen-panel__row--switch">
+            <label htmlFor="gen-think">
+              {t('Reasoning (think)')}
+              <span className="fs-gen-panel__src" data-source={thinkSource}>
+                {thinkSource === 'override' ? t('override') : t('default')}
+              </span>
+            </label>
+            <div className="fs-gen-panel__controls">
+              <input
+                id="gen-think" type="checkbox" role="switch"
+                checked={thinkValue}
+                onChange={(e) => set('think', e.target.checked)}
+              />
+              {thinkSource === 'override' && (
+                <button type="button" className="fs-gen-panel__reset" onClick={() => reset('think')}>
+                  {t('Reset')}
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+      </section>
+    </Popover>
+  );
 }

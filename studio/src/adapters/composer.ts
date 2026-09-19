@@ -361,3 +361,73 @@ export function describeGen(gen: GenOverrides): string {
   if (gen.think !== undefined) parts.push(gen.think ? t('reasons') : t('no reasoning'));
   return parts.join(' · ');
 }
+
+/**
+ * Mirrors `src/llm_core.py`'s `_THINKING_MODEL_PATTERNS`/`_supports_thinking`
+ * exactly — same reasoning `SAMPLING_FIELDS`'s own comment in
+ * `screens/Settings.tsx` gives for mirroring the backend's clamp ranges: the
+ * composer needs this answer client-side (to decide whether the think
+ * switch even shows) and there is no route worth a round trip just to ask
+ * it. Keep this list identical to the backend's; a model added there and
+ * not here shows no switch, never a wrong one.
+ */
+const THINKING_MODEL_PATTERNS = [
+  'qwen3', 'qwq', 'deepseek-r1', 'deepseek-reasoner', 'deepseek-v4',
+  'minimax', 'm2-reap', 'gemma', 'stepfun', 'step-3', 'step3',
+  'magistral', 'mistral-small', 'mistral-medium',
+];
+
+export function supportsThinking(model: string | null | undefined): boolean {
+  if (!model) return false;
+  const m = model.toLowerCase();
+  return THINKING_MODEL_PATTERNS.some((p) => m.includes(p));
+}
+
+/* ── Sampling panel (composer chip -> real controls, not just /temp etc.) ──
+ * Each control's effective value is either the global default
+ * (`local_*_default` settings, SET-07) or an explicit per-conversation
+ * override already held in `GenOverrides`. `max_tokens` and `think` have no
+ * global-default setting (SET-07 only covers temperature/top_p/top_k), so
+ * their "default" is simply "unset — the model/provider decides". */
+
+export interface SamplingDefaults {
+  temperature?: number;
+  top_p?: number;
+  top_k?: number;
+}
+
+export type GenFieldKey = 'temperature' | 'max_tokens' | 'top_p' | 'top_k' | 'think';
+
+/** The value a control should show — the explicit override when this chat
+ *  has one, else the global default (or undefined for max_tokens/think). */
+export function genEffectiveValue(
+  key: GenFieldKey,
+  gen: GenOverrides,
+  defaults: SamplingDefaults,
+): number | boolean | undefined {
+  if (gen[key] !== undefined) return gen[key];
+  if (key === 'temperature' || key === 'top_p' || key === 'top_k') return defaults[key];
+  return undefined;
+}
+
+/** Whether a control is showing this chat's own override or the global
+ *  default — drives the "default" vs "override" label and whether its
+ *  per-control reset is enabled. */
+export function genFieldSource(key: GenFieldKey, gen: GenOverrides): 'override' | 'default' {
+  return gen[key] !== undefined ? 'override' : 'default';
+}
+
+/** Setting one control turns it into an explicit override for this
+ *  conversation; the rest of `gen` is untouched. */
+export function genWithOverride(gen: GenOverrides, key: GenFieldKey, value: number | boolean): GenOverrides {
+  return { ...gen, [key]: value };
+}
+
+/** A control's own reset: back to the global default (or "unset"), leaving
+ *  every other override in this chat exactly as it was. The chip's X still
+ *  clears all of them at once (`onClearGen`, unchanged). */
+export function genWithoutOverride(gen: GenOverrides, key: GenFieldKey): GenOverrides {
+  const next = { ...gen };
+  delete next[key];
+  return next;
+}

@@ -735,3 +735,14 @@ deep-link de workflows, recetas desde un run real) ya no aparece aquí.
   would load <modelo>` sin que Ollama cargue nada (`ollama ps` sin cambios);
   (3) confirmar que activar `background_jobs_may_load_models` deja correr la
   auditoría igualmente esa noche.
+
+- **FAUSTUS.md §119 — Parte A (muestreo en el composer).** Panel del chip
+  de generación (`GenSettingsPopover`, `studio/src/screens/studio/Composer.tsx`)
+  probado a nivel de adaptador (`studio/checks/gen-sampling-panel.check.mjs`)
+  y por inspección de fuente; no se ha abierto en un navegador real.
+  **Pendiente:** abrir el chip en el Studio real y confirmar que el slider
+  de temperatura y el número enlazado se mueven juntos, que el Reset de un
+  control concreto no toca los demás overrides, que el interruptor de
+  razonamiento solo aparece con un modelo pensante activo (p. ej. `qwen3`,
+  nunca con el 27B por defecto), y que `/temp 0.9` escrito en el chat
+  actualiza el panel al reabrirlo.

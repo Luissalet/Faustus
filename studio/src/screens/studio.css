@@ -3850,6 +3850,28 @@ aside.fs-panel { position: relative; }
 }
 @media (max-width: 600px) { .fs-studio__permission-menu [role="radio"], .fs-studio__add-options > .fs-studio__chip { min-block-size: 44px; } }
 
+/* CMP-GEN: the generation chip's popover — sampling controls (temperature,
+   top_p, top_k, max_tokens, think), each with its slider+number pair, a
+   "default"/"override" tag and a per-control Reset. Same grid-of-labelled-
+   controls shape `.fs-media-recipes` already uses for the composer's other
+   panel. */
+.fs-gen-panel section { display: grid; gap: var(--fs-space-3); min-inline-size: 260px; }
+.fs-gen-panel h3, .fs-gen-panel p { margin: 0; }
+.fs-gen-panel p { color: var(--fs-text-2); font-size: var(--fs-label); }
+.fs-gen-panel__row { display: grid; gap: 6px; min-inline-size: 0; }
+.fs-gen-panel__row label { display: flex; align-items: center; justify-content: space-between; gap: var(--fs-space-2); font-weight: 500; }
+.fs-gen-panel__src { font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--fs-text-3, var(--fs-text-2)); border: 1px solid var(--fs-border); border-radius: 999px; padding: 1px 8px; }
+.fs-gen-panel__src[data-source="override"] { color: var(--fs-focus); border-color: var(--fs-focus); }
+.fs-gen-panel__controls { display: flex; align-items: center; gap: 8px; }
+.fs-gen-panel__controls input[type="range"] { flex: 1; min-inline-size: 0; }
+.fs-gen-panel__controls input[type="number"] { inline-size: 72px; min-block-size: 32px; background: var(--fs-surface-1); color: var(--fs-text-1); border: 1px solid var(--fs-border); border-radius: var(--fs-radius-control); padding: 4px 6px; font: inherit; }
+.fs-gen-panel__unit { color: var(--fs-text-2); font-size: var(--fs-label); white-space: nowrap; }
+.fs-gen-panel__reset { flex-shrink: 0; border: none; background: transparent; color: var(--fs-focus); cursor: pointer; font-size: var(--fs-label); padding: 4px 2px; }
+.fs-gen-panel__reset:hover { text-decoration: underline; }
+.fs-gen-panel__row--switch .fs-gen-panel__controls { justify-content: flex-start; }
+.fs-gen-panel__row--switch input[type="checkbox"] { inline-size: 36px; block-size: 20px; }
+@media (max-width: 600px) { .fs-gen-panel__controls input[type="number"] { min-block-size: 44px; font-size: 16px; } .fs-gen-panel__row--switch input[type="checkbox"] { min-block-size: 28px; } }
+
 /* CONTRATO_MODOS Lote B: the "Manage modes…" link at the foot of the
    behaviour-mode popover — same look as `.fs-mail__link` (email.css), a
    plain <a> styled as a link rather than a button, from tokens only. */
