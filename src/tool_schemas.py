@@ -2863,6 +2863,42 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "structural_search",
+            "description": "Search code by AST SHAPE, not text, via ast-grep -- finds things grep can't: 'every except Exception: whose body never logs', 'every call to foo() with a None second argument', regardless of whitespace/formatting. Write patterns like the code you're matching, using $NAME to capture exactly one node (e.g. foo($ARG)) or $$$NAME to capture zero-or-more (e.g. a whole statement body). Workflow: try the pattern on ONE file or a small folder first, check the hits and metaVariables look right, THEN widen path to search the whole workspace -- a pattern that looks right can still match more or less than intended.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "pattern": {"type": "string", "description": "AST pattern, e.g. 'foo($A, None)' or 'except Exception:\\n    $$$BODY'. $VAR matches one node, $$$VAR matches zero or more."},
+                    "lang": {"type": "string", "description": "Language: python, javascript, typescript, tsx, json, css, html, rust, go, java, c, cpp, csharp, bash, yaml"},
+                    "path": {"type": "string", "description": "File or directory to search (optional -- defaults to the active workspace). Start narrow, then widen."},
+                    "max_results": {"type": "integer", "description": "Max hits to return (default 200)"},
+                    "context": {"type": "integer", "description": "Lines of context around each match (default 0)"}
+                },
+                "required": ["pattern", "lang"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "structural_rewrite",
+            "description": "Rewrite code by AST SHAPE via ast-grep, e.g. replace every 'foo($A, None)' with 'foo($A)' across a whole codebase safely (whitespace/formatting-agnostic, unlike sed). $VAR/$$$VAR bound in `pattern` are reused in `rewrite` the same way. apply=false (default) returns a unified diff PREVIEW without touching any file -- always preview first, read the diff, and only then call again with apply=true to write it. Workflow: run structural_search first to see what the pattern actually matches, then rewrite with apply=false to preview, then apply=true once the diff looks right.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "pattern": {"type": "string", "description": "AST pattern to match, e.g. 'foo($A, None)'"},
+                    "rewrite": {"type": "string", "description": "Replacement using the same $VAR/$$$VAR names bound in pattern, e.g. 'foo($A)'"},
+                    "lang": {"type": "string", "description": "Language: python, javascript, typescript, tsx, json, css, html, rust, go, java, c, cpp, csharp, bash, yaml"},
+                    "path": {"type": "string", "description": "File or directory to rewrite. Required when apply=true (no implicit whole-workspace rewrite)."},
+                    "apply": {"type": "boolean", "description": "false (default): return a diff preview only, write nothing. true: write the change to disk."}
+                },
+                "required": ["pattern", "rewrite", "lang"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "code_graph_architecture",
             "description": "One-call architecture summary of a workspace: languages, symbol/edge counts, HTTP routes, the most-called modules/functions (fan-in), and hotspots (long functions with many callers). Use when opening an unfamiliar repo instead of exploring file by file.",
             "parameters": {

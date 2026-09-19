@@ -71,6 +71,7 @@ from .code_graph_tools import (
     CodeGraphChangesTool, CodeGraphImpactTool, CodeGraphArchitectureTool,
     CodeGraphSnippetTool, CodeGraphCochangesTool,
 )
+from .structural_search_tools import StructuralSearchTool, StructuralRewriteTool
 from .pdf_ops_tool import PdfOpsTool
 from .pdf_tree_tool import PdfOutlineTool, PdfReadSectionTool, PdfFindSectionTool
 from .goal_tools import GoalDefineTool, GoalStatusTool, GoalEvaluateTool, GoalEvidenceTool
@@ -185,6 +186,10 @@ TOOL_HANDLERS = {
     "code_graph_architecture": CodeGraphArchitectureTool().execute,
     "code_graph_snippet": CodeGraphSnippetTool().execute,
     "code_graph_cochanges": CodeGraphCochangesTool().execute,
+    # Structural (AST-pattern) search/rewrite via ast-grep -- shape queries
+    # text grep and the code graph can't express. See src/structural_search.py.
+    "structural_search": StructuralSearchTool().execute,
+    "structural_rewrite": StructuralRewriteTool().execute,
     # R3 (Reach wave): fan one prompt across N candidate models/endpoints,
     # each isolated via src.alternatives, ranked by src.fanout.score. See
     # src/fanout/ and src/agent_tools/fanout_tools.py.
@@ -322,6 +327,8 @@ TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_fi
              "code_graph_index", "code_graph_search", "code_graph_trace",
              "code_graph_changes", "code_graph_impact", "code_graph_architecture",
              "code_graph_snippet", "code_graph_cochanges",
+             # Structural search/rewrite -- src/agent_tools/structural_search_tools.py.
+             "structural_search", "structural_rewrite",
              # R3 (Reach wave): fan-out -- src/agent_tools/fanout_tools.py.
              "fanout_run", "fanout_status", "fanout_results", "fanout_apply",
              # PDF operations (R4, Reach wave) -- src/agent_tools/pdf_ops_tool.py.

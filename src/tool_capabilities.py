@@ -620,6 +620,23 @@ _register(
     ToolEffect.READ_WORKSPACE,
     result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED,
 )
+_register(
+    # structural_search (src/structural_search.py, ast-grep-backed): a
+    # workspace-scoped reader, same class as code_graph_search/grep -- it
+    # only quotes source text an attacker could have planted in the repo.
+    {"structural_search"},
+    ToolEffect.READ_WORKSPACE,
+    result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED,
+)
+_register(
+    # structural_rewrite can write to workspace files when apply=true (its
+    # apply=false default is preview-only, same shape as alt_apply's preview/
+    # confirm split) -- classified as WRITE_WORKSPACE like apply_patch/
+    # edit_file/rename_symbol, the worst case the tool can do.
+    {"structural_rewrite"},
+    ToolEffect.WRITE_WORKSPACE,
+    result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED,
+)
 # R3 (Reach wave, src/agent_tools/fanout_tools.py): fan one prompt across N
 # candidates, each isolated the same way alt_start's alternatives are.
 # `fanout_status`/`fanout_results` only read this run's own checkpoint

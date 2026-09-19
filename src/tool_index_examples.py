@@ -960,6 +960,20 @@ EXAMPLES: Dict[str, List[str]] = {
         "get the source of that symbol you just found",
     ],
 
+    # ── Structural (AST-pattern) search/rewrite (ast-grep) ────────────────
+    "structural_search": [
+        "encuentra todos los except Exception que no tienen log adentro",
+        "find every call to foo() where the second argument is None",
+        "busca patrones de código con esta forma exacta en todo el proyecto",
+        "find every bare except block with an empty body",
+    ],
+    "structural_rewrite": [
+        "reemplaza foo(x, None) por foo(x) en todo el código",
+        "rewrite every call matching this pattern across the codebase",
+        "aplica este refactor estructural pero enséñame el diff antes",
+        "preview what this AST rewrite would change before applying it",
+    ],
+
     # ── Fan-out (R3, Reach wave) ─────────────────────────────────────────
     "fanout_run": [
         "prueba esto con Qwen local y con el modelo remoto y compara",

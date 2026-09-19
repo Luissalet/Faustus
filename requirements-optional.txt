@@ -71,3 +71,10 @@ pdfplumber
 # oidc_client_id) never pays for it; the OIDC login route answers 500
 # "PyJWT is not installed" without it instead of failing to import.
 PyJWT>=2.8,<3
+
+# Structural (AST-pattern) code search/rewrite (structural_search /
+# structural_rewrite tools, src/structural_search.py) — installs the
+# `ast-grep` CLI binary this module shells out to. Ships prebuilt wheels for
+# Windows/macOS/Linux, so `pip install` is enough (no separate download).
+# Without it the tools answer with a clear "pip install ast-grep-cli" error.
+ast-grep-cli
