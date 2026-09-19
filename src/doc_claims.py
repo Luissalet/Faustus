@@ -573,11 +573,11 @@ def check(claims: Sequence[Claim], workspace: str) -> List[Finding]:
 
 # ── drift (stale sections) ────────────────────────────────────────────
 
-def _git(workspace: str, *args: str) -> Optional[str]:
+def _git(workspace: str, *args: str, timeout: int = 10) -> Optional[str]:
     try:
         out = subprocess.run(
             ["git", *args], cwd=workspace, capture_output=True, text=True,
-            timeout=10, check=False,
+            encoding="utf-8", errors="replace", timeout=timeout, check=False,
         )
     except (OSError, subprocess.SubprocessError):
         return None
@@ -586,18 +586,84 @@ def _git(workspace: str, *args: str) -> Optional[str]:
     return out.stdout
 
 
-def _last_commit_time(workspace: str, rel_path: str, cache: Dict[str, Optional[int]]) -> Optional[int]:
-    if rel_path in cache:
-        return cache[rel_path]
-    out = _git(workspace, "log", "-1", "--format=%ct", "--", rel_path)
-    ts = None
-    if out and out.strip():
-        try:
-            ts = int(out.strip().splitlines()[0])
-        except ValueError:
-            ts = None
-    cache[rel_path] = ts
-    return ts
+class _GitHistory:
+    """Whole-history index built from ONE `git log` call, so drift checks
+    don't spawn a git process per file (hundreds of spawns took >60s on
+    Windows). Commits are newest first."""
+
+    def __init__(self, workspace: str):
+        self.commits: List[Tuple[int, str, str, Set[str]]] = []
+        self.last_touch: Dict[str, int] = {}
+        out = _git(workspace, "log", "--no-renames",
+                   "--format=%x1e%ct%x1f%h%x1f%s", "--name-only", timeout=60)
+        if not out:
+            return
+        for block in out.split("\x1e"):
+            block = block.strip("\n")
+            if not block:
+                continue
+            head, _, rest = block.partition("\n")
+            parts = head.split("\x1f", 2)
+            if len(parts) != 3:
+                continue
+            try:
+                ts = int(parts[0])
+            except ValueError:
+                continue
+            files = {ln.strip() for ln in rest.splitlines() if ln.strip()}
+            self.commits.append((ts, parts[1], parts[2], files))
+            for f in files:
+                if f not in self.last_touch:
+                    self.last_touch[f] = ts
+
+    def last_commit_time(self, rel_path: str) -> Optional[int]:
+        return self.last_touch.get(_norm_rel(rel_path))
+
+    def commits_since(self, ts: int, rel_paths: Sequence[str], limit: int) -> List[Dict[str, str]]:
+        wanted = {_norm_rel(p) for p in rel_paths}
+        found: List[Dict[str, str]] = []
+        for c_ts, sha, subject, files in self.commits:
+            if c_ts < ts:
+                break
+            if files & wanted:
+                found.append({"sha": sha, "subject": subject})
+                if len(found) >= limit:
+                    break
+        return found
+
+
+def _norm_rel(rel_path: str) -> str:
+    norm = rel_path.replace("\\", "/")
+    while norm.startswith("./"):
+        norm = norm[2:]
+    return norm
+
+
+_BLAME_CACHE: Dict[Tuple[str, str, str], List[Optional[int]]] = {}
+
+
+def _doc_line_times(workspace: str, doc_rel: str) -> List[Optional[int]]:
+    """committer-time per line of `doc_rel` (index 0 = line 1), from one
+    `git blame` of the whole file, cached per (workspace, doc, HEAD)."""
+    head = (_git(workspace, "rev-parse", "HEAD") or "").strip()
+    key = (workspace, doc_rel, head)
+    if key in _BLAME_CACHE:
+        return _BLAME_CACHE[key]
+    out = _git(workspace, "blame", "--line-porcelain", "--", doc_rel, timeout=60)
+    times: List[Optional[int]] = []
+    current: Optional[int] = None
+    for line in (out or "").splitlines():
+        if line.startswith("committer-time "):
+            try:
+                current = int(line.split(" ", 1)[1])
+            except (ValueError, IndexError):
+                current = None
+        elif line.startswith("\t"):
+            times.append(current)
+    if len(_BLAME_CACHE) > 16:
+        _BLAME_CACHE.clear()
+    _BLAME_CACHE[key] = times
+    return times
 
 
 def _section_line_range(doc_text: str, section: str) -> Optional[Tuple[int, int]]:
@@ -624,19 +690,9 @@ def _section_last_edit_time(workspace: str, doc_rel: str, doc_text: str, section
     if rng is None:
         return None
     a, b = rng
-    out = _git(workspace, "blame", "--line-porcelain", "-L", f"{a},{b}", "--", doc_rel)
-    if not out:
-        return None
-    best = None
-    for line in out.splitlines():
-        if line.startswith("committer-time "):
-            try:
-                t = int(line.split(" ", 1)[1])
-            except (ValueError, IndexError):
-                continue
-            if best is None or t > best:
-                best = t
-    return best
+    times = _doc_line_times(workspace, doc_rel)
+    window = [t for t in times[a - 1:b] if t is not None]
+    return max(window) if window else None
 
 
 def _referenced_files_for_section(workspace: str, section_claims: Sequence[Claim]) -> List[str]:
@@ -673,7 +729,7 @@ def _drift_findings(workspace: str, doc_rel: str, doc_text: str,
         return findings  # not a git repo (or git unavailable) -- no drift signal
     now = time.time()
     stale_cutoff = now - _STALE_MAX_AGE_DAYS * 86400
-    cache: Dict[str, Optional[int]] = {}
+    history = _GitHistory(workspace)
     by_section: Dict[str, List[Claim]] = {}
     for c in claims:
         by_section.setdefault(c.section, []).append(c)
@@ -687,7 +743,7 @@ def _drift_findings(workspace: str, doc_rel: str, doc_text: str,
         newest_code_time = None
         newest_file = None
         for f in files:
-            t = _last_commit_time(workspace, f, cache)
+            t = history.last_commit_time(f)
             if t is not None and (newest_code_time is None or t > newest_code_time):
                 newest_code_time, newest_file = t, f
         if newest_code_time is None or newest_code_time <= doc_time:
@@ -698,16 +754,7 @@ def _drift_findings(workspace: str, doc_rel: str, doc_text: str,
             continue
         # Section is stale: list the commits that touched referenced files
         # after this doc section was last edited.
-        since = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(doc_time))
-        log_out = _git(
-            workspace, "log", f"--since={since}",
-            "--format=%h\t%s", "--", *files,
-        ) or ""
-        commits = []
-        for line in log_out.splitlines()[:_MAX_DRIFT_COMMITS]:
-            if "\t" in line:
-                sha, subject = line.split("\t", 1)
-                commits.append({"sha": sha, "subject": subject})
+        commits = history.commits_since(doc_time, files, _MAX_DRIFT_COMMITS)
         first_line = section_claims[0].line
         findings.append(Finding(
             severity="stale", kind="drift",
