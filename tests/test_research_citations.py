@@ -120,7 +120,7 @@ def test_registry_entries_carry_the_documented_fields():
     reg.add({"url": "https://www.a.test/p", "title": "A", "summary": "s",
              "evidence": "e", "fetched_at": "2026-01-01T00:00:00+00:00"})
     entry = reg.source(1)
-    assert set(entry) == {"n", "url", "title", "summary", "evidence", "domain", "fetched_at"}
+    assert set(entry) == {"n", "url", "title", "summary", "evidence", "domain", "fetched_at", "source_type"}
     assert entry["domain"] == "a.test"
     assert entry["fetched_at"] == "2026-01-01T00:00:00+00:00"
 

@@ -14,6 +14,9 @@ from bs4 import BeautifulSoup
 
 from src.constants import WEB_FETCH_SOFT_MAX_BYTES, WEB_FETCH_HARD_MAX_BYTES, WEB_FETCH_USER_AGENT
 from src import outbound_fetch as _outbound_fetch
+from src.source_types import classify_source as _classify_source
+from src.source_types import extraction_quality as _extraction_quality
+from src.source_types import quality_note as _quality_note
 
 from .analytics import RateLimitError, error_logger
 from .cache import (
@@ -192,7 +195,7 @@ def _is_disallowed_binary(content_type: str, url_path: str) -> bool:
 
 def _empty_result(url: str, error: str = "") -> dict:
     """Build a standard failure result dict."""
-    return {
+    result = {
         "url": url,
         "title": "",
         "content": "",
@@ -206,6 +209,44 @@ def _empty_result(url: str, error: str = "") -> dict:
         "success": False,
         "error": error,
     }
+    # A failed fetch (HTTP error, network error, oversized body...) is, by
+    # definition, an "error page" from the caller's point of view -- there is
+    # no body to run extraction_quality's text heuristics on, so this is set
+    # directly rather than inferred from empty text.
+    _annotate_source_quality(result, extra_flags=["error_page"] if error else None)
+    return result
+
+
+def _annotate_source_quality(result: dict, extra_flags=None) -> dict:
+    """Attach ``source_type``/``is_official`` (from the URL) and
+    ``extraction_quality`` (from the extracted text) to a fetch result dict
+    in place, plus a one-line ``quality_note`` when the quality flags mean
+    the model should not trust the text as the real page content.
+
+    ``extra_flags`` adds flags the text heuristic can't see on its own (e.g.
+    "error_page" for a failed HTTP fetch with no body at all).
+    """
+    url = result.get("url", "")
+    title = result.get("title", "")
+    source_info = _classify_source(url, title)
+    result["source_type"] = source_info.get("source_type", "unknown")
+    result["is_official"] = bool(source_info.get("is_official"))
+
+    quality = _extraction_quality(result.get("content", ""))
+    flags = list(quality.get("flags", []))
+    for flag in extra_flags or []:
+        if flag not in flags:
+            flags.append(flag)
+    # js_rendered is computed separately (DOM framework markers), fold it in
+    # as its own quality signal so the note/flag reflects it too.
+    if result.get("js_rendered") and "js_required" not in flags:
+        flags.append("js_required")
+
+    result["extraction_quality"] = {"quality": quality.get("quality", 1.0), "flags": flags}
+    note = _quality_note(flags)
+    if note:
+        result["quality_note"] = note
+    return result
 
 
 # ----------------------------------------------------------------------
@@ -328,6 +369,7 @@ def fetch_webpage_content(url: str, timeout: int = 5, retry_attempt: int = 0,
             "error": "" if pdf_text else "Failed to extract PDF text",
             **_size_fields,
         }
+        _annotate_source_quality(result)
         _cache_result(cache_file, cache_key, result, url)
         return result
 
@@ -363,6 +405,7 @@ def fetch_webpage_content(url: str, timeout: int = 5, retry_attempt: int = 0,
             "error": "" if text_body else "Empty response body",
             **_size_fields,
         }
+        _annotate_source_quality(result)
         _cache_result(cache_file, cache_key, result, url)
         return result
 
@@ -440,6 +483,7 @@ def fetch_webpage_content(url: str, timeout: int = 5, retry_attempt: int = 0,
         "error": "",
         **_size_fields,
     }
+    _annotate_source_quality(result)
     _cache_result(cache_file, cache_key, result, url)
     return result
 

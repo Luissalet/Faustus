@@ -142,6 +142,25 @@ except Exception:  # pragma: no cover - defensive, keeps ranking usable standalo
     def _canonical_url(url):  # type: ignore
         return (str(url or "")).strip().lower()
 
+try:
+    from src.source_types import classify_source as _classify_source
+except Exception:  # pragma: no cover - defensive, keeps ranking usable standalone
+    def _classify_source(url, title=""):  # type: ignore
+        return {"source_type": "unknown", "is_official": False, "reason": "unavailable"}
+
+
+# ---------------------------------------------------------------------------
+# Guard 5: source-type nudge — small, bounded and explained via score_reasons.
+# ---------------------------------------------------------------------------
+
+# Kept deliberately small relative to the other terms above (title match is
+# worth up to 2.0, authority up to 1.5) so this never overrides genuine
+# relevance/authority signals -- it only nudges close calls between
+# similarly-relevant results.
+_SOURCE_TYPE_UP = 0.3
+_SOURCE_TYPE_DOWN = 0.3
+_SOURCE_TYPES_BOOSTED = {"official", "docs", "academic", "reference"}
+
 
 def _result_engines(result: dict) -> List[str]:
     """Every engine/provider name attached to a single raw result dict.
@@ -444,6 +463,18 @@ def rank_search_results(query: str, results: List[dict]) -> List[dict]:
         if engine_count > 1:
             reasons.append(f"multi-engine x{engine_count}")
 
+        source_info = _classify_source(url, title)
+        source_type = source_info.get("source_type", "unknown")
+        is_official = bool(source_info.get("is_official"))
+
+        source_type_adjustment = 0.0
+        if source_type in _SOURCE_TYPES_BOOSTED:
+            source_type_adjustment += _SOURCE_TYPE_UP
+            reasons.append(f"source type: {source_type} (+{_SOURCE_TYPE_UP:.1f})")
+        elif source_type == "shop" and not purchase_intent:
+            source_type_adjustment -= _SOURCE_TYPE_DOWN
+            reasons.append(f"source type: shop, no purchase intent (-{_SOURCE_TYPE_DOWN:.1f})")
+
         base = (
             2.0 * title_score(title)
             + 1.0 * snippet_score(snippet)
@@ -451,6 +482,7 @@ def rank_search_results(query: str, results: List[dict]) -> List[dict]:
             + 1.0 * rscore
             + news_quality_adjustment(title, snippet, url)
             + rrf
+            + source_type_adjustment
         )
         scored.append({
             "score": base,
@@ -460,6 +492,8 @@ def rank_search_results(query: str, results: List[dict]) -> List[dict]:
             "title": title,
             "snippet": snippet,
             "age": age,
+            "source_type": source_type,
+            "is_official": is_official,
         })
 
     # --- anti-junk guard (a): zero content-term overlap demotion -----------
@@ -516,5 +550,7 @@ def rank_search_results(query: str, results: List[dict]) -> List[dict]:
         out = dict(item["result"])
         out["score"] = round(item["score"], 4)
         out["score_reasons"] = item["reasons"]
+        out["source_type"] = item["source_type"]
+        out["is_official"] = item["is_official"]
         ranked.append(out)
     return ranked

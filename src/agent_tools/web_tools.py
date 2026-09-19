@@ -198,6 +198,17 @@ class WebFetchTool:
                 f"{WEB_FETCH_HARD_MAX_BYTES:,} bytes.]\n\n"
             )
 
+        # Source classification + extraction-quality (#source-types): surfaced
+        # both as text the model reads (quality_note, when the extracted text
+        # is likely incomplete/wrong) and as structured fields for any caller
+        # that reads the dict directly rather than the rendered output.
+        source_type = result.get("source_type", "unknown")
+        is_official = bool(result.get("is_official"))
+        extraction_quality = result.get("extraction_quality") or {}
+        quality_note = result.get("quality_note") or ""
+        if quality_note:
+            size_note += f"[note: {quality_note}]\n\n"
+
         # The notice must lead the output so the MAX_OUTPUT_CHARS trim below can
         # never drop it. The title is untrusted, uncapped page content, so a
         # giant title ahead of the notice could push it out of range; keep the
@@ -219,6 +230,11 @@ class WebFetchTool:
         # cap here) collapse into one explicit `truncated`/`kept_bytes` pair
         # instead of the caller having to notice a "[...truncated]" string.
         response: Dict[str, Any] = {"output": output, "exit_code": 0}
+        response["source_type"] = source_type
+        response["is_official"] = is_official
+        response["extraction_quality"] = extraction_quality
+        if quality_note:
+            response["quality_note"] = quality_note
         response["truncated"] = download_truncated or output_truncated
         if download_truncated:
             response["kept_bytes"] = fetched_bytes

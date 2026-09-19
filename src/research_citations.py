@@ -246,6 +246,7 @@ class SourceRegistry:
             "evidence": _as_text(finding.get("evidence")).strip(),
             "domain": domain_of(url),
             "fetched_at": _as_text(finding.get("fetched_at")).strip() or _now(),
+            "source_type": _as_text(finding.get("source_type")).strip() or "unknown",
         })
         self._by_key[key] = number
         self._note_engine(number, finding)
