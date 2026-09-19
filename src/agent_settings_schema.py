@@ -118,6 +118,10 @@ GROUPS: list[dict[str, Any]] = [
                  "A round with no text and no tool call gets nudged to continue this many times before "
                  "the turn ends with a concrete question instead of silence.",
                  1, 10),
+            _int("agent_turn_max_seconds", "Turn wall-clock ceiling (seconds)",
+                 "Hard backstop independent of round count: once a turn has run this long in real time, "
+                 "it ends with a summary and a question instead of continuing indefinitely.",
+                 60, 86400),
             _bool("agent_harness_checks", "Reliability harness",
                   "Claims-vs-evidence check, syntax check and fabricated-path detection after each turn."),
             _bool("agent_tool_rerank", "Rerank tool candidates",

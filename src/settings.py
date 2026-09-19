@@ -510,6 +510,14 @@ DEFAULT_SETTINGS = {
     # before giving up and asking the user a concrete question instead of
     # ending the turn silently. Was hardcoded to 1.
     "agent_empty_round_max_nudges": 3,
+    # BUG-STOP-01: a hard wall-clock ceiling per turn, independent of round
+    # count — the backstop for a turn whose rounds are each individually
+    # cheap (so the round-budget/progress-gate checks above never trip) but
+    # that has still been running for an unreasonable amount of real time
+    # (a slow local endpoint, a turn stuck making tiny "progress" forever).
+    # Checked at the top of every round; once exceeded the turn ends with a
+    # summary of what it did and a concrete question — never silently.
+    "agent_turn_max_seconds": 3600,
     # Standing instructions from the repo (AGENTS.md / CLAUDE.md / …) in the
     # system prompt, and the repository map (files + symbols) before the
     # user's message (src/project_instructions.py, src/repo_map.py).

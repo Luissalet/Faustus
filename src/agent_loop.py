@@ -3493,7 +3493,8 @@ async def _recovery_ladder(*, reason: str, endpoint_url: str, model: str, header
                             messages: List[Dict], temperature: float, max_tokens: int,
                             gen_overrides: Optional[Dict], session_id: Optional[str],
                             owner: Optional[str], agent_stream_timeout: int,
-                            skip_same_model_retry: bool = False):
+                            skip_same_model_retry: bool = False,
+                            pending_cancel: Optional[Callable[[], Optional[str]]] = None):
     """Steps 2-3 of the "never end a degenerate/ctx_ack round with an error"
     recovery ladder (the owner: "If a model is loaded, the person gets an
     answer, however long it takes"). Step 1 — bumped `repeat_penalty`/
@@ -3546,6 +3547,21 @@ async def _recovery_ladder(*, reason: str, endpoint_url: str, model: str, header
     step_temperature = max(0.7, float(temperature or 0))
     step_max_tokens = min(max_tokens or _RECOVERY_STEP2_MAX_TOKENS, _RECOVERY_STEP2_MAX_TOKENS)
 
+    def _cancelled() -> Optional[str]:
+        # BUG-STOP-01: a Stop during recovery (a degenerate/looping round
+        # already made this turn slow) must not spend a step-2/step-3 model
+        # call anyway -- checked before EACH step below, not just once.
+        if pending_cancel is None:
+            return None
+        try:
+            return pending_cancel()
+        except Exception:
+            return None
+
+    if _cancelled():
+        yield ("result", {"ok": False, "cancelled": True})
+        return
+
     # ── Step 2: same endpoint/model, everything trimmed ──
     # Skipped when the caller says the same model has already degenerated
     # twice this turn (see `skip_same_model_retry` on the docstring): a third
@@ -3574,6 +3590,10 @@ async def _recovery_ladder(*, reason: str, endpoint_url: str, model: str, header
             "[recovery] step=2 skipped reason=%s model=%s (already degenerated twice this turn)",
             reason, model,
         )
+
+    if _cancelled():
+        yield ("result", {"ok": False, "cancelled": True})
+        return
 
     # ── Step 3: the utility endpoint — a different, usually-resident model ──
     try:
@@ -5974,6 +5994,17 @@ async def _stream_agent_loop_body(
     pending_user_messages: Optional[Callable[[], List[Dict[str, Any]]]] = None,
     autonomy_preset: Optional[str] = None,
     pending_pause: Optional[Callable[[], bool]] = None,
+    # BUG-STOP-01: authoritative cancellation, mirroring `pending_pause`'s
+    # shape (optional, sync, no args) but polled far more aggressively -- at
+    # the top of every round, before every tool call, before every
+    # auto-continue extension and inside the empty-round nudge retries and
+    # the recovery ladder -- instead of only "at the next safe point between
+    # rounds". Returns a reason string once this turn's run has been
+    # cancelled (`agent_runs.is_cancel_requested`), else falsy. `scope=task`/
+    # `"work"` wires this; `scope=generation` keeps using `pending_pause`
+    # (cooperative pause, resumable) since the two are deliberately
+    # different things (see routes/chat_routes.py's chat_stop docstring).
+    pending_cancel: Optional[Callable[[], Optional[str]]] = None,
 ) -> AsyncGenerator[str, None]:
     """Streaming agent loop generator.
 
@@ -8772,8 +8803,58 @@ async def _stream_agent_loop_body(
         except Exception as _dd_err:
             logger.debug("[harness] dependency drift check skipped: %s", _dd_err)
     round_num = 0
+    # BUG-STOP-01/item 4: hard wall-clock ceiling, independent of round
+    # count -- the backstop for a turn whose individual rounds are each
+    # cheap enough that neither the round-budget nor the progress-gate
+    # check above ever trips, but that has still been running an
+    # unreasonable amount of real time.
+    _turn_started_monotonic = time.monotonic()
+    try:
+        _turn_max_seconds = float(get_setting("agent_turn_max_seconds", 3600) or 3600)
+    except (TypeError, ValueError):
+        _turn_max_seconds = 3600.0
+    _turn_ceiling_hit = False
     while True:
         round_num += 1
+        # BUG-STOP-01: the FIRST thing every round does -- a `scope=task`/
+        # `"work"` Stop must win before this round spends a single model
+        # call or tool call. Authoritative: polled here in addition to (not
+        # instead of) `run.task.cancel()`'s own CancelledError, so a Stop
+        # still ends the turn promptly even on a path where the exception
+        # would otherwise take a while to propagate.
+        if pending_cancel is not None:
+            try:
+                _round_cancel_reason = pending_cancel()
+            except Exception:
+                _round_cancel_reason = None
+            if _round_cancel_reason:
+                _ledger.stop_reason = "cancelled"
+                _ledger.notes.append(f"cancelled_at_round_top@{round_num}:{_round_cancel_reason}")
+                yield "data: " + json.dumps({
+                    "type": "cancelled", "round": round_num, "reason": _round_cancel_reason,
+                    "message": "Detenido por el usuario.",
+                }) + "\n\n"
+                break
+        # BUG-STOP-01/item 4: wall-clock ceiling, checked right after the
+        # cancellation check above (a Stop always takes priority over the
+        # ceiling's own end-of-turn question) and before this round spends
+        # any time at all.
+        if _turn_max_seconds > 0 and (time.monotonic() - _turn_started_monotonic) >= _turn_max_seconds:
+            _turn_ceiling_hit = True
+            _elapsed_s = round(time.monotonic() - _turn_started_monotonic, 1)
+            logger.warning(
+                "[agent] turn wall-clock ceiling (%ss) reached at round %s (elapsed=%ss)",
+                _turn_max_seconds, round_num, _elapsed_s,
+            )
+            _ledger.notes.append(f"turn_wall_clock_ceiling@{round_num}:{_elapsed_s}s")
+            for _rk, _rpayload in _end_turn_with_question(
+                reason="turn_wall_clock_ceiling",
+                round_num=round_num, session_id=session_id, owner=owner,
+                ledger=_ledger,
+            ):
+                yield _rpayload
+            _awaiting_user = True
+            break
         try:
             from src.tool_clock import set_round as _clock_set_round
             _clock_set_round(round_num)
@@ -9598,11 +9679,21 @@ async def _stream_agent_loop_body(
                         # skip a third same-model attempt and go straight to
                         # the utility model.
                         skip_same_model_retry=True,
+                        pending_cancel=pending_cancel,
                     ):
                         if _rk == "event":
                             yield _rpayload
                         else:
                             _recovery_result = _rpayload
+                    if _recovery_result and _recovery_result.get("cancelled"):
+                        # BUG-STOP-01: a Stop landed mid-recovery-ladder.
+                        _ledger.stop_reason = "cancelled"
+                        _ledger.notes.append(f"cancelled_during_recovery@{round_num}")
+                        yield "data: " + json.dumps({
+                            "type": "cancelled", "round": round_num,
+                            "message": "Detenido por el usuario.",
+                        }) + "\n\n"
+                        break
                     if _recovery_result and _recovery_result.get("ok"):
                         round_response = _recovery_result["text"]
                         full_response += round_response
@@ -10450,11 +10541,21 @@ async def _stream_agent_loop_body(
                         max_tokens=max_tokens, gen_overrides=gen_overrides,
                         session_id=session_id, owner=owner,
                         agent_stream_timeout=agent_stream_timeout,
+                        pending_cancel=pending_cancel,
                     ):
                         if _rk == "event":
                             yield _rpayload
                         else:
                             _recovery_result = _rpayload
+                    if _recovery_result and _recovery_result.get("cancelled"):
+                        # BUG-STOP-01: a Stop landed mid-recovery-ladder.
+                        _ledger.stop_reason = "cancelled"
+                        _ledger.notes.append(f"cancelled_during_recovery@{round_num}")
+                        yield "data: " + json.dumps({
+                            "type": "cancelled", "round": round_num,
+                            "message": "Detenido por el usuario.",
+                        }) + "\n\n"
+                        break
                     if _recovery_result and _recovery_result.get("ok"):
                         round_response = _recovery_result["text"]
                         cleaned_round = round_response
@@ -11799,6 +11900,7 @@ async def _stream_agent_loop_body(
         tool_result_texts = []  # plain text for native tool role messages
         tool_result_records = []  # aligned structured provenance for next round
         budget_hit = False
+        _cancel_hit = False  # BUG-STOP-01: set inside the tool loop below
 
         # CALL-04: run a PREFIX of consecutive, side-effect-free reads on
         # distinct resources concurrently (asyncio.gather), same result each
@@ -11898,6 +12000,24 @@ async def _stream_agent_loop_body(
             # inherit a previous call's timing just because this variable
             # name is shared across the loop body).
             _tool_duration_ms: Optional[float] = None
+            # BUG-STOP-01: authoritative cancellation, checked before every
+            # tool call -- a `scope=task`/`work` Stop must not let one more
+            # tool start just because the CancelledError raised by
+            # `run.task.cancel()` had not yet reached this exact await point.
+            if pending_cancel is not None:
+                try:
+                    _cancel_reason = pending_cancel()
+                except Exception:
+                    _cancel_reason = None
+                if _cancel_reason:
+                    _ledger.stop_reason = "cancelled"
+                    _ledger.notes.append(f"cancelled_before_tool_call@{round_num}:{_cancel_reason}")
+                    yield "data: " + json.dumps({
+                        "type": "cancelled", "round": round_num, "reason": _cancel_reason,
+                        "message": "Detenido por el usuario.",
+                    }) + "\n\n"
+                    _cancel_hit = True
+                    break
             # --- Tool budget check ---
             if max_tool_calls > 0 and total_tool_calls >= max_tool_calls:
                 yield f'data: {json.dumps({"type": "budget_exceeded", "limit": max_tool_calls, "used": total_tool_calls})}\n\n'
@@ -13028,6 +13148,12 @@ async def _stream_agent_loop_body(
                 provider_cost_usd=_round_usage_bucket.get("cost_usd"),
             ))
         _budget_ledger.add_active_seconds(time.time() - _round_start)
+
+        # BUG-STOP-01: a mid-round cancellation (scope=task/work) ends the
+        # turn immediately -- checked before the budget/loop-breaker
+        # outcomes below so a Stop always wins the race against them.
+        if _cancel_hit:
+            break
 
         # If budget was hit, stop the loop
         if budget_hit:

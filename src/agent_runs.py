@@ -39,7 +39,7 @@ import re
 import threading
 import time
 import uuid
-from typing import Any, AsyncGenerator, Dict, List, Optional
+from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple
 
 from src import api_version
 
@@ -166,7 +166,17 @@ class _Run:
                  # to the CURRENT turn. `send_after_queue` is NOT applied to the
                  # live turn; it is delivered as a new chat turn once this one
                  # ends (drained by the route layer via take_send_after).
-                 "pause_requested", "steer_queue", "send_after_queue")
+                 "pause_requested", "steer_queue", "send_after_queue",
+                 # BUG-STOP-01: an explicit, polled cancellation flag,
+                 # independent of asyncio task cancellation. `stop()` sets
+                 # this to a reason string (never cleared) at the same
+                 # moment it calls `task.cancel()`, so the round loop can
+                 # check it directly at every safe point instead of relying
+                 # solely on a CancelledError actually being delivered and
+                 # propagated through however many nested try/except layers
+                 # a real turn's tool execution goes through. Authoritative:
+                 # once set, it is never reset for this run.
+                 "cancel_requested")
 
     @property
     def outcome(self) -> Optional[str]:
@@ -209,6 +219,8 @@ class _Run:
         self.pause_requested: bool = False
         self.steer_queue: list = []
         self.send_after_queue: list = []
+        # BUG-STOP-01
+        self.cancel_requested: Optional[str] = None
 
 
 _RUNS: Dict[str, _Run] = {}
@@ -1314,14 +1326,58 @@ def stop(session_id: str, expected_run_id: Optional[str] = None) -> bool:
     A stale browser may issue Stop after another tab has replaced the session's
     run. Once the caller knows its opaque run identity, fail closed rather than
     cancelling that newer run.
+
+    Thin wrapper over `stop_with_reason` for every pre-existing caller that
+    only wants the bool. See `stop_with_reason` for WHY a call returned
+    False (BUG-STOP-01: the route layer needs the reason to stop reporting a
+    bare `stopped: false` when the run WAS there but the id didn't match).
+    """
+    return stop_with_reason(session_id, expected_run_id)[0]
+
+
+def stop_with_reason(session_id: str, expected_run_id: Optional[str] = None) -> Tuple[bool, str]:
+    """Same as `stop`, plus a machine-readable reason for the route layer to
+    surface instead of a bare `False` (BUG-STOP-01, item 3): the caller can
+    then tell the person "no live run for this session" from "the run you
+    were watching already ended" from "your Stop reached the run" -- three
+    very different situations a plain bool cannot distinguish.
+
+    Sets `run.cancel_requested` BEFORE calling `task.cancel()` whenever a
+    matching, live run is found -- authoritative for the round loop to poll
+    even if asyncio's own cancellation delivery is ever delayed (a blocking
+    call, a nested task boundary): the flag does not depend on where in the
+    turn the CancelledError actually lands.
     """
     run = _RUNS.get(session_id)
-    if not expected_run_id or run is None or run.run_id != expected_run_id:
-        return False
-    if run and run.task and not run.task.done():
-        run.task.cancel()
-        return True
-    return False
+    if run is None:
+        return False, "no_active_run"
+    if not expected_run_id:
+        return False, "no_run_id_supplied"
+    if run.run_id != expected_run_id:
+        return False, "run_id_mismatch"
+    if not run.task or run.task.done():
+        return False, "run_already_finished"
+    run.cancel_requested = "task_cancelled"
+    run.task.cancel()
+    return True, "cancelled"
+
+
+def is_cancel_requested(session_id: str, expected_run_id: Optional[str] = None) -> Optional[str]:
+    """BUG-STOP-01: the authoritative, polled cancellation check the round
+    loop uses at every safe point (top of round, before every tool call,
+    before every auto-continue extension, inside empty-round nudges and
+    inside every recovery-ladder step). Returns the cancellation reason
+    string once `stop_with_reason`/`stop` has flagged this exact run, else
+    None. `expected_run_id`, when given, guards against a loop instance that
+    outlives its own run being fooled by a *different*, later run of the
+    same session that also got cancelled -- mirrors every other
+    `expected_run_id` check in this module."""
+    run = _RUNS.get(session_id)
+    if run is None:
+        return None
+    if expected_run_id and run.run_id != expected_run_id:
+        return None
+    return run.cancel_requested
 
 
 # ---------------------------------------------------------------------------

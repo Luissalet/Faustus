@@ -698,3 +698,15 @@ deep-link de workflows, recetas desde un run real) ya no aparece aquí.
   La excepción se tragaba en un logger de debug; ahora `routes/codex_routes.py`
   la nombra en `stderr` para que la próxima vez se pueda bisecar en vez de
   encogerse de hombros. **Pendiente: si vuelve a salir, leer la clase.**
+
+- **BUG-STOP-01 (FAUSTUS.md §116).** Stop (`POST /api/chat/stop`, cualquier
+  scope) arreglado a nivel de mecanismo: cancelación sondeada y autoritativa
+  en `src/agent_loop.py` (`pending_cancel`, 5 puntos de chequeo) + la ruta ya
+  informa la razón (`no_active_run`/`run_id_mismatch`/`run_already_finished`)
+  en vez de un `false` desnudo + techo `agent_turn_max_seconds`. **Pendiente:
+  confirmar contra la máquina en vivo (llama-server real, la tarea de la
+  Pokédex que llegó a la ronda 180) que un clic de Stop para el turno en la
+  ronda siguiente, y que `studio/src/screens/Studio.tsx`'s `runIdRef` no se
+  desincroniza del run real durante un turno de cientos de rondas — no se
+  pudo descartar del todo un desajuste de `run_id` específico de la UI sin
+  esa máquina.**

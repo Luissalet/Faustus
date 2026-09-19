@@ -3848,6 +3848,13 @@ def setup_chat_routes(
                             # agent_runs (see chat_pause / chat_steer below).
                             pending_user_messages=lambda: agent_runs.take_steers(session),
                             pending_pause=lambda: agent_runs.take_pause_request(session),
+                            # BUG-STOP-01: authoritative cancellation for
+                            # scope=task/work — polled far more aggressively
+                            # than pending_pause (see _stream_agent_loop_body's
+                            # docstring for exactly where). Not consumed —
+                            # `is_cancel_requested` stays true for the rest of
+                            # this run so every remaining check point agrees.
+                            pending_cancel=lambda: agent_runs.is_cancel_requested(session),
                         ):
                             if chunk.startswith("data: ") and not chunk.startswith("data: [DONE]"):
                                 try:
@@ -4322,8 +4329,15 @@ def setup_chat_routes(
             if isinstance(_stop_body, dict) else ""
         )
         if _scope not in ("generation", "task", "work"):
-            stopped = agent_runs.stop(session_id, _expected_run_id)
-            return {"stopped": stopped}
+            # BUG-STOP-01: report WHY a stop did nothing instead of a bare
+            # `stopped: false` — "no run for this session" and "your run id
+            # is stale (a newer run replaced it)" are different problems the
+            # UI (and whoever is debugging a live report) need told apart.
+            stopped, _reason = agent_runs.stop_with_reason(session_id, _expected_run_id)
+            out: Dict[str, Any] = {"stopped": stopped}
+            if not stopped:
+                out["reason"] = _reason
+            return out
 
         if _scope == "generation":
             paused = agent_runs.request_pause(session_id, _expected_run_id)
@@ -4334,7 +4348,7 @@ def setup_chat_routes(
         # reflects the turn as the user actually saw it, not what survives
         # the cancel.
         what_ran_before = agent_runs.tools_ran(session_id)
-        stopped = agent_runs.stop(session_id, _expected_run_id)
+        stopped, _stop_reason = agent_runs.stop_with_reason(session_id, _expected_run_id)
         from src.agent_tools.subagent_tools import stop_workers_of_parent_by_level
         # A07 (docs/spec/paridad/): TRANSITIVE — parent -> child -> grandchild
         # -> ... — not just the direct children the original implementation
@@ -4402,13 +4416,16 @@ def setup_chat_routes(
             cleanup["bg_jobs_cancelled"] = [
                 str(rec.get("id")) for rec in bg_jobs.cancel_for_session(session_id)
             ]
-        return {
+        out = {
             "scope": _scope,
             "stopped": stopped,
             "cancelled_at": time.time(),
             "what_ran_before": what_ran_before,
             "cleanup": cleanup,
         }
+        if not stopped:
+            out["reason"] = _stop_reason
+        return out
 
     # ------------------------------------------------------------------ #
     # POST /api/chat/regenerate/{sid} — QA-36/UX-03: redo the session's last
