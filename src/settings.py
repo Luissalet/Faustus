@@ -636,6 +636,13 @@ DEFAULT_SETTINGS = {
     # old per-turn rebuild. Invalidated when the session is reopened, when
     # memory is written, or explicitly (memory_engine.invalidate_snapshot).
     "memory_snapshot_per_session": True,
+    # Contradiction tracking (src/memory_conflicts.py): when a NEW memory
+    # disagrees with an EXISTING active one ("uses Python" vs "uses Rust"),
+    # record it as an open conflict instead of silently keeping both active
+    # forever. Off = detection never runs on write, and the ranking penalty/
+    # marker in public_item() never applies; conflicts already recorded stay
+    # readable and resolvable either way.
+    "memory_conflict_detection": True,
     # Specialist experts (services/experts.py): a local agent with its own
     # corpus — a rubric, the user's own PDFs on disk, and citations that
     # resolve back to the page they came from. Off = no expert block is

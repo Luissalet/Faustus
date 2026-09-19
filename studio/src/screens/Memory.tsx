@@ -1,4 +1,5 @@
 import {
+  AlertTriangle,
   Brain,
   Check,
   CheckSquare,
@@ -38,6 +39,7 @@ import {
   getPref,
   importFromFile,
   invalidateDecision,
+  listConflicts,
   listDecisions,
   listFailureCandidates,
   listMemories,
@@ -48,6 +50,7 @@ import {
   previewPack,
   recordDecision,
   registerFailure,
+  resolveConflict,
   RULE_LEVELS,
   ruleFeedback,
   setPref,
@@ -59,6 +62,7 @@ import {
   type ImportSuggestion,
   type LearnedRule,
   type Memory,
+  type MemoryConflict,
   type RuleStats,
 } from '../adapters/memory';
 import './projects.css';
@@ -537,6 +541,113 @@ function LearnedRules({ say }: { say: (text: string) => void }) {
         >
           <pre className="fs-rules__pack">{pack.text || t('(empty)')}</pre>
         </Dialog>
+      )}
+    </section>
+  );
+}
+
+/* ── Conflicts (src/memory_conflicts.py): a new memory that contradicts an
+ * existing active one lands here instead of both silently staying active.
+ * Three choices, all explicit: keep the newer, keep the older, or say both
+ * are true (a real disagreement the model should just be told about). */
+
+function MemoryConflictRow({
+  conflict,
+  onResolve,
+}: {
+  conflict: MemoryConflict;
+  onResolve: (keep: 'new' | 'old' | 'both') => void;
+}) {
+  return (
+    <article className="fs-conflict">
+      <span className="fs-conflict__reason">
+        <AlertTriangle size={13} />
+        {conflict.reason === 'negation' ? t('Contradiction') : t('Conflicting values')}
+      </span>
+      <div className="fs-conflict__pair">
+        <div className="fs-conflict__item" data-side="new">
+          <span className="fs-conflict__tag">{t('Newer')}</span>
+          <span className="fs-conflict__text">
+            {conflict.newText} <span className="fs-conflict__date">{conflict.newUpdatedAt ? relativeTime(conflict.newUpdatedAt) : ''}</span>
+          </span>
+        </div>
+        <div className="fs-conflict__item" data-side="old">
+          <span className="fs-conflict__tag">{t('Older')}</span>
+          <span className="fs-conflict__text">
+            {conflict.oldText} <span className="fs-conflict__date">{conflict.oldUpdatedAt ? relativeTime(conflict.oldUpdatedAt) : ''}</span>
+          </span>
+        </div>
+      </div>
+      <div className="fs-conflict__actions">
+        <Button variant="secondary" size="sm" label={t('Keep newer')} onClick={() => onResolve('new')} />
+        <Button variant="secondary" size="sm" label={t('Keep older')} onClick={() => onResolve('old')} />
+        <Button variant="ghost" size="sm" label={t('Both are true')} onClick={() => onResolve('both')} />
+      </div>
+    </article>
+  );
+}
+
+function MemoryConflicts({ say }: { say: (text: string) => void }) {
+  const [conflicts, setConflicts] = useState<MemoryConflict[] | null>(null);
+  const [failed, setFailed] = useState<string | null>(null);
+
+  const load = useCallback((signal?: AbortSignal) => {
+    listConflicts('open', signal)
+      .then((rows) => {
+        setConflicts(rows);
+        setFailed(null);
+      })
+      .catch((err: unknown) => {
+        if ((err as { name?: string })?.name === 'AbortError') return;
+        setConflicts([]);
+        setFailed(t('Could not read the memory conflicts.'));
+      });
+  }, []);
+
+  useEffect(() => {
+    const c = new AbortController();
+    load(c.signal);
+    return () => c.abort();
+  }, [load]);
+
+  if (!failed && conflicts && conflicts.length === 0) return null;
+
+  return (
+    <section className="fs-rules" aria-labelledby="fs-conflicts-title">
+      <header className="fs-rules__head">
+        <div>
+          <h2 id="fs-conflicts-title" className="fs-rules__title">
+            {t('Conflicts')} <span className="fs-rules__count">{conflicts?.length ?? 0}</span>
+          </h2>
+          <p className="fs-prose">{t('A new memory disagreed with an existing one. Both stay visible to the model until you pick a side.')}</p>
+        </div>
+      </header>
+
+      {failed && <p className="fs-rules__error">{failed}</p>}
+      {!conflicts && !failed && <Skeleton label={t('Loading conflicts')} count={1} height="48px" />}
+      {conflicts && conflicts.length > 0 && (
+        <div className="fs-rules__list">
+          {conflicts.map((c) => (
+            <MemoryConflictRow
+              key={c.id}
+              conflict={c}
+              onResolve={(keep) =>
+                void resolveConflict(c.id, keep)
+                  .then(() => {
+                    setConflicts((cur) => (cur ? cur.filter((x) => x.id !== c.id) : cur));
+                    say(
+                      keep === 'both'
+                        ? t('Both memories are kept as true.')
+                        : keep === 'new'
+                          ? t('Kept the newer memory; the older one was forgotten.')
+                          : t('Kept the older memory; the newer one was forgotten.'),
+                    );
+                  })
+                  .catch(() => say(t('Could not resolve the conflict.')))
+              }
+            />
+          ))}
+        </div>
       )}
     </section>
   );
@@ -1175,6 +1286,8 @@ export function MemoryScreen() {
       )}
 
       <LearnedRules say={say} />
+
+      <MemoryConflicts say={say} />
 
       <FailureCandidates say={say} />
 

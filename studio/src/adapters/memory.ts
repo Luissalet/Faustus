@@ -499,3 +499,60 @@ export async function invalidateDecision(id: string, reason: string, supersededB
   const data = (await response.json()) as { decision?: Record<string, unknown> };
   return decisionFrom(data.decision ?? {});
 }
+
+/* ── contradiction tracking (src/memory_conflicts.py) ──────────────────────
+ * When a new memory disagrees with an existing active one, the store
+ * records an open row instead of silently keeping both — the panel below
+ * lets the owner say which one is right. */
+
+export interface MemoryConflict {
+  id: string;
+  newId: string;
+  oldId: string;
+  newText: string;
+  oldText: string;
+  newUpdatedAt: string;
+  oldUpdatedAt: string;
+  reason: 'negation' | 'same_subject_different_value' | string;
+  detail: string;
+  status: 'open' | 'kept_new' | 'kept_old' | 'kept_both' | string;
+  createdAt: string;
+}
+
+function conflictFrom(raw: Record<string, unknown>): MemoryConflict {
+  return {
+    id: String(raw.id ?? ''),
+    newId: String(raw.new_id ?? ''),
+    oldId: String(raw.old_id ?? ''),
+    newText: typeof raw.new_text === 'string' ? raw.new_text : '',
+    oldText: typeof raw.old_text === 'string' ? raw.old_text : '',
+    newUpdatedAt: typeof raw.new_updated_at === 'string' ? raw.new_updated_at : '',
+    oldUpdatedAt: typeof raw.old_updated_at === 'string' ? raw.old_updated_at : '',
+    reason: typeof raw.reason === 'string' ? raw.reason : '',
+    detail: typeof raw.detail === 'string' ? raw.detail : '',
+    status: typeof raw.status === 'string' ? raw.status : 'open',
+    createdAt: typeof raw.created_at === 'string' ? raw.created_at : '',
+  };
+}
+
+export async function listConflicts(status = 'open', signal?: AbortSignal): Promise<MemoryConflict[]> {
+  const data = await getJson<{ conflicts?: Record<string, unknown>[] }>(
+    `/api/memory-engine/conflicts?status=${encodeURIComponent(status)}`,
+    signal,
+  );
+  return (data.conflicts ?? []).map(conflictFrom);
+}
+
+export async function resolveConflict(id: string, keep: 'new' | 'old' | 'both'): Promise<MemoryConflict> {
+  const response = await ok(
+    await fetch(`/api/memory-engine/conflicts/${encodeURIComponent(id)}/resolve`, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ keep }),
+    }),
+    'memory-engine/conflicts/resolve',
+  );
+  const data = (await response.json()) as { conflict?: Record<string, unknown> };
+  return conflictFrom(data.conflict ?? {});
+}

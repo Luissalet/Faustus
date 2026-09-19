@@ -109,6 +109,10 @@ class InvalidateDecisionBody(BaseModel):
     superseded_by: Optional[str] = None
 
 
+class ResolveConflictBody(BaseModel):
+    keep: str  # "new" | "old" | "both"
+
+
 def _owner(request: Request) -> str:
     try:
         return str(effective_user(request) or "")
@@ -417,5 +421,46 @@ def setup_memory_engine_routes() -> APIRouter:
         if item is None:
             raise HTTPException(status_code=404, detail="no such decision")
         return {"status": "success", "decision": item}
+
+    # ── contradiction tracking (memory_conflicts.py) ────────────────────────
+
+    @router.get("/conflicts")
+    async def list_conflicts(request: Request, status: Optional[str] = "open",
+                             limit: int = 200,
+                             _admin: None = Depends(require_admin)) -> Dict[str, Any]:
+        """Open (or, with `status`, any-status) contradictions for this
+        owner, both items' current text included so the panel never has to
+        make a second call per row."""
+        from src import memory_conflicts, memory_engine as engine
+
+        owner = _owner(request)
+        rows = memory_conflicts.list_conflicts(owner=owner, status=status, limit=limit)
+        out = []
+        for row in rows:
+            entry = dict(row)
+            new_item = engine.get_item(row.get("new_id"))
+            old_item = engine.get_item(row.get("old_id"))
+            entry["new_text"] = (new_item or {}).get("text", "")
+            entry["old_text"] = (old_item or {}).get("text", "")
+            entry["new_updated_at"] = (new_item or {}).get("updated_at", "")
+            entry["old_updated_at"] = (old_item or {}).get("updated_at", "")
+            out.append(entry)
+        return {"status": "success", "conflicts": out}
+
+    @router.post("/conflicts/{conflict_id}/resolve")
+    async def resolve_conflict(conflict_id: str, body: ResolveConflictBody,
+                               request: Request,
+                               _admin: None = Depends(require_admin)) -> Dict[str, Any]:
+        from src import memory_conflicts, memory_engine as engine
+
+        try:
+            result = memory_conflicts.resolve(conflict_id, body.keep,
+                                              owner=_owner(request))
+        except memory_conflicts.MemoryConflictError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        if result is None:
+            raise HTTPException(status_code=404, detail="no such open conflict")
+        engine.invalidate_all_snapshots()
+        return {"status": "success", "conflict": result}
 
     return router

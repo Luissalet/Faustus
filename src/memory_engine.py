@@ -502,12 +502,50 @@ def _row_to_item(row: sqlite3.Row) -> Dict[str, Any]:
     return item
 
 
+def memory_conflict_detection_enabled() -> bool:
+    try:
+        from src.settings import get_setting
+        return bool(get_setting("memory_conflict_detection", True))
+    except Exception:  # noqa: BLE001
+        return True
+
+
+def _open_conflict(item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """The open conflict in which `item` is the OLDER side, or None. Never
+    raises: a broken conflicts table must cost the marker, not the read."""
+    if not memory_conflict_detection_enabled():
+        return None
+    try:
+        from src import memory_conflicts
+        return memory_conflicts.open_conflict_for(item.get("id"), item.get("owner"))
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("memory engine: conflict lookup failed (%s)", exc)
+        return None
+
+
 def public_item(item: Dict[str, Any], now: Optional[datetime] = None) -> Dict[str, Any]:
     """The item as the API/tool/UI sees it: stored fields plus the COMPUTED
-    score fields (never stored — they are a function of the clock)."""
+    score fields (never stored — they are a function of the clock).
+
+    src/memory_conflicts.py: when this item is the OLDER side of an open
+    contradiction, its effective_score is discounted (never hidden — it
+    still ranks, just lower) and its text carries a short marker so a
+    packed prompt tells the model these two disagree instead of handing it
+    both as if they agreed.
+    """
     out = dict(item)
     out["id8"] = str(item.get("id") or "")[:8]
-    out["effective_score"] = round(effective_score(item, now), 4)
+    score = effective_score(item, now)
+    conflict = _open_conflict(item)
+    out["open_conflict"] = conflict
+    if conflict:
+        from src.memory_conflicts import RANKING_PENALTY
+        score *= RANKING_PENALTY
+        text = str(out.get("text") or "")
+        marker = "(contradicted by a newer memory)"
+        if marker not in text:
+            out["text"] = f"{text} {marker}".strip()
+    out["effective_score"] = round(score, 4)
     out["harmful_ratio"] = round(harmful_ratio(item, now), 4)
     out["helpful_count"] = len(item.get("helpful") or [])
     out["harmful_count"] = len(item.get("harmful") or [])
@@ -814,6 +852,12 @@ def add_item(
     }
     save_item(item)
     _index(item["id"], clean)
+    if memory_conflict_detection_enabled():
+        try:
+            from src import memory_conflicts
+            memory_conflicts.detect_for(item)
+        except Exception as exc:  # noqa: BLE001 - never block the write
+            logger.debug("memory engine: conflict detection failed (%s)", exc)
     return item
 
 

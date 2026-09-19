@@ -500,6 +500,76 @@
   }
 }
 
+/* ── Conflicts (src/memory_conflicts.py) ── */
+
+.fs-conflict {
+  display: grid;
+  gap: var(--fs-space-2);
+  padding: var(--fs-space-3) var(--fs-space-4);
+  border: 1px solid color-mix(in srgb, var(--fs-warning) 50%, var(--fs-border));
+  border-radius: var(--fs-radius-panel);
+  background: var(--fs-surface-1);
+}
+
+.fs-conflict__reason {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--fs-warning);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.fs-conflict__pair {
+  display: grid;
+  gap: 6px;
+}
+
+.fs-conflict__item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: baseline;
+  overflow-wrap: anywhere;
+}
+
+.fs-conflict__tag {
+  flex: none;
+  padding: 1px 8px;
+  border-radius: var(--fs-radius-pill);
+  background: var(--fs-highlight);
+  color: var(--fs-text-2);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.fs-conflict__item[data-side='new'] .fs-conflict__tag {
+  color: var(--fs-success);
+}
+
+.fs-conflict__item[data-side='old'] .fs-conflict__tag {
+  color: var(--fs-text-3);
+}
+
+.fs-conflict__text {
+  color: var(--fs-text-1);
+}
+
+.fs-conflict__date {
+  font-size: 11px;
+  color: var(--fs-text-3);
+}
+
+.fs-conflict__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fs-space-2);
+}
+
 /* ── What the tidy did ── */
 
 .fs-tidy {

@@ -7925,3 +7925,17 @@ model name	nombre del modelo
 Forking…	Bifurcando…
 Fork	Bifurcar
 (empty response)	(respuesta vacía)
+Contradiction	Contradicción
+Conflicting values	Valores en conflicto
+Newer	Más reciente
+Older	Más antigua
+Keep newer	Mantener la más reciente
+Keep older	Mantener la más antigua
+Both are true	Ambas son ciertas
+Could not read the memory conflicts.	No se pudieron leer los conflictos de memoria.
+A new memory disagreed with an existing one. Both stay visible to the model until you pick a side.	Un recuerdo nuevo contradice a uno existente. Ambos siguen visibles para el modelo hasta que elijas uno.
+Loading conflicts	Cargando conflictos
+Kept the newer memory; the older one was forgotten.	Se mantuvo el recuerdo más reciente; el más antiguo se olvidó.
+Kept the older memory; the newer one was forgotten.	Se mantuvo el recuerdo más antiguo; el más reciente se olvidó.
+Both memories are kept as true.	Ambos recuerdos se mantienen como ciertos.
+Could not resolve the conflict.	No se pudo resolver el conflicto.
