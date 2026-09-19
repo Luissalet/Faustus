@@ -283,19 +283,40 @@ def setup_memory_engine_routes() -> APIRouter:
         request: Request,
         project: Optional[str] = None,
         query: str = "",
+        session: str = "",
         _admin: None = Depends(require_admin),
     ) -> Dict[str, Any]:
         """The exact block the model would see — nothing regenerated, the same
-        function the prompt builder calls."""
+        function the prompt builder calls.
+
+        With `session`, this is the very block that conversation is using:
+        `pack_for_session()` returns the frozen snapshot when the per-session
+        snapshot is on, so the preview shows what the model actually has in
+        front of it rather than a freshly assembled block. Either way the
+        answer carries the snapshot flag and timestamp, and what the hard
+        character cap had to drop (`dropped_count`/`dropped_ids`/`cap_chars`/
+        `truncated_item`), so a reader can tell a complete block from a
+        trimmed one.
+        """
         from src import memory_engine as engine
 
         def payload() -> Dict[str, Any]:
+            empty = {"text": "", "ids": [], "degraded": False,
+                     "dropped_ids": [], "dropped_count": 0,
+                     "cap_chars": engine.block_max_chars(),
+                     "truncated_item": False,
+                     "snapshot": False, "snapshot_taken_at": None}
             try:
-                detail = engine.pack_detail(_owner(request), project, query,
-                                            engine.injection_budget())
+                if str(session or "").strip():
+                    detail = engine.pack_for_session(
+                        session, _owner(request), project, query,
+                        engine.injection_budget())
+                else:
+                    detail = engine.pack_detail(_owner(request), project, query,
+                                                engine.injection_budget())
             except Exception as exc:  # noqa: BLE001 - mirrors pack()'s own posture
                 logger.debug("memory engine: pack preview failed: %s", exc)
-                detail = {"text": "", "ids": [], "degraded": False}
+                detail = dict(empty)
             return {
                 "status": "success",
                 "pack": detail.get("text") or "",
@@ -304,6 +325,13 @@ def setup_memory_engine_routes() -> APIRouter:
                 "chars": len(detail.get("text") or ""),
                 "budget": engine.injection_budget(),
                 "enabled": engine.injection_enabled(),
+                "session": str(session or "").strip(),
+                "snapshot": bool(detail.get("snapshot")),
+                "snapshot_taken_at": detail.get("snapshot_taken_at"),
+                "dropped_count": int(detail.get("dropped_count") or 0),
+                "dropped_ids": detail.get("dropped_ids") or [],
+                "cap_chars": int(detail.get("cap_chars") or engine.block_max_chars()),
+                "truncated_item": bool(detail.get("truncated_item")),
             }
         if robot.wants(request):
             return await robot.reply(request, payload)

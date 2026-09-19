@@ -328,7 +328,10 @@ ITEMS = {
     "trust_classes": {"human_explicit": 0.85, "agent_assertion": 0.5},
 }
 PACK = {"status": "success", "pack": "# Learned\n- run the tests\n", "ids": ["a" * 32],
-        "degraded": False, "chars": 26, "budget": 2000, "enabled": True}
+        "degraded": False, "chars": 26, "budget": 2000, "enabled": True,
+        "session": "", "snapshot": False, "snapshot_taken_at": None,
+        "dropped_count": 0, "dropped_ids": [], "cap_chars": 6000,
+        "truncated_item": False}
 # Robot mode: one row per item, the 32-char id shortened to its id8, the
 # feedback events reduced to their counts, and the enum tables the Brain page
 # paints its dropdowns from left out.
@@ -361,6 +364,7 @@ def memory_client(monkeypatch):
     monkeypatch.setattr(engine, "pack_detail",
                         lambda owner, project, query, budget: {
                             "text": PACK["pack"], "ids": PACK["ids"], "degraded": False})
+    monkeypatch.setattr(engine, "block_max_chars", lambda: PACK["cap_chars"])
     monkeypatch.setattr(engine, "injection_budget", lambda: PACK["budget"])
     monkeypatch.setattr(engine, "injection_enabled", lambda: True)
     app = FastAPI()

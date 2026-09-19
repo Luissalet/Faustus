@@ -897,6 +897,29 @@ def test_api_pack_is_the_exact_block_the_model_would_see(client, store):
     assert "numpy" in same["pack"]
 
 
+def test_api_pack_reports_the_cap_and_the_session_snapshot(client, store):
+    """The preview must say whether what it shows is a live assembly or the
+    frozen block a conversation is actually using, and what the hard cap had
+    to leave out — otherwise a trimmed block reads like a complete one."""
+    client.post("/api/memory-engine/items", json={"text": "Always run the project tests"})
+
+    live = client.get("/api/memory-engine/pack?query=tests").json()
+    assert live["snapshot"] is False and live["snapshot_taken_at"] is None
+    assert live["session"] == ""
+    assert live["cap_chars"] == engine.block_max_chars()
+    assert live["dropped_count"] == 0 and live["dropped_ids"] == []
+    assert live["truncated_item"] is False
+
+    first = client.get("/api/memory-engine/pack?query=tests&session=s-1").json()
+    assert first["session"] == "s-1"
+    assert first["pack"] == live["pack"]
+    # The second read of the same conversation is the frozen one, stamped.
+    again = client.get("/api/memory-engine/pack?query=tests&session=s-1").json()
+    assert again["snapshot"] is True
+    assert again["snapshot_taken_at"]
+    assert again["pack"] == first["pack"]
+
+
 def test_api_endpoints_are_admin_only(store, monkeypatch):
     from fastapi import FastAPI, HTTPException
     from fastapi.testclient import TestClient
