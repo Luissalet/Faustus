@@ -1401,7 +1401,8 @@ class DeepResearcher:
             perspective_items = await self._generate_perspective_questions(question)
             if not perspective_items:
                 return
-            merged = self._merge_perspective_plan(general, perspective_items)
+            merged = self._merge_perspective_plan(general, perspective_items,
+                                                  topic=question)
             if any(item.get("perspective") != "general" for item in merged):
                 self.perspective_plan = merged
         except Exception as e:  # noqa: BLE001 - perspectives are never load-bearing
@@ -1471,7 +1472,8 @@ class DeepResearcher:
         return out
 
     def _merge_perspective_plan(self, general: List[str],
-                                perspective_items: List[Dict[str, str]]
+                                perspective_items: List[Dict[str, str]],
+                                topic: str = "",
                                 ) -> List[Dict[str, str]]:
         """De-dupe (normalized text + token-overlap threshold) and cap to
         `FIRST_ROUND_QUERY_BUDGET`. `general` is always kept in full — "the
@@ -1480,18 +1482,29 @@ class DeepResearcher:
         budget is left, in the order their perspective was returned."""
         merged: List[Dict[str, str]] = []
         seen_keys: List[Set[str]] = []
+        # Words of the research topic itself appear in nearly every question
+        # ("Valencia", "bus", "fleet"...) and would make distinct questions look
+        # like rephrasings; compare only what each question adds.
+        def _stems(text: str) -> Set[str]:
+            # Crude 5-letter stems so "bus"/"buses", "electric"/"electrify"
+            # count as the same word.
+            return {t[:5] for t in self._coverage_tokens(text)}
+
+        topic_tokens = _stems(topic) if topic else set()
 
         def _try_add(perspective: str, focus: str, text: str) -> bool:
             text = (text or "").strip()
             if not text:
                 return False
-            key = self._coverage_tokens(text)
+            key = _stems(text) - topic_tokens
             if not key:
                 key = {text.lower()}
             for existing in seen_keys:
                 if not existing:
                     continue
-                overlap = len(key & existing) / max(1, min(len(key), len(existing)))
+                # Jaccard: a short question sharing two words with a long one
+                # is not a rephrasing of it.
+                overlap = len(key & existing) / max(1, len(key | existing))
                 if overlap >= _PERSPECTIVE_DEDUP_OVERLAP:
                     return False
             seen_keys.append(key)

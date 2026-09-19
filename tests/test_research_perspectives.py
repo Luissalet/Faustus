@@ -278,3 +278,18 @@ def test_merge_plan_keeps_one_slot_per_perspective_when_general_fills_budget():
     labels = [m["perspective"] for m in merged if m["perspective"] != "general"]
     assert "Installer" in labels and "Skeptic" in labels
     assert len(labels) <= 3
+
+
+def test_merge_plan_ignores_topic_words_when_deduping():
+    r = _researcher(research_perspectives=True)
+    general = ["What is the public opinion on electric buses in Valencia?"]
+    items = [
+        {"perspective": "Operator", "focus": "",
+         "question": "How would electric buses change operational costs for Valencia's transit system?"},
+        {"perspective": "Echo", "focus": "",
+         "question": "What is the public opinion about electric buses in Valencia?"},
+    ]
+    merged = r._merge_perspective_plan(general, items, topic="Should Valencia electrify its city bus fleet?")
+    labels = [m["perspective"] for m in merged]
+    assert "Operator" in labels
+    assert "Echo" not in labels
