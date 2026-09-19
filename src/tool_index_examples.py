@@ -989,6 +989,27 @@ EXAMPLES: Dict[str, List[str]] = {
         "cuántas páginas tiene este documento",
     ],
 
+    # ── Structural PDF navigation (tree-index RAG) ──────────────────────────
+    "pdf_outline": [
+        "muéstrame el índice de este PDF",
+        "give me the table of contents of this document",
+        "qué secciones tiene este PDF largo",
+        "outline this PDF before we dig into it",
+        "list the chapters of this contract",
+    ],
+    "pdf_read_section": [
+        "léeme la sección 3.2 de este PDF",
+        "what does chapter 4 of this document say",
+        "read me just the termination clause section",
+        "muéstrame el contenido del apartado de garantías",
+    ],
+    "pdf_find_section": [
+        "encuentra la sección sobre resolución del contrato",
+        "which chapter of this PDF covers pricing",
+        "find where this document talks about liability",
+        "busca en el índice el apartado de pagos",
+    ],
+
     # ── Goal with completion by evidence (WP27, Creator) ────────────────────
     "goal_define": [
         "define qué significa que esto esté terminado",

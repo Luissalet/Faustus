@@ -72,6 +72,7 @@ from .code_graph_tools import (
     CodeGraphSnippetTool,
 )
 from .pdf_ops_tool import PdfOpsTool
+from .pdf_tree_tool import PdfOutlineTool, PdfReadSectionTool, PdfFindSectionTool
 from .goal_tools import GoalDefineTool, GoalStatusTool, GoalEvaluateTool, GoalEvidenceTool
 from .plan_tools import PlanStatusTool, PlanTaskTool, PlanDoneTool, PlanSkipTool, PlanNextTool
 
@@ -193,6 +194,13 @@ TOOL_HANDLERS = {
     # PDF operations (R4, Reach wave): merge/split/rotate/compress/watermark/
     # etc. over src.pdf_ops. See src/agent_tools/pdf_ops_tool.py.
     "pdf_ops": PdfOpsTool().execute,
+    # Structural PDF navigation (tree-index RAG, src/pdf_tree.py): a
+    # deterministic outline/bookmark or heading tree with EXACT page ranges,
+    # read one section at a time instead of chunking by embedding similarity.
+    # See src/agent_tools/pdf_tree_tool.py.
+    "pdf_outline": PdfOutlineTool().execute,
+    "pdf_read_section": PdfReadSectionTool().execute,
+    "pdf_find_section": PdfFindSectionTool().execute,
     # Goal with completion by evidence (WP27, Creator): thin executors over
     # src.creator.goal. Only goal_evaluate can ever move a goal to done.
     "goal_define": GoalDefineTool().execute,
@@ -316,7 +324,9 @@ TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_fi
              # R3 (Reach wave): fan-out -- src/agent_tools/fanout_tools.py.
              "fanout_run", "fanout_status", "fanout_results", "fanout_apply",
              # PDF operations (R4, Reach wave) -- src/agent_tools/pdf_ops_tool.py.
-             "pdf_ops"} | BUILTIN_EMAIL_TOOLS | DESKTOP_TOOLS | SEMANTIC_TOOLS
+             "pdf_ops",
+             # Structural PDF navigation -- src/agent_tools/pdf_tree_tool.py.
+             "pdf_outline", "pdf_read_section", "pdf_find_section"} | BUILTIN_EMAIL_TOOLS | DESKTOP_TOOLS | SEMANTIC_TOOLS
 
 ToolBlock = namedtuple("ToolBlock", ["tool_type", "content"])
 

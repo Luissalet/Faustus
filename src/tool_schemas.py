@@ -2975,6 +2975,53 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "pdf_outline",
+            "description": "Build (or reuse the cached) table-of-contents tree of a PDF -- from the PDF's own outline/bookmarks when it has one, else conservative heading detection, else fixed 10-page chunks -- and return it as a compact indented list (\"id  title  (pp. a-b)\") plus the structured nodes. Workflow for a long PDF: call pdf_outline to see the sections and their EXACT physical page ranges, pick a node id (or use pdf_find_section when the outline is long), then call pdf_read_section with that id. Page numbers always come from this tool, never invent one.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Path to the PDF"},
+                    "max_depth": {"type": "integer", "description": "Only return nodes up to this nesting depth (1 = top level only). Omit for the full tree"}
+                },
+                "required": ["path"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "pdf_read_section",
+            "description": "Read the text of ONE node from a PDF's table-of-contents tree (see pdf_outline), by node id -- only that node's own physical page range, each page prefixed with a \"[page N]\" marker so the source page of every fact is traceable. Clipped to max_chars, with a note saying exactly which page it stopped at if so. node_id must be one pdf_outline (or pdf_find_section) just returned for this same PDF -- an unknown id is refused rather than guessed at, so page numbers can never be invented.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Path to the PDF -- same file pdf_outline was called on"},
+                    "node_id": {"type": "string", "description": "A node id from pdf_outline/pdf_find_section, e.g. \"1.2\""},
+                    "max_chars": {"type": "integer", "description": "Max characters of text to return (default 20000)"}
+                },
+                "required": ["path", "node_id"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "pdf_find_section",
+            "description": "Search a PDF's table-of-contents tree (see pdf_outline) for node titles matching `query`, returning node ids + titles + page ranges, best match first -- use this to pick a node id when the outline is long or you only approximately know the section name, then pass the id to pdf_read_section. When the tree has no real structure (fixed page chunks), also searches each chunk's own page text.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Path to the PDF"},
+                    "query": {"type": "string", "description": "Section title or keyword to search for"},
+                    "limit": {"type": "integer", "description": "Max matches to return (default 8)"}
+                },
+                "required": ["path", "query"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "goal_define",
             "description": "Create a Goal (WP27, Creator): an executable target with typed, checkable acceptance criteria -- never prose. Each criterion is test_passes{cmd}, file_exists{path}, artifact_present{occurrence_id|kind}, http_ok{url}, doc_revision_at_least{doc_id,revision}, or custom_check{tool,args,expect}. floor (optional) names which criteria must pass for 'done' (defaults to every criterion marked required). ceiling (optional) is the hard stop -- max_rounds/max_tokens/max_seconds/max_cost_usd -- after which the goal stops trying even if it is not done. Requires creator_enabled.",
             "parameters": {

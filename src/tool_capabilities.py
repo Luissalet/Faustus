@@ -648,6 +648,17 @@ _register(
     result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED,
 )
 _register(
+    # Structural PDF navigation (src/pdf_tree.py + src/agent_tools/
+    # pdf_tree_tool.py): all three read an input PDF from the workspace/
+    # uploads allowlist and never write anything -- same class as
+    # code_graph_search/find_symbol, a workspace-scoped reader whose result
+    # quotes source text (bookmark titles, heading lines, page text) an
+    # attacker could have planted in the PDF.
+    {"pdf_outline", "pdf_read_section", "pdf_find_section"},
+    ToolEffect.READ_WORKSPACE,
+    result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED,
+)
+_register(
     # Goal (WP27, Creator, src/agent_tools/goal_tools.py): goal_status only
     # reads the goal's own private ledger under DATA_DIR/creator/goals.db.
     {"goal_status"},
