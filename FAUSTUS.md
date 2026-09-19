@@ -5797,3 +5797,128 @@ Tres cambios, mismos ficheros de siempre:
 
 
 **Ampliación (19-09-2026).** `GET /api/memory-engine/pack` ya no era «el bloque exacto que ve el modelo»: llamaba solo a `pack_detail()`, así que la vista previa reensamblaba el bloque y no enseñaba ni la foto fija ni lo que el tope duro había dejado fuera. Ahora acepta `session`: con ella devuelve `pack_for_session()` —el bloque congelado que esa conversación está usando de verdad— y en todos los casos responde `snapshot`, `snapshot_taken_at`, `dropped_count`, `dropped_ids`, `cap_chars` y `truncated_item`, para que un bloque recortado no se lea como uno completo. **Verificado:** `tests/test_memory_engine.py` (74, uno nuevo que comprueba que la segunda lectura de la misma sesión llega marcada como foto fija y con sello de tiempo) y `tests/test_robot_mode.py` (25, con la forma del payload actualizada en los tres modos).
+
+
+## 121. Motores locales bajo demanda: arrancan solos y se apagan solos al quedarse quietos (19-09-2026)
+
+**Pedido.** Un motor llama.cpp gestionado apagado obligaba a arrancarlo a mano antes de poder chatear con él, y uno ya arrancado se quedaba ocupando GPU/VRAM aunque nadie lo usara.
+
+**Hecho.** `src/engine_swap.py`, enganchado en `llm_core._local_model_slot`: una llamada de chat dirigida a un motor gestionado que está caído lo arranca (single-flight — una petición concurrente espera a la primera en vez de lanzar un segundo proceso), espera a `/health`, y si el motor ya está cargando espera en vez de reiniciarlo. Se lleva la cuenta de peticiones en vuelo y de último uso por motor. Un reaper de fondo para los motores sin uso durante `engine_idle_ttl_minutes` (ajuste nuevo, por defecto `0` = nunca), con `engine_idle_check_s` como periodo de barrido. `engine_autostart` (por defecto `True`) apaga el arranque bajo demanda entero si se pone a `False`; `engine_autostart_timeout_s` (180) acota la espera a `/health`. `GET /api/engines/swap/status` expone el estado en vuelo por motor. Settings → Local models → Engines gana el interruptor de arranque bajo demanda y el campo de minutos de inactividad.
+
+**Verificado en vivo.** El motor auxiliar (helper) arrancó solo al primer chat dirigido a él y quedó sirviendo en menos de 10 s; con `engine_idle_ttl_minutes` puesto a un valor bajo, el reaper lo paró tras el intervalo sin uso y una petición posterior volvió a arrancarlo.
+
+**No verificable sin la máquina en vivo.** Concurrencia real con dos peticiones simultáneas contra un motor caído (confirmar que solo un proceso llama.cpp se lanza, no dos); comportamiento del reaper con varios motores gestionados a la vez y cargas mixtas.
+
+**Ficheros.** `src/engine_swap.py` (nuevo), `src/llm_core.py`, `src/settings.py`, `routes/engine_routes.py`, `studio/src/screens/settings/LocalModels.tsx`.
+
+## 122. Decodificación especulativa MTP para motores llama.cpp (19-09-2026)
+
+**Pedido.** Aprovechar la predicción multi-token (MTP) de los GGUF que la traen para acelerar la generación en llama.cpp, sin que el ajuste rompa un modelo que no la soporta.
+
+**Hecho.** Cada motor gana un interruptor `mtp` y `mtp_draft_n_max` (por defecto `2`), que se traducen a `--spec-type draft-mtp --spec-draft-n-max N` en el argv de `llama-server`. El soporte se detecte leyendo la cabecera del GGUF (clave `*.nextn_predict_layers`) con un lector propio de solo biblioteca estándar (`src/gguf_meta.py`) que salta el bloque de tensores y los arrays grandes en vez de cargar el fichero entero; un modelo sin esas capas se rechaza al guardar el motor, uno cuya cabecera no se puede leer se deja pasar (nunca bloquea por un fallo de lectura). La admisión de VRAM reserva 2 GiB extra para la cabeza de borrador (draft head) cuando `mtp` está activo. El formulario de Engines muestra el interruptor con una etiqueta «MTP» junto al motor, y avisa cuando los slots paralelos por defecto de `llama-server` (varios si no se pasa `-np`) cancelarían la mayor parte de la ganancia, diciendo cómo arreglarlo (`-np 1` en los argumentos extra).
+
+**Verificado.** `mtp` detectado correctamente en el GGUF real de 27B usado en este proyecto (capas `nextn_predict_layers` presentes en la cabecera, `mtp_supported: true` en el motor). El checkbox quedó alineado en línea con su etiqueta tras un ajuste de CSS.
+
+**No verificable sin la máquina en vivo — tok/s.** El motor con MTP activo arranca y sirve, pero la comparación de tokens/segundo con MTP encendido frente a apagado sobre el 27B real NO se ha medido todavía (hace falta GPU disponible y `-np 1` para que la comparación sea limpia); ver PENDIENTES.md.
+
+**Ficheros.** `src/gguf_meta.py` (nuevo), `src/engines.py`, `routes/engine_routes.py`, `docs/ui/i18n/es.tsv`, `studio/src/screens/settings/LocalModels.tsx`, `studio/src/i18n/es.ts`, `studio/src/screens/settings.css`.
+
+## 123. Búsqueda de texto completo en resultados de herramienta descargados a disco (19-09-2026)
+
+**Pedido.** Un resultado de herramienta demasiado grande ya se guardaba entero y era legible por rango (`read_artifact_range`), pero el modelo solo podía pasear a ciegas por él sin saber dónde mirar.
+
+**Hecho.** `src/offload_search.py` (nuevo): los resultados descargados se indexan también, en trozos acotados por owner y sesión, con BM25 vía SQLite FTS5 (una tabla virtual por base de datos de aplicación) y una caída a búsqueda `LIKE` cuando la build de sqlite no trae FTS5 (comprobado una vez, en caché para todo el módulo). El trozado usa los mismos desplazamientos de carácter que `read_artifact_range` ya usa, así que un acierto de búsqueda da directamente el rango exacto que abrir con `read_artifact`. Nueva herramienta `artifact_search` (`src/agent_tools/artifact_read_tool.py`) devuelve aciertos ordenados con ese rango; la nota que aparece cuando algo se descarga ahora apunta a ella. Ajustes `offload_search_enabled` (por defecto `True`) y `offload_search_retention_days` (`14`, poda oportunista al insertar). **Corrección de bug (Windows).** El resultado descargado se escribía en modo texto, y Windows convierte `\n` en `\r\n` al escribir — el hash guardado nunca coincidía con el dígest real, el offload lanzaba una excepción, y el llamador caía de vuelta al resultado sin recortar: TODO resultado grande con más de una línea llegaba entero al prompt en Windows. `src/tool_result_offload.py` ahora escribe en modo bytes.
+
+**Verificado.** `artifact_search` encontró un término conocido dentro de una salida de herramienta descargada de aproximadamente 1 MB en Windows, con el rango devuelto abriendo exactamente el fragmento correcto vía `read_artifact`. `tests/test_offload_search.py` cubre el escenario de bytes vs. texto que causaba el bug.
+
+**No verificable sin la máquina en vivo.** Comportamiento con la build de sqlite sin FTS5 (la caída a `LIKE`) no se ha forzado en esta máquina, que sí trae FTS5.
+
+**Ficheros.** `src/offload_search.py` (nuevo), `src/agent_tools/artifact_read_tool.py`, `src/agent_tools/__init__.py`, `src/tool_result_offload.py`, `src/settings.py`, `tests/test_offload_search.py`.
+
+## 124. El grafo de código resuelve alias de import y se indexa el workspace entero para impacto (19-09-2026)
+
+**Pedido.** Saber qué más puede romperse antes de tocar una función — quién la llama, directa o indirectamente — sin tener que abrir fichero por fichero, y que ese cálculo no se quede corto por indexar solo una parte del proyecto.
+
+**Hecho.** `src/code_graph/query.py::impact()` (nuevo, con herramienta `code_graph_impact`, `src/agent_tools/code_graph_tools.py`): recorre las aristas de llamada ENTRANTES desde un símbolo, o desde cada símbolo que toca el diff actual, hasta un tope de profundidad; cada función alcanzada se queda con la certeza más débil de su camino, las aristas sin resolver se cuentan aparte y nunca se siguen, y los ficheros de test alcanzados se convierten en «tests afectados» con un comando `pytest` listo para pegar. Los alias de import ahora se resuelven — `from m import f as g` (también dentro del cuerpo de una función) e `import a.b as m` / `from pkg import mod as alias` — y el módulo del alias desempata entre símbolos con el mismo nombre. `impact()` refresca con un presupuesto que cubre el workspace entero (el paseo de 2000 ficheros por defecto dejaba fuera la mayoría de los tests); el tope de tamaño por fichero sube a 1 MB para que el módulo más grande escrito a mano entre en el índice. Un módulo de test que importa el módulo de una semilla cuenta como afectado por esa vía (import), no solo por llamada directa.
+
+**Verificado.** `code_graph_impact` sobre el repo real de este proyecto encontró al llamador de `agent_loop` más 3 ficheros de test afectados, con el comando `pytest` correcto para cada uno.
+
+**No verificable sin la máquina en vivo.** Ninguno adicional — la comprobación de arriba ya se hizo contra el repo real.
+
+**Ficheros.** `src/code_graph/query.py`, `src/code_graph/__init__.py`, `src/agent_tools/code_graph_tools.py`, `src/agent_tools/__init__.py`, `src/context_engine/code_index.py`, `docs/spec/code_graph.md`, `tests/test_code_graph_impact.py`.
+
+## 125. Independencia de fuentes en las leyendas de Deep Research (19-09-2026)
+
+**Pedido.** Cuando varias fuentes citadas son en realidad la misma noticia sindicada (una agencia y sus reproducciones), contarlas como fuentes independientes infla artificialmente la cobertura percibida de un informe.
+
+**Hecho.** `src/source_independence.py` (nuevo): los informes de investigación profunda agrupan ahora sus fuentes citadas por URL canónica, por atribución de agencia de noticias más texto casi duplicado, o por texto casi duplicado a solas (shingles de 5 palabras). La leyenda del informe añade una línea SOLO cuando varias citas resultan ser la misma historia: cuántas citas hay y cuántas son realmente independientes. El resumen del agrupamiento también se expone en los datos de cobertura del informe (`research_citations.py`).
+
+**Verificado.** `tests/test_source_independence.py` (287 líneas de cobertura de test) cubre agrupamiento por URL canónica, por agencia+casi-duplicado y por casi-duplicado a solas, y el caso donde no hay sindicación (la leyenda no añade nada).
+
+**No verificable sin la máquina en vivo.** Un informe real de Deep Research con fuentes sindicadas de verdad (varios medios reproduciendo la misma nota de agencia) no se ha corrido en esta ronda; la verificación es por test unitario sobre datos de ejemplo.
+
+**Ficheros.** `src/source_independence.py` (nuevo), `src/research_citations.py`, `tests/test_source_independence.py`.
+
+## 126. Traza de cada llamada al modelo, y la posibilidad de reenviarla (bifurcar) a otro modelo (19-09-2026)
+
+**Pedido.** Ver exactamente qué se le mandó al modelo en cada llamada de una sesión (con secretos tapados), no solo la respuesta final, y poder reenviar esa misma llamada a otro modelo para comparar respuestas lado a lado.
+
+**Hecho.** `src/llm_trace.py` (nuevo): cada llamada al modelo hecha para una sesión (petición tal cual se mandó con secretos redactados, respuesta ensamblada, llamadas a herramientas, tiempos, errores) se añade a `llm_traces/<session>.jsonl`, escrito fuera del camino caliente de la petición y purgado tras `llm_trace_retention_days` (ajuste nuevo, por defecto `7`). El panel por turno del chat gana una sección «Model calls» que lista esas llamadas; cualquiera puede reenviarse sin cambios a otro modelo para comparar (`routes/llm_trace_routes.py`: `GET /api/llm-traces/{session_id}`, `GET /api/llm-traces/{session_id}/{seq}`, `POST /api/llm-traces/{session_id}/{seq}/fork`). **Corrección.** Los contadores de tokens (`max_tokens`, recuentos de uso, nombres de tokenizador) coincidían con el patrón de detección de claves secretas y se tapaban también — una bifurcación reenviaba `max_tokens: "[REDACTED]"` y fallaba; ahora solo se reemplazan valores de muestreo numéricos. **Corrección.** El panel «Model calls» solo vivía dentro del ledger de contexto, que un turno de chat llano no lleva; ahora el último turno del transcript lo muestra por su cuenta aunque no haya ledger.
+
+**Verificado.** `tests/test_llm_trace.py` cubre la redacción de secretos sin tocar contadores numéricos. `node scripts/build-studio.js --force` → build limpio.
+
+**Verificado en vivo.** El panel «Model calls» apareció en el transcript de un turno de chat llano (sin ledger de contexto) tras el segundo arreglo, con las llamadas de esa sesión listadas y el botón de bifurcar operativo.
+
+**No verificable sin la máquina en vivo.** Comparar dos respuestas de una bifurcación real contra dos motores locales distintos a la vez no se ha hecho en esta ronda.
+
+**Ficheros.** `src/llm_trace.py` (nuevo), `routes/llm_trace_routes.py` (nuevo), `app.py`, `docs/ui/i18n/es.tsv`, `studio/src/screens/studio/Transcript.tsx`, `tests/test_llm_trace.py`.
+
+## 127. Aviso cuando un recuerdo nuevo contradice uno antiguo (19-09-2026)
+
+**Pedido.** Que la memoria aprendida avise cuando algo nuevo que se le enseña contradice algo que ya tenía guardado, en vez de quedarse con las dos versiones sin más ni menos peso.
+
+**Hecho.** `src/memory_conflicts.py` (nuevo): una comprobación determinista (polaridad tomada del test de conflicto ya existente en el context engine, más mismo sujeto con un valor distinto para una lista corta de predicados de valor único, en español e inglés) corre después de cada escritura en memoria. Un conflicto abierto reduce a la mitad la puntuación del ítem más antiguo y lo marca como contradicho allí donde se muestra; nada se oculta ni se borra hasta que el dueño elige quedarse con el nuevo, quedarse con el antiguo o mantener ambos, desde la sección nueva «Conflicts» de la pantalla Memoria (`GET/POST /api/memory-engine/conflicts`, `POST /api/memory-engine/conflicts/{id}/resolve`). Ajuste `memory_conflict_detection` (por defecto `True`).
+
+**Verificado en vivo.** Enseñado un dato y luego su contrario para el mismo sujeto: el conflicto apareció en la pantalla Memoria → Conflicts, el ítem antiguo quedó marcado como contradicho con su puntuación reducida, y elegir «quedarse con el nuevo» lo resolvió sin borrar ninguno de los dos ítems.
+
+**No verificable sin la máquina en vivo.** Ninguno adicional — el flujo completo (detección, marcado, resolución) se probó de punta a punta desde la pantalla.
+
+**Ficheros.** `src/memory_conflicts.py` (nuevo), `routes/memory_engine_routes.py`, `docs/ui/i18n/es.tsv`, `studio/src/screens/Memory.tsx`.
+
+## 128. Navegar PDF largos por su propia estructura, no por número de página adivinado (19-09-2026)
+
+**Pedido.** Con un PDF de cientos de páginas, que el modelo pueda ir a «el capítulo tal» sin tener que leer el documento entero ni inventarse en qué página empieza cada sección.
+
+**Hecho.** `src/pdf_tree.py` (nuevo), con tres herramientas (`src/agent_tools/pdf_tree_tool.py`): `pdf_outline` construye un árbol de tabla de contenidos con rango de páginas por nodo, a partir de los marcadores propios del PDF si los trae, si no de una detección conservadora de encabezados, y si no de trozos fijos de 10 páginas; `pdf_find_section` busca nodos por título; `pdf_read_section` devuelve exactamente las páginas de un nodo con marcadores `[page N]`. Los números de página siempre vienen del árbol, nunca los inventa el modelo. **Corrección.** Marcadores con salto de línea dentro del título (visto en un libro real de 758 páginas, p. ej. `"1.\r\nIntroduction"`) rompían el formato de una línea por nodo del esquema; el título se normaliza ahora antes de mostrarse.
+
+**Verificado en vivo.** `pdf_outline` sobre un PDF real de 758 páginas construyó el árbol completo en 0,3 s; `pdf_find_section` localizó un capítulo por título y `pdf_read_section` devolvió exactamente sus páginas con los marcadores `[page N]` correctos.
+
+**No verificable sin la máquina en vivo.** Un PDF sin marcadores propios y sin encabezados detectables con fiabilidad (que cae al trozado de 10 páginas) no se ha probado con un documento real de este tamaño.
+
+**Ficheros.** `src/pdf_tree.py` (nuevo), `src/agent_tools/pdf_tree_tool.py` (nuevo), `src/agent_tools/__init__.py`, `src/tool_capabilities.py`, `src/tool_index.py`, `tests/test_pdf_tree.py`.
+
+## 129. Por qué la búsqueda web ordenó los resultados así, no solo cuáles son (19-09-2026)
+
+**Pedido.** Que la clasificación de resultados de búsqueda web deje de ser una caja negra — que cada resultado diga POR QUÉ quedó donde quedó — y que los resultados obviamente irrelevantes o basura pesen menos sin llegar a desaparecer.
+
+**Hecho.** `services/search/ranking.py`: cada resultado web lleva ahora `score` y `score_reasons`. Los resultados en los que varios motores de búsqueda coinciden reciben un impulso acotado de fusión por rango recíproco (reciprocal-rank-fusion) tras deduplicar por URL canónica. Se penaliza (nunca se descarta) a los resultados que no comparten ningún término de contenido con la consulta, a resultados de tipo tienda para consultas cortas sin intención de compra, y a resultados obsoletos para consultas sensibles al tiempo — esta última penalización garantiza que queden al menos tres resultados arriba, para no vaciar la lista de golpe.
+
+**Verificado.** `tests/test_search_ranking_guards.py` (199 líneas) cubre el impulso por acuerdo entre motores, cada guardia de penalización por separado y el suelo de tres resultados en la democión por antigüedad.
+
+**Verificado en vivo.** Búsquedas reales lanzadas desde el chat devolvieron resultados con `score_reasons` legibles (coincidencia de términos, acuerdo entre motores, antigüedad) que explican el orden, en vez de una lista sin justificación.
+
+**No verificable sin la máquina en vivo.** Un panel dedicado en el Studio para inspeccionar `score_reasons` fila por fila no existe todavía — hoy es un dato de API que viaja con cada resultado, no una vista propia.
+
+**Ficheros.** `services/search/ranking.py`, `tests/test_search_ranking_guards.py`.
+
+## 130. Auditoría de accesibilidad y rendimiento dentro del smoke de UI (19-09-2026)
+
+**Pedido.** Que la comprobación automática que ya carga la página en cabeza (headless) y caza errores de consola, también avise de problemas de accesibilidad y de rendimiento, sin convertir cada aviso en un bloqueo del turno.
+
+**Hecho.** `src/ui_smoke.py`: la carga headless que ya existía corre ahora también una auditoría en línea, sin dependencias externas: texto alternativo ausente, botones y enlaces sin nombre accesible, campos de formulario sin etiqueta, `lang`/`title` ausentes en el documento, ids duplicados, saltos en la jerarquía de encabezados y contraste WCAG AA, además de tiempos de navegación, LCP, bytes de JS/CSS y número de peticiones. Los hallazgos llegan al modelo como avisos de calidad; solo hacen fallar la comprobación de smoke cuando `ui_smoke_a11y_blocking` (ajuste nuevo, por defecto `False`) está activo, y el rendimiento nunca bloquea por sí solo. Requiere Playwright instalado (`agent_ui_smoke_playwright`, ya existente) para la carga real.
+
+**Verificado en vivo.** Corrido sobre el Studio de este mismo proyecto y sobre otra aplicación local distinta: en ambos casos la auditoría encontró hallazgos reales de accesibilidad (por ejemplo, controles sin nombre accesible) y de rendimiento (bytes de JS servidos), presentados como avisos de calidad sin bloquear el turno con `ui_smoke_a11y_blocking` en su valor por defecto.
+
+**No verificable sin la máquina en vivo.** El comportamiento con `ui_smoke_a11y_blocking` activado (que un hallazgo serio SÍ bloquee el turno, igual que un error de consola) se probó por test, no se ha forzado todavía en una sesión real.
+
+**Ficheros.** `src/ui_smoke.py`, `src/settings.py`, `src/agent_settings_schema.py`.

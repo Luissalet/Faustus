@@ -827,3 +827,16 @@ UI verification (browser, admin login), screenshots under D:\LocalAI\_claude_tmp
 (a) a_generation_chip.png - Studio composer's Generation chip (found inside the '+' Add-files-and-tools menu, agent mode only, bottom of the list) opens a panel with Temperature/top_p/top_k sliders, all reading the sampling defaults. Works.
 (b) b_engines_sampling.png - Settings > Local models shows the Engines (llama.cpp) section (both engines, Stop controls present) directly above the Sampling defaults group (Temperature/top_p/top_k/Repeat penalty). Works.
 (c) c_learned_rules.png - Studio > Memoria > Learned rules panel shows the 'injected' badge on an active rule plus This rule helped/did harm, Edit the text, Pin, Suppress, Forget and Delete actions. Works.
+
+## 19-09 tarde -- pendientes del lote engines/MTP/offload-search/code-graph/trace/memoria/PDF/ranking/a11y (FAUSTUS.md §121-130)
+
+- **Medir tok/s con MTP on/off en el 27B real (FAUSTUS.md §122).** La deteccion de capas MTP ya funciona sobre el GGUF real, pero la comparacion de velocidad NO se ha medido todavia -- hace falta GPU disponible y lanzar con `-np 1` (si no, los slots paralelos por defecto cancelan la mayor parte de la ganancia y el numero sale enganoso). Sin esto, §122 esta a medias: sabemos que MTP se detecta y arranca, no sabemos cuanto acelera de verdad.
+- **Decidir si se integra la idea del modelo pequeno de tool-calling on-device.** Aplazado deliberadamente: implicaria una DLL nativa, descarga de pesos y telemetria activada por defecto -- ninguna de las tres encaja con el criterio del proyecto de no traer binarios/datos sin que el dueno lo pida explicitamente. Queda como decision abierta, no como tarea.
+- **Tests rojos preexistentes vistos hoy (ya rojos en 07c089ec, antes de este lote):**
+  - `tests/test_gpu_memory_wiring.py::test_num_gpu_survives_the_whole_override_path`
+  - `tests/test_two_tier_search.py` (2 tests)
+  - `tests/test_completion_gate.py::test_red_test_turn_closes_complete_unverified_end_to_end`
+  - `tests/test_l91_domain_synonyms.py` (2 tests, texto de reglas)
+  No se ha investigado su causa en esta ronda -- confirmar con `git stash`/bisect antes de tocarlos, para no arreglar algo que ya estaba roto por otra razon.
+- **`artifact_search` (FAUSTUS.md §123): los fragmentos devueltos traen saltos de linea escapados como JSON** (`\n` literal en vez de salto real) en vez de texto legible tal cual. Funciona para localizar el rango a abrir con `read_artifact`, pero el propio snippet de vista previa queda menos legible de lo que podria.
+- **`llm_trace` (FAUSTUS.md §126): retencion por defecto de 7 dias** (`llm_trace_retention_days`). Revisar si es suficiente para depurar un problema reportado varios dias despues, o si conviene subirlo cuando el disco lo permita.
