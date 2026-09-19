@@ -2863,6 +2863,22 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "code_graph_risk",
+            "description": "Deterministic 0-100 CHANGE-RISK score for one or more paths/symbols, or (with no paths) for the current git diff -- weighs fan-in (distinct callers within 2 hops), breadth (distinct files reached), test coverage (no tests reaching the change raises risk), churn (recent commits touching the file(s)), historical coupling (top co-change confidence to a file NOT in the change), diff size (lines added+removed, diff-seeded only) and hub status (imported by many modules) into a score, a low/medium/high level, top_reasons and concrete suggestions (which tests to run, which co-changed file to also review). Use for 'how risky is this change', 'is this file safe to edit', 'should I be careful with this diff' -- before or after making an edit.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "paths": {"type": "array", "items": {"type": "string"}, "description": "File paths and/or symbol names to score (optional -- omit to score the current git diff's changed symbols instead)"},
+                    "base_ref": {"type": "string", "description": "Git ref to diff against when paths is omitted, and for the diff-size factor (default HEAD)"},
+                    "root": {"type": "string", "description": "Workspace root (optional -- defaults to the active workspace)"}
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "structural_search",
             "description": "Search code by AST SHAPE, not text, via ast-grep -- finds things grep can't: 'every except Exception: whose body never logs', 'every call to foo() with a None second argument', regardless of whitespace/formatting. Write patterns like the code you're matching, using $NAME to capture exactly one node (e.g. foo($ARG)) or $$$NAME to capture zero-or-more (e.g. a whole statement body). Workflow: try the pattern on ONE file or a small folder first, check the hits and metaVariables look right, THEN widen path to search the whole workspace -- a pattern that looks right can still match more or less than intended.",
             "parameters": {

@@ -947,6 +947,12 @@ EXAMPLES: Dict[str, List[str]] = {
         "cuando toco este archivo, qué más debería revisar",
         "show me the historical co-change files for this module",
     ],
+    "code_graph_risk": [
+        "qué tan arriesgado es cambiar este archivo",
+        "how risky is this change",
+        "es seguro editar este archivo",
+        "give me a risk score before I touch this function",
+    ],
     "code_graph_architecture": [
         "dame un resumen de la arquitectura de este proyecto",
         "what does this codebase look like, give me the lay of the land",

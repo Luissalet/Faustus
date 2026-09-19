@@ -126,6 +126,28 @@ class CodeGraphImpactTool:
         )
 
 
+class CodeGraphRiskTool:
+    """`code_graph_risk` {paths?, base_ref?}: deterministic 0..100 change-risk
+    score (fan-in, breadth, test coverage, churn, historical coupling, diff
+    size, hub status) for one or more paths/symbols, or for the current git
+    diff when `paths` is omitted."""
+
+    async def execute(self, content: str, ctx: dict) -> dict:
+        args = _args(content, first_key="paths")
+        paths = args.get("paths") or args.get("path") or args.get("symbols")
+        if isinstance(paths, str):
+            paths = [p.strip() for p in paths.split(",") if p.strip()]
+        elif not isinstance(paths, list):
+            paths = None
+        return _catch(
+            code_graph.change_risk, paths,
+            workspace=str(args.get("root") or args.get("workspace") or ""),
+            project_id=str(args.get("project_id") or ""),
+            base_ref=str(args.get("base_ref") or "HEAD"),
+            tool="code_graph_risk",
+        )
+
+
 class CodeGraphCochangesTool:
     """`code_graph_cochanges` {path, limit?}: files that historically change
     together with `path` in git history — a correlation signal the static

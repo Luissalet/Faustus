@@ -496,7 +496,7 @@ def _changed_seeds(root: str, *, base_ref: str, project_id: str) -> List[Dict[st
 
 def impact(symbol: str = "", *, workspace: str = "", project_id: str = "",
            base_ref: str = "HEAD", depth: int = 3, limit: int = 200,
-           include_history: bool = True,
+           include_history: bool = True, include_risk: bool = True,
            output_chars: int = DEFAULT_OUTPUT_CHARS) -> Dict[str, Any]:
     """What else can break, and which tests to run.
 
@@ -513,7 +513,14 @@ def impact(symbol: str = "", *, workspace: str = "", project_id: str = "",
     files that usually change together with the seed file(s) in git history
     but were not reached by the call graph — config, templates, tests or
     i18n files a static call/import walk cannot see. This is a correlation
-    signal, not a dependency, and is reported separately."""
+    signal, not a dependency, and is reported separately.
+
+    When `include_risk` (default True), a compact `risk` block
+    (`{score, level, top_reasons, suggestions}`) is added from
+    `code_graph.risk.compact_risk`, seeded from the same symbol/diff this
+    call used — a deterministic 0..100 estimate of how risky the change is,
+    for a glance before running the suggested tests. See `code_graph_risk`
+    for the full per-factor breakdown."""
     try:
         root = _root(workspace)
     except ValueError as exc:
@@ -554,7 +561,7 @@ def impact(symbol: str = "", *, workspace: str = "", project_id: str = "",
                     "affected_tests": [], "affected_tests_via_call": [],
                     "affected_tests_via_import": [], "affected_test_functions": [],
                     "unresolved_edges": 0, "suggested_command": "",
-                    "historical_cochanges": []}
+                    "historical_cochanges": [], "risk": {}}
 
     # BFS state: symbol id -> best-known node info (weakest certainty wins).
     nodes: Dict[str, Dict[str, Any]] = {}
@@ -633,6 +640,15 @@ def impact(symbol: str = "", *, workspace: str = "", project_id: str = "",
         except Exception as exc:  # noqa: BLE001
             logger.debug("code_graph.impact: cochanges lookup failed: %s", exc)
 
+    risk: Dict[str, Any] = {}
+    if include_risk:
+        try:
+            from .risk import compact_risk as _compact_risk
+            risk = _compact_risk(seed_paths, workspace=root, base_ref=base_ref,
+                                  project_id=project_id)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("code_graph.impact: risk scoring failed: %s", exc)
+
     all_test_files = test_files | import_test_files
     py_tests = sorted(p for p in all_test_files if p.endswith(".py"))
     other_tests = sorted(p for p in all_test_files if not p.endswith(".py"))
@@ -675,6 +691,8 @@ def impact(symbol: str = "", *, workspace: str = "", project_id: str = "",
             "Often changed together (history-based, not a dependency):")
         lines += [f"  {r['path']}  (support={r['support']} "
                   f"confidence={r['confidence']:.2f})" for r in historical_cochanges]
+    if risk:
+        lines.append(f"Change risk: {risk['score']}/100 ({risk['level']})")
 
     return {
         "output": _clip("\n".join(lines), output_chars), "exit_code": 0, "root": root,
@@ -686,4 +704,5 @@ def impact(symbol: str = "", *, workspace: str = "", project_id: str = "",
         "unresolved_edges": unresolved_edges, "suggested_command": suggested_command,
         "depth": depth_cap, "base_ref": base_ref,
         "historical_cochanges": historical_cochanges,
+        "risk": risk,
     }

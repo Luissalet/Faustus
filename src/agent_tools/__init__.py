@@ -69,7 +69,7 @@ from .reach_tools import ReachReadTool, ReachSearchTool, ReachDoctorTool
 from .code_graph_tools import (
     CodeGraphIndexTool, CodeGraphSearchTool, CodeGraphTraceTool,
     CodeGraphChangesTool, CodeGraphImpactTool, CodeGraphArchitectureTool,
-    CodeGraphSnippetTool, CodeGraphCochangesTool,
+    CodeGraphSnippetTool, CodeGraphCochangesTool, CodeGraphRiskTool,
 )
 from .structural_search_tools import StructuralSearchTool, StructuralRewriteTool
 from .pdf_ops_tool import PdfOpsTool
@@ -183,6 +183,7 @@ TOOL_HANDLERS = {
     "code_graph_trace": CodeGraphTraceTool().execute,
     "code_graph_changes": CodeGraphChangesTool().execute,
     "code_graph_impact": CodeGraphImpactTool().execute,
+    "code_graph_risk": CodeGraphRiskTool().execute,
     "code_graph_architecture": CodeGraphArchitectureTool().execute,
     "code_graph_snippet": CodeGraphSnippetTool().execute,
     "code_graph_cochanges": CodeGraphCochangesTool().execute,
@@ -326,7 +327,7 @@ TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_fi
              # Code graph (R2, Reach wave) -- src/agent_tools/code_graph_tools.py.
              "code_graph_index", "code_graph_search", "code_graph_trace",
              "code_graph_changes", "code_graph_impact", "code_graph_architecture",
-             "code_graph_snippet", "code_graph_cochanges",
+             "code_graph_snippet", "code_graph_cochanges", "code_graph_risk",
              # Structural search/rewrite -- src/agent_tools/structural_search_tools.py.
              "structural_search", "structural_rewrite",
              # R3 (Reach wave): fan-out -- src/agent_tools/fanout_tools.py.

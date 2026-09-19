@@ -36,9 +36,10 @@ from .query import (
 )
 from .semantic import semantic_query
 from .cochange import cochanges
+from .risk import change_risk
 
 __all__ = [
     "index", "search_graph", "trace_path", "callers", "callees",
     "detect_changes", "get_architecture", "snippet", "semantic_query",
-    "impact", "cochanges",
+    "impact", "cochanges", "change_risk",
 ]
