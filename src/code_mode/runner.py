@@ -75,6 +75,24 @@ def _minimal_env() -> dict:
     return env
 
 
+class _WallClock:
+    """A run's own timeout deadline, mutable so a paused approval question
+    (bridge._pause_for_approval) can push it out for exactly as long as the
+    script was blocked on a human -- the SCRIPT's wall-time budget must not
+    be spent doing nothing but waiting for someone to click a button."""
+
+    __slots__ = ("deadline",)
+
+    def __init__(self, timeout_seconds: float):
+        self.deadline = time.monotonic() + timeout_seconds
+
+    def extend(self, seconds: float) -> None:
+        self.deadline += seconds
+
+    def remaining(self) -> float:
+        return self.deadline - time.monotonic()
+
+
 def _preexec_fn(max_memory_bytes: Optional[int], cpu_seconds: Optional[int]):
     """POSIX only: RLIMIT_AS / RLIMIT_CPU applied in the child right after
     fork, before exec -- the kernel enforces these, not the guest script, so
@@ -151,6 +169,8 @@ async def run_code_mode(
     terminated_by: Optional[str] = None
     final_payload: Optional[dict] = None
     stderr_tail = b""
+    wall_clock = _WallClock(timeout_s)
+    approvals_log: list = []
 
     proc.stdin.write((json.dumps({
         "max_calls": max_calls,
@@ -190,6 +210,8 @@ async def run_code_mode(
                     call_id=f"code_mode:{call_id}:{uuid.uuid4().hex[:8]}",
                     tool_policy=tool_policy,
                     security_context=security_context,
+                    wall_clock=wall_clock,
+                    approvals_log=approvals_log,
                 )
                 # "ok" transport-wise means "the tool ran" (even a functional
                 # error, e.g. a bad path or a policy rejection, is `ok=True`
@@ -226,10 +248,33 @@ async def run_code_mode(
     async def _wait_pump():
         await asyncio.gather(_pump(), _drain_stderr())
 
+    # A plain `asyncio.wait_for(_wait_pump(), timeout=timeout_s)` cannot be
+    # extended once started -- and it must be extendable, because a paused
+    # approval question (bridge._pause_for_approval) lives INSIDE this same
+    # awaited chain (dispatch_call, called from _pump) and can legitimately
+    # take up to `agent_code_mode_approval_wait_seconds` to resolve. Poll a
+    # mutable deadline (`wall_clock`) in short slices instead: the pause
+    # pre-extends it before blocking and gives back the unused slack after,
+    # so this loop's own timeout check simply never fires while a human is
+    # being asked, and still fires promptly for a script that is just slow.
+    pump_task = asyncio.ensure_future(_wait_pump())
     try:
-        await asyncio.wait_for(_wait_pump(), timeout=timeout_s)
-    except asyncio.TimeoutError:
-        terminated_by = "timeout"
+        while not pump_task.done():
+            remaining = wall_clock.remaining()
+            if remaining <= 0:
+                terminated_by = "timeout"
+                pump_task.cancel()
+                try:
+                    await pump_task
+                except (asyncio.CancelledError, Exception):
+                    pass
+                break
+            try:
+                await asyncio.wait_for(
+                    asyncio.shield(pump_task), timeout=min(remaining, 0.5)
+                )
+            except asyncio.TimeoutError:
+                continue
     finally:
         try:
             proc.stdin.close()
@@ -263,6 +308,7 @@ async def run_code_mode(
             "terminated": True,
             "receipt": receipt,
             "stderr": stderr_tail.decode("utf-8", "replace")[-2000:] if stderr_tail else "",
+            "approvals": approvals_log,
         }
 
     # A cooperative finish: the guest itself hit (and reported) a quota, or
@@ -289,11 +335,15 @@ async def run_code_mode(
             "terminated": True,
             "receipt": receipt,
             "output": final_payload.get("output") or "",
+            "approvals": approvals_log,
         }
 
+    _output = final_payload.get("output") or ""
     return {
-        "output": final_payload.get("output") or "",
+        "output": _output,
         "exit_code": 0,
         "calls_made": int(final_payload.get("calls_made") or calls_made),
         "elapsed_ms": elapsed_ms,
+        "result_chars": len(_output),
+        "approvals": approvals_log,
     }

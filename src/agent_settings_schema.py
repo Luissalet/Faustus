@@ -921,6 +921,14 @@ GROUPS: list[dict[str, Any]] = [
             _int("agent_code_mode_max_output_bytes", "Output size limit (bytes)",
                  "Max captured stdout/stderr one run_code program may produce before it is killed.",
                  1_000, 50_000_000, step=1000),
+            _bool("agent_code_mode_pause_for_approval", "Pause on approval-gated calls",
+                  "A guest call that needs a human's per-call approval (e.g. a desktop-input tool "
+                  "while it asks on every call) pauses the script and asks, instead of the script "
+                  "just getting a denial back. Off = always deny immediately, the old behaviour."),
+            _int("agent_code_mode_approval_wait_seconds", "Approval wait limit (s)",
+                 "How long a paused script waits for that answer before the call is denied as timed "
+                 "out. Does not count against the script's own wall-time limit above.",
+                 1, 3600),
         ],
     ),
     _group(

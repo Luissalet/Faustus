@@ -403,6 +403,16 @@ DEFAULT_SETTINGS = {
     # Max bytes of captured stdout/stderr one run_code program may produce
     # before it is killed (terminated_by="output").
     "agent_code_mode_max_output_bytes": 200_000,
+    # A guest tool call that needs human approval (the per-call
+    # ALWAYS_APPROVE_TOOLS gate only -- see src/code_mode/bridge.py's
+    # `_pausable_approval_block`) pauses the script and asks; off returns the
+    # plain denial immediately, the pre-A12 behaviour.
+    "agent_code_mode_pause_for_approval": True,
+    # How long a paused run_code script waits for that human answer before
+    # the call is denied as timed out. Does not count against the script's
+    # own wall-time budget (agent_code_mode_timeout_seconds) -- that clock is
+    # paused for exactly this long while waiting.
+    "agent_code_mode_approval_wait_seconds": 300,
     # Server-shaped commands (python app.py, flask, uvicorn, …) never inherit
     # the adaptive idle trained on long pytest/compiles. 0 = no extra cap.
     "agent_server_idle_timeout_seconds": 45,

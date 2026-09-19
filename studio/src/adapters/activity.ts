@@ -602,19 +602,44 @@ export async function decideApproval(approvalId: string, granted: boolean, reaso
   if (data.ok === false) throw new ApiError(data.detail || data.reason || t('The decision was not recorded'), 409);
 }
 
+/** A question opened under a synthetic session — one with no real chat turn
+ *  waiting to be resumed: `code_mode:<session>` (a paused Code Mode
+ *  approval, src/code_mode/bridge.py) or `mcp:<server_id>` (an MCP
+ *  elicitation/sampling question, src/mcp_manager.py). `sendTurn` cannot
+ *  answer either — it POSTs a new chat turn to `sessionId`, and for
+ *  `code_mode:<session>` that inner `<session>` is a REAL chat session
+ *  currently paused mid-turn on the very call this question is about, so a
+ *  second turn posted there would race it; for `mcp:<server_id>` there is
+ *  no chat session at all. See `answerQuestion` below. */
+function isSyntheticQuestionSession(session: string): boolean {
+  return session.startsWith('code_mode:') || session.startsWith('mcp:');
+}
+
 /**
- * ACT-03: answers an open question from the activity tray, through the
- * exact same path the live `AskCard` uses — `sendTurn` with `questionId`/
- * `optionIds` (Studio.tsx's `onAnswer`) — rather than a second resolution
- * route. `question_store.resolve()`'s dedupe/stale-revision/cancelled/
- * expired guards (CALL-07/TASK-04) apply identically either way, and a
- * rejection (409) surfaces as the same localized `ApiError` the card would
- * show. The tray does not render a transcript, so this drains the turn to
- * completion rather than yielding events; the caller re-fetches the feed
- * afterwards — the question simply stops being `open` once it is answered,
- * same as any other activity state change.
+ * ACT-03: answers an open question from the activity tray.
+ *
+ * A question opened on a real chat session goes through the exact same path
+ * the live `AskCard` uses — `sendTurn` with `questionId`/`optionIds`
+ * (Studio.tsx's `onAnswer`) — because answering it is also what resumes
+ * that turn. A question opened under a synthetic session
+ * (`isSyntheticQuestionSession`) has no turn to resume, so it goes through
+ * `POST /api/questions/{id}/answer` instead, which only resolves the
+ * question and starts nothing. `question_store.resolve()`'s dedupe/stale-
+ * revision/cancelled/expired guards (CALL-07/TASK-04) apply identically
+ * either way, and a rejection (409) surfaces as the same localized
+ * `ApiError`. The tray does not render a transcript, so the chat path
+ * drains the turn to completion rather than yielding events; the caller
+ * re-fetches the feed afterwards — the question simply stops being `open`
+ * once it is answered, same as any other activity state change.
  */
 export async function answerQuestion(question: QuestionDetail, text: string, optionIds?: string[]): Promise<void> {
+  if (isSyntheticQuestionSession(question.session)) {
+    const response = await post(`/api/questions/${encodeURIComponent(question.questionId)}/answer`, {
+      text, option_ids: optionIds, revision: question.revision,
+    });
+    await ok(response, 'questions/answer');
+    return;
+  }
   for await (const _event of sendTurn({
     sessionId: question.session,
     message: text,

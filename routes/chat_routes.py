@@ -4819,6 +4819,77 @@ def setup_chat_routes(
             "count": len(open_qs),
         }
 
+    # ------------------------------------------------------------------ #
+    # POST /api/questions/{question_id}/answer — answers a question that has
+    # no chat turn to resume (A12): a question opened under a SYNTHETIC
+    # session id, `code_mode:<session>` (src/code_mode/bridge.py's approval
+    # pause) or `mcp:<server_id>` (src/mcp_manager.py's elicitation/sampling
+    # callbacks). Those never had a real chat turn waiting on them, so the
+    # ordinary answer path -- POST /api/chat with `question_id`, which ends
+    # by STARTING a new chat turn on that session (see above) -- is the
+    # wrong tool here: for `code_mode:<session>` that `session` is a REAL,
+    # still in-flight chat session (the run_code call that opened the
+    # question is paused mid-turn on it), so posting a new turn there would
+    # race the in-flight one; for `mcp:<server_id>` there is no chat session
+    # at all. This route only resolves the question and never starts
+    # anything. A question opened on a real chat session (no `code_mode:`/
+    # `mcp:` prefix) is refused here with `answer_via_chat` -- that one DOES
+    # need the ordinary path, because answering it is how the chat turn it
+    # ended gets resumed.
+    # ------------------------------------------------------------------ #
+    _SYNTHETIC_QUESTION_SESSION_PREFIXES = ("code_mode:", "mcp:")
+
+    @router.post("/api/questions/{question_id}/answer")
+    async def answer_synthetic_question(question_id: str, request: Request) -> Dict[str, Any]:
+        owner = effective_user(request)
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        if not isinstance(body, dict):
+            body = {}
+
+        from src import question_store
+
+        # SEC-06: a question opened for a different owner (or one that never
+        # existed) reads identically as "not_found" -- a leaked question_id
+        # cannot confirm another owner's question exists.
+        row = question_store.get_question(question_id, owner=owner)
+        if row is None:
+            return JSONResponse(status_code=404, content={"error": "not_found", "question_id": question_id})
+
+        session = str(row.get("session_id") or "")
+        if not session.startswith(_SYNTHETIC_QUESTION_SESSION_PREFIXES):
+            # A question opened on a real chat session must be answered
+            # through POST /api/chat (question_id) -- that path also starts
+            # the turn the answer resumes, which this route deliberately
+            # never does.
+            return JSONResponse(status_code=409, content={"error": "answer_via_chat", "question_id": question_id})
+
+        text = str(body.get("text") or "")
+        option_ids = _parse_option_ids(body.get("option_ids"))
+        answer: Dict[str, Any] = {"text": text}
+        if option_ids:
+            answer["option_ids"] = option_ids
+        revision = _parse_question_revision(body.get("revision"))
+
+        resolution = question_store.resolve_question(question_id, answer, revision=revision, owner=owner)
+        if not resolution.get("ok"):
+            logger.info(
+                "[synthetic-question] question_id=%s rejected: reason=%s detail=%r",
+                question_id, resolution.get("reason"), resolution.get("detail"),
+            )
+            return JSONResponse(
+                status_code=409,
+                content={
+                    "error": "question_not_resolved",
+                    "reason": resolution.get("reason", "unknown"),
+                    "question_id": question_id,
+                    "detail": resolution.get("detail", ""),
+                },
+            )
+        return {"ok": True}
+
     @router.post("/api/chat/interrupted/ack")
     async def chat_interrupted_ack(request: Request) -> Dict[str, Any]:
         """The client has shown the "interrupted by a restart" notice."""
