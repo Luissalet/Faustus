@@ -1036,6 +1036,15 @@ DEFAULT_SETTINGS = {
     # Max relevant skills injected into the prompt for one request. The skills
     # library can grow beyond this; cleanup/retirement is an explicit review flow.
     "skill_max_injected": 3,
+    # Job D — explicit progressive disclosure token budgets
+    # (src/skills_runtime/disclosure.py). Level 0 is the always-injected
+    # index (name + one-line description + when-to-use trigger, used for
+    # candidate selection); level 1 is the procedure body, pulled only for
+    # the skills actually selected as relevant to this turn. Level 2
+    # (referenced files, `manage_skills view_ref`) has no budget here — it
+    # is read one file at a time, already the cheapest possible unit.
+    "skill_list_budget_tokens": 400,
+    "skill_body_budget_tokens": 1500,
     # Reminders
     "reminder_channel": "browser",   # "browser" | "email" | "ntfy" | "webhook"
     "reminder_llm_synthesis": False,

@@ -4430,30 +4430,25 @@ def _build_system_prompt(
                             sm.record_use(_sk.get('name', ''), owner=owner)
                         except Exception:
                             pass
+                    # Job D, level 1: the procedure body, pulled ONLY for
+                    # these already-selected skills, under its own budget —
+                    # never for the whole index (that stays level 0, above).
+                    from src.skills_runtime.disclosure import (
+                        DEFAULT_LEVEL1_BUDGET_TOKENS, render_level1,
+                    )
+                    try:
+                        _level1_budget = int(get_setting("skill_body_budget_tokens",
+                                                          DEFAULT_LEVEL1_BUDGET_TOKENS))
+                    except Exception:
+                        _level1_budget = DEFAULT_LEVEL1_BUDGET_TOKENS
+                    level1 = render_level1(relevant_skills, budget_tokens=_level1_budget)
                     lines.append("## Relevant skills for this request")
                     lines.append("These skills are matched to your current request. Each is a "
                                  "procedure proven to work. Follow them step by step. To see "
                                  "the full SKILL.md (more detail, pitfalls, verification "
                                  "steps), call `manage_skills` with action='view' and the "
                                  "skill name.")
-                    for sk in relevant_skills:
-                        src_tag = ""
-                        if sk.get("source") == "teacher-escalation":
-                            tm = sk.get("teacher_model") or "teacher"
-                            src_tag = f" _(learned from {tm})_"
-                        lines.append(f"\n### {sk.get('name','?')}{src_tag}")
-                        if sk.get("description"):
-                            lines.append(sk["description"])
-                        if sk.get("when_to_use"):
-                            lines.append(f"_When to use:_ {sk['when_to_use']}")
-                        proc = sk.get("procedure") or []
-                        if proc:
-                            lines.append("Procedure:")
-                            for i, step in enumerate(proc, 1):
-                                lines.append(f"  {i}. {step}")
-                        pitfalls = sk.get("pitfalls") or []
-                        if pitfalls:
-                            lines.append("Pitfalls: " + "; ".join(pitfalls))
+                    lines.append(level1.text)
                 # SECURITY: do NOT concatenate the skills block into the
                 # trusted system role. Skill content (name, description,
                 # when_to_use, procedure, pitfalls) is user-editable via
@@ -4779,6 +4774,14 @@ def _build_base_prompt(
             active_tools = list(set(TOOL_SECTIONS.keys()) - set(disabled or []))
             skill_idx = _sm.index_for(owner=owner, active_toolsets=active_tools)
             if skill_idx:
+                from src.skills_runtime.disclosure import (
+                    DEFAULT_LEVEL0_BUDGET_TOKENS, render_level0,
+                )
+                try:
+                    _level0_budget = int(get_setting("skill_list_budget_tokens",
+                                                      DEFAULT_LEVEL0_BUDGET_TOKENS))
+                except Exception:
+                    _level0_budget = DEFAULT_LEVEL0_BUDGET_TOKENS
                 lines = ["## Available skills",
                          "Procedures the assistant should consult before doing domain work. "
                          "Fetch the full procedure with `manage_skills` action=view name=<name> "
@@ -4786,14 +4789,8 @@ def _build_base_prompt(
                          "teacher-escalation loop after a prior failure — treat them as authoritative "
                          "guidance; if you follow one and it works, that's a good signal the procedure "
                          "is correct."]
-                by_cat: dict[str, list] = {}
-                for s in skill_idx:
-                    by_cat.setdefault(s["category"], []).append(s)
-                for cat in sorted(by_cat):
-                    lines.append(f"\n**{cat}**")
-                    for s in by_cat[cat]:
-                        badge = " *(draft)*" if s.get("status") == "draft" else ""
-                        lines.append(f"- `{s['name']}` — {s['description']}{badge}")
+                level0 = render_level0(skill_idx, budget_tokens=_level0_budget)
+                lines.append(level0.text)
                 skill_index_block = "\n\n" + "\n".join(lines)
         except Exception as _e:
             # Skill index is a soft enhancement — never fail prompt assembly on it.

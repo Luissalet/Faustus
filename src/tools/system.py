@@ -91,6 +91,11 @@ async def do_manage_skills(content: str, owner: Optional[str] = None) -> Dict:
         text = sm.read_skill_reference(name, ref, owner=owner)
         if text is None:
             return {"error": f"Reference {ref!r} not found under {name!r}", "exit_code": 1}
+        try:
+            from src.skills_runtime.disclosure import log_level2_use
+            log_level2_use(name, ref)
+        except Exception:
+            pass  # logging must never block a level-2 read
         return {"results": text}
 
     if action == "add":

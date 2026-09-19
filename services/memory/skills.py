@@ -652,6 +652,10 @@ class SkillsManager:
                 "description": s.get("description") or s.get("title", ""),
                 "category": s.get("category", "general"),
                 "status": status or "published",
+                # Job D (explicit progressive disclosure, level 0): the
+                # trigger the agent uses to decide whether to pull level 1
+                # in, without reading the procedure body itself.
+                "when_to_use": s.get("when_to_use") or "",
             })
         out.sort(key=lambda x: (x["category"], x["name"]))
         return out
