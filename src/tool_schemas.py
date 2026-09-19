@@ -2826,6 +2826,23 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "code_graph_impact",
+            "description": "What else can break and which tests to run -- from one symbol, or (with no symbol) from every symbol the current git diff touches: BFS over incoming call edges up to depth hops, deduped and capped, reporting each reached symbol's file:line, depth and certainty, plus the test files/functions reached and a ready-to-run pytest command. Use for 'what would break if I change this', 'what should I test after this diff', 'what depends on this function'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "symbol": {"type": "string", "description": "Symbol name or qualified name to seed from (optional -- omit to seed from the current git diff's changed symbols instead)"},
+                    "base_ref": {"type": "string", "description": "Git ref to diff against when symbol is omitted (default HEAD)"},
+                    "depth": {"type": "integer", "description": "Max BFS hops over incoming callers (default 3, capped at 6)"},
+                    "root": {"type": "string", "description": "Workspace root (optional -- defaults to the active workspace)"}
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "code_graph_architecture",
             "description": "One-call architecture summary of a workspace: languages, symbol/edge counts, HTTP routes, the most-called modules/functions (fan-in), and hotspots (long functions with many callers). Use when opening an unfamiliar repo instead of exploring file by file.",
             "parameters": {

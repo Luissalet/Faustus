@@ -28,6 +28,13 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_OUTPUT_CHARS = 4000
 _DIFF_HUNK_RE = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@")
+_TEST_PATH_RE = re.compile(
+    r"(?:^|/)tests?/|(?:^|/)test_[^/]+\.py$|[^/]+_test\.py$"
+    r"|[^/]+\.test\.(?:ts|tsx|js)$|[^/]+\.spec\.[^/]+$"
+)
+# exact > static_inferred > lexical: the weakest certainty seen along a path
+# is what the caller should trust for the whole path.
+_CERTAINTY_RANK = {"exact": 0, "static_inferred": 1, "lexical": 2}
 
 
 def _root(raw: str) -> str:
@@ -413,3 +420,190 @@ def snippet(symbol: str, *, workspace: str = "", project_id: str = "",
     return {"output": _clip(body, output_chars), "exit_code": 0, "symbol": sym["qualname"],
             "path": sym["path"], "start_line": start, "end_line": end,
             "language": sym.get("language", "")}
+
+
+# ── impact ───────────────────────────────────────────────────────────────
+
+def _is_test_path(path: str) -> bool:
+    return bool(_TEST_PATH_RE.search((path or "").replace("\\", "/")))
+
+
+def _weaker(a: str, b: str) -> str:
+    """The less certain of two certainty labels (unknown labels count as
+    weakest, since we cannot vouch for them)."""
+    ra = _CERTAINTY_RANK.get(a, 99)
+    rb = _CERTAINTY_RANK.get(b, 99)
+    return a if ra >= rb else b
+
+
+def _changed_seeds(root: str, *, base_ref: str, project_id: str) -> List[Dict[str, Any]]:
+    """Resolve `detect_changes`' changed symbols to graph node ids."""
+    changes = detect_changes(root, base_ref=base_ref, project_id=project_id)
+    seeds: List[Dict[str, Any]] = []
+    seen_paths: Dict[str, List[Any]] = {}
+    for entry in changes.get("changed_symbols") or []:
+        path = str(entry.get("path") or "")
+        if path not in seen_paths:
+            seen_paths[path] = code_index.symbols_in(path, workspace=root, project_id=project_id)
+        for sym in seen_paths[path]:
+            if sym.qualname == entry.get("symbol") and sym.start_line == entry.get("start_line"):
+                seeds.append({"id": sym.id, "qualname": sym.qualname, "path": sym.path,
+                              "start_line": sym.start_line})
+                break
+    return seeds
+
+
+def impact(symbol: str = "", *, workspace: str = "", project_id: str = "",
+           base_ref: str = "HEAD", depth: int = 3, limit: int = 200,
+           output_chars: int = DEFAULT_OUTPUT_CHARS) -> Dict[str, Any]:
+    """What else can break, and which tests to run.
+
+    Seeds are the resolved `symbol`, or — when `symbol` is empty — every
+    symbol `detect_changes(base_ref)` finds touched by the current git diff.
+    From each seed, BFS over *incoming* `calls` edges (who calls this, who
+    calls THAT, ...) up to `depth` hops, deduped by symbol id and capped at
+    `limit` nodes. Unresolved edges are counted but never followed — we
+    cannot say what an unresolved call site reaches. A reached node whose
+    file looks like a test file is collected into `affected_tests`, along
+    with the seed's own test file when the seed itself lives in one."""
+    try:
+        root = _root(workspace)
+    except ValueError as exc:
+        return {"error": str(exc), "exit_code": 1}
+    try:
+        code_index.refresh(root, project_id=project_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("code_graph.impact refresh failed: %s", exc)
+
+    try:
+        depth_cap = max(1, min(int(depth or 3), 6))
+    except (TypeError, ValueError):
+        depth_cap = 3
+    try:
+        node_cap = max(1, min(int(limit or 200), 2000))
+    except (TypeError, ValueError):
+        node_cap = 200
+
+    seeds: List[Dict[str, Any]] = []
+    mode = "symbol"
+    if str(symbol or "").strip():
+        sym = _resolve_symbol(symbol, root=root, project_id=project_id)
+        if not sym:
+            return {"output": f"symbol not found: {symbol!r} under {root}", "exit_code": 1,
+                    "root": root}
+        seeds = [{"id": sym["id"], "qualname": sym["qualname"], "path": sym["path"],
+                  "start_line": sym.get("start_line", 0)}]
+    else:
+        mode = "diff"
+        try:
+            seeds = _changed_seeds(root, base_ref=base_ref, project_id=project_id)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("code_graph.impact diff seeding failed: %s", exc)
+            return {"error": f"impact: {exc}", "exit_code": 1, "root": root}
+        if not seeds:
+            return {"output": f"no changed symbols vs {base_ref}", "exit_code": 0,
+                    "root": root, "mode": mode, "seeds": [], "reached": [],
+                    "affected_tests": [], "affected_test_functions": [],
+                    "unresolved_edges": 0, "suggested_command": ""}
+
+    # BFS state: symbol id -> best-known node info (weakest certainty wins).
+    nodes: Dict[str, Dict[str, Any]] = {}
+    seed_ids = {s["id"] for s in seeds}
+    frontier = [(s["id"], s["qualname"]) for s in seeds]
+    visited = set(seed_ids)
+    unresolved_edges = 0
+    d = 0
+    try:
+        while frontier and d < depth_cap and len(nodes) < node_cap:
+            d += 1
+            next_frontier: List[Tuple[str, str]] = []
+            for sym_id, callee_qual in frontier:
+                for hop in code_index.neighbors(sym_id, kinds=("calls",)):
+                    if hop.get("direction") != "in":
+                        continue
+                    if not hop.get("resolved"):
+                        unresolved_edges += 1
+                        continue
+                    other = str(hop.get("symbol_id") or "")
+                    if not other or other in seed_ids:
+                        continue
+                    certainty = str(hop.get("certainty") or "")
+                    if other in nodes:
+                        entry = nodes[other]
+                        entry["certainty"] = _weaker(entry["certainty"], certainty)
+                        entry["depth"] = min(entry["depth"], d)
+                        continue
+                    if len(nodes) >= node_cap:
+                        break
+                    nodes[other] = {
+                        "qualname": hop.get("qualname", ""), "path": hop.get("path", ""),
+                        "start_line": hop.get("start_line", 0), "depth": d,
+                        "certainty": certainty, "via": callee_qual,
+                    }
+                    if other not in visited:
+                        visited.add(other)
+                        next_frontier.append((other, str(hop.get("qualname") or "")))
+            frontier = next_frontier
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("code_graph.impact BFS failed: %s", exc)
+        return {"error": f"impact: {exc}", "exit_code": 1, "root": root}
+
+    reached = [{"symbol": n["qualname"], "path": n["path"], "start_line": n["start_line"],
+               "depth": n["depth"], "certainty": n["certainty"], "via": n["via"]}
+              for n in nodes.values()]
+    reached.sort(key=lambda e: (e["depth"], e["path"], e["start_line"]))
+
+    test_files = set()
+    test_functions: List[str] = []
+    for entry in reached:
+        if _is_test_path(entry["path"]):
+            test_files.add(entry["path"])
+            test_functions.append(entry["symbol"])
+    for s in seeds:
+        if _is_test_path(s["path"]):
+            test_files.add(s["path"])
+
+    py_tests = sorted(p for p in test_files if p.endswith(".py"))
+    other_tests = sorted(p for p in test_files if not p.endswith(".py"))
+    if py_tests:
+        capped = py_tests[:30]
+        cmd = "python -m pytest -q " + " ".join(capped)
+        if len(py_tests) > 30:
+            cmd += f"  # ({len(py_tests) - 30} more test files not shown)"
+        suggested_command = cmd
+    elif other_tests:
+        suggested_command = "JS/TS tests affected (run with your project's test runner): " \
+                             + ", ".join(other_tests[:30])
+    else:
+        suggested_command = ""
+
+    lines: List[str] = []
+    seed_desc = ", ".join(s["qualname"] for s in seeds) if mode == "symbol" else \
+        f"{len(seeds)} changed symbol(s) vs {base_ref}"
+    lines.append(f"Impact of {seed_desc}:")
+    cur_depth = 0
+    for entry in reached:
+        if entry["depth"] != cur_depth:
+            cur_depth = entry["depth"]
+            lines.append(f"-- depth {cur_depth} --")
+        lines.append(f"  {entry['path']}:{entry['start_line']} {entry['symbol']} "
+                     f"[{entry['certainty']}] via {entry['via']}")
+    if not reached:
+        lines.append("  (nothing reachable — no known callers)")
+    lines.append(f"unresolved call edges skipped: {unresolved_edges}")
+    if test_files:
+        lines.append(f"affected tests ({len(test_files)}):")
+        lines += [f"  {t}" for t in sorted(test_files)]
+        if suggested_command:
+            lines.append(f"suggested: {suggested_command}")
+    else:
+        lines.append("affected tests: none found")
+
+    return {
+        "output": _clip("\n".join(lines), output_chars), "exit_code": 0, "root": root,
+        "mode": mode, "seeds": seeds, "reached": reached,
+        "affected_tests": sorted(test_files),
+        "affected_test_functions": sorted(set(test_functions)),
+        "unresolved_edges": unresolved_edges, "suggested_command": suggested_command,
+        "depth": depth_cap, "base_ref": base_ref,
+    }

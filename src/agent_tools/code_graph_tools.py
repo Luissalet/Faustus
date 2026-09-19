@@ -105,6 +105,22 @@ class CodeGraphChangesTool:
         )
 
 
+class CodeGraphImpactTool:
+    """`code_graph_impact` {symbol?, base_ref?, depth?}: what else can break
+    and which tests to run, from a symbol or from the current git diff."""
+
+    async def execute(self, content: str, ctx: dict) -> dict:
+        args = _args(content, first_key="symbol")
+        return _catch(
+            code_graph.impact, str(args.get("symbol") or "").strip(),
+            workspace=str(args.get("root") or args.get("workspace") or ""),
+            project_id=str(args.get("project_id") or ""),
+            base_ref=str(args.get("base_ref") or "HEAD"),
+            depth=int(args.get("depth") or 3),
+            tool="code_graph_impact",
+        )
+
+
 class CodeGraphArchitectureTool:
     """`code_graph_architecture` {}: languages, routes, fan-in/out, hotspots."""
 

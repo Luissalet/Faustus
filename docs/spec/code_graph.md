@@ -57,8 +57,20 @@ the questions it did not yet answer as public functions, plus the
   `_workspace_coding_rules(workspace)`).
 - `src/agent_tools/code_graph_tools.py` — `code_graph_index`,
   `code_graph_search` (`semantic: true` routes to `semantic_query`),
-  `code_graph_trace`, `code_graph_changes`, `code_graph_architecture`,
-  `code_graph_snippet`.
+  `code_graph_trace`, `code_graph_changes`, `code_graph_impact`,
+  `code_graph_architecture`, `code_graph_snippet`.
+- `impact` (`src/code_graph/query.py`) — "what else can break and which
+  tests to run", from one symbol or (with no symbol) from every symbol the
+  current git diff touches (`detect_changes`). BFS over *incoming* `calls`
+  edges up to `depth` hops (capped at 6), deduped by symbol id and capped
+  at `limit` nodes; each reached node keeps the weakest certainty seen
+  along its path and the qualname it was reached through (`via`).
+  Unresolved call edges are counted (`unresolved_edges`) but never
+  followed. A reached node (or a seed) whose file looks like a test file
+  (`tests/`, `test_*.py`, `*_test.py`, `*.test.{ts,tsx,js}`, `*.spec.*`)
+  is collected into `affected_tests`/`affected_test_functions`, with a
+  ready `python -m pytest -q <files>` `suggested_command` for Python
+  tests (capped at 30 files) or a note for JS/TS ones.
 - `routes/code_graph_routes.py` — `POST /api/code-graph/index`,
   `GET /api/code-graph/{architecture,search,trace,changes,snippet}`, same
   `require_admin` auth as `routes/tool_registry_routes.py`.
@@ -67,8 +79,8 @@ the questions it did not yet answer as public functions, plus the
   `src/tool_capabilities.py` (`READ_WORKSPACE` / `WORKSPACE_UNTRUSTED` —
   same class as `find_symbol`/`callers`/`tests_for`), `src/tool_index.py`
   (`BUILTIN_TOOL_DESCRIPTIONS`), `src/tool_index_examples.py` (`EXAMPLES`,
-  4 ES/EN phrases each), `src/settings.py` / `src/agent_settings_schema.py`
-  (`agent_code_graph_auto_index`), `app.py`
+  4 ES/EN phrases each — `code_graph_impact` included), `src/settings.py` /
+  `src/agent_settings_schema.py` (`agent_code_graph_auto_index`), `app.py`
   (`app.include_router(setup_code_graph_routes())`).
 
 ## Known gap

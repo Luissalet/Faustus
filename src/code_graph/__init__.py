@@ -32,10 +32,12 @@ from .query import (
     detect_changes,
     get_architecture,
     snippet,
+    impact,
 )
 from .semantic import semantic_query
 
 __all__ = [
     "index", "search_graph", "trace_path", "callers", "callees",
     "detect_changes", "get_architecture", "snippet", "semantic_query",
+    "impact",
 ]

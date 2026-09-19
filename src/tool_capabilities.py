@@ -615,7 +615,8 @@ _register(
     # DATA_DIR, never a workspace file, so it stays a read/build tool rather
     # than a workspace write.
     {"code_graph_index", "code_graph_search", "code_graph_trace",
-     "code_graph_changes", "code_graph_architecture", "code_graph_snippet"},
+     "code_graph_changes", "code_graph_impact", "code_graph_architecture",
+     "code_graph_snippet"},
     ToolEffect.READ_WORKSPACE,
     result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED,
 )

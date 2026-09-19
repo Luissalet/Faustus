@@ -935,6 +935,12 @@ EXAMPLES: Dict[str, List[str]] = {
         "dado este diff, qué debería volver a probar",
         "show me what's impacted since HEAD~3",
     ],
+    "code_graph_impact": [
+        "qué se rompería si cambio esta función",
+        "what would break if I change this function",
+        "qué tests debería correr después de este diff",
+        "what depends on this, and what tests should I run",
+    ],
     "code_graph_architecture": [
         "dame un resumen de la arquitectura de este proyecto",
         "what does this codebase look like, give me the lay of the land",
