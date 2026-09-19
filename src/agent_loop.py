@@ -11994,6 +11994,20 @@ async def _stream_agent_loop_body(
                         break
                 except Exception:
                     break
+                try:
+                    # A prefetched read bypasses the main gate loop below
+                    # entirely (it is served from `_prefetched`, never
+                    # re-checked), so an argument policy rule ("deny" or
+                    # "ask") must exclude a call from the group here too —
+                    # otherwise a rule written against e.g. `grep`/`read_file`
+                    # would never fire for a call the prefetcher picked up.
+                    from src.tool_arg_policy import evaluate as _pf_evaluate_arg_policy, extract_tool_args as _pf_extract_arg_policy_args
+                    if _pf_evaluate_arg_policy(
+                        _pblock.tool_type, _pf_extract_arg_policy_args(_pblock.tool_type, _pblock.content)
+                    ) is not None:
+                        break
+                except Exception:
+                    pass
                 _pkey = _read_resource_key(_pblock)
                 if _pkey in _seen_keys:
                     break
@@ -12122,6 +12136,34 @@ async def _stream_agent_loop_body(
                 block.tool_type,
                 block.content,
             )
+            # Argument-level tool policy (src/tool_arg_policy.py): name-level
+            # policy (_denial_for_tool, right below) can only say "this tool
+            # is fine" or "this tool is blocked" for every call to it — this
+            # is the "fine, but only with these arguments" layer, checked at
+            # the same funnel point every call (built-in, MCP, connector)
+            # passes through before it executes. A "deny" rule becomes its
+            # own elif branch below, ahead of the approval gate, so a denied
+            # call never reaches a human's approval card. An "ask" rule
+            # reuses the EXISTING human approval flow rather than inventing a
+            # second one: it overrides `security_decision` to "not allowed"
+            # with the rule's own reason, so the approval-card branch a few
+            # lines down (`elif not security_decision.allowed`) creates the
+            # same kind of card it already creates for the untrusted-context
+            # gate. Never raises: evaluation failure is treated as "no rule
+            # fired", same as an empty `tool_arg_rules` setting.
+            try:
+                from src.tool_arg_policy import (
+                    evaluate as _evaluate_arg_policy,
+                    extract_tool_args as _extract_arg_policy_args,
+                    override_security_decision as _override_security_decision,
+                )
+                _arg_policy_decision = _evaluate_arg_policy(
+                    block.tool_type, _extract_arg_policy_args(block.tool_type, block.content)
+                )
+                security_decision = _override_security_decision(security_decision, _arg_policy_decision)
+            except Exception:  # noqa: BLE001
+                logger.debug("tool_arg_policy evaluation failed for tool=%s", block.tool_type, exc_info=True)
+                _arg_policy_decision = None
             _ody_clamped_tool_allowed = (
                 _ody_notes_finetune_mode
                 and block.tool_type in {"manage_notes", "manage_calendar", "manage_tasks"}
@@ -12199,6 +12241,23 @@ async def _stream_agent_loop_body(
                 logger.info(
                     "Tool blocked before execution: invalid arguments for %s: %s",
                     block.tool_type, _arg_meta["errors"],
+                )
+            elif _arg_policy_decision is not None and _arg_policy_decision.action == "deny":
+                # A "deny" argument rule never reaches the approval gate or
+                # execution — same shape as a name-level denial (`_denial`
+                # above), just with the rule's own message.
+                desc = f"{block.tool_type}: BLOCKED"
+                result = {
+                    "error": _arg_policy_decision.message(),
+                    "exit_code": 1,
+                    "blocked": True,
+                    "policy": "tool_arg_policy",
+                    "policy_rule_id": _arg_policy_decision.rule_id,
+                }
+                logger.info(
+                    "Tool blocked by argument policy rule=%s tool=%s arg=%s op=%s",
+                    _arg_policy_decision.rule_id, block.tool_type,
+                    _arg_policy_decision.arg, _arg_policy_decision.op,
                 )
             elif not security_decision.allowed:
                 approval_document = (

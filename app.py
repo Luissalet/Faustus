@@ -991,6 +991,9 @@ app.include_router(setup_diagnostics_routes(rag_manager, rag_available, research
 from routes.command_guard_routes import setup_command_guard_routes
 app.include_router(setup_command_guard_routes())
 
+from routes.tool_arg_policy_routes import setup_tool_arg_policy_routes
+app.include_router(setup_tool_arg_policy_routes())
+
 from routes.privacy_routes import setup_privacy_routes
 app.include_router(setup_privacy_routes())
 

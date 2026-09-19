@@ -7947,3 +7947,31 @@ Slice	Porción
 X	X
 {type} chart with {n} series over {m} points.	Gráfico de {type} con {n} series sobre {m} puntos.
 Pie chart with {n} slices.	Gráfico circular con {n} porciones.
+Add rule	Añadir regla
+Argument rules	Reglas de argumentos
+Argument (dotted path)	Argumento (ruta con puntos)
+Argument rule saved.	Regla de argumento guardada.
+A rule with this id already exists.	Ya existe una regla con este id.
+Allowed.	Permitido.
+Arguments must be valid JSON.	Los argumentos deben ser JSON válido.
+Check a tool and arguments against the SAVED rules — nothing runs.	Comprueba una herramienta y argumentos contra las reglas GUARDADAS — no se ejecuta nada.
+Condition	Condición
+Could not read the argument rules.	No se pudieron leer las reglas de argumentos.
+Could not run the test.	No se pudo ejecutar la prueba.
+Could not save the rule.	No se pudo guardar la regla.
+GET /api/tool-arg-rules failed.	GET /api/tool-arg-rules falló.
+No argument rules. Every tool call is only gated by name.	No hay reglas de argumentos. Cada llamada a herramienta solo se filtra por nombre.
+Note (shown to the model)	Nota (se muestra al modelo)
+Restrict a tool by its arguments — a domain, a path prefix, a pattern — not just its name. The first matching rule denies the call or asks for your approval.	Restringe una herramienta por sus argumentos — un dominio, un prefijo de ruta, un patrón — no solo por su nombre. La primera regla que coincide deniega la llamada o pide tu aprobación.
+Rule id	Id de la regla
+Rule id, tool and argument are required.	El id de la regla, la herramienta y el argumento son obligatorios.
+Save rule	Guardar regla
+This account cannot change argument rules.	Esta cuenta no puede cambiar las reglas de argumentos.
+Tool (exact name or glob)	Herramienta (nombre exacto o comodín)
+equals	es igual a
+one of	uno de
+starts with	empieza por
+does not start with	no empieza por
+matches regex	coincide con regex
+max length	longitud máxima
+domain is one of	el dominio es uno de

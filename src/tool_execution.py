@@ -1628,6 +1628,37 @@ async def _execute_tool_block_impl(
         logger.warning("Tool policy blocked tool=%s", tool)
         return desc, result
 
+    # Argument-level tool policy (src/tool_arg_policy.py), defense in depth.
+    # The main chat loop (src/agent_loop.py's per-block dispatch) already
+    # evaluates this before calling execute_tool_block at all — a "deny" is
+    # refused there and never reaches here, and an "ask" is routed into the
+    # existing human approval flow, re-entering here only once approved
+    # (`human_approved=True`). A caller that reaches this function WITHOUT
+    # going through that gate (e.g. src/code_mode/bridge.py, which has no
+    # interactive approval channel) still must not execute past a rule that
+    # fired here: a "deny" always blocks, and an "ask" blocks too unless this
+    # exact call was already human-approved.
+    if not human_approved:
+        try:
+            from src.tool_arg_policy import evaluate as _evaluate_arg_policy, extract_tool_args as _extract_arg_policy_args
+            _arg_policy_decision = _evaluate_arg_policy(tool, _extract_arg_policy_args(tool, content))
+        except Exception:  # noqa: BLE001 - evaluation failure is not a policy hit
+            _arg_policy_decision = None
+        if _arg_policy_decision is not None:
+            desc = f"{tool}: BLOCKED"
+            result = {
+                "error": _arg_policy_decision.message(),
+                "exit_code": 1,
+                "blocked": True,
+                "policy": "tool_arg_policy",
+                "policy_rule_id": _arg_policy_decision.rule_id,
+            }
+            logger.info(
+                "Tool blocked by argument policy (direct dispatch) rule=%s tool=%s",
+                _arg_policy_decision.rule_id, tool,
+            )
+            return desc, result
+
     # CONTRATO_CONECTORES F2.3: the real enforcement point — a whitelist
     # hidden only in the prompt (src/agent_loop.py::_build_system_prompt)
     # is not enforcement, it is a suggestion. This catches a call to

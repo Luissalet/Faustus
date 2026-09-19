@@ -135,3 +135,76 @@ export function saveFavoriteTools(favorites: Set<string>): void {
     /* private browsing / storage disabled: favourites just don't persist */
   }
 }
+
+/* ── Argument-level tool policy rules (src/tool_arg_policy.py) ──
+ * Name-level policy (the enable/disable toggles above) can only say "this
+ * tool is fine" or "this tool is blocked" — these rules add "fine, but only
+ * with these arguments": a constraint on one dotted argument path of one
+ * tool (exact name or a glob), enforced on every call before it executes. */
+
+export type ToolArgRuleOp =
+  | 'equals'
+  | 'one_of'
+  | 'prefix'
+  | 'not_prefix'
+  | 'regex'
+  | 'max_len'
+  | 'domain_in';
+
+export type ToolArgRuleAction = 'deny' | 'ask';
+
+export interface ToolArgRule {
+  id: string;
+  tool: string;
+  arg: string;
+  op: ToolArgRuleOp;
+  value: unknown;
+  action: ToolArgRuleAction;
+  note: string;
+}
+
+export interface ToolArgRuleTestResult {
+  allowed: boolean;
+  action?: ToolArgRuleAction;
+  rule_id?: string;
+  arg?: string;
+  op?: ToolArgRuleOp;
+  value?: unknown;
+  message?: string;
+}
+
+export async function listToolArgRules(): Promise<ToolArgRule[]> {
+  const data = await getJson<{ rules: ToolArgRule[] }>('/api/tool-arg-rules');
+  return data.rules;
+}
+
+/** Replaces the whole rule list — same shape as `setDisabledTools`: the
+ * caller sends the full set it wants, not a delta. Throws with the server's
+ * validation message (bad op, bad regex, ...) on a rejected PUT. */
+export async function saveToolArgRules(rules: ToolArgRule[]): Promise<ToolArgRule[]> {
+  const path = '/api/tool-arg-rules';
+  const response = await fetch(path, {
+    method: 'PUT',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ rules }),
+  });
+  if (!response.ok) throw new Error(await responseReason(response, path));
+  const data = (await response.json()) as { rules: ToolArgRule[] };
+  return data.rules;
+}
+
+/** The Settings "try it" box: whether a tool+args pair would be allowed
+ * under the currently SAVED rules (not whatever is still unsaved in the
+ * editor) — same read-only intent as `dryRunTool`. */
+export async function testToolArgRule(tool: string, args: Record<string, unknown>): Promise<ToolArgRuleTestResult> {
+  const path = '/api/tool-arg-rules/test';
+  const response = await fetch(path, {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ tool, args }),
+  });
+  if (!response.ok) throw new Error(await responseReason(response, path));
+  return (await response.json()) as ToolArgRuleTestResult;
+}

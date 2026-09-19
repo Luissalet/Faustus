@@ -1047,6 +1047,13 @@ DEFAULT_SETTINGS = {
     # entry is an absolute path. Sensitive subpaths (.ssh, .gnupg, shell
     # rc files, SSH key files) are always blocked regardless of roots.
     "tool_path_extra_roots": [],
+    # Argument-level tool policy rules (src/tool_arg_policy.py): a list of
+    # {id, tool, arg, op, value, action, note} objects. Each rule constrains
+    # one dotted argument path on a tool (exact name or glob) and either
+    # denies the call outright or routes it into the existing human approval
+    # flow when its constraint is violated. Empty list = no effect, same as
+    # before this existed.
+    "tool_arg_rules": [],
     # ── Built-in browser (Playwright MCP, src/builtin_mcp.py) ──
     # "persistent" keeps cookies/logins in <DATA_DIR>/browser-profile between
     # runs; "isolated" starts every server from a blank in-memory profile.

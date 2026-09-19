@@ -1,6 +1,11 @@
 ﻿# Pendientes de cierre
 
-Actualizado: 18-09-2026. REGLA: nunca nombres de empresas/personas del buzÃ³n de Luis en commits, docs, tests ni comentarios â€” ejemplos siempre ficticios. SÃ³lo trabajo vigente; quitar cada entrada al cerrarla.
+Actualizado: 19-09-2026. REGLA: nunca nombres de empresas/personas del buzÃ³n de Luis en commits, docs, tests ni comentarios â€” ejemplos siempre ficticios. SÃ³lo trabajo vigente; quitar cada entrada al cerrarla.
+
+## 19-09 — reglas de política por argumento, panel de Ajustes sin ver en vivo (FAUSTUS.md §132)
+
+- No verificado en vivo: arrancar Studio de verdad, entrar en Ajustes → Tools → "Argument rules", dar de alta una regla desde el formulario, editarla, borrarla, y usar la caja "Test" con una herramienta y JSON real — todo se probó por API (`curl` contra el servidor real) y por `tsc`, no con clics reales en el navegador. El entorno de esta tarea no tiene acceso de red desde la extensión de Chrome hacia el `localhost` del contenedor donde corre el servidor.
+- No verificado en vivo: disparar una regla `action: "ask"` dentro de una conversación real y ver la tarjeta de aprobación en el chat con el texto de la regla — el puente hacia `tool_approval_store` se probó por test unitario (mismo patrón que `test_tool_approval_single_action_scope.py`), no contra el bucle de agente completo (`stream_agent_loop`) con un modelo de verdad.
 
 ## 19-09 — gráficos en el chat, verificación en vivo pendiente (FAUSTUS.md §131)
 
