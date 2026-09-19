@@ -441,3 +441,45 @@ def test_waited_out_measured_even_when_cancelled(blocked):
         asyncio.run(run())
     assert out.get("waited_s") is not None
     assert out["waited_s"] >= 0.0
+
+
+# ── external runner occupancy (src/runner_providers.py) ─────────────────────
+#
+# The owner's screenshot: llama-server holding 47 GB, registered as an
+# OpenAI-compatible endpoint, not Ollama — loading another model in Ollama
+# next to it must be refused exactly as it would be for an Ollama resident.
+# `others_bytes` (used − held by THIS Ollama) already carries that occupancy
+# physically, since nvidia-smi does not care which process holds the bytes;
+# what these pin down is that `assess()` also NAMES it, and never treats it
+# as something it could suggest unloading.
+
+def test_external_runner_occupancy_is_refused_and_named(monkeypatch):
+    # 27 GB physically used, 6 GB of it Ollama's own resident SMALL model —
+    # the other 21 GB is llama-server, invisible to /api/ps.
+    _ollama(monkeypatch, tags=[Q8, SMALL],
+            ps=[{"name": SMALL["name"], "digest": "d-9b", "size": 6 * GIB,
+                 "size_vram": 6 * GIB, "context_length": 8192}],
+            vram=_card(28, 27))
+    monkeypatch.setattr(
+        "src.runner_providers.external_runner_snapshot",
+        lambda **kw: [{"model": "qwen3.8-27b-q8-llamacpp", "endpoint_name": "llama.cpp (8081)",
+                       "engine": "llama.cpp", "context_length": 32768,
+                       "footprint_bytes": 21 * GIB, "footprint_measured": True,
+                       "generating": False, "unloadable": False}])
+    a = va.assess(ROOT, Q8["name"])
+
+    assert a["fits"] is False
+    assert a["external_runners"][0]["model"] == "qwen3.8-27b-q8-llamacpp"
+    assert "llama.cpp (8081)" in a["reason"]
+    assert "cannot be unloaded" in a["external_occupancy_note"]
+    # It is never offered as something to unload — there is no such call.
+    assert "qwen3.8-27b-q8-llamacpp" not in a["suggestion"]
+
+
+def test_no_external_runner_leaves_assess_unchanged(monkeypatch):
+    _ollama(monkeypatch, tags=[Q8, SMALL], ps=[], vram=_card(28, 0.5))
+    monkeypatch.setattr("src.runner_providers.external_runner_snapshot", lambda **kw: [])
+    a = va.assess(ROOT, SMALL["name"])
+    assert a["fits"] is True
+    assert a["external_runners"] == []
+    assert "external_occupancy_note" not in a

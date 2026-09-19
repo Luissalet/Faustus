@@ -60,6 +60,17 @@ export interface LoadedModel {
   per_gpu?: { index: number; bytes?: number | null }[];
 }
 
+export interface ExternalRunnerModel {
+  model: string;
+  endpoint_name?: string;
+  engine?: string;
+  context_length?: number;
+  footprint_bytes?: number | null;
+  footprint_measured?: boolean;
+  generating?: boolean;
+  unloadable?: boolean;
+}
+
 export interface HealthComponent {
   name: string;
   label?: string;
@@ -87,6 +98,10 @@ export interface Orphan {
 export interface Usage {
   ts?: number;
   ollama?: { reachable: boolean; base?: string; models?: LoadedModel[] };
+  /** Self-hosted OpenAI-compatible runners (llama.cpp's llama-server) that
+   * have a model resident, which `ollama.models` never sees — additive,
+   * see routes/system_usage_routes.py and src/runner_providers.py. */
+  external_runners?: ExternalRunnerModel[];
   gpu?: Gpu[];
   gpu_pool?: Partial<GpuPool> & { name?: string };
   orphans?: Orphan[];
@@ -174,8 +189,29 @@ export function poolOf(d: Usage | null): GpuPool {
   };
 }
 
+/** An `ExternalRunnerModel` reshaped as a `LoadedModel` so `Vitals` and every
+ * other reader of `firstModel()` need no branch for where the model lives.
+ * `gpu_pct` is 100 only because a footprint measured from the GGUF file
+ * cannot say how much of it is actually in VRAM vs spilled — this is a
+ * "something is resident and this size is real" figure, not a placement
+ * reading; `context_length` and the name are exact. */
+function asLoadedModel(m: ExternalRunnerModel): LoadedModel {
+  const size = m.footprint_bytes ?? null;
+  return {
+    name: m.endpoint_name ? `${m.model} (${m.endpoint_name})` : m.model,
+    gpu_pct: size != null ? 100 : 0,
+    cpu_pct: 0,
+    size,
+    size_vram: size,
+    context_length: m.context_length ?? null,
+  };
+}
+
 export function firstModel(d: Usage | null): LoadedModel | null {
-  return d?.ollama?.models?.[0] ?? null;
+  const own = d?.ollama?.models?.[0];
+  if (own) return own;
+  const ext = d?.external_runners?.[0];
+  return ext ? asLoadedModel(ext) : null;
 }
 export function spilling(d: Usage | null): boolean {
   return !!d?.gpu_mem?.ollama?.spilling;

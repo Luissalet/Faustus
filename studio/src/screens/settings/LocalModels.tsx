@@ -818,8 +818,14 @@ function LoadedList({ loaded, cards, admin, working = '', defaultModel = '', def
                   {isKeeperDefault && until === t('kept loaded') ? t('Kept loaded by Faustus (default model)') : until}
                 </span>
               )}
+              {m.engine && (
+                <span className="fs-set__help" data-testid="lm-external-engine">
+                  {t('served by {endpoint} ({engine})', { endpoint: m.endpoint_name || t('another server'), engine: m.engine })}
+                  {m.footprint_measured === false ? ` · ${t('size unknown')}` : ''}
+                </span>
+              )}
             </span>
-            {admin && (
+            {admin && m.unloadable !== false && (
               <Button
                 size="sm"
                 variant="ghost"

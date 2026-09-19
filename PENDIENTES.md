@@ -2,6 +2,13 @@
 
 Actualizado: 18-09-2026. REGLA: nunca nombres de empresas/personas del buzón de Luis en commits, docs, tests ni comentarios — ejemplos siempre ficticios. Sólo trabajo vigente; quitar cada entrada al cerrarla.
 
+## 18-09 noche — residencia deja de ser solo-Ollama (FAUSTUS.md §118)
+
+- No verificado en vivo: con `llama-server` real sirviendo `qwen3.8-27b-q8-llamacpp` en `:8081` (registrado como endpoint), abrir el Studio y confirmar que el widget de Vitals muestra el nombre del modelo en vez de «no model», y que Ajustes → Local models lo lista en «Loaded now» con «servido por» y sin botón Unload.
+- No verificado en vivo: con Ollama intentando cargar un modelo grande mientras `llama-server` retiene los 47 GB, confirmar que la admisión rechaza/pregunta y que el mensaje nombra el endpoint de llama.cpp (`reason`/`external_occupancy_note`).
+- No verificado en vivo: apagar `llama-server` y confirmar que las tres superficies (Vitals, Local models, admisión) vuelven a su estado sin runner externo sin dejar filas fantasma.
+- Pendiente de decidir junto con lo de §114: si el modelo por defecto vive en Ollama o en el endpoint llama.cpp, este parche solo hace visible lo que ya está cargado — no cambia dónde vive el default.
+
 ## 18-09 noche — el turno de agente ya no debería terminar en silencio (FAUSTUS.md §115)
 
 - No verificado en vivo: repetir la tarea larga y repetitiva (la de la Pokédex u otra similar) contra el llama-server real y confirmar que las rondas se extienden solas con la línea de progreso («continúa: unidad N») en vez de la tarjeta «Allow this task to continue?», y que si el modelo se atasca de verdad aparece una pregunta concreta (`ask_user`) en vez de la tarjeta o el silencio.

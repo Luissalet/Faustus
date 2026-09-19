@@ -599,6 +599,21 @@ def assess(root: str, model: str) -> Dict[str, Any]:
     total = int(vram.get("total") or 0)
     used = int(vram.get("used") or 0)
     others = max(0, used - held)  # a browser, ComfyUI: not ours to evict
+    # A self-hosted OpenAI-compatible runner (llama.cpp's llama-server) is
+    # physically on the same card nvidia-smi just read, so its bytes are
+    # already inside `others` above -- this load will be refused/asked
+    # exactly as it would for an Ollama resident, with no separate
+    # accounting needed. What is missing without this is only the WORDING:
+    # `others` alone reads as "something", not "the llama.cpp endpoint
+    # holding 47 GB" -- named here so a refusal can say so instead of
+    # leaving the person to guess, and never as a target to unload (there is
+    # no unload call for it; see src/runner_providers.py).
+    try:
+        from src import runner_providers
+        out["external_runners"] = runner_providers.external_runner_snapshot(same_machine_only=True)
+    except Exception as e:  # noqa: BLE001
+        logger.debug("vram admission: external runner snapshot failed: %s", e)
+        out["external_runners"] = []
     placements = gpu_placement.placement(root, loaded, vram.get("gpus"))
     block = vram_fit.pool_budgets(vram, held_by_runner_bytes=held, others_bytes=others,
                                   placements=placements)
@@ -640,6 +655,17 @@ def assess(root: str, model: str) -> Dict[str, Any]:
         "gpu_name": str(block.get("name") or ""),
         "shortfall_bytes": shortfall,
     })
+    if shortfall and out["external_runners"]:
+        # Nothing here can free that memory -- llama-server has no unload
+        # call -- so the dialog is told plainly instead of only suggesting
+        # Ollama residents that, even all unloaded, would still leave the
+        # shortfall this occupancy causes.
+        names = ", ".join(
+            f"{r.get('model') or '?'} on {r.get('endpoint_name') or 'a local runner'}"
+            for r in out["external_runners"]
+        )
+        out["reason"] = (out.get("reason") or "") or f"blocked in part by {names}, which cannot be unloaded from here"
+        out["external_occupancy_note"] = f"{names} cannot be unloaded from here"
     if shortfall:
         # "Load anyway" means the shortfall lands in system RAM. On 08-09-2026
         # that is exactly what ran the machine out of commit memory, so the

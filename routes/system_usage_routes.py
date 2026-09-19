@@ -11,6 +11,11 @@ GET /api/system/usage
                          "gpus": [1] | [0, 1] | [],        # the card(s) it sits on
                          "placement": "single|split|cpu|unknown",
                          "per_gpu": [{"index", "bytes"|null}]}]},
+  "external_runners": [{"model", "endpoint_name", "engine": "llama.cpp",
+                         "context_length", "footprint_bytes", "footprint_measured",
+                         "generating", "unloadable": false}],  # src/runner_providers.py —
+                        # self-hosted OpenAI-compatible runners (llama.cpp's llama-server)
+                        # holding a model, which `ollama.*` above never sees
   "gpu": [{"index", "name", "util", "mem_used", "mem_total", "temp",
            "power", "power_limit",              # MiB / °C / W, from nvidia-smi
            "uuid", "bus_id", "mem_free",
@@ -86,6 +91,7 @@ from fastapi import APIRouter, HTTPException, Request
 from src import gpu_placement, nvidia_drs, vram_fit
 from src import gpu_shared_memory
 from src import health
+from src import runner_providers
 from src import robot_envelope as robot
 from src import robot_projection as lean
 from core.middleware import require_admin
@@ -456,8 +462,9 @@ async def collect_usage() -> Dict[str, Any]:
             process_task = asyncio.to_thread(_collect_process)
             shared_task = asyncio.to_thread(gpu_shared_memory.collect)
             policy_task = asyncio.to_thread(_collect_policy)
-            ollama, (gpus, gpu_err), host, process, gpu_mem, policy = await asyncio.gather(
-                ollama_task, gpu_task, host_task, process_task, shared_task, policy_task
+            external_task = _collect_external_runners()
+            ollama, (gpus, gpu_err), host, process, gpu_mem, policy, external_runners = await asyncio.gather(
+                ollama_task, gpu_task, host_task, process_task, shared_task, policy_task, external_task
             )
         # Placement needs both answers (the loaded models and the cards), so
         # it runs after the gather; it is its own 2 s cache and never raises.
@@ -479,6 +486,11 @@ async def collect_usage() -> Dict[str, Any]:
         data = {
             "ts": now,
             "ollama": ollama,
+            # Residency is not Ollama-only (src/runner_providers.py): a
+            # self-hosted OpenAI-compatible runner (llama.cpp's llama-server)
+            # holding a model shows up here even though `ollama.models` never
+            # sees it. Additive field — `ollama` keeps its own shape.
+            "external_runners": external_runners,
             "gpu": gpus,
             "gpu_pool": gpu_pool(gpus),
             "orphans": orphans,
@@ -501,6 +513,20 @@ async def collect_usage() -> Dict[str, Any]:
         _cache["ts"] = now
         _cache["data"] = data
         return data
+
+
+async def _collect_external_runners() -> List[Dict[str, Any]]:
+    """The self-hosted OpenAI-compatible runners (llama.cpp's llama-server)
+    registered as model endpoints, with a model actually resident — the
+    occupancy `_collect_ollama` above never sees since it only asks Ollama's
+    own `/api/ps`. Best-effort: an endpoint that does not answer `/health` is
+    just left out, same as an unreachable Ollama leaves `ollama.models` empty."""
+    try:
+        import asyncio as _asyncio
+        return await _asyncio.to_thread(runner_providers.external_runner_snapshot)
+    except Exception as e:  # noqa: BLE001
+        logger.debug("system usage: external runner snapshot failed: %s", e)
+        return []
 
 
 async def _model_show(client: httpx.AsyncClient, model: str) -> Dict[str, Any]:

@@ -6538,6 +6538,7 @@ and that agent does the work.	y ese agente hace el trabajo.
 announced	anunciado
 another candidate was better on every axis	otro candidato era mejor en todos los ejes
 another model	otro modelo
+another server	otro servidor
 answering	responde
 any	cualquiera
 applied	aplicado
@@ -7093,6 +7094,7 @@ secrets (provider keys, internal token)	secretos (claves de proveedor, token int
 seed	semilla
 sender signatures	firmas de remitentes
 sensitive	sensible
+served by {endpoint} ({engine})	servido por {endpoint} ({engine})
 served from cache	servido desde caché
 server default	valor del servidor
 serving	sirviendo

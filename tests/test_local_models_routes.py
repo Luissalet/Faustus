@@ -768,6 +768,51 @@ def test_three_gpu_priority_api(env, monkeypatch):
 
 
 
+# ── residency beyond Ollama (external runners, src/runner_providers.py) ─────
+
+def test_local_models_list_merges_external_runner(env, monkeypatch):
+    """A model served by a self-hosted OpenAI-compatible runner (llama.cpp's
+    llama-server), registered as its own endpoint, shows up in both `loaded`
+    ("Loaded now") and `models` (so it can be picked) without disturbing the
+    Ollama-only rows already there — and with no unload control, since
+    llama-server has no unload call."""
+    client, fake = env
+    row = {
+        "model": "qwen3.8-27b-q8-llamacpp", "endpoint_name": "llama.cpp (8081)",
+        "engine": "llama.cpp", "context_length": 32768,
+        "footprint_bytes": 29_000_000_000, "footprint_measured": True,
+        "generating": False, "unloadable": False,
+    }
+    monkeypatch.setattr(lm.runner_providers, "external_runner_snapshot", lambda **kw: [dict(row)])
+    r = client.get("/api/local-models", headers=USER)
+    assert r.status_code == 200, r.text
+    data = r.json()
+    ext_loaded = [m for m in data["loaded"] if m.get("engine") == "llama.cpp"]
+    assert len(ext_loaded) == 1
+    assert ext_loaded[0]["name"] == "qwen3.8-27b-q8-llamacpp"
+    assert ext_loaded[0]["endpoint_name"] == "llama.cpp (8081)"
+    assert ext_loaded[0]["unloadable"] is False
+    assert ext_loaded[0]["size"] == 29_000_000_000
+    ext_installed = [m for m in data["models"] if m.get("engine") == "llama.cpp"]
+    assert len(ext_installed) == 1
+    assert ext_installed[0]["loaded"] is True
+    assert ext_installed[0]["unloadable"] is False
+    assert data["external_runners"] == [row]
+    # The Ollama-only rows this page always had are untouched.
+    assert any(m["name"] == "qwen3.5:9b" for m in data["loaded"])
+    assert any(m["name"] == "qwen3.5:9b" and "engine" not in m for m in data["models"])
+
+
+def test_local_models_list_without_an_external_runner_is_unchanged(env, monkeypatch):
+    client, fake = env
+    monkeypatch.setattr(lm.runner_providers, "external_runner_snapshot", lambda **kw: [])
+    r = client.get("/api/local-models", headers=USER)
+    data = r.json()
+    assert data["external_runners"] == []
+    assert all("engine" not in m for m in data["loaded"])
+    assert all("engine" not in m for m in data["models"])
+
+
 def test_discover_counts_the_explicit_default_build_as_installed():
     """`qwen3.8:27b-q4_K_M` is the same blobs as the catalogue's `qwen3.8:27b`
     (q4_K_M is Ollama's default build), yet Discover offered to pull it while

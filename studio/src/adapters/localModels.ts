@@ -53,6 +53,21 @@ export interface LoadedModel {
   placement?: 'cpu' | 'single' | 'split' | 'unknown';
   gpus?: number[];
   per_gpu?: { index: number; bytes?: number }[];
+  /** Set only for a model residing on something other than this endpoint's
+   * Ollama — e.g. "llama.cpp" for a self-hosted OpenAI-compatible runner
+   * (src/runner_providers.py). Absent/undefined means "this Ollama", same as
+   * before this field existed. */
+  engine?: string;
+  /** The endpoint name that serves it, shown so it is obvious which server
+   * holds the memory when `engine` is set. */
+  endpoint_name?: string;
+  /** False when there is no real unload action for this row (llama-server
+   * has no unload API) — render "served by <endpoint>" instead of a button
+   * that would lie. Undefined/true means the normal Unload control applies. */
+  unloadable?: boolean;
+  /** True when `size`/`size_vram` came from measuring the GGUF file on disk
+   * rather than a runtime VRAM reading — set alongside `engine`. */
+  footprint_measured?: boolean;
 }
 export interface GpuCard {
   index: number;
@@ -109,6 +124,12 @@ export interface LocalModelsData {
   placement_policy?: { prefer: number; order?: number[]; name?: string; mode?: string };
   disk?: { path?: string; free_bytes?: number; total_bytes?: number };
   pulls: Pull[];
+  /** Models resident on a self-hosted OpenAI-compatible runner (llama.cpp's
+   * llama-server) other than this endpoint's own Ollama — already merged
+   * into `loaded` (with `engine`/`endpoint_name`/`unloadable: false` set) so
+   * "Loaded now" shows them without extra wiring; this list is the same rows
+   * on their own, for a caller that wants only the external ones. */
+  external_runners?: LoadedModel[];
 }
 export interface DiscoverTag {
   tag: string;

@@ -67,6 +67,7 @@ from core.log_safety import redact_url as _redact_url_for_log
 from core.middleware import require_admin
 from src import gpu_placement, gpu_shared_memory, vram_fit
 from src import local_model_catalog as catalog
+from src import runner_providers
 from src import model_calibration as mcal
 from src import model_capabilities as mc
 from src import model_load_options as mlo
@@ -954,12 +955,73 @@ def setup_local_models_routes() -> APIRouter:
         if ep is None:
             return {"endpoints": [], "endpoint_id": "", "reachable": False,
                     "error": "No Ollama endpoint is configured", "models": [],
-                    "loaded": [], "gpus": [], "vram": {"supported": False}, "disk": {}, "pulls": []}
+                    "loaded": [], "gpus": [], "vram": {"supported": False}, "disk": {}, "pulls": [],
+                    "external_runners": []}
         data = await asyncio.to_thread(collect_local_models, ep)
         data["endpoints"] = endpoints
         data["endpoint_id"] = ep["id"]
         data["pulls"] = pulls.list(ep["id"])
         data["ts"] = time.time()
+        # Residency is not Ollama-only (src/runner_providers.py): a self-hosted
+        # OpenAI-compatible runner (llama.cpp's llama-server) registered as its
+        # own endpoint holds VRAM this page would otherwise never mention.
+        # Merged into both `loaded` ("Loaded now") and `models` (so the owner
+        # can pick it without typing) — additive rows, existing shapes untouched.
+        try:
+            owner = effective_user(request) or ""
+            is_admin = True
+            try:
+                auth_mgr = getattr(request.app.state, "auth_manager", None)
+                if owner and auth_mgr is not None and getattr(auth_mgr, "is_admin", None):
+                    is_admin = bool(auth_mgr.is_admin(owner))
+            except Exception:  # noqa: BLE001
+                is_admin = False
+            external = await asyncio.to_thread(
+                runner_providers.external_runner_snapshot, owner=owner, is_admin=is_admin)
+        except Exception as e:  # noqa: BLE001
+            logger.debug("local models: external runner snapshot failed: %s", e)
+            external = []
+        data["external_runners"] = external
+        for row in external:
+            size = int(row.get("footprint_bytes") or 0)
+            loaded_row = {
+                "name": row.get("model") or "",
+                "size": size,
+                "size_vram": size,
+                "size_cpu": 0,
+                "gpu_pct": 100 if size else 0,
+                "expires_at": None,
+                "context_length": row.get("context_length") or None,
+                "placement": "unknown",
+                "gpus": [],
+                "per_gpu": [],
+                "engine": row.get("engine") or "external",
+                "endpoint_name": row.get("endpoint_name") or "",
+                "unloadable": False,
+                "footprint_measured": bool(row.get("footprint_measured")),
+            }
+            data["loaded"].append(loaded_row)
+            data["models"].append({
+                "name": loaded_row["name"],
+                "size": size,
+                "digest": "",
+                "modified_at": None,
+                "family": "",
+                "families": [],
+                "parameter_size": "",
+                "quantization": "",
+                "capabilities": {},
+                "context_length": row.get("context_length") or 0,
+                "license": "",
+                "architecture": "",
+                "fit": {"state": "fits", "note": f"served by {row.get('endpoint_name') or 'another server'}"},
+                "loaded": True,
+                "options": {},
+                "engine": loaded_row["engine"],
+                "endpoint_name": loaded_row["endpoint_name"],
+                "unloadable": False,
+                "footprint_measured": loaded_row["footprint_measured"],
+            })
         return data
 
     @router.get("/discover")
