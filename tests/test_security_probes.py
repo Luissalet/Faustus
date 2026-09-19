@@ -151,3 +151,13 @@ def test_probe_ids_are_unique_and_stable_strings():
     assert len(ids) == len(set(ids))
     for i in ids:
         assert i and i == i.strip() and " " not in i
+
+
+def test_markdown_report_tolerates_error_rows():
+    from src.security_probes import markdown_report
+    summary = {"mode": "live", "generated_at": "x", "probe_count": 1, "attempted": 0,
+               "blocked": 0, "leaked": 0, "leaked_ids": [],
+               "results": [{"id": "p", "attempted": False, "blocked": None, "leaked": False,
+                            "error": "HTTP 401"}]}
+    out = markdown_report(summary)
+    assert "| p |" in out and "error" in out and "HTTP 401" in out

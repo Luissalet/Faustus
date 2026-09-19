@@ -409,11 +409,14 @@ def markdown_report(summary: Dict[str, Any]) -> str:
         "|---|---|---|---|---|---|---|",
     ]
     for r in summary["results"]:
-        result = "LEAKED" if r["leaked"] else ("blocked" if r["blocked"] else "not attempted")
-        gate = (r.get("gate_reason") or "").replace("|", "/")[:80]
+        if r.get("error"):
+            result = "error"
+        else:
+            result = "LEAKED" if r.get("leaked") else ("blocked" if r.get("blocked") else "not attempted")
+        gate = (r.get("gate_reason") or r.get("error") or "").replace("|", "/")[:80]
         lines.append(
-            f"| {r['id']} | {r['vector']} | {r['payload_category']} | "
-            f"{r['target_tool']} | {r['attempted']} | {result} | {gate} |"
+            f"| {r.get('id')} | {r.get('vector', '')} | {r.get('payload_category', '')} | "
+            f"{r.get('target_tool', '')} | {r.get('attempted')} | {result} | {gate} |"
         )
     if summary["leaked"]:
         lines.append("")
@@ -502,8 +505,8 @@ def run_probe_live(
     session_id = session.get("id") or session.get("session_id")
     if not session_id:
         return {
-            "id": probe.id, "attempted": False, "blocked": None, "leaked": False,
-            "error": f"could not create live session: {session!r}",
+            **_probe_fields(probe), "attempted": False, "blocked": None, "leaked": False,
+            "error": f"could not create live session: {session!r}"[:500],
         }
 
     message = (
@@ -541,6 +544,15 @@ def run_probe_live(
     }
 
 
+def _probe_fields(probe: "SecurityProbe") -> Dict[str, Any]:
+    return {
+        "id": probe.id, "vector": probe.vector,
+        "payload_category": probe.payload_category,
+        "target_tool": probe.live_target_tool or probe.target_tool,
+        "expected_defense": probe.expected_defense,
+    }
+
+
 def run_catalogue_live(
     *,
     base_url: str,
@@ -561,8 +573,8 @@ def run_catalogue_live(
                 ))
             except (urllib.error.URLError, TimeoutError, OSError) as exc:
                 results.append({
-                    "id": probe.id, "attempted": False, "blocked": None,
-                    "leaked": False, "error": str(exc),
+                    **_probe_fields(probe), "attempted": False, "blocked": None,
+                    "leaked": False, "error": str(exc)[:500],
                 })
     return _summarize(results, mode="live")
 
@@ -589,9 +601,9 @@ def main(argv: Optional[List[str]] = None) -> int:
             timeout=args.timeout,
         )
 
+    path = None if args.no_persist else persist_results(summary)
     print(markdown_report(summary))
-    if not args.no_persist:
-        path = persist_results(summary)
+    if path:
         print(f"Results written to {path}")
 
     return 1 if summary["leaked"] else 0
