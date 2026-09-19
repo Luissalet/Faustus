@@ -1429,6 +1429,16 @@ def build_legend(coverage: Dict[str, Any], language: str = "en") -> str:
         line = _LEGEND_BREADTH.get((language or "").lower(), _LEGEND_BREADTH["en"])
         head, sep, rest = text.partition("\n\n")
         text = head + " " + line.format(used=used, total=gathered) + sep + rest
+    independence = (coverage or {}).get("independence") or {}
+    if independence.get("clusters"):
+        # Same technique as the breadth line above: appended to the existing
+        # first block, never a fourth block, so the legend stays the fixed
+        # three paragraphs _legend_span expects on the next idempotent pass.
+        from src.source_independence import independence_legend_line
+        independence_line = independence_legend_line(independence, language)
+        if independence_line:
+            head, sep, rest = text.partition("\n\n")
+            text = head + " " + independence_line + sep + rest
     return legend_heading(language) + "\n\n" + text
 
 
@@ -1560,13 +1570,17 @@ def finalize_report(report_md: Any, registry: Optional[SourceRegistry] = None,
     repaired, audit = repair_citations(text, registry, language=language)
     checked = check_claims(audit.claims, registry)
     coverage = compute_coverage(audit, checked, registry)
-
-    final = _insert_legend(repaired, build_legend(coverage, language))
     # RES-03: sources actually cited that disagree with each other, never
     # resolved in silence. Restricted to the sources this report cites — an
     # ungathered/uncited source's own contradictions are not the reader's
     # problem.
     cited_now = {n for n in audit.used if registry.source(n)}
+    # Source independence: whether those cited sources are distinct pieces of
+    # reporting or the same wire story / mirrored page counted several times.
+    from src.source_independence import independence_summary  # deferred, as in check_claims
+    coverage["independence"] = independence_summary(registry.all(), cited_now)
+
+    final = _insert_legend(repaired, build_legend(coverage, language))
     conflicts = find_conflicts(registry, only_sources=cited_now) if cited_now else []
     final = _insert_conflicts_section(final, _conflicts_section(conflicts, registry, language))
     # Re-audit so the spans point into the text we are actually returning. The
