@@ -813,3 +813,17 @@ deep-link de workflows, recetas desde un run real) ya no aparece aquÃ­.
 - Deploy 756c4d67 -> 76adb636 (rebase, PENDIENTES.md conflict resolved by keeping both sections). Tests: test_engines.py 14 passed, test_chat_mode_local_temperature_floor.py 10 passed, test_launch_profiles.py+test_launch_profiles_apps.py+test_process_center.py 52 passed / 2 failed (test_already_running_via_readiness_is_not_relaunched, test_route_level_relative_executable_is_400 -- pre-existing, reproducible in isolation, unrelated to this bundle's engines/temp-floor/composer changes; not investigated further, flagging for a future round). build-studio.js OK.
 - Downloaded Qwen/Qwen2.5-3B-Instruct-GGUF q8_0 (3616088480 bytes, verified against HF Content-Length) to D:\LocalAI\models\. Started a second llama-server on :8082 (Start-LlamaHelper.ps1 / Stop-LlamaHelper.ps1, same style as the 8081 pair). Registered as endpoint 8766e2b1 ("llama.cpp helper"), utility_endpoint_id/task_endpoint_id now point at it. Confirmed via /8082/slots and app.log that title-generation calls hit :8082, not the 27B.
 - Created two /api/engines records (09be1b79... for the 27B on 8081, 65e33f2c... for the helper on 8082) so Settings -> Local models -> Engines shows both and can start/stop them from the UI; both report state=running with correct PIDs against the already-running processes.
+
+## w127 deploy (184c1687) - memory snapshot, gen defaults, learned-rules actions
+
+Deployed cleanly on top of prior history (rebased my own docs commits). Tests: test_memory_engine.py 73 passed, test_skills_disclosure.py 10 passed, test_agent_loop.py 54 passed (137/137). Studio build succeeded. Server restarted (7000 only); both llama-server engines (8081 27B, 8082 helper) left untouched and verified healthy throughout.
+
+API verification:
+- /api/auth/settings has memory_snapshot_per_session=True, memory_block_max_chars=6000, skill_list_budget_tokens=400, skill_body_budget_tokens=1500, and the five local_*_default sampling keys (temperature 0.6, top_p 0.8, top_k 20, min_p 0.05, repeat_penalty 1.05).
+- /api/engines lists both engines running with correct models.
+- GAP FOUND (not fixed, per instructions): GET /api/memory-engine/pack (routes/memory_engine_routes.py preview_pack) calls engine.pack_detail() only and never engine.pack_for_session(), so the live pack response has no snapshot, snapshot_taken_at or drop-count fields even though src/memory_engine.py's pack_for_session() and agent_loop.py already produce/consume them internally. Worth wiring the route to the session-aware function in a future round.
+
+UI verification (browser, admin login), screenshots under D:\LocalAI\_claude_tmp\shots\:
+(a) a_generation_chip.png - Studio composer's Generation chip (found inside the '+' Add-files-and-tools menu, agent mode only, bottom of the list) opens a panel with Temperature/top_p/top_k sliders, all reading the sampling defaults. Works.
+(b) b_engines_sampling.png - Settings > Local models shows the Engines (llama.cpp) section (both engines, Stop controls present) directly above the Sampling defaults group (Temperature/top_p/top_k/Repeat penalty). Works.
+(c) c_learned_rules.png - Studio > Memoria > Learned rules panel shows the 'injected' badge on an active rule plus This rule helped/did harm, Edit the text, Pin, Suppress, Forget and Delete actions. Works.
