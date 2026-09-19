@@ -746,6 +746,7 @@ function EngineSwapFields({ say }: { say: (t: string) => void }) {
 
 const EMPTY_ENGINE_DRAFT: EngineCreateInput = {
   name: '', executable: '', model_path: '', ctx_size: 4096, port: 8081, host: '127.0.0.1', extra_args: [],
+  mtp: false, mtp_draft_n_max: 2,
 };
 
 function EnginesSection({ admin, say, defaultModel }: { admin: boolean; say: (t: string) => void; defaultModel: string }) {
@@ -813,10 +814,16 @@ function EnginesSection({ admin, say, defaultModel }: { admin: boolean; say: (t:
                 <div>
                   <strong>{engine.name}</strong>{' '}
                   <span className="fs-set__help" data-testid="engine-state" data-state={state}>{state}</span>
+                  {engine.mtp && <span className="fs-set__tag" data-testid="engine-mtp-tag">{t('MTP')}</span>}
                   {status?.model && <span className="fs-set__help"> · {status.model}</span>}
                   {status?.context_length ? <span className="fs-set__help"> · {fmtCtx(status.context_length)}</span> : null}
                   {status?.footprint_bytes ? <span className="fs-set__help"> · {fmtGb(status.footprint_bytes)}</span> : null}
                   <div className="fs-set__help">{engine.host}:{engine.port ?? '—'} · {engine.model_path || t('no model configured')}</div>
+                  {engine.mtp && (engine.parallel ?? 1) > 1 && (
+                    <div className="fs-set__help" data-testid="engine-mtp-parallel-hint">
+                      {t('Parallel slots > 1 cancel most of the MTP gain')}
+                    </div>
+                  )}
                 </div>
                 <div className="fs-set__row-actions">
                   {state === 'running' || state === 'unhealthy' ? (
@@ -875,12 +882,19 @@ function EngineEditor({ engine, onCancel, onSave }: {
           name: engine.name, executable: engine.executable, model_path: engine.model_path,
           ctx_size: engine.ctx_size, port: engine.port ?? 8081, host: engine.host,
           extra_args: engine.extra_args, description: engine.description ?? '',
+          mtp: engine.mtp, mtp_draft_n_max: engine.mtp_draft_n_max || 2,
         }
       : EMPTY_ENGINE_DRAFT,
   );
   const [discovering, setDiscovering] = useState(false);
   const set = <K extends keyof EngineCreateInput>(key: K, value: EngineCreateInput[K]) =>
     setDraft((d) => ({ ...d, [key]: value }));
+  // `mtp_supported` is read from the currently-saved engine's GGUF, not the
+  // in-progress draft's model_path — recomputing it live would need another
+  // round trip to the server on every keystroke. Good enough for the
+  // checkbox's disabled/hint state; the server re-validates on save either
+  // way.
+  const mtpSupported = engine ? engine.mtp_supported : null;
 
   const discover = async () => {
     setDiscovering(true);
@@ -916,6 +930,32 @@ function EngineEditor({ engine, onCancel, onSave }: {
           onChange={(e) => set('extra_args', e.target.value.split('\n').map((s) => s.trim()).filter(Boolean))}
         />
       </label>
+      <div className="fs-set__row-actions">
+        <label>
+          <input
+            type="checkbox"
+            data-testid="engine-mtp-checkbox"
+            checked={Boolean(draft.mtp)}
+            disabled={mtpSupported === false}
+            onChange={(e) => set('mtp', e.target.checked)}
+          />{' '}
+          {t('MTP speculative decoding (faster generation)')}
+        </label>
+        {draft.mtp && (
+          <label>{t('Draft tokens')}
+            <input
+              type="number"
+              min={1}
+              max={8}
+              value={draft.mtp_draft_n_max ?? 2}
+              onChange={(e) => set('mtp_draft_n_max', Number(e.target.value))}
+            />
+          </label>
+        )}
+      </div>
+      {mtpSupported === false && (
+        <p className="fs-set__form-hint">{t('This model does not ship MTP/nextn draft-head layers (e.g. Qwen3.x GGUFs do).')}</p>
+      )}
       <div className="fs-set__row-actions">
         <Button type="button" size="sm" variant="ghost" disabled={discovering} label={t('Fill from what is listening on this port')} onClick={() => void discover()} />
       </div>

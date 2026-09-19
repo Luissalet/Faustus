@@ -321,6 +321,18 @@
 .fs-set__row [data-testid="engine-state"][data-state="stopped"],
 .fs-set__row [data-testid="engine-state"][data-state="unknown"] { color: var(--fs-text-3); }
 
+/* MTP speculative decoding tag next to an engine's name (FAUSTUS.md §119). */
+.fs-set__tag {
+  font-size: var(--fs-text-xs, 0.8125rem);
+  color: var(--fs-text-2);
+  background: var(--fs-surface-2, transparent);
+  border: 1px solid var(--fs-border, currentColor);
+  border-radius: var(--fs-radius-sm, 4px);
+  padding: 0 var(--fs-space-2);
+  white-space: nowrap;
+}
+.fs-set__form-hint { color: var(--fs-text-3); font-size: var(--fs-text-xs, 0.8125rem); font-weight: 400; }
+
 .fs-set__form {
   display: grid;
   gap: var(--fs-space-3);

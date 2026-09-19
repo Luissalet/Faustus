@@ -54,9 +54,23 @@ _MODEL_FLAGS = ("-m", "--model")
 _CTX_FLAGS = ("-c", "--ctx-size", "--n-ctx")
 _PORT_FLAGS = ("--port",)
 _HOST_FLAGS = ("--host",)
+_SPEC_TYPE_FLAGS = ("--spec-type",)
+_SPEC_DRAFT_N_MAX_FLAGS = ("--spec-draft-n-max",)
+_PARALLEL_FLAGS = ("-np", "--parallel")
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_CTX = 4096
+DEFAULT_MTP_DRAFT_N_MAX = 2
+MTP_DRAFT_N_MAX_MIN = 1
+MTP_DRAFT_N_MAX_MAX = 8
+
+#: MTP's draft head (the extra `nextn`/`blk.N.nextn.*` tensors a Qwen3.x
+#: GGUF ships) stays resident on top of the base model's own footprint.
+#: Observed cost is roughly 1.5-2 GB; use the higher end as a fixed
+#: headroom constant so admission_check stays conservative rather than
+#: exact (VRAM use also depends on context size / batch, which it already
+#: doesn't model precisely for the base weights either).
+MTP_VRAM_HEADROOM_BYTES = 2 * 1024 * 1024 * 1024
 
 
 class EngineValidationError(ValueError):
@@ -111,7 +125,22 @@ def _parse_fields(profile: Dict[str, Any]) -> Dict[str, Any]:
         except Exception:  # noqa: BLE001
             port = None
 
-    known = set(_MODEL_FLAGS) | set(_CTX_FLAGS) | set(_PORT_FLAGS) | set(_HOST_FLAGS)
+    spec_type = _flag_value(argv, _SPEC_TYPE_FLAGS)
+    mtp = spec_type == "draft-mtp"
+    n_max_raw = _flag_value(argv, _SPEC_DRAFT_N_MAX_FLAGS)
+    try:
+        mtp_draft_n_max = int(n_max_raw) if n_max_raw is not None else DEFAULT_MTP_DRAFT_N_MAX
+    except (TypeError, ValueError):
+        mtp_draft_n_max = DEFAULT_MTP_DRAFT_N_MAX
+
+    # The MTP flags are structured (managed by `mtp`/`mtp_draft_n_max`
+    # below) and so excluded from "extra args" the same way model/ctx/port/
+    # host are. `-np`/`--parallel` is NOT: it stays a plain extra flag
+    # (round-trips through extra_args untouched) — only its current value
+    # is surfaced via `parallel` for the UI's "parallel slots cancel most
+    # of the MTP gain" hint.
+    known = (set(_MODEL_FLAGS) | set(_CTX_FLAGS) | set(_PORT_FLAGS) | set(_HOST_FLAGS)
+             | set(_SPEC_TYPE_FLAGS) | set(_SPEC_DRAFT_N_MAX_FLAGS))
     extra: List[str] = []
     skip_next = False
     for tok in argv:
@@ -123,32 +152,61 @@ def _parse_fields(profile: Dict[str, Any]) -> Dict[str, Any]:
             continue
         extra.append(tok)
 
+    parallel_raw = _flag_value(argv, _PARALLEL_FLAGS)
+    parallel: Optional[int] = None
+    if parallel_raw is not None:
+        try:
+            parallel = int(parallel_raw)
+        except (TypeError, ValueError):
+            parallel = None
+
     return {
         "model_path": model_path,
         "ctx_size": ctx_size,
         "host": host,
         "port": port,
         "extra_args": extra,
+        "mtp": mtp,
+        "mtp_draft_n_max": mtp_draft_n_max,
+        "parallel": parallel,
     }
 
 
 def _build_argv(*, model_path: str, ctx_size: int, port: int, host: str,
-                 extra_args: Optional[List[str]] = None) -> List[str]:
+                 extra_args: Optional[List[str]] = None,
+                 mtp: bool = False, mtp_draft_n_max: int = DEFAULT_MTP_DRAFT_N_MAX) -> List[str]:
     argv = ["-m", model_path, "-c", str(int(ctx_size)), "--port", str(int(port)), "--host", host]
+    if mtp:
+        argv.extend(["--spec-type", "draft-mtp", "--spec-draft-n-max", str(int(mtp_draft_n_max))])
     argv.extend(extra_args or [])
     return argv
 
 
+def mtp_supported_for(model_path: str) -> Optional[bool]:
+    """Does this GGUF ship the `nextn`/MTP draft-head layers MTP needs?
+    None when unknown (file missing/unreadable) — unknown never blocks."""
+    if not model_path or not os.path.isfile(model_path):
+        return None
+    from src import gguf_meta
+    layers = gguf_meta.mtp_layers(model_path)
+    if layers is None:
+        return None
+    return layers > 0
+
+
 def _decorate(profile: Dict[str, Any]) -> Dict[str, Any]:
     out = dict(profile)
-    out.update(_parse_fields(profile))
+    fields = _parse_fields(profile)
+    out.update(fields)
+    out["mtp_supported"] = mtp_supported_for(fields.get("model_path") or "")
     return out
 
 
 # ── validation ───────────────────────────────────────────────────────────────
 
 def _validate_fields(*, name: str, executable: str, model_path: str, ctx_size: Any,
-                      port: Any, host: str) -> List[str]:
+                      port: Any, host: str, mtp: bool = False,
+                      mtp_draft_n_max: Any = DEFAULT_MTP_DRAFT_N_MAX) -> List[str]:
     reasons: List[str] = []
     if not str(name or "").strip():
         reasons.append("name is required")
@@ -171,6 +229,19 @@ def _validate_fields(*, name: str, executable: str, model_path: str, ctx_size: A
         reasons.append("port must be an integer")
     if not str(host or "").strip():
         reasons.append("host is required")
+    try:
+        n_max = int(mtp_draft_n_max)
+        if not (MTP_DRAFT_N_MAX_MIN <= n_max <= MTP_DRAFT_N_MAX_MAX):
+            reasons.append(f"mtp_draft_n_max must be between {MTP_DRAFT_N_MAX_MIN} and {MTP_DRAFT_N_MAX_MAX}")
+    except (TypeError, ValueError):
+        reasons.append("mtp_draft_n_max must be an integer")
+    if mtp and model_path and os.path.isabs(str(model_path)) and os.path.isfile(model_path):
+        supported = mtp_supported_for(model_path)
+        if supported is False:
+            reasons.append(
+                "mtp requires a GGUF with MTP/nextn draft-head layers "
+                "(e.g. Qwen3.x); this model does not ship any"
+            )
     return reasons
 
 
@@ -190,12 +261,15 @@ def get_engine(engine_id: str) -> Optional[Dict[str, Any]]:
 def create_engine(*, owner: Optional[str], name: str, executable: str, model_path: str,
                    ctx_size: int = DEFAULT_CTX, port: int, host: str = DEFAULT_HOST,
                    extra_args: Optional[List[str]] = None,
+                   mtp: bool = False, mtp_draft_n_max: int = DEFAULT_MTP_DRAFT_N_MAX,
                    description: Optional[str] = None) -> Dict[str, Any]:
     reasons = _validate_fields(name=name, executable=executable, model_path=model_path,
-                                ctx_size=ctx_size, port=port, host=host)
+                                ctx_size=ctx_size, port=port, host=host,
+                                mtp=mtp, mtp_draft_n_max=mtp_draft_n_max)
     if reasons:
         raise EngineValidationError("; ".join(reasons))
-    argv = _build_argv(model_path=model_path, ctx_size=ctx_size, port=port, host=host, extra_args=extra_args)
+    argv = _build_argv(model_path=model_path, ctx_size=ctx_size, port=port, host=host,
+                        extra_args=extra_args, mtp=mtp, mtp_draft_n_max=mtp_draft_n_max)
     cwd = os.path.dirname(executable) or "."
     readiness = {"url": f"http://{host}:{int(port)}/health", "timeout_s": 30}
     try:
@@ -222,15 +296,19 @@ def update_engine(engine_id: str, **fields: Any) -> Optional[Dict[str, Any]]:
         "port": fields.get("port", current["port"]),
         "host": fields.get("host", current["host"]),
         "extra_args": fields.get("extra_args", current["extra_args"]),
+        "mtp": fields.get("mtp", current.get("mtp", False)),
+        "mtp_draft_n_max": fields.get("mtp_draft_n_max", current.get("mtp_draft_n_max", DEFAULT_MTP_DRAFT_N_MAX)),
         "description": fields.get("description", current.get("description")),
     }
     reasons = _validate_fields(name=merged["name"], executable=merged["executable"],
                                 model_path=merged["model_path"], ctx_size=merged["ctx_size"],
-                                port=merged["port"], host=merged["host"])
+                                port=merged["port"], host=merged["host"],
+                                mtp=merged["mtp"], mtp_draft_n_max=merged["mtp_draft_n_max"])
     if reasons:
         raise EngineValidationError("; ".join(reasons))
     argv = _build_argv(model_path=merged["model_path"], ctx_size=merged["ctx_size"],
-                        port=merged["port"], host=merged["host"], extra_args=merged["extra_args"])
+                        port=merged["port"], host=merged["host"], extra_args=merged["extra_args"],
+                        mtp=merged["mtp"], mtp_draft_n_max=merged["mtp_draft_n_max"])
     readiness = {"url": f"http://{merged['host']}:{int(merged['port'])}/health", "timeout_s": 30}
     try:
         profile = launch_profiles.update_profile(
@@ -262,7 +340,7 @@ def _gguf_size(model_path: str) -> Optional[int]:
     return None
 
 
-def admission_check(model_path: str) -> Dict[str, Any]:
+def admission_check(model_path: str, *, mtp: bool = False) -> Dict[str, Any]:
     """Does the model this engine would load fit next to whatever else is
     already resident? Reuses the SAME system-wide VRAM reading
     `vram_admission.assess()` falls back to (`gpu_shared_memory.
@@ -270,9 +348,12 @@ def admission_check(model_path: str) -> Dict[str, Any]:
     engine or runner holding a card, so nothing here has to enumerate them.
     `fits: None` (no GPU reading, or the model file is unreadable so its
     footprint is unknown) never blocks a start — ignorance is not a reason
-    to refuse."""
+    to refuse. When `mtp` is on, `MTP_VRAM_HEADROOM_BYTES` is added to the
+    needed footprint for the resident draft-head layers."""
     out: Dict[str, Any] = {"fits": None, "needed_bytes": None, "free_bytes": None}
     needed = _gguf_size(model_path)
+    if needed and mtp:
+        needed += MTP_VRAM_HEADROOM_BYTES
     out["needed_bytes"] = needed
     if not needed:
         return out
@@ -315,7 +396,7 @@ async def start_engine(engine_id: str, *, request_client_host: Optional[str] = N
             "held_by": held,
         }
 
-    admission = admission_check(engine.get("model_path") or "")
+    admission = admission_check(engine.get("model_path") or "", mtp=bool(engine.get("mtp")))
     if admission.get("fits") is False:
         return {"started": False, "error": admission.get("reason"), "admission": admission}
 

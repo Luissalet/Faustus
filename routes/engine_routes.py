@@ -39,6 +39,8 @@ class EngineCreateBody(BaseModel):
     port: int
     host: str = engines.DEFAULT_HOST
     extra_args: List[str] = []
+    mtp: bool = False
+    mtp_draft_n_max: int = engines.DEFAULT_MTP_DRAFT_N_MAX
     description: Optional[str] = None
 
 
@@ -50,6 +52,8 @@ class EngineUpdateBody(BaseModel):
     port: Optional[int] = None
     host: Optional[str] = None
     extra_args: Optional[List[str]] = None
+    mtp: Optional[bool] = None
+    mtp_draft_n_max: Optional[int] = None
     description: Optional[str] = None
 
 

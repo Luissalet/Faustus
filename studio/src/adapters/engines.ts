@@ -20,6 +20,15 @@ export interface EngineConfig {
   host: string;
   port: number | null;
   extra_args: string[];
+  mtp: boolean;
+  mtp_draft_n_max: number;
+  /** From the GGUF's own metadata (`*.nextn_predict_layers`): true when the
+   * model ships MTP/nextn draft-head layers, false when it doesn't, null
+   * when unreadable/unknown (never blocks — same "ignorance never blocks"
+   * rule as the VRAM admission check). */
+  mtp_supported: boolean | null;
+  /** Current `-np`/`--parallel` value, if the engine's extra flags set one. */
+  parallel: number | null;
   description?: string | null;
 }
 
@@ -46,6 +55,8 @@ export interface EngineCreateInput {
   port: number;
   host?: string;
   extra_args?: string[];
+  mtp?: boolean;
+  mtp_draft_n_max?: number;
   description?: string;
 }
 

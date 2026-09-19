@@ -7913,3 +7913,7 @@ yours	tuyo
 ⟨insert⟩	⟨insertar⟩
 Start the engine when a chat needs it	Arrancar el motor cuando un chat lo necesite
 Unload after idle (minutes, 0 = never)	Descargar tras inactividad (minutos, 0 = nunca)
+MTP	MTP
+MTP speculative decoding (faster generation)	Decodificación especulativa MTP (generación más rápida)
+Parallel slots > 1 cancel most of the MTP gain	Más de 1 ranura paralela anula la mayor parte de la ganancia de MTP
+This model does not ship MTP/nextn draft-head layers (e.g. Qwen3.x GGUFs do).	Este modelo no incluye capas de cabeza de borrador MTP/nextn (los GGUF de Qwen3.x sí las incluyen).
