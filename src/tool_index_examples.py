@@ -941,6 +941,12 @@ EXAMPLES: Dict[str, List[str]] = {
         "qué tests debería correr después de este diff",
         "what depends on this, and what tests should I run",
     ],
+    "code_graph_cochanges": [
+        "qué archivos suelen cambiar junto con este",
+        "what files usually change alongside this one",
+        "cuando toco este archivo, qué más debería revisar",
+        "show me the historical co-change files for this module",
+    ],
     "code_graph_architecture": [
         "dame un resumen de la arquitectura de este proyecto",
         "what does this codebase look like, give me the lay of the land",

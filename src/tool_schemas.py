@@ -2828,16 +2828,35 @@ FUNCTION_TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "code_graph_impact",
-            "description": "What else can break and which tests to run -- from one symbol, or (with no symbol) from every symbol the current git diff touches: BFS over incoming call edges up to depth hops, deduped and capped, reporting each reached symbol's file:line, depth and certainty, plus the test files/functions reached and a ready-to-run pytest command. Use for 'what would break if I change this', 'what should I test after this diff', 'what depends on this function'.",
+            "description": "What else can break and which tests to run -- from one symbol, or (with no symbol) from every symbol the current git diff touches: BFS over incoming call edges up to depth hops, deduped and capped, reporting each reached symbol's file:line, depth and certainty, plus the test files/functions reached and a ready-to-run pytest command. Also reports files that historically change together with the seed file(s) in git history (config/template/test/i18n coupling a call graph cannot see), clearly labelled as history-based, not a dependency. Use for 'what would break if I change this', 'what should I test after this diff', 'what depends on this function'.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "symbol": {"type": "string", "description": "Symbol name or qualified name to seed from (optional -- omit to seed from the current git diff's changed symbols instead)"},
                     "base_ref": {"type": "string", "description": "Git ref to diff against when symbol is omitted (default HEAD)"},
                     "depth": {"type": "integer", "description": "Max BFS hops over incoming callers (default 3, capped at 6)"},
+                    "include_history": {"type": "boolean", "description": "Include historical co-change files not reached by the call graph (default true)"},
                     "root": {"type": "string", "description": "Workspace root (optional -- defaults to the active workspace)"}
                 },
                 "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "code_graph_cochanges",
+            "description": "Files that historically change together with a given file, mined from git log -- support (commits touching both), confidence (support / commits touching the target) and a recency-weighted score, with each result's last co-change commit and whether the file still exists. Huge commits (mass renames/formatting) and lockfiles are skipped. This is a correlation signal from history, not a static dependency -- use it to catch config/template/test/i18n coupling a call graph misses. Use for 'what usually changes alongside this file', 'what else should I touch when I edit this'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Workspace-relative file path to look up"},
+                    "limit": {"type": "integer", "description": "Max results to return (default 15)"},
+                    "max_commits": {"type": "integer", "description": "How many recent commits to scan (default 500)"},
+                    "min_support": {"type": "integer", "description": "Minimum number of shared commits to include a file (default 2)"},
+                    "root": {"type": "string", "description": "Workspace root (optional -- defaults to the active workspace)"}
+                },
+                "required": ["path"]
             }
         }
     },

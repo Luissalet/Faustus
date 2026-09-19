@@ -69,7 +69,7 @@ from .reach_tools import ReachReadTool, ReachSearchTool, ReachDoctorTool
 from .code_graph_tools import (
     CodeGraphIndexTool, CodeGraphSearchTool, CodeGraphTraceTool,
     CodeGraphChangesTool, CodeGraphImpactTool, CodeGraphArchitectureTool,
-    CodeGraphSnippetTool,
+    CodeGraphSnippetTool, CodeGraphCochangesTool,
 )
 from .pdf_ops_tool import PdfOpsTool
 from .pdf_tree_tool import PdfOutlineTool, PdfReadSectionTool, PdfFindSectionTool
@@ -184,6 +184,7 @@ TOOL_HANDLERS = {
     "code_graph_impact": CodeGraphImpactTool().execute,
     "code_graph_architecture": CodeGraphArchitectureTool().execute,
     "code_graph_snippet": CodeGraphSnippetTool().execute,
+    "code_graph_cochanges": CodeGraphCochangesTool().execute,
     # R3 (Reach wave): fan one prompt across N candidate models/endpoints,
     # each isolated via src.alternatives, ranked by src.fanout.score. See
     # src/fanout/ and src/agent_tools/fanout_tools.py.
@@ -320,7 +321,7 @@ TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_fi
              # Code graph (R2, Reach wave) -- src/agent_tools/code_graph_tools.py.
              "code_graph_index", "code_graph_search", "code_graph_trace",
              "code_graph_changes", "code_graph_impact", "code_graph_architecture",
-             "code_graph_snippet",
+             "code_graph_snippet", "code_graph_cochanges",
              # R3 (Reach wave): fan-out -- src/agent_tools/fanout_tools.py.
              "fanout_run", "fanout_status", "fanout_results", "fanout_apply",
              # PDF operations (R4, Reach wave) -- src/agent_tools/pdf_ops_tool.py.

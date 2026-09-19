@@ -83,6 +83,32 @@ the questions it did not yet answer as public functions, plus the
   `src/agent_settings_schema.py` (`agent_code_graph_auto_index`), `app.py`
   (`app.include_router(setup_code_graph_routes())`).
 
+## Historical co-change signal
+
+`src/code_graph/cochange.py` — `cochanges(path_or_paths, ...)`: "files that
+usually change together with this one", mined from `git log --no-merges
+--name-only` (one subprocess call per `(workspace, HEAD sha, max_commits)`,
+cached in-process, same subprocess/timeout/cwd-confinement style as
+`detect_changes`). A static call/import graph cannot see config, template,
+test-fixture or i18n coupling — files nothing calls or imports but that
+still need editing together; this is a correlation signal for exactly that
+gap, not a dependency. Commits touching more than 50 files (mass renames,
+formatter passes) are dropped entirely, and lockfiles/generated paths are
+dropped per-file — both would otherwise link every file in the repo to
+every other file. Per candidate file: `support` (commits touching both),
+`confidence` (support / commits touching the target), a recency-weighted
+`score` (exponential decay by commit index, ~100-commit half-life),
+`last_seen` (short sha + date) and `exists_now`.
+
+Wired into `impact()` as `historical_cochanges` (default on via
+`include_history=True`): the seed file's/files' top co-changes not already
+reached by the call-graph BFS, in both the JSON result and a labelled
+"Often changed together" section of the text output. `code_graph_impact`'s
+tool schema gained `include_history` (boolean, default true). A standalone
+`code_graph_cochanges` tool `{path, limit?, max_commits?, min_support?}` is
+registered exactly like every other `code_graph_*` tool (schema, handler,
+tag, capability, description, ES/EN examples).
+
 ## Known gap
 
 `context_engine.code_index`'s `EDGE_KINDS` does not include an `INHERITS`

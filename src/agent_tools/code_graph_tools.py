@@ -106,18 +106,43 @@ class CodeGraphChangesTool:
 
 
 class CodeGraphImpactTool:
-    """`code_graph_impact` {symbol?, base_ref?, depth?}: what else can break
-    and which tests to run, from a symbol or from the current git diff."""
+    """`code_graph_impact` {symbol?, base_ref?, depth?, include_history?}:
+    what else can break and which tests to run, from a symbol or from the
+    current git diff — plus files that historically change alongside the
+    seed file(s) even without a call/import edge, unless include_history
+    is explicitly false."""
 
     async def execute(self, content: str, ctx: dict) -> dict:
         args = _args(content, first_key="symbol")
+        include_history = args.get("include_history")
         return _catch(
             code_graph.impact, str(args.get("symbol") or "").strip(),
             workspace=str(args.get("root") or args.get("workspace") or ""),
             project_id=str(args.get("project_id") or ""),
             base_ref=str(args.get("base_ref") or "HEAD"),
             depth=int(args.get("depth") or 3),
+            include_history=True if include_history is None else bool(include_history),
             tool="code_graph_impact",
+        )
+
+
+class CodeGraphCochangesTool:
+    """`code_graph_cochanges` {path, limit?}: files that historically change
+    together with `path` in git history — a correlation signal the static
+    call graph cannot see (config, templates, tests, i18n)."""
+
+    async def execute(self, content: str, ctx: dict) -> dict:
+        args = _args(content, first_key="path")
+        path = str(args.get("path") or "").strip()
+        if not path:
+            return {"error": "code_graph_cochanges: path is required", "exit_code": 1}
+        return _catch(
+            code_graph.cochanges, path,
+            workspace=str(args.get("root") or args.get("workspace") or ""),
+            max_commits=int(args.get("max_commits") or 500),
+            limit=int(args.get("limit") or 15),
+            min_support=int(args.get("min_support") or 2),
+            tool="code_graph_cochanges",
         )
 
 

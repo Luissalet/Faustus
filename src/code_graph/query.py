@@ -496,6 +496,7 @@ def _changed_seeds(root: str, *, base_ref: str, project_id: str) -> List[Dict[st
 
 def impact(symbol: str = "", *, workspace: str = "", project_id: str = "",
            base_ref: str = "HEAD", depth: int = 3, limit: int = 200,
+           include_history: bool = True,
            output_chars: int = DEFAULT_OUTPUT_CHARS) -> Dict[str, Any]:
     """What else can break, and which tests to run.
 
@@ -506,7 +507,13 @@ def impact(symbol: str = "", *, workspace: str = "", project_id: str = "",
     `limit` nodes. Unresolved edges are counted but never followed — we
     cannot say what an unresolved call site reaches. A reached node whose
     file looks like a test file is collected into `affected_tests`, along
-    with the seed's own test file when the seed itself lives in one."""
+    with the seed's own test file when the seed itself lives in one.
+
+    When `include_history` (default True), `historical_cochanges` adds
+    files that usually change together with the seed file(s) in git history
+    but were not reached by the call graph — config, templates, tests or
+    i18n files a static call/import walk cannot see. This is a correlation
+    signal, not a dependency, and is reported separately."""
     try:
         root = _root(workspace)
     except ValueError as exc:
@@ -546,7 +553,8 @@ def impact(symbol: str = "", *, workspace: str = "", project_id: str = "",
                     "root": root, "mode": mode, "seeds": [], "reached": [],
                     "affected_tests": [], "affected_tests_via_call": [],
                     "affected_tests_via_import": [], "affected_test_functions": [],
-                    "unresolved_edges": 0, "suggested_command": ""}
+                    "unresolved_edges": 0, "suggested_command": "",
+                    "historical_cochanges": []}
 
     # BFS state: symbol id -> best-known node info (weakest certainty wins).
     nodes: Dict[str, Dict[str, Any]] = {}
@@ -610,6 +618,21 @@ def impact(symbol: str = "", *, workspace: str = "", project_id: str = "",
     seed_paths = sorted({s["path"] for s in seeds})
     import_test_files = set(_import_affected_tests(root, project_id, seed_paths)) - test_files
 
+    historical_cochanges: List[Dict[str, Any]] = []
+    if include_history:
+        reached_paths = {e["path"] for e in reached} | set(seed_paths)
+        try:
+            from .cochange import cochanges as _cochanges
+            hist = _cochanges(seed_paths, workspace=root, limit=30)
+            for r in hist.get("results") or []:
+                if r["path"] in reached_paths:
+                    continue
+                historical_cochanges.append(r)
+                if len(historical_cochanges) >= 10:
+                    break
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("code_graph.impact: cochanges lookup failed: %s", exc)
+
     all_test_files = test_files | import_test_files
     py_tests = sorted(p for p in all_test_files if p.endswith(".py"))
     other_tests = sorted(p for p in all_test_files if not p.endswith(".py"))
@@ -647,6 +670,11 @@ def impact(symbol: str = "", *, workspace: str = "", project_id: str = "",
             lines.append(f"suggested: {suggested_command}")
     else:
         lines.append("affected tests: none found")
+    if historical_cochanges:
+        lines.append(
+            "Often changed together (history-based, not a dependency):")
+        lines += [f"  {r['path']}  (support={r['support']} "
+                  f"confidence={r['confidence']:.2f})" for r in historical_cochanges]
 
     return {
         "output": _clip("\n".join(lines), output_chars), "exit_code": 0, "root": root,
@@ -657,4 +685,5 @@ def impact(symbol: str = "", *, workspace: str = "", project_id: str = "",
         "affected_test_functions": sorted(set(test_functions)),
         "unresolved_edges": unresolved_edges, "suggested_command": suggested_command,
         "depth": depth_cap, "base_ref": base_ref,
+        "historical_cochanges": historical_cochanges,
     }
