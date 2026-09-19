@@ -534,3 +534,51 @@ def test_test_route_sends_to_callers_subscriptions(route_client, monkeypatch):
     assert data["ok"] is True
     assert len(data["results"]) == 1
     assert data["results"][0]["ok"] is True
+
+
+# --------------------------------------------------------------------------- #
+# Retry queue
+# --------------------------------------------------------------------------- #
+
+def test_soft_failure_is_queued_and_retried_until_it_lands(isolated_push, monkeypatch):
+    push.subscribe("luis", _sub())
+    calls = []
+
+    def flaky_post(url, content=None, headers=None, timeout=None):
+        calls.append(url)
+        return _FakeResponse(503 if len(calls) == 1 else 201)
+
+    monkeypatch.setattr("httpx.post", flaky_post)
+    first = push.broadcast("luis", {"title": "done"}, ttl=3600)
+    assert first[0]["ok"] is False and first[0]["status"] == 503
+    assert len(push._load_retry()) == 1
+    assert push.retry_due(now=time.time()) == []          # not due yet
+    results = push.retry_due(now=time.time() + 31)
+    assert results and results[0]["ok"] is True
+    assert push._load_retry() == []
+    push._store_cache = None
+    assert push.list_subscriptions("luis")[0]["failures"] == 0
+
+
+def test_hard_failure_and_expired_ttl_are_not_queued(isolated_push, monkeypatch):
+    push.subscribe("luis", _sub())
+    monkeypatch.setattr("httpx.post", lambda *a, **kw: _FakeResponse(410))
+    push.broadcast("luis", {"title": "x"})
+    assert push._load_retry() == []
+    push.subscribe("luis", _sub())
+    monkeypatch.setattr("httpx.post", lambda *a, **kw: _FakeResponse(500))
+    push.broadcast("luis", {"title": "x"}, ttl=10)           # first retry (30 s) would be too late
+    assert push._load_retry() == []
+
+
+def test_retry_backs_off_and_gives_up(isolated_push, monkeypatch):
+    push.subscribe("luis", _sub())
+    monkeypatch.setattr("httpx.post", lambda *a, **kw: _FakeResponse(429))
+    push.broadcast("luis", {"title": "x"}, ttl=24 * 3600)
+    now = time.time()
+    for delay in push.RETRY_BACKOFF_S[:-1]:
+        now += delay + 1
+        push.retry_due(now=now)
+    assert len(push._load_retry()) == 1
+    push.retry_due(now=now + push.RETRY_BACKOFF_S[-1] + 1)
+    assert push._load_retry() == []

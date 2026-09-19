@@ -495,12 +495,119 @@ def send(subscription: Dict[str, Any], payload: Dict[str, Any], *, ttl: int = 36
 def broadcast(owner: str, payload: Dict[str, Any], *, ttl: int = 3600, urgency: str = "high") -> List[Dict[str, Any]]:
     """`send()` to every subscription `owner` has. Returns one result dict
     per subscription (with `id`/`device_name` mixed in so a caller can show
-    per-device status)."""
+    per-device status). A soft failure (network error, 429, 5xx) is queued
+    for a retry instead of being lost; see `_queue_retry`."""
     results = []
     for row in list_subscriptions(owner):
         result = send(row, payload, ttl=ttl, urgency=urgency)
+        if _is_soft_failure(result):
+            _queue_retry(owner, row.get("endpoint") or "", payload, ttl=ttl, urgency=urgency)
         results.append({"id": row.get("id"), "device_name": row.get("device_name"), **result})
     return results
+
+
+# --------------------------------------------------------------------------- #
+# Retry queue — a transient failure (the PC lost internet for a minute, the
+# push service answered 429/5xx) should delay a notification, not drop it.
+# 404/410 stay final (the endpoint is gone) and the message's own TTL still
+# bounds how late it may arrive.
+# --------------------------------------------------------------------------- #
+
+RETRY_BACKOFF_S = (30, 120, 600, 1800)
+RETRY_TICK_S = 15
+RETRY_MAX_ITEMS = 200
+_retry_thread = None
+_retry_stop = None
+
+
+def _retry_file() -> str:
+    # Resolved per call so a patched PUSH_DIR (tests, a moved data dir) holds.
+    return os.path.join(PUSH_DIR, "retry.json")
+
+
+def _is_soft_failure(result: Dict[str, Any]) -> bool:
+    status = result.get("status")
+    if result.get("ok"):
+        return False
+    if status == "error":
+        return True
+    return isinstance(status, int) and (status == 429 or status >= 500)
+
+
+def _load_retry() -> List[Dict[str, Any]]:
+    try:
+        with open(_retry_file(), "r", encoding="utf-8") as fh:
+            rows = json.load(fh)
+        return rows if isinstance(rows, list) else []
+    except (OSError, ValueError):
+        return []
+
+
+def _save_retry(rows: List[Dict[str, Any]]) -> None:
+    _ensure_push_dir()
+    atomic_write_json(_retry_file(), rows[-RETRY_MAX_ITEMS:])
+
+
+def _queue_retry(owner: str, endpoint: str, payload: Dict[str, Any], *, ttl: int,
+                 urgency: str, attempt: int = 0, created: Optional[float] = None) -> bool:
+    if not endpoint or attempt >= len(RETRY_BACKOFF_S):
+        return False
+    now = time.time()
+    created = created or now
+    due = now + RETRY_BACKOFF_S[attempt]
+    if due > created + max(0, int(ttl)):
+        return False  # would arrive after the message stops mattering
+    with FileLock(_retry_file() + ".lock"):
+        rows = _load_retry()
+        rows.append({"owner": owner, "endpoint": endpoint, "payload": payload, "ttl": int(ttl),
+                     "urgency": urgency, "attempt": attempt, "created": created, "due": due})
+        _save_retry(rows)
+    return True
+
+
+def retry_due(now: Optional[float] = None) -> List[Dict[str, Any]]:
+    """Resend every queued message whose time has come. Returns one result
+    per attempted send. A message whose subscription is gone is dropped."""
+    now = time.time() if now is None else now
+    with FileLock(_retry_file() + ".lock"):
+        rows = _load_retry()
+        due = [r for r in rows if float(r.get("due") or 0) <= now]
+        later = [r for r in rows if float(r.get("due") or 0) > now]
+        _save_retry(later)
+    results = []
+    for item in due:
+        owner, endpoint = item.get("owner") or "", item.get("endpoint") or ""
+        sub = next((r for r in list_subscriptions(owner) if r.get("endpoint") == endpoint), None)
+        if sub is None:
+            continue
+        remaining = int(item.get("created", now) + item.get("ttl", 0) - now)
+        if remaining <= 0:
+            continue
+        result = send(sub, item.get("payload") or {}, ttl=remaining, urgency=item.get("urgency") or "normal")
+        results.append({"endpoint": endpoint, "attempt": item.get("attempt", 0) + 1, **result})
+        if _is_soft_failure(result):
+            _queue_retry(owner, endpoint, item.get("payload") or {}, ttl=int(item.get("ttl", 0)),
+                         urgency=item.get("urgency") or "normal",
+                         attempt=int(item.get("attempt", 0)) + 1, created=item.get("created"))
+    return results
+
+
+def _retry_loop(stop_event) -> None:
+    while not stop_event.wait(RETRY_TICK_S):
+        try:
+            retry_due()
+        except Exception:
+            logger.debug("push: retry pass failed", exc_info=True)
+
+
+def _start_retry_worker() -> None:
+    global _retry_thread, _retry_stop
+    if _retry_thread is not None and _retry_thread.is_alive():
+        return
+    import threading
+    _retry_stop = threading.Event()
+    _retry_thread = threading.Thread(target=_retry_loop, args=(_retry_stop,), name="push-retry", daemon=True)
+    _retry_thread.start()
 
 
 # --------------------------------------------------------------------------- #
@@ -586,12 +693,15 @@ def start() -> None:
     from src import notifications as notifications_bus
     notifications_bus.register_sink(_push_sink)
     _bus_started = True
+    _start_retry_worker()
 
 
 def stop() -> None:
     """Best-effort unregister, mainly for tests that want a clean bus
     between cases."""
     global _bus_started
+    if _retry_stop is not None:
+        _retry_stop.set()
     if not _bus_started:
         return
     from src import notifications as notifications_bus
