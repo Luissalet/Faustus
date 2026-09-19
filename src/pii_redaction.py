@@ -62,7 +62,11 @@ _IPV4_RE = re.compile(
 # IBAN (ISO 13616, mod-97 = 1 checksum)
 # ---------------------------------------------------------------------------
 
-_IBAN_CANDIDATE_RE = re.compile(r"\b[A-Za-z]{2}\d{2}[A-Za-z0-9]{9,30}\b")
+# Compact ("ES9121000418...") or printed in groups of four
+# ("ES91 2100 0418 4502 0005 1332").
+_IBAN_CANDIDATE_RE = re.compile(
+    r"\b[A-Za-z]{2}\d{2}(?:[A-Za-z0-9]{9,30}|(?: ?[A-Za-z0-9]{4}){2,7}(?: ?[A-Za-z0-9]{1,3})?)\b"
+)
 
 
 def _iban_valid(candidate: str) -> bool:
@@ -130,12 +134,14 @@ _PHONE_RE = re.compile(
     r"(?<![\w@.])"
     r"(?:"
     # Spanish national/mobile, optionally with +34 / 0034
-    r"(?:\+34|0034)?[ \-]?[6789]\d{2}[ \-]?\d{3}[ \-]?\d{3}"
+    # (any grouping of the 9 digits: 612 345 678, 91 123 45 67, 612345678)
+    r"(?:\+34|0034)?[ \-]?[6789](?:[ \-]?\d){8}"
     r"|"
     # Generic international E.164-ish: + then 8-15 digits, optionally grouped
     r"\+\d{1,3}(?:[ \-]?\d{2,4}){2,4}"
     r")"
-    r"(?![\w@.])"
+    # A sentence-ending period may follow; a decimal/dotted continuation may not.
+    r"(?![\w@]|\.\d)"
 )
 
 

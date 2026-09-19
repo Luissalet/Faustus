@@ -172,3 +172,16 @@ def test_original_text_returned_when_nothing_matches():
     text, counts = redact_pii(original)
     assert text == original
     assert counts == {}
+
+
+def test_phone_before_sentence_period_and_grouped_iban():
+    from src.pii_redaction import redact_pii
+    text, counts = redact_pii("Llama al +34 612 345 678. IBAN ES91 2100 0418 4502 0005 1332, gracias.")
+    assert "[PHONE]." in text and "678" not in text
+    assert "[IBAN]" in text and "1332" not in text
+    assert counts == {"PHONE": 1, "IBAN": 1}
+
+
+def test_spanish_landline_grouping():
+    from src.pii_redaction import redact_pii
+    assert redact_pii("Tel 91 123 45 67.")[0] == "Tel [PHONE]."
