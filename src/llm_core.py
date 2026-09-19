@@ -273,57 +273,88 @@ async def _local_model_slot(target_url: str, model: str, workload: Optional[str]
     chat hit that pipe together creates the user-visible "streams crossed" and
     "prompt waited behind a task" failure mode. Cloud providers are left alone.
     """
-    if not _local_model_gate_enabled() or not is_local_endpoint(target_url):
+    if not is_local_endpoint(target_url):
         yield
         return
 
-    global _LOCAL_MODEL_WAITING_FOREGROUND
-    kind = _gate_workload(workload)
-    current_task = asyncio.current_task()
-    if kind == "foreground":
-        _LOCAL_MODEL_WAITING_FOREGROUND += 1
-        current = dict(_LOCAL_MODEL_CURRENT)
-        if current.get("workload") == "background":
-            task = current.get("task")
-            if isinstance(task, asyncio.Task) and not task.done():
-                logger.info(
-                    "[model-gate] cancelling background local model call for foreground request model=%s",
-                    model,
-                )
-                task.cancel()
-    else:
-        # Background work should not jump in while the browser/chat is active
-        # or while a foreground request is waiting to acquire the local model.
-        try:
-            from src.interactive_gate import has_foreground_activity
-        except Exception:
-            has_foreground_activity = lambda: False  # type: ignore
-        while _LOCAL_MODEL_WAITING_FOREGROUND > 0 or has_foreground_activity():
-            await asyncio.sleep(0.25)
-
-    acquired = False
+    # Engine swap (src/engine_swap.py): start a managed llama.cpp engine on
+    # demand if `target_url` maps to one and it is not already up, and track
+    # usage (in-flight + last-used) for the idle reaper. Guarded throughout:
+    # any problem here must never block or break the chat call.
+    engine_swap = None
     try:
-        await _LOCAL_MODEL_LOCK.acquire()
-        acquired = True
+        from src import engine_swap as _engine_swap
+        engine_swap = _engine_swap
+        await engine_swap.ensure_ready(target_url)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("[engine-swap] ensure_ready skipped: %s", exc)
+
+    engine_id = None
+    try:
+        if engine_swap is not None:
+            engine_id = engine_swap.begin(target_url)
+    except Exception:  # noqa: BLE001
+        engine_id = None
+
+    try:
+        if not _local_model_gate_enabled():
+            yield
+            return
+
+        global _LOCAL_MODEL_WAITING_FOREGROUND
+        kind = _gate_workload(workload)
+        current_task = asyncio.current_task()
         if kind == "foreground":
-            _LOCAL_MODEL_WAITING_FOREGROUND = max(0, _LOCAL_MODEL_WAITING_FOREGROUND - 1)
-        _LOCAL_MODEL_CURRENT.clear()
-        _LOCAL_MODEL_CURRENT.update({
-            "task": current_task,
-            "workload": kind,
-            "url": target_url,
-            "model": model,
-            "started": time.time(),
-        })
-        yield
+            _LOCAL_MODEL_WAITING_FOREGROUND += 1
+            current = dict(_LOCAL_MODEL_CURRENT)
+            if current.get("workload") == "background":
+                task = current.get("task")
+                if isinstance(task, asyncio.Task) and not task.done():
+                    logger.info(
+                        "[model-gate] cancelling background local model call for foreground request model=%s",
+                        model,
+                    )
+                    task.cancel()
+        else:
+            # Background work should not jump in while the browser/chat is active
+            # or while a foreground request is waiting to acquire the local model.
+            try:
+                from src.interactive_gate import has_foreground_activity
+            except Exception:
+                has_foreground_activity = lambda: False  # type: ignore
+            while _LOCAL_MODEL_WAITING_FOREGROUND > 0 or has_foreground_activity():
+                await asyncio.sleep(0.25)
+
+        acquired = False
+        try:
+            await _LOCAL_MODEL_LOCK.acquire()
+            acquired = True
+            if kind == "foreground":
+                _LOCAL_MODEL_WAITING_FOREGROUND = max(0, _LOCAL_MODEL_WAITING_FOREGROUND - 1)
+            _LOCAL_MODEL_CURRENT.clear()
+            _LOCAL_MODEL_CURRENT.update({
+                "task": current_task,
+                "workload": kind,
+                "url": target_url,
+                "model": model,
+                "started": time.time(),
+            })
+            yield
+        finally:
+            if kind == "foreground":
+                _LOCAL_MODEL_WAITING_FOREGROUND = max(0, _LOCAL_MODEL_WAITING_FOREGROUND - 1)
+            if acquired and _LOCAL_MODEL_LOCK.locked():
+                owner = _LOCAL_MODEL_CURRENT.get("task")
+                if owner is current_task:
+                    _LOCAL_MODEL_CURRENT.clear()
+                _LOCAL_MODEL_LOCK.release()
     finally:
-        if kind == "foreground":
-            _LOCAL_MODEL_WAITING_FOREGROUND = max(0, _LOCAL_MODEL_WAITING_FOREGROUND - 1)
-        if acquired and _LOCAL_MODEL_LOCK.locked():
-            owner = _LOCAL_MODEL_CURRENT.get("task")
-            if owner is current_task:
-                _LOCAL_MODEL_CURRENT.clear()
-            _LOCAL_MODEL_LOCK.release()
+        try:
+            if engine_swap is not None:
+                engine_swap.end(engine_id)
+                engine_swap.touch(target_url)
+        except Exception:  # noqa: BLE001
+            pass
 
 class LLMConfig:
     """Configuration constants for LLM operations."""

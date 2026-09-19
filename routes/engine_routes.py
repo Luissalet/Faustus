@@ -66,6 +66,16 @@ def setup_engine_routes() -> APIRouter:
             out[engine["id"]] = await engines.status_engine(engine["id"])
         return out
 
+    @router.get("/swap/status")
+    def swap_status_route(request: Request) -> Dict[str, Any]:
+        """Engine swap (src/engine_swap.py): autostart/idle-reaper settings
+        plus per-engine last-used/in-flight/idle_s. Same read-level auth as
+        the other GET routes here (`require_human`, not the `/status`
+        health-probe exception above)."""
+        require_human(request)
+        from src import engine_swap
+        return engine_swap.status()
+
     @router.get("/discover")
     async def discover(request: Request, port: int, host: str = engines.DEFAULT_HOST) -> Dict[str, Any]:
         require_human(request)

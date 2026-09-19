@@ -2089,6 +2089,15 @@ async def _startup_event():
     except Exception as e:  # noqa: BLE001
         logger.warning(f"Model warmup not started (non-critical): {e}")
 
+    # Engine swap (src/engine_swap.py): idle reaper for managed llama.cpp
+    # engines — unloads them once idle past `engine_idle_ttl_minutes`
+    # (default 0 = disabled) so the GPU is not held by an idle llama-server.
+    try:
+        from src import engine_swap
+        engine_swap.start()
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"Engine swap reaper not started (non-critical): {e}")
+
     # Tool index warmup is ON by default: without it the first agent turn pays
     # the index build (and, with the per-request selection timeout, usually
     # lands on keyword-only tool selection). The build runs in a worker thread
@@ -2448,6 +2457,11 @@ async def _shutdown_event():
         try:
             from src import model_warmup
             await model_warmup.stop()
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            from src import engine_swap
+            await engine_swap.stop()
         except Exception:  # noqa: BLE001
             pass
     except Exception:

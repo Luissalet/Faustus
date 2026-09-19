@@ -680,6 +680,66 @@ export function LocalModelsSection({ admin, say }: { admin: boolean; say: (t: st
   );
 }
 
+/* ── engine swap (src/engine_swap.py): start an engine when a chat needs
+ * it, unload it after N idle minutes so an idle llama-server does not hold
+ * the GPU. Plain settings, saved through /api/auth/settings. */
+function EngineSwapFields({ say }: { say: (t: string) => void }) {
+  const [autostart, setAutostart] = useState(true);
+  const [ttl, setTtl] = useState('0');
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    void getSettings()
+      .then((s) => {
+        setAutostart(s.engine_autostart !== false);
+        setTtl(String(Number(s.engine_idle_ttl_minutes ?? 0) || 0));
+        setLoaded(true);
+      })
+      .catch(() => setLoaded(true));
+  }, []);
+
+  const save = async (patch: Record<string, unknown>) => {
+    try {
+      await saveSettings(patch);
+      invalidateSettings();
+      say(t('Saved'));
+    } catch (e) {
+      say((e as Error).message);
+    }
+  };
+
+  if (!loaded) return null;
+  return (
+    <div className="fs-set__row" data-testid="engine-swap-fields">
+      <label className="fs-set__help">
+        <input
+          type="checkbox"
+          checked={autostart}
+          onChange={(e) => {
+            setAutostart(e.target.checked);
+            void save({ engine_autostart: e.target.checked });
+          }}
+          data-testid="engine-autostart"
+        />{' '}
+        {t('Start the engine when a chat needs it')}
+      </label>
+      <label className="fs-set__help">
+        {t('Unload after idle (minutes, 0 = never)')}{' '}
+        <input
+          className="fs-field"
+          type="number"
+          min={0}
+          max={1440}
+          value={ttl}
+          onChange={(e) => setTtl(e.target.value)}
+          onBlur={() => void save({ engine_idle_ttl_minutes: Math.max(0, Number(ttl) || 0) })}
+          data-testid="engine-idle-ttl"
+        />
+      </label>
+    </div>
+  );
+}
+
 /* ── engines: llama-server instances started/stopped from this screen,
  * never a PowerShell script outside the app. `src/engines.py`/
  * `routes/engine_routes.py` — see FAUSTUS.md §119. */
@@ -736,6 +796,7 @@ function EnginesSection({ admin, say, defaultModel }: { admin: boolean; say: (t:
         <Button size="sm" variant="ghost" label={t('Add engine')} onClick={() => setEditing('new')} />
       </header>
       <p className="fs-set__help">{t('Local llama-server instances, started and stopped here — never a script outside the app.')}</p>
+      <EngineSwapFields say={say} />
       {engines === null ? (
         <Skeleton label={t('Loading')} count={1} height="56px" />
       ) : engines.length === 0 ? (

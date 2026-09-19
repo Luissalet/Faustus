@@ -7911,3 +7911,5 @@ yours	tuyo
 …or upload a file	…o sube un archivo
 ≥ {lower} GB (incomplete: {reason})	≥ {lower} GB (incompleto: {reason})
 ⟨insert⟩	⟨insertar⟩
+Start the engine when a chat needs it	Arrancar el motor cuando un chat lo necesite
+Unload after idle (minutes, 0 = never)	Descargar tras inactividad (minutos, 0 = nunca)

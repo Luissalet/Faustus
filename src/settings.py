@@ -180,6 +180,18 @@ DEFAULT_SETTINGS = {
     # this one" — the keeper waits out this window before reloading the
     # default back in once that model is gone or idle.
     "warm_default_model_yield_minutes": 10,
+    # Engine swap (src/engine_swap.py, inspired by llama-swap): managed
+    # llama.cpp engines (src/engines.py) start on demand when a local model
+    # call targets them, and unload when idle, so the GPU is not held by an
+    # idle llama-server. `engine_autostart` off disables the on-demand
+    # start (an engine already running is still used; one that is down
+    # just fails the request as before). `engine_idle_ttl_minutes` 0
+    # disables the idle reaper entirely (default: engines stay up once
+    # started, like today).
+    "engine_autostart": True,
+    "engine_autostart_timeout_s": 180,
+    "engine_idle_ttl_minutes": 0,
+    "engine_idle_check_s": 30,
     "agent_ui_verify": True,
     "agent_inline_attachment_max_chars": 4000,
     "agent_project_todos": True,
