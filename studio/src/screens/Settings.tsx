@@ -60,6 +60,7 @@ import {
 import './projects.css';
 import './settings.css';
 import { bool, Field, fromList, list, SaveBar, Select, str, Text, Toggle, useDraft, type Opt } from './settings/fields';
+import { SamplingDefaultsFields, useSamplingDraft } from './settings/SamplingDefaults';
 import { DeviceSignIn } from './settings/DeviceSignIn';
 import { ProviderConnect } from './settings/ProviderConnect';
 import { AccountSection } from './settings/Account';
@@ -336,21 +337,6 @@ const DEFAULT_KEYS = [
 ];
 
 /**
- * SET-07: the local sampling defaults (src/settings.py, applied to local
- * endpoints only). Each entry is [key, clamp range, decimals]; `decimals: 0`
- * means round to an integer (top_k). Client-side clamp mirrors the backend's
- * own (`routes/auth_routes.py` `_INT_RANGES`/`_FLOAT_RANGES`) so a bad value
- * never round-trips to the server just to be clamped there.
- */
-const SAMPLING_FIELDS: { key: string; label: string; help: string; lo: number; hi: number; decimals: number; fallback: number }[] = [
-  { key: 'local_temperature_default', label: 'Temperature', help: t('Lower = less rambling (0.6 recommended locally)'), lo: 0, hi: 2, decimals: 2, fallback: 0.6 },
-  { key: 'local_top_p_default', label: 'top_p', help: t('Trims the tail of the probability distribution (0.8)'), lo: 0, hi: 1, decimals: 2, fallback: 0.8 },
-  { key: 'local_top_k_default', label: 'top_k', help: t('How many candidates it considers (20)'), lo: 0, hi: 200, decimals: 0, fallback: 20 },
-  { key: 'local_repeat_penalty_default', label: t('Repeat penalty'), help: t('Avoids token loops (1.05)'), lo: 0.5, hi: 2, decimals: 2, fallback: 1.05 },
-  { key: 'local_min_p_default', label: 'min_p', help: t('Discards the unlikely (0.05)'), lo: 0, hi: 1, decimals: 2, fallback: 0.05 },
-];
-
-/**
  * SET-05: what changes (privacy, cost) when the default provider/model
  * moves from one endpoint to another — `GET /api/setup/provider-change-preview`
  * (routes/diagnostics_routes.py). Mirrors that route's response shape.
@@ -403,14 +389,9 @@ function DefaultsSection({ settings, endpoints, onSave, say }: { settings: Setti
   const { draft, set, changed, dirty } = useDraft(settings, DEFAULT_KEYS);
   const [saving, setSaving] = useState(false);
   // SET-07: the five sampling fields are optional overrides on top of an
-  // already-applied backend default, so unlike the rest of this screen they
-  // start EMPTY (the current value shown only as a placeholder) rather than
-  // pre-filled from `settings`. An empty field must never be sent — clearing
-  // a box is how you say "stop overriding", not "set it to zero" — so these
-  // live in their own text state instead of `draft`/`changed`, and only a
-  // non-empty, clamped value is merged into the patch at save time.
-  const [sampling, setSampling] = useState<Record<string, string>>({});
-  const samplingDirty = SAMPLING_FIELDS.some((f) => (sampling[f.key] ?? '').trim() !== '');
+  // already-applied backend default (see `settings/SamplingDefaults.tsx`,
+  // shared with the Local models screen).
+  const { sampling, setSampling, dirty: samplingDirty, withSampling, reset: resetSampling } = useSamplingDraft();
   const save = async () => {
     // SET-05: the default provider/model is a "consciously" change — before
     // it is saved, preview what moves (privacy, cost) and let the person
@@ -431,19 +412,11 @@ function DefaultsSection({ settings, endpoints, onSave, say }: { settings: Setti
         // Advisory only — see comment above.
       }
     }
-    const patch: Settings = { ...changed };
-    for (const f of SAMPLING_FIELDS) {
-      const raw = (sampling[f.key] ?? '').trim();
-      if (raw === '') continue;
-      const n = Number(raw);
-      if (Number.isNaN(n)) continue;
-      const clamped = Math.max(f.lo, Math.min(n, f.hi));
-      patch[f.key] = f.decimals === 0 ? Math.round(clamped) : Number(clamped.toFixed(f.decimals));
-    }
+    const patch = withSampling(changed) as Settings;
     setSaving(true);
     try {
       await onSave(patch);
-      setSampling({});
+      resetSampling();
       say(t('Saved.'));
     } catch (err) {
       say((err as Error).message || t('Could not save.'));
@@ -518,25 +491,7 @@ function DefaultsSection({ settings, endpoints, onSave, say }: { settings: Setti
           <Text id="cv-hours" type="number" value={str(draft.chat_versions_keep_hours)} onChange={(v) => set('chat_versions_keep_hours', Number(v) || 0)} placeholder={t('hours')} />
         </div>
       </Field>
-      <Field label={t('Local sampling')} help={t('Only for local endpoints (Ollama, LM Studio…). Empty: do not send. A conversation can still override these for itself with /temp, /topp, /topk.')}>
-        <div className="fs-set__grid2">
-          {SAMPLING_FIELDS.map((f) => {
-            const current = settings?.[f.key];
-            const placeholder = typeof current === 'number' ? String(current) : String(f.fallback);
-            return (
-              <Field key={f.key} label={f.label} htmlFor={`samp-${f.key}`} help={f.help}>
-                <Text
-                  id={`samp-${f.key}`}
-                  type="number"
-                  value={sampling[f.key] ?? ''}
-                  onChange={(v) => setSampling((s) => ({ ...s, [f.key]: v }))}
-                  placeholder={placeholder}
-                />
-              </Field>
-            );
-          })}
-        </div>
-      </Field>
+      <SamplingDefaultsFields idPrefix="samp" settings={settings} sampling={sampling} setSampling={setSampling} />
       <SaveBar dirty={dirty || samplingDirty} saving={saving} onSave={() => void save()} />
     </section>
   );

@@ -1,7 +1,8 @@
 import { ArrowDown, ArrowUp, Download, HardDrive, Play, RefreshCw, Square, Wrench, X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button, EmptyState, IconButton, Skeleton } from '../../components';
-import { invalidateSettings, getSettings } from '../../adapters/settings';
+import { invalidateSettings, getSettings, saveSettings } from '../../adapters/settings';
+import { SamplingDefaultsFields, useSamplingDraft } from './SamplingDefaults';
 import {
   createEngine,
   deleteEngine,
@@ -272,6 +273,49 @@ function ScopedOverridePanel({ endpointId, model }: { endpointId: string; model:
  * delete, per-model options, the placement policy, and the catalogue.
  * Everyone can look; the buttons that change something are for admins.
  */
+/**
+ * SET-07 (Job E): the same five local sampling defaults as Settings →
+ * Default AI, shown here too since this is where the per-model load options
+ * (num_ctx, keep_alive, num_gpu, main_gpu) already live. Reads and writes
+ * the exact same settings keys through the shared `SamplingDefaults`
+ * component/hook, so a save here is visible on the Default AI screen the
+ * next time it loads settings, and vice versa — no separate state.
+ */
+function LocalSamplingSection({ say }: { say: (t: string) => void }) {
+  const [settings, setSettings] = useState<Record<string, unknown> | null>(null);
+  const { sampling, setSampling, dirty, withSampling, reset } = useSamplingDraft();
+  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    void getSettings().then((s) => { if (alive) setSettings(s); }).catch(() => undefined);
+    return () => { alive = false; };
+  }, []);
+  const save = async () => {
+    setSaving(true);
+    try {
+      const patch = withSampling({});
+      const next = await saveSettings(patch);
+      setSettings(next);
+      reset();
+      say(t('Saved.'));
+    } catch (err) {
+      say((err as Error).message || t('Could not save.'));
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <div className="fs-set__card">
+      <h3 className="fs-set__card-title">{t('Sampling defaults')}</h3>
+      <SamplingDefaultsFields idPrefix="lm-samp" settings={settings} sampling={sampling} setSampling={setSampling} />
+      <div className="fs-set__save" data-dirty={dirty || undefined}>
+        <span className="fs-set__save-note">{dirty ? t('There are unsaved changes.') : t('No changes.')}</span>
+        <Button variant="primary" size="sm" label={t('Save')} disabled={!dirty} loading={saving} onClick={() => void save()} />
+      </div>
+    </div>
+  );
+}
+
 export function LocalModelsSection({ admin, say }: { admin: boolean; say: (t: string) => void }) {
   const [data, setData] = useState<LocalModelsData | null>(null);
   const [endpointId, setEndpointId] = useState('');
@@ -550,6 +594,8 @@ export function LocalModelsSection({ admin, say }: { admin: boolean; say: (t: st
           {data.disk?.free_bytes != null && <p className="fs-set__help">{t('{free} free of {total} where Ollama keeps its blobs ({path}).', { free: fmtGb(data.disk.free_bytes), total: fmtGb(data.disk.total_bytes), path: data.disk.path ?? '' })}</p>}
 
           <EnginesSection admin={admin} say={say} defaultModel={defaultModel} />
+
+          {admin && <LocalSamplingSection say={say} />}
 
           <div className="fs-set__card">
             <h3 className="fs-set__card-title">{t('Loaded now')}</h3>
