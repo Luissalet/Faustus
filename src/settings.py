@@ -876,6 +876,10 @@ DEFAULT_SETTINGS = {
     "chat_versions_keep_hours": 168,
     # Per-model scorecard of agent turns (src/scorecard.py, /scorecard).
     "agent_scorecard": True,
+    # Default spec for GET /api/agent-runs/{run_id}/gate (src/trajectory_gate.py)
+    # when the caller supplies none. Empty -> the module's own built-in
+    # DEFAULT_SPEC is used instead.
+    "trajectory_gate_default_spec": {},
     # Built-in MCP servers speak JSON-RPC on stdout; a stray print() from app
     # code in the same process corrupts that stream. The guard (src/stdio_guard.py)
     # sends stdout writes to stderr while a stdio session is live. Off = no guard.

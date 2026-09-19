@@ -7,7 +7,7 @@ import { loadAttention, markAttentionRead, type AttentionRow, type NextAction } 
 import { CACHE_LABELS, clearAutomationCache, runAutomation, stopAutomation } from '../adapters/automations';
 import { relativeTime } from '../adapters/home';
 import { stopChat } from '../adapters/chat';
-import { traceForCall, type CallTrace } from '../adapters/observability';
+import { gateForRun, traceForCall, type CallTrace, type GateReport } from '../adapters/observability';
 import { workflowEstimate, workflowMermaid, type WorkflowEstimate } from '../adapters/topology';
 import { createActivityPoller } from '../lib/activity-poller';
 import { emitForNewRuns } from '../shell/notifications';
@@ -374,6 +374,74 @@ function TracePanel() {
           {trace.events.length === 0 && trace.artifacts.length === 0 && !trace.receipt && (
             <p className="fs-act__hint">{t('Found this call ID, but it has no events, artifacts or receipt on record.')}</p>
           )}
+        </div>
+      )}
+    </details>
+  );
+}
+
+/**
+ * Trajectory gate: paste a run id (a session id, or the opaque per-turn id
+ * an SSE event carried) and see the instance's default spec checks pass or
+ * fail against that run's recorded steps (`GET /api/agent-runs/{run_id}/gate`,
+ * `src/trajectory_gate.py`). A lookup form, same shape as `TracePanel` above
+ * it — nothing feeds this a run id automatically yet.
+ */
+function GatePanel() {
+  const [runId, setRunId] = useState('');
+  const [open, setOpen] = useState(false);
+  const [report, setReport] = useState<GateReport | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    const id = runId.trim();
+    if (!id) return;
+    setBusy(true);
+    setError(null);
+    gateForRun(id)
+      .then(setReport)
+      .catch((e) => {
+        setReport(null);
+        setError((e as Error).message);
+      })
+      .finally(() => setBusy(false));
+  };
+
+  return (
+    <details className="fs-act__trace" open={open} onToggle={(e) => setOpen(e.currentTarget.open)} data-testid="activity-gate">
+      <summary className="fs-act__trace-title"><ListOrdered size={14} aria-hidden="true" /> {t('Gate a run')}</summary>
+      <form className="fs-act__trace-form" onSubmit={submit}>
+        <label className="fs-act__field">
+          <span>{t('Run ID (or session ID)')}</span>
+          <input className="fs-field" value={runId} onChange={(ev) => setRunId(ev.target.value)} placeholder={t('Paste a run or session id…')} data-testid="activity-gate-runid" />
+        </label>
+        <Button type="submit" size="sm" icon={Search} label={t('Check')} loading={busy} disabled={!runId.trim() || busy} testId="activity-gate-submit" />
+      </form>
+
+      {error && <p className="fs-act__error" role="alert">{error}</p>}
+
+      {report && (
+        <div className="fs-act__trace-result" data-testid="activity-gate-result">
+          <p className="fs-act__step-head">
+            <strong>{report.ok ? t('PASS') : t('FAIL')}</strong>
+            <span className="fs-act__when">{t('{n} steps · {status}', { n: report.stepCount, status: report.status })}</span>
+          </p>
+          <ul className="fs-act__trace-list">
+            {report.checks.map((c) => (
+              <li key={c.id} className="fs-act__trace-item">
+                <div className="fs-act__step-head">
+                  <strong>{c.ok ? '✓' : '✗'} {c.id}</strong>
+                </div>
+                <dl className="fs-act__facts">
+                  <DetailRow label={t('Expected')}>{JSON.stringify(c.expected)}</DetailRow>
+                  <DetailRow label={t('Actual')}>{JSON.stringify(c.actual)}</DetailRow>
+                  {c.detail && <DetailRow label={t('Detail')}>{c.detail}</DetailRow>}
+                </dl>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
     </details>
@@ -888,6 +956,7 @@ export function ActivityScreen() {
       <QueuePanel items={queue} busyId={queueBusy} onPrioritize={(item) => void prioritizeQueued(item)} />
 
       <TracePanel />
+      <GatePanel />
 
       <div className="fs-tabs" role="tablist" aria-label={t('Filter activity')}>
         {FILTERS.map((entry) => (

@@ -88,3 +88,52 @@ export async function traceForCall(callId: string, sessionId?: string, signal?: 
   const qs = sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : '';
   return callTraceFrom(await getJson<Record<string, unknown>>(`/api/observability/trace/${encodeURIComponent(callId)}${qs}`, signal));
 }
+
+/**
+ * Trajectory gate (`src/trajectory_gate.py`): declarative pass/fail checks
+ * over one run's recorded steps, evaluated with the instance's default spec
+ * (`GET /api/agent-runs/{run_id}/gate`). `runId` is a session id, or the
+ * opaque per-turn id an SSE event carried — either resolves to the same run.
+ */
+export interface GateCheck {
+  id: string;
+  ok: boolean;
+  expected: unknown;
+  actual: unknown;
+  detail: string;
+}
+
+export interface GateReport {
+  ok: boolean;
+  runId: string;
+  sessionId: string;
+  status: string;
+  stepCount: number;
+  checks: GateCheck[];
+}
+
+function gateCheckFrom(raw: Record<string, unknown>): GateCheck {
+  return {
+    id: String(raw.id ?? ''),
+    ok: Boolean(raw.ok),
+    expected: raw.expected,
+    actual: raw.actual,
+    detail: String(raw.detail ?? ''),
+  };
+}
+
+/** Exported for tests: pure parsing, no fetch. */
+export function gateReportFrom(raw: Record<string, unknown>): GateReport {
+  return {
+    ok: Boolean(raw.ok),
+    runId: String(raw.run_id ?? ''),
+    sessionId: String(raw.session_id ?? ''),
+    status: String(raw.status ?? ''),
+    stepCount: typeof raw.step_count === 'number' ? raw.step_count : 0,
+    checks: asArray<Record<string, unknown>>(raw.checks).map(gateCheckFrom),
+  };
+}
+
+export async function gateForRun(runId: string, signal?: AbortSignal): Promise<GateReport> {
+  return gateReportFrom(await getJson<Record<string, unknown>>(`/api/agent-runs/${encodeURIComponent(runId)}/gate`, signal));
+}

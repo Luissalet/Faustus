@@ -862,6 +862,11 @@ app.include_router(setup_code_index_routes())
 from routes.observability_routes import setup_observability_routes
 app.include_router(setup_observability_routes())
 
+# Trajectory gate: declarative, CI-style assertions over one recorded agent
+# run (src/trajectory_gate.py) — GET/POST /api/agent-runs/{run_id}/gate.
+from routes.trajectory_gate_routes import setup_trajectory_gate_routes
+app.include_router(setup_trajectory_gate_routes())
+
 # OPS-07 / EVAL-03: remote-run cost report and the chaos-fixture dry-run door.
 from routes.ops_routes import setup_ops_routes
 app.include_router(setup_ops_routes())
