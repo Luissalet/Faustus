@@ -1369,6 +1369,13 @@ class ResearchHandler:
                 minimum=15,
                 maximum=3600,
             )
+            _research_perspectives = bool(get_setting("research_perspectives", False))
+            _research_perspectives_max = _bounded_int(
+                get_setting("research_perspectives_max", 3),
+                default=3,
+                minimum=2,
+                maximum=6,
+            )
 
             researcher = DeepResearcher(
                 llm_endpoint=llm_endpoint,
@@ -1387,6 +1394,8 @@ class ResearchHandler:
                 search_provider=search_provider,
                 category=category,
                 owner=str((_task_entry or {}).get("owner") or ""),
+                research_perspectives=_research_perspectives,
+                research_perspectives_max=_research_perspectives_max,
             )
             if _task_entry is not None:
                 _task_entry["researcher"] = researcher

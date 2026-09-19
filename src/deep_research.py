@@ -149,6 +149,26 @@ Example:
 }}
 """
 
+RESEARCH_PERSPECTIVES_PROMPT = """\
+You are planning a multi-perspective research investigation.
+
+**Topic:** {question}
+
+Identify {max_perspectives} short, DISTINCT perspectives from which this specific \
+topic should be investigated (for example: practitioner, skeptic/critic, regulator, \
+historian, end-user, investor — pick whatever genuinely fits THIS topic, not a fixed \
+list). For each perspective give a one-line focus and 2-3 concrete questions that \
+perspective would actually ask.
+
+Return ONLY a JSON object:
+{{
+  "perspectives": [
+    {{"name": "Practitioner", "focus": "one-line description of this angle",
+      "questions": ["question one", "question two"]}}
+  ]
+}}
+"""
+
 QUERY_GEN_PROMPT = """\
 You are a research assistant planning web searches.
 
@@ -367,6 +387,18 @@ MAX_SUBQUESTIONS = 24
 # capping it at the same 24 as an unstructured list would delete whole named
 # sections from a brief that simply has more headings than that.
 MAX_GROUPED_SUBQUESTIONS = 60
+# Perspective-guided planning (opt-in, `research_perspectives`): round 1's
+# own query generation already asks the model for this many queries
+# (`_generate_queries`) — perspective questions become candidate round-1
+# queries, so they share that same budget instead of a second, unrelated
+# cap. Kept as a named constant so both call sites read the same number.
+FIRST_ROUND_QUERY_BUDGET = 4
+DEFAULT_PERSPECTIVES_MAX = 3
+PERSPECTIVE_QUESTIONS_PER_PERSPECTIVE = 3
+# Above this normalized-token overlap ratio, a perspective's question is
+# treated as a rephrasing of one already kept (general or another
+# perspective's) rather than a genuinely new angle.
+_PERSPECTIVE_DEDUP_OVERLAP = 0.6
 _MIN_SUBQUESTION_CHARS = 12
 # A grouped section carries its heading and every bullet under it.
 _MAX_SUBQUESTION_CHARS = 700
@@ -805,6 +837,8 @@ class DeepResearcher:
         category: Optional[str] = None,
         quality_profile: Optional[str] = None,
         owner: str = "",
+        research_perspectives: bool = False,
+        research_perspectives_max: int = DEFAULT_PERSPECTIVES_MAX,
     ):
         self.llm_endpoint = llm_endpoint
         # EXEC-04: whose cpu_heavy budget a run this class starts draws from
@@ -864,6 +898,20 @@ class DeepResearcher:
         # The user's own questions, in their order — they become the report's
         # ## sections, so a numbered list asked for survives to the contents.
         self.subquestions: List[str] = []
+        # Perspective-guided planning (opt-in). off by default: like
+        # `research_blind_review`, it is an extra model call on every run,
+        # not just complex ones, so it stays behind a setting rather than
+        # becoming the new normal cost of planning.
+        self.research_perspectives: bool = bool(research_perspectives)
+        self.research_perspectives_max: int = max(1, min(6, int(research_perspectives_max or DEFAULT_PERSPECTIVES_MAX)))
+        # One row per merged/deduped/capped perspective question:
+        # {"perspective", "focus", "question"}. Includes the flat
+        # sub-questions too, labeled "general" — see `_apply_perspective_plan`.
+        # Empty when the setting is off or the step found/kept nothing.
+        self.perspective_plan: List[Dict[str, str]] = []
+        # query text -> perspective label, for the queries actually issued
+        # (round 1 only) — read by `_generate_queries`'s progress event.
+        self.query_perspectives: Dict[str, str] = {}
         self.report_language: str = "en"
         # Numbers are handed out as findings arrive, so a marker written in
         # round two still resolves in the report written after round eight.
@@ -1012,9 +1060,18 @@ class DeepResearcher:
                 break
             self._rounds_started += 1
 
+            # Perspective labels for whichever of THIS round's queries came
+            # out of `_apply_perspective_plan` (round 1 only) — omitted
+            # entirely when the feature is off or produced nothing, so this
+            # event is byte-for-byte the same as before in that case.
+            query_perspectives = {
+                q: label for q in queries
+                if (label := getattr(self, "query_perspectives", {}).get(q))
+            }
             self._emit(phase="searching", round=round_num, queries=len(queries),
                        query_preview=queries[0] if queries else "",
-                       total_sources=len(self.urls_fetched))
+                       total_sources=len(self.urls_fetched),
+                       **({"query_perspectives": query_perspectives} if query_perspectives else {}))
 
             # SEARCH + EXTRACT
             round_findings = await self._search_and_extract(queries, question)
@@ -1282,8 +1339,9 @@ class DeepResearcher:
                     parts.append("Key topics: " + ", ".join(parsed["key_topics"]))
                 if parsed.get("success_criteria"):
                     parts.append("Success: " + parsed["success_criteria"])
-                return "\n".join(parts) if parts else response
-            return response
+                plan_text = "\n".join(parts) if parts else response
+            else:
+                plan_text = response
         except Exception as e:
             # A degraded run the user can see beats a silent one: name what
             # broke and what we are doing instead, and hand the loop a real
@@ -1300,7 +1358,162 @@ class DeepResearcher:
                 message=(f"Planning step failed ({reason}); researching the "
                          f"{len(fallback)} {noun} directly."),
             )
-            return "Sub-questions: " + "; ".join(fallback)
+            plan_text = "Sub-questions: " + "; ".join(fallback)
+
+        # Perspective-guided planning (opt-in) — never raises, never changes
+        # `plan_text`/`self.subquestions` (the report's section structure).
+        await self._apply_perspective_plan(question)
+        self._emit(
+            phase="planning",
+            perspectives=bool(self.perspective_plan),
+            plan=list(self.perspective_plan),
+        )
+        return plan_text
+
+    # ------------------------------------------------------------------
+    # Perspective-guided question planning (opt-in: `research_perspectives`)
+    # ------------------------------------------------------------------
+    async def _apply_perspective_plan(self, question: str) -> None:
+        """Fill `self.perspective_plan` with perspective-labeled questions.
+
+        One extra model call, made only when `self.research_perspectives`
+        is on: 2-4 short, distinct perspectives on `question`, each
+        contributing 2-3 questions it would ask. Merged with the flat
+        sub-questions already in `self.subquestions` — kept as perspective
+        "general" so coverage never shrinks — de-duplicated and capped to
+        `FIRST_ROUND_QUERY_BUDGET` (see `_merge_perspective_plan`).
+
+        Never touches `self.subquestions` itself, which still drives the
+        report's ## section structure; this only feeds round 1's query
+        generation (`_generate_queries`). Any failure or junk model output
+        leaves `self.perspective_plan` empty — logged at debug — so a run
+        with this on behaves exactly like one with it off the moment the
+        extra call doesn't pan out.
+        """
+        self.perspective_plan = []
+        if not getattr(self, "research_perspectives", False):
+            return
+        try:
+            general = [q for q in (self.subquestions or []) if q]
+            if not general:
+                fallback_q = str(question or "").strip()
+                general = [fallback_q] if fallback_q else []
+            perspective_items = await self._generate_perspective_questions(question)
+            if not perspective_items:
+                return
+            merged = self._merge_perspective_plan(general, perspective_items)
+            if any(item.get("perspective") != "general" for item in merged):
+                self.perspective_plan = merged
+        except Exception as e:  # noqa: BLE001 - perspectives are never load-bearing
+            logger.debug(
+                f"Perspective plan step failed, falling back to flat plan: "
+                f"{type(e).__name__}: {e}"
+            )
+            self.perspective_plan = []
+
+    async def _generate_perspective_questions(self, question: str) -> List[Dict[str, str]]:
+        """The one extra model call: perspectives + their questions, in a
+        single JSON response, via the same JSON-robust helper the flat
+        planner already uses. Returns `[]` on any parse failure or output
+        that doesn't look like the expected shape — callers must fall back
+        silently, never break the run over this."""
+        max_perspectives = max(2, min(4, int(getattr(self, "research_perspectives_max", DEFAULT_PERSPECTIVES_MAX)
+                                              or DEFAULT_PERSPECTIVES_MAX)))
+        prompt = current_date_context() + RESEARCH_PERSPECTIVES_PROMPT.format(
+            question=question, max_perspectives=max_perspectives,
+        )
+        try:
+            response = await self._llm(
+                [{"role": "user", "content": prompt}],
+                temperature=0.4,
+                max_tokens=900,
+                timeout=getattr(self, "planning_timeout", 90),
+            )
+        except Exception as e:
+            logger.debug(f"Perspective generation call failed: {type(e).__name__}: {e}")
+            return []
+
+        parsed = self._parse_json_object(response)
+        if not isinstance(parsed, dict):
+            return []
+        perspectives = parsed.get("perspectives")
+        if not isinstance(perspectives, list):
+            return []
+
+        out: List[Dict[str, str]] = []
+        for item in perspectives[:max_perspectives]:
+            if not isinstance(item, dict):
+                continue
+            try:
+                name = str(item.get("name") or "").strip()[:60]
+                focus = str(item.get("focus") or "").strip()[:200]
+            except Exception:  # noqa: BLE001
+                continue
+            questions = item.get("questions")
+            if not name or not isinstance(questions, list):
+                continue
+            count = 0
+            for q in questions:
+                if count >= PERSPECTIVE_QUESTIONS_PER_PERSPECTIVE:
+                    break
+                try:
+                    qtext = (q if isinstance(q, str) else str(q)).strip()
+                except Exception:  # noqa: BLE001
+                    continue
+                if len(qtext) < _MIN_SUBQUESTION_CHARS:
+                    continue
+                out.append({
+                    "perspective": name,
+                    "focus": focus,
+                    "question": qtext[:_MAX_SUBQUESTION_CHARS],
+                })
+                count += 1
+        return out
+
+    def _merge_perspective_plan(self, general: List[str],
+                                perspective_items: List[Dict[str, str]]
+                                ) -> List[Dict[str, str]]:
+        """De-dupe (normalized text + token-overlap threshold) and cap to
+        `FIRST_ROUND_QUERY_BUDGET`. `general` is always kept in full — "the
+        original flat questions too, ... so coverage never shrinks" — and
+        labeled perspective "general"; perspective questions fill whatever
+        budget is left, in the order their perspective was returned."""
+        merged: List[Dict[str, str]] = []
+        seen_keys: List[Set[str]] = []
+
+        def _try_add(perspective: str, focus: str, text: str) -> bool:
+            text = (text or "").strip()
+            if not text:
+                return False
+            key = self._coverage_tokens(text)
+            if not key:
+                key = {text.lower()}
+            for existing in seen_keys:
+                if not existing:
+                    continue
+                overlap = len(key & existing) / max(1, min(len(key), len(existing)))
+                if overlap >= _PERSPECTIVE_DEDUP_OVERLAP:
+                    return False
+            seen_keys.append(key)
+            merged.append({
+                "perspective": perspective or "general",
+                "focus": focus or "",
+                "question": text,
+            })
+            return True
+
+        for q in general:
+            _try_add("general", "", q)
+
+        budget = max(len(merged), FIRST_ROUND_QUERY_BUDGET)
+        remaining = max(0, budget - len(merged))
+        for item in perspective_items:
+            if remaining <= 0:
+                break
+            if _try_add(item.get("perspective", ""), item.get("focus", ""), item.get("question", "")):
+                remaining -= 1
+
+        return merged
 
     # ------------------------------------------------------------------
     # Sub-questions — the user's outline, kept
@@ -1507,7 +1720,33 @@ class DeepResearcher:
         # is how a resumed run re-issued queries already excluded by
         # `queries_used` and came back with zero new ones for its first round.
         if round_num == 1 and not report:
-            num_queries = 4
+            num_queries = FIRST_ROUND_QUERY_BUDGET
+            # Perspective-guided planning (opt-in): the plan built in
+            # `_apply_perspective_plan` is already a capped, deduped list of
+            # perspective-labeled questions — use those as round 1's actual
+            # search queries instead of asking the model for a fresh set. A
+            # skipped call here is what keeps this feature's total extra
+            # model calls at "one, max" (see that method's docstring): the
+            # perspectives call replaces this one rather than adding to it.
+            plan = getattr(self, "perspective_plan", None)
+            if plan:
+                perspective_queries: List[str] = []
+                for item in plan:
+                    q = str(item.get("question") or "").strip()
+                    if not q or q in self.queries_used or q in perspective_queries:
+                        continue
+                    perspective_queries.append(q)
+                    if len(perspective_queries) >= num_queries:
+                        break
+                if perspective_queries:
+                    self.query_perspectives = {
+                        q: next((str(i.get("perspective") or "general") for i in plan
+                                 if str(i.get("question") or "").strip() == q), "general")
+                        for q in perspective_queries
+                    }
+                    self.queries_used.update(perspective_queries)
+                    logger.info(f"Round {round_num} perspective-guided queries: {perspective_queries}")
+                    return perspective_queries
             round_instruction = (
                 "This is the first round — generate broad, diverse queries "
                 "that explore the key facets of the question."
@@ -2318,10 +2557,16 @@ class DeepResearcher:
     # Helpers
     # ------------------------------------------------------------------
     def _emit(self, **kwargs):
-        """Send a progress event via the callback, if one is registered."""
-        if self._progress:
+        """Send a progress event via the callback, if one is registered.
+
+        Some unit tests build a `DeepResearcher` via `__new__` to exercise
+        one method in isolation without the full `__init__` (same reasoning
+        as `_note_failure`) — `getattr` keeps this from raising
+        `AttributeError` on those."""
+        progress = getattr(self, "_progress", None)
+        if progress:
             try:
-                self._progress(kwargs)
+                progress(kwargs)
             except Exception:
                 pass
 
@@ -2669,6 +2914,10 @@ class DeepResearcher:
             stats["Search"] = ", ".join(self.providers_used)
         if self.category:
             stats["Category"] = self.category.capitalize()
+        plan = getattr(self, "perspective_plan", None) or []
+        used = sorted({str(i.get("perspective")) for i in plan if i.get("perspective") not in (None, "general")})
+        if used:
+            stats["Perspectives"] = ", ".join(used)
         audit = getattr(self, "citation_audit", None)
         registry = getattr(self, "citations", None)
         if audit is not None and registry is not None:

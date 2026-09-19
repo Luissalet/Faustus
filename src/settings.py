@@ -342,6 +342,14 @@ DEFAULT_SETTINGS = {
     # the old 30s/60s per-call defaults.
     "research_planning_timeout_seconds": 90,
     "research_query_timeout_seconds": 90,
+    # Perspective-guided question planning (src/deep_research.py): before
+    # round 1, ask the model for 2-4 distinct perspectives on the topic and
+    # 2-3 questions each, merged with the flat sub-question list and fed in
+    # as round 1's search queries. One extra model call, made only when this
+    # is on. Off by default for the same reason as research_blind_review
+    # below: it is an extra call on EVERY run, not just complex ones.
+    "research_perspectives": False,
+    "research_perspectives_max": 3,
     "research_extraction_concurrency": 3,
     # Hard wall-clock cap on a single deep-research run. The previous 600s
     # (10 min) default cut off slow local / edge LLMs mid-synthesis; 1800s

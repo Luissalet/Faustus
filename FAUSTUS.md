@@ -5952,3 +5952,45 @@ UI: Ajustes → Tools gana una tarjeta "Argument rules" (`studio/src/screens/set
 **No verificable sin la máquina en vivo.** El panel de Ajustes no se ha visto pintado en un navegador real: el entorno de esta tarea no tiene acceso de red desde la extensión de Chrome hacia el `localhost` de este contenedor, así que la verificación de UI se quedó en el tipado (`tsc`) y en la API real por `curl`, no en una captura de pantalla del formulario ni en un clic real sobre "Save rule"/"Test".
 
 **Ficheros.** `src/tool_arg_policy.py` (nuevo), `src/agent_loop.py`, `src/tool_execution.py`, `src/settings.py`, `routes/tool_arg_policy_routes.py` (nuevo), `app.py`, `studio/src/adapters/tools.ts`, `studio/src/screens/settings/Tools.tsx`, `docs/ui/i18n/es.tsv`, `studio/src/i18n/es.ts`, `tests/test_tool_arg_policy.py` (nuevo).
+
+## 133. Deep research: planificación guiada por perspectivas (19-09-2026)
+
+**Pedido.** El planificador de deep research (`src/deep_research.py`) siempre producía una lista plana de subpreguntas/consultas. Añadir un paso opcional: a partir del tema, pedirle al modelo 2-4 perspectivas breves y distintas ("practicante", "crítico/escéptico", "regulador", "historiador"... lo que encaje con el tema, nunca una lista fija), 2-3 preguntas por perspectiva, fusionarlas con las subpreguntas planas de siempre, deduplicar y capar al presupuesto de consultas ya existente, y que la etiqueta de perspectiva llegue hasta los eventos de progreso que ya emite la investigación.
+
+**Hecho.** `_apply_perspective_plan()` (nuevo, en `DeepResearcher._create_plan`): una llamada extra al modelo (mismo endpoint, mismo helper JSON-robusto que ya usaba el planificador — `RESEARCH_PERSPECTIVES_PROMPT` nuevo) que devuelve `{"perspectives":[{"name","focus","questions":[...]}]}`. `_merge_perspective_plan()` fusiona esas preguntas con las subpreguntas planas de siempre (etiquetadas `"general"`, nunca se pierden — "la cobertura nunca se reduce"), deduplica por solapamiento de tokens normalizados (umbral 0.6, reusa el mismo tokenizador de `_coverage_snapshot`) y capa el total a `FIRST_ROUND_QUERY_BUDGET` (4, la misma cifra que ya usaba la ronda 1 para pedir consultas) — las preguntas generales nunca se recortan aunque superen el presupuesto; las de perspectiva rellenan lo que quede. El resultado vive en `self.perspective_plan` (nunca toca `self.subquestions`, que sigue marcando las secciones `##` del informe) y se usa directamente como las consultas de la ronda 1 en `_generate_queries` — por eso la ronda 1 se AHORRA su propia llamada al modelo cuando hay plan de perspectivas, dejando el total de llamadas extra en como mucho una, tal y como pedía el encargo. Cualquier fallo o basura del modelo deja `perspective_plan` vacío (log en `debug`) y todo sigue exactamente igual que antes — nunca rompe la investigación.
+
+Ajuste nuevo `research_perspectives` (bool, **por defecto `False`**): se decidió así, no `True`, porque es una llamada extra al modelo en CADA ejecución (no solo en las complejas) — el mismo razonamiento ya documentado para `research_blind_review`, que también está apagado por defecto por el mismo motivo. `research_perspectives_max` (int, por defecto 3, acotado 2-6). Ambos se leen en `src/research_handler.py` con `get_setting(...)` igual que el resto de ajustes de investigación y se pasan al constructor de `DeepResearcher`.
+
+Las etiquetas llegan al exterior por tres vías: el evento `phase="planning"` ahora lleva `perspectives` (bool) y `plan` (la lista completa `{perspective, focus, question}`); el evento `phase="searching"` de la ronda 1 lleva `query_perspectives` (mapa consulta→etiqueta) cuando aplica, sin tocar el evento cuando el ajuste está apagado; y `get_stats()` añade una fila `"Perspectives"` con los nombres usados (sin contar `"general"`).
+
+**Verificado.** `tests/test_research_perspectives.py` (nuevo, 13 pruebas): parseo de una respuesta buena y de una con basura/forma incorrecta, deduplicación por solapamiento manteniendo las preguntas generales, tope al presupuesto de la ronda 1, que las preguntas generales nunca se pierden aunque superen el tope, que las etiquetas llegan a `self.perspective_plan` y al evento `phase="planning"`, que con el ajuste apagado `_create_plan` hace exactamente la misma llamada que antes (mismo número de llamadas al modelo, cero llamadas de perspectivas), y que un fallo en la llamada de perspectivas cae en silencio al plan plano de siempre. `pytest tests/test_research_perspectives.py` + las 39 suites existentes que tocan `deep_research`/`DeepResearcher` (657 pruebas) en verde. `guard.sh tests/test_research_perspectives.py <suites de deep research>`: cero fallos nuevos frente a la base. Se corrigió de paso un `AttributeError` latente en `_emit()` (no comprobaba `self._progress` con `getattr`) que varios tests ya construían un `DeepResearcher` con `__new__` sin ese atributo — ahora `_emit` es tan tolerante como `_note_failure`.
+
+**No verificable sin la máquina en vivo.** Esta ronda no tuvo acceso de red a un servidor llama.cpp real (127.0.0.1:8082) desde el entorno de la tarea, así que la llamada real al modelo local (`qwen2.5-3b-helper`) no se ha ejecutado aquí — la cobertura es por test con un `_llm` simulado. Para probarlo en vivo: `scripts/preview_research_perspectives.py` (nuevo) ejecuta SOLO el paso de planificación (sin búsqueda web) y imprime las preguntas etiquetadas; ver el bloque siguiente.
+
+**Cómo probarlo en vivo desde un script de Windows**, contra un servidor llama.cpp local en `http://127.0.0.1:8082` con el alias de modelo `qwen2.5-3b-helper`:
+
+```
+python scripts\preview_research_perspectives.py ^
+    --endpoint http://127.0.0.1:8082/v1 ^
+    --model qwen2.5-3b-helper ^
+    --question "Should this city switch its bus fleet to electric?"
+```
+
+o, importado como función desde otro script (sin tocar la CLI):
+
+```python
+import asyncio
+from scripts.preview_research_perspectives import preview_perspectives
+
+researcher = asyncio.run(preview_perspectives(
+    question="Should this city switch its bus fleet to electric?",
+    endpoint="http://127.0.0.1:8082/v1",
+    model="qwen2.5-3b-helper",
+))
+for item in researcher.perspective_plan:
+    print(item["perspective"], "-", item["question"])
+```
+
+`preview_perspectives()` construye un `DeepResearcher` con `research_perspectives=True`, llama solo a `_create_plan()` (que a su vez llama a `_apply_perspective_plan()`) y devuelve el objeto sin abrir ninguna búsqueda web ni tocar `bg_jobs` — la forma más barata de ver qué preguntas etiquetadas produciría una investigación real antes de lanzarla entera.
+
+**Ficheros.** `src/deep_research.py`, `src/settings.py`, `src/research_handler.py`, `tests/test_research_perspectives.py` (nuevo), `scripts/preview_research_perspectives.py` (nuevo).
