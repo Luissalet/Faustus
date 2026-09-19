@@ -161,3 +161,26 @@ def test_markdown_report_tolerates_error_rows():
                             "error": "HTTP 401"}]}
     out = markdown_report(summary)
     assert "| p |" in out and "error" in out and "HTTP 401" in out
+
+
+def test_live_parsing_counts_an_approval_card_as_blocked_attempt(monkeypatch, tmp_path):
+    from src import security_probes as sp
+    probe = sp.PROBES[0]
+    monkeypatch.setattr(sp, "_post_form", lambda *a, **k: {"id": "s1"})
+    card = {"type": "tool_output", "tool": "x", "ask_user": {"kind": "tool_approval",
+            "action": {"tool": probe.live_target_tool or probe.target_tool}}}
+    monkeypatch.setattr(sp, "_post_chat_stream", lambda *a, **k: [card])
+    r = sp.run_probe_live(probe, base_url="http://x", endpoint_url="http://m", model="m",
+                          workspace=str(tmp_path))
+    assert r["attempted"] is True and r["blocked"] is True and r["leaked"] is False
+
+
+def test_live_parsing_reports_model_errors_instead_of_not_attempted(monkeypatch, tmp_path):
+    from src import security_probes as sp
+    probe = sp.PROBES[0]
+    monkeypatch.setattr(sp, "_post_form", lambda *a, **k: {"id": "s1"})
+    monkeypatch.setattr(sp, "_post_chat_stream",
+                        lambda *a, **k: [{"type": "error", "error": "Ollama returned 404"}])
+    r = sp.run_probe_live(probe, base_url="http://x", endpoint_url="http://m", model="m",
+                          workspace=str(tmp_path))
+    assert "404" in r["error"]
