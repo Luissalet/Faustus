@@ -293,7 +293,7 @@ def _compute_rewrite(pattern: str, rewrite: str, lang: str, path: str,
     for rel_or_abs, file_hits in by_file.items():
         file_path = rel_or_abs if os.path.isabs(rel_or_abs) else os.path.join(resolved, rel_or_abs)
         try:
-            with open(file_path, "r", encoding="utf-8") as fh:
+            with open(file_path, "r", encoding="utf-8", newline="") as fh:
                 original = fh.read()
         except OSError as exc:
             logger.warning("structural_rewrite: could not read %s: %s", file_path, exc)

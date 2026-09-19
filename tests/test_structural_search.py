@@ -304,3 +304,15 @@ def test_real_search_over_faustus_src_except_without_log():
     assert proc.returncode in (0, 1)
     hits = json.loads(proc.stdout) if proc.stdout.strip() else []
     assert len(hits) > 0, "expected at least one try/except Exception block in src/"
+
+
+def test_rewrite_keeps_crlf_files_intact(ws):
+    """ast-grep reports byte offsets; a CRLF file read in text mode shifts
+    them (seen on Windows, where the fixture files are written with CRLF)."""
+    path = os.path.join(ws, "crlf.py")
+    with open(path, "wb") as fh:
+        fh.write(b"def a():\r\n    foo(1, None)\r\n    foo(2, 'keep')\r\n")
+    result = ss.rewrite_apply("foo($A, None)", "foo($A)", "python", path)
+    assert result["exit_code"] == 0
+    data = open(path, "rb").read()
+    assert data == b"def a():\r\n    foo(1)\r\n    foo(2, 'keep')\r\n"
