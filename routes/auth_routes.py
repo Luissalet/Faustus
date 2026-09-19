@@ -879,6 +879,16 @@ def setup_auth_routes(auth_manager: AuthManager) -> APIRouter:
         _INT_RANGES = {
             "agent_max_rounds": (1, 200),
             "agent_max_tool_calls": (0, 1000),  # 0 = unlimited
+            # 0 = do not send (see src/llm_core._apply_local_generation_stability
+            # and _model_load_defaults, which treat 0/empty as "no floor").
+            "local_top_k_default": (0, 200),
+        }
+        # Sampler floors for local endpoints (src/settings.py): 0 means "do not
+        # send" for each, so the lower bound stays 0 rather than the field's
+        # usual minimum.
+        _FLOAT_RANGES = {
+            "local_temperature_default": (0.0, 2.0),
+            "local_top_p_default": (0.0, 1.0),
         }
         for key in DEFAULT_SETTINGS:
             if key in RETIRED_SETTING_KEYS:
@@ -892,6 +902,13 @@ def setup_auth_routes(auth_manager: AuthManager) -> APIRouter:
                     val = int(val)
                 except (TypeError, ValueError):
                     raise HTTPException(400, f"{key} must be an integer")
+                val = max(lo, min(val, hi))
+            elif key in _FLOAT_RANGES:
+                lo, hi = _FLOAT_RANGES[key]
+                try:
+                    val = float(val)
+                except (TypeError, ValueError):
+                    raise HTTPException(400, f"{key} must be a number")
                 val = max(lo, min(val, hi))
             else:
                 # Agent / browser / desktop keys carry a declared type and

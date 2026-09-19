@@ -358,6 +358,9 @@ def test_routing_local_ollama_v1_url_always_moves_to_native(store, monkeypatch):
     because it is the only surface that carries repeat_penalty/min_p."""
     assert llm_core._model_load_defaults("http://127.0.0.1:11434/v1", "qwen3.5:9b") == {
         "repeat_penalty": 1.05, "min_p": 0.05,
+        # local_top_p_default/local_top_k_default: the same global sampler
+        # floor idea, added alongside repeat_penalty/min_p.
+        "top_p": 0.8, "top_k": 20,
     }
     routed = llm_core._route_for_gen_overrides(
         "http://127.0.0.1:11434/v1",

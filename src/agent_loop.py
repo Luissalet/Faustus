@@ -6284,6 +6284,23 @@ async def _stream_agent_loop_body(
             logger.info("[code-refs] windows=%s outside=%s",
                         [f"{r.path}:{r.line}" for r in _code_ref_ctx.get("refs") or []],
                         _code_ref_ctx.get("outside"))
+    # `local_temperature_default` (settings.py): the engines' own default
+    # (1.0, DEFAULT_TEMPERATURE) is what made a local 27B ramble ("But
+    # wait… Actually…") for minutes on a simple request. Unless the user
+    # pinned a temperature for this session (`temperature_explicit`), a
+    # local endpoint gets the measured-good default instead of the generic
+    # one. A per-model `model_load_options[...].extra` temperature (Ollama
+    # only) is applied later, downstream in llm_core, and still overwrites
+    # whatever lands here; an explicit `/temp` always wins by never
+    # reaching this branch at all (`temperature_explicit` is True). 0/empty
+    # leaves `temperature` untouched (nothing to apply).
+    try:
+        from src.llm_core import local_temperature_floor as _local_temperature_floor
+        _t_default = _local_temperature_floor(endpoint_url, temperature_explicit)
+        if _t_default is not None:
+            temperature = _t_default
+    except Exception as _temp_default_err:
+        logger.debug("local temperature default skipped: %s", _temp_default_err)
     _ody_qwen_finetune_model = _is_odysseus_qwen_model(model)
     # The caller's temperature survives for non-qwen routes; the qwen cap is
     # applied per candidate (here for the primary, in the candidate request

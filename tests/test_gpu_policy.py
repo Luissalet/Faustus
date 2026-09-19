@@ -114,14 +114,19 @@ def test_llm_core_load_defaults_carry_the_policy_under_a_per_model_pin(box, monk
     from src import llm_core
     from src import model_load_options as mlo
     box["prefer"] = 1
+    # local_repeat_penalty_default/local_min_p_default/local_top_p_default/
+    # local_top_k_default: the global sampler floor lands on every local
+    # Ollama target regardless of the GPU pin, so every expectation below
+    # carries it too.
+    _floor = {"repeat_penalty": 1.05, "min_p": 0.05, "top_p": 0.8, "top_k": 20}
     monkeypatch.setattr(mlo, "resolve_for_request", lambda url, model: {"num_ctx": 8192})
-    assert llm_core._model_load_defaults("http://127.0.0.1:11434/v1", "qwen3.5:9b") == {"num_ctx": 8192, "main_gpu": 1}
+    assert llm_core._model_load_defaults("http://127.0.0.1:11434/v1", "qwen3.5:9b") == {"num_ctx": 8192, "main_gpu": 1, **_floor}
     # a per-model pin wins over the policy
     monkeypatch.setattr(mlo, "resolve_for_request", lambda url, model: {"main_gpu": 0})
-    assert llm_core._model_load_defaults("http://127.0.0.1:11434/v1", "qwen3.5:9b") == {"main_gpu": 0}
+    assert llm_core._model_load_defaults("http://127.0.0.1:11434/v1", "qwen3.5:9b") == {"main_gpu": 0, **_floor}
     # a model that does not fit the preferred card: no main_gpu at all
     monkeypatch.setattr(mlo, "resolve_for_request", lambda url, model: {})
-    assert llm_core._model_load_defaults("http://127.0.0.1:11434/v1", "qwen3.8:27b-q4_K_M") == {}
+    assert llm_core._model_load_defaults("http://127.0.0.1:11434/v1", "qwen3.8:27b-q4_K_M") == _floor
 
 
 def test_set_preferred_index_validates_and_persists(tmp_path, monkeypatch):

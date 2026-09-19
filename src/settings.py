@@ -470,6 +470,21 @@ DEFAULT_SETTINGS = {
     # or per-request value always wins over these.
     "local_repeat_penalty_default": 1.05,
     "local_min_p_default": 0.05,
+    # Sampler floor for temperature/top_p/top_k on a LOCAL endpoint (Ollama
+    # native or a self-hosted OpenAI-compatible loopback server — llama.cpp's
+    # llama-server, vLLM, LM Studio-style). The engines' own defaults
+    # (temperature 1.0, top_p 0.95, no top_k) left a local 27B rambling
+    # ("But wait… Actually…") for minutes per simple request; measured good
+    # values for that model cut a unit of work from ~100s to ~30-60s and
+    # removed the rambling. Applied under the SAME precedence as
+    # `local_repeat_penalty_default`/`local_min_p_default` above: global
+    # default -> per-model `model_load_options[...].extra` -> an explicit
+    # per-turn/session override (`/temp`, `/topp`, `/topk`, `gen_overrides`),
+    # which always wins. 0 (or empty) means "do not send" for any of the
+    # three. Never applied to a remote provider.
+    "local_temperature_default": 0.6,
+    "local_top_p_default": 0.8,
+    "local_top_k_default": 20,
     # Gibberish-script guard (src.llm_core._DegenerateStreamGuard): over a
     # sliding window of `local_gibberish_window_chars` streamed characters,
     # abort as degenerate when more than this fraction of alphabetic

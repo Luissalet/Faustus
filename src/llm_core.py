@@ -1624,6 +1624,23 @@ def _apply_local_generation_stability(payload: Dict, url: str, model: str) -> No
         # or the reroute is bypassed.
         payload.setdefault("repeat_penalty", _local_sampler_default("local_repeat_penalty_default", 1.05))
         payload.setdefault("min_p", _local_sampler_default("local_min_p_default", 0.05))
+        # `local_top_p_default`/`local_top_k_default`: same floor as the two
+        # above (`setdefault` only — an explicit `/topp`/`/topk` already
+        # landed in `payload` via `_apply_gen_overrides_openai`, which runs
+        # BEFORE this function, so it always wins). The temperature floor
+        # for this path is applied earlier, in `_stream_agent_loop_body`,
+        # where the explicit/default distinction is tracked (`temperature`
+        # already carries the right value by the time it reaches `payload`
+        # here). 0/empty (`_local_sampler_default_optional` returns None)
+        # means "do not send".
+        if "top_p" not in payload:
+            _top_p = _local_sampler_default_optional("local_top_p_default")
+            if _top_p is not None:
+                payload["top_p"] = _top_p
+        if "top_k" not in payload:
+            _top_k = _local_sampler_default_optional("local_top_k_default")
+            if _top_k is not None:
+                payload["top_k"] = int(_top_k)
         if not payload.get("max_tokens") and not payload.get("max_completion_tokens"):
             try:
                 cap = int(_local_sampler_default("local_openai_max_tokens_default", 8192))
@@ -3686,6 +3703,21 @@ def _model_load_defaults(url: str, model: str) -> Dict:
             defaults["repeat_penalty"] = _local_sampler_default("local_repeat_penalty_default", 1.05)
         if "min_p" not in defaults and "min_p" not in extra_block:
             defaults["min_p"] = _local_sampler_default("local_min_p_default", 0.05)
+        # `local_top_p_default`/`local_top_k_default`: same floor idea as the
+        # two above, for the sampler knobs that actually stop the rambling
+        # (see `local_temperature_default`'s own comment in settings.py — the
+        # temperature floor itself is applied earlier, in
+        # `_stream_agent_loop_body`, where the explicit/default distinction
+        # is already tracked). 0/empty (`_local_sampler_default_optional`
+        # returns None) means "do not send".
+        if "top_p" not in defaults and "top_p" not in extra_block:
+            _top_p = _local_sampler_default_optional("local_top_p_default")
+            if _top_p is not None:
+                defaults["top_p"] = _top_p
+        if "top_k" not in defaults and "top_k" not in extra_block:
+            _top_k = _local_sampler_default_optional("local_top_k_default")
+            if _top_k is not None:
+                defaults["top_k"] = int(_top_k)
     return defaults
 
 
@@ -3753,6 +3785,51 @@ def _local_sampler_default(setting_key: str, fallback: float) -> float:
         return float(raw)
     except (TypeError, ValueError):
         return fallback
+
+
+def _local_sampler_default_optional(setting_key: str) -> Optional[float]:
+    """Like `_local_sampler_default`, but for the temperature/top_p/top_k
+    floors (`local_temperature_default`/`local_top_p_default`/
+    `local_top_k_default`, settings.py) where 0 or empty explicitly means
+    "do not send this field" rather than "send zero". Returns ``None`` in
+    that case, and whenever the setting is missing or not a number."""
+    try:
+        from src.settings import get_setting
+        raw = get_setting(setting_key, None)
+    except Exception:
+        return None
+    if raw in (None, ""):
+        return None
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return None
+    return value if value > 0 else None
+
+
+def local_temperature_floor(endpoint_url: str, temperature_explicit: bool) -> Optional[float]:
+    """Resolve `local_temperature_default` (settings.py) for one chat/agent
+    turn. Returns ``None`` when the caller must keep whatever temperature it
+    already has: an explicit per-turn/session override (`temperature_explicit`
+    True — a `/temp` in this chat), a non-local endpoint, or the setting
+    itself is 0/empty ("do not send"). Called from
+    `src.agent_loop._stream_agent_loop_body`, ahead of the existing
+    `agent_local_temperature_cap` logic, so a local turn gets the
+    measured-good default (0.6) instead of the engine's own (1.0,
+    `LLMConfig.DEFAULT_TEMPERATURE`) before any narrower cap is considered.
+    """
+    if temperature_explicit:
+        return None
+    try:
+        from src.model_context import is_local_endpoint
+    except Exception:
+        return None
+    try:
+        if not is_local_endpoint(endpoint_url):
+            return None
+    except Exception:
+        return None
+    return _local_sampler_default_optional("local_temperature_default")
 
 
 def _apply_gen_overrides_ollama(payload: Dict, overrides: Dict) -> None:

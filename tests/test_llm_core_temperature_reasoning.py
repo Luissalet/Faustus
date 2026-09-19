@@ -213,6 +213,121 @@ def test_ollama_endpoint_is_not_routed_through_the_generic_openai_floor():
     assert "max_tokens" not in payload
 
 
+# ── local_temperature_default / local_top_p_default / local_top_k_default ──
+#
+# Same rambling ("But wait… Actually…") caused by the engines' own defaults
+# (temperature 1.0, top_p 0.95, no top_k) — measured good values for the
+# owner's local 27B (temperature 0.6, top_p 0.8, top_k 20) cut a unit of
+# work from ~100s to ~30-60s. Unlike repeat_penalty/min_p, the temperature
+# floor is applied in src.agent_loop._stream_agent_loop_body (where the
+# explicit/default distinction, `temperature_explicit`, is already tracked)
+# rather than here; top_p/top_k follow the exact repeat_penalty/min_p
+# pattern (setdefault on the loopback path, `_model_load_defaults` on the
+# Ollama-native one).
+
+def test_new_local_sampler_defaults_are_registered():
+    from src.settings import DEFAULT_SETTINGS
+    assert DEFAULT_SETTINGS["local_temperature_default"] == 0.6
+    assert DEFAULT_SETTINGS["local_top_p_default"] == 0.8
+    assert DEFAULT_SETTINGS["local_top_k_default"] == 20
+
+
+def test_local_sampler_default_optional_treats_zero_as_do_not_send(monkeypatch):
+    from src import settings as settings_mod
+
+    def _fake_get_setting(key, default=None):
+        if key == "local_top_p_default":
+            return 0
+        if key == "local_top_k_default":
+            return ""
+        return default
+    monkeypatch.setattr(settings_mod, "get_setting", _fake_get_setting)
+    assert llm_core._local_sampler_default_optional("local_top_p_default") is None
+    assert llm_core._local_sampler_default_optional("local_top_k_default") is None
+
+
+def test_loopback_llama_server_gets_the_top_p_top_k_floor(monkeypatch):
+    payload = {"model": "qwen3.8-27b-q8-llamacpp", "messages": [], "temperature": 0.6}
+    llm_core._apply_local_generation_stability(
+        payload, "http://127.0.0.1:8081/v1/chat/completions", "qwen3.8-27b-q8-llamacpp",
+    )
+    assert payload["top_p"] == 0.8
+    assert payload["top_k"] == 20
+
+
+def test_loopback_llama_server_explicit_top_p_top_k_win_over_the_floor():
+    """An explicit `/topp`/`/topk` (`_apply_gen_overrides_openai`) already
+    landed in `payload` before `_apply_local_generation_stability` runs on
+    the real request path — the floor only fills in what is still unset."""
+    payload = {"model": "qwen3.8-27b-q8-llamacpp", "messages": [], "top_p": 0.95, "top_k": 40}
+    llm_core._apply_local_generation_stability(
+        payload, "http://127.0.0.1:8081/v1/chat/completions", "qwen3.8-27b-q8-llamacpp",
+    )
+    assert payload["top_p"] == 0.95
+    assert payload["top_k"] == 40
+
+
+def test_remote_openai_provider_gets_no_top_p_top_k_floor():
+    payload = {"model": "gpt-4o", "messages": [], "temperature": 1.0}
+    llm_core._apply_local_generation_stability(payload, "https://api.openai.com/v1", "gpt-4o")
+    assert "top_p" not in payload
+    assert "top_k" not in payload
+
+
+def test_ollama_native_model_load_defaults_get_the_top_p_top_k_floor():
+    defaults = llm_core._model_load_defaults("http://127.0.0.1:11434/v1", "qwen3.5:9b")
+    assert defaults["top_p"] == 0.8
+    assert defaults["top_k"] == 20
+    assert defaults["repeat_penalty"] == 1.05
+    assert defaults["min_p"] == 0.05
+
+
+def test_ollama_native_model_load_defaults_respect_a_saved_extra(monkeypatch):
+    """A saved `model_load_options[...].extra.top_p` must not be shadowed by
+    the global floor — same rule already enforced for repeat_penalty/min_p."""
+    def _fake_resolve(url, model):
+        return {"extra": {"top_p": 0.95}}
+    monkeypatch.setattr("src.model_load_options.resolve_for_request", _fake_resolve)
+    defaults = llm_core._model_load_defaults("http://127.0.0.1:11434/v1", "qwen3.5:9b")
+    assert "top_p" not in defaults
+    assert defaults["top_k"] == 20
+
+
+def test_remote_endpoint_model_load_defaults_get_no_local_floor():
+    defaults = llm_core._model_load_defaults("https://api.openai.com/v1", "gpt-4o")
+    assert "top_p" not in defaults
+    assert "top_k" not in defaults
+    assert "repeat_penalty" not in defaults
+
+
+# ── local_temperature_floor (src.agent_loop._stream_agent_loop_body's entry
+#    point into the temperature default) ──
+
+def test_local_temperature_floor_applies_for_a_local_endpoint():
+    assert llm_core.local_temperature_floor("http://127.0.0.1:11434", False) == 0.6
+
+
+def test_local_temperature_floor_is_none_when_temperature_is_explicit():
+    """A `/temp` in this session always wins — the floor never reaches
+    a turn where the caller already resolved an explicit temperature."""
+    assert llm_core.local_temperature_floor("http://127.0.0.1:11434", True) is None
+
+
+def test_local_temperature_floor_is_none_for_a_remote_endpoint():
+    assert llm_core.local_temperature_floor("https://api.openai.com/v1", False) is None
+
+
+def test_local_temperature_floor_is_none_when_setting_is_zero(monkeypatch):
+    from src import settings as settings_mod
+
+    def _fake_get_setting(key, default=None):
+        if key == "local_temperature_default":
+            return 0
+        return default
+    monkeypatch.setattr(settings_mod, "get_setting", _fake_get_setting)
+    assert llm_core.local_temperature_floor("http://127.0.0.1:11434", False) is None
+
+
 # ── the fields actually reach a streamed request body for a loopback endpoint ──
 
 def test_stream_llm_body_carries_the_floor_for_a_loopback_llama_server(monkeypatch):
