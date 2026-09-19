@@ -14,6 +14,13 @@ this is spend across every user's remote runs, not one session's own data.
 mechanism guarantees, never actually injecting anything. Admin-gated because
 naming these mechanisms in detail is itself operational information.
 
+``POST /api/ops/security-probes`` runs ``src.security_probes``'s
+deterministic prompt-injection probe catalogue (never ``live`` — that mode
+needs a real model and is CLI-only, see ``src/security_probes.py``) and
+returns the summary dict. No real tool is ever dispatched by either mode:
+deterministic mode only asks the same gate ``execute_tool_block`` asks
+before running anything. Admin-gated like the fixtures above.
+
 ``GET /api/ops/admission`` (ADP-32) is the read-only status door onto
 ``src.resource_admission`` — every explicit pool defined so far, with its
 live in-use/foreground-waiting counters. Admin-gated like the rest of this
@@ -48,6 +55,12 @@ def setup_ops_routes():
                 404,
                 f"no such chaos fixture: {fixture!r}; available: {sorted(chaos.FIXTURES)}",
             )
+
+    @router.post("/security-probes")
+    async def security_probes(request: Request):
+        require_admin(request)
+        from src import security_probes
+        return security_probes.run_catalogue_deterministic()
 
     @router.get("/admission")
     async def admission_status(request: Request):

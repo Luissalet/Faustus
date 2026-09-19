@@ -341,6 +341,8 @@ Approve tools and project instructions deliberately. Per-agent restrictions, own
 
 A third-party MCP server or imported skill gets a static security pre-scan (no network, no LLM) before it can be trusted: remote-script execution, obfuscated payloads, credential access, exfiltration, persistence, destructive commands, dynamic code, open network listeners, and prompt-injection markers in tool descriptions or skill text. A critical finding quarantines it — same gate a permission escalation already uses — and approving requires an explicit override, shown next to the finding count, never a silent block.
 
+A repeatable prompt-injection probe battery (`python -m src.security_probes`) checks the END-TO-END defences rather than a single function: 12 data-driven probes cover every untrusted vector (fetched pages, documents, email bodies, tool results, MCP tool descriptions, workspace files) and payload style (direct override, forged system messages, hidden HTML comments, zero-width/Unicode-tag smuggling, markdown exfiltration URLs, role-play jailbreaks, "call this tool" instructions, settings-disabling instructions, delayed multi-turn triggers, and forged sandbox-marker breakouts). A deterministic mode runs in CI with no model — a scripted "always-compromised" model that tries the exact malicious call the instant it has seen the injected content — and a live mode drives the same probes through a real local model and the real agent loop; results and a markdown summary are saved under `DATA_DIR/security_probes/` for regression tracking.
+
 See the [threat model](THREAT_MODEL.md), [security policy](SECURITY.md) and [setup security notes](website/setup.md#security-notes).
 
 ## Credits and licence

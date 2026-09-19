@@ -95,3 +95,25 @@ def test_unknown_chaos_fixture_is_a_clean_404_naming_the_available_set(monkeypat
     response = client.post("/api/ops/chaos/does_not_exist")
     assert response.status_code == 404
     assert "disk_full" in response.json()["detail"]
+
+
+# ── Security probes (src/security_probes.py) ────────────────────────────
+
+def test_security_probes_route_requires_admin(monkeypatch):
+    client = _client(monkeypatch, admin_raises=HTTPException(403, "Admin only"))
+    response = client.post("/api/ops/security-probes")
+    assert response.status_code == 403
+
+
+def test_security_probes_route_runs_deterministic_mode_only(monkeypatch):
+    """The route must reach `run_catalogue_deterministic`, never `_live`,
+    and never actually dispatch a real tool."""
+    from src import security_probes
+
+    client = _client(monkeypatch)
+    response = client.post("/api/ops/security-probes")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["mode"] == "deterministic"
+    assert body["probe_count"] == len(security_probes.PROBES)
+    assert body["leaked"] == 0
