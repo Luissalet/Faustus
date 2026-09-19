@@ -729,3 +729,9 @@ deep-link de workflows, recetas desde un run real) ya no aparece aquí.
   would load <modelo>` sin que Ollama cargue nada (`ollama ps` sin cambios);
   (3) confirmar que activar `background_jobs_may_load_models` deja correr la
   auditoría igualmente esa noche.
+
+## 19-09 w124 -- deploy verificado, engine + pokedex resume en marcha
+- Deploy fa40226d -> 4008d6ec (fast-forward, sin stash). 50 tests OK (test_bug_stop_never_stops, test_cancel_scope_routes, test_local_sampler_settings_clamp, test_model_load_options, test_background_job_guard) contra ODYSSEUS_DATA_DIR aislado.
+- utility_model/task_model apuntaban a qwen3.5:4b (borrado de Ollama); movidos a utility_endpoint_id=task_endpoint_id=3202765f, utility_model=task_model=qwen3.8-27b-q8-llamacpp via POST /api/auth/settings. Confirmado que ya no hace falta tocar local_temperature_default/top_p/top_k (ya vienen 0.6/0.8/20 en el bundle).
+- Probado /slots durante una peticion de chat corta: top_k=20, top_p=0.8, min_p=0.05, repeat_penalty=1.05 coinciden con los defaults. OJO: la temperatura vista en el slot de la respuesta de chat normal fue 1.0 (no 0.6) -- revisar de donde sale ese 1.0 para chat mode directo (la llamada de utilidad/titulo si uso 0.1 y el turno de agente vi 0.4 = agent_local_temperature_cap). No bloqueante, solo a revisar.
+- Reanudado el trabajo de carpetas Pokedex (workspace Contornos pokemon) con una sesion nueva en modo agente, siguiendo la skill pokedex-lines desde next=427 leido del estado (no se reseteo nada). El runner queda corriendo en segundo plano en la maquina de Luis (D:\LocalAI\_claude_tmp\pokedex_runner.ps1, log en pokedex_runner.log) en lotes de 10 con "continua"; cada turno tarda ~10-15 min en el llama-server local (12-13 tok/s). Sigue vivo tras cerrar esta sesion salvo que se pare a mano (crear D:\LocalAI\_claude_tmp\pokedex_stop.flag o matar el proceso powershell).
