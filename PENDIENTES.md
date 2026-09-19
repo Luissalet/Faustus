@@ -2,7 +2,12 @@
 
 Actualizado: 18-09-2026. REGLA: nunca nombres de empresas/personas del buzÃ³n de Luis en commits, docs, tests ni comentarios â€” ejemplos siempre ficticios. SÃ³lo trabajo vigente; quitar cada entrada al cerrarla.
 
-## 19-09 â€” el suelo de temperatura local no llegaba al modo chat (FAUSTUS.md Â§117, tercera parte)
+## 19-09 — gráficos en el chat, verificación en vivo pendiente (FAUSTUS.md §131)
+
+- No verificado en vivo: arrancar Studio de verdad, hacer que un modelo escriba una respuesta con un bloque ` ```chart ` real y confirmar en el navegador que se pinta el SVG (barra/línea/tarta/área), que el interruptor "Show data"/"Hide data" funciona, y que un bloque `chart` con JSON roto cae al bloque de código normal en vivo, no solo en el validador puro (`studio/checks/chartSpec.check.mjs`).
+- No verificado: apariencia en modo oscuro y claro lado a lado (los colores vienen de los tokens del tema, revisados por lectura, no por captura de pantalla).
+
+## 19-09 — el suelo de temperatura local no llegaba al modo chat (FAUSTUS.md §117, tercera parte)
 
 - No verificado en vivo: repetir la sonda contra `llama-server` (`/slots` a mitad de una peticiÃ³n) en modo chat llano, sin `/temp` ni preset, y confirmar `temperature=0.6` en la peticiÃ³n real (antes llegaba 1.0).
 - No verificado en vivo: confirmar que un `/temp 0.9` de turno en modo chat sigue ganando sobre el suelo (0.9 en `/slots`).

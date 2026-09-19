@@ -7939,3 +7939,11 @@ Kept the newer memory; the older one was forgotten.	Se mantuvo el recuerdo más 
 Kept the older memory; the newer one was forgotten.	Se mantuvo el recuerdo más antiguo; el más reciente se olvidó.
 Both memories are kept as true.	Ambos recuerdos se mantienen como ciertos.
 Could not resolve the conflict.	No se pudo resolver el conflicto.
+Show data	Mostrar datos
+Hide data	Ocultar datos
+Chart data	Datos del gráfico
+Chart	Gráfico
+Slice	Porción
+X	X
+{type} chart with {n} series over {m} points.	Gráfico de {type} con {n} series sobre {m} puntos.
+Pie chart with {n} slices.	Gráfico circular con {n} porciones.

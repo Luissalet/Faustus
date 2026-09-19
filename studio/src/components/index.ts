@@ -19,6 +19,7 @@ export {
 } from './ExecutionTimeline';
 export { Toast } from './Toast';
 export { MermaidView, type MermaidViewProps } from './MermaidView';
+export { ChartBlock, type ChartBlockProps } from './ChartBlock';
 export {
   describeError,
   friendlyError,

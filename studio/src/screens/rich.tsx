@@ -5,6 +5,8 @@ import { findSensitive, getDisplay, stripEmojis, useDisplay } from '../shell/dis
 import { writeClipboardText } from '../lib/clipboard-write';
 import { parseMarkdown, workspaceLink, type Block, type Footnote, type Inline } from '../lib/markdown';
 import { replaceShortcodesInProse } from '../lib/emoji';
+import { CHART_FENCE_LANGS, parseChartSpec } from '../lib/chartSpec';
+import { ChartBlock } from '../components/ChartBlock';
 
 /**
  * The transcript's reader. Parsing lives in lib/markdown.ts; this turns the
@@ -136,8 +138,15 @@ function One({ block, k, uid }: { block: Block; k: string; uid: string }) {
         </H>
       );
     }
-    case 'code':
+    case 'code': {
+      if (CHART_FENCE_LANGS.has(block.lang.trim().toLowerCase())) {
+        const parsed = parseChartSpec(block.code);
+        if (parsed.ok) return <ChartBlock spec={parsed.spec} />;
+        // Invalid chart JSON: never crash, never raw HTML — fall through to
+        // the plain code block exactly like any other fenced language.
+      }
       return <CodeBlock lang={block.lang} code={block.code} />;
+    }
     case 'rule':
       return <hr className="fs-rich__rule" />;
     case 'quote':
