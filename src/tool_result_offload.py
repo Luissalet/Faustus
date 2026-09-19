@@ -110,8 +110,11 @@ def _persist_full_result(full_text: str, digest: str, *, owner: str, session_id:
     os.makedirs(store, exist_ok=True)
     fd, tmp_path = tempfile.mkstemp(prefix=".offload-", suffix=".json", dir=store)
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            fh.write(full_text)
+        # Bytes, not text mode: on Windows text mode turns "\n" into "\r\n",
+        # the stored sha no longer matches `digest` and every multi-line
+        # offload failed (the caller then fell back to the untrimmed result).
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(full_text.encode("utf-8"))
         sha, size, stored_name, _created = artifact_store.publish_copy(
             tmp_path, store, "tool_result.json")
     finally:

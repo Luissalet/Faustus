@@ -5,6 +5,8 @@ agent-tool wiring (artifact_search).
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import os
 import json
 
 import pytest
@@ -236,3 +238,23 @@ def test_artifact_search_tool_requires_query(own_database, monkeypatch):
     tool = ArtifactSearchTool()
     result = asyncio.run(tool.execute(json.dumps({}), {"owner": "alice"}))
     assert result.get("exit_code") == 1
+
+
+def test_offload_persists_exact_bytes_even_where_text_mode_would_translate_newlines(monkeypatch):
+    """Windows text mode writes "\\r\\n" for "\\n"; the offload must write bytes
+    so the stored sha equals the digest of the original text."""
+    import src.tool_result_offload as tro
+
+    real_fdopen = os.fdopen
+
+    def windows_like_fdopen(fd, mode="r", *args, **kwargs):
+        if "b" not in mode:
+            kwargs.setdefault("newline", "\r\n")
+        return real_fdopen(fd, mode, *args, **kwargs)
+
+    monkeypatch.setattr(tro.os, "fdopen", windows_like_fdopen)
+    text = "\n".join(f"row {i}" for i in range(50))
+    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    artifact_id = tro._persist_full_result(text, digest, owner="o", session_id="s",
+                                           run_id="r", call_id="c", tool="bash")
+    assert artifact_id.startswith("occ_")
