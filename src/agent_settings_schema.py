@@ -538,6 +538,9 @@ GROUPS: list[dict[str, Any]] = [
                   "the page. Off = not offered and denied."),
             _bool("browser_live_view", "Live view",
                   "Capture a viewport frame after every action for the Browser panel (never sent to the model)."),
+            _bool("browser_devtools_mcp", "DevTools MCP (performance & debugging)",
+                  "Adds performance traces, network/console inspection and page audits via a second "
+                  "browser server. Downloads its package on first use." + _BROWSER_APPLY),
         ],
     ),
     _group(

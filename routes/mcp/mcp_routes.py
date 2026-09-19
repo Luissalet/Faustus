@@ -520,6 +520,27 @@ def setup_mcp_routes(mcp_manager: McpManager):
             "args": browser_launch_args(),
         }
 
+    @router.post("/builtin_devtools/restart")
+    async def restart_builtin_devtools_route(request: Request):
+        """Apply the `browser_devtools_mcp` setting (and the browser_profile /
+        browser_headless / browser_cdp_endpoint settings it shares with
+        builtin_browser) to the built-in DevTools server right now, instead
+        of waiting for its next tool call. Also the manual way to start it
+        after flipping the toggle on, or stop it after flipping it off, since
+        — unlike builtin_browser — it does not exist at all while off."""
+        require_admin(request)
+        from src.builtin_mcp import devtools_launch_args, restart_builtin_devtools
+
+        connected = await restart_builtin_devtools(mcp_manager)
+        status = mcp_manager.get_server_status("builtin_devtools")
+        return {
+            "connected": connected,
+            "status": status.get("status", "disconnected"),
+            "tool_count": status.get("tool_count", 0),
+            "error": status.get("error"),
+            "args": devtools_launch_args(),
+        }
+
     @router.patch("/servers/{server_id}")
     async def toggle_server(server_id: str, request: Request, is_enabled: str = Form(...)):
         """Enable or disable an MCP server."""

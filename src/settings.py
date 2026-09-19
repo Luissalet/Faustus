@@ -1104,6 +1104,14 @@ DEFAULT_SETTINGS = {
     # After every browser action, capture a viewport frame for the Browser
     # panel in the UI (never sent to the model).
     "browser_live_view": True,
+    # Optional second built-in browser MCP server (src/builtin_mcp.py,
+    # npm package `chrome-devtools-mcp`): performance traces (Core Web
+    # Vitals), network/console inspection and page audits that the
+    # Playwright-based builtin_browser does not expose. Off by default —
+    # downloads its own npm package on first use. Its launch flags are
+    # derived from the browser_* settings above (headless / profile / CDP
+    # endpoint), same as builtin_browser.
+    "browser_devtools_mcp": False,
     "task_endpoint_id": "",
     "task_model": "",
     "default_endpoint_id": "",

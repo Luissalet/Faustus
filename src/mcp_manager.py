@@ -30,6 +30,7 @@ from src.tool_capabilities import (
     BROWSER_CODE_EXECUTION_TOOLS,
     BROWSER_MCP_PREFIX,
     BROWSER_MCP_SERVER_ID,
+    DEVTOOLS_MCP_SERVER_ID,
 )
 
 logger = logging.getLogger(__name__)
@@ -1549,6 +1550,9 @@ class McpManager:
                 # restart — only for the SHARED connection: a session-scoped
                 # call must never restart another session's dedicated process.
                 await self.ensure_builtin_browser_current()
+        elif server_id == DEVTOOLS_MCP_SERVER_ID:
+            # Same lazy-apply as the browser above, for the second server.
+            await self.ensure_builtin_devtools_current()
 
         session = self._sessions.get(server_id)
         if not session:
@@ -1661,6 +1665,34 @@ class McpManager:
                 return False
             logger.info("Built-in browser settings changed; restarting the browser MCP server")
             await restart_builtin_browser(self)
+            return True
+
+    async def ensure_builtin_devtools_current(self) -> bool:
+        """Restart (or stop) the built-in DevTools server when it went stale.
+
+        Same idea as `ensure_builtin_browser_current`, checked whenever one
+        of its own tools is dispatched: applies a browser_* settings change
+        (headless / profile / CDP endpoint) to an already-running DevTools
+        server, and stops it if `browser_devtools_mcp` was switched off
+        without going through the settings-save hook (`routes/auth_routes.py`)
+        that normally starts/stops it on toggle.
+        """
+        try:
+            from src.builtin_mcp import devtools_launch_is_stale, restart_builtin_devtools
+        except Exception:  # pragma: no cover - isolated loads
+            return False
+        try:
+            if not devtools_launch_is_stale(self):
+                return False
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug(f"devtools launch staleness check failed: {exc}")
+            return False
+        lock = self._reconnect_locks.setdefault(DEVTOOLS_MCP_SERVER_ID, asyncio.Lock())
+        async with lock:
+            if not devtools_launch_is_stale(self):
+                return False
+            logger.info("Built-in DevTools settings changed; reapplying to the DevTools MCP server")
+            await restart_builtin_devtools(self)
             return True
 
     async def _do_call(self, session, tool_name: str, arguments: Dict) -> Dict:

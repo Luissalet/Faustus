@@ -59,6 +59,7 @@ _COMMON_TOOL_NAMES = {
     "bash",
     "bulk_email",
     "builtin_browser",
+    "builtin_devtools",
     "cancel_download",
     "chat_with_model",
     "create_document",

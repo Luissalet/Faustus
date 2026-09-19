@@ -97,10 +97,22 @@ _BUILTIN_NPX_SERVERS = {
         "name": "Built-in: Browser",
         "command": "npx",
         "args": ["-y", "@playwright/mcp@latest"],
-    }
+    },
+    # Optional second browser MCP, off by default (browser_devtools_mcp
+    # setting). Gives the agent performance traces (Core Web Vitals),
+    # network/console inspection and page audits that builtin_browser
+    # (Playwright) does not expose. Launch flags are derived from the same
+    # browser_* settings by `_devtools_mcp_args`, just like the Playwright
+    # server's own args are derived by `_browser_mcp_args`.
+    "builtin_devtools": {
+        "name": "Built-in: Browser DevTools",
+        "command": "npx",
+        "args": ["-y", "chrome-devtools-mcp@latest"],
+    },
 }
 
 BROWSER_SERVER_ID = "builtin_browser"
+DEVTOOLS_SERVER_ID = "builtin_devtools"
 
 # Defaults mirrored from src/settings.py DEFAULT_SETTINGS so this module keeps
 # working when settings cannot be loaded (isolated test loads, early startup).
@@ -109,12 +121,20 @@ BROWSER_SETTING_DEFAULTS = {
     "browser_cdp_endpoint": "",
     "browser_headless": True,
     "browser_vision_caps": False,
+    "browser_devtools_mcp": False,
 }
 
 # Flags that only make sense when Playwright LAUNCHES a browser; dropped when
 # attaching to the user's own Chrome over CDP.
 _LAUNCH_ONLY_FLAGS = ("--headless", "--isolated", "--no-sandbox", "--sandbox")
 _LAUNCH_ONLY_VALUED_FLAGS = ("--user-data-dir", "--executable-path")
+
+# Same idea for `chrome-devtools-mcp`, whose CLI uses its own flag spelling
+# (camelCase, no --user-data-dir / --no-sandbox equivalents documented):
+# https://www.npmjs.com/package/chrome-devtools-mcp — --headless, --isolated,
+# --browserUrl <CDP endpoint>, --executablePath, --channel.
+_DEVTOOLS_LAUNCH_ONLY_FLAGS = ("--headless", "--isolated")
+_DEVTOOLS_LAUNCH_ONLY_VALUED_FLAGS = ("--executablePath", "--channel")
 
 # Global flag to disable MCP if there are compatibility issues
 MCP_DISABLED = os.environ.get("ODYSSEUS_DISABLE_MCP", "").lower() in ("1", "true", "yes")
@@ -322,6 +342,56 @@ def browser_launch_args(settings=None) -> list[str]:
     return _browser_mcp_args(_BUILTIN_NPX_SERVERS[BROWSER_SERVER_ID]["args"], settings)
 
 
+def _devtools_mcp_args(args: list[str], settings=None) -> list[str]:
+    """Return chrome-devtools-mcp args derived from the same browser_*
+    settings that shape the Playwright server (`_browser_mcp_args`).
+
+    No per-(owner, task) profile here: chrome-devtools-mcp is a debugging/
+    performance tool, not a place agent web sessions run, so it only ever
+    needs the one shared configuration.
+    """
+    cfg = _browser_settings(settings)
+    out = list(args or [])
+
+    cdp = str(cfg.get("browser_cdp_endpoint") or "").strip()
+    if cdp:
+        # Attach to the user's own Chrome: launch-only flags would be
+        # ignored at best and refuse to start at worst.
+        for flag in _DEVTOOLS_LAUNCH_ONLY_FLAGS:
+            out = _strip_flag(out, flag)
+        for flag in _DEVTOOLS_LAUNCH_ONLY_VALUED_FLAGS:
+            out = _strip_flag(out, flag, valued=True)
+        if "--browserUrl" not in out:
+            out.extend(["--browserUrl", cdp])
+        return out
+
+    if _truthy(cfg.get("browser_headless", True)):
+        if "--headless" not in out:
+            out.append("--headless")
+    else:
+        out = _strip_flag(out, "--headless")
+
+    isolated = str(cfg.get("browser_profile") or "persistent").strip().lower() == "isolated"
+    if isolated:
+        if "--isolated" not in out:
+            out.append("--isolated")
+    else:
+        out = _strip_flag(out, "--isolated")
+
+    if "--executablePath" not in out:
+        browser = _find_browser_executable()
+        if browser:
+            out.extend(["--executablePath", browser])
+
+    return out
+
+
+def devtools_launch_args(settings=None) -> list[str]:
+    """The full argv (after `npx`) the built-in DevTools server would start
+    with now, regardless of whether `browser_devtools_mcp` is currently on."""
+    return _devtools_mcp_args(_BUILTIN_NPX_SERVERS[DEVTOOLS_SERVER_ID]["args"], settings)
+
+
 def _browser_env(base_dir: str) -> dict[str, str]:
     cache_home = os.environ.get(
         "ODYSSEUS_BROWSER_MCP_CACHE",
@@ -351,6 +421,8 @@ def _npx_server_launch(server_id: str, *, owner_id=None, task_id=None) -> tuple[
             except (OSError, IndexError):
                 pass
         return args, _browser_env(base_dir)
+    if server_id == DEVTOOLS_SERVER_ID:
+        return _devtools_mcp_args(cfg["args"]), None
     return list(cfg["args"]), None
 
 
@@ -412,6 +484,26 @@ async def restart_builtin_browser(mcp_manager) -> bool:
     except Exception as e:  # pragma: no cover - best effort teardown
         logger.warning(f"Browser MCP teardown before restart failed: {e}")
     return await connect_builtin_npx_server(mcp_manager, BROWSER_SERVER_ID)
+
+
+async def restart_builtin_devtools(mcp_manager, settings=None) -> bool:
+    """(Re)apply the `browser_devtools_mcp` setting to the DevTools server.
+
+    Unlike `restart_builtin_browser` (always-on, only its argv changes), the
+    DevTools server does not exist at all until enabled, so this is also the
+    start/stop hook the toggle uses: it always tears down whatever is
+    running first, then reconnects only when the setting (or the `settings`
+    override, for tests) is currently true. Returns whether the server is
+    connected afterwards.
+    """
+    try:
+        await mcp_manager.disconnect_server(DEVTOOLS_SERVER_ID)
+    except Exception as e:  # pragma: no cover - best effort teardown
+        logger.warning(f"DevTools MCP teardown before restart failed: {e}")
+    cfg = _browser_settings(settings)
+    if not _truthy(cfg.get("browser_devtools_mcp")):
+        return False
+    return await connect_builtin_npx_server(mcp_manager, DEVTOOLS_SERVER_ID)
 
 
 def close_browser_session_for_task(owner_id, task_id, *, delete_profile: bool = True) -> bool:
@@ -541,6 +633,25 @@ def browser_launch_is_stale(mcp_manager) -> bool:
         return False
 
 
+def devtools_launch_is_stale(mcp_manager) -> bool:
+    """True when the running DevTools server was started with different argv
+    than the current settings produce, OR the setting was switched off while
+    it is still connected (a restart would then disconnect it, not relaunch
+    it — see `restart_builtin_devtools`)."""
+    conn = mcp_manager.get_all_statuses().get(DEVTOOLS_SERVER_ID)
+    if not isinstance(conn, dict) or conn.get("status") != "connected":
+        return False
+    if not _truthy(_browser_settings().get("browser_devtools_mcp")):
+        return True
+    launched = conn.get("launch_args")
+    if launched is None:
+        return False
+    try:
+        return list(launched) != devtools_launch_args()
+    except Exception:
+        return False
+
+
 def builtin_python_env(base_dir: str) -> dict[str, str]:
     """Environment for built-in Python MCP subprocesses.
 
@@ -599,6 +710,11 @@ async def register_builtin_servers(mcp_manager):
     async def _start_npx_servers():
         await asyncio.sleep(3)  # let Python servers finish first
         for server_id, cfg in _BUILTIN_NPX_SERVERS.items():
+            if server_id == DEVTOOLS_SERVER_ID and not _truthy(_browser_settings().get("browser_devtools_mcp")):
+                # Off by default (settings.py DEFAULT_SETTINGS): unlike
+                # builtin_browser this one does not start until an admin
+                # opts in, so a fresh install never downloads its package.
+                continue
             # Browser automation is a shipped built-in, so the default path
             # lets `npx -y` install @playwright/mcp on first start. Locked-down
             # installs can opt back into the old no-network startup behavior

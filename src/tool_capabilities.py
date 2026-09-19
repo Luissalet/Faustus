@@ -1027,6 +1027,15 @@ _BROWSER_MCP_READ_CAPABILITIES = _capabilities(
 BROWSER_MCP_SERVER_ID = "builtin_browser"
 BROWSER_MCP_PREFIX = f"mcp__{BROWSER_MCP_SERVER_ID}__"
 
+# Optional second browser MCP (chrome-devtools-mcp, src/builtin_mcp.py):
+# performance traces, network/console inspection, page audits. Its tools are
+# not individually enumerated here (unlike BROWSER_READ_TOOLS/BROWSER_ACTION_
+# TOOLS above) — every one of them falls through capabilities_for_tool's
+# unknown-MCP-tool default, which is already the conservative, EXTERNAL_
+# UNTRUSTED, approval-gated bucket a second live browser connection needs.
+DEVTOOLS_MCP_SERVER_ID = "builtin_devtools"
+DEVTOOLS_MCP_PREFIX = f"mcp__{DEVTOOLS_MCP_SERVER_ID}__"
+
 # Observation only: auto-approved under the external-context gate (they are
 # "reads" for the gate's purposes, like snapshot/screenshot always were).
 BROWSER_READ_TOOLS = frozenset(

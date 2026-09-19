@@ -118,6 +118,24 @@ def _secure_cookie(request: Request) -> bool:
     return request.url.scheme == "https" or forwarded_proto.strip().lower() == "https"
 
 
+def _spawn_devtools_mcp_restart() -> None:
+    """Fire-and-forget: apply the just-saved `browser_devtools_mcp` setting.
+
+    Deferred imports avoid a circular import (app.py builds the MCP manager
+    after importing this module) and let this stay a no-op in contexts where
+    MCP was never wired up (isolated route tests).
+    """
+    try:
+        from src.agent_tools import get_mcp_manager
+        from src.builtin_mcp import _spawn_bg, restart_builtin_devtools
+    except Exception:  # pragma: no cover - isolated loads
+        return
+    manager = get_mcp_manager()
+    if manager is None:
+        return
+    _spawn_bg(restart_builtin_devtools(manager))
+
+
 def setup_auth_routes(auth_manager: AuthManager) -> APIRouter:
     router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -928,6 +946,13 @@ def setup_auth_routes(auth_manager: AuthManager) -> APIRouter:
                     raise HTTPException(400, f"{key} {exc}")
             current[key] = val
         _save_settings(current)
+        if "browser_devtools_mcp" in body:
+            # Starts/stops the optional DevTools MCP server the same way a
+            # browser_* change reaches the always-on builtin_browser (lazily,
+            # on its next tool call) reaches it — except this server does not
+            # exist at all while off, so a toggle needs an explicit kick
+            # rather than waiting for a tool call that can never happen.
+            _spawn_devtools_mcp_restart()
         return without_retired_settings(current)
 
     # ---- Integrations CRUD ----
