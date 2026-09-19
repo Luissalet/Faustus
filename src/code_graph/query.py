@@ -35,6 +35,12 @@ _TEST_PATH_RE = re.compile(
 # exact > static_inferred > lexical: the weakest certainty seen along a path
 # is what the caller should trust for the whole path.
 _CERTAINTY_RANK = {"exact": 0, "static_inferred": 1, "lexical": 2}
+# `impact` needs every test file in the workspace actually indexed, not just
+# the first DEFAULT_BUDGET_FILES (2000) a plain refresh() would walk — a repo
+# with ~4200 tracked files (~1680 of them tests) would silently lose the back
+# half of its test suite otherwise. The walk is hash-incremental, so a wider
+# budget only costs more on the first call for a given workspace.
+_IMPACT_INDEX_BUDGET = 20000
 
 
 def _root(raw: str) -> str:
@@ -436,6 +442,41 @@ def _weaker(a: str, b: str) -> str:
     return a if ra >= rb else b
 
 
+def _import_affected_tests(root: str, project_id: str, paths: Sequence[str]) -> List[str]:
+    """Test modules that `import` (or `tests`) one of `paths`' modules,
+    whether or not a `calls`-edge BFS ever reaches into them.
+
+    A pure call-graph walk misses a test that exercises a changed module
+    through a fixture, a monkeypatch, or an attribute access rather than a
+    direct call to the reached symbol — but if the test file imports that
+    module at all, it is still worth flagging as possibly affected."""
+    found: set = set()
+    seen: set = set()
+    for path in paths:
+        if not path or path in seen:
+            continue
+        seen.add(path)
+        try:
+            module_sym = next(
+                (s for s in code_index.symbols_in(path, workspace=root, project_id=project_id)
+                 if s.kind == "module"), None)
+        except Exception:  # noqa: BLE001
+            module_sym = None
+        if not module_sym:
+            continue
+        try:
+            hops = code_index.neighbors(module_sym.id, kinds=("imports", "tests"))
+        except Exception:  # noqa: BLE001
+            hops = []
+        for hop in hops:
+            if hop.get("direction") != "in" or not hop.get("resolved"):
+                continue
+            hop_path = str(hop.get("path") or "")
+            if hop_path and _is_test_path(hop_path):
+                found.add(hop_path)
+    return sorted(found)
+
+
 def _changed_seeds(root: str, *, base_ref: str, project_id: str) -> List[Dict[str, Any]]:
     """Resolve `detect_changes`' changed symbols to graph node ids."""
     changes = detect_changes(root, base_ref=base_ref, project_id=project_id)
@@ -471,7 +512,7 @@ def impact(symbol: str = "", *, workspace: str = "", project_id: str = "",
     except ValueError as exc:
         return {"error": str(exc), "exit_code": 1}
     try:
-        code_index.refresh(root, project_id=project_id)
+        code_index.refresh(root, project_id=project_id, budget_files=_IMPACT_INDEX_BUDGET)
     except Exception as exc:  # noqa: BLE001
         logger.warning("code_graph.impact refresh failed: %s", exc)
 
@@ -503,7 +544,8 @@ def impact(symbol: str = "", *, workspace: str = "", project_id: str = "",
         if not seeds:
             return {"output": f"no changed symbols vs {base_ref}", "exit_code": 0,
                     "root": root, "mode": mode, "seeds": [], "reached": [],
-                    "affected_tests": [], "affected_test_functions": [],
+                    "affected_tests": [], "affected_tests_via_call": [],
+                    "affected_tests_via_import": [], "affected_test_functions": [],
                     "unresolved_edges": 0, "suggested_command": ""}
 
     # BFS state: symbol id -> best-known node info (weakest certainty wins).
@@ -563,8 +605,14 @@ def impact(symbol: str = "", *, workspace: str = "", project_id: str = "",
         if _is_test_path(s["path"]):
             test_files.add(s["path"])
 
-    py_tests = sorted(p for p in test_files if p.endswith(".py"))
-    other_tests = sorted(p for p in test_files if not p.endswith(".py"))
+    # Only the seeds' own modules: a reached hub (agent_loop is imported by
+    # a hundred tests) would turn "affected" into "everything".
+    seed_paths = sorted({s["path"] for s in seeds})
+    import_test_files = set(_import_affected_tests(root, project_id, seed_paths)) - test_files
+
+    all_test_files = test_files | import_test_files
+    py_tests = sorted(p for p in all_test_files if p.endswith(".py"))
+    other_tests = sorted(p for p in all_test_files if not p.endswith(".py"))
     if py_tests:
         capped = py_tests[:30]
         cmd = "python -m pytest -q " + " ".join(capped)
@@ -591,9 +639,10 @@ def impact(symbol: str = "", *, workspace: str = "", project_id: str = "",
     if not reached:
         lines.append("  (nothing reachable — no known callers)")
     lines.append(f"unresolved call edges skipped: {unresolved_edges}")
-    if test_files:
-        lines.append(f"affected tests ({len(test_files)}):")
+    if all_test_files:
+        lines.append(f"affected tests ({len(all_test_files)}):")
         lines += [f"  {t}" for t in sorted(test_files)]
+        lines += [f"  {t}  (via import)" for t in sorted(import_test_files)]
         if suggested_command:
             lines.append(f"suggested: {suggested_command}")
     else:
@@ -602,7 +651,9 @@ def impact(symbol: str = "", *, workspace: str = "", project_id: str = "",
     return {
         "output": _clip("\n".join(lines), output_chars), "exit_code": 0, "root": root,
         "mode": mode, "seeds": seeds, "reached": reached,
-        "affected_tests": sorted(test_files),
+        "affected_tests": sorted(all_test_files),
+        "affected_tests_via_call": sorted(test_files),
+        "affected_tests_via_import": sorted(import_test_files),
         "affected_test_functions": sorted(set(test_functions)),
         "unresolved_edges": unresolved_edges, "suggested_command": suggested_command,
         "depth": depth_cap, "base_ref": base_ref,

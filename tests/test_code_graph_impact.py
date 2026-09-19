@@ -71,6 +71,10 @@ def _fake_graph_neighbors(monkeypatch):
 
     monkeypatch.setattr(code_index, "neighbors", fake_neighbors)
     monkeypatch.setattr(code_index, "refresh", lambda *a, **kw: {"scanned": 0})
+    # No real sqlite store is set up for these graph-shape tests: keep the
+    # import-based affected-tests lookup (which calls symbols_in) a no-op
+    # rather than hitting whatever store path happens to be active.
+    monkeypatch.setattr(code_index, "symbols_in", lambda *a, **kw: [])
     monkeypatch.setattr(
         cgq, "_resolve_symbol",
         lambda name, *, root, project_id: {"id": "seed", "qualname": "pkg.seed.run",
@@ -142,9 +146,28 @@ def test_impact_collects_affected_tests_and_suggested_command(tmp_path, monkeypa
     root = str(tmp_path)
     result = code_graph.impact("run", workspace=root, depth=3)
     assert result["affected_tests"] == ["tests/test_thing.py"]
+    assert result["affected_tests_via_call"] == ["tests/test_thing.py"]
+    assert result["affected_tests_via_import"] == []
     assert result["affected_test_functions"] == ["tests.test_thing.test_function"]
     assert result["suggested_command"] == "python -m pytest -q tests/test_thing.py"
     assert "tests/test_thing.py" in result["output"]
+
+
+def test_impact_passes_a_wide_index_budget(tmp_path, monkeypatch):
+    """A workspace with more files than the plain refresh() budget (2000)
+    must still get every test file indexed -- impact() asks for a much wider
+    budget up front (hash-incremental, so cheap after the first call)."""
+    captured = {}
+
+    def fake_refresh(root, *, project_id="", budget_files=None, **kw):
+        captured["budget_files"] = budget_files
+        return {"scanned": 0}
+
+    monkeypatch.setattr(code_index, "refresh", fake_refresh)
+    monkeypatch.setattr(cgq, "_resolve_symbol", lambda *a, **kw: None)
+    code_graph.impact("anything", workspace=str(tmp_path))
+    assert captured["budget_files"] == cgq._IMPACT_INDEX_BUDGET
+    assert cgq._IMPACT_INDEX_BUDGET >= 20000
 
 
 def test_impact_never_raises_on_symbol_not_found(tmp_path, monkeypatch):
@@ -218,6 +241,11 @@ def repo(tmp_path, ce_db):
     _write(root, "pkg/b.py", B_PY)
     _write(root, "pkg/c.py", C_PY)
     _write(root, "tests/test_a.py", TEST_PY)
+    # Imports pkg.c but never calls c() -- a calls-edge BFS cannot reach it;
+    # only the import/tests edge can.
+    _write(root, "tests/test_c_fixture.py",
+           "import pkg.c  # noqa: F401\n\n\ndef test_module_importable():\n"
+           "    assert pkg.c is not None\n")
     _git(root, "init", "-q")
     _git(root, "config", "user.email", "test@example.com")
     _git(root, "config", "user.name", "Test")
@@ -244,8 +272,20 @@ def test_impact_from_symbol_reaches_transitive_caller_and_test(ws):
     symbols = {n["symbol"] for n in result["reached"]}
     assert "b" in symbols
     assert "a" in symbols
-    assert result["affected_tests"] == ["tests/test_a.py"]
-    assert result["suggested_command"] == "python -m pytest -q tests/test_a.py"
+    assert result["affected_tests_via_call"] == ["tests/test_a.py"]
+    assert result["suggested_command"] == \
+        "python -m pytest -q tests/test_a.py tests/test_c_fixture.py"
+
+
+def test_impact_finds_import_only_test_a_call_bfs_would_miss(ws):
+    """tests/test_c_fixture.py imports pkg.c but never calls c() -- only
+    reachable through the module import/tests edge, not the calls BFS."""
+    code_graph.index(ws)
+    result = code_graph.impact("c", workspace=ws, depth=3)
+    assert "tests/test_c_fixture.py" in result["affected_tests_via_import"]
+    assert "tests/test_c_fixture.py" not in result["affected_tests_via_call"]
+    assert "tests/test_c_fixture.py" in result["affected_tests"]
+    assert "(via import)" in result["output"]
 
 
 def test_impact_from_symbol_with_depth_one_misses_the_transitive_caller(ws):
@@ -271,7 +311,8 @@ def test_impact_diff_seeded_reaches_the_test_touching_the_changed_symbol(ws):
     assert result["exit_code"] == 0
     assert result["mode"] == "diff"
     assert len(result["seeds"]) >= 1
-    assert result["affected_tests"] == ["tests/test_a.py"]
+    assert result["affected_tests_via_call"] == ["tests/test_a.py"]
+    assert "tests/test_c_fixture.py" in result["affected_tests_via_import"]
 
 
 def test_impact_diff_seeded_with_no_changes_is_empty(ws):

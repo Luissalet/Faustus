@@ -90,9 +90,17 @@ EDGE_KINDS: Tuple[str, ...] = ("imports", "calls", "defines", "tests", "register
 #:                        relations built on top of them.
 CERTAINTY: Tuple[str, ...] = ("exact", "static_inferred", "lexical")
 
-#: Same ceiling `repo_map` uses.  A 400 kB source file is generated, minified
-#: or a data blob; parsing it costs more than the symbols are worth.
-MAX_FILE_BYTES = 400_000
+#: A 1 MB source file is generated, minified or a data blob; parsing it
+#: costs more than the symbols are worth. Higher than `repo_map`'s 400 kB
+#: ceiling on purpose: this repo's own `src/agent_loop.py` is ~750 kB of
+#: genuinely hand-written, heavily-called code (not generated/vendored/
+#: binary — the actual disqualifiers below), and a code graph that can
+#: never see its largest, most-connected module is not answering "what
+#: calls this" honestly. Checked against every tracked file in this
+#: repository: nothing else legitimate crosses 1 MB, only media/minified
+#: vendor assets that `is_indexable_file`'s extension check already drops
+#: before this size check ever runs.
+MAX_FILE_BYTES = 1_000_000
 
 #: §10.4's time budget.  `refresh` stops after this many candidate files and
 #: says `truncated`, rather than holding a connection open across a monorepo.
@@ -475,8 +483,9 @@ def _decorator_kind(node: Any) -> Tuple[str, str]:
 
 
 def _py_imports(tree: ast.AST, module_qual: str, *,
-                is_package: bool) -> List[Tuple[str, bool]]:
-    """`(dotted module, optional)` for every import in the file.
+                is_package: bool) -> Tuple[List[Tuple[str, bool]], Dict[str, Tuple[str, str]]]:
+    """`(dotted module, optional)` for every import in the file, plus the
+    alias map a call site needs to see past a renamed import.
 
     `optional` marks a name that is a *guess about shape*, not about existence:
     in `from pkg import util`, `util` may be a submodule or it may be a
@@ -489,7 +498,14 @@ def _py_imports(tree: ast.AST, module_qual: str, *,
     `ast.walk` rather than `tree.body`: this repository imports lazily inside
     functions all over the place (`from src import prove as prove_mod`), and an
     import graph that misses those is a graph that says two modules are
-    unrelated when one calls the other.
+    unrelated when one calls the other. The same walk collects `aliases`:
+    `{bound_name: (module_dotted, orig_name)}` for every `as`-bound import,
+    module-level or nested in a function body — `orig_name` is `""` for a
+    module alias (`import a.b as m`) and the imported attribute's own name
+    for a from-import alias (`from mod import name as alias`). A call site
+    that resolves through one of these otherwise reads as a call to a bare
+    name nothing defines (`_offload(...)`) or a name collision (`func()`
+    resolved as if `m` were irrelevant) — see `_extract_python`'s call loop.
 
     `is_package` is not a detail.  `from . import x` means `a.b.x` in both
     `a/b/c.py` (module `a.b.c`) and `a/b/__init__.py` (module `a.b`), because
@@ -497,6 +513,7 @@ def _py_imports(tree: ast.AST, module_qual: str, *,
     name alone sends every relative import inside a package one level too
     high, so the `__init__` segment is put back before counting."""
     out: List[Tuple[str, bool]] = []
+    aliases: Dict[str, Tuple[str, str]] = {}
     seen: Set[str] = set()
     package = module_qual.split(".") + (["__init__"] if is_package else [])
 
@@ -509,6 +526,8 @@ def _py_imports(tree: ast.AST, module_qual: str, *,
         if isinstance(node, ast.Import):
             for alias in node.names:
                 add(alias.name or "", False)
+                if alias.asname and alias.name:
+                    aliases[alias.asname] = (alias.name, "")
         elif isinstance(node, ast.ImportFrom):
             level = int(node.level or 0)
             if level:
@@ -520,7 +539,20 @@ def _py_imports(tree: ast.AST, module_qual: str, *,
             for alias in node.names:
                 if alias.name and alias.name != "*":
                     add(f"{dotted}.{alias.name}" if dotted else alias.name, True)
-    return out
+                    if alias.asname:
+                        aliases[alias.asname] = (dotted, alias.name)
+    return out, aliases
+
+
+def _call_base_name(node: Any) -> str:
+    """The leftmost `Name` in a `Name`/`Attribute` chain used as a call
+    target — `m` in both `m()` and `m.attr.func()` — or `""` when the call
+    target is not a plain name/attribute chain (a subscript, another call's
+    result, ...). Used to check the target against an import alias without
+    depending on `_dotted`'s stringified form."""
+    while isinstance(node, ast.Attribute):
+        node = node.value
+    return node.id if isinstance(node, ast.Name) else ""
 
 
 @dataclass
@@ -535,7 +567,7 @@ class _Extracted:
     symbols: List[Symbol]
     edges: List[Edge]
     imports: List[Tuple[str, str, bool]]    # (src symbol id, dotted module, optional)
-    calls: List[Tuple[str, str, str]]       # (src symbol id, callee name, detail)
+    calls: List[Tuple[str, str, str, str]]  # (src symbol id, callee name, detail, module hint)
 
 
 def _slice_hash(lines: Sequence[str], start: int, end: int) -> str:
@@ -559,7 +591,7 @@ def _extract_python(*, workspace: str, project_id: str, rel: str, text: str,
     symbols: List[Symbol] = []
     edges: List[Edge] = []
     imports: List[Tuple[str, str, bool]] = []
-    calls: List[Tuple[str, str, str]] = []
+    calls: List[Tuple[str, str, str, str]] = []
     bodies: List[Tuple[str, Any]] = []
 
     def add(qualname: str, kind: str, signature: str, summary: str,
@@ -622,7 +654,8 @@ def _extract_python(*, workspace: str, project_id: str, rel: str, text: str,
                 constant_id = add(name, "constant", name, "", node.lineno, end)
                 edges.append(Edge(module_id, constant_id, "defines", "exact", "constant"))
 
-    for dotted, optional in _py_imports(tree, module_qual, is_package=is_package):
+    module_imports, alias_map = _py_imports(tree, module_qual, is_package=is_package)
+    for dotted, optional in module_imports:
         imports.append((module_id, dotted, optional))
 
     for owner_id, node in bodies:
@@ -635,7 +668,34 @@ def _extract_python(*, workspace: str, project_id: str, rel: str, text: str,
             if not callee or callee in seen:
                 continue
             seen.add(callee)
-            calls.append((owner_id, callee, dotted))
+            detail = dotted
+            module_hint = ""
+            base = _call_base_name(inner.func)
+            alias = alias_map.get(base) if base else None
+            if alias:
+                mod, orig_name = alias
+                if dotted == base:
+                    # `from mod import name as alias` then `alias(...)`: the
+                    # bare name resolved against workspace symbols is the
+                    # alias itself, which nothing defines — resolve against
+                    # what it actually names instead. (Harmless when `alias`
+                    # names a submodule rather than a function: `orig_name`
+                    # then matches no `function`/`method`/... symbol and the
+                    # call is dropped exactly as an unresolved one would be.)
+                    callee = orig_name or callee
+                    module_hint = mod
+                    detail = mod
+                elif dotted == f"{base}.{callee}":
+                    # One level of attribute access through the alias:
+                    # `m.func(...)` for a plain module alias (`import a.b as
+                    # m`, `orig_name` empty, hint is `mod`), or
+                    # `offload.offload_if_oversized(...)` for a from-import
+                    # alias of a *submodule* (`from src import
+                    # tool_result_offload as offload`, `orig_name` is the
+                    # submodule's own name, hint is `mod.orig_name`).
+                    module_hint = f"{mod}.{orig_name}" if orig_name else mod
+                    detail = module_hint
+            calls.append((owner_id, callee, detail, module_hint))
 
     return _Extracted(symbols=symbols, edges=edges, imports=imports, calls=calls)
 
@@ -821,7 +881,7 @@ def _insert_edges(conn: sqlite3.Connection, workspace: str, project_id: str,
 
 def _resolve(conn: sqlite3.Connection, workspace: str,
              imports: Sequence[Tuple[str, str, bool]],
-             calls: Sequence[Tuple[str, str, str]],
+             calls: Sequence[Tuple[str, str, str, str]],
              module_paths: Mapping[str, str]) -> List[Edge]:
     """Turn the unresolved halves into edges, each with the certainty it earned.
 
@@ -833,10 +893,15 @@ def _resolve(conn: sqlite3.Connection, workspace: str,
       exception is an `optional` name (the `util` of `from pkg import util`),
       which is dropped when it resolves to nothing rather than recorded as a
       module that may never have existed.
-    * A call is matched by its bare name.  Exactly one symbol with that name in
-      this workspace makes it `static_inferred`; zero or several drop the edge.
-      Guessing between two `save()`s and presenting the guess as a graph edge is
-      the failure §10.3 names.
+    * A call is matched by its bare name (already the original name, not an
+      alias — `_py_imports`'s alias map rewrote `_offload(...)` to `offload_
+      if_oversized` before this ever runs).  Exactly one symbol with that name
+      in this workspace makes it `static_inferred`.  Several candidates are
+      only resolved when the call carried a `module_hint` (the module the
+      alias imported it from) and exactly one candidate is defined in that
+      module — otherwise the edge is dropped.  Guessing between two `save()`s
+      and presenting the guess as a graph edge is the failure §10.3 names; a
+      hint from an explicit import is not a guess.
     * A test module's import of a workspace module is additionally a `tests`
       edge, at the same certainty as the import it was derived from."""
     edges: List[Edge] = []
@@ -854,23 +919,30 @@ def _resolve(conn: sqlite3.Connection, workspace: str,
             edges.append(Edge(src, f"module:{dotted}", "imports",
                               "static_inferred", dotted))
 
-    wanted = sorted({name for _, name, _ in calls})
-    by_name: Dict[str, List[str]] = {}
+    wanted = sorted({name for _, name, _, _ in calls})
+    by_name: Dict[str, List[Tuple[str, str]]] = {}
     for start in range(0, len(wanted), 400):
         chunk = wanted[start:start + 400]
         marks = ",".join("?" * len(chunk))
         for row in conn.execute(
-                f"SELECT name, id FROM code_symbols WHERE workspace = ? "
+                f"SELECT name, id, path FROM code_symbols WHERE workspace = ? "
                 f"AND name IN ({marks}) AND kind IN "
                 "('function', 'method', 'class', 'route', 'tool')",
                 [workspace, *chunk]):
-            by_name.setdefault(row["name"], []).append(row["id"])
+            by_name.setdefault(row["name"], []).append((row["id"], row["path"]))
 
-    for src, name, detail in calls:
-        found = by_name.get(name) or []
-        if len(found) != 1 or found[0] == src:
+    for src, name, detail, module_hint in calls:
+        found = [(sid, path) for sid, path in (by_name.get(name) or []) if sid != src]
+        if not found:
             continue
-        edges.append(Edge(src, found[0], "calls", "static_inferred", detail))
+        if len(found) == 1:
+            edges.append(Edge(src, found[0][0], "calls", "static_inferred", detail))
+            continue
+        if not module_hint:
+            continue
+        matched = [sid for sid, path in found if _module_qualname(path) == module_hint]
+        if len(matched) == 1:
+            edges.append(Edge(src, matched[0], "calls", "static_inferred", detail))
     return edges
 
 
@@ -981,7 +1053,7 @@ def _refresh_files(root: str, scope: str, candidates: Sequence[str],
         known = {row["path"]: row["file_hash"] for row in conn.execute(
             "SELECT path, file_hash FROM code_files WHERE workspace = ?", (root,))}
         pending_imports: List[Tuple[str, str, bool]] = []
-        pending_calls: List[Tuple[str, str, str]] = []
+        pending_calls: List[Tuple[str, str, str, str]] = []
         module_paths: Dict[str, str] = {}
         seen: Set[str] = set()
 

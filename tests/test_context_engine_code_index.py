@@ -450,3 +450,117 @@ def test_reads_degrade_instead_of_raising_when_the_store_is_gone(tmp_path):
         assert ci.refresh(str(tmp_path))["reindexed"] == 0
     finally:
         store.use_path(None)
+
+
+# ── import-alias call resolution ────────────────────────────────────────
+# Real-world trigger: `from src.tool_result_offload import offload_if_oversized
+# as _offload` (often inside a function body) then `_offload(...)` — the bare
+# name `_offload` matches nothing in the workspace, so without alias tracking
+# the call edge is silently never created.
+
+def _alias_fixture(tmp_path):
+    root = str(tmp_path / "alias_repo")
+    os.makedirs(root)
+    write(root, "pkg/__init__.py", "")
+    write(root, "pkg/a.py", "def helper():\n    return 'a'\n")
+    write(root, "pkg/b.py", "def helper():\n    return 'b'\n")
+    return root
+
+
+def _sym(root, path, qualname):
+    return [s for s in ci.symbols_in(path, workspace=root)
+            if s.qualname == qualname][0]
+
+
+def test_module_level_from_import_alias_resolves_the_call(ce_store, tmp_path):
+    root = _alias_fixture(tmp_path)
+    write(root, "caller.py",
+          "from pkg.a import helper as h\n\n\ndef run():\n    return h()\n")
+    ci.refresh(root, project_id="p1")
+
+    run = _sym(root, "caller.py", "run")
+    calls = {(row["qualname"], row["path"], row["certainty"])
+             for row in ci.neighbors(run.id, kinds=["calls"]) if row["direction"] == "out"}
+    assert ("helper", "pkg/a.py", "static_inferred") in calls
+
+
+def test_function_body_from_import_alias_resolves_the_call(ce_store, tmp_path):
+    root = _alias_fixture(tmp_path)
+    write(root, "caller.py",
+          "def run():\n"
+          "    from pkg.a import helper as h\n"
+          "    return h()\n")
+    ci.refresh(root, project_id="p1")
+
+    run = _sym(root, "caller.py", "run")
+    calls = {(row["qualname"], row["path"])
+             for row in ci.neighbors(run.id, kinds=["calls"]) if row["direction"] == "out"}
+    assert ("helper", "pkg/a.py") in calls
+
+
+def test_ambiguous_name_is_resolved_by_the_alias_source_module(ce_store, tmp_path):
+    """`helper` exists in both pkg.a and pkg.b — bare-name resolution alone
+    would drop the edge (two candidates), but the alias says exactly which
+    module it came from."""
+    root = _alias_fixture(tmp_path)
+    write(root, "caller.py",
+          "from pkg.a import helper as h\n\n\ndef run():\n    return h()\n")
+    ci.refresh(root, project_id="p1")
+
+    run = _sym(root, "caller.py", "run")
+    calls = [row for row in ci.neighbors(run.id, kinds=["calls"]) if row["direction"] == "out"]
+    assert len(calls) == 1
+    assert calls[0]["path"] == "pkg/a.py"
+
+
+def test_module_alias_attribute_call_disambiguates(ce_store, tmp_path):
+    """`import pkg.a as m` then `m.helper()` — the bare callee name `helper`
+    is ambiguous across pkg.a/pkg.b, but the module alias picks pkg.a."""
+    root = _alias_fixture(tmp_path)
+    write(root, "caller.py",
+          "import pkg.a as m\n\n\ndef run():\n    return m.helper()\n")
+    ci.refresh(root, project_id="p1")
+
+    run = _sym(root, "caller.py", "run")
+    calls = [row for row in ci.neighbors(run.id, kinds=["calls"]) if row["direction"] == "out"]
+    assert len(calls) == 1
+    assert calls[0]["path"] == "pkg/a.py"
+
+
+def test_alias_to_a_module_with_no_match_still_drops_the_edge(ce_store, tmp_path):
+    root = _alias_fixture(tmp_path)
+    write(root, "caller.py",
+          "from pkg.a import missing_fn as h\n\n\ndef run():\n    return h()\n")
+    ci.refresh(root, project_id="p1")
+
+    run = _sym(root, "caller.py", "run")
+    calls = [row for row in ci.neighbors(run.id, kinds=["calls"]) if row["direction"] == "out"]
+    assert calls == []
+
+
+def test_unaliased_ambiguous_call_is_still_dropped(ce_store, tmp_path):
+    """Alias tracking must not change the existing behaviour for a plain,
+    un-hinted ambiguous call (§10.3's guessing failure)."""
+    root = _alias_fixture(tmp_path)
+    write(root, "caller.py", "def run():\n    return helper()\n")
+    ci.refresh(root, project_id="p1")
+
+    run = _sym(root, "caller.py", "run")
+    calls = [row for row in ci.neighbors(run.id, kinds=["calls"]) if row["direction"] == "out"]
+    assert calls == []
+
+
+def test_from_import_submodule_alias_attribute_call_disambiguates(ce_store, tmp_path):
+    """`from pkg import a as offload` then `offload.helper()` -- a from-import
+    alias of a *submodule* (not a function), used through one attribute
+    access. Real-world shape: `from src import tool_result_offload as
+    offload` then `offload.offload_if_oversized(...)`."""
+    root = _alias_fixture(tmp_path)
+    write(root, "caller.py",
+          "from pkg import a as offload\n\n\ndef run():\n    return offload.helper()\n")
+    ci.refresh(root, project_id="p1")
+
+    run = _sym(root, "caller.py", "run")
+    calls = [row for row in ci.neighbors(run.id, kinds=["calls"]) if row["direction"] == "out"]
+    assert len(calls) == 1
+    assert calls[0]["path"] == "pkg/a.py"
