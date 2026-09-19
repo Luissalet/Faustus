@@ -453,6 +453,14 @@ DEFAULT_SETTINGS = {
     "agent_ui_smoke": True,
     "agent_ui_smoke_timeout_seconds": 60,
     "agent_ui_smoke_playwright": True,
+    # ui_smoke's Playwright pass also runs a dependency-free accessibility
+    # audit (img alt, accessible names, labels, lang, title, duplicate ids,
+    # heading order, color contrast) and a perf snapshot (LCP, load time,
+    # JS/CSS transfer size). Perf is warnings-only and never fails a turn.
+    # Serious a11y findings are always surfaced as `quality_warnings`, but by
+    # default do not fail the smoke result the way console errors do; set
+    # this True to make a serious a11y finding block like a console error.
+    "ui_smoke_a11y_blocking": False,
     # H2: at the start of a code turn, compare requirements*/pyproject/
     # package.json against what the project's interpreter and node_modules
     # actually have; tell the model what is missing BEFORE it runs anything.

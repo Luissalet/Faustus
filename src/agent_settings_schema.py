@@ -255,7 +255,13 @@ GROUPS: list[dict[str, Any]] = [
                  10, 600),
             _bool("agent_ui_smoke_playwright", "UI smoke: use Playwright",
                   "When Python playwright + a Chromium build are installed, also load the page "
-                  "headless and capture real console errors and 4xx/5xx network responses."),
+                  "headless and capture real console errors and 4xx/5xx network responses, plus an "
+                  "accessibility + performance audit."),
+            _bool("ui_smoke_a11y_blocking", "UI smoke: a11y findings block",
+                  "A serious accessibility finding (missing alt text, unlabeled form control, no "
+                  "accessible name, low color contrast) fails the smoke result the same way a console "
+                  "error does. Off by default: serious findings are still surfaced as quality "
+                  "warnings, they just don't block the turn."),
             _text("agent_auto_review", "Diff reviewer",
                   "Independent, tool-less review of the turn's diff: off, same (this chat's model) or a "
                   "model name on the same endpoint.",

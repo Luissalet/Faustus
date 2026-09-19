@@ -434,11 +434,316 @@ def playwright_available() -> bool:
     return True
 
 
-def _playwright_console_errors(base_url: str, timeout_s: float) -> List[str]:
-    """Load `base_url/` headless and return console errors, uncaught page
-    exceptions, and 4xx/5xx network responses as short strings. Raises on
-    any Playwright/driver problem — the caller decides whether that is fatal
-    (it is not: `run_smoke` swallows it and reports `playwright_used=False`).
+# In-page accessibility audit, run via `page.evaluate`. Deterministic,
+# dependency-free (no axe-core): each finding is
+# {rule, severity: "serious"|"moderate"|"minor", selector, detail}. Findings
+# are capped at 10 per rule for the returned list; `counts_by_severity` and
+# `counts_by_rule` are computed from the *full*, uncapped pass so nothing is
+# silently lost, only the verbose listing is bounded.
+_A11Y_JS = r"""
+() => {
+  const findings = [];
+  const MAX_PER_RULE = 10;
+  const ruleCounts = {};
+
+  function push(rule, severity, el, detail) {
+    ruleCounts[rule] = (ruleCounts[rule] || 0) + 1;
+    findings.push({ rule, severity, selector: selectorFor(el), detail });
+  }
+
+  function selectorFor(el, maxDepth) {
+    maxDepth = maxDepth || 4;
+    if (!el || el.nodeType !== 1) return '';
+    const path = [];
+    let node = el;
+    let depth = 0;
+    while (node && node.nodeType === 1 && depth < maxDepth) {
+      let part = node.tagName ? node.tagName.toLowerCase() : '';
+      if (node.id) {
+        part += '#' + node.id;
+        path.unshift(part);
+        break;
+      }
+      if (typeof node.className === 'string' && node.className.trim()) {
+        const cls = node.className.trim().split(/\s+/).filter(Boolean).slice(0, 2).join('.');
+        if (cls) part += '.' + cls;
+      }
+      const parent = node.parentElement;
+      if (parent) {
+        const siblings = Array.prototype.filter.call(parent.children, (c) => c.tagName === node.tagName);
+        if (siblings.length > 1) {
+          part += ':nth-of-type(' + (siblings.indexOf(node) + 1) + ')';
+        }
+      }
+      path.unshift(part);
+      node = parent;
+      depth++;
+    }
+    return path.join(' > ');
+  }
+
+  function isVisible(el) {
+    if (!el || el.nodeType !== 1) return false;
+    const style = getComputedStyle(el);
+    if (style.display === 'none' || style.visibility === 'hidden' || parseFloat(style.opacity || '1') === 0) return false;
+    const rect = el.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
+  }
+
+  function getAccessibleName(el) {
+    const ariaLabel = el.getAttribute('aria-label');
+    if (ariaLabel && ariaLabel.trim()) return ariaLabel.trim();
+    const labelledby = el.getAttribute('aria-labelledby');
+    if (labelledby) {
+      const txt = labelledby.split(/\s+/).map((id) => {
+        const t = document.getElementById(id);
+        return t ? t.textContent.trim() : '';
+      }).join(' ').trim();
+      if (txt) return txt;
+    }
+    const imgWithAlt = el.querySelector ? el.querySelector('img[alt]') : null;
+    if (imgWithAlt && (imgWithAlt.getAttribute('alt') || '').trim()) return imgWithAlt.getAttribute('alt').trim();
+    const text = (el.textContent || '').trim();
+    if (text) return text;
+    const title = el.getAttribute('title');
+    if (title && title.trim()) return title.trim();
+    return '';
+  }
+
+  function hasRealLabel(el) {
+    try {
+      if (el.labels && el.labels.length > 0) return true;
+    } catch (e) { /* ignore */ }
+    const ariaLabel = el.getAttribute('aria-label');
+    if (ariaLabel && ariaLabel.trim()) return true;
+    const labelledby = el.getAttribute('aria-labelledby');
+    if (labelledby) {
+      const ok = labelledby.split(/\s+/).some((id) => {
+        const t = document.getElementById(id);
+        return t && t.textContent.trim();
+      });
+      if (ok) return true;
+    }
+    return false;
+  }
+
+  // 1. img without alt attribute (serious). alt="" is a valid "decorative"
+  // marker and is intentionally not flagged.
+  document.querySelectorAll('img').forEach((img) => {
+    if (!img.hasAttribute('alt')) push('img-alt', 'serious', img, 'img element has no alt attribute');
+  });
+
+  // 2. interactive controls without an accessible name (serious)
+  document.querySelectorAll('button, [role="button"], a[href]').forEach((el) => {
+    if (!isVisible(el)) return;
+    const name = getAccessibleName(el);
+    if (!name) push('name-missing', 'serious', el, (el.tagName || '').toLowerCase() + ' has no accessible name');
+  });
+
+  // 3. form controls without a label (serious; placeholder-only is minor)
+  document.querySelectorAll('input, select, textarea').forEach((el) => {
+    const type = (el.getAttribute('type') || '').toLowerCase();
+    if (['hidden', 'submit', 'button', 'image', 'reset'].indexOf(type) !== -1) return;
+    if (!isVisible(el)) return;
+    if (hasRealLabel(el)) return;
+    const placeholder = el.getAttribute('placeholder');
+    if (placeholder && placeholder.trim()) {
+      push('input-label', 'minor', el, 'only has a placeholder, no real label');
+    } else {
+      push('input-label', 'serious', el, 'no label, aria-label or aria-labelledby');
+    }
+  });
+
+  // 4. <html> without lang (moderate)
+  const htmlEl = document.documentElement;
+  const lang = htmlEl.getAttribute('lang');
+  if (!lang || !lang.trim()) push('html-lang', 'moderate', htmlEl, 'html element is missing a lang attribute');
+
+  // 5. missing/empty <title> (moderate)
+  const titleEl = document.querySelector('title');
+  if (!titleEl || !(titleEl.textContent || '').trim()) {
+    push('page-title', 'moderate', document.head || htmlEl, 'document is missing a non-empty <title>');
+  }
+
+  // 6. duplicate id attributes (moderate)
+  const idCounts = {};
+  document.querySelectorAll('[id]').forEach((el) => {
+    const id = el.id;
+    if (!id) return;
+    idCounts[id] = (idCounts[id] || 0) + 1;
+  });
+  Object.keys(idCounts).forEach((id) => {
+    if (idCounts[id] > 1) {
+      push('duplicate-id', 'moderate', document.getElementById(id), 'id "' + id + '" is used ' + idCounts[id] + ' times');
+    }
+  });
+
+  // 7. heading level skips, e.g. h2 -> h4 (minor)
+  const headings = Array.prototype.slice.call(document.querySelectorAll('h1, h2, h3, h4, h5, h6'));
+  let prevLevel = 0;
+  headings.forEach((h) => {
+    const level = parseInt(h.tagName.substring(1), 10);
+    if (prevLevel && level > prevLevel + 1) {
+      push('heading-skip', 'minor', h, 'heading level jumps from h' + prevLevel + ' to h' + level);
+    }
+    prevLevel = level;
+  });
+
+  // 8. text color contrast below WCAG AA (4.5:1 normal, 3:1 for >=24px or
+  // >=18.66px bold), computed from computed styles, walking up for the
+  // first non-transparent background.
+  function parseColor(str) {
+    if (!str) return null;
+    const m = str.match(/rgba?\(([^)]+)\)/);
+    if (!m) return null;
+    const parts = m[1].split(',').map((s) => parseFloat(s));
+    if (parts.length < 3 || parts.some((v) => Number.isNaN(v))) return null;
+    return { r: parts[0], g: parts[1], b: parts[2], a: parts.length > 3 ? parts[3] : 1 };
+  }
+  function relLuminance(r, g, b) {
+    function c(v) {
+      v /= 255;
+      return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+    }
+    return 0.2126 * c(r) + 0.7152 * c(g) + 0.0722 * c(b);
+  }
+  function contrastRatio(a, b) {
+    const l1 = relLuminance(a.r, a.g, a.b) + 0.05;
+    const l2 = relLuminance(b.r, b.g, b.b) + 0.05;
+    return l1 > l2 ? l1 / l2 : l2 / l1;
+  }
+  function effectiveBackground(el) {
+    let node = el;
+    while (node) {
+      const style = getComputedStyle(node);
+      const parsed = parseColor(style.backgroundColor);
+      if (parsed && parsed.a > 0) return parsed;
+      node = node.parentElement;
+    }
+    return { r: 255, g: 255, b: 255, a: 1 };
+  }
+
+  const textEls = document.body ? document.body.querySelectorAll('*') : [];
+  let contrastChecked = 0;
+  textEls.forEach((el) => {
+    if (contrastChecked > 400) return; // safety cap for very large pages
+    const tag = (el.tagName || '').toLowerCase();
+    if (tag === 'script' || tag === 'style' || tag === 'noscript' || tag === 'title') return;
+    let hasDirectText = false;
+    for (let i = 0; i < el.childNodes.length; i++) {
+      const n = el.childNodes[i];
+      if (n.nodeType === 3 && n.textContent && n.textContent.trim()) { hasDirectText = true; break; }
+    }
+    if (!hasDirectText) return;
+    if (!isVisible(el)) return;
+    contrastChecked++;
+    const style = getComputedStyle(el);
+    const color = parseColor(style.color);
+    if (!color || color.a === 0) return;
+    const bg = effectiveBackground(el);
+    const ratio = contrastRatio(color, bg);
+    const fontSize = parseFloat(style.fontSize) || 16;
+    const fontWeight = parseInt(style.fontWeight, 10) || 400;
+    const isLarge = fontSize >= 24 || (fontSize >= 18.66 && fontWeight >= 700);
+    const threshold = isLarge ? 3.0 : 4.5;
+    if (ratio < threshold) {
+      const severity = ratio < 3.0 ? 'serious' : 'moderate';
+      push('color-contrast', severity, el, 'contrast ratio ' + ratio.toFixed(2) + ':1 (needs ' + threshold.toFixed(1) + ':1)');
+    }
+  });
+
+  const byRule = {};
+  findings.forEach((f) => {
+    byRule[f.rule] = byRule[f.rule] || [];
+    byRule[f.rule].push(f);
+  });
+  const capped = [];
+  Object.keys(byRule).forEach((rule) => {
+    byRule[rule].slice(0, MAX_PER_RULE).forEach((f) => capped.push(f));
+  });
+
+  const countsBySeverity = { serious: 0, moderate: 0, minor: 0 };
+  findings.forEach((f) => {
+    if (countsBySeverity[f.severity] !== undefined) countsBySeverity[f.severity]++;
+  });
+
+  return { findings: capped, counts_by_severity: countsBySeverity, counts_by_rule: ruleCounts };
+}
+"""
+
+# Navigation timing, LCP (via a buffered PerformanceObserver) and JS/CSS
+# transfer size, read once the page has settled. Warnings only — perf never
+# fails a turn (see `_perf_warnings`).
+_PERF_JS = r"""
+async () => {
+  const nav = performance.getEntriesByType('navigation')[0] || null;
+  const domContentLoaded = nav ? nav.domContentLoadedEventEnd : null;
+  const load = nav ? nav.loadEventEnd : null;
+
+  let lcp = 0;
+  try {
+    await new Promise((resolve) => {
+      try {
+        const po = new PerformanceObserver((list) => {
+          const entries = list.getEntries();
+          const last = entries[entries.length - 1];
+          if (last) lcp = last.startTime;
+        });
+        po.observe({ type: 'largest-contentful-paint', buffered: true });
+      } catch (e) { /* LCP not supported by this engine */ }
+      setTimeout(resolve, 200);
+    });
+  } catch (e) { /* ignore */ }
+
+  const resources = performance.getEntriesByType('resource') || [];
+  let jsBytes = 0;
+  let cssBytes = 0;
+  resources.forEach((r) => {
+    const size = r.transferSize || 0;
+    const name = r.name || '';
+    const initiator = r.initiatorType || '';
+    if (initiator === 'script' || /\.m?js(\?.*)?$/i.test(name)) jsBytes += size;
+    else if (/\.css(\?.*)?$/i.test(name)) cssBytes += size;
+  });
+
+  return {
+    dom_content_loaded_ms: domContentLoaded,
+    load_ms: load,
+    lcp_ms: lcp,
+    js_bytes: jsBytes,
+    css_bytes: cssBytes,
+    request_count: resources.length,
+  };
+}
+"""
+
+# perf warning thresholds — informational only, never gate a turn.
+_PERF_LCP_MS_WARN = 2500
+_PERF_LOAD_MS_WARN = 4000
+_PERF_JS_BYTES_WARN = 1_500_000
+
+
+def _perf_warnings(perf: Dict[str, Any]) -> List[str]:
+    warnings: List[str] = []
+    lcp = perf.get("lcp_ms")
+    if isinstance(lcp, (int, float)) and lcp > _PERF_LCP_MS_WARN:
+        warnings.append(f"LCP {lcp:.0f}ms exceeds {_PERF_LCP_MS_WARN}ms")
+    load = perf.get("load_ms")
+    if isinstance(load, (int, float)) and load > _PERF_LOAD_MS_WARN:
+        warnings.append(f"load {load:.0f}ms exceeds {_PERF_LOAD_MS_WARN}ms")
+    js_bytes = perf.get("js_bytes")
+    if isinstance(js_bytes, (int, float)) and js_bytes > _PERF_JS_BYTES_WARN:
+        warnings.append(f"JS transfer {js_bytes / 1_000_000:.2f}MB exceeds {_PERF_JS_BYTES_WARN / 1_000_000:.1f}MB")
+    return warnings
+
+
+def _playwright_audit(base_url: str, timeout_s: float) -> Dict[str, Any]:
+    """Load `base_url/` headless once and gather everything the Playwright
+    pass produces: console errors / uncaught exceptions / 4xx-5xx network
+    responses, the a11y audit (`_A11Y_JS`), and the perf snapshot
+    (`_PERF_JS`). Raises on any Playwright/driver problem — the caller
+    decides whether that is fatal (it is not: `run_smoke` swallows it and
+    reports `playwright_used=False`).
     """
     from playwright.sync_api import sync_playwright  # local import: optional dep
 
@@ -446,6 +751,8 @@ def _playwright_console_errors(base_url: str, timeout_s: float) -> List[str]:
         os.environ["PLAYWRIGHT_BROWSERS_PATH"] = "/opt/pw-browsers"
 
     errors: List[str] = []
+    a11y: Dict[str, Any] = {"findings": [], "counts_by_severity": {"serious": 0, "moderate": 0, "minor": 0}}
+    perf: Dict[str, Any] = {}
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         try:
@@ -455,9 +762,27 @@ def _playwright_console_errors(base_url: str, timeout_s: float) -> List[str]:
             page.on("response", lambda resp: errors.append(f"{resp.status} {resp.url}") if resp.status >= 400 else None)
             page.goto(base_url + "/", timeout=int(max(1.0, timeout_s) * 1000), wait_until="load")
             page.wait_for_timeout(500)
+            try:
+                a11y_raw = page.evaluate(_A11Y_JS)
+                if isinstance(a11y_raw, dict):
+                    a11y = {
+                        "findings": a11y_raw.get("findings") or [],
+                        "counts_by_severity": a11y_raw.get("counts_by_severity")
+                        or {"serious": 0, "moderate": 0, "minor": 0},
+                        "counts_by_rule": a11y_raw.get("counts_by_rule") or {},
+                    }
+            except Exception as e:  # noqa: BLE001
+                logger.debug("[ui_smoke] a11y audit failed: %s", e)
+            try:
+                perf_raw = page.evaluate(_PERF_JS)
+                if isinstance(perf_raw, dict):
+                    perf = dict(perf_raw)
+                    perf["warnings"] = _perf_warnings(perf)
+            except Exception as e:  # noqa: BLE001
+                logger.debug("[ui_smoke] perf audit failed: %s", e)
         finally:
             browser.close()
-    return errors
+    return {"console_errors": errors, "a11y": a11y, "perf": perf}
 
 
 # ---------------------------------------------------------------------------
@@ -467,7 +792,9 @@ def _playwright_console_errors(base_url: str, timeout_s: float) -> List[str]:
 def _report(*, ran: bool, ok: bool = True, summary: str = "", server_cmd: Optional[str] = None,
             url: Optional[str] = None, pages: Optional[List[Dict]] = None,
             assets: Optional[List[Dict]] = None, console_errors: Optional[List[str]] = None,
-            playwright_used: bool = False) -> Dict[str, Any]:
+            playwright_used: bool = False, a11y: Optional[Dict[str, Any]] = None,
+            perf: Optional[Dict[str, Any]] = None,
+            quality_warnings: Optional[List[str]] = None) -> Dict[str, Any]:
     return {
         "ran": bool(ran),
         "ok": bool(ok),
@@ -478,14 +805,42 @@ def _report(*, ran: bool, ok: bool = True, summary: str = "", server_cmd: Option
         "assets": assets or [],
         "console_errors": console_errors or [],
         "playwright_used": bool(playwright_used),
+        "a11y": a11y,
+        "perf": perf,
+        "quality_warnings": quality_warnings or [],
     }
 
 
-def _summarize(pages: List[Dict], assets: List[Dict], console_errors: List[str], problems: List[str]) -> str:
-    if not problems and not console_errors:
+def _quality_warnings(a11y: Optional[Dict[str, Any]], perf: Optional[Dict[str, Any]]) -> List[str]:
+    """Human-readable warnings for findings that never fail a turn on their
+    own: a11y (regardless of severity — blocking is a separate decision made
+    by the caller) and perf thresholds. Surfaced to the completion gate as
+    `quality_warnings`, distinct from `ok`."""
+    out: List[str] = []
+    if a11y:
+        counts = a11y.get("counts_by_severity") or {}
+        serious = int(counts.get("serious") or 0)
+        moderate = int(counts.get("moderate") or 0)
+        minor = int(counts.get("minor") or 0)
+        if serious or moderate or minor:
+            out.append(f"a11y: {serious} serious, {moderate} moderate, {minor} minor finding(s)")
+    if perf:
+        for w in perf.get("warnings") or []:
+            out.append(f"perf: {w}")
+    return out
+
+
+def _summarize(pages: List[Dict], assets: List[Dict], console_errors: List[str], problems: List[str],
+                a11y: Optional[Dict[str, Any]] = None, perf: Optional[Dict[str, Any]] = None,
+                a11y_blocking_failed: bool = False) -> str:
+    if not problems and not console_errors and not a11y_blocking_failed:
         n_assets = len(assets)
         n_pages = len(pages)
-        return f"ui_smoke ok: {n_pages} page(s), {n_assets} asset(s) checked, no console errors"
+        base = f"ui_smoke ok: {n_pages} page(s), {n_assets} asset(s) checked, no console errors"
+        extra = _quality_warnings(a11y, perf)
+        if extra:
+            base += " (" + "; ".join(extra) + ")"
+        return base
     bits = []
     bad_assets = [a for a in assets if not a.get("ok")]
     if bad_assets:
@@ -501,6 +856,14 @@ def _summarize(pages: List[Dict], assets: List[Dict], console_errors: List[str],
         bits.append(f"{len(bad_pages)} page(s) failed to load")
     if console_errors:
         bits.append(f"{len(console_errors)} browser console error(s) (e.g. {console_errors[0][:160]})")
+    if a11y_blocking_failed and a11y:
+        serious = int((a11y.get("counts_by_severity") or {}).get("serious") or 0)
+        sample = next((f for f in (a11y.get("findings") or []) if f.get("severity") == "serious"), None)
+        detail = f" (e.g. {sample['rule']} on {sample.get('selector')})" if sample else ""
+        bits.append(f"{serious} serious a11y finding(s){detail}")
+    extra = _quality_warnings(a11y, perf)
+    if extra and not a11y_blocking_failed:
+        bits.append("; ".join(extra))
     return "ui_smoke FAILED: " + "; ".join(bits)
 
 
@@ -546,19 +909,40 @@ def run_smoke(workspace: str, spec: Dict[str, Any], *, timeout_s: float = DEFAUL
 
         console_errors: List[str] = []
         playwright_used = False
+        a11y: Optional[Dict[str, Any]] = None
+        perf: Optional[Dict[str, Any]] = None
         if playwright_available():
             remaining = max(3.0, deadline - time.time())
             try:
-                console_errors = _playwright_console_errors(base_url, remaining)
+                audit = _playwright_audit(base_url, remaining)
+                console_errors = audit.get("console_errors") or []
+                a11y = audit.get("a11y")
+                perf = audit.get("perf")
                 playwright_used = True
+                # attach to the audited page's own entry too, not just the
+                # top-level report — the audit only ever loads base_url + "/".
+                for pg in pages:
+                    if pg.get("url") == base_url + "/":
+                        pg["a11y"] = a11y
+                        pg["perf"] = perf
+                        break
             except Exception as e:  # noqa: BLE001
                 logger.debug("[ui_smoke] playwright pass skipped: %s", e)
 
-        ok = not problems and not console_errors
-        summary = _summarize(pages, assets, console_errors, problems)
+        a11y_blocking = playwright_used and a11y is not None and _truthy(
+            _setting("ui_smoke_a11y_blocking", False)
+        )
+        a11y_serious = int(((a11y or {}).get("counts_by_severity") or {}).get("serious") or 0)
+        a11y_blocking_failed = bool(a11y_blocking and a11y_serious > 0)
+
+        ok = not problems and not console_errors and not a11y_blocking_failed
+        summary = _summarize(pages, assets, console_errors, problems, a11y=a11y, perf=perf,
+                              a11y_blocking_failed=a11y_blocking_failed)
+        quality_warnings = _quality_warnings(a11y, perf)
         return _report(ran=True, ok=ok, server_cmd=cmd_str, url=base_url, pages=pages,
                         assets=assets, console_errors=console_errors, summary=summary,
-                        playwright_used=playwright_used)
+                        playwright_used=playwright_used, a11y=a11y, perf=perf,
+                        quality_warnings=quality_warnings)
     finally:
         _kill_process_tree(proc)
 
@@ -604,6 +988,11 @@ def failure_message(report: Dict[str, Any]) -> str:
         lines.append(f"- {a['url']}: {a.get('problem')}{extra}")
     for e in (report.get("console_errors") or [])[:6]:
         lines.append(f"- console: {e}")
+    a11y = report.get("a11y")
+    if a11y and not report.get("ok"):
+        serious = [f for f in (a11y.get("findings") or []) if f.get("severity") == "serious"][:6]
+        for f in serious:
+            lines.append(f"- a11y ({f.get('rule')}, serious): {f.get('selector')} — {f.get('detail')}")
     lines.append(
         "If this is a Content-Type problem on a static asset (the classic case: a `.mjs`/`.js` "
         "file served as text/plain so the browser refuses to run it as a module), fix the server's "
@@ -627,5 +1016,17 @@ def compact(report: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         "assets": len(report.get("assets") or []),
         "assets_failed": len([a for a in (report.get("assets") or []) if not a.get("ok")]),
         "console_errors": len(report.get("console_errors") or []),
+        "quality_warnings": list(report.get("quality_warnings") or []),
     }
+    a11y = report.get("a11y")
+    if a11y:
+        out["a11y_counts"] = a11y.get("counts_by_severity")
+    perf = report.get("perf")
+    if perf:
+        out["perf"] = {
+            "lcp_ms": perf.get("lcp_ms"),
+            "load_ms": perf.get("load_ms"),
+            "js_bytes": perf.get("js_bytes"),
+            "warnings": perf.get("warnings") or [],
+        }
     return out
