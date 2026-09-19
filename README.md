@@ -345,6 +345,8 @@ A repeatable prompt-injection probe battery (`python -m src.security_probes`) ch
 
 A trajectory gate (`src/trajectory_gate.py`, `GET`/`POST /api/agent-runs/{run_id}/gate`) checks a recorded agent run against declarative, CI-style assertions — max error rate, step/tool-call/token/duration ceilings, forbidden/required tools, ordering rules ("`write_file` needs a prior `read_file`", "tests must run after the last edit"), no repeated identical calls, a final answer required — so a regression in agent behaviour is caught mechanically instead of by eye. `python -m src.trajectory_gate --run <id> --spec spec.json` (or `--recent 20` to aggregate a pass rate per check) runs in CI with a non-zero exit code on failure; a compact "Gate a run" panel in Activity shows the same checks for any run id.
 
+Doubt review (`src/doubt_review.py`, off by default: `agent_doubt_review`) asks a fresh-context, tool-less reviewer — no conversation history, only the task, a HIGH-risk file's `code_graph_risk` summary and the proposed diff — to find reasons a non-trivial edit is wrong before it lands, biased toward refutation rather than approval. Advisory by default: the edit applies and the verdict is appended to the tool result as "Second look..."; `agent_doubt_review_block` can instead refuse the write on a "concerns" verdict, reversible per call with `confirm_risky: true`. Cheap: a per-turn cache keeps the risk score and the review to one call per file/diff, and `agent_doubt_review_model` targets a small local model instead of spending the turn's main model on every edit.
+
 See the [threat model](THREAT_MODEL.md), [security policy](SECURITY.md) and [setup security notes](website/setup.md#security-notes).
 
 ## Credits and licence

@@ -274,6 +274,28 @@ GROUPS: list[dict[str, Any]] = [
             _int("agent_auto_review_fix_rounds", "Review fix rounds",
                  "How many bounded fix rounds the review findings may trigger.",
                  0, 5),
+            _bool("agent_doubt_review", "Doubt review before risky edits",
+                  "Before a non-trivial edit lands on a HIGH-risk file (code_graph_risk), ask a "
+                  "fresh-context, tool-less reviewer (no history -- only the task, the file's "
+                  "risk summary and the proposed diff) to find reasons the change is wrong. "
+                  "Advisory: the edit still applies and the verdict is appended to the result."),
+            _select("agent_doubt_review_min_tier", "Doubt review risk floor",
+                    "Minimum code_graph_risk tier that triggers a doubt review.",
+                    ["medium", "high"]),
+            _int("agent_doubt_review_max_per_turn", "Doubt reviews per turn",
+                 "At most this many doubt reviews run in one turn.",
+                 0, 10),
+            _bool("agent_doubt_review_block", "Doubt review can block",
+                  "A 'concerns' verdict refuses the edit (nothing is written) instead of just "
+                  "annotating the result; the agent can re-issue the call with confirm_risky: "
+                  "true to apply it anyway."),
+            _int("agent_doubt_review_timeout_seconds", "Doubt review timeout (s)",
+                 "Wall-clock cap for one doubt-review pass.",
+                 5, 600),
+            _text("agent_doubt_review_model", "Doubt review model",
+                  "Model spec for the doubt reviewer (a cheap local/utility model is recommended). "
+                  "'auto' lets the endpoint choose.",
+                  placeholder="auto"),
             _bool("agent_checkpoints", "Workspace checkpoints",
                   "Shadow snapshot of the workspace before the first change of a turn: powers 'restore to "
                   "before this turn', per-file diffs and the test baseline. Needs git."),

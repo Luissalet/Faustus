@@ -8040,6 +8040,16 @@ async def _stream_agent_loop_body(
     # WriteFileTool through turn_options → tool_execution ctx.
     from src.rewrite_policy import RewritePolicy as _RewritePolicy
     _rewrite_policy = _RewritePolicy.from_settings(get_setting)
+    # Doubt review (src/doubt_review.py): one instance per turn, same
+    # contract as _rewrite_policy above -- caches code_graph_risk per path
+    # and caps how many reviews the turn may spend, threaded to the edit
+    # tools through turn_options → tool_execution ctx.
+    from src.doubt_review import DoubtReviewState as _DoubtReviewState
+    try:
+        _doubt_review_max = int(get_setting("agent_doubt_review_max_per_turn", 2) or 0)
+    except (TypeError, ValueError):
+        _doubt_review_max = 2
+    _doubt_review_state = _DoubtReviewState(max_per_turn=_doubt_review_max)
     # TASK-06: latest update_plan payload seen this turn, for the
     # autonomy-budget checkpoint (src/autonomy_budget.py::build_checkpoint) —
     # a plain read of what update_plan already returns, no plan handling of
@@ -8375,6 +8385,8 @@ async def _stream_agent_loop_body(
                         "run_id": str(_hopts.get("run_id") or session_id or ""),
                         "turn_id": _context_turn_id,
                         "rewrite_policy": _rewrite_policy,
+                        "doubt_review_state": _doubt_review_state,
+                        "task_text": _last_user,
                     },
                 )
             finally:
@@ -12035,6 +12047,8 @@ async def _stream_agent_loop_body(
                             "run_id": str(_hopts.get("run_id") or session_id or ""),
                             "turn_id": _context_turn_id,
                             "rewrite_policy": _rewrite_policy,
+                            "doubt_review_state": _doubt_review_state,
+                            "task_text": _last_user,
                         },
                     )
                     _prefetched_duration_ms[idx] = round(max(0.0, (time.monotonic() - _pt0) * 1000.0), 1)
@@ -12396,6 +12410,8 @@ async def _stream_agent_loop_body(
                                     "run_id": str(_hopts.get("run_id") or session_id or ""),
                                     "turn_id": _context_turn_id,
                                     "rewrite_policy": _rewrite_policy,
+                                    "doubt_review_state": _doubt_review_state,
+                                    "task_text": _last_user,
                                 },
                             )
                         finally:

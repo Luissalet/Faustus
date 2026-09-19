@@ -950,6 +950,12 @@ async def _direct_fallback(
             # context never set one — filesystem_tools.py treats that as
             # "policy off" rather than raising.
             "rewrite_policy": _turn_opts.get("rewrite_policy"),
+            # Doubt review (src/doubt_review.py): the turn's DoubtReviewState
+            # (risk-score cache + per-turn review budget) and, when
+            # available, the turn's user message for the reviewer's prompt.
+            # Both None/absent just mean the edit tools skip doubt review.
+            "doubt_review_state": _turn_opts.get("doubt_review_state"),
+            "task_text": _turn_opts.get("task_text"),
             # The run's project identity, surfaced as its own ctx key so a tool
             # does not have to know that the route packs it into the harness
             # knobs (services/projects.py::agent_options puts it there). Read

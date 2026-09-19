@@ -185,6 +185,21 @@ def _base_revision_conflict(tool: str, path: str, base_revision: str,
     return result
 
 
+def _replace_text(original_lf: str, old_lf: str, new_lf: str, replace_all: bool
+                   ) -> Tuple[str, Optional[str]]:
+    """Pure `edit_file` replace logic, extracted so a doubt-review preview
+    (which must NOT write anything) and the real `_apply()` write use the
+    exact same matching rules. Returns `(status, updated_text_or_None)` with
+    status "ok" / "not_found" / "not_unique:<n>"."""
+    count = original_lf.count(old_lf)
+    if count == 0:
+        return "not_found", None
+    if count > 1 and not replace_all:
+        return f"not_unique:{count}", None
+    updated = original_lf.replace(old_lf, new_lf) if replace_all else original_lf.replace(old_lf, new_lf, 1)
+    return "ok", updated
+
+
 class EditFileTool:
     async def execute(self, content: str, ctx: dict) -> dict:
         from src.tool_execution import _resolve_tool_path, _resolve_search_root, _truncate
@@ -196,6 +211,7 @@ class EditFileTool:
         old = args.get("old_string", "")
         new = args.get("new_string", "")
         replace_all = bool(args.get("replace_all", False))
+        confirm_risky = bool(args.get("confirm_risky", False))
         base_revision = _normalize_base_revision(args.get("base_revision"))
         if not raw_path:
             return {"error": "edit_file: path required", "exit_code": 1}
@@ -214,6 +230,31 @@ class EditFileTool:
         old_lf = old.replace("\r\n", "\n")
         new_lf = new.replace("\r\n", "\n")
 
+        # Doubt review (src/doubt_review.py) block mode: preview the edit
+        # WITHOUT writing, so a "concerns" verdict can refuse the write
+        # entirely. Advisory mode (the default when doubt review is on)
+        # needs no pre-write pass — it never blocks, so the section is
+        # appended after the real write below.
+        _dr_gate = None
+        try:
+            from src import doubt_review as _doubt_review
+        except Exception:  # noqa: BLE001
+            _doubt_review = None
+        if _doubt_review is not None and _doubt_review.enabled() and _doubt_review.block_mode_enabled():
+            try:
+                _preview, _pcrlf, _ = await asyncio.to_thread(_read_text_lf, path)
+                _pstatus, _pupdated = _replace_text(_preview, old_lf, new_lf, replace_all)
+                if _pstatus == "ok":
+                    _pdiff = _unified_diff(_preview, _pupdated, path)
+                    _dr_gate = await _doubt_review.check_edit(ctx, path, raw_path, _pdiff,
+                                                              confirm_risky=confirm_risky)
+            except FileNotFoundError:
+                pass
+            except Exception:  # noqa: BLE001
+                logger.debug("[doubt_review] pre-write gate failed for %s", path, exc_info=True)
+        if _dr_gate is not None and not _dr_gate.get("proceed", True):
+            return _dr_gate["result"]
+
         def _apply():
             """Read, check the base_revision precondition (EDIT-01), replace
             and write — all inside one thread call so nothing else can slip a
@@ -225,12 +266,9 @@ class EditFileTool:
                     current_text=original, base_text=old_lf, proposed_text=new_lf)
                 if conflict is not None:
                     return original, conflict, "conflict"
-            count = original.count(old_lf)
-            if count == 0:
-                return original, None, "not_found"
-            if count > 1 and not replace_all:
-                return original, None, f"not_unique:{count}"
-            updated = original.replace(old_lf, new_lf) if replace_all else original.replace(old_lf, new_lf, 1)
+            status, updated = _replace_text(original, old_lf, new_lf, replace_all)
+            if status != "ok":
+                return original, None, status
             _write_text_lf(path, updated, crlf)
             written = updated.replace("\n", "\r\n") if crlf else updated
             return original, (updated, sha256_revision(written.encode("utf-8"))), "ok"
@@ -305,6 +343,20 @@ class EditFileTool:
                                 pre_bytes=original.encode("utf-8"))
         except Exception:
             logger.debug("[edit_history] hook failed for edit_file on %s", path, exc_info=True)
+        # Doubt review: append the "Second look..." section. `_dr_gate` is
+        # already set (from the pre-write pass) in block mode; advisory mode
+        # runs the check now, against the diff that actually landed.
+        if _doubt_review is not None and _doubt_review.enabled():
+            try:
+                if _dr_gate is None:
+                    _dr_gate = await _doubt_review.check_edit(ctx, path, raw_path, diff or {},
+                                                              confirm_risky=confirm_risky)
+                if _dr_gate.get("section"):
+                    result["output"] = f"{result['output']}\n\n{_dr_gate['section']}"
+                if _dr_gate.get("review") is not None:
+                    result["doubt_review"] = _dr_gate["review"]
+            except Exception:  # noqa: BLE001
+                logger.debug("[doubt_review] post-write section failed for %s", path, exc_info=True)
         return result
 
 class ReadFileTool:
@@ -420,6 +472,7 @@ class WriteFileTool:
         # path: there is no filesystem MCP server, so write_file always runs
         # here via _direct_fallback, not through _build_mcp_args.
         base_revision = ""
+        confirm_risky = False
         _stripped = content.strip()
         if _stripped.startswith("{"):
             try:
@@ -428,12 +481,35 @@ class WriteFileTool:
                     raw_path = str(_a.get("path", "")).strip()
                     body = str(_a.get("content", ""))
                     base_revision = _normalize_base_revision(_a.get("base_revision"))
+                    confirm_risky = bool(_a.get("confirm_risky", False))
             except (json.JSONDecodeError, TypeError, ValueError):
                 pass
         try:
             path = _resolve_tool_path(raw_path)
         except ValueError as e:
             return {"error": f"write_file: {e}", "exit_code": 1}
+        # Doubt review (src/doubt_review.py) block mode: preview the diff
+        # WITHOUT writing, so a "concerns" verdict can refuse the write
+        # entirely. Advisory mode needs no pre-write pass.
+        _dr_gate = None
+        try:
+            from src import doubt_review as _doubt_review
+        except Exception:  # noqa: BLE001
+            _doubt_review = None
+        if _doubt_review is not None and _doubt_review.enabled() and _doubt_review.block_mode_enabled():
+            try:
+                _preview = ""
+                try:
+                    _preview, _pcrlf, _ = await asyncio.to_thread(_read_text_lf, path)
+                except (FileNotFoundError, IsADirectoryError, UnicodeDecodeError, OSError):
+                    _preview = ""
+                _pdiff = _unified_diff(_preview, body, path)
+                _dr_gate = await _doubt_review.check_edit(ctx, path, raw_path, _pdiff or {},
+                                                          confirm_risky=confirm_risky)
+            except Exception:  # noqa: BLE001
+                logger.debug("[doubt_review] pre-write gate failed for %s", path, exc_info=True)
+        if _dr_gate is not None and not _dr_gate.get("proceed", True):
+            return _dr_gate["result"]
         try:
             def _write():
                 old, crlf, revision_now = "", False, None
@@ -511,6 +587,17 @@ class WriteFileTool:
                 pre_bytes=old_content.encode("utf-8") if old_content else None)
         except Exception:
             logger.debug("[edit_history] hook failed for write_file on %s", path, exc_info=True)
+        if _doubt_review is not None and _doubt_review.enabled():
+            try:
+                if _dr_gate is None:
+                    _dr_gate = await _doubt_review.check_edit(ctx, path, raw_path, diff or {},
+                                                              confirm_risky=confirm_risky)
+                if _dr_gate.get("section"):
+                    result["output"] = f"{result['output']}\n\n{_dr_gate['section']}"
+                if _dr_gate.get("review") is not None:
+                    result["doubt_review"] = _dr_gate["review"]
+            except Exception:  # noqa: BLE001
+                logger.debug("[doubt_review] post-write section failed for %s", path, exc_info=True)
         return result
 
 class ApplyPatchTool:
@@ -527,6 +614,7 @@ class ApplyPatchTool:
 
         patch_text = content or ""
         base_revision = ""
+        confirm_risky = False
         stripped = patch_text.strip()
         if stripped.startswith("{"):
             try:
@@ -534,6 +622,7 @@ class ApplyPatchTool:
                 if isinstance(args, dict):
                     patch_text = str(args.get("patch_text") or args.get("patchText") or args.get("patch") or "")
                     base_revision = _normalize_base_revision(args.get("base_revision"))
+                    confirm_risky = bool(args.get("confirm_risky", False))
             except (json.JSONDecodeError, TypeError):
                 pass
         if not patch_text.strip():
@@ -580,6 +669,30 @@ class ApplyPatchTool:
                 prepared.append((kind, path, old, new, crlf))
         except (ValueError, UnicodeDecodeError, PermissionError, OSError) as e:
             return {"error": f"apply_patch: {e}", "exit_code": 1}
+
+        # Doubt review (src/doubt_review.py) block mode: gate on each
+        # "update" op's diff BEFORE the journaled write phase below, so a
+        # "concerns" verdict on any one file refuses the WHOLE patch (still
+        # nothing written). Advisory mode runs after, against what landed.
+        _dr_gates: List[Dict[str, Any]] = []
+        try:
+            from src import doubt_review as _doubt_review
+        except Exception:  # noqa: BLE001
+            _doubt_review = None
+        if _doubt_review is not None and _doubt_review.enabled() and _doubt_review.block_mode_enabled():
+            for kind, path, old, new, crlf in prepared:
+                if kind != "update":
+                    continue
+                try:
+                    pdiff = _unified_diff(old, new, path)
+                    gate = await _doubt_review.check_edit(ctx, path, path, pdiff or {},
+                                                          confirm_risky=confirm_risky)
+                except Exception:  # noqa: BLE001
+                    logger.debug("[doubt_review] pre-write gate failed for %s", path, exc_info=True)
+                    continue
+                if not gate.get("proceed", True):
+                    return gate["result"]
+                _dr_gates.append(gate)
 
         # EDIT-02: the write phase is journaled (src/edit_journal.py) — every
         # target's pre-batch bytes are snapshotted before any write, and a
@@ -669,6 +782,32 @@ class ApplyPatchTool:
                 "new_file": any(d.get("new_file") for d in diffs),
                 "file": "patch",
             }
+        # Doubt review: block mode already gated (`_dr_gates`) before the
+        # write; advisory mode runs now, per "update" op, against what
+        # actually landed.
+        if _doubt_review is not None and _doubt_review.enabled():
+            sections: List[str] = []
+            reviews: List[Dict[str, Any]] = []
+            gates = _dr_gates
+            if not gates:
+                for kind, path, old, new, crlf in prepared:
+                    if kind != "update":
+                        continue
+                    try:
+                        pdiff = _unified_diff(old, new, path)
+                        gates.append(await _doubt_review.check_edit(
+                            ctx, path, path, pdiff or {}, confirm_risky=confirm_risky))
+                    except Exception:  # noqa: BLE001
+                        logger.debug("[doubt_review] post-write section failed for %s", path, exc_info=True)
+            for gate in gates:
+                if gate.get("section"):
+                    sections.append(gate["section"])
+                if gate.get("review") is not None:
+                    reviews.append(gate["review"])
+            if sections:
+                result["output"] = result["output"] + "\n\n" + "\n\n".join(sections)
+            if reviews:
+                result["doubt_review"] = reviews
         return result
 
 

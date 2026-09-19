@@ -539,6 +539,18 @@ DEFAULT_SETTINGS = {
     "agent_auto_review_timeout_seconds": 180,
     "agent_auto_review_fix_round": True,
     "agent_auto_review_fix_rounds": 1,
+    # Doubt review (src/doubt_review.py): before a non-trivial edit lands on
+    # a file `code_graph_risk` scores at or above `agent_doubt_review_min_tier`,
+    # a fresh-context, tool-less reviewer (no history, only the task, the
+    # file's risk summary and the proposed diff) is asked to find reasons the
+    # change is wrong. Advisory by default: the edit still applies and the
+    # verdict is appended to the tool result.
+    "agent_doubt_review": False,
+    "agent_doubt_review_min_tier": "high",
+    "agent_doubt_review_max_per_turn": 2,
+    "agent_doubt_review_block": False,
+    "agent_doubt_review_timeout_seconds": 45,
+    "agent_doubt_review_model": "auto",
     # Constrained JSON decoding for the tool-less internal passes that need a
     # JSON answer (today: the diff reviewer). "auto" — when the endpoint is a
     # native Ollama one, the pass sends its JSON Schema in Ollama's `format`

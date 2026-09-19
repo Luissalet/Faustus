@@ -114,7 +114,7 @@ def test_groups_follow_the_requested_layout():
             "agent_local_temperature_cap", "agent_auto_continue_cycles", "agent_local_stream_timeout_seconds",
             "agent_local_think_budget_seconds", "agent_subprocess_idle_timeout_seconds",
             "agent_workspace_no_memory"} <= set(by_group["loop"])
-    assert all(k.startswith(("agent_project_test", "agent_ui_smoke", "agent_static_analysis", "agent_auto_review", "agent_checkpoint"))
+    assert all(k.startswith(("agent_project_test", "agent_ui_smoke", "agent_static_analysis", "agent_auto_review", "agent_doubt_review", "agent_checkpoint"))
                for k in by_group["verification"])
     assert {"agent_subagent_reviewer", "agent_subagent_max_parallel", "agent_subagent_depth",
             "agent_subagent_stall_seconds", "agent_subagent_tick_seconds", "agent_subagent_supervisor",

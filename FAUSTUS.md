@@ -6212,3 +6212,49 @@ CLI: `python -m src.trajectory_gate --run <id> --spec spec.json` y `--recent 20 
 con un `spec.json` de ejemplo, p. ej. `{"max_error_rate": 0.3, "max_tool_calls": 100, "final_answer_required": true}`. Para evaluar varias de una vez: `python -m src.trajectory_gate --recent 20 --spec spec.json`. Con el servidor Faustus corriendo, el mismo resultado por HTTP: `GET http://127.0.0.1:7001/api/agent-runs/<id>/gate` (con la sesión iniciada como dueño de esa sesión).
 
 **Ficheros.** `src/trajectory_gate.py` (nuevo), `routes/trajectory_gate_routes.py` (nuevo), `tests/test_trajectory_gate.py` (nuevo), `app.py`, `src/settings.py`, `studio/src/adapters/observability.ts`, `studio/src/screens/Activity.tsx`, `README.md`, `README.es.md`.
+
+## 150. Revisión con duda antes de un cambio riesgoso: un segundo modelo, sin herramientas y sin memoria del turno, busca por qué el diff está mal (20-09-2026)
+
+**Pedido.** Antes de que el agente aplique un cambio no trivial a un fichero que `code_graph_risk` ya marcó como de riesgo ALTO, pedirle a un revisor de contexto fresco (mismo modelo u otro utilitario local, sin herramientas, sin historial de conversación — solo el enunciado de la tarea, el resumen de riesgo del fichero y el diff propuesto) que busque razones por las que el cambio está mal. Su veredicto ("looks right" / "concerns" con puntos concretos) vuelve al agente como parte del resultado de la herramienta de edición (el edit se aplica igual — es informativo, no bloqueante, salvo que el ajuste diga lo contrario), así el agente puede reconsiderar antes de seguir.
+
+**Hecho.** `src/doubt_review.py` (nuevo): `should_review(path, workspace, diff, ...)` decide barato, en orden de coste creciente — diff no trivial (`changed_line_count`, ignora líneas en blanco/comentario, umbral configurable), no es fichero de test/docs (mismo patrón de regex que `code_graph.query._is_test_path`, duplicado sin dependencia), presupuesto de revisiones del turno no agotado (`DoubtReviewState`, una instancia por turno igual que `RewritePolicy`), y solo entonces consulta `code_graph.change_risk` — cacheado en el `DoubtReviewState` por (turno, fichero) para que varias ediciones al mismo fichero en un turno paguen un solo cálculo de riesgo. `review(task, path, risk_summary, diff)` hace UNA llamada a modelo sin herramientas (`src.ai_interaction._resolve_model` + `llm_call_async`, con `response_schema` cuando el endpoint lo soporta, y el mismo parseo tolerante a JSON roto que `auto_review.py` — comillas simples, coma colgante, prosa alrededor del bloque JSON) con un prompt explícitamente sesgado a refutar ("tu trabajo es buscar razones por las que este cambio está MAL... no elogies el cambio"); nunca lanza excepción — un fallo de red, timeout o respuesta vacía se reporta como `error` con veredicto "ok" (falla abierto: un revisor roto nunca debe bloquear silenciosamente cada edición).
+
+Cableado en `EditFileTool`/`WriteFileTool`/`ApplyPatchTool` (`src/agent_tools/filesystem_tools.py`) vía `doubt_review.check_edit(ctx, ...)`: en modo informativo (por defecto) el chequeo corre DESPUÉS de escribir, contra el diff real, y añade una sección "Second look (high-risk file):" a `result["output"]` más `result["doubt_review"]`. En modo bloqueante (`agent_doubt_review_block=true`) el chequeo corre ANTES de escribir — una vista previa pura del reemplazo (`_replace_text`, la misma lógica que usa el `_apply()` real, extraída para no duplicar comportamiento) construye el diff sin tocar el fichero; un veredicto "concerns" hace que la herramienta devuelva el error `doubt_review_blocked` sin escribir nada, con el mensaje pidiendo revisar o reintentar la misma llamada con `"confirm_risky": true` para aplicarla de todas formas. `ApplyPatchTool` gatea cada operación `update` del patch por separado antes de la fase de escritura journalizada; una sola gatea negativa detiene el patch entero (nada se escribe, igual que su contrato all-or-nothing existente).
+
+El estado por turno (`DoubtReviewState`) y el texto del último mensaje de usuario (`task_text`, cuando `_extract_last_user_message` ya lo calculó en el turno) viajan por el mismo cauce que `rewrite_policy` — `agent_loop.py` crea una instancia por turno junto a `_rewrite_policy`, la mete en los tres sitios que arman `turn_options`, y `tool_execution.py::_direct_fallback` la reexpone en `ctx`. Ajustes nuevos (`src/settings.py`, grupo "verification" en `src/agent_settings_schema.py`): `agent_doubt_review` (bool, off por defecto), `agent_doubt_review_min_tier` (medium/high, por defecto high), `agent_doubt_review_max_per_turn` (entero, por defecto 2), `agent_doubt_review_block` (bool, off por defecto), `agent_doubt_review_timeout_seconds` (por defecto 45) y `agent_doubt_review_model` (texto, por defecto "auto" — pensado para apuntar a un modelo local barato tipo `qwen2.5-3b-helper` en vez de gastar el modelo principal del turno en cada revisión).
+
+**Verificado.** `tests/test_doubt_review.py` (29 pruebas): las cuatro puertas de `should_review` por separado (nivel de riesgo con `risk_fn` inyectado, diff trivial incluido blanco/comentario-solo, ruta de test/docs excluida, presupuesto por turno agotado — y el bug real que atrapó, donde el tope por defecto pisaba el tope ya fijado del estado del turno en cada llamada), caché de riesgo y de revisión por (turno, fichero/diff), parseo de `review()` con JSON limpio, con prosa+fences alrededor, con coma colgante, con texto no-JSON (falla abierto a "ok" con `unparsed`), con respuesta vacía y con el `model_call` lanzando excepción (ambas fallan abierto), `format_section`/`block_message`. Cableado de extremo a extremo contra `EditFileTool` real (leyendo/escribiendo ficheros de verdad en `/tmp`, con `check_edit` parcheado de forma determinista): desactivado es un no-op exacto, modo informativo aplica el edit y añade la sección, modo bloqueante NO escribe nada y devuelve `doubt_review_blocked`, y `confirm_risky: true` sí escribe. `pytest tests/test_doubt_review.py tests/test_edit_file.py tests/test_edit_file_not_found_hint.py tests/test_code_graph_risk.py tests/test_agent_settings_schema.py tests/test_H45_wiring.py tests/test_edit_base_revision.py tests/test_edit_journal.py tests/test_edit_preservation.py tests/test_l62_edit03_bom_full_overwrite.py tests/test_p1_edit_05_history_cleanup.py tests/test_review_regressions.py` (173 pruebas, todas en verde; un fallo preexistente y ajeno de orden de claves en `test_desktop_tools.py::test_settings_defaults`, confirmado con `git stash` que ya existía antes de este cambio) y `guard.sh tests/test_doubt_review.py tests/test_edit_file.py tests/test_code_graph_risk.py` sin fallos nuevos frente a la base. `test_groups_follow_the_requested_layout` (`tests/test_agent_settings_schema.py`) actualizado para aceptar el nuevo prefijo `agent_doubt_review` en el grupo "verification".
+
+**No verificable sin la máquina en vivo.** Esta caja de arena no tiene el navegador conectado a una instancia real de Faustus ni acceso al helper llama.cpp de desarrollo, así que la llamada de modelo real (`agent_doubt_review_model=qwen2.5-3b-helper` contra `http://127.0.0.1:8082/v1`) nunca se ha ejecutado contra una respuesta real, solo contra `model_call` inyectado en las pruebas — la ruta de red (`_resolve_model`/`llm_call_async`/`response_schema`) está tomada de `auto_review.py`, que sí está verificada en vivo en otro lote, pero la combinación exacta no se probó de punta a punta. Tampoco hay interfaz nueva que revisar (el cableado vive solo en el resultado de la herramienta de edición, que el agente lee, y en el formulario de ajustes ya genérico de "Agent Tools"). Para repetirlo en `D:\LocalAI\faustus-dev-data`: guardar el script siguiente como `check_doubt_review.py` y correrlo con el mismo Python que usa Faustus, apuntando `ODYSSEUS_DATA_DIR` al dev-data y con el helper llama.cpp arriba en `http://127.0.0.1:8082/v1` (alias `qwen2.5-3b-helper`):
+
+```python
+import asyncio, os
+os.environ.setdefault("ODYSSEUS_DATA_DIR", r"D:\LocalAI\faustus-dev-data")
+from src import doubt_review as dr
+from src import code_graph
+
+REPO = r"D:\LocalAI\faustus"  # un checkout real de este repo
+PATH = "src/settings.py"       # fichero real de alto fan-in/hub -> debería salir "high"
+
+async def main():
+    risk = code_graph.change_risk([PATH], workspace=REPO)
+    print("risk:", risk.get("level"), risk.get("score"))
+    # Diff deliberadamente roto: referencia un nombre que no existe.
+    diff = (
+        "--- a/src/settings.py\n+++ b/src/settings.py\n@@\n"
+        "-DEFAULT_SETTINGS = {\n"
+        "+DEFAULT_SETTINGS = _typo_undefined_name_here(\n"
+    )
+    decision, risk2 = dr.should_review(PATH, REPO, diff)
+    print("should_review:", decision)
+    result = await dr.review(
+        "Renombrar el diccionario de ajustes por defecto", PATH, risk2, diff,
+        model="qwen2.5-3b-helper", timeout_s=60,
+    )
+    print(result)
+
+asyncio.run(main())
+```
+Se espera `risk.level == "high"` (o al menos "medium"), `should_review == True`, y `result["verdict"] == "concerns"` señalando el nombre indefinido — confirmar que el modelo pequeño realmente lo detecta antes de activar `agent_doubt_review` por defecto en cualquier perfil.
+
+**Ficheros.** `src/doubt_review.py` (nuevo), `src/agent_tools/filesystem_tools.py`, `src/agent_loop.py`, `src/tool_execution.py`, `src/settings.py`, `src/agent_settings_schema.py`, `tests/test_doubt_review.py` (nuevo), `tests/test_agent_settings_schema.py`, `README.md`, `README.es.md`.
