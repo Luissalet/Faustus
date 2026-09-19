@@ -257,7 +257,7 @@ GROUPS: list[dict[str, Any]] = [
                   "When Python playwright + a Chromium build are installed, also load the page "
                   "headless and capture real console errors and 4xx/5xx network responses, plus an "
                   "accessibility + performance audit."),
-            _bool("ui_smoke_a11y_blocking", "UI smoke: a11y findings block",
+            _bool("agent_ui_smoke_a11y_blocking", "UI smoke: a11y findings block",
                   "A serious accessibility finding (missing alt text, unlabeled form control, no "
                   "accessible name, low color contrast) fails the smoke result the same way a console "
                   "error does. Off by default: serious findings are still surfaced as quality "
@@ -480,6 +480,17 @@ GROUPS: list[dict[str, Any]] = [
                  "Further identical repeats (past the block) before the turn ends with "
                  "stop_reason \"non_progressing_loop\".",
                  3, 200),
+            _bool("agent_loop_breaker_cycle_detection", "Loop breaker: detect oscillation",
+                  "Also catch a repeating A/B (or 3-4 step) pattern with no two consecutive "
+                  "calls identical — read A, read B, read A, read B... — using the same "
+                  "nudge/block/stop ladder as the exact-repeat streak above, counted on its "
+                  "own so neither resets the other."),
+            _int("agent_loop_breaker_cycle_min_repeats_p2", "Loop breaker: 2-step cycle repeats",
+                 "Full A→B→A→B repetitions before a 2-call oscillation is nudged.",
+                 2, 50),
+            _int("agent_loop_breaker_cycle_min_repeats_long", "Loop breaker: 3-4 step cycle repeats",
+                 "Full repetitions of a 3- or 4-call cycle before it is nudged.",
+                 2, 50),
         ],
     ),
     _group(

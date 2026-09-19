@@ -465,7 +465,7 @@ DEFAULT_SETTINGS = {
     # Serious a11y findings are always surfaced as `quality_warnings`, but by
     # default do not fail the smoke result the way console errors do; set
     # this True to make a serious a11y finding block like a console error.
-    "ui_smoke_a11y_blocking": False,
+    "agent_ui_smoke_a11y_blocking": False,
     # H2: at the start of a code turn, compare requirements*/pyproject/
     # package.json against what the project's interpreter and node_modules
     # actually have; tell the model what is missing BEFORE it runs anything.
@@ -903,6 +903,17 @@ DEFAULT_SETTINGS = {
     "agent_loop_breaker_nudge_after": 3,
     "agent_loop_breaker_block_after": 6,
     "agent_loop_breaker_stop_after": 10,
+    # Cycle (oscillation) detection inside the same LoopPolicy: a weak local
+    # model rarely repeats the IDENTICAL call three times running (the
+    # streak above), but it does oscillate — read A, read B, read A, read
+    # B... — which never trips an exact-repeat streak since no two
+    # consecutive calls are identical. This watches the same bounded call
+    # history for a short repeating period (2-4 calls) and escalates
+    # through the same nudge/block/stop ladder, counted separately from the
+    # exact-repeat streak so neither resets the other.
+    "agent_loop_breaker_cycle_detection": True,
+    "agent_loop_breaker_cycle_min_repeats_p2": 3,
+    "agent_loop_breaker_cycle_min_repeats_long": 2,
     # H4: src/rewrite_policy.py — discourages repeated whole-file `write_file`
     # rewrites of the same existing, non-trivial file within one turn ("off"
     # disables it entirely). From the require_edit-th qualifying rewrite the

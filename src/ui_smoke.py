@@ -930,7 +930,7 @@ def run_smoke(workspace: str, spec: Dict[str, Any], *, timeout_s: float = DEFAUL
                 logger.debug("[ui_smoke] playwright pass skipped: %s", e)
 
         a11y_blocking = playwright_used and a11y is not None and _truthy(
-            _setting("ui_smoke_a11y_blocking", False)
+            _setting("agent_ui_smoke_a11y_blocking", False)
         )
         a11y_serious = int(((a11y or {}).get("counts_by_severity") or {}).get("serious") or 0)
         a11y_blocking_failed = bool(a11y_blocking and a11y_serious > 0)

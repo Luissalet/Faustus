@@ -11735,10 +11735,15 @@ async def _stream_agent_loop_body(
                 pass
             if _loop_policy_stop:
                 _ledger.stop_reason = _LOOP_STOP_REASON
+                _loop_snap = _loop_policy.snapshot()
                 yield "data: " + json.dumps({
                     "type": "loop_breaker_stop", "round": round_num,
                     "tool": sorted(_loop_policy.blocked_tools | {_single_tool_name or tool_blocks[0].tool_type}),
                     "streak": _loop_policy.streak,
+                    "trigger": _loop_snap.get("last_trigger") or "streak",
+                    "cycle_period": _loop_snap.get("cycle_period"),
+                    "cycle_repeats": _loop_snap.get("cycle_repeats"),
+                    "reason": _loop_snap.get("cycle_reason"),
                 }) + "\n\n"
                 break
             _restore_hidden = _loop_recovery_retries >= _MAX_LOOP_RECOVERY_RETRIES
@@ -11907,10 +11912,15 @@ async def _stream_agent_loop_body(
                 pass
             if _loop_policy_stop:
                 _ledger.stop_reason = _LOOP_STOP_REASON
+                _loop_snap = _loop_policy.snapshot()
                 yield "data: " + json.dumps({
                     "type": "loop_breaker_stop", "round": round_num,
                     "tool": sorted(_loop_policy.blocked_tools | {_single_tool_name or tool_blocks[0].tool_type}),
                     "streak": _loop_policy.streak,
+                    "trigger": _loop_snap.get("last_trigger") or "streak",
+                    "cycle_period": _loop_snap.get("cycle_period"),
+                    "cycle_repeats": _loop_snap.get("cycle_repeats"),
+                    "reason": _loop_snap.get("cycle_reason"),
                 }) + "\n\n"
                 break
             _ledger.notes.append(
@@ -13064,26 +13074,62 @@ async def _stream_agent_loop_body(
                     )
             except Exception:  # noqa: BLE001
                 _loop_action = "none"
+            # A cycle (A→B→A→B... oscillation, no two consecutive calls
+            # identical) is counted on its own track inside LoopPolicy and
+            # surfaced through the exact same nudge/block/stop actions; only
+            # the message text differs, naming the alternating/cycling
+            # pattern instead of "this exact call" (which would be false —
+            # no single call repeated, the pair/triple did).
+            _loop_is_cycle = _loop_policy.last_trigger == "cycle"
             if _loop_action == "nudge":
-                messages.append({"role": "user", "content": (
-                    "[Runtime loop recovery — not a new user request] This exact call, with "
-                    "this exact result, has now repeated "
-                    f"{_loop_policy.streak} times. Take a different concrete action; do not "
-                    "repeat it."
-                )})
-                logger.info("[loop-breaker] nudge after %d identical calls to %s", _loop_policy.streak, block.tool_type)
+                if _loop_is_cycle:
+                    messages.append({"role": "user", "content": (
+                        "[Runtime loop recovery — not a new user request] You are "
+                        f"{_loop_policy.last_cycle_reason}."
+                    )})
+                    logger.info(
+                        "[loop-breaker] cycle nudge: period=%d repeats=%d",
+                        _loop_policy.last_cycle_period, _loop_policy.last_cycle_repeats,
+                    )
+                else:
+                    messages.append({"role": "user", "content": (
+                        "[Runtime loop recovery — not a new user request] This exact call, with "
+                        "this exact result, has now repeated "
+                        f"{_loop_policy.streak} times. Take a different concrete action; do not "
+                        "repeat it."
+                    )})
+                    logger.info("[loop-breaker] nudge after %d identical calls to %s", _loop_policy.streak, block.tool_type)
             elif _loop_action == "block_tool":
                 disabled_tools.update(_loop_policy.blocked_tools)
-                messages.append({"role": "user", "content": (
-                    "[Runtime loop recovery — not a new user request] The tool "
-                    f"`{block.tool_type}` is withheld for the rest of this turn: the same call "
-                    "kept returning the same result. Finish with what you have or use a "
-                    "different tool."
-                )})
-                logger.info("[loop-breaker] tool %s withheld after %d identical calls", block.tool_type, _loop_policy.streak)
+                if _loop_is_cycle:
+                    messages.append({"role": "user", "content": (
+                        "[Runtime loop recovery — not a new user request] "
+                        f"{_loop_policy.last_cycle_reason.capitalize()}. The tool(s) involved "
+                        f"({', '.join(sorted(_loop_policy.blocked_tools))}) are withheld for the "
+                        "rest of this turn. Finish with what you have or use a different tool."
+                    )})
+                    logger.info(
+                        "[loop-breaker] cycle block: period=%d repeats=%d tools=%s",
+                        _loop_policy.last_cycle_period, _loop_policy.last_cycle_repeats,
+                        sorted(_loop_policy.blocked_tools),
+                    )
+                else:
+                    messages.append({"role": "user", "content": (
+                        "[Runtime loop recovery — not a new user request] The tool "
+                        f"`{block.tool_type}` is withheld for the rest of this turn: the same call "
+                        "kept returning the same result. Finish with what you have or use a "
+                        "different tool."
+                    )})
+                    logger.info("[loop-breaker] tool %s withheld after %d identical calls", block.tool_type, _loop_policy.streak)
             elif _loop_action == "stop":
                 _loop_policy_stop = True
-                logger.info("[loop-breaker] stopping turn after %d identical calls to %s", _loop_policy.streak, block.tool_type)
+                if _loop_is_cycle:
+                    logger.info(
+                        "[loop-breaker] stopping turn after cycle: period=%d repeats=%d",
+                        _loop_policy.last_cycle_period, _loop_policy.last_cycle_repeats,
+                    )
+                else:
+                    logger.info("[loop-breaker] stopping turn after %d identical calls to %s", _loop_policy.streak, block.tool_type)
             # H4: a refused whole-file rewrite is surfaced to the UI; a
             # `block` verdict also injects the harness round text so the
             # model reads the file and the diff before touching it again.
@@ -13199,11 +13245,16 @@ async def _stream_agent_loop_body(
         # A29: a non-progressing loop ends the turn on its own, bounded.
         if _loop_policy_stop:
             _ledger.stop_reason = _LOOP_STOP_REASON
+            _loop_snap = _loop_policy.snapshot()
             yield "data: " + json.dumps({
                 "type": "loop_breaker_stop",
                 "round": round_num,
-                "tool": _loop_policy.snapshot().get("blocked_tools"),
+                "tool": _loop_snap.get("blocked_tools"),
                 "streak": _loop_policy.streak,
+                "trigger": _loop_snap.get("last_trigger") or "streak",
+                "cycle_period": _loop_snap.get("cycle_period"),
+                "cycle_repeats": _loop_snap.get("cycle_repeats"),
+                "reason": _loop_snap.get("cycle_reason"),
             }) + "\n\n"
             break
 

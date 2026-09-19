@@ -3,7 +3,7 @@
 
 Two layers:
 1. Pure-Python unit tests for the summary/policy logic (`_quality_warnings`,
-   `_perf_warnings`, `_summarize`, the `ui_smoke_a11y_blocking` setting) that
+   `_perf_warnings`, `_summarize`, the `agent_ui_smoke_a11y_blocking` setting) that
    need no browser at all.
 2. Real Playwright + Chromium tests that serve tiny static HTML fixtures
    (via `ui_smoke`'s own static-server path) and run the actual in-page
@@ -89,7 +89,7 @@ def test_summarize_fails_when_a11y_blocking_flag_set():
 
 def test_ui_smoke_a11y_blocking_setting_default_false():
     from src.settings import DEFAULT_SETTINGS
-    assert DEFAULT_SETTINGS.get("ui_smoke_a11y_blocking") is False
+    assert DEFAULT_SETTINGS.get("agent_ui_smoke_a11y_blocking") is False
 
 
 def test_compact_carries_quality_warnings_and_perf():
@@ -250,7 +250,7 @@ def test_a11y_blocking_setting_flips_result(tmp_path, monkeypatch):
     orig_setting = ui_smoke._setting
 
     def _patched(key, default):
-        if key == "ui_smoke_a11y_blocking":
+        if key == "agent_ui_smoke_a11y_blocking":
             return True
         return orig_setting(key, default)
 

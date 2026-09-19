@@ -91,4 +91,6 @@ def test_from_settings_reads_the_registered_setting_names():
     assert (policy.nudge_after, policy.block_after, policy.stop_after) == (2, 4, 6)
     assert set(calls) == {
         "agent_loop_breaker_nudge_after", "agent_loop_breaker_block_after", "agent_loop_breaker_stop_after",
+        "agent_loop_breaker_cycle_detection", "agent_loop_breaker_cycle_min_repeats_p2",
+        "agent_loop_breaker_cycle_min_repeats_long",
     }

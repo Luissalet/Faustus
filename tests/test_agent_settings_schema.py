@@ -125,6 +125,10 @@ def test_groups_follow_the_requested_layout():
             # one so the group order/prefix asserted above is untouched.
             "agent_budget_tokens_per_run", "agent_loop_breaker_nudge_after",
             "agent_loop_breaker_block_after", "agent_loop_breaker_stop_after",
+            # Cycle (oscillation) detection inside the same loop-breaker
+            # group -- see src/loop_breaker.py's module docstring.
+            "agent_loop_breaker_cycle_detection", "agent_loop_breaker_cycle_min_repeats_p2",
+            "agent_loop_breaker_cycle_min_repeats_long",
             # R3 (Reach wave): src/fanout/ -- fan-out candidate concurrency
             # and its optional extra model pool, kept in this group for the
             # same reason as above.

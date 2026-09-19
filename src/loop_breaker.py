@@ -38,13 +38,27 @@ identical thing three times running does the acceptance case ("cycling
 through diagnostics without advancing the task" IS the distinguishing
 feature — see the module docstring of ``agent_loop.py``'s inline sibling for
 the same rule stated the other way round).
+
+Weak local models rarely repeat the IDENTICAL call three times running —
+that is easy for even a small model to notice itself. What they actually do
+is OSCILLATE: read file A, read file B, read file A, read file B... (or a
+three/four-step variant) with no net progress, which never trips the exact
+streak above because no two consecutive calls are identical. The cycle
+detector below watches the same bounded history of call signatures for a
+short repeating period (2, 3 or 4 calls) instead of just "same as last
+time", and escalates through the identical nudge/block/stop ladder, counted
+on its own so a cycle never inflates (or is masked by) the exact-repeat
+streak. A cycle whose signatures are all identical is just the exact-repeat
+case by another name and is left to the streak path so nothing is counted
+twice.
 """
 from __future__ import annotations
 
 import hashlib
 import json
+from collections import deque
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional, Set
+from typing import Any, Deque, Dict, List, Optional, Set, Tuple
 
 #: Escalation actions, in the order a non-progressing streak passes through
 #: them. `none` means "nothing unusual yet" — the normal, overwhelming
@@ -58,6 +72,19 @@ STOP_REASON = "non_progressing_loop"
 DEFAULT_NUDGE_AFTER = 3
 DEFAULT_BLOCK_AFTER = 6
 DEFAULT_STOP_AFTER = 10
+
+#: Cycle detection: periods (in calls) checked for an oscillating pattern.
+#: 2 covers the common A/B ping-pong; 3-4 cover slightly longer loops
+#: (edit, run, revert, edit...). Anything longer is left alone — at that
+#: length a "loop" is hard to distinguish from a legitimately long plan.
+CYCLE_PERIODS = (2, 3, 4)
+#: How many call signatures of history the cycle detector keeps around.
+#: 24 is enough for the longest period (4) to show DEFAULT_CYCLE_MIN_REPEATS
+#: repetitions several times over without growing unbounded per turn.
+CYCLE_HISTORY_SIZE = 24
+DEFAULT_CYCLE_DETECTION = True
+DEFAULT_CYCLE_MIN_REPEATS_P2 = 3
+DEFAULT_CYCLE_MIN_REPEATS_LONG = 2
 
 
 def normalize_args(args: Any) -> str:
@@ -109,12 +136,32 @@ class LoopPolicy:
     nudge_after: int = DEFAULT_NUDGE_AFTER
     block_after: int = DEFAULT_BLOCK_AFTER
     stop_after: int = DEFAULT_STOP_AFTER
+    #: Cycle (oscillation) detection — A→B→A→B... — settings. See the
+    #: module docstring. Independent of the nudge/block/stop_after above,
+    #: which only govern the exact-repeat streak.
+    cycle_detection: bool = DEFAULT_CYCLE_DETECTION
+    cycle_min_repeats_p2: int = DEFAULT_CYCLE_MIN_REPEATS_P2
+    cycle_min_repeats_long: int = DEFAULT_CYCLE_MIN_REPEATS_LONG
 
     _last_signature: Optional[str] = field(default=None, repr=False)
     _streak: int = field(default=0, repr=False)
     _nudged_at: Optional[int] = field(default=None, repr=False)
     _blocked_at: Optional[int] = field(default=None, repr=False)
     blocked_tools: Set[str] = field(default_factory=set)
+    # Bounded history of (tool, normalized_args, result_hash) signatures,
+    # newest last, used only by the cycle detector — the exact-repeat streak
+    # above never reads it. A different signature format from the streak's
+    # joined string on purpose: a tuple compares cheaply and unambiguously
+    # (no separator-collision risk) and lets messages name the tool/args
+    # of each step in a detected cycle.
+    _history: Deque[Tuple[str, str, str]] = field(default_factory=lambda: deque(maxlen=CYCLE_HISTORY_SIZE), repr=False)
+    # Set (not reset by the exact-repeat streak, and never resets it) so a
+    # turn's cycle-triggered nudge/block/stop is counted on a track of its
+    # own — "one does not reset the other".
+    last_trigger: Optional[str] = field(default=None, repr=False)
+    last_cycle_period: Optional[int] = field(default=None, repr=False)
+    last_cycle_repeats: Optional[int] = field(default=None, repr=False)
+    last_cycle_reason: Optional[str] = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         # A misconfigured setting (block_after <= nudge_after, or a floor
@@ -124,6 +171,10 @@ class LoopPolicy:
         self.nudge_after = max(1, int(self.nudge_after or DEFAULT_NUDGE_AFTER))
         self.block_after = max(self.nudge_after + 1, int(self.block_after or DEFAULT_BLOCK_AFTER))
         self.stop_after = max(self.block_after + 1, int(self.stop_after or DEFAULT_STOP_AFTER))
+        self.cycle_min_repeats_p2 = max(2, int(self.cycle_min_repeats_p2 or DEFAULT_CYCLE_MIN_REPEATS_P2))
+        self.cycle_min_repeats_long = max(2, int(self.cycle_min_repeats_long or DEFAULT_CYCLE_MIN_REPEATS_LONG))
+        if not isinstance(self._history, deque) or self._history.maxlen != CYCLE_HISTORY_SIZE:
+            self._history = deque(self._history, maxlen=CYCLE_HISTORY_SIZE)
 
     @classmethod
     def from_settings(cls, get_setting=None) -> "LoopPolicy":
@@ -140,6 +191,13 @@ class LoopPolicy:
             nudge_after=int(get_setting("agent_loop_breaker_nudge_after", DEFAULT_NUDGE_AFTER) or DEFAULT_NUDGE_AFTER),
             block_after=int(get_setting("agent_loop_breaker_block_after", DEFAULT_BLOCK_AFTER) or DEFAULT_BLOCK_AFTER),
             stop_after=int(get_setting("agent_loop_breaker_stop_after", DEFAULT_STOP_AFTER) or DEFAULT_STOP_AFTER),
+            cycle_detection=bool(get_setting("agent_loop_breaker_cycle_detection", DEFAULT_CYCLE_DETECTION)),
+            cycle_min_repeats_p2=int(get_setting(
+                "agent_loop_breaker_cycle_min_repeats_p2", DEFAULT_CYCLE_MIN_REPEATS_P2,
+            ) or DEFAULT_CYCLE_MIN_REPEATS_P2),
+            cycle_min_repeats_long=int(get_setting(
+                "agent_loop_breaker_cycle_min_repeats_long", DEFAULT_CYCLE_MIN_REPEATS_LONG,
+            ) or DEFAULT_CYCLE_MIN_REPEATS_LONG),
         )
 
     def observe(self, tool: str, args: Any, result_hash: str) -> str:
@@ -150,8 +208,9 @@ class LoopPolicy:
         difference (a different tool, different arguments, or the same call
         returning a different result) resets it to a fresh streak of one,
         which is what makes a turn WITH real progress never trip this."""
-        signature = f"{tool}␟{normalize_args(args)}␟{result_hash}"
-        prefix = f"{tool}␟{normalize_args(args)}␟"
+        norm_args = normalize_args(args)
+        signature = f"{tool}␟{norm_args}␟{result_hash}"
+        prefix = f"{tool}␟{norm_args}␟"
         if signature == self._last_signature or (
             # The runtime skipped the previous identical call(s) — there was
             # no result to compare, so this real result continues the streak
@@ -166,6 +225,34 @@ class LoopPolicy:
             self._streak = 1
             self._nudged_at = None
             self._blocked_at = None
+        streak_action = self._streak_action(tool)
+        self._history.append((tool, norm_args, result_hash))
+        return self._finalize(tool, streak_action)
+
+    def observe_skipped(self, tool: str, args: Any) -> str:
+        """A duplicate the runtime refused to execute (so there is no result
+        to hash) still extends the streak when its tool+args match the last
+        observed call: not running it is not progress. Returns the same
+        actions as :meth:`observe`; a call to a different tool/args starts
+        a fresh streak with an unknown result."""
+        norm_args = normalize_args(args)
+        prefix = f"{tool}␟{norm_args}␟"
+        if self._last_signature and self._last_signature.startswith(prefix):
+            self._streak += 1
+        else:
+            self._last_signature = prefix + "<skipped>"
+            self._streak = 1
+            self._nudged_at = None
+            self._blocked_at = None
+        streak_action = self._streak_action(tool)
+        self._history.append((tool, norm_args, "<skipped>"))
+        return self._finalize(tool, streak_action)
+
+    def _streak_action(self, tool: str) -> str:
+        """The exact-repeat ladder verdict for the streak counter as it
+        stands right now — shared by :meth:`observe` and
+        :meth:`observe_skipped`, which only differ in how they advance
+        ``_streak``. Does not touch cycle state."""
         if self._streak >= self.stop_after:
             return "stop"
         if self._streak >= self.block_after:
@@ -179,32 +266,129 @@ class LoopPolicy:
             return "nudge"
         return "none"
 
-    def observe_skipped(self, tool: str, args: Any) -> str:
-        """A duplicate the runtime refused to execute (so there is no result
-        to hash) still extends the streak when its tool+args match the last
-        observed call: not running it is not progress. Returns the same
-        actions as :meth:`observe`; a call to a different tool/args starts
-        a fresh streak with an unknown result."""
-        prefix = f"{tool}␟{normalize_args(args)}␟"
-        if self._last_signature and self._last_signature.startswith(prefix):
-            self._streak += 1
-        else:
-            self._last_signature = prefix + "<skipped>"
-            self._streak = 1
-            self._nudged_at = None
-            self._blocked_at = None
-        if self._streak >= self.stop_after:
+    def _finalize(self, tool: str, streak_action: str) -> str:
+        """Combine the exact-repeat streak verdict with the cycle detector's,
+        with the streak winning ties (it is the narrower, more certain
+        signal). Always records which track fired last, so a caller building
+        a message can ask for the cycle-specific wording when relevant."""
+        if streak_action != "none":
+            self.last_trigger = "streak"
+            self.last_cycle_period = None
+            self.last_cycle_repeats = None
+            self.last_cycle_reason = None
+            return streak_action
+        if not self.cycle_detection:
+            self.last_trigger = None
+            return "none"
+        cycle_action = self._cycle_action(tool)
+        if cycle_action != "none":
+            self.last_trigger = "cycle"
+            return cycle_action
+        self.last_trigger = None
+        self.last_cycle_period = None
+        self.last_cycle_repeats = None
+        self.last_cycle_reason = None
+        return "none"
+
+    def _min_repeats_for(self, period: int) -> int:
+        return self.cycle_min_repeats_p2 if period == 2 else self.cycle_min_repeats_long
+
+    def _detect_cycle(self) -> Optional[Tuple[int, int, List[Tuple[str, str, str]]]]:
+        """Scan the tail of ``_history`` for a repeating period-``p`` pattern,
+        p in :data:`CYCLE_PERIODS`, smallest period first. Returns
+        ``(period, repeats, unit)`` for the first period that has completed
+        at least its configured minimum number of full repetitions at the
+        very end of the history, with the ``p`` signatures inside one
+        repetition not all identical (that degenerate case is the
+        exact-repeat streak's job, not this detector's — counting it here
+        too would double-count the same non-progress). ``None`` when nothing
+        in the checked periods qualifies."""
+        history = list(self._history)
+        n = len(history)
+        for period in CYCLE_PERIODS:
+            min_repeats = self._min_repeats_for(period)
+            max_r = n // period
+            if max_r < min_repeats:
+                continue
+            unit = history[n - period:n]
+            # Degenerate on (tool, args) alone, ignoring the result hash: a
+            # period-p "cycle" whose every step is the SAME call (whatever
+            # its result) is the exact-repeat streak's job, not this
+            # detector's — a skipped duplicate landing between two real
+            # observations of that one call must not turn it into a fake
+            # 2-cycle. A real alternation always has more than one distinct
+            # (tool, args) pair in its unit.
+            if len({(t, a) for t, a, _h in unit}) <= 1:
+                continue
+            repeats = 1
+            for i in range(2, max_r + 1):
+                chunk = history[n - i * period: n - (i - 1) * period]
+                if self._chunk_matches(chunk, unit):
+                    repeats += 1
+                else:
+                    break
+            if repeats >= min_repeats:
+                return period, repeats, unit
+        return None
+
+    @staticmethod
+    def _chunk_matches(chunk: List[Tuple[str, str, str]], unit: List[Tuple[str, str, str]]) -> bool:
+        """Two same-length windows are "the same repetition" for cycle
+        purposes when every step's (tool, args) matches and the results
+        match too — UNLESS one of the two was a runtime-skipped duplicate
+        (no result to compare, marked "<skipped>"), which must not by
+        itself break an otherwise-identical repetition: the exact-repeat
+        streak already treats a skip-then-real transition the same way
+        (see ``observe``'s own docstring)."""
+        if len(chunk) != len(unit):
+            return False
+        for (c_tool, c_args, c_hash), (u_tool, u_args, u_hash) in zip(chunk, unit):
+            if c_tool != u_tool or c_args != u_args:
+                return False
+            if c_hash != u_hash and c_hash != "<skipped>" and u_hash != "<skipped>":
+                return False
+        return True
+
+    def _cycle_action(self, tool: str) -> str:
+        found = self._detect_cycle()
+        if found is None:
+            return "none"
+        period, repeats, unit = found
+        min_repeats = self._min_repeats_for(period)
+        block_delta = self.block_after - self.nudge_after
+        stop_delta = self.stop_after - self.nudge_after
+        block_min = min_repeats + block_delta
+        stop_min = min_repeats + stop_delta
+        self.last_cycle_period = period
+        self.last_cycle_repeats = repeats
+        self.last_cycle_reason = self._describe_cycle(period, repeats, unit)
+        if repeats >= stop_min:
             return "stop"
-        if self._streak >= self.block_after:
-            if self._blocked_at is None:
-                self._blocked_at = self._streak
-                self.blocked_tools.add(tool)
+        if repeats >= block_min:
+            for step_tool, _args, _hash in unit:
+                self.blocked_tools.add(step_tool)
             return "block_tool"
-        if self._streak >= self.nudge_after:
-            if self._nudged_at is None:
-                self._nudged_at = self._streak
+        if repeats >= min_repeats:
             return "nudge"
         return "none"
+
+    @staticmethod
+    def _describe_step(signature: Tuple[str, str, str]) -> str:
+        tool, args, _result_hash = signature
+        short_args = args if len(args) <= 40 else args[:37] + "..."
+        return f"{tool}({short_args})" if short_args else tool
+
+    def _describe_cycle(self, period: int, repeats: int, unit: List[Tuple[str, str, str]]) -> str:
+        steps = [self._describe_step(sig) for sig in unit]
+        if period == 2:
+            return (
+                f"alternating between {steps[0]} and {steps[1]} {repeats} times "
+                "with the same results — change approach"
+            )
+        return (
+            f"cycling through {period} repeated actions ({' → '.join(steps)}) {repeats} times "
+            "with the same results — change approach"
+        )
 
     def reset(self) -> None:
         """Explicit reset for a caller that knows progress happened through
@@ -215,6 +399,11 @@ class LoopPolicy:
         self._nudged_at = None
         self._blocked_at = None
         self.blocked_tools.clear()
+        self._history.clear()
+        self.last_trigger = None
+        self.last_cycle_period = None
+        self.last_cycle_repeats = None
+        self.last_cycle_reason = None
 
     @property
     def streak(self) -> int:
@@ -225,4 +414,8 @@ class LoopPolicy:
             "streak": self._streak, "blocked_tools": sorted(self.blocked_tools),
             "nudge_after": self.nudge_after, "block_after": self.block_after,
             "stop_after": self.stop_after,
+            "last_trigger": self.last_trigger,
+            "cycle_period": self.last_cycle_period,
+            "cycle_repeats": self.last_cycle_repeats,
+            "cycle_reason": self.last_cycle_reason,
         }
