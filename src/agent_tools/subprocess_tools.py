@@ -726,9 +726,24 @@ def _mark_sandbox_skip(result: dict, skip: str) -> dict:
 
 class BashTool:
     async def execute(self, content: str, ctx: dict) -> dict:
-        from src.tool_execution import agent_cwd, _truncate
+        # `raw: true` in a JSON-object call opts this one call out of
+        # command_output_filters compression (src/settings.py's
+        # `command_output_compression`) — the in-prompt copy is shown
+        # untouched, though the full output is still persisted/offloaded as
+        # always. Captured here (before `content` is reduced to the bare
+        # command string) and tagged onto the result so
+        # `format_tool_result` (src/tool_execution.py) can see it.
+        _raw_flag = False
         if isinstance(content, dict):
+            _raw_flag = bool(content.get("raw"))
             content = str(content.get("command") or content.get("cmd") or content.get("code") or "")
+        result = await self._execute_inner(content, ctx)
+        if _raw_flag and isinstance(result, dict):
+            result["_raw_requested"] = True
+        return result
+
+    async def _execute_inner(self, content: str, ctx: dict) -> dict:
+        from src.tool_execution import agent_cwd, _truncate
         progress_cb = ctx.get("progress_cb")
         _subproc_env = ctx.get("subproc_env")
         session_id = ctx.get("session_id")
@@ -957,9 +972,18 @@ class PowerShellTool:
     foreground servers are refused, idle/hard timeouts, tree kill."""
 
     async def execute(self, content: str, ctx: dict) -> dict:
-        from src.tool_execution import agent_cwd, _truncate
+        # See BashTool.execute: same `raw: true` opt-out of output compression.
+        _raw_flag = False
         if isinstance(content, dict):
+            _raw_flag = bool(content.get("raw"))
             content = str(content.get("script") or content.get("command") or content.get("code") or "")
+        result = await self._execute_inner(content, ctx)
+        if _raw_flag and isinstance(result, dict):
+            result["_raw_requested"] = True
+        return result
+
+    async def _execute_inner(self, content: str, ctx: dict) -> dict:
+        from src.tool_execution import agent_cwd, _truncate
         script = str(content or "")
         if not script.strip():
             return {"error": "powershell: empty script", "exit_code": 1}

@@ -181,6 +181,15 @@ DEFAULT_SETTINGS = {
     # also chunked and indexed so the model can search inside it with
     # `artifact_search` instead of paging through `read_artifact` blindly.
     "offload_search_enabled": True,
+    # Deterministic, command-aware compression of the IN-PROMPT copy of a
+    # shell/bash/powershell tool result (src/command_output_filters.py).
+    # Applied AFTER the full output has already been persisted/offloaded
+    # (src/tool_result_offload.py) — it only shrinks what the model reads
+    # this round, never what is stored. Recognises pytest/unittest/node
+    # test runners, git diff/status, grep/rg, and package-manager installs;
+    # anything else falls back to a generic ANSI/dedup cleanup. Never makes
+    # output longer, and fails open (any error returns the original text).
+    "command_output_compression": True,
     # Chunks older than this are pruned opportunistically on the next index
     # write (cheap, no separate cron).
     "offload_search_retention_days": 14,

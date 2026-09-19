@@ -8616,7 +8616,9 @@ async def _stream_agent_loop_body(
             )
         except Exception:  # noqa: BLE001
             logger.debug("[tool_result_offload] skipped for %s", approved.tool_name, exc_info=True)
-        formatted_approved_result = format_tool_result(desc, approved_result)
+        formatted_approved_result = format_tool_result(
+            desc, approved_result, tool=approved.tool_name, command=approved.content or "",
+        )
         _append_tool_results(
             messages,
             "",
@@ -13228,7 +13230,18 @@ async def _stream_agent_loop_body(
                 logger.debug("[tool_result_offload] skipped for %s", block.tool_type, exc_info=True)
             if _model_result is not result and _attach_timing is not None:
                 _attach_timing(_model_result, _result_timing)
+            # command_output_filters wiring: tag the command's own tool/text
+            # onto the (already offloaded, if oversized) copy the model is
+            # about to see, so format_tool_result can compress shell output
+            # without this call site's literal shape changing (some tests
+            # pattern-match `format_tool_result(desc, _model_result)`).
+            if isinstance(_model_result, dict):
+                _model_result["_shell_tool"] = block.tool_type
+                _model_result["_shell_command"] = block.content or ""
             formatted = format_tool_result(desc, _model_result)
+            if isinstance(_model_result, dict):
+                _model_result.pop("_shell_tool", None)
+                _model_result.pop("_shell_command", None)
             tool_results.append(formatted)
             tool_result_texts.append(formatted)
             _record = {

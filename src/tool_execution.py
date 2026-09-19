@@ -2268,11 +2268,67 @@ _FORMATTER_HANDLED_KEYS = {
     # echoing them here put ~8 KB of base64 per screenshot into the text the
     # model reads and told it nothing (FAUSTUS).
     "images", "screenshot",
+    # Hidden routing keys src/agent_loop.py stashes on a result right before
+    # calling format_tool_result (see command_output_filters wiring below)
+    # and pops right after — never real tool-result data.
+    "_shell_tool", "_shell_command",
 }
 
 
-def format_tool_result(description: str, result: Dict) -> str:
-    """Format a tool result into text for feeding back to the LLM."""
+# Tools whose result text is command output worth running through
+# src/command_output_filters.py — restricted to the shell tools (never
+# python/read_file/etc., whose "output"/"content" fields are not the shape
+# those filters were designed for).
+_COMPRESSIBLE_SHELL_TOOLS = frozenset({"bash", "powershell"})
+
+
+def _compress_shell_text(tool: str, command: str, result: Dict, text: str) -> str:
+    """Best-effort in-prompt compression of one output/stdout/stderr field.
+    Fails open (returns `text` unchanged) on any error, when the tool isn't
+    a recognised shell tool, when the setting is off, or when the caller
+    tagged this result `_raw_requested` (the per-call `raw: true` opt-out —
+    see BashTool/PowerShellTool.execute in
+    src/agent_tools/subprocess_tools.py)."""
+    if not text or tool not in _COMPRESSIBLE_SHELL_TOOLS:
+        return text
+    if isinstance(result, dict) and result.get("_raw_requested"):
+        return text
+    try:
+        from src.settings import get_setting
+        if not bool(get_setting("command_output_compression", True)):
+            return text
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        from src.command_output_filters import compress as _compress_output
+        artifact_id = result.get("artifact_id") if isinstance(result, dict) else None
+        hint = f'read_artifact(artifact_id="{artifact_id}")' if artifact_id else None
+        exit_code = result.get("exit_code") if isinstance(result, dict) else None
+        compressed_text, _meta = _compress_output(command, text, exit_code, artifact_hint=hint)
+        return compressed_text
+    except Exception:  # noqa: BLE001 - compression must never break a result
+        return text
+
+
+def format_tool_result(description: str, result: Dict, *, tool: str = "", command: str = "") -> str:
+    """Format a tool result into text for feeding back to the LLM.
+
+    `tool` and `command` are optional: when `tool` is a shell tool (bash /
+    powershell), the stdout/output/stderr text is passed through
+    src/command_output_filters.py before being shown to the model — AFTER
+    the full result has already been persisted/offloaded by
+    src/tool_result_offload.py at the call site (see agent_loop.py), so
+    this only ever shrinks the in-prompt copy, never what is stored.
+
+    When `tool`/`command` are not passed explicitly, a caller may instead
+    stash them on `result` as `_shell_tool` / `_shell_command` (popped
+    again right after this call) — used by the main round loop so its
+    `format_tool_result(desc, _model_result)` call site keeps its literal
+    shape for callers that pattern-match the source.
+    """
+    if isinstance(result, dict):
+        tool = tool or str(result.get("_shell_tool") or "")
+        command = command or str(result.get("_shell_command") or "")
     parts = [f"### {description}"]
     try:
         from src.tool_clock import header_line as _clock_line
@@ -2290,13 +2346,16 @@ def format_tool_result(description: str, result: Dict) -> str:
 
     if "stdout" in result:
         if result["stdout"]:
-            parts.append(f"**stdout:**\n```\n{result['stdout']}\n```")
+            _stdout = _compress_shell_text(tool, command, result, result["stdout"])
+            parts.append(f"**stdout:**\n```\n{_stdout}\n```")
         if result["stderr"]:
-            parts.append(f"**stderr:**\n```\n{result['stderr']}\n```")
+            _stderr = _compress_shell_text(tool, command, result, result["stderr"])
+            parts.append(f"**stderr:**\n```\n{_stderr}\n```")
         parts.append(f"**exit_code:** {result.get('exit_code', 'unknown')}")
     elif "output" in result:
         # bash / python canonical result shape: {"output": ..., "exit_code": ...}
-        parts.append(f"```\n{result['output']}\n```")
+        _output = _compress_shell_text(tool, command, result, result["output"])
+        parts.append(f"```\n{_output}\n```")
         if result.get("exit_code") not in (0, None):
             parts.append(f"**exit_code:** {result['exit_code']}")
     elif "content" in result:
