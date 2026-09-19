@@ -5652,3 +5652,17 @@ Tres cambios, mismos ficheros de siempre:
 
 **Ficheros.** `src/agent_runs.py`, `src/agent_loop.py`, `routes/chat_routes.py`, `src/settings.py`, `src/agent_settings_schema.py`, `tests/test_bug_stop_never_stops.py`.
 
+## 117. Los cinco suelos de muestreo local, editables desde Ajustes (18-09-2026, noche)
+
+**Pedido.** El commit `5e8f3e29` (§ anterior, sin número propio) añadió `local_temperature_default` (0.6), `local_top_p_default` (0.8) y `local_top_k_default` (20) como ajustes de backend, junto a los ya existentes `local_repeat_penalty_default` (1.05) y `local_min_p_default` (0.05) — todos aplicados solo a endpoints locales (§114). El dueño pidió poder cambiarlos desde la interfaz, y que se le dijera dónde.
+
+**Hecho — grupo «Muestreo local».** `studio/src/screens/Settings.tsx`: nuevo grupo dentro de **Ajustes → Default AI** (la misma pestaña donde ya viven `ModelPair` para chat/tareas/utilidad), justo antes del botón Guardar de esa sección. Cinco campos numéricos (temperatura, top_p, top_k, penalización de repetición, min_p), cada uno con el valor actual como *placeholder* y una ayuda de una línea; el propio grupo explica que una conversación puede seguir sobrescribiéndolos con `/temp`, `/topp`, `/topk`. A diferencia del resto de la pantalla (que precarga `draft` desde `settings` y diffa contra él), estos cinco viven en su propio estado de texto: son overrides opcionales sobre un valor que el backend YA aplica por defecto, así que un campo vacío debe significar «no tocar», nunca «poner a cero» — solo un valor no vacío, recortado al mismo rango que el backend, entra en el parche que se envía a `POST /api/auth/settings`. Recorte cliente: temperatura 0-2, top_p 0-1, top_k 0-200 (redondeado a entero), penalización 0.5-2, min_p 0-1 — igual que el backend.
+
+**Hecho — el backend ahora recorta los cinco, no solo tres.** `routes/auth_routes.py`'s `_FLOAT_RANGES` solo cubría `local_temperature_default`/`local_top_p_default`; `local_repeat_penalty_default`/`local_min_p_default` no estaban declarados en ningún sitio (ni `_FLOAT_RANGES` ni `src/agent_settings_schema.py`) y pasaban a `current[key] = val` sin coerción ni límite. Añadidos con el mismo rango que ya usa el cliente (0.5-2 y 0-1). `local_top_k_default` seguía cubierto por `_INT_RANGES` (0-200), sin cambios.
+
+**Verificado.** `node scripts/build-studio.js --force` → build limpio. `python3 -m pytest tests/test_local_sampler_settings_clamp.py -q` → 7 passed (2 nuevos: `local_repeat_penalty_default`/`local_min_p_default` se recortan a su rango igual que los tres ya cubiertos).
+
+**No verificable sin la máquina en vivo.** Falta abrir Ajustes → Default AI en el Studio real, confirmar que el grupo «Muestreo local» aparece con los cinco placeholders mostrando los valores actuales, escribir un valor fuera de rango en cada campo y confirmar que se guarda ya recortado, dejar un campo vacío tras haber escrito algo y confirmar que NO viaja en el `PATCH` (Network tab) ni pisa el valor guardado, y confirmar que `/temp 0.9` en una conversación sigue ganando sobre el nuevo default guardado (precedencia ya documentada en §114: default global → opciones guardadas por modelo → override explícito del turno).
+
+**Ficheros.** `studio/src/screens/Settings.tsx`, `studio/src/i18n/es.ts`, `routes/auth_routes.py`, `tests/test_local_sampler_settings_clamp.py`.
+

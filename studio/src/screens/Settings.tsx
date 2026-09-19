@@ -331,6 +331,23 @@ const DEFAULT_KEYS = [
   'teacher_enabled', 'teacher_model', 'teacher_tier2_enabled',
   'local_structured_output', 'document_writing_style',
   'chat_versions', 'chat_versions_keep', 'chat_versions_keep_hours',
+  'local_temperature_default', 'local_top_p_default', 'local_top_k_default',
+  'local_repeat_penalty_default', 'local_min_p_default',
+];
+
+/**
+ * SET-07: the local sampling defaults (src/settings.py, applied to local
+ * endpoints only). Each entry is [key, clamp range, decimals]; `decimals: 0`
+ * means round to an integer (top_k). Client-side clamp mirrors the backend's
+ * own (`routes/auth_routes.py` `_INT_RANGES`/`_FLOAT_RANGES`) so a bad value
+ * never round-trips to the server just to be clamped there.
+ */
+const SAMPLING_FIELDS: { key: string; label: string; help: string; lo: number; hi: number; decimals: number; fallback: number }[] = [
+  { key: 'local_temperature_default', label: 'Temperature', help: t('Lower = less rambling (0.6 recommended locally)'), lo: 0, hi: 2, decimals: 2, fallback: 0.6 },
+  { key: 'local_top_p_default', label: 'top_p', help: t('Trims the tail of the probability distribution (0.8)'), lo: 0, hi: 1, decimals: 2, fallback: 0.8 },
+  { key: 'local_top_k_default', label: 'top_k', help: t('How many candidates it considers (20)'), lo: 0, hi: 200, decimals: 0, fallback: 20 },
+  { key: 'local_repeat_penalty_default', label: t('Repeat penalty'), help: t('Avoids token loops (1.05)'), lo: 0.5, hi: 2, decimals: 2, fallback: 1.05 },
+  { key: 'local_min_p_default', label: 'min_p', help: t('Discards the unlikely (0.05)'), lo: 0, hi: 1, decimals: 2, fallback: 0.05 },
 ];
 
 /**
@@ -385,6 +402,15 @@ function ModelPair({ idPrefix, label, help, endpoints, draft, set, epKey, modelK
 function DefaultsSection({ settings, endpoints, onSave, say }: { settings: Settings | null; endpoints: ModelEndpoint[]; onSave: (patch: Settings) => Promise<void>; say: (t: string) => void }) {
   const { draft, set, changed, dirty } = useDraft(settings, DEFAULT_KEYS);
   const [saving, setSaving] = useState(false);
+  // SET-07: the five sampling fields are optional overrides on top of an
+  // already-applied backend default, so unlike the rest of this screen they
+  // start EMPTY (the current value shown only as a placeholder) rather than
+  // pre-filled from `settings`. An empty field must never be sent — clearing
+  // a box is how you say "stop overriding", not "set it to zero" — so these
+  // live in their own text state instead of `draft`/`changed`, and only a
+  // non-empty, clamped value is merged into the patch at save time.
+  const [sampling, setSampling] = useState<Record<string, string>>({});
+  const samplingDirty = SAMPLING_FIELDS.some((f) => (sampling[f.key] ?? '').trim() !== '');
   const save = async () => {
     // SET-05: the default provider/model is a "consciously" change — before
     // it is saved, preview what moves (privacy, cost) and let the person
@@ -405,9 +431,19 @@ function DefaultsSection({ settings, endpoints, onSave, say }: { settings: Setti
         // Advisory only — see comment above.
       }
     }
+    const patch: Settings = { ...changed };
+    for (const f of SAMPLING_FIELDS) {
+      const raw = (sampling[f.key] ?? '').trim();
+      if (raw === '') continue;
+      const n = Number(raw);
+      if (Number.isNaN(n)) continue;
+      const clamped = Math.max(f.lo, Math.min(n, f.hi));
+      patch[f.key] = f.decimals === 0 ? Math.round(clamped) : Number(clamped.toFixed(f.decimals));
+    }
     setSaving(true);
     try {
-      await onSave(changed);
+      await onSave(patch);
+      setSampling({});
       say(t('Saved.'));
     } catch (err) {
       say((err as Error).message || t('Could not save.'));
@@ -482,7 +518,26 @@ function DefaultsSection({ settings, endpoints, onSave, say }: { settings: Setti
           <Text id="cv-hours" type="number" value={str(draft.chat_versions_keep_hours)} onChange={(v) => set('chat_versions_keep_hours', Number(v) || 0)} placeholder={t('hours')} />
         </div>
       </Field>
-      <SaveBar dirty={dirty} saving={saving} onSave={() => void save()} />
+      <Field label={t('Local sampling')} help={t('Only for local endpoints (Ollama, LM Studio…). Empty: do not send. A conversation can still override these for itself with /temp, /topp, /topk.')}>
+        <div className="fs-set__grid2">
+          {SAMPLING_FIELDS.map((f) => {
+            const current = settings?.[f.key];
+            const placeholder = typeof current === 'number' ? String(current) : String(f.fallback);
+            return (
+              <Field key={f.key} label={f.label} htmlFor={`samp-${f.key}`} help={f.help}>
+                <Text
+                  id={`samp-${f.key}`}
+                  type="number"
+                  value={sampling[f.key] ?? ''}
+                  onChange={(v) => setSampling((s) => ({ ...s, [f.key]: v }))}
+                  placeholder={placeholder}
+                />
+              </Field>
+            );
+          })}
+        </div>
+      </Field>
+      <SaveBar dirty={dirty || samplingDirty} saving={saving} onSave={() => void save()} />
     </section>
   );
 }

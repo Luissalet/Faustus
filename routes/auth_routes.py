@@ -889,6 +889,8 @@ def setup_auth_routes(auth_manager: AuthManager) -> APIRouter:
         _FLOAT_RANGES = {
             "local_temperature_default": (0.0, 2.0),
             "local_top_p_default": (0.0, 1.0),
+            "local_repeat_penalty_default": (0.5, 2.0),
+            "local_min_p_default": (0.0, 1.0),
         }
         for key in DEFAULT_SETTINGS:
             if key in RETIRED_SETTING_KEYS:

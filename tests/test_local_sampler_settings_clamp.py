@@ -91,3 +91,21 @@ async def test_a_non_numeric_value_is_rejected(settings_api):
     from fastapi import HTTPException
     with pytest.raises(HTTPException):
         await _post(settings_api, {"local_temperature_default": "warm"})
+
+
+@pytest.mark.asyncio
+async def test_repeat_penalty_default_is_clamped_to_its_range(settings_api):
+    await _post(settings_api, {"local_repeat_penalty_default": 5.0})
+    assert settings_api.stored["local_repeat_penalty_default"] == 2.0
+
+    await _post(settings_api, {"local_repeat_penalty_default": 0.1})
+    assert settings_api.stored["local_repeat_penalty_default"] == 0.5
+
+
+@pytest.mark.asyncio
+async def test_min_p_default_is_clamped_to_its_range(settings_api):
+    await _post(settings_api, {"local_min_p_default": 3.0})
+    assert settings_api.stored["local_min_p_default"] == 1.0
+
+    await _post(settings_api, {"local_min_p_default": -1.0})
+    assert settings_api.stored["local_min_p_default"] == 0.0

@@ -7891,4 +7891,12 @@ export const es: Record<string, string> = {
   "…or upload a file": "…o sube un archivo",
   "≥ {lower} GB (incomplete: {reason})": "≥ {lower} GB (incompleto: {reason})",
   "⟨insert⟩": "⟨insertar⟩",
+  "Local sampling": "Muestreo local",
+  "Only for local endpoints (Ollama, LM Studio…). Empty: do not send. A conversation can still override these for itself with /temp, /topp, /topk.": "Solo para endpoints locales (Ollama, LM Studio…). Vacío: no enviar. Una conversación puede seguir sobrescribirlos para sí misma con /temp, /topp, /topk.",
+  "Lower = less rambling (0.6 recommended locally)": "Más baja = menos divagación (0.6 recomendado en local)",
+  "Trims the tail of the probability distribution (0.8)": "Recorta la cola de probabilidades (0.8)",
+  "How many candidates it considers (20)": "Cuántos candidatos considera (20)",
+  "Repeat penalty": "Penalización de repetición",
+  "Avoids token loops (1.05)": "Evita bucles de tokens (1.05)",
+  "Discards the unlikely (0.05)": "Descarta lo improbable (0.05)",
 };
