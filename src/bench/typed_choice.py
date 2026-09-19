@@ -147,7 +147,7 @@ async def run_benchmark(url: str, model: str) -> Dict[str, Any]:
 
 def _print_report(report: Dict[str, Any]) -> None:
     tc, gc = report["typed_choice"], report["generated_choice"]
-    print(f"typed_choice benchmark — url={report['url']} model={report['model']}")
+    print(f"typed_choice benchmark - url={report['url']} model={report['model']}")
     print(f"  cases: {tc['total']}")
     print(f"  typed_choice:     accuracy {tc['accuracy']:.0%}  "
           f"mean latency {tc['mean_latency_ms']:.1f} ms  errors {tc['errors']}")
