@@ -350,3 +350,29 @@ def test_fetch_webpage_content_format_text_keeps_flat_text(no_cache, monkeypatch
     assert "# Doc Page" not in result["content"]
     assert "Doc Page" in result["content"]
     assert result["links"] == []
+
+
+def test_semantic_main_root_wins_and_toc_and_permalinks_are_dropped():
+    from src.html_markdown import html_to_markdown
+    body = "<p>" + ("Real article sentence about the topic. " * 30) + "</p>"
+    html = f"""<html><body>
+      <div class="vector-body-before-content"><div id="toc" class="toc">
+        <a href="#a">General comparison</a> <a href="#b">Type systems</a></div></div>
+      <div id="mw-content-text"><h2>General comparison<a class="headerlink" href="#g">¶</a></h2>{body}</div>
+      <div class="footer-content">Footer links everywhere</div>
+    </body></html>"""
+    md = html_to_markdown(html, "https://example.org/wiki/X")["markdown"]
+    assert md.startswith("## General comparison")
+    assert "¶" not in md
+    assert "Type systems" not in md
+    assert "Footer links" not in md
+
+
+def test_js_required_not_flagged_when_extraction_is_long(monkeypatch):
+    from services.search import content as c
+    long_result = {"content": "word " * 2000, "js_rendered": True, "url": "https://example.org/a"}
+    short_result = {"content": "tiny", "js_rendered": True, "url": "https://example.org/b"}
+    c._annotate_source_quality(long_result)
+    c._annotate_source_quality(short_result)
+    assert "js_required" not in long_result["extraction_quality"]["flags"]
+    assert "js_required" in short_result["extraction_quality"]["flags"]

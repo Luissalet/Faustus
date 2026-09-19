@@ -227,6 +227,9 @@ _LINK_FARM_DENSITY = 0.15
 _LINK_FARM_MIN_LINKS = 15
 
 
+_JS_REQUIRED_MAX_CHARS = 3000
+
+
 def _annotate_source_quality(result: dict, extra_flags=None) -> dict:
     """Attach ``source_type``/``is_official`` (from the URL) and
     ``extraction_quality`` (from the extracted text) to a fetch result dict
@@ -268,7 +271,11 @@ def _annotate_source_quality(result: dict, extra_flags=None) -> dict:
             flags.append(flag)
     # js_rendered is computed separately (DOM framework markers), fold it in
     # as its own quality signal so the note/flag reflects it too.
-    if result.get("js_rendered") and "js_required" not in flags:
+    # A framework marker on a page that still yielded plenty of text (server-
+    # rendered wikis, docs sites with a JS search box) is not "content
+    # missing": only flag it when the extraction is actually short.
+    if (result.get("js_rendered") and "js_required" not in flags
+            and len(result.get("content") or "") < _JS_REQUIRED_MAX_CHARS):
         flags.append("js_required")
 
     from src.source_types import _QUALITY_PENALTIES  # local import: internal table, avoid a hard module-level coupling

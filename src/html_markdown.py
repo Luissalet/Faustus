@@ -47,27 +47,78 @@ _LINKS_CAP = 200
 _HEADINGS_CAP = 50
 
 
+# Navigation-ish blocks that are not tags of their own: tables of contents,
+# navboxes, edit links, "¶" permalink anchors next to headings.
+_NOISE_SELECTORS = (
+    "[role=navigation]", "[role=banner]", "[role=contentinfo]",
+    "#toc", ".toc", ".navbox", ".vertical-navbox", ".vector-toc",
+    ".mw-editsection", ".mw-jump-link", ".headerlink", ".anchorjs-link",
+    ".skip-link", ".breadcrumbs", ".breadcrumb", ".sidebar", ".cookie-banner",
+)
+_PERMALINK_TEXT = {"¶", "#", "§", "🔗"}
+
+
 def _strip_noise(soup: BeautifulSoup) -> None:
     for tag in soup.find_all(_NOISE_TAGS):
         tag.decompose()
+    for selector in _NOISE_SELECTORS:
+        try:
+            for tag in soup.select(selector):
+                tag.decompose()
+        except Exception:  # noqa: BLE001 - a selector the parser can't handle
+            continue
+    for a in soup.find_all("a"):
+        if a.get_text(strip=True) in _PERMALINK_TEXT:
+            a.decompose()
     # HTML comments carry no visible text but can otherwise leak into
     # NavigableString walks below.
     for comment in soup.find_all(string=lambda s: s.__class__.__name__ == "Comment"):
         comment.extract()
 
 
+# Semantic roots tried first, in order; the first with real text wins.
+_MAIN_SELECTORS = (
+    "main", "[role=main]", "#mw-content-text", "article", "#main-content",
+    "#content", "#main", ".md-content", ".markdown-body", ".post-content",
+    ".entry-content", ".article-body", ".documentwrapper",
+)
+
+
 def _select_main(soup: BeautifulSoup) -> Tag:
-    """Pick the node(s) to render, preferring semantic/"content"-classed
-    containers (mirrors ``services.search.content``'s heuristic) and
-    falling back to the whole (noise-stripped) body for thin pages."""
+    """Pick the node to render: a semantic main-content root when the page
+    has one with real text, else the "content"-classed containers holding
+    the most text, else the whole (noise-stripped) body."""
     body = soup.find("body") or soup
+
+    for selector in _MAIN_SELECTORS:
+        try:
+            found = soup.select(selector)
+        except Exception:  # noqa: BLE001
+            continue
+        if not found:
+            continue
+        best = max(found, key=lambda t: len(t.get_text(" ", strip=True)))
+        if len(best.get_text(" ", strip=True)) >= _THIN_CONTENT_CHARS:
+            return best
 
     content_areas = soup.find_all(
         ["main", "article", "section", "div"], class_=_CONTENT_CLASS_RE
     )
     if content_areas:
+        # Largest first, skipping areas nested inside one already taken.
+        ranked = sorted(content_areas, key=lambda t: len(t.get_text(" ", strip=True)),
+                        reverse=True)
+        chosen: List[Tag] = []
+        for area in ranked:
+            if any(area in c.descendants or c in area.descendants for c in chosen):
+                continue
+            chosen.append(area)
+            if len(chosen) == 3:
+                break
+        order = {id(t): i for i, t in enumerate(content_areas)}
+        chosen.sort(key=lambda t: order[id(t)])
         wrapper = soup.new_tag("div")
-        for area in content_areas[:3]:
+        for area in chosen:
             wrapper.append(area.extract())
         return wrapper
     return body
