@@ -286,6 +286,9 @@
 .fs-set__list {
   display: grid;
   gap: var(--fs-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
 .fs-set__ep {
@@ -298,6 +301,38 @@
   border-radius: var(--fs-radius-panel);
   background: var(--fs-surface-1);
 }
+
+/* ── Engines (Settings → Local models → Engines, FAUSTUS.md §119) ── */
+
+.fs-set__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--fs-space-3);
+  padding: var(--fs-space-3) var(--fs-space-4);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-panel);
+  background: var(--fs-surface-1);
+}
+.fs-set__row [data-testid="engine-state"] { text-transform: capitalize; }
+.fs-set__row [data-testid="engine-state"][data-state="running"] { color: var(--fs-success); }
+.fs-set__row [data-testid="engine-state"][data-state="unhealthy"] { color: var(--fs-warning); }
+.fs-set__row [data-testid="engine-state"][data-state="stopped"],
+.fs-set__row [data-testid="engine-state"][data-state="unknown"] { color: var(--fs-text-3); }
+
+.fs-set__form {
+  display: grid;
+  gap: var(--fs-space-3);
+  padding: var(--fs-space-3) var(--fs-space-4);
+  border: 1px dashed var(--fs-border);
+  border-radius: var(--fs-radius-panel);
+}
+.fs-set__form label { display: grid; gap: 6px; font-size: var(--fs-label-size); font-weight: 600; min-inline-size: 0; }
+.fs-set__form input, .fs-set__form textarea { font: inherit; font-weight: 400; background: var(--fs-surface-1); color: var(--fs-text-1); border: 1px solid var(--fs-border); border-radius: var(--fs-radius-control); padding: 6px 8px; inline-size: 100%; box-sizing: border-box; }
+.fs-set__form textarea { min-block-size: 72px; resize: vertical; }
+.fs-set__form .fs-set__row-actions { flex-wrap: wrap; }
+@media (max-width: 600px) { .fs-set__form input, .fs-set__form textarea { font-size: 16px; min-block-size: 40px; } }
 
 .fs-set__ep[data-off] {
   opacity: 0.6;

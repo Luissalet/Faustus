@@ -1409,6 +1409,12 @@ app.include_router(setup_connector_routes(mcp_manager))
 from routes.process_center_routes import setup_process_center_routes
 app.include_router(setup_process_center_routes())
 
+# Local inference engines (llama.cpp's llama-server) managed from the UI —
+# built on the launch-profile machinery above, never a second process
+# manager. See routes/engine_routes.py and src/engines.py.
+from routes.engine_routes import setup_engine_routes
+app.include_router(setup_engine_routes())
+
 # Home cards (17-09): automations pinned to Home with their latest result.
 from routes.home_cards_routes import setup_home_cards_routes
 app.include_router(setup_home_cards_routes())

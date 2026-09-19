@@ -1,7 +1,21 @@
-import { ArrowDown, ArrowUp, Download, HardDrive, RefreshCw, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, Download, HardDrive, Play, RefreshCw, Square, Wrench, X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button, EmptyState, IconButton, Skeleton } from '../../components';
 import { invalidateSettings, getSettings } from '../../adapters/settings';
+import {
+  createEngine,
+  deleteEngine,
+  discoverEngine,
+  engineStatuses,
+  listEngines,
+  startEngine,
+  stopEngine,
+  updateEngine,
+  verifyEngine,
+  type EngineConfig,
+  type EngineCreateInput,
+  type EngineStatus,
+} from '../../adapters/engines';
 import {
   calibrateModel,
   cancelPull,
@@ -535,6 +549,8 @@ export function LocalModelsSection({ admin, say }: { admin: boolean; say: (t: st
           <VramCard vram={data.vram} loaded={data.loaded} policy={data.placement_policy} admin={admin} onPlacement={async (order) => { await setPlacement(order); await refresh(true); say(t('GPU priority saved.')); }} onRelease={(pid) => void act(() => releaseOrphanRunner(pid), t('Runner released.'))} />
           {data.disk?.free_bytes != null && <p className="fs-set__help">{t('{free} free of {total} where Ollama keeps its blobs ({path}).', { free: fmtGb(data.disk.free_bytes), total: fmtGb(data.disk.total_bytes), path: data.disk.path ?? '' })}</p>}
 
+          <EnginesSection admin={admin} say={say} defaultModel={defaultModel} />
+
           <div className="fs-set__card">
             <h3 className="fs-set__card-title">{t('Loaded now')}</h3>
             <LoadedList
@@ -615,6 +631,192 @@ export function LocalModelsSection({ admin, say }: { admin: boolean; say: (t: st
         onDecide={decideLoad}
       />
     </section>
+  );
+}
+
+/* ── engines: llama-server instances started/stopped from this screen,
+ * never a PowerShell script outside the app. `src/engines.py`/
+ * `routes/engine_routes.py` — see FAUSTUS.md §119. */
+
+const EMPTY_ENGINE_DRAFT: EngineCreateInput = {
+  name: '', executable: '', model_path: '', ctx_size: 4096, port: 8081, host: '127.0.0.1', extra_args: [],
+};
+
+function EnginesSection({ admin, say, defaultModel }: { admin: boolean; say: (t: string) => void; defaultModel: string }) {
+  const [engines, setEngines] = useState<EngineConfig[] | null>(null);
+  const [statuses, setStatuses] = useState<Record<string, EngineStatus>>({});
+  const [working, setWorking] = useState('');
+  const [editing, setEditing] = useState<EngineConfig | 'new' | null>(null);
+
+  const refresh = useCallback(async () => {
+    try {
+      const [list, stat] = await Promise.all([listEngines(), engineStatuses()]);
+      setEngines(list);
+      setStatuses(stat);
+    } catch {
+      setEngines((cur) => cur ?? []);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+    const id = window.setInterval(() => void refresh(), POLL_MS);
+    return () => window.clearInterval(id);
+  }, [refresh]);
+
+  const act = async (id: string, label: string, fn: () => Promise<{ error?: string; reason?: string } | unknown>) => {
+    setWorking(id);
+    try {
+      const out = (await fn()) as { error?: string; reason?: string } | undefined;
+      if (out && typeof out === 'object' && (out.error || (out as { ok?: boolean }).ok === false)) {
+        say(`${label}: ${out.error || out.reason || t('failed')}`);
+      } else {
+        say(label);
+      }
+    } catch (e) {
+      say((e as Error).message);
+    } finally {
+      setWorking('');
+      await refresh();
+    }
+  };
+
+  if (!admin) return null;
+
+  return (
+    <div className="fs-set__card" data-testid="engines-section">
+      <header className="fs-set__row-between">
+        <h3 className="fs-set__card-title">{t('Engines (llama.cpp)')}</h3>
+        <Button size="sm" variant="ghost" label={t('Add engine')} onClick={() => setEditing('new')} />
+      </header>
+      <p className="fs-set__help">{t('Local llama-server instances, started and stopped here — never a script outside the app.')}</p>
+      {engines === null ? (
+        <Skeleton label={t('Loading')} count={1} height="56px" />
+      ) : engines.length === 0 ? (
+        <p className="fs-set__help">{t('No engines configured yet.')}</p>
+      ) : (
+        <ul className="fs-set__list">
+          {engines.map((engine) => {
+            const status = statuses[engine.id];
+            const state = status?.state ?? 'unknown';
+            const servesDefault = Boolean(defaultModel) && status?.model === defaultModel;
+            const busy = working === engine.id;
+            return (
+              <li key={engine.id} className="fs-set__row" data-testid={`engine-row-${engine.id}`}>
+                <div>
+                  <strong>{engine.name}</strong>{' '}
+                  <span className="fs-set__help" data-testid="engine-state" data-state={state}>{state}</span>
+                  {status?.model && <span className="fs-set__help"> · {status.model}</span>}
+                  {status?.context_length ? <span className="fs-set__help"> · {fmtCtx(status.context_length)}</span> : null}
+                  {status?.footprint_bytes ? <span className="fs-set__help"> · {fmtGb(status.footprint_bytes)}</span> : null}
+                  <div className="fs-set__help">{engine.host}:{engine.port ?? '—'} · {engine.model_path || t('no model configured')}</div>
+                </div>
+                <div className="fs-set__row-actions">
+                  {state === 'running' || state === 'unhealthy' ? (
+                    <IconButton icon={Square} label={t('Stop')} size="sm" disabled={busy} onClick={() => {
+                      if (servesDefault && !window.confirm(t('This engine serves the default model. Stop it anyway?'))) return;
+                      void act(engine.id, t('Stopped {name}', { name: engine.name }), () => stopEngine(engine.id));
+                    }} />
+                  ) : (
+                    <IconButton icon={Play} label={t('Start')} size="sm" disabled={busy} onClick={() => void act(engine.id, t('Starting {name}…', { name: engine.name }), () => startEngine(engine.id))} />
+                  )}
+                  <IconButton icon={Wrench} label={t('Verify')} size="sm" disabled={busy} onClick={() => void act(engine.id, t('Verified {name}', { name: engine.name }), () => verifyEngine(engine.id))} />
+                  <Button size="sm" variant="ghost" label={t('Edit')} disabled={busy} onClick={() => setEditing(engine)} />
+                  <IconButton icon={X} label={t('Delete')} size="sm" disabled={busy} onClick={() => {
+                    if (!window.confirm(t('Delete engine "{name}"? This does not stop it first.', { name: engine.name }))) return;
+                    void act(engine.id, t('Deleted {name}', { name: engine.name }), () => deleteEngine(engine.id));
+                  }} />
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {editing && (
+        <EngineEditor
+          engine={editing === 'new' ? null : editing}
+          onCancel={() => setEditing(null)}
+          onSave={async (fields) => {
+            try {
+              if (editing === 'new') {
+                await createEngine(fields as EngineCreateInput);
+                say(t('Engine created.'));
+              } else {
+                await updateEngine(editing.id, fields);
+                say(t('Engine updated.'));
+              }
+              setEditing(null);
+              await refresh();
+            } catch (e) {
+              say((e as Error).message);
+            }
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function EngineEditor({ engine, onCancel, onSave }: {
+  engine: EngineConfig | null;
+  onCancel: () => void;
+  onSave: (fields: EngineCreateInput) => Promise<void>;
+}) {
+  const [draft, setDraft] = useState<EngineCreateInput>(
+    engine
+      ? {
+          name: engine.name, executable: engine.executable, model_path: engine.model_path,
+          ctx_size: engine.ctx_size, port: engine.port ?? 8081, host: engine.host,
+          extra_args: engine.extra_args, description: engine.description ?? '',
+        }
+      : EMPTY_ENGINE_DRAFT,
+  );
+  const [discovering, setDiscovering] = useState(false);
+  const set = <K extends keyof EngineCreateInput>(key: K, value: EngineCreateInput[K]) =>
+    setDraft((d) => ({ ...d, [key]: value }));
+
+  const discover = async () => {
+    setDiscovering(true);
+    try {
+      const found = await discoverEngine(draft.port, draft.host || '127.0.0.1');
+      if (found.found) {
+        setDraft((d) => ({ ...d, model_path: found.model_path || d.model_path, ctx_size: found.ctx_size || d.ctx_size }));
+      }
+    } catch {
+      /* nothing listening there, or it did not answer /props — leave the draft as-is */
+    } finally {
+      setDiscovering(false);
+    }
+  };
+
+  return (
+    <form
+      className="fs-set__form"
+      aria-label={engine ? t('Edit engine') : t('Add engine')}
+      onSubmit={(e) => { e.preventDefault(); void onSave(draft); }}
+    >
+      <label>{t('Name')}<input value={draft.name} onChange={(e) => set('name', e.target.value)} required /></label>
+      <label>{t('Executable (llama-server path)')}<input value={draft.executable} onChange={(e) => set('executable', e.target.value)} required /></label>
+      <label>{t('Model file (GGUF)')}<input value={draft.model_path} onChange={(e) => set('model_path', e.target.value)} required /></label>
+      <div className="fs-set__row-actions">
+        <label>{t('Context size')}<input type="number" min={1} value={draft.ctx_size} onChange={(e) => set('ctx_size', Number(e.target.value))} /></label>
+        <label>{t('Port')}<input type="number" min={1} max={65535} value={draft.port} onChange={(e) => set('port', Number(e.target.value))} /></label>
+        <label>{t('Host')}<input value={draft.host ?? '127.0.0.1'} onChange={(e) => set('host', e.target.value)} /></label>
+      </div>
+      <label>{t('Extra flags (one per line)')}
+        <textarea
+          value={(draft.extra_args ?? []).join('\n')}
+          onChange={(e) => set('extra_args', e.target.value.split('\n').map((s) => s.trim()).filter(Boolean))}
+        />
+      </label>
+      <div className="fs-set__row-actions">
+        <Button type="button" size="sm" variant="ghost" disabled={discovering} label={t('Fill from what is listening on this port')} onClick={() => void discover()} />
+      </div>
+      <div className="fs-set__row-actions">
+        <Button type="submit" size="sm" label={engine ? t('Save') : t('Create')} />
+        <Button type="button" size="sm" variant="ghost" label={t('Cancel')} onClick={onCancel} />
+      </div>
+    </form>
   );
 }
 

@@ -264,6 +264,7 @@ Add as a draft	Añadir como borrador
 Add between 1 and 80 subtitle segments.	Añade entre 1 y 80 segmentos de subtítulos.
 Add comment	Añadir comentario
 Add endpoint	Añadir endpoint
+Add engine	Añadir motor
 Add files and tools	Añadir archivos y herramientas
 Add folder	Añadir carpeta
 Add guidance that should apply to every chat in this project.	Añade las pautas que deban aplicarse a todas las conversaciones de este proyecto.
@@ -1108,6 +1109,7 @@ Context Engine	Motor de contexto
 Context for a task	Contexto para una tarea
 Context length the model was trained for (from /api/show)	Longitud de contexto para la que se entrenó el modelo (de /api/show)
 Context memory preview	Memoria al cambiar el contexto
+Context size	Tamaño de contexto
 Context sources	Fuentes de contexto
 Context used ({n}) — why	Contexto usado ({n}) — por qué
 Context window (tokens)	Ventana de contexto (tokens)
@@ -1551,6 +1553,7 @@ Delete branch {branch}?	¿Borrar la rama {branch}?
 Delete conversation	Borrar conversación
 Delete draft	Borrar borrador
 Delete empty and throwaway chats and file the rest into folders with a model	Borra los chats vacíos y de usar y tirar, y archiva el resto en carpetas con un modelo
+Delete engine "{name}"? This does not stop it first.	¿Eliminar el motor «{name}»? Esto no lo detiene antes.
 Delete everything	Borrarlo todo
 Delete experiment	Eliminar experimento
 Delete expert	Borrar experto
@@ -1818,6 +1821,7 @@ Edit and retry	Editar y reintentar
 Edit app	Editar app
 Edit connector	Editar conector
 Edit document	Editar documento
+Edit engine	Editar motor
 Edit image and masks: {name}	Editar imagen y máscaras: {name}
 Edit launch profile	Editar perfil de arranque
 Edit message	Editar mensaje
@@ -1885,6 +1889,9 @@ Ends the turn for good and stops any sub-agents it started.	Termina el turno de 
 Enforce eager	Forzar eager
 Engine	Motor
 Engine ID (cx)	ID del motor (cx)
+Engine created.	Motor creado.
+Engine updated.	Motor actualizado.
+Engines (llama.cpp)	Motores (llama.cpp)
 Engines asked for: {list}	Motores solicitados: {list}
 Enhance	Mejorar
 Enhance face	Mejorar cara
@@ -1999,6 +2006,7 @@ Excluded providers	Proveedores excluidos
 Excluded source	Fuente excluida
 Excluded: {what}	Excluido: {what}
 Executable (absolute path)	Ejecutable (ruta absoluta)
+Executable (llama-server path)	Ejecutable (ruta de llama-server)
 Execute bash commands	Ejecuta órdenes de bash
 Execution timed out (10 s)	La ejecución agotó el tiempo (10 s)
 Existing markdown does not disappear; this copies what it describes into issues, without duplicating anything already imported.	El markdown existente no desaparece; esto copia lo que describe en incidencias, sin duplicar nada ya importado.
@@ -2050,6 +2058,7 @@ External jobs are still off. This check does not enable them.	Los trabajos exter
 External operations	Operaciones externas
 External ops	Operaciones externas
 Extra arguments	Argumentos extra
+Extra flags (one per line)	Flags extra (uno por línea)
 Extra paths allowed to the tools	Rutas extra permitidas a las herramientas
 Extract	Extraer
 Extract editable style rules from examples, compare two responses, then save as a reusable preset. This does not train model weights.	Extrae reglas de estilo editables a partir de ejemplos, compara dos respuestas y guarda un preset reutilizable. Esto no entrena los pesos del modelo.
@@ -2105,6 +2114,7 @@ Files, one per line	Ficheros, uno por línea
 Fill	Rellenar
 Fill GPU {n} first — {name} ({gb} GB)	Llenar primero la GPU {n} — {name} ({gb} GB)
 Fill first	Llenar primero
+Fill from what is listening on this port	Rellenar desde lo que ya escucha en este puerto
 Fill in all the fields.	Rellena todos los campos.
 Fill in: {list}	Rellena: {list}
 Fill the empty, transparent parts of the canvas; the brush mask is ignored	Rellena las partes vacías y transparentes del lienzo; la máscara del pincel se ignora
@@ -2936,6 +2946,7 @@ Loading…	Cargando…
 Local	Local
 Local (Piper)	Local (Piper)
 Local latency	Latencia local
+Local llama-server instances, started and stopped here — never a script outside the app.	Instancias locales de llama-server, arrancadas y paradas aquí — nunca un script fuera de la app.
 Local model speed for research (tokens/s)	Velocidad del modelo local para research (tokens/s)
 Local models	Modelos locales
 Local only — every auxiliary (embeddings, the reranker, compaction) is blocked from reaching a non-local endpoint	Solo local — se bloquea a cada auxiliar (embeddings, reranker, compactación) el acceso a un destino no local
@@ -3143,6 +3154,7 @@ Model card	Ficha del modelo
 Model deleted	Modelo borrado
 Model detail	Detalle del modelo
 Model endpoints	Endpoints de modelos
+Model file (GGUF)	Fichero del modelo (GGUF)
 Model folders	Carpetas de modelos
 Model for the new chat	Modelo para la nueva conversación
 Model for this worker (empty = the chat's)	Modelo para este worker (vacío = el del chat)
@@ -3396,6 +3408,7 @@ No drafts	Sin borradores
 No edge touches this node: it stands on nothing recorded, and nothing recorded rests on it.	Ninguna arista toca este nodo: no se apoya en nada registrado y nada registrado se apoya en él.
 No endpoint matches "{q}". /ping lists them.	Ningún endpoint coincide con «{q}». /ping los lista.
 No endpoint responds.	Ningún endpoint responde.
+No engines configured yet.	Todavía no hay motores configurados.
 No entity by that id is visible to you. It may never have existed, or it may belong to somebody else; the mirror answers the same either way.	Ninguna entidad con ese id es visible para ti. Puede que nunca haya existido, o que sea de otra persona; el espejo responde igual en ambos casos.
 No experiments yet	Aún no hay experimentos
 No expert matches that search.	Ningún experto coincide con esa búsqueda.
@@ -5270,6 +5283,7 @@ Started {name}	{name} en marcha
 Started, but not answering yet.	Iniciado, pero todavía no responde.
 Started.	Iniciado.
 Starting	Iniciando
+Starting {name}…	Arrancando {name}…
 Starting…	Arrancando…
 Starts	Empieza
 Starts a new conversation.	Empieza una conversación nueva.
@@ -5315,6 +5329,7 @@ Stopped	Detenida
 Stopped ({n} processes).	Parado ({n} procesos).
 Stopped after {s} s (timeout).	Parado a los {s} s (tiempo agotado).
 Stopped early: the rounds converged ({score})	Parado antes: las rondas convergieron ({score})
+Stopped {name}	{name} detenido
 Stopped, and waiting for a person to decide.	Parado, esperando a que una persona decida.
 Stopped.	Parado.
 Stopped: cancelled	Parado: cancelado
@@ -5886,6 +5901,7 @@ This document changed since you loaded it. The server now has revision {n}.	Este
 This document has no layers yet.	Este documento aún no tiene capas.
 This document has no tracks yet.	Este documento todavía no tiene pistas.
 This document links to	Este documento enlaza a
+This engine serves the default model. Stop it anyway?	Este motor sirve el modelo por defecto. ¿Detenerlo de todas formas?
 This folder already has an instructions file (`{existing}`). Here is a fresh draft for reference; nothing was written.	Esta carpeta ya tiene fichero de instrucciones (`{existing}`). Aquí va un borrador nuevo como referencia; no se ha escrito nada.
 This folder has no subfolders.	Esta carpeta no tiene subcarpetas.
 This host has not been paired yet.	Este servidor aún no se ha emparejado.
@@ -6286,7 +6302,9 @@ Verification starts from a checkpoint created during upgrade; older probe histor
 Verified	Verificado
 Verified experiences	Experiencias verificadas
 Verified snapshots of the whole data folder: list, take one, or check one would restore.	Copias verificadas de toda la carpeta de datos: listarlas, hacer una, o comprobar que una restauraría.
+Verified {name}	{name} verificado
 Verified: the latest snapshot opens, restores and its row counts match the backup-time manifest.	Verificado: la última copia de seguridad abre, restaura y sus recuentos de filas coinciden con el manifiesto tomado al hacer la copia.
+Verify	Verificar
 Verify again	Verificar de nuevo
 Verify and enable	Verificar y activar
 Verify now	Verificar ahora
@@ -7052,6 +7070,7 @@ no invocation recorded	sin invocación registrada
 no label in the result	sin etiqueta en el resultado
 no layer was recorded as completed	no se registró ninguna capa como completada
 no model	sin modelo
+no model configured	sin modelo configurado
 no model on this card	ningún modelo en esta tarjeta
 no output contract declared	sin contrato de salida declarado
 no proof was attached	no se adjuntó ninguna prueba

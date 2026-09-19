@@ -746,3 +746,19 @@ deep-link de workflows, recetas desde un run real) ya no aparece aquí.
   razonamiento solo aparece con un modelo pensante activo (p. ej. `qwen3`,
   nunca con el 27B por defecto), y que `/temp 0.9` escrito en el chat
   actualiza el panel al reabrirlo.
+
+- **FAUSTUS.md §119 — Parte B (`llama-server` gestionado desde la UI).**
+  `src/engines.py`/`routes/engine_routes.py` con 14 tests unitarios en
+  verde y la sección «Engines (llama.cpp)» ya montada en Ajustes → Local
+  models; nada de esto se ha probado contra el `llama-server` real del
+  dueño. **Pendiente, en la máquina real:** (1) crear un engine desde
+  Ajustes apuntando a `llama-server.exe` y al GGUF reales y confirmar
+  «Verify» en verde; (2) Start con el puerto libre y ver la fila pasar de
+  `stopped` a `unhealthy` a `running`, con modelo/contexto/huella
+  correctos; (3) con `Start-LlamaServer.ps1` (o cualquier otra cosa)
+  arrancado a mano en el 8081, confirmar que Start desde la UI se rechaza
+  nombrando ese proceso, sin tocarlo; (4) Stop desde la UI y confirmar en
+  el Administrador de tareas que el proceso y sus hijos desaparecen, y que
+  pide confirmación cuando ese motor sirve el modelo por defecto; (5)
+  «Rellenar desde lo que ya escucha en este puerto» contra el servidor
+  real y confirmar que trae `model_path`/`n_ctx` correctos desde `/props`.
