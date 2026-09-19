@@ -2944,6 +2944,25 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "doc_claims_check",
+            "description": "Ground backticked claims in Markdown docs (file paths, dotted symbols, settings keys, API routes, tool names) in the actual code -- reports which ones are broken (the thing no longer exists) and which sections are stale (the code they cite changed after the doc section was last edited, with the commits in between). Use before closing a docs-writing task to catch stale references, or when asked 'is this doc still accurate'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "docs": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Doc paths to check, relative to root (default: FAUSTUS.md, README.md)"
+                    },
+                    "root": {"type": "string", "description": "Workspace root (optional -- defaults to the active workspace)"}
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "fanout_run",
             "description": "Race the SAME prompt across N candidate models/endpoints, each isolated in its own alternative (a git worktree or a directory snapshot, like alt_start) so they never collide. Returns immediately with a run_id -- poll with fanout_status/fanout_results, do not wait here. Candidates default to the chat's own model plus whatever worker/dispatch model this install has configured when `candidates` is omitted. Use when the user wants to compare what different models (e.g. a cheap local model vs. a remote one) each do with the same task before picking one.",
             "parameters": {

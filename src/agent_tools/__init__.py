@@ -72,6 +72,7 @@ from .code_graph_tools import (
     CodeGraphSnippetTool, CodeGraphCochangesTool, CodeGraphRiskTool,
 )
 from .structural_search_tools import StructuralSearchTool, StructuralRewriteTool
+from .doc_claims_tool import DocClaimsCheckTool
 from .pdf_ops_tool import PdfOpsTool
 from .pdf_tree_tool import PdfOutlineTool, PdfReadSectionTool, PdfFindSectionTool
 from .goal_tools import GoalDefineTool, GoalStatusTool, GoalEvaluateTool, GoalEvidenceTool
@@ -191,6 +192,10 @@ TOOL_HANDLERS = {
     # text grep and the code graph can't express. See src/structural_search.py.
     "structural_search": StructuralSearchTool().execute,
     "structural_rewrite": StructuralRewriteTool().execute,
+    # Doc-claim drift checker: grounds backticked doc claims (paths, symbols,
+    # settings keys, routes, tool names) in code evidence and flags stale
+    # sections. See src/doc_claims.py.
+    "doc_claims_check": DocClaimsCheckTool().execute,
     # R3 (Reach wave): fan one prompt across N candidate models/endpoints,
     # each isolated via src.alternatives, ranked by src.fanout.score. See
     # src/fanout/ and src/agent_tools/fanout_tools.py.
@@ -330,6 +335,8 @@ TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_fi
              "code_graph_snippet", "code_graph_cochanges", "code_graph_risk",
              # Structural search/rewrite -- src/agent_tools/structural_search_tools.py.
              "structural_search", "structural_rewrite",
+             # Doc-claim drift checker -- src/agent_tools/doc_claims_tool.py.
+             "doc_claims_check",
              # R3 (Reach wave): fan-out -- src/agent_tools/fanout_tools.py.
              "fanout_run", "fanout_status", "fanout_results", "fanout_apply",
              # PDF operations (R4, Reach wave) -- src/agent_tools/pdf_ops_tool.py.

@@ -965,6 +965,12 @@ EXAMPLES: Dict[str, List[str]] = {
         "dame las líneas exactas de esa clase",
         "get the source of that symbol you just found",
     ],
+    "doc_claims_check": [
+        "check if the README still matches the code",
+        "revisa si FAUSTUS.md tiene referencias rotas al código",
+        "which sections of this doc went stale after my last change",
+        "verify the file paths and settings keys this doc cites actually exist",
+    ],
 
     # ── Structural (AST-pattern) search/rewrite (ast-grep) ────────────────
     "structural_search": [

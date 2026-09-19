@@ -621,6 +621,16 @@ _register(
     result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED,
 )
 _register(
+    # doc_claims_check (src/doc_claims.py) only reads Markdown docs and
+    # source files already in the workspace (plus a read-only `git log`/
+    # `git blame`) to ground claims and detect drift -- same class as
+    # code_graph_search: a workspace-scoped reader whose result quotes
+    # doc/source text an attacker could have planted in the repo.
+    {"doc_claims_check"},
+    ToolEffect.READ_WORKSPACE,
+    result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED,
+)
+_register(
     # structural_search (src/structural_search.py, ast-grep-backed): a
     # workspace-scoped reader, same class as code_graph_search/grep -- it
     # only quotes source text an attacker could have planted in the repo.

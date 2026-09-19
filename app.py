@@ -1490,8 +1490,10 @@ app.include_router(setup_vault_routes())
 # Contacts (CardDAV)
 from routes.contacts.contacts_routes import setup_contacts_routes
 from routes.code_graph_routes import setup_code_graph_routes
+from routes.doc_claims_routes import setup_doc_claims_routes
 app.include_router(setup_contacts_routes())
 app.include_router(setup_code_graph_routes())
+app.include_router(setup_doc_claims_routes())
 
 from companion import setup_companion_routes
 app.include_router(setup_companion_routes())
