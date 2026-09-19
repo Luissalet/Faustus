@@ -64,7 +64,7 @@ from .fanout_tools import (
     FanoutRunTool, FanoutStatusTool, FanoutResultsTool, FanoutApplyTool,
 )
 from .context_overflow_tool import ReadOverflowTool
-from .artifact_read_tool import ReadArtifactTool
+from .artifact_read_tool import ReadArtifactTool, ArtifactSearchTool
 from .reach_tools import ReachReadTool, ReachSearchTool, ReachDoctorTool
 from .code_graph_tools import (
     CodeGraphIndexTool, CodeGraphSearchTool, CodeGraphTraceTool,
@@ -94,6 +94,8 @@ TOOL_HANDLERS = {
     "read_overflow": ReadOverflowTool().execute,
     # A12: read back an offloaded (oversized) tool result by range or query.
     "read_artifact": ReadArtifactTool().execute,
+    # A12 follow-up: BM25 full-text search over offloaded tool results.
+    "artifact_search": ArtifactSearchTool().execute,
     "glob": GlobTool().execute,
     "grep": GrepTool().execute,
     "find_symbol": FindSymbolTool().execute,
@@ -250,6 +252,9 @@ TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_fi
              "lookup_tools",
              # A15 / A12: re-acquire what compaction or offload took out of context.
              "read_overflow", "read_artifact",
+             # A12 follow-up: full-text search over offloaded tool results
+             # (src/offload_search.py) instead of paging read_artifact blindly.
+             "artifact_search",
              "manage_tasks", "api_call", "ask_teacher", "manage_skills",
              "suggest_document",
              "manage_endpoints", "manage_mcp", "manage_webhooks",

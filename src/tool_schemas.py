@@ -1106,6 +1106,33 @@ FUNCTION_TOOL_SCHEMAS = [
             }
         }
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "artifact_search",
+            "description": "Search inside offloaded tool results for a term instead of paging through `read_artifact` blindly. Scoped to your own artifacts in the current session by default; pass `artifact_id` to search one specific offloaded result only. Each hit gives the artifact id and a `start`/`end` char range — pass those straight to read_artifact(artifact_id=..., start=..., end=...) to read the hit in full.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Term or phrase to search for."
+                    },
+                    "artifact_id": {
+                        "type": "string",
+                        "description": "Restrict the search to one artifact id instead of every offloaded result in this session."
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Max hits to return (default 8, max 20)."
+                    }
+                },
+                "required": [
+                    "query"
+                ]
+            }
+        }
+    },
     # ── Code Mode (T6, A10/A11): compose several tool calls in one round ────
     {
         "type": "function",

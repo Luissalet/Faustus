@@ -157,6 +157,14 @@ DEFAULT_SETTINGS = {
     # pressure; this one catches a single oversized RESULT the moment it
     # comes back, whether or not the turn is under pressure yet).
     "agent_tool_result_offload_chars": 20000,
+    # Full-text (BM25 via SQLite FTS5) search over offloaded tool results
+    # (src/offload_search.py): every artifact an offload stores whole is
+    # also chunked and indexed so the model can search inside it with
+    # `artifact_search` instead of paging through `read_artifact` blindly.
+    "offload_search_enabled": True,
+    # Chunks older than this are pruned opportunistically on the next index
+    # write (cheap, no separate cron).
+    "offload_search_retention_days": 14,
     # While a local agent run is in flight, every Ollama request uses this
     # keep_alive so a long bash cannot unload the weight. Restored on run end.
     "agent_run_keep_alive": "2h",

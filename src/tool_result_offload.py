@@ -144,6 +144,20 @@ def _persist_full_result(full_text: str, digest: str, *, owner: str, session_id:
     return occurrence_id
 
 
+def _index_for_search(full_text: str, *, owner: str, session_id: str,
+                      artifact_id: str, tool: str) -> None:
+    """Chunk and index the just-persisted artifact for `artifact_search`
+    (src/offload_search.py). Best-effort: indexing must never break an
+    offload that already succeeded."""
+    try:
+        if not bool(get_setting("offload_search_enabled", True)):
+            return
+        from src import offload_search
+        offload_search.index_result(owner, session_id, artifact_id, tool, full_text)
+    except Exception:  # noqa: BLE001
+        logger.exception("tool_result_offload: search indexing failed for artifact=%s", artifact_id)
+
+
 def offload_if_oversized(result: Dict[str, Any], *, owner: str, session_id: str = "",
                          run_id: str = "", call_id: str = "", tool: str = "",
                          threshold_chars: Optional[int] = None) -> Dict[str, Any]:
@@ -177,6 +191,9 @@ def offload_if_oversized(result: Dict[str, Any], *, owner: str, session_id: str 
         except Exception as exc:  # noqa: BLE001 - an offload failure must never break a turn
             storage_error = str(exc)
             logger.exception("tool_result_offload: could not persist result for tool=%s", tool)
+        else:
+            _index_for_search(full_text, owner=owner, session_id=session_id,
+                              artifact_id=artifact_id, tool=tool)
     else:
         storage_error = "no authenticated storage owner; nothing was written"
 
@@ -189,7 +206,9 @@ def offload_if_oversized(result: Dict[str, Any], *, owner: str, session_id: str 
         note = (f"Full result ({len(full_text)} chars, sha256={digest}) was stored "
                 f"as artifact {artifact_id} before this preview was built. Open it "
                 f"with read_artifact(artifact_id=\"{artifact_id}\", start=..., "
-                "end=...) or query=... to read past what is shown above.")
+                "end=...) or query=... to read past what is shown above, or use "
+                f"artifact_search(query=..., artifact_id=\"{artifact_id}\") to "
+                "find where a term occurs before reading a range.")
     else:
         note = (f"Result truncated ({len(full_text)} chars total) and NOT durably "
                 f"stored ({storage_error}); the omitted text cannot be recovered.")

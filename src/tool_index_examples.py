@@ -443,6 +443,12 @@ EXAMPLES: Dict[str, List[str]] = {
         "read lines 2000 to 3000 of the stored output",
         "lee el artefacto completo que guardó el descargo",
     ],
+    "artifact_search": [
+        "search the stored output for 'timeout error'",
+        "busca 'null pointer' dentro del artefacto guardado",
+        "find where 'connection refused' shows up in that offloaded result",
+        "encuentra en qué parte del resultado aparece esa palabra",
+    ],
     "lookup_tools": [
         "qué herramienta uso para enviar un correo",
         "load the schema for git_commit",

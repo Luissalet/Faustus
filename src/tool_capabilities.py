@@ -601,7 +601,7 @@ _register(
     # Re-acquire a tool body compaction spilled (A15) or an oversized result
     # the offload stored (A12): reads Faustus's own store, but the bytes are
     # whatever the original tool returned — external content stays external.
-    {"read_overflow", "read_artifact"},
+    {"read_overflow", "read_artifact", "artifact_search"},
     ToolEffect.READ_PRIVATE,
     result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
 )
