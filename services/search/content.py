@@ -227,6 +227,9 @@ _LINK_FARM_DENSITY = 0.15
 _LINK_FARM_MIN_LINKS = 15
 
 
+# Bumped whenever extraction output changes, so cached pages from an older
+# extractor are not served after an upgrade.
+_EXTRACTOR_VERSION = 2
 _JS_REQUIRED_MAX_CHARS = 3000
 
 
@@ -316,7 +319,8 @@ def fetch_webpage_content(url: str, timeout: int = 5, retry_attempt: int = 0,
     # The cap and format are part of the cache identity: a truncated
     # soft-cap fetch, or a flat-text fetch, must not be served to a later
     # full-budget / markdown request for the same URL.
-    cache_key = generate_cache_key(f"{url}#cap={effective_cap}#fmt={format}")
+    cache_key = generate_cache_key(
+        f"{url}#cap={effective_cap}#fmt={format}#x={_EXTRACTOR_VERSION}")
     cache_file = CONTENT_CACHE_DIR / f"{cache_key}.cache"
 
     # Check cache
@@ -573,7 +577,10 @@ def fetch_webpage_content(url: str, timeout: int = 5, retry_attempt: int = 0,
 
 
 def _cache_result(cache_file, cache_key: str, result: dict, url: str):
-    """Write a result to the content cache."""
+    """Write a result to the content cache. Failed fetches are not cached:
+    a transient timeout must not pin an empty page for hours."""
+    if not result.get("success", True):
+        return
     try:
         cache_data = {"timestamp": datetime.now().isoformat(), "data": result}
         with open(cache_file, "w", encoding="utf-8") as f:
