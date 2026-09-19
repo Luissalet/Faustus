@@ -28,6 +28,27 @@ def extract_pdf_text(file_path: str) -> str:
         return ""
 
 
+def extract_pdf_pages(file_path: str) -> List[str]:
+    """Extract text from a PDF file, one string per page (1-based index i+1).
+
+    Same pypdf extraction as :func:`extract_pdf_text`, kept per-page so a
+    caller (the RAG indexer) can build stable page-accurate locators for
+    each chunk instead of losing page boundaries in a single joined string.
+    A page with no extractable text yields ``""`` at its position, so the
+    list length always equals the PDF's page count.
+    """
+    try:
+        from pypdf import PdfReader
+        reader = PdfReader(file_path)
+        return [(page.extract_text() or "") for page in reader.pages]
+    except ImportError:
+        logger.warning("pypdf not installed, cannot extract PDF text")
+        return []
+    except Exception as e:
+        logger.error(f"Failed to extract PDF pages from {file_path}: {e}")
+        return []
+
+
 def extract_office_text(file_path: str) -> str:
     """Extract text from an Office/EPUB doc via the optional markitdown dep.
 
@@ -189,9 +210,11 @@ def retrieve_personal(personal_index: List[Dict], query: str, k: int = 5,
                     # Extract filename from path
                     source = result["metadata"].get("source", "")
                     filename = os.path.basename(source)
+                    locator = result["metadata"].get("locator")
+                    tag = f"{filename} {locator}" if locator else filename
 
                     # Format the result
-                    formatted = f"[{filename} :: vector search]\n{result['document']}"
+                    formatted = f"[{tag} :: vector search]\n{result['document']}"
                     out.append(formatted)
                 return out
         except Exception as e:

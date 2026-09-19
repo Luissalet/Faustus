@@ -15,6 +15,8 @@ from typing import List, Dict, Any, Optional, Set
 
 from src.constants import CHROMA_DIR
 from src.index_walk import prune_index_dirs, is_indexable_file
+from src.pii_redaction import redact_pii
+from src.settings import get_setting
 from pathlib import Path
 
 from src.embedding_lanes import (
@@ -532,16 +534,6 @@ class VectorRAG:
                         continue
 
                     try:
-                        if ext == '.pdf':
-                            from src.personal_docs import extract_pdf_text
-                            content = extract_pdf_text(fpath)
-                        else:
-                            with open(fpath, 'r', encoding='utf-8') as f:
-                                content = f.read()
-
-                        if not content or not content.strip():
-                            continue
-
                         meta = {
                             'source': fpath,
                             'filename': fname,
@@ -551,8 +543,56 @@ class VectorRAG:
                         if owner:
                             meta['owner'] = owner
 
+                        pii_enabled = bool(get_setting("rag_pii_redaction", False))
+
+                        if ext == '.pdf':
+                            from src.personal_docs import extract_pdf_pages
+                            pages = extract_pdf_pages(fpath)
+                            if not any(p.strip() for p in pages):
+                                continue
+
+                            page_block: Dict[int, int] = {}
+                            for i, piece in enumerate(self._split_pdf_into_chunks(pages)):
+                                page_start = piece['page_start']
+                                page_end = piece['page_end']
+                                block = page_block.get(page_start, 0)
+                                page_block[page_start] = block + 1
+                                locator = (
+                                    f"p{page_start}#b{block}" if page_start == page_end
+                                    else f"p{page_start}-{page_end}#b{block}"
+                                )
+                                chunk_text = piece['text']
+                                chunk_meta = {
+                                    **meta,
+                                    'chunk_id': i,
+                                    'page': page_start,
+                                    'page_end': page_end,
+                                    'block': block,
+                                    'locator': locator,
+                                }
+                                if pii_enabled:
+                                    chunk_text, redactions = redact_pii(chunk_text)
+                                    if redactions:
+                                        chunk_meta['redactions'] = redactions
+                                if self.add_document(chunk_text, chunk_meta):
+                                    indexed += 1
+                                else:
+                                    failed += 1
+                            continue
+
+                        with open(fpath, 'r', encoding='utf-8') as f:
+                            content = f.read()
+
+                        if not content or not content.strip():
+                            continue
+
                         for i, chunk in enumerate(self._split_into_chunks(content)):
-                            if self.add_document(chunk, {**meta, 'chunk_id': i}):
+                            chunk_meta = {**meta, 'chunk_id': i}
+                            if pii_enabled:
+                                chunk, redactions = redact_pii(chunk)
+                                if redactions:
+                                    chunk_meta['redactions'] = redactions
+                            if self.add_document(chunk, chunk_meta):
                                 indexed += 1
                             else:
                                 failed += 1
@@ -685,6 +725,77 @@ class VectorRAG:
             chunks.append(' '.join(current_chunk))
 
         return chunks if chunks else [text]
+
+    def _split_pdf_into_chunks(
+        self, page_texts: List[str], chunk_size: int = 1000, overlap: int = 200
+    ) -> List[Dict[str, Any]]:
+        """Page-tracking sibling of :meth:`_split_into_chunks`.
+
+        Same sentence-boundary chunking (same ``chunk_size``/``overlap``,
+        same sentence regex), but every sentence carries its 1-based source
+        page, so each returned chunk knows the ``page_start``/``page_end`` it
+        was built from — deterministic for the same PDF, and accurate even
+        for a chunk that happens to straddle a page boundary. Returns
+        ``[{"text", "page_start", "page_end"}, ...]``.
+        """
+        sentences: List[tuple] = []
+        for page_num, text in enumerate(page_texts, start=1):
+            if not text:
+                continue
+            for s in re.split(r'(?<=[.!?])\s+|\n{2,}', text):
+                s = s.strip()
+                if s:
+                    sentences.append((page_num, s))
+
+        if not sentences:
+            return []
+
+        chunks: List[Dict[str, Any]] = []
+        current: List[tuple] = []
+        current_len = 0
+
+        def _flush() -> None:
+            if not current:
+                return
+            pages = [p for p, _ in current]
+            chunks.append({
+                'text': ' '.join(s for _, s in current),
+                'page_start': min(pages),
+                'page_end': max(pages),
+            })
+
+        for page_num, sentence in sentences:
+            sent_len = len(sentence)
+
+            if sent_len > chunk_size:
+                _flush()
+                current = []
+                current_len = 0
+                for start in range(0, sent_len, chunk_size - overlap):
+                    chunks.append({
+                        'text': sentence[start:start + chunk_size],
+                        'page_start': page_num,
+                        'page_end': page_num,
+                    })
+                continue
+
+            if current_len + sent_len + 1 > chunk_size and current:
+                _flush()
+                overlap_items: List[tuple] = []
+                overlap_len = 0
+                for item in reversed(current):
+                    if overlap_len + len(item[1]) > overlap:
+                        break
+                    overlap_items.insert(0, item)
+                    overlap_len += len(item[1]) + 1
+                current = overlap_items
+                current_len = sum(len(s) for _, s in current) + max(0, len(current) - 1)
+
+            current.append((page_num, sentence))
+            current_len += sent_len + (1 if current_len > 0 else 0)
+
+        _flush()
+        return chunks
 
     # ------------------------------------------------------------------
     # Delete by metadata

@@ -1,6 +1,11 @@
 ﻿# Pendientes de cierre
 
-Actualizado: 19-09-2026. REGLA: nunca nombres de empresas/personas del buzÃ³n de Luis en commits, docs, tests ni comentarios â€” ejemplos siempre ficticios. SÃ³lo trabajo vigente; quitar cada entrada al cerrarla.
+Actualizado: 20-09-2026. REGLA: nunca nombres de empresas/personas del buzÃ³n de Luis en commits, docs, tests ni comentarios â€” ejemplos siempre ficticios. SÃ³lo trabajo vigente; quitar cada entrada al cerrarla.
+
+## 20-09 — localizadores de PDF y sanitizado de PII en RAG (FAUSTUS.md §146)
+
+- No verificable sin la máquina en vivo: esta caja de arena no tiene ChromaDB alcanzable, así que `index_personal_documents`/`manage_rag add_directory` nunca se probó de verdad persistiendo en un ChromaDB real — solo con `VectorRAG` construido vía `__new__` y `add_document` sustituido (mismo patrón que `tests/test_rag_index_hidden_dirs.py`). Repetir en `D:\LocalAI\faustus-dev-data` con ChromaDB arrancado (`docker compose up chromadb`, puerto 8100): indexar un PDF real de varias páginas, comprobar los `locator` en los metadatos de Chroma, buscar con `rag_manager.search()` y confirmar que el `[fichero.pdf pN#bM]` aparece en el contexto inyectado al chat, activar `rag_pii_redaction` y confirmar que un PDF con datos de contacto reales queda sanitizado en el índice pero el fichero original en disco no cambia. Instrucciones exactas (llamadas a función) en el informe de esta tarea.
+- No verificado en vivo: no hay pantalla en el Studio que muestre el localizador de un fragmento citado — hoy solo viaja en el texto inyectado al modelo, no como un elemento propio de la UI de citas.
 
 ## 19-09 noche — radar (FAUSTUS.md §133-…)
 

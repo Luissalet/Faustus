@@ -428,13 +428,15 @@ class ChatProcessor:
                         rag_sources = [
                             {
                                 "filename": r["metadata"].get("filename", r["metadata"].get("source", "unknown")),
+                                "locator": r["metadata"].get("locator"),
                                 "snippet": r["document"][:200],
                                 "similarity": round(r.get("similarity", 0), 3)
                             }
                             for r in relevant
                         ]
                         rag_content = "Relevant documents:\n\n" + "\n\n---\n\n".join(
-                            f"[{s['filename']}]\n{r['document']}" for s, r in zip(rag_sources, relevant)
+                            f"[{s['filename']}" + (f" {s['locator']}" if s['locator'] else "") + f"]\n{r['document']}"
+                            for s, r in zip(rag_sources, relevant)
                         )
                         if len(rag_content) > 10000:
                             rag_content = rag_content[:10000] + "\n[Truncated]"

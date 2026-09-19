@@ -1319,6 +1319,14 @@ DEFAULT_SETTINGS = {
     # reach the server operator about a misbehaving sender). Empty ->
     # "mailto:faustus@localhost" (src/push.py:_vapid_contact).
     "push_contact": "",
+    # PII sanitising before RAG indexing (src/pii_redaction.py): when True,
+    # chunk TEXT that gets embedded/indexed has emails, phone numbers, IBANs,
+    # credit-card-like numbers, Spanish DNI/NIE and IPv4 addresses replaced
+    # with placeholders ([EMAIL], [PHONE], ...) before it reaches the
+    # embedding model or the vector store. The original uploaded file on
+    # disk is never modified. Default OFF: existing indexes keep their
+    # current chunk text until re-indexed with the flag on.
+    "rag_pii_redaction": False,
 }
 
 
