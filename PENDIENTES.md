@@ -762,3 +762,44 @@ deep-link de workflows, recetas desde un run real) ya no aparece aquí.
   pide confirmación cuando ese motor sirve el modelo por defecto; (5)
   «Rellenar desde lo que ya escucha en este puerto» contra el servidor
   real y confirmar que trae `model_path`/`n_ctx` correctos desde `/props`.
+
+- **FAUSTUS.md §120 — Parte A (snapshot de memoria por sesión).**
+  `memory_engine.pack_for_session` probado con scripts y pytest, nunca
+  contra una sesión real del Studio. **Pendiente:** abrir una sesión,
+  confirmar en el bloque de "learned memory" que aparece la nota
+  "(snapshot taken …)" y que NO cambia entre turnos de esa sesión aunque
+  se añada una regla nueva mientras tanto; abrir una sesión NUEVA y
+  confirmar que esa regla sí aparece.
+
+- **FAUSTUS.md §120 — Parte B (tope duro del bloque de memoria).**
+  `pack_detail()` probado con más de `memory_block_max_chars` de reglas
+  puntuadas vía script/pytest; no se ha mirado el diálogo «ver el bloque»
+  real. **Pendiente:** provocar el tope en un proyecto real y confirmar
+  que el panel de administración deja ver cuántos ítems se omitieron.
+  También queda sin resolver si hace falta un tope de ESCRITURA análogo
+  (memory_engine.add_item hoy recorta en silencio a MAX_TEXT_CHARS por
+  ítem en vez de rechazar) — decisión deliberadamente no tomada, ver la
+  nota en §120 Parte B.
+
+- **FAUSTUS.md §120 — Parte C (panel de revisión de memoria).** Pin,
+  suppress, edición y el chip «injected» probados por pytest contra la
+  API; no se ha abierto Studio → Memoria en un navegador real.
+  **Pendiente:** fijar una regla sin feedback y confirmar que el chip
+  «injected» aparece; suprimirla y confirmar que desaparece del bloque y
+  del chip sin borrar la fila; editar el texto y confirmar que la versión
+  vieja queda tombstoned.
+
+- **FAUSTUS.md §120 — Parte D (niveles explícitos en skills).**
+  `src/skills_runtime/disclosure.py` probado unitariamente (omite enteros,
+  nunca trunca a medias, garantiza al menos una skill en nivel 1); no se
+  ha confirmado en una conversación real que las líneas de log
+  `skills disclosure: level 0/1/2 …` aparecen cuando corresponde.
+  **Pendiente:** una conversación con muchas skills instaladas y confirmar
+  en los logs qué nivel aportó cada una.
+
+- **FAUSTUS.md §120 — Parte E (sampling defaults en Local models).**
+  Compilado y con los mismos ajustes leídos/escritos por ambas pantallas
+  por inspección de código; no verificado clicando en el Studio real.
+  **Pendiente:** cambiar la temperatura por defecto en Ajustes → Local
+  models y confirmar que Ajustes → Default AI la refleja al recargar, y
+  viceversa.
