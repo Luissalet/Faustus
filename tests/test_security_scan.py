@@ -474,3 +474,9 @@ def test_scan_mcp_server_config_clean_server_has_no_findings():
         args=["-y", "@example/mcp-filesystem-server"], env={"HOME": "/home/user"},
     )
     assert result.risk_level in ("none", "low")
+
+
+def test_scan_paths_accepts_a_path_object(tmp_path):
+    from src.security_scan import scan_paths
+    (tmp_path / "s.py").write_text("print('hi')\n", encoding="utf-8")
+    assert scan_paths(tmp_path, kind="mcp").to_dict()["risk_level"] in ("none", "low")

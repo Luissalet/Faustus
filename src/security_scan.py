@@ -461,8 +461,9 @@ def scan_paths(paths, *, kind: str = "generic", max_files: int = 200,
     """Scan a file, a list of files, or a directory tree (recursively, with
     common noise directories skipped). Never raises on an unreadable or
     binary file — it is simply skipped."""
-    if isinstance(paths, str):
+    if isinstance(paths, (str, os.PathLike)):
         paths = [paths]
+    paths = [os.fspath(p) for p in paths]
     findings: List[Finding] = []
     files_scanned = 0
     truncated = False
