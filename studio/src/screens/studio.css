@@ -3675,6 +3675,97 @@ aside.fs-panel {
   color: var(--fs-warning);
 }
 
+/* LLM-TRACE-01: Model calls panel (ModelCallsInspector, studio/src/screens/
+   studio/Transcript.tsx) — reuses .fs-ctx__note for row text and follows
+   .fs-ctx__compaction's own "no dedicated wrapper style" pattern for its
+   <details>. */
+.fs-trace__list {
+  list-style: none;
+  margin: var(--fs-space-2) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--fs-space-2);
+}
+
+.fs-trace__row {
+  border-block-start: 1px solid var(--fs-border);
+  padding-block-start: var(--fs-space-2);
+}
+
+.fs-trace__row-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--fs-space-2);
+  inline-size: 100%;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  text-align: start;
+}
+
+.fs-trace__model {
+  font-weight: 600;
+}
+
+.fs-trace__meta {
+  color: var(--fs-text-3);
+  font-size: 0.85em;
+  white-space: nowrap;
+}
+
+.fs-trace__fork {
+  margin-block-start: var(--fs-space-2);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--fs-space-2);
+}
+
+.fs-trace__fork-input {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-1);
+  font-size: 0.85em;
+  color: var(--fs-text-3);
+}
+
+.fs-trace__fork-input input {
+  font: inherit;
+  padding: 2px 6px;
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-sm, 4px);
+  background: var(--fs-surface-1);
+  color: var(--fs-text-1);
+}
+
+.fs-trace__compare {
+  margin-block-start: var(--fs-space-2);
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--fs-space-3);
+  inline-size: 100%;
+}
+
+.fs-trace__compare p {
+  color: var(--fs-text-3);
+  line-height: 1.45;
+}
+
+.fs-trace__compare p[data-level='warn'] {
+  color: var(--fs-warning);
+}
+
+@media (max-width: 640px) {
+  .fs-trace__compare {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* A citation whose URL is not http(s): shown, but not clickable. */
 .fs-studio__source-flat {
   color: var(--fs-text-3);

@@ -5,7 +5,7 @@ import { Fragment, Suspense, useCallback, useEffect, useMemo, useRef, useState, 
 import { lazyChunk } from '../../shell/lazyChunk';
 import { createPortal } from 'react-dom';
 import { Button, describeError, ExecutionTimeline, friendlyError, IconButton } from '../../components';
-import { fetchCompactionEvent, pinCompactionFragment, faviconStripEntries, type AskUser, type CompactionEvent, type ContextLedger, type ContextReceipt, type DelegationTask, type WebSource } from '../../adapters/chat';
+import { fetchCompactionEvent, pinCompactionFragment, fetchLlmTraces, forkLlmTrace, faviconStripEntries, type AskUser, type CompactionEvent, type ContextLedger, type ContextReceipt, type DelegationTask, type LlmTraceRow, type WebSource } from '../../adapters/chat';
 import { createRecipeFromRun } from '../../adapters/strategy';
 import type { EvidenceRef } from '../../adapters/evidence';
 import { attachmentUrl, isImage } from '../../adapters/composer';
@@ -1176,6 +1176,127 @@ function CompactionInspector({ sessionId, role, content }: { sessionId: string; 
   );
 }
 
+/**
+ * LLM-TRACE-01: the exact request+response of every model call this session
+ * made, with a "Fork to…" action that re-sends one recorded call's request
+ * to another model and shows the result next to the original — the debugging
+ * question "would a different model have handled this turn better?"
+ * answered without leaving the transcript. Closed by default, same
+ * pay-for-what-you-open contract as `CompactionInspector` next to it.
+ */
+function ModelCallsInspector({ sessionId }: { sessionId: string }) {
+  const [opened, setOpened] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [rows, setRows] = useState<LlmTraceRow[] | 'error' | null>(null);
+  const [expandedSeq, setExpandedSeq] = useState<number | null>(null);
+  const [forkModel, setForkModel] = useState('');
+  const [forkBusy, setForkBusy] = useState<number | null>(null);
+  const [forkResult, setForkResult] = useState<Record<number, { text: string; model: string; error: string | null }>>({});
+
+  const load = () => {
+    if (loading) return;
+    setLoading(true);
+    fetchLlmTraces(sessionId)
+      .then((r) => setRows(r))
+      .catch(() => setRows('error'))
+      .finally(() => setLoading(false));
+  };
+
+  const runFork = (seq: number) => {
+    if (!forkModel.trim() || forkBusy != null) return;
+    setForkBusy(seq);
+    forkLlmTrace(sessionId, seq, forkModel.trim())
+      .then((res) =>
+        setForkResult((prev) => ({ ...prev, [seq]: { text: res.fork.text, model: res.fork.model, error: res.fork.error } })),
+      )
+      .catch((err) =>
+        setForkResult((prev) => ({
+          ...prev,
+          [seq]: { text: '', model: forkModel.trim(), error: err instanceof Error ? err.message : String(err) },
+        })),
+      )
+      .finally(() => setForkBusy(null));
+  };
+
+  return (
+    <details
+      className="fs-ctx__compaction"
+      data-testid="model-calls-inspector"
+      onToggle={(e) => {
+        const next = e.currentTarget.open;
+        setOpened(next);
+        if (next && rows === null && !loading) load();
+      }}
+    >
+      <summary>{t('Model calls')}</summary>
+      {opened && (
+        <div className="fs-ctx__compaction-body">
+          {loading && <p className="fs-ctx__note">{t('Checking…')}</p>}
+          {!loading && rows === 'error' && <p className="fs-ctx__note" data-level="warn">{t('Could not read the model-call log.')}</p>}
+          {!loading && Array.isArray(rows) && rows.length === 0 && <p className="fs-ctx__note">{t('No model calls recorded for this session yet.')}</p>}
+          {!loading && Array.isArray(rows) && rows.length > 0 && (
+            <ul className="fs-trace__list">
+              {rows.map((row) => (
+                <li key={row.seq} className="fs-trace__row">
+                  <button
+                    type="button"
+                    className="fs-trace__row-head"
+                    onClick={() => setExpandedSeq(expandedSeq === row.seq ? null : row.seq)}
+                    data-testid={`trace-row-${row.seq}`}
+                  >
+                    <span className="fs-trace__model">{row.model}</span>
+                    <span className="fs-trace__meta">
+                      {row.durationMs != null ? `${Math.round(row.durationMs)}ms` : ''}
+                      {row.error ? ` · ${t('error')}` : ''}
+                    </span>
+                  </button>
+                  <p className="fs-ctx__note">{row.responsePreview}</p>
+                  {expandedSeq === row.seq && (
+                    <div className="fs-trace__fork">
+                      <label className="fs-trace__fork-input">
+                        {t('Fork to…')}
+                        <input
+                          type="text"
+                          value={forkModel}
+                          onChange={(e) => setForkModel(e.target.value)}
+                          placeholder={t('model name')}
+                          data-testid="trace-fork-model-input"
+                        />
+                      </label>
+                      <Button
+                        size="sm"
+                        icon={GitFork}
+                        label={forkBusy === row.seq ? t('Forking…') : t('Fork')}
+                        disabled={forkBusy != null || !forkModel.trim()}
+                        onClick={() => runFork(row.seq)}
+                        testId="trace-fork-run"
+                      />
+                      {forkResult[row.seq] && (
+                        <div className="fs-trace__compare">
+                          <div>
+                            <strong>{t('Original')} ({row.model})</strong>
+                            <p>{row.responsePreview}</p>
+                          </div>
+                          <div>
+                            <strong>{t('Fork')} ({forkResult[row.seq].model})</strong>
+                            <p data-level={forkResult[row.seq].error ? 'warn' : undefined}>
+                              {forkResult[row.seq].error || forkResult[row.seq].text || t('(empty response)')}
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </details>
+  );
+}
+
 function Ledger({ ledger, sessionId, role, content }: { ledger: ContextLedger; sessionId?: string | null; role?: string; content?: string }) {
   const tok = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(Math.round(n)));
   const warn = ledger.advice.some((a) => a.level === 'warn');
@@ -1214,6 +1335,7 @@ function Ledger({ ledger, sessionId, role, content }: { ledger: ContextLedger; s
         </p>
       ))}
       {sessionId && role && <CompactionInspector sessionId={sessionId} role={role} content={content} />}
+      {sessionId && <ModelCallsInspector sessionId={sessionId} />}
     </details>
   );
 }

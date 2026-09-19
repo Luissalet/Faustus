@@ -80,6 +80,20 @@ DEFAULT_SETTINGS = {
     # have been observed inventing signatures and sending to real
     # recipients without confirmation.
     "agent_email_confirm": True,
+    # Debugging aid (src/llm_trace.py): record every model call of a session
+    # (exact request + assembled response, secrets redacted) to
+    # DATA_DIR/llm_traces/<session_id>.jsonl so a bad turn can be inspected
+    # and "forked" (re-sent to another model) via /api/llm-traces/*. Default
+    # ON — the write is fire-and-forget on a background thread and never
+    # blocks or breaks a real call.
+    "llm_trace_enabled": True,
+    # A request whose messages exceed this many characters is not stored
+    # verbatim (a sha256 fingerprint + size note is kept instead), so one
+    # huge turn cannot balloon a trace file or the debugging UI that lists it.
+    "llm_trace_max_request_chars": 2_000_000,
+    # Trace files older than this are deleted opportunistically (no separate
+    # cron job) the next time anything writes a trace.
+    "llm_trace_retention_days": 7,
     # Creator workspace (WP02, docs/spec/creator/plan): typed revisioned
     # documents (canvas/timeline/transcript/song/storyboard) and per-project
     # Creator profile under /api/creator/*. Default OFF: with the flag off,

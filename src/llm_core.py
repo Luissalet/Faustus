@@ -3112,6 +3112,80 @@ async def llm_call_async(
     pin_public_dns: bool = False,
     on_outcome_unknown: Optional[Callable[[int, float], None]] = None,
 ) -> str | tuple[str, str]:
+    """Traced wrapper around ``_llm_call_async_impl`` (LLM-TRACE-01).
+
+    This is the narrowest point that sees BOTH the final request this
+    caller is making (url/model/messages/temperature/max_tokens — the
+    non-streaming path takes no ``tools``) and the fully assembled response
+    (the impl's return value is already the complete text). Wrapping here
+    instead of littering every provider branch inside the impl means one
+    place records every non-streaming call regardless of which provider
+    handled it, and a bug in tracing can never affect the call itself
+    (record happens after the real work is done, in its own try/except).
+    """
+    _t0 = time.time()
+    _err: Optional[str] = None
+    _text = ""
+    _model_out = model
+    try:
+        result = await _llm_call_async_impl(
+            url, model, messages,
+            temperature=temperature, max_tokens=max_tokens, headers=headers,
+            timeout=timeout, max_retries=max_retries, prompt_type=prompt_type,
+            session_id=session_id, workload=workload,
+            availability_only_transport=availability_only_transport,
+            return_model_metadata=return_model_metadata,
+            response_schema=response_schema, pin_public_dns=pin_public_dns,
+            on_outcome_unknown=on_outcome_unknown,
+        )
+        if isinstance(result, tuple):
+            _text, _model_out = result[0], result[1]
+        else:
+            _text = result
+        return result
+    except Exception as exc:
+        _err = str(exc)
+        raise
+    finally:
+        try:
+            from src import llm_trace
+            llm_trace.record_call(
+                session_id=session_id,
+                endpoint_url=url,
+                model=_model_out,
+                request={
+                    "messages": messages,
+                    "temperature": temperature,
+                    "max_tokens": max_tokens,
+                    "response_schema": response_schema,
+                    "headers": headers,
+                },
+                response_text=_text if isinstance(_text, str) else "",
+                duration_ms=(time.time() - _t0) * 1000.0,
+                error=_err,
+            )
+        except Exception:
+            logger.debug("[llm_trace] non-streaming record failed", exc_info=True)
+
+
+async def _llm_call_async_impl(
+    url: str,
+    model: str,
+    messages: List[Dict],
+    temperature: float = LLMConfig.DEFAULT_TEMPERATURE,
+    max_tokens: int = LLMConfig.DEFAULT_MAX_TOKENS,
+    headers: Optional[Dict] = None,
+    timeout: int = LLMConfig.STREAM_TIMEOUT,
+    max_retries: int = LLMConfig.MAX_RETRIES,
+    prompt_type: Optional[str] = None,
+    session_id: Optional[str] = None,
+    workload: str = "foreground",
+    availability_only_transport: bool = False,
+    return_model_metadata: bool = False,
+    response_schema: Optional[Dict] = None,
+    pin_public_dns: bool = False,
+    on_outcome_unknown: Optional[Callable[[int, float], None]] = None,
+) -> str | tuple[str, str]:
     """Asynchronous LLM call using httpx with connection pooling, timeout, retry logic, and performance logging.
 
     ``response_schema`` is a JSON Schema the answer must obey. Native Ollama
@@ -4131,6 +4205,81 @@ async def _stream_retry_or_fail(*, should_retry: bool, wait: float,
 
 
 async def stream_llm(url: str, model: str, messages: List[Dict], temperature: float = LLMConfig.DEFAULT_TEMPERATURE,
+                     max_tokens: int = LLMConfig.DEFAULT_MAX_TOKENS, headers: Optional[Dict] = None,
+                     timeout: int = LLMConfig.STREAM_TIMEOUT, prompt_type: Optional[str] = None,
+                     tools: Optional[List[Dict]] = None, session_id: Optional[str] = None,
+                     tool_choice_none: bool = False, workload: str = "foreground",
+                     gen_overrides: Optional[Dict] = None, max_retries: int = LLMConfig.MAX_RETRIES,
+                     availability_only_transport: bool = False):
+    """Traced wrapper (LLM-TRACE-01) around ``_stream_llm_traced_source``.
+
+    Streaming has no single "final response" moment — the text arrives as a
+    sequence of chunks over possibly many seconds — so this accumulates every
+    chunk AS IT PASSES THROUGH (never buffering the stream itself; each chunk
+    is yielded to the real caller immediately) and records one trace entry
+    when the generator ends, whether that is a normal finish, an upstream
+    error event, an exception, or the caller cancelling the generator (walrus
+    the finally so cancellation still records what was seen so far).
+    """
+    from src import llm_trace
+    if not llm_trace.tracing_enabled() or not session_id:
+        async for chunk in _stream_llm_traced_source(
+            url, model, messages, temperature=temperature, max_tokens=max_tokens,
+            headers=headers, timeout=timeout, prompt_type=prompt_type, tools=tools,
+            session_id=session_id, tool_choice_none=tool_choice_none, workload=workload,
+            gen_overrides=gen_overrides, max_retries=max_retries,
+            availability_only_transport=availability_only_transport,
+        ):
+            yield chunk
+        return
+
+    _t0 = time.time()
+    acc = llm_trace.StreamAccumulator()
+    _exc_text: Optional[str] = None
+    try:
+        async for chunk in _stream_llm_traced_source(
+            url, model, messages, temperature=temperature, max_tokens=max_tokens,
+            headers=headers, timeout=timeout, prompt_type=prompt_type, tools=tools,
+            session_id=session_id, tool_choice_none=tool_choice_none, workload=workload,
+            gen_overrides=gen_overrides, max_retries=max_retries,
+            availability_only_transport=availability_only_transport,
+        ):
+            try:
+                acc.feed(chunk)
+            except Exception:
+                pass
+            yield chunk
+    except Exception as exc:
+        _exc_text = str(exc)
+        raise
+    finally:
+        try:
+            llm_trace.record_call(
+                session_id=session_id,
+                endpoint_url=url,
+                model=model,
+                request={
+                    "messages": messages,
+                    "temperature": temperature,
+                    "max_tokens": max_tokens,
+                    "tools": tools,
+                    "tool_choice_none": tool_choice_none,
+                    "gen_overrides": gen_overrides,
+                    "headers": headers,
+                },
+                response_text=acc.text,
+                thinking_text=acc.thinking,
+                tool_calls=acc.tool_calls,
+                finish_reason=acc.finish_reason,
+                usage=acc.usage,
+                duration_ms=(time.time() - _t0) * 1000.0,
+                error=_exc_text or acc.error,
+            )
+        except Exception:
+            logger.debug("[llm_trace] streaming record failed", exc_info=True)
+
+
+async def _stream_llm_traced_source(url: str, model: str, messages: List[Dict], temperature: float = LLMConfig.DEFAULT_TEMPERATURE,
                      max_tokens: int = LLMConfig.DEFAULT_MAX_TOKENS, headers: Optional[Dict] = None,
                      timeout: int = LLMConfig.STREAM_TIMEOUT, prompt_type: Optional[str] = None,
                      tools: Optional[List[Dict]] = None, session_id: Optional[str] = None,

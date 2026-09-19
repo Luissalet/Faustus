@@ -2239,3 +2239,113 @@ export async function unpinCompactionFragment(sessionId: string, fingerprint: st
     return false;
   }
 }
+
+/** LLM-TRACE-01: one row of `GET /api/llm-traces/{session_id}` — a recorded
+ *  model call, summarized (the full request/response is fetched separately
+ *  on demand, see `fetchLlmTrace`). */
+export interface LlmTraceRow {
+  seq: number;
+  ts: number;
+  model: string;
+  endpoint: string | null;
+  provider: string | null;
+  durationMs: number | null;
+  responseChars: number;
+  responsePreview: string;
+  finishReason: string | null;
+  error: string | null;
+  hasToolCalls: boolean;
+}
+
+function llmTraceRowFrom(raw: Record<string, unknown>): LlmTraceRow {
+  return {
+    seq: num(raw.seq) ?? 0,
+    ts: num(raw.ts) ?? 0,
+    model: str(raw.model),
+    endpoint: raw.endpoint == null ? null : str(raw.endpoint),
+    provider: raw.provider == null ? null : str(raw.provider),
+    durationMs: num(raw.duration_ms) ?? null,
+    responseChars: num(raw.response_chars) ?? 0,
+    responsePreview: str(raw.response_preview),
+    finishReason: raw.finish_reason == null ? null : str(raw.finish_reason),
+    error: raw.error == null ? null : str(raw.error),
+    hasToolCalls: Boolean(raw.has_tool_calls),
+  };
+}
+
+/** Every model call recorded for this session so far — newest last, same
+ *  order they happened in (see src/llm_trace.py). */
+export async function fetchLlmTraces(sessionId: string): Promise<LlmTraceRow[]> {
+  const raw = await getJson<{ calls?: unknown }>(
+    `/api/llm-traces/${encodeURIComponent(sessionId)}`,
+  );
+  return asArray<Record<string, unknown>>(raw.calls).map(llmTraceRowFrom);
+}
+
+/** The full recorded call (request + assembled response) for one row. */
+export async function fetchLlmTrace(sessionId: string, seq: number): Promise<Record<string, unknown> | null> {
+  try {
+    return await getJson<Record<string, unknown>>(
+      `/api/llm-traces/${encodeURIComponent(sessionId)}/${seq}`,
+    );
+  } catch {
+    return null;
+  }
+}
+
+/** Result of `POST /api/llm-traces/{session_id}/{seq}/fork`: the original
+ *  call's output next to what the chosen model produced for the exact same
+ *  request. */
+export interface LlmTraceForkResult {
+  original: { model: string; responseText: string; durationMs: number | null; error: string | null };
+  fork: { model: string; endpoint: string | null; text: string; durationMs: number | null; error: string | null };
+}
+
+function llmTraceForkResultFrom(raw: Record<string, unknown>): LlmTraceForkResult {
+  const o = (raw.original as Record<string, unknown>) || {};
+  const f = (raw.fork as Record<string, unknown>) || {};
+  return {
+    original: {
+      model: str(o.model),
+      responseText: str(o.response_text),
+      durationMs: num(o.duration_ms) ?? null,
+      error: o.error == null ? null : str(o.error),
+    },
+    fork: {
+      model: str(f.model),
+      endpoint: f.endpoint == null ? null : str(f.endpoint),
+      text: str(f.text),
+      durationMs: num(f.duration_ms) ?? null,
+      error: f.error == null ? null : str(f.error),
+    },
+  };
+}
+
+/** Re-sends one recorded call's exact request to another model (or an
+ *  explicit endpoint) and returns both outputs side by side. Throws on a
+ *  transport/HTTP failure; a failed fork attempt itself still resolves
+ *  normally with `fork.error` set. */
+export async function forkLlmTrace(
+  sessionId: string,
+  seq: number,
+  model: string,
+  endpointId?: string,
+): Promise<LlmTraceForkResult> {
+  const response = await fetch(`/api/llm-traces/${encodeURIComponent(sessionId)}/${seq}/fork`, {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model, endpoint_id: endpointId || undefined }),
+  });
+  if (!response.ok) {
+    let detail = '';
+    try {
+      const body = (await response.json()) as { detail?: unknown; error?: unknown };
+      detail = str(body.detail ?? body.error);
+    } catch {
+      /* ignore */
+    }
+    throw new Error(detail || `fork failed (${response.status})`);
+  }
+  return llmTraceForkResultFrom((await response.json()) as Record<string, unknown>);
+}

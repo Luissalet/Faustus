@@ -7918,3 +7918,10 @@ MTP speculative decoding (faster generation)	Decodificación especulativa MTP (g
 Parallel slots > 1 cancel most of the MTP gain	Más de 1 ranura paralela anula la mayor parte de la ganancia de MTP
 This model does not ship MTP/nextn draft-head layers (e.g. Qwen3.x GGUFs do).	Este modelo no incluye capas de cabeza de borrador MTP/nextn (los GGUF de Qwen3.x sí las incluyen).
 Parallel slots > 1 cancel most of the MTP gain — add -np 1 to the extra arguments	Más de un slot en paralelo anula casi toda la ganancia de MTP: añade -np 1 a los argumentos extra
+Could not read the model-call log.	No se pudo leer el registro de llamadas al modelo.
+No model calls recorded for this session yet.	Todavía no hay llamadas al modelo registradas para esta sesión.
+Fork to…	Bifurcar a…
+model name	nombre del modelo
+Forking…	Bifurcando…
+Fork	Bifurcar
+(empty response)	(respuesta vacía)
