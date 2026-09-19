@@ -6,8 +6,9 @@ import uuid
 import urllib.parse
 import html
 from pathlib import Path
+from typing import List, Optional
 from fastapi import APIRouter, Form, HTTPException, Query, Request
-from fastapi.responses import RedirectResponse, HTMLResponse
+from fastapi.responses import RedirectResponse, HTMLResponse, JSONResponse
 import logging
 import httpx
 
@@ -26,6 +27,7 @@ from src.mcp_manager import (
     stderr_log_path,
 )
 from src import extension_manifest
+from src import security_scan
 
 logger = logging.getLogger(__name__)
 
@@ -99,6 +101,32 @@ def _apply_mcp_oauth_env(env: dict, oauth_cfg) -> None:
         env["GMAIL_CREDENTIALS_PATH"] = token_file
 
 
+def _review_json_error(status: int, error_class: str, detail: str, **extra) -> JSONResponse:
+    body = {"error_class": error_class, "detail": detail}
+    body.update(extra)
+    return JSONResponse(status_code=status, content=body)
+
+
+def _security_scan_badge(server_id: str) -> Optional[dict]:
+    """The compact `{risk_level, risk_score, critical, high, medium, low}`
+    shown next to a server in the MCP list, or None when no scan has run
+    yet (a server added before SEC-09, or one this manifest lookup fails
+    for)."""
+    manifest = extension_manifest.get_manifest(server_id)
+    scan = (manifest or {}).get("security_scan")
+    if not isinstance(scan, dict):
+        return None
+    counts = scan.get("counts") or {}
+    return {
+        "risk_level": scan.get("risk_level", "none"),
+        "risk_score": scan.get("risk_score", 0),
+        "critical": counts.get("critical", 0),
+        "high": counts.get("high", 0),
+        "medium": counts.get("medium", 0),
+        "low": counts.get("low", 0),
+    }
+
+
 def _load_disabled_map():
     """Load per-server disabled tool sets from DB."""
     db = SessionLocal()
@@ -121,6 +149,43 @@ def _mcp_oauth_redirect_uri() -> str:
     """Shared callback URL for legacy Google and generic MCP OAuth flows."""
     from src.mcp_oauth import REDIRECT_URI
     return REDIRECT_URI
+
+
+def _mcp_local_script_dirs(command: Optional[str], args) -> List[str]:
+    """Directories of any LOCAL file among `command`/`args` -- the "server
+    runs a local file" case `security_scan.py`'s module docstring asks for,
+    as opposed to `npx some-package`, which has nothing local to scan yet."""
+    dirs: List[str] = []
+    for tok in [command, *(args or [])]:
+        if not tok or not isinstance(tok, str):
+            continue
+        try:
+            if os.path.isfile(tok):
+                d = os.path.dirname(os.path.abspath(tok)) or tok
+                if d not in dirs:
+                    dirs.append(d)
+        except OSError:
+            continue
+    return dirs
+
+
+def scan_mcp_server_config(*, name: str, transport: str, command: Optional[str],
+                            args, env, tool_descriptions: Optional[List[str]] = None):
+    """SEC-09: the static pre-scan for one MCP server -- its command/args
+    (a `curl ... | sh` or a suspicious proxy env var in the launch line),
+    the directory of any local script it runs, and, once connected, the
+    tool descriptions it advertises (prompt-injection markers). Pure and
+    offline -- see `src/security_scan.py`."""
+    cmd_text = " ".join([str(command or ""), *[str(a) for a in (args or [])]])
+    env_text = "\n".join(f"{k}={v}" for k, v in (env or {}).items())
+    results = [security_scan.scan_text(
+        f"{name}\n{cmd_text}\n{env_text}", kind="mcp_command", filename="<command>")]
+    for d in _mcp_local_script_dirs(command, args):
+        results.append(security_scan.scan_paths(d, kind="generic", max_files=100))
+    for i, desc in enumerate(tool_descriptions or []):
+        results.append(security_scan.scan_text(
+            str(desc or ""), kind="mcp_tool_description", filename=f"<tool #{i}>"))
+    return security_scan.combine_results(results)
 
 
 def _apply_extension_governance(
@@ -183,7 +248,26 @@ def _apply_extension_governance(
         list(effect_set), plugin_id=server_id, tool_name="*",
         consents=security_policy.consent_store,
     )
-    return {**result, "declared_permissions": permissions, "policy_decision": decision.to_dict()}
+
+    # SEC-09: the static pre-scan, attached to the SAME manifest the
+    # permission diff above is already reviewed through. A CRITICAL finding
+    # quarantines the server (when `security_scan_block_critical` is on)
+    # exactly like a permission escalation does -- one "pending approval"
+    # state the admin sees, lifted only by an explicit override at approval
+    # time (POST /servers/{id}/manifest/approve).
+    scan = scan_mcp_server_config(name=name, transport=transport, command=command, args=args, env=env)
+    extension_manifest.attach_security_scan(server_id, scan.to_dict())
+    from src.settings import get_setting
+    security_quarantined = False
+    if scan.has_critical() and bool(get_setting("security_scan_block_critical", True)):
+        if not extension_manifest.is_quarantined_for_permissions(server_id):
+            extension_manifest.quarantine_for_security(server_id)
+        security_quarantined = True
+
+    return {
+        **result, "declared_permissions": permissions, "policy_decision": decision.to_dict(),
+        "security_scan": scan.to_dict(), "security_scan_quarantined": security_quarantined,
+    }
 
 
 def setup_mcp_routes(mcp_manager: McpManager):
@@ -239,6 +323,13 @@ def setup_mcp_routes(mcp_manager: McpManager):
                     # manifest has one — read-only here, approved via
                     # POST /servers/{id}/manifest/approve.
                     "manifest_pending_approval": extension_manifest.is_quarantined_for_permissions(srv.id),
+                    # SEC-09: the pre-scan badge -- risk level + finding
+                    # count, read off the manifest's last-attached scan
+                    # (from install, an env-mode change, or a manual
+                    # GET .../security-scan re-scan) without re-scanning on
+                    # every list call.
+                    "security_scan": _security_scan_badge(srv.id),
+                    "security_scan_pending_approval": extension_manifest.is_quarantined_for_security(srv.id),
                     # TOOL-04 / SEC-08: what this server's row itself carries
                     # as declared permissions (None for a server no
                     # install/update hook has ever run for yet).
@@ -454,6 +545,12 @@ def setup_mcp_routes(mcp_manager: McpManager):
             "manifest_diff": governance["diff"],
             "manifest_quarantined": governance["quarantined"],
             "policy_decision": governance["policy_decision"],
+            # SEC-09: the pre-scan run on this install, and whether it put
+            # the server into the same quarantine a permission escalation
+            # would (only when it found CRITICAL issues AND
+            # security_scan_block_critical is on).
+            "security_scan": governance["security_scan"],
+            "security_scan_quarantined": governance["security_scan_quarantined"],
         }
 
     @router.post("/servers/{server_id}/reconnect")
@@ -643,6 +740,8 @@ def setup_mcp_routes(mcp_manager: McpManager):
             "manifest_diff": governance["diff"],
             "manifest_quarantined": governance["quarantined"],
             "policy_decision": governance["policy_decision"],
+            "security_scan": governance["security_scan"],
+            "security_scan_quarantined": governance["security_scan_quarantined"],
         }
 
     @router.get("/servers/{server_id}/stderr")
@@ -1047,21 +1146,100 @@ def setup_mcp_routes(mcp_manager: McpManager):
         return result
 
     @router.post("/servers/{server_id}/manifest/approve")
-    def approve_server_manifest(server_id: str, request: Request):
-        """Explicit admin acceptance of a permission diff a manifest update
-        flagged — lifts the quarantine :func:`extension_manifest.record_install_or_update`
-        placed for exactly this reason, and (SEC-08) grants fresh consent for
-        the now-approved permission set so :func:`security_policy.evaluate`
-        stops reporting this server's tools as unconsented."""
+    async def approve_server_manifest(server_id: str, request: Request):
+        """Explicit admin acceptance of whatever this server is quarantined
+        for. Two distinct reasons share the same `pending_approval` gate:
+
+        * a permission diff (`extension_manifest.record_install_or_update`)
+          — lifted as before, no body required.
+        * a SEC-09 CRITICAL security-scan finding
+          (`extension_manifest.quarantine_for_security`) — lifted only when
+          the request body carries `{"override": true}` (the UI's confirm
+          checkbox), so approving is never one click on a page that also
+          shows a critical warning.
+
+        Either way also (SEC-08) grants fresh consent for the manifest's
+        permission set so :func:`security_policy.evaluate` stops reporting
+        this server's tools as unconsented."""
         require_admin(request)
+        body: dict = {}
         try:
-            manifest = extension_manifest.approve_new_permissions(server_id)
-        except ValueError as e:
-            raise HTTPException(404, str(e))
+            raw = await request.body()
+            if raw:
+                body = json.loads(raw)
+        except (json.JSONDecodeError, UnicodeDecodeError, AttributeError, TypeError):
+            # AttributeError/TypeError: some callers (this router's own test
+            # suite, per its docstring) drive the handler directly with a
+            # bare sentinel `request` that has no `.body()` -- exactly like
+            # a request with no body, not an error.
+            body = {}
+        override = bool(body.get("override")) if isinstance(body, dict) else False
+
+        if extension_manifest.is_quarantined_for_security(server_id):
+            if not override:
+                manifest = extension_manifest.get_manifest(server_id) or {}
+                return _review_json_error(
+                    409, "mcp.security_scan_block_critical",
+                    "This server's security pre-scan found CRITICAL issues. "
+                    "Approving requires an explicit override.",
+                    security_scan=manifest.get("security_scan"),
+                )
+            try:
+                manifest = extension_manifest.approve_security_scan(server_id)
+            except ValueError as e:
+                raise HTTPException(404, str(e))
+        else:
+            try:
+                manifest = extension_manifest.approve_new_permissions(server_id)
+            except ValueError as e:
+                raise HTTPException(404, str(e))
         from src import security_policy
         effect_set = security_policy.effects_for_declared_permissions(manifest.get("permissions"))
         security_policy.consent_store.grant(server_id, "*", effect_set)
         return {"server_id": server_id, "manifest": manifest}
+
+    @router.get("/servers/{server_id}/security-scan")
+    async def get_server_security_scan(server_id: str, request: Request):
+        """SEC-09: re-run the pre-scan right now (command/args, local
+        script directory, and — when connected — the tools this server
+        currently advertises) and attach the fresh result to its manifest,
+        instead of only ever reading the one taken at install time."""
+        require_admin(request)
+        db = SessionLocal()
+        try:
+            srv = db.query(McpServer).filter(McpServer.id == server_id).first()
+            if not srv and not mcp_manager.is_builtin(server_id):
+                raise HTTPException(404, "Server not found")
+            if srv is not None:
+                name, transport, command = srv.name, srv.transport, srv.command
+                args = json.loads(srv.args) if srv.args else []
+                env = json.loads(srv.env) if srv.env else {}
+            else:
+                name, transport, command, args, env = server_id, "stdio", None, [], {}
+        finally:
+            db.close()
+
+        tool_descriptions = [
+            f"{t.get('name', '')}: {t.get('description', '')}"
+            for t in mcp_manager.get_all_tools() if t.get("server_id") == server_id
+        ]
+        scan = scan_mcp_server_config(
+            name=name, transport=transport, command=command, args=args, env=env,
+            tool_descriptions=tool_descriptions,
+        )
+        scan_dict = scan.to_dict()
+        # A manifest may not exist yet for a builtin/legacy server; attach
+        # is then a no-op (documented in extension_manifest.py) and the
+        # scan is still returned -- a re-scan must never fail because
+        # nothing was installed through the manifest flow.
+        extension_manifest.attach_security_scan(server_id, scan_dict)
+        from src.settings import get_setting
+        if scan.has_critical() and bool(get_setting("security_scan_block_critical", True)) \
+                and extension_manifest.get_manifest(server_id) is not None \
+                and not extension_manifest.is_quarantined_for_permissions(server_id):
+            extension_manifest.quarantine_for_security(server_id)
+        return {"server_id": server_id, "security_scan": scan_dict,
+                "pending_approval": extension_manifest.is_quarantined_for_security(server_id)}
 
     return router
 

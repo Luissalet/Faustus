@@ -107,6 +107,15 @@ DEFAULT_SETTINGS = {
     # (Also gates WP06's additive deployment-evidence side-write in
     # src/model_calibration.py::save_tested, which reads it before writing.)
     "creator_enabled": False,
+    # SEC-09: static, offline pre-scan (src/security_scan.py) of a
+    # third-party MCP server's command/local script and advertised tool
+    # descriptions, and of an imported skill's folder, shown to the admin
+    # BEFORE it is trusted/enabled. When True (default), an install/approval
+    # that scanned CRITICAL cannot be approved without an explicit
+    # `override` flag in the approve request. Never blocks silently and
+    # never blocks a server/skill already trusted before this scan existed
+    # -- it only gates the explicit approve step.
+    "security_scan_block_critical": True,
     # WP30: conservative resource admission for Creator media jobs
     # (src/creator/resources.py). "serial" (default) allows one heavy load
     # at a time per device; "measured" allows concurrency only when the

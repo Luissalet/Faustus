@@ -335,6 +335,8 @@ Las sesiones de Bitwarden se guardan cifradas y caducan tras una hora, tanto en 
 
 Aprueba las herramientas e instrucciones del proyecto de forma deliberada. Las restricciones por agente, las fuentes propias, las aprobaciones, la configuración del sandbox y la supervisión de procesos son controles distintos. Si falta un sandbox requerido, la ruta de sandbox configurada no debe ejecutar silenciosamente el comando en el anfitrión.
 
+Un servidor MCP de terceros o una skill importada pasan por un pre-escaneo estático de seguridad (sin red, sin LLM) antes de poder confiar en ellos: ejecución de script remoto, payload ofuscado, acceso a credenciales, exfiltración, persistencia, comandos destructivos, código dinámico, listener de red abierto, e indicios de inyección de instrucciones en las descripciones de herramientas o en el texto de la skill. Un hallazgo crítico lo pone en cuarentena — la misma vía que ya usa una escalada de permisos — y aprobarlo exige una confirmación explícita, mostrada junto al recuento de hallazgos, nunca un bloqueo silencioso.
+
 Consulta el [modelo de amenazas](THREAT_MODEL.md), la [política de seguridad](SECURITY.md) y las [notas de seguridad de instalación](website/setup.md#security-notes).
 
 ## Créditos y licencia

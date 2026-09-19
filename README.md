@@ -339,6 +339,8 @@ Bitwarden sessions are encrypted at rest and expire after one hour, shared by se
 
 Approve tools and project instructions deliberately. Per-agent restrictions, owned sources, approval gates, sandbox settings and process supervision are separate controls. When a required sandbox is unavailable, the configured sandbox path must not silently run the command on the host.
 
+A third-party MCP server or imported skill gets a static security pre-scan (no network, no LLM) before it can be trusted: remote-script execution, obfuscated payloads, credential access, exfiltration, persistence, destructive commands, dynamic code, open network listeners, and prompt-injection markers in tool descriptions or skill text. A critical finding quarantines it — same gate a permission escalation already uses — and approving requires an explicit override, shown next to the finding count, never a silent block.
+
 See the [threat model](THREAT_MODEL.md), [security policy](SECURITY.md) and [setup security notes](website/setup.md#security-notes).
 
 ## Credits and licence

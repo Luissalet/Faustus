@@ -21,6 +21,7 @@ import {
   listGoogleCalendar,
   listMcpServers,
   listTokens,
+  rescanMcpServerSecurity,
   saveCardDav,
   vaultConfig,
   vaultLogout,
@@ -214,7 +215,19 @@ async function fetchAll(): Promise<{ items: Item[]; googleConfigured: boolean }>
       : s.status === 'degraded' ? t(MCP_STATUS_LABEL.degraded)
       : s.status === 'probing' ? t(MCP_STATUS_LABEL.probing)
       : t('disconnected');
-    const detail = s.manifest_pending_approval ? `${statusText} · ${t('new permissions pending approval')}` : statusText;
+    // SEC-09: the pre-scan badge (risk level + finding count), shown next
+    // to the status whenever a scan has run and found anything at all --
+    // it is informational here regardless of quarantine state, which is
+    // its own notice below.
+    const scan = s.security_scan;
+    const scanBadge = scan && scan.risk_level !== 'none'
+      ? t('{level} risk ({n} findings)', { level: scan.risk_level, n: String(scan.critical + scan.high + scan.medium + scan.low) })
+      : '';
+    const detail = [
+      statusText,
+      s.manifest_pending_approval ? t('new permissions pending approval') : '',
+      scanBadge,
+    ].filter(Boolean).join(' · ');
     items.push({ kind: 'mcp', id: s.id, name: s.name || 'MCP', detail, enabled: s.is_enabled !== false, data: s });
   }
   for (const tok of tokens) {
@@ -249,6 +262,10 @@ export function IntegrationsSection({ say }: { say: (t: string) => void }) {
   const [adding, setAdding] = useState(false);
   const [pickingCalendar, setPickingCalendar] = useState(false);
   const [params, setParams] = useSearchParams();
+  // SEC-09: per-server "I've seen the critical findings" confirm checkbox --
+  // the security-scan quarantine's Approve is disabled until this is ticked,
+  // so approving is never one click on a page that also shows the warning.
+  const [scanOverride, setScanOverride] = useState<Record<string, boolean>>({});
 
   const reload = useCallback(() => fetchAll().then(({ items: its, googleConfigured: gc }) => { setItems(its); setGoogleConfigured(gc); }), []);
   useEffect(() => {
@@ -395,7 +412,33 @@ export function IntegrationsSection({ say }: { say: (t: string) => void }) {
                 </button>
                 <IconButton icon={Trash2} label={t('Remove {name}', { name: item.name })} size="sm" onClick={() => void remove(item)} />
               </div>
-              {mcp?.manifest_pending_approval && (
+              {mcp?.security_scan_pending_approval ? (
+                <div className="fs-notice" data-tone="danger" role="alert" data-testid="mcp-security-scan-quarantine">
+                  <ShieldAlert size={14} aria-hidden="true" />
+                  <span>
+                    {t('{name}\'s security pre-scan found CRITICAL issues ({n} findings) and is quarantined until approved.', {
+                      name: item.name,
+                      n: String((mcp.security_scan?.critical ?? 0) + (mcp.security_scan?.high ?? 0) + (mcp.security_scan?.medium ?? 0) + (mcp.security_scan?.low ?? 0)),
+                    })}
+                  </span>
+                  <label className="fs-set__help" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <input
+                      type="checkbox"
+                      data-testid="mcp-security-scan-override"
+                      checked={!!scanOverride[item.id]}
+                      onChange={(e) => setScanOverride((m) => ({ ...m, [item.id]: e.target.checked }))}
+                    />
+                    {t('I have reviewed the findings and want to approve anyway')}
+                  </label>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    label={t('Approve')}
+                    disabled={!scanOverride[item.id]}
+                    onClick={() => void approveMcpManifest(item.id, true).then(() => reload()).then(() => say(t('Approved.'))).catch((e) => say((e as Error).message))}
+                  />
+                </div>
+              ) : mcp?.manifest_pending_approval && (
                 <div className="fs-notice" data-tone="warn" role="alert" data-testid="mcp-manifest-quarantine">
                   <ShieldAlert size={14} aria-hidden="true" />
                   {t('{name} asked for a new permission it did not have before and is quarantined until approved.', { name: item.name })}
@@ -404,6 +447,16 @@ export function IntegrationsSection({ say }: { say: (t: string) => void }) {
                     variant="ghost"
                     label={t('Approve')}
                     onClick={() => void approveMcpManifest(item.id).then(() => reload()).then(() => say(t('Approved.'))).catch((e) => say((e as Error).message))}
+                  />
+                </div>
+              )}
+              {item.kind === 'mcp' && mcp?.status === 'connected' && (
+                <div className="fs-set__help" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    label={t('Re-scan security')}
+                    onClick={() => void rescanMcpServerSecurity(item.id).then(() => reload()).catch((e) => say((e as Error).message))}
                   />
                 </div>
               )}

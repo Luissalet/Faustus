@@ -77,6 +77,10 @@ class SkillApproveRequest(BaseModel):
     same scoping `src/workflows/skills.py::run` uses, so an approval can
     never be requested for a folder the caller does not own."""
     project_id: str = Field(..., min_length=1, max_length=200)
+    # SEC-09: explicit confirmation (the UI's confirm checkbox) that the
+    # admin has seen the security pre-scan's CRITICAL findings and wants to
+    # approve anyway. Ignored unless the scan is actually critical.
+    override: bool = False
 
 
 class SkillUpdateRequest(BaseModel):
@@ -2025,7 +2029,8 @@ def setup_skills_routes(skills_manager: SkillsManager) -> APIRouter:
         digest = skills_discovery.skill_digest(found)
         return skill_import_review.review(
             skill_id=id, origin=found.origin, manifest=manifest,
-            manifest_text=text, digest=digest)
+            manifest_text=text, digest=digest,
+            skill_dir=str(_Path(found.path).parent))
 
     @router.post("/{id}/approve")
     async def approve_import_skill(id: str, body: SkillApproveRequest, request: Request):
@@ -2044,7 +2049,8 @@ def setup_skills_routes(skills_manager: SkillsManager) -> APIRouter:
         try:
             entry = skill_import_review.approve(
                 skill_id=id, manifest=manifest, manifest_text=text,
-                digest=digest, by=user or "unknown")
+                digest=digest, by=user or "unknown",
+                skill_dir=str(_Path(found.path).parent), override=body.override)
         except skill_import_review.SkillReviewError as e:
             return _review_error(409, e.error_class, e.message)
         return {"ok": True, "approval": entry}

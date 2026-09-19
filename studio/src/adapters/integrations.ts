@@ -288,6 +288,42 @@ export interface McpServer {
    *  permissions (`network`/`files`/`secrets`), or null for a server no
    *  install/update hook has run for yet. */
   declared_permissions?: Record<string, boolean> | null;
+  /** SEC-09: the last security pre-scan's compact badge for this server, or
+   *  null when none has run yet (see `src/security_scan.py`). */
+  security_scan?: McpSecurityScanBadge | null;
+  /** SEC-09: true when this server is quarantined specifically for a
+   *  CRITICAL pre-scan finding (as opposed to a permission escalation). */
+  security_scan_pending_approval?: boolean;
+}
+/** SEC-09: `risk_level` counts of the server's last pre-scan
+ *  (`routes/mcp/mcp_routes.py::_security_scan_badge`). */
+export interface McpSecurityScanBadge {
+  risk_level: 'none' | 'low' | 'medium' | 'high' | 'critical' | string;
+  risk_score: number;
+  critical: number;
+  high: number;
+  medium: number;
+  low: number;
+}
+/** SEC-09: one rule match from `src/security_scan.py::Finding.to_dict()`. */
+export interface SecurityFinding {
+  rule_id: string;
+  category: string;
+  severity: 'critical' | 'high' | 'medium' | 'low' | string;
+  file: string;
+  line: number;
+  snippet: string;
+  description: string;
+}
+/** SEC-09: the full `ScanResult.to_dict()` -- `GET .../security-scan`
+ *  returns `{server_id, security_scan, pending_approval}` with this shape. */
+export interface SecurityScanResult {
+  findings: SecurityFinding[];
+  risk_score: number;
+  risk_level: string;
+  counts: Record<string, number>;
+  files_scanned: number;
+  truncated: boolean;
 }
 /** TOOL-04: `{"added": [...], "removed": [...]}` permission keys, computed
  *  by `src/extension_manifest.py::diff_permissions` against the prior
@@ -311,6 +347,11 @@ export interface McpGovernance {
   manifest_diff: McpManifestDiff;
   manifest_quarantined: boolean;
   policy_decision: McpPolicyDecision;
+  /** SEC-09: the pre-scan run on this install/update, and whether it put
+   *  the server into quarantine (only on CRITICAL findings, and only when
+   *  `security_scan_block_critical` is on). */
+  security_scan?: SecurityScanResult;
+  security_scan_quarantined?: boolean;
 }
 export interface McpTool {
   name: string;
@@ -343,9 +384,23 @@ export const listMcpTools = (id: string) => getJson<McpTool[]>(`/api/mcp/servers
 export const setMcpDisabledTools = (id: string, disabled: string[]) => patch(`/api/mcp/servers/${id}/tools`, { disabled }, 'mcp/tools');
 export const mcpOauthExchange = (id: string, callbackUrl: string) => json<unknown>(`/api/mcp/oauth/exchange/${id}`, { method: 'POST', body: form({ callback_url: callbackUrl }) }, 'mcp/oauth');
 export const mcpAuthorizeUrl = (id: string) => `/api/mcp/oauth/authorize/${id}`;
-/** TOOL-04: lift the quarantine `_apply_extension_governance` (install/
- *  env-mode update) placed on a server that asked for a new permission. */
-export const approveMcpManifest = (id: string) => json<unknown>(`/api/mcp/servers/${id}/manifest/approve`, { method: 'POST' }, 'mcp/manifest/approve');
+/** TOOL-04 / SEC-09: lift whatever this server is quarantined for -- a new
+ *  permission, or (with `override: true`, the UI's confirm checkbox) a
+ *  CRITICAL security pre-scan finding. `override` is ignored (and safe to
+ *  omit) when the quarantine is for a permission diff instead. */
+export const approveMcpManifest = (id: string, override = false) =>
+  json<{ server_id: string; manifest: unknown }>(
+    `/api/mcp/servers/${id}/manifest/approve`,
+    { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ override }) },
+    'mcp/manifest/approve',
+  );
+/** SEC-09: re-run the pre-scan for one server right now (command/args,
+ *  local script directory, and its currently advertised tool descriptions
+ *  when connected) instead of only ever showing the one taken at install. */
+export const rescanMcpServerSecurity = (id: string) =>
+  json<{ server_id: string; security_scan: SecurityScanResult; pending_approval: boolean }>(
+    `/api/mcp/servers/${id}/security-scan`, { method: 'GET' }, 'mcp/security-scan',
+  );
 
 /* ── agent tokens (Codex / Claude) ── */
 

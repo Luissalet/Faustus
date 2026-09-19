@@ -49,6 +49,7 @@ from difflib import unified_diff
 from typing import Any, Dict, List, Mapping, Optional
 
 from core.atomic_io import atomic_write_json, atomic_write_text
+from src import security_scan
 from src.constants import DATA_DIR
 
 APPROVALS_FILE = os.path.join(DATA_DIR, "skill_approvals.json")
@@ -77,6 +78,7 @@ __all__ = [
     "SkillReviewError", "ReviewStatus",
     "load_approvals", "get_approval", "tools_required_of",
     "privilege_request_keys", "status_of", "review", "approve", "diff",
+    "scan_skill_folder",
 ]
 
 
@@ -181,11 +183,24 @@ def status_of(skill_id: str, *, digest: str, tools_required: List[str]) -> Revie
     return ReviewStatus("approved", "matches the approved digest and tools", approval)
 
 
+def scan_skill_folder(skill_dir: Optional[str]) -> Dict[str, Any]:
+    """SEC-09: the static pre-scan of a skill's own folder (every sibling
+    file next to its SKILL.md, same set `skills_runtime.discovery.
+    skill_digest` hashes) — run at review/approve time, before a human signs
+    off on trusting it. `skill_dir=None` (a caller that has no folder, e.g.
+    an old test) reads as an empty, zero-risk scan rather than an error."""
+    if not skill_dir:
+        empty = security_scan.ScanResult()
+        return empty.to_dict()
+    return security_scan.scan_paths(skill_dir, kind="skill_file", max_files=200).to_dict()
+
+
 def review(*, skill_id: str, origin: str, manifest: Any, manifest_text: str,
-          digest: str) -> Dict[str, Any]:
+          digest: str, skill_dir: Optional[str] = None) -> Dict[str, Any]:
     """Everything a human needs before approving: origin, version, hash,
-    tools required, declared permissions, any privilege request, and the
-    current verdict against whatever was approved before (if anything)."""
+    tools required, declared permissions, any privilege request, the SEC-09
+    security pre-scan of the skill's folder, and the current verdict against
+    whatever was approved before (if anything)."""
     fm = _frontmatter(manifest_text)
     tools = tools_required_of(manifest)
     status = status_of(skill_id, digest=digest, tools_required=tools)
@@ -197,12 +212,13 @@ def review(*, skill_id: str, origin: str, manifest: Any, manifest_text: str,
         "tools_required": tools,
         "permissions": manifest.permissions.to_dict(),
         "privilege_request": privilege_request_keys(fm),
+        "security_scan": scan_skill_folder(skill_dir),
         "status": status.to_dict(),
     }
 
 
 def approve(*, skill_id: str, manifest: Any, manifest_text: str, digest: str,
-           by: str) -> Dict[str, Any]:
+           by: str, skill_dir: Optional[str] = None, override: bool = False) -> Dict[str, Any]:
     """Record an approval pinned to `digest`.
 
     Refuses outright — never "approves with a warning" — a skill whose
@@ -210,6 +226,12 @@ def approve(*, skill_id: str, manifest: Any, manifest_text: str, digest: str,
     (`PRIVILEGE_REQUEST_KEYS`); that request cannot be granted at any digest,
     so there is nothing a re-approval could fix without the author editing
     the skill to withdraw it.
+
+    SEC-09: also refuses (`skills.security_scan_block_critical`) a skill
+    whose folder scanned CRITICAL when the `security_scan_block_critical`
+    setting is on, unless the caller passes `override=True` — the same
+    "shown before trusted, never silently blocked" contract the MCP
+    manifest/approve route applies.
     """
     fm = _frontmatter(manifest_text)
     flags = privilege_request_keys(fm)
@@ -219,6 +241,19 @@ def approve(*, skill_id: str, manifest: Any, manifest_text: str, digest: str,
             "skill frontmatter asks to change approval/tool behaviour "
             f"({', '.join(flags)}); refused",
         )
+    scan_dict = scan_skill_folder(skill_dir)
+    if scan_dict.get("risk_level") == "critical" and not override:
+        try:
+            from src.settings import get_setting
+            block = bool(get_setting("security_scan_block_critical", True))
+        except Exception:  # noqa: BLE001 - settings backend unavailable, fail safe (block)
+            block = True
+        if block:
+            raise SkillReviewError(
+                "skills.security_scan_block_critical",
+                "security pre-scan found CRITICAL issues in this skill's folder; "
+                "approving requires an explicit override",
+            )
     tools_required = tools_required_of(manifest)
     entry = {
         "digest": digest,
@@ -226,6 +261,7 @@ def approve(*, skill_id: str, manifest: Any, manifest_text: str, digest: str,
         "tools_required": tools_required,
         "by": by or "unknown",
         "version": manifest.version,
+        "security_scan": scan_dict,
     }
     all_approvals = load_approvals()
     all_approvals[skill_id] = entry

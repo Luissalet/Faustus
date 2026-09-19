@@ -50,6 +50,8 @@ __all__ = [
     "command_hash", "suggested_permissions", "diff_permissions",
     "get_manifest", "all_manifests", "record_install_or_update",
     "approve_new_permissions", "is_quarantined_for_permissions",
+    "attach_security_scan", "quarantine_for_security",
+    "is_quarantined_for_security", "approve_security_scan",
 ]
 
 
@@ -192,7 +194,15 @@ def record_install_or_update(
         "installed_at": (prior or {}).get("installed_at") or now_iso(),
         "updated_at": now_iso(),
         "pending_approval": quarantined,
+        "pending_approval_reason": "permissions" if quarantined else None,
+        # A security-scan quarantine (attach_security_scan/
+        # quarantine_for_security run AFTER this) is not this function's
+        # concern, but a permission-only update must not accidentally clear
+        # one still open from a PRIOR call -- carry it forward.
     }
+    if not quarantined and prior and prior.get("pending_approval_reason") == "security_scan":
+        manifest["pending_approval"] = True
+        manifest["pending_approval_reason"] = "security_scan"
     _save_one(server_id, manifest)
     if quarantined:
         _quarantine(server_id)
@@ -209,12 +219,20 @@ def approve_new_permissions(server_id: str) -> Dict[str, Any]:
     ``src/safe_mode.py`` itself placed for an unrelated reason (repeated
     connection failures) — that is a different quarantine reason living in
     the same list, and only that module's own MCP-failure bookkeeping should
-    lift it."""
+    lift it. Also never lifts a SECURITY-SCAN quarantine
+    (`quarantine_for_security`) -- that one is only lifted by
+    `approve_security_scan`, so approving a permission diff can never
+    silently wave through an unrelated critical finding."""
     manifest = get_manifest(server_id)
     if manifest is None:
         raise ValueError(f"no manifest recorded for {server_id!r}")
     manifest = dict(manifest)
+    if manifest.get("pending_approval_reason") == "security_scan":
+        raise ValueError(
+            f"{server_id!r} is quarantined for a security-scan finding, not a "
+            "permission change -- use approve_security_scan (with an override)")
     manifest["pending_approval"] = False
+    manifest.pop("pending_approval_reason", None)
     _save_one(server_id, manifest)
     _unquarantine(server_id)
     return manifest
@@ -223,3 +241,62 @@ def approve_new_permissions(server_id: str) -> Dict[str, Any]:
 def is_quarantined_for_permissions(server_id: str) -> bool:
     manifest = get_manifest(server_id)
     return bool(manifest and manifest.get("pending_approval"))
+
+
+# ── SEC-09: security pre-scan (src/security_scan.py) attached to the same
+# manifest a permission escalation is already reviewed through — one record
+# the admin looks at, not a parallel one. See that module's docstring for
+# what is actually scanned.
+
+def attach_security_scan(server_id: str, scan: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Store `security_scan.py::ScanResult.to_dict()` on this server's
+    manifest. No-op (returns None) when no manifest exists yet -- a scan is
+    only ever attached to something `record_install_or_update` already
+    created, never a store of its own."""
+    manifest = get_manifest(server_id)
+    if manifest is None:
+        return None
+    manifest = dict(manifest)
+    manifest["security_scan"] = dict(scan or {})
+    _save_one(server_id, manifest)
+    return manifest
+
+
+def quarantine_for_security(server_id: str) -> Dict[str, Any]:
+    """Quarantine a server for a CRITICAL security-scan finding -- the same
+    `disabled_tools` gate a permission escalation already uses
+    (`_quarantine`), so the admin sees one "pending approval" state, not two.
+    Distinguished from a permission-escalation quarantine only by
+    `pending_approval_reason`, which `approve_security_scan` checks before
+    lifting it (approving a permission diff must not silently wave through
+    an unrelated critical finding, and vice versa)."""
+    manifest = get_manifest(server_id)
+    if manifest is None:
+        raise ValueError(f"no manifest recorded for {server_id!r}")
+    manifest = dict(manifest)
+    manifest["pending_approval"] = True
+    manifest["pending_approval_reason"] = "security_scan"
+    _save_one(server_id, manifest)
+    _quarantine(server_id)
+    return manifest
+
+
+def is_quarantined_for_security(server_id: str) -> bool:
+    manifest = get_manifest(server_id)
+    return bool(manifest and manifest.get("pending_approval")
+                and manifest.get("pending_approval_reason") == "security_scan")
+
+
+def approve_security_scan(server_id: str) -> Dict[str, Any]:
+    """Explicit admin override of a security-scan quarantine. Mirrors
+    `approve_new_permissions` but only lifts a quarantine THIS module placed
+    for `pending_approval_reason == "security_scan"`."""
+    manifest = get_manifest(server_id)
+    if manifest is None:
+        raise ValueError(f"no manifest recorded for {server_id!r}")
+    manifest = dict(manifest)
+    manifest["pending_approval"] = False
+    manifest.pop("pending_approval_reason", None)
+    _save_one(server_id, manifest)
+    _unquarantine(server_id)
+    return manifest
