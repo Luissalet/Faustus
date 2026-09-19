@@ -1505,11 +1505,31 @@ class DeepResearcher:
         for q in general:
             _try_add("general", "", q)
 
-        budget = max(len(merged), FIRST_ROUND_QUERY_BUDGET)
-        remaining = max(0, budget - len(merged))
+        # Perspective slots: whatever the first-round budget leaves free, but
+        # never fewer than one per perspective (up to research_perspectives_max)
+        # -- a planner that already fills the budget with flat questions would
+        # otherwise leave no room for a single perspective question.
+        max_persp = int(getattr(self, "research_perspectives_max", DEFAULT_PERSPECTIVES_MAX)
+                        or DEFAULT_PERSPECTIVES_MAX)
+        remaining = max(FIRST_ROUND_QUERY_BUDGET - len(merged), max_persp, 0)
+        added_for: Set[str] = set()
+        # Pass 1: the first surviving question of each perspective.
         for item in perspective_items:
             if remaining <= 0:
                 break
+            name = item.get("perspective", "")
+            if name in added_for:
+                continue
+            if _try_add(name, item.get("focus", ""), item.get("question", "")):
+                added_for.add(name)
+                remaining -= 1
+        # Pass 2: fill what is left, in the order returned.
+        taken = {m["question"] for m in merged}
+        for item in perspective_items:
+            if remaining <= 0:
+                break
+            if item.get("question", "").strip() in taken:
+                continue
             if _try_add(item.get("perspective", ""), item.get("focus", ""), item.get("question", "")):
                 remaining -= 1
 

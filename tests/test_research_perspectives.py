@@ -258,3 +258,23 @@ def test_generate_queries_round_1_falls_back_to_llm_when_no_perspective_plan():
     r._llm = fake_llm
     queries = asyncio.run(r._generate_queries("solar panel adoption", "", 1))
     assert queries == ["fallback query one", "fallback query two"]
+
+
+def test_merge_plan_keeps_one_slot_per_perspective_when_general_fills_budget():
+    r = _researcher(research_perspectives=True, research_perspectives_max=3)
+    general = [
+        "How much does a residential installation cost?",
+        "What is the typical project timeline?",
+        "Which roof orientations perform best?",
+        "How does battery storage affect payback?",
+        "What are the local grid connection rules?",
+    ]
+    items = [
+        {"perspective": "Installer", "focus": "", "question": "Which mounting hardware fails first in coastal climates?"},
+        {"perspective": "Installer", "focus": "", "question": "How long do crews spend on permits versus wiring?"},
+        {"perspective": "Skeptic", "focus": "", "question": "Do subsidies distort the claimed savings figures?"},
+    ]
+    merged = r._merge_perspective_plan(general, items)
+    labels = [m["perspective"] for m in merged if m["perspective"] != "general"]
+    assert "Installer" in labels and "Skeptic" in labels
+    assert len(labels) <= 3
