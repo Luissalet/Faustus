@@ -351,6 +351,16 @@ DEFAULT_SETTINGS = {
     # unbounded model/API bill. Other values are bounded to [60, 86400].
     # Tune via Settings or by editing data/settings.json.
     "research_run_timeout_seconds": 1800,
+    # Blind review (src/research_review.py): an independent reviewer model
+    # scores the finished report with no visibility into the writer's plan,
+    # search trace or self-assessment -- catches self-grading bias. Off by
+    # default (an extra model call after every research run). The model/
+    # endpoint default to "" so resolve_endpoint("research_blind_review", ...)
+    # falls back to the Utility endpoint, then the Default Chat Model, then
+    # the writer's own endpoint -- same chain every other internal pass uses.
+    "research_blind_review": False,
+    "research_blind_review_endpoint_id": "",
+    "research_blind_review_model": "",
     "agent_max_tool_calls": 0,
     "agent_max_rounds": 20,  # per-message agent step cap (clamped 1..200)
     # Soft input-token budget for the agent loop. The DEFAULT value (6000) is the

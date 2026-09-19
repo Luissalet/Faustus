@@ -713,6 +713,9 @@ class ResearchHandler:
                 )
                 entry["result"] = result
                 entry["status"] = "done"
+                await self._maybe_blind_review(
+                    entry, query=query, llm_endpoint=llm_endpoint, llm_model=llm_model,
+                )
                 self._save_result(session_id, entry)
                 # Persist to DB via callback (ensures result survives even if SSE disconnected)
                 try:
@@ -1003,6 +1006,54 @@ class ResearchHandler:
             except Exception:
                 pass
 
+    async def _maybe_blind_review(self, entry: dict, *, query: str,
+                                   llm_endpoint: str, llm_model: str) -> None:
+        """Run src.research_review.blind_review over the just-finished report
+        and attach it to `entry["blind_review"]`, right next to
+        `citation_registry` in the JSON `_save_result` writes below.
+
+        Gated on the `research_blind_review` setting (off by default) and
+        never allowed to affect the research run: any exception here is
+        swallowed, exactly like `blind_review` itself never raises for a
+        model/network failure.
+        """
+        try:
+            from src.settings import get_setting
+            if not get_setting("research_blind_review", False):
+                return
+        except Exception:
+            return
+        try:
+            from src.research_review import blind_review, normalize_writer_self_score
+
+            researcher = entry.get("researcher")
+            report_text = entry.get("result") or ""
+            sources = (self._extract_sources(researcher.findings)
+                       if researcher and researcher.findings else [])
+            coverage = None
+            audit = getattr(researcher, "citation_audit", None) if researcher else None
+            if audit is not None:
+                coverage = getattr(audit, "coverage", None)
+            if coverage:
+                verdicts = coverage.get("verdicts") or {}
+                sources = list(sources) + [{
+                    "title": "Citation verdict summary (from this run's own checking pass)",
+                    "verdict": ", ".join(f"{k}={v}" for k, v in verdicts.items()),
+                }]
+
+            evidence_quality = getattr(researcher, "evidence_quality", None) if researcher else None
+            writer_self_score = normalize_writer_self_score(evidence_quality)
+
+            entry["blind_review"] = await blind_review(
+                query, report_text, sources,
+                owner=entry.get("owner") or None,
+                writer_endpoint_url=llm_endpoint, writer_model=llm_model,
+                writer_self_score=writer_self_score,
+            )
+        except Exception as e:  # noqa: BLE001 - never fail the research run over this
+            logger.warning("[research_handler] blind review failed: %s", e)
+            entry["blind_review"] = {"error": f"{type(e).__name__}: {e}"[:300]}
+
     def _save_result(self, session_id: str, entry: dict):
         """Persist completed research result to disk."""
         try:
@@ -1029,6 +1080,7 @@ class ResearchHandler:
                 "report_language": getattr(researcher, "report_language", None) if researcher else None,
                 "citation_registry": (researcher.citations.snapshot()
                     if researcher and getattr(researcher, "citations", None) is not None else None),
+                "blind_review": entry.get("blind_review"),
                 "stats": entry.get("stats"),
                 "category": entry.get("category"),
                 "started_at": entry["started_at"],
