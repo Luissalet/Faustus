@@ -223,6 +223,10 @@ def _embed_text_for_concept(name: str, kind: str, summary: str, details: str) ->
 # ---------------------------------------------------------------------------
 # Store
 # ---------------------------------------------------------------------------
+UNDERSTAND_MIN_SCORE = 0.2
+UNDERSTAND_RELATIVE_FLOOR = 0.4
+
+
 class Store:
     """Stateless-safe wrapper: cheap to build fresh per call, like
     ``project_board.Store``/``requirements.store.Store``."""
@@ -513,7 +517,12 @@ class Store:
             score = _cosine(qvec, vec) if vec is not None else 0.0
             scored.append((score, c))
         scored.sort(key=lambda pair: pair[0], reverse=True)
-        top = scored[:k]
+        # Keep only concepts that are actually relevant (a floor relative to
+        # the best match), so weak matches do not crowd out the graph
+        # neighbours of the strong ones.
+        best = scored[0][0] if scored else 0.0
+        floor = max(UNDERSTAND_MIN_SCORE, best * UNDERSTAND_RELATIVE_FLOOR)
+        top = [(sc, c) for sc, c in scored[:k] if sc >= floor] or scored[:1]
         top_ids = {c["id"] for _, c in top}
         neighbors: Dict[str, Dict[str, Any]] = {}
         if top_ids:
@@ -532,7 +541,7 @@ class Store:
                         neighbors[other] = self._row_to_concept(orow)
         return {
             "query": query,
-            "concepts": [{"score": round(score, 4), **c} for score, c in top if score > 0 or len(rows) <= k],
+            "concepts": [{"score": round(score, 4), **c} for score, c in top],
             "neighbors": list(neighbors.values()),
         }
 

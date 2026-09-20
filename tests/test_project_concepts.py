@@ -421,3 +421,26 @@ def test_injection_is_a_noop_when_setting_is_off(monkeypatch, tmp_path):
     # it directly rather than running the whole streaming loop.
     from src.settings import get_setting as real_get_setting  # noqa: F401
     assert agent_loop_mod.get_setting("agent_project_concepts_inject", False) is False
+
+
+def test_understand_keeps_relevant_matches_and_surfaces_their_neighbours(tmp_path, monkeypatch):
+    from src import project_concepts as pc
+    vecs = {"web": [1.0, 0.0, 0.0], "emb": [0.0, 1.0, 0.0], "led": [0.0, 0.0, 1.0]}
+
+    def fake_embed(text):
+        t = text.lower()
+        if "web" in t or "fetch" in t:
+            return vecs["web"]
+        if "embed" in t:
+            return vecs["emb"]
+        return vecs["led"]
+    import numpy as np
+    s = pc.Store("iso-test", path=str(tmp_path / "c.db"))
+    monkeypatch.setattr(pc, "_embed_one", lambda text: np.asarray(fake_embed(text), dtype="float32"))
+    a = s.upsert_concept(name="Web fetch", kind="feature", summary="web fetch")
+    b = s.upsert_concept(name="Embeddings", kind="module", summary="embed vectors")
+    s.upsert_concept(name="Ledger", kind="module", summary="token ledger")
+    s.link(a["id"], b["id"], "depends_on", "")
+    r = s.understand("how is web content fetched")
+    assert [c["name"] for c in r["concepts"]] == ["Web fetch"]
+    assert [n["name"] for n in r["neighbors"]] == ["Embeddings"]
