@@ -59,7 +59,7 @@ import {
 } from '../adapters/settings';
 import './projects.css';
 import './settings.css';
-import { bool, Field, fromList, list, SaveBar, Select, str, Text, Toggle, useDraft, type Opt } from './settings/fields';
+import { bool, DefaultResidencyField, Field, fromList, list, SaveBar, Select, str, Text, Toggle, useDraft, type Opt } from './settings/fields';
 import { SamplingDefaultsFields, useSamplingDraft } from './settings/SamplingDefaults';
 import { DeviceSignIn } from './settings/DeviceSignIn';
 import { ProviderConnect } from './settings/ProviderConnect';
@@ -434,6 +434,7 @@ function DefaultsSection({ settings, endpoints, onSave, say }: { settings: Setti
         </div>
       </header>
       <ModelPair idPrefix="def" label="Chat" help={t('The one for new conversations.')} endpoints={endpoints} draft={draft} set={set} epKey="default_endpoint_id" modelKey="default_model" />
+      <DefaultResidencyField testId="default-residency-field" />
       <ModelPair idPrefix="task" label={t('Background tasks')} help={t('Automations, summaries, tidying the memory. Empty: the chat\'s.')} endpoints={endpoints} draft={draft} set={set} epKey="task_endpoint_id" modelKey="task_model" allowEmpty={t('The chat\'s')} />
       <ModelPair idPrefix="util" label={t('Utility (fast)')} help={t('Titles, calendar in your words, classifications. A small one is best.')} endpoints={endpoints} draft={draft} set={set} epKey="utility_endpoint_id" modelKey="utility_model" allowEmpty={t('The tasks\'')} />
       <Field label={t('Utility fallbacks')} htmlFor="util-fb" help={t('Models tried in order if the utility one fails; comma-separated.')}>

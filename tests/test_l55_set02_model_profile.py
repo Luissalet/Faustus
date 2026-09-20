@@ -80,13 +80,19 @@ def test_privacy_reads_the_base_url_not_a_declared_label(client):
     r = client.get("/api/models/endpoint-profile", headers={"x-user": "alice"})
     assert r.status_code == 200
     profiles = r.json()["endpoints"]
-    assert profiles["shared-local"] == {"is_local": True, "cost": "free_local", "has_api_key": False}
+    assert profiles["shared-local"] == {
+        "is_local": True, "cost": "free_local", "has_api_key": False,
+        "backend": "ollama", "backend_label": "Ollama",
+    }
 
 
 def test_cost_distinguishes_a_keyed_cloud_endpoint_from_an_unconfigured_one(client):
     r = client.get("/api/models/endpoint-profile", headers={"x-user": "alice"})
     profiles = r.json()["endpoints"]
-    assert profiles["alices-cloud-keyed"] == {"is_local": False, "cost": "paid", "has_api_key": True}
+    assert profiles["alices-cloud-keyed"] == {
+        "is_local": False, "cost": "paid", "has_api_key": True,
+        "backend": "remote", "backend_label": "Remote API",
+    }
 
 
 def test_owner_scoping_matches_get_api_models(client):
@@ -98,4 +104,17 @@ def test_owner_scoping_matches_get_api_models(client):
 
     as_root = client.get("/api/models/endpoint-profile", headers={"x-user": "root"}).json()["endpoints"]
     assert set(as_root) == {"shared-local", "alices-cloud-keyed", "bobs-cloud-unkeyed"}
-    assert as_root["bobs-cloud-unkeyed"] == {"is_local": False, "cost": "unconfigured", "has_api_key": False}
+    assert as_root["bobs-cloud-unkeyed"] == {
+        "is_local": False, "cost": "unconfigured", "has_api_key": False,
+        "backend": "remote", "backend_label": "Remote API",
+    }
+
+
+def test_who_serves_it_ollama_vs_remote(client):
+    """The other half of the badge (task: "di quien sirve los modelos"):
+    every row also carries `backend`/`backend_label`, not just privacy/cost."""
+    profiles = client.get("/api/models/endpoint-profile", headers={"x-user": "root"}).json()["endpoints"]
+    assert profiles["shared-local"]["backend"] == "ollama"
+    assert profiles["shared-local"]["backend_label"] == "Ollama"
+    assert profiles["alices-cloud-keyed"]["backend"] == "remote"
+    assert profiles["bobs-cloud-unkeyed"]["backend"] == "remote"

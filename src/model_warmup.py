@@ -63,6 +63,10 @@ _last: Dict[str, Any] = {"model": None, "url": None, "at": None, "ok": None, "de
 # how many times this process has had to act on it.
 _keeper: Dict[str, Any] = {
     "last_check": None, "resident": None, "expires_at": "", "reloads": 0, "repins": 0,
+    # Which backend the last cycle acted on ("ollama"|"llamacpp"|None — no
+    # local default resolved) and when `resident` last flipped to True, for
+    # the residency status API (GET /api/models/default/residency).
+    "backend": None, "resident_since": None,
     # X-D: the model the default is currently yielding to (None when the
     # default is resident/being kept), and whether the last cycle skipped a
     # reload because the default would not fit next to what is resident.
@@ -140,6 +144,28 @@ def resolve_default() -> Optional[Dict[str, str]]:
     if not root:
         return None
     return {"url": url, "model": model, "root": root}
+
+
+def _resolve_default_engine() -> Optional[Dict[str, Any]]:
+    """The managed llama.cpp engine (`src.engines`, via `src.engine_swap`)
+    that serves the default chat model, else None. Mirrors `resolve_default`'s
+    Ollama path but for a `llama-server` instance registered as a plain
+    endpoint — the residency switch's second backend (module docstring
+    point 2)."""
+    try:
+        from src.endpoint_resolver import resolve_endpoint
+        url, _model, _headers = resolve_endpoint("default")
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("model warmup: default endpoint unresolved (engine): %s", exc)
+        return None
+    if not url:
+        return None
+    try:
+        from src import engine_swap
+        return engine_swap.engine_for_url(url)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("model_warmup: engine_for_url failed: %s", exc)
+        return None
 
 
 _LOCAL_HOSTS = {"localhost", "127.0.0.1", "0.0.0.0", "::1", "host.docker.internal"}
@@ -352,6 +378,69 @@ async def warm_once() -> Dict[str, Any]:
     return dict(_last)
 
 
+async def _check_once_llamacpp(engine: Dict[str, Any]) -> Dict[str, Any]:
+    """The llama.cpp half of the residency keeper (module docstring point
+    2): start the engine if it is not already healthy, and — while it is —
+    exempt it from `src.engine_swap`'s own idle reaper by touching it every
+    cycle, reusing that module's idle clock instead of a second one. Mirrors
+    `check_once`'s shape (`_keeper` in, `_keeper` out) so `status()` and the
+    residency API answer the same way regardless of backend."""
+    _keeper["last_check"] = time.time()
+    _keeper["backend"] = "llamacpp"
+    engine_id = engine.get("id")
+    root = f"http://{engine.get('host') or '127.0.0.1'}:{engine.get('port')}"
+    model_label = engine.get("model_path") or engine.get("name") or engine_id or ""
+    try:
+        from src import vram_admission
+        vram_admission.pin_model(root, model_label)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("model warmup: engine pin failed: %s", exc)
+
+    try:
+        from src import engine_swap
+        healthy = await engine_swap.probe_healthy(engine)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("model warmup: engine probe failed: %s", exc)
+        healthy = False
+
+    if not healthy:
+        _keeper["resident"] = False
+        _keeper["resident_since"] = None
+        _keeper["expires_at"] = ""
+        try:
+            from src import engines
+            result = await engines.start_engine(engine_id)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("model warmup: llama.cpp engine %s start failed: %s", engine_id, exc)
+            return dict(_keeper)
+        if result.get("started"):
+            logger.info("model warmup: started llama.cpp engine %s for the default model", engine_id)
+            _keeper["reloads"] += 1
+            _keeper["resident"] = True
+            _keeper["resident_since"] = _keeper["resident_since"] or time.time()
+            try:
+                from src import engine_swap
+                engine_swap.touch(engine_id)
+            except Exception:  # noqa: BLE001
+                pass
+        else:
+            logger.debug("model warmup: llama.cpp engine %s not started: %s", engine_id, result.get("error"))
+        return dict(_keeper)
+
+    # Healthy and kept loaded: touching it every cycle resets engine_swap's
+    # own idle clock, so its reaper never reaps an engine the residency
+    # switch is actively keeping up.
+    try:
+        from src import engine_swap
+        engine_swap.touch(engine_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("model warmup: engine touch failed: %s", exc)
+    _keeper["resident"] = True
+    _keeper["resident_since"] = _keeper["resident_since"] or time.time()
+    _keeper["expires_at"] = ""
+    return dict(_keeper)
+
+
 async def check_once() -> Dict[str, Any]:
     """One residency-keeper cycle: poll `/api/ps`, act only when the default
     model is missing or its keep_alive shrank, log only on a change."""
@@ -359,8 +448,12 @@ async def check_once() -> Dict[str, Any]:
     target = resolve_default()
     _keeper["last_check"] = time.time()
     if not target:
-        _keeper.update({"resident": None, "expires_at": ""})
+        engine = _resolve_default_engine()
+        if engine is not None:
+            return await _check_once_llamacpp(engine)
+        _keeper.update({"resident": None, "expires_at": "", "backend": None})
         return dict(_keeper)
+    _keeper["backend"] = "ollama"
     _pin(target["root"], target["model"])
     ps = await _api_ps(target["root"])
     if ps is None:
@@ -375,6 +468,7 @@ async def check_once() -> Dict[str, Any]:
             break
     if row is None:
         _keeper["resident"] = False
+        _keeper["resident_since"] = None
         _keeper["expires_at"] = ""
         if _load_in_flight(target["model"]):
             logger.debug("model warmup: default model absent but another load is in flight — waiting")
@@ -425,6 +519,7 @@ async def check_once() -> Dict[str, Any]:
                     await warm_once()
                     _keeper["reloads"] += 1
                     _keeper["resident"] = True
+                    _keeper["resident_since"] = _keeper["resident_since"] or time.time()
                     _keeper["expires_at"] = ""
                     return dict(_keeper)
             _keeper["waiting_for_room"] = True
@@ -440,10 +535,12 @@ async def check_once() -> Dict[str, Any]:
         await warm_once()
         _keeper["reloads"] += 1
         _keeper["resident"] = True
+        _keeper["resident_since"] = _keeper["resident_since"] or time.time()
         _keeper["expires_at"] = ""
         return dict(_keeper)
     expires = str(row.get("expires_at") or "")
     _keeper["resident"] = True
+    _keeper["resident_since"] = _keeper["resident_since"] or time.time()
     _keeper["expires_at"] = expires
     _keeper["yielding_to"] = None
     _keeper["waiting_for_room"] = False
@@ -494,3 +591,107 @@ async def stop() -> None:
 
 def status() -> Dict[str, Any]:
     return {**_settings(), **_last, **_keeper}
+
+
+async def _release_residency() -> None:
+    """The OFF half of the residency switch: drop the pin and ask whichever
+    backend is currently holding the default to let go now, instead of
+    waiting out its own keep_alive/idle timer. Best-effort and silent on
+    failure — the residency keeper simply stops re-asserting itself once
+    `warm_default_model` reads False, so a release that fails here is not a
+    correctness bug, only a slower VRAM give-back."""
+    target = resolve_default()
+    if target:
+        try:
+            from src import vram_admission
+            vram_admission.unpin_model(target["root"], target["model"])
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("model warmup: unpin on release failed: %s", exc)
+        try:
+            import httpx
+            async with httpx.AsyncClient(timeout=10.0, trust_env=False) as client:
+                await client.post(target["root"] + "/api/generate",
+                                   json={"model": target["model"], "keep_alive": 0})
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("model warmup: release ping failed: %s", exc)
+        _keeper.update({"resident": False, "resident_since": None, "expires_at": "", "backend": None})
+        return
+
+    engine = _resolve_default_engine()
+    if engine is not None:
+        engine_id = engine.get("id")
+        root = f"http://{engine.get('host') or '127.0.0.1'}:{engine.get('port')}"
+        model_label = engine.get("model_path") or engine.get("name") or engine_id or ""
+        try:
+            from src import vram_admission
+            vram_admission.unpin_model(root, model_label)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("model warmup: engine unpin on release failed: %s", exc)
+        # Only stop it if nothing else is actively using it right now —
+        # releasing residency must not yank the engine out from under an
+        # in-flight chat turn that happens to be using the default model.
+        try:
+            from src import engine_swap
+            in_flight = engine_swap.status().get("engines", {}).get(engine_id, {}).get("in_flight", 0)
+        except Exception:  # noqa: BLE001
+            in_flight = 0
+        if not in_flight:
+            try:
+                from src import engines
+                await engines.stop_engine(engine_id)
+                logger.info("model warmup: stopped llama.cpp engine %s (residency turned off)", engine_id)
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("model warmup: engine stop on release failed: %s", exc)
+        _keeper.update({"resident": False, "resident_since": None, "expires_at": "", "backend": None})
+
+
+async def set_residency(enabled: bool) -> Dict[str, Any]:
+    """The switch itself (Settings → Default AI / Local models: "Load the
+    default model at startup and keep it loaded"). Persists
+    `warm_default_model` and takes effect immediately rather than waiting for
+    the next `_loop` tick:
+
+      * ON  — load/start the default right now (one `check_once` cycle,
+        which covers both the Ollama and the llama.cpp branch) and let the
+        loop keep re-asserting it from here on.
+      * OFF — release the pin and ask the serving backend to let go now
+        (`_release_residency`); the loop then simply stops re-pinning it
+        because `cfg["enabled"]` reads False on its next tick.
+    """
+    from src.settings import update_settings
+    update_settings({"warm_default_model": bool(enabled)})
+    if enabled:
+        result = await check_once()
+    else:
+        await _release_residency()
+        result = dict(_keeper)
+    return {"enabled": bool(enabled), **result}
+
+
+def residency_status() -> Dict[str, Any]:
+    """GET status for the residency switch: is the default loaded right now,
+    since when, and by which backend — merged with a human `backend_label`
+    from `src.model_backend` so the UI never has to re-derive it."""
+    cfg = _settings()
+    out: Dict[str, Any] = {
+        "enabled": cfg["enabled"],
+        "loaded": bool(_keeper.get("resident")),
+        "since": _keeper.get("resident_since"),
+        "backend": _keeper.get("backend"),
+        "backend_label": None,
+        "model": None,
+        "last_check": _keeper.get("last_check"),
+    }
+    target = resolve_default()
+    if target:
+        out["model"] = target["model"]
+    else:
+        engine = _resolve_default_engine()
+        if engine is not None:
+            out["model"] = engine.get("model_path") or engine.get("name")
+    if out["backend"]:
+        # Same labels `src.model_backend.serving_backend` uses — looked up
+        # directly rather than through a probe, since the keeper already
+        # knows which backend it is acting on this cycle.
+        out["backend_label"] = {"ollama": "Ollama", "llamacpp": "llama.cpp (llama-server)"}.get(out["backend"])
+    return out

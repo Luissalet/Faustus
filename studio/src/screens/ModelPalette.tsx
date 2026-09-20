@@ -219,9 +219,20 @@ export default function ModelPalette({
                           </span>
                         )}
                         {profile && (
-                          <span className="fs-palette__privacy" data-local={profile.isLocal || undefined} title={costLabel(profile.cost)}>
+                          <span
+                            className="fs-palette__privacy"
+                            data-local={profile.isLocal || undefined}
+                            title={profile.isLocal ? `${costLabel(profile.cost)} · ${profile.backendLabel}` : costLabel(profile.cost)}
+                          >
                             {profile.isLocal ? <Lock size={12} aria-hidden="true" /> : <Cloud size={12} aria-hidden="true" />}
                             {profile.cost === 'paid' && <Coins size={12} aria-hidden="true" />}
+                          </span>
+                        )}
+                        {/* "who serves it" — Ollama vs llama.cpp vs a remote
+                            API, right next to the privacy/cost badge. */}
+                        {profile?.isLocal && profile.backend !== 'unknown' && (
+                          <span className="fs-palette__backend" data-backend={profile.backend}>
+                            {profile.backendLabel}
                           </span>
                         )}
                         {/* CMP-11 (INFORME V2 §3.10): each requested capability gets its

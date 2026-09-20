@@ -57,7 +57,7 @@ import {
 import type { AdmissionAction, VramBlocked } from '../../adapters/vramAdmission';
 import { locale, t, tn } from '../../i18n';
 import { VramAdmissionDialog } from '../VramAdmissionDialog';
-import { Select } from './fields';
+import { DefaultResidencyField, Select } from './fields';
 
 const POLL_MS = 8000;
 
@@ -797,6 +797,7 @@ function EnginesSection({ admin, say, defaultModel }: { admin: boolean; say: (t:
         <Button size="sm" variant="ghost" label={t('Add engine')} onClick={() => setEditing('new')} />
       </header>
       <p className="fs-set__help">{t('Local llama-server instances, started and stopped here — never a script outside the app.')}</p>
+      <DefaultResidencyField testId="default-residency-field-local" />
       <EngineSwapFields say={say} />
       {engines === null ? (
         <Skeleton label={t('Loading')} count={1} height="56px" />

@@ -61,6 +61,7 @@ from urllib.parse import urlparse
 import httpx
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 
 from core.database import SessionLocal, ModelEndpoint
 from core.log_safety import redact_url as _redact_url_for_log
@@ -922,6 +923,12 @@ def discover(q: str, vram: Dict[str, Any], installed: List[str]) -> List[Dict[st
     return out
 
 
+class ResidencyBody(BaseModel):
+    """Body for `POST /api/models/default/residency` — the default-model
+    residency switch (see `setup_local_models_routes`, near the end)."""
+    enabled: bool
+
+
 # ── router ──────────────────────────────────────────────────────────────────
 
 def setup_local_models_routes() -> APIRouter:
@@ -1570,6 +1577,7 @@ def setup_local_models_routes() -> APIRouter:
         leave the machine" everywhere else (COMUN rule 4)."""
         require_user(request)
         from src import privacy_policy
+        from src.model_backend import serving_backend
         owner = effective_user(request) or ""
         is_admin = True
         try:
@@ -1591,10 +1599,38 @@ def setup_local_models_routes() -> APIRouter:
                 cost = ("free_local" if is_local else
                         "paid" if has_key else
                         "unconfigured")  # a cloud endpoint with no key stored — calls will likely fail
-                profiles[ep.id] = {"is_local": is_local, "cost": cost, "has_api_key": has_key}
+                # "who serves it" (task: Default AI / Local models / chat
+                # picker all show the same label) — one helper, cached probe.
+                backend = serving_backend(ep.base_url or "", endpoint_kind=getattr(ep, "endpoint_kind", None))
+                profiles[ep.id] = {
+                    "is_local": is_local, "cost": cost, "has_api_key": has_key,
+                    "backend": backend["backend"], "backend_label": backend["label"],
+                }
             return {"endpoints": profiles}
         finally:
             db.close()
+
+    # ── residency switch: "Load the default model at startup and keep it
+    # loaded" (Settings → Default AI / Local models). src/model_warmup.py
+    # owns the actual keeper for both backends (Ollama residency, llama.cpp
+    # engine start + idle exemption); this route is just its on/off + status
+    # surface, so there is exactly one place that decides what "resident"
+    # means. `ResidencyBody` is module-level (not nested here) — a class
+    # defined inside this function is invisible to Pydantic's own forward-ref
+    # resolution when FastAPI builds the OpenAPI schema, which silently turns
+    # the JSON body into a bogus required query parameter instead of a 422 a
+    # test would catch immediately. ────────────────────────────────────────
+    @caps_router.get("/api/models/default/residency")
+    async def api_default_residency_get(request: Request) -> Dict[str, Any]:
+        require_user(request)
+        from src import model_warmup
+        return model_warmup.residency_status()
+
+    @caps_router.post("/api/models/default/residency")
+    async def api_default_residency_set(body: ResidencyBody, request: Request) -> Dict[str, Any]:
+        require_admin(request)
+        from src import model_warmup
+        return await model_warmup.set_residency(body.enabled)
 
     parent = APIRouter()
     parent.include_router(router)

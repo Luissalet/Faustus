@@ -841,6 +841,17 @@ def _effective_endpoint_kind(ep: Any, base_url: str) -> str:
     return "auto"
 
 
+def _serving_backend(base_url: str, endpoint_kind: str = "auto") -> Dict[str, str]:
+    """Who serves this endpoint — Ollama, llama.cpp (`llama-server`), or a
+    remote API. One shared helper (`src/model_backend.py`); every route that
+    lists model endpoints calls this instead of re-deriving the answer."""
+    try:
+        from src.model_backend import serving_backend
+        return serving_backend(base_url, endpoint_kind=endpoint_kind)
+    except Exception:  # noqa: BLE001
+        return {"backend": "unknown", "label": "Unknown"}
+
+
 def _is_loading_model_response(resp: Any) -> bool:
     if getattr(resp, "status_code", None) != 503:
         return False
@@ -1717,6 +1728,10 @@ def setup_model_routes(model_discovery):
             chat_url = build_chat_url(base)
             kind = _effective_endpoint_kind(ep, base)
             category = _classify_endpoint(base, kind)
+            # "Who serves it" (Ollama / llama.cpp / a remote API), for the
+            # model picker's badges — one helper (src/model_backend.py),
+            # never re-derived per screen.
+            backend = _serving_backend(base, kind)
             model_ids, pinned = _picker_models_for_endpoint(ep, base, kind)
 
             if model_ids:
@@ -1741,6 +1756,8 @@ def setup_model_routes(model_discovery):
                     "category": category,
                     "endpoint_kind": kind,
                     "model_type": ep_model_type,
+                    "backend": backend["backend"],
+                    "backend_label": backend["label"],
                 })
             else:
                 # Endpoint unreachable but still show it greyed out
@@ -1757,6 +1774,8 @@ def setup_model_routes(model_discovery):
                     "category": category,
                     "endpoint_kind": kind,
                     "model_type": ep_model_type,
+                    "backend": backend["backend"],
+                    "backend_label": backend["label"],
                     "offline": True,
                 })
 

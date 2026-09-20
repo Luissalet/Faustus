@@ -346,6 +346,18 @@
   color: var(--fs-success);
 }
 
+/* "who serves it" — Ollama / llama.cpp, next to the privacy badge. Same
+   quiet pill as .fs-palette__fit, a footnote rather than a warning. */
+.fs-palette__backend {
+  flex: none;
+  padding: 1px var(--fs-space-2);
+  border-radius: var(--fs-radius-pill);
+  border: 1px solid var(--fs-border);
+  font-size: var(--fs-label-size);
+  color: var(--fs-text-3);
+  white-space: nowrap;
+}
+
 .fs-palette__caps {
   display: inline-flex;
   flex-wrap: wrap;

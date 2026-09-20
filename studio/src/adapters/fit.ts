@@ -177,10 +177,15 @@ export function fitSummary(fit?: ModelFit): string {
  */
 export type ModelCost = 'free_local' | 'paid' | 'unconfigured';
 
+/** Who actually serves the model: `src/model_backend.py`'s `serving_backend`. */
+export type ServingBackend = 'ollama' | 'llamacpp' | 'remote' | 'unknown';
+
 export interface EndpointProfile {
   isLocal: boolean;
   cost: ModelCost;
   hasApiKey: boolean;
+  backend: ServingBackend;
+  backendLabel: string;
 }
 
 let profileCached: Promise<Record<string, EndpointProfile>> | null = null;
@@ -188,11 +193,14 @@ let profileCached: Promise<Record<string, EndpointProfile>> | null = null;
 export function endpointProfiles(refresh = false): Promise<Record<string, EndpointProfile>> {
   if (refresh) profileCached = null;
   if (!profileCached) {
-    profileCached = getJson<{ endpoints?: Record<string, { is_local?: boolean; cost?: ModelCost; has_api_key?: boolean }> }>('/api/models/endpoint-profile')
+    profileCached = getJson<{ endpoints?: Record<string, { is_local?: boolean; cost?: ModelCost; has_api_key?: boolean; backend?: ServingBackend; backend_label?: string }> }>('/api/models/endpoint-profile')
       .then((raw) => {
         const out: Record<string, EndpointProfile> = {};
         for (const [id, p] of Object.entries(raw.endpoints ?? {})) {
-          out[id] = { isLocal: Boolean(p.is_local), cost: p.cost ?? 'unconfigured', hasApiKey: Boolean(p.has_api_key) };
+          out[id] = {
+            isLocal: Boolean(p.is_local), cost: p.cost ?? 'unconfigured', hasApiKey: Boolean(p.has_api_key),
+            backend: p.backend ?? 'unknown', backendLabel: p.backend_label ?? t('Unknown'),
+          };
         }
         return out;
       })

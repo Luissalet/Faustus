@@ -69,7 +69,8 @@ _TARGET = {"url": "http://127.0.0.1:11434/v1", "model": "qwen3.8:27b", "root": "
 
 def _reset_state():
     mw._keeper.update({"last_check": None, "resident": None, "expires_at": "", "reloads": 0,
-                       "repins": 0, "yielding_to": None, "waiting_for_room": False})
+                       "repins": 0, "yielding_to": None, "waiting_for_room": False,
+                       "backend": None, "resident_since": None})
     mw._yield_logged = False
     mw._fit_wait_logged = False
 
@@ -289,4 +290,180 @@ def test_is_default_matches_run_model_pin_and_vram_admission(monkeypatch):
     assert mw.is_default("http://127.0.0.1:11434", "qwen3.8:27b") is True
     assert mw.is_default("http://127.0.0.1:11434/v1/chat/completions", "qwen3.8:27b:latest") is True
     assert mw.is_default("http://127.0.0.1:11434", "some-other-model") is False
+
+
+# ── the residency switch: on/off, live effect, both backends ───────────────
+
+_ENGINE = {"id": "eng-1", "host": "127.0.0.1", "port": 8082, "model_path": "/models/x.gguf", "name": "X"}
+
+
+def test_set_residency_on_persists_setting_and_loads_now(monkeypatch):
+    saved = []
+    monkeypatch.setattr("src.settings.update_settings", lambda patch: saved.append(patch))
+    monkeypatch.setattr(mw, "resolve_default", lambda: dict(_TARGET))
+    monkeypatch.setattr(mw, "_pin", lambda root, model: None)
+    monkeypatch.setattr(mw, "_api_ps", _fake_ps([{"name": "qwen3.8:27b", "expires_at": "0001-01-01T00:00:00Z"}]))
+
+    out = asyncio.run(mw.set_residency(True))
+    assert saved == [{"warm_default_model": True}]
+    assert out["enabled"] is True
+    assert out["resident"] is True
+
+
+def test_set_residency_off_persists_setting_and_releases_now(monkeypatch):
+    saved = []
+    released = []
+    monkeypatch.setattr("src.settings.update_settings", lambda patch: saved.append(patch))
+    monkeypatch.setattr(mw, "resolve_default", lambda: dict(_TARGET))
+    monkeypatch.setattr("src.vram_admission.unpin_model", lambda root, model: released.append((root, model)))
+
+    class Resp:
+        status_code = 200
+        text = ""
+
+    class Client:
+        def __init__(self, **kw):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def post(self, url, json=None):
+            released.append(("post", url, json))
+            return Resp()
+
+    import httpx
+    monkeypatch.setattr(httpx, "AsyncClient", Client)
+
+    out = asyncio.run(mw.set_residency(False))
+    assert saved == [{"warm_default_model": False}]
+    assert out["enabled"] is False
+    assert out["resident"] is False
+    assert (_TARGET["root"], _TARGET["model"]) in released
+    assert ("post", _TARGET["root"] + "/api/generate", {"model": _TARGET["model"], "keep_alive": 0}) in released
+
+
+def test_residency_status_reports_backend_and_since(monkeypatch):
+    monkeypatch.setattr(mw, "resolve_default", lambda: dict(_TARGET))
+    monkeypatch.setattr(mw, "_settings", lambda: {"enabled": True, "keep_alive": "-1",
+                                                   "every_s": 20.0, "yield_minutes": 10.0})
+    mw._keeper.update({"resident": True, "resident_since": 123.0, "backend": "ollama"})
+    out = mw.residency_status()
+    assert out == {
+        "enabled": True, "loaded": True, "since": 123.0, "backend": "ollama",
+        "backend_label": "Ollama", "model": "qwen3.8:27b", "last_check": None,
+    }
+
+
+# ── llama.cpp residency: check_once() reaches _check_once_llamacpp when the
+# default is not an Ollama endpoint but is a managed engine ────────────────
+
+def test_check_once_starts_llamacpp_engine_when_not_healthy(monkeypatch):
+    monkeypatch.setattr(mw, "resolve_default", lambda: None)
+    monkeypatch.setattr(mw, "_resolve_default_engine", lambda: dict(_ENGINE))
+    monkeypatch.setattr("src.vram_admission.pin_model", lambda root, model: None)
+
+    import src.engine_swap as engine_swap
+    started = []
+
+    async def fake_probe_healthy(engine):
+        return False
+    monkeypatch.setattr(engine_swap, "probe_healthy", fake_probe_healthy)
+    touched = []
+    monkeypatch.setattr(engine_swap, "touch", lambda engine_id: touched.append(engine_id))
+
+    import src.engines as engines
+
+    async def fake_start_engine(engine_id):
+        started.append(engine_id)
+        return {"started": True}
+    monkeypatch.setattr(engines, "start_engine", fake_start_engine)
+
+    out = asyncio.run(mw.check_once())
+    assert started == ["eng-1"]
+    assert touched == ["eng-1"]
+    assert out["resident"] is True
+    assert out["backend"] == "llamacpp"
+    assert out["reloads"] == 1
+
+
+def test_check_once_exempts_healthy_llamacpp_engine_from_idle_reaper(monkeypatch):
+    """While residency is on and the engine is already healthy, each cycle
+    touches it — resetting engine_swap's own idle clock — instead of
+    starting a second copy of it."""
+    monkeypatch.setattr(mw, "resolve_default", lambda: None)
+    monkeypatch.setattr(mw, "_resolve_default_engine", lambda: dict(_ENGINE))
+    monkeypatch.setattr("src.vram_admission.pin_model", lambda root, model: None)
+
+    import src.engine_swap as engine_swap
+
+    async def fake_probe_healthy(engine):
+        return True
+    monkeypatch.setattr(engine_swap, "probe_healthy", fake_probe_healthy)
+    touched = []
+    monkeypatch.setattr(engine_swap, "touch", lambda engine_id: touched.append(engine_id))
+
+    import src.engines as engines
+    started = []
+
+    async def fake_start_engine(engine_id):
+        started.append(engine_id)
+        return {"started": True}
+    monkeypatch.setattr(engines, "start_engine", fake_start_engine)
+
+    out = asyncio.run(mw.check_once())
+    assert started == []  # already healthy: never re-started
+    assert touched == ["eng-1"]
+    assert out["resident"] is True
+    assert out["backend"] == "llamacpp"
+
+
+def test_set_residency_off_stops_idle_llamacpp_engine(monkeypatch):
+    saved = []
+    monkeypatch.setattr("src.settings.update_settings", lambda patch: saved.append(patch))
+    monkeypatch.setattr(mw, "resolve_default", lambda: None)
+    monkeypatch.setattr(mw, "_resolve_default_engine", lambda: dict(_ENGINE))
+    monkeypatch.setattr("src.vram_admission.unpin_model", lambda root, model: None)
+
+    import src.engine_swap as engine_swap
+    monkeypatch.setattr(engine_swap, "status", lambda: {"engines": {"eng-1": {"in_flight": 0}}})
+
+    import src.engines as engines
+    stopped = []
+
+    async def fake_stop_engine(engine_id):
+        stopped.append(engine_id)
+        return {"ok": True}
+    monkeypatch.setattr(engines, "stop_engine", fake_stop_engine)
+
+    out = asyncio.run(mw.set_residency(False))
+    assert saved == [{"warm_default_model": False}]
+    assert stopped == ["eng-1"]
+    assert out["resident"] is False
+
+
+def test_set_residency_off_never_stops_an_in_flight_llamacpp_engine(monkeypatch):
+    """Turning the switch off must not yank the engine from under an
+    in-flight chat turn happening to use the default model right now."""
+    monkeypatch.setattr("src.settings.update_settings", lambda patch: None)
+    monkeypatch.setattr(mw, "resolve_default", lambda: None)
+    monkeypatch.setattr(mw, "_resolve_default_engine", lambda: dict(_ENGINE))
+    monkeypatch.setattr("src.vram_admission.unpin_model", lambda root, model: None)
+
+    import src.engine_swap as engine_swap
+    monkeypatch.setattr(engine_swap, "status", lambda: {"engines": {"eng-1": {"in_flight": 1}}})
+
+    import src.engines as engines
+    stopped = []
+
+    async def fake_stop_engine(engine_id):
+        stopped.append(engine_id)
+        return {"ok": True}
+    monkeypatch.setattr(engines, "stop_engine", fake_stop_engine)
+
+    asyncio.run(mw.set_residency(False))
+    assert stopped == []
     assert mw.is_default("http://10.0.0.5:11434", "qwen3.8:27b") is False

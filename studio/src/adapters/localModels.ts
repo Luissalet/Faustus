@@ -335,6 +335,44 @@ export interface VramFit {
   gpuName?: string;
 }
 
+/**
+ * The default-model residency switch ("Load the default model at startup
+ * and keep it loaded"; src/model_warmup.py, `GET`/`POST
+ * /api/models/default/residency`). Covers both backends the default can
+ * live on — Ollama (kept resident via `keep_alive`) and a managed
+ * llama.cpp engine (started, then exempted from `src.engine_swap`'s idle
+ * reaper) — the caller never needs to know which one it is.
+ */
+export interface DefaultResidency {
+  enabled: boolean;
+  loaded: boolean;
+  since: number | null;
+  backend: 'ollama' | 'llamacpp' | null;
+  backendLabel: string | null;
+  model: string | null;
+}
+
+function residencyFrom(d: Record<string, unknown>): DefaultResidency {
+  return {
+    enabled: Boolean(d.enabled),
+    loaded: Boolean(d.loaded),
+    since: d.since == null ? null : Number(d.since),
+    backend: (d.backend as DefaultResidency['backend']) ?? null,
+    backendLabel: typeof d.backend_label === 'string' ? d.backend_label : null,
+    model: typeof d.model === 'string' ? d.model : null,
+  };
+}
+
+export async function getDefaultResidency(): Promise<DefaultResidency> {
+  return residencyFrom(await call<Record<string, unknown>>('/api/models/default/residency'));
+}
+
+export async function setDefaultResidency(enabled: boolean): Promise<DefaultResidency> {
+  return residencyFrom(await call<Record<string, unknown>>('/api/models/default/residency', {
+    method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ enabled }),
+  }));
+}
+
 export async function vramFit(model: string, targetCtx?: number): Promise<VramFit> {
   const q = new URLSearchParams({ model });
   if (targetCtx) q.set('target_ctx', String(targetCtx));

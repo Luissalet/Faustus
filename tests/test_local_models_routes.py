@@ -822,3 +822,45 @@ def test_discover_counts_the_explicit_default_build_as_installed():
     assert not lm._same_build("qwen3.8:27b", "qwen3.8:27b-q8_0")
     assert not lm._same_build("qwen3.8:27b", "qwen3.5:27b-q4_K_M")
     assert not lm._same_build("qwen3.8", "qwen3.8:27b-q4_K_M")
+
+
+# ── residency switch route: /api/models/default/residency ─────────────────
+
+def test_residency_get_requires_a_signed_in_user(env):
+    client, _fake = env
+    assert client.get("/api/models/default/residency").status_code == 401
+
+
+def test_residency_get_returns_model_warmup_status(env, monkeypatch):
+    client, _fake = env
+    from src import model_warmup
+    monkeypatch.setattr(model_warmup, "residency_status", lambda: {
+        "enabled": True, "loaded": True, "since": 100.0, "backend": "ollama",
+        "backend_label": "Ollama", "model": "qwen3.8:27b", "last_check": 100.0,
+    })
+    r = client.get("/api/models/default/residency", headers=USER)
+    assert r.status_code == 200
+    assert r.json()["backend"] == "ollama"
+
+
+def test_residency_post_is_admin_only(env):
+    client, _fake = env
+    r = client.post("/api/models/default/residency", json={"enabled": False}, headers=USER)
+    assert r.status_code == 403
+
+
+def test_residency_post_toggles_through_model_warmup(env, monkeypatch):
+    client, _fake = env
+    from src import model_warmup
+    calls = []
+
+    async def fake_set_residency(enabled):
+        calls.append(enabled)
+        return {"enabled": enabled, "resident": enabled, "resident_since": None,
+                "expires_at": "", "backend": "ollama" if enabled else None}
+    monkeypatch.setattr(model_warmup, "set_residency", fake_set_residency)
+
+    r = client.post("/api/models/default/residency", json={"enabled": False}, headers=ADMIN)
+    assert r.status_code == 200
+    assert r.json()["enabled"] is False
+    assert calls == [False]

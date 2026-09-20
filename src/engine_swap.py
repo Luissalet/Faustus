@@ -169,6 +169,13 @@ async def _probe_healthy(engine: Dict[str, Any]) -> bool:
     return (await _probe(engine)) == "ok"
 
 
+async def probe_healthy(engine: Dict[str, Any]) -> bool:
+    """Public alias of `_probe_healthy` for callers outside this module
+    (`src.model_warmup`'s llama.cpp residency branch) — one probe helper,
+    not a second copy of it."""
+    return await _probe_healthy(engine)
+
+
 async def _wait_healthy(engine: Dict[str, Any], timeout_s: float) -> bool:
     deadline = time.monotonic() + max(0.0, timeout_s)
     while time.monotonic() < deadline:
