@@ -515,7 +515,7 @@ function useSaver(onSave: (patch: Settings) => Promise<void>, say: (t: string) =
   return { saving, save };
 }
 
-const VOICE_KEYS = ['tts_enabled', 'tts_provider', 'tts_model', 'tts_voice', 'tts_speed', 'tts_command_template', 'stt_enabled', 'stt_provider', 'stt_model', 'stt_language', 'stt_device', 'stt_command_template', 'voice_stop_phrases'];
+const VOICE_KEYS = ['tts_enabled', 'tts_provider', 'tts_model', 'tts_voice', 'tts_speed', 'tts_command_template', 'stt_enabled', 'stt_provider', 'stt_model', 'stt_language', 'stt_device', 'stt_command_template', 'voice_stop_phrases', 'dictation_anywhere_enabled', 'dictation_global_hotkey', 'dictation_paste_method'];
 
 function VoiceSection({ settings, endpoints, onSave, say }: { settings: Settings | null; endpoints: ModelEndpoint[]; onSave: (patch: Settings) => Promise<void>; say: (t: string) => void }) {
   const { draft, set, changed, dirty } = useDraft(settings, VOICE_KEYS);
@@ -587,6 +587,19 @@ function VoiceSection({ settings, endpoints, onSave, say }: { settings: Settings
       <Field label={t('Stop phrases')} htmlFor="voice-stop-phrases" help={t('One per line. Said alone, these silence the current reply instead of being sent. Added to the built-in list (stop, para, cállate…), never replacing it.')}>
         <textarea id="voice-stop-phrases" className="fs-field" rows={3} value={linesValue(draft.voice_stop_phrases)} onChange={(e) => set('voice_stop_phrases', fromLines(e.target.value))} />
       </Field>
+      <Field label={t('Dictate anywhere')} help={t('Windows desktop app only. A global hotkey that transcribes into whatever app has focus — your email, a terminal, another program — not just this composer.')}>
+        <Toggle id="dictate-anywhere-on" checked={bool(draft.dictation_anywhere_enabled)} onChange={(v) => set('dictation_anywhere_enabled', v)} label={t('On')} />
+      </Field>
+      {bool(draft.dictation_anywhere_enabled) && (
+        <div className="fs-set__grid2">
+          <Field label={t('Global hotkey')} htmlFor="dictate-hotkey" help={t('Press once to start recording, press again to transcribe and paste. Restart the desktop app after changing it.')}>
+            <Text id="dictate-hotkey" value={str(draft.dictation_global_hotkey, 'Ctrl+Alt+Space')} onChange={(v) => set('dictation_global_hotkey', v)} placeholder="Ctrl+Alt+Space" />
+          </Field>
+          <Field label={t('Delivery method')} htmlFor="dictate-method" help={t('Clipboard: paste via Ctrl+V, then restore the clipboard. Type: sends keystrokes instead, for apps that block paste.')}>
+            <Select id="dictate-method" value={str(draft.dictation_paste_method, 'clipboard')} onChange={(v) => set('dictation_paste_method', v)} options={[{ value: 'clipboard', label: t('Clipboard (paste)') }, { value: 'type', label: t('Type (keystrokes)') }]} />
+          </Field>
+        </div>
+      )}
       <SaveBar dirty={dirty} saving={saving} onSave={() => void save(changed)} />
     </section>
   );

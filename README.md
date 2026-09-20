@@ -278,6 +278,8 @@ Voice input enters the same conversation and tool-permission flow as typed input
 
 Every transcript — voice input and meeting notes alike — passes through a deterministic cleanup pass (`src/stt_cleanup.py`) before it reaches the conversation or the notes: repeated segments collapse to one, known silence/hallucination phrases (English/Spanish) and bare music markers are dropped, and an in-segment word/phrase loop ("the the the the…") is collapsed, with timestamps kept coherent throughout.
 
+Windows desktop app: a global "dictate anywhere" hotkey (off by default; Settings → Voice) transcribes into whatever app has focus — email, a terminal, another program — not just Studio's own composer. It captures the target window before recording, then delivers the text by simulated paste (clipboard is saved and restored afterward) or direct keystrokes, for apps that block paste (`src/dictation_paste.py`, `routes/dictation_routes.py`).
+
 ## Architecture
 
 | Area | Code |

@@ -1037,6 +1037,10 @@ from routes.stt_routes import setup_stt_routes
 app.include_router(setup_stt_routes(stt_service))
 logger.info("STT service initialized (provider managed via settings)")
 
+# Dictate anywhere (push-to-talk paste into whatever app has focus, Windows-only)
+from routes.dictation_routes import setup_dictation_routes
+app.include_router(setup_dictation_routes(stt_service))
+
 # Meeting notes (record/upload -> chunked transcript -> local-model notes)
 from routes.meetings_routes import setup_meetings_routes
 app.include_router(setup_meetings_routes())

@@ -7,7 +7,7 @@ const {localNavigation,externalNavigation,permissionCheck,permissionRequest}=req
 const execute=promisify(execFile),root=resolve(__dirname,'..');
 const python=join(root,'venv',process.platform==='win32'?'Scripts/python.exe':'bin/python');
 const port=Number(process.env.FAUSTUS_PORT||7000),origin=`http://127.0.0.1:${port}`;
-let mainWindow,tray=null,ownedToken='',quitting=false,startup=null,stopDesktopControl=()=>{};
+let mainWindow,tray=null,ownedToken='',quitting=false,startup=null,stopDesktopControl=()=>{},stopDictation=()=>{};
 // Closing the window parks Faustus in the tray (hidden icons), like the chat
 // desktop apps do; the tray menu's Quit is what really stops it. The smoke
 // test keeps the old close-means-quit path so it can finish on its own.
@@ -99,7 +99,7 @@ function createTray(){
   tray.on('double-click',()=>showMainWindow());
 }
 async function shutdown(){
-  if(quitting)return;quitting=true;stopDesktopControl();
+  if(quitting)return;quitting=true;stopDesktopControl();stopDictation();
   try{await startup;}catch{/* A failed page load must not skip server cleanup. */}
   try{if(ownedToken)await runtime(['stop','--token',ownedToken]);}
   catch(error){console.error('Faustus shutdown:',error.message);}
@@ -113,6 +113,11 @@ else{
   app.on('window-all-closed',()=>void shutdown());
   app.whenReady().then(async()=>{
     stopDesktopControl=require('./desktop-control.cjs').startDesktopControl(require('electron'),root);
+    // Windows-only feature; dictation.cjs itself only ever talks to the
+    // server's /api/dictation/* routes, which 501 cleanly off Windows, so
+    // this is left running everywhere and simply never registers a hotkey
+    // when the settings poll reports it unsupported/disabled.
+    if(process.platform==='win32')stopDictation=require('./dictation.cjs').startDictation(require('electron'),{origin});
     if(!existsSync(python)){dialog.showErrorBox('Faustus','Run Start-Faustus-Desktop.bat to install this checkout first.');app.quit();return;}
     const allowed=new Set();
     session.defaultSession.setPermissionCheckHandler((contents,permission,requestingOrigin)=>{

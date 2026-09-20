@@ -306,6 +306,16 @@ DEFAULT_SETTINGS = {
     # client merges these with its own built-in list; editing this only adds
     # to it, it never removes the built-ins.
     "voice_stop_phrases": ["stop", "para", "cállate", "callate", "silencio", "espera", "shut up", "wait"],
+    # Dictate anywhere (src/dictation_paste.py, routes/dictation_routes.py,
+    # desktop/dictation.cjs): a global push-to-talk hotkey, Windows-only,
+    # that transcribes into whatever app has focus instead of only Studio's
+    # own composer. Off by default — it is a systemwide hotkey + clipboard
+    # takeover, so it stays opt-in even when STT itself is on.
+    "dictation_anywhere_enabled": False,
+    "dictation_global_hotkey": "Ctrl+Alt+Space",
+    # "clipboard" (save/paste/restore via Ctrl+V) or "type" (SendInput
+    # Unicode, for apps that block synthetic paste).
+    "dictation_paste_method": "clipboard",
     "search_provider": "searxng",
     # Default fallback chain — when the primary provider fails or
     # rate-limits, we try DuckDuckGo next. Free, no API key required, so

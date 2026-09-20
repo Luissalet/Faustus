@@ -276,6 +276,8 @@ La voz entra en la misma conversación y el mismo flujo de permisos de herramien
 
 Toda transcripción —tanto la voz de entrada como las notas de reunión— pasa por una limpieza determinista (`src/stt_cleanup.py`) antes de llegar a la conversación o a las notas: los segmentos repetidos se colapsan en uno, las frases conocidas de silencio/alucinación (español/inglés) y los marcadores de música se descartan, y un bucle de palabra o frase dentro de un segmento ("la la la la…") se colapsa, manteniendo coherentes las marcas de tiempo.
 
+App de escritorio de Windows: un atajo global de «dictar en cualquier lugar» (desactivado por defecto; Configuración → Voz) transcribe en la app que tenga el foco —el correo, una terminal, otro programa— no solo en el cuadro de texto de Studio. Captura la ventana objetivo antes de grabar y entrega el texto pegándolo (el portapapeles se guarda y se restaura después) o escribiéndolo directamente, para apps que bloquean el pegado (`src/dictation_paste.py`, `routes/dictation_routes.py`).
+
 ## Arquitectura
 
 | Área | Código |
