@@ -202,3 +202,11 @@ def test_notes_prompt_follows_the_meeting_language():
     assert m._guess_language(es) == "es"
     assert "Spanish" in m._notes_prompt("es")
     assert m._notes_prompt("") == m._NOTES_SYSTEM_PROMPT
+
+
+def test_list_meetings_ignores_the_job_registry(tmp_path, monkeypatch):
+    from src import meetings as m
+    monkeypatch.setattr(m, "MEETINGS_DIR", str(tmp_path))
+    monkeypatch.setattr(m, "JOBS_FILE", str(tmp_path / "jobs.json"))
+    (tmp_path / "jobs.json").write_text('{"abc": {"status": "failed", "owner": ""}}', encoding="utf-8")
+    assert m.list_meetings(owner="") == []

@@ -476,8 +476,10 @@ def list_meetings(*, owner: Optional[str] = None, limit: int = 100) -> List[Dict
     except Exception:
         names = []
     for path in names:
+        if os.path.abspath(str(path)) == os.path.abspath(JOBS_FILE):
+            continue  # the job registry lives in the same folder
         data = _read_sidecar(str(path))
-        if not data:
+        if not data or "id" not in data:
             continue
         if owner is not None and data.get("owner", "") != (owner or ""):
             continue
