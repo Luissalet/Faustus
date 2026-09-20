@@ -247,14 +247,42 @@ _NOTES_SYSTEM_PROMPT = (
 )
 
 
-async def _generate_notes_async(transcript_text: str, *, owner: Optional[str]) -> str:
+_LANGUAGE_NAMES = {"es": "Spanish", "en": "English", "fr": "French", "de": "German",
+                   "it": "Italian", "pt": "Portuguese", "ca": "Catalan"}
+
+
+_STOPWORDS = {
+    "es": {"de", "que", "la", "el", "los", "las", "en", "y", "por", "para", "con", "una"},
+    "en": {"the", "and", "of", "to", "is", "that", "for", "with", "we", "you", "this"},
+}
+
+
+def _guess_language(text: str) -> str:
+    words = re.findall(r"[a-záéíóúñü]+", (text or "").lower())[:2000]
+    if len(words) < 20:
+        return ""
+    scores = {lang: sum(w in sw for w in words) for lang, sw in _STOPWORDS.items()}
+    best = max(scores, key=scores.get)
+    return best if scores[best] >= 5 else ""
+
+
+def _notes_prompt(language: str = "") -> str:
+    name = _LANGUAGE_NAMES.get((language or "").lower()[:2])
+    if not name:
+        return _NOTES_SYSTEM_PROMPT
+    return (_NOTES_SYSTEM_PROMPT + f" The transcript is in {name}: write every "
+            f"sentence and bullet in {name}, keeping only the section headings in English.")
+
+
+async def _generate_notes_async(transcript_text: str, *, owner: Optional[str],
+                                language: str = "") -> str:
     from src.task_endpoint import task_llm_call_async
     from src.text_helpers import strip_think
 
     body = transcript_text[:NOTES_TRANSCRIPT_CHAR_BUDGET]
     out = await task_llm_call_async(
         [
-            {"role": "system", "content": _NOTES_SYSTEM_PROMPT},
+            {"role": "system", "content": _notes_prompt(language)},
             {"role": "user", "content": body},
         ],
         owner=owner,
@@ -263,9 +291,10 @@ async def _generate_notes_async(transcript_text: str, *, owner: Optional[str]) -
     return strip_think(str(out or "")).strip()
 
 
-def _generate_notes_sync(transcript_text: str, *, owner: Optional[str]) -> str:
+def _generate_notes_sync(transcript_text: str, *, owner: Optional[str],
+                         language: str = "") -> str:
     import asyncio
-    return asyncio.run(_generate_notes_async(transcript_text, owner=owner))
+    return asyncio.run(_generate_notes_async(transcript_text, owner=owner, language=language))
 
 
 _FALLBACK_NOTES = (
@@ -353,7 +382,9 @@ def _run_job(job_id: str, src_path: str, job_dir: str, filename: str, title: str
         notes_body = _FALLBACK_NOTES
         model_ok = True
         try:
-            generated = _generate_notes_sync(transcript_text, owner=owner)
+            generated = _generate_notes_sync(
+                transcript_text, owner=owner,
+                language=language or _guess_language(transcript_text))
             if generated:
                 notes_body = generated
             else:

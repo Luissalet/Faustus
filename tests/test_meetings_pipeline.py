@@ -68,7 +68,7 @@ def test_pipeline_chunks_transcribes_cleans_and_saves_markdown(tmp_path, monkeyp
     monkeypatch.setattr(
         meetings,
         "_generate_notes_sync",
-        lambda transcript_text, *, owner: (
+        lambda transcript_text, *, owner, **_kw: (
             "## Summary\n\nThe team agreed to ship the product on Monday.\n\n"
             "## Decisions\n\n- Ship on Monday\n\n"
             "## Action items\n\n- Prepare release notes (owner: Ana, due: Monday)\n\n"
@@ -134,7 +134,7 @@ def test_pipeline_model_failure_saves_transcript_only_with_warning(tmp_path, mon
     monkeypatch.setattr(meetings, "_split_chunks", lambda src, wd, secs: _fake_chunks(str(job_dir), 1))
     monkeypatch.setattr("services.stt.stt_service.get_stt_service", lambda: fake_stt)
 
-    def _boom(transcript_text, *, owner):
+    def _boom(transcript_text, *, owner, **_kw):
         raise RuntimeError("no endpoint reachable")
 
     monkeypatch.setattr(meetings, "_generate_notes_sync", _boom)
@@ -185,7 +185,7 @@ def test_list_meetings_is_owner_scoped(tmp_path, monkeypatch):
     fake_stt = FakeSTT([[{"start": 0.0, "end": 1.0, "text": "Hola equipo."}]])
     monkeypatch.setattr(meetings, "_split_chunks", lambda src, wd, secs: _fake_chunks(str(job_dir), 1))
     monkeypatch.setattr("services.stt.stt_service.get_stt_service", lambda: fake_stt)
-    monkeypatch.setattr(meetings, "_generate_notes_sync", lambda t, *, owner: "## Summary\n\nHi.\n\n## Decisions\n\nNone recorded.\n\n## Action items\n\nNone recorded.\n\n## Open questions\n\nNone recorded.")
+    monkeypatch.setattr(meetings, "_generate_notes_sync", lambda t, *, owner, **_kw: "## Summary\n\nHi.\n\n## Decisions\n\nNone recorded.\n\n## Action items\n\nNone recorded.\n\n## Open questions\n\nNone recorded.")
 
     src_path = job_dir / "source.wav"
     src_path.write_bytes(b"RIFF....WAVEfmt ")
@@ -194,3 +194,11 @@ def test_list_meetings_is_owner_scoped(tmp_path, monkeypatch):
 
     assert len(meetings.list_meetings(owner="alice")) == 1
     assert len(meetings.list_meetings(owner="bob")) == 0
+
+
+def test_notes_prompt_follows_the_meeting_language():
+    from src import meetings as m
+    es = "Buenos días, empezamos la reunión de la versión dos y decidimos que el lanzamiento es el martes para todos los equipos de la empresa con las notas de la versión"
+    assert m._guess_language(es) == "es"
+    assert "Spanish" in m._notes_prompt("es")
+    assert m._notes_prompt("") == m._NOTES_SYSTEM_PROMPT
