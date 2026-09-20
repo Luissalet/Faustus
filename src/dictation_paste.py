@@ -52,7 +52,8 @@ IS_WINDOWS = sys.platform == "win32"
 _CF_TEXT = 1
 _CF_UNICODETEXT = 13
 _CF_LOCALE = 16
-_TEXT_LIKE_FORMATS = frozenset({_CF_TEXT, _CF_UNICODETEXT, _CF_LOCALE})
+_CF_OEMTEXT = 7  # synthesized by Windows alongside Unicode text
+_TEXT_LIKE_FORMATS = frozenset({_CF_TEXT, _CF_OEMTEXT, _CF_UNICODETEXT, _CF_LOCALE})
 
 
 class DictationError(Exception):
