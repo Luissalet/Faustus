@@ -831,6 +831,12 @@ DEFAULT_SETTINGS = {
     # them into reviewable procedures. Off prevents capture/compilation and
     # lifecycle mutations; existing demonstrations remain readable.
     "agent_teach_mode": False,
+    # Project concepts (src/project_concepts.py): automatic injection of a
+    # semantic-search result over the project's own concept graph into
+    # context at the start of a turn. Off by default -- the agent can always
+    # call concepts_understand itself; this only makes it automatic.
+    "agent_project_concepts_inject": False,
+    "agent_project_concepts_inject_k": 4,
     # Immune System (src/immune_system/): health verdicts, incident
     # containment and governed repair promotion. Off prevents new assessments
     # and repairs; recorded health remains readable by diagnostics.

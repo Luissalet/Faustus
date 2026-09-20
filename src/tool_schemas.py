@@ -2668,6 +2668,98 @@ FUNCTION_TOOL_SCHEMAS = [
             }
         }
     },
+    # Project concepts -- the agent's own persistent, per-project graph of
+    # architecture concepts (feature/module/pattern/config/decision/
+    # component) and typed relations between them. See
+    # src/agent_tools/project_concepts_tools.py / src/project_concepts.py.
+    {
+        "type": "function",
+        "function": {
+            "name": "concepts_understand",
+            "description": "Semantic search over this project's own concept graph: returns the concepts closest to `query` plus their one-hop neighbours. Read-only. Call this before exploring an unfamiliar subsystem -- the project may already have a concept for it from a previous session.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "What you're trying to understand, e.g. 'how is web content fetched and cleaned'"},
+                    "k": {"type": "integer", "description": "Max concepts to return (default 6)"}
+                },
+                "required": ["query"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "concept_get",
+            "description": "Full detail of one project concept: summary, details, refs (files/symbols it's grounded in), incoming/outgoing typed edges, and child concepts. Read-only.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string", "description": "Concept id (slug), e.g. 'web-content-fetching'"}
+                },
+                "required": ["id"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "concepts_roots",
+            "description": "Top-level concepts (no parent) recorded for this project, with child counts. Read-only. A good first call when starting a task in an unfamiliar project.",
+            "parameters": {"type": "object", "properties": {}, "required": []}
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "concept_upsert",
+            "description": "Create or update a project concept -- the agent's own record of what a subsystem is, why it exists, and what it depends on. Pass `id` to update an existing concept, omit it to create a new one (a slug is derived from `name`). `refs` should cite the files/symbols this concept is grounded in (e.g. 'src/embeddings.py', 'src/embeddings.py@get_embedding_client') -- these are what later staleness checks ground against. Use this whenever you work out how a subsystem fits together, so the next session doesn't have to re-derive it.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Short concept name, e.g. 'Web content fetching'"},
+                    "kind": {"type": "string", "enum": ["feature", "module", "pattern", "config", "decision", "component"]},
+                    "summary": {"type": "string", "description": "One or two sentences"},
+                    "details": {"type": "string", "description": "Longer explanation (optional)"},
+                    "refs": {"type": "array", "items": {"type": "string"}, "description": "Files/symbols this concept is grounded in, e.g. 'src/embeddings.py@get_embedding_client' (optional)"},
+                    "parent_id": {"type": "string", "description": "Parent concept id, for a containment tree (optional)"},
+                    "id": {"type": "string", "description": "Existing concept id to update (optional -- omit to create a new one)"}
+                },
+                "required": ["name", "kind"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "concept_link",
+            "description": "Attach a typed relation between two existing concepts of this project: `connects_to`, `depends_on`, `implements`, `calls`, or `configured_by`.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "src": {"type": "string", "description": "Source concept id"},
+                    "dst": {"type": "string", "description": "Destination concept id"},
+                    "rel": {"type": "string", "enum": ["connects_to", "depends_on", "implements", "calls", "configured_by"]},
+                    "note": {"type": "string", "description": "Free-text note on the relation (optional)"}
+                },
+                "required": ["src", "dst", "rel"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "concept_remove",
+            "description": "Soft-delete a project concept (and its edges) -- it stops appearing in concepts_understand/concepts_roots, but its history is kept. Use when a concept describes something removed from the project, or was simply wrong.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string", "description": "Concept id to remove"}
+                },
+                "required": ["id"]
+            }
+        }
+    },
     {
         "type": "function",
         "function": {

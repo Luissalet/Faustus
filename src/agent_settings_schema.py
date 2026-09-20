@@ -893,6 +893,22 @@ GROUPS: list[dict[str, Any]] = [
         ],
     ),
     _group(
+        "project_concepts", "Project concepts",
+        "The agent's own persistent, per-project graph of architecture concepts — queried "
+        "semantically before a task so understanding survives across sessions instead of being "
+        "re-derived every time.",
+        [
+            _bool("agent_project_concepts_inject", "Inject concepts into context",
+                  "At the start of an agent turn in a bound project/workspace, run a semantic "
+                  "search over this project's concept graph for the user's message and add a "
+                  "short 'Project concepts' block to context. Off by default: the agent can "
+                  "always call concepts_understand itself; this only adds it automatically."),
+            _int("agent_project_concepts_inject_k", "Concepts to inject",
+                 "How many concepts the automatic injection adds to context, when enabled.",
+                 1, 10, step=1),
+        ],
+    ),
+    _group(
         "immune_system", "Immune System",
         "Track whether skills, tools, workflows and connectors are healthy; deduplicate failures, "
         "quarantine unsafe capabilities and gate repair promotion on proof and canary evidence.",

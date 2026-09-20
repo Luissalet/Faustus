@@ -70,6 +70,7 @@ import {
   type SelectionControls,
 } from '../adapters/context';
 import { locale, t, tn } from '../i18n';
+import { ConceptsPanel } from './context/ConceptsPanel';
 import './projects.css';
 import './home.css';
 import './context.css';
@@ -102,6 +103,7 @@ const TABS = [
   { id: 'blocks', label: 'Blocks' },
   { id: 'knowledge', label: 'Knowledge' },
   { id: 'code', label: 'Code index' },
+  { id: 'concepts', label: 'Concepts' },
 ] as const;
 
 type TabId = (typeof TABS)[number]['id'];
@@ -2020,6 +2022,7 @@ export function ContextScreen() {
       {tab === 'code' && (
         <CodeIndex projectId={projectId} workspace={workspace} onWorkspace={(value) => put('ws', value)} />
       )}
+      {tab === 'concepts' && <ConceptsPanel projectId={projectId} workspace={workspace} />}
     </div>
   );
 }

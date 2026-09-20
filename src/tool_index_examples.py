@@ -873,6 +873,32 @@ EXAMPLES: Dict[str, List[str]] = {
         "marca que este commit implementa ese requisito",
     ],
 
+    # ── Project concepts (agent-authored architecture graph) ──────────────
+    "concepts_understand": [
+        "how is web content fetched and cleaned in this project",
+        "qué sabemos ya sobre cómo funciona la autenticación aquí",
+    ],
+    "concept_get": [
+        "tell me everything about the embeddings concept",
+        "qué depende del concepto de fetch de contenido web",
+    ],
+    "concepts_roots": [
+        "what are this project's main architecture concepts",
+        "dame un resumen de los conceptos principales del proyecto",
+    ],
+    "concept_upsert": [
+        "remember that this module is how we fetch and clean web pages",
+        "apunta este concepto: el sistema de embeddings usa fastembed en local",
+    ],
+    "concept_link": [
+        "note that the web-fetch feature depends on the embeddings module",
+        "vincula estos dos conceptos: uno implementa al otro",
+    ],
+    "concept_remove": [
+        "that concept about the old caching layer is no longer accurate, remove it",
+        "borra ese concepto, ya no describe nada real",
+    ],
+
     # ── Isolated, comparable alternatives (CMP-13, W2-G) ───────────────────
     "alt_start": [
         "prueba esto de dos formas distintas y compáralas",

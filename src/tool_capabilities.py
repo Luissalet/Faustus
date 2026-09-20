@@ -546,6 +546,19 @@ _register(
     {"req_propose", "req_link"},
     ToolEffect.WRITE_PRIVATE,
 )
+# Project concepts (src/agent_tools/project_concepts_tools.py) -- the agent's
+# own per-project architecture graph, stored in its own SQLite under
+# DATA_DIR, same bucket as the board/requirements tools directly above:
+# understand/get/roots only ever read that private store, upsert/link/remove
+# write it (and, for upsert, run a local embedding pass -- no network call).
+_register(
+    {"concepts_understand", "concept_get", "concepts_roots"},
+    ToolEffect.READ_PRIVATE,
+)
+_register(
+    {"concept_upsert", "concept_link", "concept_remove"},
+    ToolEffect.WRITE_PRIVATE,
+)
 # Isolated, comparable alternatives (CMP-13, W2-G, src/agent_tools/
 # alternatives_tools.py). `alt_compare` only reads a diff against the base
 # (same class as git_diff) -- READ_WORKSPACE, workspace-sourced content.

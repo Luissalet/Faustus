@@ -6248,6 +6248,35 @@ async def _stream_agent_loop_body(
                 messages,
                 untrusted_context_message("repository map", _repo_map_text, arm_tool_gate=False),
             )
+    # Project concepts (src/project_concepts.py): the agent's own persistent,
+    # per-project graph of architecture concepts. Off by default
+    # (agent_project_concepts_inject) -- the agent can always call
+    # concepts_understand itself; this only makes it automatic, running a
+    # semantic search over the user's message and adding the closest
+    # concepts as reference data, the same spot repo_map uses.
+    if workspace and not guide_only and get_setting("agent_project_concepts_inject", False):
+        try:
+            from src import project_concepts as _pc
+            _pc_key = _pc.resolve_project_key(workspace=workspace)
+            _pc_store = _pc.Store(_pc_key)
+            _pc_k = int(get_setting("agent_project_concepts_inject_k", 4) or 4)
+            _pc_result = _pc_store.understand(_last_user or "", k=_pc_k)
+            _pc_concepts = _pc_result.get("concepts") or []
+        except Exception:
+            logger.debug("[project-concepts] injection failed", exc_info=True)
+            _pc_concepts = []
+        if _pc_concepts:
+            _pc_lines = [
+                f"- {c['name']} [{c['kind']}]: {c['summary']}"
+                for c in _pc_concepts if c.get("summary") or c.get("name")
+            ]
+            if _pc_lines:
+                messages = _insert_before_latest_user(
+                    messages,
+                    untrusted_context_message(
+                        "project concepts", "\n".join(_pc_lines), arm_tool_gate=False,
+                    ),
+                )
     # @file mentions (src/file_mentions.py): the paths the user picked in the
     # composer, resolved against the workspace index and injected right before
     # their message — closest to the request, after the repo map, because these

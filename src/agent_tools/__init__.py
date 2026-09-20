@@ -56,6 +56,10 @@ from .requirement_tools import (
     ReqListTool, ReqGetTool, ReqMatrixTool,
     ReqProposeTool, ReqLinkTool,
 )
+from .project_concepts_tools import (
+    ConceptsUnderstandTool, ConceptGetTool, ConceptsRootsTool,
+    ConceptUpsertTool, ConceptLinkTool, ConceptRemoveTool,
+)
 from .alternatives_tools import (
     AltStartTool, AltCompareTool, AltApplyTool,
 )
@@ -163,6 +167,14 @@ TOOL_HANDLERS = {
     "req_matrix": ReqMatrixTool().execute,
     "req_propose": ReqProposeTool().execute,
     "req_link": ReqLinkTool().execute,
+    # Project concepts: the agent's own persistent, per-project architecture
+    # graph. See src/agent_tools/project_concepts_tools.py.
+    "concepts_understand": ConceptsUnderstandTool().execute,
+    "concept_get": ConceptGetTool().execute,
+    "concepts_roots": ConceptsRootsTool().execute,
+    "concept_upsert": ConceptUpsertTool().execute,
+    "concept_link": ConceptLinkTool().execute,
+    "concept_remove": ConceptRemoveTool().execute,
     # Isolated, comparable alternatives (CMP-13, W2-G): thin executors over
     # src.alternatives. See src/agent_tools/alternatives_tools.py.
     "alt_start": AltStartTool().execute,
@@ -324,6 +336,9 @@ TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_fi
              # src/agent_tools/requirement_tools.py.
              "req_list", "req_get", "req_matrix",
              "req_propose", "req_link",
+             # Project concepts -- src/agent_tools/project_concepts_tools.py.
+             "concepts_understand", "concept_get", "concepts_roots",
+             "concept_upsert", "concept_link", "concept_remove",
              # Isolated, comparable alternatives (CMP-13, W2-G) --
              # src/agent_tools/alternatives_tools.py.
              "alt_start", "alt_compare", "alt_apply",

@@ -251,6 +251,15 @@ BUILTIN_TOOL_DESCRIPTIONS: Dict[str, str] = {
     "req_matrix": "Coverage matrix for one requirement or the whole project: linked/implemented/tested/verified/stale, each an independent fact. Use for 'is REQ-4 implemented', 'what's still not covered', 'está eso probado y verificado'. Read-only.",
     "req_propose": "File a new requirement as a MODEL PROPOSAL (always status: proposed — only a human accepts it). Returns its key; always cite it back. Use when the user states a new requirement or acceptance criterion, or you infer one that should be tracked — 'apunta esto como requisito', 'this should be a requirement'.",
     "req_link": "Attach evidence to a requirement — a file that implements it, a test that exercises it, a run/test result that verifies it, or a board issue. A workspace-escaping file target is refused. Use for 'link this file to REQ-3', 'this test covers that requirement', 'mark that this commit implements REQ-5'.",
+    # Project concepts — the agent's own persistent, per-project graph of
+    # architecture concepts, queried semantically so understanding survives
+    # across sessions instead of being re-derived every time.
+    "concepts_understand": "Semantic search over this project's own concept graph: returns the closest concepts to a query plus their one-hop neighbours. Use for 'how is X handled in this project', 'what do we already know about this subsystem', before exploring an unfamiliar area of the codebase. Read-only.",
+    "concept_get": "Full detail of one project concept: summary, details, refs, incoming/outgoing edges, children. Use for 'tell me about the <X> concept', 'what does this concept depend on'. Read-only.",
+    "concepts_roots": "Top-level concepts recorded for this project, with child counts. Use as a first orientation call — 'what are this project's main concepts', 'give me the lay of the land'. Read-only.",
+    "concept_upsert": "Record or update a project concept — a feature/module/pattern/config/decision/component the agent just understood, with a summary and file/symbol refs it's grounded in. Use whenever you work out what a subsystem is or why it exists, so the next session doesn't have to re-derive it — 'remember that this is how auth works here'.",
+    "concept_link": "Attach a typed relation (connects_to/depends_on/implements/calls/configured_by) between two existing project concepts. Use for 'this feature depends on that module', 'note that X implements Y'.",
+    "concept_remove": "Soft-delete a project concept that described something removed or was simply wrong; its history is kept. Use for 'that concept is no longer accurate, remove it'.",
     # CMP-13 (W2-G) — isolated, comparable alternatives: try more than one
     # approach to the same task without one overwriting the other or the
     # user's own edits, then compare and apply the one that worked.

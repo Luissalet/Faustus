@@ -53,7 +53,7 @@ _LABEL_RULES: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
     ("integrations", ("integration",)),
     ("skills", ("skill",)),
     ("memory", ("memor",)),
-    ("instructions", ("instruction", "agents.md", "repository map", "repo map")),
+    ("instructions", ("instruction", "agents.md", "repository map", "repo map", "project concepts")),
     ("attachments", ("attachment", "image", "upload", "screenshot")),
     ("web", ("web", "search", "page", "url", "youtube", "research", "http")),
     ("documents", ("document", "rag", "file", "note", "editor", "personal",

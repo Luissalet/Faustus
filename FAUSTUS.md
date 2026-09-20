@@ -6422,3 +6422,86 @@ print("tardó:", time.monotonic() - started, "segundos — debe ser ~0.05s, no e
 También, a través de la app: en Settings → Voz, elegir proveedor «Local (Piper)», pulsar «Download» sobre `es_ES-davefx-medium`, confirmar que pasa de la lista «no instaladas» a la lista con selector, y probar una síntesis real desde el chat/Jarvis con voz en español.
 
 **Ficheros.** `src/media_tts_worker.py` (nuevo), `services/tts/piper_voice.py`, `requirements-optional.txt`, `tests/test_tts_worker.py` (nuevo), `FAUSTUS.md`, `README.md`, `README.es.md`, `PENDIENTES.md`.
+
+## 154. Conceptos de proyecto: un grafo de arquitectura persistente que escribe el propio agente (20-09-2026)
+
+Faustus ya indexaba código mecánicamente (`src/code_graph/`, `src/context_engine/code_index.py`) y seguía requisitos/decisiones (`src/requirements/`, `src/project_board.py`), unidos para un fichero o requisito por `src/knowledge_neighborhood.py`. Lo que faltaba era una capa de **conceptos de arquitectura escritos por el propio agente** — qué es cada subsistema, por qué existe, de qué depende — consultable semánticamente al empezar una tarea y persistente entre sesiones, sin AST ni análisis estático: el modelo es el indexador.
+
+**Almacenamiento.** `src/project_concepts.py`: SQLite propio por proyecto bajo `DATA_DIR/project_concepts/<project_key>.db` (modo WAL, mismo patrón autocontenido que `project_board.py`/`requirements/store.py`). Tres tablas: `concepts` (id-slug, name, kind en `feature|module|pattern|config|decision|component`, summary, details, refs JSON de rutas/símbolos, parent_id, timestamps, `removed_at` de borrado blando, embedding BLOB), `edges` (relación tipada `connects_to|depends_on|implements|calls|configured_by` entre dos conceptos) e `history` (registro append-only de cada create/update/remove/link/unlink con el before/after). `project_key` prefiere el `project_id` real (`proj-<id>`) y cae a un hash del workspace normalizado (`ws-<hash>`, mismo formato que `src.project_audit.workspace_key`) cuando el chat no tiene proyecto — así un workspace suelto tampoco pierde lo que el agente aprendió.
+
+**API del store.** `upsert_concept` (crea o actualiza, regenerando el embedding), `get_concept` (con aristas entrantes/salientes e hijos), `link`/`unlink`, `remove_concept` (borrado blando), `list_roots`, `understand(query, k)` — coseno a fuerza bruta sobre `src.embeddings.get_embedding_client()` (el mismo cliente que RAG y memoria: endpoint HTTP si está configurado, si no fastembed local — funciona sin red) que devuelve los conceptos más cercanos más sus vecinos a un salto, `stale_check(concept, workspace)` — agrupa la misma disciplina que `src.doc_claims` usa para sus claims: una ruta que ya no existe, o un `path@symbol` cuyo símbolo ya no está definido, marca el ref (y el concepto) obsoleto — e `history(concept_id)`.
+
+**Herramientas del agente.** `concepts_understand`, `concept_get`, `concepts_roots` (lectura), `concept_upsert`, `concept_link`, `concept_remove` (escritura) — registradas en las cinco piezas que la paridad exige (`src/tool_schemas.py`, `src/agent_tools/__init__.py` TOOL_HANDLERS/TOOL_TAGS, `src/tool_capabilities.py` con READ_PRIVATE/WRITE_PRIVATE, `src/tool_index.py` BUILTIN_TOOL_DESCRIPTIONS, `src/tool_index_examples.py` con ≥2 ejemplos cada una) en `src/agent_tools/project_concepts_tools.py`, mismo patrón que `requirement_tools.py`: el proyecto se resuelve de `ctx["project_id"]`/`ctx["workspace"]`, nunca de texto del modelo. Quedan expuestas al exterior por la misma vía que el resto de rutas de Faustus: como API REST propia, alcanzable desde el puente MCP genérico (`bridges/rest_mcp/`) apuntándolo a Faustus mismo.
+
+**Inyección opcional de contexto.** Ajuste `agent_project_concepts_inject` (por defecto `False`) + `agent_project_concepts_inject_k` (por defecto 4): al empezar un turno en un workspace, `src/agent_loop.py` corre `understand(mensaje_del_usuario)` y añade un bloque «project concepts» al contexto justo después del mapa de repositorio, con `untrusted_context_message` (mismo tratamiento que el repo map), visible en el ledger de contexto bajo la etiqueta `instructions` (`src/context_ledger.py`). Apagado por defecto: el agente siempre puede llamar `concepts_understand` él mismo; esto solo lo automatiza.
+
+**Rutas + UI.** `routes/project_concepts_routes.py` (`GET/POST /api/project-concepts`, `/graph`, `/understand`, `/{id}`, `/{id}/history`, `/{id}/stale`, `POST /link`, `DELETE /{id}`), `require_admin` como las rutas vecinas de doc-claims/code-graph, workspace resuelto con el mismo guard (`src.code_graph.query._root`). Pestaña **Concepts** en Studio → Context (`studio/src/screens/context/ConceptsPanel.tsx` + `studio/src/adapters/projectConcepts.ts`): grafo dirigido por fuerzas dibujado a mano en `<canvas>` (sin librería nueva — simulación de repulsión/muelle/centrado con `requestAnimationFrame`), nodos coloreados por `kind` y dimensionados por grado, clic abre panel lateral con resumen, refs (tachando las que `stale_check` marca rotas), relaciones, hijos e historial, y una caja de búsqueda que llama a `understand`.
+
+**Verificado.** `tests/test_project_concepts.py` (33 pruebas): CRUD + borrado blando + historial con before/after, aristas visibles desde ambos extremos y removidas al borrar un concepto, ranking de `understand` con un embebedor determinista de mentira y, cuando fastembed está instalado, el mismo ranking contra el modelo local real (offline, sin red), detección de obsolescencia (ruta ausente, símbolo ausente, ruta que se escapa del workspace, sin workspace = no comprobado), aislamiento entre dos proyectos, paridad de registro de herramientas (handlers/schemas/capabilities/índice+ejemplos), alcance de las rutas HTTP (roundtrip crear→leer→enlazar→grafo, dos workspaces nunca comparten conceptos, 404 explícito), y que el ajuste de inyección apagado nunca llama al store. `pytest tests/test_project_concepts.py tests/test_tool_registry.py tests/test_tool_index_schema_parity.py tests/test_agent_settings_schema.py` — 85 pasan. `tsc --noEmit` limpio. `guard.sh` sobre los mismos ficheros: sin fallos nuevos frente a la base (2 fallos preexistentes en ambas cajas, ajenos a este cambio).
+
+**Verificado también contra el servidor real, no solo `TestClient`.** Esta caja de arena sí tenía red y `npx`, así que además de las pruebas de arriba se arrancó `uvicorn app:app` de verdad (datos en un `DATA_DIR` temporal), se creó la cuenta admin con `POST /api/auth/setup` y se inició sesión con `POST /api/auth/login`; `GET /openapi.json` autenticado listó los 7 endpoints de `/api/project-concepts` (confirmando que el puente MCP genérico, `bridges/rest_mcp/`, los descubriría igual apuntado a Faustus), y un roundtrip real por HTTP (`POST /api/project-concepts` crea "Web fetch" con `refs: ["src/real.py"]` sobre un workspace temporal real → `GET .../understand?q=...` lo devuelve con `score 0.6089` vía fastembed local real (no simulado) → `GET .../stale` confirma `stale: false` → `GET .../graph` lo lista → `DELETE` lo borra) pasó de punta a punta antes de limpiar los datos temporales.
+
+**No verificable sin la máquina en vivo.** Solo la pestaña Concepts *en el navegador* no corrió aquí (sin sesión de escritorio para Studio). Para repetirlo en Windows (venv `D:\LocalAI\faustus\venv`, datos `D:\LocalAI\faustus-dev-data`):
+```python
+import os
+os.environ.setdefault("ODYSSEUS_DATA_DIR", r"D:\LocalAI\faustus-dev-data")
+from src import project_concepts as pc
+
+WORKSPACE = r"D:\LocalAI\faustus"
+store = pc.Store(pc.resolve_project_key(workspace=WORKSPACE))
+
+concepts = [
+    dict(name="Web content fetching", kind="feature",
+         summary="Fetches a URL and strips it down to clean readable text for the agent.",
+         refs=["src/web_tools.py"]),
+    dict(name="Embeddings", kind="module",
+         summary="Local/HTTP embedding client used by RAG, memory and project concepts.",
+         refs=["src/embeddings.py@get_embedding_client"]),
+    dict(name="Project concepts", kind="feature",
+         summary="Agent-authored, per-project graph of architecture concepts.",
+         refs=["src/project_concepts.py"]),
+    dict(name="Agent tool registry", kind="pattern",
+         summary="Every agent tool is registered in five places kept in parity by tests.",
+         refs=["src/tool_schemas.py"]),
+    dict(name="Context ledger", kind="module",
+         summary="Per-turn token accounting of what actually went into the prompt.",
+         refs=["src/context_ledger.py"]),
+    dict(name="Doc claims grounding", kind="pattern",
+         summary="Grounds a doc's backticked paths/symbols against the real workspace to catch drift.",
+         refs=["src/doc_claims.py"]),
+]
+ids = {}
+for c in concepts:
+    row = store.upsert_concept(**c)
+    ids[c["name"]] = row["id"]
+    print("upserted:", row["id"])
+
+store.link(ids["Project concepts"], ids["Embeddings"], "depends_on", "understand() ranks with cosine over embeddings")
+store.link(ids["Web content fetching"], ids["Embeddings"], "depends_on", "search ranking")
+store.link(ids["Agent tool registry"], ids["Project concepts"], "connects_to", "concepts_* tools registered here")
+print("roots:", [r["name"] for r in store.list_roots()])
+```
+En un proceso nuevo (confirma que sobrevive entre sesiones):
+```python
+import os
+os.environ.setdefault("ODYSSEUS_DATA_DIR", r"D:\LocalAI\faustus-dev-data")
+from src import project_concepts as pc
+
+store = pc.Store(pc.resolve_project_key(workspace=r"D:\LocalAI\faustus"))
+result = store.understand("how is web content fetched and cleaned")
+for c in result["concepts"]:
+    print(round(c["score"], 3), c["name"], "-", c["summary"])
+print("neighbors:", [n["name"] for n in result["neighbors"]])
+
+# Marcar un ref roto a propósito y comprobar la obsolescencia.
+target = next(x for x in store.all_concepts() if x["name"] == "Web content fetching")
+store.upsert_concept(concept_id=target["id"], name=target["name"], kind=target["kind"],
+                      summary=target["summary"], refs=["src/does_not_exist_123.py"])
+print("stale:", store.stale_check(store.get_concept(target["id"]), r"D:\LocalAI\faustus"))
+
+# Limpieza.
+os.remove(pc.db_path(pc.resolve_project_key(workspace=r"D:\LocalAI\faustus")))
+```
+También, a través de la app: iniciar sesión como `admin`, abrir Context → Concepts sobre el workspace `D:\LocalAI\faustus`, confirmar que el grafo dibuja los 6 conceptos y las 3 aristas, que la búsqueda «how is web content fetched» devuelve «Web content fetching» primero, y que el panel lateral marca la referencia rota tras el paso anterior.
+
+**Ficheros.** `src/project_concepts.py` (nuevo), `src/agent_tools/project_concepts_tools.py` (nuevo), `src/agent_tools/__init__.py`, `src/tool_schemas.py`, `src/tool_capabilities.py`, `src/tool_index.py`, `src/tool_index_examples.py`, `src/agent_settings_schema.py`, `src/settings.py`, `src/agent_loop.py`, `src/context_ledger.py`, `routes/project_concepts_routes.py` (nuevo), `app.py`, `studio/src/adapters/projectConcepts.ts` (nuevo), `studio/src/screens/context/ConceptsPanel.tsx` (nuevo), `studio/src/screens/Context.tsx`, `studio/src/screens/context.css`, `docs/ui/i18n/es.tsv`, `studio/src/i18n/es.ts`, `tests/test_project_concepts.py` (nuevo), `FAUSTUS.md`, `README.md`, `README.es.md`.
