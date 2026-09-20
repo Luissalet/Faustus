@@ -414,6 +414,28 @@ async def group_files_with_model(
     return groups
 
 
+def split_groups_by_budget(groups: Sequence[Sequence[str]], sizes: Mapping[str, int],
+                           budget: int) -> List[List[str]]:
+    """Split each thematic group into consecutive sub-groups whose diffs fit
+    `budget` together, so grouping never just moves the truncation inside a
+    group. A single file larger than the budget stays alone (and is the only
+    thing truncated). Order is preserved."""
+    out: List[List[str]] = []
+    for group in groups:
+        current: List[str] = []
+        used = 0
+        for f in group:
+            size = int(sizes.get(f, 0) or 0)
+            if current and used + size + 1 > budget:
+                out.append(current)
+                current, used = [], 0
+            current.append(f)
+            used += size + 1
+        if current:
+            out.append(current)
+    return out
+
+
 async def group_files(
     files: Sequence[str], *, endpoint_url: str, model: str, headers: Optional[Dict] = None,
     timeout_s: float = 60.0, workload: str = "foreground", with_model: bool = False,
@@ -793,14 +815,15 @@ async def review_turn(
     if not groups:
         groups = group_files_deterministic(files) or [files]
 
-    reviewed_groups = groups[:max_groups]
-    not_reviewed = [f for g in groups[max_groups:] for f in g]
-
     try:
         pf = per_file_diffs(workspace, files, checkpoint_sha, per_file_max_chars=MAX_DIFF_CHARS)
     except Exception as e:
         logger.debug("[review] per_file_diffs failed: %s", e)
         pf = {}
+
+    groups = split_groups_by_budget(groups, {f: len(d) for f, d in pf.items()}, MAX_DIFF_CHARS)
+    reviewed_groups = groups[:max_groups]
+    not_reviewed = [f for g in groups[max_groups:] for f in g]
 
     all_findings: List[Dict[str, Any]] = []
     group_file_lists: List[List[str]] = []

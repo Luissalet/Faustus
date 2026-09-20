@@ -302,8 +302,9 @@ def test_review_turn_uses_model_grouping_when_enabled_with_fallback(ws, data_dir
 
 
 def test_review_turn_group_budget_is_respected_per_group(ws, data_dir, monkeypatch, settings):
-    """A single group whose combined diff exceeds MAX_DIFF_CHARS is
-    truncated for that call, and the files past the cut are recorded."""
+    """A thematic group whose combined diff exceeds MAX_DIFF_CHARS is split
+    so each call fits; only a single file bigger than the budget is
+    truncated, and it is recorded."""
     from src import auto_review as ar
     import src.llm_core as lc
 
@@ -330,8 +331,8 @@ def test_review_turn_group_budget_is_respected_per_group(ws, data_dir, monkeypat
         workspace=str(ws), changed=files, checkpoint_sha="abc", user_text="x",
         endpoint_url="http://127.0.0.1:11434/v1", model="m",
     ))
-    assert res["groups"] == 1
-    assert res["truncated_files"] == ["a.py", "b.py"]
+    assert res["groups"] == 2
+    assert res["truncated_files"] == ["a.py"]
     assert res["group_chars"][0] <= ar.MAX_DIFF_CHARS + 60  # + the truncation marker
 
 
@@ -350,3 +351,11 @@ def test_per_file_diffs_from_a_real_checkpoint(ws, data_dir):
     assert "src/calc.py" in out and "+    return a + b" in out["src/calc.py"]
     assert "src/new.py" in out and "X = 1" in out["src/new.py"]
     assert "README.md" not in out
+
+
+def test_split_groups_by_budget_keeps_order_and_fits():
+    from src.auto_review import split_groups_by_budget
+    groups = [["a", "b", "c", "d"], ["e"]]
+    sizes = {"a": 10000, "b": 10000, "c": 10000, "d": 30000, "e": 5}
+    out = split_groups_by_budget(groups, sizes, 24000)
+    assert out == [["a", "b"], ["c"], ["d"], ["e"]]
