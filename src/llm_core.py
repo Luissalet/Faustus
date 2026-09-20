@@ -802,6 +802,48 @@ class _DegenerateStreamGuard:
         if reason:
             raise DegenerateOutput(reason, self.model)
 
+    def check_reasoning(self, text: str) -> None:
+        """`check` plus a paragraph-loop detector for the reasoning channel.
+
+        20-09-2026, qwen3.8 27B q4 on a batch task: the thinking restated the
+        same five paragraphs verbatim four or five times until the reasoning
+        budget cut it (~250 s of GPU for nothing). Each cycle is hundreds of
+        tokens long, far beyond the 96-token window above, so none of the
+        token/phrase rules could see it. A long sentence (>= 60 chars) that
+        comes back word for word a third time is a wedged plan, not thought.
+        Reasoning only: content can legitimately repeat long lines (tables,
+        code, JSON rows)."""
+        self.check(text)
+        if not text:
+            return
+        buf = getattr(self, "_sentence_buf", "") + text
+        parts = _REASONING_SENTENCE_SPLIT_RE.split(buf)
+        self._sentence_buf = parts.pop() if parts else ""
+        if len(self._sentence_buf) > 4000:
+            self._sentence_buf = self._sentence_buf[-4000:]
+        counts = getattr(self, "_sentence_counts", None)
+        if counts is None:
+            counts = self._sentence_counts = {}
+        for sentence in parts:
+            norm = " ".join(sentence.lower().split())
+            if len(norm) < _REASONING_LOOP_MIN_CHARS:
+                continue
+            counts[norm] = counts.get(norm, 0) + 1
+            if counts[norm] >= _REASONING_LOOP_REPEATS:
+                raise DegenerateOutput(
+                    f"reasoning loop: the same sentence came back {counts[norm]} times "
+                    f"('{norm[:60]}…')",
+                    self.model,
+                )
+        if len(counts) > 4000:
+            for key in list(counts)[:2000]:
+                counts.pop(key, None)
+
+
+_REASONING_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+|\n+")
+_REASONING_LOOP_MIN_CHARS = 60
+_REASONING_LOOP_REPEATS = 3
+
 
 def _model_activity_key(url: str, model: str) -> str:
     return f"{(url or '').strip()}|{(model or '').strip()}"
@@ -4852,7 +4894,7 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                     thinking = message.get("thinking") or ""
                     if thinking:
                         try:
-                            degenerate_guard.check(thinking)
+                            degenerate_guard.check_reasoning(thinking)
                         except DegenerateOutput as _degenerate:
                             yield _degenerate_output_error_chunk(_degenerate)
                             return
@@ -5609,7 +5651,7 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                                             content = text_part
                                         if reasoning:
                                             try:
-                                                degenerate_guard.check(reasoning)
+                                                degenerate_guard.check_reasoning(reasoning)
                                             except DegenerateOutput as _degenerate:
                                                 yield _degenerate_output_error_chunk(_degenerate)
                                                 return

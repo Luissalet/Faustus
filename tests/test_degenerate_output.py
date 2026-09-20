@@ -505,3 +505,48 @@ def test_recovery_ladder_step2_caps_output_tokens(monkeypatch, tmp_path):
     asyncio.run(_run())
     assert seen_max_tokens
     assert all(mt <= al._RECOVERY_STEP2_MAX_TOKENS for mt in seen_max_tokens)
+
+
+
+# --- reasoning paragraph loops (20-09-2026) --------------------------------
+
+_LOOP_PARAGRAPH = (
+    "Now I'm working through the naming logic: if there's a single Pokemon, use its name. "
+    "For tags, I'll start with each identifier in lowercase, then add the group or line tag. "
+    "I'm planning to process the remaining folders in batches of about 10 at a time.\n\n"
+)
+
+
+def _feed_in_chunks(fn, text, size=7):
+    for i in range(0, len(text), size):
+        fn(text[i:i + size])
+
+
+def test_reasoning_paragraph_loop_is_caught_across_small_chunks():
+    import pytest
+    from src.llm_core import DegenerateOutput, _DegenerateStreamGuard
+
+    guard = _DegenerateStreamGuard("qwen3.8:27b-q4_K_M")
+    _feed_in_chunks(guard.check_reasoning, _LOOP_PARAGRAPH * 2)  # twice: still thinking
+    with pytest.raises(DegenerateOutput) as info:
+        _feed_in_chunks(guard.check_reasoning, _LOOP_PARAGRAPH)
+    assert "reasoning loop" in str(info.value)
+
+
+def test_content_may_repeat_long_lines_without_tripping():
+    from src.llm_core import _DegenerateStreamGuard
+
+    guard = _DegenerateStreamGuard("m")
+    row = '{"title": "Venusaur Line - Pokemon Silhouette Frame | Normal, Inverse & Scaled STL"}\n'
+    _feed_in_chunks(guard.check, row * 5)  # content channel: no paragraph-loop rule
+
+
+def test_varied_reasoning_is_left_alone():
+    from src.llm_core import _DegenerateStreamGuard
+
+    guard = _DegenerateStreamGuard("m")
+    text = "".join(
+        f"Step {i}: read folder {i}-{i + 2}, look the ids up in the csv and write its listing file.\n"
+        for i in range(40)
+    )
+    _feed_in_chunks(guard.check_reasoning, text)
