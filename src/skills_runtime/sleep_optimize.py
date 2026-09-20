@@ -381,6 +381,31 @@ def _frontmatter_of(text: str) -> Dict[str, Any]:
     return fm if isinstance(fm, dict) else {}
 
 
+def _parse_model_json(text: str) -> Optional[Dict[str, Any]]:
+    """Tolerant JSON read of a model reply: code fences, prose around the
+    object and raw newlines inside strings (common when a model embeds a
+    whole Markdown file) are all accepted. None when nothing parses."""
+    text = (text or "").strip()
+    if not text:
+        return None
+    if text.startswith("```"):
+        text = re.sub(r"^```[a-zA-Z0-9_-]*\s*", "", text)
+        text = re.sub(r"\s*```\s*$", "", text)
+    candidates = [text]
+    start, end = text.find("{"), text.rfind("}")
+    if 0 <= start < end:
+        candidates.append(text[start:end + 1])
+    for cand in candidates:
+        for strict in (True, False):
+            try:
+                data = json.JSONDecoder(strict=strict).decode(cand)
+            except ValueError:
+                continue
+            if isinstance(data, dict):
+                return data
+    return None
+
+
 def _validate_revision(*, original_md: str, revised_md: str) -> None:
     """Raises `SleepPassError` naming exactly why a proposal is refused
     before it is ever stored. Never silently "fixes" the model's output."""
@@ -479,11 +504,11 @@ async def propose(skill_id: str, evidence: Sequence[Mapping[str, Any]], *,
 
     if isinstance(raw, tuple):
         raw = raw[0]
-    try:
-        data = json.loads(raw if isinstance(raw, str) else "")
-    except (TypeError, ValueError) as e:
+    data = _parse_model_json(raw if isinstance(raw, str) else "")
+    if data is None:
+        snippet = (raw if isinstance(raw, str) else repr(raw))[:160].replace("\n", " ")
         raise SleepPassError("sleep_pass.unparseable_response",
-                             "model response could not be parsed as JSON") from e
+                             f"model response could not be parsed as JSON: {snippet!r}")
     revised_md = str(data.get("revised_skill_md") or "").strip()
     rationale = str(data.get("rationale") or "").strip()[:2000]
     evidence_ids_used = [str(x) for x in (data.get("evidence_ids_used") or [])

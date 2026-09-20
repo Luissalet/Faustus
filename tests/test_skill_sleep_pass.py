@@ -421,3 +421,11 @@ def test_small_skill_may_grow_by_the_absolute_allowance():
                     procedure=["a"] + ["another concrete step to follow"] * 30).to_markdown()
     assert len(revised) > len(original) * so.MAX_GROWTH_RATIO
     so._validate_revision(original_md=original, revised_md=revised)
+
+
+def test_model_json_is_parsed_tolerantly():
+    from src.skills_runtime.sleep_optimize import _parse_model_json
+    assert _parse_model_json('```json\n{"a": 1}\n```') == {"a": 1}
+    assert _parse_model_json('Here you go:\n{"a": "x"}\nThanks') == {"a": "x"}
+    assert _parse_model_json('{"md": "line1\nline2"}') == {"md": "line1\nline2"}
+    assert _parse_model_json("") is None and _parse_model_json("no json") is None
