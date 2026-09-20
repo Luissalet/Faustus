@@ -381,6 +381,17 @@ def _frontmatter_of(text: str) -> Dict[str, Any]:
     return fm if isinstance(fm, dict) else {}
 
 
+_FRONTMATTER_RE = re.compile(r"\A\s*---\s*\n.*?\n---\s*(?:\n|\Z)", re.S)
+
+
+def _with_original_frontmatter(original_md: str, revised_md: str) -> str:
+    m = _FRONTMATTER_RE.match(original_md or "")
+    if not m:
+        return revised_md
+    body = _FRONTMATTER_RE.sub("", revised_md or "", count=1).lstrip("\n")
+    return m.group(0).rstrip() + "\n\n" + body
+
+
 def _parse_model_json(text: str) -> Optional[Dict[str, Any]]:
     """Tolerant JSON read of a model reply: code fences, prose around the
     object and raw newlines inside strings (common when a model embeds a
@@ -514,6 +525,10 @@ async def propose(skill_id: str, evidence: Sequence[Mapping[str, Any]], *,
     evidence_ids_used = [str(x) for x in (data.get("evidence_ids_used") or [])
                          if str(x).strip()][:50]
 
+    # The pass improves the procedure, not the skill's identity: the original
+    # frontmatter is always kept and only the model's body is taken (small
+    # models often drop or reword frontmatter keys).
+    revised_md = _with_original_frontmatter(current_md, revised_md)
     _validate_revision(original_md=current_md, revised_md=revised_md)
 
     diff_text = "".join(unified_diff(

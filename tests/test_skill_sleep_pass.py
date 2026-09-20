@@ -429,3 +429,14 @@ def test_model_json_is_parsed_tolerantly():
     assert _parse_model_json('Here you go:\n{"a": "x"}\nThanks') == {"a": "x"}
     assert _parse_model_json('{"md": "line1\nline2"}') == {"md": "line1\nline2"}
     assert _parse_model_json("") is None and _parse_model_json("no json") is None
+
+
+def test_original_frontmatter_is_always_kept():
+    from src.skills_runtime.sleep_optimize import _with_original_frontmatter
+    original = Skill(name="keep", description="orig", status="published", procedure=["a"]).to_markdown()
+    out = _with_original_frontmatter(original, "## Procedure\n- a\n- b\n")
+    assert out.startswith(original.split("\n---")[0])
+    assert "- b" in out
+    reworded = "---\nname: other\ndescription: new\n---\n## Procedure\n- c\n"
+    out2 = _with_original_frontmatter(original, reworded)
+    assert "name: other" not in out2 and "- c" in out2
