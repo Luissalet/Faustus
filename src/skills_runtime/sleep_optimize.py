@@ -71,6 +71,8 @@ VERSIONS_FILE = os.path.join(PROPOSALS_ROOT, "versions.json")
 #: model failure, not a real improvement, and this catches it before a
 #: human even sees the diff.
 MAX_GROWTH_RATIO = 2.5
+# Small skills need room: a few added steps can easily triple a 400-byte file.
+MIN_GROWTH_ALLOWANCE_BYTES = 2000
 #: Absolute ceiling regardless of the original's size.
 MAX_SKILL_MD_BYTES = 60_000
 
@@ -388,7 +390,8 @@ def _validate_revision(*, original_md: str, revised_md: str) -> None:
         raise SleepPassError("sleep_pass.too_large",
                              f"revision exceeds the {MAX_SKILL_MD_BYTES}-byte limit")
     orig_len = max(1, len(original_md.encode("utf-8")))
-    if len(revised_md.encode("utf-8")) > orig_len * MAX_GROWTH_RATIO:
+    if len(revised_md.encode("utf-8")) > max(orig_len * MAX_GROWTH_RATIO,
+                                             orig_len + MIN_GROWTH_ALLOWANCE_BYTES):
         raise SleepPassError("sleep_pass.grew_too_much",
                              "revision is more than "
                              f"{MAX_GROWTH_RATIO}x the original's size")

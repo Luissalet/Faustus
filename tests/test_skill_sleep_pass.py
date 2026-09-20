@@ -411,3 +411,13 @@ def test_rollback_without_history_is_refused(isolated_store):
     with pytest.raises(sp.SleepPassError) as exc:
         sp.rollback_proposal("lonely-skill")
     assert exc.value.error_class == "sleep_pass.no_history"
+
+
+def test_small_skill_may_grow_by_the_absolute_allowance():
+    from src.skills_runtime import sleep_optimize as so
+    original = Skill(name="tiny", description="d", status="published",
+                     procedure=["a"]).to_markdown()
+    revised = Skill(name="tiny", description="d", status="published",
+                    procedure=["a"] + ["another concrete step to follow"] * 30).to_markdown()
+    assert len(revised) > len(original) * so.MAX_GROWTH_RATIO
+    so._validate_revision(original_md=original, revised_md=revised)
