@@ -361,6 +361,19 @@ def setup_auth_routes(auth_manager: AuthManager) -> APIRouter:
         token = request.cookies.get(SESSION_COOKIE)
         result = auth_manager.status(token)
         result["signup_enabled"] = auth_manager.signup_enabled
+        if _auth_disabled() and not result.get("authenticated"):
+            # AUTH_ENABLED=false: the server already lets every request act as
+            # the operator (require_user/require_admin pass), so the UI must
+            # not hide admin controls behind a login that does not exist.
+            result["authenticated"] = True
+            result["is_admin"] = True
+            result["auth_disabled"] = True
+            try:
+                from core.auth import ADMIN_PRIVILEGES
+                result["privileges"] = dict(ADMIN_PRIVILEGES)
+            except Exception:
+                pass
+            return result
         # Include the caller's effective privileges so the frontend can
         # hide / dim UI controls the user isn't allowed to use. Admins get
         # ADMIN_PRIVILEGES (everything on), regular users get their stored
