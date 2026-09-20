@@ -291,7 +291,7 @@ def select_voice(voice: str, language: str = "") -> Optional[str]:
     return installed[0]["name"]
 
 
-def _run_worker(engine: str, payload: Dict[str, Any], timeout: float = WORKER_TIMEOUT_S) -> bytes:
+def _run_worker(engine: str, payload: Dict[str, Any], timeout: Optional[float] = None) -> bytes:
     """Runs `engine` inside the isolated `media_tts_worker.py` child process
     (see that module's docstring for the protocol) and returns the WAV bytes
     it wrote. Always kills the child on timeout — `subprocess.run`'s own
@@ -299,6 +299,8 @@ def _run_worker(engine: str, payload: Dict[str, Any], timeout: float = WORKER_TI
     a plain exception on any failure; callers here (`synthesize()`) already
     catch broadly so a worker problem degrades to "no audio", never a server
     crash."""
+    if timeout is None:
+        timeout = WORKER_TIMEOUT_S  # read at call time so it can be tuned
     fd, out_name = tempfile.mkstemp(suffix=".wav")
     os.close(fd)
     out_path = Path(out_name)

@@ -201,3 +201,19 @@ def test_download_url_layout_for_spanish_voice():
 def test_download_url_layout_for_english_voice():
     onnx_url, _ = piper_voice.voice_urls("en_US-lessac-medium")
     assert onnx_url.endswith("en/en_US/lessac/medium/en_US-lessac-medium.onnx")
+
+
+def test_worker_timeout_is_read_at_call_time(monkeypatch):
+    from services.tts import piper_voice as pv
+    seen = {}
+
+    def fake_run(*a, **k):
+        seen["timeout"] = k.get("timeout")
+        raise RuntimeError("stop")
+    monkeypatch.setattr(pv.subprocess, "run", fake_run)
+    monkeypatch.setattr(pv, "WORKER_TIMEOUT_S", 0.5)
+    try:
+        pv._run_worker("piper", {})
+    except Exception:
+        pass
+    assert seen["timeout"] == 0.5
