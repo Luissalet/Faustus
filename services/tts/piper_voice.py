@@ -20,14 +20,13 @@ are admin-gated at the route layer.
 """
 from __future__ import annotations
 
-import io
 import json
 import logging
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
-import wave
 from importlib.util import find_spec
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -39,6 +38,15 @@ logger = logging.getLogger(__name__)
 PIPER_DIR = Path(DATA_DIR) / "tts" / "piper"
 VOICES_DIR = PIPER_DIR / "voices"
 BIN_DIR = PIPER_DIR / "bin"
+
+# The `python` runtime (piper-tts pip package) always synthesizes in a
+# disposable child process — see src/media_tts_worker.py — never by
+# importing `piper` into this (server) process. A hang, an unexpected
+# `sys.exit()`, or a native crash inside the engine then only kills the
+# child; this timeout is the parent's hard bound on how long it waits
+# before killing that child itself.
+WORKER_PATH = Path(__file__).resolve().parents[2] / "src" / "media_tts_worker.py"
+WORKER_TIMEOUT_S = 60
 
 HF_VOICES_BASE = "https://huggingface.co/rhasspy/piper-voices/resolve/main"
 GITHUB_RELEASES_BASE = "https://github.com/rhasspy/piper/releases/latest/download"
@@ -283,28 +291,52 @@ def select_voice(voice: str, language: str = "") -> Optional[str]:
     return installed[0]["name"]
 
 
-def _synthesize_python(text: str, onnx_path: Path, length_scale: float) -> bytes:
-    from piper import PiperVoice
+def _run_worker(engine: str, payload: Dict[str, Any], timeout: float = WORKER_TIMEOUT_S) -> bytes:
+    """Runs `engine` inside the isolated `media_tts_worker.py` child process
+    (see that module's docstring for the protocol) and returns the WAV bytes
+    it wrote. Always kills the child on timeout — `subprocess.run`'s own
+    `timeout=` does this before raising `TimeoutExpired` — and always raises
+    a plain exception on any failure; callers here (`synthesize()`) already
+    catch broadly so a worker problem degrades to "no audio", never a server
+    crash."""
+    fd, out_name = tempfile.mkstemp(suffix=".wav")
+    os.close(fd)
+    out_path = Path(out_name)
+    try:
+        stdin_bytes = json.dumps(payload).encode("utf-8")
+        kwargs: Dict[str, Any] = {}
+        if os.name == "nt":
+            kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+        try:
+            result = subprocess.run(
+                [sys.executable, str(WORKER_PATH), engine, str(out_path)],
+                input=stdin_bytes, capture_output=True, timeout=timeout, **kwargs,
+            )
+        except subprocess.TimeoutExpired as exc:
+            # subprocess.run already killed the child before raising this.
+            raise RuntimeError(f"TTS worker ({engine}) timed out after {timeout}s") from exc
 
-    pv = PiperVoice.load(str(onnx_path))
-    buf = io.BytesIO()
-    with wave.open(buf, "wb") as wf:
-        if hasattr(pv, "synthesize_wav"):
-            # Current piper-tts (>=1.3): synthesize() itself only yields audio
-            # chunks; synthesize_wav() is the one that writes a WAV file, and
-            # takes a SynthesisConfig rather than a length_scale kwarg.
-            try:
-                from piper.config import SynthesisConfig
-                pv.synthesize_wav(text, wf, syn_config=SynthesisConfig(length_scale=length_scale))
-            except ImportError:
-                pv.synthesize_wav(text, wf)
-        else:
-            # Older piper-tts: synthesize() itself writes to the wav file.
-            try:
-                pv.synthesize(text, wf, length_scale=length_scale)
-            except TypeError:
-                pv.synthesize(text, wf)
-    return buf.getvalue()
+        try:
+            reply = json.loads(result.stdout.decode("utf-8", "replace") or "{}")
+        except ValueError:
+            reply = {}
+        if result.returncode != 0 or not isinstance(reply, dict) or not reply.get("ok"):
+            code = reply.get("error_code", "worker_failed") if isinstance(reply, dict) else "worker_failed"
+            message = reply.get("message") if isinstance(reply, dict) else None
+            message = message or result.stderr.decode("utf-8", "replace")[:300]
+            raise RuntimeError(f"TTS worker ({engine}) failed [{code}]: {message}")
+
+        return out_path.read_bytes()
+    finally:
+        out_path.unlink(missing_ok=True)
+
+
+def _synthesize_python(text: str, onnx_path: Path, length_scale: float) -> bytes:
+    """Piper via the pip package — always inside the isolated worker child
+    process, never imported here (see WORKER_PATH's module docstring)."""
+    return _run_worker("piper", {
+        "text": text, "voice_path": str(onnx_path), "length_scale": length_scale,
+    })
 
 
 def _synthesize_binary(text: str, onnx_path: Path, length_scale: float) -> bytes:

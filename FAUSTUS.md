@@ -6373,3 +6373,52 @@ asyncio.run(main())
 (`checkpoint_sha=None` usa el `git diff` del propio repo como origen, así que basta con tener el repo a mano y sin necesidad de checkpoint sombra.) Confirmar en la salida que `groups` es mayor que 1 y que el bug inyectado aparece entre los hallazgos.
 
 **Ficheros.** `src/auto_review.py`, `src/settings.py`, `tests/test_auto_review_grouping.py` (nuevo).
+
+## 153. Piper TTS: la síntesis del paquete Python siempre corre en un proceso hijo desechable, nunca dentro del servidor (20-09-2026)
+
+Auditoría del voice studio: el proveedor `piper` (motor local, MIT, con voces en español como `es_ES-davefx-medium`) ya estaba completo — descubrimiento de runtime, catálogo de voces, descarga (`download_voice`), instalación del binario del motor, selección por idioma, caché de UI en Settings → Voz con los tres estados («motor no encontrado» / «sin voces instaladas» / lista de voces listas) — pero cuando el runtime instalado era el paquete `pip install piper-tts`, `_synthesize_python` hacía `from piper import PiperVoice` **dentro del proceso del servidor**. Un cuelgue, un `sys.exit()` inesperado o un fallo nativo del motor ahí no tenía manera de matarse desde fuera: el único hilo del `anyio.CapacityLimiter(1)` que sirve TTS se quedaba bloqueado para siempre, sin timeout, y una síntesis colgada dejaba sordo el resto de la app.
+
+**El worker aislado.** `src/media_tts_worker.py` sigue exactamente la disciplina de `media_probe_worker.py`/`media_transform_worker.py`: protocolo `argv = [motor, ruta_wav_salida]` + un único objeto JSON por stdin (`{"text", "voice_path", "length_scale"}`), imprime una línea JSON de resultado (`{"ok": true, "bytes": N}` o `{"ok": false, "error_code", "message"}`) y nunca importa `piper` fuera de la función del motor. Registro de motores extensible (`ENGINES`, hoy solo `"piper"`) para futuros motores (edge-tts, chatterbox…) sin tocar el protocolo. Un motor `"test_fake"` se registra solo cuando el propio proceso hijo tiene `FAUSTUS_TTS_TEST_ENGINE=1` en su entorno — nunca alcanzable en producción, verificado por test.
+
+**El lado del padre.** `services/tts/piper_voice.py::_run_worker` lanza el worker con `subprocess.run(..., timeout=WORKER_TIMEOUT_S)`; el propio `subprocess.run` mata al hijo antes de lanzar `TimeoutExpired`, así que un cuelgue nunca deja un proceso zombi ni bloquea más de `WORKER_TIMEOUT_S` (60 s) el hilo que lo espera. `_synthesize_python` ahora es una fachada de una línea sobre `_run_worker("piper", {...})`; `synthesize()` (sin cambios) ya envolvía la llamada en `try/except Exception: return None`, así que un fallo del worker degrada a «sin audio», nunca una excepción hacia la ruta `/api/tts/synthesize`. La descarga de voces (`download_voice`, admin-only, ya existente) y la resolución de voz por idioma (`select_voice`) no cambian — se integra sobre el camino existente, no uno paralelo.
+
+**Verificado.** `tests/test_tts_worker.py` (16 pruebas, procesos reales del worker, sin red): protocolo con el motor falso (éxito, fallo, `engine_not_installed`, motor desconocido, argumentos/payload inválidos), el motor falso **no** es alcanzable sin la variable de entorno de test, `piper` real reporta `engine_not_installed` limpio (piper-tts no está instalado en esta caja — `ImportError` real, no simulado), timeout mata al hijo en <10 s frente a un sueño de 30 s con timeout de 1 s, `_synthesize_python` delega en `_run_worker`, `synthesize()` nunca propaga una excepción cuando el worker falla, resolución de rutas de voz y construcción de URL de descarga (español e inglés) contra el layout real del repo de voces. `pytest tests/test_tts_worker.py tests/test_piper_voice.py tests/test_tts_cache_stats.py tests/test_tts_available_nonstring_provider.py tests/test_tts_service_enforce_cache_limit.py tests/test_tts_speed_malformed.py tests/test_l70_a07_ocr_tts_stt_privacy_gate.py tests/test_l68_sec04_ocr_tts_stt_egress_audit.py tests/test_creator_wp18_voices.py` — 116 pasan. `guard.sh` sobre los mismos ficheros: sin fallos nuevos frente a la base (2 fallos preexistentes en ambas cajas, ajenos a este cambio).
+
+**No verificable sin la máquina en vivo.** `piper-tts` no está instalado en esta caja de arena (sin red de pip para el paquete real), así que nunca corrió una síntesis real de principio a fin, ni el download real de una voz desde Hugging Face, ni una prueba de matar el worker a mitad de una síntesis real (solo el motor falso simula el sueño). Para repetirlo en Windows (venv `D:\LocalAI\faustus\venv`):
+```
+D:\LocalAI\faustus\venv\Scripts\pip install piper-tts
+```
+```python
+import os
+os.environ.setdefault("ODYSSEUS_DATA_DIR", r"D:\LocalAI\faustus-dev-data")
+from services.tts import piper_voice
+
+# 1) Descargar una voz en español (llamada real a Hugging Face).
+piper_voice.download_voice("es_ES-davefx-medium")
+print("instalada:", [v["name"] for v in piper_voice.list_voices()])
+
+# 2) Sintetizar a través del camino del padre (proceso hijo aislado).
+audio = piper_voice.synthesize("Hola, esto es una prueba de Piper en Faustus.",
+                                voice="es_ES-davefx-medium", language="es")
+open(r"D:\LocalAI\piper_test.wav", "wb").write(audio)
+
+import wave
+with wave.open(r"D:\LocalAI\piper_test.wav", "rb") as wf:
+    print("duración (s):", wf.getnframes() / wf.getframerate())
+
+# 3) Prueba de matar: confirma que un timeout corto mata al hijo real de Piper
+#    (no solo al motor falso) sin colgar el proceso Python.
+import time
+piper_voice.WORKER_TIMEOUT_S = 0.05
+started = time.monotonic()
+try:
+    piper_voice.synthesize("Frase larga para forzar que la síntesis tarde más de 50 milisegundos, "
+                            "de modo que el timeout salte antes de que el motor termine.",
+                            voice="es_ES-davefx-medium", language="es")
+except Exception as e:
+    print("(atrapado dentro de synthesize(), no debería llegar aquí)", e)
+print("tardó:", time.monotonic() - started, "segundos — debe ser ~0.05s, no el tiempo real de síntesis")
+```
+También, a través de la app: en Settings → Voz, elegir proveedor «Local (Piper)», pulsar «Download» sobre `es_ES-davefx-medium`, confirmar que pasa de la lista «no instaladas» a la lista con selector, y probar una síntesis real desde el chat/Jarvis con voz en español.
+
+**Ficheros.** `src/media_tts_worker.py` (nuevo), `services/tts/piper_voice.py`, `requirements-optional.txt`, `tests/test_tts_worker.py` (nuevo), `FAUSTUS.md`, `README.md`, `README.es.md`, `PENDIENTES.md`.

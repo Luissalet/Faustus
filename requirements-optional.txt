@@ -78,3 +78,13 @@ PyJWT>=2.8,<3
 # Windows/macOS/Linux, so `pip install` is enough (no separate download).
 # Without it the tools answer with a clear "pip install ast-grep-cli" error.
 ast-grep-cli
+
+# Local text-to-speech via Piper for the "piper" TTS provider (services/tts/
+# piper_voice.py). Fully local, CPU-friendly, MIT-licensed. Synthesis always
+# runs in an isolated child process (src/media_tts_worker.py) even when this
+# package is installed — the server process never imports `piper` itself.
+# Without it, the provider falls back to a separately-installed `piper`
+# engine binary, or reports itself unavailable in Settings -> Voice. Voices
+# (.onnx + .onnx.json) are downloaded separately, on explicit admin action,
+# from Settings -> Voice; none is bundled.
+piper-tts

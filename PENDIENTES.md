@@ -2,6 +2,11 @@
 
 Actualizado: 20-09-2026. REGLA: nunca nombres de empresas/personas del buzÃ³n de Luis en commits, docs, tests ni comentarios â€” ejemplos siempre ficticios. SÃ³lo trabajo vigente; quitar cada entrada al cerrarla.
 
+## 20-09 — Piper TTS: síntesis del paquete Python aislada en proceso hijo (FAUSTUS.md §153)
+
+- **`piper-tts` no está instalado en esta caja de arena** (sin red de pip hacia el paquete real): `tests/test_tts_worker.py` prueba `engine_not_installed` contra el `ImportError` real de "piper" no instalado, y el resto del protocolo del worker (éxito, fallos, timeout) contra el motor falso `test_fake`. Nunca corrió una síntesis real del paquete `piper` de principio a fin, ni una descarga real de voz desde Hugging Face, ni un timeout matando al hijo real de Piper a mitad de una síntesis de verdad (solo el motor falso simula el sueño). Script exacto de repetición en Windows (instalar `piper-tts`, descargar `es_ES-davefx-medium`, sintetizar, comprobar duración del WAV, forzar un timeout corto y confirmar que mata al hijo) en FAUSTUS.md §153.
+- **La app en vivo no se abrió en el navegador para esta tarea**: Settings → Voice con el selector de motor/voz Piper y el flujo de descarga por botón ya existían antes de este cambio (no se tocó la UI), así que no se repitió la comprobación visual — solo se confirmó por lectura de código que sigue intacta.
+
 ## 20-09 — localizadores de PDF y sanitizado de PII en RAG (FAUSTUS.md §146)
 
 - No verificable sin la máquina en vivo: esta caja de arena no tiene ChromaDB alcanzable, así que `index_personal_documents`/`manage_rag add_directory` nunca se probó de verdad persistiendo en un ChromaDB real — solo con `VectorRAG` construido vía `__new__` y `add_document` sustituido (mismo patrón que `tests/test_rag_index_hidden_dirs.py`). Repetir en `D:\LocalAI\faustus-dev-data` con ChromaDB arrancado (`docker compose up chromadb`, puerto 8100): indexar un PDF real de varias páginas, comprobar los `locator` en los metadatos de Chroma, buscar con `rag_manager.search()` y confirmar que el `[fichero.pdf pN#bM]` aparece en el contexto inyectado al chat, activar `rag_pii_redaction` y confirmar que un PDF con datos de contacto reales queda sanitizado en el índice pero el fichero original en disco no cambia. Instrucciones exactas (llamadas a función) en el informe de esta tarea.

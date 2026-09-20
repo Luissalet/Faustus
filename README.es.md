@@ -266,6 +266,8 @@ Tres recorridos comprobables sin conexión —un documento con revisión real, u
 
 Jarvis ofrece una sesión de voz con reconocimiento español/inglés, respuestas habladas, controles de interrupción y esfera visual reactiva. Configura los servicios de transcripción y síntesis disponibles en la app; el navegador necesita permiso para usar el micrófono. Las voces instaladas y los motores locales de voz determinan los idiomas y la reproducción disponibles.
 
+Proveedores de voz: navegador (Web Speech API), sistema (voces de Windows instaladas, sin conexión), local (Kokoro TTS / faster-whisper STT), **Piper** (síntesis neuronal totalmente local, licencia MIT, con voces en español — instala el motor y descarga una voz desde Configuración → Voz, sin modelo incluido de fábrica; la síntesis siempre corre en un proceso hijo aislado, nunca dentro del servidor), **command** (ejecuta tu propio ejecutable local de TTS/STT mediante una plantilla configurable), o un endpoint de API configurado. Ver [docs/ui/voice.md](docs/ui/voice.md).
+
 La voz entra en la misma conversación y el mismo flujo de permisos de herramientas que el texto. Una sesión de voz no autoriza de forma general acciones sobre archivos, escritorio o servicios externos.
 
 ## Arquitectura
