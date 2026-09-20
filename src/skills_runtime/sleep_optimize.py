@@ -366,8 +366,10 @@ def _build_prompt(current_md: str, evidence: Sequence[Mapping[str, Any]]) -> str
         )
     lines.append("")
     lines.append(
-        "Respond as JSON: {\"revised_skill_md\": \"...\", \"rationale\": \"...\", "
-        "\"evidence_ids_used\": [\"...\"]}"
+        "Respond in exactly this format (plain text, no JSON, no code fences):\n"
+        "<skill>\nthe full revised SKILL.md\n</skill>\n"
+        "<why>one short paragraph: what you changed and which evidence justifies it</why>\n"
+        "<evidence>comma-separated evidence ids you used</evidence>"
     )
     return "\n".join(lines)
 
@@ -390,6 +392,25 @@ def _with_original_frontmatter(original_md: str, revised_md: str) -> str:
         return revised_md
     body = _FRONTMATTER_RE.sub("", revised_md or "", count=1).lstrip("\n")
     return m.group(0).rstrip() + "\n\n" + body
+
+
+def _parse_tagged(text: str) -> Optional[Dict[str, Any]]:
+    """`<skill>...</skill><why>...</why><evidence>...</evidence>` -- far easier
+    for small local models than a JSON string holding a whole Markdown file."""
+    m = re.search(r"<skill>\s*(.*?)\s*</skill>", text or "", re.S | re.I)
+    if not m:
+        return None
+    why = re.search(r"<why>\s*(.*?)\s*</why>", text, re.S | re.I)
+    ev = re.search(r"<evidence>\s*(.*?)\s*</evidence>", text, re.S | re.I)
+    body = m.group(1)
+    if body.startswith("```"):
+        body = re.sub(r"^```[a-zA-Z0-9_-]*\s*", "", body)
+        body = re.sub(r"\s*```\s*$", "", body)
+    return {
+        "revised_skill_md": body,
+        "rationale": why.group(1) if why else "",
+        "evidence_ids_used": [x.strip() for x in (ev.group(1) if ev else "").split(",") if x.strip()],
+    }
 
 
 def _parse_model_json(text: str) -> Optional[Dict[str, Any]]:
@@ -508,14 +529,15 @@ async def propose(skill_id: str, evidence: Sequence[Mapping[str, Any]], *,
             url=resolved_url, model=resolved_model,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.2, max_tokens=4000, timeout=120, max_retries=1,
-            workload="background", response_schema=_PROPOSAL_SCHEMA,
+            workload="background",
         )
     except Exception as e:  # noqa: BLE001 - a model/network failure is not a bug here
         raise SleepPassError("sleep_pass.model_call_failed", f"{type(e).__name__}: {e}"[:300]) from e
 
     if isinstance(raw, tuple):
         raw = raw[0]
-    data = _parse_model_json(raw if isinstance(raw, str) else "")
+    data = _parse_tagged(raw if isinstance(raw, str) else "") or \
+        _parse_model_json(raw if isinstance(raw, str) else "")
     if data is None:
         snippet = (raw if isinstance(raw, str) else repr(raw))[:160].replace("\n", " ")
         raise SleepPassError("sleep_pass.unparseable_response",

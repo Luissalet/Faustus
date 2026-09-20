@@ -440,3 +440,11 @@ def test_original_frontmatter_is_always_kept():
     reworded = "---\nname: other\ndescription: new\n---\n## Procedure\n- c\n"
     out2 = _with_original_frontmatter(original, reworded)
     assert "name: other" not in out2 and "- c" in out2
+
+
+def test_tagged_reply_is_parsed():
+    from src.skills_runtime.sleep_optimize import _parse_tagged
+    d = _parse_tagged("ok\n<skill>\n## Procedure\n- a\n</skill>\n<why>because</why>\n<evidence>e1, e2</evidence>")
+    assert d["revised_skill_md"].startswith("## Procedure")
+    assert d["rationale"] == "because" and d["evidence_ids_used"] == ["e1", "e2"]
+    assert _parse_tagged("no tags") is None
