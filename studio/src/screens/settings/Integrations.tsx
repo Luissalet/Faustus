@@ -450,7 +450,7 @@ export function IntegrationsSection({ say }: { say: (t: string) => void }) {
                   />
                 </div>
               )}
-              {item.kind === 'mcp' && mcp?.status === 'connected' && (
+              {item.kind === 'mcp' && (
                 <div className="fs-set__help" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <Button
                     size="sm"
