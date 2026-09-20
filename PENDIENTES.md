@@ -2,6 +2,25 @@
 
 Actualizado: 20-09-2026. REGLA: nunca nombres de empresas/personas del buzÃ³n de Luis en commits, docs, tests ni comentarios â€” ejemplos siempre ficticios. SÃ³lo trabajo vigente; quitar cada entrada al cerrarla.
 
+## 20-09 — sesión real de lote (fichas por carpeta) con qwen3.8 27B q4, aprendido haciendo de coach
+
+- CERRADO (b2471156): el ping de keep_alive al terminar cada turno expulsaba el modelo residente (no llevaba num_ctx; Ollama recargaba y el timeout de 3 s abortaba la carga). Ver FAUSTUS.md §159.
+- CERRADO (59202e81): bucles de párrafo en el razonamiento (el plan repetido 4-5 veces hasta cortar por presupuesto). Ver FAUSTUS.md §159.
+- ABIERTO: el turno de continuación tras aprobar la tarjeta «Allow this task to continue?» (17 rondas, 9 comandos) no quedó en el historial: `chat_messages` solo tiene la parte previa a la tarjeta. Reproducir: gate de contexto externo → aprobar → `/api/history/<sid>` tras terminar.
+- ABIERTO: etiquetas de la tarjeta de aprobación engañosas. «Approve» es alcance de CHAT; «Approve the whole task» es solo este turno (más estrecho, aunque suena más amplio). Con la segunda cada turno nuevo vuelve a preguntar. Renombrar (p. ej. «Allow in this chat» / «Only for this task»).
+- (Descartado: «Always for this folder» SÍ persiste — log `tool_approval_grants: ... granted` y `[gate] ... bypassed: workspace grant`; yo miraba otro `data/`.) Lo que confunde es que la tarjeta del guardián de comandos destructivos (`Exact approval required before tool start`, p. ej. un `rm -f` de un `__pycache__`) usa el MISMO título «Allow this task to continue?» que la del contexto externo: parece que la concesión por carpeta no funcionó. Debería decir qué comando y por qué (borra ficheros).
+- ABIERTO: un selector nativo de carpeta (`POST /api/workspace/pick`) que nadie atendió se resolvió minutos después con otra carpeta (una subcarpeta recién creada por Luis en otro programa) y cambió en silencio el workspace del compositor (`localStorage odysseus-workspace`); el agente pasó a trabajar en esa subcarpeta. Un pick que llega tarde debería caducar o pedir confirmación.
+- ABIERTO: un mensaje enviado mientras hay una tarjeta de aprobación pendiente da «I could not deliver that — nothing is running right now» y deja la UI en «Waiting for the model» con los botones de la tarjeta deshabilitados; al recargar, el outbox lo reenvía («outcome is uncertain») y abre un turno nuevo que deja la aprobación huérfana.
+- ABIERTO: cada turno nuevo arranca con el historial muy recortado (13-15k de 200k) y el modelo gasta 10-20 rondas en «localizar la raíz» del workspace que ya conocía. Revisar qué se poda entre turnos en una sesión de agente con workspace.
+- ABIERTO: escribir un mensaje largo (~700 caracteres) en el compositor de una conversación larga congela el renderer >30 s (CDP `Input.dispatchKeyEvent` timeout).
+- ABIERTO: «Changes»/`mutations` del resumen de turno lista ficheros que no cambiaron (`pokemon_species.csv`, un `cults3d.json` en la raíz que no existe).
+- ABIERTO: el panel Progress se queda en «0 of 7» aunque el trabajo avanza: el modelo no vuelve a llamar a `todowrite`. Un recordatorio del harness cada N rondas sin actualizar ayudaría.
+- NOTA de coaching: el agente editó el validador (`cults3d_check.py`) para su tarea — inofensivo esta vez, pero es corregirse su propio examen. La skill ahora lo prohíbe; en el harness podría marcarse como «mutación sospechosa» cualquier escritura a un fichero que la propia tarea usa como verificador.
+- ABIERTO: la verificación del harness lanzó pytest -x -q en el workspace (una carpeta de datos que casualmente tiene tests/ de un complemento de Blender). En tareas que no son de código no debería correr la suite del proyecto sin que la tarea lo pida.
+- ABIERTO: el checkpoint del workspace tarda ~91 s en una carpeta con blends y PNG grandes; cada turno con escritura lo paga.
+- ABIERTO: la insignia «PCIe spill» aparece con el modelo 100 % en GPU según `ollama ps`.
+- IDEA: `presence_penalty` 1.5 para cuantizados Qwen (recomendación oficial contra repetición) en `model_load_options[...].extra` del q4; medir antes/después con el mismo lote.
+
 ## 20-09 — Piper TTS: síntesis del paquete Python aislada en proceso hijo (FAUSTUS.md §153)
 
 - **`piper-tts` no está instalado en esta caja de arena** (sin red de pip hacia el paquete real): `tests/test_tts_worker.py` prueba `engine_not_installed` contra el `ImportError` real de "piper" no instalado, y el resto del protocolo del worker (éxito, fallos, timeout) contra el motor falso `test_fake`. Nunca corrió una síntesis real del paquete `piper` de principio a fin, ni una descarga real de voz desde Hugging Face, ni un timeout matando al hijo real de Piper a mitad de una síntesis de verdad (solo el motor falso simula el sueño). Script exacto de repetición en Windows (instalar `piper-tts`, descargar `es_ES-davefx-medium`, sintetizar, comprobar duración del WAV, forzar un timeout corto y confirmar que mata al hijo) en FAUSTUS.md §153.
