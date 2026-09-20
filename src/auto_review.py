@@ -207,6 +207,250 @@ def turn_diff(workspace: str, changed: Iterable[str], checkpoint_sha: Optional[s
     return {"diff": text, "truncated": truncated, "source": source, "files": paths}
 
 
+def per_file_diffs(workspace: str, files: Iterable[str], checkpoint_sha: Optional[str],
+                    per_file_max_chars: int = 8_000) -> Dict[str, str]:
+    """Diff of each changed file, independently capped, keyed by path.
+
+    Same two sources as `turn_diff` (the shadow checkpoint, else the user's
+    own git), but never joined and never truncated as a whole — this is what
+    lets a big multi-file diff be split into groups that are each reviewed
+    within their own budget instead of one call losing the tail of the diff
+    past MAX_DIFF_CHARS. A file this could not get a diff for (deleted repo,
+    git unavailable, …) is simply absent from the result."""
+    paths = [p for p in files if p]
+    out: Dict[str, str] = {}
+    if checkpoint_sha and workspace:
+        try:
+            from src import workspace_checkpoints as wc
+            for p in paths:
+                d = wc.diff_since(workspace, checkpoint_sha, p, max_chars=per_file_max_chars)
+                if d:
+                    out[p] = d
+        except Exception as e:
+            logger.debug("[review] per-file checkpoint diff failed: %s", e)
+    missing = [p for p in paths if p not in out]
+    if missing and workspace:
+        for p in missing:
+            try:
+                d = _user_git_diff(workspace, [p], per_file_max_chars)
+            except Exception:
+                d = ""
+            if d:
+                out[p] = d
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Grouping a large, multi-file diff for review (LOTE big-diff grouping)
+# ---------------------------------------------------------------------------
+#
+# A diff over MAX_DIFF_CHARS or touching many files used to be silently
+# truncated to one call's budget: everything past the cut was never seen by
+# the reviewer, with no record that it had been dropped. Past
+# `auto_review_group_threshold_files` files (or when the joined diff would be
+# truncated), the changed files are split into small thematic groups instead
+# — same directory/module, a test file with the source it tests, config
+# files together — and each group is reviewed in its own call, within its
+# own MAX_DIFF_CHARS budget, so nothing is dropped without saying so.
+
+_CONFIG_FILE_RE = re.compile(
+    r"(^|/)("
+    r"pyproject\.toml|setup\.(?:cfg|py)|requirements[\w.-]*\.txt|"
+    r"package(?:-lock)?\.json|tsconfig[\w.-]*\.json|"
+    r"Dockerfile[\w.-]*|docker-compose[\w.-]*\.ya?ml|Makefile|\.env[\w.-]*|"
+    r"[\w.-]+\.(?:cfg|ini|toml|ya?ml)"
+    r")$",
+    re.I,
+)
+
+_TEST_AFFIX_RE = re.compile(r"^(?:test_|spec_)(?P<core1>.+)$|^(?P<core2>.+?)(?:_test|_spec)$")
+
+
+def _basename_core(path: str) -> str:
+    """The part of a filename that ties it to what it is about, stripped of
+    a leading/trailing test/spec marker and its extension — so
+    `tests/test_auto_review.py` and `src/auto_review.py` both reduce to
+    `auto_review` and group together."""
+    name = os.path.basename(str(path).replace("\\", "/"))
+    stem = name.rsplit(".", 1)[0] if "." in name else name
+    m = _TEST_AFFIX_RE.match(stem)
+    if m:
+        stem = m.group("core1") or m.group("core2") or stem
+    return stem.lower()
+
+
+def group_files_deterministic(files: Sequence[str]) -> List[List[str]]:
+    """Group changed files into small thematic groups with no model call:
+
+    1. config files (pyproject.toml, package.json, Dockerfile, *.yml, …) —
+       one group, together;
+    2. files that share a basename core with at least one other changed
+       file — typically a test paired with the source it tests — one group
+       per shared core;
+    3. everything else, grouped by directory.
+
+    Deterministic and stable: same input, same groups, same order, every
+    time — the fallback `group_files_with_model` always lands on if the
+    model's answer cannot be trusted."""
+    ordered = [f for f in files if f]
+    config = [f for f in ordered if _CONFIG_FILE_RE.search(f.replace("\\", "/"))]
+    config_set = set(config)
+    rest = [f for f in ordered if f not in config_set]
+
+    core_to_files: Dict[str, List[str]] = {}
+    for f in rest:
+        core_to_files.setdefault(_basename_core(f), []).append(f)
+
+    groups: List[List[str]] = []
+    grouped: set = set()
+    for f in rest:
+        if f in grouped:
+            continue
+        bucket = core_to_files.get(_basename_core(f)) or [f]
+        if len(bucket) > 1:
+            groups.append(bucket)
+            grouped.update(bucket)
+
+    dir_to_files: Dict[str, List[str]] = {}
+    dir_order: List[str] = []
+    for f in rest:
+        if f in grouped:
+            continue
+        d = os.path.dirname(f.replace("\\", "/")) or "."
+        if d not in dir_to_files:
+            dir_to_files[d] = []
+            dir_order.append(d)
+        dir_to_files[d].append(f)
+        grouped.add(f)
+    for d in dir_order:
+        groups.append(dir_to_files[d])
+
+    if config:
+        groups.append(config)
+    return groups
+
+
+_GROUP_JSON_RE = re.compile(r"\[.*\]", re.S)
+
+
+async def group_files_with_model(
+    files: Sequence[str], *, endpoint_url: str, model: str, headers: Optional[Dict] = None,
+    timeout_s: float = 60.0, workload: str = "foreground",
+) -> Optional[List[List[str]]]:
+    """Ask the reviewer model, once, to group changed files by INDEX — never
+    by path, so the prompt (and the model's answer) stays cheap regardless
+    of how long the paths are. Expects a JSON array of arrays of 0-based
+    indices into `files`, e.g. `[[0, 1], [2], [3, 4, 5]]`, every index
+    appearing exactly once.
+
+    Returns `None` on anything that is not a clean, complete partition —
+    a bad call, unparsable text, an out-of-range or repeated index, an index
+    left out — so the caller always has a deterministic fallback to reach
+    for; this never raises."""
+    ordered = [f for f in files if f]
+    if not ordered:
+        return None
+    listing = "\n".join(f"{i}: {p}" for i, p in enumerate(ordered))
+    prompt = (
+        "Group these changed files into small thematic review groups (same "
+        "module or directory, a test file with the source file it tests, "
+        "config files together). Every file must end up in exactly one "
+        "group.\n\n"
+        f"<files>\n{listing}\n</files>\n\n"
+        "Answer with ONLY a JSON array of arrays of the file INDEX numbers "
+        "above (not the paths), e.g. [[0, 1], [2], [3, 4, 5]]. No prose."
+    )
+    try:
+        from src.llm_core import llm_call_async
+        raw = await asyncio.wait_for(
+            llm_call_async(
+                url=endpoint_url, model=model, messages=[{"role": "user", "content": prompt}],
+                headers=headers, temperature=0.0, max_tokens=500, timeout=int(timeout_s),
+                max_retries=1, workload=workload or "foreground",
+            ),
+            timeout=timeout_s + 30,
+        )
+    except Exception as e:
+        logger.debug("[review] model grouping call failed: %s", e)
+        return None
+    if isinstance(raw, tuple):
+        raw = raw[0]
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+    text = _THINK_RE.sub("", raw).strip()
+    text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text, flags=re.I | re.M)
+    m = _GROUP_JSON_RE.search(text)
+    if not m:
+        return None
+    try:
+        data = json.loads(m.group(0))
+    except ValueError:
+        try:
+            data = json.loads(re.sub(r",\s*([}\]])", r"\1", m.group(0)))
+        except ValueError:
+            return None
+    if not isinstance(data, list) or not data:
+        return None
+    n = len(ordered)
+    used: set = set()
+    groups: List[List[str]] = []
+    for grp in data:
+        if not isinstance(grp, list):
+            return None
+        idxs: List[int] = []
+        for raw_i in grp:
+            try:
+                i = int(raw_i)
+            except (TypeError, ValueError):
+                return None
+            if i < 0 or i >= n or i in used:
+                return None
+            used.add(i)
+            idxs.append(i)
+        if idxs:
+            groups.append([ordered[i] for i in idxs])
+    if len(used) != n or not groups:
+        return None
+    return groups
+
+
+async def group_files(
+    files: Sequence[str], *, endpoint_url: str, model: str, headers: Optional[Dict] = None,
+    timeout_s: float = 60.0, workload: str = "foreground", with_model: bool = False,
+) -> List[List[str]]:
+    """The groups to review a large diff in: the model's grouping when
+    `with_model` is on and it returns a clean partition, else the
+    deterministic grouping — which is also what a disabled or failed model
+    grouping always falls back to."""
+    if with_model:
+        try:
+            grouped = await group_files_with_model(
+                files, endpoint_url=endpoint_url, model=model, headers=headers,
+                timeout_s=timeout_s, workload=workload,
+            )
+        except Exception as e:
+            logger.debug("[review] group_files_with_model raised: %s", e)
+            grouped = None
+        if grouped:
+            return grouped
+    return group_files_deterministic(files)
+
+
+def _dedup_findings(findings: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Findings from several group reviews, deduped by (file, line, message)
+    — the same finding flagged by two overlapping groups (a test grouped
+    with its source, both mentioning the same broken call) is kept once."""
+    seen: set = set()
+    out: List[Dict[str, Any]] = []
+    for f in findings:
+        key = (f.get("file") or "", f.get("line"), _norm_line(f.get("issue") or ""))
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(f)
+    return out
+
+
 # ---------------------------------------------------------------------------
 # The shape of the answer
 # ---------------------------------------------------------------------------
@@ -395,45 +639,20 @@ def _parse(raw: str) -> Dict[str, Any]:
     return {"verdict": verdict, "summary": str(data.get("summary") or "").strip()[:400], "findings": findings}
 
 
-async def review_turn(
-    *,
-    workspace: str,
-    changed: Iterable[str],
-    checkpoint_sha: Optional[str],
-    user_text: str,
-    endpoint_url: str,
-    model: str,
-    headers: Optional[Dict] = None,
-    reviewer_model: Optional[str] = None,
-    tests: Optional[Dict[str, Any]] = None,
-    timeout_s: Optional[float] = None,
-    workload: str = "foreground",
-) -> Dict[str, Any]:
-    """Run the review. Always returns a dict; `error` is set when it could not run."""
-    t0 = time.time()
-    files = [p for p in changed if p]
-    reviewer = reviewer_model or model
-    result: Dict[str, Any] = {
-        "model": reviewer, "verdict": "skipped", "summary": "", "findings": [],
-        "duration_s": 0.0, "diff_chars": 0, "truncated": False, "source": "none", "files": files[:40],
-    }
-    if not files or not workspace:
-        result["summary"] = "nothing to review"
-        return result
-    try:
-        d = turn_diff(workspace, files, checkpoint_sha)
-    except Exception as e:
-        result.update(error=f"diff failed: {e}"[:300], verdict="error")
-        return result
-    diff = d.get("diff") or ""
-    result.update(diff_chars=len(diff), truncated=bool(d.get("truncated")), source=d.get("source"))
-    if not diff.strip():
-        result["summary"] = "no diff available for the changed files"
-        return result
-    try:
-        timeout = float(timeout_s if timeout_s is not None else _setting("agent_auto_review_timeout_seconds", DEFAULT_TIMEOUT_S) or DEFAULT_TIMEOUT_S)
-    except (TypeError, ValueError):
-        timeout = float(DEFAULT_TIMEOUT_S)
+async def _call_reviewer(
+    *, diff: str, files: List[str], user_text: str, endpoint_url: str, reviewer: str,
+    headers: Optional[Dict], tests: Optional[Dict[str, Any]], timeout: float, workload: str,
+) -> Tuple[Dict[str, Any], Optional[str]]:
+    """One reviewer completion over `diff`/`files`, parsed and grounded.
+
+    Returns `(parsed, error)`: `error` is `None` on success, and `parsed` is
+    `{"verdict": "ok"|"issues", "summary", "findings", "ungrounded"}`; on
+    failure `parsed` is an empty `{"verdict": "error", ...}` shell so a
+    caller merging several of these (one per review group) can still fold it
+    in without a type check. This is the single call `review_turn` always
+    made — factored out so the grouped path (below) can make it more than
+    once, byte-identical each time, instead of duplicating it."""
+    empty: Dict[str, Any] = {"verdict": "error", "summary": "", "findings": []}
     try:
         from src.llm_core import llm_call_async
         # max_retries is the number of *attempts* (0 would never call the
@@ -459,37 +678,188 @@ async def review_turn(
         )
     except asyncio.TimeoutError:
         logger.warning("[review] reviewer %s did not answer within %ss", reviewer, int(timeout) + 30)
-        result.update(error=f"review timed out after {int(timeout) + 30} s", verdict="error")
-        result["duration_s"] = round(time.time() - t0, 1)
-        return result
+        return empty, f"review timed out after {int(timeout) + 30} s"
     except Exception as e:
         logger.warning("[review] reviewer %s failed: %s", reviewer, e)
-        result.update(error=f"{type(e).__name__}: {e}"[:300], verdict="error")
-        result["duration_s"] = round(time.time() - t0, 1)
-        return result
+        return empty, f"{type(e).__name__}: {e}"[:300]
     if isinstance(raw, tuple):
         raw = raw[0]
     if not isinstance(raw, str) or not raw.strip():
-        result.update(error="the reviewer returned an empty answer", verdict="error")
-        result["duration_s"] = round(time.time() - t0, 1)
         logger.warning("[review] reviewer %s returned an empty answer", reviewer)
-        return result
-    result.update(_parse(raw))
-    if result["verdict"] == "unparsed":
+        return empty, "the reviewer returned an empty answer"
+    parsed = _parse(raw)
+    if parsed["verdict"] == "unparsed":
         logger.warning("[review] %s: answer was not a JSON object: %r", reviewer, raw[:300])
     else:
-        grounded = ground_findings(result["findings"], diff, user_text)
-        result["findings"] = grounded["findings"]
-        result["ungrounded"] = grounded["ungrounded"]
-        if result["verdict"] == "issues" and not any(f["severity"] == "error" for f in result["findings"]) \
-                and result["findings"] and all(not f["grounded"] for f in result["findings"]):
+        grounded = ground_findings(parsed["findings"], diff, user_text)
+        parsed["findings"] = grounded["findings"]
+        parsed["ungrounded"] = grounded["ungrounded"]
+        if parsed["verdict"] == "issues" and not any(f["severity"] == "error" for f in parsed["findings"]) \
+                and parsed["findings"] and all(not f["grounded"] for f in parsed["findings"]):
             # Nothing the reviewer said can be located in the diff.
-            result["verdict"] = "ok"
-            result["summary"] = (result.get("summary") or "").strip()
-            result["summary"] = ("no finding could be located in the diff" + (f" ({result['summary']})" if result["summary"] else ""))[:400]
+            parsed["verdict"] = "ok"
+            parsed["summary"] = (parsed.get("summary") or "").strip()
+            parsed["summary"] = ("no finding could be located in the diff" + (f" ({parsed['summary']})" if parsed["summary"] else ""))[:400]
+    return parsed, None
+
+
+async def review_turn(
+    *,
+    workspace: str,
+    changed: Iterable[str],
+    checkpoint_sha: Optional[str],
+    user_text: str,
+    endpoint_url: str,
+    model: str,
+    headers: Optional[Dict] = None,
+    reviewer_model: Optional[str] = None,
+    tests: Optional[Dict[str, Any]] = None,
+    timeout_s: Optional[float] = None,
+    workload: str = "foreground",
+) -> Dict[str, Any]:
+    """Run the review. Always returns a dict; `error` is set when it could not run.
+
+    A diff that stays under `MAX_DIFF_CHARS` and touches at most
+    `auto_review_group_threshold_files` files is reviewed exactly as before:
+    one call, one prompt. Past either limit, the changed files are split
+    into small thematic groups (`group_files`) and reviewed group by group,
+    each within its own budget, so a large turn's diff is never silently
+    truncated out of review; findings from every group are merged and
+    deduped, and files beyond `auto_review_max_groups` groups are reported
+    as `not_reviewed` rather than dropped without a trace.
+    """
+    t0 = time.time()
+    files = [p for p in changed if p]
+    reviewer = reviewer_model or model
+    result: Dict[str, Any] = {
+        "model": reviewer, "verdict": "skipped", "summary": "", "findings": [],
+        "duration_s": 0.0, "diff_chars": 0, "truncated": False, "source": "none", "files": files[:40],
+    }
+    if not files or not workspace:
+        result["summary"] = "nothing to review"
+        return result
+    try:
+        d = turn_diff(workspace, files, checkpoint_sha)
+    except Exception as e:
+        result.update(error=f"diff failed: {e}"[:300], verdict="error")
+        return result
+    diff = d.get("diff") or ""
+    result.update(diff_chars=len(diff), truncated=bool(d.get("truncated")), source=d.get("source"))
+    if not diff.strip():
+        result["summary"] = "no diff available for the changed files"
+        return result
+    try:
+        timeout = float(timeout_s if timeout_s is not None else _setting("agent_auto_review_timeout_seconds", DEFAULT_TIMEOUT_S) or DEFAULT_TIMEOUT_S)
+    except (TypeError, ValueError):
+        timeout = float(DEFAULT_TIMEOUT_S)
+
+    try:
+        threshold_files = int(_setting("auto_review_group_threshold_files", 6) or 6)
+    except (TypeError, ValueError):
+        threshold_files = 6
+    needs_grouping = bool(d.get("truncated")) or len(files) > threshold_files
+
+    if not needs_grouping:
+        parsed, err = await _call_reviewer(
+            diff=diff, files=files, user_text=user_text, endpoint_url=endpoint_url,
+            reviewer=reviewer, headers=headers, tests=tests, timeout=timeout, workload=workload,
+        )
+        if err:
+            result.update(error=err, verdict="error")
+            result["duration_s"] = round(time.time() - t0, 1)
+            return result
+        result.update(parsed)
+        result["duration_s"] = round(time.time() - t0, 1)
+        logger.info("[review] %s: verdict=%s findings=%d in %ss", reviewer, result["verdict"],
+                    len(result["findings"]), result["duration_s"])
+        return result
+
+    # ── large / many-file diff: review in groups ──────────────────────────
+    try:
+        max_groups = int(_setting("auto_review_max_groups", 4) or 4)
+    except (TypeError, ValueError):
+        max_groups = 4
+    max_groups = max(1, max_groups)
+    group_with_model_on = bool(_setting("auto_review_group_with_model", False))
+
+    try:
+        groups = await group_files(
+            files, endpoint_url=endpoint_url, model=reviewer, headers=headers,
+            timeout_s=min(timeout, 60.0), workload=workload, with_model=group_with_model_on,
+        )
+    except Exception as e:
+        logger.debug("[review] group_files raised, falling back to deterministic: %s", e)
+        groups = None
+    if not groups:
+        groups = group_files_deterministic(files) or [files]
+
+    reviewed_groups = groups[:max_groups]
+    not_reviewed = [f for g in groups[max_groups:] for f in g]
+
+    try:
+        pf = per_file_diffs(workspace, files, checkpoint_sha, per_file_max_chars=MAX_DIFF_CHARS)
+    except Exception as e:
+        logger.debug("[review] per_file_diffs failed: %s", e)
+        pf = {}
+
+    all_findings: List[Dict[str, Any]] = []
+    group_file_lists: List[List[str]] = []
+    group_chars: List[int] = []
+    truncated_files: List[str] = []
+    total_chars = 0
+    total_ungrounded = 0
+    any_error: Optional[str] = None
+    any_ok_call = False
+    any_issues = False
+
+    for group in reviewed_groups:
+        group_present = [f for f in group if pf.get(f)]
+        if not group_present:
+            continue
+        group_diff = "\n".join(pf[f] for f in group_present)
+        if len(group_diff) > MAX_DIFF_CHARS:
+            group_diff = group_diff[:MAX_DIFF_CHARS] + "\n… diff truncated for review"
+            truncated_files.extend(group_present)
+        total_chars += len(group_diff)
+        group_file_lists.append(group_present)
+        group_chars.append(len(group_diff))
+        parsed, err = await _call_reviewer(
+            diff=group_diff, files=group_present, user_text=user_text, endpoint_url=endpoint_url,
+            reviewer=reviewer, headers=headers, tests=tests, timeout=timeout, workload=workload,
+        )
+        if err:
+            any_error = any_error or err
+            continue
+        any_ok_call = True
+        if parsed.get("verdict") == "issues":
+            any_issues = True
+        total_ungrounded += int(parsed.get("ungrounded") or 0)
+        all_findings.extend(parsed.get("findings") or [])
+
+    result["findings"] = _dedup_findings(all_findings)
+    result["ungrounded"] = total_ungrounded
+    result["groups"] = len(group_file_lists)
+    result["group_files"] = group_file_lists
+    result["not_reviewed"] = not_reviewed
+    result["truncated_files"] = truncated_files
+    result["group_chars"] = group_chars
+    result["diff_chars"] = total_chars
+    result["truncated"] = bool(truncated_files) or bool(not_reviewed)
+    if not any_ok_call:
+        result.update(error=any_error or "all review groups failed", verdict="error")
+    else:
+        has_error_finding = any(f.get("severity") == "error" for f in result["findings"])
+        result["verdict"] = "issues" if (has_error_finding or any_issues or result["findings"]) else "ok"
+        summary = f"reviewed in {result['groups']} group(s)"
+        if not_reviewed:
+            summary += f", {len(not_reviewed)} file(s) not reviewed (group cap)"
+        if any_error:
+            summary += f" ({any_error})"
+        result["summary"] = summary[:400]
     result["duration_s"] = round(time.time() - t0, 1)
-    logger.info("[review] %s: verdict=%s findings=%d in %ss", reviewer, result["verdict"],
-                len(result["findings"]), result["duration_s"])
+    logger.info("[review] %s: grouped verdict=%s findings=%d groups=%d not_reviewed=%d in %ss",
+                reviewer, result["verdict"], len(result["findings"]), result["groups"],
+                len(not_reviewed), result["duration_s"])
     return result
 
 
@@ -518,7 +888,7 @@ def compact(review: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     if not review:
         return None
     keys = ("model", "verdict", "summary", "findings", "duration_s", "diff_chars", "truncated", "source", "error",
-            "ungrounded", "disputed")
+            "ungrounded", "disputed", "groups", "group_files", "not_reviewed", "truncated_files", "group_chars")
     return {k: review.get(k) for k in keys if k in review}
 
 

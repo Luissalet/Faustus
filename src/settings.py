@@ -539,6 +539,21 @@ DEFAULT_SETTINGS = {
     "agent_auto_review_timeout_seconds": 180,
     "agent_auto_review_fix_round": True,
     "agent_auto_review_fix_rounds": 1,
+    # Large multi-file diffs: instead of one call truncated at MAX_DIFF_CHARS
+    # (which silently drops the tail of a big diff from review), the diff is
+    # split per file and reviewed in small groups, each within its own budget.
+    # Triggers when the diff would be truncated OR touches more than this many
+    # files.
+    "auto_review_group_threshold_files": 6,
+    # off (default): group deterministically (directory/module, a test file
+    # with its source, config files together). On: ask the reviewer model
+    # once to group by file INDEX (cheap — no paths in the prompt), with a
+    # robust parse and a deterministic fallback on any failure.
+    "auto_review_group_with_model": False,
+    # Hard cap on how many groups are actually reviewed; files in groups
+    # beyond the cap are reported as "not reviewed" rather than dropped
+    # silently.
+    "auto_review_max_groups": 4,
     # Doubt review (src/doubt_review.py): before a non-trivial edit lands on
     # a file `code_graph_risk` scores at or above `agent_doubt_review_min_tier`,
     # a fresh-context, tool-less reviewer (no history, only the task, the

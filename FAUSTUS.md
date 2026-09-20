@@ -6329,3 +6329,47 @@ Limpieza: borrar `DATA_DIR\skills\general\deploy-helper-demo`, la fila `demo-sle
 **Ficheros.** `src/skills_runtime/sleep_optimize.py` (nuevo), `tests/test_skill_sleep_pass.py` (nuevo), `routes/skills_routes.py`, `studio/src/adapters/skills.ts`, `studio/src/screens/skills/Detail.tsx`, `studio/src/screens/skills.css`, `studio/src/i18n/es.ts`, `README.md`, `README.es.md`, `PENDIENTES.md`.
 
 **Verificado en vivo (20-09, Windows, datos de desarrollo, `qwen2.5-3b-helper`):** skill sembrada + sesión sintética con «sigue roto, el healthcheck falla siempre» → 1 evidencia negativa → propuesta pendiente que añade «confirma el healthcheck» al procedimiento → rechazada, SKILL.md intacto, todo limpiado. La prueba sacó cuatro fallos, ya corregidos: crecimiento máximo demasiado estricto para skills pequeñas (`12ab0caa`), JSON leído sin tolerancia (`605889b6`), frontmatter que el modelo pequeño perdía, ahora siempre se conserva el original (`3648637a`), y el formato de respuesta pasa a bloques `<skill>/<why>/<evidence>` en vez de JSON (`c4dcb698`).
+
+## 152. Revisión automática de diffs grandes multi-archivo: agrupación en grupos temáticos, nunca truncados en silencio (20-09-2026)
+
+`auto_review.py` mandaba el diff entero del turno en una sola llamada, recortado a `MAX_DIFF_CHARS` (≈24 000 caracteres): un turno que tocaba muchos archivos perdía en silencio la revisión de todo lo que caía después del corte, sin dejar rastro de qué se quedó fuera. Ahora, cuando el diff se truncaría o el turno toca más de `auto_review_group_threshold_files` archivos (por defecto 6), los archivos cambiados se dividen en grupos pequeños y cada grupo se revisa en su propia llamada, con su propio presupuesto — nada se pierde sin decirlo.
+
+**Agrupación.** `group_files_deterministic` (por defecto, sin llamada a modelo): los ficheros de configuración (`pyproject.toml`, `package.json`, `Dockerfile*`, `*.yml`, `requirements*.txt`, …) van juntos en un grupo aparte; un test y el fichero que prueba comparten grupo (`tests/test_auto_review.py` ↔ `src/auto_review.py`, emparejados por el nombre base sin el prefijo/sufijo `test_`/`_test`); el resto se agrupa por directorio. Determinista: mismo diff, mismos grupos, mismo orden, siempre. Con `auto_review_group_with_model` activo (apagado por defecto), se pide al modelo revisor, una sola vez, que agrupe por ÍNDICE en vez de ruta (`[[0,1],[2],[3,4,5]]`) — más barato en tokens que mandar las rutas — con un parseo tolerante (bloque JSON, comillas simples, comas colgantes) y una validación estricta (cada índice aparece exactamente una vez, dentro de rango); cualquier fallo cae de vuelta a la agrupación determinista, nunca a un error visible.
+
+**Revisión por grupo.** `per_file_diffs` obtiene el diff de cada fichero por separado (mismo origen que `turn_diff`: checkpoint sombra o `git` del usuario), así un grupo se arma exactamente con los ficheros que necesita sin volver a tocar el disco. Cada grupo se revisa con la misma llamada `_call_reviewer` que antes hacía la única llamada — mismo prompt, mismo esquema `REVIEW_SCHEMA`, mismo `ground_findings` — así un diff pequeño (bajo el umbral) sigue siendo exactamente una llamada, byte a byte igual que antes. Los hallazgos de todos los grupos se combinan y se deduplican por `(fichero, línea, mensaje normalizado)` — un mismo defecto señalado por dos grupos solapados (un test agrupado con su fuente) se queda una sola vez.
+
+**Tope y qué no se revisó.** `auto_review_max_groups` (por defecto 4) limita cuántos grupos se revisan de verdad; los ficheros de los grupos que sobran se listan en `not_reviewed`, explícitamente, en vez de desaparecer. Un grupo cuyo diff combinado supera `MAX_DIFF_CHARS` se trunca para esa llamada y sus ficheros quedan en `truncated_files`. El resultado guarda además `groups` (nº de grupos revisados), `group_files` (lista de ficheros por grupo) y `group_chars` (caracteres enviados por grupo) — metadatos nuevos, aditivos: la forma que ya consumían el bucle del agente (`verdict`, `summary`, `findings`, `model`, …) no cambia.
+
+**Verificado.** `tests/test_auto_review_grouping.py` (11 pruebas): agrupación determinista empareja test+fuente y aísla config; estable y cubre todos los ficheros; parseo de índices del modelo (limpio, y cinco variantes garbladas → `None`, caída a determinista); diff pequeño sigue siendo una sola llamada sin metadatos de grupo; diff de 9 ficheros por encima del umbral se revisa en varias llamadas con hallazgos deduplicados; ficheros por encima del tope de grupos quedan en `not_reviewed`; agrupación por modelo activa se usa y cae a determinista si el modelo desvaría; presupuesto por grupo respetado (un grupo que excede `MAX_DIFF_CHARS` se trunca solo, no arrastra al resto); `per_file_diffs` contra un checkpoint git real. `pytest tests/test_auto_review_grouping.py tests/test_harness_building_blocks.py tests/test_bench_review.py tests/test_agent_settings_schema.py tests/test_lote50_wiring.py tests/test_ollama_structured_output.py tests/test_agent_harness_functional.py tests/test_p1_plan_ver03_review.py` en verde salvo 7 fallos preexistentes en esta caja (entorno sin `pytest` instalado en el intérprete del proyecto / una clave `pre_existing_only` que ya faltaba en la base antes de este cambio — confirmado comparando contra la base con `git stash`) y `guard.sh tests/test_auto_review_grouping.py tests/test_harness_building_blocks.py tests/test_bench_review.py tests/test_p1_plan_ver03_review.py tests/test_lote50_wiring.py tests/test_ollama_structured_output.py` sin fallos nuevos frente a la base.
+
+**No verificable sin la máquina en vivo.** Esta caja de arena no tiene el navegador conectado a una instancia real de Faustus ni el helper llama.cpp de desarrollo, así que la agrupación nunca corrió contra un diff real de varios archivos ni contra una respuesta real de `qwen2.5-3b-helper` — solo contra `llm_call_async` parcheado en las pruebas. Para repetirlo en `D:\LocalAI\faustus-dev-data` con el helper en `http://127.0.0.1:8082/v1` (alias `qwen2.5-3b-helper`):
+
+```python
+import asyncio, os, subprocess
+os.environ.setdefault("ODYSSEUS_DATA_DIR", r"D:\LocalAI\faustus-dev-data")
+from src import auto_review as ar
+
+# 1) Un diff sintético multi-archivo real, sacado del propio historial del repo
+#    (~10 ficheros entre dos commits), con un bug obvio inyectado a mano en uno
+#    de ellos antes de correr la revisión — p.ej. invertir una comparación o
+#    borrar una línea de validación en el fichero que más cambia.
+files = subprocess.run(["git", "diff", "--name-only", "HEAD~15", "HEAD"],
+                        cwd=r"C:\ruta\a\faustus", capture_output=True, text=True).stdout.split()
+files = files[:10]
+
+async def main():
+    res = await ar.review_turn(
+        workspace=r"C:\ruta\a\faustus", changed=files, checkpoint_sha=None,
+        user_text="revisa estos cambios", endpoint_url="http://127.0.0.1:8082/v1",
+        model="qwen2.5-3b-helper", reviewer_model="qwen2.5-3b-helper",
+    )
+    print("groups:", res.get("groups"), "not_reviewed:", res.get("not_reviewed"))
+    print("truncated_files:", res.get("truncated_files"))
+    for f in res["findings"]:
+        print(f["severity"], f["file"], f.get("line"), "-", f["issue"])
+
+asyncio.run(main())
+```
+(`checkpoint_sha=None` usa el `git diff` del propio repo como origen, así que basta con tener el repo a mano y sin necesidad de checkpoint sombra.) Confirmar en la salida que `groups` es mayor que 1 y que el bug inyectado aparece entre los hallazgos.
+
+**Ficheros.** `src/auto_review.py`, `src/settings.py`, `tests/test_auto_review_grouping.py` (nuevo).
