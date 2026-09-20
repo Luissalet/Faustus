@@ -6258,3 +6258,72 @@ asyncio.run(main())
 Se espera `risk.level == "high"` (o al menos "medium"), `should_review == True`, y `result["verdict"] == "concerns"` señalando el nombre indefinido — confirmar que el modelo pequeño realmente lo detecta antes de activar `agent_doubt_review` por defecto en cualquier perfil.
 
 **Ficheros.** `src/doubt_review.py` (nuevo), `src/agent_tools/filesystem_tools.py`, `src/agent_loop.py`, `src/tool_execution.py`, `src/settings.py`, `src/agent_settings_schema.py`, `tests/test_doubt_review.py` (nuevo), `tests/test_agent_settings_schema.py`, `README.md`, `README.es.md`.
+
+## 151. Pase de sueño de skills: evidencia de sesiones reales propone una mejora a un SKILL.md, nunca la aplica sola (20-09-2026)
+
+**Pedido.** Fuera de línea, a demanda o programado, minar sesiones recientes donde una skill estuvo activa buscando evidencia de éxito/fracaso, y pedirle a un modelo local que proponga una mejora concreta al `SKILL.md` de esa skill — sin aplicarla nunca automáticamente; toda propuesta pasa por la puerta de gobernanza/promoción/revisión de skills ya existente.
+
+**De dónde sale "la skill estuvo activa".** No hay un evento propio de activación en el repo. Lo que sí queda grabado, en cada mensaje persistido (`core.database.ChatMessage`), es la llamada a herramienta que lee o edita una skill: el modelo llama a `manage_skills(action="view"|"edit"|"patch", name=...)` (`src/tools/system.py::do_manage_skills`), y esa llamada — nombre, argumentos JSON y resultado — queda en `metadata.tool_events` del mensaje del asistente (forma `{"round", "tool", "command", "output", "exit_code"}`, la misma que usa el propio flujo de aprobación de herramientas). Un `view`/`patch` sobre el nombre de una skill ES la señal de activación que este módulo mina — es el único sitio donde "esta skill se consultó en este turno" queda grabado de forma duradera.
+
+**Hecho.** `src/skills_runtime/sleep_optimize.py` (nuevo):
+- `classify_reaction(text)`: tablas deterministas de frases en/es, sin llamada a modelo — negativas ("no funciona", "sigue roto", "otra vez mal", "that's wrong", "still broken", señales de deshacer/reintentar) y positivas ("perfecto", "funciona", "gracias", "works now", "great"); negativo gana si ambas aparecen ("gracias pero sigue mal" es evidencia de fallo).
+- `collect_evidence(skill_id, since_days, limit, owner=None)`: consulta `core.database` directamente (sin tabla nueva) por mensajes del asistente cuyo `tool_events` incluye `manage_skills` con `name == skill_id`; para cada activación, localiza el siguiente mensaje de usuario en la misma sesión y lo clasifica, y recoge cualquier error de herramienta (código de salida ≠ 0 o "error" en la salida) del propio turno de activación y del turno inmediatamente siguiente. Cada ítem conserva id de sesión, índice de turno, extractos cortos y un id estable (`session_id:message_id`).
+- `propose(skill_id, evidence, *, url=None, model=None)`: UNA llamada a un modelo local vía `src.endpoint_resolver.resolve_endpoint("skills_sleep_pass", ...)` (mismo patrón de caída a Utility → Chat por defecto que `typed_choice`/`research_review`/`task_endpoint`), con el `SKILL.md` actual + resumen de evidencia → una revisión completa del `SKILL.md` + justificación + ids de evidencia usados (`response_schema` JSON, mismo mecanismo que `research_review.blind_review`). Validación antes de guardar nada (`_validate_revision`): frontmatter conservado, `name:` sin cambios, tamaño ≤ 60 KB y ≤ 2.5× el original, secciones "Pitfalls"/"Verification" no vaciadas si el original las tenía, y `src.security_scan.scan_text` sobre el texto propuesto (crítico → rechazo). Cualquier fallo (modelo inalcanzable, JSON ilegible, validación) lanza `SleepPassError` con `error_class` estable y **no guarda ninguna propuesta** — nunca hay un registro a medias.
+- Almacén propio, JSON bajo `DATA_DIR/skill_proposals/` (`proposals.json` + una instantánea `current`/`proposed` por propuesta en `snapshots/`): el versionado git de `skill_sources.py` solo cubre skills instaladas desde un remoto git, y la mayoría de skills de una máquina personal nunca lo fueron, así que este módulo no podía apoyarse en él honestamente para cada skill. `approve_proposal` sí pasa por `skill_governance.validate_promotion` (origen `sleep_pass`, tratado igual que una promoción de Enséñame — contenido escrito por una máquina que nadie ha revisado todavía) y por `skill_governance.record_version` para una entrada de historial propia (`versions.json`) que guarda la instantánea previa completa, así `rollback_proposal(skill_id)` puede restaurar byte a byte. Aplicar una propuesta aprobada escribe por el mismo camino que `do_manage_skills(action="edit")` (`Skill.from_markdown` + `SkillsManager.update_skill`), nunca una escritura de fichero cruda.
+
+**Interfaz.** `routes/skills_routes.py`: `GET /api/skills/proposals` (lista, filtrable por `skill_id`/`status`, con dueño), `POST /api/skills/{id}/sleep-pass` (admin; corre la mina de evidencia + la propuesta ahora mismo), `POST /api/skills/proposals/{id}/approve|reject` (admin). `studio/src/screens/skills/Detail.tsx`: nueva pestaña "Proposals" en el panel de una skill — botón "Run sleep pass now", lista de propuestas pendientes con modelo/nº de evidencias/justificación, diff plegable, Aprobar/Rechazar, e historial de decisiones anteriores. `studio/src/adapters/skills.ts`: `listProposals`, `runSleepPass`, `approveProposal`, `rejectProposal`.
+
+No se cableó un gancho al planificador nocturno: `src/task_scheduler.py` (≈4000 líneas) no tiene un patrón simple de "ejecutar a las N horas" reutilizable sin un cambio bastante mayor que el alcance de este lote — se deja fuera deliberadamente en vez de improvisar uno; ver Pendientes.
+
+**Verificado.** `tests/test_skill_sleep_pass.py` (32 pruebas): clasificación en/es (negativo, positivo, neutro, negativo-gana-sobre-agradecimiento, texto vacío), recolección de evidencia contra una base SQLite en memoria aislada (activación encontrada + siguiente respuesta clasificada, errores de herramienta capturados en el turno de activación, otras skills/turnos fuera de ventana ignorados, límite respetado), validación de revisión (nombre cambiado, crecimiento excesivo, sección de seguridad eliminada, escaneo de seguridad crítico, revisión razonable aceptada), ciclo de vida del almacén de propuestas, `propose()` con fallo de modelo y con JSON ilegible → ninguna propuesta guardada, `propose()` con éxito → propuesta `pending` y el `SKILL.md` en disco sin tocar, aprobar escribe la revisión y queda en el historial de versiones + `rollback_proposal` restaura el contenido anterior, aprobar dos veces se rechaza, rechazar deja la skill intacta y bloquea una aprobación posterior, y rollback sin historial se rechaza con `sleep_pass.no_history`. `pytest tests/test_skill_sleep_pass.py tests/test_skills_runtime.py tests/test_p1_tool06_skill_governance.py tests/test_u3_skill_source_routes.py tests/test_adp25_skill_review.py` en verde y `guard.sh tests/test_skill_sleep_pass.py tests/test_skills_runtime.py tests/test_p1_tool06_skill_governance.py tests/test_u3_skill_source_routes.py tests/test_adp25_skill_review.py` sin fallos nuevos frente a la base (el único fallo compartido con la base, `test_foreground_model_routing.py::test_skill_activation_reaches_later_fallback_request_and_pinned_round`, es preexistente y ajeno a este cambio). `npx tsc --noEmit -p tsconfig.json` sin errores.
+
+**No verificable sin la máquina en vivo.** Esta caja de arena no tiene el navegador conectado a una instancia real de Faustus ni el helper llama.cpp de desarrollo, así que la pestaña "Proposals" nunca se vio renderizada contra datos reales ni la llamada de modelo real se ejecutó contra una respuesta real — solo contra `llm_call_async` parcheado en las pruebas. Tampoco se cableó el gancho de planificador (ver arriba). Para repetirlo en `D:\LocalAI\faustus-dev-data` con el helper en `http://127.0.0.1:8082/v1` (alias `qwen2.5-3b-helper`):
+
+```python
+import asyncio, os, json
+os.environ.setdefault("ODYSSEUS_DATA_DIR", r"D:\LocalAI\faustus-dev-data")
+from services.memory.skills import SkillsManager
+from services.memory.skill_format import Skill
+from src.skills_runtime import sleep_optimize as sp
+from src.constants import DATA_DIR
+
+# 1) Sembrar una skill de prueba.
+sm = SkillsManager(DATA_DIR)
+sk = Skill(name="deploy-helper-demo", description="ayuda a desplegar", status="published",
+           when_to_use="al desplegar la app", procedure=["revisa el build", "corre deploy.sh"],
+           pitfalls=["no despliegues en viernes"], verification=["confirma el healthcheck"])
+import os as _os
+skill_dir = _os.path.join(DATA_DIR, "skills", "general", "deploy-helper-demo")
+_os.makedirs(skill_dir, exist_ok=True)
+open(_os.path.join(skill_dir, "SKILL.md"), "w", encoding="utf-8").write(sk.to_markdown())
+
+# 2) Sembrar un par de sesiones sintéticas con la skill "activada" y una queja.
+from core.database import SessionLocal, Session as DbSession, ChatMessage as DbChatMessage
+from datetime import datetime
+db = SessionLocal()
+db.add(DbSession(id="demo-sleep-1", name="demo", endpoint_url="http://x", model="m", owner=None))
+db.add(DbChatMessage(id="demo-sleep-1-a", session_id="demo-sleep-1", role="assistant",
+                      content="usando deploy-helper-demo", timestamp=datetime.utcnow(),
+                      meta_data=json.dumps({"tool_events": [{"round": 1, "tool": "manage_skills",
+                          "command": json.dumps({"action": "view", "name": "deploy-helper-demo"}),
+                          "output": "ok", "exit_code": 0}]})))
+db.add(DbChatMessage(id="demo-sleep-1-b", session_id="demo-sleep-1", role="user",
+                      content="sigue roto, el healthcheck falla siempre", timestamp=datetime.utcnow()))
+db.commit(); db.close()
+
+# 3) Correr el pase y ver la propuesta.
+async def main():
+    evidence = sp.collect_evidence("deploy-helper-demo", since_days=30)
+    print("evidence:", evidence)
+    record = await sp.propose("deploy-helper-demo", evidence)
+    print("proposal id:", record["id"], "status:", record["status"])
+    print(record["diff"])
+    # 4) Rechazarla y limpiar.
+    sp.reject_proposal(record["id"], by="demo", reason="solo una prueba manual")
+    print("rejected — el SKILL.md en disco no cambió")
+
+asyncio.run(main())
+```
+Limpieza: borrar `DATA_DIR\skills\general\deploy-helper-demo`, la fila `demo-sleep-1` en `sessions`/`chat_messages`, y la entrada de `DATA_DIR\skill_proposals\proposals.json` que crea el script.
+
+**Ficheros.** `src/skills_runtime/sleep_optimize.py` (nuevo), `tests/test_skill_sleep_pass.py` (nuevo), `routes/skills_routes.py`, `studio/src/adapters/skills.ts`, `studio/src/screens/skills/Detail.tsx`, `studio/src/screens/skills.css`, `studio/src/i18n/es.ts`, `README.md`, `README.es.md`, `PENDIENTES.md`.

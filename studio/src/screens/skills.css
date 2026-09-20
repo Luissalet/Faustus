@@ -400,6 +400,22 @@
   color: var(--fs-warning);
 }
 
+/* Sleep pass proposals */
+
+.fs-sk__proposals {
+  display: grid;
+  gap: var(--fs-space-4);
+  max-inline-size: 70ch;
+}
+
+.fs-sk__proposal {
+  display: grid;
+  gap: var(--fs-space-2);
+  padding: var(--fs-space-3);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-panel);
+}
+
 /* Overview */
 
 .fs-sk__overview {

@@ -654,3 +654,7 @@ El enrutado de modelo por schema (#170) queda sin destino mientras no exista una
 ## OBJ-25 · Mostrar en Research los veredictos de citas y la revisión ciega — PENDIENTE
 
 La revisión ciega de informes (FAUSTUS.md §144) y los veredictos de verificación de citas existen como datos que viajan con el resultado de la investigación, pero la vista de informe de Research no los muestra todavía. Falta la pantalla.
+
+## OBJ-26 · Gancho de planificador para el pase de sueño de skills — PENDIENTE
+
+El pase de sueño de skills (FAUSTUS.md §151) corre a demanda desde la pestaña "Proposals" o por API; queda pendiente el ajuste `skills_sleep_pass_enabled`/`skills_sleep_pass_hour` para que corra solo por la noche, como se pidió originalmente. Requiere primero decidir con qué patrón de `src/task_scheduler.py` debe encajar (tarea de sistema como el audit nocturno de skills, o un `ScheduledTask` de usuario) antes de cablearlo — ver PENDIENTES.md §151.

@@ -321,6 +321,56 @@ export async function addSkill(input: NewSkill): Promise<void> {
   );
 }
 
+/* ── Sleep pass: offline-mined proposals for a skill's SKILL.md ── */
+
+export interface SleepPassProposal {
+  id: string;
+  skillId: string;
+  status: 'pending' | 'approved' | 'rejected' | string;
+  createdAt: number;
+  model: string;
+  rationale: string;
+  evidenceCount: number;
+  diff: string;
+}
+
+function proposalFrom(raw: Record<string, unknown>): SleepPassProposal {
+  return {
+    id: str(raw.id),
+    skillId: str(raw.skill_id),
+    status: (str(raw.status) || 'pending') as SleepPassProposal['status'],
+    createdAt: num(raw.created_at),
+    model: str(raw.model),
+    rationale: str(raw.rationale),
+    evidenceCount: num(raw.evidence_count),
+    diff: str(raw.diff),
+  };
+}
+
+export async function listProposals(skillId?: string): Promise<SleepPassProposal[]> {
+  const qs = skillId ? `?skill_id=${enc(skillId)}` : '';
+  const data = await getJson<{ proposals?: Record<string, unknown>[] }>(`/api/skills/proposals${qs}`);
+  return (data.proposals ?? []).map(proposalFrom);
+}
+
+export async function runSleepPass(skillId: string): Promise<SleepPassProposal> {
+  const response = await ok(await fetch(`/api/skills/${enc(skillId)}/sleep-pass`, json({})), 'skills/sleep-pass');
+  const data = (await response.json()) as { proposal: Record<string, unknown> };
+  return proposalFrom(data.proposal);
+}
+
+export async function approveProposal(proposalId: string): Promise<SleepPassProposal> {
+  const response = await ok(await fetch(`/api/skills/proposals/${enc(proposalId)}/approve`, json({})), 'skills/proposal-approve');
+  const data = (await response.json()) as { proposal: Record<string, unknown> };
+  return proposalFrom(data.proposal);
+}
+
+export async function rejectProposal(proposalId: string, reason = ''): Promise<SleepPassProposal> {
+  const response = await ok(await fetch(`/api/skills/proposals/${enc(proposalId)}/reject`, json({ reason })), 'skills/proposal-reject');
+  const data = (await response.json()) as { proposal: Record<string, unknown> };
+  return proposalFrom(data.proposal);
+}
+
 /* ── Preferences ── */
 
 export interface SkillPrefs {

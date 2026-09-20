@@ -1493,6 +1493,58 @@ def setup_skills_routes(skills_manager: SkillsManager) -> APIRouter:
             "message": message,
         }
 
+    @router.get("/proposals")
+    async def list_sleep_pass_proposals(request: Request, skill_id: Optional[str] = None,
+                                        status: Optional[str] = None):
+        """LOTE skill-sleep-pass: proposals from `sleep_optimize.propose`,
+        newest first. Declared before the generic `/{skill_id}` GET below so
+        the literal path `proposals` is never swallowed as a skill id."""
+        user = _owner(request)
+        from src.skills_runtime import sleep_optimize
+        return {"proposals": sleep_optimize.list_proposals_for(
+            skill_id=skill_id, owner=user, status=status)}
+
+    @router.post("/{skill_id}/sleep-pass")
+    async def run_sleep_pass(request: Request, skill_id: str, since_days: int = 30,
+                             limit: int = 20):
+        """Offline skill-improvement pass: mine recent sessions for evidence
+        this skill worked or didn't, and ask a local model for ONE proposed
+        SKILL.md revision. Never applies anything — the result is stored as
+        a pending proposal for a human to approve/reject."""
+        require_admin(request)
+        user = _owner(request)
+        from src.skills_runtime import sleep_optimize
+        evidence = sleep_optimize.collect_evidence(
+            skill_id, since_days=since_days, limit=limit, owner=user)
+        try:
+            record = await sleep_optimize.propose(skill_id, evidence, owner=user)
+        except sleep_optimize.SleepPassError as e:
+            raise HTTPException(422, {"error_class": e.error_class, "message": e.message})
+        return {"proposal": record}
+
+    @router.post("/proposals/{proposal_id}/approve")
+    async def approve_sleep_pass_proposal(request: Request, proposal_id: str):
+        require_admin(request)
+        user = _owner(request)
+        from src.skills_runtime import sleep_optimize
+        try:
+            record = sleep_optimize.approve_proposal(proposal_id, by=user or "unknown")
+        except sleep_optimize.SleepPassError as e:
+            raise HTTPException(409, {"error_class": e.error_class, "message": e.message})
+        return {"proposal": record}
+
+    @router.post("/proposals/{proposal_id}/reject")
+    async def reject_sleep_pass_proposal(request: Request, proposal_id: str,
+                                         reason: str = ""):
+        require_admin(request)
+        user = _owner(request)
+        from src.skills_runtime import sleep_optimize
+        try:
+            record = sleep_optimize.reject_proposal(proposal_id, by=user or "unknown", reason=reason)
+        except sleep_optimize.SleepPassError as e:
+            raise HTTPException(409, {"error_class": e.error_class, "message": e.message})
+        return {"proposal": record}
+
     @router.get("/{skill_id}")
     async def get_skill(request: Request, skill_id: str):
         user = _owner(request)

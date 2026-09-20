@@ -4,10 +4,14 @@ import { Button } from '../../components';
 import { relativeTime } from '../../adapters/home';
 import {
   addSkill,
+  approveProposal,
   decideTestApproval,
   draftMarkdown,
   importSkillFromUrl,
+  listProposals,
   necessityKind,
+  rejectProposal,
+  runSleepPass,
   saveSkillMarkdown,
   shortModel,
   skillMarkdown,
@@ -15,6 +19,7 @@ import {
   testStatus,
   type DuplicateInfo,
   type Skill,
+  type SleepPassProposal,
   type TestJob,
 } from '../../adapters/skills';
 import { t, tn } from '../../i18n';
@@ -25,7 +30,7 @@ import { t, tn } from '../../i18n';
  * one by hand and the field to import one from a URL.
  */
 
-export type Tab = 'overview' | 'markdown' | 'test';
+export type Tab = 'overview' | 'markdown' | 'test' | 'proposals';
 
 const VERDICT_LABEL: Record<string, string> = {
   pass: 'Pass',
@@ -145,6 +150,114 @@ function MarkdownPane({ skill, say, onSaved }: { skill: Skill; say: (msg: string
           }}
         />
       </div>
+    </div>
+  );
+}
+
+/* ── Sleep pass: offline-mined proposals for this skill's SKILL.md ── */
+
+function ProposalsPane({ skill, say }: { skill: Skill; say: (msg: string) => void }) {
+  const [proposals, setProposals] = useState<SleepPassProposal[] | null>(null);
+  const [running, setRunning] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [openId, setOpenId] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    listProposals(skill.name)
+      .then(setProposals)
+      .catch((e: Error) => setError(e.message));
+  }, [skill.name]);
+
+  useEffect(() => {
+    setProposals(null);
+    setError(null);
+    load();
+  }, [load]);
+
+  const run = async () => {
+    setRunning(true);
+    setError(null);
+    try {
+      await runSleepPass(skill.name);
+      say(t('Sleep pass proposed a revision — review it below.'));
+      load();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const decide = async (p: SleepPassProposal, decision: 'approve' | 'reject') => {
+    setBusyId(p.id);
+    setError(null);
+    try {
+      if (decision === 'approve') {
+        await approveProposal(p.id);
+        say(t('Proposal approved and applied to the skill.'));
+      } else {
+        await rejectProposal(p.id);
+        say(t('Proposal rejected — the skill was not changed.'));
+      }
+      load();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const pending = (proposals ?? []).filter((p) => p.status === 'pending');
+  const decided = (proposals ?? []).filter((p) => p.status !== 'pending');
+
+  return (
+    <div className="fs-sk__proposals">
+      <p className="fs-prose">
+        {t('Mines recent sessions where this skill was used for evidence it worked or not, and asks a local model for one proposed SKILL.md revision. Nothing is applied automatically — every proposal needs your approval.')}
+      </p>
+      <div className="fs-sk__row">
+        <Button variant="primary" size="sm" icon={Zap} label={t('Run sleep pass now')} loading={running} onClick={() => void run()} testId="skill-sleep-pass-run" />
+      </div>
+      {error && <p className="fs-sk__error">{error}</p>}
+      {proposals === null && !error && <p className="fs-sk__hint">{t('Loading…')}</p>}
+      {proposals !== null && proposals.length === 0 && <p className="fs-sk__hint">{t('No proposals yet.')}</p>}
+
+      {pending.length > 0 && (
+        <div className="fs-sk__block">
+          <h3>{t('Pending')}</h3>
+          {pending.map((p) => (
+            <div key={p.id} className="fs-sk__proposal" data-testid="skill-proposal">
+              <div className="fs-sk__row">
+                <span className="fs-sk__hint">
+                  {shortModel(p.model)} · {t('{n} evidence item(s)', { n: p.evidenceCount })} · {relativeTime(p.createdAt)}
+                </span>
+              </div>
+              {p.rationale && <p className="fs-prose">{p.rationale}</p>}
+              <Button variant="ghost" size="sm" label={openId === p.id ? t('Hide diff') : t('Show diff')} onClick={() => setOpenId(openId === p.id ? null : p.id)} />
+              {openId === p.id && <pre className="fs-sk__pre">{p.diff || t('(no diff)')}</pre>}
+              <div className="fs-sk__row">
+                <Button variant="primary" size="sm" icon={Check} label={t('Approve')} loading={busyId === p.id} onClick={() => void decide(p, 'approve')} testId="skill-proposal-approve" />
+                <Button variant="danger" size="sm" icon={X} label={t('Reject')} loading={busyId === p.id} onClick={() => void decide(p, 'reject')} testId="skill-proposal-reject" />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {decided.length > 0 && (
+        <div className="fs-sk__block">
+          <h3>{t('History')}</h3>
+          {decided.map((p) => (
+            <div key={p.id} className="fs-sk__row">
+              <span data-tone={p.status === 'approved' ? 'success' : 'muted'} className="fs-sk__conf">
+                {p.status === 'approved' ? t('Approved') : t('Rejected')}
+              </span>
+              <span className="fs-sk__hint">{relativeTime(p.createdAt)}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -356,6 +469,7 @@ export function SkillDetail({ skill, dup, tab, onTab, onPublish, onAudit, onDele
     { key: 'overview', label: t('Overview') },
     { key: 'markdown', label: 'SKILL.md' },
     { key: 'test', label: t('Test') },
+    { key: 'proposals', label: t('Proposals') },
   ];
 
   return (
@@ -498,6 +612,8 @@ export function SkillDetail({ skill, dup, tab, onTab, onPublish, onAudit, onDele
       )}
 
       {tab === 'markdown' && <MarkdownPane skill={skill} say={say} onSaved={onChanged} />}
+
+      {tab === 'proposals' && <ProposalsPane skill={skill} say={say} />}
 
       {tab === 'test' && <TestPane skill={skill} published={published} onPublish={onPublish} onEdit={() => onTab('markdown')} onDelete={onDelete} say={say} />}
     </section>
