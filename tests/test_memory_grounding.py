@@ -245,7 +245,7 @@ def test_route_returns_owner_scoped_report(client):
         "Grew 12% to $500,000.", owner="someone-else", trust_class="human_explicit",
         evidence=[{"kind": "chat", "excerpt": "no numbers here"}],
     )
-    resp = client.get("/api/memory/grounding")
+    resp = client.get("/api/memory-engine/grounding")
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["status"] == "success"

@@ -1,4 +1,4 @@
-"""Grounding lint API — /api/memory/grounding (FAUSTUS).
+"""Grounding lint API — /api/memory-engine/grounding (FAUSTUS).
 
 ``src/memory_grounding.py`` checks that the concrete, checkable claims
 inside a memory item (numbers, dates, quotes, names, URLs...) actually show
@@ -31,7 +31,7 @@ def _owner(request: Request) -> str:
 
 
 def setup_memory_grounding_routes() -> APIRouter:
-    router = APIRouter(prefix="/api/memory", tags=["memory-grounding"])
+    router = APIRouter(prefix="/api/memory-engine", tags=["memory-grounding"])
 
     @router.get("/grounding")
     async def get_grounding(request: Request, limit: int = 200,

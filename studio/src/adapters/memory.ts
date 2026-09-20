@@ -607,7 +607,7 @@ export async function getGrounding(signal?: AbortSignal): Promise<MemoryGroundin
     unverifiable?: number;
     checked_items?: number;
     total_items?: number;
-  }>('/api/memory/grounding', signal);
+  }>('/api/memory-engine/grounding', signal);
   return {
     findings: (data.findings ?? []).map(groundingFindingFrom),
     unverifiable: data.unverifiable ?? 0,
