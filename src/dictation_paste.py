@@ -108,6 +108,25 @@ class Win32Clipboard:
         self.wintypes = wintypes
         self.user32 = ctypes.WinDLL("user32", use_last_error=True)
         self.kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        # 64-bit handles: without explicit prototypes ctypes truncates HGLOBAL
+        # and pointers to 32-bit ints and GlobalLock/GetClipboardData fail.
+        k, u = self.kernel32, self.user32
+        k.GlobalAlloc.argtypes = [wintypes.UINT, ctypes.c_size_t]
+        k.GlobalAlloc.restype = wintypes.HGLOBAL
+        k.GlobalLock.argtypes = [wintypes.HGLOBAL]
+        k.GlobalLock.restype = wintypes.LPVOID
+        k.GlobalUnlock.argtypes = [wintypes.HGLOBAL]
+        k.GlobalUnlock.restype = wintypes.BOOL
+        k.GlobalFree.argtypes = [wintypes.HGLOBAL]
+        k.GlobalFree.restype = wintypes.HGLOBAL
+        u.OpenClipboard.argtypes = [wintypes.HWND]
+        u.OpenClipboard.restype = wintypes.BOOL
+        u.GetClipboardData.argtypes = [wintypes.UINT]
+        u.GetClipboardData.restype = wintypes.HANDLE
+        u.SetClipboardData.argtypes = [wintypes.UINT, wintypes.HANDLE]
+        u.SetClipboardData.restype = wintypes.HANDLE
+        u.EnumClipboardFormats.argtypes = [wintypes.UINT]
+        u.EnumClipboardFormats.restype = wintypes.UINT
 
     def _open(self) -> None:
         for _ in range(25):
@@ -148,6 +167,7 @@ class Win32Clipboard:
         try:
             self.user32.EmptyClipboard()
             if not self.user32.SetClipboardData(_CF_UNICODETEXT, block):
+                self.kernel32.GlobalFree(block)  # ownership was not transferred
                 raise DictationError("SetClipboardData failed")
         finally:
             self.user32.CloseClipboard()
