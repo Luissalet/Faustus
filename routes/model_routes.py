@@ -2502,6 +2502,8 @@ def setup_model_routes(model_discovery):
                     "supports_tools": getattr(r, "supports_tools", None),
                     "endpoint_kind": kind,
                     "category": _classify_endpoint(base, kind),
+                    "backend": _serving_backend(base, kind)["backend"],
+                    "backend_label": _serving_backend(base, kind)["label"],  # cached probe
                     "model_refresh_mode": _endpoint_refresh_mode(r, kind),
                     "model_refresh_interval": getattr(r, "model_refresh_interval", None),
                     "model_refresh_timeout": getattr(r, "model_refresh_timeout", None),
