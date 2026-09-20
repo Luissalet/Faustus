@@ -196,3 +196,36 @@ def test_restore_skips_a_model_that_is_no_longer_resident(monkeypatch):
     monkeypatch.setitem(sys.modules, "httpx", _Http)
     assert pin.restore_keep_alive("http://127.0.0.1:11434/v1", "qwen", "5m") is False
     assert posted == []
+
+
+def test_restore_ping_echoes_the_resident_context_so_ollama_does_not_reload(monkeypatch):
+    """A keep_alive ping without the runner's num_ctx makes Ollama reload the
+    model with its default window; the 3 s timeout then aborts that load and
+    the model ends up evicted after every run (seen live on 20-09-2026 with a
+    27B loaded at 200k). The ping must carry the resident context length."""
+    pin.reset_for_tests()
+    monkeypatch.undo()
+    posted = []
+
+    class _Resp:
+        def json(self):
+            return {"models": [{"name": "qwen3.8:27b-q4_K_M", "context_length": 200192}]}
+
+    class _Http:
+        @staticmethod
+        def post(url, **kw):
+            posted.append(kw.get("json"))
+
+        @staticmethod
+        def get(url, **kw):
+            return _Resp()
+
+    import sys
+    from src import model_load_options
+
+    monkeypatch.setitem(sys.modules, "httpx", _Http)
+    monkeypatch.setattr(model_load_options, "resolve_for_request",
+                        lambda url, model, **kw: {"num_ctx": 8192, "num_gpu": 99})
+    assert pin.restore_keep_alive("http://127.0.0.1:11434/v1", "qwen3.8:27b-q4_K_M", "5m") is True
+    assert posted[0]["options"]["num_ctx"] == 200192  # the runner's real window wins
+    assert posted[0]["options"]["num_gpu"] == 99

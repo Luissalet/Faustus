@@ -203,6 +203,37 @@ def _is_default_model(endpoint: str, model: str) -> bool:
         return False
 
 
+def _resident_load_options(ps: Dict[str, Any], endpoint: str, model: str) -> Dict[str, Any]:
+    """Load-time options that make a keep_alive ping match the runner that is
+    already resident: its real context length from /api/ps, plus the saved
+    num_gpu/main_gpu for the model. Empty when nothing is known."""
+    options: Dict[str, Any] = {}
+    want = _norm_model(model)
+    for entry in (ps.get("models") or []):
+        if not isinstance(entry, dict):
+            continue
+        if _norm_model(str(entry.get("name") or entry.get("model") or "")) != want:
+            continue
+        try:
+            ctx = int(entry.get("context_length") or 0)
+        except (TypeError, ValueError):
+            ctx = 0
+        if ctx > 0:
+            options["num_ctx"] = ctx
+        break
+    try:
+        from src.model_load_options import resolve_for_request
+        saved = resolve_for_request(endpoint, model) or {}
+    except Exception:  # noqa: BLE001
+        saved = {}
+    if "num_ctx" not in options and saved.get("num_ctx"):
+        options["num_ctx"] = saved["num_ctx"]
+    for key in ("num_gpu", "main_gpu"):
+        if saved.get(key) not in (None, ""):
+            options[key] = saved[key]
+    return options
+
+
 def restore_keep_alive(endpoint: str, model: str, keep_alive: Any) -> bool:
     """Best-effort ping so Ollama drops back to the saved keep_alive. Never
     raises; never talks to a non-Ollama endpoint (OpenRouter has no
@@ -234,11 +265,18 @@ def restore_keep_alive(endpoint: str, model: str, keep_alive: Any) -> bool:
             return False
         if not resident and ps:
             return False
-        httpx.post(
-            url,
-            json={"model": model, "keep_alive": keep_alive, "prompt": "", "stream": False},
-            timeout=3.0,
-        )
+        body: Dict[str, Any] = {"model": model, "keep_alive": keep_alive, "prompt": "", "stream": False}
+        # 20-09-2026: a bare ping carries Ollama's default num_ctx. When the
+        # runner was loaded with another window (200k here) Ollama treats the
+        # ping as a reload: it tears the resident runner down, starts a new
+        # one, and the 3 s timeout below closes the connection mid-load
+        # ("client connection closed ... aborting load") — every run end
+        # evicted the 27B. Echo the resident runner's own context so the
+        # ping only moves the keep_alive.
+        options = _resident_load_options(ps, endpoint, model)
+        if options:
+            body["options"] = options
+        httpx.post(url, json=body, timeout=3.0)
         return True
     except Exception as e:  # noqa: BLE001
         logger.debug("restore_keep_alive failed: %s", e)
