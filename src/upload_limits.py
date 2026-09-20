@@ -57,6 +57,11 @@ EMAIL_COMPOSE_UPLOAD_MAX_BYTES = read_byte_limit_env(
 STT_MAX_AUDIO_BYTES = read_byte_limit_env(
     "ODYSSEUS_STT_MAX_AUDIO_BYTES", 25 * 1024 * 1024
 )
+# A meeting recording is a whole call, not a short dictation clip — a much
+# higher ceiling than STT_MAX_AUDIO_BYTES above (which is chat voice input).
+MEETINGS_MAX_AUDIO_BYTES = read_byte_limit_env(
+    "ODYSSEUS_MEETINGS_MAX_AUDIO_BYTES", 300 * 1024 * 1024
+)
 ICS_MAX_BYTES = read_byte_limit_env(
     "ODYSSEUS_ICS_MAX_BYTES", 10 * 1024 * 1024
 )

@@ -76,6 +76,7 @@ Studio se instala como app independiente (PWA) desde el propio navegador, sin ti
 - **Referencias visuales de proyecto:** guarda `@referencias` con nombre como enlaces de contexto de proyecto, distingue sujeto, estilo y composición, y adjúntalas explícitamente desde el selector. Quitar el enlace de una referencia no elimina su imagen de la galería.
 - **Aprender un estilo:** extrae reglas de estilo editables a partir de ejemplos en TXT/Markdown usando el modelo elegido, compara la respuesta base con la respuesta con estilo y guarda y selecciona un preset. La comparación hace dos llamadas al modelo usando la conexión seleccionada.
 - **Vídeo local:** transcribe con un modelo Whisper ya instalado, edita o traduce manualmente los segmentos con marca de tiempo, exporta SRT/VTT, y renderiza narración usando las voces de Windows en inglés o español instaladas. Sin API en la nube ni descargas automáticas de modelos. Las entradas están acotadas a 64 MB, 3 minutos y 1080p; se requiere FFmpeg/FFprobe. Esto es narración local práctica, no clonación de voz ni sincronización labial. La exportación narrada sustituye el audio original.
+- **Notas de reunión:** graba o sube un archivo de audio y recibe notas en Markdown — resumen, decisiones, tareas (responsable/fecha límite cuando se mencionan), preguntas abiertas y la transcripción completa con marcas de tiempo — mediante un trabajo en segundo plano que fragmenta las grabaciones largas, transcribe cada fragmento con el motor de voz configurado, y hace una pasada con un modelo local para redactar las notas. Si esa pasada no está disponible, la transcripción se guarda igualmente con un aviso en lugar de perderse. Está en Biblioteca → Meetings.
 
 ### Chat y panel de trabajo persistente
 
@@ -272,6 +273,8 @@ Jarvis ofrece una sesión de voz con reconocimiento español/inglés, respuestas
 Proveedores de voz: navegador (Web Speech API), sistema (voces de Windows instaladas, sin conexión), local (Kokoro TTS / faster-whisper STT), **Piper** (síntesis neuronal totalmente local, licencia MIT, con voces en español — instala el motor y descarga una voz desde Configuración → Voz, sin modelo incluido de fábrica; la síntesis siempre corre en un proceso hijo aislado, nunca dentro del servidor), **command** (ejecuta tu propio ejecutable local de TTS/STT mediante una plantilla configurable), o un endpoint de API configurado. Ver [docs/ui/voice.md](docs/ui/voice.md).
 
 La voz entra en la misma conversación y el mismo flujo de permisos de herramientas que el texto. Una sesión de voz no autoriza de forma general acciones sobre archivos, escritorio o servicios externos.
+
+Toda transcripción —tanto la voz de entrada como las notas de reunión— pasa por una limpieza determinista (`src/stt_cleanup.py`) antes de llegar a la conversación o a las notas: los segmentos repetidos se colapsan en uno, las frases conocidas de silencio/alucinación (español/inglés) y los marcadores de música se descartan, y un bucle de palabra o frase dentro de un segmento ("la la la la…") se colapsa, manteniendo coherentes las marcas de tiempo.
 
 ## Arquitectura
 

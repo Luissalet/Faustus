@@ -76,6 +76,7 @@ Studio installs as a standalone app (a PWA) straight from the browser — no app
 - **Project visual references:** save named `@references` as project context links, distinguish subject, style and composition, and explicitly attach them from the picker. Removing a reference link does not delete its gallery image.
 - **Learn a style:** derive editable style rules from TXT/Markdown examples using the selected model, compare baseline and styled answers, then save and select a preset. Comparison makes two model calls using the selected connection.
 - **Local video:** transcribe with an already-installed Whisper model, edit or manually translate timed segments, export SRT/VTT, and render narration using installed Windows English or Spanish voices. No cloud API or automatic model downloads. Inputs are bounded to 64 MB, 3 minutes and 1080p; FFmpeg/FFprobe are required. This is practical local narration, not voice cloning or lip-sync. Original audio is replaced in the narrated export.
+- **Meeting notes:** record or upload an audio file and get back Markdown notes — summary, decisions, action items (owner/due date when stated), open questions and the full timestamped transcript — from a background job that chunks long recordings, transcribes each chunk with the configured STT engine, and runs one local-model pass to write the notes. If that model pass is unavailable, the transcript is still saved with a warning instead of being lost. Listed under Library → Meetings.
 
 ### Chat and a persistent workbench
 
@@ -274,6 +275,8 @@ Jarvis provides a voice session with English/Spanish recognition, spoken replies
 Speech providers: browser (Web Speech API), system (installed Windows voices, offline), local (Kokoro TTS / faster-whisper STT), **Piper** (fully local, MIT-licensed neural TTS, including Spanish voices — install the engine and download a voice from Settings → Voice, no built-in model bundled; synthesis always runs in an isolated child process, never inside the server), **command** (run your own local TTS/STT executable via a placeholder template), or a configured API endpoint. See [docs/ui/voice.md](docs/ui/voice.md).
 
 Voice input enters the same conversation and tool-permission flow as typed input. A voice session is not blanket authorization for filesystem, desktop or external actions.
+
+Every transcript — voice input and meeting notes alike — passes through a deterministic cleanup pass (`src/stt_cleanup.py`) before it reaches the conversation or the notes: repeated segments collapse to one, known silence/hallucination phrases (English/Spanish) and bare music markers are dropped, and an in-segment word/phrase loop ("the the the the…") is collapsed, with timestamps kept coherent throughout.
 
 ## Architecture
 

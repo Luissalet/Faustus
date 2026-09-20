@@ -1191,6 +1191,7 @@ Corrections rejected	Correcciones rechazadas
 Cost	Coste
 Cost (USD)	Coste (USD)
 Cost of the current workflow	Coste del workflow actual
+Could not access the microphone.	No se pudo acceder al micrófono.
 Could not add it	No se ha podido añadir
 Could not add the endpoint.	No he podido añadir el endpoint.
 Could not add the note.	No se pudo añadir la nota.
@@ -1301,6 +1302,7 @@ Could not prepare the capture.	No se pudo preparar la captura.
 Could not prepare the commit	No he podido preparar el commit
 Could not prepare the regeneration	No he podido preparar la regeneración
 Could not probe	No se ha podido sondear
+Could not process the meeting.	No se pudo procesar la reunión.
 Could not push{detail}	No se pudo hacer push{detail}
 Could not read anything from the server	No he podido leer nada del servidor
 Could not read file provenance. Retry or download the file.	No se ha podido leer la procedencia. Reintenta o descarga el archivo.
@@ -2912,6 +2914,7 @@ Loading identities…	Cargando identidades…
 Loading images	Cargando imágenes
 Loading links	Cargando los enlaces
 Loading lint findings	Cargando los hallazgos del lint
+Loading meetings	Cargando reuniones
 Loading messages	Cargando mensajes
 Loading model	Cargando modelo
 Loading models	Cargando modelos
@@ -3115,6 +3118,7 @@ Measures this model against the free VRAM and fills num_ctx and num_gpu.	Mide es
 Media	Medios
 Media recipe	Receta multimedia
 Medium	Media
+Meeting notes ready	Notas de la reunión listas
 Meets requirements	Cumple los requisitos
 Memories	Recuerdos
 Memory	Memoria
@@ -3484,6 +3488,7 @@ No mail accounts	Sin cuentas de correo
 No matches	Sin coincidencias
 No materials pinned yet.	Aún no hay materiales fijados.
 No media recipes are installed.	No hay recetas multimedia instaladas.
+No meeting notes yet	Aún no hay notas de reuniones
 No memories yet. `/memory add text` saves one.	Todavía no hay recuerdos. `/memory add texto` guarda uno.
 No memory yet	Sin memoria todavía
 No message matches.	Ningún mensaje coincide.
@@ -4445,9 +4450,11 @@ Reconnecting…	Reconectando…
 Record	Registrar
 Record a technical decision and why…	Registra una decisión técnica y por qué…
 Record it	Registrarlo
+Record or upload an audio file; the transcript and notes collect here.	Graba o sube un archivo de audio; la transcripción y las notas se recopilan aquí.
 Record that this was classified wrongly, and why.	Registra que esto se clasificó mal, y por qué.
 Record the refusal	Registrar el rechazo
 Record voice note	Grabar nota de voz
+Record#audio	Grabar
 Recorded against {ref}	Se anotará contra {ref}
 Recorded rather than decided: when two sources disagree the mirror keeps both claims and says what would settle it, because a wrong answer chosen silently is worse than a disagreement shown plainly.	Registrado en vez de decidido: cuando dos fuentes discrepan el espejo guarda ambas afirmaciones y dice qué lo resolvería, porque una respuesta equivocada elegida en silencio es peor que un desacuerdo mostrado con claridad.
 Recorded with no reference	Se anotará sin referencia
@@ -4455,6 +4462,7 @@ Recorded, beside the original.	Registrado, junto al original.
 Recorded.	Anotado.
 Recording failed. Reconnect your microphone and retry.	Falló la grabación. Reconecta el micrófono y vuelve a intentarlo.
 Recording is too large. Try a shorter message.	La grabación es demasiado grande. Prueba un mensaje más corto.
+Recording needs a supported browser and microphone access.	Grabar requiere un navegador compatible y acceso al micrófono.
 Recover	Recuperar
 Recover {name}	Recuperar {name}
 Redo	Rehacer
@@ -5744,6 +5752,7 @@ The mail is already in {language}.	El correo ya está en {language}.
 The maintenance pass could not be started	No se ha podido lanzar la pasada de mantenimiento
 The manifest could not be read	No se ha podido leer el manifiesto
 The map was cut off; it goes deeper than this.	El mapa se ha recortado; sigue más allá.
+The meeting is taking longer than expected. Check back in Library later.	La reunión está tardando más de lo esperado. Vuelve a comprobarlo más tarde en Biblioteca.
 The memories the assistant keeps about you.	Los recuerdos que el asistente guarda sobre ti.
 The memory endpoint is not responding. The previous interface does not depend on this screen.	El endpoint de memoria no responde. La interfaz anterior no depende de esta pantalla.
 The memory is empty	La memoria está vacía
@@ -6112,6 +6121,7 @@ Track {id} clips	Clips de la pista {id}
 Transcribe	Transcribir
 Transcribe locally	Transcribir en local
 Transcribe with existing Whisper weights, then edit or translate the segments yourself. Dubbing uses an installed Windows voice and replaces the original audio; it does not clone voices or synchronize lips.	Transcribe con pesos de Whisper ya instalados y después edita o traduce los segmentos. El doblaje usa una voz instalada de Windows y sustituye el audio original; no clona voces ni sincroniza labios.
+Transcribing and writing notes…	Transcribiendo y redactando notas…
 Transcribing locally…	Transcribiendo en local…
 Transcribing…	Transcribiendo…
 Transcript in Studio	Transcripción en Studio
@@ -6248,6 +6258,7 @@ Unticked models stay out of Shuffle and the pickers.	Los modelos sin marcar qued
 Until	Hasta
 Untitled	Sin título
 Untitled document	Documento sin título
+Untitled meeting	Reunión sin título
 Untitled objective	Objetivo sin título
 Untitled research	Investigación sin título
 Untitled room	Sala sin título
@@ -6273,6 +6284,7 @@ Updated	Actualizado
 Updating	Actualizando
 Upload	Subir
 Upload PNG	Subir PNG
+Upload audio	Subir audio
 Upload timed out. Retry or remove this attachment.	La subida ha tardado demasiado. Reintenta o quita este adjunto.
 Uploaded {n} image	Subida {n} imagen
 Uploaded {n} images	Subidas {n} imágenes
@@ -7455,6 +7467,7 @@ tool calls	llamadas a herramientas
 tool), or paste a result here.	), o pega un resultado aquí.
 top_p (0-1).	top_p (0-1).
 top_p (0–1).	top_p (0–1).
+transcript only	solo transcripción
 unassigned	sin asignar
 unchanged	sin cambios
 under a second	menos de un segundo
@@ -7767,6 +7780,8 @@ yours	tuyo
 {n} matches	{n} coincidencias
 {n} material	{n} material
 {n} materials	{n} materiales
+{n} meeting	{n} reunión
+{n} meetings	{n} reuniones
 {n} memories	{n} recuerdos
 {n} memory	{n} recuerdo
 {n} merged into a new one	{n} fundido en uno nuevo

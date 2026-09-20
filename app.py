@@ -1037,6 +1037,10 @@ from routes.stt_routes import setup_stt_routes
 app.include_router(setup_stt_routes(stt_service))
 logger.info("STT service initialized (provider managed via settings)")
 
+# Meeting notes (record/upload -> chunked transcript -> local-model notes)
+from routes.meetings_routes import setup_meetings_routes
+app.include_router(setup_meetings_routes())
+
 # Documents (artifacts/canvas)
 from routes.document.document_routes import setup_document_routes
 document_router = setup_document_routes(session_manager, upload_handler)

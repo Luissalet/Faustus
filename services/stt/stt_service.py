@@ -8,7 +8,9 @@ import tempfile
 import time
 import threading
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
+
+from src import stt_cleanup
 
 logger = logging.getLogger(__name__)
 
@@ -108,7 +110,12 @@ class STTService:
                 return None
         return self._whisper_model
 
-    def _transcribe_local(self, audio_bytes: bytes, language: str = "", metadata: Optional[dict] = None) -> Optional[str]:
+    def _raw_segments_local(self, audio_bytes: bytes, language: str = "", metadata: Optional[dict] = None) -> Optional[List[Dict[str, Any]]]:
+        """Local faster-whisper transcription, UNCLEANED: the raw per-segment
+        ``{"start", "end", "text"}`` list straight out of the model. Cleanup
+        (src/stt_cleanup.py) is applied by the callers below, in one place,
+        so every local-STT caller — chat dictation and the meeting-notes
+        pipeline alike — sees the same post-processed output."""
         model = self._get_whisper()
         if not model:
             return None
@@ -122,9 +129,10 @@ class STTService:
             # Conversation, not dictation of a lecture: greedy decoding is
             # several times faster than the 5-beam default and just as good
             # on short utterances; the VAD trims the silence around them
-            # (and drops the "You"/"Thank you" a Whisper model hallucinates
-            # on pure silence). No context carried between calls — one
-            # bad turn must not colour the next.
+            # (and reduces the "You"/"Thank you" a Whisper model hallucinates
+            # on pure silence — src/stt_cleanup.py catches what still gets
+            # through). No context carried between calls — one bad turn must
+            # not colour the next.
             kwargs = {"beam_size": 1, "condition_on_previous_text": False}
             if language:
                 kwargs["language"] = language
@@ -132,23 +140,33 @@ class STTService:
             started = time.perf_counter()
             try:
                 segments, info = model.transcribe(tmp_path, vad_filter=True, **kwargs)
-                text = " ".join(seg.text.strip() for seg in segments)
+                raw = [{"start": seg.start, "end": seg.end, "text": seg.text.strip()} for seg in segments]
             except Exception as vad_error:  # noqa: BLE001 — the VAD needs an extra runtime some installs lack
                 logger.warning("Local STT: VAD unavailable (%s); transcribing without it", vad_error)
                 segments, info = model.transcribe(tmp_path, **kwargs)
-                text = " ".join(seg.text.strip() for seg in segments)
+                raw = [{"start": seg.start, "end": seg.end, "text": seg.text.strip()} for seg in segments]
             logger.info("Local STT took %.2fs", time.perf_counter() - started)
             if metadata is not None:
                 metadata["language"] = info.language
 
-            logger.info(f"Local STT: {len(text)} chars, lang={info.language}, prob={info.language_probability:.2f}")
-            return text
+            char_count = sum(len(s["text"]) for s in raw)
+            logger.info(f"Local STT: {char_count} chars, lang={info.language}, prob={info.language_probability:.2f}")
+            return raw
         except Exception as e:
             logger.error(f"Local STT transcription failed: {e}", exc_info=True)
             return None
         finally:
             if tmp_path:
                 Path(tmp_path).unlink(missing_ok=True)
+
+    def _transcribe_local(self, audio_bytes: bytes, language: str = "", metadata: Optional[dict] = None) -> Optional[str]:
+        raw = self._raw_segments_local(audio_bytes, language, metadata)
+        if raw is None:
+            return None
+        cleaned, stats = self._clean(raw)
+        if metadata is not None:
+            metadata["cleanup_stats"] = stats
+        return stt_cleanup.segments_to_text(cleaned)
 
     # ── API endpoint ──
 
@@ -213,13 +231,78 @@ class STTService:
         elif provider == "command":
             from .command_stt import transcribe_command
             template = settings.get("stt_command_template", "")
-            return transcribe_command(audio_bytes, template, language)
+            text = transcribe_command(audio_bytes, template, language)
+            return self._clean_flat_text(text, metadata)
         elif isinstance(provider, str) and provider.startswith("endpoint:"):
             endpoint_id = provider.split(":", 1)[1]
-            return self._transcribe_api(audio_bytes, endpoint_id, model, language)
+            text = self._transcribe_api(audio_bytes, endpoint_id, model, language)
+            return self._clean_flat_text(text, metadata)
         else:
             logger.error(f"Unknown STT provider: {provider}")
             return None
+
+    # ── Cleanup (src/stt_cleanup.py) — the single choke point every
+    # provider's raw output passes through before it leaves this service ──
+
+    def _hotkey_phrases(self, settings: Optional[dict] = None) -> List[str]:
+        settings = settings or self._load_settings()
+        phrases = settings.get("voice_stop_phrases") or []
+        return [p for p in phrases if isinstance(p, str) and p.strip()]
+
+    def _clean(self, segments: List[Dict[str, Any]]):
+        return stt_cleanup.clean_segments(segments, hotkey_phrases=self._hotkey_phrases())
+
+    def _clean_flat_text(self, text: Optional[str], metadata: Optional[dict]) -> Optional[str]:
+        if text is None:
+            return None
+        cleaned, stats = stt_cleanup.clean_text(text, hotkey_phrases=self._hotkey_phrases())
+        if metadata is not None:
+            metadata["cleanup_stats"] = stats
+        return cleaned
+
+    def transcribe_segments(self, audio_bytes: bytes, *, language: str = "", metadata: Optional[dict] = None) -> Optional[List[Dict[str, Any]]]:
+        """Cleaned, timestamped segments — for callers that need timestamps
+        (the meeting-notes pipeline) rather than a flat string. Only the
+        local (faster-whisper) provider has real per-segment timestamps;
+        command/endpoint providers return everything as a single segment
+        with ``start``/``end`` of ``None``.
+        """
+        settings = self._load_settings()
+        if settings.get("stt_enabled") is False:
+            return None
+        provider = settings["stt_provider"]
+        model = settings["stt_model"]
+        use_language = language or settings.get("stt_language", "")
+
+        if provider == "local":
+            raw = self._raw_segments_local(audio_bytes, use_language, metadata)
+            if raw is None:
+                return None
+            cleaned, stats = self._clean(raw)
+        elif provider == "command":
+            from .command_stt import transcribe_command
+            template = settings.get("stt_command_template", "")
+            text = transcribe_command(audio_bytes, template, use_language)
+            if text is None:
+                return None
+            cleaned, stats = stt_cleanup.clean_segments(
+                [{"start": None, "end": None, "text": text}], hotkey_phrases=self._hotkey_phrases(settings)
+            )
+        elif isinstance(provider, str) and provider.startswith("endpoint:"):
+            endpoint_id = provider.split(":", 1)[1]
+            text = self._transcribe_api(audio_bytes, endpoint_id, model, use_language)
+            if text is None:
+                return None
+            cleaned, stats = stt_cleanup.clean_segments(
+                [{"start": None, "end": None, "text": text}], hotkey_phrases=self._hotkey_phrases(settings)
+            )
+        else:
+            logger.error(f"Unknown STT provider: {provider}")
+            return None
+
+        if metadata is not None:
+            metadata["cleanup_stats"] = stats
+        return cleaned
 
     def get_stats(self) -> Dict[str, Any]:
         settings = self._load_settings()

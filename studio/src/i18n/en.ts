@@ -21,6 +21,7 @@ export const en: Record<string, string> = {
   // gender) -- tagged so both get their own Spanish row without disturbing
   // each other, while English shows the same plain word either way.
   'Open#issue_status': 'Open',
+  'Record#audio': 'Record',
   'Blocked#issue_status': 'Blocked',
   'Done#issue_status': 'Done',
   'Duplicate#issue_status': 'Duplicate',
