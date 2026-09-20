@@ -201,8 +201,13 @@ def simulate(
                 made_progress = True
                 continue
 
-            # manual/schedule/webhook/skill/wait/artifact_store/deliver: a
-            # structural pass-through once every dependency is satisfied.
+            # manual/schedule/webhook/skill/wait/wait_until/wait_for_event/
+            # artifact_store/deliver: a structural pass-through once every
+            # dependency is satisfied. A wait_until/wait_for_event timeout
+            # branch is not a separate edge this schema has — same as
+            # `wait`, it is one path that a real run may take longer to
+            # reach, not two the graph distinguishes.
+
             resolved_this_round[node_id] = "activated"
             made_progress = True
 

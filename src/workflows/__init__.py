@@ -34,7 +34,9 @@ from .store import (  # noqa: F401
 )
 from .handlers import (  # noqa: F401
     OPERATORS, default_handlers, evaluate, resolve,
+    EVENT_SOURCES, wait_until_handler, wait_for_event_handler,
 )
 
 __all__ = ["WorkflowEngine", "WorkflowStore", "NodeHandler", "ready_nodes",
-           "default_handlers", "evaluate", "resolve", "OPERATORS"]
+           "default_handlers", "evaluate", "resolve", "OPERATORS",
+           "EVENT_SOURCES", "wait_until_handler", "wait_for_event_handler"]

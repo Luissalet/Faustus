@@ -249,6 +249,249 @@ def wait_handler(node: WorkflowNode, context: Mapping[str, Any]) -> Dict[str, An
     return {"status": "paused", "wake_at": wake_at, "reason": f"waiting until {wake_at}"}
 
 
+class EventSourceError(Exception):
+    """A `wait_for_event` source could not be read this pass — a definition
+    or environment problem, not evidence that nothing changed."""
+
+
+def _scan_file_change(config: Mapping[str, Any]) -> Dict[str, float]:
+    """The `file_change` event source: every matching file under
+    `config.path`, mapped to its mtime.
+
+    A plain mtime snapshot rather than an OS-level watch (inotify and
+    friends), on purpose: the engine already re-invokes a paused node on a
+    timer (`wake_at`, the same mechanism `wait` uses), so polling is not an
+    extra mechanism here — it is the one the run already survives a restart
+    with. `wait_for_event_handler` diffs two snapshots to find what changed;
+    this function only ever describes "right now"."""
+    import fnmatch
+    import os
+    path = str(config.get("path") or "")
+    if not path or not os.path.isdir(path):
+        raise EventSourceError(f"config.path {path!r} is not a directory")
+    pattern = str(config.get("pattern") or "*")
+    recursive = bool(config.get("recursive"))
+    out: Dict[str, float] = {}
+    if recursive:
+        for root, _dirs, files in os.walk(path):
+            for name in files:
+                if not fnmatch.fnmatch(name, pattern):
+                    continue
+                full = os.path.join(root, name)
+                try:
+                    out[full] = os.stat(full).st_mtime
+                except OSError:
+                    continue
+    else:
+        try:
+            entries = os.listdir(path)
+        except OSError as exc:
+            raise EventSourceError(str(exc)) from exc
+        for name in entries:
+            if not fnmatch.fnmatch(name, pattern):
+                continue
+            full = os.path.join(path, name)
+            if not os.path.isfile(full):
+                continue
+            try:
+                out[full] = os.stat(full).st_mtime
+            except OSError:
+                continue
+    return out
+
+
+#: Built-in event sources for `wait_for_event`. Unlike `deliver`/`skill`/
+#: `artifact_store`, `file_change` needs no capability handed in — reading
+#: the local filesystem is not reaching outside Faustus, so it is wired by
+#: default rather than refusing until wired. `default_handlers(event_sources=
+#: {...})` adds more (a webhook queue, a message bus) without touching this
+#: file.
+EVENT_SOURCES: Dict[str, Callable[[Mapping[str, Any]], Dict[str, float]]] = {
+    "file_change": _scan_file_change,
+}
+
+
+def wait_until_handler(node: WorkflowNode, context: Mapping[str, Any]) -> Dict[str, Any]:
+    """`wait_until`: pause, polling, until `config.when` becomes true.
+
+    Same two-pass shape as `wait_handler` and the same condition language as
+    `condition_handler` (`evaluate`, above) — this is a `condition` that
+    keeps asking instead of deciding once. The overall deadline is computed
+    ONCE, on the first pass, and carried in `previous.deadline` exactly like
+    `wait`'s own `wake_at`: recomputing it on a later pass is how a 30-second
+    timeout becomes a wait that never ends.
+
+    On timeout: `config.on_timeout` truthy completes the node (`timed_out:
+    True`, not failed) so a `condition` node downstream can branch on it —
+    the schema has no separate timeout edge, so this is how a plan expresses
+    one. With no `on_timeout` the node fails, the same as any other
+    unmet-and-out-of-time wait."""
+    import math
+    from .clock import due, normalized, instant
+
+    when = node.config.get("when")
+    if not isinstance(when, Mapping):
+        return {"status": "failed",
+                "reason": "a wait_until node needs `config.when` with `left`, "
+                          "`op` and (unless op is exists/truthy) `right`"}
+    timeout_seconds = node.config.get("timeout_seconds")
+    if (type(timeout_seconds) not in (int, float) or isinstance(timeout_seconds, bool)
+            or timeout_seconds <= 0 or not math.isfinite(timeout_seconds)):
+        return {"status": "failed",
+                "reason": "a wait_until node needs a positive `config.timeout_seconds`"}
+    interval_seconds = node.config.get("interval_seconds", 5)
+    if (type(interval_seconds) not in (int, float) or isinstance(interval_seconds, bool)
+            or interval_seconds <= 0 or not math.isfinite(interval_seconds)):
+        return {"status": "failed",
+                "reason": "config.interval_seconds must be a positive number"}
+
+    previous = context.get("previous") or {}
+    now_dt = datetime.now(timezone.utc)
+    now = now_dt.isoformat()
+
+    deadline = str(previous.get("deadline") or "")
+    if not deadline:
+        try:
+            deadline = normalized((now_dt + timedelta(seconds=float(timeout_seconds))).isoformat())
+        except (OverflowError, ValueError):
+            return {"status": "failed",
+                    "reason": "config.timeout_seconds exceeds the supported time range"}
+
+    verdict = evaluate(when, context)
+    if verdict.get("error") and verdict["error"] != "missing_value":
+        # A definition mistake (unknown operator, incomparable types) is not
+        # something more polling could ever fix.
+        return {"status": "failed", "reason": f"{verdict['error']}: {verdict['detail']}"}
+    if verdict.get("passed"):
+        return {"passed": True, "detail": verdict["detail"], "deadline": deadline}
+
+    detail = str(verdict.get("detail") or "")
+    if due(deadline, now):
+        on_timeout = node.config.get("on_timeout")
+        if on_timeout:
+            return {"passed": False, "timed_out": True, "deadline": deadline,
+                    "detail": detail, "reason": f"wait_until timed out: {detail}"}
+        return {"status": "failed", "timed_out": True,
+                "reason": f"wait_until timed out after {timeout_seconds}s: {detail}"}
+
+    poll_dt = now_dt + timedelta(seconds=float(interval_seconds))
+    wake_dt = min(poll_dt, instant(deadline))
+    return {"status": "paused", "wake_at": normalized(wake_dt.isoformat()),
+            "deadline": deadline, "reason": f"waiting: {detail}"}
+
+
+def wait_for_event_handler(event_sources: Optional[Mapping[str, Callable]] = None) -> Callable:
+    """`wait_for_event`: pause until a matching source goes quiet.
+
+    Each pass re-scans the source and diffs it against the snapshot the
+    LAST pass saved (`previous.seen`) — the first pass takes that snapshot
+    silently, as a baseline, and never counts what was already there as an
+    "event"; only a change from here on is one. Every matching change found
+    resets the settle deadline (`previous.settle_until`), so the node only
+    completes once `config.settle_ms` has passed with nothing new — the
+    same debounce a person means by "wait until the dust settles". The
+    overall `config.timeout_ms` is enforced the whole time, independent of
+    settling, so a source that never quiets down cannot wait forever.
+
+    Restart-safe the same way `wait_until` is: `deadline`, `seen`, `events`
+    and `settle_until` are all carried in the paused result, so the next
+    pass — whether seconds or a full process restart later — picks up
+    exactly where this one left off rather than starting its baseline over
+    (which would silently forget every event seen before the crash)."""
+    registry: Dict[str, Callable] = dict(EVENT_SOURCES)
+    if event_sources:
+        registry.update(event_sources)
+
+    def handle(node: WorkflowNode, context: Mapping[str, Any]) -> Dict[str, Any]:
+        import math
+        from .clock import due, normalized, instant
+
+        source_name = str(node.config.get("source") or "")
+        scanner = registry.get(source_name)
+        if scanner is None:
+            return {"status": "failed",
+                    "reason": f"wait_for_event: unknown source {source_name!r}; "
+                              f"known sources: {', '.join(sorted(registry)) or 'none wired'}"}
+
+        def positive(key: str, default: Any = None) -> Optional[float]:
+            v = node.config.get(key, default)
+            if (type(v) not in (int, float) or isinstance(v, bool)
+                    or v <= 0 or not math.isfinite(v)):
+                return None
+            return float(v)
+
+        settle_ms = positive("settle_ms")
+        timeout_ms = positive("timeout_ms")
+        if settle_ms is None or timeout_ms is None:
+            return {"status": "failed",
+                    "reason": "a wait_for_event node needs positive `config.settle_ms` "
+                              "and `config.timeout_ms`"}
+        poll_ms = positive("poll_ms", 500) or 500.0
+        max_events = node.config.get("max_events", 50)
+        if type(max_events) is not int or isinstance(max_events, bool) or max_events < 1:
+            max_events = 50
+
+        previous = context.get("previous") or {}
+        now_dt = datetime.now(timezone.utc)
+        now = now_dt.isoformat()
+
+        deadline = str(previous.get("deadline") or "")
+        if not deadline:
+            try:
+                deadline = normalized((now_dt + timedelta(seconds=timeout_ms / 1000.0)).isoformat())
+            except (OverflowError, ValueError):
+                return {"status": "failed",
+                        "reason": "config.timeout_ms exceeds the supported time range"}
+
+        first_pass = "seen" not in previous
+        seen: Dict[str, float] = dict(previous.get("seen") or {})
+        events = list(previous.get("events") or [])
+        settle_until = str(previous.get("settle_until") or "")
+
+        try:
+            current = scanner(node.config)
+        except EventSourceError as exc:
+            return {"status": "failed", "reason": f"wait_for_event: {exc}"}
+        except Exception as exc:  # noqa: BLE001 — a scanner bug is a node failure, not a crash
+            return {"status": "failed", "reason": f"wait_for_event source raised: {exc}"}
+
+        if first_pass:
+            seen = dict(current)
+        else:
+            new_events = [{"path": path, "mtime": mtime, "detected_at": now}
+                         for path, mtime in current.items() if seen.get(path) != mtime]
+            seen.update(current)
+            if new_events:
+                events.extend(new_events)
+                if len(events) > max_events:
+                    events = events[-max_events:]
+                settle_until = normalized((now_dt + timedelta(seconds=settle_ms / 1000.0)).isoformat())
+
+        if events and settle_until and due(settle_until, now):
+            return {"settled": True, "events": events, "count": len(events),
+                    "deadline": deadline}
+
+        if due(deadline, now):
+            on_timeout = node.config.get("on_timeout")
+            detail = f"{len(events)} event(s) received" if events else "no matching event arrived"
+            if on_timeout:
+                return {"timed_out": True, "events": events, "count": len(events),
+                        "deadline": deadline, "reason": f"wait_for_event timed out: {detail}"}
+            return {"status": "failed", "timed_out": True,
+                    "reason": f"wait_for_event timed out after {timeout_ms}ms: {detail}"}
+
+        poll_dt = now_dt + timedelta(seconds=poll_ms / 1000.0)
+        wake_dt = min(poll_dt, instant(deadline))
+        if settle_until:
+            wake_dt = min(wake_dt, instant(settle_until))
+        return {"status": "paused", "wake_at": normalized(wake_dt.isoformat()),
+                "deadline": deadline, "seen": seen, "events": events,
+                "settle_until": settle_until,
+                "reason": f"waiting for {source_name} ({len(events)} event(s) so far)"}
+
+    return handle
+
+
 def _approval_plan(node, context):
     from src.contracts import ApprovalPlan
     plan = {"action": str(node.config.get("action") or "deliver"),
@@ -512,6 +755,7 @@ def default_handlers(*, approvals: Any = None, owner: str = "",
                      skill: Optional[Callable] = None,
                      media: Optional[Callable] = None,
                      artifact_store: Optional[Callable] = None,
+                     event_sources: Optional[Mapping[str, Callable]] = None,
                      ttl_seconds: Optional[int] = None) -> Dict[str, Callable]:
     """Every node type the contract allows, wired or honestly refusing.
 
@@ -524,6 +768,8 @@ def default_handlers(*, approvals: Any = None, owner: str = "",
         "webhook": trigger_handler,
         "condition": condition_handler,
         "wait": wait_handler,
+        "wait_until": wait_until_handler,
+        "wait_for_event": wait_for_event_handler(event_sources),
         "human_approval": approval_handler(approvals, owner=owner,
                                            ttl_seconds=ttl_seconds),
         "deliver": deliver_handler(deliver),

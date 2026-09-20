@@ -31,6 +31,7 @@ from .base import (
 
 #: What a node can be. Closed: a node type nothing can execute is a comment.
 NODE_TYPES = ("manual", "schedule", "webhook", "skill", "condition", "wait",
+              "wait_until", "wait_for_event",
               "human_approval", "artifact_store", "deliver")
 
 #: Types that reach outside — the ones where running twice is the real damage
