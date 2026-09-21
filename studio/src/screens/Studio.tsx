@@ -2399,15 +2399,21 @@ export function StudioScreen() {
 
   // "Dirigir…" — a user message on the live turn. The model picks it up
   // while generating (or before its next step if a tool is in flight).
-  const steerLive = useCallback((text: string) => {
+  const steerLive = useCallback(async (text: string): Promise<boolean> => {
     const message = text.trim();
-    if (!sessionId || !message) return;
-    setDraft((current) => (current.trim() === message ? '' : current));
-    setTurns((list) => appendSteer(list, message, false));
-    void steerChat(sessionId, message, { runId: runIdRef.current, mode: 'steer' }).then((ok) => {
-      if (!ok) say(t('I could not deliver that — nothing is running right now.'), 'warning');
-    });
-  }, [sessionId, say]);
+    if (!sessionId || !message) return false;
+    // 20-09-2026: the steer bubble used to go in before the server had taken
+    // the message, so a refused steer (the turn is parked on an approval, or
+    // it ended between the render and this send) left the text shown as
+    // delivered while it had gone nowhere. Show it only once accepted; the
+    // caller reopens it as a normal turn otherwise.
+    const ok = await steerChat(sessionId, message, { runId: runIdRef.current, mode: 'steer' });
+    if (ok) {
+      setDraft((current) => (current.trim() === message ? '' : current));
+      setTurns((list) => appendSteer(list, message, false));
+    }
+    return ok;
+  }, [sessionId]);
 
   /* ── Send ── */
   const send = useCallback(
@@ -2415,8 +2421,18 @@ export function StudioScreen() {
       const message = text.trim();
       if ((!message && attachments.length === 0) || sendingMessage.current) return;
       if (busy) {
-        if (message) steerLive(message);
-        return;
+        if (!message) return;
+        // A parked turn (waiting on an approval card or a question) still
+        // looks "live" here, and the server refuses a steer for it. Rather
+        // than dropping the message with a warning — which is what left the
+        // screen stuck on "Waiting for the model" with an orphaned card —
+        // fall through and open a new turn; `run()` marks the pending card
+        // superseded as it starts (20-09-2026).
+        if (await steerLive(message)) return;
+        setBusy(false);
+        controllerRef.current?.abort();
+        controllerRef.current = null;
+        runIdRef.current = null;
       }
 
       const parsed = message ? parseCommand(message) : null;

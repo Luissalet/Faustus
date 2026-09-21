@@ -230,6 +230,12 @@ function mediaCapabilities(): Promise<MediaCapabilities | null> {
  *  refusing outright rather than spending an upload attempt on it. */
 const MAX_ATTACHMENT_BYTES = 200 * 1024 * 1024; // 200MB
 
+/** How long typing must pause before the draft is handed up to Studio.
+ *  Short enough that a reload or a conversation switch a moment later keeps
+ *  the text, long enough that a burst of typing costs one screen render
+ *  instead of one per character. */
+const DRAFT_PUSH_MS = 250;
+
 /** Sync size gate — runs before the chip appears so huge files never flash. */
 function sizeIncompatibility(file: File): string | null {
   if (file.size > MAX_ATTACHMENT_BYTES) {
@@ -258,8 +264,8 @@ async function mediaIncompatibility(file: File): Promise<string | null> {
  * text instead of a floating menu.
  */
 export function Composer({
-  draft,
-  setDraft,
+  draft: draftProp,
+  setDraft: setDraftProp,
   busy,
   pending,
   preparing = false,
@@ -294,6 +300,53 @@ export function Composer({
   lastSent,
   textareaRef,
 }: ComposerProps) {
+  /* ── The draft is typed here and only then handed up ──────────────────
+   * 20-09-2026: the textarea was controlled straight from Studio's own
+   * state, so every keystroke re-rendered the whole screen — transcript
+   * included. In a long conversation that is tens of milliseconds per
+   * character, and typing a paragraph into one froze the tab for half a
+   * minute. The text now lives here (one small component re-renders per
+   * keystroke) and is pushed up when typing pauses, when focus leaves, and
+   * always before a send — so everything that reads `draft` up there (the
+   * outbox, the model-missing warning that puts the text back, ?draft=)
+   * still sees it. A draft set from outside (a quote, ↑, dictation) flows
+   * back down through the effect below. */
+  const [draft, setLocalDraft] = useState(draftProp);
+  const draftRef = useRef(draftProp);
+  const pushedRef = useRef(draftProp);
+  const pushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const setDraftPropRef = useRef(setDraftProp);
+  setDraftPropRef.current = setDraftProp;
+
+  const flushDraft = useCallback(() => {
+    if (pushTimer.current !== null) {
+      clearTimeout(pushTimer.current);
+      pushTimer.current = null;
+    }
+    if (draftRef.current !== pushedRef.current) {
+      pushedRef.current = draftRef.current;
+      setDraftPropRef.current(draftRef.current);
+    }
+  }, []);
+
+  const setDraft = useCallback((value: string) => {
+    draftRef.current = value;
+    setLocalDraft(value);
+    if (pushTimer.current !== null) clearTimeout(pushTimer.current);
+    pushTimer.current = setTimeout(flushDraft, DRAFT_PUSH_MS);
+  }, [flushDraft]);
+
+  useEffect(() => {
+    if (draftProp === pushedRef.current) return;
+    pushedRef.current = draftProp;
+    draftRef.current = draftProp;
+    setLocalDraft(draftProp);
+  }, [draftProp]);
+
+  // Never lose what is typed: hand it up before this composer goes away
+  // (another conversation, a layout change).
+  useEffect(() => () => flushDraft(), [flushDraft]);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const platform = usePlatform();
   const [pendingFiles, setPendingFiles] = useState<PendingAttachment[]>([]);
@@ -370,6 +423,7 @@ export function Composer({
    *  next message starts from nothing, exactly like attachments do. */
   const trySend = () => {
     if (uploads.hasPending()) return;
+    flushDraft();
     if (busy && onSteer) {
       const text = draft.trim();
       if (!text) return;
@@ -792,6 +846,7 @@ export function Composer({
         onChange={onChange}
         onKeyDown={onKey}
         onPaste={onPaste}
+        onBlur={flushDraft}
         onClick={(event) => refreshSuggestions(draft, event.currentTarget.selectionStart ?? draft.length)}
         data-testid="studio-input"
       />

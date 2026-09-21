@@ -935,6 +935,16 @@ details.fs-studio__step > summary:hover .fs-trace__label {
   color: var(--fs-warning);
 }
 
+/* Why the gate fired, in the server's words — the two gates share the same
+   question, so this line is what tells a destructive-command confirmation
+   apart from the untrusted-context one (20-09-2026). */
+.fs-studio__ask-reason {
+  color: var(--fs-text-2);
+  font-size: var(--fs-text-sm, 0.875rem);
+  line-height: 1.5;
+  margin: var(--fs-space-1) 0 var(--fs-space-2);
+}
+
 .fs-studio__ask-actions {
   display: flex;
   flex-wrap: wrap;
