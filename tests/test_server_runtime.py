@@ -45,6 +45,51 @@ def test_external_server_is_reused_not_adopted(monkeypatch):
     assert 'token' not in result
 
 
+def test_emergency_stopper_recognizes_checkout_entrypoints_only():
+    root=str(runtime.ROOT)
+    venv=str(runtime.ROOT/'venv'/'Scripts'/'python.exe')
+    electron=str(runtime.ROOT/'desktop'/'node_modules'/'electron'/'dist'/'electron.exe')
+    assert runtime._is_faustus_process({
+        'exe':venv,'cwd':root,'cmdline':[venv,'-m','uvicorn','app:app'],'pid':10,'ppid':1,
+    })
+    assert runtime._is_faustus_process({
+        'exe':electron,'cwd':root,'cmdline':[electron,'--type=renderer'],'pid':11,'ppid':10,
+    })
+    assert runtime._is_faustus_process({
+        'exe':r'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe',
+        'cwd':r'C:\Windows',
+        'cmdline':['powershell.exe','-File',str(runtime.ROOT/'launch-windows.ps1')],
+        'pid':12,'ppid':1,
+    })
+
+
+def test_emergency_stopper_does_not_claim_unrelated_python_or_port_service():
+    # The same interpreter can be used for tests or maintenance. A venv path,
+    # generic python name, or conventional port alone is not ownership.
+    venv=str(runtime.ROOT/'venv'/'Scripts'/'python.exe')
+    assert not runtime._is_faustus_process({
+        'exe':venv,'cwd':str(runtime.ROOT),'cmdline':[venv,'-m','pytest','tests'],
+        'pid':20,'ppid':1,
+    })
+    assert not runtime._is_faustus_process({
+        'exe':r'C:\Python313\python.exe','cwd':r'D:\somewhere-else',
+        'cmdline':['python','unrelated_server.py','--port','7000'],'pid':21,'ppid':1,
+    })
+
+
+def test_stop_all_preserves_model_servers_and_reports_managed_stop(monkeypatch,tmp_path):
+    monkeypatch.setattr(runtime,'RUNTIME',tmp_path)
+    monkeypatch.setattr(runtime,'RECORD',tmp_path/'server.json')
+    monkeypatch.setattr(runtime,'STOP',tmp_path/'stop.json')
+    monkeypatch.setattr(runtime,'stop',lambda wait_seconds=30:{'stopped':True,'port':7000})
+    monkeypatch.setattr(runtime,'discover_faustus_processes',lambda:[])
+    monkeypatch.setattr(runtime,'owned_process',lambda record:None)
+    result=runtime.stop_all()
+    assert result['stopped'] is True
+    assert result['remaining']==[]
+    assert result['preserved']==['ollama','llama-server','unrelated-python']
+
+
 def test_shutdown_spares_children_launched_to_outlive_the_server(monkeypatch, tmp_path):
     """The WhatsApp bridge and launch profiles are detached children; on
     Windows they still list the server as parent, so the shutdown sweep must

@@ -90,9 +90,185 @@ def terminate_tree(process):
     for item in alive:
         try:item.kill()
         except psutil.Error:pass
+    if alive:psutil.wait_procs(alive,timeout=5)
 
 
-def stop(expected_token=""):
+def _normal_path(value):
+    """Comparable path text without requiring the process path to exist."""
+    if value is None or str(value).strip()=="":return ""
+    try:return os.path.normcase(os.path.abspath(str(value))).replace("\\", "/")
+    except (OSError,TypeError,ValueError):return ""
+
+
+def _inside(path, parent):
+    path,parent=_normal_path(path),_normal_path(parent)
+    return bool(path and parent and (path==parent or path.startswith(parent.rstrip("/")+"/")))
+
+
+def _process_details(process):
+    """Read what Windows permits; an elevated process may deny some fields."""
+    details={"pid":process.pid,"ppid":0,"name":"","exe":"","cwd":"","cmdline":[]}
+    for key,reader in (
+        ("ppid",process.ppid),("name",process.name),("exe",process.exe),
+        ("cwd",process.cwd),("cmdline",process.cmdline),
+    ):
+        try:details[key]=reader()
+        except (psutil.Error,OSError):pass
+    return details
+
+
+def _is_faustus_process(details):
+    """Strong identity test used by the emergency all-instance stopper.
+
+    Merely listening on port 7000, being named python.exe, or using a Python
+    from the virtualenv is intentionally insufficient. This keeps unrelated
+    local services and one-off developer commands safe.
+    """
+    root=_normal_path(ROOT)
+    venv=_normal_path(ROOT / "venv")
+    electron=_normal_path(ROOT / "desktop" / "node_modules" / "electron")
+    exe=_normal_path(details.get("exe"))
+    cwd=_normal_path(details.get("cwd"))
+    argv=[str(value) for value in (details.get("cmdline") or [])]
+    command=" ".join(argv).replace("\\", "/").lower()
+    root_in_command=root.lower() in command
+    markers=(
+        "server_runtime.py", "launch-windows.ps1", "start-faustus.ps1",
+        "start-faustus-desktop.ps1", "app:app", "mcp_servers/",
+        "/desktop/main.cjs", "/desktop\"", "/desktop'",
+    )
+    marked=any(marker in command for marker in markers)
+
+    # Every Electron executable below this checkout is part of Faustus. This
+    # includes renderer/GPU helpers whose commands omit the desktop argument.
+    if _inside(exe,electron):return True
+    # Managed/manual Python servers and orphan MCP children from this venv.
+    if _inside(exe,venv) and marked:return True
+    # System Python or PowerShell launchers require both checkout and entrypoint.
+    if root_in_command and marked:return True
+    # Manual ``python -m uvicorn app:app`` can expose only its working directory.
+    if cwd==root and ("app:app" in command or "server_runtime.py" in command):return True
+    return False
+
+
+def _ancestor_pids(pid):
+    result=set()
+    try:process=psutil.Process(pid)
+    except psutil.Error:return result
+    while True:
+        try:process=process.parent()
+        except psutil.Error:break
+        if not process:break
+        result.add(process.pid)
+    return result
+
+
+def _basic_process_snapshot():
+    """Fast (pid, parent pid, image name) snapshot.
+
+    psutil's Windows process_iter asks the kernel about every process one by
+    one; on a busy desktop that can take 15-30 seconds. Toolhelp provides the
+    same routing data in a single snapshot, which keeps the stopper immediate.
+    """
+    if os.name!="nt":
+        return [(p.pid,p.info.get("ppid") or 0,p.info.get("name") or "")
+                for p in psutil.process_iter(["pid","ppid","name"],ad_value="")]
+    import ctypes
+    from ctypes import wintypes
+    class PROCESSENTRY32W(ctypes.Structure):
+        _fields_=[
+            ("dwSize",wintypes.DWORD),("cntUsage",wintypes.DWORD),
+            ("th32ProcessID",wintypes.DWORD),("th32DefaultHeapID",ctypes.c_size_t),
+            ("th32ModuleID",wintypes.DWORD),("cntThreads",wintypes.DWORD),
+            ("th32ParentProcessID",wintypes.DWORD),("pcPriClassBase",wintypes.LONG),
+            ("dwFlags",wintypes.DWORD),("szExeFile",wintypes.WCHAR*260),
+        ]
+    kernel32=ctypes.WinDLL("kernel32",use_last_error=True)
+    snapshot=kernel32.CreateToolhelp32Snapshot(0x00000002,0)
+    invalid=ctypes.c_void_p(-1).value
+    if snapshot==invalid:raise ctypes.WinError(ctypes.get_last_error())
+    entry=PROCESSENTRY32W();entry.dwSize=ctypes.sizeof(entry)
+    result=[]
+    try:
+        ok=kernel32.Process32FirstW(snapshot,ctypes.byref(entry))
+        while ok:
+            result.append((int(entry.th32ProcessID),int(entry.th32ParentProcessID),entry.szExeFile))
+            ok=kernel32.Process32NextW(snapshot,ctypes.byref(entry))
+    finally:kernel32.CloseHandle(snapshot)
+    return result
+
+
+def discover_faustus_processes():
+    """Return Faustus desktop/server roots and all of their descendants."""
+    excluded={os.getpid(),*_ancestor_pids(os.getpid())}
+    processes={}
+    details={}
+    # Reading cwd/cmdline/exe for every process is surprisingly expensive (and
+    # can make a stopper look hung), so inspect only plausible entrypoints.
+    entrypoint_names={
+        "python", "python.exe", "pythonw", "pythonw.exe", "electron",
+        "electron.exe", "powershell", "powershell.exe", "pwsh", "pwsh.exe",
+        "uvicorn", "uvicorn.exe",
+    }
+    for pid,ppid,name in _basic_process_snapshot():
+        if pid in excluded:continue
+        try:process=psutil.Process(pid)
+        except psutil.Error:continue
+        item={"pid":pid,"ppid":ppid,"name":name or "","exe":"","cwd":"","cmdline":[]}
+        if item["name"].lower() in entrypoint_names:item=_process_details(process)
+        processes[pid]=process
+        details[pid]=item
+    selected={pid for pid,item in details.items() if _is_faustus_process(item)}
+    # Include opaque Electron helpers and MCP children by ancestry.
+    changed=True
+    while changed:
+        changed=False
+        for pid,item in details.items():
+            if pid not in selected and item.get("ppid") in selected:
+                selected.add(pid);changed=True
+    # Launch profiles (including app-shell windows), bridges and external
+    # model helpers are deliberately detached. They may retain Faustus as
+    # their Windows parent, but the ledger proves they are meant to outlive it.
+    keep=set()
+    try:
+        ledger=json.loads((RUNTIME / "detached.json").read_text(encoding="utf-8"))
+        for raw_pid,record in (ledger or {}).items():
+            try:
+                pid=int(raw_pid)
+                process=processes.get(pid) or psutil.Process(pid)
+                if abs(process.create_time()-float(record.get("created") or 0))<=.01:keep.add(pid)
+            except (psutil.Error,ValueError,TypeError):pass
+    except (OSError,ValueError):pass
+    changed=True
+    while changed:
+        changed=False
+        for pid,item in details.items():
+            if pid not in keep and item.get("ppid") in keep:
+                keep.add(pid);changed=True
+    selected.difference_update(keep)
+    return [processes[pid] for pid in selected]
+
+
+def _terminate_processes(processes,timeout=5):
+    unique={process.pid:process for process in processes if process.pid!=os.getpid()}
+    if not unique:return [],[]
+    for process in unique.values():
+        try:process.terminate()
+        except psutil.Error:pass
+    _,alive=psutil.wait_procs(list(unique.values()),timeout=timeout)
+    for process in alive:
+        try:process.kill()
+        except psutil.Error:pass
+    if alive:_,alive=psutil.wait_procs(alive,timeout=5)
+    remaining=[]
+    for process in alive:
+        try:
+            if process.is_running():remaining.append(process.pid)
+        except psutil.Error:pass
+    return sorted(set(unique)-set(remaining)),sorted(remaining)
+
+
+def stop(expected_token="",wait_seconds=30):
     with launch_lock():
         record=read_record()
         if expected_token and record.get("token")!=expected_token:
@@ -101,13 +277,30 @@ def stop(expected_token=""):
         if not process:
             return {"stopped":False,"reason":"no_managed_server"}
         STOP.write_text(json.dumps({"token":record["token"]}),encoding="utf-8")
-        try:process.wait(timeout=30)
+        try:process.wait(timeout=wait_seconds)
         except psutil.TimeoutExpired:
             process=owned_process(record)
             if process:terminate_tree(process)
         if read_record().get("token")==record["token"]:RECORD.unlink(missing_ok=True)
         STOP.unlink(missing_ok=True)
         return {"stopped":True,"port":record["port"]}
+
+
+def stop_all():
+    """Stop all Faustus instances from this checkout, including tray apps."""
+    managed=stop(wait_seconds=5)
+    stopped,remaining=_terminate_processes(discover_faustus_processes())
+    record=read_record()
+    if not owned_process(record):
+        RECORD.unlink(missing_ok=True)
+        STOP.unlink(missing_ok=True)
+    return {
+        "stopped":bool(managed.get("stopped") or stopped),
+        "managed":managed,
+        "pids":stopped,
+        "remaining":remaining,
+        "preserved":["ollama","llama-server","unrelated-python"],
+    }
 
 
 def start(port=7000,owner="web"):
@@ -200,7 +393,7 @@ def _children_to_terminate():
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action",choices=["start","stop","status","serve"])
+    parser.add_argument("action",choices=["start","stop","stop-all","status","serve"])
     parser.add_argument("--port",type=int,default=7000)
     parser.add_argument("--owner",choices=["web","desktop"],default="web")
     parser.add_argument("--token",default="")
@@ -210,6 +403,7 @@ def main():
         if args.action=="serve":serve(args.port,args.token);return
         if args.action=="start":result=start(args.port,args.owner)
         elif args.action=="stop":result=stop(args.token)
+        elif args.action=="stop-all":result=stop_all()
         else:
             record=read_record();result={"managed":bool(owned_process(record)),"port":record.get("port"),"owner":record.get("owner")}
         print(json.dumps(result))
