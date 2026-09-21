@@ -749,6 +749,31 @@ const EMPTY_ENGINE_DRAFT: EngineCreateInput = {
   mtp: false, mtp_draft_n_max: 2,
 };
 
+/**
+ * Does this engine serve the default chat model?
+ *
+ * A running one answers for itself (`status.model` is what llama-server
+ * reports). A STOPPED one has no status to ask, so fall back to the alias it
+ * is configured to publish — `--alias <name>` in its extra arguments, which
+ * is exactly the model name the endpoint points at. Without this a stopped
+ * engine could never be recognised as the one the default needs, which is
+ * how the default ended up pointing at an engine nobody had started
+ * (21-09-2026).
+ */
+export function engineServesDefault(
+  engine: { extra_args?: string[]; model_path?: string },
+  status: { model?: string } | undefined,
+  defaultModel: string,
+): boolean {
+  if (!defaultModel) return false;
+  if (status?.model && status.model === defaultModel) return true;
+  const args = engine.extra_args ?? [];
+  for (let i = 0; i < args.length - 1; i++) {
+    if ((args[i] === '--alias' || args[i] === '-a') && args[i + 1] === defaultModel) return true;
+  }
+  return false;
+}
+
 function EnginesSection({ admin, say, defaultModel }: { admin: boolean; say: (t: string) => void; defaultModel: string }) {
   const [engines, setEngines] = useState<EngineConfig[] | null>(null);
   const [statuses, setStatuses] = useState<Record<string, EngineStatus>>({});
@@ -797,6 +822,30 @@ function EnginesSection({ admin, say, defaultModel }: { admin: boolean; say: (t:
         <Button size="sm" variant="ghost" label={t('Add engine')} onClick={() => setEditing('new')} />
       </header>
       <p className="fs-set__help">{t('Local llama-server instances, started and stopped here — never a script outside the app.')}</p>
+      {/* 21-09-2026: with Ollama closed, this screen led with "Ollama
+          unreachable" and the engine that actually serves the default model
+          was a stopped row further down — the person is left looking for a
+          way to start it (Luis: «no está encontrando el qwen 3.8 de
+          llama-server»). Say it where the eye lands, with the button on it. */}
+      {(() => {
+        const stopped = (engines ?? []).find(
+          (e) => engineServesDefault(e, statuses[e.id], defaultModel) && (statuses[e.id]?.state ?? 'unknown') !== 'running',
+        );
+        if (!stopped) return null;
+        return (
+          <p className="fs-notice" data-tone="warning" data-testid="default-engine-stopped">
+            {t('The default model ({model}) is served by {engine}, which is not running.', { model: defaultModel, engine: stopped.name })}{' '}
+            <Button
+              size="sm"
+              variant="primary"
+              icon={Play}
+              label={t('Start the engine')}
+              disabled={working === stopped.id}
+              onClick={() => void act(stopped.id, t('Starting {name}…', { name: stopped.name }), () => startEngine(stopped.id))}
+            />
+          </p>
+        );
+      })()}
       <DefaultResidencyField testId="default-residency-field-local" />
       <EngineSwapFields say={say} />
       {engines === null ? (
@@ -808,7 +857,7 @@ function EnginesSection({ admin, say, defaultModel }: { admin: boolean; say: (t:
           {engines.map((engine) => {
             const status = statuses[engine.id];
             const state = status?.state ?? 'unknown';
-            const servesDefault = Boolean(defaultModel) && status?.model === defaultModel;
+            const servesDefault = engineServesDefault(engine, status, defaultModel);
             const busy = working === engine.id;
             return (
               <li key={engine.id} className="fs-set__row" data-testid={`engine-row-${engine.id}`}>
