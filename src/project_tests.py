@@ -482,15 +482,27 @@ def run_tests(
                 argv = argv + ["--"] + py_rel
                 result["scope"] = "related"
                 result["related_files"] = rel
-            elif rel:
+            elif rel or list(changed):
                 # JS/node tests only: do not fall back to the whole pytest
                 # suite (Silhouettes d20e933f verified 82 unrelated python
                 # tests and never ran test_gestures.mjs).
+                #
+                # 20-09-2026 — same rule when NOTHING maps: a turn that wrote
+                # data files in a folder that merely happens to contain a
+                # `tests/` directory (a Blender add-on's, in the case that
+                # found this) ran that whole stranger suite, for minutes,
+                # having changed nothing it covers. "Related" has to mean
+                # related: with changes but no related test, there is
+                # nothing to verify here. `scope="all"` still runs
+                # everything, and a turn with no changed files at all is
+                # unaffected.
                 result["scope"] = "related"
                 result["related_files"] = rel
                 result["ran"] = False
                 result["ok"] = True
-                result["summary"] = "no related python tests"
+                result["summary"] = (
+                    "no related python tests" if rel else "no test covers the files this turn changed"
+                )
                 result["duration_s"] = round(time.time() - t0, 1)
                 return result
         result["command"] = " ".join(shlex.quote(a) if " " in a else a for a in argv)
