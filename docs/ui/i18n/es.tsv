@@ -8007,3 +8007,21 @@ yours	tuyo
 …or upload a file	…o sube un archivo
 ≥ {lower} GB (incomplete: {reason})	≥ {lower} GB (incompleto: {reason})
 ⟨insert⟩	⟨insertar⟩
+Dictate anywhere	Dictar en cualquier lugar
+Windows desktop app only. A global hotkey that transcribes into whatever app has focus — your email, a terminal, another program — not just this composer.	Solo en la app de escritorio de Windows. Un atajo global que transcribe en la app que tenga el foco — tu correo, una terminal, otro programa — no solo en este cuadro de texto.
+Global hotkey	Atajo global
+Press once to start recording, press again to transcribe and paste. Restart the desktop app after changing it.	Pulsa una vez para empezar a grabar, vuelve a pulsar para transcribir y pegar. Reinicia la app de escritorio tras cambiarlo.
+Delivery method	Método de entrega
+Clipboard: paste via Ctrl+V, then restore the clipboard. Type: sends keystrokes instead, for apps that block paste.	Portapapeles: pega con Ctrl+V y luego restaura el portapapeles. Escribir: envía pulsaciones de teclado en su lugar, para apps que bloquean el pegado.
+Clipboard (paste)	Portapapeles (pegar)
+Type (keystrokes)	Escribir (teclado)
+Allow for this task	Permitir para esta tarea
+Allow for this chat	Permitir en este chat
+Allow for this chat session	Permitir en este chat
+Always for this workspace folder	Siempre para esta carpeta
+Always for this folder	Siempre para esta carpeta
+Runs the action and whatever else this request needs. Asks again next turn.	Ejecuta la acción y lo que haga falta para esta petición. En el siguiente turno vuelve a preguntar.
+Stops asking at this gate for the rest of this conversation.	Deja de preguntar aquí durante el resto de esta conversación.
+Does not run the proposed action.	No ejecuta la acción propuesta.
+The default model ({model}) is served by {engine}, which is not running.	El modelo por defecto ({model}) lo sirve {engine}, que no está arrancado.
+Start the engine	Arrancar el motor

@@ -63,10 +63,22 @@ def main() -> int:
         " * translation table (docs/ui/i18n/es.tsv) by scripts/i18n_es.py -- edit the\n * table, not this file.\n */\n"
         "export const es: Record<string, string> = {\n" + body + ",\n};\n"
     )
-    with io.open(OUT, "w", encoding="utf-8", newline="\n") as f:
-        f.write(text)
+    check_only = "--check" in sys.argv
+    # 21-09-2026: `--check` used to REGENERATE es.ts before checking it. The
+    # file is generated from the table, so every run silently deleted any
+    # translation that lived only in es.ts — including strings added by hand
+    # in an earlier lote (the dictation panel's) and ones added minutes
+    # before by whoever was working. A check must not write; it reports, and
+    # says so when the generated file is out of date with the table.
+    if check_only:
+        current = io.open(OUT, encoding="utf-8").read() if os.path.exists(OUT) else ""
+        if current != text:
+            print("stale: studio/src/i18n/es.ts does not match docs/ui/i18n/es.tsv — run scripts/i18n_es.py")
+    else:
+        with io.open(OUT, "w", encoding="utf-8", newline="\n") as f:
+            f.write(text)
     print("es.ts: %d strings" % len(rows))
-    if "--check" in sys.argv:
+    if check_only:
         have = {k for k, _ in rows}
         missing = sorted(k for k in used_keys() if k not in have)
         for k in missing:
