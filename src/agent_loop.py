@@ -2090,12 +2090,57 @@ def _local_computer_rules() -> str:
     )
 
 
+#: How many top-level names of the workspace go into the prompt, and how
+#: long that line may get. Enough to recognise a project (or the scripts a
+#: previous turn left behind) without turning a 450-folder directory into a
+#: wall of text.
+_WORKSPACE_ORIENTATION_MAX_NAMES = 24
+_WORKSPACE_ORIENTATION_MAX_CHARS = 600
+
+
+def _workspace_orientation(workspace: Optional[str]) -> str:
+    """One line naming what is at the root of the workspace.
+
+    20-09-2026: between turns the earlier tool rounds are trimmed out of the
+    prompt, so a later turn in the same chat knew the workspace PATH but no
+    longer what was in it — and spent ten or twenty rounds of `ls`/`cd`
+    "locating" the folder and the helper scripts it had written itself an
+    hour before. Naming the root's own entries costs ~60 tokens and removes
+    that whole re-discovery. Best-effort: an unreadable folder just omits
+    the line.
+    """
+    if not workspace:
+        return ""
+    try:
+        with os.scandir(workspace) as it:
+            entries = sorted(
+                (e.name + ("/" if e.is_dir() else "") for e in it if not e.name.startswith(".")),
+                key=str.lower,
+            )
+    except OSError:
+        return ""
+    if not entries:
+        return "- The workspace folder is empty.\n"
+    total = len(entries)
+    shown: List[str] = []
+    used = 0
+    for name in entries[:_WORKSPACE_ORIENTATION_MAX_NAMES]:
+        used += len(name) + 2
+        if used > _WORKSPACE_ORIENTATION_MAX_CHARS:
+            break
+        shown.append(name)
+    rest = total - len(shown)
+    tail = f", … (+{rest} more)" if rest > 0 else ""
+    return f"- At its root: {', '.join(shown)}{tail}. No need to hunt for it with `ls`/`cd`.\n"
+
+
 def _workspace_coding_rules(workspace: Optional[str]) -> str:
     if not workspace:
         return ""
     return (
         "\n\n## Workspace coding mode\n"
         f"- Active workspace: `{workspace}`. Treat relative paths as relative to this folder.\n"
+        + _workspace_orientation(workspace) +
         "- This mode is for coding, debugging, shell, file, build, benchmark, and repo tasks. Do not use personal-assistant tools like email, calendar, notes, memory, documents, gallery, or UI panels for workspace work.\n"
         "- Work from the real filesystem and command output. Inspect before editing.\n"
         "- Start by orienting with `get_workspace` plus `grep`/`glob`/`ls`/`read_file`; prefer targeted reads over dumping whole files. Several searches beat one guess from memory.\n"
