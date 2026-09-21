@@ -338,9 +338,15 @@ def test_route_context_agent_frontend_and_cache_bust_wire_the_contract():
     # and the answer travels as an approval id — never as a message typed into
     # the composer on the user's behalf, which is what made "Approve" look
     # like the user had said the word.
-    assert "'approve' | 'approve_task' | 'approve_workspace' | 'deny'" in transcript
-    assert "onApproval('approve_task')" in transcript
-    assert "onApproval('approve_workspace')" in transcript
+    # 20-09-2026: the card no longer writes its own four buttons — it renders
+    # the scopes the server sends (`approval-scopes.ts`), narrowest first, so
+    # a label can never again claim a wider scope than its decision has.
+    scopes = (root / "studio/src/screens/studio/approval-scopes.ts").read_text(encoding="utf-8")
+    assert "'approve' | 'approve_task' | 'approve_workspace' | 'deny'" in scopes
+    for decision in ("approve_task", "approve", "approve_workspace", "deny"):
+        assert f"decision: '{decision}'" in scopes
+    assert "approvalChoices(ask.options)" in transcript
+    assert "onApproval(choice.decision)" in transcript
     assert "tool_approval_id" in chat_adapter
     assert "tool_approval_resolved" in chat_adapter
     # An answered question stops being a question: the card must not come back

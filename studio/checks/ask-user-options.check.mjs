@@ -32,7 +32,10 @@ assert.deepEqual(opts, [
   { label: 'SQLite (recommended)', description: 'No server to run; one file in the project.' },
   { label: 'Postgres', description: '' },
   { label: 'Write my own', description: '' },
-  { label: 'legacy-value-shape', description: '' },
+  // 20-09-2026: an option's wire `value` is kept now (the approval card
+  // renders the server's own scopes by it — approval-scopes.ts). A question
+  // option that only had a `value` still shows it as its label, as before.
+  { label: 'legacy-value-shape', description: '', value: 'legacy-value-shape' },
 ]);
 assert.ok(!opts.some((o) => o.label === '[object Object]'), 'no option is the string of an object');
 

@@ -203,6 +203,12 @@ export interface AskOption {
    *  Lets an answer be sent as `option_ids` instead of matching label text
    *  back to the choice it came from. */
   id?: string;
+  /** Approval cards only: the wire decision this option stands for
+   *  (`approve_task` / `approve` / `approve_workspace` / `deny`), so the
+   *  card can render the server's own wording instead of a second,
+   *  hand-written set of buttons whose labels drifted from what the
+   *  decisions actually mean (20-09-2026). */
+  value?: string;
 }
 
 /**
@@ -218,10 +224,12 @@ export function askOptionsFrom(raw: unknown): AskOption[] {
       if (o && typeof o === 'object') {
         const r = o as Record<string, unknown>;
         const id = str(r.id).trim();
+        const value = str(r.value).trim();
         return {
           label: str(r.label ?? r.value ?? r.title).trim(),
           description: str(r.description).trim(),
           ...(id ? { id } : {}),
+          ...(value ? { value } : {}),
         };
       }
       return { label: '', description: '' };
@@ -231,6 +239,12 @@ export function askOptionsFrom(raw: unknown): AskOption[] {
 
 export interface AskUser {
   question: string;
+  /** Why the gate fired, in the server's words: the untrusted-context
+   *  sentence, or — for the destructive-command guard — which command and
+   *  what about it needs a separate yes. Both gates share the question
+   *  "Allow this task to continue?", so without this the two are
+   *  indistinguishable in the card (20-09-2026). */
+  description?: string;
   options: AskOption[];
   multi: boolean;
   kind: 'tool_approval' | 'question';
@@ -1379,6 +1393,7 @@ export function toolEventsFrom(meta: Record<string, unknown>): HistoryToolEvent[
       ask: askRaw
         ? {
             question: str(askRaw.question),
+            description: str(askRaw.description) || undefined,
             options: askOptionsFrom(askRaw.options),
             multi: Boolean(askRaw.multi),
             kind: askRaw.kind === 'tool_approval' ? 'tool_approval' : 'question',
@@ -1502,6 +1517,7 @@ export function decode(raw: Record<string, unknown>, sseEvent: string | null): C
         type: 'ask_user',
         ask: {
           question: str(data.question),
+          description: str(data.description) || undefined,
           options: askOptionsFrom(data.options),
           multi: Boolean(data.multi),
           kind: data.kind === 'tool_approval' ? 'tool_approval' : 'question',

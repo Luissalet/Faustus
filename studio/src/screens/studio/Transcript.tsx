@@ -87,7 +87,9 @@ const speak = (text: string) => import('../../adapters/speech').then((m) => m.sp
 const Harness = lazyChunk(() => import('./Harness'));
 const SubagentBoard = lazyChunk(() => import('./SubagentBoard'));
 
-export type Decision = 'approve' | 'approve_task' | 'approve_workspace' | 'deny';
+import { approvalChoices, type Decision } from './approval-scopes';
+
+export type { Decision };
 
 export interface TranscriptProps {
   turns: Turn[];
@@ -805,14 +807,23 @@ export function AskCard({
       <div className="fs-studio__ask" ref={ref} data-testid="studio-approval">
         <p className="fs-studio__ask-title">{t('Needs your permission')}</p>
         {ask.question && <p className="fs-prose">{ask.question}</p>}
+        {/* 20-09-2026: both gates ask the same question ("Allow this task to
+            continue?"), so without the server's reason a destructive-command
+            confirmation is indistinguishable from the untrusted-context one
+            and reads like the folder grant stopped working. */}
+        {ask.description && <p className="fs-studio__ask-reason">{ask.description}</p>}
         <div className="fs-studio__ask-actions">
-          <Button variant="primary" icon={Check} label={t('Approve')} disabled={busy} onClick={() => onApproval('approve')} />
-          <Button label={t('Approve the whole task')} disabled={busy} onClick={() => onApproval('approve_task')} />
-          {/* 14-09-2026: remembered per workspace folder across chats
-              (src/tool_approval_grants.py) — the answer to «no me lo
-              preguntes en cada chat nuevo del proyecto». */}
-          <Button label={t('Always for this folder')} title={t('Remember this answer for the workspace folder: later chats in it stop asking here. Destructive-command and desktop confirmations still apply.')} disabled={busy} onClick={() => onApproval('approve_workspace')} />
-          <Button variant="danger" icon={X} label={t('Deny')} disabled={busy} onClick={() => onApproval('deny')} />
+          {approvalChoices(ask.options).map((choice) => (
+            <Button
+              key={choice.decision}
+              variant={choice.variant}
+              icon={choice.decision === 'deny' ? X : choice.variant === 'primary' ? Check : undefined}
+              label={choice.label}
+              title={choice.description || undefined}
+              disabled={busy}
+              onClick={() => onApproval(choice.decision)}
+            />
+          ))}
         </div>
       </div>
     );
