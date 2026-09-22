@@ -579,6 +579,12 @@ class ToolIndex:
                     ids.append(f"mcp_{name}")
                     metadatas.append({"tool_name": name, "tool_type": "mcp"})
 
+        # The prompt listing above cuts every description to 120 characters
+        # of its first line; index the full text when the manager has it.
+        structured = _mcp_index_docs(mcp_mgr, disabled_map)
+        if structured[0] is not None:
+            docs, ids, metadatas = structured
+
         if not docs:
             self._mcp_generation = gen
             return
@@ -1307,3 +1313,43 @@ def tool_index_warmup_enabled(env: Optional[Dict[str, str]] = None) -> bool:
     if legacy in _FALSY:
         return False
     return True
+
+
+#: Cap on the indexed text of one MCP tool. Long enough for a tool's
+#: purpose, when-to-use and the bilingual trigger words servers append; short
+#: enough that one verbose server cannot dominate the lexical floor.
+MCP_INDEX_DESC_CHARS = 1500
+
+
+def _mcp_index_docs(mcp_mgr, disabled_map):
+    """(docs, ids, metadatas) for every enabled MCP tool, from the manager's
+    structured listing — the FULL description, whitespace collapsed.
+
+    Indexing parsed `get_tool_descriptions_for_prompt()`, which cuts each
+    description to 120 characters of its first line. Everything a server
+    wrote after that — when to use the tool, the words a user would say
+    (often in a second language) — never reached tool-RAG, so a request
+    phrased the way people talk did not find the tool. (None, None, None)
+    when the manager has no structured listing; the caller keeps the parsed
+    text then."""
+    grouped = getattr(mcp_mgr, "_grouped_prompt_tools", None)
+    if not callable(grouped):
+        return None, None, None
+    try:
+        by_server = grouped(disabled_map or {})
+    except Exception:
+        return None, None, None
+    docs, ids, metadatas = [], [], []
+    for server_name, tools in (by_server or {}).items():
+        for t in tools or []:
+            name = str(t.get("qualified_name") or "").strip()
+            if not name:
+                continue
+            desc = " ".join(str(t.get("description") or "").split())[:MCP_INDEX_DESC_CHARS]
+            server_ctx = f" (server: {server_name})" if server_name else ""
+            docs.append(f"Tool: {name}{server_ctx}\n{desc}")
+            ids.append(f"mcp_{name}")
+            metadatas.append({"tool_name": name, "tool_type": "mcp"})
+    if not docs:
+        return None, None, None
+    return docs, ids, metadatas
