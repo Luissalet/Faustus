@@ -367,7 +367,12 @@ LEGACY = {
     "reviewer": {
         "mode": "reviewer", "model": "", "endpoint_id": "", "runner": "",
         "tools": ["read_file", "ls", "glob", "grep", "todowrite"],
-        "deny": ["write_file", "edit_file", "apply_patch", "bash", "python"],
+        # "powershell" added 22-09-2026: it was the only writing tool the
+        # reviewer did not deny, and on Windows it is bash. Leaving a tool off
+        # the allowlist is not the same refusal, because the session floor can
+        # put it back -- which is what tests/test_agent_profiles_builtin.py
+        # has been saying, in red, for as long as nobody looked.
+        "deny": ["write_file", "edit_file", "apply_patch", "bash", "python", "powershell"],
         "permission": ["deny write **", "deny delegate *", "allow read **"],
         "files": [], "max_rounds": 12, "timeout_s": None,
         "may_delegate": False, "caveats": [],

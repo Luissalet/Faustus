@@ -795,7 +795,7 @@ name: reviewer
 description: Reads the whole change and reports on it. Cannot write, cannot delegate.
 mode: reviewer
 tools: [read_file, ls, glob, grep, todowrite]
-deny: [write_file, edit_file, apply_patch, bash, python]
+deny: [write_file, edit_file, apply_patch, bash, python, powershell]
 permission:
   - "deny write **"
   - "deny delegate *"

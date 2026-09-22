@@ -37,7 +37,7 @@ Three rules hold for every entry:
 
 **A reviewer cannot write, and denies say so.** §8 asks an auditor not to fix
 things during an audit. A prompt asking nicely is not an enforcement point;
-`deny: [write_file, edit_file, apply_patch, bash, python]` is. Any built-in of
+`deny: [write_file, edit_file, apply_patch, bash, python, powershell]` is. Any built-in of
 mode `reviewer` that could still reach a writing tool is DROPPED by
 :func:`profile_defs` with a warning — dropping it fails the "the ten exist"
 test loudly, which is the point, whereas shipping it would hand a read-only
