@@ -197,10 +197,21 @@ def conversation_language(messages: Optional[Iterable[Dict[str, Any]]]) -> Optio
 
 
 def refresh_continuation(messages: List[Dict[str, Any]], hint: Optional[Dict[str, str]]) -> None:
-    """One current reminder after tool results, never a growing prompt tail."""
+    """One current reminder after tool results, never a growing prompt tail.
+
+    Placed BEFORE the final message, not after it. This runs at the top of a
+    round, when the last thing in the list is whatever the previous round
+    ended with -- tool results, or a runtime instruction as pointed as "the
+    tests FAILED, fix them". Appending put a standing style requirement
+    after that instruction, so the last thing the model read before
+    answering was boilerplate about which language to write in rather than
+    the thing it had to do. A reminder is a condition on the answer; it is
+    not the next step, and it should not be read as one.
+    """
     messages[:] = [m for m in messages if m.get("_agent_injected") != "reply_language_continuity"]
     if hint:
-        messages.append({**hint, "_agent_injected": "reply_language_continuity"})
+        messages.insert(max(0, len(messages) - 1),
+                        {**hint, "_agent_injected": "reply_language_continuity"})
 
 
 #: Used when the conversation settles no language of its own. Empty keeps the

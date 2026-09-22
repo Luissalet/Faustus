@@ -247,7 +247,10 @@ def test_untrusted_tool_context_cannot_change_reply_language():
     }]) == "en"
 
 
-def test_continuation_reminder_stays_after_tool_batch_without_accumulating():
+def test_continuation_reminder_rides_with_the_tool_batch_without_accumulating():
+    """Refreshed five times leaves exactly one reminder, and it sits BEFORE
+    the last message rather than after it -- the last thing the model reads
+    has to be the step it was just given, not a standing style rule."""
     from src.reply_language import refresh_continuation, conversation_language
     original = [user(ENGLISH), {"role": "assistant", "tool_calls": [{"id": "a"}]},
                 {"role": "tool", "tool_call_id": "a", "content": SPANISH}]
@@ -255,8 +258,12 @@ def test_continuation_reminder_stays_after_tool_batch_without_accumulating():
     hint = context_message(messages)
     for _ in range(5):
         refresh_continuation(messages, hint)
-    assert messages[:-1] == original
-    assert "in English" in messages[-1]["content"]
+    injected = [m for m in messages
+                if m.get("_agent_injected") == "reply_language_continuity"]
+    assert len(injected) == 1, "one reminder, never a growing prompt tail"
+    assert "in English" in injected[0]["content"]
+    assert messages[-1] == original[-1], "the last word stays with the conversation"
+    assert [m for m in messages if not m.get("_agent_injected")] == original
     assert conversation_language(messages) == "en"
     refresh_continuation(messages, None)
     assert messages == original
