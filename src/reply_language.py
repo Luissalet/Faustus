@@ -203,6 +203,34 @@ def refresh_continuation(messages: List[Dict[str, Any]], hint: Optional[Dict[str
         messages.append({**hint, "_agent_injected": "reply_language_continuity"})
 
 
+#: Used when the conversation settles no language of its own. Empty keeps the
+#: old behaviour exactly: say nothing and let the model choose.
+DEFAULT_LANGUAGE_SETTING = "reply_language_default"
+
+
+def fallback_language() -> Optional[str]:
+    """The language to use when the conversation settles none.
+
+    Found by using the app. "Prueba de envio numero dos" was answered in
+    Portuguese. Nothing was broken: written without accents, its only function
+    word is "de", which four of the six languages share, so the signal came in
+    under the threshold and no language was pinned at all. The model was left
+    to guess from a sentence that, stripped of its accents, really does look
+    Portuguese -- and people type without accents constantly.
+
+    Staying silent is the right default for a server that does not know its
+    user. It is the wrong one for a personal install where every conversation
+    is in the same language, so that install can name it here and stop the
+    guessing. An unset or unrecognised value keeps today's behaviour.
+    """
+    try:
+        from src.settings import get_setting
+        code = str(get_setting(DEFAULT_LANGUAGE_SETTING, "") or "").strip().lower()
+    except Exception:  # noqa: BLE001
+        return None
+    return code if code in _DIRECTIVE else None
+
+
 def context_message(
     messages: Optional[Iterable[Dict[str, Any]]],
 ) -> Optional[Dict[str, str]]:
@@ -212,7 +240,7 @@ def context_message(
     is one: local backends key their KV-cache prefix off the system message
     byte-for-byte, and this line changes whenever the user switches language.
     """
-    code = conversation_language(messages)
+    code = conversation_language(messages) or fallback_language()
     if not code:
         return None
     return {

@@ -1163,9 +1163,17 @@ _STOPWORDS = {
              it its on at from by be been what how why when which who not no do does did
              have has had can could should would will about between than more most best
              long take usually""".split(),
-    "es": """el la los las un una unos unas y de del que en por para con como es son era
+    # `dos`, `o`, `da` and `segundo` are here because they are ordinary
+    # Spanish (the number, the conjunction, "da" from dar, the ordinal) and
+    # were listed ONLY under pt, where they are contractions and function
+    # words. Each of them alone therefore settled Portuguese outright: "dame
+    # dos ejemplos" scored pt 1.0 and was answered in Portuguese. Listed in
+    # both, the 1/(languages sharing it) weighting does its job and they stop
+    # deciding anything on their own.
+    "es": """el la los las un una unos unas y o de del que en por para con como es son era
              sobre según qué cuál cuáles cuánto cuánta cuántos dónde cómo porqué al se no
-             ni hay más entre desde tienen tiene sus su este esta estos estas necesito""".split(),
+             ni hay más entre desde tienen tiene sus su este esta estos estas necesito
+             dos da segundo""".split(),
     "pt": """o os as um uma e de do da dos das que em por para com como é são era sobre
              segundo qual quais quanto quanta quantos onde não há mais entre desde têm tem
              seus sua este esta estes estas você são melhores leva""".split(),

@@ -128,7 +128,21 @@ def test_the_context_blocks_this_module_sits_beside_are_skipped():
     assert conversation_language([user(SPANISH), date_block]) == "es"
 
 
-def test_nothing_to_read_means_no_directive():
+@pytest.fixture
+def no_default_language(monkeypatch):
+    """These tests are about a turn that settles no language of its own, so
+    they must not read the install's `reply_language_default` -- which exists
+    precisely to answer that case and would otherwise make them pass or fail
+    depending on whose machine they run on."""
+    import src.settings as settings_mod
+    real = settings_mod.get_setting
+    monkeypatch.setattr(
+        settings_mod, "get_setting",
+        lambda key, default=None: (
+            "" if key == "reply_language_default" else real(key, default)))
+
+
+def test_nothing_to_read_means_no_directive(no_default_language):
     assert conversation_language([]) is None
     assert conversation_language([user("Hazlo"), user("...")]) is None
     assert context_message([user("Hazlo")]) is None
@@ -198,7 +212,7 @@ def test_a_spanish_conversation_gets_the_spanish_directive_in_place():
     assert "en español" in built[-2]["content"]
 
 
-def test_a_turn_that_settles_nothing_adds_no_message_at_all():
+def test_a_turn_that_settles_nothing_adds_no_message_at_all(no_default_language):
     from src.agent_loop import _build_system_prompt
 
     built, _ = _build_system_prompt(

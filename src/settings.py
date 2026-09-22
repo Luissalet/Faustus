@@ -586,6 +586,13 @@ DEFAULT_SETTINGS = {
     # Never applied to a request that also carries tools (Ollama does not
     # combine `format` with `tools` reliably), so the agent loop is untouched.
     "local_structured_output": "auto",
+    # Reply language to use when a conversation settles none of its own
+    # (src/reply_language.py). Empty is the old behaviour: say nothing and let
+    # the model choose, which is right for an install that does not know its
+    # user and wrong for a personal one where every conversation is in the
+    # same language -- a short message with no function words got answered in
+    # whatever the model felt like. One of es/en/fr/de/pt/it, or empty.
+    "reply_language_default": "",
     # Typed choice decisions (src/typed_choice.py): let a tool-less internal
     # pass that needs to pick among a small fixed set of options (currently:
     # the verify_claim tool's optional layer-5 judge, src/tool_execution.py)
