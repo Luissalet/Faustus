@@ -56,6 +56,17 @@ def used_keys() -> set[str]:
 
 
 def main() -> int:
+    # The report is about interface strings, so it is full of characters the
+    # Windows console's default code page cannot encode. Printing the first
+    # key containing a "→" killed the whole check with a UnicodeEncodeError,
+    # mid-list, so the tool that tells you what is untranslated could not
+    # finish saying it. Reconfigure the stream rather than mangling the keys:
+    # a key printed with "?" in it is not a key anyone can look up.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):  # pragma: no cover - older/odd streams
+            pass
     rows = load()
     body = ",\n".join("  %s: %s" % (json.dumps(k, ensure_ascii=False), json.dumps(v, ensure_ascii=False)) for k, v in rows)
     text = (
