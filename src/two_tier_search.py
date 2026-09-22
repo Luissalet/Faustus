@@ -579,10 +579,24 @@ def _search(corpus: Iterable[Any], query: Any, k: int, embedder: Any,
     # query, and its judgement is not second-guessed here.
     if degraded and tier == TIER_HYBRID and lexical_ranked and k > 1:
         head = ordered[:k]
-        rescued = [doc_id for doc_id in lexical_ranked[:k] if doc_id not in head]
-        if rescued:
-            keep = k - min(len(rescued), k // 2)
-            promoted = head[:keep] + rescued[:k - keep]
+        strong = lexical_ranked[:k]
+        strong_set = set(strong)
+        missing = [doc_id for doc_id in strong if doc_id not in head]
+        if missing:
+            # Room is made by dropping documents the strong lane did NOT
+            # choose, from the tail of the head. Taking the head's last
+            # slots wholesale instead threw away whatever was sitting in
+            # them -- and what sits at the bottom of a fused head is
+            # typically a document the weak lane disliked, which is to say
+            # exactly the strong lane's own answer. Measured: for "run a
+            # shell command", `bash` was at the tail of the head and the
+            # rescue evicted it to make room for rescues, so the rule
+            # deleted the one document it exists to protect.
+            budget = min(len(missing), k // 2)
+            fused_only = [doc_id for doc_id in head if doc_id not in strong_set]
+            dropped = set(fused_only[-budget:]) if budget else set()
+            kept = [doc_id for doc_id in head if doc_id not in dropped]
+            promoted = kept + missing[:max(0, k - len(kept))]
             rest = [doc_id for doc_id in ordered if doc_id not in set(promoted)]
             ordered = promoted + rest
 

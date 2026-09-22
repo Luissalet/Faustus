@@ -215,4 +215,8 @@ def test_the_module_calls_nothing_that_varies_between_runs():
             imported.add(node.module.split(".")[0])
     assert not ({"random", "time", "uuid", "secrets"} & imported), sorted(imported)
     # …and stdlib only: nothing from outside the standard library or this app.
-    assert imported <= {"logging", "math", "functools", "typing", "src", "__future__"}
+    # `unicodedata` earns its place: folding accents is what makes "ultimas"
+    # and "últimas" the same token, and its tables ship with the interpreter,
+    # so it is as deterministic across machines as the FNV hash above.
+    assert imported <= {"logging", "math", "functools", "typing", "src",
+                        "unicodedata", "__future__"}

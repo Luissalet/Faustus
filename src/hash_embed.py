@@ -63,6 +63,7 @@ from __future__ import annotations
 
 import logging
 import math
+import unicodedata
 from functools import lru_cache
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
@@ -114,8 +115,50 @@ def _bucket(token: str, dims: int) -> int:
     return fnv1a_32(token) % dims
 
 
+def _strip_edge_punctuation(token: str) -> str:
+    """Leading and trailing punctuation dropped, by Unicode category.
+
+    ``src.memory.tokenize`` strips ``.,!?";`` — an English list, so ``¿`` and
+    ``¡`` survived and ``¿cuándo`` was a different word from ``cuándo``. Any
+    category-P character qualifies now, which also covers quotes, brackets
+    and dashes in every language rather than the handful somebody listed.
+
+    ``_`` is kept: it is connector punctuation to Unicode and a letter to
+    this catalogue, where half the vocabulary is ``read_file`` and
+    ``code_graph_search``. Only the edges are touched, so ``server.py``
+    keeps its dot.
+    """
+    start, end = 0, len(token)
+    while start < end and token[start] != "_" and unicodedata.category(token[start]).startswith("P"):
+        start += 1
+    while end > start and token[end - 1] != "_" and unicodedata.category(token[end - 1]).startswith("P"):
+        end -= 1
+    return token[start:end]
+
+
+def fold_accents(token: str) -> str:
+    """``últimas`` and ``ultimas`` are the same word to a lexical lane.
+
+    Combining marks are stripped after NFKD, so every accented Latin letter
+    folds to its base. This is about matching, not spelling: a user typing
+    quickly leaves the accents off, and before this the two spellings were
+    different vocabulary entries — "busca las ultimas noticias" scored zero
+    against an index that had written "últimas", and the lexical lane went
+    silent on exactly the requests it is best at.
+
+    ``ñ`` folds to ``n`` with the rest. It is a letter of its own and not an
+    accent, so this does merge ``año`` with ``ano``; for ranking a query
+    against a tool catalogue that costs nothing, and refusing to fold it
+    would leave ``añade``/``anade`` broken, which is the common case.
+    """
+    if token.isascii():
+        return token
+    return "".join(ch for ch in unicodedata.normalize("NFKD", token)
+                   if not unicodedata.combining(ch))
+
+
 def tokens(text: Any) -> List[str]:
-    """``src.memory.tokenize`` lowercased, with the empties dropped.
+    """``src.memory.tokenize`` lowercased and accent-folded, empties dropped.
 
     A list, not a set: the caller needs term frequency.
     """
@@ -126,7 +169,7 @@ def tokens(text: Any) -> List[str]:
         return []
     out: List[str] = []
     for token in raw:
-        token = str(token or "").strip().lower()
+        token = fold_accents(_strip_edge_punctuation(str(token or "").strip().lower()))
         if token:
             out.append(token)
     return out
