@@ -210,6 +210,22 @@ def test_leave_the_tests_alone_means_the_tests(tmp_path):
     assert allows("edit_file", _edit("test_inventario.py"), "arregla el test roto", workspace=ws) is True
 
 
+def test_the_summary_file_the_user_asked_for_is_written_without_a_card(tmp_path):
+    # seen live: the last step of the sales task stopped here
+    (tmp_path / "ventas_junio.csv").write_text("x", encoding="utf-8")
+    ws = str(tmp_path)
+    write = lambda name: json.dumps({"path": str(tmp_path / name), "content": "# Junio"})  # noqa: E731
+    ask = ("Te dejo en la carpeta el export (ventas_junio.csv). Hazme también un gráfico y un "
+           "resumen corto para el equipo en informe_junio.md con las cifras.")
+    assert allows("write_file", write("informe_junio.md"), ask, workspace=ws) is True
+    # naming a new file is enough on its own; naming the export is not a request to overwrite it
+    plain = "Quiero el resumen en informe_junio.md; el export es ventas_junio.csv."
+    assert allows("write_file", write("informe_junio.md"), plain, workspace=ws) is True
+    assert allows("write_file", write("ventas_junio.csv"), plain, workspace=ws) is False
+    assert allows("write_file", write("otro.md"), plain, workspace=ws) is False
+    assert allows("write_file", write("informe_junio.md"), "No crees informe_junio.md todavía", workspace=ws) is False
+
+
 @pytest.mark.parametrize("text", [
     "¿Qué cambia si subo el umbral?",
     "¿Por qué no lo arreglas?",

@@ -467,8 +467,11 @@ _ORDERS_A_CHANGE = (
     r"repara(?:lo|la)?", r"soluciona(?:lo|la)?", r"cambia(?:lo|la)?", r"modifica(?:lo|la)?",
     r"implementa(?:lo|la)?", r"implementar(?:lo|la)?", r"anade(?:lo|la|le)?", r"agrega(?:lo|la)?",
     r"crea(?:lo|la|me)?", r"escribe(?:lo|la|me)?", r"refactoriza(?:lo|la)?", r"actualiza(?:lo|la)?",
+    # "Hazme un resumen en informe.md" (seen live) orders a file as much as "créalo"
+    r"haz(?:lo|la|me)?", r"hacer(?:lo|la|me)?", r"genera(?:lo|la|me)?", r"generar(?:lo|la)?",
+    r"prepara(?:lo|la|me)?", r"redacta(?:lo|la|me)?", r"guarda(?:lo|la|me)?",
     r"fix", r"repair", r"change", r"modify", r"implement", r"add", r"create", r"write",
-    r"refactor", r"update",
+    r"refactor", r"update", r"make", r"generate", r"draft", r"save",
 )
 _LEAVE_TESTS_ALONE = re.compile(
     r"\b(?:sin\s+(?:tocar|modificar|cambiar)|no\s+(?:toques|modifiques|cambies))\s+(?:los\s+|las\s+)?(?:tests?|pruebas?)"
@@ -480,6 +483,23 @@ _TEST_FILE = re.compile(
 )
 
 
+def _names_every_file(user_text: str, targets: Any) -> bool:
+    """The user's message names each new file being written ("un resumen en
+    informe_junio.md"), not after a negation ("no toques app.py"). Only new
+    files: naming the export you hand over is not asking to overwrite it."""
+    import os
+
+    lowered = str(user_text or "").lower()
+    for target in targets:
+        if os.path.exists(str(target)):
+            return False
+        name = os.path.basename(str(target)).lower()
+        at = lowered.find(name) if len(name) >= 4 and "." in name else -1
+        if at < 0 or _NEGATED_BEFORE.search(user_text[:at]):
+            return False
+    return True
+
+
 def _edits_the_project(user_text: str, content: Any, workspace: str = "", tool: str = "") -> bool:
     from src import plugins as plugins_mod
     from src.tool_capabilities import _write_targets, path_inside_trusted
@@ -487,10 +507,10 @@ def _edits_the_project(user_text: str, content: Any, workspace: str = "", tool: 
     if not workspace:
         return False
     text = plugins_mod.fold(user_text)
-    if not _ordered(text, _ORDERS_A_CHANGE):
-        return False
     targets = _write_targets(tool, content)
     if not targets or not all(path_inside_trusted(workspace, t) for t in targets):
+        return False
+    if not _ordered(text, _ORDERS_A_CHANGE) and not _names_every_file(user_text, targets):
         return False
     if _LEAVE_TESTS_ALONE.search(text) and any(_TEST_FILE.search(t.replace("\\", "/")) for t in targets):
         return False
