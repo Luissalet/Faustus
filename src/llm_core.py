@@ -1303,20 +1303,82 @@ def _structured_output_enabled() -> bool:
     return value not in ("off", "false", "0", "no", "none", "disabled")
 
 
+#: Wire field that carries a JSON Schema, per backend. Ollama's native
+#: /api/chat takes `format`; llama-server takes `response_format` on its
+#: OpenAI-compatible surface and compiles the schema to a GBNF grammar.
+_SCHEMA_FIELD_OLLAMA = "format"
+_SCHEMA_FIELD_OPENAI = "response_format"
+
+
+def _schema_transport(url: str) -> Optional[str]:
+    """Which wire field can carry a JSON Schema to `url`, or None.
+
+    Two local backends can decode under a schema, and they take it in
+    different fields:
+
+    * native Ollama `/api/chat` -> ``format``
+    * llama-server `/v1/chat/completions` -> ``response_format``
+
+    Everything else (a hosted API, Ollama's own /v1 surface, an endpoint we
+    cannot identify) gets None and keeps the tolerant text parser. The
+    llama.cpp side is answered from the managed-engine registry with
+    ``probe=False``: a request on the hot path must never pay a network probe
+    to find out how to phrase itself.
+    """
+    if _is_ollama_native_url(url):
+        return _SCHEMA_FIELD_OLLAMA
+    try:
+        from src.model_backend import serving_backend
+        if serving_backend(url, probe=False).get("backend") == "llamacpp":
+            return _SCHEMA_FIELD_OPENAI
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("llm_core: schema transport unknown for %s: %s", url, exc)
+    return None
+
+
 def _resolve_response_schema(url: str, response_schema: Optional[Dict]) -> Optional[Dict]:
     """The schema to actually put on the wire for `url`, or None.
 
-    Gated on capability exactly like `think` and `num_ctx` are: only a native
-    Ollama endpoint understands `format`, so anything else (OpenAI, Anthropic,
-    llama.cpp, Ollama's own /v1) gets nothing and keeps today's parsing.
+    Gated on capability exactly like `think` and `num_ctx` are: only a backend
+    that decodes under a schema gets one, so a hosted API or an endpoint we
+    cannot identify gets nothing and keeps today's parsing. Which field the
+    schema travels in is `_schema_transport`'s business, not the caller's.
     """
     if not response_schema or not isinstance(response_schema, dict):
         return None
     if not _structured_output_enabled():
         return None
-    if not _is_ollama_native_url(url):
+    if not _schema_transport(url):
         return None
     return response_schema
+
+
+def _apply_openai_response_format(
+    payload: Dict, url: str, schema: Optional[Dict], tools: Optional[List] = None,
+) -> bool:
+    """Attach `schema` to an OpenAI-shaped payload for llama-server.
+
+    Returns whether it was attached, so a caller can log the difference rather
+    than assume it. The gate lives here and not at the call sites: a schema
+    that reaches a payload builder which silently ignores it is worse than no
+    schema at all, because the caller then trusts JSON that nothing enforced.
+
+    `tools` excludes the schema for the same reason as on the Ollama side --
+    the grammar and the tool-call decoder compete for the same output.
+    """
+    if not schema or not isinstance(schema, dict):
+        return False
+    if tools:
+        logger.debug("Not sending `response_format` alongside `tools` "
+                     "(constrained decoding is for tool-less passes only)")
+        return False
+    if _schema_transport(url) != _SCHEMA_FIELD_OPENAI:
+        return False
+    payload[_SCHEMA_FIELD_OPENAI] = {
+        "type": "json_schema",
+        "json_schema": {"name": "response", "strict": True, "schema": schema},
+    }
+    return True
 
 
 def _route_for_response_schema(url: str, model: str) -> str:
@@ -2868,6 +2930,11 @@ def llm_call(url: str, model: str, messages: List[Dict], temperature: float = LL
             tok_key = "max_completion_tokens" if _uses_max_completion_tokens(model) else "max_tokens"
             payload[tok_key] = max_tokens
         _apply_local_generation_stability(payload, target_url, model)
+        # `url`, not `target_url`: the gate in `_resolve_response_schema` was
+        # decided on the endpoint as configured, and the backend registry is
+        # keyed the same way. Asking about the normalised /chat/completions
+        # form answers "unknown" and drops the schema without a word.
+        _apply_openai_response_format(payload, url, schema)
         if provider == "mistral" and _supports_thinking(model):
             payload["reasoning_effort"] = _MISTRAL_REASONING_EFFORT
         if provider == "openrouter":
@@ -3426,6 +3493,7 @@ async def _llm_call_async_impl(
             payload["reasoning_effort"] = _MISTRAL_REASONING_EFFORT
         _apply_local_cache_affinity(payload, url, session_id)
         _apply_local_generation_stability(payload, target_url, model)
+        _apply_openai_response_format(payload, url, schema)  # `url`: see llm_call
         if provider == "openrouter":
             # Same OpenRouter options application as llm_call (OBJ-8 Lote A2)
             # -- see that call site for the full rationale.
