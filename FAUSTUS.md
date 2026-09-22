@@ -7045,3 +7045,97 @@ Lo grave es lo otro: **mientras esa guarda está en rojo, una llamada de
 verdad indebida se vería exactamente igual.** Ahí está el coste real de
 convivir con noventa y tres fallos: no es el trabajo de arreglarlos, es que
 dejan de significar nada, y entonces el que importa pasa desapercibido.
+
+## 165. Lo que había debajo de los tests frágiles (22-09-2026)
+
+La sección anterior nombraba cuatro clases de test que fallan sin que el
+producto esté roto. Siguiendo por la lista apareció la clase que faltaba, y
+es la peligrosa: **el test frágil que tapa un fallo real**.
+
+**Un turno cortado sin respuesta.** `test_force_answer_recovery_...` fijaba
+el número exacto de rondas, que la recuperación de bucle cambió
+legítimamente. Leído por encima, otro test que afirma sobre la maquinaria.
+Debajo del número había esto: las tres salidas del loop breaker hacen
+`break` directo fuera del bucle de rondas, y **al salir se saltan el rescate
+de respuesta forzada**. Reproducido: diez rondas de llamadas a herramientas,
+el turno se corta, y el usuario recibe una respuesta vacía — sin texto, cero
+tokens de salida, todos los `round_texts` vacíos, con todos los resultados
+necesarios para responder ya en la conversación.
+
+Ahora, cuando es el loop breaker quien termina el turno y no ha salido
+prosa, se pide una vez más sin herramientas la respuesta que esos resultados
+componen, en la ruta que estaba respondiendo de verdad.
+
+**La lección: una alarma que suena por el motivo equivocado deja de
+mirarse.** El detalle frágil no sólo era ruido; era camuflaje.
+
+### Dos fallos que sólo se ven usando el producto
+
+**El carril débil se comía la cabecera.** La búsqueda híbrida (BM25 +
+vectores hash) perdía recall según crecía el corpus, que es al revés de lo
+que debería pasar. Sobre las 185 descripciones de herramientas, el carril
+hash rankeaba 165: casi todo el corpus recibía puntuación, y sus favoritos
+por azar adelantaban a los aciertos léxicos. `bash` para «run a shell
+command» caía del #2 léxico al #9 tras la fusión. `HASH_WEIGHT=0.5` reduce
+su peso pero no lo acota. Ahora el carril débil se lleva media cabecera como
+mucho: las primeras plazas en orden de fusión, el resto reservadas para los
+mejores documentos del carril fuerte que la fusión tiró.
+
+**Faustus llamaba «huérfanos» a sus propios motores.** El escáner marcaba
+como resto abandonado cualquier `llama-server` cuyo padre no fuese Ollama —
+una regla escrita cuando Ollama era lo único que arrancaba un runner.
+Ejecutado contra una instalación real de llama.cpp señalaba los dos
+servidores que la propia instalación estaba usando, uno con 22 GB cargados
+respondiendo la conversación en curso. Eso es un `warn` permanente en la
+puntuación de salud y un botón *Release* que ofrece matar el modelo con el
+que estás hablando. Y la app ya sabía la diferencia en otro sitio: esos
+mismos endpoints salen listados en `external_runners`. Ahora un runner que
+escucha en el puerto de un endpoint configurado está poseído, lo arrancara
+quien lo arrancara.
+
+### Dos afinados del agente que salieron de contar rondas
+
+Tres tests del harness fallaban por una ronda de más. La ronda de más era
+real, y en dos casos la culpa era del producto:
+
+- **El recordatorio de idioma se quedaba con la última palabra.** Se
+  refresca al principio de cada ronda y se añadía al final, o sea después de
+  lo último que dejó la ronda anterior: los resultados de las herramientas o
+  una instrucción tan concreta como «los tests FALLARON, arréglalos». Lo
+  último que leía el modelo antes de responder era la chapa sobre en qué
+  idioma escribir. Ahora va antes del último mensaje.
+- **Pedir una explicación no es escaquearse.** Con un workspace activo,
+  cualquier respuesta sin herramientas parecía trabajo esquivado, y el
+  harness gastaba una ronda en exigir una llamada a herramienta. Al saludo ya
+  se le había hecho excepción; a una pregunta no. «Explica qué hace
+  server.py» se responde con prosa por definición. La excepción es estrecha:
+  el turno tiene que empezar pidiendo que le cuenten algo, y un verbo de
+  cambio en cualquier parte lo descalifica.
+
+### Dos cosas anotadas en vez de decididas
+
+No todo lo que se encuentra se arregla en el momento.
+
+`tool_approval_mode = auto` anula `desktop_control_mode = ask_each`: la
+puerta por llamada de las acciones de escritorio sólo se consulta en modo
+`ask`, así que con el modo global en automático una acción de ratón o
+teclado se ejecuta sin confirmar. El comentario que hay encima afirma lo
+contrario de lo que hace el código. Las dos lecturas son defendibles y
+cambiarlo altera el comportamiento de seguridad de una instalación viva, así
+que va a PENDIENTES para que lo decida su dueño.
+
+Y una medición que no cuadra: una de las seis tareas del eval scripted da 46
+tokens donde la baseline grabó 23, con **dos apuntes de consumo midiendo el
+mismo texto**. Regenerar la baseline habría puesto el test en verde y tirado
+la prueba a la basura. `usage_buckets` es de donde sale lo que se cobra a un
+endpoint de pago, así que un apunte duplicado es dinero mal atribuido:
+anotado con todo lo comprobado y lo descartado, sin cerrar.
+
+### Y el trabajo aburrido
+
+71 cadenas que la interfaz en español seguía enseñando en inglés: los
+controles de muestreo local y todas sus explicaciones, el panel de la pasada
+de reposo, el informe de respaldo, las acciones sobre reglas de memoria, el
+diálogo de crear repositorio. El check llevaba en rojo lo suficiente como
+para que dejara de leerse — la misma historia de la sección anterior, en
+pequeño.
