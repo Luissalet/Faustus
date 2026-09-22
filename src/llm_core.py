@@ -4803,6 +4803,11 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
         _apply_local_cache_affinity(payload, url, session_id)
         _apply_local_generation_stability(payload, target_url, model)
         _scrub_openai_chat_tool_reasoning(payload, target_url, model)
+        # The streaming path is the one the user is watching, and agent mode
+        # is the default here, so this is where a greeting arrives with the
+        # whole toolset attached. `turn_effort` decides; a conversation that
+        # has already run a tool always keeps its reasoning.
+        _suppress_thinking_for_small_talk(payload, model, messages_copy, tools)
         if provider == "openrouter":
             # Same OpenRouter options application as llm_call (OBJ-8 Lote A2)
             # -- see that call site for the full rationale. `tools` is known

@@ -1116,10 +1116,34 @@ def progress_list_is_complete(progress: Optional[List[Dict[str, Any]]]) -> bool:
 class TurnLedger:
     """What actually happened this turn, as recorded from tool executions."""
 
+    def conversational_turn(self) -> bool:
+        """Did the user ask a question rather than ask for work?
+
+        Found by using the app. "Hola, dime en dos frases qué eres y qué
+        puedes hacer por mí" produced a correct answer that was then rejected
+        as `intent_without_action`, because listing what it can do reads as
+        announcing intentions it never carried out. The model wrote a second
+        answer, both survived into the message, and the user got the same
+        paragraph twice across three rounds.
+
+        On a turn like that there is nothing to announce and nothing to do:
+        describing capabilities IS the answer. Every other check still runs --
+        this only excuses the one about unfulfilled intentions, and only for a
+        turn the whitelist in `src/turn_effort.py` recognises as small talk.
+        """
+        if self._conversational is None:
+            try:
+                from src.turn_effort import is_small_talk
+                self._conversational = is_small_talk(user_authored_text(self.user_text))
+            except Exception:  # noqa: BLE001 -- a guard must never break a turn
+                self._conversational = False
+        return self._conversational
+
     def __init__(self, workspace: Optional[str] = None, user_text: str = ""):
         self.workspace = workspace
         self.user_text = user_text or ""
         self.language = detect_language(self.user_text)
+        self._conversational: Optional[bool] = None
         self.events: List[Dict[str, Any]] = []
         self.observed_paths: Set[str] = set()
         self.rejections = 0
@@ -1500,7 +1524,7 @@ class TurnLedger:
         untouched = [p for p in self.claimed_untouched_paths(body) if p not in bad_paths]
         if untouched:
             reasons.append("claimed_paths_untouched")
-        if intent and not claims:
+        if intent and not claims and not self.conversational_turn():
             reasons.append("intent_without_action")
         if permission:
             reasons.append("asked_instead_of_continuing")

@@ -171,10 +171,28 @@ def test_the_wiring_leaves_real_work_alone(monkeypatch):
     assert "chat_template_kwargs" not in seen["body"]
 
 
-def test_tools_always_keep_reasoning():
-    """A turn that can act has consequences worth thinking about, and the
-    whitelist was not written with tool use in mind."""
-    messages = [{"role": "user", "content": "gracias"}]
+def test_having_tools_is_not_a_reason_to_reason():
+    """Agent mode is the default in this app, so a greeting arrives with the
+    whole toolset attached. Excluding those turns made the fix miss the only
+    case the user actually hits."""
+    messages = [{"role": "user", "content": "hola"}]
     tools = [{"type": "function", "function": {"name": "read_file"}}]
-    assert te.wants_reasoning(messages, tools=tools) is True
-    assert te.wants_reasoning(messages) is False
+    assert te.wants_reasoning(messages, tools=tools) is False
+
+
+def test_a_conversation_that_has_acted_keeps_reasoning():
+    """"sí" in a conversation waiting on an approval is a go-ahead, not a
+    pleasantry -- and that is the moment to think hardest."""
+    messages = [
+        {"role": "user", "content": "arregla el bug"},
+        {"role": "assistant", "content": "", "tool_calls": [{"id": "1"}]},
+        {"role": "tool", "content": "ok"},
+        {"role": "user", "content": "sí"},
+    ]
+    assert te.work_in_progress(messages) is True
+    assert te.wants_reasoning(messages) is True
+
+
+def test_a_plain_conversation_has_no_work_in_progress():
+    assert te.work_in_progress([{"role": "user", "content": "hola"}]) is False
+    assert te.work_in_progress([]) is False

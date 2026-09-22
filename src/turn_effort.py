@@ -110,13 +110,34 @@ def is_small_talk(text: str) -> bool:
     return bool(_SMALL_TALK_RE.search(stripped))
 
 
+def work_in_progress(messages: Optional[Sequence[Dict[str, Any]]]) -> bool:
+    """Has this conversation already started doing things?
+
+    A tool result or a tool call anywhere in it means the agent is mid-task.
+    That matters because the whitelist recognises "sí", "ok" and "adelante",
+    and in a conversation that is waiting on an approval those are not small
+    talk at all -- they are the go-ahead for the next action, which is exactly
+    when the model should be thinking hardest.
+    """
+    for message in messages or []:
+        if not isinstance(message, dict):
+            continue
+        if message.get("role") == "tool" or message.get("tool_calls"):
+            return True
+    return False
+
+
 def wants_reasoning(messages: Optional[Sequence[Dict[str, Any]]], *,
                     tools: Optional[List] = None) -> bool:
     """Should this turn keep the model's reasoning on?
 
-    Tools keep it: a turn that can act has consequences worth thinking about,
-    and the small-talk whitelist was never written with tool use in mind.
+    Having tools available is NOT a reason to reason: agent mode is the
+    default in this app, so a greeting arrives with the whole toolset attached
+    and would never have qualified otherwise -- which is the case the user
+    actually hits. What does disqualify a turn is the conversation having
+    started to act, because then a bare "sí" is an approval and not a
+    pleasantry.
     """
-    if tools:
+    if work_in_progress(messages):
         return True
     return not is_small_talk(last_user_text(messages))
