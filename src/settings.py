@@ -1445,6 +1445,20 @@ DEFAULT_SETTINGS = {
     # selector renormalizes lexical+trigger on its own when the semantic
     # lane is unavailable, so these don't need to sum to 1 by hand.
     "skill_selector_weights": {"semantic": 0.55, "lexical": 0.3, "trigger": 0.15},
+    # Project rules (src/project_rules.py, lot C): whether the per-project
+    # `.faustus/rules/` folder and the bundled `config/rules/` library are
+    # injected into the agent's system prompt at all. Off skips the whole
+    # feature and reproduces pre-lot-C behaviour exactly.
+    "project_rules_enabled": True,
+    # Character budget (estimated in tokens) for the combined project +
+    # library rules block appended to the system prompt. Rules that do not
+    # fit are summarised as a one-line "more rules available" pointer rather
+    # than dropped silently. See `project_rules.block`.
+    "project_rules_budget_tokens": 1200,
+    # Whether the bundled rule library (config/rules/**) contributes to the
+    # block at all. Off leaves only the workspace's own `.faustus/rules/`
+    # (and the other RULE_DIR_NAMES) in the prompt.
+    "project_rules_library_enabled": True,
 }
 
 

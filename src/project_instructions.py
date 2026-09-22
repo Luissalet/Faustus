@@ -269,6 +269,32 @@ _LANG_BY_EXT = {
 }
 
 
+def detect_languages(workspace: str, max_langs: int = 6) -> List[str]:
+    """The languages present in `workspace`, most files first.
+
+    Pulled out of :func:`draft` (which used to inline this) so other callers
+    — `src/project_rules.py::languages_for` is the first one — can ask "what
+    is this workspace written in?" without duplicating the extension table.
+    Never raises: an unreadable workspace or a broken file index reads as "no
+    languages detected", not an error.
+    """
+    root = os.path.realpath(os.path.expanduser(workspace or ""))
+    if not root or not os.path.isdir(root):
+        return []
+    try:
+        from src.agent_harness import workspace_file_index
+        files = workspace_file_index(root)
+    except Exception:
+        files = []
+    counts: Dict[str, int] = {}
+    for rel in files:
+        ext = os.path.splitext(rel)[1].lower()
+        lang = _LANG_BY_EXT.get(ext)
+        if lang:
+            counts[lang] = counts.get(lang, 0) + 1
+    return [k for k, _ in sorted(counts.items(), key=lambda kv: -kv[1])[:max_langs]]
+
+
 def draft(workspace: str, language: str = "en") -> Dict[str, Any]:
     """A first AGENTS.md for the workspace, built from facts the runtime already
     detects (test runner, languages, top-level layout, package manifests) plus
@@ -283,13 +309,7 @@ def draft(workspace: str, language: str = "en") -> Dict[str, Any]:
         files = workspace_file_index(root)
     except Exception:
         files = []
-    counts: Dict[str, int] = {}
-    for rel in files:
-        ext = os.path.splitext(rel)[1].lower()
-        lang = _LANG_BY_EXT.get(ext)
-        if lang:
-            counts[lang] = counts.get(lang, 0) + 1
-    langs = [k for k, _ in sorted(counts.items(), key=lambda kv: -kv[1])[:4]]
+    langs = detect_languages(root, max_langs=4)
     facts["languages"] = langs
     top_dirs = sorted({rel.split("/", 1)[0] for rel in files if "/" in rel})[:14]
     facts["top_dirs"] = top_dirs
