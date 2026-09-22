@@ -1390,6 +1390,21 @@ DEFAULT_SETTINGS = {
     # disk is never modified. Default OFF: existing indexes keep their
     # current chunk text until re-indexed with the flag on.
     "rag_pii_redaction": False,
+    # Hybrid skill selector (src/skills_runtime/selector.py, lot S):
+    # "hybrid" ranks with semantic + lexical + trigger lanes and an
+    # outcome prior; "lexical" calls straight through to the old
+    # SkillsManager.get_relevant_skills Jaccard scoring, unchanged.
+    "skill_selector_mode": "hybrid",
+    # Combined-score cutoff below which a skill isn't surfaced at all —
+    # calibrated so a clearly off-topic query returns nothing while an
+    # on-topic one still surfaces its best match.
+    "skill_selector_threshold": 0.22,
+    # Per-lane weights for the hybrid selector's combined score
+    # (semantic*cos + lexical*jaccard + trigger*overlap), before the
+    # outcome-prior multiplier is applied. Must be non-negative; the
+    # selector renormalizes lexical+trigger on its own when the semantic
+    # lane is unavailable, so these don't need to sum to 1 by hand.
+    "skill_selector_weights": {"semantic": 0.55, "lexical": 0.3, "trigger": 0.15},
 }
 
 

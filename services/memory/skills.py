@@ -64,6 +64,34 @@ def _to_float(x, default: float = 0.0) -> float:
         return default
 
 
+def _lexical_score(query: str, query_tokens: set, sk: Dict) -> float:
+    """Per-skill Jaccard-token-overlap score, factored out of
+    `SkillsManager.get_relevant_skills` (lot S) so the hybrid selector's
+    lexical lane can score an arbitrary skill list without going through
+    that method's threshold filter. Behaviour is unchanged from before the
+    factor-out — this is exactly the loop body that used to live inline."""
+    text = " ".join([
+        sk.get("name", ""),
+        sk.get("description", ""),
+        sk.get("when_to_use", ""),
+        " ".join(sk.get("tags", []) or []),
+        " ".join(sk.get("procedure", []) or []),
+    ])
+    score = _jaccard(query_tokens, _tokenize(text))
+    for tag in sk.get("tags", []) or []:
+        # Match tags as whole tokens, not substrings: `tag in query`
+        # boosted e.g. a "ai" tag for any query containing "email".
+        tag_tokens = _tokenize(tag)
+        if tag_tokens and tag_tokens <= query_tokens:
+            score = max(score, 0.3) * 1.3
+    if query.lower() in (sk.get("description") or "").lower():
+        score = max(score, 0.6)
+    score *= 1.0 + _to_float(sk.get("confidence"), 0.5) * 0.1
+    if sk.get("uses", 0) > 0:
+        score *= 1.05
+    return score
+
+
 # ---------------------------------------------------------------------------
 # SkillsManager
 # ---------------------------------------------------------------------------
@@ -557,6 +585,28 @@ class SkillsManager:
         entry["last_used"] = int(time.time())
         self._save_usage(usage)
 
+    def record_outcome(self, skill_id: str, owner: Optional[str] = None,
+                       positive: bool = True) -> None:
+        """Lot S outcome prior: bump the `positive`/`negative` counters in the
+        same usage sidecar `record_use` writes to (no new store). The hybrid
+        selector reads these back as a Laplace-smoothed prior on the skill's
+        combined score — see `src.skills_runtime.selector`. Never raises past
+        a bad on-disk sidecar; a failed write here should not break the turn
+        that's recording it."""
+        usage = self._load_usage()
+        key = self._usage_key(skill_id, owner)
+        entry = usage.setdefault(key, {"uses": 0, "last_used": None})
+        field = "positive" if positive else "negative"
+        entry[field] = int(entry.get(field, 0) or 0) + 1
+        self._save_usage(usage)
+
+    def usage_entry(self, skill_id: str, owner: Optional[str] = None) -> Dict:
+        """Public read of one skill's usage-sidecar entry (uses/last_used
+        plus the `positive`/`negative` outcome counters `record_outcome`
+        writes) — used by the hybrid selector's outcome-prior lane so it
+        doesn't reach into the private `_load_usage`/`_usage_entry` pair."""
+        return self._usage_entry(self._load_usage(), skill_id, owner)
+
     # ----------------------------------------------------------------------
     # Reading a single skill (used by the skill_view tool)
     # ----------------------------------------------------------------------
@@ -666,18 +716,12 @@ class SkillsManager:
     # field set.
     # ----------------------------------------------------------------------
 
-    def get_relevant_skills(
-        self,
-        query: str,
-        skills: Optional[List[Dict]] = None,
-        threshold: float = 0.3,
-        max_items: int = 5,
-        min_confidence: float = 0.0,
-    ) -> List[Dict]:
-        if skills is None:
-            skills = self.load_all()
-        if not skills or not query.strip():
-            return []
+    def _filter_candidates(self, skills: List[Dict], min_confidence: float = 0.0) -> List[Dict]:
+        """Status + confidence gating shared by `get_relevant_skills` and the
+        hybrid selector (`src.skills_runtime.selector`), factored out so both
+        apply exactly the same eligibility rule instead of two copies
+        drifting apart. Behaviour is unchanged from the inline version this
+        replaced."""
         # Consider published AND draft skills for relevance retrieval.
         # The teacher-escalation loop writes new skills as drafts; the
         # whole point is for the student to find them on the next try
@@ -709,31 +753,28 @@ class SkillsManager:
                     return True  # unset → don't filter (legacy)
                 return _to_float(c, 1.0) >= min_confidence  # unparseable → pass
             skills = [s for s in skills if _passes(s)]
+        return skills
+
+    def get_relevant_skills(
+        self,
+        query: str,
+        skills: Optional[List[Dict]] = None,
+        threshold: float = 0.3,
+        max_items: int = 5,
+        min_confidence: float = 0.0,
+    ) -> List[Dict]:
+        if skills is None:
+            skills = self.load_all()
+        if not skills or not query.strip():
+            return []
+        skills = self._filter_candidates(skills, min_confidence)
         if not skills:
             return []
 
         query_tokens = _tokenize(query)
         scored = []
         for sk in skills:
-            text = " ".join([
-                sk.get("name", ""),
-                sk.get("description", ""),
-                sk.get("when_to_use", ""),
-                " ".join(sk.get("tags", []) or []),
-                " ".join(sk.get("procedure", []) or []),
-            ])
-            score = _jaccard(query_tokens, _tokenize(text))
-            for tag in sk.get("tags", []) or []:
-                # Match tags as whole tokens, not substrings: `tag in query`
-                # boosted e.g. a "ai" tag for any query containing "email".
-                tag_tokens = _tokenize(tag)
-                if tag_tokens and tag_tokens <= query_tokens:
-                    score = max(score, 0.3) * 1.3
-            if query.lower() in (sk.get("description") or "").lower():
-                score = max(score, 0.6)
-            score *= 1.0 + _to_float(sk.get("confidence"), 0.5) * 0.1
-            if sk.get("uses", 0) > 0:
-                score *= 1.05
+            score = _lexical_score(query, query_tokens, sk)
             if score >= threshold:
                 scored.append((score, sk))
         scored.sort(key=lambda x: x[0], reverse=True)
