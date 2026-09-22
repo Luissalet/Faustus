@@ -535,6 +535,22 @@ def _query_context_length(endpoint_url: str, model: str) -> Tuple[int, bool]:
     from src.endpoint_resolver import build_models_url
 
     models_url = build_models_url(endpoint_url)
+    # A probe of a host that is not answering costs the full timeout, and this
+    # runs on the mid-turn pressure path -- once per round, every round. With
+    # the endpoint down that is the whole budget spent on a question we
+    # already have a fallback answer for. `llm_core` keeps a shared dead-host
+    # cooldown; honour it, and feed it when this probe is the one that finds
+    # out. (Found chasing a suite that sat near the end with no output: one
+    # test drives ~30 turns and paid this every round.)
+    try:
+        from src.llm_core import _is_host_dead
+        if _is_host_dead(models_url):
+            logger.debug("Context length: %s is in the dead-host cooldown, using what is known", endpoint_url)
+            if known:
+                return known, True
+            return DEFAULT_CONTEXT, False
+    except Exception:  # noqa: BLE001 -- the cooldown is an optimisation
+        pass
     try:
         r = httpx.get(models_url, timeout=REQUEST_TIMEOUT)
         if r.is_success:
@@ -548,6 +564,14 @@ def _query_context_length(endpoint_url: str, model: str) -> Tuple[int, bool]:
                     break
     except Exception as e:
         logger.debug(f"Failed to query context length for {model}: {e}")
+        # Nobody answered: say so once, so the next round is a lookup rather
+        # than another full timeout.
+        if isinstance(e, (OSError, ConnectionError)) or "onnect" in str(e) or "imeout" in str(e):
+            try:
+                from src.llm_core import _mark_host_dead
+                _mark_host_dead(models_url)
+            except Exception:  # noqa: BLE001
+                pass
 
     # For local/self-hosted endpoints, trust the API value (user set --max-model-len)
     # For cloud APIs, use the larger value (API can report low defaults)

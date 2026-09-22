@@ -249,6 +249,19 @@ def restore_keep_alive(endpoint: str, model: str, keep_alive: Any) -> bool:
                          model, keep_alive)
             keep_alive = -1
     url = _root(endpoint) + "/api/generate"
+    # A keep-alive ping to a server that is not there costs two blocking HTTP
+    # calls of 3 s each, at the end of EVERY turn. With Ollama closed that is
+    # six seconds of waiting for nothing, every time -- and in the suite,
+    # where one test drives ~30 turns, it is what left runs stalled near the
+    # end with no failure and no output. `llm_core` already keeps a dead-host
+    # cooldown for exactly this; honour it here and feed it on failure.
+    try:
+        from src.llm_core import _is_host_dead
+        if _is_host_dead(url):
+            logger.debug("restore_keep_alive: %s is in the dead-host cooldown, skipping the ping", url)
+            return False
+    except Exception:  # noqa: BLE001 -- the cooldown is an optimisation
+        pass
     try:
         import httpx
         # An empty-prompt generate LOADS the model when it is not resident
@@ -257,8 +270,16 @@ def restore_keep_alive(endpoint: str, model: str, keep_alive: Any) -> bool:
         # and the ping would pull 18 GB back into VRAM for nothing.
         try:
             ps = httpx.get(_root(endpoint) + "/api/ps", timeout=3.0).json() or {}
-        except Exception:  # noqa: BLE001
+        except Exception as probe_error:  # noqa: BLE001
             ps = {}
+            # Nobody answered. Tell the shared cooldown, so the next turn's
+            # ping is a dictionary lookup instead of another 3 s wait.
+            if isinstance(probe_error, (OSError, ConnectionError)) or "onnect" in str(probe_error):
+                try:
+                    from src.llm_core import _mark_host_dead
+                    _mark_host_dead(url)
+                except Exception:  # noqa: BLE001
+                    pass
         resident = {_norm_model(str(m.get("name") or m.get("model") or ""))
                     for m in (ps.get("models") or []) if isinstance(m, dict)}
         if resident and _norm_model(model) not in resident:
