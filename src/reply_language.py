@@ -207,11 +207,32 @@ def refresh_continuation(messages: List[Dict[str, Any]], hint: Optional[Dict[str
     answering was boilerplate about which language to write in rather than
     the thing it had to do. A reminder is a condition on the answer; it is
     not the next step, and it should not be read as one.
+
+    "Before the final message" must never mean inside a tool exchange. When
+    the list ends with tool results, the final message is a ``tool`` reply,
+    and putting the reminder right before it separated the assistant's call
+    from its answer: ``assistant(call) → user(reminder) → tool(result)``.
+    Seen live on a 27B: the model read its own call as unanswered and made
+    the identical call again, every time, before answering. The exchange is
+    kept whole and the reminder goes in front of it.
     """
     messages[:] = [m for m in messages if m.get("_agent_injected") != "reply_language_continuity"]
     if hint:
-        messages.insert(max(0, len(messages) - 1),
+        messages.insert(_continuation_slot(messages),
                         {**hint, "_agent_injected": "reply_language_continuity"})
+
+
+def _continuation_slot(messages: List[Dict[str, Any]]) -> int:
+    """Index for the reminder: before the last message, or -- when the list
+    ends in tool results -- before the assistant turn that asked for them."""
+    idx = len(messages)
+    while idx > 0 and messages[idx - 1].get("role") == "tool":
+        idx -= 1
+    if idx == len(messages):
+        return max(0, len(messages) - 1)
+    if idx > 0 and messages[idx - 1].get("role") == "assistant":
+        return idx - 1
+    return idx
 
 
 #: Used when the conversation settles no language of its own. Empty keeps the
