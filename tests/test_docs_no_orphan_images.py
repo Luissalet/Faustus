@@ -98,8 +98,13 @@ def test_pages_site_owns_its_entrypoint_and_media():
     # adapted from other projects (ADP/CMP, 11-09-2026); docs/recipes/ holds
     # the built-in work recipes; docs/requirements-format.md and
     # docs/showcase.md are engineering references, not the public site.
+    # docs/radar/ is the dated record of a sweep of other projects: what was
+    # looked at, what was accepted or rejected and why. Same kind of material
+    # as docs/adaptations/ -- addressed to whoever picks the work up, and
+    # deliberately not a page anyone publishes.
     ENGINEERING = ("docs/ui/", "docs/design/", "docs/spec/", "docs/api/", "docs/adaptations/",
-                   "docs/recipes/", "docs/evals/", "docs/requirements-format.md", "docs/showcase.md")
+                   "docs/radar/", "docs/recipes/", "docs/evals/",
+                   "docs/requirements-format.md", "docs/showcase.md")
     stray = [
         p for p in docs_files
         if p.suffix.lower() in VIDEO_EXTS | {".md"}
