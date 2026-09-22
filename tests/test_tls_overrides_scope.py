@@ -48,6 +48,15 @@ ALLOWED_CALLERS = frozenset({
     # admitting a load) — the identical private-CA-behind-a-reverse-proxy
     # case, so it needs the same bundle.
     "src/vram_admission.py",
+    # "Create a config from what is already running": probes a llama.cpp
+    # server's own /props on a given port so the owner does not retype what
+    # the running server already knows (engines.discover_from_port). Same
+    # engine, same reverse proxy, same private CA as model_routes' probe --
+    # read-only, and it creates nothing (22-09-2026).
+    "src/engines.py",
+    # The runner providers' JSON reads (runner_providers._get_json) against
+    # those same local engine endpoints. Identical case (22-09-2026).
+    "src/runner_providers.py",
 })
 
 
