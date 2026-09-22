@@ -1434,6 +1434,33 @@ def _apply_openai_response_format(
     return True
 
 
+def _suppress_thinking_for_small_talk(payload: Dict, model: str,
+                                      messages: Optional[List] = None,
+                                      tools: Optional[List] = None) -> bool:
+    """Skip the reasoning on a turn that plainly does not need it.
+
+    `src/turn_effort.py` holds the rule and the reasoning behind it. The short
+    version: reasoning and the answer share one token budget, and on "dime en
+    dos frases qué eres" the whole budget went to the reasoning -- 37.2 s and
+    nothing said, against 5.5 s and a correct answer with it off.
+
+    Only a recognised greeting or pleasantry qualifies, and never a turn that
+    carries tools. Everything else keeps what it has today.
+    """
+    if not _supports_thinking(model):
+        return False
+    try:
+        from src.turn_effort import wants_reasoning
+        if wants_reasoning(messages, tools=tools):
+            return False
+    except Exception as exc:  # noqa: BLE001 -- never fail a turn over this
+        logger.debug("turn_effort unavailable: %s", exc)
+        return False
+    _suppress_thinking(payload, model)
+    logger.debug("Small talk: answering %s without reasoning", model)
+    return True
+
+
 def _suppress_thinking(payload: Dict, model: str) -> None:
     """Turn a thinking model's reasoning off for this request.
 
@@ -3018,6 +3045,7 @@ def llm_call(url: str, model: str, messages: List[Dict], temperature: float = LL
         # keyed the same way. Asking about the normalised /chat/completions
         # form answers "unknown" and drops the schema without a word.
         _apply_openai_response_format(payload, url, schema, model=model)
+        _suppress_thinking_for_small_talk(payload, model, messages_copy)
         if provider == "mistral" and _supports_thinking(model):
             payload["reasoning_effort"] = _MISTRAL_REASONING_EFFORT
         if provider == "openrouter":
@@ -3634,6 +3662,8 @@ async def _llm_call_async_impl(
         _apply_local_cache_affinity(payload, url, session_id)
         _apply_local_generation_stability(payload, target_url, model)
         _apply_openai_response_format(payload, url, schema, model=model)  # `url`: see llm_call
+        # No `tools` here: this path is the tool-less completion helper.
+        _suppress_thinking_for_small_talk(payload, model, messages_copy)
         if provider == "openrouter":
             # Same OpenRouter options application as llm_call (OBJ-8 Lote A2)
             # -- see that call site for the full rationale.
