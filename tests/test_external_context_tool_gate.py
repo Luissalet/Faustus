@@ -1397,3 +1397,82 @@ def test_authorized_document_stream_precedes_completed_update(monkeypatch):
     assert event_types.index("doc_stream_open") < event_types.index("doc_update")
     assert event_types.index("doc_stream_delta") < event_types.index("doc_update")
     assert event_types.index("doc_update") < event_types.index("tool_output")
+
+
+# ── Reads of Faustus's own catalog behind an armed gate ──────────────────
+#
+# Seen live: «¿qué aplicaciones mías puedes usar?» ended in the approval card
+# on `manage_mcp {"action": "list"}` with no answer. The gate had been armed
+# by the MCP-description block — which is correct and stays so, it is an
+# audited injection vector — but the call behind it only lists what is
+# connected. These drive the real arming path (an untrusted prompt message),
+# not a flag set by hand.
+
+
+def _armed_by_prompt_context(monkeypatch):
+    from src import tool_capabilities
+    from src.prompt_security import untrusted_context_message
+
+    monkeypatch.setattr(tool_capabilities, "tool_approval_mode", lambda: "auto")
+    context = ToolRunSecurityContext()
+    context.observe_messages([
+        untrusted_context_message("MCP tools", "- some_tool: text a server wrote"),
+    ])
+    assert context.external_untrusted_context_seen is True
+    return context
+
+
+@pytest.mark.parametrize(
+    "tool_name,content",
+    [
+        ("manage_mcp", '{"action": "list"}'),
+        ("manage_mcp", '{"action": "list_tools"}'),
+        ("manage_mcp", "{}"),
+        ("plugins_list", "{}"),
+        ("plugins_list", '{"check": true}'),
+    ],
+)
+def test_catalog_reads_pass_a_gate_armed_by_prompt_context(monkeypatch, tool_name, content):
+    context = _armed_by_prompt_context(monkeypatch)
+
+    assert context.decision_for(tool_name, content).allowed is True
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        '{"action": "add", "name": "x", "command": "node"}',
+        '{"action": "delete", "server_id": "abc"}',
+        '{"action": "reconnect", "server_id": "abc"}',
+        "not json",
+    ],
+)
+def test_manage_mcp_changes_still_stop_at_the_gate(monkeypatch, content):
+    context = _armed_by_prompt_context(monkeypatch)
+
+    decision = context.decision_for("manage_mcp", content)
+
+    assert decision.allowed is False
+    assert "admin_change" in (decision.reason or "")
+
+
+@pytest.mark.parametrize(
+    "tool_name,content",
+    [
+        ("manage_mcp", '{"action": "list"}'),
+        ("plugins_list", "{}"),
+    ],
+)
+def test_catalog_read_results_still_arm_the_gate(monkeypatch, tool_name, content):
+    from src import tool_capabilities
+
+    monkeypatch.setattr(tool_capabilities, "tool_approval_mode", lambda: "auto")
+    context = ToolRunSecurityContext()
+    context.observe_tool_result(
+        tool_name,
+        {"output": "Writer app (writer) — gives: manuscripts", "exit_code": 0},
+        content,
+    )
+
+    assert context.external_untrusted_context_seen is True
+    assert context.decision_for("bash", '{"command": "echo hi"}').allowed is False

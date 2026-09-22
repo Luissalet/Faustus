@@ -575,7 +575,19 @@ _register({"design_canvas"}, ToolEffect.WRITE_PRIVATE)
 # declaring an effect is how a permission system stops meaning anything.
 # Neither can stop an app: an agent that can close the window you are
 # writing in is not a capability anybody asked for.
-_register({"plugins_list"}, ToolEffect.READ_PRIVATE)
+# `plugins_list` is a read of Faustus's own configuration -- which apps are
+# installed, what each manifest says it lends, whether it answers on
+# loopback -- not of anything the person wrote. Classed READ_PRIVATE it sat
+# behind the external-context gate, and that gate is armed on almost every
+# agent turn (MCP descriptions and the skill index ride in the untrusted
+# lane on purpose), so "which of my apps can you use?" ended in an approval
+# card every time, having read nothing. The manifest text is written by the
+# app, not by Faustus, so the RESULT stays untrusted and keeps the gate armed.
+_register(
+    {"plugins_list"},
+    ToolEffect.READ_PUBLIC,
+    result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
+)
 _register({"plugin_app"}, ToolEffect.EXECUTE_CODE, ToolEffect.UI_SIDE_EFFECT)
 # Isolated, comparable alternatives (CMP-13, W2-G, src/agent_tools/
 # alternatives_tools.py). `alt_compare` only reads a diff against the base
@@ -1232,10 +1244,23 @@ _ACTION_DESTRUCTIVE: Mapping[str, frozenset[str]] = MappingProxyType(
     }
 )
 
+# Actions of an admin manager that only read Faustus's own catalog: the
+# connected MCP servers (name, transport, status, tool count) and their tool
+# names with a short description. That is the same information `lookup_tools`
+# (READ_PUBLIC) returns and the prompt already carries, with no URLs, headers
+# or env in it (src/agent_tools/admin_tools.py::do_manage_mcp). Classing the
+# whole tool ADMIN_CHANGE sent `{"action": "list"}` to an approval card.
+_CATALOG_ACTION_READS: Mapping[str, frozenset[str]] = MappingProxyType(
+    {
+        "manage_mcp": frozenset({"list", "list_tools"}),
+    }
+)
+
 _ACTION_DEFAULTS: Mapping[str, str] = MappingProxyType(
     {
         "manage_calendar": "list_events",
         "manage_documents": "list",
+        "manage_mcp": "list",
         "manage_research": "list",
         "manage_tasks": "list",
     }
@@ -1321,6 +1346,11 @@ def capabilities_for_action(tool_name: Any, content: Any) -> ToolCapabilities:
         return base
 
     action = _action_from_content(tool_name, content)
+    if action in _CATALOG_ACTION_READS.get(tool_name, ()):
+        return _capabilities(
+            ToolEffect.READ_PUBLIC,
+            result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
+        )
     destructive = action in _ACTION_DESTRUCTIVE.get(tool_name, ())
     if tool_name not in _PRIVATE_ACTION_READS:
         if not destructive:
