@@ -5853,7 +5853,10 @@ def _apply_steers_to_messages(
                 hint = _turn_language([{"role": "user", "content": text}]) or hint
             except Exception:  # noqa: BLE001
                 pass
-        messages.append({"role": "user", "content": text})
+        _steer_msg: Dict[str, Any] = {"role": "user", "content": text}
+        if source != "user":
+            _steer_msg["_harness_note"] = True
+        messages.append(_steer_msg)
         events.append({
             "type": "steer",
             "round": round_num,
@@ -8885,7 +8888,7 @@ async def _stream_agent_loop_body(
         except Exception:
             _saved_todos = []
         if _harness.progress_list_is_complete(_saved_todos):
-            messages.append({"role": "user", "content": TODOWRITE_REFRESH_NUDGE})
+            messages.append({"role": "user", "_harness_note": True, "content": TODOWRITE_REFRESH_NUDGE})
             _todo_refresh_nudged = True
             logger.info("[harness] todowrite refresh injected at continue turn start")
     try:
@@ -9170,6 +9173,7 @@ async def _stream_agent_loop_body(
                     _todo_refresh_nudged = True
                 messages.append({
                     "role": "user",
+                    "_harness_note": True,
                     "content": _auto_continue_text,
                 })
                 _ledger.notes.append(f"auto_continue_rounds@{round_num - 1}")
@@ -10725,6 +10729,7 @@ async def _stream_agent_loop_body(
                     )
                     messages.append({
                         "role": "user",
+                        "_harness_note": True,
                         "content": (
                             "[Harness check — automatic runtime message, not a new "
                             "user request] Answer the person's request directly now."
@@ -10831,6 +10836,7 @@ async def _stream_agent_loop_body(
                     messages.append({"role": "assistant", "content": round_response})
                 messages.append({
                     "role": "user",
+                    "_harness_note": True,
                     "content": (
                         "[Harness check — automatic message from the runtime, not from the user] "
                         "Your previous output was cut off by the max_tokens limit (finish_reason=length). "
@@ -10883,6 +10889,7 @@ async def _stream_agent_loop_body(
                     messages.append({"role": "assistant", "content": round_response})
                 messages.append({
                     "role": "user",
+                    "_harness_note": True,
                     "content": (
                         "[Harness check — automatic message from the runtime, not from the user] "
                         "You called a tool that does not exist: " + ", ".join(f"`{d}`" for d in _dropped)
@@ -10936,6 +10943,7 @@ async def _stream_agent_loop_body(
                 _ledger.notes.append(f"empty_round_nudge@{round_num}")
                 messages.append({
                     "role": "user",
+                    "_harness_note": True,
                     "content": (
                         "[Harness check — automatic message from the runtime, not from the user] "
                         "Your last message was EMPTY: no text and no tool call, so nothing happened. "
@@ -11037,6 +11045,7 @@ async def _stream_agent_loop_body(
                 logger.warning("[harness] round %s returned only the context separator — nudging", round_num)
                 messages.append({
                     "role": "user",
+                    "_harness_note": True,
                     "content": (
                         "[Harness check — automatic runtime message, not a new user request] "
                         "Your last message contained only the context separator and no answer. "
@@ -11090,6 +11099,7 @@ async def _stream_agent_loop_body(
                 )
                 messages.append({
                     "role": "user",
+                    "_harness_note": True,
                     "content": (
                         "[Harness check — automatic runtime message, not a new user request] "
                         "The original request requires work in the active workspace, but your last response "
@@ -11129,6 +11139,7 @@ async def _stream_agent_loop_body(
                         messages.append({"role": "assistant", "content": round_response})
                     messages.append({
                         "role": "user",
+                        "_harness_note": True,
                         "content": (
                             "[Harness check — automatic message from the runtime, not from the user] "
                             "You claimed the project objectives were changed, but this turn has no usable "
@@ -11158,6 +11169,7 @@ async def _stream_agent_loop_body(
                     messages.append({"role": "assistant", "content": round_response})
                 messages.append({
                     "role": "user",
+                    "_harness_note": True,
                     "content": (
                         "[Harness check — automatic message from the runtime, not from the user] "
                         "The user explicitly asked to change the active project's objectives, but no "
@@ -11238,7 +11250,7 @@ async def _stream_agent_loop_body(
                         # is real and the model merely overstated the scope.
                         if round_response.strip() and _ledger.effects:
                             messages.append({"role": "assistant", "content": round_response})
-                        messages.append({"role": "user", "content": _ledger.rejection_message(_check)})
+                        messages.append({"role": "user", "_harness_note": True, "content": _ledger.rejection_message(_check)})
                         yield (
                             "data: " + json.dumps({
                                 "type": "harness_check", "status": "rejected",
@@ -11275,6 +11287,7 @@ async def _stream_agent_loop_body(
                         _ledger.rejections = 0
                         messages.append({
                             "role": "user",
+                            "_harness_note": True,
                             "content": (
                                 "[Harness execution recovery — automatic runtime message, not a new user request] "
                                 "Stop writing status prose. Your next response must START with a tool call that "
@@ -11348,7 +11361,7 @@ async def _stream_agent_loop_body(
                                        round_num, _ts_check["changed"], _ts_check["missing"])
                         if round_response.strip():
                             messages.append({"role": "assistant", "content": round_response})
-                        messages.append({"role": "user", "content": _ledger.target_substitution_message(_ts_check)})
+                        messages.append({"role": "user", "_harness_note": True, "content": _ledger.target_substitution_message(_ts_check)})
                         yield (
                             "data: " + json.dumps({
                                 "type": "harness_check", "status": "target_substituted", "round": round_num,
@@ -11380,6 +11393,7 @@ async def _stream_agent_loop_body(
                             messages.append({"role": "assistant", "content": round_response})
                         messages.append({
                             "role": "user",
+                            "_harness_note": True,
                             "content": (
                                 "[Harness check — automatic message from the runtime, not from the user] "
                                 "A syntax check of the files you changed FAILED:\n- "
@@ -11441,7 +11455,7 @@ async def _stream_agent_loop_body(
                                        [(f.get("path"), f.get("line"), f.get("code")) for f in _analysis_failed[:5]])
                         if round_response.strip():
                             messages.append({"role": "assistant", "content": round_response})
-                        messages.append({"role": "user", "content": _static_checks.fix_message(_sres)})
+                        messages.append({"role": "user", "_harness_note": True, "content": _static_checks.fix_message(_sres)})
                         yield (
                             "data: " + json.dumps({
                                 "type": "harness_check", "status": "static_analysis", "round": round_num,
@@ -11490,7 +11504,7 @@ async def _stream_agent_loop_body(
                                                round_num, _usres.get("summary"))
                                 if round_response.strip():
                                     messages.append({"role": "assistant", "content": round_response})
-                                messages.append({"role": "user", "content": _ui_smoke.failure_message(_usres)})
+                                messages.append({"role": "user", "_harness_note": True, "content": _ui_smoke.failure_message(_usres)})
                                 yield (
                                     "data: " + json.dumps({
                                         "type": "harness_check", "status": "ui_smoke_failed",
@@ -11559,7 +11573,7 @@ async def _stream_agent_loop_body(
                                            round_num, _tres.get("summary"))
                             if round_response.strip():
                                 messages.append({"role": "assistant", "content": round_response})
-                            messages.append({"role": "user", "content": _ptests.failure_message(_tres)})
+                            messages.append({"role": "user", "_harness_note": True, "content": _ptests.failure_message(_tres)})
                             yield (
                                 "data: " + json.dumps({
                                     "type": "harness_check", "status": "tests_failed", "round": round_num,
@@ -11610,7 +11624,7 @@ async def _stream_agent_loop_body(
                                            round_num, len(_rev_errors))
                             if round_response.strip():
                                 messages.append({"role": "assistant", "content": round_response})
-                            messages.append({"role": "user", "content": _auto_review.fix_message(_rev)})
+                            messages.append({"role": "user", "_harness_note": True, "content": _auto_review.fix_message(_rev)})
                             yield (
                                 "data: " + json.dumps({
                                     "type": "harness_check", "status": "review_issues", "round": round_num,
@@ -11959,6 +11973,7 @@ async def _stream_agent_loop_body(
             if _restore_hidden:
                 messages.append({
                     "role": "user",
+                    "_harness_note": True,
                     "content": (
                         "[Runtime loop recovery — not a new user request] The "
                         "previously hidden tool is available again. Do NOT repeat "
@@ -11973,6 +11988,7 @@ async def _stream_agent_loop_body(
                 )
                 messages.append({
                     "role": "user",
+                    "_harness_note": True,
                     "content": (
                         "[Runtime loop recovery — not a new user request] This diagnostic "
                         "retry was skipped because it repeats the stalled investigation. "
@@ -12114,6 +12130,7 @@ async def _stream_agent_loop_body(
             )
             messages.append({
                 "role": "user",
+                "_harness_note": True,
                 "content": (
                     "[Runtime loop recovery — not a new user request] The current "
                     "diagnostic call was skipped because this investigation is "
@@ -13346,7 +13363,7 @@ async def _stream_agent_loop_body(
             _loop_is_cycle = _loop_policy.last_trigger == "cycle"
             if _loop_action == "nudge":
                 if _loop_is_cycle:
-                    messages.append({"role": "user", "content": (
+                    messages.append({"role": "user", "_harness_note": True, "content": (
                         "[Runtime loop recovery — not a new user request] You are "
                         f"{_loop_policy.last_cycle_reason}."
                     )})
@@ -13355,7 +13372,7 @@ async def _stream_agent_loop_body(
                         _loop_policy.last_cycle_period, _loop_policy.last_cycle_repeats,
                     )
                 else:
-                    messages.append({"role": "user", "content": (
+                    messages.append({"role": "user", "_harness_note": True, "content": (
                         "[Runtime loop recovery — not a new user request] This exact call, with "
                         "this exact result, has now repeated "
                         f"{_loop_policy.streak} times. Take a different concrete action; do not "
@@ -13365,7 +13382,7 @@ async def _stream_agent_loop_body(
             elif _loop_action == "block_tool":
                 disabled_tools.update(_loop_policy.blocked_tools)
                 if _loop_is_cycle:
-                    messages.append({"role": "user", "content": (
+                    messages.append({"role": "user", "_harness_note": True, "content": (
                         "[Runtime loop recovery — not a new user request] "
                         f"{_loop_policy.last_cycle_reason.capitalize()}. The tool(s) involved "
                         f"({', '.join(sorted(_loop_policy.blocked_tools))}) are withheld for the "
@@ -13377,7 +13394,7 @@ async def _stream_agent_loop_body(
                         sorted(_loop_policy.blocked_tools),
                     )
                 else:
-                    messages.append({"role": "user", "content": (
+                    messages.append({"role": "user", "_harness_note": True, "content": (
                         "[Runtime loop recovery — not a new user request] The tool "
                         f"`{block.tool_type}` is withheld for the rest of this turn: the same call "
                         "kept returning the same result. Finish with what you have or use a "
@@ -13403,7 +13420,7 @@ async def _stream_agent_loop_body(
                     _rw_note = "rewrite_blocked:" + _rw_path[:80]
                     if _rw_note not in _ledger.notes:
                         _ledger.notes.append(_rw_note)
-                    messages.append({"role": "user", "content": (
+                    messages.append({"role": "user", "_harness_note": True, "content": (
                         "[Runtime rewrite policy — not a new user request] You have rewritten "
                         f"`{_rw_path}` from scratch {int(result.get('count') or 0)} times this turn "
                         "and it is now blocked for whole-file writes. Read the file (read_file) and the "
@@ -13590,6 +13607,7 @@ async def _stream_agent_loop_body(
             _todo_nudged = True
             messages.append({
                 "role": "user",
+                "_harness_note": True,
                 "content": (
                     "[Harness check — automatic message from the runtime, not from the user] "
                     "You are several tool calls into a multi-step task without a task list. Call "
@@ -13605,7 +13623,7 @@ async def _stream_agent_loop_body(
             and _todowrite_offered
         ):
             _todo_refresh_nudged = True
-            messages.append({"role": "user", "content": TODOWRITE_REFRESH_NUDGE})
+            messages.append({"role": "user", "_harness_note": True, "content": TODOWRITE_REFRESH_NUDGE})
             logger.info("[harness] todowrite refresh injected on round %s (stale completed list)", round_num)
 
         # Emit agent_step event

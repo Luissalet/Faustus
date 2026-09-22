@@ -33,7 +33,16 @@ def user_request_text(messages: Optional[Iterable[Mapping[str, Any]]]) -> str:
     for message in reversed(list(messages or ())):
         if not isinstance(message, Mapping) or message.get("role") != "user":
             continue
-        if message.get("_agent_injected"):
+        if message.get("_agent_injected") or message.get("_harness_note"):
+            continue
+        # The runtime talks to the model in user-role messages too (test
+        # failures, loop recovery, "the list is done but..."). Those are not
+        # the user asking for anything: read as the request, a nudge that
+        # mentions tests could approve a test run the user never asked for,
+        # and hides the request the user did make. The flag is set where
+        # agent_loop appends them; the frame catches any other module.
+        head = str(message.get("content") or "").lstrip()[:40]
+        if head.startswith(("[Harness", "[Runtime")):
             continue
         metadata = message.get("metadata")
         if isinstance(metadata, Mapping) and metadata.get("trusted") is False:

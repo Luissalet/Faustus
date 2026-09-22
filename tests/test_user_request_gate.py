@@ -227,3 +227,41 @@ def test_the_workspace_written_the_bash_way_is_the_same_folder(tmp_path):
     for spelled in (f"/{drive}/{rest}", f"/mnt/{drive}/{rest}", ws.replace("\\", "/")):
         command = f"cd {spelled} && python -m pytest test_inventario.py -v 2>&1 | tail -20"
         assert allows("bash", command, ASKED_ABOUT_TESTS, workspace=ws) is True, spelled
+
+
+# ---- the runtime's own notes are not the user's request ----
+
+_WS = r"D:\\proj"
+
+
+def _turn(user_text, *later):
+    return [
+        {"role": "system", "content": "sys", "_agent_injected": "prompt"},
+        {"role": "user", "content": user_text},
+        {"role": "assistant", "content": "", "tool_calls": [{"id": "1", "function": {"name": "read_file", "arguments": "{}"}}]},
+        {"role": "tool", "tool_call_id": "1", "content": "ok"},
+        *later,
+    ]
+
+
+def test_a_runtime_note_after_the_request_does_not_hide_it():
+    from src.agent_loop import TODOWRITE_REFRESH_NUDGE
+    msgs = _turn("Los tests fallan, arréglalo.", {"role": "user", "content": TODOWRITE_REFRESH_NUDGE})
+    assert user_request_text(msgs) == "Los tests fallan, arréglalo."
+    assert allows("bash", "python -m pytest -q", user_request_text(msgs), _WS)
+
+
+@pytest.mark.parametrize("note", [
+    {"role": "user", "_harness_note": True, "content": "Some tests failed. Run the tests again: python -m pytest -q"},
+    {"role": "user", "content": "[Harness check - automatic message] Tests failed; run the tests again."},
+    {"role": "user", "content": "[Runtime loop recovery - not a new user request] run the tests"},
+])
+def test_a_runtime_note_that_mentions_tests_never_approves_a_run_the_user_did_not_ask_for(note):
+    msgs = _turn("Explícame qué hace billing/report.py.", note)
+    assert user_request_text(msgs) == "Explícame qué hace billing/report.py."
+    assert not allows("bash", "python -m pytest -q", user_request_text(msgs), _WS)
+
+
+def test_a_message_the_user_sends_mid_turn_is_their_request():
+    msgs = _turn("Explícame qué hace billing/report.py.", {"role": "user", "content": "Y pasa los tests, por favor."})
+    assert allows("bash", "python -m pytest -q", user_request_text(msgs), _WS)
