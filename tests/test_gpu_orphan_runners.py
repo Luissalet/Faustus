@@ -140,6 +140,33 @@ def test_scan_lists_only_the_orphans_with_their_card_and_bytes(box):
     assert all(o["pid"] not in (15948, 3080) for o in out)
 
 
+def test_a_runner_serving_a_configured_endpoint_is_owned_not_orphaned(box, monkeypatch):
+    """Found live on a llama.cpp setup: the two model servers this
+    installation talks to were listed as orphans -- a permanent "warn" on
+    the health score and a Release button offering to terminate the model
+    the user was mid-conversation with. Neither has an Ollama parent,
+    because Ollama did not start them; the installation did.
+
+    Parentage cannot tell the difference. The endpoint table can: a runner
+    listening on a port a configured endpoint is served on is owned.
+    """
+    monkeypatch.setattr(gp, "_configured_runner_ports", lambda: {61001})
+    monkeypatch.setattr(gp, "_pids_listening_on",
+                        lambda ports: {49960} if 61001 in ports else set())
+    gp.reset_cache()
+    out = gp.orphan_runners(GPUS)
+    assert [o["pid"] for o in out] == [46404], "only the runner nothing is served by"
+
+
+def test_with_no_configured_runner_ports_the_answer_is_the_old_one(box, monkeypatch):
+    """The lookup is best-effort -- no endpoints, no database, no permission
+    to read sockets. Any of those must leave the scan exactly as it was."""
+    monkeypatch.setattr(gp, "_configured_runner_ports", lambda: set())
+    gp.reset_cache()
+    assert [o["pid"] for o in gp.orphan_runners(GPUS)] == [49960, 46404]
+    assert gp._pids_listening_on(set()) == set()
+
+
 def test_a_cards_token_cuda_context_does_not_count_as_a_card_the_runner_is_on(box, monkeypatch):
     """Seen live: the orphan held 6.9 GB on #1 and ~200 MB (a CUDA context)
     on #0 — "on #0, #1" read like a split. Only cards with a real share."""

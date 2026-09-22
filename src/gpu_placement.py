@@ -35,7 +35,7 @@ import subprocess
 import sys
 import threading
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import httpx
 
@@ -528,11 +528,56 @@ def is_orphan_runner(name: str, parent_name: Optional[str], parent_alive: bool) 
     return not (parent_name or "").lower().startswith("ollama")
 
 
+def _configured_runner_ports() -> Set[int]:
+    """Local ports that a CONFIGURED model endpoint is served on.
+
+    A llama-server listening on one of these is not a leftover: it is an
+    engine this installation deliberately points at. Without this, a
+    llama.cpp setup had its own engines listed as orphans -- a permanent
+    "warn" on the health score, and a Release button offering to kill the
+    model the user is talking to. Never raises: an empty set simply restores
+    the old parentage-only answer.
+    """
+    ports: Set[int] = set()
+    try:
+        from urllib.parse import urlsplit
+        from src.runner_providers import list_external_runner_endpoints
+        for row in list_external_runner_endpoints() or []:
+            parts = urlsplit(str(row.get("root") or row.get("base_url") or ""))
+            if parts.hostname not in ("127.0.0.1", "localhost", "::1", "0.0.0.0"):
+                continue
+            if parts.port:
+                ports.add(int(parts.port))
+    except Exception as e:  # noqa: BLE001 - a scan must never fail on this
+        logger.debug("orphan scan: could not read configured runner ports: %s", e)
+    return ports
+
+
+def _pids_listening_on(ports: Set[int]) -> Set[int]:
+    """Pids with a LISTEN socket on any of `ports`. Empty on any failure --
+    including the permission errors this call raises for other users'
+    sockets on some systems."""
+    if not ports:
+        return set()
+    owners: Set[int] = set()
+    try:
+        import psutil
+        for conn in psutil.net_connections(kind="inet"):
+            if conn.status != psutil.CONN_LISTEN or not conn.pid:
+                continue
+            if conn.laddr and conn.laddr.port in ports:
+                owners.add(int(conn.pid))
+    except Exception as e:  # noqa: BLE001
+        logger.debug("orphan scan: could not read listening sockets: %s", e)
+    return owners
+
+
 def _orphan_processes() -> List[Dict[str, Any]]:
     try:
         import psutil
     except Exception:  # pragma: no cover
         return []
+    _served = _pids_listening_on(_configured_runner_ports())
     out: List[Dict[str, Any]] = []
     for proc in psutil.process_iter(["pid", "name"]):
         try:
@@ -549,6 +594,10 @@ def _orphan_processes() -> List[Dict[str, Any]]:
                 except Exception:
                     parent_alive = False
             if not is_orphan_runner(name, parent_name, parent_alive):
+                continue
+            if int(proc.pid) in _served:
+                # Serving a configured endpoint: owned by this installation,
+                # whatever launched it. Nothing to release here.
                 continue
             try:
                 started = float(proc.create_time())
