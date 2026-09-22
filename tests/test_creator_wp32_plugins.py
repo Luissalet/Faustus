@@ -37,7 +37,11 @@ def _write_package(root: Path, manifest: dict, extra_files: dict | None = None) 
     for name, content in (extra_files or {}).items():
         p = root / name
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(content, encoding="utf-8")
+        # `newline=""` on purpose: these tests assert the installed bytes are
+        # byte-exact against the literal written here, and the default text
+        # mode turns every "\n" into "\r\n" on Windows, so the comparison
+        # failed on the one platform this file is mostly about.
+        p.write_text(content, encoding="utf-8", newline="")
     return str(root)
 
 
@@ -297,7 +301,19 @@ def _naive_replace(tgt: Path, src: Path) -> None:
             shutil.copy2(entry, dest)
 
 
-@pytest.mark.skipif(os.geteuid() == 0, reason="root bypasses POSIX permission checks — "
+def _running_as_posix_root() -> bool:
+    """True only on a POSIX host running as root.
+
+    `os.geteuid` does not exist on Windows, and calling it at import time took
+    this whole module down at COLLECTION: every test in the file was reported
+    as an error before any of them ran, on the platform the file is mostly
+    about. There is no euid on Windows, so nothing is being bypassed there.
+    """
+    geteuid = getattr(os, "geteuid", None)
+    return geteuid is not None and geteuid() == 0
+
+
+@pytest.mark.skipif(_running_as_posix_root(), reason="root bypasses POSIX permission checks — "
                                               "the naive-failure demonstration needs an "
                                               "unprivileged user")
 def test_naive_replace_reproduces_the_reported_bug(tmp_path):
