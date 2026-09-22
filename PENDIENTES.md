@@ -2,6 +2,27 @@
 
 Actualizado: 22-09-2026. REGLA: nunca nombres de empresas/personas del buzÃ³n de Luis en commits, docs, tests ni comentarios â€” ejemplos siempre ficticios. SÃ³lo trabajo vigente; quitar cada entrada al cerrarla.
 
+## 22-09 noche (4) — hablando con Faustus (FAUSTUS.md §166)
+
+- CERRADO (e7a467d1): «¿Qué aplicaciones mías puedes usar?» acababa en «Allow this task to continue?»: `manage_mcp list` contaba como cambio de administración y `plugins_list` como lectura privada. Ahora son lecturas públicas con resultado no fiable.
+- CERRADO (766b4cc4): la llamada doble (dos `lookup_tools`, luego dos `plugins_list`) era el recordatorio de idioma metido entre la llamada y su resultado.
+- CERRADO (92de5811): «ahora mismo», «hoy», «último» sobre las cosas del usuario ya no empujan a buscar en la web.
+- CERRADO (1f6cc8f3): la vía directa sin herramientas ni system prompt queda sólo para saludos («Como modelo de IA no tengo acceso a tus aplicaciones»).
+- CERRADO (60057288, c3ccf5b9) — decisión tuya: «lo que pides tú, pasa». Comparadores para `plugin_app` y para leer memoria (`manage_memory list/search`).
+- CERRADO (4431cb81): nombrar una app instalada trae `plugins_list` y `plugin_app` a la selección.
+- CERRADO (70e83a54): `plugins_list` incluye el `purpose` de cada manifiesto; sin él el modelo inventaba qué hacía cada app.
+- CERRADO (54c9bb1a): «lo que de verdad está escrito» ya no cuenta como afirmación de edición (claims_without_mutation dentro de una subordinada).
+- CERRADO (679b04c0): una app que arranca en otra dirección que la de su conexión se nombra en el acto en vez de esperar 30 s.
+- CERRADO (e8accbbf): los «flakes de orden» de `test_tool_serve` (esquema): ciclo de imports en `src/agent_tools/__init__.py`; sólo se podía importar la pila de herramientas entrando por el paquete.
+- CERRADO (ffe3e9e6): el otro de `test_tool_serve` (`send_email`) era el orden de iteración de un `set`, distinto en cada proceso.
+- CERRADO (9e55e280): `test_baseline_match[feature]` — la segunda compleción era real: la «a» se leía como inglés y el harness pedía reescribir una respuesta correcta en castellano.
+- CERRADO (fuera del repo): `Start-Faustus-Dev.ps1` ponía `FAUSTUS_*` y la app lee `ODYSSEUS_*`: el 7001 escribía en `data/` real y corría pollers y tareas. Corregido en el script.
+- YA ESTABA CERRADO (d01726b2, §165): los dos llama-server como «huérfanos». Verificado en vivo: `orphans: []` con datos dev y reales.
+- YA ESTABA CERRADO (§165): el freno de bucles con respuesta vacía. Queda un hueco teórico sin reproducir: si la respuesta de rescate es sólo «budget exhausted», `agent_loop` la borra (motor local) y `_empty_response_fallback` no pone nada porque hubo herramientas.
+- ABIERTO: la puerta sigue armándose en casi todos los turnos. Hoy pasan sin tarjeta `plugin_app` y la lectura de memoria cuando se piden con todas las letras; el resto (p. ej. «2+2?» → `python`) sigue preguntando. Cada herramienta nueva que quiera esta regla necesita su comparador en `src/user_request_gate.py`.
+- ABIERTO (datos dev): el perfil «Jobhunter (test data, 5179)» arranca en 5179 y la conexión apunta a 5178. Útil para probar el mensaje de discrepancia; no tocar sin decidir.
+- ABIERTO: siguen sin mirar a fondo `test_h1`, `test_memory_extractor_vector_degraded`, `test_workflow_waits`, `test_ui_smoke_audit` — juntos y aislados pasan; ver el resultado de la suite de esta noche.
+
 ## 22-09 noche (3) — tests que no podían pasar
 
 Tercera tanda. Aquí hay dos que no eran «el test describe otra cosa» sino «el test no comprueba nada»:
@@ -16,7 +37,7 @@ Tercera tanda. Aquí hay dos que no eran «el test describe otra cosa» sino «e
 
 ## 22-09 madrugada (5) — una medición que no cuadra, sin cerrar
 
-**ABIERTO: `tests/eval/test_baseline_match.py[feature]` — 46 tokens donde la baseline grabó 23.**
+**CERRADO (9e55e280, ver arriba): `tests/eval/test_baseline_match.py[feature]` — 46 tokens donde la baseline grabó 23.**
 
 No he regenerado la baseline. Regenerarla borraría la señal, y la señal parece real.
 
@@ -1070,7 +1091,7 @@ UI verification (browser, admin login), screenshots under D:\LocalAI\_claude_tmp
 - **El atajo es "pulsar para empezar / volver a pulsar para terminar", no mantener pulsado**: `globalShortcut` de Electron no distingue tecla-abajo de tecla-arriba multiplataforma sin un hook nativo de teclado de bajo nivel, que esta tarea no añadió (ninguna dependencia nueva). El texto de Configuración ya lo dice así, pero vale la pena confirmar con el dueño si el comportamiento real (toggle) es aceptable o si en algún momento merece la pena añadir esa dependencia para un push-to-talk de verdad.
 - **La tabla de formatos de portapapeles preservados es solo texto (`CF_UNICODETEXT`)**: si el portapapeles tenía una imagen, HTML enriquecido o una lista de archivos copiados antes de dictar, ese formato se pierde tras el pegado — el resultado lo señala en `note`, pero no se ha probado en vivo qué apps lo notan de forma molesta (p. ej. pegar una imagen copiada justo antes de dictar).
 
-## Dos pruebas de tool_serve fallan segun el orden de ejecucion
+## CERRADO (e8accbbf, ffe3e9e6) — Dos pruebas de tool_serve fallan segun el orden de ejecucion
 
 `tests/test_tool_serve.py::test_search_by_query_hits_keyword_hints_without_embedder`
 y `::test_serve_returns_promote_list_and_schemas_for_named_tools` fallan en

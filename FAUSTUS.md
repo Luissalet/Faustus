@@ -7225,3 +7225,126 @@ con un atajo para ASCII para que el camino comun no pague nada.
 Arreglar el tokenizador destapo un fallo en la cabeza reservada del nivel
 hibrido: podia expulsar un acierto lexico fuerte que ya estaba dentro de la
 cabeza. Ahora solo se descartan documentos que el carril lexico no ranqueo.
+
+## 166. Una pregunta, cuatro fallos encadenados (22-09-2026, noche)
+
+Se le preguntó a Faustus, por el 7001 y con el 27B de llama-server, «¿Qué
+aplicaciones mías puedes usar ahora mismo?». Tardó 81 s, llamó dos veces a
+`lookup_tools` y terminó en «Allow this task to continue?» sin contestar.
+Ahora responde en 27 s con una sola llamada a `plugins_list`. Entre medias
+había cuatro fallos, y cada uno tapaba al siguiente.
+
+**La tarjeta (`e7a467d1`).** La puerta de contexto externo se arma al
+empezar casi cualquier turno de agente: las descripciones MCP y el índice de
+skills viajan por el carril no fiable a propósito, y las descripciones MCP
+son un vector de inyección auditado (sondas `mcp_desc_*`). Eso se queda. Lo
+que estaba mal era la clasificación de lo que venía detrás: `manage_mcp
+{"action": "list"}` contaba como cambio de administración porque la
+herramienta entera lo era, y `plugins_list` como lectura privada. Las dos
+leen el catálogo del propio Faustus —lo mismo que ya devuelve `lookup_tools`
+y que ya va en el prompt—, sin URLs, cabeceras ni variables de entorno.
+Ahora son lecturas públicas; su resultado sigue marcado como no fiable, así
+que mantienen la puerta armada.
+
+**La llamada doble (`766b4cc4`).** En la petición grabada se veía: el
+recordatorio de idioma, que se reinserta en cada ronda «antes del último
+mensaje», caía entre la llamada del asistente y su resultado:
+`assistant(llamada) → user(recordatorio) → tool(resultado)`. El modelo leía
+su llamada como no contestada y la repetía, idéntica. Ahora el recordatorio
+va delante del intercambio entero.
+
+**«Busca en la web» (`92de5811`).** «ahora mismo» disparaba el detector de
+actualidad y el turno recibía la instrucción «search the web before
+answering». Las palabras que sólo fechan una pregunta (hoy, último, ahora
+mismo, actual, un año reciente) dejan de contar cuando la pregunta va de las
+cosas del usuario —posesivos, correo, calendario, ficheros, repo, plugins—.
+Las que nombran algo público (un partido, un precio, el tiempo) siguen
+contando.
+
+**«Como modelo de IA no tengo acceso» (`1f6cc8f3`).** Sin ese falso
+positivo, la pregunta no casaba con ninguna palabra clave de dominio y caía
+en la vía directa, que manda el mensaje suelto sin system prompt ni
+herramientas. Esa vía queda sólo para saludos; todo lo demás pasa por la
+recuperación de herramientas, que no depende de las listas de palabras.
+
+### Lo que pides tú, pasa
+
+Con los datos reales, 60 tarjetas en una semana, muchas en la primera
+acción del turno: «Hola, ¿qué eres?» (`manage_memory`), «2+2?» (`python`),
+«Arranca Jobhunter's Hoard» (`plugin_app`). La puerta pedía permiso para lo
+mismo que se acababa de pedir. Decisión de Luis: la puerta se queda como
+está, pero la acción que el propio mensaje del usuario pide con todas las
+letras pasa, como ya pasaba `delegate_agents` dictado con `/agents`.
+
+`src/user_request_gate.py` (`60057288`, `c3ccf5b9`) es una tabla de
+comparadores por herramienta; una herramienta sin comparador nunca pasa por
+esta regla. Las palabras son el último turno del usuario que no sea
+inyectado ni marcado no fiable, sin los cuerpos de los adjuntos: un correo o
+un fichero que diga «abre Jobhunter» es contenido, no una petición. El
+guardián de comandos destructivos y la confirmación por acción de escritorio
+van antes y no cambian.
+
+- `plugin_app`: el plugin tiene que estar nombrado (id, nombre o su primera
+  palabra distintiva) y el verbo tiene que ser un imperativo o infinitivo que
+  cuadre con la acción —arrancar, mostrar, o abrir para ambas—, sin negar.
+- `manage_memory`: sólo `list` y `search`, y sólo cuando se pregunta qué
+  recuerda o sabe de uno. Nunca se infiere añadir, editar o borrar.
+
+### Preparando el terreno a los plugins
+
+- **Nombrar una app trae sus herramientas (`4431cb81`).** «Arranca
+  Jobhunter's Hoard y dime si responde» recuperaba las herramientas de correo
+  («responde» se lee como *reply*). `src/plugins.named_in` dice qué plugins
+  instalados nombra una frase; la selección de herramientas añade
+  `plugins_list` y `plugin_app` cuando nombra alguno, y la puerta usa la misma
+  función, así que no pueden discrepar sobre qué app se nombró.
+- **Una app que arranca en otra dirección se nombra, no se espera
+  (`679b04c0`).** El perfil de arranque levantaba la app en :5179 y la
+  conexión apuntaba a :5178: `ensure_running` esperaba 30 s y decía «puede que
+  aún esté arrancando» de una app que llevaba arriba todo el rato. Ahora
+  vigila también la dirección del perfil y, si la app responde ahí y no en la
+  de la conexión, lo dice en el acto. En vivo, Faustus contesta: está
+  corriendo en 5179, la conexión apunta a 5178, corrige una de las dos.
+
+- **La lista dice para qué sirve cada app (`70e83a54`).** Preguntado qué
+  podría hacer con Writer's Hoard sin conectar, el modelo sólo tenía las
+  palabras clave de capacidades y rellenaba el resto. Cada línea de
+  `plugins_list` lleva ahora el `purpose` del manifiesto, escrito por el autor
+  de la app.
+- **«Lo que está escrito» no es haber escrito (`54c9bb1a`).** La respuesta a
+  esa misma pregunta decía que podría contestar «basándome en lo que de verdad
+  está escrito», y la comprobación de cierre lo leyó como una edición sin
+  escritura detrás: dos rechazos, cuatro rondas y 86 s en vez de dos y 48. El
+  patrón «está/queda + participio» deja de contar dentro de una subordinada
+  relativa o condicional; sigue contando cuando la cosa es el sujeto («el
+  fichero ya está modificado»).
+
+### Tests que no fallaban por el orden
+
+- **Un ciclo de imports (`e8accbbf`).** `src/agent_tools/__init__.py`
+  reexportaba parsing, esquemas y ejecución al final, y cada uno de esos
+  módulos importa `ToolBlock` del paquete. Entrando por el paquete el ciclo se
+  cerraba; entrando por cualquier otro —`tool_schemas`, `tool_policy`,
+  `tool_serve`…— daba ImportError. La app siempre entra por el paquete; la
+  suite no, y el resultado dependía de qué test corría antes. Ahora las
+  reexportaciones son perezosas (PEP 562).
+- **La sal del hash (`ffe3e9e6`).** El otro «flake» de `test_tool_serve` no
+  era el orden de los tests sino el de un `set`: las pistas de palabras clave
+  se tomaban en orden de iteración y se cortaban a ocho, así que `send_email`
+  entraba o no según el proceso. Ahora se ordenan por cuántas palabras de la
+  consulta repite el nombre de la herramienta.
+- **La preposición «a» (`9e55e280`).** El apunte de consumo «duplicado» de
+  `test_baseline_match[feature]` era una segunda compleción real: «He añadido
+  multiply(a, b) a calc.py conservando add().» se leía como inglés (la «a»
+  sólo estaba en la lista inglesa), el harness pedía reescribirla en
+  castellano y el modelo contestaba otra vez. La contabilidad estaba bien; el
+  motivo de la compleción no. La «a» se comparte ahora entre las cuatro
+  lenguas que la usan. La baseline pasa sin regenerarla.
+
+### Fuera del repo
+
+`D:\LocalAI\Start-Faustus-Dev.ps1` ponía `FAUSTUS_DATA_DIR` y
+`FAUSTUS_INPROCESS_*`, pero la app lee `ODYSSEUS_*` (el renombrado de
+variables se revirtió el 18-09). El 7001 trabajaba sobre `data/` real, con
+los pollers de correo y las tareas programadas en marcha. El script pone ya
+las dos familias de variables.
