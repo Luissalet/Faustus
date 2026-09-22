@@ -1,6 +1,7 @@
 """Piper TTS provider: voice path derivation, listing, fake-runtime synthesis
 and capabilities shape. No network here — every fetch is monkeypatched."""
 import json
+import os
 import wave
 import io
 
@@ -117,6 +118,15 @@ def test_download_voice_writes_both_files():
 
 def test_install_binary_extracts_executable(monkeypatch):
     import tarfile
+
+    # This test installs the LINUX release archive, and does it by telling the
+    # module `os.name == "posix"`. On Windows that lie reaches pathlib, which
+    # refuses to build a PosixPath and takes the test down with
+    # UnsupportedOperation -- a failure about the host, not about the code.
+    # There is no Windows behaviour to check here (the Windows asset is a
+    # different archive with a different layout), so skip rather than pretend.
+    if os.name == "nt":
+        pytest.skip("installs the Linux release archive; faking os.name breaks pathlib on Windows")
 
     # Build a fake tar.gz with a "piper" executable inside, mimicking the
     # real release archive's layout.

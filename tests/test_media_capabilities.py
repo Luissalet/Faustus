@@ -23,6 +23,26 @@ from core.middleware import require_admin
 from src import media_capabilities as caps
 
 
+def _fake_binary(directory, name: str, script: str, exit_code: int) -> None:
+    """A stub the OS will actually run when `name` is looked up on PATH.
+
+    The POSIX version -- an extensionless file with a `#!/bin/sh` line -- is
+    invisible to Windows, which resolves a bare command through PATHEXT and
+    therefore walked straight past it and ran the REAL ffmpeg installed on
+    this machine. Four tests here were quietly asserting things about the
+    developer's own ffmpeg build instead of about the stub they thought they
+    had written.
+    """
+    if os.name == "nt":
+        target = directory / (name + ".bat")
+        target.write_text("@echo off\r\necho %s\r\nexit /b %d\r\n" % (script, exit_code),
+                          encoding="utf-8")
+        return
+    target = directory / name
+    target.write_text("#!/bin/sh\necho '%s'\nexit %d\n" % (script, exit_code))
+    target.chmod(0o755)
+
+
 def _client(admin=True):
     from routes.local_video_routes import setup_local_video_routes
     app = FastAPI()
@@ -85,12 +105,8 @@ def test_ffmpeg_probe_is_not_installed_when_the_real_binary_exits_non_zero(tmp_p
     the plan flagged as unchecked. RED before the fix: `_run_version` looked
     only at `TimeoutExpired`/`OSError`, so this used to come back
     `installed=True`."""
-    fake_ffmpeg = tmp_path / "ffmpeg"
-    fake_ffmpeg.write_text("#!/bin/sh\necho 'ffmpeg version broken-build'\nexit 1\n")
-    fake_ffmpeg.chmod(0o755)
-    fake_ffprobe = tmp_path / "ffprobe"
-    fake_ffprobe.write_text("#!/bin/sh\necho 'ffprobe version broken-build'\nexit 0\n")
-    fake_ffprobe.chmod(0o755)
+    _fake_binary(tmp_path, "ffmpeg", "ffmpeg version broken-build", 1)
+    _fake_binary(tmp_path, "ffprobe", "ffprobe version broken-build", 0)
     monkeypatch.setenv("PATH", f"{tmp_path}{os.pathsep}{os.environ.get('PATH', '')}")
 
     result = caps.probe_ffmpeg()
@@ -99,9 +115,7 @@ def test_ffmpeg_probe_is_not_installed_when_the_real_binary_exits_non_zero(tmp_p
 
 
 def test_run_version_reports_the_nonzero_exit_code_directly(tmp_path, monkeypatch):
-    fake = tmp_path / "ffmpeg"
-    fake.write_text("#!/bin/sh\necho 'some diagnostic on stdout'\nexit 1\n")
-    fake.chmod(0o755)
+    _fake_binary(tmp_path, "ffmpeg", "some diagnostic on stdout", 1)
     monkeypatch.setenv("PATH", f"{tmp_path}{os.pathsep}{os.environ.get('PATH', '')}")
 
     installed, version, detail = caps._run_version("ffmpeg", "-version")
@@ -112,9 +126,7 @@ def test_run_version_reports_the_nonzero_exit_code_directly(tmp_path, monkeypatc
 
 
 def test_run_version_still_reports_installed_true_on_a_clean_zero_exit(tmp_path, monkeypatch):
-    fake = tmp_path / "ffmpeg"
-    fake.write_text("#!/bin/sh\necho 'ffmpeg version 6.0'\nexit 0\n")
-    fake.chmod(0o755)
+    _fake_binary(tmp_path, "ffmpeg", "ffmpeg version 6.0", 0)
     monkeypatch.setenv("PATH", f"{tmp_path}{os.pathsep}{os.environ.get('PATH', '')}")
 
     installed, version, detail = caps._run_version("ffmpeg", "-version")
@@ -142,9 +154,19 @@ def test_tts_kokoro_probe_reflects_import_status(monkeypatch):
     assert caps.probe_tts_kokoro()["installed"] is True
 
 
-def test_tts_piper_probe_checks_both_the_binary_and_the_package():
+def test_tts_piper_probe_checks_both_the_binary_and_the_package(monkeypatch):
+    """Both absent means not installed.
+
+    This used to assert that neither is present "in this environment", which
+    is a claim about the machine rather than about the probe -- and on a
+    machine where piper IS installed it failed while the probe was working
+    perfectly. Say what the probe does instead, and make the environment
+    say it: neither on PATH, neither importable.
+    """
+    monkeypatch.setattr(caps.shutil, "which", lambda name: None)
+    monkeypatch.setattr(caps, "_importable", lambda module: False)
     result = caps.probe_tts_piper()
-    assert result["installed"] is False  # neither is present in this environment
+    assert result["installed"] is False
     assert "no piper" in result["detail"]
 
 
