@@ -730,6 +730,29 @@ def _analyses_the_data(user_text: str, content: Any, workspace: str = "") -> boo
 
     file_callees = _READ_CALLS | _WRITE_CALLS | {"open"}
     called = {id(n.func) for n in ast.walk(tree) if isinstance(n, ast.Call)}
+    # `out = r'...\chart.png'; plt.savefig(out)` (seen live): a name bound
+    # exactly once in the whole code, to a string literal, stands for it.
+    stores: dict = {}
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Name) and not isinstance(n.ctx, ast.Load):
+            stores[n.id] = stores.get(n.id, 0) + 1
+        elif isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            stores[n.name] = stores.get(n.name, 0) + 2
+        elif isinstance(n, ast.arg):
+            stores[n.arg] = stores.get(n.arg, 0) + 2
+        # bindings that are not Name nodes: `except E as out`, `import x as
+        # out`, `case {"k": out}` / `case [*out]`
+        for bound in (getattr(n, "name", None) if isinstance(n, (ast.ExceptHandler, ast.MatchAs, ast.MatchStar)) else None,
+                      getattr(n, "rest", None) if isinstance(n, ast.MatchMapping) else None,
+                      (n.asname or n.name.split(".")[0]) if isinstance(n, ast.alias) else None):
+            if bound:
+                stores[bound] = stores.get(bound, 0) + 2
+    literals = {
+        n.targets[0].id: n.value for n in ast.walk(tree)
+        if isinstance(n, ast.Assign) and len(n.targets) == 1 and isinstance(n.targets[0], ast.Name)
+        and isinstance(n.value, ast.Constant) and isinstance(n.value.value, str)
+        and stores.get(n.targets[0].id) == 1
+    }
     for node in ast.walk(tree):
         if isinstance(node, ast.Name):
             if "__" in node.id or node.id in _DYNAMIC:
@@ -793,6 +816,8 @@ def _analyses_the_data(user_text: str, content: Any, workspace: str = "") -> boo
                 return False
             writes = name in _WRITE_CALLS or (name == "open" and _open_writes(node))
             for p in paths:
+                if isinstance(p, ast.Name) and p.id in literals:
+                    p = literals[p.id]
                 target = _literal_path(p, workspace)
                 if target is None or (writes and not _writable_output(target)):
                     return False

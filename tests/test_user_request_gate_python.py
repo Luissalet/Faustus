@@ -105,6 +105,31 @@ def test_the_analysis_the_user_asked_for_runs_without_a_card(ws, code):
     assert allows("python", json.dumps({"code": code}), ASK, ws)
 
 
+def test_a_path_named_once_in_a_variable_counts_as_that_literal(ws):
+    # written live by the agent after cleaning the data
+    code = (
+        "import matplotlib\nmatplotlib.use('Agg')\nimport matplotlib.pyplot as plt\n"
+        "fig, ax = plt.subplots(figsize=(8, 5), dpi=150)\n"
+        "bars = ax.bar(['Puerto', 'Centro'], [3735.27, 3556.92])\n"
+        "ax.spines[['top','right']].set_visible(False)\n"
+        f"out = r'{os.path.join(ws, 'facturacion_junio_por_tienda.png')}'\n"
+        "plt.savefig(out)\nprint('saved', out)\n"
+    )
+    assert allows("python", code, ASK, ws)
+
+
+@pytest.mark.parametrize("rebinding", [
+    "out = 'grafico.png'\nout = 'app.py'",
+    "out = 'grafico.png'\nfor out in ['app.py']:\n    pass",
+    "out = 'grafico.png'\ntry:\n    pass\nexcept Exception as out:\n    pass",
+    "out = 'grafico.png'\nif (out := 'app.py'):\n    pass",
+    "out = 'grafico.png'\nimport csv as out",
+    "out = 'app.py'",
+])
+def test_a_variable_that_can_hold_another_path_keeps_the_card(ws, rebinding):
+    assert not allows("python", rebinding + "\nopen(out, 'w').write('x')", ASK, ws)
+
+
 def test_rerunning_it_may_rewrite_the_chart_it_just_made(ws):
     open(os.path.join(ws, "facturacion_tiendas.png"), "wb").close()
     assert allows("python", CHART_AND_SUMMARY, ASK, ws)
@@ -145,7 +170,7 @@ def test_code_nobody_asked_for_keeps_the_card(ws):
     "print(open('sub/../../secret.txt').read())",
     "print(open('~/notes.txt').read())",
     "print(open('\\\\\\\\server\\\\share\\\\x').read())",
-    "p = 'ventas_junio.csv'\nprint(open(p).read())",
+    "p = 'ventas_' + 'junio.csv'\nprint(open(p).read())",  # built, not a literal
     "f = open\nprint(f('/etc/passwd').read())",
     "import pandas as pd\nr = pd.read_csv\nr('/etc/passwd')",
     "import numpy as np\nnp.load(p)",
