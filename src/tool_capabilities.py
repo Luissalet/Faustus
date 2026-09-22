@@ -1725,12 +1725,25 @@ class ToolRunSecurityContext:
         effects = ", ".join(sorted(effect.value for effect in blocked_effects))
         if not capabilities.known:
             effects = "unknown/high-impact"
+        # Name what actually armed the gate. The wording used to be "External
+        # untrusted context has already influenced this run", which a user who
+        # had just asked Faustus to read their own files reads as "something
+        # from the internet got in" -- alarming and, in the common case, not
+        # true: reading a local file arms this gate exactly as a web page does,
+        # because a file can carry an instruction too. A warning that
+        # misdescribes what happened is a warning people learn to click past,
+        # so say which tools brought the content in and let them judge.
+        sources = ", ".join(str(source) for source in self.external_sources if source)
+        seen = (
+            f"This run has already taken in content Faustus did not write itself, via {sources}."
+            if sources else
+            "This run has already taken in content Faustus did not write itself."
+        )
         return ToolGateDecision(
             False,
             (
-                "External untrusted context has already influenced this run. "
-                f"Tool '{tool_name}' requires a separate user-authorized action "
-                f"because it can cause {effects}."
+                f"{seen} Content like that can carry instructions of its own, so "
+                f"'{tool_name}' needs your go-ahead on its own because it can cause {effects}."
             ),
         )
 
