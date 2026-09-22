@@ -6748,11 +6748,11 @@ operaciones, 3 normas, 3 salvaguardas) y rutas extraídas para los refs.
 `tests/test_llamacpp_structured_output.py`,
 `data/skills/general/design-before-code/SKILL.md` (fuera del repo),
 `FAUSTUS.md`, `OBJETIVOS.md`, `PENDIENTES.md`.
-## 161. Una sesión de uso real: siete fallos que ningún test veía (22-09-2026)
+## 161. Una sesión de uso real: nueve fallos que ningún test veía (22-09-2026)
 
 Usar la aplicación como usuario, no probarla. El primer mensaje fue «Hola. Dime
 en dos frases qué eres y qué puedes hacer por mí». Tardó cuatro minutos y
-contestó con una página en blanco. De ahí salieron siete arreglos, todos con su
+contestó con una página en blanco. De ahí salieron nueve arreglos, todos con su
 medición.
 
 ### 1. Una respuesta vacía se servía como si el modelo hubiera hablado (`82b21e81`)
@@ -6833,6 +6833,43 @@ decide sola: «dame dos ejemplos» daba portugués 1.0. Igual con la conjunción
 «o», «da» del verbo dar y «segundo». Ahora están en los dos idiomas y la
 ponderación hace su trabajo; el portugués real se sigue leyendo como portugués,
 y eso también está en los tests.
+
+### 8. Una sesión caducada se presentó como una cuenta vacía (`6c6a65e2`)
+
+Cuando la carga de la lista de conversaciones devolvió 401, la pantalla mostró
+«No conversations yet. You start the first one below.» y un selector de modelos
+vacío — exactamente la pantalla de una instalación nueva. Nada decía que las
+peticiones se estuvieran rechazando, así que la única lectura honesta
+disponible para el usuario era que su trabajo había desaparecido.
+
+La causa era una línea: `catch(() => setSessions([]))`. **Una lista vacía no es
+un valor de reserva neutro, es una afirmación sobre la cuenta**, y se estaba
+haciendo sin ninguna prueba. Ahora una sesión caducada lo dice y ofrece
+recargar; cualquier otro fallo dice que no se pudo leer la lista. Ninguno
+finge saber qué contiene la cuenta.
+
+### 9. El indicador de uso bloqueaba la interfaz hasta trece segundos (`f71ad872`)
+
+Del log del servidor con un turno en marcha:
+
+    slow_request GET /api/system/usage status=200 elapsed=8.366s
+    slow_request GET /api/system/usage status=200 elapsed=9.417s
+    slow_request GET /api/system/usage status=200 elapsed=10.498s
+    slow_request GET /api/system/usage status=200 elapsed=11.610s
+    slow_request GET /api/system/usage status=200 elapsed=12.924s
+
+Subiendo, y **89 llamadas en tres minutos**. Recoger la instantánea sondea cada
+motor llama.cpp (health, models, props y slots de cada uno) y un motor ocupado
+generando contesta despacio. Así que la recogida tardaba más que el segundo que
+vive su caché: todos los sondeos fallaban el caché y luego **hacían cola en el
+cerrojo** detrás del anterior. El navegador sondea por temporizador, así que la
+cola solo crecía.
+
+Ahora se sirve la última lectura de inmediato y el refresco corre por detrás,
+con un cerrojo que hace que una ráfaga de sondeos arranque **una** recogida y no
+una por sondeo. Solo el primer llamante de un caché frío espera, y un refresco
+que falla deja los números anteriores en su sitio en vez de vaciar el
+indicador. Medido después: **2,26 s en frío y 0,01 s el resto**.
 
 ### Lo que quedó sin cerrar
 
