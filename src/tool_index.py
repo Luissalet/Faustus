@@ -669,6 +669,18 @@ class ToolIndex:
             return []
         found = two_tier_search.search(self.corpus_rows(), query, k=k)
         names = [str(hit.get("id")) for hit in found.get("hits") or [] if hit.get("id")]
+        # The same reserved tail slot `retrieve` already gives the weak
+        # in-memory embedder, for the case that is strictly worse: no vector
+        # lane answered at all. Without it, "run a shell command" did not put
+        # `bash` in the top eight and "search the web for the latest news" did
+        # not put `web_search` there -- two tests said so, in red, and the
+        # safeguard for the milder case was sitting right above.
+        anchor = self._strong_lexical_anchor(query)
+        if anchor and anchor not in names and k > 0:
+            if len(names) >= k:
+                names.pop()
+            names.append(anchor)
+            names = names[:max(0, int(k))]
         if names:
             logger.debug("tool index: no vector lane answered; lexical floor served "
                          "%d tools (tier=%s)", len(names), found.get("tier"))
