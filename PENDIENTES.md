@@ -2,6 +2,19 @@
 
 Actualizado: 22-09-2026. REGLA: nunca nombres de empresas/personas del buzÃ³n de Luis en commits, docs, tests ni comentarios â€” ejemplos siempre ficticios. SÃ³lo trabajo vigente; quitar cada entrada al cerrarla.
 
+## 22-09 noche (2) — bajando por los 74
+
+Segunda pasada completa de la suite, ya con los arreglos del día: **74 fallan, 20.804 pasan, 46:12** (venía de 93 / 20.766 / 53:42). Sigo mirándolos uno a uno.
+
+- CERRADO (36911fe4) — **13 de los 74 eran un solo fichero**. Cada parametrización de `test_offered_set_equals_executable_set` no se cuelga: tarda 154 s de verdad, porque conduce un turno completo por cada herramienta ofrecida. El límite global de 120 s las mataba y, como `pytest-timeout` en modo `thread` sale del proceso, se llevaba al trabajador de xdist — **ése era el «node down» en cascada del final**. Ahora ese fichero declara sus propios 10 minutos en vez de aflojar el límite de los otros veinte mil.
+- CERRADO (e7285acc): el panel de conceptos pintaba con la paleta oscura estando en tema claro — etiquetas en `rgb(226 232 240)` sobre fondo casi blanco, o sea invisibles. Los catorce colores a pelo que `test_colours_come_from_tokens` señalaba eran toda la paleta del grafo. Ahora son tokens con valor oscuro y claro; el canvas los lee con `getComputedStyle` porque no puede usar una variable CSS. Sin valores de reserva a propósito: una reserva es una segunda copia del token que se va separando en silencio.
+- CERRADO (bc0e824a): cinco tests fijaban el texto, los botones y el Escape de un diálogo de cierre que se quitó por decisión tuya — `closeConfirmed()` lo dice en su primera línea. Reescritos sobre lo que la función decide ahora.
+- CERRADO (6dc722b9): el «dead-host cooldown» vive en diccionarios de módulo y sobrevivía al test; un test que apuntaba a un Ollama inalcanzable enfriaba ese host para todos los siguientes del mismo trabajador. Ahora se limpia alrededor de cada test.
+- CERRADO (01ad1135): un renombrado de `lazy()` a `lazyChunk()` tumbaba dos contratos que fijaban el literal del import. Misma clase que el `num_gpu` de esta mañana.
+- CERRADO (b1555b81): el test del ping de warm-up fijaba el cuerpo exacto y se rompió el día que el ping empezó a llevar las `options` del runner residente — que es justo el arreglo del 20-09 para que el ping no recargara el 27B.
+
+**Decisión tuya, no mía (no lo he tocado):** `l86-source-control-panel.check.mjs` dice que el modo compacto del panel de control de versiones no debe renderizar `NewRepositoryDialog`, y lo renderiza. El check no está roto: el producto cambió. El diálogo está cerrado (`open={newRepoOpen}`), así que no se ve hasta que alguien lo abre — puede ser una capacidad añadida a propósito o un descuido. Si es lo primero, lo que hay que actualizar es CONTRATO_GIT_4.md punto 3, no el check.
+
 ## 22-09 noche — la suite termina por primera vez, y lo que se vio al final
 
 La suite completa acabó por primera vez en el día: **20.766 pasan, 93 fallan, 53 min**. Con ese número delante, los fallos dejan de ser ruido y se pueden mirar uno a uno. Estos son los que se han cerrado.
