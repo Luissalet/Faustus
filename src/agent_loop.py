@@ -544,7 +544,8 @@ _DOMAIN_RULES = {
 ## File rules
 - Use file tools for real disk files. Use document tools only for editor documents.
 - Prefer `grep`, `glob`, and `ls` over shell equivalents when available.
-- Use `edit_file`/`write_file` for writes; avoid shell redirection/heredocs for editing files.""",
+- Use `edit_file`/`write_file` for writes; avoid shell redirection/heredocs for editing files.
+- Run a project's tests with the shell tool calling the runner directly (`python -m pytest -q`, `npm test`), not through `python` + subprocess: a plain runner is what "run/fix the tests" already covers, anything else waits for approval.""",
     "settings": """\
 ## Settings/API rules
 - Use `manage_settings` for preferences and tool enable/disable.
