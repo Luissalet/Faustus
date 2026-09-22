@@ -2,6 +2,14 @@
 
 Actualizado: 22-09-2026. REGLA: nunca nombres de empresas/personas del buzÃ³n de Luis en commits, docs, tests ni comentarios â€” ejemplos siempre ficticios. SÃ³lo trabajo vigente; quitar cada entrada al cerrarla.
 
+## 22-09 tarde — sesión de uso real (FAUSTUS.md §161)
+
+- ABIERTO (importante): **el primer envío tras cargar Studio se pierde en silencio**. Reproducción: recargar `/studio`, escribir en el compositor, pulsar el botón Enviar. El texto desaparece, no aparece conversación nueva, y en la pestaña de red **no sale ni `POST /api/session`** — no llega a intentarlo. El segundo intento siempre funciona (`POST /api/session` + `POST /api/chat_stream`, ambos 200). Sospecha: el compositor se remonta mientras se escribe (llegan `/api/projects`, `/api/tools`, `/api/session/.../connectors`) y el borrador local se pierde; el efecto de adopción no lo restaura porque el prop del padre está vacío. No se ha tocado: hay que instrumentarlo antes.
+- SOSPECHA (sin confirmar): la tecla Intro no envía en algunas ocasiones mientras el botón Enviar sí. No se distingue de un artefacto de la automatización del navegador; hay que probarlo a mano.
+- ABIERTO: el turno conversacional sigue mostrando la tarjeta «No action taken · no_workspace_action» en la ronda 1 aunque ya no dispare una segunda ronda. Es ruido en la interfaz para un saludo.
+- TRAMPA DEL ENTORNO: `Set-Content -Encoding UTF8` en PowerShell 5.1 reescribe el fichero con BOM y destroza los acentos de un fichero de test en español. Para editar ficheros con acentos, usar Python o la herramienta de escritura del puente, nunca `Set-Content`.
+- TRAMPA DEL ENTORNO: un proceso lanzado con `Start-Process` desde el puente muere cuando el comando padre agota su tiempo. Para algo que dure más de ~50 s hay que usar el ejecutor persistente (`start_process` + `read_process_output`), no `Start-Process` + espera.
+
 ## 22-09 — decodificación bajo esquema en llama-server (FAUSTUS.md §160b)
 
 - PREEXISTENTES (comprobados idénticos contra la base con `git stash` sobre `src/llm_core.py`): `tests/test_ollama_structured_output.py::test_local_v1_without_a_native_api_keeps_v1_and_sends_no_schema` y `::test_setting_off_restores_the_previous_request_byte_for_byte`. Los dos esperan que un Ollama `/v1` local cuyo `/api/show` no responde se quede en `/v1`, y lo que ocurre es que se reencamina a `/api/chat`. No es de este cambio; hay que mirar `_route_for_response_schema` y su prueba de identidad.

@@ -6748,3 +6748,102 @@ operaciones, 3 normas, 3 salvaguardas) y rutas extraídas para los refs.
 `tests/test_llamacpp_structured_output.py`,
 `data/skills/general/design-before-code/SKILL.md` (fuera del repo),
 `FAUSTUS.md`, `OBJETIVOS.md`, `PENDIENTES.md`.
+## 161. Una sesión de uso real: siete fallos que ningún test veía (22-09-2026)
+
+Usar la aplicación como usuario, no probarla. El primer mensaje fue «Hola. Dime
+en dos frases qué eres y qué puedes hacer por mí». Tardó cuatro minutos y
+contestó con una página en blanco. De ahí salieron siete arreglos, todos con su
+medición.
+
+### 1. Una respuesta vacía se servía como si el modelo hubiera hablado (`82b21e81`)
+
+Dos fallos distintos producen el mismo turno en blanco, y ninguno se detectaba.
+
+El motor con un slot en mal estado contesta en menos de un segundo con
+`content` vacío, `finish_reason` «stop» y seis caracteres de puntuación en el
+canal de razonamiento (`/umd```, los mismos bytes en cada petición mientras el
+caché de prompt seguía creciendo). Ese razonamiento se servía al usuario **como
+respuesta**, y además se escribía en el caché de respuestas: un fallo transitorio
+del motor se convertiía en una respuesta incorrecta permanente para esa
+pregunta, sin volver a preguntar al modelo. Reiniciar el motor arreglaba el
+motor; nada arreglaba el caché.
+
+El otro camino: el modelo se gasta el presupuesto entero razonando y no llega a
+responder. **37,2 s, 1.752 caracteres de razonamiento, techo de tokens
+alcanzado, nada dicho** — frente a **5,5 s y una respuesta correcta** con el
+razonamiento apagado.
+
+Ahora una respuesta vacía es un fallo, no un resultado: no se cachea nunca, se
+reintenta una vez sin caché de prompt y sin razonamiento (ataca las dos causas),
+y si sigue vacía se lanza un error que nombra el motor y cómo limpiarlo.
+
+### 2. Un saludo pagaba el razonamiento completo (`9e020e28`)
+
+`src/effort_profile.py` ya existía, con niveles y presupuestos — pero **solo lo
+reciben los trabajadores delegados**. El turno que el usuario mira nunca ha
+tenido ajuste de esfuerzo, así que siempre paga el caso más difícil.
+
+`src/turn_effort.py` añade la versión más estrecha posible: una **lista blanca**
+de conversación (saludos, gracias, «qué eres», sí y no) que contesta sin
+razonar. Lo que no reconoce conserva exactamente lo de hoy. La asimetría es
+deliberada: pensar sin necesidad cuesta segundos, no pensar cuando hacía falta
+cuesta una respuesta equivocada. En vivo: 5,3 s.
+
+### 3. El modelo local no cabía en su propio timeout (`7e7a6fb6`)
+
+Una pregunta de tres frases devolvía 502 a los 30,2 s. No fallaba nada: el
+modelo seguía trabajando. El valor por defecto de 30 s se escribió para APIs
+remotas. Medido en esta máquina con razonamiento: **23,0 s** tres frases,
+**74,9 s** una respuesta larga. Toda pasada local no trivial se cortaba sola y
+reportaba el corte como fallo del proveedor. El defecto sube solo para los
+endpoints propios; quien pasa su propio timeout lo conserva.
+
+### 4. Un saludo rechazado por prometer trabajo que nadie pidió (`c3293676`)
+
+El guardián `intent_without_action` rechazó una respuesta correcta a «qué puedes
+hacer»: enumerar capacidades se lee como anunciar intenciones incumplidas. El
+guardián se queda — existe porque los modelos locales dicen «ahora lo arreglo» y
+paran — pero no actúa en un turno donde no se pidió nada. El resto de
+comprobaciones siguen corriendo.
+
+### 5. El compositor enviaba el borrador de hace un render (`ffad2f6c`)
+
+Regresión del arreglo de velocidad de escritura del 21-09: el borrador se
+empuja al padre con temporizador, así que el estado va un render por detrás
+mientras la referencia se escribe en cada tecla — y el camino de envío leía el
+estado. Escribir y enviar en el mismo tick manda el valor anterior, vacío en el
+primer mensaje.
+
+### 6. Un saludo devuelto a una segunda ronda (`3dac97b9`)
+
+El aviso de «no hiciste nada» se dispara con `bool(workspace)` a secas, y tener
+una carpeta atada es lo normal. Así que a «hola» se le decía que «la petición
+original requiere trabajo en el workspace activo» y se le mandaba otra ronda. El
+modelo saludaba otra vez, y como el texto de la ronda 1 se conserva y el de la 2
+se añade, **el usuario leía la misma presentación dos veces, pegadas a mitad de
+frase**.
+
+### 7. El español leído como portugués (`60d4bfe8`)
+
+«Prueba de envio numero dos» se contestó en portugués. Las tildes ausentes eran
+una pista falsa: **`dos` estaba solo en el diccionario portugués** (allí es la
+contracción de+os) y en español es el número. Como cada acierto se pondera por
+cuántos idiomas comparten la palabra, una palabra listada en un solo idioma lo
+decide sola: «dame dos ejemplos» daba portugués 1.0. Igual con la conjunción
+«o», «da» del verbo dar y «segundo». Ahora están en los dos idiomas y la
+ponderación hace su trabajo; el portugués real se sigue leyendo como portugués,
+y eso también está en los tests.
+
+### Lo que quedó sin cerrar
+
+El primer envío tras cargar Studio se pierde en silencio: no sale ni
+`POST /api/session`, el compositor se limpia y no aparece conversación. El
+segundo intento siempre funciona. Anotado en PENDIENTES con la reproducción
+exacta; no se toca a ciegas.
+
+**Ficheros.** `src/llm_core.py`, `src/turn_effort.py` (nuevo),
+`src/agent_harness.py`, `src/agent_loop.py`, `src/reply_language.py`,
+`src/research_citations.py`, `src/settings.py`,
+`studio/src/screens/studio/Composer.tsx`,
+`studio/checks/composer-send-draft.check.mjs` (nuevo), y siete ficheros de
+tests nuevos.
