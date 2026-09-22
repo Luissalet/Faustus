@@ -100,6 +100,9 @@ from src.auth_helpers import require_user
 logger = logging.getLogger(__name__)
 
 _CACHE_TTL = 1.0
+#: Held while a background refresh is in flight, so a burst of polls starts
+#: exactly one of them instead of one each.
+_refreshing = asyncio.Lock()
 _cache: Dict[str, Any] = {"ts": 0.0, "data": None}
 _cache_lock = asyncio.Lock()
 
@@ -449,70 +452,118 @@ def _collect_policy() -> Dict[str, Any]:
     return data
 
 
+async def _refresh_usage() -> None:
+    """Recollect in the background, leaving the stale reading readable.
+
+    Never raises: this runs detached, and a failed refresh must leave the
+    last good numbers in place rather than take a task down with it.
+    """
+    if _refreshing.locked():
+        return
+    async with _refreshing:
+        try:
+            await _collect_usage_uncached()
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("system usage refresh failed: %s", exc)
+
+
 async def collect_usage() -> Dict[str, Any]:
+    """The widget's snapshot, never at the cost of making anyone wait.
+
+    Gathering this probes every llama.cpp engine (/health, /models, /props,
+    /slots each) and an engine that is busy generating answers those slowly.
+    Measured while a turn was running: 8.4 s, then 9.4, 10.5, 11.6, 12.9 --
+    climbing, because the collection takes longer than the 1 s cache lives, so
+    every poll missed and then queued on the lock behind the one before it.
+    The browser polls this on a timer, so the queue only grew.
+
+    A stale reading is served immediately and a refresh runs behind it. Only
+    the very first caller of a cold cache waits, and nobody ever queues: the
+    numbers are a gauge, and a gauge that is two seconds out of date is worth
+    far more than one that blocks the interface for twelve.
+    """
+    now = time.time()
+    cached = _cache["data"]
+    if cached is not None and now - _cache["ts"] < _CACHE_TTL:
+        return cached
+    if cached is not None:
+        if not _refreshing.locked():
+            asyncio.create_task(_refresh_usage())
+        return cached
     async with _cache_lock:
         now = time.time()
         if _cache["data"] is not None and now - _cache["ts"] < _CACHE_TTL:
             return _cache["data"]
-        errors: List[str] = []
-        async with httpx.AsyncClient() as client:
-            ollama_task = _collect_ollama(client)
-            gpu_task = asyncio.to_thread(_collect_gpu)
-            host_task = asyncio.to_thread(_collect_host)
-            process_task = asyncio.to_thread(_collect_process)
-            shared_task = asyncio.to_thread(gpu_shared_memory.collect)
-            policy_task = asyncio.to_thread(_collect_policy)
-            external_task = _collect_external_runners()
-            ollama, (gpus, gpu_err), host, process, gpu_mem, policy, external_runners = await asyncio.gather(
-                ollama_task, gpu_task, host_task, process_task, shared_task, policy_task, external_task
-            )
-        # Placement needs both answers (the loaded models and the cards), so
-        # it runs after the gather; it is its own 2 s cache and never raises.
-        report: Dict[str, Any] = {}
-        if ollama.get("models") and gpus:
-            report = await asyncio.to_thread(gpu_placement.report, ollama.get("base", ""), ollama["models"], gpus)
-        _merge_placement(ollama, gpus, report)
-        # Runners no Ollama server owns any more (a restart leaves them
-        # behind) — they hold VRAM every other gauge files under "other".
-        orphans: List[Dict[str, Any]] = []
-        if gpus:
-            orphans = await asyncio.to_thread(gpu_placement.orphan_runners, gpus)
-        if gpu_err:
-            errors.append(gpu_err)
-        if ollama.get("error"):
-            errors.append(f"ollama: {ollama['error']}")
-        if host.get("error"):
-            errors.append(host["error"])
-        data = {
-            "ts": now,
-            "ollama": ollama,
-            # Residency is not Ollama-only (src/runner_providers.py): a
-            # self-hosted OpenAI-compatible runner (llama.cpp's llama-server)
-            # holding a model shows up here even though `ollama.models` never
-            # sees it. Additive field — `ollama` keeps its own shape.
-            "external_runners": external_runners,
-            "gpu": gpus,
-            "gpu_pool": gpu_pool(gpus),
-            "orphans": orphans,
-            "gpu_mem": gpu_mem,
-            "sysmem_fallback": policy,
-            "cpu": host.get("cpu", {}),
-            "ram": host.get("ram", {}),
-            "process": process,
-            "errors": errors,
-        }
-        # The honest health block (src/health.py): every signal above that this
-        # box really has a source for, and a named zero for every one it does
-        # not. Additive — with `agent_health_score` off the document is exactly
-        # the one this endpoint has always answered.
-        try:
-            if health.enabled():
-                data["health"] = health.score(health_signals(data))
-        except Exception as e:  # noqa: BLE001 - a gauge never breaks the gauges
-            logger.debug("health block unavailable: %s", e)
-        _cache["ts"] = now
-        _cache["data"] = data
-        return data
+        return await _collect_usage_uncached()
+
+
+async def _collect_usage_uncached() -> Dict[str, Any]:
+    """Build the snapshot and store it. The slow part; see collect_usage.
+
+    The timestamp is taken when the collection FINISHES, not when it started:
+    stamping it with a reading from before an eight-second probe would make
+    the cache look fresh for a second it had already spent.
+    """
+    errors: List[str] = []
+    async with httpx.AsyncClient() as client:
+        ollama_task = _collect_ollama(client)
+        gpu_task = asyncio.to_thread(_collect_gpu)
+        host_task = asyncio.to_thread(_collect_host)
+        process_task = asyncio.to_thread(_collect_process)
+        shared_task = asyncio.to_thread(gpu_shared_memory.collect)
+        policy_task = asyncio.to_thread(_collect_policy)
+        external_task = _collect_external_runners()
+        ollama, (gpus, gpu_err), host, process, gpu_mem, policy, external_runners = await asyncio.gather(
+            ollama_task, gpu_task, host_task, process_task, shared_task, policy_task, external_task
+        )
+    # Placement needs both answers (the loaded models and the cards), so
+    # it runs after the gather; it is its own 2 s cache and never raises.
+    report: Dict[str, Any] = {}
+    if ollama.get("models") and gpus:
+        report = await asyncio.to_thread(gpu_placement.report, ollama.get("base", ""), ollama["models"], gpus)
+    _merge_placement(ollama, gpus, report)
+    # Runners no Ollama server owns any more (a restart leaves them
+    # behind) — they hold VRAM every other gauge files under "other".
+    orphans: List[Dict[str, Any]] = []
+    if gpus:
+        orphans = await asyncio.to_thread(gpu_placement.orphan_runners, gpus)
+    if gpu_err:
+        errors.append(gpu_err)
+    if ollama.get("error"):
+        errors.append(f"ollama: {ollama['error']}")
+    if host.get("error"):
+        errors.append(host["error"])
+    now = time.time()
+    data = {
+        "ts": now,
+        "ollama": ollama,
+        # Residency is not Ollama-only (src/runner_providers.py): a
+        # self-hosted OpenAI-compatible runner (llama.cpp's llama-server)
+        # holding a model shows up here even though `ollama.models` never
+        # sees it. Additive field — `ollama` keeps its own shape.
+        "external_runners": external_runners,
+        "gpu": gpus,
+        "gpu_pool": gpu_pool(gpus),
+        "orphans": orphans,
+        "gpu_mem": gpu_mem,
+        "sysmem_fallback": policy,
+        "cpu": host.get("cpu", {}),
+        "ram": host.get("ram", {}),
+        "process": process,
+        "errors": errors,
+    }
+    # The honest health block (src/health.py): every signal above that this
+    # box really has a source for, and a named zero for every one it does
+    # not. Additive — with `agent_health_score` off the document is exactly
+    # the one this endpoint has always answered.
+    try:
+        if health.enabled():
+            data["health"] = health.score(health_signals(data))
+    except Exception as e:  # noqa: BLE001 - a gauge never breaks the gauges
+        logger.debug("health block unavailable: %s", e)
+    _cache["ts"] = now
+    _cache["data"] = data
+    return data
 
 
 async def _collect_external_runners() -> List[Dict[str, Any]]:
