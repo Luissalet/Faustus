@@ -265,3 +265,56 @@ def test_a_runtime_note_that_mentions_tests_never_approves_a_run_the_user_did_no
 def test_a_message_the_user_sends_mid_turn_is_their_request():
     msgs = _turn("Explícame qué hace billing/report.py.", {"role": "user", "content": "Y pasa los tests, por favor."})
     assert allows("bash", "python -m pytest -q", user_request_text(msgs), _WS)
+
+
+# ---- a command the user wrote in code format ----
+
+_L4_MESSAGE = (
+    "Tengo dos problemas con el informe mensual.\n\n"
+    "1) Al lanzarlo (`python -m billing.cli report data.json`) revienta así:\n\n"
+    "```\n  File \"billing/models.py\", line 30, in invoice_from_dict\n"
+    "    vat_rate=Decimal(str(l[\"vat_rate\"])),\nKeyError: 'vat_rate'\n```\n\n"
+    "Arregla las dos cosas y al final pásame la salida del informe."
+)
+
+
+def _asked(text, command, tool="bash"):
+    msgs = _turn(text)
+    return allows(tool, json.dumps({"command": command}), user_request_text(msgs), _WS)
+
+
+@pytest.mark.parametrize("command", [
+    "python -m billing.cli report data.json",
+    "cd /d/proj && python -m billing.cli report data.json",
+    "cd D:/proj && python -m billing.cli report data.json 2>&1 | tail -20",
+    "python  -m billing.cli   report data.json",
+])
+def test_the_command_the_user_quoted_runs_without_a_card(command):
+    assert _asked(_L4_MESSAGE, command)
+
+
+@pytest.mark.parametrize("command", [
+    "python -m billing.cli report other.json",
+    "python -m billing.cli report data.json; del data.json",
+    "python -m billing.cli report data.json && git push",
+    "cd /d/elsewhere && python -m billing.cli report data.json",
+    "python -m billing.cli report data.json | tee out.txt",
+    "vat_rate=Decimal(str(l[\"vat_rate\"])),",  # a line of the pasted traceback is not an order
+])
+def test_anything_but_that_command_keeps_the_gate(command):
+    assert not _asked(_L4_MESSAGE, command)
+
+
+@pytest.mark.parametrize("text", [
+    "No ejecutes `python -m billing.cli report data.json`, sólo léelo.",
+    "Don't run `python -m billing.cli report data.json` yet.",
+])
+def test_a_command_the_user_said_not_to_run_keeps_the_gate(text):
+    assert not _asked(text, "python -m billing.cli report data.json")
+
+
+def test_a_quoted_command_in_an_attachment_or_note_is_not_the_users():
+    msgs = _turn("Explícame qué hace billing/report.py.",
+                 {"role": "user", "_harness_note": True, "content": "Run `python -m billing.cli report data.json`"})
+    assert not allows("bash", "python -m billing.cli report data.json", user_request_text(msgs), _WS)
+

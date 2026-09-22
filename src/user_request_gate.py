@@ -228,6 +228,54 @@ def _runs_the_tests(user_text: str, content: Any, workspace: str = "") -> bool:
     return all(_OUTPUT_TRIM.match(s) for s in stages[1:])
 
 
+# A command the user wrote themselves, in code format, is the plainest way to
+# ask for it. Seen live: the message quoted `python -m billing.cli report
+# data.json`, said it crashed and asked for the report's output at the end;
+# after fixing it the agent ran exactly that command and stopped at the card.
+# Only the literal command passes: the same words, optionally run from this
+# workspace (`cd <workspace> &&`) and with its output trimmed. Inline code
+# spans and one-line code blocks count; a multi-line block is pasted
+# material (a traceback, a script), not an order. A span the user negated
+# ("no ejecutes `...`") does not count.
+_CODE_SPAN = re.compile(r"```[^\n`]*\n([^\n`]+)\n```|`([^`\n]+)`")
+_NEGATED_BEFORE = re.compile(
+    r"\b(?:no|nunca|jamas|jamás|sin|not|never|don'?t|do\s+not|avoid|evita)\b[^.`\n]{0,30}$",
+    re.IGNORECASE,
+)
+
+
+def _shell_words(command: str) -> str:
+    return " ".join(command.replace("2>&1", " ").split())
+
+
+def _runs_what_the_user_wrote(user_text: str, content: Any, workspace: str = "") -> bool:
+    command = _shell_words(_command_of(content))
+    lead = re.match(r"^cd\s+(\"[^\"]+\"|'[^']+'|\S+)\s*&&\s*", command)
+    if lead:
+        if not _same_dir(lead.group(1).strip("\"'"), workspace):
+            return False
+        command = command[lead.end():]
+    stages = [s.strip() for s in command.split("|")]
+    while len(stages) > 1 and _OUTPUT_TRIM.match(stages[-1]):
+        stages.pop()
+    command = " | ".join(stages)
+    if not command:
+        return False
+    for match in _CODE_SPAN.finditer(str(user_text or "")):
+        written = _shell_words(match.group(1) or match.group(2) or "")
+        if written != command:
+            continue
+        if _NEGATED_BEFORE.search(user_text[:match.start()]):
+            return False
+        return True
+    return False
+
+
+def _shell_matcher(user_text: str, content: Any, workspace: str = "") -> bool:
+    return (_runs_the_tests(user_text, content, workspace)
+            or _runs_what_the_user_wrote(user_text, content, workspace))
+
+
 # "Arréglalo" asks for the project to be changed. Live, after reading the
 # code and running the tests, the one-line fix to inventario.py stopped at
 # the card. An edit passes when: a workspace is bound, the user's words
@@ -279,8 +327,8 @@ def _edit_matcher(tool: str) -> Callable[..., bool]:
 MATCHERS: Dict[str, Callable[..., bool]] = {
     "plugin_app": _plugin_app,
     "manage_memory": _memory_read,
-    "bash": _runs_the_tests,
-    "powershell": _runs_the_tests,
+    "bash": _shell_matcher,
+    "powershell": _shell_matcher,
     "edit_file": _edit_matcher("edit_file"),
     "write_file": _edit_matcher("write_file"),
     "apply_patch": _edit_matcher("apply_patch"),
