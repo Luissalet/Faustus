@@ -565,6 +565,18 @@ _register(
 # taxonomy names -- no network egress to a third party beyond the endpoint the
 # turn is already using, and nothing written outside DATA_DIR.
 _register({"design_canvas"}, ToolEffect.WRITE_PRIVATE)
+
+# The user's own applications, connected as plugins
+# (src/agent_tools/plugin_tools.py). Split by cost, not by subject:
+# `plugins_list` reads a local list, while `plugin_app` starts a process on
+# this machine and can put a window on the screen. The second is declared
+# with both effects even though what it starts is a launch profile an admin
+# already saved and validated -- a narrower thing than `bash`, but under-
+# declaring an effect is how a permission system stops meaning anything.
+# Neither can stop an app: an agent that can close the window you are
+# writing in is not a capability anybody asked for.
+_register({"plugins_list"}, ToolEffect.READ_PRIVATE)
+_register({"plugin_app"}, ToolEffect.EXECUTE_CODE, ToolEffect.UI_SIDE_EFFECT)
 # Isolated, comparable alternatives (CMP-13, W2-G, src/agent_tools/
 # alternatives_tools.py). `alt_compare` only reads a diff against the base
 # (same class as git_diff) -- READ_WORKSPACE, workspace-sourced content.

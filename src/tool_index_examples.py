@@ -907,6 +907,22 @@ EXAMPLES: Dict[str, List[str]] = {
         "plan the refactor first and write the design down",
     ],
 
+    # ── The user's own applications, connected as plugins ──────────────────
+    "plugins_list": [
+        "qué aplicaciones mías puedes usar",
+        "what plugins do you have connected",
+        "¿tienes conectada mi app de escribir?",
+        "which of my apps are running right now",
+        "do you have anything that knows about my job applications",
+    ],
+    "plugin_app": [
+        "abre mi app de escribir y enséñamela",
+        "open the editor and show it to me",
+        "arranca Dorian",
+        "start my job application app, I need it",
+        "levanta la aplicación de documentos",
+    ],
+
     # ── Isolated, comparable alternatives (CMP-13, W2-G) ───────────────────
     "alt_start": [
         "prueba esto de dos formas distintas y compáralas",

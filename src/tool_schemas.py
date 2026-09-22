@@ -2730,6 +2730,35 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "plugins_list",
+            "description": "The user's own applications that this Faustus can use as plugins -- what each one is for, what it lends (contexts, documents, credentials...), whether it is connected, and whether Faustus can start or show it. These are standalone apps the user also runs on their own; Faustus connects to them, it does not contain them. Call this before assuming a capability is missing: the tools for a connected plugin appear as mcp__<server>__<tool>. Read-only.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "check": {"type": "boolean", "description": "Also ask each connected app whether it is running right now (one request each; off by default)"}
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "plugin_app",
+            "description": "Start one of the user's connected applications, and/or bring it up in front of them. Use `start` when you need a plugin's tools and its app is not running -- the app is started from the launch profile the user already saved for it, and an app that is already up is left alone rather than restarted. Use `show` when the user asks to see it ('open Plato and show me'). Never stops anything, and cannot start an app that has no launch profile -- it will say so instead of guessing a command.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "plugin": {"type": "string", "description": "Plugin id or name, as plugins_list reports it (e.g. 'dorian', \"Dorian's Hoard\")"},
+                    "action": {"type": "string", "enum": ["start", "show", "start_and_show"], "description": "Default 'start'"}
+                },
+                "required": ["plugin"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "concept_upsert",
             "description": "Create or update a project concept -- the agent's own record of what a subsystem is, why it exists, and what it depends on. Pass `id` to update an existing concept, omit it to create a new one (a slug is derived from `name`). `refs` should cite the files/symbols this concept is grounded in (e.g. 'src/embeddings.py', 'src/embeddings.py@get_embedding_client') -- these are what later staleness checks ground against. Use this whenever you work out how a subsystem fits together, so the next session doesn't have to re-derive it.",
             "parameters": {

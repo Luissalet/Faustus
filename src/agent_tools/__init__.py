@@ -61,6 +61,7 @@ from .project_concepts_tools import (
     ConceptUpsertTool, ConceptLinkTool, ConceptRemoveTool,
 )
 from .design_canvas_tools import DesignCanvasTool
+from .plugin_tools import PluginAppTool, PluginsListTool
 from .alternatives_tools import (
     AltStartTool, AltCompareTool, AltApplyTool,
 )
@@ -179,6 +180,11 @@ TOOL_HANDLERS = {
     # OBJ-30: declare the design before writing code, and file it in the same
     # graph. See src/agent_tools/design_canvas_tools.py.
     "design_canvas": DesignCanvasTool().execute,
+    # The user's own applications, connected as plugins. Reading the list is
+    # free; starting one is an act and is gated as such. See
+    # src/agent_tools/plugin_tools.py and src/plugin_runtime.py.
+    "plugins_list": PluginsListTool().execute,
+    "plugin_app": PluginAppTool().execute,
     # Isolated, comparable alternatives (CMP-13, W2-G): thin executors over
     # src.alternatives. See src/agent_tools/alternatives_tools.py.
     "alt_start": AltStartTool().execute,
@@ -345,6 +351,8 @@ TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_fi
              "concept_upsert", "concept_link", "concept_remove",
              # Design canvas (OBJ-30) -- src/agent_tools/design_canvas_tools.py.
              "design_canvas",
+             # The user's own applications -- src/agent_tools/plugin_tools.py.
+             "plugins_list", "plugin_app",
              # Isolated, comparable alternatives (CMP-13, W2-G) --
              # src/agent_tools/alternatives_tools.py.
              "alt_start", "alt_compare", "alt_apply",
