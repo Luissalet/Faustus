@@ -153,8 +153,15 @@ const { apply, blankTurn, restoreFromMetadata } = await bundle('studio/src/scree
   assert.ok(src.includes('docContext?: DocContextRef[]'), 'Knobs must carry docContext for sendTurn to forward');
   assert.ok(src.includes("setKnobs((k) => ({") && /docContext:\s*docContext\.length/.test(src),
     'docContext state must be kept in sync onto knobs.docContext');
-  // Cleared once the turn that carried it is actually sent.
-  assert.ok(/trySend[\s\S]{0,200}setDocContext\(\[\]\)/.test(src), 'a sent turn must clear its attached document context');
+  // Cleared once the turn that carried it is actually sent. Read the whole
+  // body of `trySend` rather than a fixed window after its name: the window
+  // was 200 characters and the function outgrew it, which said the context
+  // was no longer cleared when the line clearing it was still right there.
+  const sendStart = src.indexOf('const trySend = () => {');
+  assert.ok(sendStart > -1, 'Composer.tsx must define trySend');
+  const sendBody = src.slice(sendStart, src.indexOf('\n  };', sendStart));
+  assert.ok(sendBody.includes('setDocContext([])'),
+    'a sent turn must clear its attached document context');
 }
 
 // ── adapters/chat.ts: DocContextRef + sendTurn appends doc_context ──

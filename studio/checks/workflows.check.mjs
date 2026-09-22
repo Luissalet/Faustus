@@ -134,7 +134,11 @@ const read = (p) => readFileSync(path(p), 'utf8').replace(/\r\n/g, '\n');
   assert.ok(/^\s*'\/workflows',\s*$/m.test(routes), 'routes.ts SERVER_ROUTES must list /workflows');
 
   const shell = read('studio/src/shell/AppShell.tsx');
-  assert.ok(shell.includes("const WorkflowsScreen = lazy(() => import('../screens/workflows/WorkflowsScreen')"), 'AppShell must lazily import WorkflowsScreen');
+  // Lazily, by whatever helper AppShell uses for every other screen -- the
+  // check used to spell out `lazy(() => import(...))` and went red when the
+  // shell moved to its own `lazyChunk` wrapper, which is still lazy.
+  assert.ok(/const WorkflowsScreen = lazy\w*\(\(\) => import\('\.\.\/screens\/workflows\/WorkflowsScreen'\)/
+    .test(shell), 'AppShell must lazily import WorkflowsScreen');
   assert.ok(shell.includes('<Route path="/workflows" element={<WorkflowsScreen />} />'), 'AppShell must register the /workflows route');
 
   const appPy = read('app.py');
