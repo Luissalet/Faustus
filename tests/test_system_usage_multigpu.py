@@ -75,6 +75,12 @@ def box(monkeypatch):
     monkeypatch.setattr(sur.gpu_shared_memory, "collect", lambda: {"supported": False, "reason": "test"})
     monkeypatch.setattr(sur, "_collect_policy", lambda: {"exposed": False})
     monkeypatch.setattr(gpu_placement, "report", _report)
+    # The one collector this box was missing: orphan detection walks the real
+    # process table, so on a machine running its own model servers the faked
+    # endpoint still came back with real orphans and a health score that was
+    # about the developer's machine, not about the fixture. A test that wants
+    # orphans patches this itself (tests/test_health.py does).
+    monkeypatch.setattr(gpu_placement, "orphan_runners", lambda gpus: [])
     sur._cache["ts"] = 0.0
     sur._cache["data"] = None
     yield state
