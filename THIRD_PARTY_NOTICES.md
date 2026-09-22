@@ -84,6 +84,20 @@ forget to keep in sync with the code.
   budget/degradation vocabulary (`parser: regex` when tree-sitter is
   absent); no graph-ranking library was introduced.
 
+## Bundled
+
+- **Skill library, rule library and agent library** (`skills/library/`,
+  `config/rules/`, `config/agents/library/`). The substance of these
+  bundled files — procedures, per-language conventions and reviewer/worker
+  role definitions — is adapted from an MIT-licensed collection of coding-
+  agent workflows. Copyright (c) 2026 Affaan Mustafa. Every file in these
+  three folders was rewritten into this app's own formats and words (its
+  own `SKILL.md`/`AGENT.md` dialects and its own rule-file frontmatter);
+  none of the source collection's own file paths, commands, scripts,
+  environment variables, or hook names appear anywhere in this repository.
+  The full MIT license text is kept at
+  [`licenses/Bundled-Agent-Workflows-MIT-LICENSE.txt`](licenses/Bundled-Agent-Workflows-MIT-LICENSE.txt).
+
 *(Faustus descends from Odysseus, whose own `ACKNOWLEDGMENTS.md` already
 lists several vendored/adapted pieces — Diogenes, opencode, llmfit, Tongyi
 DeepResearch, bundled front-end JS libraries, Docker Compose images,

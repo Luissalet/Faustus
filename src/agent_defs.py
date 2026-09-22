@@ -112,6 +112,13 @@ DEF_FILENAME = "AGENT.md"
 #: Where a repo keeps its own definitions. Read only for a TRUSTED workspace.
 REPO_DIR = os.path.join(".faustus", "agents")
 
+#: The repo-bundled agent library (lot C): `config/agents/library/<slug>.md`,
+#: adapted per-language/per-role reviewers and workers shipped with the app
+#: itself. Loaded as ``SOURCE_BUILTIN`` — same precedence as the three
+#: definitions above, so a user or repo definition of the same slug still
+#: wins. Module-level so a test can point it at a disposable fixture folder.
+LIBRARY_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config", "agents", "library")
+
 MODES: Tuple[str, ...] = ("coordinator", "worker", "reviewer")
 ACTIONS: Tuple[str, ...] = ("read", "write", "delegate")
 EFFECTS: Tuple[str, ...] = ("allow", "deny")
@@ -905,6 +912,35 @@ def _profile_catalogue() -> List[AgentDef]:
         return []
 
 
+def _library_defs() -> List[AgentDef]:
+    """The bundled agent library (lot C): every `config/agents/library/*.md`,
+    parsed with the same loader a user's own AGENT.md goes through — this is
+    not a second dialect. A file that fails to parse is skipped and logged
+    at WARNING (a bug in this repo's own content, not in a user's), the same
+    discipline :func:`builtins` applies to the three hand-written sources
+    above.
+    """
+    out: List[AgentDef] = []
+    try:
+        names = sorted(os.listdir(LIBRARY_DIR))
+    except OSError:
+        return out
+    for name in names[:_MAX_DEFS]:
+        if not name.lower().endswith(".md") or name.startswith("."):
+            continue
+        slug = clean_slug(os.path.splitext(name)[0])
+        if not slug:
+            continue
+        path = os.path.join(LIBRARY_DIR, name)
+        try:
+            out.append(parse(_read(path), slug=slug, source=SOURCE_BUILTIN, path=path))
+        except AgentDefError as exc:
+            logger.warning("agent_defs: library definition %r does not load: %s", slug, exc)
+        except OSError as exc:
+            logger.warning("agent_defs: library definition %r could not be read: %s", slug, exc)
+    return out
+
+
 # ── loading ─────────────────────────────────────────────────────────────────
 
 def _read(path: str) -> str:
@@ -1036,6 +1072,20 @@ def _load_raw(workspace: Optional[str] = None) -> LoadResult:
             result.agents.append(definition)
         else:
             result.agents[index] = definition
+    # The bundled agent library (lot C) comes after the profiles and before
+    # the user/repo stores, so it can never shadow a hand-written builtin or
+    # profile slug: a collision is reported in `errors` instead of silently
+    # replacing (or being replaced by) the earlier definition.
+    for definition in _library_defs():
+        if definition.slug in seen:
+            result.errors.append({
+                "path": definition.path, "slug": definition.slug,
+                "reason": f"`{definition.slug}` shadows an existing built-in or profile "
+                          f"definition and was not loaded from the library",
+            })
+            continue
+        seen[definition.slug] = len(result.agents)
+        result.agents.append(definition)
     try:
         _load_user(result, seen)
     except Exception as exc:  # noqa: BLE001
@@ -1410,7 +1460,7 @@ def explain(d: AgentDef, *, tools: Optional[Sequence[str]] = None) -> List[Dict[
 
 __all__ = [
     "ACTIONS", "AgentDef", "AgentDefError", "DEFAULT_COMPLETION_MODE", "EFFECTS",
-    "FRONTMATTER_KEYS", "LoadResult", "MAX_EXTENDS_DEPTH", "MODES", "PROFILE_FIELDS",
+    "FRONTMATTER_KEYS", "LIBRARY_DIR", "LoadResult", "MAX_EXTENDS_DEPTH", "MODES", "PROFILE_FIELDS",
     "REPO_DIR", "RESOLVED_KEYS", "Rule", "SOURCE_BUILTIN", "SOURCE_REPO", "SOURCE_USER",
     "agents_root", "builtins", "clean_slug", "def_path", "explain", "from_dict", "get",
     "known_tools",
