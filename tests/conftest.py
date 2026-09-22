@@ -59,6 +59,26 @@ def clean_dead_host_cooldown():
 
 
 @pytest.fixture(autouse=True)
+def clean_bash_probe_cache():
+    """`find_bash` probes once and keeps the answer in a module global.
+
+    Right again in production -- the probe walks a handful of install paths
+    and the answer does not change while the process lives. In a test run it
+    is cross-contamination: any test that fakes `which` (the stray-tmux test
+    fakes it for every name) poisons the cache with a path that does not
+    exist, and the next test that really runs a command spawns it and dies
+    with WinError 2. It shows as a test that passes alone and fails in the
+    suite -- and it crosses files, so the file it fails in is innocent.
+    """
+    from core import platform_compat
+    platform_compat._BASH_PROBED = False
+    platform_compat._BASH_CACHE = None
+    yield
+    platform_compat._BASH_PROBED = False
+    platform_compat._BASH_CACHE = None
+
+
+@pytest.fixture(autouse=True)
 def isolated_managed_objectives(tmp_path_factory):
     from services import objective_locations
     allocated = []
