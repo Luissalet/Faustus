@@ -927,3 +927,17 @@ def test_no_browser_offered_means_skipped_not_missing(tmp_path):
     assert "ui_unverified" not in led.check_completion("Fixed the canvas drag.")["reasons"]
     led.browser_tools_offered = True
     assert led.ui_verify_status() == "missing"
+
+
+def test_a_state_inside_a_relative_or_conditional_clause_is_not_a_claim():
+    """Live: describing what a plugin would allow -- «responder preguntas sobre
+    tu obra basándome en lo que de verdad está escrito» -- was rejected twice
+    as claims_without_mutation. "lo que está escrito" is the user's text, not
+    work Faustus says it did."""
+    text = ("Cuando lo conectes podría:\n"
+            "- **Consultar el manuscrito**: buscar escenas y responder sobre tu obra "
+            "basándome en lo que de verdad está escrito, no de memoria.\n"
+            "- Revisar el código si está modificado desde la última versión.")
+    assert h.find_mutation_claims(text) == []
+    # The subject of the sentence being the thing still counts.
+    assert h.find_mutation_claims("El fichero config.py ya está modificado y el botón está añadido.")
