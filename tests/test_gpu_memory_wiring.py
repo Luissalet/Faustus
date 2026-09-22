@@ -72,7 +72,15 @@ def test_num_gpu_survives_the_whole_override_path():
     llm_core = (ROOT / "src" / "llm_core.py").read_text(encoding="utf-8")
     assert 'data.get("num_gpu")' in chat_routes          # accepted from the client
     assert '"num_gpu"' in llm_core                        # allowed through
-    # and it must reach the Ollama `options` block, where it means anything
-    assert 'for k in ("top_p", "top_k", "seed", "num_ctx", "num_gpu"' in llm_core
+    # ...and it must reach the Ollama `options` block, which is the only place
+    # it means anything. This used to be asserted by looking for the literal
+    # `for k in ("top_p", "top_k", "seed", ...)` in the source; adding "min_p"
+    # to that tuple broke the test while the behaviour it cares about was
+    # untouched, and it stayed red for weeks. Run the function instead.
+    from src.llm_core import _apply_gen_overrides_ollama
+    payload = {"model": "whatever", "messages": []}
+    _apply_gen_overrides_ollama(payload, {"num_gpu": 99, "main_gpu": 1})
+    assert payload["options"]["num_gpu"] == 99
+    assert payload["options"]["main_gpu"] == 1
 
 
