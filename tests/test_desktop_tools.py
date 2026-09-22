@@ -265,9 +265,16 @@ def test_settings_defaults():
     assert DEFAULT_SETTINGS["agent_tool_images"] is True
     assert DEFAULT_SETTINGS["agent_tool_image_max_px"] == 1280
     assert DEFAULT_SETTINGS["agent_keep_images"] == 1
-    keys = list(DEFAULT_SETTINGS)
-    i = keys.index("vision_model_fallbacks")
-    assert keys[i + 1:i + 5] == ["agent_tool_images", "agent_tool_image_max_px", "agent_keep_images", "desktop_control_mode"]
+    # This used to assert those four keys sat immediately after
+    # `vision_model_fallbacks`, in that order. Nothing reads
+    # DEFAULT_SETTINGS by position, so the adjacency was never a contract --
+    # and it broke the day an unrelated setting
+    # (`agent_midturn_compact_enabled`) was declared in between, which is a
+    # thing anyone is free to do. What matters is that the four exist,
+    # which the assertions above already read one value at a time.
+    for key in ("agent_tool_images", "agent_tool_image_max_px",
+                "agent_keep_images", "desktop_control_mode"):
+        assert key in DEFAULT_SETTINGS, key
 
 
 # ── desktop_screenshot ─────────────────────────────────────────────────────
