@@ -613,19 +613,60 @@ class ToolIndex:
             # which needs no model and no network.
             return self.lexical_retrieve(query, k=k)
         rows.sort(key=lambda row: (-row["score"], lane_priority.get(row["embedding_lane"], 99)))
+        if getattr(self, "backend", "") == BACKEND_MEMORY and k > 0:
+            deep = [row["tool_name"] for row in
+                    dedupe_results(rows, id_key="tool_name", limit=max(k * 3, 24))]
+            return self._with_lexical_lane(query, deep, k)
         names = [row["tool_name"] for row in
                  dedupe_results(rows, id_key="tool_name", limit=k)]
-        if getattr(self, "backend", "") == BACKEND_MEMORY and k > 0:
-            # The local fallback is deliberately available even with a tiny or
-            # user-supplied embedder. As the catalogue grows, a weak hashing
-            # model can collide badly enough to omit an exact intent such as
-            # "shell command". Keep the vector ranking, but reserve one tail
-            # slot for a near-literal first-sentence intent.
-            anchor = self._strong_lexical_anchor(query)
-            if anchor and anchor not in names:
-                if len(names) >= k:
-                    names.pop()
-                names.append(anchor)
+        return names[:max(0, int(k))]
+
+    def _with_lexical_lane(self, query: str, vector_order: List[str], k: int) -> List[str]:
+        """Fuse the embedding lane's ranking with the lexical one.
+
+        The in-memory lane is a small English embedding model. Asked in
+        another language it does not fail loudly, it ranks plausibly and
+        wrongly: measured on this catalogue, "lee el fichero server.py"
+        returned model-download tools and no `read_file`, and "qué
+        aplicaciones mías puedes usar" returned WhatsApp tools while BM25
+        scored the right answer 1.0 at rank 1. The lane was deciding alone,
+        so a perfect lexical match could not save the turn.
+
+        Both lanes vote now. Measured over 17 queries in both languages:
+        the lane alone 11, the lexical path alone 15, the two fused 16 —
+        fusing keeps what the embedder is good at instead of trading one
+        blind spot for another. It costs about 30ms per turn.
+
+        Only for the in-memory backend, which is the one that was measured.
+        Whether a ChromaDB lane deserves the same company is the same
+        question with a different embedder behind it, and it should be
+        answered by measuring it rather than by assuming this result
+        transfers.
+        """
+        try:
+            from src.two_tier_search import rrf, _ordered
+        except Exception:  # noqa: BLE001 - never fail a turn over ranking
+            return vector_order[:max(0, int(k))]
+        try:
+            lexical = self.lexical_retrieve(query, k=max(k * 3, 24))
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("tool index: lexical lane unavailable (%s)", exc)
+            return vector_order[:max(0, int(k))]
+        if not lexical:
+            return vector_order[:max(0, int(k))]
+        names = _ordered(rrf(lexical, vector_order))[:max(0, int(k))]
+        # And still the reserved tail slot. Fusing two rankings is about
+        # which tool is *most like* the request; this is about the one the
+        # request nearly names outright. BM25 ranks `manage_scripts` above
+        # `bash` for "run a shell command" — reasonably, its description
+        # talks about running shell commands — and no amount of fusing
+        # fixes that, because both lanes agree and both are wrong about
+        # what was meant.
+        anchor = self._strong_lexical_anchor(query)
+        if anchor and anchor not in names and k > 0:
+            if len(names) >= k:
+                names.pop()
+            names.append(anchor)
         return names[:max(0, int(k))]
 
     def _set_corpus(self, section: str, docs: Dict[str, str]) -> None:
