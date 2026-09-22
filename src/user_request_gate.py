@@ -404,10 +404,26 @@ def _inspects_the_workspace(step: str, workspace: str) -> bool:
 _PLAIN_ECHO = re.compile(r"^echo(?:\s+(?:[\w.,:=+/\- ]+|\"[\w.,:=+/\- ]*\"|'[\w.,:=+/\- ]*'))?$")
 
 
+def _python_dash_c(user_text: str, command: str, workspace: str) -> bool:
+    """`python -c "<code>"` from the shell is the python tool by another
+    door; it gets the same judgment (`python -c "import pandas"` to see
+    whether a package is there)."""
+    import shlex
+
+    try:
+        words = shlex.split(command)
+    except ValueError:
+        return False
+    if len(words) != 3 or words[1] != "-c" or not re.fullmatch(r"(?:python3?|py)(?:\.exe)?", words[0]):
+        return False
+    return _analyses_the_data(user_text, words[2], workspace)
+
+
 def _one_command(user_text: str, command: str, workspace: str) -> bool:
     return (_runs_the_tests(user_text, command, workspace)
             or _runs_what_the_user_wrote(user_text, command, workspace)
-            or _inspects_the_workspace(command, workspace))
+            or _inspects_the_workspace(command, workspace)
+            or _python_dash_c(user_text, command, workspace))
 
 
 def _shell_matcher(user_text: str, content: Any, workspace: str = "") -> bool:

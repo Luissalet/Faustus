@@ -363,6 +363,8 @@ _SALES = "Analiza el export de ventas_junio.csv y dime qué tienda factura más.
     "cat ventas_junio.csv | awk -F';' 'NR>1 {print $2}' | sort | uniq -c && echo \"=== FECHAS ===\" "
     "&& awk -F';' 'NR>1 {print $1}' ventas_junio.csv | sort | uniq -c | head -40",
     "awk -v umbral=100 -F';' '$5 > umbral {n++} END {print n}' ventas_junio.csv",
+    "python -c \"import matplotlib, pandas\"",
+    "cd /d/proj && python3 -c 'import pandas as pd; print(pd.read_csv(\"ventas_junio.csv\", sep=\";\").shape)'",
 ])
 def test_reading_workspace_files_with_the_shell_needs_no_card(command):
     assert _asked(_SALES, command)
@@ -401,6 +403,11 @@ def test_reading_workspace_files_with_the_shell_needs_no_card(command):
     "awk --source='BEGIN {system(\"calc\")}' ventas_junio.csv",
     "awk -v a=1 'x=1' /etc/passwd",
     "awk '{print}' /etc/passwd",
+    # seen live: the check is fine, the install after it downloads code
+    "python -c \"import matplotlib, pandas\" 2>&1 || pip install matplotlib pandas 2>&1 | tail -1",
+    "python -c \"import os; os.remove('ventas_junio.csv')\"",
+    "python -c \"print(open('/etc/passwd').read())\"",
+    "python -m http.server",
 ])
 def test_anything_that_writes_runs_or_leaves_the_workspace_keeps_the_card(command):
     assert not _asked(_SALES, command)
