@@ -82,6 +82,15 @@ def test_integrity_compaction_is_tried_first_and_skips_the_llm_summary(monkeypat
     monkeypatch.setattr(agent_loop, "compact_with_integrity", fake_integrity)
     monkeypatch.setattr(agent_loop, "maybe_compact", fake_maybe_compact)
     monkeypatch.setattr(agent_loop, "estimate_tokens", lambda messages: len(messages) * 1000)
+    # The gate reads `token_calibration.estimate_tokens_for`, NOT
+    # `agent_loop.estimate_tokens`: it wants the candidate model's real
+    # chars->tokens ratio. Mocking only the latter left the gate computing a
+    # genuine (tiny) estimate for this fixture, never crossing the threshold,
+    # so `compact_with_integrity` was never reached and this test had been
+    # asserting nothing for as long as it had been red.
+    import src.token_calibration as token_calibration
+    monkeypatch.setattr(token_calibration, "estimate_tokens_for",
+                        lambda messages, model=None: len(messages) * 1000)
     _base_mocks(monkeypatch)
 
     primary = ("https://selected.example/v1", "selected-model", {})
@@ -119,6 +128,15 @@ def test_llm_summary_still_runs_when_integrity_compaction_is_a_no_op(monkeypatch
     monkeypatch.setattr(agent_loop, "compact_with_integrity", fake_integrity)
     monkeypatch.setattr(agent_loop, "maybe_compact", fake_maybe_compact)
     monkeypatch.setattr(agent_loop, "estimate_tokens", lambda messages: len(messages) * 1000)
+    # The gate reads `token_calibration.estimate_tokens_for`, NOT
+    # `agent_loop.estimate_tokens`: it wants the candidate model's real
+    # chars->tokens ratio. Mocking only the latter left the gate computing a
+    # genuine (tiny) estimate for this fixture, never crossing the threshold,
+    # so `compact_with_integrity` was never reached and this test had been
+    # asserting nothing for as long as it had been red.
+    import src.token_calibration as token_calibration
+    monkeypatch.setattr(token_calibration, "estimate_tokens_for",
+                        lambda messages, model=None: len(messages) * 1000)
     _base_mocks(monkeypatch)
 
     primary = ("https://selected.example/v1", "selected-model", {})
