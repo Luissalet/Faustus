@@ -42,7 +42,7 @@ def _patch_common(monkeypatch, settings=None, tool_exec=None):
     # `acme/model`. These tests assert on the reviewer's identity, so the
     # candidate list must be empty here, not whatever the shared DB holds.
     from src import auto_review as _auto_review
-    monkeypatch.setattr(_auto_review, "available_models_for_review", lambda owner: [], raising=False)
+    monkeypatch.setattr(_auto_review, "available_models_for_review", lambda owner, endpoint_url=None: [], raising=False)
 
     async def _fake_exec(block, *a, **k):
         if tool_exec is not None:

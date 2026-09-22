@@ -160,6 +160,34 @@ def test_available_models_for_review_reads_only_enabled_owned_endpoints(tmp_path
     assert reviewer == "model-b"
 
 
+def test_the_reviewer_is_chosen_among_what_the_writers_endpoint_serves(tmp_path, monkeypatch):
+    """The review is sent to the writer's endpoint. A name from another
+    endpoint was only a label there: live, a single-model llama-server
+    answered a "review by <hosted model>" with the writer itself."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from core import database as db_mod
+
+    url = "sqlite:///" + (tmp_path / "t.db").as_posix()
+    engine = create_engine(url, connect_args={"check_same_thread": False})
+    monkeypatch.setattr(db_mod, "engine", engine)
+    monkeypatch.setattr(db_mod, "SessionLocal", sessionmaker(autocommit=False, autoflush=False, bind=engine))
+    db_mod.Base.metadata.create_all(bind=engine)
+
+    from src import auto_review
+    with db_mod.SessionLocal() as db:
+        db.add(db_mod.ModelEndpoint(id="local", name="local", base_url="http://127.0.0.1:8081/v1",
+                                    is_enabled=True, cached_models=json.dumps(["writer-27b"])))
+        db.add(db_mod.ModelEndpoint(id="hosted", name="hosted", base_url="https://api.example.com/v1",
+                                    is_enabled=True, cached_models=json.dumps(["hosted-model"])))
+        db.commit()
+
+    ids = auto_review.available_models_for_review(None, "http://localhost:8081/v1/chat/completions")
+    assert ids == ["writer-27b"]
+    # Nothing else on that endpoint: the writer reviews, under its own name.
+    assert auto_review.resolve_reviewer("writer-27b", "same", available_models=ids) == "writer-27b"
+
+
 # ── (46) PLAN-04 evidence_weighted_support wired into synthesis.build ──────
 
 def test_synthesis_build_attaches_evidence_support_per_decision():

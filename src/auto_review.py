@@ -77,7 +77,16 @@ def _distinct_reviewer(writer_model: str, available_models: Sequence[str]) -> Op
     return None
 
 
-def available_models_for_review(owner: Optional[str]) -> List[str]:
+def _endpoint_root(url: str) -> str:
+    """`http://127.0.0.1:8081/v1/chat/completions` -> `http://127.0.0.1:8081`."""
+    u = str(url or "").strip().rstrip("/")
+    for tail in ("/chat/completions", "/completions", "/v1", "/api/chat", "/api"):
+        if u.endswith(tail):
+            u = u[: -len(tail)].rstrip("/")
+    return u.replace("://localhost", "://127.0.0.1").lower()
+
+
+def available_models_for_review(owner: Optional[str], endpoint_url: Optional[str] = None) -> List[str]:
     """VER-03 (Lote 50 wiring): a cheap, DB-only candidate list for
     `resolve_reviewer`'s `available_models` — every model id any of the
     owner's enabled endpoints has last reported (`ModelEndpoint.cached_models`,
@@ -85,9 +94,17 @@ def available_models_for_review(owner: Optional[str]) -> List[str]:
     every list). This never touches the network: a stale or empty cache just
     means "same" still falls back to `model` itself, exactly like before this
     function existed. Never raises — any failure returns ``[]``.
+
+    `endpoint_url` restricts the list to what THAT endpoint serves, and the
+    agent loop always passes it: the review is sent to the writer's
+    endpoint, so a name taken from any other one is only a label. Seen
+    live: a review logged as done by a hosted model was the local 27B
+    answering to that name on llama-server, which ignores the `model`
+    field -- the same model reviewing itself under a borrowed name.
     """
     try:
         from core.database import ModelEndpoint, SessionLocal
+        want_root = _endpoint_root(endpoint_url) if endpoint_url else ""
         with SessionLocal() as db:
             rows = db.query(ModelEndpoint).filter(ModelEndpoint.is_enabled == True).all()  # noqa: E712
             ids: List[str] = []
@@ -95,6 +112,8 @@ def available_models_for_review(owner: Optional[str]) -> List[str]:
                 if ep.owner and owner and ep.owner != owner:
                     continue
                 if ep.owner and not owner:
+                    continue
+                if want_root and _endpoint_root(getattr(ep, "base_url", "") or "") != want_root:
                     continue
                 try:
                     cached = json.loads(ep.cached_models or "[]")

@@ -8405,7 +8405,7 @@ async def _stream_agent_loop_body(
         from src import auto_review as _auto_review
         _reviewer_model = _auto_review.resolve_reviewer(
             model, _hopts.get("review_model") or str(get_setting("agent_auto_review", "off") or "off"),
-            available_models=_auto_review.available_models_for_review(owner),
+            available_models=_auto_review.available_models_for_review(owner, endpoint_url),
         ) if (_harness_enabled and workspace) else None
     except Exception:
         _reviewer_model = None
