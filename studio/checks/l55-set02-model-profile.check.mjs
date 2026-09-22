@@ -23,10 +23,22 @@ try {
     }), { status: 200 });
   };
   const first = await endpointProfiles();
-  assert.deepEqual(first, {
-    'local-ollama': { isLocal: true, cost: 'free_local', hasApiKey: false },
-    'cloud-keyed': { isLocal: false, cost: 'paid', hasApiKey: true },
-  });
+  // Field by field, not deepEqual on the whole object: this check is about
+  // snake_case becoming camelCase, and a whole-object comparison fails the
+  // day the profile grows a field (it grew `backend`/`backendLabel`), which
+  // says nothing about the mapping it is meant to guard.
+  assert.deepEqual(Object.keys(first).sort(), ['cloud-keyed', 'local-ollama']);
+  assert.equal(first['local-ollama'].isLocal, true);
+  assert.equal(first['local-ollama'].cost, 'free_local');
+  assert.equal(first['local-ollama'].hasApiKey, false);
+  assert.equal(first['cloud-keyed'].isLocal, false);
+  assert.equal(first['cloud-keyed'].cost, 'paid');
+  assert.equal(first['cloud-keyed'].hasApiKey, true);
+  // Nothing snake_case survives the mapping, whatever fields exist.
+  for (const profile of Object.values(first)) {
+    assert.ok(!Object.keys(profile).some((key) => key.includes('_')),
+      'every profile field is camelCase on the client side');
+  }
   await endpointProfiles();
   assert.equal(calls, 1, 'endpointProfiles() is cached — the picker opening twice does not ask twice');
   const refreshed = await endpointProfiles(true);
