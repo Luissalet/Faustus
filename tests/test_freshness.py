@@ -65,7 +65,28 @@ NEGATIVE_CASES = [
     "¿cómo se calcula el área de un círculo?",
     "write a poem about the sea",
     "fix this bug in my code",
+    # A time word on the person's own things is not a web question (seen
+    # live: the first one got "search the web before answering").
+    "¿Qué aplicaciones mías puedes usar ahora mismo?",
+    "lee el último correo",
+    "¿qué tengo hoy en el calendario?",
+    "resume mis notas de esta semana",
+    "what did I change in my repo yesterday",
+    "¿cuál es el estado actual de la rama?",
 ]
+
+# The same words on a public subject still fire, whoever asks.
+OWN_BUT_PUBLIC_CASES = [
+    "¿ganó mi equipo el último partido?",
+    "¿qué tiempo hace hoy en mi ciudad?",
+    "cuál es el precio actual de mis acciones",
+    "any news about my favourite band today",
+]
+
+
+@pytest.mark.parametrize("text", OWN_BUT_PUBLIC_CASES)
+def test_a_public_subject_fires_even_in_the_first_person(text):
+    assert looks_time_sensitive(text), f"expected time-sensitive: {text!r}"
 
 
 @pytest.mark.parametrize("text", POSITIVE_CASES)

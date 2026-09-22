@@ -11,8 +11,10 @@ This module is a small, pure, dependency-free heuristic used by
 ``web_fetch`` get pulled into the turn's tool set, and (b) prepend a one-line
 nudge telling the model to search first. It is intentionally conservative
 about *not* firing on timeless questions (math, code, definitions, "explain
-X", "summarize this file") — a false positive here just means an extra,
-harmless web search; a false negative reproduces the original bug.
+X", "summarize this file"). A false negative reproduces the original bug; a
+false positive is not free either, because the nudge is an instruction and
+sends the model to the web instead of to the tool that holds the answer --
+see ``_OWN_THINGS`` below.
 """
 
 from __future__ import annotations
@@ -33,9 +35,13 @@ _PATTERNS: List[tuple] = [
         re.IGNORECASE,
     )),
     ("news_events", re.compile(
-        r"\b(noticias?|qu[eé] ha pasado|[uú]ltimo|[uú]ltima|reciente|ayer|hoy|"
+        r"\b(noticias?|qu[eé] ha pasado|breaking|breaking news|news)\b",
+        re.IGNORECASE,
+    )),
+    ("time_word", re.compile(
+        r"\b([uú]ltimo|[uú]ltima|reciente|ayer|hoy|"
         r"esta semana|este mes|este a[ñn]o|ahora mismo|latest|yesterday|"
-        r"this week|this month|breaking|breaking news)\b",
+        r"this week|this month)\b",
         re.IGNORECASE,
     )),
     ("prices_markets", re.compile(
@@ -76,6 +82,27 @@ _PATTERNS: List[tuple] = [
 ]
 
 
+# A bare time word says WHEN, not WHERE the answer lives. "¿Qué aplicaciones
+# mías puedes usar ahora mismo?", "lee el último correo", "what's on my
+# calendar today" all carry one, and all of them are about the person's own
+# things -- the nudge that fired on them ("search the web before answering")
+# pointed the model away from the tool that knew. The false positive the
+# module docstring calls harmless is not: the nudge is an instruction. So the
+# words that only date a question stop counting when the question is about
+# the user's own stuff; the ones that name a public subject (a match, a
+# price, the weather) still count whatever the phrasing.
+_WEAK_LABELS = frozenset({"time_word", "explicit_year", "current_word"})
+_OWN_THINGS = re.compile(
+    r"\b(m[ií]os|m[ií]as|m[ií]o|m[ií]a|mis|mi|tengo|tenemos|nuestr[oa]s?|"
+    r"my|mine|our|i have|we have|"
+    r"correos?|emails?|mails?|inbox|calendario|agenda|calendar|"
+    r"ficheros?|archivos?|carpetas?|files?|folders?|repo|repositorio|rama|"
+    r"branch|commits?|notas?|notes?|tareas?|tasks?|chats?|conversaci[oó]n|"
+    r"workspace|plugins?|conectores?|connectors?)\b",
+    re.IGNORECASE,
+)
+
+
 def freshness_reasons(text: str) -> List[str]:
     """Return the labels of every freshness pattern that fired on ``text``.
 
@@ -84,7 +111,10 @@ def freshness_reasons(text: str) -> List[str]:
     raw = str(text or "")
     if not raw.strip():
         return []
-    return [label for label, pattern in _PATTERNS if pattern.search(raw)]
+    hits = [label for label, pattern in _PATTERNS if pattern.search(raw)]
+    if hits and all(label in _WEAK_LABELS for label in hits) and _OWN_THINGS.search(raw):
+        return []
+    return hits
 
 
 def looks_time_sensitive(text: str) -> bool:
