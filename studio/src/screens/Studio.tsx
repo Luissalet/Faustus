@@ -24,6 +24,7 @@ import {
   type DelegationTask,
   type ModelRoute,
 } from '../adapters/chat';
+import { ApiError } from '../adapters/api';
 import { listProjects, type Project } from '../adapters/projects';
 import { createDoc } from '../adapters/documents';
 import type { EvidenceRef } from '../adapters/evidence';
@@ -787,7 +788,22 @@ export function StudioScreen() {
   /* Sessions and models: once. */
   useEffect(() => {
     const controller = new AbortController();
-    listSessions(controller.signal).then(setSessions).catch(() => setSessions([]));
+    listSessions(controller.signal).then(setSessions).catch((e: unknown) => {
+      // NOT `setSessions([])`. An empty list is a claim -- "you have no
+      // conversations" -- and turning every failure into it told a signed-out
+      // user their work was gone. A session that expires while the tab is
+      // open (restarting the server is enough) showed "No conversations yet.
+      // You start the first one below." and an empty model picker, with
+      // nothing anywhere saying the requests were coming back 401.
+      if (controller.signal.aborted) return;
+      if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
+        say(t('Your session has expired. Sign in again to get your conversations back — nothing has been lost.'),
+            'warning', { label: t('Reload'), onClick: () => window.location.reload() });
+        return;
+      }
+      say(t('Could not read your conversations.'), 'danger',
+          { label: t('Retry'), onClick: () => window.location.reload() });
+    });
     listModels(controller.signal).then(setRoutes).catch(() => setRoutes([]));
     return () => controller.abort();
   }, []);

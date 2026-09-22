@@ -8025,3 +8025,5 @@ Stops asking at this gate for the rest of this conversation.	Deja de preguntar a
 Does not run the proposed action.	No ejecuta la acción propuesta.
 The default model ({model}) is served by {engine}, which is not running.	El modelo por defecto ({model}) lo sirve {engine}, que no está arrancado.
 Start the engine	Arrancar el motor
+Your session has expired. Sign in again to get your conversations back — nothing has been lost.	Tu sesión ha caducado. Vuelve a iniciar sesión para recuperar tus conversaciones: no se ha perdido nada.
+Could not read your conversations.	No se han podido leer tus conversaciones.
