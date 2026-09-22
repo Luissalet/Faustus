@@ -226,3 +226,46 @@ def test_there_is_no_way_to_stop_an_app_from_here(world, monkeypatch):
             '{"plugin": "platos", "action": "%s"}' % asked, {}))
         assert "unknown action" in out["error"], asked
     assert stopped == [], "no phrasing of the request reaches stop()"
+
+
+# ── an app that came up somewhere else ─────────────────────────────────────
+
+def _profile_on(monkeypatch, url):
+    import src.launch_profiles as lp
+
+    monkeypatch.setattr(lp, "get_profile", lambda pid: {"id": pid, "readiness": {"url": url}})
+
+    async def answers(readiness):
+        return readiness.get("url") == url
+
+    monkeypatch.setattr(lp, "_check_ready_once", answers)
+
+
+def test_an_app_up_at_another_address_is_named_not_waited_for(world, monkeypatch):
+    """Seen live: the profile started the app on :5179, the connection
+    pointed at :5178, and the call waited 30 s to say "it may still be coming
+    up" about an app that was up. The disagreement is the answer."""
+    import src.launch_profiles as lp
+
+    async def launch_but_elsewhere(profile_id, **kwargs):
+        world["launched"].append(profile_id)
+        return {"launched": True, "pid": 1}
+
+    monkeypatch.setattr(lp, "launch", launch_but_elsewhere)
+    _profile_on(monkeypatch, "http://127.0.0.1:5001/api/health")
+
+    out = asyncio.run(plugin_runtime.ensure_running("platos", wait_s=30))
+
+    assert out["ok"] is False and out["started_process"] is True
+    assert out["answering_at"] == "http://127.0.0.1:5001/api/health"
+    assert "127.0.0.1:5000" in out["reason"] and "disagree" in out["reason"]
+    assert world["waited"] <= 2, "it must not sit out the whole wait"
+
+
+def test_a_profile_on_the_connection_address_is_not_a_disagreement(world, monkeypatch):
+    # localhost and 127.0.0.1, with a health path, are the same place.
+    _profile_on(monkeypatch, "http://localhost:5000/api/health")
+
+    out = asyncio.run(plugin_runtime.ensure_running("platos"))
+
+    assert out["ok"] is True and out.get("started") is True

@@ -165,6 +165,25 @@ async def survey(*, owner: Optional[str] = None, check: bool = False) -> List[Di
     return out
 
 
+def _same_origin(a: str, b: str) -> bool:
+    """Same scheme-less host and port. `localhost` and 127.0.0.1 are the
+    same place; a missing port is the scheme's default."""
+    from urllib.parse import urlsplit
+
+    def key(url: str):
+        parts = urlsplit(url if "//" in url else f"http://{url}")
+        host = (parts.hostname or "").lower()
+        if host in ("localhost", "::1", "0.0.0.0"):
+            host = "127.0.0.1"
+        port = parts.port or (443 if parts.scheme == "https" else 80)
+        return host, port
+
+    try:
+        return key(a) == key(b)
+    except ValueError:
+        return False
+
+
 async def ensure_running(ref: str, *, owner: Optional[str] = None,
                          wait_s: float = DEFAULT_WAIT_S) -> Dict[str, Any]:
     """Make sure the plugin's app is up, starting it if it is not.
@@ -212,9 +231,34 @@ async def ensure_running(ref: str, *, owner: Optional[str] = None,
     # The profile's own readiness check may already have waited; poll the
     # app's health anyway, because "the process started" and "the app is
     # answering" are different claims and only the second one is useful.
+    #
+    # And watch the address the PROFILE says the app comes up on. Seen live:
+    # the profile started the app on :5179 while the connection pointed at
+    # :5178, so this waited the full 30 s and answered "it may still be
+    # coming up" about an app that had been up the whole time -- and the
+    # agent went off to probe ports with a shell. Two saved settings that
+    # disagree are a fact to name, not a timeout.
+    profile = launch_profiles.get_profile(profile_id) or {}
+    readiness = profile.get("readiness") if isinstance(profile.get("readiness"), dict) else {}
+    ready_url = str((readiness or {}).get("url") or "")
+    app_url = str(connector.get("app_url") or "")
+    elsewhere = bool(ready_url) and not _same_origin(ready_url, app_url)
     deadline = time.monotonic() + max(0.0, float(wait_s))
     while True:
         health = await app_reachable(connector, plugin)
+        if not health.get("reachable") and elsewhere and await launch_profiles._check_ready_once(readiness):
+            return {
+                "ok": False,
+                "plugin": getattr(plugin, "id", None),
+                "name": name,
+                "started_process": True,
+                "answering_at": ready_url,
+                "app_url": app_url,
+                "reason": f"{name} started and is answering at {ready_url}, but its "
+                          f"connection points at {app_url or 'no address'}. The launch "
+                          f"profile and the connection disagree about where the app "
+                          f"lives; correct one of them in Connectors.",
+            }
         if health.get("reachable"):
             from src import connector_status
 
