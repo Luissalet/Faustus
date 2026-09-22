@@ -1,0 +1,69 @@
+{
+  "schema": 1,
+  "id": "gepetto",
+  "name": "Gepetto's Hoard",
+  "purpose": "Drive Gepetto's Hoard's projects, analysis and jobs through its REST API.",
+  "capabilities": [
+    "projects",
+    "analysis",
+    "jobs"
+  ],
+  "placeholders": [
+    "GEPETTO_DIR",
+    "APP_URL"
+  ],
+  "defaults": {
+    "APP_URL": "http://127.0.0.1:8767"
+  },
+  "app": {
+    "url_default": "http://127.0.0.1:8767",
+    "ui_url": "{APP_URL}",
+    "health": {
+      "path": "/api/health",
+      "expect": {
+        "application": "sculptors-hoard"
+      }
+    },
+    "identify": {
+      "application": [
+        "sculptors-hoard"
+      ],
+      "title": [
+        "gepetto's hoard",
+        "sculptor's hoard"
+      ]
+    },
+    "launch_hint": {
+      "kind": "process",
+      "executable": "{GEPETTO_DIR}/.venv/Scripts/python.exe",
+      "argv": [
+        "-m",
+        "uvicorn",
+        "backend.app:app",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8767"
+      ],
+      "cwd": "{GEPETTO_DIR}",
+      "readiness": {
+        "url": "{APP_URL}/api/health",
+        "timeout_s": 20
+      }
+    }
+  },
+  "mcp": {
+    "transport": "stdio",
+    "command": "{FAUSTUS_PYTHON}",
+    "args": [
+      "{FAUSTUS_DIR}/bridges/rest_mcp/server.py"
+    ],
+    "env": {
+      "REST_BASE_URL": "{APP_URL}",
+      "REST_OPENAPI_URL": "{APP_URL}/openapi.json",
+      "REST_MANIFEST": "{FAUSTUS_DIR}/bridges/rest_mcp/manifests/gepetto.json",
+      "REST_NAME": "Gepetto's Hoard"
+    },
+    "optional_env": []
+  }
+}

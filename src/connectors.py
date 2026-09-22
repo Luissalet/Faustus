@@ -78,157 +78,43 @@ def _writer_token_file_default() -> str:
     return os.path.expandvars(os.path.expanduser(raw))
 
 
-PRESETS: Dict[str, ConnectorPreset] = {
-    "jobhunter": ConnectorPreset(
-        id="jobhunter",
-        name="Jobhunter's Hoard",
-        purpose="Track job applications, answers and context through the Jobhunter MCP bridge.",
-        capabilities=["contexts", "jobs", "applications", "answers"],
-        transport="stdio",
-        command="node",
-        args=["{JOBHUNT_DIR}/server/mcp.js"],
-        env={
-            "JOBHUNT_URL": "{APP_URL}",
-            "JOBHUNT_TOKEN_FILE": "{TOKEN_FILE}",
-        },
-        app_url_default="http://127.0.0.1:5178",
-        health_path="/api/health",
-        # Empty on purpose: old Jobhunter builds have no /api/health at all,
-        # and the contract says any HTTP answer (404 included) still counts
-        # as the app being reachable — an empty expectation is trivially
-        # satisfied by any JSON (or lack of it), which is exactly that rule.
-        health_expect={},
-        ui_url_default=None,  # resolved as "= app_url" (see resolve_preset_values)
-        # TOKEN_FILE defaults to the token the app writes next to its own
-        # data; a Jobhunter started with another JOBHUNT_DATA_DIR (a test
-        # instance) writes its token there, so the value is editable.
-        placeholders=["JOBHUNT_DIR", "APP_URL", "TOKEN_FILE"],
-        launch_profile_hint={
-            "kind": "process",
-            "executable": "node",
-            "argv": ["server/index.js"],
-            "cwd": "{JOBHUNT_DIR}",
-            "readiness": {"url": "{APP_URL}/api/health", "timeout_s": 20},
-        },
-        defaults={"APP_URL": "http://127.0.0.1:5178", "TOKEN_FILE": "{JOBHUNT_DIR}/data/mcp-token"},
-    ),
-    "writer": ConnectorPreset(
-        id="writer",
-        name="Writer's Hoard",
-        purpose="Draft, edit and query manuscripts through the Writer's Hoard AI bridge.",
-        capabilities=["documents", "notes", "outline", "search"],
-        transport="stdio",
-        command="node",
-        args=["{WRITER_DIR}/dist-electron/aibridge/mcpStdio.cjs"],
-        env={
-            "WH_BRIDGE_URL": "{APP_URL}",
-            "WH_BRIDGE_TOKEN_FILE": "{TOKEN_FILE}",
-        },
-        app_url_default="http://127.0.0.1:8766",
-        health_path="/api/health",
-        health_expect={"service": "writers-hoard-ai-bridge"},
-        ui_url_default=None,  # 8766 is an API, not a UI — no ui_url
-        placeholders=["WRITER_DIR", "APP_URL", "TOKEN_FILE"],
-        launch_profile_hint={
-            "kind": "open_exe",
-            "executable": "{WRITER_DIR}/release/win-unpacked/Writers Hoard.exe",
-            "argv": [],
-        },
-        defaults={
-            "APP_URL": "http://127.0.0.1:8766",
-            "TOKEN_FILE": _writer_token_file_default(),
-        },
-        # Forwarded verbatim into `env` when the user supplies it; never
-        # required, and its absence never makes the preset "unconfigured".
-        optional_extra_env=["WH_BRIDGE_GROUPS"],
-    ),
-    "dorian": ConnectorPreset(
-        id="dorian",
-        name="Dorian's Hoard",
-        purpose="Manage local credentials and sessions through Dorian's Hoard's own MCP server.",
-        capabilities=["credentials", "sessions"],
-        transport="stdio",
-        command="{DORIAN_DIR}/.venv/Scripts/python.exe",
-        args=["{DORIAN_DIR}/selfhoard/mcp_server.py", "--credential-file", "{CREDENTIAL_FILE}"],
-        env={},
-        app_url_default="http://127.0.0.1:8741",
-        health_path="/api/session",
-        health_expect={"mode": "local"},
-        ui_url_default="{APP_URL}",
-        placeholders=["DORIAN_DIR", "APP_URL", "CREDENTIAL_FILE"],
-        launch_profile_hint={
-            "kind": "process",
-            "executable": "{DORIAN_DIR}/.venv/Scripts/python.exe",
-            "argv": ["-m", "selfhoard"],
-            "cwd": "{DORIAN_DIR}",
-            "readiness": {"url": "{APP_URL}/api/session", "timeout_s": 20},
-        },
-        defaults={
-            "APP_URL": "http://127.0.0.1:8741",
-            "CREDENTIAL_FILE": "{DORIAN_DIR}/data/agent-clients/faustus.json",
-        },
-    ),
-    "gepetto": ConnectorPreset(
-        id="gepetto",
-        name="Gepetto's Hoard",
-        purpose="Drive Gepetto's Hoard's projects, analysis and jobs through its REST API.",
-        capabilities=["projects", "analysis", "jobs"],
-        transport="stdio",
-        # A bridge Faustus ships itself (bridges/rest_mcp), run with Faustus's
-        # own interpreter — this app has no MCP server of its own, so the
-        # generic REST adapter (built from its OpenAPI document, falling
-        # back to manifests/gepetto.json) stands in for one.
-        command="{FAUSTUS_PYTHON}",
-        args=["{FAUSTUS_DIR}/bridges/rest_mcp/server.py"],
-        env={
-            "REST_BASE_URL": "{APP_URL}",
-            "REST_OPENAPI_URL": "{APP_URL}/openapi.json",
-            "REST_MANIFEST": "{FAUSTUS_DIR}/bridges/rest_mcp/manifests/gepetto.json",
-            "REST_NAME": "Gepetto's Hoard",
-        },
-        app_url_default="http://127.0.0.1:8767",
-        health_path="/api/health",
-        health_expect={"application": "sculptors-hoard"},
-        ui_url_default="{APP_URL}",
-        placeholders=["GEPETTO_DIR", "APP_URL"],
-        launch_profile_hint={
-            "kind": "process",
-            "executable": "{GEPETTO_DIR}/.venv/Scripts/python.exe",
-            "argv": ["-m", "uvicorn", "backend.app:app", "--host", "127.0.0.1", "--port", "8767"],
-            "cwd": "{GEPETTO_DIR}",
-            "readiness": {"url": "{APP_URL}/api/health", "timeout_s": 20},
-        },
-        defaults={"APP_URL": "http://127.0.0.1:8767"},
-    ),
-    "platos": ConnectorPreset(
-        id="platos",
-        name="Plato's Hoard",
-        purpose="Create, edit and export documents through Plato's Hoard's editor API.",
-        capabilities=["documents", "editor", "exports"],
-        transport="stdio",
-        command="{FAUSTUS_PYTHON}",
-        args=["{FAUSTUS_DIR}/bridges/rest_mcp/server.py"],
-        env={
-            "REST_BASE_URL": "{APP_URL}",
-            "REST_MANIFEST": "{FAUSTUS_DIR}/bridges/rest_mcp/manifests/platos.json",
-            "REST_NAME": "Plato's Hoard",
-        },
-        app_url_default="http://127.0.0.1:5000",
-        health_path="/",
-        # Any 200 counts — "/" is an HTML page, not a JSON health endpoint.
-        health_expect={},
-        ui_url_default="{APP_URL}",
-        placeholders=["PLATOS_DIR", "APP_URL"],
-        launch_profile_hint={
-            "kind": "process",
-            "executable": "{PLATOS_DIR}/.venv/Scripts/python.exe",
-            "argv": ["app.py"],
-            "cwd": "{PLATOS_DIR}",
-            "readiness": {"url": "{APP_URL}/", "timeout_s": 20},
-        },
-        defaults={"APP_URL": "http://127.0.0.1:5000"},
-    ),
-}
+#: Every plugin this installation has, as the `ConnectorPreset` shape the
+#: rest of the code already speaks. Derived, not written: the source of
+#: truth for a plugin is its own manifest (`plugins/<id>/plugin.json`, or
+#: `<DATA_DIR>/plugins/<id>/plugin.json` for one the user installed).
+#:
+#: This used to be five hand-written entries here, with the fingerprint that
+#: recognises each app kept in a SECOND dict in `src/connector_discovery.py`.
+#: Two files to remember meant the second one was forgotten: three of the
+#: five plugins had no fingerprint at all and were invisible to the nearby-
+#: apps scan. One manifest per plugin makes that particular mistake
+#: unavailable.
+PRESETS: Dict[str, ConnectorPreset] = {}
+
+
+def reload_presets() -> Dict[str, ConnectorPreset]:
+    """Re-read the manifests and rebuild `PRESETS` in place.
+
+    In place, because callers hold a reference to the dict itself (and tests
+    patch entries into it); rebinding the name would leave them looking at
+    the old one.
+    """
+    from src import plugins as plugins_mod
+
+    plugins_mod.reset_cache()
+    fresh = {pid: p.to_preset() for pid, p in plugins_mod.load_plugins().items()}
+    PRESETS.clear()
+    PRESETS.update(fresh)
+    return PRESETS
+
+
+def _load_presets_once() -> None:
+    from src import plugins as plugins_mod
+
+    PRESETS.update({pid: p.to_preset() for pid, p in plugins_mod.load_plugins().items()})
+
+
+_load_presets_once()
 
 
 def list_presets() -> List[Dict[str, Any]]:
@@ -314,10 +200,12 @@ def resolve_preset_values(preset: ConnectorPreset, values: Optional[Dict[str, st
             env[extra] = values[extra]
 
     app_url = merged.get("APP_URL") or preset.app_url_default
-    if preset.ui_url_default is None:
-        ui_url = app_url if preset.id == "jobhunter" else None
-    else:
-        ui_url = _substitute(preset.ui_url_default, merged)
+    # Whether an app has a UI worth opening is a fact about that app, so it
+    # is declared in its manifest (`app.ui_url`, usually "{APP_URL}", null
+    # when the port is an API and not a page). It used to be decided here by
+    # an `if preset.id == "jobhunter"` — one plugin's detail sitting in the
+    # code path every plugin goes through.
+    ui_url = _substitute(preset.ui_url_default, merged) if preset.ui_url_default else None
 
     reasons: List[str] = []
     dir_placeholder = _dir_placeholder(preset)

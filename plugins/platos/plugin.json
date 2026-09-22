@@ -1,0 +1,57 @@
+{
+  "schema": 1,
+  "id": "platos",
+  "name": "Plato's Hoard",
+  "purpose": "Create, edit and export documents through Plato's Hoard's editor API.",
+  "capabilities": [
+    "documents",
+    "editor",
+    "exports"
+  ],
+  "placeholders": [
+    "PLATOS_DIR",
+    "APP_URL"
+  ],
+  "defaults": {
+    "APP_URL": "http://127.0.0.1:5000"
+  },
+  "app": {
+    "url_default": "http://127.0.0.1:5000",
+    "ui_url": "{APP_URL}",
+    "health": {
+      "path": "/",
+      "expect": {}
+    },
+    "identify": {
+      "title": [
+        "plato's hoard",
+        "platos hoard"
+      ]
+    },
+    "launch_hint": {
+      "kind": "process",
+      "executable": "{PLATOS_DIR}/.venv/Scripts/python.exe",
+      "argv": [
+        "app.py"
+      ],
+      "cwd": "{PLATOS_DIR}",
+      "readiness": {
+        "url": "{APP_URL}/",
+        "timeout_s": 20
+      }
+    }
+  },
+  "mcp": {
+    "transport": "stdio",
+    "command": "{FAUSTUS_PYTHON}",
+    "args": [
+      "{FAUSTUS_DIR}/bridges/rest_mcp/server.py"
+    ],
+    "env": {
+      "REST_BASE_URL": "{APP_URL}",
+      "REST_MANIFEST": "{FAUSTUS_DIR}/bridges/rest_mcp/manifests/platos.json",
+      "REST_NAME": "Plato's Hoard"
+    },
+    "optional_env": []
+  }
+}

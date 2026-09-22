@@ -1,0 +1,59 @@
+{
+  "schema": 1,
+  "id": "writer",
+  "name": "Writer's Hoard",
+  "purpose": "Draft, edit and query manuscripts through the Writer's Hoard AI bridge.",
+  "capabilities": [
+    "documents",
+    "notes",
+    "outline",
+    "search"
+  ],
+  "placeholders": [
+    "WRITER_DIR",
+    "APP_URL",
+    "TOKEN_FILE"
+  ],
+  "defaults": {
+    "APP_URL": "http://127.0.0.1:8766",
+    "TOKEN_FILE": "%APPDATA%/writers-hoard/aibridge/token"
+  },
+  "app": {
+    "url_default": "http://127.0.0.1:8766",
+    "ui_url": null,
+    "health": {
+      "path": "/api/health",
+      "expect": {
+        "service": "writers-hoard-ai-bridge"
+      }
+    },
+    "identify": {
+      "service": [
+        "writers-hoard-ai-bridge"
+      ],
+      "title": [
+        "writer's hoard",
+        "writers hoard"
+      ]
+    },
+    "launch_hint": {
+      "kind": "open_exe",
+      "executable": "{WRITER_DIR}/release/win-unpacked/Writers Hoard.exe",
+      "argv": []
+    }
+  },
+  "mcp": {
+    "transport": "stdio",
+    "command": "node",
+    "args": [
+      "{WRITER_DIR}/dist-electron/aibridge/mcpStdio.cjs"
+    ],
+    "env": {
+      "WH_BRIDGE_URL": "{APP_URL}",
+      "WH_BRIDGE_TOKEN_FILE": "{TOKEN_FILE}"
+    },
+    "optional_env": [
+      "WH_BRIDGE_GROUPS"
+    ]
+  }
+}

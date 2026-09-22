@@ -1,0 +1,64 @@
+{
+  "schema": 1,
+  "id": "jobhunter",
+  "name": "Jobhunter's Hoard",
+  "purpose": "Track job applications, answers and context through the Jobhunter MCP bridge.",
+  "capabilities": [
+    "contexts",
+    "jobs",
+    "applications",
+    "answers"
+  ],
+  "placeholders": [
+    "JOBHUNT_DIR",
+    "APP_URL",
+    "TOKEN_FILE"
+  ],
+  "defaults": {
+    "APP_URL": "http://127.0.0.1:5178",
+    "TOKEN_FILE": "{JOBHUNT_DIR}/data/mcp-token"
+  },
+  "app": {
+    "url_default": "http://127.0.0.1:5178",
+    "ui_url": "{APP_URL}",
+    "health": {
+      "path": "/api/health",
+      "expect": {}
+    },
+    "identify": {
+      "service": [
+        "jubhunters-hoard",
+        "jobhunters-hoard",
+        "jobhunter"
+      ],
+      "title": [
+        "jubhunter",
+        "jobhunter"
+      ]
+    },
+    "launch_hint": {
+      "kind": "process",
+      "executable": "node",
+      "argv": [
+        "server/index.js"
+      ],
+      "cwd": "{JOBHUNT_DIR}",
+      "readiness": {
+        "url": "{APP_URL}/api/health",
+        "timeout_s": 20
+      }
+    }
+  },
+  "mcp": {
+    "transport": "stdio",
+    "command": "node",
+    "args": [
+      "{JOBHUNT_DIR}/server/mcp.js"
+    ],
+    "env": {
+      "JOBHUNT_URL": "{APP_URL}",
+      "JOBHUNT_TOKEN_FILE": "{TOKEN_FILE}"
+    },
+    "optional_env": []
+  }
+}

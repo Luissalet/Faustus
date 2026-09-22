@@ -43,11 +43,48 @@ SKIP_PORTS = {11434, 5354, 5939, 27339}
 #: Loopback range a preset's app may drift within (Jobhunter: 5178 + up to 100).
 DRIFT_SPAN = 30
 
-#: health-body fingerprints per preset (F1.1 presets say who they are).
-FINGERPRINTS: Dict[str, Dict[str, Any]] = {
-    "jobhunter": {"service": ("jubhunters-hoard", "jobhunters-hoard", "jobhunter"), "title": ("jubhunter", "jobhunter")},
-    "writer": {"service": ("writers-hoard-ai-bridge",), "title": ("writer's hoard", "writers hoard")},
-}
+def fingerprints() -> Dict[str, Dict[str, List[str]]]:
+    """How to recognise each plugin's app, read from the plugins themselves.
+
+    This used to be a literal dict here, written by hand next to a SECOND
+    hand-written list of the same plugins in `src/connectors.py`. Keeping
+    two lists in step is a chore nobody signed up for, so it was not done:
+    of the five plugins that shipped, three had no entry here at all and
+    could never be recognised by a scan, however plainly their app was
+    running. A plugin declares its own `app.identify` now, in the one file
+    that is the plugin, and this function is a view of that.
+    """
+    from src import plugins as plugins_mod
+
+    return {
+        pid: {field: list(values) for field, values in plugin.identify.items() if values}
+        for pid, plugin in plugins_mod.load_plugins().items()
+        if plugin.identify
+    }
+
+
+def health_paths() -> List[str]:
+    """Every distinct health path a plugin declares, most specific first.
+
+    A probe that only ever asked for ``/api/health`` could not recognise an
+    app whose health lives somewhere else — which is two of the five (one
+    answers on ``/api/session``, one only has ``/``). Asking each declared
+    path costs one request per path on a loopback port.
+    """
+    from src import plugins as plugins_mod
+
+    paths: List[str] = []
+    for plugin in plugins_mod.load_plugins().values():
+        path = (plugin.health_path or "").strip()
+        if path and path != "/" and path not in paths:
+            paths.append(path)
+    # `/api/health` first whether or not a plugin declares it: it is what
+    # most apps answer on, and a scan should spend its first request where
+    # the answer usually is rather than wherever a dict happened to order.
+    if "/api/health" in paths:
+        paths.remove("/api/health")
+    paths.insert(0, "/api/health")
+    return paths
 
 
 @dataclass
@@ -158,26 +195,42 @@ def _netstat_ports() -> List[ListeningPort]:
 # who is it
 # ---------------------------------------------------------------------------
 
-async def probe(url: str, health_path: str = "/api/health", tokens: Optional[List[str]] = None) -> Dict[str, Any]:
+async def probe(url: str, health_path: Optional[str] = None,
+                tokens: Optional[List[str]] = None) -> Dict[str, Any]:
     """``{"health": dict|None, "title": str, "latency_ms": int|None}`` for one
-    loopback app. `health` is the parsed JSON of ``health_path`` when it
+    loopback app. `health` is the parsed JSON of the first health path that
     answered 200 with an object; `title` the ``<title>`` of ``/`` when it is
-    HTML. Never raises; a port that is not HTTP simply yields nothing."""
+    HTML. Never raises; a port that is not HTTP simply yields nothing.
+
+    With no `health_path` given, every path a plugin declares is tried in
+    turn. Hard-coding ``/api/health`` was fine while both known apps used it
+    and silently blind to the ones that do not — the point of asking an app
+    who it is is to ask where it answers, and each plugin says.
+    """
     import httpx
 
     result: Dict[str, Any] = {"health": None, "title": "", "latency_ms": None}
+    paths = [health_path] if health_path else health_paths()
     started = time.monotonic()
     try:
         async with httpx.AsyncClient(follow_redirects=False, timeout=PROBE_TIMEOUT_S) as client:
-            try:
-                resp = await client.get(url.rstrip("/") + health_path)
-                result["latency_ms"] = int((time.monotonic() - started) * 1000)
+            reached = False
+            for path in paths:
+                try:
+                    resp = await client.get(url.rstrip("/") + path)
+                except Exception:  # noqa: BLE001 - not HTTP, refused, timed out
+                    if reached:
+                        continue
+                    return result
+                reached = True
+                if result["latency_ms"] is None:
+                    result["latency_ms"] = int((time.monotonic() - started) * 1000)
                 if resp.status_code == 401:
                     # A bridge that wants its own token (Writer's Hoard): try
                     # the tokens the presets know how to find on this machine.
                     for tok in tokens or ():
                         try:
-                            again = await client.get(url.rstrip("/") + health_path,
+                            again = await client.get(url.rstrip("/") + path,
                                                      headers={"Authorization": f"Bearer {tok}"})
                         except Exception:  # noqa: BLE001
                             continue
@@ -187,12 +240,11 @@ async def probe(url: str, health_path: str = "/api/health", tokens: Optional[Lis
                 if resp.status_code == 200:
                     try:
                         body = resp.json()
-                        if isinstance(body, dict):
-                            result["health"] = body
                     except Exception:  # noqa: BLE001
-                        pass
-            except Exception:  # noqa: BLE001 - not HTTP, refused, timed out
-                return result
+                        body = None
+                    if isinstance(body, dict):
+                        result["health"] = body
+                        break
             try:
                 root = await client.get(url.rstrip("/") + "/")
                 ctype = root.headers.get("content-type", "")
@@ -208,16 +260,32 @@ async def probe(url: str, health_path: str = "/api/health", tokens: Optional[Lis
 
 
 def match_preset(health: Optional[Dict[str, Any]], title: str) -> Optional[str]:
-    """Which preset a probed app is, by its own health body first, then by
-    the page title. None when nothing recognisable answered."""
-    service = str((health or {}).get("service") or "").strip().lower()
+    """Which plugin a probed app is, by its own health body first, then by
+    the page title. None when nothing recognisable answered.
+
+    Any field a plugin names in `app.identify` is matched against the health
+    body, not just ``service``: the apps do not agree on what to call
+    themselves (one says ``service``, one ``application``, one only has a
+    mode), and a matcher that knows one key can only ever recognise the apps
+    that happen to use it. ``title`` is the exception — it is the page title,
+    matched as a substring, and it is what recognises an app with no health
+    endpoint worth the name.
+    """
+    body = {str(k).strip().lower(): str(v).strip().lower()
+            for k, v in (health or {}).items() if isinstance(v, (str, int, float))}
     low_title = (title or "").lower()
-    for preset_id, fp in FINGERPRINTS.items():
-        if service and any(service == s for s in fp["service"]):
-            return preset_id
-    for preset_id, fp in FINGERPRINTS.items():
-        if low_title and any(t in low_title for t in fp["title"]):
-            return preset_id
+    prints = fingerprints()
+    for preset_id, fp in prints.items():
+        for field, values in fp.items():
+            if field == "title":
+                continue
+            seen = body.get(field.strip().lower())
+            if seen and any(seen == str(v).strip().lower() for v in values):
+                return preset_id
+    for preset_id, fp in prints.items():
+        for candidate in fp.get("title") or ():
+            if low_title and str(candidate).lower() in low_title:
+                return preset_id
     return None
 
 
