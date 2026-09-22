@@ -288,6 +288,7 @@ _READ_ONLY_COMMANDS = {
     # `-e`/`--source`/`-W` could carry a program inside the option itself
     "awk": ("-f", "--file", "-i", "--include", "-l", "--load", "-E", "--exec", "-o", "--pretty-print",
             "-p", "--profile", "-d", "--dump-variables", "-D", "--debug", "-e", "--source", "-W"),
+    "sed": (),  # only `sed -n '<range>p'`, checked below
 }
 
 
@@ -374,6 +375,13 @@ def _inspects_the_workspace(step: str, workspace: str) -> bool:
             positional.append(word)
         if words[0] == "grep" and positional:
             positional = positional[1:]  # the pattern, not a path
+        if words[0] == "sed":
+            # only printing a range of lines (`sed -n '1,40p'`, seen live):
+            # sed can also write files (w), run commands (e) and edit in place
+            if [w for w in words[1:] if w.startswith("-")] != ["-n"] or not positional or not re.fullmatch(
+                    r"(?:\d+|\$)(?:,(?:\d+|\$))?p", positional[0]):
+                return False
+            positional = positional[1:]
         if words[0] == "awk":
             if not positional or not _harmless_awk(positional[0]):
                 return False

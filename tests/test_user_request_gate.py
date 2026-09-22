@@ -364,6 +364,8 @@ _SALES = "Analiza el export de ventas_junio.csv y dime qué tienda factura más.
     "&& awk -F';' 'NR>1 {print $1}' ventas_junio.csv | sort | uniq -c | head -40",
     "awk -v umbral=100 -F';' '$5 > umbral {n++} END {print n}' ventas_junio.csv",
     "python -c \"import matplotlib, pandas\"",
+    "sed -n '1,40p' ventas_junio.csv",  # seen live
+    "sed -n '$p' ventas_junio.csv",
     "cd /d/proj && python3 -c 'import pandas as pd; print(pd.read_csv(\"ventas_junio.csv\", sep=\";\").shape)'",
 ])
 def test_reading_workspace_files_with_the_shell_needs_no_card(command):
@@ -408,6 +410,12 @@ def test_reading_workspace_files_with_the_shell_needs_no_card(command):
     "python -c \"import os; os.remove('ventas_junio.csv')\"",
     "python -c \"print(open('/etc/passwd').read())\"",
     "python -m http.server",
+    "sed -i 's/a/b/' ventas_junio.csv",
+    "sed -n '1w app.py' ventas_junio.csv",
+    "sed -n '1e calc' ventas_junio.csv",
+    "sed '1,40p' ventas_junio.csv > copia.csv",
+    "sed -n -i '1p' ventas_junio.csv",
+    "sed -n '1,40p' /etc/passwd",
 ])
 def test_anything_that_writes_runs_or_leaves_the_workspace_keeps_the_card(command):
     assert not _asked(_SALES, command)
