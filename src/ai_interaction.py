@@ -153,7 +153,26 @@ def _resolve_model(spec: str, owner: Optional[str] = None, model_type: Optional[
     from src.llm_core import _detect_provider, ANTHROPIC_MODELS
     from src.auth_helpers import owner_filter
 
-    spec = spec.strip()
+    spec = (spec or "").strip()
+    # "auto" is the sentinel every caller in this codebase passes when it has
+    # no opinion -- the chat route, the review passes, the tournament, the
+    # tool-execution path. Nothing here ever implemented it, so each of those
+    # went looking for a model literally NAMED "auto", found none, and raised
+    # "Model 'auto' not found on any configured endpoint". The review passes
+    # fail open, so they simply never ran and nobody saw it; the design canvas
+    # does not fail open, which is how this finally surfaced. The sentinel
+    # means the configured default model.
+    if spec.lower() in ("", "auto"):
+        try:
+            from src.settings import get_setting
+            spec = str(get_setting("default_model", "") or "").strip()
+        except Exception:  # noqa: BLE001
+            spec = ""
+        if not spec:
+            raise ValueError(
+                "No model was given and no default model is configured. "
+                "Set a default model in Settings, or pass an explicit model."
+            )
     target_endpoint_name = None
 
     if "@" in spec:
