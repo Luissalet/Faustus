@@ -115,7 +115,14 @@ async def test_already_running_via_readiness_is_not_relaunched(monkeypatch, tmp_
     monkeypatch.setattr(launch_profiles, "_check_ready_once", ready_now)
     result = await launch_profiles.launch(profile["id"])
     assert result == {"launched": False, "already_running": True}
-    assert calls == []  # never spawned
+    # F1.4 forbids launching the APP a second time. It does not forbid
+    # opening the desktop shell on the app that is already running -- that
+    # is what lot D added ("open the shell instead of returning the URL"),
+    # and it is the right answer to "launch" on something already up: show
+    # me its window. So the assertion is about this profile's executable,
+    # not about the process table being untouched.
+    relaunched = [c for c in calls if c["argv"] and c["argv"][0] == executable]
+    assert relaunched == [], "the app itself must never be re-launched"
 
 
 async def test_double_click_concurrent_launch_produces_one_pid(monkeypatch, tmp_path, executable):
@@ -260,8 +267,14 @@ async def test_route_level_relative_executable_is_400(monkeypatch, tmp_path):
             return self._body
 
     from fastapi import HTTPException
+    # NOT a bare name: on Windows a bare name that `shutil.which` resolves is
+    # accepted on purpose (`powershell.exe` has no fixed absolute path across
+    # Windows versions). This test used "node", so it passed or failed
+    # depending on whether the machine happened to have node on PATH. A
+    # relative path with a separator can never take that route.
+    relative = os.path.join("bin", "no-such-executable-9f3c2b.exe")
     with pytest.raises(HTTPException) as exc_info:
         await by_path[("POST", "/api/launch-profiles")](
-            request=FakeRequest({"name": "X", "kind": "process", "executable": "node",
+            request=FakeRequest({"name": "X", "kind": "process", "executable": relative,
                                  "argv": [], "cwd": str(tmp_path)}))
     assert exc_info.value.status_code == 400
