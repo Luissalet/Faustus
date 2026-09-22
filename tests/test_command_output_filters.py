@@ -360,6 +360,22 @@ def test_generic_strips_ansi_and_cr_progress_bars():
     assert "Progress: 10%" not in text
 
 
+def test_generic_keeps_every_line_of_windows_output():
+    # A Windows program ends lines with \r\n. Seen live: a monthly report
+    # reached the model as two blank lines and the last one.
+    report = [
+        "2025-12    1  base      90.00  iva      3.60  total      93.60",
+        "2026-01    2  base     147.20  iva     28.67  total     175.87",
+        "2026-02    2  base     374.97  iva     45.74  total     420.71",
+    ]
+    text, meta = cof.compress("python -m billing.cli report data.json", "\r\n".join(report) + "\r\n", 0)
+    for line in report:
+        assert line in text
+    # a progress redraw inside CRLF output still shows only its final state
+    text, _ = cof.compress("some-build-tool run", "Progress: 10%\rProgress: 100%\r\nDone\r\n" * 3, 0)
+    assert "Progress: 100%" in text and "Done" in text and "Progress: 10%" not in text
+
+
 def test_generic_collapses_repeated_lines():
     lines = ["Connecting..."] * 200 + ["Connected."]
     output = "\n".join(lines)

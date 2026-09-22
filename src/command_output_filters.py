@@ -146,8 +146,13 @@ def _strip_ansi(text: str) -> str:
 def _strip_cr_progress(text: str) -> str:
     """Keep only what survives the last carriage return on each line — the
     same thing a real terminal would show for an in-place progress redraw.
+
+    "\\r\\n" is a line ending, not a redraw. Windows programs end every line
+    with it; read as a redraw, each line kept only the empty text after its
+    "\\r". Seen live: a three-line report reached the model as two blank
+    lines and the last one, under a note saying 3 of 3 lines were kept.
     """
-    lines = text.split("\n")
+    lines = text.replace("\r\n", "\n").split("\n")
     return "\n".join(line.split("\r")[-1] if "\r" in line else line for line in lines)
 
 
