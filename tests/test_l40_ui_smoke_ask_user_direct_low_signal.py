@@ -54,12 +54,13 @@ def test_ui_smoke_step_3_script_now_surfaces_an_ask_user_card():
     assert payload["question"] == "Which greeting do you want?"
     assert [o["label"] for o in payload["options"]] == ["Hello", "Hi"]
 
-    # The direct_low_signal metrics shape ui_smoke's own diagnosis quoted
-    # (EVAL_ESTADO.md: `"direct_low_signal": true, "agent_rounds": 0,
-    # "tool_calls": 0`) is still 0 rounds/0 tool_calls by DESIGN (no round
-    # loop ran) — what changed is that the fence no longer streams as inert
-    # text: metrics now carry the executed ask_user tool_event too.
-    assert result.metrics.get("direct_low_signal") is True
-    assert result.metrics.get("agent_rounds") == 0
-    assert result.metrics.get("tool_calls") == 1
-    assert result.metrics.get("tool_events", [{}])[0].get("tool") == "ask_user"
+    # The executed ask_user is on the turn's record, not only streamed.
+    #
+    # This used to also pin the ROUTE (`direct_low_signal: true, 0 rounds`).
+    # That was the shape of the bug report, not the behaviour: the message is
+    # an instruction, not a greeting, and since the direct path is kept for
+    # casual openers only (it answers with no system prompt and no tools —
+    # «¿qué aplicaciones mías puedes usar?» got "as an AI I have no access")
+    # it goes through the round loop. What ui_smoke needs is the card above
+    # and this record, whichever path produced them.
+    assert "ask_user" in [ev.get("tool") for ev in result.metrics.get("tool_events") or []]

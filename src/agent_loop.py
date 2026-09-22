@@ -6493,16 +6493,23 @@ async def _stream_agent_loop_body(
         disabled_tools.update(_draft_off)
         _note_denials(_draft_off, DENIAL_ORIGIN_EMAIL_DRAFT)
     _prompt_active_document = active_document if _active_document_relevant else None
+    # The direct path sends the bare user message with no system prompt and
+    # no tools, so the model answers as if it were nothing but a model. That
+    # is right for "hola" and wrong for anything else: "low signal" only means
+    # no domain KEYWORD matched, and a first turn such as «¿qué aplicaciones
+    # mías puedes usar?» matched none and got, live, «Como modelo de IA no
+    # tengo acceso a tus aplicaciones» -- from an assistant with a tool whose
+    # whole job is to list them. Only a casual opener takes the shortcut;
+    # every other turn goes through tool retrieval, which does not depend on
+    # the keyword lists.
     _direct_low_signal = (
         _low_signal_turn
+        and _casual_low_signal_turn
         and not _existing_conversation
         and not bool(_intent.get("continuation"))
         and not plan_mode
         and not approved_plan
         and not guide_only
-        and (_casual_low_signal_turn or not _active_document_relevant)
-        and (_casual_low_signal_turn or not active_email)
-        and (_casual_low_signal_turn or not workspace)
         and not forced_tools
         and not relevant_tools
     )
