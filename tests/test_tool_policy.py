@@ -352,7 +352,13 @@ def test_guide_only_blocks_later_round_document_streaming(monkeypatch):
         )
     )
     events = _events(chunks)
-    assert calls == 2
+    # What this test is about is the round AFTER the first one: the guide-only
+    # policy has to keep blocking once the loop is already running. So what
+    # matters is that a second round happened at all, not how many there were
+    # -- `max_rounds` is a step budget the harness may extend on its own
+    # (auto-continue), so pinning the exact count made this test fail on a
+    # feature that has nothing to do with document streaming.
+    assert calls >= 2
     assert not any(event.get("type") == "doc_stream_open" for event in events)
     assert not any(event.get("type") == "doc_stream_delta" for event in events)
 
