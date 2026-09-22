@@ -66,6 +66,16 @@ import src.agent_tools  # noqa: F401  - resolves the circular schema imports fir
 import src.agent_loop as agent_loop
 from src.tool_policy import ToolPolicy, build_effective_tool_policy
 
+# Each case drives a whole agent turn per offered tool -- about thirty turns,
+# roughly three minutes. That is slow, not hung: measured at 178 s for one
+# case with the engine idle. The suite-wide 120 s bound (pyproject.toml) was
+# killing every parametrisation here and, because pytest-timeout's thread
+# method exits the process, taking the xdist worker with it -- thirteen
+# failures and a cascade of "node down" at the tail that said nothing about
+# the code. Bound it generously HERE rather than loosening the bound for
+# everything: a file that needs ten minutes should say so in its own name.
+pytestmark = pytest.mark.timeout(600)
+
 
 OLLAMA_V1 = "http://127.0.0.1:11434/v1/chat/completions"
 MODEL = "qwen3.5:9b"
