@@ -23,18 +23,9 @@ from __future__ import annotations
 
 import logging
 import re
-import unicodedata
 from typing import Any, Callable, Dict, Iterable, Mapping, Optional
 
 logger = logging.getLogger(__name__)
-
-
-def _fold(text: Any) -> str:
-    """Lower case, accents off, apostrophes gone, everything else a space."""
-    raw = unicodedata.normalize("NFKD", str(text or ""))
-    raw = "".join(ch for ch in raw if not unicodedata.combining(ch)).casefold()
-    raw = re.sub(r"['’`]", "", raw)
-    return " ".join(re.sub(r"[^\w]+", " ", raw).split())
 
 
 def user_request_text(messages: Optional[Iterable[Mapping[str, Any]]]) -> str:
@@ -78,21 +69,6 @@ def _ordered(text: str, verbs: Iterable[str]) -> bool:
     return False
 
 
-def _names_for(plugin: Any) -> list:
-    """How a person refers to this plugin: its id, its full name, and the
-    name without its trailing word when that leaves something distinctive
-    ("Jobhunter's Hoard" -> "jobhunters", "jobhunter")."""
-    names = {_fold(getattr(plugin, "id", "")), _fold(getattr(plugin, "name", ""))}
-    full = _fold(getattr(plugin, "name", ""))
-    parts = full.split()
-    if len(parts) > 1:
-        head = parts[0]
-        names.add(head)
-        if head.endswith("s") and len(head) > 5:
-            names.add(head[:-1])
-    return [n for n in names if len(n) >= 4]
-
-
 def _plugin_app(user_text: str, content: Any) -> bool:
     from src.agent_tools.plugin_tools import _args
     from src import plugins as plugins_mod
@@ -118,9 +94,9 @@ def _plugin_app(user_text: str, content: Any) -> bool:
     if plugin is None:
         return False
 
-    text = _fold(user_text)
-    if not any(re.search(rf"\b{re.escape(name)}\b", text) for name in _names_for(plugin)):
+    if plugin.id not in {p.id for p in plugins_mod.named_in(user_text)}:
         return False
+    text = plugins_mod.fold(user_text)
     if action == "start":
         return _ordered(text, _START)
     if action == "show":

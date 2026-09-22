@@ -7126,6 +7126,24 @@ async def _stream_agent_loop_body(
         if _hot_seed is None:
             _hot_seed = set(_relevant_tools)
 
+    # A request that names one of the user's installed applications brings the
+    # plugin tools with it. Seen live: «Arranca Jobhunter's Hoard y dime si
+    # responde» retrieved the email tools ("responde" reads as "reply") and
+    # neither plugins_list nor plugin_app; the model spent three rounds on
+    # lookups and a shell listing before stopping at an approval card. The
+    # app's name is the strongest signal in that sentence and no index knew
+    # it. Same name matching as the approval gate (src/plugins.named_in).
+    if not guide_only and _relevant_tools is not None and _retrieval_query:
+        try:
+            from src.plugins import named_in as _plugins_named_in
+            if _plugins_named_in(_retrieval_query):
+                _relevant_tools.update({"plugins_list", "plugin_app"})
+                if _hot_seed is not None:
+                    _hot_seed.update({"plugins_list", "plugin_app"})
+                logger.info("[tool-rag] request names an installed plugin: plugin tools added")
+        except Exception as _plugin_err:  # noqa: BLE001 - selection must not fail on this
+            logger.debug("plugin name scan failed: %s", _plugin_err)
+
     # If deterministic domain detection fired, seed the corresponding domain
     # tools into the selected tool set. This is not direct prompt-pack
     # injection: `_assemble_prompt()` still derives domain rules from the final

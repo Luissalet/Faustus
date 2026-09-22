@@ -44,6 +44,8 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
+import unicodedata
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
@@ -410,6 +412,51 @@ def load_plugins() -> Dict[str, "Plugin"]:
 
 def get(plugin_id: str) -> Optional["Plugin"]:
     return cached().plugins.get(str(plugin_id or ""))
+
+
+# ---------------------------------------------------------------------------
+# How a person names a plugin in a sentence
+# ---------------------------------------------------------------------------
+#
+# One place, because two readers need the same answer: tool selection (a
+# request that names an installed app should bring the plugin tools along)
+# and the approval gate (src/user_request_gate.py: an act on an app the user
+# named passes). If they disagreed, the gate could let through a call the
+# selection never offered, or the reverse.
+
+def fold(text: Any) -> str:
+    """Lower case, accents off, apostrophes gone, everything else a space."""
+    raw = unicodedata.normalize("NFKD", str(text or ""))
+    raw = "".join(ch for ch in raw if not unicodedata.combining(ch)).casefold()
+    raw = re.sub(r"['’`]", "", raw)
+    return " ".join(re.sub(r"[^\w]+", " ", raw).split())
+
+
+def names_for(plugin: "Plugin") -> List[str]:
+    """How a person refers to this plugin: its id, its full name, and its
+    first word when the name has more than one ("Jobhunter's Hoard" ->
+    "jobhunters", "jobhunter"). Anything under four letters is dropped: too
+    likely to be an ordinary word."""
+    full = fold(getattr(plugin, "name", ""))
+    names = {fold(getattr(plugin, "id", "")), full}
+    parts = full.split()
+    if len(parts) > 1:
+        head = parts[0]
+        names.add(head)
+        if head.endswith("s") and len(head) > 5:
+            names.add(head[:-1])
+    return sorted(n for n in names if len(n) >= 4)
+
+
+def named_in(text: Any) -> List["Plugin"]:
+    """The installed plugins a sentence names, by id or name, as whole words."""
+    folded = fold(text)
+    if not folded:
+        return []
+    return [
+        plugin for plugin in load_plugins().values()
+        if any(re.search(rf"\b{re.escape(name)}\b", folded) for name in names_for(plugin))
+    ]
 
 
 # ---------------------------------------------------------------------------

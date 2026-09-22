@@ -2750,7 +2750,7 @@ FUNCTION_TOOL_SCHEMAS = [
                 "type": "object",
                 "properties": {
                     "plugin": {"type": "string", "description": "Plugin id or name, as plugins_list reports it (e.g. 'dorian', \"Dorian's Hoard\")"},
-                    "action": {"type": "string", "enum": ["start", "show", "start_and_show"], "description": "Default 'start'"}
+                    "action": {"type": "string", "enum": ["start", "show", "start_and_show"], "description": "Default 'start': starts it, which is all you need to use its tools or to check that it answers. 'show' and 'start_and_show' put its window in front of the user -- only when they asked to see it"}
                 },
                 "required": ["plugin"]
             }
