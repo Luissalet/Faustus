@@ -379,40 +379,55 @@ ToolBlock = namedtuple("ToolBlock", ["tool_type", "content"])
 # Re-exports from sub-modules
 # ---------------------------------------------------------------------------
 
-# Parsing
-from src.tool_parsing import (  # noqa: E402, F401
-    parse_tool_blocks,
-    strip_tool_blocks,
-    _TOOL_NAME_MAP,
-    _TOOL_BLOCK_RE,
-    _TOOL_CALL_RE,
-    _XML_TOOL_CALL_RE,
-    _XML_INVOKE_RE,
-    _XML_PARAM_RE,
-)
-
-# Schemas
-from src.tool_schemas import (  # noqa: E402, F401
-    FUNCTION_TOOL_SCHEMAS,
-    function_call_to_tool_block,
-)
-
-# Execution
-from src.tool_execution import (  # noqa: E402, F401
-    execute_tool_block,
-    format_tool_result,
-)
-
 # Document functions
 from .document_tools import (
     set_active_document, 
     set_active_model
 )
 
-# Implementations
-from src.tool_implementations import (  # noqa: E402, F401
-    do_search_chats,
-    do_manage_skills,
-    do_manage_tasks,
-    do_api_call,
-)
+# Parsing, schemas, execution and implementations are re-exported LAZILY
+# (PEP 562). Each of those modules imports `ToolBlock` / `TOOL_TAGS` from this
+# package, so re-exporting them eagerly here closed an import cycle: the tool
+# stack could only be imported through `src.agent_tools` first. Entered from
+# anywhere else -- `src.tool_schemas`, `src.tool_policy`, `src.tool_serve`,
+# `src.tool_discovery` -- it raised ImportError on a partially initialised
+# module. In the app that never showed, because the package is imported at
+# startup; in the suite it made tests pass or fail by which test ran first,
+# and `tool_serve.schema_for` swallowed it and served tools with no schema.
+_LAZY_EXPORTS = {
+    # Parsing
+    "parse_tool_blocks": "src.tool_parsing",
+    "strip_tool_blocks": "src.tool_parsing",
+    "_TOOL_NAME_MAP": "src.tool_parsing",
+    "_TOOL_BLOCK_RE": "src.tool_parsing",
+    "_TOOL_CALL_RE": "src.tool_parsing",
+    "_XML_TOOL_CALL_RE": "src.tool_parsing",
+    "_XML_INVOKE_RE": "src.tool_parsing",
+    "_XML_PARAM_RE": "src.tool_parsing",
+    # Schemas
+    "FUNCTION_TOOL_SCHEMAS": "src.tool_schemas",
+    "function_call_to_tool_block": "src.tool_schemas",
+    # Execution
+    "execute_tool_block": "src.tool_execution",
+    "format_tool_result": "src.tool_execution",
+    # Implementations
+    "do_search_chats": "src.tool_implementations",
+    "do_manage_skills": "src.tool_implementations",
+    "do_manage_tasks": "src.tool_implementations",
+    "do_api_call": "src.tool_implementations",
+}
+
+
+def __getattr__(name):
+    module_name = _LAZY_EXPORTS.get(name)
+    if module_name is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    import importlib
+    value = getattr(importlib.import_module(module_name), name)
+    globals()[name] = value
+    return value
+
+
+def __dir__():
+    return sorted(set(globals()) | set(_LAZY_EXPORTS))
+
