@@ -160,6 +160,40 @@ def lmstudio_supports_vision(url: str, model: str) -> Optional[bool]:
     return None
 
 
+_llamacpp_props_cache: dict = {}
+
+
+def llamacpp_supports_vision(url: str) -> Optional[bool]:
+    """llama.cpp's `/props` reports `modalities.vision` (true only when the
+    server was started with a projector, `--mmproj`). None when the endpoint
+    is not a local llama-server or does not say. Seen live: a qwen3.x
+    GGUF served without a projector passed the name check, a tool result
+    image was attached, and the server answered HTTP 500 "image input is not
+    supported", ending the turn with no answer."""
+    parsed = urlparse(url or "")
+    host = parsed.hostname or ""
+    if not _is_local_host(host):
+        return None
+    key = (host, parsed.port)
+    now = time.time()
+    cached = _llamacpp_props_cache.get(key)
+    if cached is not None and cached[1] > now:
+        return cached[0]
+    authority = host if parsed.port is None else f"{host}:{parsed.port}"
+    try:
+        r = httpx.get(f"{parsed.scheme or 'http'}://{authority}/props", timeout=1.0)
+    except Exception:
+        return None
+    try:
+        data = r.json() if r.is_success else {}
+    except Exception:
+        data = {}
+    modalities = data.get("modalities") if isinstance(data, dict) else None
+    answer = bool(modalities.get("vision")) if isinstance(modalities, dict) and "vision" in modalities else None
+    _llamacpp_props_cache[key] = (answer, now + _PROVIDER_FINGERPRINT_TTL)
+    return answer
+
+
 def _is_local_ollama_url(url: str) -> bool:
     """A local Ollama server, on its native `/api` surface or its OpenAI
     `/v1` surface (both answer `/api/show`). Never a public host."""
@@ -209,6 +243,12 @@ def model_supports_vision(model_name: str, endpoint_url: str = "") -> bool:
     if endpoint_url:
         try:
             advertised = lmstudio_supports_vision(endpoint_url, model_name or "")
+        except Exception:
+            advertised = None
+        if advertised is not None:
+            return advertised
+        try:
+            advertised = llamacpp_supports_vision(endpoint_url)
         except Exception:
             advertised = None
         if advertised is not None:

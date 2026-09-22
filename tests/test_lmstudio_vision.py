@@ -102,3 +102,52 @@ class TestModelSupportsVision:
         monkeypatch.setattr(chat_helpers, "lmstudio_supports_vision", lambda url, m: None)
         assert chat_helpers.model_supports_vision("qwen2-vl-7b", "http://host/v1") is True
         assert chat_helpers.model_supports_vision("plain-llm", "http://host/v1") is False
+
+
+# ════════════════════════════════════════════════════════════
+# llama.cpp — /props reports modalities.vision (a projector loaded or not)
+# ════════════════════════════════════════════════════════════
+
+class TestLlamaCppSupportsVision:
+    URL = "http://127.0.0.1:8081/v1"
+
+    @pytest.fixture(autouse=True)
+    def _clear_cache(self):
+        chat_helpers._llamacpp_props_cache.clear()
+        chat_helpers._lmstudio_models_cache.clear()
+        yield
+        chat_helpers._llamacpp_props_cache.clear()
+        chat_helpers._lmstudio_models_cache.clear()
+
+    def _serve(self, monkeypatch, props):
+        def fake_get(url, timeout=None):
+            if url.endswith("/props"):
+                return _FakeResponse(props)
+            return _FakeResponse({}, ok=False)
+        monkeypatch.setattr(chat_helpers.httpx, "get", fake_get)
+
+    def test_a_server_without_a_projector_cannot_see(self, monkeypatch):
+        # seen live: a qwen3.x GGUF without --mmproj; the name alone says vision
+        self._serve(monkeypatch, {"modalities": {"vision": False, "audio": False}})
+        assert chat_helpers.llamacpp_supports_vision(self.URL) is False
+        assert chat_helpers.model_supports_vision("qwen2-vl-27b-q8", self.URL) is False
+
+    def test_a_server_with_a_projector_can(self, monkeypatch):
+        self._serve(monkeypatch, {"modalities": {"vision": True}})
+        assert chat_helpers.model_supports_vision("plain-name", self.URL) is True
+
+    def test_a_server_that_does_not_say_falls_back(self, monkeypatch):
+        self._serve(monkeypatch, {"build_info": "b1"})
+        assert chat_helpers.llamacpp_supports_vision(self.URL) is None
+
+    def test_a_remote_endpoint_is_never_probed(self, monkeypatch):
+        calls = {"n": 0}
+
+        def tracking_get(url, timeout=None):
+            calls["n"] += 1
+            return _FakeResponse({"modalities": {"vision": True}})
+
+        monkeypatch.setattr(chat_helpers.httpx, "get", tracking_get)
+        assert chat_helpers.llamacpp_supports_vision("https://api.example.com/v1") is None
+        assert calls["n"] == 0
+
