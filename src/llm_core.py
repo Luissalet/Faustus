@@ -1500,6 +1500,40 @@ def _suppress_thinking_for_small_talk(payload: Dict, model: str,
     return True
 
 
+def _drop_tools_for_small_talk(payload: Dict, messages: Optional[List] = None) -> bool:
+    """Send a greeting without the toolset attached.
+
+    Agent mode is the default here, so "hola" arrives carrying every tool
+    schema the workspace has, and the engine has to read all of it before it
+    can say a word. Measured on this install with the same question and the
+    same engine: 7.7 s and a 7.5k prompt with the tools, 3.0 s without them.
+    That is 60% of the wait on a turn where no tool was ever going to be
+    called.
+
+    `src/turn_effort.py` decides, with the same whitelist that governs the
+    reasoning: a recognised pleasantry, nothing that smells of work, and no
+    tool used anywhere in the conversation yet. Anything else keeps its tools.
+
+    The cost is a cache miss later: the next turn that does carry tools has to
+    prefill that block. It would have paid that on its first tool turn anyway,
+    and it is a turn that is already long, so the trade favours the greeting
+    the user is sitting and watching.
+    """
+    if not payload.get("tools"):
+        return False
+    try:
+        from src.turn_effort import wants_tools
+        if wants_tools(messages):
+            return False
+    except Exception as exc:  # noqa: BLE001 -- never fail a turn over this
+        logger.debug("turn_effort unavailable: %s", exc)
+        return False
+    payload.pop("tools", None)
+    payload.pop("tool_choice", None)
+    logger.debug("Small talk: answering without the toolset attached")
+    return True
+
+
 def _suppress_thinking(payload: Dict, model: str) -> None:
     """Turn a thinking model's reasoning off for this request.
 
@@ -4808,6 +4842,7 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
         # whole toolset attached. `turn_effort` decides; a conversation that
         # has already run a tool always keeps its reasoning.
         _suppress_thinking_for_small_talk(payload, model, messages_copy, tools)
+        _drop_tools_for_small_talk(payload, messages_copy)
         if provider == "openrouter":
             # Same OpenRouter options application as llm_call (OBJ-8 Lote A2)
             # -- see that call site for the full rationale. `tools` is known

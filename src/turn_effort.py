@@ -141,3 +141,20 @@ def wants_reasoning(messages: Optional[Sequence[Dict[str, Any]]], *,
     if work_in_progress(messages):
         return True
     return not is_small_talk(last_user_text(messages))
+
+
+def wants_tools(messages: Optional[Sequence[Dict[str, Any]]]) -> bool:
+    """Should this turn still carry the whole toolset?
+
+    Measured on this install, same question ("2+2?") and same engine:
+    agent mode, with the tools attached, 7.7 s and 7.5k of prompt; chat mode,
+    without them, 3.0 s and a prompt too small to register. The tool schemas
+    are most of what the engine has to read before it can say a word, and on a
+    greeting nobody is going to call any of them.
+
+    The rule is deliberately the same one `wants_reasoning` uses, because the
+    question is the same: does this turn have work in it? A conversation that
+    has already called a tool keeps its tools whatever the last message says --
+    that is what makes a bare "sí" after an approval card safe.
+    """
+    return wants_reasoning(messages)
