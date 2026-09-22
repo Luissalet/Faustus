@@ -2,6 +2,25 @@
 
 Actualizado: 22-09-2026. REGLA: nunca nombres de empresas/personas del buzÃ³n de Luis en commits, docs, tests ni comentarios â€” ejemplos siempre ficticios. SÃ³lo trabajo vigente; quitar cada entrada al cerrarla.
 
+## 22-09 noche — la suite termina por primera vez, y lo que se vio al final
+
+La suite completa acabó por primera vez en el día: **20.766 pasan, 93 fallan, 53 min**. Con ese número delante, los fallos dejan de ser ruido y se pueden mirar uno a uno. Estos son los que se han cerrado.
+
+- CERRADO (32121654) — **la causa real del atasco del 97%**. Dos sondas HTTP del camino caliente ignoraban el «dead-host cooldown» que `llm_core` ya mantiene: `run_model_pin.restore_keep_alive` (al final de CADA turno, dos llamadas bloqueantes de 3 s) y `model_context._query_context_length` (una por ronda). Con el motor cerrado cada una se come su timeout entero para devolver algo que ya teníamos por defecto. Un test que encadena ~30 turnos lo pagaba una y otra vez. El test que no terminaba: timeout a 200 s → **1 passed en 178 s**. Esto también afecta a una sesión real, no solo a la suite.
+- CERRADO (9c6faf5a): el `reviewer` denegaba todas las herramientas de escritura menos `powershell`, que en Windows es bash. Dejar una herramienta fuera de la lista blanca no es la misma negativa, porque el suelo de sesión la puede devolver — lo decía el propio test, en rojo.
+- CERRADO (c060a94f, mío): la lista blanca de conversación pisaba un `think: True` explícito. Una heurística existe para adivinar cuando nadie ha dicho nada, no para llevarle la contraria a quien sí lo dijo.
+- CERRADO (a3f18760, mío): el suelo de 40 caracteres del canal de razonamiento tiraba respuestas cortas pero correctas («Sí, ya está arreglado.»). Lo que separa la basura de una respuesta no es la longitud sino la forma: palabras con espacios. Una frase vale a cualquier longitud; solo un token sin cortar sigue necesitando los 40.
+- CERRADO (99601900, mío): el medidor de uso podía servir números rancios **para siempre** si todos los refrescos de detrás fallaban. Ahora hay techo (30 s): pasado eso se espera a una lectura de verdad. Un medidor que dejó de ser sobre el ahora es peor que uno lento.
+- CERRADO (052a29c3): sin embedder, el índice de herramientas no ponía `bash` entre los ocho primeros para «run a shell command» ni `web_search` para «search the web…». La salvaguarda para el caso más leve (embedder débil) estaba veinte líneas más arriba; ahora cubre también el caso peor (ningún embedder), que es el que se da con el servicio de embeddings caído.
+- CERRADO (eb8b995c): `scripts/i18n_es.py --check` se moría a mitad de su propio informe con UnicodeEncodeError al imprimir la primera clave con «→». La herramienta que te dice qué falta por traducir no podía terminar de decirlo. 67 líneas antes de reventar, 72 y salida limpia después.
+- CERRADO (4b05c84f): el test de compactación CTX-02 mockeaba `agent_loop.estimate_tokens`; la puerta lee `token_calibration.estimate_tokens_for`. Llevaba en rojo afirmando nada.
+- CERRADO (ac48edb8): cinco tests de media comprobaban ESTA máquina y no el código. Cuatro escribían un stub `ffmpeg` con `#!/bin/sh` y sin extensión: Windows resuelve por PATHEXT, pasaba de largo y ejecutaba el ffmpeg real de aquí. El quinto afirmaba que piper no está instalado «en este entorno», que es una afirmación sobre la máquina y no sobre la sonda.
+
+- NOTA sobre los 93: una parte son de esta clase — tests que afirman algo sobre el entorno (hardware presente, servicios levantados, binarios instalados) y no sobre el código. Los que he comprobado uno a uno contra la base son preexistentes; los cuatro que eran míos están arriba.
+- ABIERTO: `test_launch_profiles::test_already_running_via_readiness_is_not_relaunched` **lanza Electron de verdad** durante la suite. Un test que arranca la aplicación deja procesos sueltos y depende del escritorio de quien lo corra.
+- ABIERTO: siguen en rojo, sin mirar a fondo: `test_ui_smoke_audit` (4), `test_studio_close_dialog_js` (5), `test_studio_clipboard_js`, `test_l86_source_control_panel_js`, `test_studio_guards`, `test_w3a_composer_js`, `test_sse_catalog`, `test_typed_choice`, `test_tool_policy`, `test_process_center`, `test_tls_overrides_scope`, `test_workflow_waits`, `test_model_warmup`, `test_ollama_structured_output` (2), `test_two_tier_search` (1 de 2).
+- NOTA: `test_health::test_the_usage_endpoint_carries_the_health_block` falla porque el bloque de salud dice `warn`, y ahora mismo lo dice con razón (ChromaDB en 8100 y Ollama en 11434 no responden). No es un fallo de código; es el test afirmando que la instalación está sana.
+
 ## 22-09 tarde — sesión de uso real (FAUSTUS.md §161)
 
 - CERRADO (756c26bb): la tarjeta de permisos decía «External untrusted context has already influenced this run» cuando lo único que había pasado era leer dos ficheros locales que el usuario señaló. Leer un fichero arma esa puerta y debe hacerlo; lo que estaba mal era la frase. Ahora nombra las herramientas que trajeron el contenido.

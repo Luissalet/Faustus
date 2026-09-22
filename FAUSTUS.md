@@ -6954,3 +6954,50 @@ sintéticos no llegan a una pestaña en segundo plano, y las ejecuciones que
 compositor, del que una nota anterior decía ~350 ms, mide 0,28 ms con 2.321
 nodos y se aplana entre 1,6 y 2,8 ms hasta 14.888. Las dos cosas están en
 PENDIENTES.md con sus números, para que nadie las vuelva a averiguar.
+
+## 163. Lo que se vio cuando la suite por fin llegó al final (22-09-2026)
+
+Dos ejecuciones se habían parado en el 97% sin fallo y sin salida. Con el
+timeout por test (§162) la tercera terminó: **20.766 pasan, 93 fallan, 53
+minutos**. Ese número es la mitad del valor; la otra mitad es que, teniéndolo,
+los fallos dejan de ser ruido y se pueden mirar de uno en uno.
+
+**La causa del atasco no era un test colgado: era coste real.** El volcado del
+timeout señaló dos sondas HTTP del camino caliente que ignoraban el
+«dead-host cooldown» que `llm_core` ya mantenía:
+`run_model_pin.restore_keep_alive`, al final de CADA turno, con dos llamadas
+bloqueantes de 3 s; y `model_context._query_context_length`, una vez por ronda.
+Con el motor local cerrado, cada una se come su timeout entero para devolver
+algo que ya teníamos por defecto. Un test que encadena unos treinta turnos lo
+pagaba una y otra vez, y lo que se veía desde fuera era una ejecución sentada
+sin decir nada. El test que no terminaba pasa ahora en 178 s. Esto no es una
+anomalía de la suite: una sesión real con un endpoint caído estaba gastando
+esos mismos segundos, turno tras turno.
+
+**El `reviewer` denegaba todo menos lo que importa en Windows.** Negaba
+`write_file`, `edit_file`, `apply_patch`, `bash` y `python`. No `powershell`.
+Dejar una herramienta fuera de la lista blanca no es la misma negativa, porque
+el suelo de sesión la puede devolver — lo decía el propio test, en rojo, desde
+hacía tiempo.
+
+**El medidor de uso podía servir números rancios para siempre.** Servir una
+lectura vieja mientras se refresca por detrás es lo que quitó los doce segundos
+de bloqueo (§161), pero no tenía techo: si todos los refrescos fallaban, el
+mismo payload salía indefinidamente. Un medidor que dejó de ser sobre el ahora
+es peor que uno lento. Pasados 30 s, el que llama espera.
+
+**Y cuatro de los fallos eran míos, de esta misma sesión.** La lista blanca de
+conversación pisaba un `think: True` explícito — una heurística existe para
+adivinar cuando nadie ha dicho nada, no para llevarle la contraria a quien sí
+lo dijo. Y el suelo de 40 caracteres del canal de razonamiento tiraba
+respuestas cortas pero correctas: lo que separa «/umd``» de una respuesta no es
+la longitud sino la forma, palabras con espacios entre ellas. Los cuatro los
+encontró la suite, y solo pudo encontrarlos porque ahora llega al final.
+
+**Una clase entera de fallo que conviene nombrar:** tests que afirman algo
+sobre el ENTORNO y no sobre el código. Cinco de media escribían un stub
+`ffmpeg` con `#!/bin/sh` y sin extensión: Windows resuelve un comando por
+PATHEXT, pasaba de largo y ejecutaba el ffmpeg real de la máquina, así que las
+afirmaciones eran sobre la instalación de quien lo corriera. Otro afirmaba que
+piper «no está en este entorno». Otro sigue lanzando Electron de verdad. Un
+test así no falla cuando el código se rompe: falla cuando cambias de máquina.
