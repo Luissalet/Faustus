@@ -146,11 +146,22 @@ def wants_reasoning(messages: Optional[Sequence[Dict[str, Any]]], *,
 def wants_tools(messages: Optional[Sequence[Dict[str, Any]]]) -> bool:
     """Should this turn still carry the whole toolset?
 
-    Measured on this install, same question ("2+2?") and same engine:
-    agent mode, with the tools attached, 7.7 s and 7.5k of prompt; chat mode,
-    without them, 3.0 s and a prompt too small to register. The tool schemas
-    are most of what the engine has to read before it can say a word, and on a
-    greeting nobody is going to call any of them.
+    Measured on this install, "hola" to the same engine, alternating so
+    warm-up hits both arms equally:
+
+        prompt cache cold   with tools 7.5 s (6,356 prompt tokens)
+                            without    2.2 s (14)
+        prompt cache warm   with tools 2.1 s
+                            without    1.7 s
+
+    The tool block is 25 KB of schemas and most of what the engine reads
+    before it can say a word. Once it is cached it is nearly free, so the
+    saving that matters is the FIRST greeting of a session -- which is also
+    the one a person notices.
+
+    (The first version of this note claimed 7.7 s -> 3.7 s, measured with
+    "2+2?". That is not small talk by the rule below, so the rule never
+    applied to it and the number was not this change's to claim.)
 
     The rule is deliberately the same one `wants_reasoning` uses, because the
     question is the same: does this turn have work in it? A conversation that

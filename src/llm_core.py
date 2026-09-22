@@ -1540,10 +1540,11 @@ def _drop_tools_for_small_talk(payload: Dict, messages: Optional[List] = None) -
 
     Agent mode is the default here, so "hola" arrives carrying every tool
     schema the workspace has, and the engine has to read all of it before it
-    can say a word. Measured on this install with the same question and the
-    same engine: 7.7 s and a 7.5k prompt with the tools, 3.0 s without them.
-    That is 60% of the wait on a turn where no tool was ever going to be
-    called.
+    can say a word. Measured on this install with "hola", alternating arms:
+    with the tools 7.5 s against 2.2 s without, on a cold prompt cache -- the
+    block is 25 KB of schemas, 6,356 prompt tokens. Once the engine has it
+    cached the gap closes to 2.1 s against 1.7 s, so what this really saves is
+    the first greeting of a session, which is the one anybody notices.
 
     `src/turn_effort.py` decides, with the same whitelist that governs the
     reasoning: a recognised pleasantry, nothing that smells of work, and no

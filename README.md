@@ -281,7 +281,8 @@ whatever the global default happens to be.
 
 At the other end of the scale, a turn that is plainly small talk is answered
 without the model’s reasoning and without the toolset attached. Measured on a
-local 27B, same question and same engine: 7.7 s before, 3.7 s after. A
+local 27B with a cold prompt cache: 7.5 s carrying the tools against 2.2 s
+without them. A
 conversation that has already called a tool keeps everything, whatever its last
 message says.
 

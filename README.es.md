@@ -282,7 +282,8 @@ global.
 
 En el otro extremo, un turno que es claramente conversación se responde sin el
 razonamiento del modelo y sin el juego de herramientas adjunto. Medido en un 27B
-local, misma pregunta y mismo motor: 7,7 s antes, 3,7 s después. Una
+local con la caché de prompt fría: 7,5 s llevando las herramientas contra
+2,2 s sin ellas. Una
 conversación que ya ha llamado a una herramienta lo conserva todo, diga lo que
 diga su último mensaje.
 

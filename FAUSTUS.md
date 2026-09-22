@@ -6894,8 +6894,15 @@ ninguno sale de leer el código: salen de usar la aplicación como la usa alguie
 **El saludo viajaba con todas las herramientas puestas.** Modo agente es el
 modo por defecto, así que "hola" llegaba al motor con el esquema de cada
 herramienta del workspace adjunto, y el motor tenía que leerselo entero antes de
-decir una palabra. Medido con la misma pregunta y el mismo motor: 7,7 s con
-herramientas, 3,0 s en modo chat sin ellas, 3,7 s en modo agente ya arreglado.
+decir una palabra. Medido con «hola» y el mismo motor, alternando los dos
+casos para que el calentamiento afecte igual a los dos: con la caché de prompt
+fría, **7,5 s con herramientas (6.356 tokens de prompt) contra 2,2 s sin
+ellas**; con la caché caliente, 2,1 s contra 1,7 s. El bloque de herramientas
+son 25 KB de esquemas: una vez cacheado sale casi gratis, así que lo que esto
+ahorra de verdad es el PRIMER saludo de una sesión, que es justo el que se
+nota. (La primera versión de esta nota decía 7,7 s → 3,7 s, medido con
+«2+2?». Eso no es small talk según la propia lista blanca, así que la regla
+nunca se le aplicó y el número no era de este cambio.)
 Decide `turn_effort.wants_tools`, deliberadamente la misma lista blanca que ya
 gobierna el razonamiento, porque la pregunta es la misma: ¿hay trabajo en este
 turno? Una conversación que ya llamó a una herramienta conserva las suyas diga
