@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import re
 from pathlib import Path
 
 import pytest
@@ -89,7 +90,12 @@ def test_layout_persists_per_session_in_localstorage():
 
 def test_review_pane_is_lazy_and_named_export_only():
     src = (_REPO / "studio" / "src" / "screens" / "Studio.tsx").read_text(encoding="utf-8")
-    assert "lazy(() => import('./documents/ReviewPane')" in src
+    # Written as a literal, and red since the import switched from `lazy(...)`
+    # to `lazyChunk(...)` -- a rename that changed nothing this test is about.
+    # What it is about: ReviewPane arrives lazily, from that file, by name.
+    assert re.search(
+        r"const ReviewPane\s*=\s*lazy\w*\(\s*\(\)\s*=>\s*import\('\./documents/ReviewPane'\)", src
+    ), "ReviewPane must be lazy-imported from ./documents/ReviewPane"
     assert "m.ReviewPane" in src
     review_pane = (_REPO / "studio" / "src" / "screens" / "documents" / "ReviewPane.tsx").read_text(encoding="utf-8")
     # Studio.tsx's lazy import reads m.ReviewPane explicitly (see above), so

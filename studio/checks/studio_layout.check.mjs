@@ -89,7 +89,14 @@ const css = read('studio/src/screens/studio.css');
 
 // ── Review mode: ReviewPane is W2-A1's, imported lazily, never copied ──
 {
-  check(studio.includes("const ReviewPane = lazy(() => import('./documents/ReviewPane')"), 'ReviewPane must be lazy-imported from documents/ReviewPane (W2-A1\'s file)');
+  // Written as a literal once, and went red the day the import switched from
+  // `lazy(...)` to `lazyChunk(...)` -- a rename that changed nothing this
+  // check cares about. What it cares about is that ReviewPane arrives lazily
+  // FROM W2-A1's file and is never copied, so ask for that.
+  check(
+    /const ReviewPane\s*=\s*lazy\w*\(\s*\(\)\s*=>\s*import\('\.\/documents\/ReviewPane'\)/.test(studio),
+    'ReviewPane must be lazy-imported from documents/ReviewPane (W2-A1\'s file)',
+  );
   check(studio.includes("layout === 'review' && panel.open"), 'the review column must only render in review layout, and only once the panel actually has something to show');
   check(studio.includes('<div className="fs-review"'), 'the review column needs its own grid-column element (see studio.css .fs-review)');
   const reviewPanePath = 'studio/src/screens/documents/ReviewPane.tsx';
