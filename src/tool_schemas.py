@@ -2712,6 +2712,24 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "design_canvas",
+            "description": "Declare the design BEFORE writing code, and file it in this project's concept graph. Answers seven things in one pass: requirements, entities, approach (with the alternative you rejected and why), structure (the files you will touch), operations, norms, and safeguards. Use it at the start of anything bigger than a one-line change -- a new subsystem, a refactor, a feature you are about to spread across several files. The canvas is stored as a `decision` concept whose refs are the paths from `structure`, so when one of those files disappears the staleness check finds the design that no longer matches. Costs one model call of up to ~1600 tokens; do not use it for a typo or a rename.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "goal": {"type": "string", "description": "What is being designed, in one or two sentences"},
+                    "context": {"type": "string", "description": "Constraints, existing code, anything already decided (optional)"},
+                    "name": {"type": "string", "description": "Name for the stored concept (optional -- derived from the canvas otherwise)"},
+                    "concept_id": {"type": "string", "description": "Existing concept id to update instead of creating a new one (optional)"},
+                    "save": {"type": "boolean", "description": "Set false to get the canvas back without filing it (optional, default true)"}
+                },
+                "required": ["goal"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "concept_upsert",
             "description": "Create or update a project concept -- the agent's own record of what a subsystem is, why it exists, and what it depends on. Pass `id` to update an existing concept, omit it to create a new one (a slug is derived from `name`). `refs` should cite the files/symbols this concept is grounded in (e.g. 'src/embeddings.py', 'src/embeddings.py@get_embedding_client') -- these are what later staleness checks ground against. Use this whenever you work out how a subsystem fits together, so the next session doesn't have to re-derive it.",
             "parameters": {

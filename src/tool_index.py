@@ -260,6 +260,8 @@ BUILTIN_TOOL_DESCRIPTIONS: Dict[str, str] = {
     "concept_upsert": "Record or update a project concept — a feature/module/pattern/config/decision/component the agent just understood, with a summary and file/symbol refs it's grounded in. Use whenever you work out what a subsystem is or why it exists, so the next session doesn't have to re-derive it — 'remember that this is how auth works here'.",
     "concept_link": "Attach a typed relation (connects_to/depends_on/implements/calls/configured_by) between two existing project concepts. Use for 'this feature depends on that module', 'note that X implements Y'.",
     "concept_remove": "Soft-delete a project concept that described something removed or was simply wrong; its history is kept. Use for 'that concept is no longer accurate, remove it'.",
+    # OBJ-30 — declare the design before writing code.
+    "design_canvas": "Declare the design BEFORE touching code and file it in the project graph: requirements, entities, approach (with the rejected alternative), structure, operations, norms, safeguards. Use at the start of anything bigger than a one-line change — 'design this before you build it', 'plan the refactor first', a new subsystem, a feature spread across several files. Costs one model call; not for a typo or a rename.",
     # CMP-13 (W2-G) — isolated, comparable alternatives: try more than one
     # approach to the same task without one overwriting the other or the
     # user's own edits, then compare and apply the one that worked.

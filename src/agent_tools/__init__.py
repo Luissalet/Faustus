@@ -60,6 +60,7 @@ from .project_concepts_tools import (
     ConceptsUnderstandTool, ConceptGetTool, ConceptsRootsTool,
     ConceptUpsertTool, ConceptLinkTool, ConceptRemoveTool,
 )
+from .design_canvas_tools import DesignCanvasTool
 from .alternatives_tools import (
     AltStartTool, AltCompareTool, AltApplyTool,
 )
@@ -175,6 +176,9 @@ TOOL_HANDLERS = {
     "concept_upsert": ConceptUpsertTool().execute,
     "concept_link": ConceptLinkTool().execute,
     "concept_remove": ConceptRemoveTool().execute,
+    # OBJ-30: declare the design before writing code, and file it in the same
+    # graph. See src/agent_tools/design_canvas_tools.py.
+    "design_canvas": DesignCanvasTool().execute,
     # Isolated, comparable alternatives (CMP-13, W2-G): thin executors over
     # src.alternatives. See src/agent_tools/alternatives_tools.py.
     "alt_start": AltStartTool().execute,
@@ -339,6 +343,8 @@ TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_fi
              # Project concepts -- src/agent_tools/project_concepts_tools.py.
              "concepts_understand", "concept_get", "concepts_roots",
              "concept_upsert", "concept_link", "concept_remove",
+             # Design canvas (OBJ-30) -- src/agent_tools/design_canvas_tools.py.
+             "design_canvas",
              # Isolated, comparable alternatives (CMP-13, W2-G) --
              # src/agent_tools/alternatives_tools.py.
              "alt_start", "alt_compare", "alt_apply",

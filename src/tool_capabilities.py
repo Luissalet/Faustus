@@ -559,6 +559,12 @@ _register(
     {"concept_upsert", "concept_link", "concept_remove"},
     ToolEffect.WRITE_PRIVATE,
 )
+# Design canvas (OBJ-30, src/agent_tools/design_canvas_tools.py). It writes
+# the same private concept store as `concept_upsert`, so it lands in the same
+# bucket. It also makes one model call of its own, which is not an effect this
+# taxonomy names -- no network egress to a third party beyond the endpoint the
+# turn is already using, and nothing written outside DATA_DIR.
+_register({"design_canvas"}, ToolEffect.WRITE_PRIVATE)
 # Isolated, comparable alternatives (CMP-13, W2-G, src/agent_tools/
 # alternatives_tools.py). `alt_compare` only reads a diff against the base
 # (same class as git_diff) -- READ_WORKSPACE, workspace-sourced content.

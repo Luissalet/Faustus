@@ -899,6 +899,14 @@ EXAMPLES: Dict[str, List[str]] = {
         "borra ese concepto, ya no describe nada real",
     ],
 
+    # ── Design canvas (OBJ-30) ─────────────────────────────────────────────
+    "design_canvas": [
+        "diseña esto antes de escribir nada de código",
+        "design this subsystem before you build it",
+        "antes de tocar nada, declara requisitos, entidades y salvaguardas",
+        "plan the refactor first and write the design down",
+    ],
+
     # ── Isolated, comparable alternatives (CMP-13, W2-G) ───────────────────
     "alt_start": [
         "prueba esto de dos formas distintas y compáralas",
