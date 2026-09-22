@@ -359,6 +359,14 @@ async def _local_model_slot(target_url: str, model: str, workload: Optional[str]
 class LLMConfig:
     """Configuration constants for LLM operations."""
     DEFAULT_TIMEOUT = 30
+    #: The same default is far too tight for a quantised local model that
+    #: reasons before it answers: measured on this machine's 27B, a
+    #: three-sentence explanation took 23.0 s and a longer one 74.9 s, so
+    #: every local pass that was not trivial cut itself off at 30 s and came
+    #: back as a 502. Callers that pass a timeout of their own still get
+    #: exactly what they asked for; this only replaces the default, and only
+    #: when the endpoint is one we host ourselves.
+    LOCAL_DEFAULT_TIMEOUT = int(os.getenv('LLM_LOCAL_TIMEOUT', '240') or '240')
     DEFAULT_TEMPERATURE = 1.0
     DEFAULT_MAX_TOKENS = 0
     MAX_RETRIES = 3
@@ -1432,6 +1440,37 @@ def _apply_openai_response_format(
     }
     _suppress_thinking(payload, model)
     return True
+
+
+def is_local_backend(url: str) -> bool:
+    """Is this endpoint one we host ourselves?
+
+    Ollama on either of its surfaces, or a managed llama.cpp engine. Answered
+    without a network probe, because every caller is on a hot path.
+    """
+    try:
+        if _is_ollama_native_url(url) or _is_ollama_openai_compat_url(url):
+            return True
+        from src.model_backend import serving_backend
+        return serving_backend(url, probe=False).get("backend") in ("ollama", "llamacpp")
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("llm_core: could not classify %s as local: %s", url, exc)
+        return False
+
+
+def resolve_timeout(url: str, timeout: Optional[int]) -> int:
+    """The timeout to use, giving a local backend room to think.
+
+    A caller that named a timeout gets it unchanged. Only the default is
+    replaced, and only for an endpoint we host: 30 s is a sensible ceiling for
+    a hosted API and a guaranteed cut-off for a quantised 27B that reasons
+    first (23.0 s for three sentences, 74.9 s for a longer answer, measured).
+    """
+    if timeout is not None and timeout != LLMConfig.DEFAULT_TIMEOUT:
+        return int(timeout)
+    if is_local_backend(url):
+        return LLMConfig.LOCAL_DEFAULT_TIMEOUT
+    return int(timeout if timeout is not None else LLMConfig.DEFAULT_TIMEOUT)
 
 
 def _suppress_thinking_for_small_talk(payload: Dict, model: str,
@@ -3063,6 +3102,9 @@ def llm_call(url: str, model: str, messages: List[Dict], temperature: float = LL
                 logger.debug("openrouter_options: apply_openrouter_payload failed for %s: %s", model, exc)
             if _openrouter_anthropic_cache_hints_applicable(provider, model):
                 _apply_openrouter_anthropic_cache_hints(payload, tools=None)
+    # A local backend reasons before it answers, and the shared default was
+    # written for hosted APIs -- see `resolve_timeout`.
+    timeout = resolve_timeout(url, timeout)
     try:
         note_model_activity(target_url, model)
         r = httpx_post_kimi_aware(target_url, h, json=payload, timeout=timeout)
@@ -3678,7 +3720,9 @@ async def _llm_call_async_impl(
     if _is_host_dead(target_url):
         raise HTTPException(503, f"Upstream {_host_key(target_url)} marked unreachable (cooldown active)")
 
-    call_timeout = _call_timeout(timeout)
+    # Same reason as the sync path: a local backend reasons before it answers,
+    # and the shared default was written for hosted APIs.
+    call_timeout = _call_timeout(resolve_timeout(url, timeout))
     _pinned_ips = None
     _pinned_transport_type = None
     if pin_public_dns:
