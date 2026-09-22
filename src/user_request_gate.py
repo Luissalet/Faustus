@@ -57,6 +57,7 @@ _SHOW = (r"abre(?:lo|la|me)?", r"abrir(?:lo|la)?", r"muestra(?:lo|la|me)?", r"mo
          r"bring up")
 _OPEN = (r"abre(?:lo|la|me)?", r"abrir(?:lo|la)?", r"open")
 _NEGATION = {"no", "nunca", "jamas", "ni", "dont", "not", "never"}
+_NOT_AN_ORDER_AFTER = {"que", "si", "cuando", "como", "donde", "quien", "lo", "la", "se"}
 
 
 def _ordered(text: str, verbs: Iterable[str]) -> bool:
@@ -64,12 +65,18 @@ def _ordered(text: str, verbs: Iterable[str]) -> bool:
     for verb in verbs:
         for match in re.finditer(rf"\b{verb}\b", text):
             before = text[: match.start()].split()[-2:]
-            if not (set(before) & _NEGATION):
-                return True
+            if set(before) & _NEGATION:
+                continue
+            # "¿qué cambia si…?", "si lo arranca…": the imperative and the
+            # third person are the same word in Spanish; after an
+            # interrogative or a conditional it is not an order.
+            if before and before[-1] in _NOT_AN_ORDER_AFTER:
+                continue
+            return True
     return False
 
 
-def _plugin_app(user_text: str, content: Any) -> bool:
+def _plugin_app(user_text: str, content: Any, workspace: str = "") -> bool:
     from src.agent_tools.plugin_tools import _args
     from src import plugins as plugins_mod
 
@@ -122,7 +129,7 @@ _ASKS_WHAT_IS_REMEMBERED = re.compile(
 )
 
 
-def _memory_read(user_text: str, content: Any) -> bool:
+def _memory_read(user_text: str, content: Any, workspace: str = "") -> bool:
     from src.tool_capabilities import _action_from_content
     from src import plugins as plugins_mod
 
@@ -131,21 +138,153 @@ def _memory_read(user_text: str, content: Any) -> bool:
     return bool(_ASKS_WHAT_IS_REMEMBERED.search(plugins_mod.fold(user_text)))
 
 
+# "Los tests fallan, averigua por qué" asks, in so many words, for the tests
+# to be run. Live, the first `python -m pytest ... | tail -20` of that task
+# stopped at the card (the gate had been armed by reading the project's own
+# files). Only a test runner, invoked plainly: no `;`, `&&`, redirection into
+# a file, substitution or backticks, optionally piped into head/tail to trim
+# its output. Anything more is a shell command like any other.
+_ASKS_ABOUT_TESTS = re.compile(r"\b(?:tests?|pruebas?|pytest|testea\w*|testing|suite)\b")
+_ARG = r"[\w./\\:=\[\]\-]+"
+_TEST_RUNNER = re.compile(
+    r"^(?:"
+    r"(?:python3?|py|(?:\.?venv[\\/])?(?:scripts|bin)[\\/]python(?:\.exe)?)\s+-m\s+(?:pytest|unittest)"
+    r"|pytest"
+    r"|(?:npm|pnpm|yarn)\s+(?:run\s+)?test[\w:-]*(?:\s+--)?"
+    r"|cargo\s+test|go\s+test"
+    rf")(?:\s+{_ARG})*$",
+    re.IGNORECASE,
+)
+_OUTPUT_TRIM = re.compile(
+    r"^(?:(?:tail|head)(?:\s+-n)?\s+-?\d+|select-object\s+-(?:first|last)\s+\d+)$",
+    re.IGNORECASE,
+)
+
+
+def _command_of(content: Any) -> str:
+    if isinstance(content, Mapping):
+        return str(content.get("command") or content.get("cmd") or "")
+    text = str(content or "").strip()
+    if text.startswith("{"):
+        try:
+            import json
+
+            parsed = json.loads(text)
+        except ValueError:
+            return ""
+        if isinstance(parsed, dict):
+            return str(parsed.get("command") or parsed.get("cmd") or "")
+        return ""
+    return text
+
+
+def _same_dir(path: str, workspace: str) -> bool:
+    import os
+
+    if not workspace or not path:
+        return False
+    # The shell Faustus runs on Windows is bash: the same folder arrives as
+    # "D:/x", "D:\\x", "/d/x" (seen live), "/mnt/d/x" or "/cygdrive/d/x".
+    drive = re.match(r"^/(?:mnt/|cygdrive/)?([a-zA-Z])(?:/(.*))?$", path)
+    if drive and os.name == "nt":
+        path = f"{drive.group(1)}:/{drive.group(2) or ''}"
+    norm = lambda p: os.path.normcase(os.path.normpath(os.path.abspath(str(p)))).rstrip("\\/")  # noqa: E731
+    return norm(path) == norm(workspace)
+
+
+def _runs_the_tests(user_text: str, content: Any, workspace: str = "") -> bool:
+    from src import plugins as plugins_mod
+
+    if not _ASKS_ABOUT_TESTS.search(plugins_mod.fold(user_text)):
+        return False
+    command = " ".join(_command_of(content).replace("2>&1", " ").split())
+    # `cd "<workspace>" && pytest ...` is how models run tests from the
+    # project root (seen live). Allowed only when the directory IS the
+    # workspace this turn is bound to.
+    lead = re.match(r"^cd\s+(\"[^\"]+\"|'[^']+'|\S+)\s*&&\s*", command)
+    if lead:
+        if not _same_dir(lead.group(1).strip("\"'"), workspace):
+            return False
+        command = command[lead.end():]
+    if not command or re.search(r"[;&<>`$()]|\|\|", command):
+        return False
+    stages = [s.strip() for s in command.split("|")]
+    if not _TEST_RUNNER.match(stages[0]):
+        return False
+    # Options that load code from elsewhere or move where the run happens are
+    # not "run the tests": a plugin by name, another config, another root.
+    if re.search(r"(?:^|\s)(?:-p|-c|--pyargs|--rootdir\S*|--basetemp\S*|--confcutdir\S*)(?:\s|$|=)",
+                 stages[0]):
+        return False
+    return all(_OUTPUT_TRIM.match(s) for s in stages[1:])
+
+
+# "Arréglalo" asks for the project to be changed. Live, after reading the
+# code and running the tests, the one-line fix to inventario.py stopped at
+# the card. An edit passes when: a workspace is bound, the user's words
+# order a change (imperative or infinitive, not negated), and every target
+# resolves inside that workspace. Deletions never pass (apply_patch with a
+# Delete hunk has no determinable targets). And when the user said to
+# leave the tests alone, a test file is not a target this rule allows.
+_ORDERS_A_CHANGE = (
+    r"arregla(?:lo|la|los|las)?", r"arreglar(?:lo|la)?", r"corrige(?:lo|la)?", r"corregir(?:lo|la)?",
+    r"repara(?:lo|la)?", r"soluciona(?:lo|la)?", r"cambia(?:lo|la)?", r"modifica(?:lo|la)?",
+    r"implementa(?:lo|la)?", r"implementar(?:lo|la)?", r"anade(?:lo|la|le)?", r"agrega(?:lo|la)?",
+    r"crea(?:lo|la|me)?", r"escribe(?:lo|la|me)?", r"refactoriza(?:lo|la)?", r"actualiza(?:lo|la)?",
+    r"fix", r"repair", r"change", r"modify", r"implement", r"add", r"create", r"write",
+    r"refactor", r"update",
+)
+_LEAVE_TESTS_ALONE = re.compile(
+    r"\b(?:sin\s+(?:tocar|modificar|cambiar)|no\s+(?:toques|modifiques|cambies))\s+(?:los\s+|las\s+)?(?:tests?|pruebas?)"
+    r"|\b(?:without\s+(?:touching|changing|modifying)|(?:don\s*t|do\s+not)\s+(?:touch|change|modify))\s+(?:the\s+)?tests?"
+)
+_TEST_FILE = re.compile(
+    r"(?:^|[\\/])(?:tests?[\\/]|test_[^\\/]*$|[^\\/]*_test\.\w+$|[^\\/]*\.(?:test|spec)\.\w+$|conftest\.py$)",
+    re.IGNORECASE,
+)
+
+
+def _edits_the_project(user_text: str, content: Any, workspace: str = "", tool: str = "") -> bool:
+    from src import plugins as plugins_mod
+    from src.tool_capabilities import _write_targets, path_inside_trusted
+
+    if not workspace:
+        return False
+    text = plugins_mod.fold(user_text)
+    if not _ordered(text, _ORDERS_A_CHANGE):
+        return False
+    targets = _write_targets(tool, content)
+    if not targets or not all(path_inside_trusted(workspace, t) for t in targets):
+        return False
+    if _LEAVE_TESTS_ALONE.search(text) and any(_TEST_FILE.search(t.replace("\\", "/")) for t in targets):
+        return False
+    return True
+
+
+def _edit_matcher(tool: str) -> Callable[..., bool]:
+    return lambda user_text, content, workspace="": _edits_the_project(user_text, content, workspace, tool)
+
+
 #: tool name -> matcher(user_text, call_content). A tool that is not here is
 #: never let through by this rule.
-MATCHERS: Dict[str, Callable[[str, Any], bool]] = {
+MATCHERS: Dict[str, Callable[..., bool]] = {
     "plugin_app": _plugin_app,
     "manage_memory": _memory_read,
+    "bash": _runs_the_tests,
+    "powershell": _runs_the_tests,
+    "edit_file": _edit_matcher("edit_file"),
+    "write_file": _edit_matcher("write_file"),
+    "apply_patch": _edit_matcher("apply_patch"),
 }
 
 
-def allows(tool_name: Any, content: Any, user_text: str) -> bool:
+def allows(tool_name: Any, content: Any, user_text: str, workspace: str = "") -> bool:
     """True when the user's latest message asked for exactly this call."""
     matcher = MATCHERS.get(tool_name) if isinstance(tool_name, str) else None
     if matcher is None or not str(user_text or "").strip():
         return False
     try:
-        ok = bool(matcher(user_text, content))
+        ok = bool(matcher(user_text, content, workspace or ""))
     except Exception as exc:  # noqa: BLE001 - a matcher failure keeps the gate
         logger.info("[gate] user request matcher for %s failed: %s", tool_name, exc)
         return False

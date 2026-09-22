@@ -6202,6 +6202,7 @@ async def _stream_agent_loop_body(
             if isinstance((harness_options or {}).get("user_delegation"), dict) else None
         ),
         user_request=_user_request_text(messages),
+        workspace=str(workspace or ""),
     )
     if run_security.user_delegation is not None:
         logger.info("[gate] user-dictated delegation in this turn: %d task(s)",

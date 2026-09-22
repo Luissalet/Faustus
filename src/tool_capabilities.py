@@ -1587,6 +1587,9 @@ class ToolRunSecurityContext:
     # something the model decided after reading untrusted text. Same
     # non-consuming contract as `user_delegation` above.
     user_request: str = ""
+    # The folder this turn is bound to, for matchers that need to know where
+    # a command runs (`cd "<workspace>" && pytest`). Empty when unbound.
+    workspace: str = ""
 
     @staticmethod
     def _delegation_payload(content: Any) -> Optional[Mapping[str, Any]]:
@@ -1775,7 +1778,7 @@ class ToolRunSecurityContext:
             return ToolGateDecision(True)
         if self.user_request:
             from src.user_request_gate import allows as _user_asked_for
-            if _user_asked_for(tool_name, content, self.user_request):
+            if _user_asked_for(tool_name, content, self.user_request, self.workspace):
                 return ToolGateDecision(True)
         capabilities = capabilities_for_action(tool_name, content)
         blocked_effects = capabilities.effects & POST_EXTERNAL_BLOCKED_EFFECTS
