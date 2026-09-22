@@ -71,6 +71,10 @@ _NOT_SSE_FRAME_TYPES = frozenset({
     "refusal",     # a model-refusal content block
     "object",      # a JSON-schema {"type": "object", ...} (tool parameters)
     "url",         # a nested {"type": "url", ...} image/source shape
+    # `response_format: {"type": "json_schema", ...}` in the request body
+    # llm_core sends to an OpenAI-compatible engine -- constrained decoding,
+    # nothing to do with the stream coming back (22-09-2026).
+    "json_schema",
 })
 
 # `"type": "x"`, `'type': 'x'`, or the kwarg form `type="x"` — never
