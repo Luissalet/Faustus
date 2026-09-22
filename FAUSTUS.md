@@ -7408,3 +7408,116 @@ puede verlas (`ea50dd72`).
 
 Queda abierto: en casi todas las tareas de código, la segunda ronda se
 corta a los 240 s de pensamiento con este modelo.
+## 168. Seis aplicaciones nuevas como plugins: lo que le faltaba al asistente (23-09-2026, madrugada)
+
+Pregunta de partida de Luis: si Faustus es el modelo del usuario, ¿qué le
+falta para serle útil? No eran tablas; era contexto del usuario que hoy no
+existe en ninguna parte, y que por la regla de la casa (un plugin es una app
+que se usa sola, §165) no cabe dentro de Faustus. Seis aplicaciones nuevas de
+la familia Hoard, cada una con su repositorio, su interfaz, su base de datos
+local, su puente MCP y su `faustus-plugin.json`:
+
+| id | app | puerto | lo que le da al asistente |
+| --- | --- | --- | --- |
+| `ledger` | Ledger's Hoard | 5180 | dinero de casa: cuentas, movimientos, presupuestos, importación CSV, informes |
+| `links` | Links Hoard | 5181 | guardar para luego con el texto extraído, etiquetas, subrayados; share target del móvil y bookmarklet |
+| `people` | People's Hoard | 5182 | quién es quién: alias de chat y correo, hechos, último contacto, cumpleaños, recordatorios |
+| `argus` | Argus's Hoard | 5183 | memoria de pantalla: capturas periódicas del monitor activo + OCR local, línea de tiempo y búsqueda |
+| `borges` | Borges's Hoard | 5184 | biblioteca personal: carpetas de PDF/DOCX/EPUB/MD indexadas con embeddings + BM25, citas exactas |
+| `scribe` | Scribe's Hoard | 5185 | grabadora de reuniones: micro y sonido del sistema como dos pistas (yo/otros), Whisper local, sesiones buscables |
+
+Las tres primeras son Node (Express + `node:sqlite`, React/Vite), calcadas
+de Jobhunter's Hoard; las tres últimas son Python (FastAPI, React/Vite) porque
+el dominio lo pide (OCR, audio, embeddings). Todas siguen el mismo contrato:
+`/api/health` con `service`, `/api/agent/tools` + `/api/agent/call` con token
+en `data/mcp-token`, puente stdio que no abre la base de datos, tests en
+`node --test` o `pytest`, README en inglés y `README.es.md`. Los manifiestos
+shipped (`plugins/<id>/plugin.json`) son copia literal del
+`faustus-plugin.json` de cada app; `tests/test_plugins_hoard_family.py` fija
+que cargan, que un escaneo los reconoce, que tienen `launch_hint`, puente y
+`purpose`, que sus puertos no chocan y que una frase que nombre cada uno lo
+encuentra. El fixture «novel» de `test_plugin_app_manifest.py` se llamaba
+`ledger`; ahora que hay un Ledger's Hoard real, se llama `abacus`, que es el
+sentido de esa prueba (una app de la que Faustus nunca ha oído hablar).
+
+### Lo que salió al usarlas desde Faustus en el PC de verdad
+
+Batería de seis peticiones por una instancia propia (7003, datos en
+`D:\LocalAI\faustus-hoards-data`, 27B q8 en llama-server 8081) con
+`talk3.py`/`battery3.py`, aprobando las tarjetas como lo haría una persona:
+
+- «Crea una cuenta Efectivo y otra Tarjeta y apunta 12,50 € de taxi… ¿cuánto
+  llevo este mes?» → 7 rondas, 414 s: `list_accounts` → `lookup_tools` (el
+  modelo pidió `create_account`/`upsert_account`/`add_account` por nombre) →
+  dos `upsert_account` en paralelo → dos `add_entry` → `list_entries` →
+  «57,50 €». La primera pasada falló porque no existía ninguna herramienta
+  para crear cuentas: se añadió `upsert_account`, y `add_entry` resuelve la
+  cuenta con la misma tolerancia que las categorías (sin acentos, prefijo) y
+  usa la única cuenta sin preguntar.
+- «Guarda este enlace con la etiqueta lectura y dime de qué va» → 2 rondas,
+  78 s: `save_link` espera hasta 10 s a la extracción y devuelve título y
+  extracto, así que el resumen sale del texto guardado, no del título.
+- «Apunta que X es mi vecina, cumple el 14 de marzo, le gustan los gatos.
+  ¿Qué sabes de ella?» → `upsert_person` → `add_fact` → `get_person`, 147 s.
+- «¿Qué estaba haciendo hace diez minutos?» → `screen_recent` y una
+  respuesta correcta sobre la ventana que había en pantalla (136 s).
+
+Fallos reales de máquina, ninguno visible en la nube:
+
+- **El guardián «solo local» rechazaba navegaciones normales.** Una
+  navegación de nivel superior desde otra página (la extensión del
+  navegador, un bookmarklet, la hoja de compartir del móvil) lleva
+  `Sec-Fetch-Site: cross-site`, y el guardián la trataba como un fetch
+  cross-site. Ahora sólo se rechazan los fetches y los embeds cross-site, un
+  POST en modo navegación (formulario desde otra web) sigue fuera, y
+  `<PREFIX>_ALLOWED_HOSTS` admite nombres exactos o `*.sufijo` para el túnel
+  del móvil. Mismo módulo (`guard.js` / `guard.py`) en las seis, byte a byte.
+- **`rapidocr-onnxruntime` no tiene ruedas para Python 3.13**; el paquete
+  sucesor es `rapidocr` (API `output.boxes/txts/scores`). Y en Windows,
+  importar `winocr` (WinRT) antes que `onnxruntime` mata el proceso con un
+  access violation sin mensaje; el orden inverso funciona. `winocr_backend`
+  importa `onnxruntime` primero aunque no lo vaya a usar.
+- **La detección de cambios de pantalla estaba calibrada con DejaVu.** Con
+  Segoe UI (trazos más finos) una línea nueva de 16 px cambiaba menos de 8
+  celdas en la rejilla de 192×108 y contaba como duplicado. Medido en el PC:
+  rejilla 384×216 y nivel 12 separan cursor (4) y reloj (10) de una línea
+  nueva (25) y un scroll (94); umbral por defecto 16.
+- **Seis monitores.** Capturar y OCR-ar los seis cada 5 s era inútil:
+  `capture_scope: active` (por defecto) captura sólo el monitor de la ventana
+  activa, con `all` disponible. winocr tarda ~150 ms por pantalla 1080p.
+- **Scribe cargaba el modelo en CUDA y fallaba en la primera inferencia**:
+  CTranslate2 carga cuBLAS/cuDNN perezosamente y `cublas64_12.dll` no estaba
+  en la ruta de DLL. `requirements-windows.txt` trae `nvidia-cublas-cu12` y
+  `nvidia-cudnn-cu12`, la app registra sus `bin` con `os.add_dll_directory`,
+  y un fallo CUDA en inferencia recarga en CPU en vez de dejar la sesión en
+  «processing» para siempre. Verificado: grabación real de 10 s (micro +
+  loopback WASAPI, dos pistas), sesión cerrada, modelo `small` en CUDA.
+- **`daysSince` mezclaba UTC y hora local** en People's (una interacción a
+  las 22:25Z del 22 contaba como «ayer» a las 00:25 del 23).
+- **La suite de Links dejaba trabajo asíncrono tras cerrar la base**: la
+  cola de descargas seguía viva; ahora `stop()`/`drain()` y un apagado
+  limpio por SIGINT/SIGTERM.
+
+Y una trampa de Faustus, no de las apps: **cambiar las herramientas de una
+app exige desconectar y volver a conectar el conector**. El puente MCP
+importa la lista de herramientas al arrancar y `connect` sobre un conector
+ya conectado no lo reinicia, así que `lookup_tools` encontraba
+`upsert_account` en el catálogo y el esquema nunca llegaba al modelo. En la
+práctica: `disconnect` + `connect` (script `reconnect_all.py` en `_claude_tmp`).
+
+### Pendiente
+
+- La puerta de contexto externo se arma en cada turno con estas apps (las
+  descripciones MCP viajan por el carril no fiable): cada petición acabó en
+  «Allow this task to continue?». Con la regla «lo que pides tú, pasa» (§166)
+  faltan comparadores para `add_entry`, `save_link`, `upsert_person`,
+  `screen_recent`, `library_search`, `scribe_sessions`…
+- El otro chat tiene un plugin `argus` (biblioteca de fotos) en su banco de
+  pruebas; mismo id que el Argus de memoria de pantalla. Uno de los dos tiene
+  que cambiar de nombre antes de que el suyo llegue a `plugins/`.
+- Perfiles de arranque para las seis en el 7000 (hoy arrancan a mano con
+  `hoards_start.ps1`), y el 7003 es una instancia de pruebas que no debe
+  quedarse.
+- Scribe: la primera grabación real no captó voz (silencio): probar con una
+  llamada de verdad; Borges: indexar una carpeta grande (apuntes del máster) y
+  medir; Argus: retención y tamaño en disco tras un día entero.
