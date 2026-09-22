@@ -38,6 +38,31 @@ def test_the_workspace_coding_block_says_it_too():
     assert agent_loop._workspace_coding_rules(None) == ""
 
 
-def test_ask_user_is_always_offered_to_the_agent():
-    src = open(agent_loop.__file__, encoding="utf-8").read()
-    assert 'tool_names = set(relevant_tools) | {"ask_user", "update_plan"}' in src
+def test_ask_user_is_always_offered_to_the_agent(monkeypatch):
+    """The rule above is worthless if `ask_user` is not on the turn's list.
+
+    This used to be checked by looking for one line of agent_loop.py in the
+    file. It went red the day a third primitive joined the set -- the rule
+    was MORE true, and the test said less true -- so it asks the prompt
+    builder instead: whatever retrieval selected, the loop primitives are
+    there and are never deferred to the catalog.
+    """
+    seen = {}
+
+    def fake_assemble(tool_names, disabled, **kwargs):
+        seen["tools"] = set(tool_names)
+        seen["deferred"] = set(kwargs.get("deferred_tools") or ())
+        return "prompt"
+
+    monkeypatch.setattr(agent_loop, "_assemble_prompt", fake_assemble)
+    agent_loop._build_base_prompt(
+        disabled_tools=set(),
+        mcp_mgr=None,
+        needs_admin=False,
+        relevant_tools={"bash"},
+        deferred_tools={"ask_user", "update_plan", "lookup_tools", "python"},
+    )
+
+    assert {"ask_user", "update_plan", "lookup_tools"} <= seen["tools"]
+    assert not ({"ask_user", "update_plan", "lookup_tools"} & seen["deferred"]), (
+        "a loop primitive must never be a catalog one-liner the model has to look up")
