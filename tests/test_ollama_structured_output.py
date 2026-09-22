@@ -61,6 +61,13 @@ def settings(monkeypatch):
 def stable_ctx(monkeypatch):
     """Pin the discovered context window so payloads are comparable."""
     monkeypatch.setattr(llm_core, "get_context_length", lambda url, model: 32768)
+    # And the other input that decides the wire format: saved per-model load
+    # options (num_ctx / num_gpu / keep_alive) are native-only, so their mere
+    # presence moves a /v1 call to /api/chat before anything here is
+    # considered. They come from the real settings database, so on a machine
+    # where the developer had saved any, these tests were reading that
+    # instead of their own premise.
+    monkeypatch.setattr(llm_core, "_model_load_defaults", lambda url, model: {})
 
 
 class _Resp:
