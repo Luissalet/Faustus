@@ -61,7 +61,10 @@ def test_a_stale_cache_is_served_immediately(monkeypatch):
     monkeypatch.setattr(usage, "_collect_usage_uncached", slow)
 
     async def scenario():
-        usage._cache["ts"] = usage.time.time() - 3600
+        usage._cache["ts"] = usage.time.time() - 2  # stale, but inside
+        # `_CACHE_MAX_STALE`: past that ceiling the caller is meant to
+        # WAIT for a fresh reading rather than be handed an old one
+        # forever, so an hour would be testing the opposite rule.
         usage._cache["data"] = {"gpu": "stale"}
         out = await asyncio.wait_for(usage.collect_usage(), timeout=1.0)
         await asyncio.sleep(0)  # let the background task start
@@ -83,7 +86,10 @@ def test_a_stale_read_starts_exactly_one_refresh(monkeypatch):
     monkeypatch.setattr(usage, "_collect_usage_uncached", slow)
 
     async def scenario():
-        usage._cache["ts"] = usage.time.time() - 3600
+        usage._cache["ts"] = usage.time.time() - 2  # stale, but inside
+        # `_CACHE_MAX_STALE`: past that ceiling the caller is meant to
+        # WAIT for a fresh reading rather than be handed an old one
+        # forever, so an hour would be testing the opposite rule.
         usage._cache["data"] = {"gpu": "stale"}
         for _ in range(10):
             await usage.collect_usage()
@@ -113,7 +119,10 @@ def test_a_failing_refresh_leaves_the_last_good_reading(monkeypatch):
     monkeypatch.setattr(usage, "_collect_usage_uncached", boom)
 
     async def scenario():
-        usage._cache["ts"] = usage.time.time() - 3600
+        usage._cache["ts"] = usage.time.time() - 2  # stale, but inside
+        # `_CACHE_MAX_STALE`: past that ceiling the caller is meant to
+        # WAIT for a fresh reading rather than be handed an old one
+        # forever, so an hour would be testing the opposite rule.
         usage._cache["data"] = {"gpu": "stale"}
         out = await usage.collect_usage()
         await asyncio.sleep(0.05)
@@ -122,3 +131,30 @@ def test_a_failing_refresh_leaves_the_last_good_reading(monkeypatch):
     served, after = asyncio.run(scenario())
     assert served == {"gpu": "stale"}
     assert after == {"gpu": "stale"}
+
+
+def test_a_reading_older_than_the_ceiling_is_not_served(monkeypatch):
+    """Serving stale numbers keeps the widget responsive. Serving them with
+    no ceiling would leave a gauge on screen that quietly stopped being about
+    now -- every refresh behind it failing, and nobody told. Past
+    `_CACHE_MAX_STALE` the caller waits for a real reading instead."""
+    async def fresh():
+        usage._cache["ts"] = usage.time.time()
+        usage._cache["data"] = {"gpu": "fresh"}
+        return usage._cache["data"]
+
+    monkeypatch.setattr(usage, "_collect_usage_uncached", fresh)
+
+    async def scenario():
+        usage._cache["ts"] = usage.time.time() - (usage._CACHE_MAX_STALE + 1)
+        usage._cache["data"] = {"gpu": "ancient"}
+        return await usage.collect_usage()
+
+    assert asyncio.run(scenario()) == {"gpu": "fresh"}
+
+
+def test_the_ceiling_is_well_past_the_slowest_collection():
+    """12.9 s was the slowest collection measured with a turn running; a
+    ceiling anywhere near that would put the fast path out of reach."""
+    assert usage._CACHE_MAX_STALE >= 20.0
+    assert usage._CACHE_MAX_STALE > usage._CACHE_TTL

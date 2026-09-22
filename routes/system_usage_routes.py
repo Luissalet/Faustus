@@ -100,6 +100,14 @@ from src.auth_helpers import require_user
 logger = logging.getLogger(__name__)
 
 _CACHE_TTL = 1.0
+
+#: How old a served-stale reading may get before a caller waits for a fresh
+#: one instead. Serving stale numbers is what keeps the widget from blocking
+#: the interface; serving them FOREVER, when every refresh behind it keeps
+#: failing, would put a gauge on screen that quietly stopped being about now.
+#: Generous on purpose -- well past the slowest collection measured (12.9 s
+#: with a turn running) -- so the fast path stays the normal one.
+_CACHE_MAX_STALE = 30.0
 #: Held while a background refresh is in flight, so a burst of polls starts
 #: exactly one of them instead of one each.
 _refreshing = asyncio.Lock()
@@ -481,12 +489,17 @@ async def collect_usage() -> Dict[str, Any]:
     the very first caller of a cold cache waits, and nobody ever queues: the
     numbers are a gauge, and a gauge that is two seconds out of date is worth
     far more than one that blocks the interface for twelve.
+
+    Past `_CACHE_MAX_STALE` the caller waits instead. Serving stale numbers is
+    what keeps the widget responsive; serving them with no ceiling, when the
+    refreshes behind them keep failing, would leave a gauge on screen that
+    quietly stopped being about now -- which is worse than a slow one.
     """
     now = time.time()
     cached = _cache["data"]
     if cached is not None and now - _cache["ts"] < _CACHE_TTL:
         return cached
-    if cached is not None:
+    if cached is not None and now - _cache["ts"] < _CACHE_MAX_STALE:
         if not _refreshing.locked():
             asyncio.create_task(_refresh_usage())
         return cached
