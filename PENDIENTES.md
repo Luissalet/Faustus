@@ -14,6 +14,25 @@ Tercera tanda. Aquí hay dos que no eran «el test describe otra cosa» sino «e
 
 - CERRADO (09945826): era lo contrario de un fallo — `_on_host` ya no da la pista, ejecuta el comando por PowerShell. Los dos tests describían un producto que ya no existe. Reescritos contra lo que el código promete ahora.
 
+## 22-09 madrugada (5) — una medición que no cuadra, sin cerrar
+
+**ABIERTO: `tests/eval/test_baseline_match.py[feature]` — 46 tokens donde la baseline grabó 23.**
+
+No he regenerado la baseline. Regenerarla borraría la señal, y la señal parece real.
+
+Lo comprobado, con `python scripts/eval_run.py` (el generador que nombra el propio fichero):
+
+- Las **seis** tareas siguen dando `ok`, y cinco coinciden exactamente con la baseline. Sólo `feature` cambia.
+- Los `usage_buckets` de cada tarea traen **un** apunte. `feature` trae **dos**, y los dos son idénticos: `input 10 / output 13`.
+- 13 = `len("He añadido multiply(a, b) a calc.py conservando add().") // 4`, que es como el modelo de prueba calcula sus tokens. O sea: **los dos apuntes miden el mismo texto**, la respuesta final.
+- Las rondas siguen siendo 3 y las llamadas a herramienta 2, igual que en la baseline. Lo que cambió es cuántas veces se factura.
+
+O hay una compleción de más, o una ronda apunta el consumo de otra. Las dos cosas importan: `usage_buckets` es de donde sale lo que se le cobra a un endpoint de pago (`endpoint_cost_tracked`), así que un apunte duplicado es dinero mal atribuido.
+
+Lo que descarta: `_finalize_round_usage` tiene su propio pestillo por ronda (`_round_usage_finalized`), así que una misma ronda no puede apuntar dos veces — son dos rondas distintas apuntando el mismo texto. Y el sub-agente verificador no apunta consumo, así que no es él.
+
+Por qué sólo `feature`: es la única de las tres tareas de código que escribe con `write_file` sobre un fichero **que ya existe**. `investigation` también usa `write_file` y da un solo apunte.
+
 ## 22-09 madrugada (4) — una pregunta de diseño para ti
 
 **ABIERTO, decisión tuya: `tool_approval_mode = auto` anula `desktop_control_mode = ask_each`.**
