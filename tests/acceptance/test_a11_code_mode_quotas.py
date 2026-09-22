@@ -127,12 +127,24 @@ async def test_the_terminated_child_process_does_not_survive(monkeypatch, reques
 
     # Give the OS a moment to finish reaping (the runner already awaited
     # proc.wait() with a timeout before returning).
+    #
+    # Asked through psutil, not `os.kill(pid, 0)`. That idiom is POSIX: on
+    # Windows `os.kill` with any signal that is not a CTRL event calls
+    # TerminateProcess, so it is not a liveness probe at all -- it is an
+    # attempt to kill -- and it raises nothing while a handle to the dead
+    # process is still open, which asyncio's own subprocess object holds.
+    # The guest here was genuinely gone (psutil: no such process) and this
+    # loop reported it alive for the full two seconds, every run, on the one
+    # platform the project is developed on.
+    import psutil
+
     for _ in range(20):
-        try:
-            os.kill(pid, 0)
-        except (ProcessLookupError, PermissionError):
+        if not psutil.pid_exists(pid):
             break
-        except OSError:
+        try:
+            if psutil.Process(pid).status() == psutil.STATUS_ZOMBIE:
+                break
+        except psutil.NoSuchProcess:
             break
         time.sleep(0.1)
     else:
