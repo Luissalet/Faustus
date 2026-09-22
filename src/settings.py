@@ -1390,6 +1390,21 @@ DEFAULT_SETTINGS = {
     # disk is never modified. Default OFF: existing indexes keep their
     # current chunk text until re-indexed with the flag on.
     "rag_pii_redaction": False,
+    # Lifecycle hooks (src/lifecycle_hooks.py, lot H): user-configurable
+    # automation attached to points in the agent's turn (session_start,
+    # turn_start, pre_tool, post_tool, turn_end, pre_compact) — run a shell
+    # command and feed its output to the model, inject a fixed note, or warn
+    # on a pattern match. Hooks augment only: they never deny/block a tool
+    # call and never require approval. Empty list = no effect.
+    "lifecycle_hooks": [],
+    # Master on/off switch for the lifecycle hooks runtime above.
+    "lifecycle_hooks_enabled": True,
+    # Per-hook default timeout (seconds) for action="command", when a hook
+    # does not set its own `timeout_s`. Hard-capped at 120s regardless.
+    "lifecycle_hooks_command_timeout_seconds": 20,
+    # Wall-clock cap (seconds) for ALL hooks of one lifecycle event combined —
+    # protects a turn from stalling behind a chain of slow/misbehaving hooks.
+    "lifecycle_hooks_total_timeout_seconds": 45,
 }
 
 
