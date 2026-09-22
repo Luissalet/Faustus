@@ -63,6 +63,11 @@ def _patch_settings(monkeypatch, **overrides):
     from src.settings import DEFAULT_SETTINGS
 
     base = {
+        # The approval gate is only consulted in "ask" mode, and this machine
+        # -- or any machine running the app with auto-approve on -- has a real
+        # settings row saying "auto". Pin it: this test is about what happens
+        # AFTER a call is gated, not about whether the installation gates.
+        "tool_approval_mode": "ask",
         "desktop_control_mode": "ask_each",
         "agent_code_mode_timeout_seconds": 20,
         "agent_code_mode_max_calls": 50,
@@ -78,6 +83,13 @@ def _patch_settings(monkeypatch, **overrides):
         return DEFAULT_SETTINGS.get(key, default)
 
     monkeypatch.setattr(settings_mod, "get_setting", _fast)
+    # Same trap as ALWAYS_APPROVE_TOOLS above: a module that did
+    # `from src.settings import get_setting` at import time holds its own
+    # binding, and patching src.settings alone never reaches it. The gate
+    # this test is about lives in one of those, so it read the real
+    # installation's settings and the fake tool ran unblocked.
+    import src.tool_capabilities as tool_caps
+    monkeypatch.setattr(tool_caps, "get_setting", _fast, raising=False)
 
 
 async def _wait_for_open_question(owner: str, *, timeout_s: float = 10.0) -> dict:
