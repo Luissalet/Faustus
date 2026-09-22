@@ -271,12 +271,118 @@ def _runs_what_the_user_wrote(user_text: str, content: Any, workspace: str = "")
     return False
 
 
+# Looking at a file in the workspace with the shell is what read_file does,
+# which never needs the card. Seen live: `wc -l ventas_junio.csv && tail -n
+# +31 ventas_junio.csv | head -60` on the user's own export stopped the
+# analysis. A step passes when every command in its pipeline is one of these
+# read-only ones, with none of the options that write, follow, run a program
+# or read a list of names from elsewhere, and every path it names is inside
+# the workspace. Quoted text is taken literally, as bash does (`cut -d';'`).
+_READ_ONLY_COMMANDS = {
+    "cat": (), "head": (), "wc": ("--files0-from",), "ls": (), "cut": (), "nl": (),
+    "stat": (), "du": ("--files0-from", "-X", "--exclude-from"), "uniq": (),
+    "tail": ("-f", "-F", "--follow", "--retry"),
+    "grep": ("-f", "--file", "--exclude-from"),
+    "sort": ("-o", "--output", "-T", "--temporary-directory", "--compress-program", "--random-source", "--files0-from"),
+}
+
+
+def _host_path(token: str) -> str:
+    import os
+
+    drive = re.match(r"^/(?:mnt/|cygdrive/)?([a-zA-Z])(?:/(.*))?$", token)
+    if drive and os.name == "nt":
+        return f"{drive.group(1)}:/{drive.group(2) or ''}"
+    return token
+
+
+def _bad_option(word: str, bad: tuple) -> bool:
+    if word.startswith("--"):
+        return word.split("=", 1)[0] in bad
+    # a short cluster: `-no` is -n and -o; stop at the first option that
+    # takes a value in the same word (`-t;`, `-d,`, `-n20`)
+    for i, ch in enumerate(word[1:], 1):
+        if f"-{ch}" in bad:
+            return True
+        if ch in "tdkncCsSe":
+            break
+    return False
+
+
+def _inspects_the_workspace(step: str, workspace: str) -> bool:
+    import os
+    import shlex
+
+    from src.tool_capabilities import path_inside_trusted
+
+    if not workspace:
+        return False
+    step = step.replace("2>/dev/null", " ")
+    # `$`, backticks and backslashes expand or escape outside single quotes.
+    if re.search(r"[`$\\]", re.sub(r"'[^']*'", "", step)):
+        return False
+    try:
+        lexer = shlex.shlex(step, posix=True, punctuation_chars="|&;<>()")
+        lexer.whitespace_split = True
+        tokens = list(lexer)
+    except ValueError:
+        return False
+    stages, current = [], []
+    for token in tokens:
+        if token == "|":
+            stages.append(current)
+            current = []
+        elif token and set(token) <= set("|&;<>()"):
+            return False  # any other operator: redirection, ;, &, ||, subshell
+        else:
+            current.append(token)
+    stages.append(current)
+    for words in stages:
+        if not words or words[0] not in _READ_ONLY_COMMANDS:
+            return False
+        bad = _READ_ONLY_COMMANDS[words[0]]
+        # Every word that is not an option is checked as a path, option
+        # values included: skipping "the value after -n" would skip the file
+        # in `cat -n /etc/x`. A value like `;` or `2` reads as a harmless
+        # name inside the workspace.
+        positional = []
+        for word in words[1:]:
+            if word.startswith("-") and not re.match(r"^-\d+$", word):
+                if _bad_option(word, bad):
+                    return False
+                continue
+            positional.append(word)
+        if words[0] == "grep" and positional:
+            positional = positional[1:]  # the pattern, not a path
+        if words[0] == "uniq" and len(positional) > 1:
+            return False  # `uniq in out` writes its second name
+        for word in positional:
+            if re.match(r"^[+-]?\d+$", word):
+                continue
+            # bash expands `~` and `{a,b}` into other paths than the text says
+            if re.search(r"[~{}]", word) or re.search(r"(?:^|[\\/])\.\.(?:[\\/]|$)", word):
+                return False
+            path = _host_path(word)
+            target = os.path.normpath(path if os.path.isabs(path) else os.path.join(workspace, path))
+            if re.search(r"[*?\[]", word):
+                import glob
+
+                # a glob is checked by what it matches: `link*` could be a
+                # symlink that leaves the workspace
+                if not all(path_inside_trusted(workspace, m) for m in glob.glob(target)):
+                    return False
+            elif not path_inside_trusted(workspace, target):
+                return False
+    return True
+
+
 _PLAIN_ECHO = re.compile(r"^echo(?:\s+(?:[\w.,:=+/\- ]+|\"[\w.,:=+/\- ]*\"|'[\w.,:=+/\- ]*'))?$")
 
 
 def _one_command(user_text: str, command: str, workspace: str) -> bool:
     return (_runs_the_tests(user_text, command, workspace)
-            or _runs_what_the_user_wrote(user_text, command, workspace))
+            or _runs_what_the_user_wrote(user_text, command, workspace)
+            or _inspects_the_workspace(command, workspace))
 
 
 def _shell_matcher(user_text: str, content: Any, workspace: str = "") -> bool:
@@ -294,7 +400,7 @@ def _shell_matcher(user_text: str, content: Any, workspace: str = "") -> bool:
             return False
         command = command[lead.end():]
     steps = [s.strip() for s in command.split("&&")]
-    if len(steps) < 2 or not all(steps):
+    if not all(steps) or (len(steps) < 2 and not lead):
         return False
     asked = [s for s in steps if not _PLAIN_ECHO.match(s)]
     return bool(asked) and all(_one_command(user_text, s, workspace) for s in asked)

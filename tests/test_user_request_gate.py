@@ -344,3 +344,68 @@ def test_a_chain_of_steps_the_user_asked_for_runs_without_a_card(command):
 def test_a_chain_with_any_step_nobody_asked_for_keeps_the_gate(command):
     assert not _asked(_FIX_AND_TEST, command)
 
+
+# ---- looking at workspace files with the shell, like read_file does ----
+
+_SALES = "Analiza el export de ventas_junio.csv y dime qué tienda factura más."
+
+
+@pytest.mark.parametrize("command", [
+    "wc -l ventas_junio.csv && tail -n +31 ventas_junio.csv | head -60",  # seen live
+    "head -5 ventas_junio.csv",
+    "cut -d';' -f2 ventas_junio.csv | sort | uniq -c",
+    "grep -c 'Centro' ventas_junio.csv",
+    "grep -n 'a|b' ventas_junio.csv",
+    "ls -la",
+    "cd /d/proj && cat LEEME.md",
+    "sort -t';' -k2 ventas_junio.csv 2>/dev/null | head -n 20",
+])
+def test_reading_workspace_files_with_the_shell_needs_no_card(command):
+    assert _asked(_SALES, command)
+
+
+@pytest.mark.parametrize("command", [
+    "cat /etc/passwd",
+    "cat -n /etc/passwd",
+    "head -c 100 C:/Users/someone/.ssh/id_rsa",
+    "cat ../secret.txt",
+    "cat ~/notes.txt",
+    "tail -f ventas_junio.csv",
+    "sort -o ventas_junio.csv ventas_junio.csv",
+    "sort --compress-program=evil ventas_junio.csv",
+    "uniq ventas_junio.csv salida.csv",
+    "grep -f /etc/passwd ventas_junio.csv",
+    "cat ventas_junio.csv > copia.csv",
+    "cat ventas_junio.csv; rm ventas_junio.csv",
+    "cat $HOME/x",
+    "cat `whoami`",
+    "cat ventas_junio.csv | sh",
+    "cat ventas_junio.csv | xargs rm",
+    "awk '{system(\"x\")}' ventas_junio.csv",
+    "sed -i 's/a/b/' ventas_junio.csv",
+    "wc --files0-from=/etc/list",
+    "cd /d/elsewhere && cat ventas_junio.csv",
+    "cat {/etc/passwd,x}",
+    "cat x~",
+    "file -z ventas_junio.csv",
+])
+def test_anything_that_writes_runs_or_leaves_the_workspace_keeps_the_card(command):
+    assert not _asked(_SALES, command)
+
+
+def test_a_glob_is_judged_by_the_files_it_matches(tmp_path):
+    import os
+
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    (ws / "ventas_junio.csv").write_text("x", encoding="utf-8")
+    outside = tmp_path / "secret.txt"
+    outside.write_text("s", encoding="utf-8")
+    msgs = _turn(_SALES)
+    ok = lambda cmd: allows("bash", json.dumps({"command": cmd}), user_request_text(msgs), str(ws))  # noqa: E731
+    assert ok("head -3 *.csv")
+    try:
+        os.symlink(outside, ws / "link.csv")
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks are not available here")
+    assert not ok("head -3 *.csv")
