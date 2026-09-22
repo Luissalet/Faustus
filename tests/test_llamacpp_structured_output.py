@@ -173,6 +173,47 @@ def test_native_ollama_never_receives_response_format(settings, backends):
 
 
 # ---------------------------------------------------------------------------
+# Thinking and the grammar compete for the same budget
+# ---------------------------------------------------------------------------
+
+def test_a_thinking_model_stops_thinking_under_the_grammar(settings, backends):
+    """llama-server applies the grammar to the content channel only, so a
+    model that reasons first spends the budget there and answers with an empty
+    string under HTTP 200. Measured on the local 27B: 1200 completion tokens,
+    5,542 characters of reasoning, nothing in content. With the flag, the same
+    request answered in 48 s on half the tokens."""
+    payload = {"model": "qwen3.8-27b-q8-llamacpp", "messages": []}
+    assert llm_core._apply_openai_response_format(
+        payload, LLAMACPP, SCHEMA, model="qwen3.8-27b-q8-llamacpp") is True
+    assert payload["chat_template_kwargs"]["enable_thinking"] is False
+
+
+def test_a_model_that_does_not_think_gets_no_flag(settings, backends):
+    """No stray key in the payload of a model the flag means nothing to."""
+    payload = {"model": "codellama:7b", "messages": []}
+    llm_core._apply_openai_response_format(
+        payload, LLAMACPP, SCHEMA, model="codellama:7b")
+    assert "chat_template_kwargs" not in payload
+
+
+def test_the_flag_does_not_clobber_existing_template_kwargs(settings, backends):
+    payload = {"model": "qwen3.8-27b-q8-llamacpp", "messages": [],
+               "chat_template_kwargs": {"something_else": 1}}
+    llm_core._apply_openai_response_format(
+        payload, LLAMACPP, SCHEMA, model="qwen3.8-27b-q8-llamacpp")
+    assert payload["chat_template_kwargs"]["something_else"] == 1
+    assert payload["chat_template_kwargs"]["enable_thinking"] is False
+
+
+def test_no_schema_means_the_model_may_still_think(settings, backends):
+    """The suppression is the price of the grammar, not a global policy."""
+    payload = {"model": "qwen3.8-27b-q8-llamacpp", "messages": []}
+    llm_core._apply_openai_response_format(
+        payload, LLAMACPP, None, model="qwen3.8-27b-q8-llamacpp")
+    assert "chat_template_kwargs" not in payload
+
+
+# ---------------------------------------------------------------------------
 # End to end: the schema is really on the wire
 # ---------------------------------------------------------------------------
 

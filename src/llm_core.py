@@ -1355,6 +1355,7 @@ def _resolve_response_schema(url: str, response_schema: Optional[Dict]) -> Optio
 
 def _apply_openai_response_format(
     payload: Dict, url: str, schema: Optional[Dict], tools: Optional[List] = None,
+    *, model: str = "",
 ) -> bool:
     """Attach `schema` to an OpenAI-shaped payload for llama-server.
 
@@ -1378,7 +1379,34 @@ def _apply_openai_response_format(
         "type": "json_schema",
         "json_schema": {"name": "response", "strict": True, "schema": schema},
     }
+    _suppress_thinking_under_grammar(payload, model)
     return True
+
+
+def _suppress_thinking_under_grammar(payload: Dict, model: str) -> None:
+    """Turn a thinking model's reasoning off for a constrained answer.
+
+    llama-server applies the grammar to the content channel only, so a model
+    that reasons first spends the token budget thinking and the grammar never
+    gets its turn. Measured on the local 27B asking for a seven-field object:
+    1200 completion tokens, 5,542 characters of reasoning, `finish_reason` of
+    "length" and an empty content string -- returned as HTTP 200, which is the
+    worst shape a failure can take, because every layer above reads it as a
+    healthy answer that happens to be blank.
+
+    With the reasoning off the same request answered in 48 s with the full
+    object and `finish_reason` "stop", on half the tokens. Nothing is lost: a
+    constrained answer is a form to fill, and thinking out loud about how to
+    fill it competes for the budget that fills it. (Asking in the prompt does
+    not work -- the model reasons anyway. It has to be the template flag.)
+
+    This mirrors what the Ollama /v1 path already does with `think: False`.
+    """
+    if not _supports_thinking(model):
+        return
+    kwargs = payload.setdefault("chat_template_kwargs", {})
+    if isinstance(kwargs, dict):
+        kwargs["enable_thinking"] = False
 
 
 def _route_for_response_schema(url: str, model: str) -> str:
@@ -2934,7 +2962,7 @@ def llm_call(url: str, model: str, messages: List[Dict], temperature: float = LL
         # decided on the endpoint as configured, and the backend registry is
         # keyed the same way. Asking about the normalised /chat/completions
         # form answers "unknown" and drops the schema without a word.
-        _apply_openai_response_format(payload, url, schema)
+        _apply_openai_response_format(payload, url, schema, model=model)
         if provider == "mistral" and _supports_thinking(model):
             payload["reasoning_effort"] = _MISTRAL_REASONING_EFFORT
         if provider == "openrouter":
@@ -3493,7 +3521,7 @@ async def _llm_call_async_impl(
             payload["reasoning_effort"] = _MISTRAL_REASONING_EFFORT
         _apply_local_cache_affinity(payload, url, session_id)
         _apply_local_generation_stability(payload, target_url, model)
-        _apply_openai_response_format(payload, url, schema)  # `url`: see llm_call
+        _apply_openai_response_format(payload, url, schema, model=model)  # `url`: see llm_call
         if provider == "openrouter":
             # Same OpenRouter options application as llm_call (OBJ-8 Lote A2)
             # -- see that call site for the full rationale.
