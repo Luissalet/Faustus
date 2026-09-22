@@ -1,0 +1,192 @@
+"""`python` passes the approval gate only as data work the user asked for,
+confined to the workspace. The allowed cases are code the agent really
+wrote for "analyse this CSV and chart it"; the refused ones are the ways
+that code could reach past the workspace or over the user's own files."""
+import json
+import os
+import time
+
+import pytest
+
+from src.user_request_gate import allows
+
+ASK = ("Te dejo el export de ventas de junio (ventas_junio.csv). Necesito saber qué tienda ha "
+       "facturado más, un gráfico de barras en PNG y un resumen en informe_junio.md.")
+
+# Written by the agent live, first call of the sales task.
+AGENT_FIRST_CALL = '''
+import csv, re
+from collections import defaultdict
+from datetime import date
+
+rows = []
+with open('ventas_junio.csv', encoding='utf-8') as f:
+    r = csv.reader(f, delimiter=';')
+    header = next(r)
+    for line in r:
+        if not line or len(line) < 5: continue
+        fecha, tienda, producto, unidades, precio = [x.strip() for x in line[:5]]
+        m = re.match(r'^(\\d{4})-(\\d{2})-(\\d{2})$', fecha)
+        if m: d = date(int(m[1]), int(m[2]), int(m[3]))
+        else:
+            m = re.match(r'^(\\d{2})/(\\d{2})/(\\d{4})$', fecha)
+            d = date(int(m[3]), int(m[2]), int(m[1]))
+        tienda_n = tienda.strip().title()
+        precio_f = float(precio.replace(',', '.'))
+        rows.append((d, tienda_n, producto, int(unidades), precio_f))
+print("filas totales:", len(rows))
+prod_price = defaultdict(set)
+for d,t,p,u,pr in rows: prod_price[p].add(pr)
+for p, s in prod_price.items(): print(p, sorted(s))
+'''
+
+CHART_AND_SUMMARY = '''
+import json
+import pandas as pd
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+
+df = pd.read_csv("ventas_junio.csv", sep=";", decimal=",")
+df["tienda"] = df["tienda"].str.strip().str.title()
+df = df.drop_duplicates()
+df["importe"] = df["unidades"] * df["precio_unitario"]
+por_tienda = df.groupby("tienda")["importe"].sum().sort_values(ascending=False)
+ax = por_tienda.plot(kind="bar", title="Facturación junio")
+plt.tight_layout()
+plt.savefig("facturacion_tiendas.png", dpi=150)
+with open("informe_junio.md", "w", encoding="utf-8") as f:
+    f.write(f"# Junio\\n\\n{por_tienda.to_markdown()}\\n")
+with open("ventas_junio.csv", encoding="utf-8") as f:
+    header = f.readline()
+cfg = json.load(open("ventas_junio.csv")) if False else None
+'''
+
+
+@pytest.fixture
+def ws(tmp_path):
+    (tmp_path / "ventas_junio.csv").write_text("fecha;tienda\n", encoding="utf-8")
+    (tmp_path / "app.py").write_text("print('mine')\n", encoding="utf-8")
+    old = time.time() - 3 * 24 * 3600
+    for name in ("ventas_junio.csv", "app.py"):
+        os.utime(tmp_path / name, (old, old))
+    return str(tmp_path)
+
+
+TYPED_AND_STDLIB = '''
+from dataclasses import dataclass
+from typing import Dict, List, Optional
+from functools import reduce
+from matplotlib import pyplot as plt
+from matplotlib.ticker import FuncFormatter
+import pandas as pd
+import numpy as np
+
+@dataclass
+class Fila:
+    tienda: str
+    total: float = 0.0
+
+def totales(df: pd.DataFrame, filas: List[Dict[str, float]], tope: Optional[int] = None) -> pd.Series:
+    return df.groupby("tienda")["importe"].sum()
+
+precios = np.array([1.0, 2.0, 1299.0])
+q1, q3 = np.percentile(precios, [25, 75])
+print(reduce(lambda a, b: a + b, [1, 2, 3]), precios[precios > q3 + 3 * (q3 - q1)])
+fig, ax = plt.subplots()
+ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:,.0f} €"))
+fig.savefig("serie.png")
+'''
+
+
+@pytest.mark.parametrize("code", [AGENT_FIRST_CALL, CHART_AND_SUMMARY, TYPED_AND_STDLIB])
+def test_the_analysis_the_user_asked_for_runs_without_a_card(ws, code):
+    assert allows("python", code, ASK, ws)
+    assert allows("python", json.dumps({"code": code}), ASK, ws)
+
+
+def test_rerunning_it_may_rewrite_the_chart_it_just_made(ws):
+    open(os.path.join(ws, "facturacion_tiendas.png"), "wb").close()
+    assert allows("python", CHART_AND_SUMMARY, ASK, ws)
+
+
+def test_code_nobody_asked_for_keeps_the_card(ws):
+    assert not allows("python", AGENT_FIRST_CALL, "Hola, ¿qué tal?", ws)
+    assert not allows("python", AGENT_FIRST_CALL, ASK, "")
+
+
+@pytest.mark.parametrize("code", [
+    # other modules
+    "import os\nos.remove('ventas_junio.csv')",
+    "import subprocess\nsubprocess.run(['whoami'])",
+    "from pathlib import Path\nPath('app.py').write_text('x')",
+    "import urllib.request\nurllib.request.urlopen('x')",
+    "from . import thing",
+    "from pandas import *",
+    # reaching modules through the data libraries
+    "import pandas as pd\npd.io.common.os.remove('app.py')",
+    "import numpy as np\nnp.ctypeslib.load_library('x', '.')",
+    "import pandas as pd\npd._libs",
+    "import pandas as pd\nx = pd.__builtins__",
+    "import pandas as pd\n().__class__.__base__.__subclasses__()",
+    # dynamic lookups and evaluation
+    "import pandas as pd\ngetattr(pd, 'read_' + 'pickle')('x.pkl')",
+    "from operator import attrgetter\nattrgetter('io')(1)",
+    "import operator\noperator.methodcaller('remove', 'app.py')",
+    "eval('1+1')",
+    "exec('print(1)')",
+    "import pandas as pd\npd.eval('1+1')",
+    "import pandas as pd\ndf = pd.DataFrame()\ndf.query('a > 1')",
+    "print('{0.__class__}'.format(1))",
+    # files outside the workspace, or not named literally
+    "print(open('C:/Users/someone/.ssh/id_rsa').read())",
+    "print(open('/etc/passwd').read())",
+    "print(open('../secret.txt').read())",
+    "print(open('sub/../../secret.txt').read())",
+    "print(open('~/notes.txt').read())",
+    "print(open('\\\\\\\\server\\\\share\\\\x').read())",
+    "p = 'ventas_junio.csv'\nprint(open(p).read())",
+    "f = open\nprint(f('/etc/passwd').read())",
+    "import pandas as pd\nr = pd.read_csv\nr('/etc/passwd')",
+    "import numpy as np\nnp.load(p)",
+    "import pandas as pd\npd.read_csv('https://example.invalid/x.csv')",
+    "import pandas as pd\nargs = {'filepath_or_buffer': '/etc/passwd'}\npd.read_csv(**args)",
+    "import pandas as pd\nparts = ['/etc/passwd']\npd.read_csv(*parts)",
+    "import numpy as np\nnp.load('data.npy', allow_pickle=True)",
+    "import pandas as pd\npd.read_pickle('x.pkl')",
+    "from numpy import load\nload('/etc/passwd')",
+    # rebinding a module name so json.load stops meaning json
+    "import numpy as json\njson.load('/etc/passwd')",
+    "import json\nimport numpy as np\njson = np\njson.load('/etc/passwd')",
+    # writing over the user's own files
+    "with open('app.py', 'w') as f:\n    f.write('pwned')",
+    "import pandas as pd\npd.DataFrame().to_csv('ventas_junio.csv')",
+    "with open('run.bat', 'w') as f:\n    f.write('del *')",
+    "import matplotlib.pyplot as plt\nplt.savefig('C:/Windows/x.png')",
+    "m = 'w'\nopen('app.py', m).write('x')",  # a mode it cannot read counts as a write
+    # found by adversarial review of a first, deny-list version
+    "import pandas as pd\nh = pd.io.common.get_handle('/tmp' + '/x.txt', 'w')\nh.handle.write('x')",
+    "import numpy as np\nm = np.lib.format.open_memmap('/tmp' + '/m.npy', mode='w+', dtype='float64', shape=(2,))",
+    "import matplotlib\nmatplotlib.use('module:/' + '/antigravity')",
+    "import pandas as pd\npd.set_option('plotting.backend', 'antigravity')",
+    "import pandas as pd\npd.DataFrame({'a': [1]}).plot(backend='antigravity')",
+    "import pandas as pd\npd.read_excel('ventas.xlsx', engine='mymodule')",
+    "import matplotlib.pyplot as plt\nplt.style.use('ggplot')",
+    "import matplotlib.pyplot as plt\nplt.rcParams['backend'] = 'agg'",
+    # annotation strings evaluated at runtime (typing / singledispatch)
+    "import typing\ndef f(x: \"open('app.py','w').write('H')\"):\n    pass\ntyping.get_type_hints(f)",
+    "from typing import List\ndef f(x: List[\"exec(1)\"]):\n    pass",
+    "x: \"exec(1)\" = 1",
+    "def f() -> \"exec(1)\":\n    pass",
+    "import functools\ns = \"open('app.py','w').write('H')\"\n@functools.singledispatch\ndef base(x): pass\n"
+    "@base.register\ndef _(x: s): pass",
+    "from typing import get_type_hints",
+])
+def test_code_that_could_reach_past_the_workspace_keeps_the_card(ws, code):
+    assert not allows("python", code, ASK, ws)
+
+
+def test_a_workspace_file_named_like_an_allowed_module_keeps_the_card(ws):
+    with open(os.path.join(ws, "csv.py"), "w", encoding="utf-8") as fh:
+        fh.write("import os\n")
+    assert not allows("python", AGENT_FIRST_CALL, ASK, ws)

@@ -342,6 +342,357 @@ def _edits_the_project(user_text: str, content: Any, workspace: str = "", tool: 
     return True
 
 
+# "Analyse my sales CSV and make a chart" is code the user asked for. Seen
+# live: after reading the user's own CSV the first `python` call stopped at
+# the card, so the task could not start. Python is the widest door the gate
+# guards, so this matcher reads the code and lets it through only when every
+# name it reaches is on a list: a few standard modules, and for pandas,
+# numpy and matplotlib only the functions data work uses - not their I/O
+# internals (`pd.io`, `np.lib`), not backends or options that import modules
+# by name. No dunders, private attributes or lookups by string; annotations
+# only plain type names; every file it touches is a literal path inside the
+# workspace, and writes only create output files (a chart, a table, a
+# summary), never overwrite the user's. A first version listed what to
+# refuse instead; three rounds of adversarial review got past it through
+# `pd.io.common.get_handle`, `np.lib.format.open_memmap`,
+# `matplotlib.use("module://...")` and annotation strings evaluated by
+# `typing.get_type_hints` / `functools.singledispatch`. Anything not proven
+# safe keeps the card.
+_ASKS_FOR_DATA_WORK = re.compile(
+    r"\b(?:grafic\w*|chart\w*|plot\w*|analiz\w*|analisis|analy[sz]\w*|calcul\w*|estadistic\w*|statistic\w*"
+    r"|media|promedio|average|mean|suma|sum|totales|factur\w*|cifras|figures|numbers|numeros|datos|data"
+    r"|csv|excel|xlsx|informe|report|resumen|summary|ventas|sales)\b"
+)
+# Standard modules whose whole public surface is computation or works on
+# file objects `open()` already vetted.
+_OPEN_MODULES = frozenset({
+    "csv", "json", "math", "statistics", "collections", "datetime", "decimal", "fractions", "re",
+    "itertools", "operator", "string", "textwrap", "unicodedata", "calendar",
+    "enum", "random", "pprint", "heapq", "bisect",
+    "matplotlib.ticker", "matplotlib.dates",
+})
+# Libraries with I/O and import machinery inside: only these names.
+_LISTED_MODULES = {
+    "pandas": frozenset({
+        "DataFrame", "Series", "Index", "MultiIndex", "Categorical", "CategoricalDtype", "Timestamp",
+        "Timedelta", "Period", "NA", "NaT", "read_csv", "read_excel", "read_json", "read_parquet",
+        "read_table", "to_datetime", "to_numeric", "to_timedelta", "concat", "merge", "merge_asof",
+        "pivot", "pivot_table", "crosstab", "melt", "cut", "qcut", "date_range", "period_range",
+        "isna", "isnull", "notna", "notnull", "unique", "get_dummies", "factorize", "Grouper",
+        "IndexSlice", "DateOffset", "offsets", "NamedAgg",
+    }),
+    "numpy": frozenset({
+        "array", "asarray", "arange", "linspace", "zeros", "ones", "full", "empty", "eye", "mean",
+        "median", "average", "sum", "prod", "std", "var", "min", "max", "amin", "amax", "argmin",
+        "argmax", "round", "around", "abs", "absolute", "sqrt", "exp", "log", "log10", "log2",
+        "power", "where", "nan", "inf", "pi", "e", "isnan", "isfinite", "isinf", "nanmean",
+        "nansum", "nanmedian", "nanstd", "nanmin", "nanmax", "percentile", "quantile", "cumsum",
+        "cumprod", "diff", "sort", "argsort", "unique", "concatenate", "stack", "vstack", "hstack",
+        "clip", "histogram", "bincount", "corrcoef", "cov", "polyfit", "polyval", "floor", "ceil",
+        "trunc", "sign", "maximum", "minimum", "int32", "int64", "float32", "float64", "bool_",
+        "datetime64", "timedelta64", "random", "dot", "matmul", "transpose", "reshape", "ravel",
+        "count_nonzero", "any", "all", "allclose", "isclose", "digitize", "interp", "gradient",
+        "convolve", "repeat", "tile", "meshgrid", "ndarray", "dtype", "newaxis", "save", "savetxt",
+        "load", "loadtxt", "genfromtxt",
+    }),
+    "matplotlib": frozenset({"use", "pyplot", "ticker", "dates", "cm", "colors", "colormaps"}),
+    # `typing.get_type_hints` evaluates annotation strings: names only.
+    "typing": frozenset({
+        "Any", "Dict", "List", "Tuple", "Set", "Optional", "Union", "Iterable", "Iterator",
+        "Sequence", "Mapping", "Callable", "NamedTuple", "TypedDict", "Literal",
+    }),
+    "dataclasses": frozenset({"dataclass", "field", "fields", "asdict", "astuple"}),
+    # `singledispatch` evaluates annotations like `get_type_hints` does.
+    "functools": frozenset({"reduce", "partial", "lru_cache", "cache", "cmp_to_key", "total_ordering", "wraps"}),
+    "matplotlib.pyplot": frozenset({
+        "figure", "subplots", "subplot", "bar", "barh", "plot", "pie", "hist", "scatter", "boxplot",
+        "stackplot", "step", "fill_between", "errorbar", "title", "suptitle", "xlabel", "ylabel",
+        "xticks", "yticks", "xlim", "ylim", "legend", "grid", "text", "annotate", "axhline",
+        "axvline", "tight_layout", "savefig", "close", "gca", "gcf", "table", "colorbar", "twinx",
+        "figtext", "margins", "ticklabel_format", "subplots_adjust", "cm", "get_cmap", "bar_label",
+    }),
+}
+_NON_GUI_BACKENDS = frozenset({"agg", "svg", "pdf", "ps", "cairo"})
+_KNOWN_ENGINES = frozenset({"c", "python", "pyarrow", "openpyxl", "odf", "xlrd", "xlsxwriter", "calamine"})
+# Builtins and attribute names that evaluate code, look names up by string,
+# reach modules re-exported inside libraries, or hand out raw memory.
+_DYNAMIC = frozenset({
+    "eval", "exec", "compile", "getattr", "setattr", "delattr", "globals", "locals", "vars", "input",
+    "breakpoint", "help", "exit", "quit", "license", "memoryview", "attrgetter", "methodcaller",
+    "query", "open_code", "system", "popen", "ctypes", "ctypeslib", "DataSource",
+})
+_MODULE_ATTRS = frozenset({
+    "os", "sys", "subprocess", "shutil", "socket", "importlib", "builtins", "pickle", "marshal",
+    "urllib", "http", "request", "requests", "pathlib", "glob", "tempfile", "platform", "signal",
+    "threading", "multiprocessing", "asyncio", "webbrowser", "runpy", "code", "inspect", "gc",
+    "zipfile", "tarfile", "posix", "nt", "winreg", "msvcrt", "mmap", "pydoc", "io", "lib",
+    "clipboard", "clipboards", "sqlalchemy", "sqlite3", "rcParams", "rc", "rc_file", "style",
+    "switch_backend", "set_option", "options", "plotting", "api", "testing", "compat", "core",
+})
+_UNSAFE_FORMATS = frozenset({
+    "read_pickle", "to_pickle", "read_sql", "read_sql_query", "read_sql_table", "to_sql", "read_html",
+    "read_xml", "read_clipboard", "to_clipboard", "read_hdf", "to_hdf", "HDFStore", "to_gbq",
+    "read_gbq", "memmap", "ExcelWriter", "open_memmap", "get_handle",
+})
+_READ_CALLS = frozenset({
+    "read_csv", "read_excel", "read_json", "read_table", "read_parquet", "read_fwf", "read_feather",
+    "read_orc", "read_stata", "read_spss", "read_sas", "ExcelFile", "imread", "loadtxt", "genfromtxt",
+    "fromfile", "load",
+})
+_WRITE_CALLS = frozenset({
+    "to_csv", "to_excel", "to_json", "to_parquet", "to_feather", "to_markdown", "to_html", "to_latex",
+    "to_string", "to_stata", "to_xml", "to_orc", "savefig", "imsave", "savetxt", "tofile", "save",
+    "savez", "savez_compressed", "dump", "print_figure", "print_png", "print_pdf", "print_svg",
+})
+_PATH_KEYWORDS = frozenset({
+    "path", "path_or_buf", "path_or_buffer", "filepath_or_buffer", "fname", "file", "filename",
+    "excel_writer", "buf", "io",
+})
+_OUTPUT_SUFFIXES = (".png", ".jpg", ".jpeg", ".svg", ".pdf", ".html", ".md", ".txt", ".csv", ".xlsx", ".json")
+_RECENT_OUTPUT_S = 30 * 60
+
+
+def _literal_path(node: Any, workspace: str) -> Optional[str]:
+    """The absolute path a literal names inside the workspace, else None."""
+    import ast
+    import os
+
+    from src.tool_capabilities import path_inside_trusted
+
+    if not (isinstance(node, ast.Constant) and isinstance(node.value, str)) or not node.value.strip():
+        return None
+    raw = node.value.strip()
+    target = os.path.normpath(raw if os.path.isabs(raw) else os.path.join(workspace, raw))
+    return target if path_inside_trusted(workspace, target) else None
+
+
+def _writable_output(path: str) -> bool:
+    """A new output file, or one this task wrote minutes ago (a re-run)."""
+    import os
+    import time
+
+    if not path.lower().endswith(_OUTPUT_SUFFIXES):
+        return False
+    if not os.path.exists(path):
+        return True
+    return os.path.isfile(path) and time.time() - os.path.getmtime(path) < _RECENT_OUTPUT_S
+
+
+def _suspicious_string(value: str, workspace: str) -> bool:
+    import os
+
+    from src.tool_capabilities import path_inside_trusted
+
+    text = value.strip()
+    if "__" in text or "://" in text or text.startswith(("\\\\", "//", "~")):
+        return True
+    if re.search(r"(?:^|[\\/])\.\.(?:[\\/]|$)", text):
+        return True
+    if re.match(r"^(?:[A-Za-z]:[\\/]|/[A-Za-z0-9_.-]+/)", text):
+        return not path_inside_trusted(workspace, os.path.normpath(text))
+    return False
+
+
+def _workspace_shadows(module: str, workspace: str) -> bool:
+    import os
+
+    return (os.path.exists(os.path.join(workspace, module + ".py"))
+            or os.path.isdir(os.path.join(workspace, module)))
+
+
+def _code_of(content: Any) -> str:
+    if isinstance(content, Mapping):
+        return str(content.get("code") or content.get("content") or "")
+    text = str(content or "")
+    if text.lstrip().startswith("{"):
+        try:
+            import json
+
+            parsed = json.loads(text)
+            if isinstance(parsed, dict) and isinstance(parsed.get("code"), str):
+                return parsed["code"]
+        except ValueError:
+            pass
+    return text
+
+
+def _open_writes(call: Any) -> bool:
+    import ast
+
+    mode = call.args[1] if len(call.args) > 1 else next((k.value for k in call.keywords if k.arg == "mode"), None)
+    if mode is None:
+        return False
+    if not (isinstance(mode, ast.Constant) and isinstance(mode.value, str)):
+        return True  # a mode it cannot read counts as a write
+    return any(c in mode.value for c in "wax+")
+
+
+def _callee(node: Any) -> str:
+    import ast
+
+    return node.id if isinstance(node, ast.Name) else node.attr if isinstance(node, ast.Attribute) else ""
+
+
+_PLAIN_TYPES = frozenset({"int", "float", "str", "bool", "bytes", "list", "dict", "tuple", "set", "object"})
+
+
+def _unsafe_annotation(annotation: Any, type_names: set, modules: Optional[dict] = None) -> bool:
+    """An annotation is code in waiting: `typing.get_type_hints` and
+    `functools.singledispatch` evaluate strings in it. An adversarial review
+    ran shell commands through `def f(x: "exec(...)")`, then through `x: s`
+    with `s` holding that string. So annotations may only be plain type
+    names, names imported from `typing`, listed module names, and
+    subscripts or unions of those."""
+    import ast
+
+    if annotation is None:
+        return False
+    if isinstance(annotation, ast.Constant):
+        return annotation.value is not None
+    if isinstance(annotation, ast.Name):
+        return annotation.id not in _PLAIN_TYPES and annotation.id not in type_names
+    if isinstance(annotation, ast.Attribute) and isinstance(annotation.value, ast.Name):
+        module = (modules or {}).get(annotation.value.id)
+        return not (module and _module_allows(module, annotation.attr))
+    if isinstance(annotation, ast.Subscript):
+        inner = annotation.slice.elts if isinstance(annotation.slice, ast.Tuple) else [annotation.slice]
+        return _unsafe_annotation(annotation.value, type_names, modules) or any(
+            _unsafe_annotation(e, type_names, modules) for e in inner)
+    if isinstance(annotation, ast.BinOp) and isinstance(annotation.op, ast.BitOr):
+        return (_unsafe_annotation(annotation.left, type_names, modules)
+                or _unsafe_annotation(annotation.right, type_names, modules))
+    return True
+
+
+def _module_allows(module: str, name: str) -> bool:
+    if module in _LISTED_MODULES:
+        return name in _LISTED_MODULES[module]
+    return module in _OPEN_MODULES and not name.startswith("_")
+
+
+def _analyses_the_data(user_text: str, content: Any, workspace: str = "") -> bool:
+    import ast
+
+    from src import plugins as plugins_mod
+
+    if not workspace or not _ASKS_FOR_DATA_WORK.search(plugins_mod.fold(user_text)):
+        return False
+    try:
+        tree = ast.parse(_code_of(content))
+    except (SyntaxError, ValueError):
+        return False
+    known = _OPEN_MODULES | set(_LISTED_MODULES)
+    # Local name -> module it is bound to, from the imports.
+    modules: dict = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for a in node.names:
+                if a.name not in known:
+                    return False
+                if a.asname:
+                    modules[a.asname] = a.name
+                else:
+                    root = a.name.split(".")[0]
+                    if root not in known:
+                        return False
+                    modules[root] = root
+        elif isinstance(node, ast.ImportFrom):
+            if node.level or not node.module or node.module not in known:
+                return False
+            for a in node.names:
+                if a.name == "*" or not _module_allows(node.module, a.name):
+                    return False
+                sub = f"{node.module}.{a.name}"
+                if sub in known:
+                    modules[a.asname or a.name] = sub
+                elif a.name in _READ_CALLS | _WRITE_CALLS:
+                    return False  # `from numpy import load` would hide what is called
+    type_names = {a.asname or a.name for n in ast.walk(tree)
+                  if isinstance(n, ast.ImportFrom) and n.module == "typing" for a in n.names}
+    type_names |= {n.name for n in ast.walk(tree) if isinstance(n, ast.ClassDef)}
+    for mod in set(modules.values()):
+        if _workspace_shadows(mod.split(".")[0], workspace):
+            return False
+
+    def dotted(node: Any) -> Optional[str]:
+        if isinstance(node, ast.Name):
+            return modules.get(node.id)
+        if isinstance(node, ast.Attribute):
+            base = dotted(node.value)
+            return f"{base}.{node.attr}" if base else None
+        return None
+
+    file_callees = _READ_CALLS | _WRITE_CALLS | {"open"}
+    called = {id(n.func) for n in ast.walk(tree) if isinstance(n, ast.Call)}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name):
+            if "__" in node.id or node.id in _DYNAMIC:
+                return False
+            if isinstance(node.ctx, (ast.Store, ast.Del)) and node.id in modules:
+                return False  # rebinding a module name would defeat the lists
+            if node.id == "open" and id(node) not in called:
+                return False  # `f = open` would hide the call
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            if node.name in modules or _unsafe_annotation(getattr(node, "returns", None), type_names, modules):
+                return False
+        elif isinstance(node, ast.AnnAssign):
+            if _unsafe_annotation(node.annotation, type_names, modules):
+                return False
+        elif isinstance(node, ast.arg):
+            if node.arg in modules or _unsafe_annotation(node.annotation, type_names, modules):
+                return False
+        elif isinstance(node, ast.Attribute):
+            attr = node.attr
+            if attr.startswith("_") or attr in _DYNAMIC | _MODULE_ATTRS | _UNSAFE_FORMATS:
+                return False
+            base = dotted(node.value)
+            if base is not None and base in known and not _module_allows(base, attr):
+                return False
+            if base is not None and base not in known and base.split(".")[0] in known:
+                # An attribute of a listed name (`pd.DataFrame.from_dict`) is
+                # fine; a namespace below a module that is not listed is not.
+                parent = base.rsplit(".", 1)[0]
+                if parent in known and not _module_allows(parent, base.rsplit(".", 1)[1]):
+                    return False
+            if attr in file_callees and id(node) not in called:
+                return False  # `r = pd.read_csv` would hide the call
+        elif isinstance(node, (ast.Global, ast.Nonlocal)):
+            return False
+        elif isinstance(node, ast.Constant) and isinstance(node.value, (str, bytes)):
+            value = node.value.decode("latin-1") if isinstance(node.value, bytes) else node.value
+            if _suspicious_string(value, workspace):
+                return False
+        elif isinstance(node, ast.keyword):
+            if node.arg is None or node.arg in {"allow_pickle", "backend"}:
+                return False  # **kwargs could carry anything; backend= imports by name
+            if node.arg == "engine" and not (
+                    isinstance(node.value, ast.Constant) and str(node.value.value).lower() in _KNOWN_ENGINES):
+                return False
+        elif isinstance(node, ast.Call):
+            name = _callee(node.func)
+            if dotted(node.func) == "matplotlib.use":
+                arg = node.args[0] if node.args else None
+                if not (isinstance(arg, ast.Constant) and str(arg.value).lower() in _NON_GUI_BACKENDS):
+                    return False
+                continue
+            if any(isinstance(a, ast.Starred) for a in node.args) and name in file_callees:
+                return False
+            if name not in file_callees:
+                continue
+            receiver = dotted(node.func.value) if isinstance(node.func, ast.Attribute) else None
+            if name in {"load", "dump"} and receiver == "json":
+                continue  # json.load/dump take a file object from a vetted open()
+            paths = list(node.args[:1]) + [k.value for k in node.keywords if k.arg in _PATH_KEYWORDS]
+            if name == "open" and not paths:
+                return False
+            writes = name in _WRITE_CALLS or (name == "open" and _open_writes(node))
+            for p in paths:
+                target = _literal_path(p, workspace)
+                if target is None or (writes and not _writable_output(target)):
+                    return False
+    return True
+
+
 def _edit_matcher(tool: str) -> Callable[..., bool]:
     return lambda user_text, content, workspace="": _edits_the_project(user_text, content, workspace, tool)
 
@@ -353,6 +704,7 @@ MATCHERS: Dict[str, Callable[..., bool]] = {
     "manage_memory": _memory_read,
     "bash": _shell_matcher,
     "powershell": _shell_matcher,
+    "python": _analyses_the_data,
     "edit_file": _edit_matcher("edit_file"),
     "write_file": _edit_matcher("write_file"),
     "apply_patch": _edit_matcher("apply_patch"),
