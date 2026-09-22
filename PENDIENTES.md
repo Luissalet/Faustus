@@ -1069,3 +1069,20 @@ UI verification (browser, admin login), screenshots under D:\LocalAI\_claude_tmp
 - **El atajo global de Electron y la ventana oculta de grabación nunca se probaron end-to-end**: `desktop/dictation.cjs` y `desktop/dictation-recorder-preload.cjs` solo se probaron con `globalShortcut`/`BrowserWindow`/`net` inyectados y falsos (`desktop/dictation.test.cjs`, 7 pruebas) — nunca se abrió la app de escritorio real, se pulsó el atajo de verdad, ni se vio la ventana oculta pedir permiso de micrófono y grabar. La primera vez que se pida el permiso `media` en esa ventana aparecerá el diálogo de confirmación que ya usa el resto de la app (`desktop/main.cjs`'s `permissionRequest`) — necesita un clic humano una vez por sesión, no hay forma de saltárselo sin debilitar la política de permisos existente.
 - **El atajo es "pulsar para empezar / volver a pulsar para terminar", no mantener pulsado**: `globalShortcut` de Electron no distingue tecla-abajo de tecla-arriba multiplataforma sin un hook nativo de teclado de bajo nivel, que esta tarea no añadió (ninguna dependencia nueva). El texto de Configuración ya lo dice así, pero vale la pena confirmar con el dueño si el comportamiento real (toggle) es aceptable o si en algún momento merece la pena añadir esa dependencia para un push-to-talk de verdad.
 - **La tabla de formatos de portapapeles preservados es solo texto (`CF_UNICODETEXT`)**: si el portapapeles tenía una imagen, HTML enriquecido o una lista de archivos copiados antes de dictar, ese formato se pierde tras el pegado — el resultado lo señala en `note`, pero no se ha probado en vivo qué apps lo notan de forma molesta (p. ej. pegar una imagen copiada justo antes de dictar).
+
+## Dos pruebas de tool_serve fallan segun el orden de ejecucion
+
+`tests/test_tool_serve.py::test_search_by_query_hits_keyword_hints_without_embedder`
+y `::test_serve_returns_promote_list_and_schemas_for_named_tools` fallan en
+suite completa y tambien al ejecutar solo ese fichero, pero cada una pasa
+cuando se ejecuta sola. Verificado con `git stash` que no las provoca el
+cambio del tokenizador: fallan igual sin el.
+
+La primera devuelve la lista de herramientas de correo sin `send_email`; la
+segunda recibe un payload con `summary` pero sin `schema`. Las dos pintan a
+estado global de modulo que otra prueba del mismo fichero deja cambiado
+(probablemente el monkeypatch de `get_tool_index` o el catalogo de esquemas).
+
+Lo que hay que hacer no es re-pinear la asercion sino encontrar que prueba
+contamina a cual, y aislar ese estado en una fixture, como se hizo con
+`_BASH_PROBED`/`_BASH_CACHE` en `platform_compat`.

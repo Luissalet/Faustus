@@ -7139,3 +7139,89 @@ de reposo, el informe de respaldo, las acciones sobre reglas de memoria, el
 diálogo de crear repositorio. El check llevaba en rojo lo suficiente como
 para que dejara de leerse — la misma historia de la sección anterior, en
 pequeño.
+
+## Los conectores dejan de ser una lista escrita a mano
+
+Habia un diccionario de 153 lineas dentro de `src/connectors.py` con los
+cinco conectores que Faustus conocia, y otro literal paralelo en
+`src/connector_discovery.py` con las huellas para reconocerlos al escanear
+puertos. Anadir uno era tocar dos sitios y esperar que el segundo no se
+olvidara. Y jobhunter tenia ademas un caso especial escrito en el codigo
+para su URL de interfaz, porque cuando se escribio no habia donde ponerlo.
+
+Ahora cada conector es un manifiesto suyo, `plugins/<id>/plugin.json`, y
+tanto los presets como las huellas se leen de ahi. El caso especial de
+jobhunter desaparecio solo: era un campo que faltaba, no una excepcion.
+
+### Un manifiesto puede venir de la propia aplicacion
+
+Se leen tres sitios, en este orden: `plugins/` (lo que se distribuye),
+`<DATA_DIR>/plugins/` (lo instalado en esta maquina, que tapa a lo anterior
+con el mismo id y lo dice en vez de callarselo) y `faustus-plugin.json` en
+la carpeta de la propia aplicacion.
+
+El tercero es el que importa. Quien escribe una aplicacion sabe lo que
+expone y deberia poder declararlo en su repositorio sin mandar un parche
+aqui. Una aplicacion que esta escuchando y tiene ese fichero al lado se
+ofrece para conectar nada mas verla, con el formulario ya relleno.
+
+Las claves desconocidas se rechazan en vez de ignorarse: el manifiesto *es*
+el plugin, asi que una clave que no va a ninguna parte es una promesa que no
+se va a cumplir. Y los valores por defecto se escriben con la variable
+(`%APPDATA%/...`), nunca expandida — un manifiesto viaja, y una ruta
+expandida es la respuesta de una maquina a la pregunta de todas. Hay una
+prueba que rechaza cualquier ruta con pinta de carpeta de usuario en un
+manifiesto distribuido, porque ese error ya se cometio una vez.
+
+### Un plugin no es una parte de Faustus
+
+Son aplicaciones que se usan solas. Faustus se conecta a ellas como un
+procesador de textos se conecta a un asistente: el documento no pasa a ser
+del asistente.
+
+Lo que si puede hacer es levantarlas y ensenarlas, que es lo que se pide
+cuando se dice "abre eso". `plugins_list` lee la lista con su estado;
+`plugin_app` arranca, muestra, o las dos cosas. Con tres limites, cada uno
+con su prueba:
+
+- **Solo arranca desde un perfil de lanzamiento guardado.** Adivinar la
+  linea de comandos de la aplicacion de otro es como se acaba ejecutando el
+  binario equivocado con el nombre correcto. Sin perfil no arranca, y lo
+  dice.
+- **Una aplicacion que ya responde se adopta, no se reinicia.** La abrio su
+  dueno y puede tener trabajo abierto.
+- **Nada puede pararlas.** Parar sigue siendo un boton que pulsa una
+  persona. Un agente que puede cerrar una aplicacion que no abrio puede
+  cerrar el documento en el que estas escribiendo.
+
+Si la aplicacion no trae servidor MCP no hace falta que lo traiga: el puente
+`bridges/rest_mcp` convierte un OpenAPI — o una lista de endpoints escrita a
+mano — en herramientas.
+
+La guia para escribir uno esta en `docs/api/plugins.md`.
+
+## La busqueda de herramientas no entendia castellano
+
+Esta es la peor de las que se encontraron hablando con el, porque no fallaba
+ruidosamente: elegia otra herramienta y seguia.
+
+El indice de herramientas tiene dos carriles. Uno de vectores (fastembed,
+entrenado en ingles) y uno lexico (BM25). El codigo consultaba el lexico
+**solo cuando todos los carriles de vectores fallaban**. Es decir: el carril
+que entiende una sola lengua decidia solo, y el que si acertaba estaba de
+suplente.
+
+Medido con 17 consultas mezcladas: el carril de vectores solo acertaba 11,
+el lexico solo 15, y los dos fusionados por RRF 16. En el indice vivo la
+cuenta paso de 11/17 a 15/17, y en las consultas en castellano de 5/11 a
+9/11. Cuesta unos 30 ms por turno.
+
+Y debajo habia algo mas tonto todavia: el tokenizador bajaba a minusculas y
+quitaba una lista fija de signos ingleses, asi que `¿cuando` se quedaba
+pegado y `ultimas` con tilde y sin tilde eran dos palabras distintas. Ahora
+los signos se quitan por categoria Unicode y las tildes se pliegan con NFKD,
+con un atajo para ASCII para que el camino comun no pague nada.
+
+Arreglar el tokenizador destapo un fallo en la cabeza reservada del nivel
+hibrido: podia expulsar un acierto lexico fuerte que ya estaba dentro de la
+cabeza. Ahora solo se descartan documentos que el carril lexico no ranqueo.
