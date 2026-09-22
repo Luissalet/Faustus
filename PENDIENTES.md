@@ -12,7 +12,21 @@ Tercera tanda. Aquí hay dos que no eran «el test describe otra cosa» sino «e
 - CERRADO (003e4620): una regla del agente mejoró (ahora nombra `lookup_tools` en vez de «consulta el catálogo») y tumbó dos tests que fijaban la frase palabra por palabra.
 - CERRADO (8dc6810e): un test afirmaba **en qué posición** del diccionario de ajustes vive una clave. Nadie lo lee por posición; se rompió el día que alguien declaró otro ajuste en medio.
 
-- ABIERTO: `test_agent_bash_windows::test_bash_tool_returns_install_hint_when_git_bash_is_missing`. El test parchea `find_bash` a None y espera `exit_code 1` con la pista de instalación; llega un 4294901760, o sea que algo se ejecutó de verdad. `BashTool.execute` no pasa por donde el test cree. Puede ser un fallo real (en un Windows sin Git Bash, ¿recibe el usuario la pista o un código raro?) — hay que mirar `BashTool` antes de tocar nada.
+- CERRADO (09945826): era lo contrario de un fallo — `_on_host` ya no da la pista, ejecuta el comando por PowerShell. Los dos tests describían un producto que ya no existe. Reescritos contra lo que el código promete ahora.
+
+## 22-09 madrugada (4) — una pregunta de diseño para ti
+
+**ABIERTO, decisión tuya: `tool_approval_mode = auto` anula `desktop_control_mode = ask_each`.**
+
+En `src/tool_capabilities.py::decision_for`, la puerta por llamada de las acciones de escritorio (ratón y teclado) solo se consulta `if mode == "ask"`. Con el modo global en `auto` —que es como está esta instalación— una acción de escritorio se ejecuta sin confirmar, aunque `desktop_control_mode` diga `ask_each`.
+
+El comentario justo encima dice lo contrario de lo que hace el código: *"Per-call approvals come first: neither a task/chat-scope grant nor a clean run lets a desktop input action run unconfirmed"*. Enumera lo que la puerta vence, y el modo global no está en esa lista porque se decide antes.
+
+Las dos lecturas son defendibles:
+- `auto` significa "no me preguntes por herramientas", y punto.
+- `desktop_control_mode = ask_each` es una elección más específica y más reciente sobre un riesgo concreto, y debería ganar.
+
+No lo he tocado: cambia el comportamiento de seguridad de una instalación que corre en `auto` —la tuya— y esa es tu decisión, no mía. Lo encontré porque cinco tests de code mode fallaban leyendo tus ajustes reales.
 
 ## 22-09 noche (2) — bajando por los 74
 
