@@ -13566,6 +13566,57 @@ async def _stream_agent_loop_body(
         _ledger.stop_reason = "rounds_exhausted"
         yield f'data: {json.dumps({"type": "rounds_exhausted", "rounds": _rounds_budget})}\n\n'
 
+    # A29: the loop breaker ends the turn by itself, and every one of its
+    # exits `break`s straight out of the round loop. That is right -- a
+    # non-progressing turn must stop -- but it walked past the force-answer
+    # salvage on the way out and handed the user a blank reply after ten
+    # rounds of work. The conversation already holds every tool result, so
+    # ask once, without tools, for the answer they add up to; the canned line
+    # is only for when even that comes back empty.
+    if (_ledger.stop_reason == _LOOP_STOP_REASON
+            and not _strip_think_blocks(strip_tool_blocks(full_response)).strip()):
+        _answering = _pinned_fallback_candidate or (endpoint_url, model, headers)
+        _synth = ""
+        try:
+            from src.llm_core import llm_call_async as _llm_call_async
+            _synth_messages = list(messages) + [{
+                "role": "user",
+                "content": (
+                    "Stop. Using ONLY the information already gathered above, write "
+                    "the final answer for the user now. Do NOT call any tools, "
+                    "do NOT explain your reasoning — output the finished response "
+                    "directly. If the investigation did not get there, say plainly "
+                    "what you found, what is still unknown and what you would try next."
+                ),
+            }]
+            _raw = await _llm_call_async(
+                url=_answering[0], model=_answering[1], messages=_synth_messages,
+                headers=_answering[2], temperature=0.3, max_tokens=max_tokens, timeout=60,
+            )
+            _raw_text = _raw or ""
+            _synth = _strip_think_blocks(strip_tool_blocks(_raw_text)).strip()
+            usage_buckets.append(_usage_bucket(
+                round_num=round_num,
+                model=_answering[1],
+                endpoint_id=_round_actual_endpoint_id,
+                endpoint_label=_round_actual_endpoint_label,
+                endpoint_cost_tracked=actual_endpoint_cost_tracked,
+                input_tokens=estimate_tokens(_synth_messages),
+                output_tokens=max(len(_raw_text) // 4, 0),
+                usage_source="estimated",
+            ))
+        except Exception as _e:  # noqa: BLE001
+            logger.warning("[agent] loop-breaker synthesis failed: %s", _e)
+        _out = _synth or (
+            "I gathered some search results but couldn't pull a clean "
+            "answer together. Want me to try a more specific question, "
+            "or summarize what I did find?"
+        )
+        yield f'data: {json.dumps({"delta": _out})}\n\n'
+        full_response += _out
+        if round_texts:
+            round_texts[-1] = (round_texts[-1] or "") + _out
+
     # If the response is completely empty and no tools were executed,
     # yield a fallback message so the user is not left hanging.
     if _local_completion_unbounded and _looks_like_budget_exhausted_stop(
