@@ -758,6 +758,17 @@ _register(
     ToolEffect.WRITE_PRIVATE,
     result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED,
 )
+_register(
+    # Lot I: instincts (src/instincts.py, src/agent_tools/instinct_tools.py)
+    # — small learned behaviours in the owner's own JSON store under
+    # DATA_DIR. Same class as manage_skills/manage_notes/etc: a private
+    # multiplexed manager whose per-action read/write/destructive split is
+    # in _PRIVATE_ACTION_READS/_PRIVATE_ACTION_WRITES/_ACTION_DESTRUCTIVE
+    # below (capabilities_for_action classifies EXTERNAL_UNTRUSTED there —
+    # its own trigger/action text can quote past session content).
+    {"manage_instincts"},
+    ToolEffect.WRITE_PRIVATE,
+)
 
 
 TOOL_CAPABILITIES: Mapping[str, ToolCapabilities] = MappingProxyType(dict(_REGISTRY))
@@ -1194,6 +1205,7 @@ _PRIVATE_ACTION_READS: Mapping[str, frozenset[str]] = MappingProxyType(
         "manage_session": frozenset({"list", "switch", "open", "select", "view"}),
         "manage_skills": frozenset({"list", "index", "view", "view_ref", "search"}),
         "manage_tasks": frozenset({"list"}),
+        "manage_instincts": frozenset({"list", "view", "status", "export"}),
     }
 )
 
@@ -1221,6 +1233,9 @@ _PRIVATE_ACTION_WRITES: Mapping[str, frozenset[str]] = MappingProxyType(
         ),
         "manage_skills": frozenset({"add", "edit", "patch", "publish", "delete"}),
         "manage_tasks": frozenset({"create", "edit", "delete", "pause", "resume", "run"}),
+        "manage_instincts": frozenset(
+            {"confirm", "contradict", "add", "retire", "promote", "evolve", "import"}
+        ),
     }
 )
 
@@ -1241,6 +1256,7 @@ _ACTION_DESTRUCTIVE: Mapping[str, frozenset[str]] = MappingProxyType(
         "manage_tasks": frozenset({"delete"}),
         "manage_tokens": frozenset({"delete"}),
         "manage_webhooks": frozenset({"delete"}),
+        "manage_instincts": frozenset({"retire"}),
     }
 )
 

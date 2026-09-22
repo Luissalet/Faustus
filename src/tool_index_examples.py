@@ -1146,4 +1146,16 @@ EXAMPLES: Dict[str, List[str]] = {
         "move on to the next step of the plan",
         "continua implementando el plan",
     ],
+
+    # ── Instincts (Lot I) — learned per-project behaviours with confidence ─
+    "manage_instincts": [
+        "what have you learned about how I like this project set up",
+        "remember that I always want tests written before the fix",
+        "that instinct about routing was wrong, forget it",
+        "qué has aprendido de cómo trabajo en este proyecto",
+        "recuerda que siempre quiero que confirmes antes de borrar archivos",
+        "esa costumbre que aprendiste ya no aplica, retírala",
+        "turn what you've picked up into a reusable skill",
+        "show me the instincts you've picked up so far",
+    ],
 }

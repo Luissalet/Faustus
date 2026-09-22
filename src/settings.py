@@ -1390,6 +1390,31 @@ DEFAULT_SETTINGS = {
     # disk is never modified. Default OFF: existing indexes keep their
     # current chunk text until re-indexed with the flag on.
     "rag_pii_redaction": False,
+    # Lot I: instincts (src/instincts.py) -- small learned per-project
+    # behaviours mined from real sessions in the background. Master switch:
+    # when False, render_block/injection is skipped entirely (read at call
+    # time inside a try/except, so an unavailable settings store just means
+    # the feature is off, never a broken turn).
+    "instincts_enabled": True,
+    # Sub-switch for the background extraction pass specifically (the model
+    # call after a turn) -- lets an admin keep reading/injecting existing
+    # instincts while turning off further learning.
+    "instincts_extract_enabled": True,
+    # Minimum decayed (effective_confidence) an instinct needs to be
+    # injected into the prompt via render_block.
+    "instincts_inject_threshold": 0.7,
+    # Max instincts injected into one turn's prompt block.
+    "instincts_inject_max": 6,
+    # Max instincts a single background extraction pass may create/update
+    # from one turn.
+    "instincts_extract_max_per_turn": 3,
+    # promote(): an instinct id must be seen as scope="project" in at least
+    # this many DISTINCT projects before it is eligible to merge into one
+    # scope="global" record.
+    "instincts_promote_min_projects": 2,
+    # promote(): the mean effective_confidence across those project-scoped
+    # copies must be at least this high, too.
+    "instincts_promote_min_confidence": 0.8,
 }
 
 
