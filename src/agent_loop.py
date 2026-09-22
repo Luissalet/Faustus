@@ -2039,6 +2039,27 @@ def qwen38_long_run_notice(
     return _QWEN38_LONG_NOTICE
 
 
+def _conversational_turn(text: str) -> bool:
+    """Did the user say hello rather than ask for work?
+
+    The no-action nudge treats a prose-only reply as a shirked job whenever a
+    workspace is bound -- which is most of the time. That turned "hola" into
+    "your original request requires work in the active workspace", a second
+    round, and a greeting answered twice in one message, the two answers run
+    together mid-sentence because round 1's text is kept and round 2's is
+    appended to it.
+
+    The whitelist in `src/turn_effort.py` is deliberately narrow and shared
+    with the harness check that had the same problem, so the two agree on what
+    counts as a turn with nothing to do.
+    """
+    try:
+        from src.turn_effort import is_small_talk
+        return is_small_talk(text or "")
+    except Exception:  # noqa: BLE001 -- a nudge must never break a turn
+        return False
+
+
 def _looks_like_workspace_coding_request(text: str) -> bool:
     """Best-effort signal for when an active workspace should become code mode.
 
@@ -10982,6 +11003,13 @@ async def _stream_agent_loop_body(
                         )
                     )
                 )
+                # A bound workspace was enough on its own to make every
+                # prose-only reply look like a shirked job, so "hola" was told
+                # its "original request requires work in the active workspace"
+                # and sent back for another round. The round-1 text is kept and
+                # the round-2 text appended, so the user saw the greeting
+                # answered twice, run together mid-sentence.
+                and not _conversational_turn(_last_user)
             ):
                 _no_action_nudges += 1
                 _ledger.notes.append(f"no_action_nudge@{round_num}")
