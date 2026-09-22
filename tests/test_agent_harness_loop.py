@@ -188,6 +188,49 @@ def test_runaway_thinking_is_cut_off_and_retried_without_think(tmp_path, monkeyp
     assert summary["stop_reason"] == "complete"
 
 
+def test_a_server_that_refuses_images_gets_the_round_again_without_them(tmp_path, monkeypatch):
+    """Seen live: read_file attached a chart, llama-server without a projector
+    answered HTTP 500 "image input is not supported", and the turn ended with
+    no answer. The round is retried once with the images replaced by a note."""
+    png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+    _patch_common(monkeypatch, tool_result={
+        "output": "grafico.png: PNG image - attached so you can see it.", "exit_code": 0,
+        "images": [{"data": png, "mimeType": "image/png"}]})
+    monkeypatch.setattr(al, "model_supports_vision", lambda *a, **k: True, raising=False)
+    sent = []
+
+    def _has_image(messages):
+        return any(isinstance(m.get("content"), list) and any(
+            isinstance(b, dict) and b.get("type") in ("image_url", "image") for b in m["content"])
+            for m in messages)
+
+    async def _fake_stream(_candidates, messages, **kwargs):
+        sent.append([dict(m) for m in messages])
+        if _has_image(messages):
+            yield 'event: error\ndata: ' + json.dumps({
+                "status": 500, "text": "image input is not supported - hint: you may need to provide the mmproj"}) + "\n\n"
+            return
+        if len(sent) == 1:  # first round: look at the chart
+            yield f'data: {json.dumps({"delta": "```read_file" + chr(10) + "grafico.png" + chr(10) + "```"})}\n\n'
+            yield f'data: {json.dumps({"type": "finish", "finish_reason": "tool_calls"})}\n\n'
+            yield "data: [DONE]\n\n"
+            return
+        yield f'data: {json.dumps({"delta": "El gráfico está guardado; no puedo verlo, pero los datos son los del informe."})}\n\n'
+        yield f'data: {json.dumps({"type": "finish", "finish_reason": "stop"})}\n\n'
+        yield "data: [DONE]\n\n"
+    monkeypatch.setattr(al, "stream_llm_with_fallback", _fake_stream, raising=False)
+
+    events = _run(monkeypatch, str(tmp_path), user="Revisa el gráfico grafico.png", max_rounds=4)
+    assert any(e.get("reason") == "image_input_refused" for e in events if e.get("type") == "harness_check")
+    last = sent[-1]
+    assert not _has_image(last)
+    assert al.IMAGES_NOT_SHOWN in json.dumps(last, ensure_ascii=False)
+    text = "".join(e.get("delta", "") for e in events if "delta" in e and not e.get("type"))
+    assert "no puedo verlo" in text
+    summary = next(e for e in events if e.get("type") == "harness_summary")["data"]
+    assert summary["stop_reason"] == "complete"
+
+
 def test_local_workspace_turn_enables_thinking(tmp_path, monkeypatch):
     """Coding work on a local endpoint thinks by default so the transcript
     can show collapsed Thought Ns between tool groups."""

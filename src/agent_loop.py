@@ -3878,6 +3878,43 @@ def _recent_context_for_retrieval(messages: List[Dict], max_user: int = 3, max_c
     return "\n".join(collected)[:max_chars]
 
 
+_IMAGE_INPUT_REFUSED_RE = re.compile(
+    r"image input is not supported|mmproj|does not support (?:image|vision)|"
+    r"images? (?:are|is) not supported|vision is not (?:supported|enabled)|"
+    r"(?:image_url|multimodal)[^\"]{0,40}not supported",
+    re.IGNORECASE,
+)
+IMAGES_NOT_SHOWN = "[image not shown: this model cannot see images - rely on the text of the result]"
+
+
+def _image_input_refused(error_data: Any) -> bool:
+    """The server refused the request because it carried an image. Seen live:
+    llama-server without a projector answered HTTP 500 "image input is not
+    supported" to a chart attached from read_file, and the turn ended with
+    no answer."""
+    try:
+        text = json.dumps(error_data, ensure_ascii=False) if not isinstance(error_data, str) else error_data
+    except (TypeError, ValueError):
+        text = str(error_data)
+    return bool(_IMAGE_INPUT_REFUSED_RE.search(text))
+
+
+def _drop_tool_images(messages: List[Dict]) -> int:
+    """Replace every tool image in the conversation by a note; count them."""
+    from src.context_compactor import _is_tool_image_message
+
+    dropped = 0
+    for i, msg in enumerate(messages):
+        if not _is_tool_image_message(msg):
+            continue
+        blocks = [b for b in msg["content"]
+                  if not (isinstance(b, dict) and b.get("type") in ("image_url", "image", "input_image"))]
+        blocks.append({"type": "text", "text": IMAGES_NOT_SHOWN})
+        messages[i] = {**msg, "content": blocks}
+        dropped += 1
+    return dropped
+
+
 def _think_cutoff_note(reasoning: str, limit: int = 6000) -> str:
     """What the model had worked out when its thinking was cut, for the retry.
 
@@ -8334,6 +8371,10 @@ async def _stream_agent_loop_body(
     # from the degenerate regime and drop the untrusted-context blocks (the
     # loop is not something more context fixes).
     _degenerate_output_retried = False
+    # The server refused an image (a text-only model behind a server that
+    # does not say so): drop the images, retry the round once, and attach no
+    # more for the rest of the turn.
+    _images_refused = False
     # Recovery ladder (owner requirement, 18-09-2026): "a degenerate or
     # marker-only round must NEVER end the turn with an error message, if a
     # model is loaded". Once per turn — steps 2/3 of `_recovery_ladder`
@@ -9674,6 +9715,7 @@ async def _stream_agent_loop_body(
         _think_runaway = False
         _degenerate_output_hit = False
         _degenerate_output_reason = ""
+        _image_input_refused_now = False
         _round_actual_model = model
         _round_actual_endpoint_id = actual_endpoint_id
         _round_actual_endpoint_label = actual_endpoint_label
@@ -9875,6 +9917,13 @@ async def _stream_agent_loop_body(
                 ):
                     _degenerate_output_hit = True
                     _degenerate_output_reason = str(error_data.get("error") or "")[:200]
+                    break
+                if (
+                    not _images_refused
+                    and _image_input_refused(error_data)
+                    and round_num < max_rounds
+                ):
+                    _image_input_refused_now = True
                     break
                 # A clean empty completion is not a transport failure. The
                 # harness already nudges silent give-ups; treating this 502 as
@@ -10348,6 +10397,24 @@ async def _stream_agent_loop_body(
                     "type": "harness_check", "status": "think_cutoff", "round": round_num,
                     "seconds": round(_think_secs), "reasoning_chars": len(round_reasoning),
                     "budget_seconds": _think_budget_s,
+                }) + "\n\n"
+            )
+            yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
+            continue
+
+        if _image_input_refused_now:
+            _images_refused = True
+            _dropped_images = _drop_tool_images(messages)
+            logger.warning(
+                "[harness] round %s: the model refused image input — %d image(s) replaced by a "
+                "note, retrying without them", round_num, _dropped_images,
+            )
+            _ledger.notes.append(f"image_input_refused@{round_num}")
+            _rounds_budget += 1  # the retry must not eat the task's step budget
+            yield (
+                "data: " + json.dumps({
+                    "type": "harness_check", "status": "auto_continue",
+                    "reason": "image_input_refused", "round": round_num,
                 }) + "\n\n"
             )
             yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
@@ -13614,7 +13681,8 @@ async def _stream_agent_loop_body(
                              tool_result_records=tool_result_records,
                              model=_round_actual_model,
                              endpoint_url=(_pinned_fallback_candidate[0]
-                                           if _pinned_fallback_candidate else endpoint_url))
+                                           if _pinned_fallback_candidate else endpoint_url),
+                             tool_images_enabled=(False if _images_refused else None))
 
         # Progress discipline: a multi-step workspace task that is several tool
         # calls in without a todowrite list gets one nudge, so the Progress
