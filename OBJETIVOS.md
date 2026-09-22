@@ -732,3 +732,16 @@ que ser estable entre turnos o no se hace.
 
 Va después de la fase 2 del Context Engine (llevar el compilador al camino
 caliente detrás de la bandera), no antes.
+
+## OBJ-30 · Canvas de diseño antes de codificar — PRIMERA ENTREGA HECHA (22-09-2026)
+
+Las siete dimensiones (requisitos, entidades, enfoque, estructura, operaciones,
+normas, salvaguardas) como esquema forzado, guardadas en el grafo de conceptos.
+Ver FAUSTUS.md §160c. Hecho el módulo, la pasada, la skill y la verificación en
+vivo.
+
+**Lo que falta:** la herramienta de agente que lo llame (hoy hay que invocar
+`design_canvas_pass.draft` desde código), su registro en las cinco piezas que
+la paridad exige, y la vuelta al canvas al terminar la tarea para comprobar que
+el trabajo cumple lo que se diseñó — que es la mitad que le da sentido a
+guardarlo y enlaza con OBJ-28.

@@ -6,6 +6,9 @@ Actualizado: 22-09-2026. REGLA: nunca nombres de empresas/personas del buzÃ³n 
 
 - PREEXISTENTES (comprobados idénticos contra la base con `git stash` sobre `src/llm_core.py`): `tests/test_ollama_structured_output.py::test_local_v1_without_a_native_api_keeps_v1_and_sends_no_schema` y `::test_setting_off_restores_the_previous_request_byte_for_byte`. Los dos esperan que un Ollama `/v1` local cuyo `/api/show` no responde se quede en `/v1`, y lo que ocurre es que se reencamina a `/api/chat`. No es de este cambio; hay que mirar `_route_for_response_schema` y su prueba de identidad.
 - ABIERTO: los consumidores de OBJ-27. Hoy solo `auto_review`, `doubt_review` y `research_review` piden esquema. Los puntos de decisión que corren en cada turno — clasificación de intención, enrutado de modelo, selección de herramienta — siguen pidiendo texto libre y parseándolo con suerte. Falta inventariarlos (un sub-agente no pudo: `D:\LocalAI\faustus` no es carpeta conectada de la sesión, hay que hacerlo desde el shell de la máquina).
+- ABIERTO (OBJ-30): el canvas de diseño no tiene todavía herramienta de agente — hay que llamar a `design_canvas_pass.draft` desde código. Falta registrarla en las cinco piezas de la paridad y cerrar el ciclo: volver al canvas al acabar la tarea y comprobar que lo hecho cumple lo diseñado.
+- NOTA: la skill `design-before-code` vive en `data/skills/`, que está en .gitignore. Existe solo en esta máquina; si se quiere versionar, hay que decidir dónde.
+- ABIERTO: un modelo que piensa y una gramática no conviven. Si algún día se quiere razonamiento Y salida restringida en la misma pasada, hay que hacerlo en dos llamadas (pensar libre, luego rellenar), no en una.
 - NOTA: el esquema nunca viaja junto a `tools` en ninguno de los dos backends. Si alguna vez se quiere decodificación restringida dentro del bucle de agente, eso es un diseño nuevo, no un ajuste.
 
 ## 21-09 — motor parado a la vista y la tabla de traducciones como única fuente

@@ -6675,3 +6675,76 @@ tokens y milisegundos ahorrados.
 **Ficheros.** `src/llm_core.py`, `tests/test_llamacpp_structured_output.py`
 (nuevo), `docs/radar/2026-09-22.md` (nuevo), `OBJETIVOS.md`, `PENDIENTES.md`,
 `FAUSTUS.md`, `README.md`, `README.es.md`.
+## 160c. El canvas de diseño: siete cosas antes de escribir código (22-09-2026)
+
+**De dónde sale.** La metodología de spec del barrido del 22-09
+(`docs/radar/2026-09-22.md`): antes de generar código, declarar requisitos,
+entidades, enfoque, estructura, operaciones, normas y salvaguardas. En el
+original eso es una plantilla markdown y nada más — no hay mecanismo que
+compruebe que una sección se rellenó, así que un modelo que se salta las
+salvaguardas no recibe ninguna queja. Aquí las siete dimensiones son un
+esquema, y la decodificación restringida de §160b las vuelve estructurales: la
+gramática no tiene camino a la llave de cierre hasta que están las siete.
+
+**Hecho.** `src/design_canvas.py` (puro, sin red): `DIMENSIONS` es la tabla de
+la que salen el prompt y el esquema — añadir una dimensión la mete en los dos
+sin tocar nada más —, `canvas_schema()` es lo que va al cable, `validate()`
+comprueba lo que una gramática no puede, `referenced_paths()` saca las rutas de
+`structure`, `render()` lo pasa a markdown y `parse_response()` lo lee de vuelta
+(objeto pelado, o el primer objeto balanceado si el backend no decodificó bajo
+esquema). `src/design_canvas_pass.py` hace la pasada sin herramientas — mismo
+patrón que `auto_review`/`doubt_review`/`research_review`, y es el cuarto
+consumidor de OBJ-27 — y `file_as_concept()` lo guarda en el grafo de conceptos
+(§154) como `decision`, con las rutas de `structure` de refs. Eso da la
+obsolescencia gratis: en cuanto el diseño nombra un fichero que ya no existe,
+`stale_check` lo marca sin que nadie lo mantenga. La skill
+`design-before-code` es la que lo usa (vive en `data/`, fuera del repo).
+
+**A diferencia de una revisión, esta pasada NO falla abierta.** Una revisión que
+falla abierta cuesta un comentario perdido; un canvas vacío guardado como
+diseño es una mentira en el expediente que la siguiente sesión lee como
+asentada.
+
+**Tres hallazgos de ejecutarlo contra el 27B local, los tres ya en el código.**
+
+1. **El pensamiento y la gramática compiten por el mismo presupuesto.**
+   llama-server aplica la gramática solo al canal de contenido, así que el
+   modelo gastó los 1200 tokens razonando (5.542 caracteres), `finish_reason`
+   «length» y contenido **vacío** — devuelto como HTTP 200, que es la peor forma
+   que puede tomar un fallo, porque toda capa superior lo lee como una
+   respuesta sana que resulta estar en blanco. Con
+   `chat_template_kwargs: {enable_thinking: false}` la misma petición contestó
+   en 48 s con el objeto entero y la mitad de tokens. Pedirlo en el prompt
+   (`/no_think`) **no** funciona: el modelo razona igual. Ahora
+   `_suppress_thinking_under_grammar` lo apaga siempre que se adjunta un
+   esquema a un modelo que piensa — espejo del `think: False` que el camino de
+   Ollama /v1 ya hacía.
+2. **Los mínimos van en el validador, no en la gramática.** `minItems` y
+   `minLength` en el esquema convierten la máquina de estados en una en la que
+   el decodificador estuvo casi dos minutos antes de rendirse. El esquema
+   lleva forma; los suelos viven donde se pueden comprobar de verdad y
+   reportar campo por campo.
+3. **Una barra no es prueba de ruta.** La primera ejecución convirtió «medir el
+   coste token/latency» en un ref que habría quedado roto para siempre en el
+   grafo. Ahora se exige extensión: un ref que falta cuesta un poco de
+   cobertura, uno inventado cuesta la confianza en todos los informes de
+   obsolescencia.
+
+Y una lección de calibración: el primer suelo era «dos entradas en todas las
+dimensiones» y rechazó un canvas correcto cuya única entidad era la respuesta
+buena. Una regla lo bastante estricta como para rechazar trabajo bien hecho
+enseña a rellenar. Quedan dos en requisitos y salvaguardas — donde una sola
+entrada es la señal de que no se ha pensado — y una en el resto.
+
+**Verificado.** `tests/test_design_canvas.py` (nuevo, 30 pruebas) y las cuatro
+nuevas de supresión de pensamiento en
+`tests/test_llamacpp_structured_output.py`: 50 verdes en conjunto. **En vivo**
+contra el 27B real: las siete dimensiones con contenido real en 82 s
+(4 requisitos, 3 entidades, 584 caracteres de enfoque, 4 de estructura, 2
+operaciones, 3 normas, 3 salvaguardas) y rutas extraídas para los refs.
+
+**Ficheros.** `src/design_canvas.py` (nuevo), `src/design_canvas_pass.py`
+(nuevo), `src/llm_core.py`, `tests/test_design_canvas.py` (nuevo),
+`tests/test_llamacpp_structured_output.py`,
+`data/skills/general/design-before-code/SKILL.md` (fuera del repo),
+`FAUSTUS.md`, `OBJETIVOS.md`, `PENDIENTES.md`.
