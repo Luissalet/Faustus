@@ -424,13 +424,19 @@ export function Composer({
   const trySend = () => {
     if (uploads.hasPending()) return;
     flushDraft();
+    // `draftRef`, not `draft`: the ref is written synchronously on every
+    // keystroke while the state behind `draft` is a render behind. Typing
+    // quickly and pressing Enter in the same tick therefore sent the PREVIOUS
+    // value -- empty, on the first message of a conversation, so the turn
+    // silently never started and the composer just cleared itself.
+    const current = draftRef.current;
     if (busy && onSteer) {
-      const text = draft.trim();
+      const text = current.trim();
       if (!text) return;
       onSteer(text);
       return;
     }
-    onSend(draft);
+    onSend(current);
     if (docContext.length) setDocContext([]);
   };
 
