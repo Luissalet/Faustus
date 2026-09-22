@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import io
 import time
+import types
 import wave
 from typing import Any, Dict, Tuple
 
@@ -278,13 +279,24 @@ def test_expiry_in_the_past_is_rejected_at_register(own_consent_db):
     assert result["reason"] == "expiry_in_past"
 
 
-def test_expired_consent_is_not_valid_even_though_never_revoked(own_consent_db):
+def test_expired_consent_is_not_valid_even_though_never_revoked(own_consent_db, monkeypatch):
     """AUD10: 'un permiso vencido se comprueba antes de ejecutar, aunque el
     preflight anterior fuera válido' — is_valid() checks expiry live."""
-    consent_mod.register(OWNER, "Jane Doe", granted_by="bob", expires_at=time.time() + 0.05)
+    # The permit is registered with a real, generous window and then the
+    # clock is moved past it, which is what "expired" means for a permit
+    # nobody revoked. Sleeping through a 50ms window instead made the first
+    # assertion a race -- registering writes to sqlite, and on a loaded
+    # machine the window was already gone when it ran. (Registering one
+    # that is ALREADY expired is not an option: `register` refuses those,
+    # which the test above covers.)
+    expires_at = time.time() + 3600
+    consent_mod.register(OWNER, "Jane Doe", granted_by="bob", expires_at=expires_at)
     assert consent_mod.is_valid(OWNER, "Jane Doe") is True
-    time.sleep(0.15)
-    assert consent_mod.is_valid(OWNER, "Jane Doe") is False
+
+    monkeypatch.setattr(consent_mod, "time",
+                        types.SimpleNamespace(time=lambda: expires_at + 1))
+    assert consent_mod.is_valid(OWNER, "Jane Doe") is False, (
+        "expiry is checked live, not trusted from an earlier preflight")
 
 
 def test_register_bridges_into_media_consent(own_consent_db, tmp_path, monkeypatch):
