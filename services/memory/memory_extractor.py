@@ -18,6 +18,7 @@ import re
 from typing import Optional
 
 from src.memory import MemoryStoreUnreadable
+from services.memory.volatile_facts import volatile_reason
 
 logger = logging.getLogger(__name__)
 
@@ -409,6 +410,15 @@ async def extract_and_store(
                 continue
 
             if not fact_text or len(fact_text) < 5:
+                continue
+
+            # A snapshot of the workspace is not a fact about the person, and
+            # it is wrong by the next write. The extraction prompt already
+            # asks for durable facts; this is the guard that holds whatever
+            # the model answers. See services/memory/volatile_facts.py.
+            _volatile = volatile_reason(fact_text)
+            if _volatile:
+                logger.info("[memory-extract] dropped %r: %s", fact_text[:60], _volatile)
                 continue
 
             # Dedup: check vector similarity first (fast), then exact text match.
