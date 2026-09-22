@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {build} from 'esbuild';
+import {build, stop} from 'esbuild';
 async function module(path) {
   const built = await build({entryPoints:[path], bundle:true, platform:'node', format:'esm', write:false});
   return import(`data:text/javascript;base64,${Buffer.from(built.outputFiles[0].text).toString('base64')}`);
@@ -58,4 +58,9 @@ try {
   assert.equal(snapshots.at(-1)[0].error,'empty');
   assert.equal(queue.hasPending(), true);
 } finally { queue.dispose(); }
+// esbuild's JS API keeps a helper process alive until it is told to stop.
+// Without this the check printed its OK line and then never exited, so the
+// runner killed it at its timeout and reported a failure for a check that
+// had already passed.
+stop();
 console.log('ALL OK: clipboard representations, text preservation, previews, bounded uploads, retry, removal and session isolation');

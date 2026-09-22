@@ -20,6 +20,7 @@ export function createAttachmentUploads<T>(options: {
 }) {
   const entries = new Map<string, PendingAttachment>();
   const requests = new Map<string, AbortController>();
+  const timers = new Map<string, ReturnType<typeof setTimeout>>();
   let serial = 0, active = true, epoch = 0;
   const emit = () => { if (active) options.change([...entries.values()]); };
   const release = (entry: PendingAttachment) => { if (entry.preview) options.revoke(entry.preview); };
@@ -34,7 +35,12 @@ export function createAttachmentUploads<T>(options: {
       const ownEpoch = epoch;
       requests.set(entry.id, controller);
       let timedOut = false;
+      // Tracked, not just closed over: the watchdog is cleared when the
+      // upload settles, but an upload whose promise never settles -- a
+      // transport that swallows the abort -- would otherwise leave a 60s
+      // timer behind that fires on a conversation nobody is in any more.
       const timer = setTimeout(() => { timedOut = true; controller.abort(); }, 60000);
+      timers.set(entry.id, timer);
       const onProgress = (ratio: number) => {
         if (!active || epoch !== ownEpoch || !entries.has(entry.id)) return;
         entry.progress = Math.max(0, Math.min(1, ratio));
@@ -58,6 +64,7 @@ export function createAttachmentUploads<T>(options: {
         entry.error = timedOut ? options.timeoutMessage() : error instanceof Error ? error.message : String(error);
       }).finally(() => {
         clearTimeout(timer);
+        timers.delete(entry.id);
         if (epoch !== ownEpoch) return;
         requests.delete(entry.id);
         emit();
@@ -80,6 +87,8 @@ export function createAttachmentUploads<T>(options: {
       if (!entry) return;
       entries.delete(id);
       requests.get(id)?.abort();
+      clearTimeout(timers.get(id));
+      timers.delete(id);
       release(entry);
       emit();
     },
@@ -107,8 +116,9 @@ export function createAttachmentUploads<T>(options: {
     dispose() {
       active = false; ++epoch;
       for (const controller of requests.values()) controller.abort();
+      for (const timer of timers.values()) clearTimeout(timer);
       for (const entry of entries.values()) release(entry);
-      requests.clear(); entries.clear();
+      requests.clear(); entries.clear(); timers.clear();
     },
   };
 }
