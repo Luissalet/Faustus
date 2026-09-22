@@ -2,6 +2,18 @@
 
 Actualizado: 22-09-2026. REGLA: nunca nombres de empresas/personas del buzÃ³n de Luis en commits, docs, tests ni comentarios â€” ejemplos siempre ficticios. SÃ³lo trabajo vigente; quitar cada entrada al cerrarla.
 
+## 22-09 noche (3) — tests que no podían pasar
+
+Tercera tanda. Aquí hay dos que no eran «el test describe otra cosa» sino «el test no comprueba nada»:
+
+- CERRADO (2ba59191): `test_typed_choice.py` ponía `DEFAULT_SETTINGS["typed_choice_logprobs"]` e invalidaba las cachés. **Eso no cambia lo que responde `get_setting`**: una fila guardada gana a la tabla de valores por defecto, así que el test pedía una cosa y el código leía otra. Comprobado a mano: pones el default a True, invalidas, y `get_setting` sigue devolviendo False. El caso «off» pasaba por suerte (el valor real es False) y el «on» habría fallado hiciera lo que hiciera el código. La escalera de verificación nunca tuvo nada que ver: con un juez de prueba devuelve `layer 5` como debe.
+- CERRADO (1751c815): la guarda de alcance de `llm_verify()` llevaba en rojo con dos llamadas sin revisar (`src/engines.py`, `src/runner_providers.py`). Las dos son de lectura contra los mismos endpoints locales que ya estaban en la lista. Añadidas con su razón. **Lo peligroso de que una guarda así esté en rojo es que una de verdad se vería exactamente igual.**
+- CERRADO (2e2703b9): el evento SSE `cancelled` (lo emite `agent_loop` en cuatro sitios al pulsar Stop) no estaba en `docs/api/sse_events.json`. El otro que señalaba la guarda, `json_schema`, era un falso positivo mío de esta mañana — es el `response_format` que va al motor, no un evento del stream; a la lista de exclusiones con su forma.
+- CERRADO (003e4620): una regla del agente mejoró (ahora nombra `lookup_tools` en vez de «consulta el catálogo») y tumbó dos tests que fijaban la frase palabra por palabra.
+- CERRADO (8dc6810e): un test afirmaba **en qué posición** del diccionario de ajustes vive una clave. Nadie lo lee por posición; se rompió el día que alguien declaró otro ajuste en medio.
+
+- ABIERTO: `test_agent_bash_windows::test_bash_tool_returns_install_hint_when_git_bash_is_missing`. El test parchea `find_bash` a None y espera `exit_code 1` con la pista de instalación; llega un 4294901760, o sea que algo se ejecutó de verdad. `BashTool.execute` no pasa por donde el test cree. Puede ser un fallo real (en un Windows sin Git Bash, ¿recibe el usuario la pista o un código raro?) — hay que mirar `BashTool` antes de tocar nada.
+
 ## 22-09 noche (2) — bajando por los 74
 
 Segunda pasada completa de la suite, ya con los arreglos del día: **74 fallan, 20.804 pasan, 46:12** (venía de 93 / 20.766 / 53:42). Sigo mirándolos uno a uno.

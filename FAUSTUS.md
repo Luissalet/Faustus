@@ -7008,3 +7008,40 @@ PATHEXT, pasaba de largo y ejecutaba el ffmpeg real de la máquina, así que las
 afirmaciones eran sobre la instalación de quien lo corriera. Otro afirmaba que
 piper «no está en este entorno». Otro sigue lanzando Electron de verdad. Un
 test así no falla cuando el código se rompe: falla cuando cambias de máquina.
+
+## 164. Una suite roja no dice «está roto»: dice «nadie mira» (22-09-2026)
+
+Bajando de uno en uno por los fallos que quedaban, casi ninguno era un
+fallo del producto. Merece la pena nombrar las clases, porque se repiten y
+porque cada una envenena la suite de una manera distinta.
+
+**El test que no puede pasar.** `test_typed_choice.py` ponía
+`DEFAULT_SETTINGS["typed_choice_logprobs"]` e invalidaba las cachés. Eso no
+cambia lo que responde `get_setting`: una fila guardada gana a la tabla de
+valores por defecto. El caso «off» pasaba por suerte, porque el valor real
+coincidía; el «on» habría fallado hiciera lo que hiciera el código. Un test
+así es peor que no tener test: ocupa el sitio de uno que sí comprobaría algo.
+
+**El test que describe un producto que ya no existe.** Cinco fijaban el
+texto, los botones y el Escape de un diálogo de cierre que se quitó por
+decisión del dueño — `closeConfirmed()` lo dice en su primera línea: «No
+questions, ever». Llevaban en rojo desde entonces describiendo otra cosa.
+
+**El test que afirma sobre la máquina.** Cinco de media escribían un stub
+`ffmpeg` que Windows ni mira, y acababan afirmando cosas sobre el ffmpeg
+real de quien lo ejecutara. Otro decía que piper «no está en este entorno».
+Otro afirma la posición de una clave dentro de un diccionario. Ninguno falla
+cuando el código se rompe: fallan cuando cambias de ordenador.
+
+**El test escrito contra el texto del código.** `lazy()` pasó a
+`lazyChunk()`, una regla del agente mejoró para nombrar `lookup_tools` en
+vez de decir «consulta el catálogo», el ping de warm-up empezó a llevar las
+`options` del runner residente. Tres cambios buenos, seis tests en rojo, y
+ninguno de ellos sobre lo que el test protegía.
+
+Y una guarda que sí importaba: la de alcance de `llm_verify()` llevaba en
+rojo señalando dos llamadas que nadie había revisado. Resultaron legítimas.
+Lo grave es lo otro: **mientras esa guarda está en rojo, una llamada de
+verdad indebida se vería exactamente igual.** Ahí está el coste real de
+convivir con noventa y tres fallos: no es el trabajo de arreglarlos, es que
+dejan de significar nada, y entonces el que importa pasa desapercibido.
