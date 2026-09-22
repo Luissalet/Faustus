@@ -1,4 +1,16 @@
-"""Lote 28 - ACT-04: closing the window explains what it costs.
+"""Closing the window: what it decides, now that it no longer asks.
+
+SINCE 22-09-2026: the dialog described below is GONE. `closeConfirmed()`
+says so in its own first line -- "No questions, ever (the owner's rule)":
+the X parks the window in the tray, and Quit from the tray is what closes
+it and stops a server this window started. Five tests here went on pinning
+that dialog's wording, buttons and Escape default long after it was
+removed; they were rewritten to check the decision the function actually
+makes. The history below is kept because it explains WHY the decision
+still distinguishes an owned server from a shared one, which is the part
+that survived.
+
+Lote 28 - ACT-04 (historical): closing the window explains what it costs.
 
 Before this change `action==='close'` in `desktop/main.cjs` closed the window
 immediately, with no distinction between a window that owns its own local
@@ -70,69 +82,50 @@ def test_keeping_the_server_clears_ownedtoken_before_the_window_closes():
     assert keep_at < close_at, "clearing ownedToken must happen before the window closes"
 
 
-def test_the_dialog_names_ownedtoken_and_both_consequences_bilingually():
-    """The whole point is telling the two situations (and the two islands of
-    action the resulting decision splits into) apart, not just asking."""
+def test_closing_never_asks():
+    """The owner's rule, written into `closeConfirmed` itself: "No
+    questions, ever". The X parks the window in the tray; Quit from the
+    tray is what closes it.
+
+    Five tests here used to pin the wording, the buttons and the Escape
+    default of a native dialog that this function no longer opens. They had
+    been red ever since it was removed, describing a product that is not
+    the one that ships. What replaced them is the decision the function
+    actually makes.
+    """
     body = _close_confirmed_body()
-    assert "ownedToken" in body
-    for needle in (
-        # non-owned (shared server) case
-        "does not stop that server",
-        "the turn keeps running there",
-        "detiene",
-        "sigue en el servidor",
-        # owned case: names what a stop interrupts, in both languages
-        "task", "tarea",
-        "in progress", "en marcha",
-        "Keep the server running",
-        "Mantener el servidor",
-    ):
-        assert needle in body, f"missing consequence text: {needle!r}"
+    assert "showMessageBox" not in body
+    assert "dialog." not in body
 
 
-def test_owned_dialog_offers_keep_and_stop_as_distinct_choices():
+def test_an_owned_server_stops_and_a_shared_one_is_left_alone():
+    """`ownedToken` is set only when THIS instance started the server, so
+    it is the whole difference between killing a server and walking away
+    from one somebody else is on."""
     body = _close_confirmed_body()
-    assert "Keep the server running / Mantener el servidor" in body
-    assert "Close and stop the server / Cerrar y detener el servidor" in body
-    assert "response===2?'stop':response===1?'keep':'cancel'" in body
+    assert "return ownedToken?'stop':'close'" in body
 
 
-def test_declining_the_dialog_is_the_safe_default_when_the_server_is_owned():
-    """Destroying your own server (or, now, silently detaching from it) is
-    the one outcome that should need an explicit click, never a stray
-    Enter/Escape - both default to Cancel."""
+def test_secondary_windows_the_splash_and_the_smoke_run_just_close():
+    """These three never own the server, and the smoke run has nobody to
+    click anything. They resolve to a plain close before `ownedToken` is
+    even consulted."""
     body = _close_confirmed_body()
-    assert body.count("cancelId:0") == 2, "both the owned and non-owned dialogs must cancel by default on Escape"
-    # The owned dialog (three buttons) defaults its Enter/primary action to Cancel too.
-    owned_dialog = body[body.index("const count=await activeTaskCount()"):]
-    assert re.search(r"defaultId\s*:\s*0\s*,\s*\n\s*cancelId\s*:\s*0", owned_dialog), (
-        "when the server is owned, the default button must be Cancel (index 0)"
-    )
-
-
-def test_best_effort_task_count_degrades_to_unknown_rather_than_blocking():
-    """A failed /api/queue read must not stop the dialog from opening, and
-    must not be misreported as "nothing in progress"."""
-    assert "async function activeTaskCount(" in MAIN_CJS
-    fn = MAIN_CJS[MAIN_CJS.index("async function activeTaskCount("):]
-    fn = fn[: fn.index("\nasync function closeConfirmed")]
-    assert "/api/queue" in fn
-    assert "catch{return null;}" in fn
-    body = _close_confirmed_body()
-    assert "count===null" in body, "an unknown count must be its own branch, not folded into count>0/count===0"
-
-
-def test_smoke_test_and_splash_and_secondary_windows_skip_the_dialog():
-    """These three must keep closing exactly as before this lote: smoke.cjs
-    scripts the close with nothing able to click a native dialog, and the
-    splash screen's own text already promises an instant cancel."""
-    body = _close_confirmed_body()
-    guard = body[: body.index("\n  const owned")]
+    guard = body[: body.index("return ownedToken")]
     assert "target!==mainWindow" in guard
     assert "senderUrl===splash" in guard
     assert "'--smoke-test'" in guard
-    assert "return 'close'" in guard, "the skip path must still resolve to a close decision, not a bare true"
+    assert "return 'close'" in guard
 
+
+def test_every_decision_is_one_the_handler_knows():
+    """The handler branches on 'cancel', 'keep' and 'stop', and treats
+    anything else as a plain close. Nothing returns 'cancel' or 'keep'
+    today, which is fine -- but a fourth word would be swallowed in
+    silence, so pin the vocabulary rather than the count."""
+    words = set(re.findall(r"'(cancel|keep|stop|close|[a-z]+)'", _close_confirmed_body()))
+    unexpected = words - {"cancel", "keep", "stop", "close", "question"}
+    assert not unexpected, f"closeConfirmed can return something the handler does not know: {unexpected}"
 
 def test_close_action_list_and_bridge_shape_are_unchanged():
     """SEC lote 16 (tests/test_sec_lote16_sec07_electron.py) pins this exact
