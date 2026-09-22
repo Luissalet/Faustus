@@ -49,10 +49,31 @@ def test_these_are_not_answers(text):
 # ---------------------------------------------------------------------------
 
 def test_six_characters_of_reasoning_are_not_a_reply():
-    """"/umd``" has letters in it, so no rule about shape catches it. What
-    catches it is length: a model that puts its answer in the reasoning
-    channel writes sentences, not six characters."""
+    """"/umd``" has letters in it, so `empty_completion` does not catch it.
+    What catches it is that it is ONE unbroken token and a short one: a model
+    that puts its answer in the reasoning channel writes words with spaces
+    between them."""
     assert llm_core.reasoning_as_answer("/umd``") == ""
+    assert llm_core.reasoning_as_answer("aaaaaaaaaaaaaaaaaaaa") == ""
+
+
+@pytest.mark.parametrize("text", [
+    "Yes, already fixed.",
+    "Sí, ya está arreglado.",
+    "async reasoning text",
+    "2 + 2 = 4",
+])
+def test_a_short_reply_is_still_a_reply(text):
+    """Length alone was the first rule and it was too blunt: it threw away
+    answers that are simply short. Several words is a reply at any length."""
+    assert llm_core.reasoning_as_answer(text) == text
+
+
+def test_a_long_single_token_is_allowed_through():
+    """A URL or a base64 blob on its own is unusual but not malformed, and it
+    is long enough not to be the six characters of a sick slot."""
+    blob = "https://example.invalid/a/very/long/path/that/keeps/going/and/going"
+    assert llm_core.reasoning_as_answer(blob) == blob
 
 
 def test_a_real_reasoning_answer_still_comes_through():

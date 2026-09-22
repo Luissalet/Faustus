@@ -967,12 +967,30 @@ def _get_cached_response_model(cache_key: str) -> Optional[str]:
 #: first version of this rule threw it away as punctuation.
 _ANSWER_RE = re.compile(r"[0-9A-Za-z{}\[\]À-ɏͰ-῿぀-퟿]")
 
-#: Below this, a reasoning channel is a leftover rather than an answer. A
-#: healthy model that puts its answer there writes sentences; a backend whose
-#: slot has gone bad emits a handful of characters -- measured on this
-#: machine: content "", reasoning "/umd``", three tokens, 0.8 s, the same
-#: bytes on every request while the prompt cache kept growing.
+#: Below this, a SINGLE-WORD reasoning channel is a leftover rather than an
+#: answer. A healthy model that puts its answer there writes sentences; a
+#: backend whose slot has gone bad emits a handful of characters -- measured
+#: on this machine: content "", reasoning "/umd``", three tokens, 0.8 s, the
+#: same bytes on every request while the prompt cache kept growing.
+#:
+#: Length alone was the first rule and it was too blunt: it threw away short
+#: but perfectly well-formed answers ("Sí, ya está arreglado."), which
+#: tests/test_llm_core_reasoning_content_fallback.py caught. What separates
+#: "/umd``" from a real reply is not length but shape -- a reply is words
+#: with spaces between them. So: several words is an answer at any length,
+#: and a single token has to be long enough to be a sentence's worth.
 MIN_REASONING_AS_ANSWER = 40
+
+#: Runs of letters or digits. A phrase is whitespace plus two or more of
+#: these -- kept as two cheap checks rather than one clever pattern, because
+#: "2 + 2 = 4" separates its words with punctuation and a single
+#: `\s`-joined pattern quietly rejected it.
+_REASONING_WORD_RE = re.compile(r"[0-9A-Za-zÀ-ɏͰ-῿぀-퟿]+")
+
+
+def _reads_like_a_phrase(text: str) -> bool:
+    """Whitespace, and at least two words around it."""
+    return any(ch.isspace() for ch in text) and len(_REASONING_WORD_RE.findall(text)) >= 2
 
 
 def empty_completion(text: Optional[str]) -> bool:
@@ -988,15 +1006,22 @@ def empty_completion(text: Optional[str]) -> bool:
 
 
 def reasoning_as_answer(reasoning: Optional[str]) -> str:
-    """The reasoning channel, but only when it is long enough to be a reply.
+    """The reasoning channel, but only when it reads like a reply.
 
     Falling back to the reasoning channel exists for models that put their
-    whole answer there, and those write sentences. Taking it unconditionally
-    is how six characters of punctuation from a sick engine reached the user
-    as though the model had said it.
+    whole answer there. Taking it unconditionally is how six characters of
+    punctuation from a sick engine reached the user as though the model had
+    said it.
+
+    A phrase -- two or more words with whitespace between them -- is a reply
+    at any length; "Yes, fixed." is a complete answer. A single unbroken
+    token has to reach `MIN_REASONING_AS_ANSWER` before it counts, which is
+    what keeps "/umd``" out without throwing away short real answers.
     """
     text = str(reasoning or "").strip()
-    if empty_completion(text) or len(text) < MIN_REASONING_AS_ANSWER:
+    if empty_completion(text):
+        return ""
+    if not _reads_like_a_phrase(text) and len(text) < MIN_REASONING_AS_ANSWER:
         return ""
     return text
 
