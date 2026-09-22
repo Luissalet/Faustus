@@ -1488,6 +1488,16 @@ def _suppress_thinking_for_small_talk(payload: Dict, model: str,
     """
     if not _supports_thinking(model):
         return False
+    # An explicit ask wins over a heuristic. `gen_overrides={"think": True}`
+    # is somebody saying "think about this one", and it is applied to the
+    # payload before this runs; a whitelist that then turned the reasoning
+    # back off would be overruling the person who asked for it. Caught by
+    # tests/test_llm_core_temperature_reasoning.py, which sends "hi" -- small
+    # talk by every rule here -- with think=True on purpose.
+    if (payload.get("chat_template_kwargs") or {}).get("enable_thinking") is True:
+        return False
+    if payload.get("think") is True or payload.get("reasoning_budget"):
+        return False
     try:
         from src.turn_effort import wants_reasoning
         if wants_reasoning(messages, tools=tools):
