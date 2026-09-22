@@ -115,3 +115,27 @@ def test_catalog_entry_without_schema_is_tiny():
     entry = catalog_entry("read_file", detail="catalog")
     assert set(entry) == {"name", "summary"}
     assert "schema" not in entry
+
+
+def test_keyword_hits_do_not_depend_on_the_hash_seed():
+    """The hint values are sets; ranked by iteration order, `send_email` was
+    inside the first eight for "send an email to Alex" on some interpreters
+    and not on others. Several seeds, one fresh process each."""
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    code = ("from src.tool_serve import _keyword_hits; "
+            "print(','.join(_keyword_hits('send an email to Alex')))")
+    seen = set()
+    for seed in ("0", "1", "7", "123"):
+        out = subprocess.run(
+            [sys.executable, "-c", code], cwd=str(Path(__file__).resolve().parents[1]),
+            env=dict(os.environ, PYTHONHASHSEED=seed),
+            capture_output=True, text=True, timeout=120,
+        )
+        assert out.returncode == 0, out.stderr[-1500:]
+        seen.add(out.stdout.strip())
+    assert len(seen) == 1, seen
+    assert seen.pop().split(",")[0] == "send_email"

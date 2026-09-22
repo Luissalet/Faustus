@@ -156,20 +156,32 @@ def compact_catalog_block(
 
 
 def _keyword_hits(query: str) -> List[str]:
+    """Tools a keyword hint names for ``query``, best first.
+
+    The hint values are sets, and the caller truncates to ``k``: taken in
+    iteration order, which of the thirteen email tools made the cut for
+    "send an email to Alex" changed from one interpreter to the next (string
+    hashing is salted per process), so `send_email` was in the list on some
+    runs and not on others. Ranked instead: a tool whose own name repeats
+    more of the query's words comes first ("send" + "email" → `send_email`),
+    then the order of the hint groups, then the name.
+    """
     if not query.strip():
         return []
     try:
         from src.tool_index import ToolIndex
         ql = query.lower()
-        hits: List[str] = []
-        seen: Set[str] = set()
-        for keywords, tools in ToolIndex._KEYWORD_HINTS.items():
+        # Words of three letters or more: "to" would otherwise tie
+        # `reply_to_email` with `send_email` for "send an email to Alex".
+        words = {w for w in re.findall(r"[a-z0-9]+", ql) if len(w) >= 3}
+        rank: Dict[str, tuple] = {}
+        for group, (keywords, tools) in enumerate(ToolIndex._KEYWORD_HINTS.items()):
             if any(re.search(rf"\b{re.escape(kw)}\b", ql) for kw in keywords):
                 for name in tools:
-                    if name not in seen:
-                        seen.add(name)
-                        hits.append(name)
-        return hits
+                    if name not in rank:
+                        overlap = len(words & set(name.lower().split("_")))
+                        rank[name] = (-overlap, group, name)
+        return sorted(rank, key=rank.__getitem__)
     except Exception:
         logger.debug("tool catalog: keyword hints unavailable", exc_info=True)
         return []
