@@ -1,6 +1,12 @@
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+# A test that blocks forever is worse than a failing one: it hides every
+# result behind it and burns a worker until someone kills the run by hand.
+# 120 s is far above the slowest honest test here and still bounds the suite.
+# `thread` is the only method that works on Windows (`signal` needs SIGALRM).
+timeout = 120
+timeout_method = "thread"
 # Test-taxonomy markers added at collection time by tests/conftest.py. The
 # stable area_* markers are declared here; the dynamic sub_<filename-token>
 # markers are registered before collection by pytest_configure in
