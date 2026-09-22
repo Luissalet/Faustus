@@ -30,17 +30,53 @@ import { t } from '../../i18n';
  * uses, so a person can sanity-check what the agent would retrieve.
  */
 
-const KIND_COLORS: Record<string, string> = {
-  feature: '#6c8cff',
-  module: '#3ecf8e',
-  pattern: '#f5a623',
-  config: '#b980f0',
-  decision: '#ff6b6b',
-  component: '#4dd0e1',
+/* The six kinds, the fallback for one nobody has named yet, and the two
+   things the canvas draws that are not a node, all as tokens
+   (studio/src/styles/tokens.css).
+
+   They were literals here, so this panel kept drawing dark-theme colours
+   in light mode -- pale labels on a near-white surface, which is to say
+   invisible. A canvas cannot use a CSS variable, so read them off the
+   element once per paint; `getComputedStyle` resolves whichever theme is
+   in force, and the draw effect already reruns on everything that changes.
+
+   There is deliberately no literal fallback for any of these. A fallback
+   would be a second copy of a token, drifting quietly from the first --
+   which is the whole reason tokens.css exists. A style the browser cannot
+   resolve is simply not set, leaving the canvas default; that only happens
+   if the stylesheet failed to load, and then nothing on the page is
+   styled anyway. */
+const KIND_VARS = ['feature', 'module', 'pattern', 'config', 'decision', 'component'] as const;
+
+type GraphPalette = {
+  kind: Record<string, string>;
+  unknown: string;
+  edge: string;
+  label: string;
+  selected: string;
 };
 
-function kindColor(kind: string): string {
-  return KIND_COLORS[kind] ?? '#9aa3b2';
+function readPalette(element: Element | null): GraphPalette {
+  const style = element ? getComputedStyle(element) : null;
+  const read = (name: string) => (style?.getPropertyValue(name) || '').trim();
+  const kind: Record<string, string> = {};
+  for (const name of KIND_VARS) kind[name] = read(`--fs-kind-${name}`);
+  return {
+    kind,
+    unknown: read('--fs-kind-unknown'),
+    edge: read('--fs-graph-edge'),
+    label: read('--fs-graph-label'),
+    // The ring around the selected node has to read against the node's own
+    // colour, not against the page, so it borrows the surface behind it all
+    // -- which flips with the theme, so the ring stays visible in both.
+    selected: read('--fs-canvas'),
+  };
+}
+
+/** Canvas ignores an empty style, which would silently keep the previous
+ *  one; skip the draw instruction instead of passing a blank. */
+function paint(ctx: CanvasRenderingContext2D, key: 'fillStyle' | 'strokeStyle', value: string) {
+  if (value) ctx[key] = value;
 }
 
 interface LaidOutNode extends Concept {
@@ -174,7 +210,8 @@ function GraphCanvas({
     ctx.scale(dpr, dpr);
     ctx.clearRect(0, 0, size.width, size.height);
 
-    ctx.strokeStyle = 'rgba(148, 163, 184, 0.35)';
+    const palette = readPalette(canvas);
+    paint(ctx, 'strokeStyle', palette.edge);
     ctx.lineWidth = 1;
     for (const e of graph.edges) {
       const a = byId.get(e.src);
@@ -189,15 +226,15 @@ function GraphCanvas({
     for (const n of nodes) {
       const r = 6 + Math.min(14, (n.degree ?? 0) * 2.5);
       ctx.beginPath();
-      ctx.fillStyle = kindColor(n.kind);
+      paint(ctx, 'fillStyle', palette.kind[n.kind] || palette.unknown);
       ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
       ctx.fill();
       if (n.id === selectedId) {
         ctx.lineWidth = 2;
-        ctx.strokeStyle = '#ffffff';
+        paint(ctx, 'strokeStyle', palette.selected);
         ctx.stroke();
       }
-      ctx.fillStyle = 'rgba(226, 232, 240, 0.92)';
+      paint(ctx, 'fillStyle', palette.label);
       ctx.font = '11px sans-serif';
       ctx.fillText(n.name, n.x + r + 4, n.y + 4);
     }
@@ -278,7 +315,14 @@ function ConceptDetailPanel({
       <header>
         <h4>{detail.name}</h4>
         <div className="fs-ctx__concepts-meta">
-          <span className="fs-badge" style={{ background: kindColor(detail.kind) }}>{detail.kind}</span>
+          {/* The badge is ordinary DOM, so it can take the variable straight
+              and follow the theme without any of the canvas gymnastics. */}
+          <span
+            className="fs-badge"
+            style={{ background: `var(--fs-kind-${detail.kind}, var(--fs-kind-unknown))` }}
+          >
+            {detail.kind}
+          </span>
           <StaleBadge stale={stale} />
         </div>
       </header>
@@ -431,7 +475,7 @@ export function ConceptsPanel({ workspace, projectId }: { workspace: string; pro
           {searchResult.map((c) => (
             <li key={c.id}>
               <button type="button" onClick={() => setSelectedId(c.id)}>
-                <span className="fs-badge" style={{ background: kindColor(c.kind) }}>{c.kind}</span>
+                <span className="fs-badge" style={{ background: `var(--fs-kind-${c.kind}, var(--fs-kind-unknown))` }}>{c.kind}</span>
                 {c.name} — {c.summary}
               </button>
             </li>
@@ -473,7 +517,7 @@ export function ConceptsPanel({ workspace, projectId }: { workspace: string; pro
       <p className="fs-muted fs-ctx__concepts-kinds">
         {CONCEPT_KINDS.map((k) => (
           <span key={k} className="fs-ctx__concepts-kind-swatch">
-            <span style={{ background: kindColor(k) }} /> {k}
+            <span style={{ background: `var(--fs-kind-${k}, var(--fs-kind-unknown))` }} /> {k}
           </span>
         ))}
       </p>

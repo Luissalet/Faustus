@@ -50,6 +50,27 @@
   --fs-on-danger-solid: #ffffff;
   --fs-info: #7198e5;
 
+  /* ── Concept kinds ──
+     The six kinds of the project concept graph (feature / module /
+     pattern / config / decision / component) plus the fallback for one
+     nobody has named yet, and the two things the graph canvas draws that
+     are not a node: its edges and its labels.
+
+     These lived as literals inside ConceptsPanel.tsx, which meant the
+     panel drew the same dark-theme colours in light mode -- including a
+     near-black label colour on a near-white surface. A canvas cannot use
+     a CSS variable directly, so the panel reads these off the element
+     with getComputedStyle and redraws when the theme changes. */
+  --fs-kind-feature: #6c8cff;
+  --fs-kind-module: #3ecf8e;
+  --fs-kind-pattern: #f5a623;
+  --fs-kind-config: #b980f0;
+  --fs-kind-decision: #ff6b6b;
+  --fs-kind-component: #4dd0e1;
+  --fs-kind-unknown: #9aa3b2;
+  --fs-graph-edge: rgb(148 163 184 / 0.35);
+  --fs-graph-label: rgb(226 232 240 / 0.92);
+
   /* ── Shadow: overlays and drag only ── */
   --fs-shadow-overlay: 0 4px 16px rgb(0 0 0 / 0.32);
   --fs-shadow-drag: 0 8px 24px rgb(0 0 0 / 0.32);
@@ -84,6 +105,15 @@
   --fs-danger-solid: #a4231b; /* white on it: 7.41:1 */
   --fs-on-danger-solid: #ffffff;
   --fs-info: #2c5bb5;
+  --fs-kind-feature: #3a5bd9;
+  --fs-kind-module: #1f7a52;
+  --fs-kind-pattern: #96620b;
+  --fs-kind-config: #7b3fb5;
+  --fs-kind-decision: #c0392b;
+  --fs-kind-component: #10707e;
+  --fs-kind-unknown: #5b6472;
+  --fs-graph-edge: rgb(71 85 105 / 0.35);
+  --fs-graph-label: rgb(30 41 59 / 0.92);
 
   --fs-shadow-overlay: 0 4px 16px rgb(0 0 0 / 0.08);
   --fs-shadow-drag: 0 8px 24px rgb(0 0 0 / 0.12);
@@ -117,6 +147,15 @@
     --fs-danger-solid: #a4231b;
     --fs-on-danger-solid: #ffffff;
     --fs-info: #2c5bb5;
+  --fs-kind-feature: #3a5bd9;
+  --fs-kind-module: #1f7a52;
+  --fs-kind-pattern: #96620b;
+  --fs-kind-config: #7b3fb5;
+  --fs-kind-decision: #c0392b;
+  --fs-kind-component: #10707e;
+  --fs-kind-unknown: #5b6472;
+  --fs-graph-edge: rgb(71 85 105 / 0.35);
+  --fs-graph-label: rgb(30 41 59 / 0.92);
 
     --fs-shadow-overlay: 0 4px 16px rgb(0 0 0 / 0.08);
     --fs-shadow-drag: 0 8px 24px rgb(0 0 0 / 0.12);

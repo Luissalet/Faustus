@@ -607,16 +607,16 @@
   padding: 2px 8px;
   border-radius: 999px;
   font-size: var(--fs-label-size);
-  color: #0b0e14;
+  color: var(--fs-on-danger);
   background: var(--fs-text-3);
 }
 
 .fs-badge--ok {
-  background: #3ecf8e;
+  background: var(--fs-kind-module);
 }
 
 .fs-badge--warn {
-  background: #f5a623;
+  background: var(--fs-kind-pattern);
 }
 
 .fs-ctx__concepts-meta {
@@ -682,7 +682,7 @@
 }
 
 .fs-ctx__concepts-ref--broken {
-  color: #ff6b6b;
+  color: var(--fs-danger);
   text-decoration: line-through;
 }
 
