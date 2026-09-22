@@ -1,6 +1,12 @@
 ﻿# Pendientes de cierre
 
-Actualizado: 21-09-2026. REGLA: nunca nombres de empresas/personas del buzÃ³n de Luis en commits, docs, tests ni comentarios â€” ejemplos siempre ficticios. SÃ³lo trabajo vigente; quitar cada entrada al cerrarla.
+Actualizado: 22-09-2026. REGLA: nunca nombres de empresas/personas del buzÃ³n de Luis en commits, docs, tests ni comentarios â€” ejemplos siempre ficticios. SÃ³lo trabajo vigente; quitar cada entrada al cerrarla.
+
+## 22-09 — decodificación bajo esquema en llama-server (FAUSTUS.md §160b)
+
+- PREEXISTENTES (comprobados idénticos contra la base con `git stash` sobre `src/llm_core.py`): `tests/test_ollama_structured_output.py::test_local_v1_without_a_native_api_keeps_v1_and_sends_no_schema` y `::test_setting_off_restores_the_previous_request_byte_for_byte`. Los dos esperan que un Ollama `/v1` local cuyo `/api/show` no responde se quede en `/v1`, y lo que ocurre es que se reencamina a `/api/chat`. No es de este cambio; hay que mirar `_route_for_response_schema` y su prueba de identidad.
+- ABIERTO: los consumidores de OBJ-27. Hoy solo `auto_review`, `doubt_review` y `research_review` piden esquema. Los puntos de decisión que corren en cada turno — clasificación de intención, enrutado de modelo, selección de herramienta — siguen pidiendo texto libre y parseándolo con suerte. Falta inventariarlos (un sub-agente no pudo: `D:\LocalAI\faustus` no es carpeta conectada de la sesión, hay que hacerlo desde el shell de la máquina).
+- NOTA: el esquema nunca viaja junto a `tools` en ninguno de los dos backends. Si alguna vez se quiere decodificación restringida dentro del bucle de agente, eso es un diseño nuevo, no un ajuste.
 
 ## 21-09 — motor parado a la vista y la tabla de traducciones como única fuente
 

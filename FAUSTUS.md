@@ -6606,3 +6606,72 @@ Lecciones de coaching para tareas mecánicas por lotes con modelos locales: la e
 **Verificado.** 202 pruebas verdes sobre los ficheros tocados (`test_i18n_check_is_read_only`, `test_agent_workspace_orientation`, `test_project_tests_unrelated_folder`, `test_studio_approval_scopes_js`, `test_tool_approval_task_scope`, `test_external_context_tool_gate`, `test_run_model_pin`, `test_degenerate_output`). `tests/test_i18n_check_is_read_only.py` (nuevo) fija que `--check` no modifica el catálogo generado. **En vivo, por navegador**, sobre el Faustus real en `127.0.0.1:7000`: parar el motor «llama.cpp 27B (qwen3.8-27b-q8)» → aparece el aviso «The default model (qwen3.8-27b-q8-llamacpp) is served by llama.cpp 27B (qwen3.8-27b-q8), which is not running.» con su botón → pulsarlo → el motor pasa por «Unhealthy» mientras carga y vuelve a «Running», `127.0.0.1:8081/v1/models` responde con el alias y el aviso desaparece.
 
 **Ficheros.** `studio/src/screens/settings/LocalModels.tsx`, `scripts/i18n_es.py`, `docs/ui/i18n/es.tsv`, `studio/src/i18n/es.ts`, `studio/src/screens/studio/approval-scopes.ts` (nuevo), `studio/src/screens/studio/Transcript.tsx`, `studio/src/adapters/chat.ts`, `studio/src/screens/Studio.tsx`, `studio/src/screens/studio/Composer.tsx`, `studio/src/screens/studio.css`, `src/agent_loop.py`, `src/project_tests.py`, `server_runtime.py`, `Stop-Faustus.ps1`, `Stop-Faustus.bat`, `studio/checks/approval-scopes.check.mjs` (nuevo), `studio/checks/ask-user-options.check.mjs`, `tests/test_i18n_check_is_read_only.py` (nuevo), `tests/test_agent_workspace_orientation.py` (nuevo), `tests/test_project_tests_unrelated_folder.py` (nuevo), `tests/test_studio_approval_scopes_js.py` (nuevo), `tests/test_tool_approval_task_scope.py`, `tests/test_external_context_tool_gate.py`, `tests/test_server_runtime.py`, `FAUSTUS.md`, `README.md`, `README.es.md`, `PENDIENTES.md`.
+## 160b. Decodificar bajo un esquema también en llama-server (OBJ-27, fase 1) (22-09-2026)
+
+**De dónde sale.** Primera entrega de OBJ-27, abierto tras el barrido de repos
+del 22-09 (`docs/radar/2026-09-22.md`). La tesis que se compra — no la venden
+gratis, pero es correcta — es que cuando la salida real es *elegir una opción
+de un conjunto cerrado*, dejar que un modelo grande escriba texto libre es caro
+y además alucinable.
+
+**Lo que se encontró al mirar.** La tubería de decodificación restringida ya
+existía (§ del `format` nativo de Ollama, con su ajuste `local_structured_output`
+y tres consumidores: `auto_review`, `doubt_review`, `research_review`), pero el
+gate decía literalmente que cualquier cosa que no fuera Ollama nativo — llama.cpp
+incluido — «no recibe nada y se queda con el parseo de hoy». El día en que el
+modelo por defecto pasó a un `llama-server` gestionado, esas tres pasadas
+volvieron en silencio a parsear prosa. Nada en los logs lo decía.
+
+**Hecho.** `src/llm_core.py`: `_schema_transport(url)` responde en qué campo
+viaja un esquema para ese endpoint — `format` para Ollama nativo,
+`response_format` para un llama.cpp gestionado, `None` para todo lo demás. El
+lado de llama.cpp se contesta desde el registro de motores con `probe=False`:
+una petición del camino caliente no puede pagar un sondeo de red para
+averiguar cómo formularse. `_resolve_response_schema` pasa a preguntar por el
+transporte en vez de por Ollama, y `_apply_openai_response_format(payload, url,
+schema, tools)` adjunta el esquema al cuerpo OpenAI envuelto en
+`{"type": "json_schema", "json_schema": {...}}`, devolviendo si lo adjuntó — el
+gate vive dentro de esa función y no en los dos sitios que la llaman, porque un
+esquema que llega a un constructor que lo ignora es peor que ningún esquema: el
+llamante se cree garantizado un JSON que nadie garantizó.
+
+**La trampa de la URL.** Las dos llamadas pasan `url`, no `target_url`. El
+registro de motores está indexado por el endpoint tal y como se configuró; la
+forma normalizada `.../v1/chat/completions` responde «unknown» y el esquema se
+cae sin una palabra. Es exactamente el fallo que este subsistema existe para
+evitar, y estuvo en el código hasta que el test de extremo a extremo lo cantó.
+
+**Las tres respuestas, medidas contra el 27B local.** Misma pregunta, mismo
+modelo, temperatura 0:
+
+| régimen | respuesta |
+| --- | --- |
+| sin esquema | `Classification: **Bug fix request** / **Issue resolution intent**` (prosa, no parseable) |
+| `json_object` | `{"thinking": "...", "intent": "bug_fix_request"}` (JSON válido, valor **fuera** del conjunto) |
+| `json_schema` | `{"intent": "code"}` |
+
+La fila del medio es la que justifica el trabajo: forzar JSON no basta, hay que
+forzar el esquema.
+
+**Verificado.** `tests/test_llamacpp_structured_output.py` (nuevo, 13 pruebas):
+qué campo corresponde a cada backend, que un fallo del registro de motores no
+tumba la petición, que el ajuste `off` sigue desactivando los dos backends, que
+`tools` sigue excluyendo el esquema, que un endpoint remoto y Ollama nativo
+nunca reciben `response_format`, y una prueba de extremo a extremo de que el
+esquema está de verdad en el cuerpo — las doce unitarias pasan con el cableado
+ausente, esa no. **En vivo**, contra el registro de motores real y el 27B real:
+`serving_backend` → `llamacpp`, transporte → `response_format`, esquema en el
+cable, respuesta `{"intent": "code"}` en 13,3 s, valor dentro del conjunto.
+`tests/test_ollama_structured_output.py` sigue con sus 19 verdes y sus 2 fallos
+preexistentes (comprobados idénticos contra la base con `git stash`; anotados en
+PENDIENTES.md).
+
+**Lo siguiente de OBJ-27.** Los consumidores. Hoy solo tres pasadas internas
+piden esquema; los puntos de decisión que más veces se ejecutan por turno
+— clasificación de intención, enrutado de modelo, selección de herramienta —
+siguen pidiendo texto libre. Cada uno que se migre tiene que traer su medida de
+tokens y milisegundos ahorrados.
+
+**Ficheros.** `src/llm_core.py`, `tests/test_llamacpp_structured_output.py`
+(nuevo), `docs/radar/2026-09-22.md` (nuevo), `OBJETIVOS.md`, `PENDIENTES.md`,
+`FAUSTUS.md`, `README.md`, `README.es.md`.

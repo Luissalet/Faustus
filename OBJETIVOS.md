@@ -658,3 +658,77 @@ La revisión ciega de informes (FAUSTUS.md §144) y los veredictos de verificaci
 ## OBJ-26 · Gancho de planificador para el pase de sueño de skills — PENDIENTE
 
 El pase de sueño de skills (FAUSTUS.md §151) corre a demanda desde la pestaña "Proposals" o por API; queda pendiente el ajuste `skills_sleep_pass_enabled`/`skills_sleep_pass_hour` para que corra solo por la noche, como se pidió originalmente. Requiere primero decidir con qué patrón de `src/task_scheduler.py` debe encajar (tarea de sistema como el audit nocturno de skills, o un `ScheduledTask` de usuario) antes de cablearlo — ver PENDIENTES.md §151.
+
+## OBJ-27 · Decisión tipada en vez de texto libre — EN CURSO (22-09-2026)
+
+Del barrido de repos del 22-09 (ver `docs/radar/2026-09-22.md`). Es la entrada
+de mayor retorno del lote y la que menos depende de nadie: no hay que adoptar
+ningún proyecto externo, solo aplicar el principio.
+
+**Qué falla hoy.** Faustus usa el modelo grande para decisiones cuya salida es
+*elegir una opción de un conjunto cerrado*: clasificación de intención,
+enrutado de modelo, selección de herramienta del tool RAG, y la próxima capa de
+control de navegador. Eso no necesita generación. Paga el precio de una
+llamada de 27B y además deja la puerta abierta a que el modelo invente un valor
+que no está en la lista, que luego hay que parsear y validar.
+
+**Qué tiene que pasar, en dos fases.**
+
+1. **Decodificación restringida sobre el modelo que ya está cargado.** Cuando
+   la salida pertenece a un conjunto cerrado, la petición lleva una gramática
+   (GBNF en llama-server) o un formato forzado (`format` en Ollama) construido
+   a partir de ese conjunto. La respuesta deja de ser parseable-con-suerte y
+   pasa a ser válida por construcción. Sin dependencias nuevas.
+2. **Un encoder pequeño para intención y enrutado.** Un modelo de decisión
+   tipada (encoder no autorregresivo, del orden de 300-400M, Apache 2.0,
+   descargable) resuelve la elección en milisegundos en vez de en una llamada
+   al 27B. Cabe al lado del modelo grande. Solo tiene sentido después de la
+   fase 1 y con etiquetas propias: en frío, fuera de dominio, estos modelos
+   están cerca del azar.
+
+**Criterio de aceptación.** Cada punto de decisión migrado demuestra, con la
+misma entrada, (a) que la salida nunca cae fuera del conjunto, y (b) cuántos
+tokens y cuántos milisegundos ahorra frente al camino anterior. Sin esa medida
+no se da por cerrado.
+
+**Relación con lo que ya hay.** `src/agent_harness`/`local_model_policy` y la
+recuperación de herramientas (OBJ-7) son los primeros destinos. OBJ-24
+(extracción a un schema del usuario) es el mismo mecanismo visto desde el otro
+lado: si la fase 1 deja una capa de decodificación restringida reutilizable,
+OBJ-24 se apoya en ella.
+
+## OBJ-28 · Refinamiento del harness propuesto tras cada tarea — PENDIENTE (22-09-2026)
+
+Del mismo barrido. El patrón: al terminar una tarea, revisar la trayectoria y
+**proponer el edit CRUD más pequeño** sobre el estado del harness — prompt,
+skill, memoria o especificación de sub-agente — con registro `disparador →
+resultado` y deshacer por identificador. El prompt base queda inmutable; solo
+se edita la capa de alrededor.
+
+Faustus tiene media pieza: el pase de sueño de skills (FAUSTUS.md §151) ya
+propone revisiones de SKILL.md que el usuario aprueba. Falta extenderlo a los
+otros tres ejes y añadir el deshacer.
+
+**Regla no negociable:** propone, nunca aplica. La crítica principal al
+proyecto de donde sale el patrón es justamente que se auto-modifica sin
+aprobación humana obligatoria. Encaja con OBJ-26 (cuándo corre) y con las
+tarjetas de aprobación que ya existen (cómo se acepta).
+
+## OBJ-29 · Omisión recuperable en el Context Engine — PENDIENTE (22-09-2026)
+
+Hoy el Context Engine trata una omisión como dato de salida, no como log, pero
+lo omitido no se puede recuperar: si el compilador decide que algo no entra, el
+modelo no tiene forma de pedirlo. El patrón a copiar es la compresión
+reversible: lo que no entra se guarda localmente con un identificador corto que
+sí viaja en el prompt, más una herramienta que lo recupera bajo demanda. Ataca
+directamente el pendiente de «cada turno arranca con 13-15k de 200k y el modelo
+gasta rondas redescubriendo lo que ya sabía».
+
+**La trampa, ya documentada en casa.** Los backends locales cachean el prefijo
+del system byte a byte (por eso la línea de idioma va como `user` y no como
+`system`). Una compresión que reescriba el contexto de forma distinta en cada
+turno invalida ese caché y sale más cara de lo que ahorra. Lo comprimido tiene
+que ser estable entre turnos o no se hace.
+
+Va después de la fase 2 del Context Engine (llevar el compilador al camino
+caliente detrás de la bandera), no antes.
