@@ -105,10 +105,37 @@ def _plugin_app(user_text: str, content: Any) -> bool:
     return _ordered(text, _OPEN) or (_ordered(text, _START) and _ordered(text, _SHOW))
 
 
+# "What do you remember about me?" is a request to read the memory store, in
+# so many words. Live it stopped at the card on `manage_memory list`. Only the
+# two read actions; adding, editing or deleting a memory is never inferred
+# from a question.
+_ASKS_WHAT_IS_REMEMBERED = re.compile(
+    r"\b(?:"
+    r"que (?:recuerdas|sabes|tienes guardado|has guardado|te acuerdas|memorias tienes)"
+    r"(?: tu)? (?:de|sobre) mi"
+    r"|que memorias tienes"
+    r"|(?:ensename|muestrame|lista|listame|dime) (?:mis|tus|las) (?:memorias|recuerdos)"
+    r"|what do you (?:remember|know) about me"
+    r"|what have you (?:saved|stored|remembered) about me"
+    r"|(?:show|list) (?:me )?(?:my|your) memor(?:y|ies)"
+    r")\b"
+)
+
+
+def _memory_read(user_text: str, content: Any) -> bool:
+    from src.tool_capabilities import _action_from_content
+    from src import plugins as plugins_mod
+
+    if _action_from_content("manage_memory", content) not in ("list", "search"):
+        return False
+    return bool(_ASKS_WHAT_IS_REMEMBERED.search(plugins_mod.fold(user_text)))
+
+
 #: tool name -> matcher(user_text, call_content). A tool that is not here is
 #: never let through by this rule.
 MATCHERS: Dict[str, Callable[[str, Any], bool]] = {
     "plugin_app": _plugin_app,
+    "manage_memory": _memory_read,
 }
 
 

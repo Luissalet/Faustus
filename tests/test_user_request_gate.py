@@ -92,3 +92,28 @@ def test_the_gate_still_stops_what_was_not_asked(monkeypatch):
 
     assert context.decision_for("plugin_app", _call("writer")).allowed is False
     assert context.decision_for("bash", '{"command": "echo hi"}').allowed is False
+
+
+# ── "What do you remember about me?" ────────────────────────────────────────
+# Seen live: stopped at the card on `manage_memory list`.
+
+@pytest.mark.parametrize("text", [
+    "¿Qué recuerdas de mí?",
+    "que sabes sobre mi",
+    "Enséñame mis memorias",
+    "What do you remember about me?",
+    "show me your memories",
+])
+@pytest.mark.parametrize("content", ["list", '{"action": "list"}', "search\nmóstoles"])
+def test_asking_what_is_remembered_lets_the_memory_read_through(text, content):
+    assert allows("manage_memory", content, text) is True
+
+
+@pytest.mark.parametrize("content", ["add\nuser likes tea", '{"action": "delete", "id": "m1"}',
+                                     "edit\nm1\nnew text"])
+def test_a_question_never_writes_or_deletes_a_memory(content):
+    assert allows("manage_memory", content, "¿Qué recuerdas de mí?") is False
+
+
+def test_a_memory_read_nobody_asked_for_keeps_the_gate():
+    assert allows("manage_memory", "list", "Hola, ¿qué eres?") is False
