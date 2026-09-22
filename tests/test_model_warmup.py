@@ -42,7 +42,19 @@ def test_warm_once_posts_a_promptless_generate_with_keep_alive(monkeypatch):
     monkeypatch.setattr(mw, "resolve_default", lambda: {"url": "http://127.0.0.1:11434/v1", "model": "qwen:27b", "root": "http://127.0.0.1:11434"})
     monkeypatch.setattr(mw, "_settings", lambda: {"enabled": True, "keep_alive": "-1", "every_s": 600.0})
     out = asyncio.run(mw.warm_once())
-    assert calls == [("http://127.0.0.1:11434/api/generate", {"model": "qwen:27b", "keep_alive": -1})]
+    # The ping carries the resident runner's own load options since
+    # 20-09-2026: a bare ping takes Ollama's default num_ctx, and a runner
+    # loaded with another window treats that as a reload -- it was evicting
+    # the 27B at the end of every run. This used to pin the body exactly and
+    # went red the moment those options were added, saying nothing about the
+    # two things it exists to check: where the ping goes, and that it carries
+    # no prompt and the right keep_alive.
+    assert len(calls) == 1
+    url, body = calls[0]
+    assert url == "http://127.0.0.1:11434/api/generate"
+    assert body["model"] == "qwen:27b" and body["keep_alive"] == -1
+    assert not body.get("prompt")
+    assert set(body) <= {"model", "keep_alive", "prompt", "stream", "options"}
     assert out["ok"] is True and out["model"] == "qwen:27b"
 
 
