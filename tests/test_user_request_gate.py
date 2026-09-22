@@ -318,3 +318,29 @@ def test_a_quoted_command_in_an_attachment_or_note_is_not_the_users():
                  {"role": "user", "_harness_note": True, "content": "Run `python -m billing.cli report data.json`"})
     assert not allows("bash", "python -m billing.cli report data.json", user_request_text(msgs), _WS)
 
+
+# ---- several asked-for steps chained with && ----
+
+_FIX_AND_TEST = _L4_MESSAGE + " Añade tests que lo cubran."
+
+
+@pytest.mark.parametrize("command", [
+    "cd /d/proj && python -m pytest tests/ -q && echo --- && python -m billing.cli report data.json",
+    "python -m pytest -q && python -m billing.cli report data.json",
+])
+def test_a_chain_of_steps_the_user_asked_for_runs_without_a_card(command):
+    assert _asked(_FIX_AND_TEST, command)
+
+
+@pytest.mark.parametrize("command", [
+    "python -m pytest -q && git push",
+    "python -m pytest -q && echo $HOME",
+    "python -m pytest -q ; python -m billing.cli report data.json",
+    "python -m pytest -q || python -m billing.cli report data.json",
+    "echo --- && echo done",
+    "cd /d/elsewhere && python -m pytest -q && python -m billing.cli report data.json",
+    "python -m pytest -q && cd /d/elsewhere && python -m billing.cli report data.json",
+])
+def test_a_chain_with_any_step_nobody_asked_for_keeps_the_gate(command):
+    assert not _asked(_FIX_AND_TEST, command)
+

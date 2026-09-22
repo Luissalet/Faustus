@@ -271,9 +271,33 @@ def _runs_what_the_user_wrote(user_text: str, content: Any, workspace: str = "")
     return False
 
 
+_PLAIN_ECHO = re.compile(r"^echo(?:\s+(?:[\w.,:=+/\- ]+|\"[\w.,:=+/\- ]*\"|'[\w.,:=+/\- ]*'))?$")
+
+
+def _one_command(user_text: str, command: str, workspace: str) -> bool:
+    return (_runs_the_tests(user_text, command, workspace)
+            or _runs_what_the_user_wrote(user_text, command, workspace))
+
+
 def _shell_matcher(user_text: str, content: Any, workspace: str = "") -> bool:
-    return (_runs_the_tests(user_text, content, workspace)
-            or _runs_what_the_user_wrote(user_text, content, workspace))
+    command = _shell_words(_command_of(content))
+    if _one_command(user_text, command, workspace):
+        return True
+    # Seen live: `cd <ws> && python -m pytest -q && echo --- && <the command
+    # the user quoted>`. Each step is one the user asked for; `&&` only runs
+    # them in order and stops at the first failure. So a chain passes when
+    # every step passes on its own (a plain `echo` separator included).
+    # `;`, `||` and `&` are not split here and keep the gate.
+    lead = re.match(r"^cd\s+(\"[^\"]+\"|'[^']+'|\S+)\s*&&\s*", command)
+    if lead:
+        if not _same_dir(lead.group(1).strip("\"'"), workspace):
+            return False
+        command = command[lead.end():]
+    steps = [s.strip() for s in command.split("&&")]
+    if len(steps) < 2 or not all(steps):
+        return False
+    asked = [s for s in steps if not _PLAIN_ECHO.match(s)]
+    return bool(asked) and all(_one_command(user_text, s, workspace) for s in asked)
 
 
 # "Arréglalo" asks for the project to be changed. Live, after reading the
