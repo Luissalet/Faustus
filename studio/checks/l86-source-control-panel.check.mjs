@@ -34,15 +34,11 @@ const read = (p) => readFileSync(path(p), 'utf8').replace(/\r\n/g, '\n'); // CRL
   for (const call of ['listRepos(', 'getStatus(', 'stage as stageFiles', 'commit as commitRepo', 'sync as syncRepo']) {
     assert.ok(src.includes(call), `SourceControlPanel must reuse adapters/git.ts's ${call}`);
   }
-  // The compact branch is genuinely condensed: no New repository/branch/
-  // GitHub/policy dialogs, per CONTRATO_GIT_4.md point 3's exact list.
-  const compactBranch = src.slice(src.indexOf('if (compact) {'), src.indexOf('return (\n    <div className="fs-sc" data-testid="source-control-panel">'));
-  assert.ok(compactBranch.length > 200, 'the compact branch must exist and not be empty');
-  for (const heavy of ['NewRepositoryDialog', 'RepoPolicyDialog', 'PublishToGithubDialog', 'CreateBranchDialog']) {
-    assert.ok(!compactBranch.includes(heavy), `compact mode must not render ${heavy} — only branch/ahead-behind/changes/log/Fetch-Pull-Push-Sync`);
-  }
-  assert.ok(compactBranch.includes('BranchPopover'), 'compact mode must still offer a clickable branch (BranchPopover)');
-  assert.ok(compactBranch.includes('ChangesPane'), 'compact mode must still offer stage/commit/push (ChangesPane)');
+  // The compact branch's actual behaviour (no New repository/branch/GitHub/
+  // policy dialogs showing, per CONTRATO_GIT_4.md point 3's exact list, but
+  // still a clickable branch and stage/commit/push) is checked by mounting
+  // the real component against a fake fetch and asserting on the rendered
+  // DOM — see studio/checks/l86-source-control-compact.render.check.mjs.
 }
 
 // ── SourceControl.tsx became a thin wrapper: no more state/handlers of its
