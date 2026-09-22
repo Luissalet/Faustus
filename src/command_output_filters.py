@@ -644,6 +644,11 @@ def compress(
         "original_chars": original_chars,
         "kept_chars": len(compressed),
     }
+    if kept_lines >= original_lines and not artifact_hint:
+        # Only colour codes / progress redraws went: nothing to go back for.
+        # "rerun without filtering" here sent the model to run the same
+        # command again (seen live, piped through `| cat`).
+        return compressed + f"\n[output cleaned by {filter_name}: terminal codes removed, no lines dropped]", meta
     how = artifact_hint or "rerun without filtering"
     note = (
         f"\n[output compressed by {filter_name}: kept {kept_lines} of "

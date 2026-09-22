@@ -376,6 +376,13 @@ def test_generic_keeps_every_line_of_windows_output():
     assert "Progress: 100%" in text and "Done" in text and "Progress: 10%" not in text
 
 
+def test_output_that_only_lost_colour_codes_does_not_ask_for_a_rerun():
+    output = "".join(f"\x1b[32mline {i} ok\x1b[0m\n" for i in range(20))
+    text, meta = cof.compress("some-build-tool run", output, 0)
+    assert all(f"line {i} ok" in text for i in range(20))
+    assert "rerun" not in text
+
+
 def test_generic_collapses_repeated_lines():
     lines = ["Connecting..."] * 200 + ["Connected."]
     output = "\n".join(lines)
