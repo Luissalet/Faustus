@@ -7348,3 +7348,63 @@ van antes y no cambian.
 variables se revirtió el 18-09). El 7001 trabajaba sobre `data/` real, con
 los pollers de correo y las tareas programadas en marcha. El script pone ya
 las dos familias de variables.
+
+## 167. Tareas de verdad: el modelo acertaba, lo de alrededor fallaba (23-09-2026, madrugada)
+
+Dos tareas completas por el 7001 con el 27B, repetidas hasta que salieran
+de principio a fin. **L4**: un proyecto de facturación de tres módulos con
+un `KeyError` pegado como traceback (facturas antiguas con `"iva": "4%"`) y
+una factura de las 00:30 de Madrid que caía en el mes anterior. **L5**: el
+export de ventas de tres tiendas con trampas (24 filas reexportadas, comas
+decimales, dos formatos de fecha, «puerto », un precio 1299 que era 12,99),
+un gráfico y un resumen para dirección. Sin limpiar gana Centro; limpio,
+Puerto.
+
+El razonamiento fue bueno desde la primera corrida: el arreglo del `iva`
+con porcentaje, la agrupación en hora de Madrid, la limpieza de los datos.
+El informe final de L5 cuadra al céntimo y documenta los cinco problemas.
+Casi todo lo que fallaba estaba alrededor del modelo:
+
+**Veía la salida en blanco (`134d92dc`).** El filtro genérico de salida
+trataba el `\r` de los finales de línea de Windows como el redibujado de
+una barra de progreso y dejaba cada línea vacía: un informe de tres líneas
+llegaba como dos líneas en blanco y la última, bajo una nota «kept 3 of 3
+lines». Afectaba a cualquier programa de Windows sin filtro propio.
+
+**Leía la nota del runtime como la petición del usuario (`2543d71f`).** La
+puerta buscaba «lo que pidió el usuario» en el último mensaje de rol user,
+y el runtime también habla con ese rol. Una nota de fallo de tests que
+decía «run the tests» aprobaba un pytest que nadie pidió. Las notas van
+marcadas y la puerta las salta.
+
+**«Lo que pides tú, pasa», ampliado con cuidado.** Cada corrida paró en una
+tarjeta distinta ante cosas pedidas: el comando que escribes entre comillas
+invertidas (`58355a80`), una cadena `&&` de pasos pedidos (`e4f421fb`),
+mirar tus ficheros con `head`/`wc`/`awk`/`sed -n` (`b4484d08`, `91c91b70`,
+`bb5a1dbf`), el análisis en `python` (`7b2bb323`, `dd405454`, `23304113`)
+y el resumen en el fichero que nombras (`98f7fd59`). El comparador de
+`python` pasó por tres rondas de revisión adversaria con otro agente: una
+primera versión con lista negra cayó por `pd.io.common.get_handle`,
+`np.lib.format.open_memmap`, `matplotlib.use("module://…")` y anotaciones
+que evalúan `typing.get_type_hints` y `functools.singledispatch`. Ahora es
+lista blanca, y cada bypass es un test. Lo que sí debe preguntar sigue
+preguntando: instalar paquetes, capturar la pantalla, escribir fuera.
+
+**Detalles que costaban minutos.** El razonamiento cortado a los 240 s ya
+llega al reintento (`fcc071fa`), cuando antes se tiraba con el arreglo
+dentro. La nota «rerun without filtering» ya no aparece si no se quitó
+nada (`76b2039f`). `read_file` de una imagen devuelve la imagen (`b8e32fc2`):
+para ver su gráfico, el modelo pedía una captura de tu pantalla.
+
+**Una imagen tumbaba el turno.** Ese cambio destapó el siguiente fallo:
+llama-server sin proyector (`--mmproj`) respondió HTTP 500 «image input is
+not supported» y el turno acabó sin respuesta, anotado además como «el
+endpoint tiene una caída». Faustus preguntaba la visión a LM Studio y a
+Ollama y, si no, la adivinaba por el nombre: «qwen3.x» parece un modelo con
+visión. Ahora le pregunta también a llama-server, que lo dice en `/props`
+(`d5ba34cb`). Y si un servidor rechaza la imagen sin haber avisado, la
+ronda se repite una vez sin imágenes y con una nota de que el modelo no
+puede verlas (`ea50dd72`).
+
+Queda abierto: en casi todas las tareas de código, la segunda ronda se
+corta a los 240 s de pensamiento con este modelo.
