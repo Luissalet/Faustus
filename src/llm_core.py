@@ -951,13 +951,64 @@ def _get_cached_response_model(cache_key: str) -> Optional[str]:
     return model if isinstance(model, str) and model.strip() else None
 
 
+#: Characters that make a completion an answer. The letter range covers
+#: accented Latin, Greek, Cyrillic, CJK and the rest deliberately: "no
+#: letters" has to mean no letters, not "no ASCII letters", or every answer in
+#: Chinese would be thrown away. Braces and brackets count too: `{}` is a
+#: complete and legitimate reply to a request that asked for JSON, and the
+#: first version of this rule threw it away as punctuation.
+_ANSWER_RE = re.compile(r"[0-9A-Za-z{}\[\]À-ɏͰ-῿぀-퟿]")
+
+#: Below this, a reasoning channel is a leftover rather than an answer. A
+#: healthy model that puts its answer there writes sentences; a backend whose
+#: slot has gone bad emits a handful of characters -- measured on this
+#: machine: content "", reasoning "/umd``", three tokens, 0.8 s, the same
+#: bytes on every request while the prompt cache kept growing.
+MIN_REASONING_AS_ANSWER = 40
+
+
+def empty_completion(text: Optional[str]) -> bool:
+    """Is this a completion with nothing in it?
+
+    True for an empty or whitespace-only answer, and for one with no letter or
+    digit anywhere -- a run of punctuation is not an answer in any language.
+    """
+    stripped = str(text or "").strip()
+    if not stripped:
+        return True
+    return _ANSWER_RE.search(stripped) is None
+
+
+def reasoning_as_answer(reasoning: Optional[str]) -> str:
+    """The reasoning channel, but only when it is long enough to be a reply.
+
+    Falling back to the reasoning channel exists for models that put their
+    whole answer there, and those write sentences. Taking it unconditionally
+    is how six characters of punctuation from a sick engine reached the user
+    as though the model had said it.
+    """
+    text = str(reasoning or "").strip()
+    if empty_completion(text) or len(text) < MIN_REASONING_AS_ANSWER:
+        return ""
+    return text
+
+
 def _set_cached_response(
     cache_key: str,
     response: str,
     *,
     actual_model: Optional[str] = None,
 ) -> None:
-    """Store response in cache."""
+    """Store response in cache.
+
+    An empty completion is never stored. It is a symptom of a backend in a bad
+    state, and caching it turns a transient fault into a permanent one: the
+    same question then answers with the same nothing without the model being
+    asked at all.
+    """
+    if empty_completion(response):
+        logger.warning("Not caching an empty completion (backend returned nothing)")
+        return
     if len(_response_cache) > 128:
         keys_to_remove = list(_response_cache.keys())[:64]
         for key in keys_to_remove:
@@ -1379,12 +1430,16 @@ def _apply_openai_response_format(
         "type": "json_schema",
         "json_schema": {"name": "response", "strict": True, "schema": schema},
     }
-    _suppress_thinking_under_grammar(payload, model)
+    _suppress_thinking(payload, model)
     return True
 
 
-def _suppress_thinking_under_grammar(payload: Dict, model: str) -> None:
-    """Turn a thinking model's reasoning off for a constrained answer.
+def _suppress_thinking(payload: Dict, model: str) -> None:
+    """Turn a thinking model's reasoning off for this request.
+
+    Used in two places, for the same underlying reason: reasoning and the
+    answer come out of one token budget, so whenever the reasoning is not what
+    we are paying for, it is in the way.
 
     llama-server applies the grammar to the content channel only, so a model
     that reasons first spends the token budget thinking and the grammar never
@@ -3002,13 +3057,70 @@ def llm_call(url: str, model: str, messages: List[Dict], temperature: float = LL
                 if thinking_part:
                     response = thinking_part + "\n\n" + (text_part or "")
                 else:
-                    response = text_part or msg.get("reasoning_content") or ""
+                    response = text_part or reasoning_as_answer(msg.get("reasoning_content"))
             else:
-                response = content or msg.get("reasoning_content") or ""
-        _set_cached_response(cache_key, response)
-        return response
+                response = content or reasoning_as_answer(msg.get("reasoning_content"))
     except Exception:
         raise HTTPException(502, f"Unexpected schema from {target_url}: {str(data)[:400]}")
+
+    if empty_completion(response):
+        response = _retry_empty_completion(
+            target_url, h, payload, provider, model, timeout,
+        )
+    _set_cached_response(cache_key, response)
+    return response
+
+
+def _retry_empty_completion(target_url: str, headers: Dict, payload: Dict,
+                            provider: str, model: str, timeout) -> str:
+    """One more try when a backend answered with nothing, then give up loudly.
+
+    A local backend whose slot has gone bad answers in under a second with an
+    empty content field, `finish_reason` "stop" and a few characters of
+    punctuation in the reasoning channel -- and it keeps doing it, because the
+    poisoned prompt cache is what it is reading from. Measured on this
+    machine: the same six bytes on every request until the engine was
+    restarted, after which the same question answered correctly in 3.7 s.
+
+    So the retry asks llama.cpp to rebuild the prompt instead of reusing the
+    cached one (`cache_prompt: false`). If that still comes back empty the
+    fault is not transient, and an exception is the right answer: a turn that
+    renders as a blank message after minutes of waiting tells the user nothing
+    and leaves them to guess, while an error names what happened and what to
+    do about it.
+    """
+    logger.warning("Empty completion from %s (%s); retrying without the prompt "
+                   "cache and without reasoning", target_url, model)
+    retry = dict(payload)
+    retry["cache_prompt"] = False
+    # The other way to answer with nothing is to spend the whole budget
+    # thinking: measured on the local 27B, a two-sentence question took 37.2 s,
+    # produced 1,752 characters of reasoning, hit the token ceiling and
+    # returned an empty answer -- while the same question with reasoning off
+    # answered correctly in 5.5 s. Whatever the model was working through, it
+    # did not get to say it, so the retry does not pay for it twice.
+    _suppress_thinking(retry, model)
+    try:
+        r = httpx_post_kimi_aware(target_url, headers, json=retry, timeout=timeout)
+        if r.is_success:
+            data = r.json()
+            if provider == "ollama":
+                text = _parse_ollama_response(data)
+            else:
+                message = data["choices"][0]["message"]
+                text = message.get("content") or ""
+            if not empty_completion(text):
+                logger.info("The retry answered; the prompt cache was the problem")
+                return text
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("The retry of an empty completion also failed: %s", exc)
+
+    raise HTTPException(502, (
+        f"{model} returned an empty answer twice, including once with its "
+        f"prompt cache bypassed. The engine behind {target_url} is most "
+        f"likely in a bad state; restarting it from Settings -> Local models "
+        f"clears this."
+    ))
 
 
 def _candidate_is_configured(candidate) -> bool:
@@ -3661,9 +3773,9 @@ async def _llm_call_async_impl(
                         if thinking_part:
                             response = thinking_part + "\n\n" + (text_part or "")
                         else:
-                            response = text_part or msg.get("reasoning_content") or ""
+                            response = text_part or reasoning_as_answer(msg.get("reasoning_content"))
                     else:
-                        response = content or msg.get("reasoning_content") or ""
+                        response = content or reasoning_as_answer(msg.get("reasoning_content"))
                 _set_cached_response(
                     cache_key,
                     response,
