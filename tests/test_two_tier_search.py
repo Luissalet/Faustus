@@ -118,12 +118,17 @@ def test_the_hash_lane_is_fused_at_half_weight_and_that_is_measured_not_tuned():
     assert equal["a"] == weighted["a"], "the strong lane's own score is untouched"
 
 
-def test_the_weight_is_what_restores_recall_on_long_documents():
+def test_the_shipped_search_keeps_what_bm25_alone_finds():
     """The measurement the docstring's table records, run as a test.
 
     At the report's plain ``Σ 1/(60+rank)`` the fusion loses documents BM25
-    alone finds; at ``HASH_WEIGHT`` it does not. If a future change makes the
-    hash lane a true peer, this test is where the weight stops being needed.
+    alone finds. ``HASH_WEIGHT`` used to be enough to keep them; it stopped
+    being enough as the tool corpus grew, because a weak lane that ranks
+    almost every document gets MORE leverage the bigger the corpus is, not
+    less. What guarantees the recall now is the reserved half-head in
+    ``_search``: the fusion owns the top slots, the strong lane owns the
+    rest. So the assertion is on the shipped search, not on a bare ``rrf``
+    -- the weight alone never promised this.
     """
     from src.tool_index import BUILTIN_TOOL_DESCRIPTIONS
 
@@ -141,10 +146,43 @@ def test_the_weight_is_what_restores_recall_on_long_documents():
                 weights=(two_tier_search.BM25_WEIGHT, two_tier_search.HASH_WEIGHT)))
         assert want in lexical[:8], (query, "BM25 alone finds it")
         assert want not in equal[:8], (query, "…and equal weights lose it")
-        assert want in weighted[:8], (query, "…and the shipped weight keeps it")
-        # the shipped path agrees with the weighted computation
+        assert weighted, (query, "the weighted fusion still ranks everything")
         assert want in [hit["id"] for hit in
-                        search([{"id": i, "text": t} for i, t in docs], query, k=8)["hits"]]
+                        search([{"id": i, "text": t} for i, t in docs], query, k=8)["hits"]], (
+            query, "…and the shipped search keeps it anyway")
+
+
+def test_the_weak_lane_never_takes_more_than_half_the_head():
+    """The hash lane may reorder the head. It may not empty it.
+
+    Built as the failure was found: a corpus big enough that the weak lane
+    ranks almost all of it, so its own favourites keep collecting a
+    contribution and lexical hits keep falling out of the top k. Whatever it
+    does, the strong lane's best documents must still be reachable in k.
+    """
+    docs = [{"id": f"noise{i}", "text": f"unrelated filler document number {i} about gardening"}
+            for i in range(120)]
+    docs.append({"id": "target", "text": "run a shell command in a terminal"})
+    docs.append({"id": "near", "text": "run a command"})
+
+    out = search(docs, "run a shell command", k=8)
+    ids = [hit["id"] for hit in out["hits"]]
+    assert "target" in ids, ids
+    lexical = two_tier_search._ordered(
+        two_tier_search.bm25_scores("run a shell command",
+                                    [(d["id"], d["text"]) for d in docs]))
+    # Every document the strong lane scored at all is in the head: the weak
+    # lane's 120 guesses do not get to bury three real matches.
+    assert set(lexical) <= set(ids), (lexical, ids)
+
+
+def test_the_reserved_head_leaves_short_result_sets_alone():
+    """k=1 has no half to reserve, and a fusion that already agrees with the
+    strong lane must come back untouched."""
+    docs = [{"id": "a", "text": "shell command terminal"},
+            {"id": "b", "text": "entirely unrelated gardening"}]
+    assert [hit["id"] for hit in search(docs, "shell command", k=1)["hits"]] == ["a"]
+    assert [hit["id"] for hit in search(docs, "shell command", k=8)["hits"]][0] == "a"
 
 
 def test_rrf_weights_are_defensive_about_what_they_are_given():

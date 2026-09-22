@@ -557,6 +557,35 @@ def _search(corpus: Iterable[Any], query: Any, k: int, embedder: Any,
 
     ordered = _ordered(scores)
 
+    # ── half the head belongs to the strong lane ───────────────────────────
+    # HASH_WEIGHT halves the weak lane's leverage; it does not bound it. RRF
+    # assumes lanes of comparable quality, and this one is not: on a corpus
+    # of 185 tool descriptions the hash lane ranked 165 of them, so nearly
+    # every document collected a contribution and the ones it happened to put
+    # first were lifted over real lexical hits. Measured there, "run a shell
+    # command" had `bash` second by BM25 and ninth after fusion, and "search
+    # the web for the latest news" had `web_search` sixth and ninth. The
+    # weak lane grew stronger as the corpus grew, which is backwards: more
+    # documents means more chances to rank something plausibly by accident.
+    #
+    # So the weak lane gets half the head and no more. The top slots stay in
+    # fused order -- that is the fusion doing its job -- and the rest are
+    # reserved for the strong lane's own best documents that fusion dropped,
+    # best lexical rank first. A lane that is right is never silenced by a
+    # lane that is guessing, whatever the corpus size.
+    #
+    # Only where the fusion can do that harm: the hybrid tier with no real
+    # embedder. A refined tier has a lane that actually understands the
+    # query, and its judgement is not second-guessed here.
+    if degraded and tier == TIER_HYBRID and lexical_ranked and k > 1:
+        head = ordered[:k]
+        rescued = [doc_id for doc_id in lexical_ranked[:k] if doc_id not in head]
+        if rescued:
+            keep = k - min(len(rescued), k // 2)
+            promoted = head[:keep] + rescued[:k - keep]
+            rest = [doc_id for doc_id in ordered if doc_id not in set(promoted)]
+            ordered = promoted + rest
+
     # ── tier 3: a cross-encoder over the fused head, opt-in ────────────────
     rerank_reason: Optional[str] = None
     if reranker is not None:
