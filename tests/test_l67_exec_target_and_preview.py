@@ -67,19 +67,20 @@ def test_python_tool_result_carries_execution_target():
     assert target["cwd"]
 
 
-def test_bash_tool_missing_git_bash_reports_execution_target_before_failing(monkeypatch):
-    """The Windows-without-Git-Bash gap (EXEC-01): the RuntimeError still
-    carries the execution_target the caller would have used, so the error
-    is attributable to a specific target rather than a bare string."""
+def test_bash_without_git_bash_still_names_where_it_ran(monkeypatch):
+    """EXEC-01 is about a result being attributable to a target, not about
+    which target. Windows with no Git Bash no longer fails with an install
+    hint -- it runs the command through PowerShell -- and this test pinned
+    the failure, so it went red when the behaviour improved. What EXEC-01
+    actually asks for is that the result still say where it ran."""
     import core.platform_compat as pc
 
     monkeypatch.setattr(st, "IS_WINDOWS", True)
     monkeypatch.setattr(pc, "IS_WINDOWS", True, raising=False)
     monkeypatch.setattr(st, "find_bash", lambda: None)
     res = asyncio.run(st.BashTool().execute("echo hi", {"session_id": None}))
-    assert res["exit_code"] == 1
-    assert "Git Bash" in res["error"]
     assert res["execution_target"]["kind"] == native_env.TARGET_WINDOWS
+    assert res["execution_target"]["cwd"]
 
 
 # ── EXEC-02 ──────────────────────────────────────────────────────────────

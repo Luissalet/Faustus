@@ -53,17 +53,33 @@ async def test_windows_bash_without_git_bash_fails_clearly(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_bash_tool_returns_install_hint_when_git_bash_is_missing(monkeypatch):
+async def test_bash_without_git_bash_runs_the_command_through_powershell(monkeypatch):
+    """Windows with no Git Bash used to come back with an install hint and
+    nothing done. `_on_host` now says so in its own comment -- "run the same
+    command through PowerShell rather than telling the model the shell does
+    not exist" -- and the command runs. This test asserted the hint, so it
+    went red when the behaviour improved and stayed red.
+
+    The hint itself is not gone: `_create_bash_subprocess` still raises it,
+    which `test_windows_bash_without_git_bash_fails_clearly` above covers."""
     monkeypatch.setattr(subprocess_tools, "IS_WINDOWS", True)
     monkeypatch.setattr(subprocess_tools, "find_bash", lambda: None)
+
+    seen = {}
+
+    async def fake_powershell(self, content, ctx):
+        seen["content"] = content
+        return {"output": "ok", "exit_code": 0}
+
+    monkeypatch.setattr(subprocess_tools.PowerShellTool, "execute", fake_powershell)
 
     result = await subprocess_tools.BashTool().execute(
         "pwd",
         {"subproc_env": {}, "session_id": None},
     )
 
-    assert result["exit_code"] == 1
-    assert "install Git for Windows" in result["error"]
+    assert seen["content"] == "pwd", "the command must reach PowerShell unchanged"
+    assert result["exit_code"] == 0
 
 
 @pytest.mark.asyncio
