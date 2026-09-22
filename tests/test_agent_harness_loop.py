@@ -73,9 +73,13 @@ def _run(monkeypatch, workspace, user="Añade un botón de borrar en las tarjeta
 
 def test_truncated_output_is_auto_continued(tmp_path, monkeypatch):
     _patch_common(monkeypatch)
+    # Scripted in the user's language on purpose: the harness nudges a reply
+    # that comes back in another one, and that nudge costs a round. This test
+    # is about `finish_reason: length` being continued, so it must not also
+    # be a language-mismatch test by accident.
     calls = _scripted_stream(monkeypatch, [
-        ("Here is the first half of the answer about the code", "length"),
-        ("and here is the rest. No files were changed.", "stop"),
+        ("Esta es la primera mitad de la respuesta sobre el código", "length"),
+        ("y este es el resto. No se cambió ningún fichero.", "stop"),
     ])
     events = _run(monkeypatch, str(tmp_path), user="Explica qué hace el fichero server.py")
     cont = [e for e in events if e.get("type") == "harness_check" and e.get("status") == "auto_continue"]
@@ -83,6 +87,23 @@ def test_truncated_output_is_auto_continued(tmp_path, monkeypatch):
     assert calls["n"] == 2
     infos = [e for e in events if e.get("type") == "round_info"]
     assert [i["finish_reason"] for i in infos] == ["length", "stop"]
+
+
+def test_a_request_to_explain_is_answered_in_prose_without_a_nudge():
+    """A bound workspace made every prose-only reply look like a shirked job.
+    A greeting was exempted when that turned "hola" into "your original
+    request requires work in the active workspace"; a question has exactly
+    the same problem, and being told to start the next response with a tool
+    call is the wrong answer to it."""
+    assert al._explanation_request("Explica qué hace el fichero server.py")
+    assert al._explanation_request("explain what this module does")
+    assert al._explanation_request("¿Cómo funciona el enrutado de modelos?")
+    assert al._explanation_request("What does agent_loop do?")
+    # A change is still a change, however it is introduced.
+    assert not al._explanation_request("Explica qué hace server.py y luego arregla el bug")
+    assert not al._explanation_request("Añade un endpoint /api/stats en server.py")
+    assert not al._explanation_request("fix the failing test")
+    assert not al._explanation_request("")
 
 
 def test_todowrite_progress_is_annotated_and_persisted(tmp_path, monkeypatch):
@@ -231,7 +252,9 @@ def test_hallucinated_tool_name_gets_a_correction_not_a_silent_end(tmp_path, mon
     calls = _native_call_stream(monkeypatch, [
         [{"name": "list", "arguments": json.dumps({"path": "."})}],
         [{"name": "ls", "arguments": json.dumps({"path": "."})}],
-        "The repo has server.py at the root; nothing was changed.",
+        # In the user's language: a reply in another one earns a nudge and
+        # an extra round, which is a different check from this one.
+        "El repositorio tiene server.py en la raíz; no se cambió nada.",
     ])
     events = _run(monkeypatch, str(tmp_path), user="Añade un endpoint /api/stats en server.py", max_rounds=6)
     unk = [e for e in events if e.get("type") == "harness_check" and e.get("status") == "unknown_tool"]
@@ -249,7 +272,8 @@ def test_empty_round_after_tool_work_is_nudged_once(tmp_path, monkeypatch):
     calls = _native_call_stream(monkeypatch, [
         [{"name": "read_file", "arguments": json.dumps({"path": "server.py"})}],
         "",   # silent give-up
-        "I read server.py; the endpoint is not there yet and I have not changed anything.",
+        # In the user's language, so the empty-round nudge is the only one.
+        "He leído server.py; el endpoint todavía no está y no he cambiado nada.",
     ])
     events = _run(monkeypatch, str(tmp_path), user="Añade un endpoint /api/stats en server.py", max_rounds=6)
     empty = [e for e in events if e.get("type") == "harness_check" and e.get("status") == "empty_round"]
@@ -566,7 +590,11 @@ def test_permission_to_continue_is_rejected_and_the_model_is_told_to_keep_workin
     ])
     events = _events(_collect(al.stream_agent_loop(
         "http://127.0.0.1:11434/v1", "qwen3-coder:30b",
-        [{"role": "user", "content": "Continue"}],
+        # Unambiguously English: "Continue" settles no language of its own,
+        # so the installation's configured default decided it, and on a
+        # Spanish one the English script earned a language nudge -- which
+        # costs the round this test is watching for.
+        [{"role": "user", "content": "Continue with the next task, please."}],
         max_rounds=6, relevant_tools={"read_file", "edit_file", "glob"},
         workspace=str(tmp_path),
         harness_options={"trusted_workspace": str(tmp_path)},
