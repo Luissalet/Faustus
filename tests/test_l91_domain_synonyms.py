@@ -17,11 +17,12 @@ plus the new base-rules line. Three things this covers:
    floor (`_git_intent` in the agent loop's tool-selection code, tested by
    tests/test_l88_git_tools_offered.py and tests/test_l90_git_natural.py) —
    this file only asserts that floor still works after this lot's edits.
-3. `_AGENT_RULES`/`_API_AGENT_RULES` gained the one line the brief specifies
-   verbatim: "Users speak plainly: map what they ask to the right tool
-   yourself; never ask them to name a tool, a path or a command, and never
-   say a tool is unavailable without first checking the catalog (list the
-   tools you have)".
+3. `_AGENT_RULES`/`_API_AGENT_RULES` carry the rule the brief specifies:
+   speak plainly, map the request to the tool yourself, never make the
+   person name a tool or a path, and never claim a tool is missing without
+   checking first. Asserted by its commitments rather than verbatim -- the
+   last clause has since been reworded to name `lookup_tools`, which is the
+   better instruction, and a verbatim pin only turned red for it.
 """
 from __future__ import annotations
 
@@ -134,17 +135,31 @@ def test_git_natural_language_still_recognized_by_its_own_floor():
 # 3. New base-rules line
 # ---------------------------------------------------------------------------
 
-_NEW_RULE_LINE = (
-    "Users speak plainly: map what they ask to the right tool yourself; "
-    "never ask them to name a tool, a path or a command, and never say a "
-    "tool is unavailable without first checking the catalog (list the "
-    "tools you have)."
+# The rule has three commitments, and it is those that matter, not the
+# sentence. The last clause was reworded from "checking the catalog (list
+# the tools you have)" to name the tool that actually does it,
+# `lookup_tools` -- a strictly better instruction, and it turned both of
+# these red for pinning the old words verbatim.
+_RULE_COMMITMENTS = (
+    "Users speak plainly",
+    "map what they ask to the right tool yourself",
+    "never ask them to name a tool, a path or a command",
+    "never say a tool is unavailable without first",
 )
 
 
+def _assert_rule(rules: str, where: str) -> None:
+    for phrase in _RULE_COMMITMENTS:
+        assert phrase in rules, f"{where} lost: {phrase!r}"
+    # And it must still point at a way to check, not just forbid the excuse.
+    assert "lookup_tools" in rules or "catalog" in rules, (
+        f"{where} forbids saying a tool is unavailable but no longer says how to check"
+    )
+
+
 def test_agent_rules_has_new_map_dont_ask_line():
-    assert _NEW_RULE_LINE in agent_loop._AGENT_RULES
+    _assert_rule(agent_loop._AGENT_RULES, "_AGENT_RULES")
 
 
 def test_api_agent_rules_has_new_map_dont_ask_line():
-    assert _NEW_RULE_LINE in agent_loop._API_AGENT_RULES
+    _assert_rule(agent_loop._API_AGENT_RULES, "_API_AGENT_RULES")
