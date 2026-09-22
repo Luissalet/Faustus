@@ -6884,3 +6884,73 @@ exacta; no se toca a ciegas.
 `studio/src/screens/studio/Composer.tsx`,
 `studio/checks/composer-send-draft.check.mjs` (nuevo), y siete ficheros de
 tests nuevos.
+
+## 162. Segunda sesión de uso real: la latencia del saludo, la memoria que
+guardaba fotos fijas, y un centinela que nadie había implementado (22-09-2026)
+
+Siete arreglos y dos descartes, cada uno con su medida. Lo que los une es que
+ninguno sale de leer el código: salen de usar la aplicación como la usa alguien.
+
+**El saludo viajaba con todas las herramientas puestas.** Modo agente es el
+modo por defecto, así que "hola" llegaba al motor con el esquema de cada
+herramienta del workspace adjunto, y el motor tenía que leerselo entero antes de
+decir una palabra. Medido con la misma pregunta y el mismo motor: 7,7 s con
+herramientas, 3,0 s en modo chat sin ellas, 3,7 s en modo agente ya arreglado.
+Decide `turn_effort.wants_tools`, deliberadamente la misma lista blanca que ya
+gobierna el razonamiento, porque la pregunta es la misma: ¿hay trabajo en este
+turno? Una conversación que ya llamó a una herramienta conserva las suyas diga
+lo que diga el último mensaje, que es lo que hace segura una respuesta de una
+palabra después de una tarjeta de aprobación.
+
+**La memoria archivaba fotos fijas del workspace como hechos del usuario.** En
+la pantalla de memoria había guardado "Hay 2 ficheros en la raíz del workspace",
+y ya se había colado tres veces en el prompt. No es un hecho de la persona: dejó
+de ser verdad en cuanto alguien añadió un fichero, y a partir de ahí contradice
+la realidad en cada turno que lo carga. El prompt de extracción ya pedía "hechos
+personales duraderos" y aun así produjo eso, porque un prompt es una petición y
+no una guarda. La guarda es `services/memory/volatile_facts.py`, una lista de
+rechazo determinista que sobrevive a cualquier modelo y a cualquier reescritura
+del prompt. Estrecha a propósito: el test afirma que cada memoria real que había
+en el almacén la sobrevive, una a una.
+
+**`"auto"` era el centinela que pasaba todo el mundo y que nadie implementó.**
+Darle al canvas de diseño su herramienta de agente (OBJ-30) lo destapó: la
+herramienta volvía en dos segundos con "Model 'auto' not found on any configured
+endpoint". `_resolve_model` buscaba un modelo llamado literalmente "auto", y ese
+es el string que le pasan el route de chat, `auto_review`, `doubt_review`,
+`research_review`, el torneo y la ruta de ejecución de herramientas. Las pasadas
+de revisión fallan en abierto, así que llevaban sin ejecutarse sin dejar rastro;
+el canvas no falla en abierto, y por eso salió. Un spec vacío era peor que roto:
+la rama de Anthropic compara con `model_name.lower() in am.lower()`, y "" es
+subcadena de todo, así que resolvía a lo primero que hubiera.
+
+**Y ya resolviendo, el canvas se lo escribía el modelo más pequeño de la
+máquina.** 179,8 s bajo la gramática y completion vacía, porque un canvas es un
+objeto de siete campos y la gramática y el razonamiento salen del mismo
+presupuesto de tokens. El modelo del turno viaja ahora en el contexto de
+herramienta como `turn_model`: 81,5 s y las siete dimensiones completas.
+
+**La tarjeta de permisos decía "external" cuando no había pasado nada externo.**
+Pedir "ejecuta los tests de esta carpeta" sacaba "External untrusted context has
+already influenced this run". No había pasado nada externo: había leído dos
+ficheros que el usuario le señaló. Leer un fichero local arma esa puerta igual
+que una página web, y debe hacerlo — un fichero también puede llevar
+instrucciones dentro — pero una tarjeta que describe mal lo que ha pasado es una
+tarjeta que la gente aprende a saltarse, y un aviso que nadie lee no protege a
+nadie. Ahora nombra las herramientas que trajeron el contenido.
+
+**La suite podía colgarse para siempre.** Dos ejecuciones completas se pararon
+en el 97% sin fallo y sin salida. `pytest-timeout` a 120 s convierte ese
+silencio en un fallo con nombre y con pila.
+
+**Un fichero de tests entero no se ejecutaba nunca en Windows.** `os.geteuid()`
+dentro de un `skipif` a nivel de módulo reventaba la recolección, y sus 29 tests
+salían como errores — en la plataforma de la que trata el fichero.
+
+**Dos descartes, con su medida.** El "no se puede crear la primera conversación"
+no era un fallo del producto sino de mi banco de pruebas: el clic y el tecleo
+sintéticos no llegan a una pestaña en segundo plano, y las ejecuciones que
+"fallaban" no registraban ni un `keydown`. Y el reflow por pulsación del
+compositor, del que una nota anterior decía ~350 ms, mide 0,28 ms con 2.321
+nodos y se aplana entre 1,6 y 2,8 ms hasta 14.888. Las dos cosas están en
+PENDIENTES.md con sus números, para que nadie las vuelva a averiguar.

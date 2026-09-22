@@ -269,6 +269,26 @@ The **Workflows** screen draws a definition as a layered graph with three explic
 
 ![Workflow canvas in structural simulation](assets/screens/workflows.png)
 
+### Design before code, and a turn that only costs what it needs
+
+The `design_canvas` tool makes the model declare a design before it touches a
+file: requirements, entities, the approach with the alternative it rejected and
+why, the files it will change, operations, norms and safeguards. The result is
+stored in the project concept graph as a decision whose refs are those files, so
+when one of them disappears the staleness check finds the design that no longer
+matches. It is written by the model the turn is already running on, not by
+whatever the global default happens to be.
+
+At the other end of the scale, a turn that is plainly small talk is answered
+without the model’s reasoning and without the toolset attached. Measured on a
+local 27B, same question and same engine: 7.7 s before, 3.7 s after. A
+conversation that has already called a tool keeps everything, whatever its last
+message says.
+
+Memory refuses to file a snapshot of the workspace as a fact about you. A count
+of the files in a folder stops being true the moment you add one, and a stored
+fact that contradicts reality is worse than no fact at all.
+
 ### Adaptation history and demos
 
 Three offline-checkable walkthroughs — a document with real review, a supervised agent end to end, semantic desktop control — are described in [docs/showcase.md](docs/showcase.md), each citing the files that implement it and the test that covers it, plus a small sample project under `examples/showcase/`. The adaptation backlog behind these features, audited row by row against the real code rather than asserted, lives in [docs/adaptations/](docs/adaptations/) (baseline classification and per-feature decision records).

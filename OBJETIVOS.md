@@ -733,15 +733,29 @@ que ser estable entre turnos o no se hace.
 Va después de la fase 2 del Context Engine (llevar el compilador al camino
 caliente detrás de la bandera), no antes.
 
-## OBJ-30 · Canvas de diseño antes de codificar — PRIMERA ENTREGA HECHA (22-09-2026)
+## OBJ-30 · Canvas de diseño antes de codificar — HERRAMIENTA VIVA (22-09-2026)
 
 Las siete dimensiones (requisitos, entidades, enfoque, estructura, operaciones,
 normas, salvaguardas) como esquema forzado, guardadas en el grafo de conceptos.
 Ver FAUSTUS.md §160c. Hecho el módulo, la pasada, la skill y la verificación en
 vivo.
 
-**Lo que falta:** la herramienta de agente que lo llame (hoy hay que invocar
-`design_canvas_pass.draft` desde código), su registro en las cinco piezas que
-la paridad exige, y la vuelta al canvas al terminar la tarea para comprobar que
-el trabajo cumple lo que se diseñó — que es la mitad que le da sentido a
-guardarlo y enlaza con OBJ-28.
+**Hecho después (13c2f88a, e6d35ca5, a72ea47b):** la herramienta de agente
+`design_canvas` {goal, context?, name?, concept_id?, save?}, registrada en las
+cinco piezas que la paridad exige. Dársela al agente destapó dos fallos que
+nadie podía ver desde código:
+
+- `_resolve_model` nunca implementó el centinela `"auto"` que le pasan el
+  route de chat, `auto_review`, `doubt_review`, `research_review`, el torneo y
+  la ruta de ejecución de herramientas: buscaba un modelo llamado literalmente
+  "auto". Las pasadas de revisión fallan en abierto, así que llevaban sin
+  ejecutarse quién sabe cuánto sin dejar rastro; el canvas no falla en abierto,
+  y por eso salió. Ahora significa `default_model`.
+- ya resolviendo, el canvas se lo escribía el modelo más pequeño de la máquina
+  (el ayudante en :8082): 179,8 s bajo la gramática y completion vacía. El
+  modelo del turno viaja ahora en el contexto de herramienta como `turn_model`
+  y el canvas lo prefiere: 81,5 s y las siete dimensiones.
+
+**Lo que falta:** la vuelta al canvas al terminar la tarea para comprobar que el
+trabajo cumple lo que se diseñó — que es la mitad que le da sentido a guardarlo
+y enlaza con OBJ-28.

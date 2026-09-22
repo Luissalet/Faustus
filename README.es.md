@@ -269,6 +269,28 @@ La pantalla **Flujos de trabajo** dibuja una definición como un grafo por capas
 
 Tres recorridos comprobables sin conexión —un documento con revisión real, un agente supervisado de principio a fin, control semántico de escritorio— se describen en [docs/showcase.md](docs/showcase.md), cada uno con las referencias a los archivos que lo implementan y el test que lo cubre, más un pequeño proyecto de ejemplo en `examples/showcase/`. El backlog de adaptación detrás de estas funciones, auditado fila por fila contra el código real en lugar de simplemente afirmado, está en [docs/adaptations/](docs/adaptations/) (clasificación de referencia y registros de decisión por función).
 
+### Diseñar antes de codificar, y un turno que cuesta solo lo que necesita
+
+La herramienta `design_canvas` obliga al modelo a declarar el diseño antes de
+tocar un fichero: requisitos, entidades, el enfoque con la alternativa que
+descartó y por qué, los ficheros que va a cambiar, operaciones, normas y
+salvaguardas. El resultado se guarda en el grafo de conceptos del proyecto como
+una decisión cuyas referencias son esos ficheros, de modo que cuando uno deja de
+existir la comprobación de obsolescencia encuentra el diseño que ya no cuadra.
+Lo escribe el modelo con el que ya corre el turno, no el que sea el por defecto
+global.
+
+En el otro extremo, un turno que es claramente conversación se responde sin el
+razonamiento del modelo y sin el juego de herramientas adjunto. Medido en un 27B
+local, misma pregunta y mismo motor: 7,7 s antes, 3,7 s después. Una
+conversación que ya ha llamado a una herramienta lo conserva todo, diga lo que
+diga su último mensaje.
+
+La memoria se niega a archivar una foto fija del workspace como un hecho sobre
+ti. Un recuento de los ficheros de una carpeta deja de ser verdad en cuanto
+añades uno, y un hecho guardado que contradice la realidad es peor que no tener
+ninguno.
+
 ## Voz
 
 Jarvis ofrece una sesión de voz con reconocimiento español/inglés, respuestas habladas, controles de interrupción y esfera visual reactiva. Configura los servicios de transcripción y síntesis disponibles en la app; el navegador necesita permiso para usar el micrófono. Las voces instaladas y los motores locales de voz determinan los idiomas y la reproducción disponibles.
