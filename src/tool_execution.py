@@ -956,6 +956,9 @@ async def _direct_fallback(
             # Both None/absent just mean the edit tools skip doubt review.
             "doubt_review_state": _turn_opts.get("doubt_review_state"),
             "task_text": _turn_opts.get("task_text"),
+            # The model this turn is running on, for a tool that makes a model
+            # call of its own. See the note beside it in src/agent_loop.py.
+            "turn_model": str(_turn_opts.get("turn_model") or ""),
             # The run's project identity, surfaced as its own ctx key so a tool
             # does not have to know that the route packs it into the harness
             # knobs (services/projects.py::agent_options puts it there). Read

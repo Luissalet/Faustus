@@ -8482,6 +8482,13 @@ async def _stream_agent_loop_body(
                         "rewrite_policy": _rewrite_policy,
                         "doubt_review_state": _doubt_review_state,
                         "task_text": _last_user,
+                        # The model THIS turn is running on. A tool that makes a model
+                        # call of its own (design_canvas) needs it: resolving its own
+                        # "auto" against the global default landed on the small helper
+                        # model, which spent 180 s under the canvas grammar and returned
+                        # nothing. The turn's model is the one the user chose and the
+                        # one already warm.
+                        "turn_model": model,
                     },
                 )
             finally:
@@ -12151,6 +12158,13 @@ async def _stream_agent_loop_body(
                             "rewrite_policy": _rewrite_policy,
                             "doubt_review_state": _doubt_review_state,
                             "task_text": _last_user,
+                            # The model THIS turn is running on. A tool that makes a model
+                            # call of its own (design_canvas) needs it: resolving its own
+                            # "auto" against the global default landed on the small helper
+                            # model, which spent 180 s under the canvas grammar and returned
+                            # nothing. The turn's model is the one the user chose and the
+                            # one already warm.
+                            "turn_model": model,
                         },
                     )
                     _prefetched_duration_ms[idx] = round(max(0.0, (time.monotonic() - _pt0) * 1000.0), 1)
@@ -12514,6 +12528,13 @@ async def _stream_agent_loop_body(
                                     "rewrite_policy": _rewrite_policy,
                                     "doubt_review_state": _doubt_review_state,
                                     "task_text": _last_user,
+                                    # The model THIS turn is running on. A tool that makes a model
+                                    # call of its own (design_canvas) needs it: resolving its own
+                                    # "auto" against the global default landed on the small helper
+                                    # model, which spent 180 s under the canvas grammar and returned
+                                    # nothing. The turn's model is the one the user chose and the
+                                    # one already warm.
+                                    "turn_model": model,
                                 },
                             )
                         finally:

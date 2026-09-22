@@ -63,6 +63,30 @@ def _workspace(ctx: dict) -> str:
     return str((ctx or {}).get("workspace") or "")
 
 
+def _canvas_model(ctx: dict) -> Optional[str]:
+    """Which model writes the canvas.
+
+    Order: the `agent_design_canvas_model` setting when somebody set one, then
+    the model THIS turn is running on, then whatever the pass resolves.
+
+    The middle step is the one that was missing. Left to resolve its own
+    "auto", the pass took the global default model -- on this install the
+    small helper -- which spent 180 s under the canvas grammar and returned an
+    empty completion. A canvas is a seven-field object and the grammar and the
+    reasoning come out of one token budget, so a small model is exactly the
+    wrong one for it. The turn's model is the one the user chose for the work
+    and the one already resident.
+    """
+    try:
+        from src.settings import get_setting
+        configured = str(get_setting("agent_design_canvas_model", "") or "").strip()
+    except Exception:  # noqa: BLE001
+        configured = ""
+    if configured and configured.lower() != "auto":
+        return configured
+    return str((ctx or {}).get("turn_model") or "").strip() or None
+
+
 class DesignCanvasTool:
     """`design_canvas` {goal, context?, name?, save?}: declare the design
     before writing code — requirements, entities, approach, structure,
@@ -85,6 +109,7 @@ class DesignCanvasTool:
                 goal,
                 context=str(args.get("context") or ""),
                 owner=str((ctx or {}).get("owner") or "") or None,
+                model=_canvas_model(ctx),
             )
         except DesignCanvasError as exc:
             # Deliberately not fail-open: see the module docstring.
