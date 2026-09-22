@@ -60,6 +60,12 @@ class PluginsListTool:
         lines = []
         for row in rows:
             bits = [f"{row['name']} ({row['plugin']})"]
+            # The manifest's own one-line purpose, in the text the model reads
+            # first. With only the capability keywords, asked "what could you
+            # do with Writer's Hoard?" the model invented specifics; the
+            # sentence the app's author wrote is the grounded answer.
+            if row.get("purpose"):
+                bits.append(str(row["purpose"]).strip())
             if row["capabilities"]:
                 bits.append("gives: " + ", ".join(row["capabilities"]))
             if not row["connected"]:
