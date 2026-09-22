@@ -108,6 +108,11 @@ class Candidate:
     preset_id: Optional[str]
     preset_name: Optional[str]
     latency_ms: Optional[int]
+    #: Path to the `faustus-plugin.json` this app shipped, when that is how
+    #: it was recognised. Non-null means "Faustus knew nothing about this
+    #: application; the application said what it offers", which is a
+    #: different claim from a shipped plugin and worth showing as one.
+    declares_itself: Optional[str] = None
     values: Dict[str, str] = field(default_factory=dict)   # prefilled preset values
 
     def to_dict(self) -> Dict[str, Any]:
@@ -337,12 +342,26 @@ async def _probe_port(lp: ListeningPort, sem: asyncio.Semaphore, tokens: Optiona
         return None
     preset_id = match_preset(probed["health"], probed["title"])
     preset = PRESETS.get(preset_id) if preset_id else None
+    offers_self = None
+    if preset is None and lp.cwd:
+        # An application Faustus ships no knowledge of, declaring itself in
+        # its own repository. The author of an app knows what it exposes and
+        # should not have to patch Faustus to say so — so an app running
+        # with a `faustus-plugin.json` beside it is connectable on sight.
+        from src import plugins as plugins_mod
+
+        declared = plugins_mod.read_app_manifest(lp.cwd)
+        if declared is not None:
+            preset = declared.to_preset()
+            preset_id = declared.id
+            offers_self = declared.path
     return Candidate(
         port=lp.port, url=url, pid=lp.pid, process=lp.process, cwd=lp.cwd,
         title=probed["title"] or str((probed["health"] or {}).get("service") or ""),
         health=probed["health"], preset_id=preset_id,
         preset_name=preset.name if preset else None, latency_ms=probed["latency_ms"],
         values=suggested_values(preset, url, lp.cwd) if preset else {},
+        declares_itself=offers_self,
     )
 
 

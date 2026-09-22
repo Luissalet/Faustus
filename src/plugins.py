@@ -59,6 +59,16 @@ SCHEMA = 1
 
 MANIFEST_NAME = "plugin.json"
 
+#: The same manifest, living in the application's own repository instead of
+#: in Faustus. Namespaced, because it sits in someone else's project root
+#: next to their package.json and their README.
+#:
+#: This is the one that matters for an app nobody has taught Faustus about:
+#: the author of an application knows what it exposes, and should be able to
+#: say so in their own repo without sending a patch to Faustus. An app found
+#: running with one of these is connectable on sight.
+APP_MANIFEST_NAME = "faustus-plugin.json"
+
 #: Every key a manifest may carry at the top level. An unknown key is a
 #: typo or a newer schema, and both deserve to be said out loud rather than
 #: ignored into silence.
@@ -400,3 +410,64 @@ def load_plugins() -> Dict[str, "Plugin"]:
 
 def get(plugin_id: str) -> Optional["Plugin"]:
     return cached().plugins.get(str(plugin_id or ""))
+
+
+# ---------------------------------------------------------------------------
+# Manifests that travel inside the application
+# ---------------------------------------------------------------------------
+
+def read_app_manifest(app_dir: str) -> Optional["Plugin"]:
+    """The plugin an application declares about itself, or None.
+
+    Looks for `faustus-plugin.json` in the directory an app is installed in.
+    Nothing is written and nothing is registered: this only answers "does
+    this application say what it offers?", which is the question the
+    nearby-apps scan needs in order to offer an app Faustus ships no
+    knowledge of.
+
+    A malformed one is a None with a logged reason, never an exception — it
+    is a file in somebody else's repository, and Faustus is reading it
+    uninvited.
+    """
+    path = os.path.join(str(app_dir or ""), APP_MANIFEST_NAME)
+    if not os.path.isfile(path):
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        return parse_manifest(data, source="app", path=path)
+    except (OSError, ValueError, ManifestError) as exc:
+        logger.info("plugin manifest in %s refused: %s", app_dir, exc)
+        return None
+
+
+def install_from_dir(app_dir: str) -> Dict[str, Any]:
+    """Adopt the manifest an application ships, as an installed plugin.
+
+    Copies it under `<DATA_DIR>/plugins/<id>/plugin.json` — the same place a
+    hand-installed plugin lives — so nothing downstream needs to know where
+    it came from, and so removing the application does not silently take a
+    configured connection with it.
+
+    The application's own copy stays the original. This is a snapshot taken
+    on adoption, not a link: an app that changes what it offers in a later
+    version is a change the user should see and accept, not one that
+    rewrites a live connection underneath them.
+    """
+    plugin = read_app_manifest(app_dir)
+    if plugin is None:
+        return {"ok": False,
+                "reason": f"no readable {APP_MANIFEST_NAME} in {app_dir}"}
+    target_dir = os.path.join(user_dir(), plugin.id)
+    target = os.path.join(target_dir, MANIFEST_NAME)
+    try:
+        os.makedirs(target_dir, exist_ok=True)
+        with open(plugin.path, "r", encoding="utf-8") as src:
+            raw = src.read()
+        with open(target, "w", encoding="utf-8", newline="\n") as dst:
+            dst.write(raw)
+    except OSError as exc:
+        return {"ok": False, "reason": f"could not install {plugin.id}: {exc}"}
+    reset_cache()
+    return {"ok": True, "id": plugin.id, "name": plugin.name,
+            "path": target, "from": plugin.path}
