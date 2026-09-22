@@ -3392,6 +3392,41 @@ FUNCTION_TOOL_SCHEMAS = [
             }
         }
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "manage_instincts",
+            "description": (
+                "Read or manage the user's learned 'instincts' -- small, per-project "
+                "(or promoted-to-global) behaviours with a confidence score, mined "
+                "automatically from past sessions in the background. This never gates "
+                "anything; it only adds context. list/view/status are read-only. "
+                "confirm/contradict adjust confidence from explicit feedback. add creates "
+                "a manual one. retire deactivates one (kept, never deleted). promote merges "
+                "a pattern seen across several projects into one global instinct. evolve "
+                "clusters related instincts into a suggested draft skill/command/agent. "
+                "export/import move the whole set as JSON."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["list", "view", "status", "confirm", "contradict", "add", "retire", "promote", "evolve", "export", "import"], "description": "list = active instincts; view = one record by id; status = counts + top 5 + pending promotions; confirm/contradict = adjust confidence for id; add = create a manual instinct; retire = deactivate id; promote = merge a widely-seen project pattern into global; evolve = cluster into a suggested skill/command/agent; export/import = whole-set JSON."},
+                    "id": {"type": "string", "description": "Instinct id (for view/confirm/contradict/retire, and optionally promote to restrict it to one candidate)."},
+                    "trigger": {"type": "string", "description": "The recurring situation, starting with 'when'/'cuando' (for add), e.g. 'when writing new FastAPI routes'."},
+                    "do": {"type": "string", "description": "What to do in that situation (for add), e.g. 'use the router factory in routes/ and register in app.py'."},
+                    "domain": {"type": "string", "enum": ["code-style", "workflow", "testing", "tooling", "communication", "debugging", "other"], "description": "Category (for add). Defaults to 'other'."},
+                    "scope": {"type": "string", "enum": ["project", "global"], "description": "Where this instinct applies (for add). Defaults to 'project'."},
+                    "project": {"type": "string", "description": "Project key to scope list/status/add/evolve to (omit for every project)."},
+                    "min_confidence": {"type": "number", "description": "Minimum decayed confidence to include (for list). 0-1."},
+                    "evidence": {"type": "string", "description": "Short note on why you're confirming/contradicting (for confirm/contradict)."},
+                    "dry_run": {"type": "boolean", "description": "For promote: report what WOULD be promoted without changing anything."},
+                    "generate": {"type": "boolean", "description": "For evolve: also write each cluster as a draft skill (never published)."},
+                    "json": {"type": "string", "description": "For import: the JSON array text previously returned by export."}
+                },
+                "required": ["action"]
+            }
+        }
+    },
 ]
 
 

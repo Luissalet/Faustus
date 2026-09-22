@@ -257,6 +257,24 @@ TOOL_HANDLERS.update(DESKTOP_TOOL_HANDLERS)
 # ADP-08/09 semantic desktop tools (snapshot/find/act by control identity).
 TOOL_HANDLERS.update(DESKTOP_SEMANTIC_TOOL_HANDLERS)
 
+
+# Lot I: instincts (src/agent_tools/instinct_tools.py, src/instincts.py).
+# `do_manage_instincts` mirrors `do_manage_skills`'s call shape
+# (`content, owner=None`), not the generic `(content, ctx)` shape every
+# other TOOL_HANDLERS entry uses — this thin adapter bridges the two so the
+# tool still dispatches through `src/tool_execution.py`'s existing generic
+# `elif tool in dynamic_handlers` fallback with NO change to that
+# (integrator-owned) file. See `<worktree>/I_wiring.md` for the two other
+# integrator-file hooks this lot does need (agent_loop.py injection,
+# chat_helpers.py post-turn extraction).
+async def _manage_instincts_adapter(content, ctx):
+    from src.agent_tools.instinct_tools import do_manage_instincts
+    owner = ctx.get("owner") if isinstance(ctx, dict) else None
+    return await do_manage_instincts(content, owner=owner)
+
+
+TOOL_HANDLERS["manage_instincts"] = _manage_instincts_adapter
+
 # ---------------------------------------------------------------------------
 # Constants (re-exported for backward compatibility — single source of truth
 # is src.constants; always prefer importing from there for new code)
@@ -371,7 +389,9 @@ TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_fi
              # PDF operations (R4, Reach wave) -- src/agent_tools/pdf_ops_tool.py.
              "pdf_ops",
              # Structural PDF navigation -- src/agent_tools/pdf_tree_tool.py.
-             "pdf_outline", "pdf_read_section", "pdf_find_section"} | BUILTIN_EMAIL_TOOLS | DESKTOP_TOOLS | SEMANTIC_TOOLS
+             "pdf_outline", "pdf_read_section", "pdf_find_section",
+             # Lot I: instincts -- src/agent_tools/instinct_tools.py.
+             "manage_instincts"} | BUILTIN_EMAIL_TOOLS | DESKTOP_TOOLS | SEMANTIC_TOOLS
 
 ToolBlock = namedtuple("ToolBlock", ["tool_type", "content"])
 
@@ -415,6 +435,9 @@ _LAZY_EXPORTS = {
     "do_manage_skills": "src.tool_implementations",
     "do_manage_tasks": "src.tool_implementations",
     "do_api_call": "src.tool_implementations",
+    # Lot I: instincts -- lives in its own module (see the note above
+    # TOOL_HANDLERS["manage_instincts"]), not src.tool_implementations.
+    "do_manage_instincts": "src.agent_tools.instinct_tools",
 }
 
 

@@ -326,6 +326,10 @@ BUILTIN_TOOL_DESCRIPTIONS: Dict[str, str] = {
     "plan_done": "Mark one task of the active persisted plan done, with concrete evidence of what was actually run/checked. Use for 'mark this task done', 'this step is finished'.",
     "plan_skip": "Mark one task of the active persisted plan skipped, with a reason. Use for 'skip this task', 'we're not doing this step'.",
     "plan_next": "Return the next pending task of the active persisted plan and mark it in_progress, without closing the current one. Use for 'what's the next task', 'move on to the next step'.",
+    # Lot I: instincts -- small learned behaviours with confidence, mined
+    # from real sessions in the background and injected as context (never a
+    # gate) once confident enough. src/instincts.py + src/agent_tools/instinct_tools.py.
+    "manage_instincts": "Read or manage the user's learned 'instincts' -- small, per-project (or promoted-to-global) behaviours like 'when writing new FastAPI routes, use the router factory' with a confidence score, mined automatically from past sessions. list/view/status are read-only; confirm/contradict adjust confidence from feedback; add creates a manual one; retire deactivates one; promote merges a pattern seen across several projects into one global instinct; evolve clusters related instincts into a suggested draft skill/command/agent; export/import move the whole set as JSON. Use for 'what have you learned about how I like this project done', 'remember that I always want X when Y', 'that instinct was wrong', 'turn what you've learned into a skill'.",
 }
 
 
