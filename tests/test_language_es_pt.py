@@ -74,3 +74,37 @@ def test_a_sentence_with_real_signal_still_settles():
 
 def test_english_is_untouched():
     assert detect_language("What are the two files that changed?") == "en"
+
+
+# ---------------------------------------------------------------------------
+# `a`, the preposition, is not English evidence
+# ---------------------------------------------------------------------------
+#
+# Listed only under English, each `a` of a Spanish sentence scored a full
+# point of English. With code identifiers around it (which score nothing),
+# the sentence came out English and the agent harness asked the model to say
+# it again in Spanish: a second completion, billed, for a correct answer.
+
+@pytest.mark.parametrize("text", [
+    "He añadido multiply(a, b) a calc.py conservando add().",
+    "Voy a leer config.py y a ejecutar pytest.",
+    "Paso a paso: de main.py a utils.py.",
+])
+def test_a_spanish_sentence_around_code_is_spanish(text):
+    assert detect_language(text) == "es"
+
+
+@pytest.mark.parametrize("text", [
+    "Write a poem about the sea",
+    "I added a function to calc.py and kept the tests green.",
+])
+def test_english_with_a_is_still_english(text):
+    assert detect_language(text) == "en"
+
+
+def test_the_harness_does_not_flag_a_correct_spanish_answer():
+    from src.reply_language import reply_language_mismatch
+
+    assert reply_language_mismatch(
+        "es", "He añadido multiply(a, b) a calc.py conservando add()."
+    ) is None

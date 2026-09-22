@@ -1170,13 +1170,20 @@ _STOPWORDS = {
     # dos ejemplos" scored pt 1.0 and was answered in Portuguese. Listed in
     # both, the 1/(languages sharing it) weighting does its job and they stop
     # deciding anything on their own.
+    #
+    # `a` is the same case the other way round: listed only under English, it
+    # scored a full point of English every time a Spanish, Portuguese or
+    # Italian sentence used the preposition. "He añadido multiply(a, b) a
+    # calc.py conservando add()." read as English 2.0 against Spanish 0.75,
+    # the harness judged a correct Spanish answer to be in the wrong language
+    # and asked the model for it again -- a second completion, billed.
     "es": """el la los las un una unos unas y o de del que en por para con como es son era
              sobre según qué cuál cuáles cuánto cuánta cuántos dónde cómo porqué al se no
              ni hay más entre desde tienen tiene sus su este esta estos estas necesito
-             dos da segundo""".split(),
+             dos da segundo a""".split(),
     "pt": """o os as um uma e de do da dos das que em por para com como é são era sobre
              segundo qual quais quanto quanta quantos onde não há mais entre desde têm tem
-             seus sua este esta estes estas você são melhores leva""".split(),
+             seus sua este esta estes estas você são melhores leva a""".split(),
     "fr": """le la les un une des du de et que en pour avec dans qui est sont était sur
              selon quel quelle quels quelles combien où comment pourquoi ne pas ce cette
              ces plus entre depuis leur leurs chez sont meilleurs""".split(),
@@ -1185,7 +1192,7 @@ _STOPWORDS = {
              nicht kein mehr zwischen seit ihre ihr am besten lange""".split(),
     "it": """il lo la i gli le un uno una di del della dei delle e che in per con come è
              sono era su secondo quale quali quanto quanta dove perché non più tra da loro
-             questo questa questi queste negli migliori richiede""".split(),
+             questo questa questi queste negli migliori richiede a""".split(),
 }
 _STOPWORD_SETS = {code: frozenset(words) for code, words in _STOPWORDS.items()}
 _WORD_RE = re.compile(r"[^\W\d_]+", re.UNICODE)
