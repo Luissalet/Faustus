@@ -37,6 +37,28 @@ def isolated_changeset_receipts(tmp_path_factory):
 
 
 @pytest.fixture(autouse=True)
+def clean_dead_host_cooldown():
+    """`llm_core` remembers which hosts stopped answering, in module-level
+    dicts that outlive a test.
+
+    That memory is the point in production -- it is what stops a turn paying
+    a full timeout per round for an engine that is not there. In a test run
+    it is cross-contamination: one test pointing at an unreachable endpoint
+    cools that host, and a later test that expects a probe silently gets the
+    cooldown path instead. It was always possible through `llm_call`; it
+    became common once the keep-alive ping and the context-length probe
+    started feeding the same table, and it showed as two route tests that
+    pass alone and fail in the suite.
+    """
+    from src import llm_core
+    llm_core._dead_hosts.clear()
+    llm_core._host_fails.clear()
+    yield
+    llm_core._dead_hosts.clear()
+    llm_core._host_fails.clear()
+
+
+@pytest.fixture(autouse=True)
 def isolated_managed_objectives(tmp_path_factory):
     from services import objective_locations
     allocated = []
