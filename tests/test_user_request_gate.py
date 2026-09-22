@@ -359,6 +359,10 @@ _SALES = "Analiza el export de ventas_junio.csv y dime qué tienda factura más.
     "ls -la",
     "cd /d/proj && cat LEEME.md",
     "sort -t';' -k2 ventas_junio.csv 2>/dev/null | head -n 20",
+    # seen live
+    "cat ventas_junio.csv | awk -F';' 'NR>1 {print $2}' | sort | uniq -c && echo \"=== FECHAS ===\" "
+    "&& awk -F';' 'NR>1 {print $1}' ventas_junio.csv | sort | uniq -c | head -40",
+    "awk -v umbral=100 -F';' '$5 > umbral {n++} END {print n}' ventas_junio.csv",
 ])
 def test_reading_workspace_files_with_the_shell_needs_no_card(command):
     assert _asked(_SALES, command)
@@ -388,6 +392,15 @@ def test_reading_workspace_files_with_the_shell_needs_no_card(command):
     "cat {/etc/passwd,x}",
     "cat x~",
     "file -z ventas_junio.csv",
+    "awk 'BEGIN {system(\"calc\")}'",
+    "awk '{print | \"sh\"}' ventas_junio.csv",
+    "awk '{print > \"app.py\"}' ventas_junio.csv",
+    "awk '{while ((getline line < \"/etc/passwd\") > 0) print line}'",
+    "awk '@load \"x\"'",
+    "awk -f prog.awk ventas_junio.csv",
+    "awk --source='BEGIN {system(\"calc\")}' ventas_junio.csv",
+    "awk -v a=1 'x=1' /etc/passwd",
+    "awk '{print}' /etc/passwd",
 ])
 def test_anything_that_writes_runs_or_leaves_the_workspace_keeps_the_card(command):
     assert not _asked(_SALES, command)

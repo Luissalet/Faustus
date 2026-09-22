@@ -284,7 +284,21 @@ _READ_ONLY_COMMANDS = {
     "tail": ("-f", "-F", "--follow", "--retry"),
     "grep": ("-f", "--file", "--exclude-from"),
     "sort": ("-o", "--output", "-T", "--temporary-directory", "--compress-program", "--random-source", "--files0-from"),
+    # the program is checked on its own below (_harmless_awk)
+    # `-e`/`--source`/`-W` could carry a program inside the option itself
+    "awk": ("-f", "--file", "-i", "--include", "-l", "--load", "-E", "--exec", "-o", "--pretty-print",
+            "-p", "--profile", "-d", "--dump-variables", "-D", "--debug", "-e", "--source", "-W"),
 }
+
+
+def _harmless_awk(program: str) -> bool:
+    """An awk program that only reads and prints: no `system()`, no
+    `getline` (reads files or runs commands), no pipes to commands, no
+    `print > file`, no extension loading. Seen live: `awk -F';' 'NR>1
+    {print $2}' ventas.csv | sort | uniq -c` to count stores."""
+    if re.search(r"\b(?:system|getline)\b|[|@`]", program):
+        return False
+    return not re.search(r"\bprintf?\b[^;}]*>", program)
 
 
 def _host_path(token: str) -> str:
@@ -345,15 +359,26 @@ def _inspects_the_workspace(step: str, workspace: str) -> bool:
         # values included: skipping "the value after -n" would skip the file
         # in `cat -n /etc/x`. A value like `;` or `2` reads as a harmless
         # name inside the workspace.
-        positional = []
+        positional, awk_assignment = [], False
         for word in words[1:]:
+            if awk_assignment:
+                awk_assignment = False
+                if not re.match(r"^[A-Za-z_]\w*=", word):
+                    return False
+                continue  # `awk -v x=1`: a variable, not a file or the program
             if word.startswith("-") and not re.match(r"^-\d+$", word):
                 if _bad_option(word, bad):
                     return False
+                awk_assignment = words[0] == "awk" and word == "-v"
                 continue
             positional.append(word)
         if words[0] == "grep" and positional:
             positional = positional[1:]  # the pattern, not a path
+        if words[0] == "awk":
+            if not positional or not _harmless_awk(positional[0]):
+                return False
+            # the program, then `var=value` assignments awk reads as such
+            positional = [w for w in positional[1:] if not re.match(r"^[A-Za-z_]\w*=", w)]
         if words[0] == "uniq" and len(positional) > 1:
             return False  # `uniq in out` writes its second name
         for word in positional:
