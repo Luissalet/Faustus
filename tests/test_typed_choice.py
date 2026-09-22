@@ -320,15 +320,32 @@ from src import tool_execution                                              # no
 from src import settings as settings_mod                                    # noqa: E402
 
 
+def _force_setting(monkeypatch, value: bool) -> None:
+    """Make `get_setting("typed_choice_logprobs")` answer `value`.
+
+    Patching DEFAULT_SETTINGS and invalidating the caches does NOT do this:
+    a stored row wins over the defaults table, so on any install where the
+    setting has ever been written the test was asking for one thing and the
+    code reading another. `_verify_claim_with_optional_judge` imports
+    `get_setting` from `src.settings` at call time, so patching it there is
+    what the code actually sees.
+    """
+    real = settings_mod.get_setting
+
+    def fake(key, default=None):
+        if key == "typed_choice_logprobs":
+            return value
+        return real(key, default)
+
+    monkeypatch.setattr(settings_mod, "get_setting", fake)
+
 def test_typed_choice_logprobs_default_is_off():
     assert settings_mod.DEFAULT_SETTINGS["typed_choice_logprobs"] is False
 
 
 @pytest.mark.asyncio
 async def test_verify_claim_setting_off_never_calls_typed_choice(monkeypatch):
-    from src import settings as settings_mod
-    monkeypatch.setitem(settings_mod.DEFAULT_SETTINGS, "typed_choice_logprobs", False)
-    settings_mod._invalidate_caches()
+    _force_setting(monkeypatch, False)
 
     called = {"n": 0}
 
@@ -346,9 +363,7 @@ async def test_verify_claim_setting_off_never_calls_typed_choice(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_verify_claim_setting_on_uses_typed_choice_when_unsettled(monkeypatch):
-    from src import settings as settings_mod
-    monkeypatch.setitem(settings_mod.DEFAULT_SETTINGS, "typed_choice_logprobs", True)
-    settings_mod._invalidate_caches()
+    _force_setting(monkeypatch, True)
 
     async def fake_typed_choice(question, options, **kwargs):
         assert options == ["supported", "not supported"]
