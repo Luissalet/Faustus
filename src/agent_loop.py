@@ -54,6 +54,7 @@ from src.tool_security import (
     plan_mode_disabled_tools,
 )
 from src.tool_policy import GUIDE_ONLY_DIRECTIVE, WEB_TOOL_NAMES, ToolPolicy
+from src.user_request_gate import user_request_text as _user_request_text
 from src.tool_capabilities import (
     ResultIntegrity,
     ToolEffect,
@@ -6200,6 +6201,7 @@ async def _stream_agent_loop_body(
             (harness_options or {}).get("user_delegation")
             if isinstance((harness_options or {}).get("user_delegation"), dict) else None
         ),
+        user_request=_user_request_text(messages),
     )
     if run_security.user_delegation is not None:
         logger.info("[gate] user-dictated delegation in this turn: %d task(s)",

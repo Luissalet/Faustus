@@ -1580,6 +1580,13 @@ class ToolRunSecurityContext:
     # the first check let it through and blocked the second (seen live:
     # "blocked by the external-context policy", no card).
     user_delegation: Optional[Mapping[str, Any]] = None
+    # The user's own words in this turn (src.user_request_gate.
+    # user_request_text). A call that a matcher ties to them word for word --
+    # "Arranca Jobhunter's Hoard" -> plugin_app {"plugin": "jobhunter"} --
+    # passes the post-external-context gate: it is what was asked, not
+    # something the model decided after reading untrusted text. Same
+    # non-consuming contract as `user_delegation` above.
+    user_request: str = ""
 
     @staticmethod
     def _delegation_payload(content: Any) -> Optional[Mapping[str, Any]]:
@@ -1766,6 +1773,10 @@ class ToolRunSecurityContext:
             return ToolGateDecision(True)
         if self._user_delegation_allows(tool_name, content):
             return ToolGateDecision(True)
+        if self.user_request:
+            from src.user_request_gate import allows as _user_asked_for
+            if _user_asked_for(tool_name, content, self.user_request):
+                return ToolGateDecision(True)
         capabilities = capabilities_for_action(tool_name, content)
         blocked_effects = capabilities.effects & POST_EXTERNAL_BLOCKED_EFFECTS
         if capabilities.known and not blocked_effects:
