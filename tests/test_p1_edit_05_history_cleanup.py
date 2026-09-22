@@ -114,6 +114,27 @@ def test_registry_clears_after_cleanup_so_a_second_run_is_a_no_op(tmp_path):
     assert second == {"moved": [], "missing": [], "trash_dir": None}
 
 
+# ---- read_file on a picture shows the picture ----
+
+def test_read_file_returns_an_image_as_an_image(tmp_path, monkeypatch):
+    import base64
+    from src.tool_images import normalize_result_images
+
+    monkeypatch.setattr("src.tool_execution._resolve_tool_path", lambda raw: str(tmp_path / raw), raising=False)
+    png = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==")
+    (tmp_path / "grafico.png").write_bytes(png)
+    result = asyncio.run(ft.ReadFileTool().execute("grafico.png", {}))
+    assert result["exit_code"] == 0
+    images = normalize_result_images(result)
+    assert len(images) == 1 and images[0]["mimeType"] == "image/png"
+    assert base64.b64decode(images[0]["data"]) == png
+    # text files are unchanged
+    (tmp_path / "notas.md").write_text("hola", encoding="utf-8")
+    text = asyncio.run(ft.ReadFileTool().execute("notas.md", {}))
+    assert text["output"].startswith("hola") and "images" not in text
+
+
 # ---- Faustus's own folders stay out of the user's version control ----
 
 def _git(cwd, *args):

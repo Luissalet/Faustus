@@ -359,6 +359,35 @@ class EditFileTool:
                 logger.debug("[doubt_review] post-write section failed for %s", path, exc_info=True)
         return result
 
+_IMAGE_TYPES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+                ".gif": "image/gif", ".webp": "image/webp"}
+_MAX_IMAGE_BYTES = 8 * 1024 * 1024
+
+
+def _image_result(path: str, shown: str) -> Optional[Dict[str, Any]]:
+    """read_file on a picture returns the picture. Seen live: after saving a
+    chart, the agent reached for `desktop_screenshot` to check it - a capture
+    of the user's screen, which does not even show the file. A tool result
+    with `images` is attached for the model to see (or described, when it
+    cannot see), the same path screenshots take."""
+    import base64
+
+    mime = _IMAGE_TYPES.get(os.path.splitext(path)[1].lower())
+    if mime is None or not os.path.isfile(path):
+        return None
+    size = os.path.getsize(path)
+    if size > _MAX_IMAGE_BYTES:
+        return {"error": f"read_file: {shown}: image of {size} bytes is too large to view "
+                         f"(limit {_MAX_IMAGE_BYTES})", "exit_code": 1}
+    with open(path, "rb") as fh:
+        data = base64.b64encode(fh.read()).decode("ascii")
+    return {
+        "output": f"{shown}: {mime.split('/')[1].upper()} image, {size} bytes - attached so you can see it.",
+        "exit_code": 0,
+        "images": [{"data": data, "mimeType": mime}],
+    }
+
+
 class ReadFileTool:
     async def execute(self, content: str, ctx: dict) -> dict:
         from src.tool_execution import _resolve_tool_path, _resolve_search_root, _truncate
@@ -389,6 +418,9 @@ class ReadFileTool:
         if os.path.isdir(path):
             return {"error": f"read_file: {path}: is a directory (use ls)",
                     "exit_code": 1}
+        image = await asyncio.to_thread(_image_result, path, raw_path or path)
+        if image is not None:
+            return image
         try:
             def _read():
                 if ranged:

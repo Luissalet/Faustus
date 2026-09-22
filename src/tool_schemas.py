@@ -166,7 +166,7 @@ FUNCTION_TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "read_file",
-            "description": "Read a file from disk. Optionally read a line range with offset/limit for large files. The result carries a `revision` (the file's current content hash) — pass it back as `base_revision` to write_file/edit_file/apply_patch so the edit is refused instead of silently applied if the file changed since this read.",
+            "description": "Read a file from disk. Optionally read a line range with offset/limit for large files. An image file (png, jpg, gif, webp) comes back as the picture itself, so this is how you look at a chart or image you produced (desktop_screenshot shows the screen, not a file). The result carries a `revision` (the file's current content hash) — pass it back as `base_revision` to write_file/edit_file/apply_patch so the edit is refused instead of silently applied if the file changed since this read.",
             "parameters": {
                 "type": "object",
                 "properties": {
