@@ -112,3 +112,32 @@ def test_registry_clears_after_cleanup_so_a_second_run_is_a_no_op(tmp_path):
 
     second = ft.cleanup_temp_files(workspace)
     assert second == {"moved": [], "missing": [], "trash_dir": None}
+
+
+# ---- Faustus's own folders stay out of the user's version control ----
+
+def _git(cwd, *args):
+    import subprocess
+    return subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, check=True).stdout
+
+
+@pytest.mark.skipif(__import__("shutil").which("git") is None, reason="git not installed")
+def test_edit_history_and_temp_trash_never_show_up_in_git_status(tmp_path):
+    _git(tmp_path, "init", "-q")
+    target = tmp_path / "app.py"
+    target.write_text("x = 1\n")
+    _git(tmp_path, "add", "app.py")
+    _git(tmp_path, "-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-qm", "init")
+
+    target.write_text("x = 2\n")
+    ft.record_edit_history(str(target), tool="edit_file", pre_revision=ft.sha256_revision(b"x = 1\n"),
+                           post_revision=ft.sha256_revision(b"x = 2\n"), pre_bytes=b"x = 1\n")
+    scratch = tmp_path / "scratch.txt"
+    scratch.write_text("tmp")
+    ft.mark_temp_file(str(tmp_path), str(scratch))
+    assert ft.cleanup_temp_files(str(tmp_path))["moved"]
+
+    status = _git(tmp_path, "status", "--porcelain", "--untracked-files=all")
+    assert status.splitlines() == [" M app.py"]
+    # the history still works: the folders exist, only git is told to ignore them
+    assert ft.list_edit_history(str(target))

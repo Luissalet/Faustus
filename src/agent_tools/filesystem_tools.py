@@ -1218,6 +1218,24 @@ def _history_sidecar_dir(path: str) -> str:
     return os.path.join(os.path.dirname(os.path.abspath(path)), _EDIT_HISTORY_DIRNAME)
 
 
+def _ensure_private_dir(directory: str) -> None:
+    """Create one of Faustus's own folders inside the user's project, and
+    keep it out of their version control.
+
+    The edit history lives next to the files it protects, which means in
+    the user's repository. Seen coaching the agent through a small project:
+    `git status` listed `.faustus_edit_history/` as untracked after every
+    task, one `git add -A` away from committing snapshots into someone's
+    history. A `.gitignore` of `*` inside the folder is the convention tool
+    caches use: git ignores the folder, and the user's own .gitignore is
+    never touched."""
+    os.makedirs(directory, exist_ok=True)
+    marker = os.path.join(directory, ".gitignore")
+    if not os.path.exists(marker):
+        with open(marker, "w", encoding="utf-8") as fh:
+            fh.write("# Written by Faustus: its own edit history, not part of the project.\n*\n")
+
+
 def _history_sidecar_path(path: str) -> str:
     return os.path.join(_history_sidecar_dir(path), os.path.basename(path) + ".jsonl")
 
@@ -1230,7 +1248,7 @@ def record_edit_history(path: str, *, tool: str, pre_revision: Optional[str],
     into a failed tool call."""
     try:
         sidecar_dir = _history_sidecar_dir(path)
-        os.makedirs(sidecar_dir, exist_ok=True)
+        _ensure_private_dir(sidecar_dir)
         entry: Dict[str, Any] = {
             "ts": time.time(), "tool": tool,
             "pre_revision": pre_revision, "post_revision": post_revision,
@@ -1307,7 +1325,7 @@ def _read_registry(workspace_root: str) -> List[str]:
 
 def _write_registry(workspace_root: str, paths: List[str]) -> None:
     reg_path = _temp_registry_path(workspace_root)
-    os.makedirs(os.path.dirname(reg_path), exist_ok=True)
+    _ensure_private_dir(os.path.dirname(reg_path))
     with open(reg_path, "w", encoding="utf-8") as fh:
         json.dump(paths, fh)
 
@@ -1340,6 +1358,7 @@ def cleanup_temp_files(workspace_root: str) -> Dict[str, Any]:
         if not os.path.isfile(abs_path):
             missing.append(rel)
             continue
+        _ensure_private_dir(os.path.join(workspace_root, _TEMP_TRASH_DIRNAME))
         os.makedirs(trash_dir, exist_ok=True)
         dest = os.path.join(trash_dir, rel.replace(os.sep, "__").replace("/", "__"))
         shutil.move(abs_path, dest)
