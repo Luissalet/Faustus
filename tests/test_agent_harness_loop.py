@@ -155,6 +155,7 @@ def test_runaway_thinking_is_cut_off_and_retried_without_think(tmp_path, monkeyp
     monkeypatch.setattr(al, "estimate_tokens", lambda *a, **k: 10, raising=False)
     monkeypatch.setattr(al, "blocked_tools_for_owner", lambda owner: set(), raising=False)
     seen_think = []
+    retried_with = []
     calls = {"n": 0}
 
     async def _fake_stream(_candidates, messages, **kwargs):
@@ -163,11 +164,13 @@ def test_runaway_thinking_is_cut_off_and_retried_without_think(tmp_path, monkeyp
         seen_think.append(go.get("think"))
         if calls["n"] == 1:
             # endless reasoning, never a visible token
+            yield f'data: {json.dumps({"delta": "The counter lives in stats.js, line 40. ", "thinking": True})}\n\n'
             for _ in range(200):
                 yield f'data: {json.dumps({"delta": "hmm ", "thinking": True})}\n\n'
                 await asyncio.sleep(0.002)
             yield "data: [DONE]\n\n"
             return
+        retried_with.append("\n".join(str(m.get("content") or "") for m in messages))
         yield f'data: {json.dumps({"delta": "I could not find a project counter in this repository."})}\n\n'
         yield f'data: {json.dumps({"type": "finish", "finish_reason": "stop"})}\n\n'
         yield "data: [DONE]\n\n"
@@ -178,6 +181,8 @@ def test_runaway_thinking_is_cut_off_and_retried_without_think(tmp_path, monkeyp
     assert len(cut) == 1 and cut[0]["reasoning_chars"] > 0
     assert calls["n"] == 2
     assert seen_think == [True, False]
+    # the retry starts from what the cut reasoning had already found
+    assert "The counter lives in stats.js, line 40." in retried_with[0]
     summary = next(e for e in events if e.get("type") == "harness_summary")["data"]
     assert any(n.startswith("think_cutoff@") for n in summary["notes"])
     assert summary["stop_reason"] == "complete"

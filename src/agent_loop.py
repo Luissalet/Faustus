@@ -3876,6 +3876,29 @@ def _recent_context_for_retrieval(messages: List[Dict], max_user: int = 3, max_c
             break
     return "\n".join(collected)[:max_chars]
 
+
+def _think_cutoff_note(reasoning: str, limit: int = 6000) -> str:
+    """What the model had worked out when its thinking was cut, for the retry.
+
+    Seen live (billing report task): the cut-off reasoning already held the
+    whole fix and the tests, written out; the retry without thinking had to
+    derive it all again. Passing it on keeps the work. Long reasoning keeps
+    its opening (the diagnosis) and its end (the latest plan)."""
+    text = str(reasoning or "").strip()
+    if not text:
+        return ""
+    if len(text) > limit:
+        head = limit // 4
+        text = text[:head].rstrip() + "\n[...]\n" + text[-(limit - head):].lstrip()
+    return (
+        "[Harness check — automatic message from the runtime, not from the user] "
+        "Your thinking for this step ran past the time budget and was cut before you acted; "
+        "thinking is off for the rest of this turn. Below is what you had already worked out. "
+        "Do not start over: act on it now (make the tool calls it leads to, or answer).\n\n"
+        "<your_reasoning_so_far>\n" + text + "\n</your_reasoning_so_far>"
+    )
+
+
 def _strip_agent_injected_messages(messages: List[Dict]) -> List[Dict]:
     """Remove route-specific prompt/context before building another route."""
 
@@ -10313,6 +10336,9 @@ async def _stream_agent_loop_body(
                 round_num, _think_secs, len(round_reasoning),
             )
             _ledger.notes.append(f"think_cutoff@{round_num}")
+            _carry = _think_cutoff_note(round_reasoning)
+            if _carry:
+                messages.append({"role": "user", "_harness_note": True, "content": _carry})
             gen_overrides = dict(gen_overrides or {})
             gen_overrides["think"] = False
             _rounds_budget += 1  # the retry must not eat the task's step budget
