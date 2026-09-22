@@ -146,6 +146,40 @@ def get_preset(preset_id: str) -> Optional[ConnectorPreset]:
     return PRESETS.get(preset_id)
 
 
+def adopt_declared_app(app_dir: str, expected_id: str) -> Dict[str, Any]:
+    """Turn an application's own `faustus-plugin.json` into an installed plugin.
+
+    Discovery can recognise an app Faustus ships nothing for because the app
+    declares itself, but a connector is built from a preset, and a preset
+    only exists for manifests Faustus has loaded. Adopting such an app
+    therefore installs its manifest first — the snapshot under
+    ``<DATA_DIR>/plugins/<id>/`` that `plugins.install_from_dir` writes —
+    and reloads the presets, which is what docs/api/plugins.md promises.
+
+    Only for an id Faustus does not already know: a declaration can never
+    replace a shipped or installed plugin this way. Never raises.
+    """
+    if get_preset(expected_id) is not None:
+        return {"ok": True, "id": expected_id, "installed": False}
+    from src import plugins as plugins_mod
+
+    declared = plugins_mod.read_app_manifest(app_dir)
+    if declared is None:
+        return {"ok": False, "reason": f"no readable {plugins_mod.APP_MANIFEST_NAME} in {app_dir}"}
+    if declared.id != expected_id:
+        return {"ok": False,
+                "reason": f"the app now declares {declared.id!r}, not {expected_id!r}; scan again"}
+    out = plugins_mod.install_from_dir(app_dir)
+    if not out.get("ok"):
+        return out
+    reload_presets()
+    if get_preset(expected_id) is None:
+        problems = [e["reason"] for e in plugins_mod.cached().errors if expected_id in e.get("path", "")]
+        return {"ok": False,
+                "reason": "installed but not loaded: " + ("; ".join(problems) or "unknown reason")}
+    return {"ok": True, "id": expected_id, "installed": True, "path": out.get("path")}
+
+
 def _dir_placeholder(preset: ConnectorPreset) -> Optional[str]:
     for name in preset.placeholders:
         if name.endswith("_DIR"):

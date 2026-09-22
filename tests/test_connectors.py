@@ -609,3 +609,38 @@ async def test_health_sends_the_bridge_token_only_after_a_401(bridge_dir, tmp_pa
         assert status["state"] == "available", status
     finally:
         httpd.shutdown(); httpd.server_close()
+
+
+async def test_adopt_installs_an_app_that_declares_itself(routes, db, health_server, tmp_path, monkeypatch):
+    """Seen live: discovery recognised an app by its own faustus-plugin.json
+    (``declares_itself``), and Add answered "Unknown preset". Adopting it now
+    installs the declared manifest under DATA_DIR/plugins and connects."""
+    from src import connector_discovery, plugins as plugins_mod
+
+    app = tmp_path / "ledger-app"
+    app.mkdir()
+    (app / "mcp.js").write_text("// bridge\n")
+    (app / plugins_mod.APP_MANIFEST_NAME).write_text(json.dumps({
+        "schema": 1, "id": "ledger-test", "name": "Ledger (test)",
+        "placeholders": ["LEDGER_DIR", "APP_URL"],
+        "app": {"url_default": "http://127.0.0.1:8790",
+                "health": {"path": "/api/health", "expect": {}},
+                "identify": {"service": ["ledger-test"]}},
+        "mcp": {"command": "node", "args": ["{LEDGER_DIR}/mcp.js"],
+                "env": {"LEDGER_URL": "{APP_URL}"}},
+    }), encoding="utf-8")
+    monkeypatch.setattr(plugins_mod, "user_dir", lambda: str(tmp_path / "installed"))
+    plugins_mod.reset_cache()
+    live = health_server(200, json.dumps({"service": "ledger-test"}).encode())
+    port = int(live.rsplit(":", 1)[1])
+    monkeypatch.setattr(connector_discovery, "listening_ports", lambda: [
+        connector_discovery.ListeningPort(port=port, pid=7, process="node", cwd=str(app))])
+    try:
+        assert connectors.get_preset("ledger-test") is None
+        created = await routes[("POST", "/api/app-connectors/adopt")](request=FakeRequest(body={"port": port}))
+        assert created["preset_id"] == "ledger-test"
+        assert created["app_url"] == live and created["values"]["LEDGER_DIR"] == str(app)
+        assert (tmp_path / "installed" / "ledger-test" / "plugin.json").is_file()
+    finally:
+        connectors.PRESETS.pop("ledger-test", None)
+        plugins_mod.reset_cache()

@@ -234,6 +234,12 @@ def setup_connector_routes(mcp_manager: McpManager) -> APIRouter:
         preset_id = body.get("preset_id") or cand.preset_id
         if not preset_id:
             raise HTTPException(400, "This app is not a known preset; add it as an MCP server instead")
+        if connectors.get_preset(preset_id) is None and cand.declares_itself:
+            # Recognised only through its own faustus-plugin.json: install
+            # that manifest so a preset exists, then connect as usual.
+            adopted = connectors.adopt_declared_app(cand.cwd, preset_id)
+            if not adopted.get("ok"):
+                raise HTTPException(400, adopted.get("reason") or "could not install the app's manifest")
         values = {**cand.values, **{k: v for k, v in (body.get("values") or {}).items() if v}}
         return await _create_from_payload(request, {
             "preset_id": preset_id, "values": values,
