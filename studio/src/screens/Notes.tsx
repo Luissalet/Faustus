@@ -1063,7 +1063,7 @@ export function NotesScreen() {
       )}
       {!archivedView && (
         <span className="fs-notes__hint">
-          <Check size={11} aria-hidden="true" /> Arrastra una tarjeta para cambiar el orden.
+          <Check size={11} aria-hidden="true" /> {t('Drag a card to reorder.')}
         </span>
       )}
     </div>

@@ -1804,6 +1804,7 @@ export const es: Record<string, string> = {
   "Drafting…": "Redactando…",
   "Drafts": "Borradores",
   "Drafts an AGENTS.md for the working folder; \"write\" saves it.": "Redacta un AGENTS.md para la carpeta de trabajo; «write» lo guarda.",
+  "Drag a card to reorder.": "Arrastra una tarjeta para cambiar el orden.",
   "Drag a rectangle, move it by its inside, then apply. Shift keeps it square.": "Arrastra un rectángulo, muévelo por dentro y aplica. Mayús lo mantiene cuadrado.",
   "Drag the active layer. It snaps to the canvas and other layers; hold Ctrl to move freely.": "Arrastra la capa activa. Se ajusta al lienzo y a las demás capas; con Ctrl se mueve libre.",
   "Drag the corners to scale and the top handle to rotate. Shift snaps the angle to 15°.": "Arrastra las esquinas para escalar y el asa superior para girar. Mayús ajusta el ángulo a 15°.",
