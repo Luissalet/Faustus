@@ -545,7 +545,8 @@ _DOMAIN_RULES = {
 - Use file tools for real disk files. Use document tools only for editor documents.
 - Prefer `grep`, `glob`, and `ls` over shell equivalents when available.
 - Use `edit_file`/`write_file` for writes; avoid shell redirection/heredocs for editing files.
-- Run a project's tests with the shell tool calling the runner directly (`python -m pytest -q`, `npm test`), not through `python` + subprocess: a plain runner is what "run/fix the tests" already covers, anything else waits for approval.""",
+- Run a project's tests with the shell tool calling the runner directly (`python -m pytest -q`, `npm test`), not through `python` + subprocess: a plain runner is what "run/fix the tests" already covers, anything else waits for approval.
+- To see whether a package is installed, run the check on its own (`python -c "import pandas"`); never chain an install after it (`|| pip install ...`). Installing downloads code and needs the user's approval: if the check fails, say what is missing and ask.""",
     "settings": """\
 ## Settings/API rules
 - Use `manage_settings` for preferences and tool enable/disable.
