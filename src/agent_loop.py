@@ -2060,6 +2060,37 @@ def _conversational_turn(text: str) -> bool:
         return False
 
 
+#: A turn that OPENS by asking to be told something. Anchored at the start on
+#: purpose: "explain why you changed it, then fix Y" is not one of these, and
+#: neither is anything with a change verb anywhere in it.
+_EXPLANATION_REQUEST_RE = re.compile(
+    r"^[\s¿\"'`]*(?:por favor[,\s]+|please[,\s]+)?(?:me\s+)?"
+    r"(?:puedes\s+|podr[íi]as\s+|can\s+you\s+|could\s+you\s+|please\s+)?"
+    r"(?:expl[íi]ca(?:me)?|describe(?:me)?|descr[íi]beme|res[úu]me(?:me)?|res[úu]meme|"
+    r"qu[ée]\s+hace|para\s+qu[ée]\s+sirve|c[óo]mo\s+funciona|d[óo]nde\s+est[áa]|"
+    r"explain|describe|summari[sz]e|walk\s+me\s+through|"
+    r"what\s+does|what\s+is|what'?s|how\s+does|where\s+is)\b",
+    re.IGNORECASE,
+)
+
+
+def _explanation_request(text: str) -> bool:
+    """Did the user ask to be told something, rather than to have it changed?
+
+    The no-action nudge treats a prose-only reply as a shirked job whenever a
+    workspace is bound. "hola" was exempted when that turned a greeting into
+    "your original request requires work in the active workspace" -- but the
+    same thing happens to "explain what server.py does", which is answered in
+    prose BY DEFINITION. Being told an acknowledgement is not completion, and
+    to start the next response with a tool call, is the wrong answer to a
+    question, and it costs a round to say it.
+    """
+    text = str(text or "").strip()
+    if not text or not _EXPLANATION_REQUEST_RE.match(text):
+        return False
+    return not _WORKSPACE_CODE_ACTION_RE.search(text)
+
+
 def _looks_like_workspace_coding_request(text: str) -> bool:
     """Best-effort signal for when an active workspace should become code mode.
 
@@ -11017,6 +11048,9 @@ async def _stream_agent_loop_body(
                 # the round-2 text appended, so the user saw the greeting
                 # answered twice, run together mid-sentence.
                 and not _conversational_turn(_last_user)
+                # Same lesson, one step further out: a request to EXPLAIN is
+                # answered in prose, so prose is not a shirked job.
+                and not _explanation_request(_last_user)
             ):
                 _no_action_nudges += 1
                 _ledger.notes.append(f"no_action_nudge@{round_num}")
