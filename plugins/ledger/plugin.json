@@ -1,0 +1,69 @@
+{
+  "schema": 1,
+  "id": "ledger",
+  "name": "Ledger's Hoard",
+  "purpose": "Household money ledger: accounts, categorised entries, monthly budgets, reports and bank CSV imports, all stored locally.",
+  "capabilities": [
+    "accounts",
+    "entries",
+    "categories",
+    "budgets",
+    "summary",
+    "reports",
+    "csv-import",
+    "transfers"
+  ],
+  "placeholders": [
+    "LEDGER_DIR",
+    "APP_URL",
+    "TOKEN_FILE"
+  ],
+  "defaults": {
+    "APP_URL": "http://127.0.0.1:5180",
+    "TOKEN_FILE": "{LEDGER_DIR}/data/mcp-token"
+  },
+  "app": {
+    "url_default": "http://127.0.0.1:5180",
+    "ui_url": "{APP_URL}",
+    "health": {
+      "path": "/api/health",
+      "expect": {
+        "service": "ledgers-hoard"
+      }
+    },
+    "identify": {
+      "service": [
+        "ledgers-hoard"
+      ],
+      "title": [
+        "ledger's hoard",
+        "cuentas de casa"
+      ]
+    },
+    "launch_hint": {
+      "kind": "process",
+      "executable": "node",
+      "argv": [
+        "server/index.js"
+      ],
+      "cwd": "{LEDGER_DIR}",
+      "readiness": {
+        "url": "{APP_URL}/api/health",
+        "timeout_s": 20
+      }
+    }
+  },
+  "mcp": {
+    "transport": "stdio",
+    "command": "node",
+    "args": [
+      "{LEDGER_DIR}/server/mcp.js"
+    ],
+    "env": {
+      "LEDGER_URL": "{APP_URL}",
+      "LEDGER_TOKEN_FILE": "{TOKEN_FILE}"
+    },
+    "optional_env": []
+  },
+  "notes": "Keep the app running (npm start) while the assistant uses it: the MCP bridge proxies every call to the local server and never opens the database itself. Amounts are integer cents in tool results."
+}

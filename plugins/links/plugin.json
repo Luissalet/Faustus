@@ -1,0 +1,68 @@
+{
+  "schema": 1,
+  "id": "links",
+  "name": "Links Hoard",
+  "purpose": "Read-later bookmark library with extracted article text, tags and highlights, stored locally.",
+  "capabilities": [
+    "bookmarks",
+    "read-later",
+    "extraction",
+    "tags",
+    "highlights",
+    "search",
+    "digest",
+    "import"
+  ],
+  "placeholders": [
+    "LINKS_DIR",
+    "APP_URL",
+    "TOKEN_FILE"
+  ],
+  "defaults": {
+    "APP_URL": "http://127.0.0.1:5181",
+    "TOKEN_FILE": "{LINKS_DIR}/data/mcp-token"
+  },
+  "app": {
+    "url_default": "http://127.0.0.1:5181",
+    "ui_url": "{APP_URL}",
+    "health": {
+      "path": "/api/health",
+      "expect": {
+        "service": "links-hoard"
+      }
+    },
+    "identify": {
+      "service": [
+        "links-hoard"
+      ],
+      "title": [
+        "links hoard"
+      ]
+    },
+    "launch_hint": {
+      "kind": "process",
+      "executable": "node",
+      "argv": [
+        "server/index.js"
+      ],
+      "cwd": "{LINKS_DIR}",
+      "readiness": {
+        "url": "{APP_URL}/api/health",
+        "timeout_s": 20
+      }
+    }
+  },
+  "mcp": {
+    "transport": "stdio",
+    "command": "node",
+    "args": [
+      "{LINKS_DIR}/server/mcp.js"
+    ],
+    "env": {
+      "LINKS_URL": "{APP_URL}",
+      "LINKS_TOKEN_FILE": "{TOKEN_FILE}"
+    },
+    "optional_env": []
+  },
+  "notes": "Keep the app running (npm start) while the assistant uses it: the MCP bridge proxies every call to the local server and never opens the database itself. save_link waits briefly for the background fetch to report a real title and excerpt."
+}

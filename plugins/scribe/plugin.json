@@ -1,0 +1,78 @@
+{
+  "schema": 1,
+  "id": "scribe",
+  "name": "Scribe's Hoard",
+  "purpose": "Private recorder for meetings, interviews and voice notes: microphone and system audio captured as two tracks, transcribed locally with faster-whisper, searchable by text and time.",
+  "capabilities": [
+    "recording",
+    "two-track-capture",
+    "system-loopback",
+    "live-transcript",
+    "local-transcription",
+    "faster-whisper",
+    "sessions",
+    "full-text-search",
+    "timestamps",
+    "speaker-by-channel",
+    "notes",
+    "tags",
+    "export-txt-srt-md",
+    "import-audio"
+  ],
+  "placeholders": [
+    "SCRIBE_DIR",
+    "APP_URL",
+    "TOKEN_FILE",
+    "PYTHON"
+  ],
+  "defaults": {
+    "APP_URL": "http://127.0.0.1:5185",
+    "TOKEN_FILE": "{SCRIBE_DIR}/data/mcp-token",
+    "PYTHON": "{SCRIBE_DIR}/venv/Scripts/python.exe"
+  },
+  "app": {
+    "url_default": "http://127.0.0.1:5185",
+    "ui_url": "{APP_URL}",
+    "health": {
+      "path": "/api/health",
+      "expect": {
+        "service": "scribe-hoard"
+      }
+    },
+    "identify": {
+      "service": [
+        "scribe-hoard"
+      ],
+      "title": [
+        "scribe's hoard",
+        "grabadora y transcripción"
+      ]
+    },
+    "launch_hint": {
+      "kind": "process",
+      "executable": "{PYTHON}",
+      "argv": [
+        "-m",
+        "scribe"
+      ],
+      "cwd": "{SCRIBE_DIR}",
+      "readiness": {
+        "url": "{APP_URL}/api/health",
+        "timeout_s": 30
+      }
+    }
+  },
+  "mcp": {
+    "transport": "stdio",
+    "command": "{PYTHON}",
+    "args": [
+      "{SCRIBE_DIR}/mcp_server.py"
+    ],
+    "env": {
+      "SCRIBE_URL": "{APP_URL}",
+      "SCRIBE_TOKEN_FILE": "{TOKEN_FILE}"
+    },
+    "optional_env": []
+  },
+  "notes": "Keep the app running (python -m scribe) while the assistant uses it: the MCP bridge proxies every call to the local server and never opens the database. Transcripts are automatic speech recognition and may contain errors; 'yo'/'otros' labels come from the audio channel, not from voice recognition."
+}

@@ -1,0 +1,75 @@
+{
+  "schema": 1,
+  "id": "argus",
+  "name": "Argus's Hoard",
+  "purpose": "Private screen memory: periodic screenshots of the user's own PC, OCR'd and searchable by text, app, window and time, stored only on the machine.",
+  "capabilities": [
+    "screen-history",
+    "ocr",
+    "timeline",
+    "full-text-search",
+    "activity-by-app",
+    "recent-screen",
+    "pause",
+    "private-mode",
+    "exclusions",
+    "retention",
+    "delete-range"
+  ],
+  "placeholders": [
+    "ARGUS_DIR",
+    "APP_URL",
+    "TOKEN_FILE",
+    "PYTHON"
+  ],
+  "defaults": {
+    "APP_URL": "http://127.0.0.1:5183",
+    "TOKEN_FILE": "{ARGUS_DIR}/data/mcp-token",
+    "PYTHON": "{ARGUS_DIR}/venv/Scripts/python.exe"
+  },
+  "app": {
+    "url_default": "http://127.0.0.1:5183",
+    "ui_url": "{APP_URL}",
+    "health": {
+      "path": "/api/health",
+      "expect": {
+        "service": "argus-hoard"
+      }
+    },
+    "identify": {
+      "service": [
+        "argus-hoard"
+      ],
+      "title": [
+        "argus's hoard",
+        "memoria de pantalla"
+      ]
+    },
+    "launch_hint": {
+      "kind": "process",
+      "executable": "{PYTHON}",
+      "argv": [
+        "-m",
+        "argus"
+      ],
+      "cwd": "{ARGUS_DIR}",
+      "readiness": {
+        "url": "{APP_URL}/api/health",
+        "timeout_s": 30
+      }
+    }
+  },
+  "mcp": {
+    "transport": "stdio",
+    "command": "{PYTHON}",
+    "args": [
+      "{ARGUS_DIR}/mcp_server.py"
+    ],
+    "env": {
+      "ARGUS_URL": "{APP_URL}",
+      "ARGUS_TOKEN_FILE": "{TOKEN_FILE}"
+    },
+    "optional_env": []
+  },
+  "notes": "Keep the app running (python -m argus) while the assistant uses it: the MCP bridge proxies every call to the local server and never opens the database. OCR text may contain recognition errors; the assistant should quote it as such."
+}

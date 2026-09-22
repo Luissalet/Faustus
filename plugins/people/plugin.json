@@ -1,0 +1,69 @@
+{
+  "schema": 1,
+  "id": "people",
+  "name": "People's Hoard",
+  "purpose": "Personal CRM: who people are, what to remember about them, when you last talked and what to follow up on, all stored locally.",
+  "capabilities": [
+    "people",
+    "aliases",
+    "facts",
+    "interactions",
+    "reminders",
+    "birthdays",
+    "circles",
+    "search"
+  ],
+  "placeholders": [
+    "PEOPLE_DIR",
+    "APP_URL",
+    "TOKEN_FILE"
+  ],
+  "defaults": {
+    "APP_URL": "http://127.0.0.1:5182",
+    "TOKEN_FILE": "{PEOPLE_DIR}/data/mcp-token"
+  },
+  "app": {
+    "url_default": "http://127.0.0.1:5182",
+    "ui_url": "{APP_URL}",
+    "health": {
+      "path": "/api/health",
+      "expect": {
+        "service": "peoples-hoard"
+      }
+    },
+    "identify": {
+      "service": [
+        "peoples-hoard"
+      ],
+      "title": [
+        "people's hoard",
+        "agenda personal"
+      ]
+    },
+    "launch_hint": {
+      "kind": "process",
+      "executable": "node",
+      "argv": [
+        "server/index.js"
+      ],
+      "cwd": "{PEOPLE_DIR}",
+      "readiness": {
+        "url": "{APP_URL}/api/health",
+        "timeout_s": 20
+      }
+    }
+  },
+  "mcp": {
+    "transport": "stdio",
+    "command": "node",
+    "args": [
+      "{PEOPLE_DIR}/server/mcp.js"
+    ],
+    "env": {
+      "PEOPLE_URL": "{APP_URL}",
+      "PEOPLE_TOKEN_FILE": "{TOKEN_FILE}"
+    },
+    "optional_env": []
+  },
+  "notes": "Keep the app running (npm start) while the assistant uses it: the MCP bridge proxies every call to the local server and never opens the database itself. Names can be ambiguous; the assistant should ask when a tool returns several candidates."
+}

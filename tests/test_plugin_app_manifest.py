@@ -8,7 +8,7 @@ connectable on sight — even though Faustus ships no knowledge of it at all.
 
 These tests use an app Faustus has never heard of, deliberately. Using a
 known one would prove nothing: the answer could be coming from the shipped
-manifest.
+manifest. (It was called `ledger` until a real Ledger's Hoard shipped.)
 """
 from __future__ import annotations
 
@@ -22,27 +22,27 @@ from src import plugins
 
 NOVEL = {
     "schema": 1,
-    "id": "ledger",
-    "name": "Ledger",
-    "purpose": "Keep and query a household ledger.",
+    "id": "abacus",
+    "name": "Abacus",
+    "purpose": "Keep and query a household abacus of accounts.",
     "capabilities": ["accounts", "entries", "reports"],
-    "placeholders": ["LEDGER_DIR", "APP_URL"],
+    "placeholders": ["ABACUS_DIR", "APP_URL"],
     "defaults": {"APP_URL": "http://127.0.0.1:8790"},
     "app": {
         "url_default": "http://127.0.0.1:8790",
         "ui_url": "{APP_URL}",
-        "health": {"path": "/api/health", "expect": {"service": "ledger"}},
-        "identify": {"service": ["ledger"], "title": ["ledger"]},
+        "health": {"path": "/api/health", "expect": {"service": "abacus"}},
+        "identify": {"service": ["abacus"], "title": ["abacus"]},
         "launch_hint": {"kind": "process", "executable": "node",
-                        "argv": ["server.js"], "cwd": "{LEDGER_DIR}"},
+                        "argv": ["server.js"], "cwd": "{ABACUS_DIR}"},
     },
-    "mcp": {"command": "node", "args": ["{LEDGER_DIR}/mcp.js"]},
+    "mcp": {"command": "node", "args": ["{ABACUS_DIR}/mcp.js"]},
 }
 
 
 @pytest.fixture
 def app_dir(tmp_path):
-    root = tmp_path / "ledger-app"
+    root = tmp_path / "abacus-app"
     root.mkdir()
     (root / plugins.APP_MANIFEST_NAME).write_text(
         json.dumps(NOVEL, indent=2), encoding="utf-8")
@@ -61,10 +61,10 @@ def _isolate(tmp_path, monkeypatch):
 def test_an_app_can_say_what_it_offers_from_its_own_repository(app_dir):
     declared = plugins.read_app_manifest(str(app_dir))
     assert declared is not None
-    assert declared.id == "ledger" and declared.name == "Ledger"
+    assert declared.id == "abacus" and declared.name == "Abacus"
     assert declared.source == "app"
     assert declared.capabilities == ["accounts", "entries", "reports"]
-    assert "ledger" not in plugins.load_plugins(), "reading is not installing"
+    assert "abacus" not in plugins.load_plugins(), "reading is not installing"
 
 
 def test_a_directory_with_nothing_to_say_is_not_an_error(tmp_path):
@@ -87,17 +87,17 @@ def test_adopting_it_installs_a_snapshot_the_app_cannot_change_later(app_dir):
     a change the user should see and accept, not one that rewrites a live
     connection underneath them."""
     out = plugins.install_from_dir(str(app_dir))
-    assert out["ok"] and out["id"] == "ledger"
-    assert "ledger" in plugins.load_plugins()
-    assert plugins.get("ledger").source == "user"
+    assert out["ok"] and out["id"] == "abacus"
+    assert "abacus" in plugins.load_plugins()
+    assert plugins.get("abacus").source == "user"
 
     # The app changes its mind; the installed copy does not move.
-    changed = dict(NOVEL, name="Ledger Pro")
+    changed = dict(NOVEL, name="Abacus Pro")
     (app_dir / plugins.APP_MANIFEST_NAME).write_text(
         json.dumps(changed), encoding="utf-8")
     plugins.reset_cache()
-    assert plugins.get("ledger").name == "Ledger"
-    assert plugins.read_app_manifest(str(app_dir)).name == "Ledger Pro"
+    assert plugins.get("abacus").name == "Abacus"
+    assert plugins.read_app_manifest(str(app_dir)).name == "Abacus Pro"
 
 
 def test_adopting_a_directory_with_no_manifest_says_so(tmp_path):
@@ -120,12 +120,12 @@ def test_an_unknown_app_is_offered_because_it_declared_itself(app_dir, monkeypat
     found = asyncio.run(disco.discover(ports=[port]))
     assert len(found) == 1
     candidate = found[0]
-    assert candidate.preset_id == "ledger"
-    assert candidate.preset_name == "Ledger"
+    assert candidate.preset_id == "abacus"
+    assert candidate.preset_name == "Abacus"
     assert candidate.declares_itself.endswith(plugins.APP_MANIFEST_NAME)
     # And the form is prefilled from what was found, not typed by hand.
     assert candidate.values["APP_URL"] == "http://127.0.0.1:8790"
-    assert candidate.values["LEDGER_DIR"] == str(app_dir)
+    assert candidate.values["ABACUS_DIR"] == str(app_dir)
 
 
 def test_an_unknown_app_with_nothing_to_declare_stays_unknown(tmp_path, monkeypatch):
