@@ -47,7 +47,7 @@ import json
 import logging
 import re
 import time
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 from src.brain import temporal
 from src.brain.db import db, fold, now_iso, parse_iso, register_schema, sha
@@ -59,7 +59,9 @@ from src.brain.entities import (
     canonical_relation,
     clean_name,
     entities_in_text,
+    forget_source,
     proper_noun_in_source,
+    repoint_source,
     self_entity,
     upsert_entity,
     valid_entity_name,
@@ -370,6 +372,53 @@ def _gather_sources(owner: str) -> List[Dict[str, Any]]:
     return out
 
 
+def _corrected_from_map(owner: str) -> Dict[str, str]:
+    """Old ``mem:<id>`` -> new ``mem:<id>`` for every active item that
+    carries ``provenance.corrected_from`` — how a stale mention of a
+    corrected memory is repointed instead of merely dropped."""
+    out: Dict[str, str] = {}
+    try:
+        from src import memory_engine
+        for item in memory_engine.list_items(owner=owner, status="active", limit=2000):
+            old_id = (item.get("provenance") or {}).get("corrected_from")
+            if old_id:
+                out[f"mem:{old_id}"] = f"mem:{item['id']}"
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("brain.extract: could not build the corrected-from map (%s)", exc)
+    return out
+
+
+def _prune_stale_mentions(owner: str, live_refs: Set[str], corrected: Dict[str, str]) -> Dict[str, int]:
+    """The cheap, batched half of the sweep: every source_ref this owner's
+    entities currently cite that is no longer among `live_refs` (its memory,
+    personal memory or free note is forgotten, corrected away, suppressed,
+    marked secret, or deleted) either moves to its correction (`corrected`
+    knows the new id) or is dropped outright — a stale citation never rots
+    on an entity page waiting for the next full extraction. One query to
+    list the distinct source_refs this owner's mentions cite, one store call
+    per stale ref to fix it; never raises."""
+    report = {"repointed": 0, "dropped": 0}
+    try:
+        with db() as conn:
+            rows = conn.execute(
+                "SELECT DISTINCT source_ref FROM mentions WHERE owner = ?", (owner,)
+            ).fetchall()
+        for row in rows:
+            ref = str(row["source_ref"] or "")
+            if not ref or ref in live_refs:
+                continue
+            new_ref = corrected.get(ref)
+            if new_ref and new_ref in live_refs:
+                repoint_source(owner, ref, new_ref)
+                report["repointed"] += 1
+            else:
+                forget_source(owner, ref)
+                report["dropped"] += 1
+    except Exception as exc:  # noqa: BLE001 - a cleanup pass must never raise
+        logger.debug("brain.extract: stale-mention sweep failed (%s)", exc)
+    return report
+
+
 def _get_setting(key: str, default: Any) -> Any:
     try:
         from src.settings import get_setting
@@ -658,6 +707,7 @@ async def extract_pending(owner: Any, *, limit: Optional[int] = None, budget_s: 
     report: Dict[str, Any] = {
         "processed": 0, "entities": 0, "relations": 0, "skipped": 0,
         "errors": 0, "llm_used": False, "llm_skipped": "",
+        "repointed": 0, "dropped": 0,
     }
     if not owner:
         return report
@@ -667,6 +717,10 @@ async def extract_pending(owner: Any, *, limit: Optional[int] = None, budget_s: 
             return report
 
         sources = _gather_sources(owner)
+        live_refs = {src["source_ref"] for src in sources}
+        pruned = _prune_stale_mentions(owner, live_refs, _corrected_from_map(owner))
+        report["repointed"], report["dropped"] = pruned["repointed"], pruned["dropped"]
+
         pending = []
         for src in sources:
             text_hash = sha(src["text"])

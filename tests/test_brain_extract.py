@@ -181,6 +181,41 @@ async def test_extract_pending_no_owner_is_a_noop(store):
 
 
 # ---------------------------------------------------------------------------
+# extract_pending — cheap batched pruning of mentions whose source is gone
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_extract_pending_repoints_mentions_of_a_corrected_memory(store, monkeypatch):
+    monkeypatch.setattr("src.endpoint_resolver.resolve_endpoint",
+                        lambda *a, **k: (None, None, None))
+    item = engine.add_item("Ada works at Cordera Labs", owner="alice", trust_class="human_explicit")
+    await extract.extract_pending("alice", use_llm=False)
+    ada = next(e for e in entities.list_entities("alice") if e["name"] == "Ada")
+    assert f"mem:{item['id']}" in entities.sources_for(ada["id"])
+
+    corrected = engine.correct(item["id"], "Ada works at Bluehaven", reason="test")
+    report = await extract.extract_pending("alice", use_llm=False)
+    assert report["repointed"] >= 1
+    assert f"mem:{item['id']}" not in entities.sources_for(ada["id"])
+    assert f"mem:{corrected['id']}" in entities.sources_for(ada["id"])
+
+
+@pytest.mark.asyncio
+async def test_extract_pending_drops_mentions_of_a_forgotten_memory(store, monkeypatch):
+    monkeypatch.setattr("src.endpoint_resolver.resolve_endpoint",
+                        lambda *a, **k: (None, None, None))
+    item = engine.add_item("Ada works at Cordera Labs", owner="alice", trust_class="human_explicit")
+    await extract.extract_pending("alice", use_llm=False)
+    ada = next(e for e in entities.list_entities("alice") if e["name"] == "Ada")
+
+    engine.forget(item["id"], reason="test")
+    report = await extract.extract_pending("alice", use_llm=False)
+    assert report["dropped"] >= 1
+    assert entities.sources_for(ada["id"]) == []
+
+
+# ---------------------------------------------------------------------------
 # extract_pending — LLM pass, fake model, grounding filter
 # ---------------------------------------------------------------------------
 
