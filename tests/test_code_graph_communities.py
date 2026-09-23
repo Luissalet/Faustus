@@ -346,6 +346,14 @@ def test_place_order():
     assert place_order({}) is not None
 '''
 
+ORPHAN_TEST_PY = '''"""A test file with no resolved edge into any production file at all --
+must land in the shared "Unattached tests" bucket, never its own community."""
+
+
+def test_nothing_in_particular():
+    assert 1 + 1 == 2
+'''
+
 
 @pytest.fixture()
 def repo(tmp_path, ce_db):
@@ -357,6 +365,7 @@ def repo(tmp_path, ce_db):
     _write(root, "services/invoices.py", INVOICES_PY)
     _write(root, "shared/util.py", SHARED_PY)
     _write(root, "tests/test_orders.py", TEST_ORDERS_PY)
+    _write(root, "tests/test_orphan.py", ORPHAN_TEST_PY)
     _commit(str(root))
     return str(root)
 
@@ -379,10 +388,14 @@ def test_orders_trio_is_not_split_from_itself(ws):
 
 
 def test_test_file_never_merges_into_the_production_cluster(ws):
+    """Test files are never clustering nodes at all -- they never show up in
+    any community's `files` list, only (post attachment) in `test_files`."""
     code_graph.index(ws)
     result = code_graph.communities(ws, level=0)
-    by_file = {f: c["id"] for c in result["communities"] for f in c["files"]}
-    assert by_file["tests/test_orders.py"] != by_file["services/orders.py"]
+    all_files = {f for c in result["communities"] for f in c["files"]}
+    assert "tests/test_orders.py" not in all_files
+    orders_comm = next(c for c in result["communities"] if "services/orders.py" in c["files"])
+    assert "tests/test_orders.py" in orders_comm["test_files"]
 
 
 def test_community_reports_test_coverage_via_unfiltered_edges(ws):
@@ -417,6 +430,137 @@ def test_coupling_is_symmetric_between_the_two_reported_communities(ws):
         other_id = orders_comm["coupling"][0]["community_id"]
         other = next(c for c in result["communities"] if c["id"] == other_id)
         assert any(x["community_id"] == orders_comm["id"] for x in other["coupling"])
+
+
+def test_names_are_path_based_not_symbol_based(ws):
+    """Quality round: no more "dir — symbol" names -- see communities.py's
+    `_name_for`. `key_symbols` remains a separate field."""
+    code_graph.index(ws)
+    result = code_graph.communities(ws, level=0, min_files=1)
+    for c in result["communities"]:
+        assert "—" not in c["name"]
+        assert "key_symbols" in c
+
+
+def test_min_files_param_controls_the_display_floor(ws):
+    code_graph.index(ws)
+    everything = code_graph.communities(ws, level=0, min_files=0)
+    default = code_graph.communities(ws, level=0)
+    assert default["min_files"] == cg_communities._DEFAULT_MIN_FILES
+    assert len(everything["communities"]) >= len(default["communities"])
+    assert all(len(c["files"]) >= default["min_files"] for c in default["communities"])
+
+
+def test_orphan_test_file_lands_in_the_unattached_bucket_not_its_own_community(ws):
+    code_graph.index(ws)
+    default = code_graph.communities(ws, level=0)
+    assert default["unattached_tests_count"] >= 1
+    assert all(c.get("bucket") != "unattached_tests" for c in default["communities"])
+    assert all("tests/test_orphan.py" not in c["files"] for c in default["communities"])
+
+    with_bucket = code_graph.communities(ws, level=0, include_unattached=True, min_files=0)
+    bucket = next(c for c in with_bucket["communities"] if c.get("bucket") == "unattached_tests")
+    assert "tests/test_orphan.py" in bucket["files"]
+
+
+# ── quality round: fold-tiny / catch-all-split / test-attach unit tests ──
+#
+# These exercise the pure post-processing functions directly (small, exact,
+# deterministic inputs) rather than only through a full Louvain build --
+# the acceptance scenarios (a repo-scale run) are covered separately by the
+# real-repo numbers in REPORT_CG.md.
+
+def test_fold_tiny_groups_prefers_the_strongest_real_edge():
+    groups = {"big": ["a.py", "b.py", "c.py"], "tiny": ["d.py"]}
+    pair_weight = {("c.py", "d.py"): 5.0}
+    folded = cg_communities._fold_tiny_groups(groups, pair_weight, min_files=3)
+    assert "tiny" not in folded
+    assert sorted(folded["big"]) == ["a.py", "b.py", "c.py", "d.py"]
+
+
+def test_fold_tiny_groups_falls_back_to_directory_majority_with_no_edges():
+    groups = {"big": ["dir/a.py", "dir/b.py", "dir/c.py"], "tiny": ["dir/d.py"]}
+    folded = cg_communities._fold_tiny_groups(groups, {}, min_files=3)
+    assert sorted(folded["big"]) == ["dir/a.py", "dir/b.py", "dir/c.py", "dir/d.py"]
+
+
+def test_fold_tiny_groups_uses_a_loose_bucket_with_no_edge_and_no_dir_neighbour():
+    groups = {"big": ["dir_a/a.py", "dir_a/b.py", "dir_a/c.py"], "tiny": ["dir_b/z.py"]}
+    folded = cg_communities._fold_tiny_groups(groups, {}, min_files=3)
+    assert "dir_b/z.py" not in folded["big"]
+    loose = [files for gid, files in folded.items() if gid.startswith("__loose__")]
+    assert loose == [["dir_b/z.py"]]
+
+
+def test_fold_tiny_groups_is_a_noop_when_nothing_reaches_min_files():
+    groups = {"a": ["x.py"], "b": ["y.py"]}
+    assert cg_communities._fold_tiny_groups(groups, {}, min_files=3) == groups
+
+
+def test_split_catchalls_splits_a_big_zero_cohesion_blob_by_directory():
+    files = [f"area_a/f{i}.py" for i in range(40)] + [f"area_b/g{i}.py" for i in range(40)]
+    final, split_of = cg_communities._split_catchalls({"blob": files}, {}, min_files=3)
+    assert len(final) == 2
+    assert set(split_of.values()) == {"directory"}
+    assert sum(len(v) for v in final.values()) == 80
+
+
+def test_split_catchalls_leaves_a_cohesive_big_group_alone():
+    blob = [f"area/f{i}.py" for i in range(70)]
+    other = ["other/g0.py", "other/g1.py", "other/g2.py"]
+    pair_weight = {(blob[i], blob[i + 1]): 10.0 for i in range(69)}
+    pair_weight[(blob[0], other[0])] = 0.5  # one weak cross edge
+    final, split_of = cg_communities._split_catchalls(
+        {"blob": blob, "other": other}, pair_weight, min_files=3)
+    assert final["blob"] == blob
+    assert split_of == {}
+
+
+def test_split_catchalls_leaves_a_small_group_alone_regardless_of_cohesion():
+    files = [f"area/f{i}.py" for i in range(10)]  # under _CATCHALL_MIN_FILES
+    final, split_of = cg_communities._split_catchalls({"blob": files}, {}, min_files=3)
+    assert final == {"blob": files}
+    assert split_of == {}
+
+
+def test_assign_tests_attaches_to_the_strongest_production_community():
+    test_weighted = {"tests/test_a.py": {"prod/a.py": 3.0, "prod/b.py": 1.0}}
+    file_to_id0 = {"prod/a.py": "comm1", "prod/b.py": "comm2"}
+    by_id0, unattached = cg_communities._assign_tests(
+        test_weighted, file_to_id0, ["tests/test_a.py"])
+    assert by_id0 == {"comm1": {"tests/test_a.py"}}
+    assert unattached == []
+
+
+def test_assign_tests_is_unattached_with_no_production_edge():
+    by_id0, unattached = cg_communities._assign_tests({}, {}, ["tests/test_orphan.py"])
+    assert unattached == ["tests/test_orphan.py"]
+    assert by_id0 == {}
+
+
+def test_name_for_is_a_directory_path_not_a_symbol():
+    files = ["src/brain/a.py", "src/brain/b.py"]
+    ctx = cg_communities._NameCtx({f: 10 for f in files}, files)
+    assert cg_communities._name_for(files, ctx) == "src/brain"
+
+
+def test_name_for_falls_back_to_a_file_stem_for_a_small_slice_of_a_flat_dir():
+    # "src" holds 10 files repo-wide; this community owns exactly one of them.
+    all_files = [f"src/x{i}.py" for i in range(10)] + ["other/y.py"]
+    ctx = cg_communities._NameCtx({f: 5 for f in all_files}, all_files)
+    assert cg_communities._name_for(["src/x0.py"], ctx) == "src/x0"
+
+
+def test_disambiguate_names_tags_a_name_collision():
+    files = ["src/foo_bar.py", "src/foo_baz.py", "other/foo_qux.py"]
+    ctx = cg_communities._NameCtx({f: 5 for f in files}, files)
+    records = [
+        {"name": "src", "files": ["src/foo_bar.py"]},
+        {"name": "src", "files": ["src/foo_baz.py"]},
+    ]
+    cg_communities._disambiguate_names(records, ctx)
+    assert records[0]["name"] != records[1]["name"]
+    assert records[0]["name"].startswith("src (") and records[1]["name"].startswith("src (")
 
 
 # ── tool/schema registration ────────────────────────────────────────────

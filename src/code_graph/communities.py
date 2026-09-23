@@ -3,63 +3,76 @@
 `context_engine.code_index` already resolves symbols, calls, imports and
 routes; this module answers the one architecture question it does not: group
 those symbols into the modules a person would actually name ("the auth
-service", "the code graph", "the test suite for X") without reading a single
-file.
+service", "the code graph", "the studio brain screen") without reading a
+single file.
 
 Design decisions, and why:
 
-* **Nodes are files, not symbols.**  A workspace this index targets has on
-  the order of 10-30k symbols but a few thousand files, and clustering at
-  file granularity is both cheaper (Louvain in pure Python has to stay a
-  few-second operation, not a few-minute one) and more stable: two tiny
-  helper functions in the same file that happen to call unrelated things
-  should not be pulled into different communities just because a leaf-level
-  modularity score says so, and a file is already the unit a human means by
-  "part of the codebase". `code_files.symbols` (already stored per file by
-  `code_index.refresh`) gives each file node's `size` for free, so nothing
-  extra is computed to get it.
+* **Nodes are production files, not symbols, and not test files either.**
+  Test files are never graph nodes for clustering: a test file typically
+  imports/exercises a dozen unrelated modules across the whole repository,
+  and if it clustered like any other node it would either drag unrelated
+  production files together or form its own meaningless "tests" community
+  (which read as noise, not architecture, to a human skimming the top-level
+  list). Instead every test file is attached, after clustering, to the one
+  production community it exercises most (by the summed weight of its
+  `calls`/`imports`/`tests`/`registers` edges into that community's files) —
+  reported as that community's `test_files`, never as its own community. A
+  test file with no such edge anywhere lands in one shared "Unattached
+  tests" bucket per level, excluded from the default listing.
+* **A community must earn its place: no singletons, no giant blobs.** Two
+  post-processing passes run after clustering, both keyed off actual graph
+  signal rather than an arbitrary count alone:
+  - `_fold_tiny_groups` merges any group under `_FOLD_MIN_FILES` files into,
+    in order, (a) the other group it has the strongest real edge weight to,
+    (b) the group holding a majority of the *other* files in the same
+    directory, or (c) a per-top-level-directory "loose files" bucket if
+    neither exists — so an isolated or near-isolated file never becomes its
+    own one-file "community".
+  - `_split_catchalls` breaks up the opposite failure mode: a big (`>60`
+    files), low-cohesion (`<0.30`) group that Louvain produced only because
+    the file graph itself has one loosely-coupled "glue" region (routing
+    setup, `__init__` re-exports, ...). Rather than present that as one
+    unreadable blob, it is split by directory into real sub-communities,
+    each marked `split_by: "directory"`.
 * **Edges are weighted by kind and certainty, aggregated per file pair.**
   `calls` edges are the strongest signal of "these two files work together"
   (weight 3.0), `registers` next (a route/tool wiring itself in, 2.0),
   `tests` next (1.5), `imports` weakest (1.0, a dependency without a
   behavioural link). Every edge is additionally scaled by how sure the
-  extractor was (`exact` 1.0, `static_inferred` 0.7, `lexical` 0.4) — a
-  guessed call should not out-vote an AST-resolved one when they disagree
-  about which community a file belongs to.
-* **Test files never pull production files into their own cluster.** A test
-  file typically imports/exercises a dozen unrelated modules across the
-  whole repository (fixtures, the modules under test); if that edge counted
-  for clustering, one test file would out-weigh every real coupling signal
-  and Louvain would either merge the whole repo into one blob or produce a
-  meaningless partition dominated by whichever test file has the most
-  imports. So an edge whose two endpoints disagree on "is this a test path"
-  (`query._is_test_path`) is dropped **for clustering only** — a test file
-  keeps its own node and clusters with other tests it is genuinely coupled
-  to (shared fixtures, `conftest.py`), and the coverage a community's tests
-  provide is reported separately (`test_files`, computed from the *full*,
-  unfiltered edge set) rather than folded into the partition itself.
-* **Deterministic two-level Louvain, no dependency.** `_one_level` is the
-  textbook Louvain local-moving phase (Blondel et al. 2008): nodes visited
-  in a fixed sorted order, each considers moving into the community of a
-  neighbour that maximises modularity gain, repeated until no node moves.
-  Ties are broken by the lexicographically smallest candidate id and a node
-  only moves on a strictly positive gain, so the same graph always produces
-  the same partition. Level 0 is the direct output of that phase over the
-  file graph; level 1 re-runs the exact same phase over the level-0
-  communities aggregated into super-nodes (their mutual edge weight summed,
-  self-loops representing internal cohesion) — literally "communities of
-  communities", which is what real multi-level Louvain calls its second
-  pass. Anything past level 1 is out of scope here (the contract asks for
-  0/1 only).
-* **A time/size budget, with an honest fallback.** A local-moving pass is
-  O(nodes x average degree) per sweep and a pathological graph (a huge
-  monorepo, or an unusually dense one) could still take too long in pure
-  Python. `_TIME_BUDGET_S` bounds the wall clock spent inside Louvain; if it
-  is exceeded, or the file-node count is absurd (`_NODE_CAP`), the whole
-  computation is abandoned in favour of directory-based grouping (two path
-  segments = level 0, one = level 1) so the tool never hangs a turn — the
-  result says `"method": "directory"` so a caller can tell the difference
-  from a real clustering.
+  extractor was (`exact` 1.0, `static_inferred` 0.7, `lexical` 0.4).
+* **Deterministic two-level Louvain, no dependency, with a resolution
+  parameter.** `_one_level` is the textbook Louvain local-moving phase
+  (Blondel et al. 2008): nodes visited in a fixed sorted order, each
+  considers moving into the community of a neighbour that maximises
+  modularity gain, repeated until no node moves. Ties are broken by the
+  lexicographically smallest candidate id and a node only moves on a
+  strictly positive gain, so the same graph always produces the same
+  partition. A resolution parameter (Reichardt & Bornholdt 2006) scales the
+  null-model term of the gain; `_RESOLUTION_LEVEL0/1 < 1` deliberately biases
+  toward fewer, larger communities than the textbook default, because the
+  contract this module serves is "a human orienting in an unfamiliar repo",
+  and a few dozen readable groups beat a few thousand technically-optimal
+  but illegible ones. Level 0 comes from that phase over the (fold/split
+  finalised) production file graph; level 1 re-runs it over those level-0
+  communities aggregated into super-nodes.
+* **Names come from paths, not from a symbol.** A community's name is the
+  one or two directories (by symbol count, not just file count) that hold
+  most of it, e.g. `"src/brain"` or `"src/brain + routes/brain_routes"`. If
+  a community only touches a small slice of a directory (most of that
+  directory lives in other communities), that piece is named by its
+  standout file's own stem instead of the whole directory, so the name
+  never implies ownership of files it does not have. Level-1 names use only
+  the top-level directory segment ("dominant top-level areas"). When two
+  sibling communities land on the exact same base name, a short
+  TF-IDF-over-file-stem-tokens tag disambiguates them. `key_symbols` (the
+  old, still useful "what's the most-called thing in here" signal) remains
+  a separate field on every record.
+* **A time/size budget, with an honest fallback.** `_TIME_BUDGET_S` bounds
+  the wall clock spent inside Louvain; if exceeded, or the file-node count
+  is absurd (`_NODE_CAP`), the whole computation is abandoned in favour of
+  directory-based grouping (two path segments = level 0, one = level 1) so
+  the tool never hangs a turn — the result says `"method": "directory"`.
 
 Persisted in `ce_store` (own tables, `code_communities` / `code_community_files`),
 keyed by `(workspace, project_id, fingerprint)` where `fingerprint` is a hash
@@ -72,6 +85,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import math
 import os
 import re
 import sqlite3
@@ -134,20 +148,56 @@ _KIND_WEIGHT: Dict[str, float] = {"calls": 3.0, "registers": 2.0, "tests": 1.5, 
 _CERTAINTY_WEIGHT: Dict[str, float] = {"exact": 1.0, "static_inferred": 0.7, "lexical": 0.4}
 _EDGE_KINDS_FOR_GRAPH = tuple(_KIND_WEIGHT)
 
+#: Resolution parameter (Reichardt & Bornholdt 2006) applied to the
+#: null-model term of the Louvain modularity gain. 1.0 is the textbook
+#: value. Empirically (see REPORT_CG.md) the textbook value already gives
+#: this repo's ~2,500 production files a healthy level-0 spread (no
+#: hundred-plus-file mega-blob); it is `_FOLD_MIN_FILES` below, not the
+#: resolution, that does the real coarsening work needed to land in the
+#: ~20-120 / ~6-25 community ranges a first-time reader can actually use.
+_RESOLUTION_LEVEL0 = 1.0
+_RESOLUTION_LEVEL1 = 1.0
+
 _TOP_KEY_SYMBOLS = 6
 _TOP_COUPLING = 5
+
+#: A group under this many files never stands alone at BUILD time -- see
+#: `_fold_tiny_groups`. This is what actually keeps the *count* of level-0/1
+#: communities in a range a human can scan on a real repo (real-repo numbers
+#: in REPORT_CG.md) -- the Louvain resolution alone was not enough. Kept
+#: separate from `_DEFAULT_MIN_FILES` below (the *display*-time floor
+#: `communities()`'s own `min_files` parameter defaults to) because a small
+#: workspace legitimately has communities under this build-time threshold
+#: with nothing sensible to fold them into (nothing else in a 6-file repo
+#: reaches 5) -- folding backs off in that case (see `_fold_tiny_groups`),
+#: and the display floor is the literal "at least 3 files" the contract
+#: asks for, not this repo-scale coarsening knob.
+_FOLD_MIN_FILES = 8
+#: `communities()`'s default `min_files` display parameter.
+_DEFAULT_MIN_FILES = 3
+#: A group at or past this many files, with cohesion below the threshold, is
+#: presented as a directory-split set of sub-communities instead of one
+#: catch-all blob -- see `_split_catchalls`.
+_CATCHALL_MIN_FILES = 60
+_CATCHALL_MAX_COHESION = 0.30
+
+_BUCKET_UNATTACHED_TESTS = "unattached_tests"
+_BUCKET_LOOSE_FILES = "loose_files"
 
 #: Bare names common enough (container/string builtins, generic verbs) that
 #: `context_engine.code_index`'s bare-name call resolution ("exactly one
 #: symbol with that name in this workspace" -- see its `_resolve` docstring)
-#: can match a call site that meant `list.append`/`str.strip`/etc to the one
-#: unrelated user function or method that happens to share the name, in a
-#: codebase large enough to define one. That is a resolution-quality
-#: limitation of the shared index, not something this module can fix without
-#: touching file ownership outside this lot -- but a name this generic is
-#: also never a good "what does this community do" headline even on the rare
-#: occasion it IS a real call, so it is excluded from `key_symbols`/naming
-#: (never from clustering weight or membership, which is unaffected).
+#: can match a call site that meant `list.append`/`str.strip`/`round`/etc to
+#: the one unrelated user function or method that happens to share the name,
+#: in a codebase large enough to define one (verified on the real repo: a
+#: TypeScript `round`/`any` under `studio/src/lib/**` was misresolved this
+#: way). That is a resolution-quality limitation of the shared index, not
+#: something this module can fix without touching file ownership outside
+#: this lot -- but a name this generic is also never a good "what does this
+#: community do" headline even on the rare occasion it IS a real call, so it
+#: is excluded from `key_symbols` (never from clustering weight or
+#: membership, which is unaffected; and no longer from naming at all, since
+#: names are now path-based -- see the module docstring).
 _GENERIC_SYMBOL_NAMES = frozenset({
     "append", "extend", "insert", "remove", "pop", "clear", "index", "count",
     "sort", "reverse", "copy", "update", "keys", "values", "items", "get",
@@ -162,6 +212,15 @@ _GENERIC_SYMBOL_NAMES = frozenset({
     "callable", "bool", "int", "float", "list", "dict", "set", "tuple",
     "bytes", "bytearray", "property", "staticmethod", "classmethod",
     "super", "exists",
+})
+
+#: Tokens too generic (either as English filler or as code-file boilerplate)
+#: to usefully distinguish two same-named sibling communities from each
+#: other -- excluded from `_tfidf_tag` candidates.
+_GENERIC_PATH_TOKENS = frozenset({
+    "test", "tests", "util", "utils", "helper", "helpers", "service",
+    "services", "index", "main", "init", "common", "base", "core", "mod",
+    "module", "src", "lib", "app", "routes", "route", "api", "v1", "v2",
 })
 
 
@@ -237,22 +296,46 @@ def _load_call_edges(conn: sqlite3.Connection, workspace: str, project_id: str
             for r in conn.execute(f"SELECT src, dst FROM code_edges WHERE {where}", params)]
 
 
-def _load_test_edges(conn: sqlite3.Connection, workspace: str, project_id: str
-                      ) -> List[Tuple[str, str]]:
-    """`(src_id, dst_id)` for every edge a test file makes into anything --
-    unfiltered, used only to report which tests exercise a community, never
-    for clustering."""
-    where, params = _where(workspace, project_id,
-                           extra="kind IN ('calls', 'imports', 'tests')")
-    return [(str(r["src"]), str(r["dst"]))
-            for r in conn.execute(f"SELECT src, dst FROM code_edges WHERE {where}", params)]
+def _load_test_weighted_edges(conn: sqlite3.Connection, workspace: str, project_id: str,
+                               inputs: _Inputs) -> Dict[str, Dict[str, float]]:
+    """`test_path -> {production_path: summed_weight}` for every edge a test
+    file makes into a production file -- never used for clustering, only to
+    decide which single production community a test file is attached to
+    (see the module docstring's test-attachment rule)."""
+    marks = ",".join("?" * len(_EDGE_KINDS_FOR_GRAPH))
+    clauses = ["workspace = ?"]
+    params: List[Any] = [workspace]
+    if project_id:
+        clauses.append("project_id = ?")
+        params.append(project_id)
+    clauses.append(f"kind IN ({marks})")
+    params.extend(_EDGE_KINDS_FOR_GRAPH)
+    sql = f"SELECT src, dst, kind, certainty FROM code_edges WHERE {' AND '.join(clauses)}"
+
+    out: Dict[str, Dict[str, float]] = {}
+    for row in conn.execute(sql, params):
+        src_path = inputs.sym_path.get(str(row["src"]))
+        dst_path = inputs.sym_path.get(str(row["dst"]))
+        if not src_path or not dst_path or src_path == dst_path:
+            continue
+        if not _is_test_path(src_path) or _is_test_path(dst_path):
+            continue  # only test -> production edges decide attachment
+        weight = _KIND_WEIGHT.get(str(row["kind"]), 0.0) * \
+            _CERTAINTY_WEIGHT.get(str(row["certainty"]), 0.3)
+        if weight <= 0:
+            continue
+        bucket = out.setdefault(src_path, {})
+        bucket[dst_path] = bucket.get(dst_path, 0.0) + weight
+    return out
 
 
 def _build_file_graph(conn: sqlite3.Connection, workspace: str, project_id: str,
                        inputs: _Inputs) -> Dict[Tuple[str, str], float]:
-    """One weighted, undirected entry per unordered file pair with at least
-    one qualifying edge between them -- see the module docstring for the
-    kind/certainty weights and the test/production exclusion rule."""
+    """One weighted, undirected entry per unordered *production* file pair
+    with at least one qualifying edge between them -- test files are never
+    nodes in this graph at all (see the module docstring); their edges are
+    loaded separately by `_load_test_weighted_edges` for post-hoc
+    attachment instead."""
     marks = ",".join("?" * len(_EDGE_KINDS_FOR_GRAPH))
     clauses = ["workspace = ?"]
     params = [workspace]
@@ -269,8 +352,8 @@ def _build_file_graph(conn: sqlite3.Connection, workspace: str, project_id: str,
         dst_path = inputs.sym_path.get(str(row["dst"]))
         if not src_path or not dst_path or src_path == dst_path:
             continue
-        if _is_test_path(src_path) != _is_test_path(dst_path):
-            continue  # cross test/production edge: never used for clustering
+        if _is_test_path(src_path) or _is_test_path(dst_path):
+            continue  # test files are not clustering nodes
         weight = _KIND_WEIGHT.get(str(row["kind"]), 0.0) * \
             _CERTAINTY_WEIGHT.get(str(row["certainty"]), 0.3)
         if weight <= 0:
@@ -280,13 +363,25 @@ def _build_file_graph(conn: sqlite3.Connection, workspace: str, project_id: str,
     return pair_weight
 
 
-# ── deterministic two-level Louvain ─────────────────────────────────────
+def _build_adj(pair_weight: Dict[Tuple[str, str], float],
+                nodes: Sequence[str]) -> Dict[str, Dict[str, float]]:
+    adj: Dict[str, Dict[str, float]] = {p: {} for p in nodes}
+    for (a, b), w in pair_weight.items():
+        adj.setdefault(a, {})
+        adj.setdefault(b, {})
+        adj[a][b] = adj[a].get(b, 0.0) + w
+        adj[b][a] = adj[b].get(a, 0.0) + w
+    return adj
+
+
+# ── deterministic Louvain (one level) ───────────────────────────────────
 
 def _one_level(adj: Dict[str, Dict[str, float]], order: Sequence[str],
-                deadline: float) -> Dict[str, str]:
+                deadline: float, *, resolution: float = 1.0) -> Dict[str, str]:
     """One Louvain local-moving phase: fixed node order, ties broken by the
     smallest candidate id, a move only on a strictly positive gain -- the
-    same graph and order always produce the same partition."""
+    same graph and order always produce the same partition. `resolution`
+    scales the null-model term (see the module docstring)."""
     comm: Dict[str, str] = {n: n for n in order}
     if not order:
         return comm
@@ -313,11 +408,11 @@ def _one_level(adj: Dict[str, Dict[str, float]], order: Sequence[str],
                 c = comm[nb]
                 neigh_w[c] = neigh_w.get(c, 0.0) + w
             best_c = cur
-            best_gain = neigh_w.get(cur, 0.0) - sigma_tot.get(cur, 0.0) * kn / m2
+            best_gain = neigh_w.get(cur, 0.0) - resolution * sigma_tot.get(cur, 0.0) * kn / m2
             for c in sorted(neigh_w):
                 if c == cur:
                     continue
-                gain = neigh_w[c] - sigma_tot.get(c, 0.0) * kn / m2
+                gain = neigh_w[c] - resolution * sigma_tot.get(c, 0.0) * kn / m2
                 if gain > best_gain + 1e-12:
                     best_gain = gain
                     best_c = c
@@ -333,14 +428,16 @@ def _aggregate(adj: Dict[str, Dict[str, float]], membership: Dict[str, str]
     """Super-node graph: communities become nodes, mutual weight summed.
     Iterating every original (n, neighbour) pair from both sides naturally
     doubles an internal pair's contribution into the community's own
-    self-loop -- exactly the convention multi-level Louvain relies on: a
-    self-loop weight already represents twice the enclosed edge weight, and
-    contributes to the super-node's degree with no further adjustment."""
+    self-loop -- exactly the convention multi-level Louvain relies on."""
     agg: Dict[str, Dict[str, float]] = {c: {} for c in set(membership.values())}
     for n, neighbours in adj.items():
-        cn = membership[n]
+        cn = membership.get(n)
+        if cn is None:
+            continue
         for nb, w in neighbours.items():
-            cnb = membership[nb]
+            cnb = membership.get(nb)
+            if cnb is None:
+                continue
             agg[cn][cnb] = agg[cn].get(cnb, 0.0) + w
     return agg
 
@@ -359,51 +456,152 @@ def _community_id(files: Sequence[str]) -> str:
     return "comm_" + hashlib.sha256(blob).hexdigest()[:16]
 
 
-def _louvain_partition(pair_weight: Dict[Tuple[str, str], float], all_files: Sequence[str],
-                        *, deadline: float
-                        ) -> Tuple[Dict[str, str], Dict[str, str], str]:
-    """`(file -> community_id0, community_id0 -> community_id1, method)`.
-
-    Falls back to directory-based grouping (`method="directory"`) when the
-    file-node count is past `_NODE_CAP` or the Louvain passes exceed the
-    time budget -- never a partial/mixed result, always one method or the
-    other, so a caller never has to reconcile two clustering styles."""
-    if len(all_files) > _NODE_CAP:
-        return _directory_fallback(all_files)
-
-    adj: Dict[str, Dict[str, float]] = {p: {} for p in all_files}
+def _internal_cross_weights(groups: Dict[str, List[str]],
+                             pair_weight: Dict[Tuple[str, str], float]
+                             ) -> Tuple[Dict[str, float], Dict[str, Dict[str, float]]]:
+    file_to_group = {f: gid for gid, files in groups.items() for f in files}
+    internal: Dict[str, float] = {}
+    cross: Dict[str, Dict[str, float]] = {}
     for (a, b), w in pair_weight.items():
-        adj[a][b] = adj[a].get(b, 0.0) + w
-        adj[b][a] = adj[b].get(a, 0.0) + w
+        ga, gb = file_to_group.get(a), file_to_group.get(b)
+        if ga is None or gb is None:
+            continue
+        if ga == gb:
+            internal[ga] = internal.get(ga, 0.0) + w
+        else:
+            cross.setdefault(ga, {})[gb] = cross.setdefault(ga, {}).get(gb, 0.0) + w
+            cross.setdefault(gb, {})[ga] = cross.setdefault(gb, {}).get(ga, 0.0) + w
+    return internal, cross
 
-    order = sorted(all_files)
-    try:
-        level0_raw = _one_level(adj, order, deadline)
-        agg = _aggregate(adj, level0_raw)
-        comm_order = sorted(agg)
-        level1_raw = _one_level(agg, comm_order, deadline)
-    except _BudgetExceeded:
-        logger.info("code_graph.communities: Louvain exceeded its time budget "
-                    "(%d files) -- falling back to directory grouping", len(all_files))
-        return _directory_fallback(all_files)
 
-    groups0 = _group_by(level0_raw)
-    label_to_id0 = {label: _community_id(members) for label, members in groups0.items()}
-    id0_to_label0 = {v: k for k, v in label_to_id0.items()}
-    file_to_id0 = {f: label_to_id0[level0_raw[f]] for f in all_files}
+def _cohesion_of(gid: str, internal: Dict[str, float], cross: Dict[str, Dict[str, float]]) -> float:
+    own_internal = internal.get(gid, 0.0)
+    own_cross = sum(cross.get(gid, {}).values())
+    total = own_internal + own_cross
+    return (own_internal / total) if total > 0 else 0.0
 
-    groups1_labels: Dict[str, List[str]] = {}  # raw level1 label -> [id0, ...]
-    for label0, id0 in label_to_id0.items():
-        label1 = level1_raw.get(label0, label0)
-        groups1_labels.setdefault(label1, []).append(id0)
-    id0_to_id1: Dict[str, str] = {}
-    for label1, id0_list in sorted(groups1_labels.items()):
-        files1 = sorted({f for id0 in id0_list for f in groups0[id0_to_label0[id0]]})
-        id1 = _community_id(files1)
-        for id0 in id0_list:
-            id0_to_id1[id0] = id1
 
-    return file_to_id0, id0_to_id1, "louvain"
+# ── fold tiny groups / split catch-alls ─────────────────────────────────
+
+def _dir_key(path: str, depth: Optional[int] = None) -> str:
+    parts = path.rsplit("/", 1)[0].split("/") if "/" in path else []
+    if depth is not None:
+        parts = parts[:depth]
+    return "/".join(parts) or "."
+
+
+def _fold_tiny_groups(groups: Dict[str, List[str]], pair_weight: Dict[Tuple[str, str], float],
+                       *, min_files: int) -> Dict[str, List[str]]:
+    """A group under `min_files` files never stands alone. It merges into,
+    in order: (a) the other group it has the strongest real edge weight to,
+    (b) the group holding a majority of the *other* files in the same
+    directory (using the ORIGINAL, pre-fold assignment, snapshotted once so
+    folding decisions never chain/order-depend), or (c) a per-top-level-
+    directory "loose files" bucket. If nothing in the repo reaches
+    `min_files` at all (a tiny fixture/workspace), folding is skipped
+    entirely rather than dumping everything into "loose" buckets."""
+    big = {gid for gid, files in groups.items() if len(files) >= min_files}
+    if not big:
+        return {gid: list(files) for gid, files in groups.items()}
+    tiny = sorted(gid for gid in groups if gid not in big)
+    if not tiny:
+        return {gid: list(files) for gid, files in groups.items()}
+
+    file_to_group = {f: gid for gid, files in groups.items() for f in files}
+    _, cross = _internal_cross_weights(groups, pair_weight)
+
+    dir_counts: Dict[str, Dict[str, int]] = {}
+    for f, gid in file_to_group.items():
+        d = _dir_key(f)
+        dir_counts.setdefault(d, {})[gid] = dir_counts.setdefault(d, {}).get(gid, 0) + 1
+
+    new_groups: Dict[str, List[str]] = {gid: list(files) for gid, files in groups.items() if gid in big}
+    loose: Dict[str, List[str]] = {}
+
+    for gid in tiny:
+        files = groups[gid]
+        candidates = {g: w for g, w in cross.get(gid, {}).items() if g in big}
+        target = sorted(candidates.items(), key=lambda kv: (-kv[1], kv[0]))[0][0] if candidates else None
+        if target is None:
+            dir_votes: Dict[str, int] = {}
+            for f in files:
+                d = _dir_key(f)
+                for g, cnt in dir_counts.get(d, {}).items():
+                    if g == gid or g not in big:
+                        continue
+                    dir_votes[g] = dir_votes.get(g, 0) + cnt
+            if dir_votes:
+                target = sorted(dir_votes.items(), key=lambda kv: (-kv[1], kv[0]))[0][0]
+        if target is not None:
+            new_groups[target].extend(files)
+            continue
+        for f in files:
+            top = f.split("/", 1)[0] if "/" in f else "."
+            loose.setdefault(top, []).append(f)
+
+    for top, files in loose.items():
+        new_groups[f"__loose__{top}"] = files
+    for files in new_groups.values():
+        files.sort()
+    return new_groups
+
+
+def _fold_siblings(sub: Dict[str, List[str]], *, min_files: int) -> Dict[str, List[str]]:
+    """Same idea as `_fold_tiny_groups`, scoped to one catch-all's own
+    directory-split sub-groups: a too-small sub-group merges into a sibling
+    sharing its top-level segment, else the largest sibling overall."""
+    big = {k: v for k, v in sub.items() if len(v) >= min_files}
+    if not big:
+        return {k: list(v) for k, v in sub.items()}
+    result: Dict[str, List[str]] = {k: list(v) for k, v in big.items()}
+    for k, files in sub.items():
+        if k in big:
+            continue
+        top = k.split("/", 1)[0]
+        target = next((bk for bk in sorted(big) if bk == top or bk.startswith(top + "/")), None)
+        if target is None:
+            target = sorted(big.items(), key=lambda kv: (-len(kv[1]), kv[0]))[0][0]
+        result[target].extend(files)
+    for v in result.values():
+        v.sort()
+    return result
+
+
+def _split_catchalls(groups: Dict[str, List[str]], pair_weight: Dict[Tuple[str, str], float],
+                      *, min_files: int) -> Tuple[Dict[str, List[str]], Dict[str, str]]:
+    """A group past `_CATCHALL_MIN_FILES` files with cohesion below
+    `_CATCHALL_MAX_COHESION` is Louvain's honest answer for a loosely-
+    coupled "glue" region, not a real single module -- split it by each
+    file's own immediate directory into real sub-communities instead of
+    presenting one illegible blob (a fixed absolute depth would collapse a
+    deeply-nested blob like `studio/src/screens/**` right back to
+    `studio/src` for every file; splitting on the file's own full directory
+    keeps whatever structure the blob actually has, however deep it starts).
+    Sub-groups that come out too small are folded into a directory sibling,
+    same rule as `_fold_tiny_groups`. When even that yields only one group
+    (every file in the blob is a direct sibling in one flat directory, with
+    no subdirectory structure left to split along), splitting genuinely
+    cannot help and the blob is left as-is."""
+    internal, cross = _internal_cross_weights(groups, pair_weight)
+    final: Dict[str, List[str]] = {}
+    split_of: Dict[str, str] = {}
+    for gid, files in groups.items():
+        cohesion = _cohesion_of(gid, internal, cross)
+        if len(files) > _CATCHALL_MIN_FILES and cohesion < _CATCHALL_MAX_COHESION:
+            sub: Dict[str, List[str]] = {}
+            for f in files:
+                sub.setdefault(_dir_key(f), []).append(f)
+            sub = _fold_siblings(sub, min_files=min_files)
+            if len(sub) <= 1:
+                final[gid] = files  # splitting would not actually help
+                continue
+            for skey, sfiles in sub.items():
+                label = f"{gid}::{skey}"
+                final[label] = sfiles
+                split_of[label] = "directory"
+        else:
+            final[gid] = files
+    return final, split_of
 
 
 def _directory_fallback(all_files: Sequence[str], *, level0_depth: int = 2,
@@ -431,6 +629,159 @@ def _directory_fallback(all_files: Sequence[str], *, level0_depth: int = 2,
     label_to_id1 = {key1: _community_id(members) for key1, members in groups1.items()}
     id0_to_id1 = {id0: label_to_id1[key1] for id0, key1 in id0_to_key1.items()}
     return file_to_id0, id0_to_id1, "directory"
+
+
+# ── test attachment ─────────────────────────────────────────────────────
+
+def _assign_tests(test_weighted: Dict[str, Dict[str, float]], file_to_id0: Dict[str, str],
+                   test_paths: Sequence[str]) -> Tuple[Dict[str, Set[str]], List[str]]:
+    """Every test file is attached to the *one* production community
+    (post fold/split, so ids are final) it exercises most, by summed edge
+    weight; a test file with no production edge at all is unattached."""
+    test_files_by_id0: Dict[str, Set[str]] = {}
+    unattached: List[str] = []
+    for tpath in sorted(test_paths):
+        group_weight: Dict[str, float] = {}
+        for prod_path, w in test_weighted.get(tpath, {}).items():
+            gid = file_to_id0.get(prod_path)
+            if not gid:
+                continue
+            group_weight[gid] = group_weight.get(gid, 0.0) + w
+        if not group_weight:
+            unattached.append(tpath)
+            continue
+        best_gid = sorted(group_weight.items(), key=lambda kv: (-kv[1], kv[0]))[0][0]
+        test_files_by_id0.setdefault(best_gid, set()).add(tpath)
+    return test_files_by_id0, unattached
+
+
+# ── naming: paths, not symbols ───────────────────────────────────────────
+
+_TOKEN_SPLIT_RE = re.compile(r"[_\-\s]+")
+_CAMEL_RE = re.compile(r"[A-Z]?[a-z0-9]+|[A-Z]+(?![a-z])")
+_EXT_RE = re.compile(r"\.(py|ts|tsx|js|jsx|mjs|go|rs|java|rb)$")
+
+
+def _tokenize_stem(path: str) -> List[str]:
+    stem = path.rsplit("/", 1)[-1]
+    stem = _EXT_RE.sub("", stem)
+    tokens: List[str] = []
+    for part in _TOKEN_SPLIT_RE.split(stem):
+        if not part:
+            continue
+        tokens.extend(m.lower() for m in _CAMEL_RE.findall(part))
+    return [t for t in tokens if len(t) > 1]
+
+
+class _NameCtx:
+    """Precomputed, repo-wide inputs the naming/tagging functions need --
+    built once per `_build` call, never per community (that would be
+    O(communities x files) again)."""
+    __slots__ = ("path_symbols", "dir_file_totals", "file_tokens", "doc_freq", "n_docs")
+
+    def __init__(self, path_symbols: Dict[str, int], production_files: Sequence[str]) -> None:
+        self.path_symbols = path_symbols
+        dir_file_totals: Dict[str, int] = {}
+        file_tokens: Dict[str, Set[str]] = {}
+        doc_freq: Dict[str, int] = {}
+        for f in production_files:
+            dir_file_totals[_dir_key(f)] = dir_file_totals.get(_dir_key(f), 0) + 1
+            toks = set(_tokenize_stem(f))
+            file_tokens[f] = toks
+            for t in toks:
+                doc_freq[t] = doc_freq.get(t, 0) + 1
+        self.dir_file_totals = dir_file_totals
+        self.file_tokens = file_tokens
+        self.doc_freq = doc_freq
+        self.n_docs = len(production_files) or 1
+
+
+def _name_for(files: Sequence[str], ctx: _NameCtx, *, level1: bool = False) -> str:
+    depth = 1 if level1 else None
+    dir_symbols: Dict[str, int] = {}
+    dir_files: Dict[str, List[str]] = {}
+    for f in files:
+        key = _dir_key(f, depth)
+        dir_symbols[key] = dir_symbols.get(key, 0) + ctx.path_symbols.get(f, 0)
+        dir_files.setdefault(key, []).append(f)
+    total = sum(dir_symbols.values()) or 1
+    ranked = sorted(dir_symbols.items(), key=lambda kv: (-kv[1], kv[0]))
+
+    pieces: List[str] = []
+    covered = 0.0
+    for key, weight in ranked:
+        if len(pieces) >= 2:
+            break
+        frac = weight / total
+        if pieces and frac < 0.12:
+            break
+        piece = key
+        if not level1:
+            repo_total = ctx.dir_file_totals.get(key, len(dir_files[key]))
+            here = len(dir_files[key])
+            frac_of_dir = (here / repo_total) if repo_total else 1.0
+            # A "flat" directory key (no subdirectory segment of its own,
+            # e.g. "src", "routes") holding hundreds of loose files is not
+            # a meaningful name by itself even when this community owns a
+            # few dozen of them -- so the minority-of-directory threshold is
+            # more forgiving there than for a real, named subdirectory.
+            is_flat = "/" not in key
+            minority = frac_of_dir < (0.5 if is_flat else 0.34)
+            if repo_total > here and minority:
+                top_files = sorted(dir_files[key],
+                                   key=lambda f: (-ctx.path_symbols.get(f, 0), f))[:2]
+                stems: List[str] = []
+                for bf in top_files:
+                    stem = _EXT_RE.sub("", bf.rsplit("/", 1)[-1])
+                    file_dir = bf.rsplit("/", 1)[0] if "/" in bf else ""
+                    piece_str = f"{file_dir}/{stem}" if file_dir else stem
+                    if piece_str not in stems:
+                        stems.append(piece_str)
+                piece = " · ".join(stems)
+        pieces.append(piece)
+        covered += frac
+        if covered >= 0.75:
+            break
+    if not pieces:
+        return files[0].rsplit("/", 1)[-1] if files else "community"
+    return " + ".join(pieces)
+
+
+def _tfidf_tag(files: Sequence[str], ctx: _NameCtx, exclude: Set[str]) -> str:
+    """Short disambiguator for two same-named sibling communities: the
+    file-stem tokens most distinctive to this community's files versus the
+    whole repo (classic TF-IDF), skipping generic/boilerplate tokens and
+    anything already present in the name itself."""
+    tf: Dict[str, int] = {}
+    for f in files:
+        for t in ctx.file_tokens.get(f, ()):
+            tf[t] = tf.get(t, 0) + 1
+    n_files = len(files) or 1
+    scored: List[Tuple[float, str]] = []
+    for t, c in tf.items():
+        if t in exclude or t in _GENERIC_PATH_TOKENS:
+            continue
+        idf = math.log((ctx.n_docs + 1) / (ctx.doc_freq.get(t, 0) + 1)) + 1.0
+        score = (c / n_files) * idf
+        scored.append((score, t))
+    scored.sort(key=lambda x: (-x[0], x[1]))
+    return ", ".join(t for _, t in scored[:2])
+
+
+def _disambiguate_names(records: List[Dict[str, Any]], ctx: _NameCtx) -> None:
+    """Sibling communities (same level) that landed on the exact same
+    base name get a short TF-IDF tag appended, in place."""
+    by_name: Dict[str, List[Dict[str, Any]]] = {}
+    for r in records:
+        by_name.setdefault(r["name"], []).append(r)
+    for name, group in by_name.items():
+        if len(group) < 2:
+            continue
+        exclude = set(re.split(r"[\s+/·]+", name.lower()))
+        for r in group:
+            tag = _tfidf_tag(r["files"], ctx, exclude)
+            if tag:
+                r["name"] = f"{name} ({tag})"
 
 
 # ── per-community detail (shared by both levels) ────────────────────────
@@ -463,6 +814,9 @@ def _dominant_language(files: Sequence[str], path_lang: Dict[str, str]) -> str:
 
 
 def _common_dir_prefix(files: Sequence[str]) -> str:
+    """Still used by `_maybe_summarize`'s prompt (a rough one-line location
+    hint for the model) -- naming itself no longer uses this, see
+    `_name_for`."""
     dirs = [f.rsplit("/", 1)[0].split("/") for f in files if "/" in f]
     if not dirs:
         return ""
@@ -475,17 +829,6 @@ def _common_dir_prefix(files: Sequence[str]) -> str:
         else:
             break
     return "/".join(prefix)
-
-
-def _name_for(files: Sequence[str], key_symbols: Sequence[Dict[str, Any]]) -> str:
-    prefix = _common_dir_prefix(files)
-    top = key_symbols[0]["symbol"].rsplit(".", 1)[-1] if key_symbols else ""
-    if prefix and top:
-        return f"{prefix} — {top}"
-    if prefix:
-        return prefix
-    base = files[0].rsplit("/", 1)[-1] if files else "community"
-    return f"{base} — {top}" if top else base
 
 
 def _purpose_for(files: Sequence[str], routes: Sequence[Dict[str, Any]],
@@ -510,28 +853,18 @@ def _purpose_for(files: Sequence[str], routes: Sequence[Dict[str, Any]],
 def _build_records(level: int, groups: Dict[str, List[str]], parents: Dict[str, str],
                     inputs: _Inputs, pair_weight: Dict[Tuple[str, str], float],
                     calls_edges: Sequence[Tuple[str, str]],
-                    test_targets: Dict[str, Set[str]], method: str,
-                    computed_at: str) -> List[Dict[str, Any]]:
+                    test_files_map: Dict[str, Set[str]], method: str,
+                    computed_at: str, split_of: Dict[str, str], ctx: _NameCtx
+                    ) -> List[Dict[str, Any]]:
     """Every field the contract asks for, for one level's groups.
 
-    `groups`: community id -> sorted member files. `parents`: id -> parent id
-    (empty for level 1). `test_targets`: file -> set of test files that call
-    or import into it, from the *unfiltered* edge set (never the clustering
-    graph)."""
+    `groups`: community id -> sorted member (production) files. `parents`:
+    id -> parent id (empty for level 1). `test_files_map`: community id ->
+    the test files attached to it (see `_assign_tests`). `split_of`:
+    community id -> `"directory"` when it is a catch-all split's
+    sub-community, else absent/empty."""
     files_of_community: Dict[str, str] = {f: cid for cid, files in groups.items() for f in files}
-
-    # internal vs cross weight, one pass over the clustering graph.
-    internal: Dict[str, float] = {}
-    cross: Dict[str, Dict[str, float]] = {}
-    for (a, b), w in pair_weight.items():
-        ca, cb = files_of_community.get(a), files_of_community.get(b)
-        if ca is None or cb is None:
-            continue
-        if ca == cb:
-            internal[ca] = internal.get(ca, 0.0) + w
-        else:
-            cross.setdefault(ca, {})[cb] = cross.setdefault(ca, {}).get(cb, 0.0) + w
-            cross.setdefault(cb, {})[ca] = cross.setdefault(cb, {}).get(ca, 0.0) + w
+    internal, cross = _internal_cross_weights(groups, pair_weight)
 
     # key symbols: internal call fan-in, one pass over resolved `calls` edges.
     fanin: Dict[str, int] = {}
@@ -543,12 +876,9 @@ def _build_records(level: int, groups: Dict[str, List[str]], parents: Dict[str, 
                 and files_of_community.get(dst_path) is not None:
             fanin[dst] = fanin.get(dst, 0) + 1
 
-    # Symbol ids grouped by file, built ONCE: with thousands of communities
-    # (one repo file each, in the common case) a naive per-community scan
-    # of the whole symbol table (`sid for sid, p in inputs.sym_path.items()
-    # if p in file_set`, repeated for key_symbols/routes/entry_points) is
-    # O(communities x total_symbols) -- tens of seconds on a real repo. This
-    # index makes every community's own lookup O(its own member count).
+    # Symbol ids grouped by file, built ONCE -- see the perf note in git
+    # history: a per-community scan of the whole symbol table is
+    # O(communities x total_symbols), tens of seconds on a real repo.
     symbols_by_file: Dict[str, List[str]] = {}
     for sid, p in inputs.sym_path.items():
         symbols_by_file.setdefault(p, []).append(sid)
@@ -582,19 +912,16 @@ def _build_records(level: int, groups: Dict[str, List[str]], parents: Dict[str, 
                 inputs.sym_name.get(sid, ""))
         ), key=lambda e: (e["path"], e["line"]))
 
-        test_files = sorted({t for f in files for t in test_targets.get(f, ())})
+        test_files = sorted(test_files_map.get(cid, ()))
 
-        own_internal = internal.get(cid, 0.0)
-        own_cross = sum(cross.get(cid, {}).values())
-        cohesion = round(own_internal / (own_internal + own_cross), 4) \
-            if (own_internal + own_cross) > 0 else 0.0
+        cohesion = round(_cohesion_of(cid, internal, cross), 4)
 
         coupling = [
             {"community_id": other, "weight": round(w, 4)}
             for other, w in sorted(cross.get(cid, {}).items(), key=lambda kv: (-kv[1], kv[0]))
         ][:_TOP_COUPLING]
 
-        name = _name_for(files, key_symbols)
+        name = _name_for(files, ctx, level1=(level >= 1))
         purpose = _purpose_for(files, routes, entry_points, key_symbols,
                                [inputs.path_lang.get(f, "") for f in files])
 
@@ -605,13 +932,35 @@ def _build_records(level: int, groups: Dict[str, List[str]], parents: Dict[str, 
             "cohesion": cohesion, "key_symbols": key_symbols, "routes": routes,
             "entry_points": entry_points, "test_files": test_files,
             "coupling": coupling, "computed_at": computed_at,
+            "split_by": split_of.get(cid, ""), "bucket": "",
         })
+
+    _disambiguate_names(records, ctx)
     return records
+
+
+def _unattached_tests_record(level: int, files: Sequence[str], computed_at: str,
+                             method: str) -> Dict[str, Any]:
+    cid = _community_id(list(files)) + f"_lvl{level}"
+    return {
+        "id": cid, "level": level, "parent": cid, "method": method,
+        "name": "Unattached tests", "purpose": f"{len(files)} test file(s) with no "
+        "resolved edge into any production file.", "summary": "", "size": 0,
+        "files": sorted(files), "dominant_language": "", "cohesion": 0.0,
+        "key_symbols": [], "routes": [], "entry_points": [], "test_files": [],
+        "coupling": [], "computed_at": computed_at, "split_by": "",
+        "bucket": _BUCKET_UNATTACHED_TESTS,
+    }
 
 
 # ── persistence ──────────────────────────────────────────────────────────
 
-_RECORD_KEYS = ("files", "key_symbols", "routes", "entry_points", "test_files", "coupling")
+_RECORD_KEYS = ("files", "key_symbols", "routes", "entry_points", "test_files", "coupling",
+               "split_by", "bucket")
+_RECORD_DEFAULTS: Dict[str, Any] = {
+    "files": [], "key_symbols": [], "routes": [], "entry_points": [], "test_files": [],
+    "coupling": [], "split_by": "", "bucket": "",
+}
 
 
 def _persist(root: str, project_id: str, fingerprint: str,
@@ -637,6 +986,8 @@ def _persist(root: str, project_id: str, fingerprint: str,
                 if rec["level"] == 0:
                     for f in rec["files"]:
                         file_rows.append((root, project_id, fingerprint, f, rec["id"]))
+                    for f in rec.get("test_files", ()):
+                        file_rows.append((root, project_id, fingerprint, f, rec["id"]))
             conn.executemany(
                 "INSERT OR REPLACE INTO code_communities "
                 "(workspace, project_id, fingerprint, level, id, parent, method, name, "
@@ -661,7 +1012,7 @@ def _row_to_record(row: Dict[str, Any]) -> Dict[str, Any]:
         "computed_at": row["computed_at"],
     }
     for key in _RECORD_KEYS:
-        rec[key] = data.get(key, [] if key != "files" else [])
+        rec[key] = data.get(key, _RECORD_DEFAULTS[key])
     return rec
 
 
@@ -688,41 +1039,118 @@ def _build(root: str, project_id: str, fingerprint: str) -> List[Dict[str, Any]]
         inputs = _load_inputs(conn, root, project_id)
         pair_weight = _build_file_graph(conn, root, project_id, inputs)
         calls_edges = _load_call_edges(conn, root, project_id)
-        test_edges = _load_test_edges(conn, root, project_id)
+        test_weighted = _load_test_weighted_edges(conn, root, project_id, inputs)
 
-    test_targets: Dict[str, Set[str]] = {}
-    for src, dst in test_edges:
-        src_path, dst_path = inputs.sym_path.get(src), inputs.sym_path.get(dst)
-        if not src_path or not dst_path or not _is_test_path(src_path) or src_path == dst_path:
-            continue
-        test_targets.setdefault(dst_path, set()).add(src_path)
-
+    production_files = [f for f in inputs.paths if not _is_test_path(f)]
+    test_paths = [f for f in inputs.paths if _is_test_path(f)]
     deadline = started + _TIME_BUDGET_S
-    file_to_id0, id0_to_id1, method = _louvain_partition(pair_weight, inputs.paths,
-                                                          deadline=deadline)
 
-    groups0 = _group_by(file_to_id0)
+    if len(production_files) > _NODE_CAP:
+        file_to_label0, label0_to_label1_dir, method = _directory_fallback(production_files)
+        groups0_final = _group_by(file_to_label0)
+        split_of: Dict[str, str] = {}
+        groups1_final = {}
+        for id0, files in groups0_final.items():
+            id1 = label0_to_label1_dir.get(id0, id0)
+            groups1_final.setdefault(id1, []).extend(files)
+        for v in groups1_final.values():
+            v.sort()
+        label_to_id0 = {gid: gid for gid in groups0_final}  # already stable ids
+        label_to_id1 = {gid: gid for gid in groups1_final}
+        parents = {id0: label0_to_label1_dir.get(id0, id0) for id0 in groups0_final}
+    else:
+        adj = _build_adj(pair_weight, production_files)
+        order = sorted(production_files)
+        try:
+            labels0 = _one_level(adj, order, deadline, resolution=_RESOLUTION_LEVEL0)
+            method = "louvain"
+        except _BudgetExceeded:
+            logger.info("code_graph.communities: Louvain exceeded its time budget "
+                       "(%d files) -- falling back to directory grouping", len(production_files))
+            file_to_label0, label0_to_label1_dir, method = _directory_fallback(production_files)
+            labels0 = file_to_label0
+
+        if method == "directory":
+            groups0_final = _group_by(labels0)
+            split_of = {}
+            groups1_final = {}
+            for id0, files in groups0_final.items():
+                id1 = label0_to_label1_dir.get(id0, id0)
+                groups1_final.setdefault(id1, []).extend(files)
+            for v in groups1_final.values():
+                v.sort()
+            label_to_id0 = {gid: gid for gid in groups0_final}
+            label_to_id1 = {gid: gid for gid in groups1_final}
+            parents = {id0: label0_to_label1_dir.get(id0, id0) for id0 in groups0_final}
+        else:
+            groups0_raw = _group_by(labels0)
+            groups0_folded = _fold_tiny_groups(groups0_raw, pair_weight, min_files=_FOLD_MIN_FILES)
+            groups0_labelled, split_of = _split_catchalls(groups0_folded, pair_weight,
+                                                           min_files=_FOLD_MIN_FILES)
+            file_to_label0 = {f: lbl for lbl, files in groups0_labelled.items() for f in files}
+
+            try:
+                agg = _aggregate(adj, file_to_label0)
+                label1_of_label0 = _one_level(agg, sorted(agg), deadline,
+                                              resolution=_RESOLUTION_LEVEL1)
+            except _BudgetExceeded:
+                label1_of_label0 = {lbl: lbl for lbl in groups0_labelled}
+
+            groups1_raw: Dict[str, List[str]] = {}
+            for lbl0, files in groups0_labelled.items():
+                lbl1 = label1_of_label0.get(lbl0, lbl0)
+                groups1_raw.setdefault(lbl1, []).extend(files)
+            for v in groups1_raw.values():
+                v.sort()
+            groups1_labelled = _fold_tiny_groups(groups1_raw, pair_weight, min_files=_FOLD_MIN_FILES)
+
+            label_to_id0 = {lbl: _community_id(files) for lbl, files in groups0_labelled.items()}
+            label_to_id1 = {lbl: _community_id(files) for lbl, files in groups1_labelled.items()}
+
+            groups0_final = {label_to_id0[lbl]: files for lbl, files in groups0_labelled.items()}
+            groups1_final = {label_to_id1[lbl]: files for lbl, files in groups1_labelled.items()}
+            split_of = {label_to_id0[lbl]: flag for lbl, flag in split_of.items()}
+
+            id1_of_file = {f: label_to_id1[lbl1] for lbl1, files in groups1_labelled.items()
+                          for f in files}
+            parents = {}
+            for id0, files in groups0_final.items():
+                votes: Dict[str, int] = {}
+                for f in files:
+                    v = id1_of_file.get(f)
+                    if v:
+                        votes[v] = votes.get(v, 0) + 1
+                parents[id0] = sorted(votes.items(), key=lambda kv: (-kv[1], kv[0]))[0][0] \
+                    if votes else ""
+
+    file_to_id0 = {f: gid for gid, files in groups0_final.items() for f in files}
+    test_files_by_id0, unattached = _assign_tests(test_weighted, file_to_id0, test_paths)
+
+    # test_files at level 1 = union of the test_files of its level-0 children.
+    test_files_by_id1: Dict[str, Set[str]] = {}
+    for id0, tests in test_files_by_id0.items():
+        id1 = parents.get(id0, "")
+        if id1:
+            test_files_by_id1.setdefault(id1, set()).update(tests)
+
+    ctx = _NameCtx(inputs.path_symbols, production_files)
     computed_at = ce_store.now_iso()
-    records0 = _build_records(0, groups0, {}, inputs, pair_weight, calls_edges,
-                              test_targets, method, computed_at)
-    for rec in records0:
-        rec["parent"] = id0_to_id1.get(rec["id"], "")
+    records0 = _build_records(0, groups0_final, parents, inputs, pair_weight, calls_edges,
+                              test_files_by_id0, method, computed_at, split_of, ctx)
+    records1 = _build_records(1, groups1_final, {}, inputs, pair_weight, calls_edges,
+                              test_files_by_id1, method, computed_at, {}, ctx)
 
-    groups1: Dict[str, List[str]] = {}
-    for id0, files in groups0.items():
-        id1 = id0_to_id1.get(id0, id0)
-        groups1.setdefault(id1, []).extend(files)
-    for files in groups1.values():
-        files.sort()
-    records1 = _build_records(1, groups1, {}, inputs, pair_weight, calls_edges,
-                              test_targets, method, computed_at)
+    if unattached:
+        records0.append(_unattached_tests_record(0, unattached, computed_at, method))
+        records1.append(_unattached_tests_record(1, unattached, computed_at, method))
 
     all_records = records0 + records1
     _persist(root, project_id, fingerprint, all_records)
     elapsed_ms = int((time.monotonic() - started) * 1000)
     logger.info("code_graph.communities: built %d level-0 / %d level-1 communities "
-               "(%s, %d files) in %dms", len(records0), len(records1), method,
-               len(inputs.paths), elapsed_ms)
+               "(%s, %d production files, %d test files, %d unattached) in %dms",
+               len(records0), len(records1), method, len(production_files),
+               len(test_paths), len(unattached), elapsed_ms)
     for rec in all_records:
         rec["_elapsed_ms"] = elapsed_ms
     return all_records
@@ -730,18 +1158,27 @@ def _build(root: str, project_id: str, fingerprint: str) -> List[Dict[str, Any]]
 
 # ── rendering ────────────────────────────────────────────────────────────
 
-def _render_list(records: List[Dict[str, Any]], output_chars: Optional[int]) -> str:
+def _render_list(records: List[Dict[str, Any]], output_chars: Optional[int], *,
+                  hidden_count: int = 0, unattached_count: int = 0) -> str:
     lines = []
     for r in sorted(records, key=lambda x: (-x["size"], x["id"])):
+        tag = "  [split_by=directory]" if r.get("split_by") else ""
         lines.append(
             f"{r['id']}  {r['name']}  ({r['size']} symbols, {len(r['files'])} files, "
-            f"cohesion={r['cohesion']:.2f})")
+            f"cohesion={r['cohesion']:.2f}){tag}")
+    if hidden_count:
+        lines.append(f"... {hidden_count} smaller communit{'y' if hidden_count == 1 else 'ies'} "
+                     f"folded/hidden below the file-count floor")
+    if unattached_count:
+        lines.append(f"({unattached_count} test file(s) with no production edge -- "
+                     f"see communities(include_unattached=True))")
     return _clip("\n".join(lines) or "(no communities)", output_chars)
 
 
 def _render_detail(r: Dict[str, Any], output_chars: Optional[int]) -> str:
     lines = [
-        f"{r['id']}  {r['name']}  [level {r['level']}]",
+        f"{r['id']}  {r['name']}  [level {r['level']}]"
+        + ("  [split_by=directory]" if r.get("split_by") else ""),
         r["purpose"],
         f"{r['size']} symbols across {len(r['files'])} file(s), "
         f"language={r['dominant_language'] or '?'}, cohesion={r['cohesion']:.2f}",
@@ -772,6 +1209,7 @@ def _render_detail(r: Dict[str, Any], output_chars: Optional[int]) -> str:
 
 def communities(root: str = "", *, project_id: str = "", level: int = 0,
                 refresh: bool = False, summarize: bool = False,
+                min_files: int = _DEFAULT_MIN_FILES, include_unattached: bool = False,
                 output_chars: int = DEFAULT_OUTPUT_CHARS) -> Dict[str, Any]:
     """What parts this repo is made of, at `level` 0 (fine, per-module) or
     1 (coarse groups of those modules).
@@ -779,9 +1217,14 @@ def communities(root: str = "", *, project_id: str = "", level: int = 0,
     Cached per `(workspace, project_id)` and the index's own fingerprint --
     a second call with an unchanged index is a cache read, a changed one
     rebuilds. `refresh=True` forces a rebuild even when the fingerprint
-    matches. `summarize=True` additionally tries a one-sentence model
-    summary per community (see `_maybe_summarize`); it never blocks on a
-    model that would have to be loaded and never changes the deterministic
+    matches. The default listing hides communities under `min_files` files
+    (folding already merged most of these at build time; this is a display-
+    time floor on top of that) and always hides the "Unattached tests"
+    bucket unless `include_unattached=True` -- both counts are still
+    reported (`hidden_small_count`, `unattached_tests_count`) so nothing
+    silently disappears. `summarize=True` additionally tries a one-sentence
+    model summary per community (see `_maybe_summarize`); it never blocks on
+    a model that would have to be loaded and never changes the deterministic
     fields."""
     try:
         resolved = _root(root)
@@ -796,6 +1239,10 @@ def communities(root: str = "", *, project_id: str = "", level: int = 0,
         lvl = 1 if int(level or 0) >= 1 else 0
     except (TypeError, ValueError):
         lvl = 0
+    try:
+        min_files_i = max(0, int(min_files or 0))
+    except (TypeError, ValueError):
+        min_files_i = _DEFAULT_MIN_FILES
 
     fp = _fingerprint(resolved, project_id)
     all_records = None if refresh else _load_cached(resolved, project_id, fp)
@@ -805,12 +1252,22 @@ def communities(root: str = "", *, project_id: str = "", level: int = 0,
     if summarize:
         _maybe_summarize(resolved, project_id, fp, all_records)
 
-    picked = [r for r in all_records if r["level"] == lvl]
-    method = picked[0]["method"] if picked else "louvain"
+    picked_all = [r for r in all_records if r["level"] == lvl]
+    method = picked_all[0]["method"] if picked_all else "louvain"
+    unattached_bucket = next((r for r in picked_all if r.get("bucket") == _BUCKET_UNATTACHED_TESTS), None)
+    pool = picked_all if include_unattached else \
+        [r for r in picked_all if r.get("bucket") != _BUCKET_UNATTACHED_TESTS]
+    shown = [r for r in pool if len(r["files"]) >= min_files_i]
+    hidden_count = len(pool) - len(shown)
+    unattached_count = len(unattached_bucket["files"]) if unattached_bucket else 0
+
     return {
-        "output": _render_list(picked, output_chars), "exit_code": 0, "root": resolved,
-        "level": lvl, "method": method, "fingerprint": fp,
-        "communities": [{k: v for k, v in r.items() if not k.startswith("_")} for r in picked],
+        "output": _render_list(shown, output_chars, hidden_count=hidden_count,
+                               unattached_count=0 if include_unattached else unattached_count),
+        "exit_code": 0, "root": resolved,
+        "level": lvl, "method": method, "fingerprint": fp, "min_files": min_files_i,
+        "hidden_small_count": hidden_count, "unattached_tests_count": unattached_count,
+        "communities": [{k: v for k, v in r.items() if not k.startswith("_")} for r in shown],
     }
 
 
@@ -853,7 +1310,10 @@ def community(root: str, id_or_name_or_symbol: str, *, project_id: str = "",
 
 
 def community_of(root: str, symbol: str, *, project_id: str = "") -> Dict[str, Any]:
-    """The level-0 community id/name a symbol's file belongs to."""
+    """The level-0 community id/name a symbol's file belongs to (a
+    production file's own community, or -- for a symbol defined in a test
+    file -- whichever community that test file was attached to, or the
+    "Unattached tests" bucket)."""
     try:
         resolved = _root(root)
     except ValueError as exc:
@@ -917,7 +1377,7 @@ def _maybe_summarize(root: str, project_id: str, fingerprint: str,
             return
     except Exception:  # noqa: BLE001
         return
-    to_summarize = [r for r in records if not r.get("summary")]
+    to_summarize = [r for r in records if not r.get("summary") and not r.get("bucket")]
     if not to_summarize:
         return
     try:
