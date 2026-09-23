@@ -631,6 +631,28 @@ _WORKSPACE_TERMINUS_TOOLS = (
        "delegate_agents", "desktop_screenshot", "desktop_list_windows"}
 )
 
+#: A workspace question about the code's own structure: what a change
+#: breaks, which flows and tests it reaches, what parts the repo has. Spanish
+#: and English on purpose — the Terminus toolset must not depend on language.
+_CODE_INTEL_INTENT_RE = re.compile(
+    r"(\bimpact[oa]?s?\b|\bimpact\b|\bafectad[oa]s?\b|\bse ven afectad|\baffected\b"
+    r"|\bblast radius\b|\bqu[eé] se romp|\bwhat (?:would |will )?breaks?\b"
+    r"|\bflujos? de ejecuci[oó]n\b|\bexecution flows?\b|\bentry points?\b|\bpuntos? de entrada\b"
+    r"|\bqu[eé] tests\b|\bwhich tests\b|\bwhat tests\b"
+    r"|\bde qu[eé] partes\b|\bwhat parts\b|\bqu[eé] m[oó]dulos\b|\bwhich modules\b"
+    r"|\barquitectura\b|\barchitecture\b)",
+    re.IGNORECASE,
+)
+#: What such a question gets: the answer tools, not the whole family.
+_CODE_INTEL_FAMILY = frozenset({
+    "code_graph_impact", "code_graph_flows", "code_graph_communities", "tests_for",
+})
+
+
+def _code_intel_family_for(text: str) -> set:
+    return set(_CODE_INTEL_FAMILY) if _CODE_INTEL_INTENT_RE.search(str(text or "")) else set()
+
+
 # ── Workspace tool floor (FAUSTUS) ────────────────────────────────────────
 # An agent with a bound workspace that cannot read a file in it is not an
 # agent. It is worth stating as an invariant because the failure mode is
@@ -7628,7 +7650,20 @@ async def _stream_agent_loop_body(
             and not _active_document_relevant
             and not active_email
         ):
-            _relevant_tools = set(_WORKSPACE_TERMINUS_TOOLS)
+            # A question about the workspace's own structure (what breaks,
+            # which flows and tests, what parts) brings the code-graph family
+            # with it. Decided from the words, not from what retrieval
+            # happened to return, so the same request in Spanish and English
+            # still gets the same toolset. Seen live (23-09-2026, local 27B):
+            # «si cambio cómo se interpretan los números 1.150,00, ¿qué flujos
+            # y qué tests se ven afectados?» retrieved code_graph_impact, this
+            # replacement threw it away, and the model spent the turn grepping
+            # for what one impact call answers.
+            _kept_code_intel = _code_intel_family_for(_retrieval_query or _last_user)
+            _relevant_tools = set(_WORKSPACE_TERMINUS_TOOLS) | _kept_code_intel
+            if _kept_code_intel:
+                logger.info("[tool-rag] Workspace question about code structure; adding %s",
+                            sorted(_kept_code_intel))
             # The replacement drops retriever noise on purpose. On a short
             # continuation such as "Implement this", `_intent.domains` comes
             # from prior context; words such as image, model, task and panel in
@@ -7648,7 +7683,7 @@ async def _stream_agent_loop_body(
             # message stay executable (catalog + lookup_tools) so a stray
             # "email"/"model" word does not dump those families as schemas.
             if _hot_seed is not None:
-                _hot_seed = set(_WORKSPACE_TERMINUS_TOOLS)
+                _hot_seed = set(_WORKSPACE_TERMINUS_TOOLS) | _kept_code_intel
         elif workspace and not plan_mode and not _active_document_relevant and not active_email:
             # A bound workspace is the user's declared intent to work in that
             # folder. Whatever the retriever picked (it is English-biased and
