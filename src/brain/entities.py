@@ -790,6 +790,14 @@ def add_relation(owner: Any, src_id: Any, rel: Any, *, dst_id: Any = None,
     valid_from_iso = _norm_dt_arg(valid_from) or now
     valid_until_iso = _norm_dt_arg(valid_until)
 
+    duplicate = _find_same_active_relation(owner, src_id, rel_key, dst_id, dst_value)
+    if duplicate is not None:
+        # The same fact asserted again (another memory, or the model pass
+        # restating a rule-found relation): one edge, more evidence.
+        return _merge_into_relation(duplicate, evidence=evidence, confidence=confidence,
+                                    method=str(method or "rule"), valid_from=_norm_dt_arg(valid_from),
+                                    now=now)
+
     relation_id = uuid.uuid4().hex
     with db() as conn:
         conn.execute(
@@ -821,6 +829,46 @@ def add_relation(owner: Any, src_id: Any, rel: Any, *, dst_id: Any = None,
 
     with db() as conn:
         row = conn.execute("SELECT * FROM relations WHERE id = ?", (relation_id,)).fetchone()
+    return _row_to_relation(row)
+
+
+def _find_same_active_relation(owner: str, src_id: str, rel_key: str, dst_id: Any,
+                               dst_value: str) -> Optional[Dict[str, Any]]:
+    with db() as conn:
+        if dst_id:
+            row = conn.execute(
+                "SELECT * FROM relations WHERE owner = ? AND src = ? AND rel = ? AND dst = ? "
+                "AND status = 'active' ORDER BY created_at LIMIT 1",
+                (owner, src_id, rel_key, dst_id)).fetchone()
+        else:
+            row = conn.execute(
+                "SELECT * FROM relations WHERE owner = ? AND src = ? AND rel = ? "
+                "AND (dst IS NULL OR dst = '') AND dst_value = ? AND status = 'active' "
+                "ORDER BY created_at LIMIT 1",
+                (owner, src_id, rel_key, dst_value)).fetchone()
+    return _row_to_relation(row) if row else None
+
+
+def _merge_into_relation(existing: Dict[str, Any], *, evidence: Sequence[str], confidence: float,
+                         method: str, valid_from: Optional[str], now: str) -> Dict[str, Any]:
+    merged_evidence = list(existing.get("evidence") or [])
+    for ref in evidence or ():
+        if ref and ref not in merged_evidence:
+            merged_evidence.append(ref)
+    new_method = existing.get("method") or "rule"
+    new_from = existing.get("valid_from") or ""
+    if method == "rule" and new_method != "rule":
+        # A rule-found restatement outranks the model's copy, date included.
+        new_method = "rule"
+        if valid_from:
+            new_from = valid_from
+    with db() as conn:
+        conn.execute(
+            "UPDATE relations SET evidence = ?, confidence = ?, method = ?, valid_from = ?, "
+            "updated_at = ? WHERE id = ?",
+            (dumps(merged_evidence), max(float(existing.get("confidence") or 0), float(confidence)),
+             new_method, new_from, now, existing["id"]))
+        row = conn.execute("SELECT * FROM relations WHERE id = ?", (existing["id"],)).fetchone()
     return _row_to_relation(row)
 
 
@@ -1059,7 +1107,7 @@ def entities_in_text(owner: Any, text: Any, *, limit: int = 8) -> List[Dict[str,
 # stored so `undo_revalidate` can put it back. Bump REVALIDATE_VERSION when
 # the filter changes enough to deserve another pass.
 
-REVALIDATE_VERSION = 2
+REVALIDATE_VERSION = 3
 
 _META_VERSION = "revalidate_version"
 _META_LAST = "revalidate_last"
@@ -1129,6 +1177,29 @@ def revalidate(owner: Any, *, dry_run: bool = False) -> Dict[str, Any]:
                 "SELECT id, rel, status FROM relations WHERE owner = ? AND method = 'llm' "
                 "AND status != 'retracted'", (owner,)).fetchall()
             to_retract = [r for r in rel_rows if r["rel"] not in KNOWN_RELATIONS]
+            # A model restatement of an edge that already exists (possibly
+            # under a synonym: "works_for" next to "works_at") is one fact
+            # drawn twice: keep the rule-found (or oldest) edge.
+            retract_ids = {r["id"] for r in to_retract}
+            live = conn.execute(
+                "SELECT id, src, rel, dst, dst_value, method, status FROM relations "
+                "WHERE owner = ? AND status = 'active' ORDER BY created_at, id", (owner,)).fetchall()
+            seen: Dict[Tuple[str, str, str], sqlite3.Row] = {}
+            for row in live:
+                if row["id"] in retract_ids:
+                    continue
+                canonical = canonical_relation(row["rel"]) or row["rel"]
+                key = (row["src"], canonical, row["dst"] or ("=" + fold(row["dst_value"])))
+                keeper = seen.get(key)
+                if keeper is None:
+                    seen[key] = row
+                    continue
+                loser = row
+                if keeper["method"] == "llm" and row["method"] != "llm":
+                    seen[key], loser = row, keeper
+                if loser["method"] == "llm":
+                    to_retract.append(loser)
+                    retract_ids.add(loser["id"])
 
             report["hidden"] = [row["id"] for row in to_hide]
             report["hidden_names"] = [row["name"] for row in to_hide]

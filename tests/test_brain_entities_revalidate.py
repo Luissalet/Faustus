@@ -205,3 +205,32 @@ def test_self_entity_folds_in_a_stray_user_node(tmp_path):
         assert len([e for e in entities.list_entities("alice", type="person")]) == 1
     finally:
         db.use_dir(None)
+
+
+def test_same_edge_twice_is_one_edge_and_model_synonym_duplicates_retract(tmp_path):
+    from src.brain import db, entities
+    db.use_dir(str(tmp_path / "brain5"))
+    try:
+        ada = entities.upsert_entity("alice", "Ada", type="person")
+        blue = entities.upsert_entity("alice", "Bluehaven", type="organization")
+        r1 = entities.add_relation("alice", ada["id"], "works_at", dst_id=blue["id"],
+                                   evidence=["mem:1"], method="rule")
+        r2 = entities.add_relation("alice", ada["id"], "works_at", dst_id=blue["id"],
+                                   evidence=["mem:2"], method="llm")
+        assert r1["id"] == r2["id"]
+        assert set(r2["evidence"]) == {"mem:1", "mem:2"}
+        assert r2["method"] == "rule"
+        # a legacy synonym row written before canonicalisation
+        with entities.db() as conn:
+            conn.execute("UPDATE relations SET rel = 'works_at' WHERE id = ?", (r1["id"],))
+            conn.execute(
+                "INSERT INTO relations (id, owner, project, src, rel, dst, dst_value, valid_from, "
+                "valid_until, asserted_at, evidence, confidence, method, status, superseded_by, "
+                "created_at, updated_at) VALUES ('dup','alice','',?,'works_for',?,'','','','',"
+                "'[]',0.5,'llm','active','','9999','9999')", (ada["id"], blue["id"]))
+        report = entities.revalidate("alice")
+        assert "dup" in report["retracted"]
+        live = entities.list_relations("alice", entity_id=ada["id"], include_closed=False)
+        assert [r["id"] for r in live] == [r1["id"]]
+    finally:
+        db.use_dir(None)
