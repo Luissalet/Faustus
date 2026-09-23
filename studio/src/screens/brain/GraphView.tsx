@@ -2,12 +2,15 @@ import { AlertTriangle, Crosshair, Search, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { EmptyState, IconButton, Skeleton } from '../../components';
 import { loadGraph, type BrainGraph, type GraphScope } from '../../adapters/brain';
-import { countByKind, layout, nodeRadius, shorten, tooltip, viewModel, type GraphNode, type ViewModel } from '../../lib/graph';
+import { countByKind, layout, shorten, tooltip, viewModel, type GraphNode, type ViewModel } from '../../lib/graph';
 import {
+  declutterLabels,
   fitTransform,
   hitTest,
   isSettled,
+  labelBox,
   neighborsOf,
+  nodeRadius,
   panBy,
   reconcileSim,
   screenToWorld,
@@ -141,7 +144,11 @@ export function GraphView({ center, onOpenNote, onOpenEntity, compact = false }:
     const positions = simPositions(sim);
     const hovered = hoverRef.current;
     const neighbors = hovered ? neighborsOf(hovered, m.edges) : null;
+    // A hovered node's own neighbourhood is what stays fully visible; every
+    // other node dims down to a fifth of its normal opacity so the
+    // highlighted subgraph reads immediately against a busy canvas.
     const dim = (id: string) => Boolean(hovered) && id !== hovered && !neighbors?.has(id);
+    const DIMMED_ALPHA = 0.2;
     const showAllLabels = transform.scale >= LABEL_ZOOM_THRESHOLD;
 
     ctx.lineWidth = 1 / transform.scale;
@@ -159,12 +166,31 @@ export function GraphView({ center, onOpenNote, onOpenEntity, compact = false }:
     }
     ctx.globalAlpha = 1;
 
+    // Which labels actually get drawn is decided once per frame, not node
+    // by node: a label that would land on top of an already-placed one is
+    // dropped, unless it belongs to the hovered/selected node or one of its
+    // neighbours — those always show, even at the cost of a little overlap
+    // among themselves, because that is exactly the context a hover is for.
+    const required = new Set<string>();
+    if (center) required.add(center);
+    if (hovered) {
+      required.add(hovered);
+      for (const nb of neighbors ?? []) required.add(nb);
+    }
+    const candidates = m.nodes
+      .filter((n) => positions[n.id] && !dim(n.id) && (showAllLabels || m.labels.has(n.id) || required.has(n.id)))
+      .sort((a, b) => (degrees[b.id] || 0) - (degrees[a.id] || 0));
+    const boxes = candidates.map((n) => labelBox(n.id, positions[n.id], radiusFor(n.id), shorten(n.label, 26), transform));
+    const keepLabels = declutterLabels(boxes, required);
+    for (const id of required) keepLabels.add(id);
+
     for (const n of m.nodes) {
       const p = positions[n.id];
       if (!p) continue;
       const r = radiusFor(n.id);
       const faded = dim(n.id);
-      ctx.globalAlpha = faded ? 0.25 : 1;
+      const isNeighbor = Boolean(hovered) && neighbors?.has(n.id);
+      ctx.globalAlpha = faded ? DIMMED_ALPHA : 1;
       ctx.beginPath();
       ctx.fillStyle = kindColor(style, n.kind);
       ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
@@ -173,16 +199,23 @@ export function GraphView({ center, onOpenNote, onOpenEntity, compact = false }:
         ctx.lineWidth = (n.id === hovered ? 2.5 : 2) / transform.scale;
         ctx.strokeStyle = labelColor;
         ctx.stroke();
+      } else if (isNeighbor) {
+        // A lighter ring than the hovered node's own, so a hover's
+        // neighbourhood reads as emphasised without competing with it.
+        ctx.lineWidth = 1.25 / transform.scale;
+        ctx.strokeStyle = labelColor;
+        ctx.globalAlpha = 0.85;
+        ctx.stroke();
+        ctx.globalAlpha = faded ? DIMMED_ALPHA : 1;
       }
-      const wantsLabel = m.labels.has(n.id) || showAllLabels || n.id === hovered || (neighbors?.has(n.id) ?? false);
-      if (wantsLabel && !faded) {
+      if (keepLabels.has(n.id) && !faded) {
         ctx.fillStyle = labelColor;
         ctx.font = `${11 / transform.scale}px sans-serif`;
         ctx.fillText(shorten(n.label, 26), p.x + r + 4 / transform.scale, p.y + 4 / transform.scale);
       }
     }
     ctx.globalAlpha = 1;
-  }, [center, radiusFor, size.width, size.height]);
+  }, [center, degrees, radiusFor, size.width, size.height]);
 
   const scheduleFrame = useCallback(() => {
     if (rafRef.current !== null) return;
@@ -191,9 +224,20 @@ export function GraphView({ center, onOpenNote, onOpenEntity, compact = false }:
       const sim = simRef.current;
       const m = modelRef.current;
       if (!sim || !m) return;
+      const width = size.width || 480;
+      const height = size.height || 320;
       let energy = 0;
       if (hotRef.current && !reducedMotionRef.current) {
-        energy = stepSimulation(sim, m.edges, { width: size.width || 480, height: size.height || 320 });
+        energy = stepSimulation(sim, m.edges, { width, height }, radiusFor);
+        // Re-fit every frame while the layout is still warming up or
+        // untangling a dense cluster — a settling simulation keeps pushing
+        // nodes outward from where they were first seeded, and fitting only
+        // once at the start (or only on a double-click) is what left the
+        // very first frame's fit stale by the time it visibly stopped
+        // moving. Stops the moment the viewer pans, zooms or drags a node.
+        if (!interactedRef.current) {
+          transformRef.current = fitTransform(simPositions(sim), m.nodes.map((n) => n.id), { width, height }, CANVAS_PAD);
+        }
       }
       draw();
       if (hotRef.current && !reducedMotionRef.current && !isSettled(energy)) {
@@ -203,7 +247,7 @@ export function GraphView({ center, onOpenNote, onOpenEntity, compact = false }:
       }
     };
     rafRef.current = requestAnimationFrame(loop);
-  }, [draw, size.width, size.height]);
+  }, [draw, radiusFor, size.width, size.height]);
 
   const reheat = useCallback(() => {
     if (reducedMotionRef.current) {
@@ -214,14 +258,19 @@ export function GraphView({ center, onOpenNote, onOpenEntity, compact = false }:
     scheduleFrame();
   }, [draw, scheduleFrame]);
 
-  // A changed graph (new data, a different filter/scope/local note) reseeds
-  // the simulation from the deterministic layout, re-fits the view (unless
-  // the viewer already panned/zoomed this same graph) and starts it live.
+  // A changed graph (new data, a different filter/scope/local note/depth)
+  // reseeds the simulation from the deterministic layout and fits the view
+  // to it again — even past the point the viewer already panned or zoomed,
+  // because a different scope or filter is effectively a different picture,
+  // not a continuation of the one they were framing. From here the
+  // continuous re-fit in `scheduleFrame`'s loop takes back over until the
+  // next pan, zoom or drag.
   useEffect(() => {
     if (!model) {
       simRef.current = null;
       return;
     }
+    interactedRef.current = false;
     const width = size.width || 480;
     const height = size.height || 320;
     const seeded = layout(model.nodes, model.edges, { width, height });
@@ -230,9 +279,7 @@ export function GraphView({ center, onOpenNote, onOpenEntity, compact = false }:
     // (a filter tweak or a background refresh should not visibly jump); a
     // brand new one seeds from the deterministic layout.
     simRef.current = reconcileSim(simRef.current ?? { nodes: new Map() }, seeded.positions, ids);
-    if (!interactedRef.current) {
-      transformRef.current = fitTransform(seeded.positions, ids, { width, height }, CANVAS_PAD);
-    }
+    transformRef.current = fitTransform(seeded.positions, ids, { width, height }, CANVAS_PAD);
     reheat();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [model?.nodes.length, model?.edges.length, scope, local, center, depth, query, [...off].join(',')]);

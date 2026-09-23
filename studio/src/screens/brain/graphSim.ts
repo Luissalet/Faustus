@@ -14,9 +14,22 @@
  * to a drag, a pan, a zoom or new data the way a static layout cannot.
  */
 
-import { hash01, nodeRadius as degreeRadius, type GraphEdge, type Positions, type Point } from '../../lib/graph';
+import { hash01, type GraphEdge, type Positions, type Point } from '../../lib/graph';
 
-export { degreeRadius as nodeRadius };
+export { hash01 };
+
+/**
+ * The Brain graph draws far denser neighbourhoods than the provenance graph
+ * `lib/graph.ts`'s own `nodeRadius` was tuned for (a vault's Home note alone
+ * can touch every project), so this screen keeps its own, smaller range: a
+ * disconnected note reads as a small dot rather than competing visually with
+ * a hub, and even a very well-connected note never grows past a size that
+ * would swallow its neighbours at zoom 1.
+ */
+export function nodeRadius(degree: number | undefined): number {
+  const d = Math.max(0, degree ?? 0);
+  return Math.round((4 + Math.min(10, Math.sqrt(d) * 3)) * 10) / 10;
+}
 
 /* ── the simulation state ─────────────────────────────────────────── */
 
@@ -83,6 +96,9 @@ export interface ForceOptions {
    *  fling a node across the canvas in one frame. */
   maxSpeed: number;
   dt: number;
+  /** Extra screen space kept between two nodes' circles on top of their
+   *  radii — the collision pass never lets them settle edge-to-edge. */
+  collisionPadding: number;
 }
 
 export const DEFAULT_FORCE: ForceOptions = {
@@ -95,25 +111,91 @@ export const DEFAULT_FORCE: ForceOptions = {
   damping: 0.88,
   maxSpeed: 40,
   dt: 1,
+  collisionPadding: 2,
 };
 
 /** Kinetic energy stays below this once the layout has visibly settled —
- *  the caller's cue to stop scheduling animation frames. */
+ *  the caller's cue to stop scheduling animation frames. Collision overlap
+ *  (see `resolveCollisions`) is folded into the same figure, so a dense
+ *  cluster that is still untangling never reads as "settled" early. */
 export const REST_ENERGY = 0.02;
+/** Below this many screen pixels of leftover overlap, `resolveCollisions`
+ *  stops counting it as unsettled — otherwise floating-point remainders
+ *  from the position-based correction would keep the simulation "hot"
+ *  forever, chasing an overlap too small to ever see. */
+const COLLISION_REST_PX = 0.25;
 
 export function isSettled(energy: number): boolean {
   return energy < REST_ENERGY;
 }
 
 /**
+ * Pushes every overlapping pair of circles apart just enough to clear
+ * `collisionPadding`, Gauss–Seidel style (each pair correction sees the
+ * PREVIOUS pair's already-moved positions within the same pass) — the same
+ * family of technique as d3-force's collide, chosen over a spring-like force
+ * because a spring only ever approaches zero overlap asymptotically, never
+ * reaching it, and "no node overlap" has to hold exactly once the layout is
+ * declared settled. A `fixed` node (mid-drag) absorbs none of the
+ * correction itself; its neighbour gets pushed clear of it instead. Returns
+ * the largest single-pair overlap still outstanding, in screen pixels, so
+ * the caller can fold "still untangling a dense cluster" into the same
+ * energy figure that governs `isSettled`.
+ */
+export function resolveCollisions(sim: SimState, ids: string[], radiusFor: (id: string) => number, padding: number): number {
+  let worst = 0;
+  for (let i = 0; i < ids.length; i += 1) {
+    const a = sim.nodes.get(ids[i]);
+    if (!a) continue;
+    const ra = radiusFor(ids[i]);
+    for (let j = i + 1; j < ids.length; j += 1) {
+      const b = sim.nodes.get(ids[j]);
+      if (!b) continue;
+      const rb = radiusFor(ids[j]);
+      const minDist = ra + rb + padding;
+      let dx = b.x - a.x;
+      let dy = b.y - a.y;
+      let dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist >= minDist) continue;
+      if (dist < 0.01) {
+        dx = (hash01(`${a.id}:${b.id}:collide`) - 0.5) || 0.05;
+        dy = (hash01(`${b.id}:${a.id}:collide`) - 0.5) || 0.05;
+        dist = Math.sqrt(dx * dx + dy * dy) || 0.01;
+      }
+      const overlap = minDist - dist;
+      worst = Math.max(worst, overlap);
+      const ux = (dx / dist) * overlap;
+      const uy = (dy / dist) * overlap;
+      if (a.fixed && b.fixed) continue;
+      if (a.fixed) {
+        b.x += ux;
+        b.y += uy;
+      } else if (b.fixed) {
+        a.x -= ux;
+        a.y -= uy;
+      } else {
+        a.x -= ux / 2;
+        a.y -= uy / 2;
+        b.x += ux / 2;
+        b.y += uy / 2;
+      }
+    }
+  }
+  return worst;
+}
+
+/**
  * One tick: pairwise repulsion (O(n²), fine at the `MAX_DRAWN` cap the
  * graph view already enforces), a spring per edge toward `linkDistance`, a
- * weak pull toward the canvas centre, then damping and an integration step.
- * A `fixed` node (mid-drag) still pushes and pulls its neighbours but is
- * never moved by the result. Returns the system's total kinetic energy —
+ * weak pull toward the canvas centre, damping and an integration step, then
+ * a `resolveCollisions` pass so two circles never end up on top of each
+ * other. A `fixed` node (mid-drag) still pushes and pulls its neighbours but
+ * is never moved by the result. Returns the system's total kinetic energy —
  * the settle/reheat signal — so this stays a pure function of its inputs.
+ * `radiusFor` is optional so a caller that does not care about overlap
+ * (an existing test fixture, say) can skip the collision pass entirely.
  */
-export function stepSimulation(sim: SimState, edges: GraphEdge[], opts: Partial<ForceOptions> = {}): number {
+export function stepSimulation(sim: SimState, edges: GraphEdge[], opts: Partial<ForceOptions> = {}, radiusFor?: (id: string) => number): number {
   const o = { ...DEFAULT_FORCE, ...opts };
   const ids = [...sim.nodes.keys()];
   const fx = new Map<string, number>();
@@ -122,6 +204,14 @@ export function stepSimulation(sim: SimState, edges: GraphEdge[], opts: Partial<
     fx.set(id, 0);
     fy.set(id, 0);
   }
+
+  // A bigger, busier neighbourhood pushes harder apart than a sparse one —
+  // without this, a cluster with dozens of mutually-repelling nodes settles
+  // into the same tight ball a five-node graph would, just because each
+  // individual repulsion term is unchanged; scaling by how many nodes are
+  // sharing this simulation spreads a dense cluster out visibly more.
+  const densityBoost = 1 + Math.min(1.5, Math.max(0, ids.length - 1) / 40);
+  const repulsion = o.repulsion * densityBoost;
 
   for (let i = 0; i < ids.length; i += 1) {
     const a = sim.nodes.get(ids[i])!;
@@ -138,7 +228,7 @@ export function stepSimulation(sim: SimState, edges: GraphEdge[], opts: Partial<
         dy = (hash01(`${b.id}:${a.id}`) - 0.5) || 0.05;
         dist = Math.sqrt(dx * dx + dy * dy) || 0.01;
       }
-      const force = o.repulsion / (dist * dist);
+      const force = repulsion / (dist * dist);
       const fxv = (dx / dist) * force;
       const fyv = (dy / dist) * force;
       fx.set(a.id, fx.get(a.id)! + fxv);
@@ -186,6 +276,10 @@ export function stepSimulation(sim: SimState, edges: GraphEdge[], opts: Partial<
     n.x += n.vx * o.dt;
     n.y += n.vy * o.dt;
     energy += n.vx * n.vx + n.vy * n.vy;
+  }
+  if (radiusFor) {
+    const overlap = resolveCollisions(sim, ids, radiusFor, o.collisionPadding);
+    if (overlap > COLLISION_REST_PX) energy = Math.max(energy, REST_ENERGY * 2);
   }
   return energy;
 }
@@ -305,4 +399,63 @@ export function neighborsOf(id: string, edges: GraphEdge[]): Set<string> {
     else if (e.to === id) out.add(e.from);
   }
   return out;
+}
+
+/* ── label decluttering ──────────────────────────────────────────────
+ * The canvas draws a label as text starting just past the node's edge, at a
+ * roughly-constant SCREEN size regardless of zoom (the draw loop shrinks the
+ * font by `1 / transform.scale` before scaling the whole canvas back up by
+ * `transform.scale`) — so a label's on-screen footprint is cheap to estimate
+ * without ever touching a `CanvasRenderingContext2D` (no DOM, no font
+ * metrics, stays a pure function this checks file can call directly). */
+
+export interface LabelBox {
+  id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** A rough but stable estimate of a label's on-screen bounding box: the
+ *  monospace-ish average glyph width the draw loop's small sans-serif font
+ *  renders at, positioned exactly where `GraphView`'s draw loop puts the
+ *  text — just past the node's (zoomed) radius, vertically centred on it. */
+export function labelBox(id: string, world: Point, radiusWorld: number, label: string, transform: Transform, charWidth = 5.6, lineHeight = 13): LabelBox {
+  const screen = worldToScreen(transform, world);
+  const gap = radiusWorld * transform.scale + 4;
+  return {
+    id,
+    x: screen.x + gap,
+    y: screen.y - lineHeight / 2,
+    width: Math.max(charWidth, label.length * charWidth),
+    height: lineHeight,
+  };
+}
+
+function boxesOverlap(a: LabelBox, b: LabelBox): boolean {
+  return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+}
+
+/**
+ * Greedily keeps a label only when it does not overlap a higher-priority
+ * label already kept — the graph's answer to "don't draw a label that would
+ * overlap an already-drawn one". `boxes` should already be given in priority
+ * order (busiest/most relevant node first); `alwaysShow` (typically the
+ * hovered node, the selected/centre note, and their neighbours) is moved to
+ * the front regardless of the order `boxes` arrived in, so an important
+ * label never loses a tie to an unrelated one that merely sorted earlier.
+ * Pure and DOM-free: `studio/checks/brain.check.mjs` calls it directly with
+ * a synthetic dense cluster and asserts the returned ids' boxes never touch.
+ */
+export function declutterLabels(boxes: LabelBox[], alwaysShow: Set<string> = new Set()): Set<string> {
+  const ordered = alwaysShow.size ? [...boxes.filter((b) => alwaysShow.has(b.id)), ...boxes.filter((b) => !alwaysShow.has(b.id))] : boxes;
+  const kept: LabelBox[] = [];
+  const result = new Set<string>();
+  for (const box of ordered) {
+    if (kept.some((k) => boxesOverlap(k, box))) continue;
+    kept.push(box);
+    result.add(box.id);
+  }
+  return result;
 }

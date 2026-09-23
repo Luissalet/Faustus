@@ -309,5 +309,106 @@ const deepEqual = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   assert(Math.abs(worldBefore.x - worldAfterClamp.x) < 1e-6, 'the cursor point still stays fixed once the zoom factor is clamped');
 }
 
+/* ── graphSim: collision (no node overlap) ───────────────────────────── */
+{
+  // A dense, evenly-degreed 40-node cluster seeded on top of itself (the
+  // hardest case: every pair starts at zero distance) with a moderately
+  // high average degree, wide enough that repulsion and the link springs
+  // never do the untangling alone — this is exactly what `resolveCollisions`
+  // exists for.
+  const n = 40;
+  const ids = Array.from({ length: n }, (_, i) => `n${i}`);
+  const positions = {};
+  for (const id of ids) positions[id] = { x: 400 + (graphSim.hash01(`x:${id}`) - 0.5) * 40, y: 300 + (graphSim.hash01(`y:${id}`) - 0.5) * 40 };
+  const edges = [];
+  for (let i = 0; i < n; i += 1) {
+    for (let k = 1; k <= 3; k += 1) edges.push({ from: ids[i], to: ids[(i + k) % n], kind: 'link', confidence: null, trust: 'declared', why: '', meta: {} });
+  }
+  const degree = {};
+  for (const e of edges) {
+    degree[e.from] = (degree[e.from] || 0) + 1;
+    degree[e.to] = (degree[e.to] || 0) + 1;
+  }
+  const radiusFor = (id) => graphSim.nodeRadius(degree[id]);
+  const sim = graphSim.initSim(positions, ids);
+  const PADDING = 2;
+  let settled = false;
+  for (let step = 0; step < 400; step += 1) {
+    const energy = graphSim.stepSimulation(sim, edges, { width: 900, height: 700, collisionPadding: PADDING }, radiusFor);
+    if (graphSim.isSettled(energy)) {
+      settled = true;
+      break;
+    }
+  }
+  assert(settled, 'a dense 40-node cluster with collisions on eventually reports settled');
+  let worstOverlap = 0;
+  for (let i = 0; i < ids.length; i += 1) {
+    for (let j = i + 1; j < ids.length; j += 1) {
+      const a = sim.nodes.get(ids[i]);
+      const b = sim.nodes.get(ids[j]);
+      const dist = Math.hypot(a.x - b.x, a.y - b.y);
+      const minDist = radiusFor(ids[i]) + radiusFor(ids[j]);
+      worstOverlap = Math.max(worstOverlap, minDist - dist);
+    }
+  }
+  assert(worstOverlap <= 0.5, `no two nodes overlap once a dense cluster has settled (worst overlap ${worstOverlap.toFixed(3)}px)`);
+
+  const withoutRadius = graphSim.initSim(positions, ids);
+  graphSim.stepSimulation(withoutRadius, edges, { width: 900, height: 700 });
+  assert(typeof withoutRadius.nodes.get(ids[0]).x === 'number', 'stepSimulation with no radiusFor still runs (collision pass is opt-in)');
+}
+
+/* ── graphSim: label decluttering ────────────────────────────────────── */
+{
+  const boxesOverlap = (a, b) => a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+  const noOverlaps = (ids, boxById) => {
+    for (let i = 0; i < ids.length; i += 1) {
+      for (let j = i + 1; j < ids.length; j += 1) {
+        if (boxesOverlap(boxById.get(ids[i]), boxById.get(ids[j]))) return false;
+      }
+    }
+    return true;
+  };
+
+  // Three labels crammed into the same few pixels: only non-overlapping
+  // ones can survive together.
+  const transform = { scale: 1, tx: 0, ty: 0 };
+  const boxes = [
+    graphSim.labelBox('a', { x: 0, y: 0 }, 6, 'Alpha', transform),
+    graphSim.labelBox('b', { x: 2, y: 1 }, 6, 'Beta', transform),
+    graphSim.labelBox('c', { x: 400, y: 400 }, 6, 'Gamma, far away', transform),
+  ];
+  const kept = graphSim.declutterLabels(boxes);
+  const boxById = new Map(boxes.map((b) => [b.id, b]));
+  assert(kept.has('a'), 'the first (highest-priority) label of an overlapping pair is kept');
+  assert(!kept.has('b'), 'the second label of an overlapping pair is dropped rather than drawn on top of the first');
+  assert(kept.has('c'), 'a label nowhere near the crowded pair is kept regardless of priority order');
+  assert(noOverlaps([...kept], boxById), 'declutterLabels returns a set of genuinely non-overlapping boxes');
+
+  // `alwaysShow` reorders so a low-priority-by-position id still wins its
+  // overlap against one that was not required.
+  const reordered = graphSim.declutterLabels(boxes, new Set(['b']));
+  assert(reordered.has('b') && !reordered.has('a'), 'alwaysShow moves its id to the front of the priority order');
+
+  // A denser field of labels (some genuinely non-overlapping, some stacked)
+  // still comes back with no two kept boxes touching.
+  const many = [];
+  for (let i = 0; i < 30; i += 1) {
+    const cluster = i % 5; // five spots, six labels stacked on each
+    many.push(graphSim.labelBox(`m${i}`, { x: cluster * 3, y: cluster * 3 }, 5, `Node ${i}`, transform));
+  }
+  const keptMany = graphSim.declutterLabels(many);
+  const manyById = new Map(many.map((b) => [b.id, b]));
+  assert(keptMany.size > 0 && keptMany.size < many.length, 'a stacked field of labels keeps some and drops the overlapping rest');
+  assert(noOverlaps([...keptMany], manyById), 'declutterLabels stays overlap-free on a larger, denser field too');
+}
+
+/* ── graphSim: the Brain-specific node radius range ──────────────────── */
+{
+  assert(graphSim.nodeRadius(0) >= 4 && graphSim.nodeRadius(0) <= 5, `an isolated note gets close to the floor of the range (got ${graphSim.nodeRadius(0)})`);
+  assert(graphSim.nodeRadius(200) <= 14, `even a very high degree never exceeds the capped radius (got ${graphSim.nodeRadius(200)})`);
+  assert(graphSim.nodeRadius(8) > graphSim.nodeRadius(1), 'a busier node still draws bigger than a quieter one');
+}
+
 console.log(failed === 0 ? 'ok brain' : `FAIL: ${failed} assertion(s) failed`);
 process.exit(failed === 0 ? 0 : 1);
