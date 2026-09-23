@@ -107,6 +107,8 @@ MCP_EFFECT_VERBS = frozenset({
     "uninstall", "import", "export", "index", "reindex", "rescan", "scan", "record", "start",
     "stop", "log", "mark", "toggle", "note", "capture", "transcribe", "generate", "build",
     "edit", "append", "attach", "detach", "merge", "split", "convert", "watch", "unwatch",
+    "review", "grade", "rate", "complete", "finish", "resolve", "pause", "resume", "suspend",
+    "unsuspend", "pin", "unpin", "favorite", "unfavorite", "read_mark",
 })
 
 
@@ -233,6 +235,15 @@ MUTATION_CLAIM_PATTERNS: List[re.Pattern] = [
     re.compile(r"\b(?:los\s+)?cambios\s+(?:han\s+sido\s+|fueron\s+|están\s+)?" + _ES_PP, re.IGNORECASE),
     re.compile(r"\b(?:todo|la\s+funcionalidad|la\s+implementación|el\s+código|la\s+tarea)\s+(?:ya\s+)?(?:está|queda)\s+(?:completamente\s+|totalmente\s+)?(?:list[oa]|implementad[oa]|integrad[oa]|hech[oa]|completad[oa]|terminad[oa])", re.IGNORECASE),
     _BARE_DONE_ES,
+    # Record-keeping claims a plugin turn makes in the present or perfect:
+    # "te la marco como otra vez", "la he marcado como difícil", "le he
+    # puesto nota de bien", "lo apunto". Seen live: a model quizzing the
+    # user said "te la marco como otra vez" and called no tool at all. The
+    # object clitic is required so "el marco de 226 mm" (a frame) and a
+    # person called Marco stay out.
+    re.compile(r"\b(?:te\s+)?(?:la|lo|las|los|le|les)\s+(?:he\s+|hemos\s+)?(?:marco|marcamos|marcad[oa]s?|apunto|apuntamos|apuntad[oa]s?|anoto|anotamos|anotad[oa]s?|registro|registramos|registrad[oa]s?|califico|calificamos|calificad[oa]s?)\b", re.IGNORECASE),
+    re.compile(r"\b(?:le\s+|les\s+)?(?:he\s+|hemos\s+)?(?:puesto|pongo|ponemos)\s+(?:una\s+|la\s+)?nota\b", re.IGNORECASE),
+    re.compile(r"\bI(?:'ve|\s+have)?\s+(?:just\s+|now\s+)?(?:marked|graded|logged|recorded|noted)\s+(?:it|that|this|the\s+card|the\s+answer)\b", re.IGNORECASE),
     # English
     re.compile(r"\bI(?:'ve|\s+have)\s+(?:now\s+|also\s+|successfully\s+|just\s+)?" + _EN_PP, re.IGNORECASE),
     re.compile(r"\bI\s+(?:then\s+|also\s+|now\s+)?" + r"(?:created|added|modified|updated|implemented|removed|deleted|changed|edited|wrote|fixed|applied|moved|renamed|refactored|integrated|completed|finished|patched|inserted|replaced)\b", re.IGNORECASE),
@@ -413,7 +424,11 @@ _TECH_CONTEXT_RE = re.compile(
     r"funciones|m[eé]todo|clase|componente|bot[oó]n|botones|tarjeta|tarjetas|endpoint|"
     r"pruebas?|script|m[oó]dulo|variable|configuraci[oó]n|esquema|migraci[oó]n|estilos?|"
     r"plantilla|consulta|base\s+de\s+datos|tabla|columna|parche|cambios?|implementaci[oó]n|"
-    r"l[oó]gica|interfaz|frontend|backend|servidor|cliente|p[aá]gina|vista|men[uú]|formulario)\b)",
+    r"l[oó]gica|interfaz|frontend|backend|servidor|cliente|p[aá]gina|vista|men[uú]|formulario|"
+    # what the user's own apps (plugins) hold: a claim about these is a claim
+    # about a record the assistant could only have changed through a tool
+    r"mazos?|nota|otra\s+vez|dif[ií]cil|recordatorios?|enlaces?|gastos?|movimientos?|contactos?|"
+    r"fichas?|repaso|calificaci[oó]n|deck|decks?|card|cards|reminders?|bookmarks?|expenses?|listing)\b)",
     re.IGNORECASE,
 )
 

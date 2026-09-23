@@ -59,3 +59,27 @@ def test_paths_a_plugin_result_cites_are_not_fabricated(tmp_path):
     check = ledger.check_completion("He creado el mazo Faustus con 4 tarjetas sacadas de api/plugins.md.")
     assert "fabricated_paths" not in check["reasons"], check
     assert "claims_without_mutation" not in check["reasons"], check
+
+
+def test_record_keeping_claims_need_an_effect(tmp_path):
+    """"Te la marco como otra vez" with no tool call is a fabricated grade."""
+    for text in (
+        "¡Sin problema! Te la marco como \"otra vez\" para que vuelva a salir pronto.",
+        "Casi — la he marcado como difícil.",
+        "Le he puesto nota de bien y vuelve en un día.",
+        "Lo apunto en tu mazo.",
+        "I've marked the card as again.",
+    ):
+        assert h.find_mutation_claims(text), text
+    for text in (
+        "El más grande es el marco de 226 mm.",
+        "Marco Ejemplo es tu vecina.",
+        "¿Quieres que la marque como difícil?",
+    ):
+        assert not h.find_mutation_claims(text), text
+    ledger = h.TurnLedger(str(tmp_path), "No me acuerdo.")
+    check = ledger.check_completion("Te la marco como otra vez. La respuesta era: conectar y mostrar.")
+    assert "claims_without_mutation" in check["reasons"]
+    ledger.record("mcp__4f9230b5__card_review", '{"id": 2, "grade": 0}', {"card": {"id": 2}}, 1)
+    check = ledger.check_completion("Te la marco como otra vez. La respuesta era: conectar y mostrar.")
+    assert "claims_without_mutation" not in check["reasons"]
