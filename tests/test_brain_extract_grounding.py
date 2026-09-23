@@ -26,7 +26,7 @@ from src.brain import entities  # noqa: E402
 from src.brain import extract  # noqa: E402
 from src import memory_engine as engine  # noqa: E402
 
-OWNER = "luis"
+OWNER = "alice"
 
 
 @pytest.fixture()
