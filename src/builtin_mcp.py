@@ -101,6 +101,14 @@ _BUILTIN_SERVERS = {
     "prior_art":  ("mcp_servers/prior_art_server.py", "Built-in: Prior art"),
 }
 
+# Built-in servers whose every tool is a 1:1 twin of a native agent tool
+# (same module underneath). They stay connected -- the MCP panel shows them
+# and any MCP client can use them -- but the agent's own tool retrieval skips
+# their tools: indexing both put two copies of each answer in the top-k and
+# pushed other relevant tools out of the turn (seen live: `code_graph_*` next
+# to `mcp__code_graph__code_graph_*` for one question).
+NATIVE_TWIN_SERVERS = frozenset({"code_graph", "prior_art"})
+
 # NPX-based built-in servers (run via npx, not Python).
 #
 # The browser's base args carry only the package; headless / profile /

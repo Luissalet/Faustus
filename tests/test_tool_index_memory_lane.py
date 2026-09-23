@@ -434,6 +434,30 @@ def test_memory_lane_indexes_and_replaces_mcp_tools(monkeypatch, tmp_path):
     assert "turn_on_lights" not in index.retrieve("turn on the smart lights", k=5)
 
 
+def test_mcp_twins_of_native_tools_are_not_indexed(monkeypatch, tmp_path):
+    """Built-in servers that only mirror native tools stay out of the agent's
+    retrieval; any other MCP tool, built-in or not, is indexed as before."""
+    _chroma_down(monkeypatch)
+    _use_embedder(monkeypatch, tmp_path)
+    from src.tool_index import ToolIndex
+
+    class Mgr:
+        _generation = 1
+
+        def get_tool_descriptions_for_prompt(self, disabled):
+            return ("**Built-in: Code graph:**\n"
+                    "- mcp__code_graph__code_graph_communities: What parts this repo is made of\n"
+                    "**Built-in: Brain:**\n"
+                    "- mcp__brain__brain_search: Search the markdown vault\n"
+                    "**home:**\n- turn_on_lights: Turn on the smart lights\n")
+
+    index = ToolIndex()
+    index.index_builtin_tools()
+    index.index_mcp_tools(Mgr())
+    ids = sorted(index._lanes[0].collection.get(where={"tool_type": "mcp"})["ids"])
+    assert ids == ["mcp_mcp__brain__brain_search", "mcp_turn_on_lights"]
+
+
 # ── singleton getter ───────────────────────────────────────────────────────
 
 @pytest.fixture
