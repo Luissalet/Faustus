@@ -1343,7 +1343,7 @@ def _mcp_index_docs(mcp_mgr, disabled_map):
     for server_name, tools in (by_server or {}).items():
         for t in tools or []:
             name = str(t.get("qualified_name") or "").strip()
-            if not name:
+            if not name or _is_native_twin(name):
                 continue
             desc = " ".join(str(t.get("description") or "").split())[:MCP_INDEX_DESC_CHARS]
             server_ctx = f" (server: {server_name})" if server_name else ""

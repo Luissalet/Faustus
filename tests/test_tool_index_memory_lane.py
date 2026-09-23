@@ -599,3 +599,29 @@ def test_get_tool_index_falls_back_to_memory_when_chroma_indexing_fails(monkeypa
     assert index is not None and index.healthy
     assert index.backend == "memory"
     assert "bash" in index.retrieve("run a shell command", k=8)
+
+
+def test_structured_mcp_listing_also_skips_native_twins(monkeypatch, tmp_path):
+    _chroma_down(monkeypatch)
+    _use_embedder(monkeypatch, tmp_path)
+    from src.tool_index import ToolIndex
+
+    class Mgr:
+        _generation = 1
+
+        def _grouped_prompt_tools(self, disabled):
+            return {
+                "Built-in: Prior art": [{"qualified_name": "mcp__prior_art__prior_art_verify",
+                                         "description": "Verify repositories"}],
+                "home": [{"qualified_name": "turn_on_lights", "description": "Turn on the lights"}],
+            }
+
+        def get_tool_descriptions_for_prompt(self, disabled):
+            return ("**Built-in: Prior art:**\n- mcp__prior_art__prior_art_verify: Verify repositories\n"
+                    "**home:**\n- turn_on_lights: Turn on the lights\n")
+
+    index = ToolIndex()
+    index.index_builtin_tools()
+    index.index_mcp_tools(Mgr())
+    ids = sorted(index._lanes[0].collection.get(where={"tool_type": "mcp"})["ids"])
+    assert ids == ["mcp_turn_on_lights"]
