@@ -206,6 +206,7 @@ _register(
 )
 _register(
     {
+        "brain",
         "create_document",
         "manage_calendar",
         "manage_contact",
@@ -1208,6 +1209,7 @@ def capabilities_for_tool(tool_name: Any) -> ToolCapabilities:
 
 _PRIVATE_ACTION_READS: Mapping[str, frozenset[str]] = MappingProxyType(
     {
+        "brain": frozenset({"search", "read", "entity", "timeline", "neighbors"}),
         "manage_calendar": frozenset({"list_calendars", "list_events"}),
         "manage_contact": frozenset({"list"}),
         "manage_documents": frozenset({"list", "read", "view", "open", "get"}),
@@ -1223,6 +1225,7 @@ _PRIVATE_ACTION_READS: Mapping[str, frozenset[str]] = MappingProxyType(
 
 _PRIVATE_ACTION_WRITES: Mapping[str, frozenset[str]] = MappingProxyType(
     {
+        "brain": frozenset({"write", "append", "daily"}),
         "manage_calendar": frozenset(
             {"create_event", "update_event", "delete_event"}
         ),

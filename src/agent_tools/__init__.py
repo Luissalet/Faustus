@@ -62,6 +62,7 @@ from .project_concepts_tools import (
 )
 from .design_canvas_tools import DesignCanvasTool
 from .context_recall_tools import ContextRecallTool
+from .brain_tools import BrainTool
 from .plugin_tools import PluginAppTool, PluginsListTool
 from .alternatives_tools import (
     AltStartTool, AltCompareTool, AltApplyTool,
@@ -184,6 +185,9 @@ TOOL_HANDLERS = {
     # OBJ-29: bring back what the live context packet omitted for budget, by
     # the `[ctx:<id>]` its footer lists. See src/agent_tools/context_recall_tools.py.
     "context_recall": ContextRecallTool().execute,
+    # The second brain: markdown vault notes + typed entities with facts and
+    # relations over time. See src/agent_tools/brain_tools.py.
+    "brain": BrainTool().execute,
     # The user's own applications, connected as plugins. Reading the list is
     # free; starting one is an act and is gated as such. See
     # src/agent_tools/plugin_tools.py and src/plugin_runtime.py.
@@ -375,6 +379,8 @@ TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_fi
              "design_canvas",
              # Recoverable omission (OBJ-29) -- src/agent_tools/context_recall_tools.py.
              "context_recall",
+             # The second brain: vault notes + typed entities -- src/agent_tools/brain_tools.py.
+             "brain",
              # The user's own applications -- src/agent_tools/plugin_tools.py.
              "plugins_list", "plugin_app",
              # Isolated, comparable alternatives (CMP-13, W2-G) --

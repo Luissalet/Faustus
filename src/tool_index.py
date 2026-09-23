@@ -265,6 +265,7 @@ BUILTIN_TOOL_DESCRIPTIONS: Dict[str, str] = {
     "plugin_app": "Start one of the user's connected applications, or bring it up on screen. Use it when you need a plugin's tools and its app is down, and when asked to open one - 'open my writing app', 'show me the editor', 'start Dorian'. Never stops anything; refuses rather than guesses when an app has no saved way to start.",
     "design_canvas": "Declare the design BEFORE touching code and file it in the project graph: requirements, entities, approach (with the rejected alternative), structure, operations, norms, safeguards. Use at the start of anything bigger than a one-line change — 'design this before you build it', 'plan the refactor first', a new subsystem, a feature spread across several files. Costs one model call; not for a typo or a rename.",
     "context_recall": "Recall context the packet omitted to fit the budget: bring back, read in full, reopen or expand an item listed as [ctx:<id>] in the omitted_for_budget footer — a memory, document excerpt, file or earlier message the compiler had to leave out. Returns the complete text with provenance (source reference, section, why it was omitted). Use it instead of searching again for something the context already said exists.",
+    "brain": "The user's second brain: a markdown vault of notes plus typed entities (people, places, tools, projects) with facts and relations over time. Actions: search (notes + entities), read (one note), write (create a note or edit an existing one's editable zone), append (add to a note without erasing it), entity (a person/thing's full profile, by id or name), timeline (one entity's dated history, or a cross-entity one), neighbors (the local note/entity graph), daily (today's or a given day's daily note). Use for 'note this in my brain' / 'apunta en mis notas', 'what do I know about <person>' / 'qué sé de <persona>', keeping a running wiki, or 'what changed recently'.",
     # CMP-13 (W2-G) — isolated, comparable alternatives: try more than one
     # approach to the same task without one overwriting the other or the
     # user's own edits, then compare and apply the one that worked.
@@ -837,6 +838,17 @@ class ToolIndex:
             {"manage_bg_jobs"},
         frozenset({"note", "todo", "reminder", "remind", "checklist", "remember to"}):
             {"manage_notes"},
+        # The second brain: vault notes + typed entities with facts over time.
+        # Deliberately separate from the manage_notes hint above — "apunta en
+        # mis notas" and "note this" both land here too (the vault is where a
+        # durable note belongs), while manage_notes stays the quick
+        # checklist/reminder tool.
+        frozenset({"segundo cerebro", "second brain", "mi wiki", "my wiki",
+                   "mis notas", "my notes", "apunta en mis notas",
+                   "apunta esto", "note this in my brain", "note this in my notes",
+                   "qué sé de", "que se de", "what do i know about",
+                   "wikilink", "wikilinks", "note graph", "grafo de notas"}):
+            {"brain"},
         # Chat/session management. "rename" alone maps to documents below, so a
         # request like "rename the last 12 sessions/chats" needs these session
         # keywords to surface the right tools (NOT app_api — /api/sessions is

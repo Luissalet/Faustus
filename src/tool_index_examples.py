@@ -917,6 +917,22 @@ EXAMPLES: Dict[str, List[str]] = {
         "expand the omitted memory listed in the context footer",
     ],
 
+    # ── The second brain: vault notes + typed entities over time ───────────
+    "brain": [
+        "apunta esto en mi segundo cerebro",
+        "note this in my brain for later",
+        "qué sé de Bruno Villanueva",
+        "what do I know about Cordera Labs",
+        "busca en mi wiki algo sobre la mudanza a Bluehaven",
+        "search my notes for anything about the Bluehaven move",
+        "añade esto a mi nota de ideas de café",
+        "add this to my running log note",
+        "cuándo dije que Ada trabaja en Cordera Labs",
+        "when did I say Ada works at Cordera Labs",
+        "muéstrame cómo se conecta esta nota con el resto",
+        "show me how this note links to everything else",
+    ],
+
     # ── The user's own applications, connected as plugins ──────────────────
     "plugins_list": [
         "qué aplicaciones mías puedes usar",

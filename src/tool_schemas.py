@@ -1425,6 +1425,36 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "brain",
+            "description": "Use and maintain the user's second brain: a markdown vault of notes plus typed entities (people, places, tools, projects) with facts and relations over time. Actions: search (notes + entities), read (one note by path), write (create a new free note, or replace an existing note's editable zone — give `title`+`content` to create, `path`+`content` to edit), append (add text to an existing note without erasing what is there), entity (a person/thing's full profile — pass `entity_id` or `name`, optionally `as_of` for a past state), timeline (one entity's dated history, or a cross-entity timeline when no entity is given), neighbors (the local note or entity graph around a path), daily (open or create today's daily note, or one for `date`). Use this for 'apunta en mis notas' / 'note this in my brain', 'qué sé de <persona>' / 'what do I know about <person>', keeping a running wiki, or asking what changed recently. Prefer `search` before `write` to avoid duplicating an existing note.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string",
+                               "enum": ["search", "read", "write", "append",
+                                        "entity", "timeline", "neighbors", "daily"],
+                               "description": "The action to perform"},
+                    "query": {"type": "string", "description": "Search text for action='search', or a text filter for the cross-entity action='timeline'"},
+                    "path": {"type": "string", "description": "Vault-relative note path, e.g. 'Notes/Coffee ideas.md'. Required for read/append; for write, its presence means 'edit this note' rather than 'create one'. For neighbors, the note to center the graph on."},
+                    "content": {"type": "string", "description": "The note text for write/append."},
+                    "title": {"type": "string", "description": "Title for a new note (action='write' with no `path`)."},
+                    "folder": {"type": "string", "description": "Folder for a new note, default 'Notes'."},
+                    "entity_id": {"type": "string", "description": "Entity id for action='entity' or action='timeline'."},
+                    "name": {"type": "string", "description": "Entity name for action='entity' or action='timeline', used when entity_id is not known (fuzzy match on name/aliases)."},
+                    "as_of": {"type": "string", "description": "ISO date/time for action='entity': the profile as it stood then, not now."},
+                    "date": {"type": "string", "description": "ISO date (YYYY-MM-DD) for action='daily'. Defaults to today."},
+                    "scope": {"type": "string", "enum": ["notes", "entities"],
+                              "description": "Which graph for action='neighbors'. Default 'notes' when `path` is given, else 'entities'."},
+                    "depth": {"type": "integer", "description": "How many link hops out for action='neighbors' (default 1)."},
+                    "limit": {"type": "integer", "description": "Max results for search/timeline."}
+                },
+                "required": ["action"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "api_call",
             "description": "Call a registered API integration (RSS reader, git forge, bookmark manager, smart home, etc.). Check the system context for available integrations and their endpoints.",
             "parameters": {

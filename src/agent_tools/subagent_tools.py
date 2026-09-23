@@ -596,7 +596,7 @@ SUBAGENT_DISABLED_TOOLS = frozenset({
 # the task text itself asks for the web / memory / background jobs.
 SUBAGENT_LEAN_DENYLIST = frozenset({
     "web_search", "web_fetch", "manage_skills", "manage_bg_jobs", "manage_memory",
-    "manage_tasks", "manage_contact", "ui_control", "manage_notes",
+    "manage_tasks", "manage_contact", "ui_control", "manage_notes", "brain",
     # `project_context` (READ) left out deliberately. This list is for tools a
     # scoped worker NEVER needs, and that stopped being true the moment the
     # child session inherits its parent's project_id: a worker that owns the
@@ -616,6 +616,8 @@ _LEAN_KEEP_FAMILIES = (
     (re.compile(r"\b(background( job)?|segundo plano|bg job)\b", re.I), frozenset({"manage_bg_jobs"})),
     (re.compile(r"\b(contact[os]?|contacts?)\b", re.I), frozenset({"manage_contact"})),
     (re.compile(r"\b(notes?|notas?|apunte)\b", re.I), frozenset({"manage_notes"})),
+    (re.compile(r"\b(segundo cerebro|second brain|mi wiki|my wiki|wikilinks?)\b", re.I),
+     frozenset({"brain"})),
     (re.compile(r"\b(todo list|tareas pendientes|task list)\b", re.I), frozenset({"manage_tasks"})),
 )
 # Kept for callers that import it: every keyword of every family.
@@ -625,7 +627,8 @@ _LEAN_KEEP_RE = re.compile("|".join(f"(?:{rx.pattern})" for rx, _ in _LEAN_KEEP_
 def worker_disabled_tools(instruction: str, permissions: Any = None) -> set:
     """The worker's denylist: the hard set plus, when the lean mode is on,
     the tools a scoped worker never needs — minus the family (web, memory,
-    skills, background jobs, contacts, notes, tasks) the task text asks for.
+    skills, background jobs, contacts, notes, the second brain, tasks) the
+    task text asks for.
 
     With an agent definition's derived permissions (src/subagent_permissions.py)
     its own denials are added, its allowlist becomes the deny of everything
