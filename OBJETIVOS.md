@@ -813,3 +813,27 @@ generadas (proyecto/objetivo/concepto) cuya fuente se borró; dejar de
 repetir el aviso de un fichero ilegible en cada sincronización una vez
 reportado una vez; encender `agent_context_engine` en la instancia principal
 tras esta prueba en la privada (ver PENDIENTES).
+
+## OBJ-37 · Decisiones tipadas: clasificar leyendo probabilidades, no generando — HECHO (23-09-2026)
+
+Donde el código clasificaba texto con listas de palabras clave frágiles,
+una pregunta cerrada al modelo de utilidad ya cargado, respondida con un solo
+prefill: las respuestas van etiquetadas con letras de un token y se leen las
+probabilidades del siguiente token (valor, confianza, masa), sin generar
+razonamiento, con prefijo compartido entre campos para aprovechar la caché
+de prompt. Consultiva siempre, con presupuesto de latencia, nunca carga un
+modelo, y la regla determinista sigue siendo la primera pasada y la reserva.
+
+Hecho: `src/typed_decision.py` (formas OpenAI-compatible y Ollama nativa,
+residencia, reserva por letra, estadísticas), `POST /api/typed-decision` y
+`/stats`; cableado en la comprobación de actualidad del chat (sólo en los
+casos en que la regla duda), el tipado de entidades «other» del segundo
+cerebro (sólo en segundo plano) y sugerencias de conflicto de memoria
+(estado `suggested`, nunca resueltas); evaluación con 100 casos ES/EN y modo
+`--fake` para CI. FAUSTUS.md §177; API en `docs/api/typed_decision.md`.
+
+**Queda:** medir en vivo contra el ayudante en loopback y contra Ollama
+(`scripts/eval_typed_decision.py`), ajustar umbrales con esos números, llevar
+las sugerencias de conflicto a la pantalla de Memoria y buscar otros sitios
+con listas de palabras frágiles donde un error sea barato (p. ej. «¿merece la
+pena guardar esta memoria?»).

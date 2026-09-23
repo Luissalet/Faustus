@@ -2,6 +2,32 @@
 
 Actualizado: 23-09-2026. REGLA: nunca nombres de empresas/personas del buzÃ³n de Luis en commits, docs, tests ni comentarios â€” ejemplos siempre ficticios. SÃ³lo trabajo vigente; quitar cada entrada al cerrarla.
 
+## 23-09 — decisiones tipadas (FAUSTUS.md §177, OBJ-37) — sin medir contra un modelo real
+
+- **Correr la evaluación en la máquina del dueño** y pegar las tablas en
+  `docs/evals/typed-decisions.md`: `python scripts/eval_typed_decision.py
+  --url http://127.0.0.1:8082/v1 --model <ayudante> --markdown` y lo mismo con
+  `--url http://127.0.0.1:11434 --model <modelo residente>`. Sólo se ha
+  corrido con `--fake`.
+- **Ajustar umbrales con esos números** (`typed_decision_min_confidence` 0.7,
+  `typed_decision_min_mass` 0.5) mirando los cubos de calibración.
+- **Latencia real añadida a un turno**: la regla de actualidad duda en toda
+  pregunta sin palabra clave (45 de los 60 casos de la evaluación), así que
+  con el ayudante residente esos turnos pagan una llamada de hasta
+  `typed_decision_timeout_ms` (1,5 s). Confirmar el p50 real en vivo y, si
+  molesta, bajar el presupuesto o estrechar «pregunta».
+- **Verificar en vivo el log `[freshness] typed decision:`** en un turno de
+  chat real (navegador), con el ayudante cargado y descargado (descargado
+  debe salir `unavailable model_not_resident` sin cargar nada).
+- **El recordatorio de actualidad dentro del bucle del agente** sigue leyendo
+  sólo la regla (`agent_loop._classify_turn_intent`); si la decisión dijo
+  «no», la ruta no activa la web y el recordatorio ya no se añade sin
+  herramientas web, pero el dominio «web» sigue entrando en la intención.
+- **Sugerencias de conflicto de memoria** (`status=suggested`) sólo por API;
+  falta mostrarlas en la pantalla de Memoria con su probabilidad.
+- **El tipado de entidades** sólo mira la primera frase que nombra la
+  entidad; una entidad mencionada de formas distintas podría merecer varias.
+
 ## 23-09 — documentación del segundo cerebro (FAUSTUS.md §176, OBJ-36) — pendiente de verificar en la máquina en vivo
 
 El código de la ola completa ya está en la rama (§176); este bloque recoge lo

@@ -8262,3 +8262,157 @@ tras un rato de inactividad en la máquina del dueño); las notas generadas
 fichero ilegible se reporta en cada sincronización hasta que se arregla; y
 `agent_context_engine` sigue `False` por defecto en código, encendido sólo en
 la instancia privada de verificación.
+
+## 177. Decisiones tipadas: preguntas cerradas leídas de un solo prefill (23-09-2026)
+
+**Problema.** Varios sitios de Faustus clasifican texto con listas de
+palabras clave: «¿este turno necesita buscar en la web?», «¿esta entidad
+nueva es una persona o un lugar?», «¿estas dos memorias se contradicen?». Una
+lista es rápida y predecible pero frágil en los bordes: «¿quién dirige ahora
+el club?» no tiene ninguna palabra clave y necesita la web; «¿qué significa el
+último verso?» tiene «último» y no la necesita. Pedirle al modelo que
+*escriba* la respuesta es lento, hay que parsearla y no trae ninguna
+confianza. Faltaba el punto intermedio.
+
+**Hecho.**
+- *La técnica* (`src/typed_decision.py`). Las respuestas permitidas se
+  etiquetan con letras de un solo token (`A`, `B`, `C`…; sí/no es `A`/`B`),
+  se pide exactamente un token a temperatura 0 con `top_logprobs`, y se lee
+  la probabilidad que el modelo pone en cada letra en esa única pasada: un
+  prefill, ningún razonamiento generado. `value` es la letra más probable,
+  `confidence` su probabilidad renormalizada entre las permitidas y `mass` la
+  probabilidad total sobre letras permitidas — masa baja significa que el
+  modelo quería decir otra cosa y la respuesta es «desconocido», por muy
+  picuda que parezca la distribución renormalizada. `" A"` y `"A"` suman
+  juntas; una minúscula no cuenta. Varios campos sobre el mismo contexto
+  comparten un prefijo idéntico byte a byte (instrucciones + contexto) con la
+  pregunta siempre al final, para que la caché de prompt del servidor sólo
+  rellene la cola. Habla las dos formas medidas en la máquina del dueño: la
+  compatible con OpenAI (un `llama-server` en loopback, con `cache_prompt` y
+  `enable_thinking=false`) y la nativa de Ollama `/api/chat` (`think:false`,
+  `num_predict:1`); una URL `/v1` de un Ollama local se pasa a la nativa,
+  porque en la compatible un modelo que piensa gasta el único token en
+  razonar. Si no llegan log-probabilidades se lee la letra generada
+  (`method:"letter"`, sin confianza); si tampoco, desconocido. **Nunca carga
+  ni descarga un modelo**: antes de nada pregunta a `background_job_guard`
+  qué hay residente (Ollama `/api/ps`; `llama-server` `/health` +
+  `/v1/models`) y si está ocupado (`/slots`), sin caché (una respuesta
+  «residente» vieja podría sobrevivir a una descarga y la petición siguiente
+  lo recargaría); si no está, `method:"unavailable"` sin llamar al modelo.
+  Presupuesto duro de reloj para toda la llamada, nunca lanza, contadores en
+  memoria (llamadas, métodos, reservas por letra, p50/p95, las últimas 50
+  decisiones sin su contexto). `decide()` asíncrona y `decide_sync()`.
+- *Consultiva siempre.* Nunca concede un permiso ni aprueba nada; no se usa
+  en `user_request_gate` ni en ninguna decisión de seguridad. Cada sitio que
+  la usa conserva su regla como primera pasada (cuando la regla ya está
+  segura, no se pregunta nada) y como reserva.
+- *Dónde se usa y cuándo exactamente.*
+  - **Actualidad en el chat** (`src/freshness.py`, `routes/chat_routes.py`).
+    Sólo si el turno llega sin la búsqueda web decidida (mismo punto donde ya
+    se consultaba la regla). `freshness_assessment` dice si la regla está
+    segura: SÍ cuando dispara una etiqueta de tema público cambiante
+    (resultado, precio, tiempo, cargo, horario, disponibilidad, noticias,
+    versiones) o cuando el turno está vacío, es código o un texto de más de
+    1.500 caracteres, es aritmética, habla de las cosas de la persona (mis
+    correos, mi calendario…), empieza pidiendo escribir/traducir/resumir/
+    explicar… o no es una pregunta. NO está segura en dos casos: sólo
+    disparó una palabra de tiempo suelta (último, hoy, actual, un año…) o es
+    una pregunta sin ninguna palabra clave. Sólo entonces `decide_freshness`
+    pregunta «¿responder bien esto exige información que cambia con el
+    tiempo…?» con `typed_decision_timeout_ms` (1,5 s) de presupuesto, y usa la
+    respuesta sólo si viene de log-probabilidades con confianza ≥ 0,7 y masa
+    ≥ 0,5; si no, manda la regla. La ruta registra en el log la decisión, su
+    probabilidad, masa, método, latencia y el motivo de la regla. Arreglo de
+    paso: el recordatorio «busca en la web antes de responder» del bucle del
+    agente ya no se añade cuando todas las herramientas web del turno están
+    retiradas (pedía usar una herramienta que no tenía).
+  - **Tipo de las entidades del segundo cerebro** (`src/brain/extract.py`).
+    La pasada por reglas crea toda entidad como «other», y la del modelo
+    también cuando duda. Tras la pasada desatendida (`background=True`, y
+    sólo si `brain_llm_extraction` permite pasadas de modelo y la puerta no
+    las ha frenado ya), `type_untyped_entities` toma la frase que nombra cada
+    entidad «other» y pregunta su tipo entre los ocho del cerebro, con una
+    descripción por letra. `background_llm_gate` se consulta antes de CADA
+    llamada (ningún turno en curso, modelo residente, no ocupado). El tipo se
+    escribe sólo con una respuesta de log-probabilidades segura y sólo si la
+    entidad sigue siendo «other» (un tipo puesto a mano siempre gana). Cada
+    par (entidad, frase) se pregunta una vez; lo cambiado queda en
+    `brain_meta` (`typed_decision_types`) para auditarlo. Presupuesto de
+    fondo: al menos 8 s por llamada.
+  - **Sugerencias de conflicto de memoria** (`src/memory_conflicts.py`,
+    tarea de mantenimiento `memory_conflict_advice`, cada hora, por dueño).
+    Entre los 20 ítems activos más recientes y sus 4 vecinos más parecidos,
+    los pares sobre los que las reglas cerradas no dicen nada, que no son la
+    misma frase dos veces y que comparten al menos un 25 % del vocabulario,
+    se preguntan (el más antiguo primero): contradicen / uno actualiza al
+    otro con el tiempo / compatibles. Un «contradicen» o «actualiza» seguro
+    se guarda como fila con estado nuevo `suggested` y motivo
+    `model_suggested`: nunca `open` (así nunca rebaja en ranking la memoria
+    antigua) y nunca se resuelve sola. Se lista con
+    `GET /api/memory-engine/conflicts?status=suggested` y la persona puede
+    resolverla a mano como una abierta. Cada par se pregunta una vez (tabla
+    `memory_conflict_advice`). Misma etiqueta de modelo que el cerebro.
+- *HTTP* (`routes/typed_decision_routes.py`, `require_user`):
+  `POST /api/typed-decision` {context, fields:[{name, question,
+  choices|"bool", descriptions?}], purpose?, instructions?, timeout_ms?,
+  min_confidence?} → decisiones; `GET /api/typed-decision/stats`. Referencia
+  en [docs/api/typed_decision.md](docs/api/typed_decision.md). No hay
+  herramienta MCP: ningún servidor integrado era su casa natural.
+- *Ajustes* (`src/settings.py`): `typed_decisions_enabled` (true),
+  `typed_decision_timeout_ms` (1500), `typed_decision_min_confidence` (0.7),
+  `typed_decision_min_mass` (0.5), `typed_decisions_may_load` (false) y un
+  interruptor por sitio: `typed_decision_freshness`,
+  `typed_decision_entity_types`, `typed_decision_memory_conflicts` (true).
+- *Relación con `typed_choice` (§140, `src/typed_choice.py`)*: aquel es
+  una pregunta suelta contra una URL explícita con gramática GBNF para el
+  juez opcional de `verify_claim`; sigue igual. Éste es la capa de producto:
+  varios campos con prefijo compartido, ajustes, residencia, Ollama nativo,
+  masa y presupuesto.
+- *Evaluación* (`scripts/eval_typed_decision.py`,
+  `docs/evals/typed_decision_cases.json`, `docs/evals/typed-decisions.md`):
+  60 casos de actualidad y 40 de tipo de entidad inventados, ES/EN, con los
+  mismos prompts que el producto; informa precisión de regla sola, decisión
+  sola y combinación que se entrega, cambios respecto a la regla y cuántos
+  acertaron, cubos de calibración, p50/p95 y el efecto del prefijo
+  compartido (segundo campo sobre el mismo contexto y tokens cacheados que
+  diga el servidor). `--url/--model` o el modelo de utilidad configurado; no
+  carga un modelo sin `--allow-load`; `--fake` corre sin red para CI.
+
+**Verificación.** Tests nuevos: `tests/test_typed_decision.py` (33: las dos
+formas de respuesta, tokens con espacio delante, sin log-probabilidades →
+letra, basura → desconocido, masa baja, confianza baja, modelo no residente
+→ `unavailable` sin ninguna petición al modelo, ocupado, sin endpoint,
+presupuesto duro, prefijo idéntico byte a byte entre campos, interruptor
+apagado, nunca lanza, `decide_sync` dentro y fuera de un bucle, estadísticas
+sin contexto, rutas y autenticación, y las formas de respuesta tal como las
+devolvieron en vivo un `llama-server` y un Ollama 0.34 en la máquina del
+dueño), `tests/test_typed_decision_wiring.py` (13: regla segura → cero
+llamadas; duda → decide la decisión en ambos sentidos; no disponible, dudosa,
+sólo letra o interruptor apagado → manda la regla; tipado en segundo plano,
+puerta, confianza baja, sólo en fondo, un tipo puesto a mano gana;
+sugerencias que nunca abren conflicto ni rebajan ranking, compatibles o no
+residente → nada; tarea registrada) y `tests/test_eval_typed_decision.py`
+(5). Antes/después sobre la misma selección (frescura, rutas de chat,
+extracción y mantenimiento del cerebro, conflictos de memoria, esquema de
+ajustes, registro de herramientas, guardas de residencia, typed_choice,
+comprobaciones estáticas, compilador del Context Engine, ranking, motor de
+memoria, rutas del cerebro): base 639 pasan + 1 falla; rama 690 pasan + la
+misma 1 que ya fallaba en la base
+(`test_static_checks::test_the_loop_flags_the_undefined_name_BEFORE_it_spends_40s_on_pytest`).
+Otra selección de guardas (app, política de herramientas, catálogo SSE,
+preflight de herramientas): 73/73 en ambas. La app real registra las dos
+rutas y responde de extremo a extremo (sin modelo configurado:
+`unavailable/no_endpoint`, y las estadísticas lo cuentan). La evaluación
+`--fake` recorre todo el camino. **No** se ha medido todavía contra un
+modelo real: en este entorno no hay servidor de modelos.
+
+**Pendiente.** Ver PENDIENTES.md: correr la evaluación en la máquina del
+dueño contra el ayudante en loopback y contra Ollama y pegar las tablas en
+`docs/evals/typed-decisions.md`; con esos números, ajustar umbrales
+(`min_confidence`, `min_mass`) y confirmar la latencia real añadida a un
+turno con pregunta dudosa (el caso «pregunta sin palabra clave» es
+frecuente: en los casos de la evaluación la regla duda en 45 de 60); el
+recordatorio de actualidad del bucle del agente sigue leyendo sólo la regla
+(la ruta ya decide si hay herramientas web, y sin ellas ya no se añade);
+las sugerencias de conflicto aún no tienen sitio en la pantalla de Memoria
+(sólo la API con `status=suggested`).

@@ -201,6 +201,7 @@ A project also carries:
 | Strategy & recipes | An observable per-turn strategy that escalates only on observed failure, and reusable recipes built from real runs. | [strategy_policy.py](src/strategy_policy.py), [recipes.py](src/recipes.py) |
 | Requirements | A versioned, human-accepted spec with typed evidence and coverage. | [requirements](src/requirements/) |
 | Second brain | A self-owned markdown vault of notes and typed entities with time-windowed relations, two-way synced with the filesystem, plus a graph view. | [brain](src/brain/), [Brain API](docs/api/brain.md) |
+| Typed decisions | Closed questions answered from one prefill by reading the next-token probabilities of the allowed answers; advisory, budgeted, never loads a model. | [typed_decision.py](src/typed_decision.py), [API](docs/api/typed_decision.md) |
 | Project Board | Typed issues, kanban, commit-closing links and agent tools. | [project_board.py](src/project_board.py) |
 | Git panel | Repositories, identities, GitHub, branches and a per-repository policy the agent obeys. | [git_panel.py](src/git_panel.py) |
 | Teach Mode | Capture demonstrations as reusable procedures, with review and execution controls. | [teach mode routes](routes/teach_mode_routes.py) |
@@ -300,6 +301,21 @@ message says.
 Memory refuses to file a snapshot of the workspace as a fact about you. A count
 of the files in a folder stops being true the moment you add one, and a stored
 fact that contradicts reality is worse than no fact at all.
+
+**Typed decisions.** Where a keyword rule is not sure, Faustus can ask a closed
+question instead of guessing: the options are labelled with single letters, the
+already-loaded utility model reads the text once, and the probabilities it puts
+on each letter for its very next token are the answer, with a confidence and a
+"did it even want to answer this" mass, and no reasoning generated. Several
+questions about the same text share the prompt prefix, so the server's prompt
+cache pays for the text once. It never loads a model, it has a hard latency
+budget, and it is advisory only: the rule decides whenever it is confident and
+whenever the model is unavailable or unsure. Today it settles the unsure cases
+of "does this question need a web search?", gives a type to second-brain
+entities left as "other", and suggests (never resolves) memory contradictions
+the fixed conflict rules cannot see. An eval compares rule, decision and
+combined accuracy with calibration and cache timings.
+[Typed decision API](docs/api/typed_decision.md), [eval](docs/evals/typed-decisions.md).
 
 ### Adaptation history and demos
 

@@ -193,6 +193,7 @@ Un proyecto también incluye:
 | Estrategia y recetas | Una estrategia observable por turno que solo escala ante un fallo observado, y recetas reutilizables construidas a partir de ejecuciones reales. | [strategy_policy.py](src/strategy_policy.py), [recipes.py](src/recipes.py) |
 | Requisitos | Una especificación con versiones y aceptación humana, con evidencia tipada y cobertura. | [requirements](src/requirements/) |
 | Segundo cerebro | Una bóveda markdown propia de notas y entidades tipadas con relaciones con ventanas de tiempo, sincronizada en ambos sentidos con el sistema de ficheros, más una vista de grafo. | [brain](src/brain/), [API del cerebro](docs/api/brain.md) |
+| Decisiones tipadas | Preguntas cerradas respondidas con un solo prefill leyendo las probabilidades del siguiente token de las respuestas permitidas; consultivas, con presupuesto, nunca cargan un modelo. | [typed_decision.py](src/typed_decision.py), [API](docs/api/typed_decision.md) |
 | Tablero del proyecto | Incidencias tipadas, kanban, enlaces que cierran incidencias desde el commit y herramientas de agente. | [project_board.py](src/project_board.py) |
 | Panel de Git | Repositorios, identidades, GitHub, ramas y una política por repositorio que el agente obedece. | [git_panel.py](src/git_panel.py) |
 | Modo Enséñame | Capturar demostraciones como procedimientos reutilizables, con revisión y controles de ejecución. | [rutas de Enséñame](routes/teach_mode_routes.py) |
@@ -297,6 +298,22 @@ La memoria se niega a archivar una foto fija del workspace como un hecho sobre
 ti. Un recuento de los ficheros de una carpeta deja de ser verdad en cuanto
 añades uno, y un hecho guardado que contradice la realidad es peor que no tener
 ninguno.
+
+**Decisiones tipadas.** Donde una regla de palabras clave no está segura,
+Faustus puede hacer una pregunta cerrada en vez de adivinar: las opciones van
+etiquetadas con una sola letra, el modelo de utilidad ya cargado lee el texto
+una vez, y la probabilidad que pone en cada letra para su siguiente token es la
+respuesta, con una confianza y una «masa» (¿quería siquiera contestar esto?), sin
+generar razonamiento. Varias preguntas sobre el mismo texto comparten el prefijo
+del prompt, así que la caché del servidor paga el texto una sola vez. Nunca carga
+un modelo, tiene un presupuesto de latencia duro y es sólo consultiva: la regla
+decide siempre que está segura y siempre que el modelo no está disponible o duda.
+Hoy resuelve los casos dudosos de «¿esta pregunta necesita buscar en la web?», da
+tipo a las entidades del segundo cerebro que quedaron como «otro» y sugiere (nunca
+resuelve) contradicciones de memoria que las reglas fijas no ven. Una evaluación
+compara la precisión de la regla, la decisión y la combinación, con calibración y
+tiempos de caché. [API de decisiones tipadas](docs/api/typed_decision.md),
+[evaluación](docs/evals/typed-decisions.md).
 
 ## Voz
 
