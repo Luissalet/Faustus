@@ -708,6 +708,52 @@ def _degenerate_output_error_chunk(exc: "DegenerateOutput") -> str:
     return f'event: error\ndata: {json.dumps({"status": 502, "text": message, "error": message, "error_class": DEGENERATE_OUTPUT_ERROR_CLASS, "fallback_eligible": False})}\n\n'
 
 
+#: Tool-call argument loop guard (see `tool_argument_loop`): the repeated unit
+#: must be at least this long, repeat back-to-back this many times at the very
+#: end of the arguments, and read like prose (this many alphabetic words).
+_TOOL_ARG_LOOP_MIN_UNIT = 40
+_TOOL_ARG_LOOP_MAX_UNIT = 600
+_TOOL_ARG_LOOP_MIN_REPEATS = 8
+_TOOL_ARG_LOOP_MIN_WORDS = 5
+#: Only look once the arguments are this long, and again every this many chars.
+_TOOL_ARG_LOOP_START_CHARS = 1500
+_TOOL_ARG_LOOP_EVERY_CHARS = 400
+_ALPHA_WORD_RE = re.compile(r"[^\W\d_]{2,}", re.UNICODE)
+
+
+def tool_argument_loop(arguments: str) -> Optional[str]:
+    """A tool call's streamed arguments stuck in a loop, or None.
+
+    Seen live on a local 27B behind llama-server: a `rationale` field
+    repeated one Spanish sentence until max_tokens -- 8192 tokens, 14 minutes
+    -- and nothing reached the screen because a server-side tool-call parser
+    holds argument text until the call is complete, so the content and
+    reasoning guards never saw it. Deliberately strict so a file that really
+    repeats a line never trips it: the unit is 40-600 characters of prose
+    (5+ words), repeated back-to-back at least 8 times at the very end."""
+    text = arguments or ""
+    probe_len = _TOOL_ARG_LOOP_MIN_UNIT
+    if len(text) < probe_len * _TOOL_ARG_LOOP_MIN_REPEATS:
+        return None
+    probe = text[-probe_len:]
+    prev = text.rfind(probe, 0, len(text) - probe_len)
+    if prev < 0:
+        return None
+    unit_len = len(text) - probe_len - prev
+    if not (_TOOL_ARG_LOOP_MIN_UNIT <= unit_len <= _TOOL_ARG_LOOP_MAX_UNIT):
+        return None
+    unit = text[-unit_len:]
+    if len(_ALPHA_WORD_RE.findall(unit)) < _TOOL_ARG_LOOP_MIN_WORDS:
+        return None
+    repeats, end = 0, len(text)
+    while end - unit_len >= 0 and text[end - unit_len:end] == unit:
+        repeats += 1
+        end -= unit_len
+    if repeats < _TOOL_ARG_LOOP_MIN_REPEATS:
+        return None
+    return f"tool-call arguments repeat a {unit_len}-char passage {repeats} times"
+
+
 class _DegenerateStreamGuard:
     """Detect local-model token collapse before it floods the UI.
 
@@ -5829,6 +5875,7 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
     # parallel calls) and the split-safe JSON reassembly; this stream loop
     # only feeds it deltas and renders its output in the legacy wire shape.
     _tc_assembler = ToolCallAssembler()
+    _tool_arg_checked: Dict[int, int] = {}  # call index -> args length last checked
     # For thinking models: prepend <think> to first content delta so frontend
     # can detect thinking-in-progress (some models output </think> but no <think>)
     _thinking_model = _supports_thinking(model)
@@ -6146,6 +6193,17 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                                                 tc["function"] = dict(func, name=_unalias_harmony_tool_name(func["name"], model))
                                                 func = tc["function"]
                                             call = _tc_assembler.feed(tc)
+                                            if call and call.last_appended:
+                                                _args_len = len(call.arguments)
+                                                _last = _tool_arg_checked.get(call.index, 0)
+                                                if (_args_len >= _TOOL_ARG_LOOP_START_CHARS
+                                                        and _args_len - _last >= _TOOL_ARG_LOOP_EVERY_CHARS):
+                                                    _tool_arg_checked[call.index] = _args_len
+                                                    _loop = tool_argument_loop(call.arguments)
+                                                    if _loop:
+                                                        yield _degenerate_output_error_chunk(
+                                                            DegenerateOutput(f"{call.name or 'tool call'}: {_loop}", model))
+                                                        return
                                             # Stream tool arg deltas for doc tools. Guards against a
                                             # null arguments delta the same way the assembler does
                                             # internally: `func` can be {"arguments": None} (JSON
