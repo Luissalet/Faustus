@@ -51,7 +51,7 @@ import asyncio
 import logging
 import secrets
 from datetime import datetime, timezone
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, HTTPException, Response
@@ -1886,8 +1886,24 @@ async def get_version(request: Request, response: Response):
     }
 
 @app.get("/api/health")
-async def health_check() -> Dict[str, str]:
-    return {"status": "healthy", "timestamp": datetime.now(timezone.utc).isoformat()}
+async def health_check() -> Dict[str, Any]:
+    payload: Dict[str, Any] = {
+        "status": "healthy",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "service": "faustus",
+    }
+    # Which instance answered (src/model_lease.py): several instances can
+    # share one PC and one local model server, so a caller on any port can
+    # tell them apart and ask this one what it holds.
+    try:
+        from src import model_lease
+        rec = model_lease.self_record()
+        payload["instance_id"] = rec.get("instance_id")
+        payload["port"] = rec.get("port")
+        payload["leases"] = bool(rec)
+    except Exception:  # noqa: BLE001
+        payload["leases"] = False
+    return payload
 
 @app.post("/api/client-perf")
 async def client_perf(request: Request):
@@ -2130,6 +2146,15 @@ async def _startup_event():
         model_warmup.start()
     except Exception as e:  # noqa: BLE001
         logger.warning(f"Model warmup not started (non-critical): {e}")
+
+    # Shared model lease (src/model_lease.py): register this instance so
+    # sibling instances sharing the same local model server can see it
+    # (residency leadership, VRAM reservation visibility, adoption).
+    try:
+        from src import model_lease
+        model_lease.start()
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"Model lease not started (non-critical): {e}")
 
     # Engine swap (src/engine_swap.py): idle reaper for managed llama.cpp
     # engines — unloads them once idle past `engine_idle_ttl_minutes`
@@ -2499,6 +2524,11 @@ async def _shutdown_event():
         try:
             from src import model_warmup
             await model_warmup.stop()
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            from src import model_lease
+            await model_lease.stop()
         except Exception:  # noqa: BLE001
             pass
         try:

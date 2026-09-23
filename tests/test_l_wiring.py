@@ -18,7 +18,6 @@ import pytest
 import app as app_module
 
 
-@pytest.mark.xfail(strict=True, reason="wired by the integrator")
 def test_health_check_reports_service_and_instance_id():
     out = asyncio.run(app_module.health_check())
     assert out.get("service") == "faustus"
@@ -26,7 +25,6 @@ def test_health_check_reports_service_and_instance_id():
     assert "leases" in out
 
 
-@pytest.mark.xfail(strict=True, reason="wired by the integrator")
 def test_lifespan_starts_and_stops_the_model_lease():
     source = inspect.getsource(app_module)
     assert "model_lease.start()" in source
