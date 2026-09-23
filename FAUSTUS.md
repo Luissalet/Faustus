@@ -7521,3 +7521,208 @@ práctica: `disconnect` + `connect` (script `reconnect_all.py` en `_claude_tmp`)
 - Scribe: la primera grabación real no captó voz (silencio): probar con una
   llamada de verdad; Borges: indexar una carpeta grande (apuntes del máster) y
   medir; Argus: retención y tamaño en disco tras un día entero.
+## 169. Hooks de ciclo de vida: automatización sin burocracia (23-09-2026)
+
+Faustus tenía diecinueve módulos de política y puerta (`tool_policy`,
+`tool_arg_policy`, `rewrite_policy`, `trajectory_gate`…), todos cableados en
+código. No había forma de que el usuario dijese «cada vez que edites un
+`.py`, pásale `ruff`» o «al empezar una sesión, cuéntale al modelo el `git
+status`» sin tocar Python. La decisión de Luis fija el carácter de la pieza:
+**los hooks añaden, nunca bloquean**. No hay acción `deny`, no piden
+aprobación, y un hook que falla o tarda se anota y se sigue.
+
+**Lo que hay.** `src/lifecycle_hooks.py`: seis eventos (`session_start`,
+`turn_start`, `pre_tool`, `post_tool`, `turn_end`, `pre_compact`), un
+comparador por hook (`tool` con globs separados por `|`, `path` sobre las
+rutas que la llamada toca —reutiliza `_paths_from_args` del arnés—, regex
+sobre el comando o sobre el mensaje del usuario, `scope: project` que sólo
+casa con workspace) y tres acciones: `command` (la salida, recortada
+cabeza+cola, llega al modelo), `inject` (texto fijo) y `warn` (texto marcado
+como aviso). Plantillas `{file}`, `{files}`, `{tool}`, `{command}`,
+`{workspace}`, `{user_message}`… con las rutas entrecomilladas para la
+shell. Tope por hook y por evento (`lifecycle_hooks_command_timeout_seconds`,
+`lifecycle_hooks_total_timeout_seconds`), registro rotatorio en
+`<DATA_DIR>/lifecycle_hooks/log.jsonl`. Nueve presets de un clic: formateo
+de Python y web tras editar, typecheck de TypeScript, `git status`+`log` al
+abrir sesión, aviso de `console.log`, nota de build terminado, aviso de
+dev-server en primer plano, aviso de `--no-verify`, nota antes de compactar.
+
+**Dónde se engancha** (`src/agent_loop.py`, `routes/chat_helpers.py`).
+`session_start`/`turn_start` justo después del mapa del repositorio, como un
+mensaje no fiable más (`untrusted_context_message`, rol user, nunca system);
+`pre_tool` tras el evento `tool_start` y `post_tool` tras
+`observe_tool_result`: sus notas viajan en el propio resultado de la
+herramienta bajo `hook_notes`, con `setdefault`, para que la paridad byte a
+byte del resultado (CALL-05) no se toque; `pre_compact` antes de
+`compact_with_integrity` (lo inyectado sobrevive al corte); `turn_end` en
+`save_assistant_response`, junto al aviso `turn_finished`, en segundo plano.
+Cada ejecución sale por SSE como `harness_check status=hooks`.
+
+**API y pantalla.** `routes/lifecycle_hooks_routes.py` (admin):
+`GET/PUT /api/lifecycle-hooks`, `POST …/presets/{id}`, `POST …/test`
+(evaluación en seco o ejecución real), `GET …/log`. Ajustes → Tools, tarjeta
+«Lifecycle hooks» al lado de «Argument rules»: tabla, alta, presets,
+«Try» y últimas ejecuciones.
+
+**Verificación.** `tests/test_lifecycle_hooks.py` (46: validación,
+semántica de los comparadores, plantillas y entrecomillado, ejecución real
+con `echo` y con timeout, recorte, `attach_to_result` sin pisar claves,
+presets idempotentes, rutas, rotación del log) y `tests/test_h_wiring.py`
+(5, el cableado). `test_l62_call05_tool_result` sigue en verde.
+
+## 170. Instintos: lo que Faustus aprende de cómo trabajas (23-09-2026)
+
+Faustus ya aprendía a dos escalas: la memoria (hechos con clase de
+confianza) y las skills (procedimientos enteros, con el pase de sueño de
+§151 que propone mejoras). Faltaba la escala pequeña: «cuando escribes rutas
+nuevas de FastAPI, usa la factoría de `routes/` y regístrala en `app.py`».
+Eso es un **instinto**: un disparador, una acción, una confianza entre 0,3 y
+0,9, un dominio y un alcance (proyecto o global).
+
+**Cómo nace y cómo cambia.** `src/instincts.py`. Tras cada turno
+persistido con dos o más rondas, dos o más herramientas o una corrección del
+usuario (el clasificador de reacciones de §151), el modelo de utilidad
+recibe la conversación y los instintos ya conocidos del proyecto y devuelve
+hasta tres bloques etiquetados (`<instinct>` con `trigger`, `action`,
+`domain`, `evidence`, `contradicts`). La validación es dura: el disparador
+empieza por «when/cuando», la evidencia tiene que ser una cita literal de la
+conversación —si no, se descarta: nada de evidencia inventada— y el modelo
+puede marcar que contradice un instinto existente. Confianza inicial por
+número de observaciones (0,3 → 0,85), +0,05 por confirmación, −0,10 por
+contradicción, −0,02 por semana sin verse (calculada al leer), retiro por
+debajo de 0,15. Alcance por proyecto (clave = workspace, o `project_id` si
+no hay carpeta, la misma regla que el motor de memoria); un instinto visto en
+dos proyectos con media ≥0,8 **se promociona a global**. `evolve` agrupa por
+solape de palabras del disparador y convierte un grupo en un **borrador de
+skill** (`SkillsManager.add_skill`, `status=draft`, nunca publicado).
+
+**Cómo se usa.** Los instintos con confianza ≥0,7 (máximo 6, los del
+proyecto ganan) entran en el prompt justo después del mapa del repositorio
+como bloque no fiable «learned instincts». Herramienta `manage_instincts`
+(list/view/status/confirm/contradict/add/retire/promote/evolve/export/import)
+registrada en todos los catálogos (esquema, capacidades, índice, ejemplos
+en español e inglés, bloque de prompt para modelos sin function-calling);
+API `/api/instincts/*` por propietario; pestaña «Instincts» en Skills
+(barras de confianza, confirmar/contradecir/retirar, promoción con vista
+previa, evolución a skill, exportar/importar).
+
+**Verificación.** `tests/test_instincts.py` (aritmética de confianza y
+decaimiento, fusión, promoción entre proyectos, bloque inyectado, extracción
+con modelo simulado y rechazo por evidencia no citada, clustering y borrador
+de skill, exportación, rutas, acciones de la herramienta) más los cinco
+guardas de registro de herramientas, y `tests/test_i_wiring.py`.
+
+## 171. Bibliotecas incluidas: skills, reglas por lenguaje y agentes (23-09-2026)
+
+Se adaptó a los formatos propios de Faustus el fondo de una colección
+MIT de flujos de trabajo para agentes (atribución en
+`THIRD_PARTY_NOTICES.md`; nada de la colección se copia tal cual y ninguno
+de sus nombres, rutas o comandos aparece en el repo — un test lo vigila).
+
+- **Skills** (`skills/library/`, 29): TDD, bucle de verificación,
+  presupuesto de contexto y cuándo compactar, revisión de seguridad,
+  aterrizaje en un repo, code tour, estándares de código, errores, diseño
+  de APIs, git, e2e, desarrollo por intención, evals, optimización de
+  prompts, consejo de voces, destilar convenciones a `.faustus/rules/`,
+  investigar antes de construir (con las herramientas web de Faustus),
+  orquestar sub-agentes con `delegate_agents`, patrones Python/React/
+  FastAPI/Go/Rust/Docker, migraciones, despliegue, documentación,
+  investigación profunda. Cada una en el dialecto de `skill_format.py`
+  (When to Use / Procedure / Pitfalls / Verification, 500-1.200 palabras,
+  descripción que termina en «Use when …»). `src/skill_library.py` la lista e
+  instala por propietario pasando por el pre-escaneo de §147; pestaña
+  «Library» en Skills.
+- **Reglas** (`config/rules/`, 52 ficheros en 12 áreas: `common` más
+  python, typescript, react, web, golang, rust, java, csharp, swift, kotlin,
+  php; estilo, tests, seguridad, patrones; ≤400 palabras cada una).
+  `src/project_rules.py` descubre las del proyecto (`.faustus/rules/`,
+  `.agents/rules/`, `.claude/rules/`, `.cursor/rules/*.mdc`, acotado a la
+  raíz del repo como las skills) y las de la biblioteca que casan con los
+  lenguajes detectados (`project_instructions.detect_languages`), y monta el
+  bloque de sistema **detrás de las instrucciones del proyecto y con su mismo
+  veredicto de confianza**: carpeta no aprobada → sólo los nombres, cero
+  bytes de contenido. Presupuesto `project_rules_budget_tokens` (1.200); lo
+  que no cabe se nombra en una línea. Instalación = copiar a
+  `.faustus/rules/`, nunca fuera del workspace. Pestaña «Rules» en Proyecto.
+- **Agentes** (`config/agents/library/`, 19 `AGENT.md`): revisores por
+  lenguaje (python, typescript, react, fastapi, go, rust, base de datos,
+  seguridad, fallos silenciosos, análisis de tests de PR, diseño de tipos)
+  en `mode: reviewer` —no pueden escribir—, y trabajadores acotados
+  (simplificador, limpiador de refactors, rendimiento, documentación,
+  e2e, guía TDD, arquitecto, resolutor de errores de build). Se cargan
+  como definiciones builtin en `agent_defs` y las del usuario o del repo
+  las sobreescriben por slug.
+
+**Verificación.** `tests/test_skill_library.py`, `tests/test_project_rules.py`,
+`tests/test_agent_library.py`, `tests/test_c_wiring.py`: formato de todos
+los ficheros, palabras prohibidas, instalación idempotente, descubrimiento
+`.mdc`, nota de no fiable, filtro por lenguaje, orden por prioridad, corte
+por presupuesto, estabilidad byte a byte, cada agente carga y los revisores
+no escriben.
+
+## 172. Selector híbrido de skills (23-09-2026)
+
+La selección de skills por turno era solape de tokens (Jaccard) sobre nombre,
+descripción y `when_to_use`. `src/skills_runtime/selector.py` la sustituye
+sin cambiar la forma de lo que devuelve: tres carriles —**semántico**
+(coseno con el embedder local de `embedding_lanes`, vectores cacheados en
+memoria y en `<DATA_DIR>/skills/_vectors.json` por hash de contenido),
+**léxico** (la puntuación de antes, factorizada en `_lexical_score`) y
+**disparador** (la cláusula «Use when …»/«Cuando …» extraída de la
+descripción)— ponderados por `skill_selector_weights` y multiplicados por un
+**prior de resultado**: cada skill lleva contadores positivo/negativo en
+`_usage.json`, y la reacción del usuario en el turno siguiente a las skills
+que se le enseñaron (mismo clasificador de §151) los actualiza. Sin embedder,
+el peso semántico se reparte; `skill_selector_mode=lexical` devuelve
+exactamente lo de antes. Diagnóstico por skill en `_selector`, `POST
+/api/skills/selector/explain` y panel «Selector» en Skills.
+
+**Verificación.** `tests/test_skill_selector.py` (paráfrasis por encima
+del distractor léxico con un embedder determinista, fallback sin embedder,
+extracción en/es, prior que reordena, umbral, caché e invalidación, modo
+léxico idéntico, rutas) y las cuatro suites de skills existentes.
+
+## 173. Varios Faustus, un Ollama: el arriendo compartido de modelos (23-09-2026)
+
+Luis abre varios chats sobre copias distintas en puertos distintos (7000,
+7001, 7002) contra el mismo Ollama y las mismas GPUs. Cada instancia tenía
+sus pines, su tabla de actividad y sus reservas de VRAM **en memoria de
+proceso**, y su guardián de residencia pineaba su modelo por defecto cada
+20 s: una instancia descargaba como «ocioso sin pin» el modelo que otra
+tenía pineado, el plan de cesión del default vaciaba el modelo activo de la
+vecina, y dos admisiones podían reservar los mismos bytes.
+
+**`src/model_lease.py`.** Una carpeta compartida de máquina, fuera de
+cualquier DATA_DIR (`%LOCALAPPDATA%\Faustus\shared`, o `FAUSTUS_SHARED_DIR`),
+con **un fichero por instancia** (`leases/<id>.json`, id = sha1 de data_dir
+y puerto): pid, puerto, default, pines, actividad por modelo, reservas con
+caducidad, modelo adoptado; latido cada 10 s, caducidad a los 45 s o si el
+pid ya no existe. Nadie escribe el fichero de otro, así que no hay
+cerrojos. Hasta que `start()` no corre (lifespan de `app.py`) las
+anotaciones son no-ops: los tests de otros módulos no escriben en la carpeta
+real.
+
+**Lo que cambia.** `vram_admission`: los pines y defaults de las vecinas
+cuentan como pineados, sus reservas vigentes suman en `reserved_bytes`, y el
+plan de cesión y las sugerencias de desalojo no tocan un modelo activo en
+otra instancia (en modo «ask» aparece en la tarjeta como «in use by
+:puerto»). `model_warmup`: **elección de líder** por default (la instancia
+más antigua; empate, el puerto más bajo): sólo el líder recarga o re-pinea,
+las demás observan; y **adopción**: si mi default no está residente y el de
+una vecina sí, no cargo el mío —uso el suyo—, y `resolve_endpoint("default")`
+lo sustituye sólo para el default implícito (una sesión con modelo elegido
+no cambia). `run_model_pin.restore_keep_alive` nunca acorta el keep_alive
+de un modelo protegido por otra instancia. `GET /api/health` dice
+`service`, `instance_id` y `port`; `GET /api/local-models/instances`
+devuelve todas las instancias vivas y quién sostiene cada modelo residente;
+la pantalla Local models enseña «in use by :7001 (pinned)» por modelo y una
+tarjeta «Instances sharing this Ollama».
+
+**Verificación.** `tests/test_model_lease.py` (35: identidad, latidos y
+caducidad, no-ops antes de `start`, pines y reservas de vecinas dentro de
+`vram_admission`, líder y seguidor sobre los fixtures de `/api/ps` de
+`test_model_warmup`, adopción y su limpieza, `restore_keep_alive`,
+`_default_yield_plan`, snapshot, `endpoint_resolver`, ruta) y las suites de
+`model_warmup`, `vram_admission`, `run_model_pin`, `gpu_policy`,
+`hw_vram_reservation`, `chat_vram_gate` y `vram_admission_reconciled` en
+verde.

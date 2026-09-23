@@ -759,3 +759,23 @@ nadie podía ver desde código:
 **Lo que falta:** la vuelta al canvas al terminar la tarea para comprobar que el
 trabajo cumple lo que se diseñó — que es la mitad que le da sentido a guardarlo
 y enlaza con OBJ-28.
+
+## OBJ-31 · Hooks de ciclo de vida configurables — HECHO (23-09-2026)
+
+Seis eventos, tres acciones que sólo añaden (command/inject/warn), presets, log y tarjeta en Ajustes → Tools. FAUSTUS.md §169.
+
+## OBJ-32 · Instintos (aprendizaje continuo con confianza y alcance por proyecto) — HECHO (23-09-2026)
+
+Extracción en segundo plano con el modelo de utilidad, confianza dinámica, promoción a global, evolución a borrador de skill, herramienta `manage_instincts`, pestaña en Skills. FAUSTUS.md §170. Pendiente: medir en uso real qué fracción de instintos extraídos son útiles (ver PENDIENTES).
+
+## OBJ-33 · Bibliotecas incluidas: skills, reglas por lenguaje y agentes — HECHO (23-09-2026)
+
+29 skills, 52 reglas, 19 agentes adaptados; `.faustus/rules/` descubierto e inyectado con presupuesto; pestañas Library y Rules. FAUSTUS.md §171.
+
+## OBJ-34 · Selector híbrido de skills — HECHO (23-09-2026)
+
+Semántico + léxico + disparador × prior de resultado; explicación por API y panel. FAUSTUS.md §172.
+
+## OBJ-35 · Arriendo compartido de modelos entre instancias — HECHO (23-09-2026)
+
+Fichero por instancia en carpeta compartida de máquina, líder de residencia por default, pines y reservas de vecinas respetados, adopción del default residente, `/api/local-models/instances`. FAUSTUS.md §173. Pendiente: verificar en vivo con dos instancias nuevas (ver PENDIENTES).
