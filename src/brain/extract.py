@@ -21,10 +21,15 @@ whole feature follows:
    and relations it can find — but keeps only the ones the rule pass could
    have found too if it had looked harder: an entity only if its name or an
    alias actually occurs in the source text, a relation only if both ends
-   were kept (or the destination is a literal value that occurs in the
-   text). A model that names something never mentioned in the text is
-   simply ignored, not stored — the grounding check IS the safety net that
-   lets this pass run unsupervised in the background.
+   were kept (or the destination is a literal value) AND both occur in the
+   SAME source — the model sees a batch of unrelated sources, and one end
+   from each is how a relation nobody stated gets invented. Such a relation
+   cites only that source, keeps a model date only when that source's own
+   text yields the same day through :mod:`temporal`, and — being a model's
+   reading — never closes a rule-derived relation. A model that names
+   something never mentioned in the text is simply ignored, not stored —
+   the grounding check IS the safety net that lets this pass run
+   unsupervised in the background.
 
 Nothing here ever raises out to a caller on the chat hot path: this module
 is only ever invoked from a background sweep or an explicit "extract now"
@@ -40,7 +45,7 @@ import time
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from src.brain import temporal
-from src.brain.db import db, fold, now_iso, register_schema, sha
+from src.brain.db import db, fold, now_iso, parse_iso, register_schema, sha
 from src.brain.entities import (
     TYPES,
     add_mention,
@@ -219,7 +224,9 @@ def extract_source(owner: Any, source_ref: Any, text: Any, *, project: str = "",
         add_mention(owner, entity["id"], source_ref)
         _remember(entity)
 
-    window = temporal.parse_temporal(text)
+    # Relative phrases and bare months resolve against when the source was
+    # WRITTEN ("hasta marzo" in an October memory), not when this runs.
+    window = temporal.parse_temporal(text, now=parse_iso(created_at) if created_at else None)
     valid_from, valid_until = window.get("valid_from"), window.get("valid_until")
 
     for subject, rel_key, obj in _extract_relations(text):
@@ -385,6 +392,39 @@ def _build_llm_prompt(batch: Sequence[Dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+def _occurs(term: str, text_fold: str) -> bool:
+    return bool(term) and re.search(rf"\b{re.escape(term)}\b", text_fold) is not None
+
+
+def _same_day(a: Any, b: Any) -> bool:
+    da, db_ = parse_iso(a), parse_iso(b)
+    return bool(da and db_) and da.date() == db_.date()
+
+
+def _pick_grounding_source(sources: Sequence[Dict[str, Any]], model_from: Any,
+                           model_until: Any) -> Tuple[Dict[str, Any], Optional[str], Optional[str]]:
+    """The one source a model relation will cite, and the dates it keeps.
+
+    A model date survives only when that source's OWN text yields the same
+    day through the deterministic parser — a date the model inferred,
+    rounded or invented is dropped (``None``), never stored. Among several
+    grounding sources the one supporting the most model dates wins, ties
+    to the first."""
+    best: Tuple[int, int, Dict[str, Any], Optional[str], Optional[str]] = (-1, 0, sources[0], None, None)
+    for index, source in enumerate(sources):
+        created = source.get("created_at")
+        window = temporal.parse_temporal(source["text"],
+                                         now=parse_iso(created) if created else None)
+        valid_from = str(model_from) if model_from and _same_day(model_from, window.get("valid_from")) \
+            else None
+        valid_until = str(model_until) if model_until and \
+            _same_day(model_until, window.get("valid_until")) else None
+        score = int(valid_from is not None) + int(valid_until is not None)
+        if score > best[0]:
+            best = (score, index, source, valid_from, valid_until)
+    return best[2], best[3], best[4]
+
+
 async def _extract_llm_batch(owner: str, batch: Sequence[Dict[str, Any]],
                              report: Dict[str, Any]) -> bool:
     """One background model call over `batch`. Returns True iff the model
@@ -419,7 +459,11 @@ async def _extract_llm_batch(owner: str, batch: Sequence[Dict[str, Any]],
         return True
 
     batch_fold = fold(" \n ".join(src["text"] for src in batch))
+    source_folds = [fold(src["text"]) for src in batch]
     kept: Dict[str, Dict[str, Any]] = {}
+    # entity id -> every folded spelling the model used for it (name +
+    # aliases) that literally occurs somewhere in the batch
+    spellings: Dict[str, set] = {}
 
     for raw_entity in data.get("entities") or []:
         if not isinstance(raw_entity, dict):
@@ -441,6 +485,8 @@ async def _extract_llm_batch(owner: str, batch: Sequence[Dict[str, Any]],
         kept[fold(name)] = entity
         for alias in aliases:
             kept[fold(alias)] = entity
+        spellings.setdefault(entity["id"], set()).update(
+            cf for cf in candidate_folds if cf and _occurs(cf, batch_fold))
         for src in batch:
             if re.search(rf"\b{re.escape(fold(name))}\b", fold(src["text"])):
                 add_mention(owner, entity["id"], src["source_ref"])
@@ -458,17 +504,26 @@ async def _extract_llm_batch(owner: str, batch: Sequence[Dict[str, Any]],
         if not src_entity:
             continue  # source end was not kept -> drop the relation, never guess
         dst_entity = kept.get(fold(dst_name))
-        dst_value = ""
-        if not dst_entity:
-            if not re.search(rf"\b{re.escape(fold(dst_name))}\b", batch_fold):
-                continue  # literal destination must also occur in the text
-            dst_value = dst_name
+        dst_value = "" if dst_entity else dst_name
+        src_terms = {fold(src_name)} | spellings.get(src_entity["id"], set())
+        dst_terms = ({fold(dst_name)} | spellings.get(dst_entity["id"], set())) if dst_entity \
+            else {fold(dst_name)}
+        # BOTH ends must occur in ONE source: a batch mixes unrelated
+        # sources, and an end from each is exactly how a model invents a
+        # relation nobody ever stated.
+        grounding = [i for i, text_fold in enumerate(source_folds)
+                     if any(_occurs(t, text_fold) for t in src_terms)
+                     and any(_occurs(t, text_fold) for t in dst_terms)]
+        if not grounding:
+            continue
+        source, valid_from, valid_until = _pick_grounding_source(
+            [batch[i] for i in grounding], raw_rel.get("valid_from"), raw_rel.get("valid_until"))
         try:
             add_relation(
                 owner, src_entity["id"], rel_key,
                 dst_id=(dst_entity["id"] if dst_entity else None), dst_value=dst_value,
-                valid_from=raw_rel.get("valid_from"), valid_until=raw_rel.get("valid_until"),
-                evidence=tuple(src["source_ref"] for src in batch),
+                valid_from=valid_from, valid_until=valid_until,
+                evidence=(source["source_ref"],),
                 confidence=0.55, method="llm",
             )
             report["relations"] += 1
