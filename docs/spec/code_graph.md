@@ -133,22 +133,39 @@ critical are they".
 
   Two post-processing passes turn the raw Louvain output into something a
   human can actually scan (the real-repo numbers in REPORT_CG.md: level 0
-  from 2,013 raw groups down to 59 shown; level 1 down to 24):
-  - `_fold_tiny_groups` — a group under `_FOLD_MIN_FILES` files never stands
-    alone. It merges into, in order, the other group it has the strongest
-    real edge weight to, the group holding a majority of the *other* files
-    in the same directory, or a per-top-level-directory "loose files"
-    bucket if neither exists. Skipped entirely on a workspace too small for
-    anything to reach the threshold (nothing to fold into).
-  - `_split_catchalls` — a big (`>60` files), low-cohesion (`<0.30`) group
-    is Louvain's honest answer for a loosely-coupled "glue" region (routing
-    setup, `__init__` re-exports, ...), not a real single module. It is
-    split by each file's own directory into real sub-communities (marked
-    `split_by: "directory"`) instead of shown as one blob; a too-small
-    resulting sub-community folds into a directory sibling. When every file
-    in the blob is already a direct sibling in one flat directory, there is
-    no structure left to split along and the blob is left as one community
-    (an acknowledged limit of a *directory* split specifically).
+  from 2,013 raw groups down to 72 shown; level 1 down to 19). Both passes'
+  file-count thresholds are **scaled to repo size**
+  (`_fold_min_files_for`/`_catchall_min_files_for`) rather than fixed: a
+  threshold tuned on a ~2,500-file repo is either unreachable (folds/splits
+  never fire) or destructive (folds away every legitimate small module) on
+  a ~60-file app — confirmed by re-running on a copied-in small FastAPI+React
+  app (`REPORT_CG.md`'s second quality round):
+  - `_fold_tiny_groups` — a group under the scaled fold threshold
+    (`clamp(n_production_files / 80, 2, 8)`) never stands alone. It merges
+    into, in order, the other group it has the strongest real edge weight
+    to, the group holding a majority of the *other* files in the same
+    directory, or a per-top-level-directory "loose files" bucket if neither
+    exists. Skipped entirely on a workspace too small for anything to reach
+    the threshold (nothing to fold into).
+  - `_split_catchalls` — a group past the scaled catch-all floor
+    (`clamp(n_production_files * 0.12, 15, 60)`) is split when EITHER it is
+    low-cohesion (`<0.30`, Louvain's honest answer for a loosely-coupled
+    "glue" region — routing setup, `__init__` re-exports, ...) OR it holds
+    more than 30% of the whole repo's production files regardless of
+    cohesion (`_CATCHALL_DOMINANCE_FRACTION`) — the case a small, genuinely
+    cohesive package produces when it is still most of the app (cohesion
+    0.96 is not "loose", but 39 of 67 files is not "one module" either).
+    `_split_one_catchall` tries first to re-run Louvain on the blob's own
+    induced subgraph at a much higher resolution
+    (`_CATCHALL_INTERNAL_RESOLUTION = 4.0`, marked `split_by: "call_graph"`)
+    — pulling apart the files that call each other most *within* the blob —
+    and only falls back to splitting by each file's own directory
+    (`split_by: "directory"`) when that doesn't yield >= 2 usable
+    sub-groups. A too-small resulting sub-community folds into a sibling
+    either way. When neither approach can produce more than one group
+    (every file is a direct sibling in one flat directory with no internal
+    edges), the blob is left as one community — an acknowledged limit, not
+    a bug.
 
   Test files are never graph nodes: each one is attached, after clustering,
   to the single production community it exercises most, by the summed
@@ -167,9 +184,28 @@ critical are they".
   ownership it does not have. Level-1 names truncate to the top-level
   directory only ("dominant top-level areas"), e.g. `"src (memory,
   brain)"`. When two sibling communities land on the same base name, a
-  short TF-IDF-over-file-stem-tokens tag disambiguates them (`_tfidf_tag`).
+  short TF-IDF-over-file-stem-tokens tag disambiguates them (`_tfidf_tag`),
+  preferring tokens that appear in >= 2 of the community's own file stems
+  (a count-1 token is only used as a fallback when nothing clears that bar)
+  and excluding generic UI/CRUD words (`page`, `error`, `check`, `issue`,
+  `handler`, ... — `_GENERIC_PATH_TOKENS`) that are common enough across
+  unrelated communities to read as noise rather than a real shared theme.
   `key_symbols` (unaffected by any of this — still the top-internal-fan-in
   signal, filtered against `_GENERIC_SYMBOL_NAMES`) is a separate field.
+
+  JS/JSX/TS/TSX files get their own file-level "imports" edges derived
+  locally by this module (`_derive_js_import_edges`), never written back to
+  `code_index`/`code_edges`: `context_engine.code_index`'s lexical extractor
+  (used for every non-Python language) never emits `imports`/`calls` edges
+  for these files, only `defines`, so without this a client app's files
+  would cluster at cohesion 0.0 regardless of how tightly they actually
+  depend on each other. A small regex (`_js_relative_imports`) finds each
+  file's own relative `import .../require(...)` specifiers (`./x`, `../x` —
+  bare/package specifiers are never considered), resolved the way a
+  bundler would (`_resolve_js_specifier`: exact path, known extensions,
+  `index.<ext>`). Deliberately not a real module resolver (no tsconfig
+  paths/aliases, no node_modules) — just enough real signal for client code
+  to cluster by screens/components/lib.
 
   Each community carries a stable id (hash of its sorted member files), the
   path-based `name`, a deterministic `purpose` paragraph, `size` (symbols),
@@ -197,14 +233,29 @@ critical are they".
   `ClassName.execute` methods, `main`-named functions, and public
   functions/methods with outgoing calls but no caller from a non-test file
   (capped and ranked by fan-out — see the module docstring for why CLI
-  decorators are not separately detected). From each entry, a cycle-safe,
-  depth/node-capped DFS over resolved `calls` edges builds a deterministic
-  call tree (`flow`'s indented rendering). Criticality (0..1, weights sum to
-  1.0, documented on `_CRITICALITY_WEIGHTS`) combines flow size, files/
-  communities spanned, members with high global fan-in, side-effect sinks
-  (name matches `db`/`commit`/`write`/`send`/`delete`/`subprocess`/
-  `requests`) and the inverse of how much of the flow a test exercises.
-  Persisted the same way as communities, sharing the same fingerprint.
+  decorators are not separately detected). A root candidate inside a
+  detected vendored/third-party directory (`_vendor_dirs` — structural:
+  the directory's own name matches `vendor`/`third_party`/`external`/...,
+  or it contains a marker file like `VENDORED.txt`/`NOTICE`/`LICENSE`;
+  behavioral: the directory receives cross-directory calls but never makes
+  one out) becomes `entry_reason: "vendor_root"` instead of `"root"`, and
+  is ranked after every non-vendored root regardless of fan-out. From each
+  entry, a cycle-safe, depth/node-capped DFS over resolved `calls` edges
+  builds a deterministic call tree (`flow`'s indented rendering). A route's
+  display `name` is parsed from its own recorded `signature`
+  (`code_index`'s `"router.post /orders"` becomes `"POST /orders"` —
+  `_route_label`) instead of showing the handler function's bare name.
+  Criticality (0..1, weights sum to 1.0, documented on
+  `_CRITICALITY_WEIGHTS`) combines flow size, files/communities spanned,
+  members with high global fan-in, side-effect sinks (name matches
+  `db`/`commit`/`write`/`send`/`delete`/`subprocess`/`requests`) and the
+  inverse of how much of the flow a test exercises. `flows()`'s default
+  sort orders by entry KIND first (`_KIND_PRIORITY`: route/tool/
+  tool_executor > main > root > vendor_root), criticality only breaking
+  ties within a kind — a real HTTP route or tool handler is never
+  outranked by an internal or vendored root just because its own call tree
+  happens to be bigger. Persisted the same way as communities, sharing the
+  same fingerprint.
 
 - `impact()` gains an additive `affected_flows` key (the execution flows
   through the same seed(s), each with its criticality) — present, possibly
@@ -260,15 +311,22 @@ ids across repeated calls, a cache hit on an unchanged index, a rebuild after
 a file changes the fingerprint, the directory fallback under a tiny time
 budget, test files excluded from clustering but attached (not merged) as
 coverage, and `community`/`community_of` resolution by id/name/symbol. Plus
-the quality-round additions: names are path-based with no symbol suffix, the
-`min_files` display floor and its `hidden_small_count`/`unattached_tests_count`
-reporting, an orphan test file landing in the shared "Unattached tests"
-bucket rather than its own community, and direct unit coverage of
-`_fold_tiny_groups` (strongest-edge / directory-majority / loose-bucket / no-op
-when nothing reaches the threshold), `_split_catchalls` (splits a big
-zero-cohesion blob, leaves a cohesive or small one alone), `_assign_tests`,
-`_name_for` (directory name, and the small-slice-of-a-flat-directory file-stem
-fallback) and `_disambiguate_names` (the TF-IDF collision tag).
+the first quality-round additions: names are path-based with no symbol
+suffix, the `min_files` display floor and its
+`hidden_small_count`/`unattached_tests_count` reporting, an orphan test file
+landing in the shared "Unattached tests" bucket rather than its own
+community, and direct unit coverage of `_fold_tiny_groups` (strongest-edge /
+directory-majority / loose-bucket / no-op when nothing reaches the
+threshold), `_split_catchalls` (splits a big zero-cohesion blob, leaves a
+cohesive-and-non-dominant or small one alone, splits a dominant cohesive
+blob by call graph), `_assign_tests`, `_name_for` (directory name, and the
+small-slice-of-a-flat-directory file-stem fallback) and
+`_disambiguate_names` (the TF-IDF collision tag). Plus the second
+quality-round `small_app_repo` fixture (~37 files across 5 independent
+Python packages, one flagged vendored via a `VENDORED.txt` marker) asserting
+a small repo yields more than one level-0 community (never one blob) and
+that a real HTTP route outranks both a plain internal root and a vendored
+root in `flows()`.
 
 `tests/test_code_graph_flows.py` — a route that calls through three files
 into a `commit()`-like sink: one entry point, a deterministic call tree,
@@ -276,7 +334,11 @@ cycle safety (a manufactured call cycle never loops), the depth cap, and a
 flow that touches a sink ranking above a trivial one-hop flow by
 criticality. `affected_flows` from a symbol and from a real `git diff` in a
 temp git repo. `impact()` gaining `affected_flows` and every existing
-`test_code_graph_*` module still passing.
+`test_code_graph_*` module still passing. Plus the second quality-round
+updates: a route's display `name` is asserted as its parsed `"POST
+/orders"` label (fixture helpers now match flows by `entry_symbol`, which
+stays the handler's qualname), and the default sort is asserted as
+kind-priority-then-criticality rather than pure criticality.
 
 `tests/test_code_graph_mcp.py` — the `code_graph` built-in MCP server:
 importing it starts nothing, `list_tools()` returns a valid schema for
