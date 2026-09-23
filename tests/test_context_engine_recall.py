@@ -332,3 +332,14 @@ def test_a_broken_recall_store_costs_only_the_footer(live, monkeypatch):
     assert "omitted_for_budget" not in result["message"]["content"]
     assert result["report"]["recallable"] == []
     assert "Use concise prose" in result["message"]["content"]
+
+
+def test_no_live_packet_when_the_room_is_below_the_compiler_floor(live, monkeypatch):
+    """`resolve_budget` never goes below MIN_INPUT_BUDGET; delivering with less
+    room than that would let the packet overrun what is really left."""
+    from src.context_engine.budgets import MIN_INPUT_BUDGET
+
+    monkeypatch.setattr(wiring, "_live_budget", lambda *a, **k: MIN_INPUT_BUDGET - 1)
+    assert _deliver() is None
+    monkeypatch.setattr(wiring, "_live_budget", lambda *a, **k: MIN_INPUT_BUDGET)
+    assert _deliver() is not None

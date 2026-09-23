@@ -550,8 +550,16 @@ async def deliver_round(*, request: ContextRequest,
             context_length=context_length, window_known=window_known,
             max_output_tokens=max_output_tokens,
         )
-        if allowance <= 0:
-            logger.info("context engine skipped live delivery: prompt has no safe room")
+        # The compiler never budgets below MIN_INPUT_BUDGET, whatever the
+        # policy asks for; a smaller allowance would let the packet overrun
+        # the room that is really left. No packet is the safe answer: the
+        # round keeps the legacy blocks (see agent_loop's standby fallback).
+        from .budgets import MIN_INPUT_BUDGET
+
+        if allowance < MIN_INPUT_BUDGET:
+            logger.info("context engine skipped live delivery: %d tokens of room "
+                        "is below the compiler's %d-token floor", allowance,
+                        MIN_INPUT_BUDGET)
             return None
         bounded = replace(
             request,
