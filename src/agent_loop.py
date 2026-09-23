@@ -3054,6 +3054,34 @@ def _scrub_approval_card_from_history(messages: List[Dict[str, Any]], tool_name:
     return False
 
 
+_APPROVAL_CARD_LINE_RE = re.compile(r"[ \t]*" + re.escape(_APPROVAL_CARD_QUESTION) + r"[ \t]*", re.IGNORECASE)
+
+
+def _scrub_approval_cards_from_replay(messages: List[Dict[str, Any]]) -> int:
+    """Take the card's question out of EVERY replayed assistant message.
+
+    The resume-time rewrite above handles the turn that just got approved;
+    the persisted transcript still carries "Allow this task to continue?"
+    at the top of each earlier assistant turn that paused. Seen live, third
+    turn of a quiz: the model's two previous messages both began with the
+    card, the user said "no me acuerdo", and the whole answer was the card
+    sentence again. Returns how many messages were rewritten."""
+    n = 0
+    for msg in messages or []:
+        if not isinstance(msg, dict) or msg.get("role") != "assistant":
+            continue
+        content = msg.get("content")
+        if not isinstance(content, str) or _APPROVAL_CARD_QUESTION.lower() not in content.lower():
+            continue
+        note = "(paused for the user's approval of a tool call; it was granted)"
+        cleaned = _APPROVAL_CARD_LINE_RE.sub(note, content)
+        cleaned = re.sub(r"(?:\(paused for the user's approval of a tool call; it was granted\)\s*){2,}", note + "\n\n", cleaned)
+        cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+        msg["content"] = cleaned or note
+        n += 1
+    return n
+
+
 def _resolved_tool_event_name(event: dict[str, Any]) -> str:
     tool = str(event.get("tool") or "").strip()
     if tool != "mcp":
@@ -6693,6 +6721,15 @@ async def _stream_agent_loop_body(
         except Exception as _cap_err:
             logger.debug("temperature cap skipped: %s", _cap_err)
     _ody_memory_identity_turn = _looks_like_memory_identity_turn(_last_user)
+    # The runtime's approval card is never the assistant's own words: take it
+    # out of every replayed assistant message before the model reads them
+    # (the persisted transcript keeps it for the UI).
+    try:
+        _cards_scrubbed = _scrub_approval_cards_from_replay(messages)
+        if _cards_scrubbed:
+            logger.info("[approval] %d replayed assistant message(s) had the card text; replaced", _cards_scrubbed)
+    except Exception:  # noqa: BLE001 - replay cosmetics never cost the turn
+        logger.debug("[approval] replay scrub skipped", exc_info=True)
     # The keyword travels only when the route said this message answers an
     # ask_user question; the plain two-argument call stays the common path.
     _intent = (
@@ -10934,7 +10971,10 @@ async def _stream_agent_loop_body(
                         }) + "\n\n"
                     )
 
-        if (not tool_blocks and _approved_result_injected and _approval_echo_retries < 2
+        # Any turn, not only the one resumed after an approval: with the card
+        # in the transcript, a later low-signal message ("no me acuerdo")
+        # came back as the card sentence alone.
+        if (not tool_blocks and _approval_echo_retries < 2
                 and not _force_answer and not plan_mode
                 and _strip_think_blocks(cleaned_round).strip().lower() == _APPROVAL_CARD_QUESTION.lower()):
             _approval_echo_retries += 1

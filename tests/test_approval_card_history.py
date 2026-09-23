@@ -47,3 +47,24 @@ def test_only_the_recent_turns_are_touched():
     msgs = [old_card] + [{"role": "assistant", "content": f"turno {i}"} for i in range(4)]
     assert not al._scrub_approval_card_from_history(msgs, "bash")
     assert old_card["content"] == "Allow this task to continue?"
+
+
+def test_every_replayed_assistant_message_loses_the_card():
+    """Third turn of a quiz: both earlier assistant messages began with the
+    card, the user said "no me acuerdo", and the answer was the card again."""
+    msgs = [
+        {"role": "user", "content": "examíname"},
+        {"role": "assistant", "content": "Allow this task to continue?¡Vamos! Primera tarjeta: ¿Qué es un plugin?"},
+        {"role": "user", "content": "una app"},
+        {"role": "assistant", "content": "Allow this task to continue?Allow this task to continue?¡Correcto!"},
+        {"role": "user", "content": "No me acuerdo."},
+    ]
+    assert al._scrub_approval_cards_from_replay(msgs) == 2
+    for m in msgs:
+        assert "allow this task to continue" not in str(m["content"]).lower()
+    assert msgs[1]["content"].endswith("¿Qué es un plugin?")
+    assert msgs[1]["content"].startswith("(paused for the user's approval")
+    assert msgs[3]["content"].count("(paused for") == 1 and msgs[3]["content"].endswith("¡Correcto!")
+    # idempotent, and nothing else is touched
+    assert al._scrub_approval_cards_from_replay(msgs) == 0
+    assert msgs[0]["content"] == "examíname" and msgs[4]["content"] == "No me acuerdo."
