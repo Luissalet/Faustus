@@ -35,12 +35,81 @@ def _resident_model_names(url: str) -> Optional[List[str]]:
     try:
         from src import vram_admission
         root = vram_admission.ollama_root(url)
-        if not root:
-            return None
-        loaded = vram_admission._get(root, "/api/ps", 2.5).get("models") or []
-        return [str(m.get("name") or m.get("model") or "") for m in loaded if m]
     except Exception:
         return None
+    if root:
+        try:
+            loaded = vram_admission._get(root, "/api/ps", 2.5).get("models") or []
+            return [str(m.get("name") or m.get("model") or "") for m in loaded if m]
+        except Exception:
+            return None
+    loopback = _loopback_root(url)
+    if not loopback:
+        return None
+    return _llama_server_models(vram_admission, loopback)
+
+
+def _loopback_root(url: str) -> Optional[str]:
+    """`http://127.0.0.1:8082/v1/chat/completions` -> `http://127.0.0.1:8082`,
+    only for a server on this machine (never probe a remote provider)."""
+    from urllib.parse import urlparse
+    try:
+        p = urlparse(str(url or "").strip())
+    except ValueError:
+        return None
+    host = (p.hostname or "").lower()
+    if p.scheme not in ("http", "https") or host not in ("127.0.0.1", "localhost", "::1") or not p.port:
+        return None
+    shown = f"[{host}]" if ":" in host else host
+    return f"{p.scheme}://{shown}:{p.port}"
+
+
+def _llama_server_models(vram_admission, root: str) -> Optional[List[str]]:
+    """Residency on a loopback llama-server (no `/api/ps`).
+
+    A llama-server that answers `/health` with "ok" has its model(s) in memory:
+    it loads before it listens. In router mode each `/v1/models` entry carries
+    a `status` and only the "loaded" ones count. Anything else — not a
+    llama-server, still loading, unreachable — stays None ("cannot tell"),
+    which the callers treat as "would load"."""
+    try:
+        health = vram_admission._get(root, "/health", 2.5)
+        if str((health or {}).get("status") or "").lower() != "ok":
+            return None
+        data = vram_admission._get(root, "/v1/models", 2.5).get("data") or []
+    except Exception:
+        return None
+    names: List[str] = []
+    for entry in data:
+        if not isinstance(entry, dict):
+            continue
+        status = entry.get("status")
+        if isinstance(status, dict):
+            status = status.get("value")
+        if status not in (None, "", "loaded"):
+            continue
+        name = str(entry.get("id") or entry.get("model") or "").strip()
+        if name:
+            names.append(name)
+    return names or None
+
+
+def model_busy(url: str) -> bool:
+    """True when a loopback llama-server behind `url` is serving a request
+    right now (`/slots` reports a slot processing). A single-slot server
+    shared with a person's chat must not get a background request queued in
+    front of them. Ollama and anything that cannot answer: False."""
+    root = _loopback_root(url)
+    if not root:
+        return False
+    try:
+        from src import vram_admission
+        slots = vram_admission._get(root, "/slots", 1.5)
+    except Exception:
+        return False
+    if isinstance(slots, dict):
+        slots = slots.get("slots") or []
+    return any(isinstance(s, dict) and s.get("is_processing") for s in (slots or []))
 
 
 def would_require_load(url: str, model: str) -> bool:

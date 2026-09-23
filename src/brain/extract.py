@@ -555,6 +555,11 @@ def background_llm_gate(url: Any, model: Any) -> str:
         return "residency_unknown"
     if not any(_same_model_identity(name, str(model)) for name in names if name):
         return "model_not_resident"
+    try:
+        if background_job_guard.model_busy(str(url)):
+            return "model_busy"
+    except Exception:  # noqa: BLE001 - cannot tell = not busy; residency already held
+        logger.debug("brain.extract: busy probe failed")
     return ""
 
 
