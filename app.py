@@ -804,12 +804,15 @@ app.include_router(setup_admin_wipe_routes(session_manager))
 from routes.memory.memory_routes import setup_memory_routes
 memory_router = setup_memory_routes(memory_manager, session_manager, memory_vector=memory_vector)
 app.include_router(memory_router)
-from routes.skills_routes import setup_skills_routes
-app.include_router(setup_skills_routes(skills_manager))
+# The bundled skill library and the selector live under /api/skills/... too:
+# registered BEFORE the skills router so its `/{skill_id}` catch-all never
+# swallows `/library` or `/selector`.
 from routes.skill_library_routes import setup_skill_library_routes
 app.include_router(setup_skill_library_routes())
 from routes.skill_selector_routes import setup_skill_selector_routes
 app.include_router(setup_skill_selector_routes())
+from routes.skills_routes import setup_skills_routes
+app.include_router(setup_skills_routes(skills_manager))
 # A25: git-backed skill sources (pinned revision, verified update, rollback).
 from routes.skill_source_routes import setup_skill_source_routes
 app.include_router(setup_skill_source_routes())
