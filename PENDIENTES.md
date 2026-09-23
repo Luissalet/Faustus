@@ -3,6 +3,17 @@
 Actualizado: 23-09-2026. REGLA: nunca nombres de empresas/personas del buzÃ³n de Luis en commits, docs, tests ni comentarios â€” ejemplos siempre ficticios. SÃ³lo trabajo vigente; quitar cada entrada al cerrarla.
 
 
+## 23-09 noche — grafo de código+, prior art y el bucle con el 27B (FAUSTUS.md §179)
+
+- **Servidor de modelo estropeado.** El `llama-server` 8081 se estropeó (devolvía `////` y sopa de tokens) y el turno murió a los 14 min con un 500 del analizador. Los bucles dentro de argumentos ya se cortan (§179); falta detectar un servidor que devuelve basura desde el primer token para decirlo y no esperar, y medir si hace falta un corte por silencio a mitad de stream.
+- **Una investigación que no para**: sin límite propio, el modelo encadenó 32 `bash`+`curl` leyendo código de un repo ajeno. El presupuesto de rondas lo acabaría parando, pero tarde; valorar un aviso cuando muchas rondas seguidas sólo leen la web sin avanzar el plan.
+- **Colección de ChromaDB compartida entre instancias.** Todas usan `odysseus_tool_index_fastembed` en el mismo Chroma (8100) con catálogos distintos (7000, 7003, 7006): comprobar que una no borra ni pisa las herramientas MCP de otra.
+- **Narración intermedia en inglés** a un usuario que escribe en español («Continuing with the analysis…») en turnos largos; la respuesta final sí sale en español.
+- **Aristas por nombre dentro del mismo lenguaje** (`run_pca → transform` en Nightingale): mejorar la resolución del índice o bajar su peso en flujos.
+- **Hoards de Node (Ledger, Links, People)**: la primera línea de 9–14 descripciones MCP pasa de 110 caracteres; el índice ya lee la descripción entera, pero el contrato de la familia pide ≤110.
+- **Reiniciar el 7000** para que cargue todo esto (y los plugins adoptados en el 7006 se adoptan igual allí desde Conectores).
+
+
 ## 23-09 tarde — decisiones tipadas y Nightingale's Hoard (FAUSTUS.md §177–§178)
 
 - Repetir `scripts/eval_typed_decision.py` contra el modelo grande de Ollama cuando esté libre (el ayudante de 3B ya está medido: actualidad 73 % → 93 %, tipos de entidad 12 % → 88 %, p50 ≈ 390 ms).

@@ -837,3 +837,30 @@ cerebro (sólo en segundo plano) y sugerencias de conflicto de memoria
 las sugerencias de conflicto a la pantalla de Memoria y buscar otros sitios
 con listas de palabras frágiles donde un error sea barato (p. ej. «¿merece la
 pena guardar esta memoria?»).
+
+## OBJ-38 · Grafo de código+: de qué está hecho un repo y qué caminos importan — HECHO (23-09-2026)
+
+Comunidades (módulos y áreas con nombre, tests asignados a lo que ejercitan)
+y flujos de ejecución (de cada punto de entrada, con criticidad, tests que lo
+alcanzan y comando de pytest) sobre el grafo de código existente; `impact`
+dice qué flujos toca un cambio. Herramientas `code_graph_communities` y
+`code_graph_flows`, rutas `/api/code-graph/*` y servidor MCP `code_graph`.
+FAUSTUS.md §179; spec en `docs/spec/code_graph.md`.
+
+**Queda:** resúmenes por el modelo de utilidad en vivo; la resolución por
+nombre del índice sigue inventando alguna arista dentro del mismo lenguaje
+(`run_pca → transform`); una vista en Studio (el grafo del cerebro serviría
+de base).
+
+## OBJ-39 · «¿Ya existe?»: reutilizar, adaptar o escribir, con cada repo verificado — HECHO (23-09-2026)
+
+Antes de construir, el agente descompone la idea con una lista de
+comprobación y Faustus verifica en vivo cada repositorio que propone
+(existencia, renombrado, archivado, fork, último push, licencia contra la del
+proyecto), rebaja veredictos cuando la licencia o la salud no dan, y guarda
+el informe. Herramienta `prior_art`, rutas `/api/prior-art/*`, servidor MCP
+`prior_art`. FAUSTUS.md §179; API en `docs/api/prior_art.md`.
+
+**Queda:** pantalla en Studio para los informes; poner el token de GitHub en
+Ajustes si 60 peticiones/hora se quedan cortas.
+
