@@ -1859,7 +1859,13 @@ def _legacy_learned_memory_message(
 
 
 def _is_legacy_memory_standby(message: Any) -> bool:
-    return isinstance(message, dict) and bool(message.get(_LEGACY_MEMORY_STANDBY_KEY))
+    """The learned-memory standby only. The chat preface's saved-memory and
+    document blocks share the key with other values (see
+    `src/context_engine/standby.py`), and must not be mistaken for it."""
+    if not isinstance(message, dict):
+        return False
+    value = message.get(_LEGACY_MEMORY_STANDBY_KEY)
+    return bool(value) and (value is True or value == "learned_memory")
 
 
 def _is_trailing_turn_context(message: Dict) -> bool:
@@ -8537,6 +8543,10 @@ async def _stream_agent_loop_body(
     # store already (at most once per turn, and only if it was really sent).
     _ce_legacy_memory_standby: Optional[Dict] = None
     _ce_legacy_memory_credited = False
+    # Same fail-safe for the chat preface's saved-memory and document blocks
+    # (`src/context_engine/standby.py`): captured with their anchors the first
+    # time they are seen, restored in place on a round without a packet.
+    _ce_preface_standby: List[Dict[str, Any]] = []
     _context_receipts_flushed = False
 
     def _flush_context_receipts(*, hsum: Optional[Dict[str, Any]] = None,
@@ -9911,12 +9921,14 @@ async def _stream_agent_loop_body(
                     if _is_legacy_memory_standby(_ce_standby_msg):
                         _ce_legacy_memory_standby = _ce_standby_msg
                         break
+                from src.context_engine import standby as _ce_standby
+                _ce_preface_seen = _ce_standby.capture(messages)
+                if _ce_preface_seen:
+                    _ce_preface_standby = _ce_preface_seen
                 # The packet is budgeted against the prompt WITHOUT the
-                # standby block it is about to replace.
-                _ce_request_messages = [
-                    _message for _message in messages
-                    if not _is_legacy_memory_standby(_message)
-                ]
+                # standby blocks it is about to replace (learned memory and
+                # the chat preface's saved memory / documents).
+                _ce_request_messages = _ce_standby.without_standby(messages)
                 _ce_live = await _ce_live_wiring.deliver_round(
                     request=_ce_live_wiring.build_request(
                         owner=owner or "",
@@ -10005,6 +10017,11 @@ async def _stream_agent_loop_body(
             try:
                 messages, _ce_restored = _restore_legacy_memory_fallback(
                     messages, _ce_legacy_memory_standby)
+                if _ce_preface_standby:
+                    from src.context_engine import standby as _ce_standby
+                    messages, _ce_preface_restored = _ce_standby.restore(
+                        messages, _ce_preface_standby)
+                    _ce_restored = _ce_restored or _ce_preface_restored
                 if _ce_restored:
                     _active_route_state["messages"] = messages
                     if round_num != 1:

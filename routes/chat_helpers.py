@@ -834,6 +834,19 @@ async def build_chat_context(
         _preface_kwargs["use_rag"] = use_rag_val
     preface, rag_sources, web_sources = chat_processor.build_context_preface(**_preface_kwargs)
 
+    # Context Engine on: the saved-memory and document blocks above are the
+    # same stores the live packet selects from, so they ride along as a
+    # STANDBY — dropped by a model call that really carries a packet, kept or
+    # restored in place by one that does not (src/context_engine/standby.py).
+    # Flag off: nothing is tagged and the prompt is exactly today's.
+    try:
+        from src.context_engine import wiring as _ce_wiring
+        if _ce_wiring.enabled():
+            from src.context_engine.standby import mark_preface_standby
+            mark_preface_standby(preface)
+    except Exception:
+        logger.debug("context engine standby tagging skipped", exc_info=True)
+
     # Capture used memories immediately
     used_memories = getattr(chat_processor, '_last_used_memories', [])
 
