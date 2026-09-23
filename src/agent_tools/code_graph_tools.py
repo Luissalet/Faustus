@@ -180,6 +180,68 @@ class CodeGraphArchitectureTool:
         )
 
 
+class CodeGraphCommunitiesTool:
+    """`code_graph_communities` {level?, refresh?, summarize?, id?}: list this
+    workspace's modules (level 0) or coarser groups of them (level 1), or
+    the detail of one community by id/name/symbol when `id` is given."""
+
+    async def execute(self, content: str, ctx: dict) -> dict:
+        args = _args(content, first_key="id")
+        target = str(args.get("id") or args.get("name") or args.get("symbol") or "").strip()
+        root_arg = str(args.get("root") or args.get("workspace") or "")
+        project_id = str(args.get("project_id") or "")
+        if target:
+            return _catch(
+                code_graph.community, root_arg, target,
+                project_id=project_id, tool="code_graph_communities",
+            )
+        return _catch(
+            code_graph.communities, root_arg,
+            project_id=project_id,
+            level=int(args.get("level") or 0),
+            refresh=bool(args.get("refresh")),
+            summarize=bool(args.get("summarize")),
+            tool="code_graph_communities",
+        )
+
+
+class CodeGraphFlowsTool:
+    """`code_graph_flows` {entry?, id?, symbol?, base_ref?, limit?}: list
+    execution flows ranked by criticality, one flow's full call tree
+    (`id` or `entry`), or the flows a `symbol` (or the current git diff,
+    when `symbol` is omitted together with `id`/`entry`) passes through."""
+
+    async def execute(self, content: str, ctx: dict) -> dict:
+        args = _args(content, first_key="entry")
+        root_arg = str(args.get("root") or args.get("workspace") or "")
+        project_id = str(args.get("project_id") or "")
+        flow_id = str(args.get("id") or "").strip()
+        entry = str(args.get("entry") or "").strip()
+        symbol = str(args.get("symbol") or "").strip()
+
+        if flow_id or entry:
+            return _catch(
+                code_graph.flow, root_arg, flow_id or entry,
+                project_id=project_id, tool="code_graph_flows",
+            )
+        if symbol or "base_ref" in args:
+            return _catch(
+                code_graph.affected_flows, symbol,
+                workspace=root_arg, project_id=project_id,
+                base_ref=str(args.get("base_ref") or "HEAD"),
+                limit=int(args.get("limit") or 20),
+                tool="code_graph_flows",
+            )
+        return _catch(
+            code_graph.flows, root_arg,
+            project_id=project_id,
+            limit=int(args.get("limit") or 20),
+            sort=str(args.get("sort") or "criticality"),
+            refresh=bool(args.get("refresh")),
+            tool="code_graph_flows",
+        )
+
+
 class CodeGraphSnippetTool:
     """`code_graph_snippet` {symbol}: exactly one symbol's source lines."""
 

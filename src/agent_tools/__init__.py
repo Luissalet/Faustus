@@ -78,6 +78,7 @@ from .code_graph_tools import (
     CodeGraphIndexTool, CodeGraphSearchTool, CodeGraphTraceTool,
     CodeGraphChangesTool, CodeGraphImpactTool, CodeGraphArchitectureTool,
     CodeGraphSnippetTool, CodeGraphCochangesTool, CodeGraphRiskTool,
+    CodeGraphCommunitiesTool, CodeGraphFlowsTool,
 )
 from .structural_search_tools import StructuralSearchTool, StructuralRewriteTool
 from .doc_claims_tool import DocClaimsCheckTool
@@ -218,6 +219,8 @@ TOOL_HANDLERS = {
     "code_graph_architecture": CodeGraphArchitectureTool().execute,
     "code_graph_snippet": CodeGraphSnippetTool().execute,
     "code_graph_cochanges": CodeGraphCochangesTool().execute,
+    "code_graph_communities": CodeGraphCommunitiesTool().execute,
+    "code_graph_flows": CodeGraphFlowsTool().execute,
     # Structural (AST-pattern) search/rewrite via ast-grep -- shape queries
     # text grep and the code graph can't express. See src/structural_search.py.
     "structural_search": StructuralSearchTool().execute,
@@ -392,6 +395,7 @@ TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_fi
              "code_graph_index", "code_graph_search", "code_graph_trace",
              "code_graph_changes", "code_graph_impact", "code_graph_architecture",
              "code_graph_snippet", "code_graph_cochanges", "code_graph_risk",
+             "code_graph_communities", "code_graph_flows",
              # Structural search/rewrite -- src/agent_tools/structural_search_tools.py.
              "structural_search", "structural_rewrite",
              # Doc-claim drift checker -- src/agent_tools/doc_claims_tool.py.

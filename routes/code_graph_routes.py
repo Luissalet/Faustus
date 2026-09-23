@@ -11,6 +11,11 @@ GET  /api/code-graph/search         ?pattern=&kinds=&limit=&root=&semantic=
 GET  /api/code-graph/trace          ?from=&to=&max_depth=&root=
 GET  /api/code-graph/changes        ?base_ref=&root=
 GET  /api/code-graph/snippet        ?symbol=&root=
+GET  /api/code-graph/communities    ?level=&refresh=&summarize=&root=
+GET  /api/code-graph/communities/{id}  ?root=  (id: community id, name substring, or symbol)
+GET  /api/code-graph/flows          ?entry=&limit=&sort=&refresh=&root=
+GET  /api/code-graph/flows/{id}     ?root=  (id: flow id, or an entry point's name)
+GET  /api/code-graph/affected-flows ?symbol=&base_ref=&limit=&root=
 """
 import logging
 
@@ -82,5 +87,36 @@ def setup_code_graph_routes():
     def snippet(request: Request, symbol: str = Query(...), root: str = "", project_id: str = ""):
         require_admin(request)
         return _guarded(code_graph.snippet, symbol, workspace=root, project_id=project_id)
+
+    @router.get("/communities")
+    def communities(request: Request, level: int = 0, refresh: bool = False,
+                    summarize: bool = False, root: str = "", project_id: str = ""):
+        require_admin(request)
+        return _guarded(code_graph.communities, root, project_id=project_id, level=level,
+                        refresh=refresh, summarize=summarize)
+
+    @router.get("/communities/{id}")
+    def community_detail(id: str, request: Request, root: str = "", project_id: str = ""):
+        require_admin(request)
+        return _guarded(code_graph.community, root, id, project_id=project_id)
+
+    @router.get("/flows")
+    def flows(request: Request, entry: str = "", limit: int = 20, sort: str = "criticality",
+             refresh: bool = False, root: str = "", project_id: str = ""):
+        require_admin(request)
+        return _guarded(code_graph.flows, root, project_id=project_id, limit=limit, sort=sort,
+                        entry=entry or None, refresh=refresh)
+
+    @router.get("/flows/{id}")
+    def flow_detail(id: str, request: Request, root: str = "", project_id: str = ""):
+        require_admin(request)
+        return _guarded(code_graph.flow, root, id, project_id=project_id)
+
+    @router.get("/affected-flows")
+    def affected_flows(request: Request, symbol: str = "", base_ref: str = "HEAD",
+                       limit: int = 20, root: str = "", project_id: str = ""):
+        require_admin(request)
+        return _guarded(code_graph.affected_flows, symbol, workspace=root,
+                        project_id=project_id, base_ref=base_ref, limit=limit)
 
     return router

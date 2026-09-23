@@ -3062,6 +3062,45 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "code_graph_communities",
+            "description": "What parts this repo is made of -- deterministic clustering of files into modules (level 0) and coarser groups of those modules (level 1) from the weighted call/import graph, falling back to directory grouping on an oversized/slow graph. Each community has a name, a deterministic one-paragraph purpose, its key symbols (top internal fan-in), routes, entry points, test files that exercise it and which other communities it is coupled to. Give `id` (a community id, a name substring, or a symbol name/qualname) to get one community's full detail instead of the list. Use for 'what parts is this repo made of', 'give me the module map', 'what would I call this cluster of files'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "level": {"type": "integer", "description": "0 for fine-grained modules (default), 1 for coarser groups of those modules"},
+                    "refresh": {"type": "boolean", "description": "Force a rebuild even if a cached clustering already matches the current index (default false)"},
+                    "summarize": {"type": "boolean", "description": "Also try a one-sentence model summary per community, only when a local model is already resident and idle (default false)"},
+                    "id": {"type": "string", "description": "A community id, name substring, or symbol name/qualname -- returns that one community's full detail instead of the list"},
+                    "root": {"type": "string", "description": "Workspace root (optional -- defaults to the active workspace)"}
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "code_graph_flows",
+            "description": "Execution flows: from every real entry point (HTTP route, agent-tool executor, MCP tool handler, main, or a public symbol nothing else calls) outward along resolved calls, deterministically depth/node-capped and cycle-safe. Each flow has a 0..1 criticality score (size, files/communities spanned, high-fan-in members, side-effect sinks by name, test coverage) with its factor breakdown. With no `id`/`entry`/`symbol`, lists flows ranked by criticality; give `id` or `entry` for one flow's full call tree; give `symbol` (or nothing but `base_ref`, to use the current git diff) for the flows that pass through it. Use for 'what are the most critical execution paths here', 'show me the call tree from this route', 'which flows does this change touch'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "entry": {"type": "string", "description": "An entry point's name/qualname (substring match) -- returns that one flow's full call tree"},
+                    "id": {"type": "string", "description": "A flow id from a previous list -- returns that one flow's full call tree"},
+                    "symbol": {"type": "string", "description": "A symbol name/qualname -- returns the flows that pass through it"},
+                    "base_ref": {"type": "string", "description": "Git ref to diff against when symbol/id/entry are all omitted, to find flows the current diff touches (default HEAD)"},
+                    "limit": {"type": "integer", "description": "Max flows to return in a list (default 20)"},
+                    "sort": {"type": "string", "description": "'criticality' (default) or 'size'"},
+                    "refresh": {"type": "boolean", "description": "Force a rebuild even if cached flows already match the current index (default false)"},
+                    "root": {"type": "string", "description": "Workspace root (optional -- defaults to the active workspace)"}
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "structural_search",
             "description": "Search code by AST SHAPE, not text, via ast-grep -- finds things grep can't: 'every except Exception: whose body never logs', 'every call to foo() with a None second argument', regardless of whitespace/formatting. Write patterns like the code you're matching, using $NAME to capture exactly one node (e.g. foo($ARG)) or $$$NAME to capture zero-or-more (e.g. a whole statement body). Workflow: try the pattern on ONE file or a small folder first, check the hits and metaVariables look right, THEN widen path to search the whole workspace -- a pattern that looks right can still match more or less than intended.",
             "parameters": {

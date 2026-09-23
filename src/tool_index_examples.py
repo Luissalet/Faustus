@@ -1041,6 +1041,18 @@ EXAMPLES: Dict[str, List[str]] = {
         "dame las líneas exactas de esa clase",
         "get the source of that symbol you just found",
     ],
+    "code_graph_communities": [
+        "de qué partes se compone este repositorio",
+        "give me a module map of this codebase",
+        "qué otros módulos tiene acoplados el motor de contexto",
+        "what would you call this cluster of files",
+    ],
+    "code_graph_flows": [
+        "cuáles son los flujos de ejecución más críticos de este proyecto",
+        "show me the call tree starting from this route",
+        "qué rutas de ejecución pasan por esta función",
+        "which flows would this diff actually affect end to end",
+    ],
     "doc_claims_check": [
         "check if the README still matches the code",
         "revisa si FAUSTUS.md tiene referencias rotas al código",
