@@ -8,6 +8,7 @@ The LLM decides when to use tools by writing fenced code blocks.
 
 import asyncio
 import collections
+import contextvars
 import difflib
 import functools
 import hashlib
@@ -1781,6 +1782,131 @@ def _insert_before_latest_user(messages: List[Dict], context_msg: Dict) -> List[
             return out
     out.append(context_msg)
     return out
+
+
+# ── Context Engine fail-safe for learned memory ───────────────────────────
+# With `agent_context_engine` on, the live packet owns learned-memory
+# selection and `_build_system_prompt` must not ALSO inject the legacy block
+# (the same rule would be shown and credited twice). But the packet is
+# fail-open: `deliver_round` returns None on a timeout, an empty packet or a
+# crash, and the round then carries on with whatever the prompt already had.
+# If the legacy block had simply been left out, that round would have NO
+# learned memory at all — silently. So the legacy block is still built, at its
+# usual position, but marked as a standby: the live path removes it when a
+# packet really goes in, and puts it back (same tag, same lane, same place)
+# when one does not. Exactly one of the two is ever in the request.
+_LEGACY_MEMORY_STANDBY_KEY = "_context_engine_standby"
+_LEGACY_MEMORY_IDS_KEY = "_context_engine_memory_ids"
+
+
+def _legacy_learned_memory_message(
+    messages: List[Dict],
+    *,
+    owner: Optional[str],
+    workspace: Optional[str],
+    session_id: Optional[str],
+) -> Tuple[Optional[Dict], List[str]]:
+    """The legacy learned-memory block (src/memory_engine.py) and its item ids.
+
+    Factored out of `_build_system_prompt` so the Context Engine fail-safe can
+    reuse the exact same message. Recording the ids with `note_injected` is the
+    caller's job, because only the caller knows whether the block actually
+    reached the model. Never raises: a broken store costs the block, never the
+    turn."""
+    try:
+        from src import memory_engine as _mem_engine
+        if not _mem_engine.injection_enabled():
+            return None, []
+        _mem_budget = _mem_engine.injection_budget()
+        if _mem_budget <= 0:
+            return None, []
+        # Job A: frozen once per session (memory_snapshot_per_session)
+        # instead of rebuilt every turn — see
+        # `memory_engine.pack_for_session`'s docstring.
+        _mem_detail = _mem_engine.pack_for_session(
+            session_id,
+            owner or "",
+            workspace or "",
+            _extract_last_user_message(messages) or "",
+            _mem_budget,
+        )
+        if not _mem_detail.get("text"):
+            return None, []
+        _mem_note = ""
+        if _mem_detail.get("snapshot"):
+            _mem_note = (
+                f"\n\n_(snapshot taken {_mem_detail.get('snapshot_taken_at')}; "
+                "written since then appears next session)_"
+            )
+        if _mem_detail.get("dropped_count"):
+            _mem_note += (
+                f"\n\n_({_mem_detail['dropped_count']} lower-priority item(s) "
+                f"omitted — the block is capped at {_mem_detail.get('cap_chars')} "
+                "chars)_"
+            )
+        message = untrusted_context_message(
+            "learned memory",
+            "These were learned from earlier turns and scored by what happened "
+            "afterwards. Follow the rules; treat anti-patterns as things that "
+            "already went wrong. Correct one with `memory_rules` "
+            "(action='feedback') when it turns out to be right or wrong.\n\n"
+            + _mem_detail["text"] + _mem_note,
+        )
+        return message, [str(i) for i in (_mem_detail.get("ids") or []) if i]
+    except Exception as _mem_err:  # noqa: BLE001 - prompt path, never raise
+        logger.debug(f"learned-memory injection failed (non-fatal): {_mem_err}")
+        return None, []
+
+
+def _is_legacy_memory_standby(message: Any) -> bool:
+    return isinstance(message, dict) and bool(message.get(_LEGACY_MEMORY_STANDBY_KEY))
+
+
+def _is_trailing_turn_context(message: Dict) -> bool:
+    """The two blocks the legacy path places AFTER learned memory: the
+    date/time line and the reply-language directive (see the insertion order
+    at the end of `_build_system_prompt`)."""
+    if message.get("_reply_language"):
+        return True
+    content = message.get("content")
+    if not isinstance(content, str):
+        return False
+    if content.startswith("[Context — current date/time"):
+        return True
+    return content.startswith("[Runtime requirement") and "reply language" in content
+
+
+def _restore_legacy_memory_fallback(messages: List[Dict],
+                                    memory_message: Optional[Dict]) -> Tuple[List[Dict], bool]:
+    """Put the standby learned-memory block back where the legacy path puts it.
+
+    Returns ``(messages, inserted)``. A no-op (``inserted`` False) when there is
+    no standby block, or one is already present — the block is never
+    duplicated. Position: immediately before the date/time and reply-language
+    blocks that precede the latest real user message, i.e. exactly the slot
+    `_build_system_prompt` gives it."""
+    out = list(messages or [])
+    if not memory_message or any(_is_legacy_memory_standby(m) for m in out):
+        return out, False
+    for idx in range(len(out) - 1, -1, -1):
+        if out[idx].get("role") == "user" and not out[idx].get("_agent_injected"):
+            insert_at = idx
+            while insert_at > 0 and _is_trailing_turn_context(out[insert_at - 1]):
+                insert_at -= 1
+            out.insert(insert_at, memory_message)
+            return out, True
+    out.append(memory_message)
+    return out, True
+
+
+#: Callbacks the turn body registers for "the stream ended, for any reason".
+#: `stream_agent_loop` owns the list and runs it after the body is closed, so
+#: a Stop/disconnect (GeneratorExit at a `yield`) still records what the body
+#: had already delivered — today, the Context Engine packet receipts. Each
+#: callback must be idempotent and must not raise.
+_TURN_FINALIZERS: "contextvars.ContextVar[Optional[List[Callable[[], None]]]]" = (
+    contextvars.ContextVar("agent_turn_finalizers", default=None)
+)
 
 
 def _uploaded_files_context_message(uploaded_files: Optional[List[Dict]]) -> Optional[Dict]:
@@ -4118,12 +4244,18 @@ def _build_system_prompt(
     workspace: Optional[str] = None,
     session_id: Optional[str] = None,
     schema_tools: Optional[Set[str]] = None,
+    project_id: Optional[str] = None,
 ) -> List[Dict]:
     """Build agent system prompt, inject MCP/document context, merge consecutive system msgs.
 
     ``session_id`` is only used to remember WHICH learned-memory items were put
     in front of the model this turn (src/memory_engine.py), so the turn's
     verification result can be credited or blamed on exactly those items.
+
+    ``project_id`` is the run's project as the route already resolved it
+    (``harness_options["project_id"]``). The project repos/board blocks use
+    it directly; only when it is None do they fall back to resolving the
+    project from ``session_id`` again.
 
     ``schema_tools`` is the hot subset whose full prompt sections / native
     schemas ship this turn. ``relevant_tools`` remains the executable set;
@@ -4589,11 +4721,18 @@ def _build_system_prompt(
     # own `workspace` is unset or points elsewhere — gated only on having a
     # session/owner to resolve the project from, and on suppress_local_context
     # like every other project-scoped addition here.
-    if not suppress_local_context and session_id and owner:
+    # The route already resolved the run's project (`project_id`, from
+    # harness_options); use it as-is and only re-resolve from the session when
+    # the caller did not pass one.
+    _given_project_id = str(project_id or "").strip()
+    _repos_project_id = ""
+    if not suppress_local_context and owner and (_given_project_id or session_id):
         try:
-            from services.projects import project_for_session as _project_for_session
-            _repos_project = _project_for_session(session_id, owner)
-            _repos_project_id = str((_repos_project or {}).get("id") or "")
+            _repos_project_id = _given_project_id
+            if not _repos_project_id:
+                from services.projects import project_for_session as _project_for_session
+                _repos_project = _project_for_session(session_id, owner)
+                _repos_project_id = str((_repos_project or {}).get("id") or "")
             if _repos_project_id:
                 agent_prompt += _project_repos_block(owner, _repos_project_id)
         except Exception as _repos_block_err:
@@ -4601,13 +4740,13 @@ def _build_system_prompt(
 
     # Lote 92 (OBJ-6) — "Project board": same idea as the repos block just
     # above, for the project's own issue tracker (see _project_board_block).
-    # Reuses `_repos_project_id` when the repos block above already resolved
-    # it for this same turn (same session/owner, so the same project) instead
-    # of resolving the project a second time; falls back to its own lookup
-    # when the repos block was skipped or failed before setting it.
-    if not suppress_local_context and session_id and owner:
+    # Reuses the project id the repos block above used (the caller's
+    # `project_id`, or the one it resolved for this same session/owner)
+    # instead of resolving the project a second time; falls back to its own
+    # lookup when the repos block was skipped or failed before setting it.
+    if not suppress_local_context and owner and (_given_project_id or session_id):
         try:
-            _board_project_id = locals().get("_repos_project_id") or ""
+            _board_project_id = _repos_project_id or _given_project_id
             if not _board_project_id:
                 from services.projects import project_for_session as _project_for_session_board
                 _board_project = _project_for_session_board(session_id, owner)
@@ -4795,54 +4934,34 @@ def _build_system_prompt(
     #     turn's verification result (tests / auto-review, attributed at the
     #     scorecard hook below) lands on exactly the rules that were shown.
     # Wrapped whole: a broken store costs the block, never the turn.
+    #
+    # With the live Context Engine on, the packet owns learned-memory
+    # selection: the block is still built here, at its usual position, but as
+    # a STANDBY (see `_LEGACY_MEMORY_STANDBY_KEY`). The live path in the round
+    # loop removes it when a packet really goes in and restores it when one
+    # does not, so a failed/timed-out/empty packet never leaves a round with
+    # no learned memory, and the same rule is never shown (or credited) twice.
     _legacy_memory_lane = True
     try:
-        # Live Context Engine owns learned-memory selection. Keeping the old
-        # injector too would show and count the same rule twice.
         from src.context_engine import wiring as _context_wiring
         _legacy_memory_lane = not _context_wiring.enabled()
     except Exception:
         _legacy_memory_lane = True
-    if not suppress_local_context and not suppress_personal_memory and _legacy_memory_lane:
-        try:
-            from src import memory_engine as _mem_engine
-            if _mem_engine.injection_enabled():
-                _mem_budget = _mem_engine.injection_budget()
-                if _mem_budget > 0:
-                    # Job A: frozen once per session (memory_snapshot_per_session)
-                    # instead of rebuilt every turn — see
-                    # `memory_engine.pack_for_session`'s docstring.
-                    _mem_detail = _mem_engine.pack_for_session(
-                        session_id,
-                        owner or "",
-                        workspace or "",
-                        _extract_last_user_message(messages) or "",
-                        _mem_budget,
-                    )
-                    if _mem_detail.get("text"):
-                        _mem_note = ""
-                        if _mem_detail.get("snapshot"):
-                            _mem_note = (
-                                f"\n\n_(snapshot taken {_mem_detail.get('snapshot_taken_at')}; "
-                                "written since then appears next session)_"
-                            )
-                        if _mem_detail.get("dropped_count"):
-                            _mem_note += (
-                                f"\n\n_({_mem_detail['dropped_count']} lower-priority item(s) "
-                                f"omitted — the block is capped at {_mem_detail.get('cap_chars')} "
-                                "chars)_"
-                            )
-                        _memory_message = untrusted_context_message(
-                            "learned memory",
-                            "These were learned from earlier turns and scored by what happened "
-                            "afterwards. Follow the rules; treat anti-patterns as things that "
-                            "already went wrong. Correct one with `memory_rules` "
-                            "(action='feedback') when it turns out to be right or wrong.\n\n"
-                            + _mem_detail["text"] + _mem_note,
-                        )
-                        _mem_engine.note_injected(session_id, _mem_detail.get("ids") or [])
-        except Exception as _mem_err:  # noqa: BLE001 - prompt path, never raise
-            logger.debug(f"learned-memory injection failed (non-fatal): {_mem_err}")
+    if not suppress_local_context and not suppress_personal_memory:
+        _memory_message, _memory_ids = _legacy_learned_memory_message(
+            messages, owner=owner, workspace=workspace, session_id=session_id,
+        )
+        if _memory_message is not None:
+            if _legacy_memory_lane:
+                try:
+                    from src import memory_engine as _mem_engine
+                    _mem_engine.note_injected(session_id, _memory_ids)
+                except Exception as _mem_err:  # noqa: BLE001 - prompt path, never raise
+                    logger.debug(f"learned-memory attribution failed (non-fatal): {_mem_err}")
+            else:
+                # Credited only if the live path actually falls back to it.
+                _memory_message[_LEGACY_MEMORY_STANDBY_KEY] = "learned_memory"
+                _memory_message[_LEGACY_MEMORY_IDS_KEY] = list(_memory_ids)
 
     # Integration descriptions — user-editable fields, must not be in system role.
     if not suppress_local_context:
@@ -7789,6 +7908,17 @@ async def _stream_agent_loop_body(
             _partition_seed |= _always_hot
         except Exception:
             pass
+        # OBJ-29: with the live Context Engine on, the packet's footer names
+        # omitted items by `[ctx:<id>]` and tells the model to call
+        # `context_recall`; the tool must then be callable this very turn,
+        # not only after a `lookup_tools` round trip.
+        try:
+            from src.context_engine import wiring as _ce_offer_wiring
+            if _ce_offer_wiring.enabled() and "context_recall" not in disabled_tools:
+                _relevant_tools.add("context_recall")
+                _partition_seed.add("context_recall")
+        except Exception:
+            logger.debug("[context-engine] context_recall not offered", exc_info=True)
         _schema_tools, _deferred_tools = _partition_offer(
             _relevant_tools,
             hot_seed=_partition_seed,
@@ -8253,6 +8383,7 @@ async def _stream_agent_loop_body(
             active_email=active_email,
             workspace=workspace,
             session_id=session_id,
+            project_id=str(_hopts.get("project_id") or "").strip() or None,
         )
         if doc_mode and not plan_mode and not approved_plan and not guide_only:
             route_messages = _minimal_odysseus_doc_messages(
@@ -8401,6 +8532,59 @@ async def _stream_agent_loop_body(
     # A packet is compiled per provider call. Every packet actually inserted
     # gets a receipt after the turn's checks have established the outcome.
     _context_packets_delivered: List[Dict[str, str]] = []
+    # Context Engine fail-safe: the standby learned-memory block this turn's
+    # prompt was built with, and whether it has been credited to the memory
+    # store already (at most once per turn, and only if it was really sent).
+    _ce_legacy_memory_standby: Optional[Dict] = None
+    _ce_legacy_memory_credited = False
+    _context_receipts_flushed = False
+
+    def _flush_context_receipts(*, hsum: Optional[Dict[str, Any]] = None,
+                                verdict: str = "") -> None:
+        """One receipt per delivered packet, with the turn's final messages.
+
+        Idempotent: the normal end of the turn, an early terminal-error
+        return and a cancelled stream (via `_TURN_FINALIZERS`) may all reach
+        it, and each packet is receipted exactly once. Never raises."""
+        nonlocal _context_receipts_flushed
+        if _context_receipts_flushed or not _context_packets_delivered:
+            return
+        _context_receipts_flushed = True
+        try:
+            from src.context_engine import wiring as _ce_wiring
+            _ctx_changeset = (hsum or {}).get("changeset") or {}
+            _ctx_outcome_ref = str(_ctx_changeset.get("id") or session_id or "")
+            _ctx_verdict = str(
+                verdict
+                or _ctx_changeset.get("verdict")
+                or ((hsum or {}).get("tests") or {}).get("status")
+                or (hsum or {}).get("stop_reason")
+                or "complete"
+            )[:64]
+            _seen_context_packets = set()
+            for _ctx_packet in _context_packets_delivered:
+                _ctx_packet_id = _ctx_packet.get("packet_id") or ""
+                if not _ctx_packet_id or _ctx_packet_id in _seen_context_packets:
+                    continue
+                _seen_context_packets.add(_ctx_packet_id)
+                _ce_wiring.observe_receipt(
+                    packet_id=_ctx_packet_id,
+                    request_id=_ctx_packet.get("request_id") or "",
+                    messages=messages,
+                    tool_results=len(tool_events),
+                    outcome_ref=_ctx_outcome_ref,
+                    verdict=_ctx_verdict,
+                )
+        except Exception as _ctx_receipt_err:
+            logger.debug("[context-engine] receipt skipped: %s", _ctx_receipt_err)
+
+    try:
+        _turn_finalizers = _TURN_FINALIZERS.get()
+        if _turn_finalizers is not None:
+            _turn_finalizers.append(
+                lambda: _flush_context_receipts(verdict="interrupted"))
+    except Exception:  # noqa: BLE001 - a receipt is never worth a turn
+        logger.debug("[context-engine] could not register the receipt finalizer")
     _context_turn_id = f"{session_id or 'session'}:{int(total_start * 1000)}"[:128]
     # CMP-04: a compact, deduplicated summary of what the delivered context
     # packets actually put in front of the model this turn — {source, kind,
@@ -9708,12 +9892,30 @@ async def _stream_agent_loop_body(
         # Context Engine live path: one replacement packet per provider call.
         # Conversation and tool results stay in their native roles; only the
         # retrieved packet is replaced between rounds.
+        #
+        # Fail-safe: the legacy learned-memory block rides along as a standby
+        # (see `_LEGACY_MEMORY_STANDBY_KEY`). A delivered packet replaces it;
+        # a round with no packet (None, timeout, crash) gets it back at its
+        # legacy position, so the flag can never silently cost a turn its
+        # memory.
+        _ce_live_enabled = False
         try:
             from src.context_engine import wiring as _ce_live_wiring
-            if _ce_live_wiring.enabled():
+            _ce_live_enabled = bool(_ce_live_wiring.enabled())
+            if _ce_live_enabled:
                 messages = [
                     dict(_message) for _message in messages
                     if _message.get("_agent_injected") != "context_engine"
+                ]
+                for _ce_standby_msg in messages:
+                    if _is_legacy_memory_standby(_ce_standby_msg):
+                        _ce_legacy_memory_standby = _ce_standby_msg
+                        break
+                # The packet is budgeted against the prompt WITHOUT the
+                # standby block it is about to replace.
+                _ce_request_messages = [
+                    _message for _message in messages
+                    if not _is_legacy_memory_standby(_message)
                 ]
                 _ce_live = await _ce_live_wiring.deliver_round(
                     request=_ce_live_wiring.build_request(
@@ -9724,12 +9926,12 @@ async def _stream_agent_loop_body(
                         project_id=str(_hopts.get("project_id") or ""),
                         run_id=str(_hopts.get("run_id") or session_id or ""),
                         turn_id=_context_turn_id,
-                        messages=messages,
+                        messages=_ce_request_messages,
                         agent_mode=True,
                         incognito=bool(_hopts.get("incognito")),
                         no_memory=bool(_hopts.get("no_memory")),
                     ),
-                    messages=messages,
+                    messages=_ce_request_messages,
                     tool_schemas=all_tool_schemas or (),
                     context_length=min(_last_route_context_length or context_length or _turn_input_budget, _turn_input_budget) if _turn_input_budget else (_last_route_context_length or context_length),
                     window_known=bool(_last_route_context_length),
@@ -9737,8 +9939,9 @@ async def _stream_agent_loop_body(
                     round_index=round_num - 1,
                 )
                 if _ce_live:
+                    # The packet replaces the standby learned-memory block.
                     messages = _insert_before_latest_user(
-                        messages, _ce_live["message"])
+                        _ce_request_messages, _ce_live["message"])
                     _active_route_state["messages"] = messages
                     _active_route_state.pop("request_messages", None)
                     _active_route_state["tools"] = all_tool_schemas
@@ -9793,6 +9996,33 @@ async def _stream_agent_loop_body(
         except Exception as _ce_err:
             logger.warning("[context-engine] live packet skipped: %s", _ce_err,
                            exc_info=True)
+        # No packet went into this round (None, timeout, crash, or an
+        # exception above): the legacy learned-memory block comes back, same
+        # tag/lane/position, never twice, credited once per turn.
+        if _ce_live_enabled and not any(
+            _message.get("_agent_injected") == "context_engine" for _message in messages
+        ):
+            try:
+                messages, _ce_restored = _restore_legacy_memory_fallback(
+                    messages, _ce_legacy_memory_standby)
+                if _ce_restored:
+                    _active_route_state["messages"] = messages
+                    if round_num != 1:
+                        _active_route_state.pop("request_messages", None)
+                if (_ce_legacy_memory_standby is not None
+                        and not _ce_legacy_memory_credited
+                        and any(_is_legacy_memory_standby(_m) for _m in messages)):
+                    _ce_legacy_memory_credited = True
+                    _ce_fallback_ids = list(
+                        _ce_legacy_memory_standby.get(_LEGACY_MEMORY_IDS_KEY) or [])
+                    if _ce_fallback_ids:
+                        from src import memory_engine as _mem_engine
+                        _mem_engine.note_injected(session_id, _ce_fallback_ids)
+                    logger.info("[context-engine] no packet in round %s; legacy "
+                                "learned memory kept as fallback", round_num)
+            except Exception as _ce_fallback_err:
+                logger.debug("[context-engine] learned-memory fallback skipped: %s",
+                             _ce_fallback_err)
         agent_stream_timeout = int(get_setting("agent_stream_timeout_seconds", 300) or 300)
         # Local runners can sit silent for minutes while they prefill a long
         # prompt (qwen3-coder-next on a 12 GB card: ~280 s for 14k tokens). The
@@ -10314,6 +10544,8 @@ async def _stream_agent_loop_body(
                 # A terminal provider/request failure is not a completed Agent
                 # round.  Stop before empty-response synthesis, metrics,
                 # teacher escalation, post-processing, or a success [DONE].
+                # Packets already delivered this turn still get their receipt.
+                _flush_context_receipts(verdict="error")
                 return
             if chunk.startswith("data: ") and not chunk.startswith("data: [DONE]"):
                 try:
@@ -11163,6 +11395,7 @@ async def _stream_agent_loop_body(
                             "event: error\n"
                             f"data: {json.dumps({'error': _failure_message, 'status': 502, 'fallback_eligible': False})}\n\n"
                         )
+                        _flush_context_receipts(verdict="error")
                         return
             elif _hc_text != _hc_raw:
                 # Prose that started by parroting the separator — keep the body.
@@ -14340,33 +14573,7 @@ async def _stream_agent_loop_body(
 
     # Receipts are recorded only after verification, so their verdict is an
     # observed turn result rather than a prediction made before tools ran.
-    if _context_packets_delivered:
-        try:
-            from src.context_engine import wiring as _ce_wiring
-            _ctx_changeset = (_hsum or {}).get("changeset") or {}
-            _ctx_outcome_ref = str(_ctx_changeset.get("id") or session_id or "")
-            _ctx_verdict = str(
-                _ctx_changeset.get("verdict")
-                or ((_hsum or {}).get("tests") or {}).get("status")
-                or (_hsum or {}).get("stop_reason")
-                or "complete"
-            )[:64]
-            _seen_context_packets = set()
-            for _ctx_packet in _context_packets_delivered:
-                _ctx_packet_id = _ctx_packet.get("packet_id") or ""
-                if not _ctx_packet_id or _ctx_packet_id in _seen_context_packets:
-                    continue
-                _seen_context_packets.add(_ctx_packet_id)
-                _ce_wiring.observe_receipt(
-                    packet_id=_ctx_packet_id,
-                    request_id=_ctx_packet.get("request_id") or "",
-                    messages=messages,
-                    tool_results=len(tool_events),
-                    outcome_ref=_ctx_outcome_ref,
-                    verdict=_ctx_verdict,
-                )
-        except Exception as _ctx_receipt_err:
-            logger.debug("[context-engine] receipt skipped: %s", _ctx_receipt_err)
+    _flush_context_receipts(hsum=_hsum)
 
     # Context receipts (CMP-04): a compact "what was used and why" summary,
     # attached to `metrics` below the same way `harness`/`web_sources` already
@@ -14624,12 +14831,25 @@ async def stream_agent_loop(*args, **kwargs) -> AsyncGenerator[str, None]:
         logger.debug("stream_agent_loop: model pin skipped", exc_info=True)
     from src import tool_clock as _tool_clock
     _clock_token = _tool_clock.begin_turn()
+    _finalizers: List[Callable[[], None]] = []
+    _finalizers_token = _TURN_FINALIZERS.set(_finalizers)
     gen = _stream_agent_loop_body(*args, **kwargs)
     try:
         async for chunk in gen:
             yield chunk
     finally:
         await gen.aclose()
+        for _finalize in list(_finalizers):
+            try:
+                _finalize()
+            except Exception:  # noqa: BLE001 - cleanup never masks the outcome
+                logger.debug("stream_agent_loop: turn finalizer failed", exc_info=True)
+        try:
+            _TURN_FINALIZERS.reset(_finalizers_token)
+        except (ValueError, RuntimeError):
+            # Reset from a different context (the consumer closed the stream
+            # from another task): the value dies with this wrapper anyway.
+            _TURN_FINALIZERS.set(None)
         _tool_clock.end_turn(_clock_token)
         if _pin_token is not None:
             try:

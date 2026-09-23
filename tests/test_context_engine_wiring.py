@@ -501,7 +501,10 @@ def test_the_shadow_measures_the_schemas_that_are_actually_sent():
 
 
 def test_the_shadow_call_can_never_break_a_round():
-    block = LOOP[LOOP.index("from src.context_engine import wiring as _ce_wiring"):]
+    # Anchored on the shadow call itself: the same import line also opens the
+    # (earlier) turn-end receipt helper, which has its own try/except.
+    start = LOOP.index("_ce_wiring.shadow_enabled() and not _ce_wiring.enabled()")
+    block = LOOP[LOOP.rindex("try:", 0, start):]
     assert "except Exception as _ce_err" in block[:2200]
 
 
