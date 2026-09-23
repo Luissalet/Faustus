@@ -241,7 +241,11 @@ MUTATION_CLAIM_PATTERNS: List[re.Pattern] = [
     # user said "te la marco como otra vez" and called no tool at all. The
     # object clitic is required so "el marco de 226 mm" (a frame) and a
     # person called Marco stay out.
-    re.compile(r"\b(?:te\s+)?(?:la|lo|las|los|le|les)\s+(?:he\s+|hemos\s+)?(?:marco|marcamos|marcad[oa]s?|apunto|apuntamos|apuntad[oa]s?|anoto|anotamos|anotad[oa]s?|registro|registramos|registrad[oa]s?|califico|calificamos|calificad[oa]s?)\b", re.IGNORECASE),
+    # Present tense only with "como/en/con" after it ("te la marco como otra
+    # vez", "lo apunto en tu mazo"): "contesta cuando quieras y la califico"
+    # is a promise, not a claim — seen live as a false rejection.
+    re.compile(r"\b(?:te\s+)?(?:la|lo|las|los)\s+(?:marco|marcamos|apunto|apuntamos|anoto|anotamos|registro|registramos)\s+(?:como|en|con)\b", re.IGNORECASE),
+    re.compile(r"\b(?:te\s+)?(?:la|lo|las|los|le|les)\s+(?:he|hemos)\s+(?:marcad[oa]s?|apuntad[oa]s?|anotad[oa]s?|registrad[oa]s?|calificad[oa]s?)\b", re.IGNORECASE),
     re.compile(r"\b(?:le\s+|les\s+)?(?:he\s+|hemos\s+)?(?:puesto|pongo|ponemos)\s+(?:una\s+|la\s+)?nota\b", re.IGNORECASE),
     re.compile(r"\bI(?:'ve|\s+have)?\s+(?:just\s+|now\s+)?(?:marked|graded|logged|recorded|noted)\s+(?:it|that|this|the\s+card|the\s+answer)\b", re.IGNORECASE),
     # English

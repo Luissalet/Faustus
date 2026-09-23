@@ -75,6 +75,9 @@ def test_record_keeping_claims_need_an_effect(tmp_path):
         "El más grande es el marco de 226 mm.",
         "Marco Ejemplo es tu vecina.",
         "¿Quieres que la marque como difícil?",
+        # a promise about the next answer, not a claim (seen live as a false rejection)
+        "Contesta cuando quieras y la califico.",
+        "Cuando respondas la marco.",
     ):
         assert not h.find_mutation_claims(text), text
     ledger = h.TurnLedger(str(tmp_path), "No me acuerdo.")

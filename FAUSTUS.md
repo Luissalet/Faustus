@@ -7631,6 +7631,40 @@ Borges como plantilla; el revisor humano (esta sesión) arregló el reverso
 sin renderizar en la lista y la previsión que pisaba su título, y probó
 el flujo de repaso con Playwright antes de enviarla al PC.
 
+Probada como usuario con una conversación de varios turnos (`convo3.py`,
+una sesión): «busca en mi biblioteca qué dice sobre plugins y hazme 4
+tarjetas» → siete `library_search` + `cards_add` con fuente
+`api/plugins.md § …` (506 s: el llama-server lo comparten tres chats);
+«examíname» → `cards_due` → pregunta; la respuesta → `card_review` →
+siguiente; «no me acuerdo» → «otra vez». Tres cosas más salieron de ahí:
+
+- **La respuesta del usuario cambiaba las herramientas del turno.** «Creo
+  que era el fichero plugin.json» se clasificó como dominio *files*, el
+  turno recibió `read_file` y `ls`, y la herramienta de calificar
+  desapareció: 90 s de razonamiento y un `lookup_tools` para recuperarla.
+  Ahora las herramientas de todo servidor MCP que el asistente haya usado
+  en sus tres últimos turnos se quedan en la selección (tope 30), diga lo
+  que diga el clasificador del último mensaje (`_sticky_mcp_tool_names`,
+  `tests/test_sticky_plugin_tools.py`). Con ello: 50/43/43 s por turno.
+- **Una cita salida de un plugin contaba como ruta inventada.** «He creado
+  4 tarjetas de `api/plugins.md`» → `fabricated_paths`, porque sólo los
+  resultados de `ls`/`grep`/`read_file` fundamentaban rutas. Los de
+  `mcp__*` también.
+- **«Te la marco como otra vez» sin llamar a nada.** A un «no me acuerdo»
+  el modelo contestó que la marcaba, inventó el reverso y no llamó a
+  `card_review`. Los patrones de afirmación sólo conocían el perfecto y el
+  pretérito del trabajo con ficheros; ahora «te la marco», «la he marcado
+  como difícil», «le he puesto nota», «lo apunto» cuentan (con clítico
+  obligatorio: el marco de 226 mm y una vecina llamada Marco quedan fuera)
+  y el contexto «técnico» sabe lo que guardan las apps del usuario (mazos,
+  tarjetas, recordatorios, enlaces, gastos, contactos, fichas).
+
+Y una del modelo que la app ataja: calificó la tarjeta 1 habiendo mostrado
+la 2. `card_review` pide ahora el id **y** el frente mostrado y rechaza
+la llamada si no casan, diciendo de qué tarjeta es ese frente; en la
+segunda vuelta el 27B pasó el frente, inventó un id inexistente, recibió
+el 404, volvió a `cards_due` y calificó la buena.
+
 Iconos, segunda vuelta: los ocho tenían un anillo semitransparente donde
 estaba el botón del icono original (el borde negro del botón se leía como
 esquina redondeada y se hacía transparente) y el triángulo blanco del
@@ -7650,11 +7684,13 @@ Regenerados los ocho en `Icons\` y en cada app.
   pero nadie las arranca al iniciar sesión: hoy es `hoards_start.ps1` a mano
   o el perfil desde Faustus. El 7003 y `faustus-hoards-data` son de pruebas
   y no deben quedarse.
-- El 7000 arrancó antes de los tres arreglos de esta tanda
-  (`mcp_tool_looks_mutating`, la nota en lugar de la tarjeta, los nombres
-  pelados en `lookup_tools`): hasta que se reinicie sigue rechazando
-  respuestas verdaderas tras una herramienta MCP que escribe y repitiendo
-  la tarjeta tras aprobar.
+- El 7000 arrancó antes de los arreglos de esta tanda (`00ba4dc0`,
+  `5a507d3e`, `31722cf1`, `cf05e543`: efectos MCP, nota en lugar de la
+  tarjeta, nombres pelados, herramientas pegajosas, rutas de resultados
+  MCP, afirmaciones de registro) y antes de `plugins/hypatia/`: hasta que
+  se reinicie sigue con el comportamiento viejo y no conoce el preset
+  `hypatia` (el perfil de arranque ya está creado; `setup7000.py 7000
+  --user admin --password …` adopta y conecta al reiniciar).
 - Scribe: la primera grabación real no captó voz (silencio): probar con una
   llamada de verdad; Borges: indexar una carpeta grande (apuntes del máster) y
   medir; Argus: retención y tamaño en disco tras un día entero; Links: la
