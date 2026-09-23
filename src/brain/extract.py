@@ -537,4 +537,27 @@ async def extract_pending(owner: Any, *, limit: Optional[int] = None, budget_s: 
     return report
 
 
-__all__ = ["extract_source", "extract_pending"]
+def count_pending(owner: Any) -> int:
+    """How many sources have not been through the rule pass since their text
+    last changed — the cheap number `GET /api/brain/status` shows, without
+    running the extraction itself. Same source list and hash comparison
+    `extract_pending` uses; never raises."""
+    owner = str(owner or "")
+    if not owner:
+        return 0
+    try:
+        sources = _gather_sources(owner)
+    except Exception as exc:  # noqa: BLE001 - a status number must not 500
+        logger.debug("brain.extract: count_pending could not gather sources (%s)", exc)
+        return 0
+    count = 0
+    for src in sources:
+        try:
+            if _extraction_hash(owner, src["source_ref"], "rule") != sha(src["text"]):
+                count += 1
+        except Exception:  # noqa: BLE001
+            continue
+    return count
+
+
+__all__ = ["extract_source", "extract_pending", "count_pending"]

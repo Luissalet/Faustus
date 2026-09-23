@@ -860,6 +860,14 @@ app.include_router(setup_evolution_routes())
 from routes.context_engine_routes import setup_context_engine_routes
 app.include_router(setup_context_engine_routes())
 
+# The second brain: a markdown vault (`src/brain/`) mirroring memories,
+# personal notes and typed entities into human-editable files, plus free
+# notes, a note graph and entity relations over time. Owner-scoped like the
+# memory routes above — any authenticated user reads and writes their own
+# vault; only PUT /settings (an admin-wide default) is admin-only.
+from routes.brain_routes import setup_brain_routes
+app.include_router(setup_brain_routes())
+
 # find_symbol/callers/tests_for HTTP surface (Lote 38, IDX-02/IDX-03).
 from routes.code_index_routes import setup_code_index_routes
 app.include_router(setup_code_index_routes())
@@ -1582,9 +1590,9 @@ async def serve_email(request: Request):
 async def serve_memory(request: Request):
     return await serve_index(request)
 
-# `/gallery`, `/tasks` and `/brain` are the paths the interface this one
-# replaced used to own. They stay served — they are in bookmarks — and the
-# shell's router sends each to the screen that took the job over.
+# `/gallery` and `/tasks` are paths the interface this one replaced used to
+# own. They stay served — they are in bookmarks — and the shell's router
+# sends each to the screen that took the job over.
 @app.get("/gallery")
 async def serve_gallery(request: Request):
     return await serve_index(request)
@@ -1593,6 +1601,9 @@ async def serve_gallery(request: Request):
 async def serve_tasks(request: Request):
     return await serve_index(request)
 
+# `/brain` is the deep link to the Brain screen (the markdown vault, its
+# entities and its graph, `src/brain/`) — a client-side route, so a reload or
+# a pasted link here has to come back with the shell rather than a 404.
 @app.get("/brain")
 async def serve_brain(request: Request):
     return await serve_index(request)

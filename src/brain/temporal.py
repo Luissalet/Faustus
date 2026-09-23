@@ -39,10 +39,13 @@ Nothing here touches a store or calls a model — this is a pure function of
 from __future__ import annotations
 
 import calendar
+import logging
 import re
 import unicodedata
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Vocabulary
@@ -305,4 +308,80 @@ def parse_temporal(text: Any, *, now: Optional[datetime] = None) -> Dict[str, An
     }
 
 
-__all__ = ["parse_temporal"]
+def timeline(owner: Any, *, query: str = "", limit: int = 200) -> List[Dict[str, Any]]:
+    """A cross-entity timeline for `GET /api/brain/timeline` when no single
+    entity is named: memory items (created/valid_from/valid_until/corrected)
+    plus every relation's validity window, newest first.
+
+    Lot B's own note (see B_wiring.md) is that `memory_engine` has no
+    store-wide timeline of its own — reconstructing one from tombstoned rows
+    would need text `correct()` already discards. This composes from what
+    IS still readable: `memory_engine.list_items` (each item carries its own
+    `created_at`/`valid_from`/`valid_until`, and a `provenance.corrected_from`
+    when it replaced an older item) and `entities.list_relations` (each
+    relation's own window). `entities.profile(id)["timeline"]` remains the
+    per-entity view this composes nothing from — it is already complete.
+
+    Never raises: one store being unavailable costs its half of the
+    timeline, not the whole answer.
+    """
+    owner = str(owner or "")
+    events: List[Dict[str, Any]] = []
+    if not owner:
+        return events
+
+    from .db import fold
+
+    q_fold = fold(query) if query else ""
+
+    try:
+        from src import memory_engine as engine
+
+        for item in engine.list_items(owner=owner, limit=2000):
+            text = str(item.get("text") or "")
+            if q_fold and q_fold not in fold(text):
+                continue
+            item_id = str(item.get("id") or "")
+            source_ref = f"mem:{item_id}" if item_id else ""
+            if item.get("created_at"):
+                events.append({"at": item["created_at"], "kind": "created",
+                               "item_id": item_id, "text": text, "source_ref": source_ref})
+            if item.get("valid_from"):
+                events.append({"at": item["valid_from"], "kind": "valid_from",
+                               "item_id": item_id, "text": text, "source_ref": source_ref})
+            if item.get("valid_until"):
+                events.append({"at": item["valid_until"], "kind": "valid_until",
+                               "item_id": item_id, "text": text, "source_ref": source_ref})
+            provenance = item.get("provenance") or {}
+            if isinstance(provenance, dict) and provenance.get("corrected_from"):
+                at = item.get("created_at") or item.get("updated_at") or ""
+                if at:
+                    events.append({"at": at, "kind": "corrected", "item_id": item_id,
+                                   "text": text, "source_ref": source_ref})
+    except Exception:  # noqa: BLE001 - half a timeline beats none
+        logger.debug("brain.temporal: timeline could not read memory_engine", exc_info=True)
+
+    try:
+        from .entities import list_relations
+
+        for rel in list_relations(owner, include_closed=True):
+            label = f"{rel.get('rel', '')} {rel.get('dst_value') or rel.get('dst') or ''}".strip()
+            if q_fold and q_fold not in fold(label):
+                continue
+            rel_id = str(rel.get("id") or "")
+            source_ref = f"rel:{rel_id}" if rel_id else ""
+            if rel.get("valid_from"):
+                events.append({"at": rel["valid_from"], "kind": "valid_from",
+                               "item_id": rel_id, "text": label, "source_ref": source_ref})
+            if rel.get("valid_until"):
+                events.append({"at": rel["valid_until"], "kind": "valid_until",
+                               "item_id": rel_id, "text": label, "source_ref": source_ref})
+    except Exception:  # noqa: BLE001
+        logger.debug("brain.temporal: timeline could not read entities", exc_info=True)
+
+    events = [e for e in events if e.get("at")]
+    events.sort(key=lambda e: e["at"], reverse=True)
+    return events[: max(1, int(limit or 200))]
+
+
+__all__ = ["parse_temporal", "timeline"]
