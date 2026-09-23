@@ -697,6 +697,159 @@ async def _extract_llm_batch(owner: str, batch: Sequence[Dict[str, Any]],
     return True
 
 
+# ---------------------------------------------------------------------------
+# Typing pass — background only, one typed decision per untyped entity
+# ---------------------------------------------------------------------------
+
+#: What each entity type means, shown next to its letter.
+ENTITY_TYPE_DESCRIPTIONS: Dict[str, str] = {
+    "person": "a specific human being (or a pet)",
+    "project": "a named project, product being built, or initiative",
+    "organization": "a company, team, institution, club or public body",
+    "place": "a city, country, address, building or geographic place",
+    "tool": "software, a programming language, a library, an app or a device",
+    "concept": "an idea, topic, method or field of knowledge",
+    "event": "a named event, meeting, trip, release or occasion",
+    "other": "none of the above, or impossible to tell from the text",
+}
+
+_TYPED_TRIED_KEY = "typed_decision_types_tried"
+_TYPED_DONE_KEY = "typed_decision_types"
+_TYPED_TRIED_CAP = 5000
+#: A background decision is not racing a person; it gets more room than the
+#: chat hot path's `typed_decision_timeout_ms`, but still a hard ceiling.
+_TYPING_TIMEOUT_S = 8.0
+
+
+def entity_type_field(name: str) -> Any:
+    from src.typed_decision import Field
+    return Field(
+        name="type",
+        question=f'In this text, what kind of thing is "{name}"?',
+        choices=list(TYPES),
+        descriptions={t: ENTITY_TYPE_DESCRIPTIONS.get(t, "") for t in TYPES},
+    )
+
+
+def _sentence_for(name: str, aliases: Sequence[str], text: str) -> str:
+    """The first sentence of `text` naming the entity (or its alias), or ""."""
+    terms = [fold(t) for t in [name, *aliases] if fold(t)]
+    for sentence in _split_sentences(text):
+        sf = fold(sentence)
+        if any(_occurs(t, sf) for t in terms):
+            return sentence[:600]
+    return ""
+
+
+def _untyped_entities(owner: str, limit: int) -> List[Dict[str, Any]]:
+    with db() as conn:
+        rows = conn.execute(
+            "SELECT id, name, aliases FROM entities WHERE owner = ? AND type = 'other' "
+            "AND hidden = 0 AND merged_into = '' ORDER BY updated_at DESC LIMIT ?",
+            (owner, max(1, int(limit)) * 4),
+        ).fetchall()
+    out = []
+    for row in rows:
+        try:
+            aliases = json.loads(row["aliases"] or "[]")
+        except (TypeError, ValueError):
+            aliases = []
+        out.append({"id": row["id"], "name": row["name"], "aliases": aliases})
+    return out
+
+
+def _typing_meta(owner: str) -> Tuple[Dict[str, str], Dict[str, Any]]:
+    from src.brain.entities import _meta_get
+    with db() as conn:
+        tried = _meta_get(conn, owner, _TYPED_TRIED_KEY, {}) or {}
+        done = _meta_get(conn, owner, _TYPED_DONE_KEY, {}) or {}
+    return (tried if isinstance(tried, dict) else {}), (done if isinstance(done, dict) else {})
+
+
+def _save_typing_meta(owner: str, tried: Dict[str, str], done: Dict[str, Any]) -> None:
+    from src.brain.entities import _meta_set
+    if len(tried) > _TYPED_TRIED_CAP:
+        tried = dict(list(tried.items())[-_TYPED_TRIED_CAP:])
+    if len(done) > _TYPED_TRIED_CAP:
+        done = dict(list(done.items())[-_TYPED_TRIED_CAP:])
+    with db() as conn:
+        _meta_set(conn, owner, _TYPED_TRIED_KEY, tried)
+        _meta_set(conn, owner, _TYPED_DONE_KEY, done)
+
+
+async def type_untyped_entities(owner: Any, sources: Sequence[Dict[str, Any]],
+                                report: Dict[str, Any], *, limit: int = 8,
+                                deadline: Optional[float] = None) -> int:
+    """Give entities left as ``other`` (the rule pass always creates them so;
+    the model pass does when it was unsure) a type chosen by a typed decision
+    over the sentence that names them. Background only: the same
+    :func:`background_llm_gate` as the model pass is asked before EACH call,
+    and a type is changed only while the entity is still ``other`` (a person
+    who typed it by hand always wins) and only on a confident log-probability
+    answer. Each (entity, sentence) pair is asked once; what was changed is
+    kept in ``brain_meta`` (``typed_decision_types``) so it can be audited.
+    Returns how many entities got a type; never raises."""
+    owner = str(owner or "")
+    typed_count = 0
+    try:
+        from src import typed_decision
+        if not typed_decision.enabled() or not bool(_get_setting("typed_decision_entity_types", True)):
+            return 0
+        from src.endpoint_resolver import resolve_endpoint
+        url, model, _headers = resolve_endpoint("utility", owner=owner)
+        texts = {str(s.get("source_ref") or ""): str(s.get("text") or "") for s in sources}
+        tried, done = _typing_meta(owner)
+        candidates = _untyped_entities(owner, limit)
+        asked = 0
+        from src.brain.entities import get_entity, sources_for, update_entity
+        for ent in candidates:
+            if asked >= limit or (deadline is not None and time.monotonic() > deadline):
+                break
+            if fold(ent["name"]) in SELF_WORDS + SELF_EXTRA_ALIASES:
+                continue
+            sentence = ""
+            for ref in sources_for(ent["id"]):
+                sentence = _sentence_for(ent["name"], ent.get("aliases") or [], texts.get(ref, ""))
+                if sentence:
+                    break
+            if not sentence:
+                continue
+            key = sha(sentence)
+            if tried.get(ent["id"]) == key:
+                continue
+            reason = background_llm_gate(url, model)
+            if reason:
+                report["typing_skipped"] = reason
+                break
+            asked += 1
+            decisions = await typed_decision.decide(
+                sentence, [entity_type_field(ent["name"])], owner=owner, purpose="utility",
+                timeout_s=max(typed_decision.default_timeout_s(), _TYPING_TIMEOUT_S),
+                caller="brain_entity_type",
+            )
+            decision = decisions.get("type")
+            if decision is None or decision.method == "unavailable":
+                # Nothing was asked of the model: try again on a later sweep.
+                if decision is not None:
+                    report["typing_skipped"] = decision.reason or "unavailable"
+                break
+            tried[ent["id"]] = key
+            if decision.method != "logprobs" or not decision.value or decision.value == "other":
+                continue
+            current = get_entity(ent["id"])
+            if not current or current.get("type") != "other":
+                continue
+            update_entity(ent["id"], type=decision.value)
+            done[ent["id"]] = {"type": decision.value, "confidence": decision.confidence,
+                               "mass": decision.mass, "at": now_iso()}
+            typed_count += 1
+        _save_typing_meta(owner, tried, done)
+    except Exception as exc:  # noqa: BLE001 - a background pass never raises
+        logger.debug("brain.extract: typing pass failed (%s)", exc)
+    report["typed"] = int(report.get("typed") or 0) + typed_count
+    return typed_count
+
+
 async def extract_pending(owner: Any, *, limit: Optional[int] = None, budget_s: float = 20.0,
                           use_llm: Optional[bool] = None,
                           background: bool = True) -> Dict[str, Any]:
@@ -771,6 +924,11 @@ async def extract_pending(owner: Any, *, limit: Optional[int] = None, budget_s: 
                     report["llm_used"] = True
                 if report.get("llm_skipped"):
                     break
+        # Typing pass: only in the unattended sweep, only when model passes
+        # are allowed at all, and never after the gate already said no.
+        if (background and use_llm_flag and not report.get("llm_skipped")
+                and time.monotonic() - start <= budget_s):
+            await type_untyped_entities(owner, sources, report, deadline=start + budget_s)
     except Exception as exc:  # noqa: BLE001 - a background sweep must never raise
         logger.debug("brain.extract: extract_pending failed (%s)", exc)
         report["errors"] += 1

@@ -87,6 +87,101 @@ def test_freshness_assessment_never_changes_the_rule_verdict():
         assert a["time_sensitive"] == freshness.looks_time_sensitive(text)
 
 
+# ── wiring: brain entity typing ─────────────────────────────────────────────
+
+@pytest.fixture()
+def brain(tmp_path, monkeypatch, endpoint):
+    from src.brain import db as brain_db
+    from src import memory_engine as engine
+    brain_db.use_dir(str(tmp_path / "brain"))
+    monkeypatch.setattr(engine, "DATA_DIR", str(tmp_path / "engine"))
+    monkeypatch.setattr("src.constants.DATA_DIR", str(tmp_path / "engine"))
+    engine.set_vector_store(None)
+    monkeypatch.setattr("src.context_engine.maintenance.should_yield", lambda: False)
+
+    async def _no_llm(*a, **k):
+        return json.dumps({"entities": [], "relations": []})
+
+    monkeypatch.setattr("src.llm_core.llm_call_async", _no_llm)
+    yield engine
+    brain_db.use_dir(None)
+    engine.reset_vector_store()
+
+
+def _type_answer(letter: str, p: float = 0.92):
+    others = [chr(ord("A") + i) for i in range(8) if chr(ord("A") + i) != letter]
+    rest = (1 - p - 0.02) / len(others)
+    return openai_body([{"token": letter, "logprob": _lp(p)}]
+                       + [{"token": o, "logprob": _lp(rest)} for o in others], content=letter)
+
+
+def test_extract_types_an_other_entity_in_the_background(monkeypatch, brain):
+    from src.brain import entities, extract
+    # organization is the third type (C)
+    server = serve(monkeypatch, lambda p: (200, _type_answer("C")))
+    brain.add_item("Ada works at Cordera Labs", owner="ada", trust_class="human_explicit")
+    report = run(extract.extract_pending("ada", use_llm=True))
+    labs = [e for e in entities.list_entities("ada") if e["name"] == "Cordera Labs"]
+    assert labs and labs[0]["type"] == "organization"
+    assert report["typed"] >= 1
+    asked = [r for r in server.requests if "Cordera Labs" in r["payload"]["messages"][1]["content"]]
+    assert asked and "Ada works at Cordera Labs" in asked[0]["payload"]["messages"][1]["content"]
+    # asked once: a second sweep over the same sentence asks nothing new
+    n = len(server.requests)
+    run(extract.extract_pending("ada", use_llm=True))
+    assert len(server.requests) == n
+
+
+def test_extract_typing_respects_the_gate_and_low_confidence(monkeypatch, brain):
+    from src.brain import entities, extract
+    brain.add_item("Ada works at Cordera Labs", owner="ada", trust_class="human_explicit")
+    # not resident: nothing asked, type unchanged
+    brain_state = {"resident": ["another-model:70b"]}
+    monkeypatch.setattr("src.background_job_guard._resident_model_names",
+                        lambda url: brain_state["resident"])
+    server = serve(monkeypatch, lambda p: (200, _type_answer("C")))
+    run(extract.extract_pending("ada", use_llm=True))
+    assert server.requests == []
+    assert all(e["type"] == "other" for e in entities.list_entities("ada")
+               if e["name"] == "Cordera Labs")
+    # resident but unsure: asked, nothing changed
+    brain_state["resident"] = [MODEL]
+    server = serve(monkeypatch, lambda p: (200, openai_body(
+        [{"token": "C", "logprob": _lp(0.4)}, {"token": "A", "logprob": _lp(0.35)}], content="C")))
+    run(extract.extract_pending("ada", use_llm=True))
+    assert server.requests
+    assert all(e["type"] == "other" for e in entities.list_entities("ada")
+               if e["name"] == "Cordera Labs")
+
+
+def test_extract_typing_only_in_background_and_setting_off(monkeypatch, brain, settings):
+    from src.brain import extract
+    brain.add_item("Ada works at Cordera Labs", owner="ada", trust_class="human_explicit")
+    server = serve(monkeypatch, lambda p: (200, _type_answer("C")))
+    run(extract.extract_pending("ada", use_llm=True, background=False))
+    assert server.requests == []
+    settings["typed_decision_entity_types"] = False
+    run(extract.extract_pending("ada", use_llm=True))
+    assert server.requests == []
+
+
+def test_typing_never_overrides_a_type_set_meanwhile(monkeypatch, brain):
+    from src.brain import entities, extract
+    brain.add_item("Ada works at Cordera Labs", owner="ada", trust_class="human_explicit")
+    run(extract.extract_pending("ada", use_llm=False))
+    labs = [e for e in entities.list_entities("ada") if e["name"] == "Cordera Labs"][0]
+
+    def responder(p):
+        entities.update_entity(labs["id"], type="project")  # a person typed it by hand
+        return 200, _type_answer("C")
+
+    serve(monkeypatch, responder)
+    sources = [{"source_ref": r, "text": "Ada works at Cordera Labs"} for r in entities.sources_for(labs["id"])]
+    report = {}
+    run(extract.type_untyped_entities("ada", sources, report))
+    assert entities.get_entity(labs["id"])["type"] == "project"
+
+
 def test_chat_route_uses_the_freshness_decision_on_the_hot_path():
     """The chat route asks `decide_freshness` (rule first, typed decision only
     when the rule is unsure) where it used to ask the bare keyword rule, and
