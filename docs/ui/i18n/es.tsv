@@ -8230,3 +8230,104 @@ universal	universal
 {n} pieces of evidence	{n} evidencias
 {n} projects · mean confidence {pct}%	{n} proyectos · confianza media {pct}%
 {n} words	{n} palabras
+Brain	Cerebro
+Adds a background model pass on top of the deterministic one; never blocks a chat turn.	Añade un paso de modelo en segundo plano sobre el determinista; nunca bloquea un turno de chat.
+Aliases	Alias
+An updated fact closes the previous one instead of leaving both open.	Un hecho actualizado cierra el anterior en lugar de dejar ambos abiertos.
+As of	A fecha de
+As of date	Fecha de referencia
+Backlinks	Enlaces entrantes
+Breadcrumbs	Migas de pan
+Clear kind filters	Quitar filtros de tipo
+Context source	Fuente de contexto
+Delete this note	Eliminar esta nota
+Delete this note?	¿Eliminar esta nota?
+Deleted notes, and anything a sync removed on the other side, land here.	Aquí llegan las notas eliminadas y todo lo que una sincronización haya quitado al otro lado.
+Depth	Profundidad
+Deterministic first: relations and facts come from stored records, not from a model asserting them.	Determinista antes que nada: las relaciones y los hechos vienen de registros guardados, no de una afirmación de un modelo.
+Discard and continue	Descartar y continuar
+Discard unsaved changes?	¿Descartar los cambios sin guardar?
+Empty uses the default location under the data directory.	Vacío usa la ubicación por defecto dentro del directorio de datos.
+Entities	Entidades
+Entity extraction	Extracción de entidades
+Entity summaries	Resúmenes de entidades
+Facts	Hechos
+Filter the graph	Filtrar el grafo
+Filter the graph…	Filtrar el grafo…
+Finds entities and relations in memories and notes, deterministically.	Encuentra entidades y relaciones en memorias y notas, de forma determinista.
+Generated — read-only, replaced on the next sync	Generado — solo lectura, se reemplaza en la próxima sincronización
+Generated — replaced on the next sync	Generado — se reemplaza en la próxima sincronización
+Graph scope	Alcance del grafo
+Graph view	Vista de grafo
+History ({n} closed)	Historial ({n} cerradas)
+It moves to the trash and can be restored from there.	Se mueve a la papelera y se puede restaurar desde allí.
+Jump to a note	Ir a una nota
+Jump to a note…	Ir a una nota…
+Last sync	Última sincronización
+Lets a background model write the 2-5 sentence entity summary, each claim cited.	Permite que un modelo en segundo plano escriba el resumen de la entidad (2-5 frases), cada afirmación citada.
+Local graph depth	Profundidad del grafo local
+Local to this note	Local a esta nota
+Model-assisted extraction	Extracción asistida por modelo
+Never synced yet	Aún no se ha sincronizado
+No facts recorded yet.	Todavía no hay hechos registrados.
+No note matches "{query}".	Ninguna nota coincide con «{query}».
+No note open	Ninguna nota abierta
+No relation is valid at this date.	Ninguna relación es válida en esta fecha.
+No summary yet — refresh once there are facts recorded.	Aún no hay resumen — actualízalo cuando haya hechos registrados.
+No tags yet.	Todavía no hay etiquetas.
+Not created yet	Aún no creada
+Note body	Cuerpo de la nota
+Note details	Detalles de la nota
+Note graph: {n} nodes, {e} edges	Grafo de notas: {n} nodos, {e} enlaces
+Nothing in the trash	No hay nada en la papelera
+Nothing links here yet.	Todavía nada enlaza aquí.
+Nothing recorded yet.	Todavía no hay nada registrado.
+Outgoing links	Enlaces salientes
+Pick a note from the list, or press Ctrl+O to jump to one.	Elige una nota de la lista, o pulsa Ctrl+O para ir a una.
+Properties	Propiedades
+Quick switcher	Selector rápido
+Reading the entity	Leyendo la entidad
+Reading the note	Leyendo la nota
+Reading the note graph	Leyendo el grafo de notas
+Reading the settings	Leyendo los ajustes
+Reading the trash	Leyendo la papelera
+Reading the vault…	Leyendo la bóveda…
+Reads dates like "since March" out of a memory when it is saved.	Lee fechas como «desde marzo» de una memoria al guardarla.
+Search the vault	Buscar en la bóveda
+Search the vault…	Buscar en la bóveda…
+Showing {shown} of {total} nodes — narrow the filter to see the rest.	Mostrando {shown} de {total} nodos — afina el filtro para ver el resto.
+Supersede on conflict	Sustituir en caso de conflicto
+Sync interval (seconds)	Intervalo de sincronización (segundos)
+Sync now	Sincronizar ahora
+Syncing…	Sincronizando…
+Temporal parsing of memories	Interpretación temporal de las memorias
+The entity could not be read	No se pudo leer la entidad
+The graph could not be read	No se pudo leer el grafo
+The note could not be read	No se pudo leer la nota
+The vault is empty — create the first note.	La bóveda está vacía — crea la primera nota.
+This note does not exist yet — click to create it	Esta nota todavía no existe — haz clic para crearla
+This note has edits that have not been saved.	Esta nota tiene cambios sin guardar.
+This note is empty.	Esta nota está vacía.
+This note is read-mostly: only its free annotation is editable, if any.	Esta nota es mayormente de solo lectura: solo se puede editar su anotación libre, si la tiene.
+This note links to nothing yet.	Esta nota todavía no enlaza a nada.
+Today's note	Nota de hoy
+Turns the whole markdown vault off; nothing is synced or read while it is off.	Desactiva toda la bóveda de markdown; mientras esté apagada no se sincroniza ni se lee nada.
+Unhide	Dejar de ocultar
+Valid from	Válido desde
+Valid until	Válido hasta
+Vault enabled	Bóveda activada
+Vault folder	Carpeta de la bóveda
+Vault settings	Ajustes de la bóveda
+Which store the context engine reads for this scope; leave empty for the default.	Qué almacén lee el motor de contexto para este ámbito; déjalo vacío para usar el predeterminado.
+Write a note and link it with [[another note]] to see it here.	Escribe una nota y enlázala con [[otra nota]] para verla aquí.
+embed	incrustación
+embed — does not exist yet	incrustación — todavía no existe
+guard tripped — some deletions were skipped	protección activada — se omitieron algunas eliminaciones
+{n} node matches	{n} nodo coincide
+{n} nodes match	{n} nodos coinciden
+{n} note exported	{n} nota exportada
+{n} note imported	{n} nota importada
+{n} notes exported	{n} notas exportadas
+{n} notes imported	{n} notas importadas
+{n} tag	{n} etiqueta
+{n} tags	{n} etiquetas
