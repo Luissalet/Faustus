@@ -887,7 +887,27 @@ def add_item(
             memory_conflicts.detect_for(item)
         except Exception as exc:  # noqa: BLE001 - never block the write
             logger.debug("memory engine: conflict detection failed (%s)", exc)
+        # A supersede can close the NEW item's window (a historical fact
+        # arriving after the current one): hand back what is stored, so a
+        # caller that re-saves the returned dict cannot undo that.
+        stored = get_item(item["id"])
+        if stored:
+            item = stored
     return item
+
+
+def _purge_recall(item: Optional[Dict[str, Any]]) -> None:
+    """Drop cached recall copies of a memory that just left the context.
+
+    The recall cache re-checks its source on every read anyway; this is the
+    belt-and-braces cleanup so nothing lingers until the next prune."""
+    if not item:
+        return
+    try:
+        from src.context_engine import recall as _recall
+        _recall.purge_source(str(item.get("owner") or ""), f"mem:{item.get('id')}")
+    except Exception as exc:  # noqa: BLE001 - never block the write
+        logger.debug("memory engine: recall purge skipped (%s)", exc)
 
 
 def save_item(item: Dict[str, Any]) -> Dict[str, Any]:
@@ -970,7 +990,10 @@ def set_suppressed(item_id: Any, suppressed: bool,
     """Job C: stop this item from ever entering a pack or a search result,
     without deleting or tombstoning it — the owner can lift this later. Use
     `forget()` instead when the item should never come back at all."""
-    return _set_flag(item_id, "suppressed", bool(suppressed), now)
+    item = _set_flag(item_id, "suppressed", bool(suppressed), now)
+    if item and suppressed:
+        _purge_recall(item)
+    return item
 
 
 def delete_item(item_id: Any) -> bool:
@@ -1074,6 +1097,7 @@ def forget(item_id: Any, *, reason: str = "", ref: str = "",
             [tombstone[c] for c in _TOMBSTONE_COLUMNS],
         )
     delete_item(item["id"])
+    _purge_recall(item)
     return tombstone
 
 

@@ -82,8 +82,14 @@ export function foldTitle(value: string): string {
 }
 
 export function buildTitleIndex(notes: Array<{ path: string; title: string }>): TitleIndex {
+  // Same rule as the server: when two notes share a title, the first path in
+  // sorted order wins, so a click and a server-side link resolve alike.
   const index: TitleIndex = new Map();
-  for (const note of notes) index.set(foldTitle(note.title), { path: note.path, title: note.title });
+  const sorted = [...notes].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+  for (const note of sorted) {
+    const key = foldTitle(note.title);
+    if (!index.has(key)) index.set(key, { path: note.path, title: note.title });
+  }
   return index;
 }
 

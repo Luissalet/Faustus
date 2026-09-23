@@ -181,7 +181,7 @@ _SLUG_BAD = re.compile(r'[\\/:*?"<>|#^\[\]\x00-\x1f]+')
 def safe_filename(title: Any, *, limit: int = 80) -> str:
     """A title usable as a file name on Windows and in a [[wikilink]].
 
-    Keeps accents and spaces (Obsidian-style names), drops the characters
+    Keeps accents and spaces (human-readable names), drops the characters
     Windows or wikilinks cannot hold, and never returns a reserved name."""
     text = _SLUG_BAD.sub(" ", str(title or "")).strip().strip(".")
     text = " ".join(text.split())[:limit].rstrip(" .")

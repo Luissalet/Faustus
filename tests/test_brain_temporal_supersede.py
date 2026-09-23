@@ -39,16 +39,16 @@ def store(tmp_path, monkeypatch):
 
 
 def test_supersede_end_to_end(store):
-    old = engine.add_item("Ada works at Cordera Labs", owner="luis",
+    old = engine.add_item("Ada works at Cordera Labs", owner="alice",
                           trust_class="human_explicit", now=T0)
-    new = engine.add_item("Ada works at Bluehaven", owner="luis",
+    new = engine.add_item("Ada works at Bluehaven", owner="alice",
                           trust_class="human_explicit", now=T1)
 
     # The conflict was recorded and immediately resolved as `superseded`,
     # never left `open`.
-    open_rows = conflicts.list_conflicts(owner="luis", status="open")
+    open_rows = conflicts.list_conflicts(owner="alice", status="open")
     assert open_rows == []
-    superseded_rows = conflicts.list_conflicts(owner="luis", status="superseded")
+    superseded_rows = conflicts.list_conflicts(owner="alice", status="superseded")
     assert len(superseded_rows) == 1
     conflict = superseded_rows[0]
     assert conflict["old_id"] == old["id"]
@@ -65,18 +65,18 @@ def test_supersede_end_to_end(store):
 
     # search(as_of=<between>) sees only the old fact; search() "now" (after
     # both) sees only the new one.
-    as_of_hits = engine.search("Ada", owner="luis", now=AFTER, as_of=BETWEEN,
+    as_of_hits = engine.search("Ada", owner="alice", now=AFTER, as_of=BETWEEN,
                                statuses=("active",), touch_hits=False)
     assert [h["id"] for h in as_of_hits] == [old["id"]]
 
-    now_hits = engine.search("Ada", owner="luis", now=AFTER,
+    now_hits = engine.search("Ada", owner="alice", now=AFTER,
                              statuses=("active",), touch_hits=False)
     assert [h["id"] for h in now_hits] == [new["id"]]
 
     # list_items(as_of=...) applies the same window filter; with no as_of it
     # keeps returning every row (today's default behaviour, unchanged).
-    assert {i["id"] for i in engine.list_items(owner="luis")} == {old["id"], new["id"]}
-    at_between = engine.list_items(owner="luis", as_of=BETWEEN)
+    assert {i["id"] for i in engine.list_items(owner="alice")} == {old["id"], new["id"]}
+    at_between = engine.list_items(owner="alice", as_of=BETWEEN)
     assert [i["id"] for i in at_between] == [old["id"]]
 
     # unsupersede reopens the conflict and restores the old item's window.
@@ -90,10 +90,10 @@ def test_supersede_end_to_end(store):
 
 
 def test_negation_conflicts_are_never_superseded(store):
-    old = engine.add_item("Luis prefers tabs", owner="luis", trust_class="human_explicit", now=T0)
-    engine.add_item("Luis does not prefer tabs", owner="luis", trust_class="human_explicit", now=T1)
+    old = engine.add_item("Alice prefers tabs", owner="alice", trust_class="human_explicit", now=T0)
+    engine.add_item("Alice does not prefer tabs", owner="alice", trust_class="human_explicit", now=T1)
 
-    open_rows = conflicts.list_conflicts(owner="luis", status="open")
+    open_rows = conflicts.list_conflicts(owner="alice", status="open")
     assert len(open_rows) == 1
     assert open_rows[0]["reason"] == "negation"
     assert open_rows[0]["old_id"] == old["id"]
@@ -107,11 +107,11 @@ def test_supersede_disabled_by_setting_keeps_conflict_open(store, monkeypatch):
         "src.settings.get_setting",
         lambda key, default=None: False if key == "memory_temporal_supersede" else default,
     )
-    old = engine.add_item("Bruno works at Cordera Labs", owner="luis",
+    old = engine.add_item("Bruno works at Cordera Labs", owner="alice",
                           trust_class="human_explicit", now=T0)
-    engine.add_item("Bruno works at Bluehaven", owner="luis",
+    engine.add_item("Bruno works at Bluehaven", owner="alice",
                     trust_class="human_explicit", now=T1)
-    open_rows = conflicts.list_conflicts(owner="luis", status="open")
+    open_rows = conflicts.list_conflicts(owner="alice", status="open")
     assert len(open_rows) == 1
     assert open_rows[0]["old_id"] == old["id"]
 
@@ -120,30 +120,30 @@ def test_resolve_keep_superseded_applies_manually_outside_the_auto_set(store):
     # "uses" is NOT in the automatic-supersede predicate set (existing
     # conflict tests rely on it staying `open`), so this pair is left open —
     # `resolve(id, keep="superseded")` still applies the resolution by hand.
-    old = engine.add_item("the project uses Python", owner="luis",
+    old = engine.add_item("the project uses Python", owner="alice",
                           trust_class="human_explicit", now=T0)
-    new = engine.add_item("the project uses Rust", owner="luis",
+    new = engine.add_item("the project uses Rust", owner="alice",
                           trust_class="human_explicit", now=T1)
-    open_rows = conflicts.list_conflicts(owner="luis", status="open")
+    open_rows = conflicts.list_conflicts(owner="alice", status="open")
     assert len(open_rows) == 1
 
     resolved = conflicts.resolve(open_rows[0]["id"], "superseded")
     assert resolved["status"] == "superseded"
     assert engine.get_item(old["id"])["valid_until"] == new["valid_from"]
-    assert conflicts.list_conflicts(owner="luis", status="open") == []
+    assert conflicts.list_conflicts(owner="alice", status="open") == []
 
 
 def test_temporal_fill_on_add_item_and_past_state_provenance(store):
     dated = engine.add_item("Ada worked at Cordera Labs desde marzo de 2025",
-                            owner="luis", trust_class="human_explicit", now=T1)
+                            owner="alice", trust_class="human_explicit", now=T1)
     assert dated["valid_from"] == "2025-03-01T00:00:00Z"
 
-    past = engine.add_item("Ada ya no trabaja en Cordera Labs", owner="luis",
+    past = engine.add_item("Ada ya no trabaja en Cordera Labs", owner="alice",
                            trust_class="human_explicit", now=T1)
     assert past["valid_until"] == ""
     assert past["provenance"].get("temporal_state") == "past"
 
-    explicit = engine.add_item("Ada works at Cordera Labs", owner="luis",
+    explicit = engine.add_item("Ada works at Cordera Labs", owner="alice",
                                trust_class="human_explicit", now=T1,
                                valid_from="2020-01-01T00:00:00Z")
     # An explicit valid_from short-circuits the parser entirely.
@@ -156,5 +156,5 @@ def test_temporal_fill_can_be_disabled(store, monkeypatch):
         lambda key, default=None: False if key == "memory_temporal_parse" else default,
     )
     item = engine.add_item("Ada works at Cordera Labs desde marzo de 2025",
-                           owner="luis", trust_class="human_explicit", now=T1)
+                           owner="alice", trust_class="human_explicit", now=T1)
     assert item["valid_from"] == engine._iso(T1)

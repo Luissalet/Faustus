@@ -25,7 +25,7 @@ from routes import brain_routes  # noqa: E402
 from src import memory_engine as engine  # noqa: E402
 from src.brain import db as brain_db  # noqa: E402
 
-OWNER = "luis"
+OWNER = "alice"
 OTHER = "mallory"
 
 

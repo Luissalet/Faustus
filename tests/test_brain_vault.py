@@ -25,7 +25,7 @@ from src.brain import db as bdb
 from src.brain import frontmatter as fm
 from src.brain import vault
 
-OWNER = "luis"
+OWNER = "alice"
 
 
 @pytest.fixture()
