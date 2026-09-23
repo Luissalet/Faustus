@@ -63,8 +63,10 @@ class _Mcp:
 @pytest.fixture(autouse=True)
 def _wire(monkeypatch):
     connectors = {"4f9230b5", "10d9867d", "41bff0fe", "df4c1bc4", "7aa0c0de"}
+    presets = {"7aa0c0de": "laplace"}
     monkeypatch.setattr("src.connector_sidecar.get_connector_for_server",
-                        lambda server_id, redact=True: {"id": "c-" + server_id} if server_id in connectors else None)
+                        lambda server_id, redact=True: ({"id": "c-" + server_id, "preset_id": presets.get(server_id, "")}
+                                                        if server_id in connectors else None))
     monkeypatch.setattr("src.tool_utils.get_mcp_manager", lambda: _Mcp())
 
 
@@ -178,3 +180,19 @@ def test_a_wrapped_keywords_paragraph_counts_as_the_trigger_list():
     assert not gate.allows("mcp__7aa0c0de__date_calc", '{"operation": "business_days"}', "Hola, ¿qué tal?")
     words = gate._tool_synonyms(DATE_CALC["description"], "date_calc")
     assert "dias laborables" in words and "plazo" in words and "working days" in words
+
+
+def test_a_read_tool_passes_when_the_user_names_the_app():
+    """«Con Laplace: …» sends the request to that app; its read-only tools
+    pass even when none of their trigger words was said."""
+    assert gate.allows("mcp__7aa0c0de__date_calc", '{"operation": "diff"}',
+                       "Con Laplace: ¿qué día de la semana cae el 3 de marzo?")
+    assert gate.allows("mcp__7aa0c0de__date_calc", '{"operation": "diff"}',
+                       "Pregúntale a Laplace's Hoard la diferencia entre dos fechas")
+    # another app's name does not open this one
+    assert not gate.allows("mcp__7aa0c0de__date_calc", '{"operation": "diff"}', "Con Babel: ¿qué hay?")
+
+
+def test_naming_the_app_does_not_open_its_write_tools():
+    # add_entry writes; the app name alone is not the act plus a value
+    assert not gate.allows("mcp__10d9867d__add_entry", '{"amount": 12.5}', "Con Ledger: hola")

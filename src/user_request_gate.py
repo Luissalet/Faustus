@@ -1099,6 +1099,38 @@ def _answers_what_was_asked(text: str, asked_before: str, meta: Mapping[str, Any
     return False
 
 
+def _names_the_app(text: str, connector: Mapping[str, Any]) -> bool:
+    """The folded user text names this connector's app: its preset id or its
+    name, with or without the family suffix ("Babel's Hoard", "babel's",
+    "babel"). Seen live: «si Babel's Hoard no está arrancada, arráncala y dime
+    qué documentación tiene indexada» stopped on a card before the app's own
+    read-only listing, because none of that tool's trigger words was said."""
+    from src import plugins as plugins_mod
+    names = set()
+    preset_id = str(connector.get("preset_id") or "")
+    if preset_id:
+        names.add(preset_id)
+    try:
+        from src import connectors as connectors_mod
+        preset = connectors_mod.get_preset(preset_id) if preset_id else None
+    except Exception:  # noqa: BLE001
+        preset = None
+    display = str(getattr(preset, "name", "") or connector.get("name") or "")
+    if display:
+        folded = plugins_mod.fold(display)
+        names.add(folded)
+        # fold() drops the apostrophe: "Babel's Hoard" -> "babels hoard".
+        core = re.sub(r"\s+hoard$", "", folded).strip()
+        names.add(core)
+        if core.endswith("s") and len(core) > 4:
+            names.add(core[:-1])
+    def _named(n: str) -> bool:
+        n = plugins_mod.fold(n)
+        # "Laplace's Hoard" folds to "laplaces hoard": the possessive too.
+        return _contains_phrase(text, n) or _contains_phrase(text, n + "s")
+    return any(len(n) >= 4 and _named(n) for n in names if n)
+
+
 def _app_tool(user_text: str, content: Any, workspace: str = "", tool: str = "", asked_before: str = "") -> bool:
     parts = str(tool or "").split("__", 2)
     if len(parts) != 3 or parts[0] != "mcp" or not parts[1] or not parts[2]:
@@ -1125,6 +1157,10 @@ def _app_tool(user_text: str, content: Any, workspace: str = "", tool: str = "",
 
     text = plugins_mod.fold(user_text)
     args = _parse_args(content)
+    if mcp_tool_is_readonly(meta) and _names_the_app(text, connector):
+        # «Con Laplace: …», «dime qué documentación tiene Babel»: the user
+        # sent this request to that app by name, and the call only reads.
+        return True
     if not any(_says(text, phrase) for phrase in _tool_synonyms(meta.get("description") or "", name)):
         return _answers_what_was_asked(text, asked_before, meta, args)
     if mcp_tool_is_readonly(meta):
