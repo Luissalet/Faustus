@@ -20,6 +20,10 @@ Both the request and the acceptance check run only in the background
 (``refresh_entity``/``refresh_stale`` are async, called from a maintenance
 sweep, never from a chat turn), and a locked summary (``summary_locked`` —
 a human edited it) or an unchanged fact set (``facts_hash``) is left alone.
+The sweep is also polite with the machine: each model call first asks
+``extract.background_llm_gate``, so none happens while a turn is in flight
+or when the utility model would have to be loaded (and something else
+evicted) to answer.
 """
 
 from __future__ import annotations
@@ -126,7 +130,8 @@ def _build_wiki_prompt(profile_data: Dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-async def refresh_entity(entity_id: Any, *, force: bool = False) -> Dict[str, Any]:
+async def refresh_entity(entity_id: Any, *, force: bool = False, background: bool = False,
+                         defer_reason: str = "") -> Dict[str, Any]:
     """Rewrite one entity's summary with the utility model, or fall back to
     the deterministic bullets. Never raises; always returns a `status`:
 
@@ -140,6 +145,13 @@ async def refresh_entity(entity_id: Any, *, force: bool = False) -> Dict[str, An
     - ``rejected`` — the model answered but cited something not in the
       profile; the deterministic bullets were written instead.
     - ``updated`` — the model's cited summary was accepted and stored.
+    - ``deferred`` (only with `background`) — the model may not be called
+      right now (``reason``: a turn is in flight, or the model is not
+      already resident — see ``extract.background_llm_gate``). An entity
+      with no summary yet gets the deterministic bullets; ``facts_hash`` is
+      left alone either way, so a later sweep retries with the model.
+      `defer_reason` lets a sweep that already got a residency refusal
+      defer the rest without asking the runner again.
     """
     entity_id = str(entity_id or "")
     try:
@@ -179,6 +191,16 @@ async def refresh_entity(entity_id: Any, *, force: bool = False) -> Dict[str, An
         if not url or not model:
             return _store_fallback()
 
+        if background:
+            from src.brain.extract import background_llm_gate
+
+            reason = defer_reason or background_llm_gate(url, model)
+            if reason:
+                if not entity.get("summary"):
+                    update_entity(entity_id, summary=fallback, summary_sources=refs)
+                logger.debug("brain.wiki: %s deferred (%s)", entity_id, reason)
+                return {"status": "deferred", "entity_id": entity_id, "reason": reason}
+
         try:
             from src.llm_core import llm_call_async
             raw = await llm_call_async(
@@ -214,11 +236,19 @@ async def refresh_entity(entity_id: Any, *, force: bool = False) -> Dict[str, An
         return {"status": "error", "entity_id": entity_id}
 
 
-async def refresh_stale(owner: Any, *, limit: int = 5, budget_s: float = 30.0) -> Dict[str, Any]:
+async def refresh_stale(owner: Any, *, limit: int = 5, budget_s: float = 30.0,
+                        background: bool = True) -> Dict[str, Any]:
     """Refresh up to `limit` entities whose facts changed since their last
-    summary. Never raises."""
+    summary. Never raises.
+
+    `background` (the default: this is the maintenance sweep) makes every
+    model call ask ``extract.background_llm_gate`` first. A turn in flight
+    stops the sweep; a model that is not resident (or whose residency is
+    unknown) defers the remaining entities without calling it.
+    ``report["llm_skipped"]`` says why, ``report["deferred"]`` how many."""
     start = time.monotonic()
-    report: Dict[str, Any] = {"checked": 0, "updated": 0, "skipped": 0, "errors": 0}
+    report: Dict[str, Any] = {"checked": 0, "updated": 0, "skipped": 0, "errors": 0,
+                              "deferred": 0, "llm_skipped": ""}
     try:
         candidates = []
         for entity in list_entities(str(owner or ""), limit=2000, include_hidden=True):
@@ -231,17 +261,25 @@ async def refresh_stale(owner: Any, *, limit: int = 5, budget_s: float = 30.0) -
             if entity.get("facts_hash") != facts_hash or not entity.get("summary"):
                 candidates.append(entity)
 
+        defer_reason = ""
         for entity in candidates[:max(0, int(limit or 5))]:
             if time.monotonic() - start > budget_s:
                 break
             report["checked"] += 1
             try:
-                result = await refresh_entity(entity["id"])
+                result = await refresh_entity(entity["id"], background=background,
+                                              defer_reason=defer_reason)
             except Exception:  # noqa: BLE001
                 report["errors"] += 1
                 continue
             status = result.get("status")
-            if status in ("updated", "fallback", "rejected"):
+            if status == "deferred":
+                report["deferred"] += 1
+                report["llm_skipped"] = str(result.get("reason") or "")
+                if report["llm_skipped"] == "interactive_turn":
+                    break  # somebody is waiting on this machine: stop here
+                defer_reason = report["llm_skipped"]
+            elif status in ("updated", "fallback", "rejected"):
                 report["updated"] += 1
             elif status == "error":
                 report["errors"] += 1
