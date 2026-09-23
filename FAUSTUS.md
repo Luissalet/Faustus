@@ -8149,9 +8149,10 @@ la memoria — de forma reversible —, nunca la olvida de verdad.
   lo que una regla ya había encontrado — no abre una segunda arista:
   `add_relation` lo funde en la existente (evidencia unida; una relación
   encontrada por regla desplaza en rango a una encontrada por el modelo).
-  `revalidate()` (versión 3, reversible) también retira los restablecimientos
-  del modelo que duplican una arista ya vigente bajo un sinónimo de la
-  relación.
+  `revalidate()` (versión 4, reversible) funde las aristas duplicadas que ya
+  existían — de regla o del modelo, también bajo un sinónimo de la relación —
+  en una sola con la evidencia unida, y una entidad nacida sin tipo toma el
+  que le dé una fuente posterior («Ada» → persona).
 - *Extracción* (`src/brain/extract.py`). Una pasada determinista (nombres y
   alias ya conocidos, sustantivos propios en mayúscula, sujeto-verbo-objeto
   sobre el vocabulario cerrado, ventana temporal) y una pasada opcional con
