@@ -351,6 +351,15 @@ DEFAULT_SETTINGS = {
     "google_pse_cx": "",
     "tavily_api_key": "",
     "serper_api_key": "",
+    # Prior art (GIT-08): reuse/adapt/write, verified live against
+    # api.github.com. Off switch mirrors search_provider == "disabled" —
+    # verify/search then skip the network entirely and report `verified:
+    # false` with the reason, never a silent empty result. The token is
+    # optional (60 req/h unauthenticated works fine for occasional use);
+    # set it to raise GitHub's rate limit. Never logged, sent only to
+    # api.github.com (src/prior_art.py:_headers).
+    "prior_art_enabled": True,
+    "prior_art_github_token": "",
     "research_endpoint_id": "",
     "research_model": "",
     "research_search_provider": "",
