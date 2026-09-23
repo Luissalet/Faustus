@@ -320,9 +320,25 @@ def suggested_values(preset: ConnectorPreset, url: str, cwd: str) -> Dict[str, s
     process cwd is the install dir, the `{X_DIR}` placeholder too."""
     values = {"APP_URL": url}
     key = _dir_placeholder(preset)
-    if key and _looks_like_app_dir(preset, cwd):
+    if key and (_looks_like_app_dir(preset, cwd) or _declares_itself_in(preset, cwd)):
         values[key] = cwd
     return values
+
+
+def _declares_itself_in(preset: ConnectorPreset, path: str) -> bool:
+    """The cwd holds the app's own manifest for this very preset, so it is
+    the install dir even when the bridge is a module (`python -m pkg.mcp`)
+    rather than a script path `_looks_like_app_dir` could find. Seen live:
+    an app whose bridge runs as a module was offered with its `{X_DIR}`
+    empty and adopting it failed with "missing value for {X_DIR}"."""
+    if not path or not os.path.isdir(path):
+        return False
+    try:
+        from src import plugins as plugins_mod
+        declared = plugins_mod.read_app_manifest(path)
+    except Exception:  # noqa: BLE001 - discovery never fails over a manifest
+        return False
+    return declared is not None and declared.id == preset.id
 
 
 def _known_tokens() -> List[str]:
