@@ -57,6 +57,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import os
 import re
 import sqlite3
 import time
@@ -101,6 +102,37 @@ _MAX_TOTAL_ENTRIES = 1500
 _HIGH_FANIN_THRESHOLD = 5
 _SINK_RE = re.compile(r"\b(?:db|commit|write|send|delete|subprocess|requests)\w*", re.I)
 
+#: Entry-point kind, ranked coarsest-first for the default (criticality)
+#: sort in `flows()` -- a real HTTP route or tool handler is what a human
+#: asking "what are the important paths here?" means, and should never be
+#: outranked by an internal "root" (a symbol nothing else happens to call)
+#: just because its own call tree is bigger, and especially never by a
+#: "vendor_root" (a root candidate inside a detected vendored/third-party
+#: directory -- see `_vendor_dirs`), which is often the internal entry
+#: point of a whole library the app merely depends on. Ties within a kind
+#: still sort by criticality (see `flows()`).
+_KIND_PRIORITY: Dict[str, int] = {
+    "route": 0, "tool": 1, "tool_executor": 1, "main": 2, "root": 3, "vendor_root": 4,
+}
+
+#: A directory's own name matching one of these is a strong structural
+#: signal it holds vendored/third-party code, however the vendoring was
+#: actually done (a git submodule, a vendoring script, a manual copy) --
+#: see `_vendor_dirs`.
+_VENDOR_NAME_RE = re.compile(
+    r"(?:^|/)(?:vendor|vendored|third[-_]?party|thirdparty|external|contrib)(?:/|$)", re.I)
+#: A marker file commonly shipped inside (or naming) a vendored library's
+#: own directory -- checked on disk since these are not source files
+#: `code_index` indexes as symbols. Deliberately conservative: a bare
+#: top-level `LICENSE`/`NOTICE` for the whole project is common and NOT a
+#: vendoring signal by itself -- see `_vendor_dirs` for why the project
+#: root is excluded from this check.
+_VENDOR_MARKER_RE = re.compile(
+    r"(?:^|/)(?:VENDORED(?:\.\w+)?|THIRD_PARTY(?:\.\w+)?|NOTICE(?:\.\w+)?|LICEN[CS]E(?:\.\w+)?)$",
+    re.I)
+_HTTP_VERBS = {"get", "post", "put", "patch", "delete", "head", "options"}
+_ROUTE_SIG_RE = re.compile(r"^([\w.]+)\s+(\S.*)$")
+
 # score = sum(weight * normalised); weights sum to 1.0 -- see `_criticality`.
 _CRITICALITY_WEIGHTS: Dict[str, float] = {
     "size": 0.20, "files": 0.15, "communities": 0.15,
@@ -121,14 +153,16 @@ def _clamp01(x: float) -> float:
 # ── loading ──────────────────────────────────────────────────────────────
 
 class _Sym:
-    __slots__ = ("path", "kind", "qualname", "name", "line")
+    __slots__ = ("path", "kind", "qualname", "name", "line", "signature")
 
-    def __init__(self, path: str, kind: str, qualname: str, name: str, line: int) -> None:
+    def __init__(self, path: str, kind: str, qualname: str, name: str, line: int,
+                 signature: str = "") -> None:
         self.path = path
         self.kind = kind
         self.qualname = qualname
         self.name = name
         self.line = line
+        self.signature = signature
 
 
 def _load_symbols(conn: sqlite3.Connection, workspace: str, project_id: str
@@ -136,10 +170,11 @@ def _load_symbols(conn: sqlite3.Connection, workspace: str, project_id: str
     where, params = _where(workspace, project_id)
     out: Dict[str, _Sym] = {}
     for row in conn.execute(
-            f"SELECT id, path, kind, qualname, name, start_line FROM code_symbols "
+            f"SELECT id, path, kind, qualname, name, start_line, signature FROM code_symbols "
             f"WHERE {where}", params):
         out[str(row["id"])] = _Sym(str(row["path"]), str(row["kind"]), str(row["qualname"]),
-                                   str(row["name"]), int(row["start_line"] or 0))
+                                   str(row["name"]), int(row["start_line"] or 0),
+                                   str(row["signature"] or ""))
     return out
 
 
@@ -192,11 +227,90 @@ def _is_tool_executor(sym: _Sym) -> bool:
     return owner.endswith("Tool")
 
 
-def _entry_points(symbols: Dict[str, _Sym], calls: Sequence[Tuple[str, str, str]]
-                   ) -> List[Tuple[str, str]]:
+def _route_label(signature: str, qualname: str) -> str:
+    """`"GET /orders"`-style display label for a route entry point, parsed
+    from `code_index`'s own recorded `signature` (`_decorator_kind` writes
+    it as `"<dotted> <route>"`, e.g. `"router.post /orders"`). Falls back to
+    the symbol's qualname when the signature isn't in that shape (a route
+    kind from a decorator tail `code_index` doesn't specialise beyond a
+    known HTTP verb, or a cached row from before this parsing existed) --
+    always returns something displayable, never an empty label."""
+    m = _ROUTE_SIG_RE.match(signature or "")
+    if m:
+        dotted, route = m.group(1), m.group(2).strip()
+        verb = dotted.rsplit(".", 1)[-1].lower()
+        if verb in _HTTP_VERBS and route.startswith("/"):
+            return f"{verb.upper()} {route}"
+    return qualname
+
+
+def _vendor_dirs(symbols: Dict[str, _Sym], calls: Sequence[Tuple[str, str, str]],
+                  root: str) -> Set[str]:
+    """Directory paths (relative, forward-slash, `""` for the repo root)
+    whose ROOT-CANDIDATE entry points get demoted to `"vendor_root"` -- see
+    `_entry_points` and the `_KIND_PRIORITY` note. Two independent signals,
+    either sufficient on its own:
+
+    - **structural**: the directory's own name matches a vendor/third-party
+      naming convention (`_VENDOR_NAME_RE`), or it directly contains a
+      vendoring marker file (`_VENDOR_MARKER_RE`) -- checked on disk, since
+      these are not source files `code_index` indexes as symbols. The repo
+      root itself (`""`) is never flagged this way even if it happens to
+      hold a top-level `LICENSE`/`NOTICE` -- that describes the whole
+      project, not a vendored dependency inside it.
+    - **behavioral**: the directory receives `calls` edges from OTHER
+      directories but never itself makes a `calls` edge into another
+      directory -- the one-way dependency shape of "the app calls into this
+      library, which never calls back out" -- regardless of what the
+      directory happens to be named. A directory with no incoming
+      cross-directory calls at all is not flagged this way (silence is not
+      a signal; only a one-way relationship is).
+
+    Applied per immediate directory of the file, not per top-level path
+    segment, so a vendored library nested a few levels deep is caught
+    precisely rather than tainting its whole parent tree."""
+    dir_of: Dict[str, str] = {}
+    for sym in symbols.values():
+        if sym.path not in dir_of:
+            dir_of[sym.path] = sym.path.rsplit("/", 1)[0] if "/" in sym.path else ""
+    all_dirs = set(dir_of.values())
+
+    structural: Set[str] = {d for d in all_dirs if d and _VENDOR_NAME_RE.search(d)}
+
+    try:
+        for dirpath, _dirnames, filenames in os.walk(root):
+            rel_dir = os.path.relpath(dirpath, root).replace(os.sep, "/")
+            if rel_dir == ".":
+                continue  # repo root: see docstring, never flagged this way
+            if rel_dir not in all_dirs:
+                continue
+            if any(_VENDOR_MARKER_RE.search(fn) for fn in filenames):
+                structural.add(rel_dir)
+    except OSError:
+        pass
+
+    out_dirs: Dict[str, Set[str]] = {}
+    in_dirs: Dict[str, Set[str]] = {}
+    for src, dst, _cert in calls:
+        src_sym, dst_sym = symbols.get(src), symbols.get(dst)
+        if not src_sym or not dst_sym:
+            continue
+        sd, dd = dir_of.get(src_sym.path, ""), dir_of.get(dst_sym.path, "")
+        if sd == dd:
+            continue
+        out_dirs.setdefault(sd, set()).add(dd)
+        in_dirs.setdefault(dd, set()).add(sd)
+
+    behavioral = {d for d, callers in in_dirs.items() if d and callers and not out_dirs.get(d)}
+    return structural | behavioral
+
+
+def _entry_points(symbols: Dict[str, _Sym], calls: Sequence[Tuple[str, str, str]],
+                   vendor_dirs: Set[str]) -> List[Tuple[str, str]]:
     """`[(symbol_id, reason)]`, routes/tools/executors first (uncapped),
-    public roots last (capped and ranked by fan-out) -- see the module
-    docstring for why."""
+    public roots last (capped and ranked by fan-out, non-vendored roots
+    ranked ahead of vendored ones regardless of fan-out) -- see the module
+    docstring, `_KIND_PRIORITY`, and `_vendor_dirs`."""
     fanout: Dict[str, int] = {}
     caller_is_nontest: Set[str] = set()
     for src, dst, _cert in calls:
@@ -204,6 +318,11 @@ def _entry_points(symbols: Dict[str, _Sym], calls: Sequence[Tuple[str, str, str]
         src_sym = symbols.get(src)
         if src_sym and not _is_test_path(src_sym.path):
             caller_is_nontest.add(dst)
+
+    def _is_vendor(sid: str) -> bool:
+        path = symbols[sid].path
+        d = path.rsplit("/", 1)[0] if "/" in path else ""
+        return d in vendor_dirs
 
     routes: List[Tuple[str, str]] = []
     tools: List[Tuple[str, str]] = []
@@ -227,8 +346,9 @@ def _entry_points(symbols: Dict[str, _Sym], calls: Sequence[Tuple[str, str, str]
     routes.sort(key=lambda p: (symbols[p[0]].path, symbols[p[0]].line))
     tools.sort(key=lambda p: (symbols[p[0]].path, symbols[p[0]].line))
     executors.sort(key=lambda p: (symbols[p[0]].path, symbols[p[0]].line))
-    roots.sort(key=lambda p: (-p[1], symbols[p[0]].path, symbols[p[0]].line))
-    root_entries = [(sid, "root") for sid, _fanout in roots[:_MAX_ROOT_ENTRIES]]
+    roots.sort(key=lambda p: (_is_vendor(p[0]), -p[1], symbols[p[0]].path, symbols[p[0]].line))
+    root_entries = [(sid, "vendor_root" if _is_vendor(sid) else "root")
+                    for sid, _fanout in roots[:_MAX_ROOT_ENTRIES]]
 
     picked = routes + tools + executors + root_entries
     return picked[:_MAX_TOTAL_ENTRIES]
@@ -345,7 +465,8 @@ def _build(root: str, project_id: str, fingerprint: str) -> List[Dict[str, Any]]
         calls_out.setdefault(src, []).append((src, dst, cert))
         fanin_count[dst] = fanin_count.get(dst, 0) + 1
 
-    entries = _entry_points(symbols, calls)
+    vendor_dirs = _vendor_dirs(symbols, calls, root)
+    entries = _entry_points(symbols, calls, vendor_dirs)
     computed_at = ce_store.now_iso()
     records: List[Dict[str, Any]] = []
     for entry_id, reason in entries:
@@ -355,7 +476,8 @@ def _build(root: str, project_id: str, fingerprint: str) -> List[Dict[str, Any]]
         members = _dfs_flow(entry_id, symbols, calls_out,
                             depth_cap=_DEFAULT_DEPTH_CAP, node_cap=_NODE_CAP)
         crit = _criticality(entry_sym, members, fanin_count, test_targets, community_of_path)
-        name = entry_sym.qualname
+        name = _route_label(entry_sym.signature, entry_sym.qualname) if reason == "route" \
+            else entry_sym.qualname
         fid = _flow_id(entry_id, [m["symbol_id"] for m in members])
         records.append({
             "id": fid, "entry_symbol": entry_sym.qualname, "entry_reason": reason,
@@ -446,7 +568,8 @@ def _criticality_level(score: float) -> str:
 def _render_list(records: List[Dict[str, Any]], output_chars: Optional[int]) -> str:
     lines = []
     for r in records:
-        lines.append(f"{r['id']}  {r['name']}  criticality={r['criticality']:.2f} "
+        lines.append(f"{r['id']}  [{r.get('entry_reason', '')}] {r['name']}  "
+                    f"criticality={r['criticality']:.2f} "
                     f"({_criticality_level(r['criticality'])})  "
                     f"{len(r['members']) + 1} members, {len(r['files'])} files")
     return _clip("\n".join(lines) or "(no flows found)", output_chars)
@@ -454,7 +577,8 @@ def _render_list(records: List[Dict[str, Any]], output_chars: Optional[int]) -> 
 
 def _render_tree(r: Dict[str, Any], output_chars: Optional[int]) -> str:
     entry = r["entry"]
-    lines = [f"{r['id']}  {r['name']}  criticality={r['criticality']:.2f} "
+    lines = [f"{r['id']}  [{r.get('entry_reason', '')}] {r['name']}  "
+            f"criticality={r['criticality']:.2f} "
             f"({_criticality_level(r['criticality'])})",
             f"{entry['symbol']} ({entry['kind']})  {entry['path']}:{entry['line']}"]
     for m in r["members"]:
@@ -503,7 +627,8 @@ def flows(root: str = "", *, project_id: str = "", limit: int = 20,
     if sort == "size":
         records = sorted(records, key=lambda r: (-(len(r["members"]) + 1), r["id"]))
     else:
-        records = sorted(records, key=lambda r: (-r["criticality"], r["id"]))
+        records = sorted(records, key=lambda r: (
+            _KIND_PRIORITY.get(r["entry_reason"], 3), -r["criticality"], r["id"]))
 
     try:
         cap = max(1, min(int(limit or 20), 500))

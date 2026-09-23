@@ -190,7 +190,11 @@ def ws(repo):
 
 
 def _flow_named(result, needle):
-    return next(f for f in result["flows"] if needle in f["name"])
+    """Find a flow by its entry point's qualname (`entry_symbol`), which is
+    stable regardless of the display `name` -- a route's `name` is now a
+    human label like "POST /orders", not its function name (see
+    `cg_flows._route_label`)."""
+    return next(f for f in result["flows"] if needle in f["entry_symbol"])
 
 
 # ── entry points and call tree ───────────────────────────────────────────
@@ -200,6 +204,8 @@ def test_route_is_an_entry_point_with_a_deterministic_call_tree(ws):
     result = code_graph.flows(ws, limit=50)
     assert result["exit_code"] == 0
     route_flow = _flow_named(result, "create_order")
+    assert route_flow["entry_reason"] == "route"
+    assert route_flow["name"] == "POST /orders"  # parsed from the route signature
     detail = code_graph.flow(ws, route_flow["id"])
     assert detail["exit_code"] == 0
     members = detail["flow"]["members"]
@@ -228,11 +234,25 @@ def test_flow_touching_a_sink_ranks_above_a_trivial_one(ws):
     assert sink_flow["criticality"] > trivial_flow["criticality"]
 
 
-def test_flows_are_sorted_by_criticality_descending_by_default(ws):
+def test_flows_are_sorted_by_kind_priority_then_criticality_by_default(ws):
+    """Routes/tools outrank plain roots regardless of raw criticality (see
+    `cg_flows._KIND_PRIORITY`); within the same kind, criticality still
+    decides the order."""
     code_graph.index(ws)
     result = code_graph.flows(ws, limit=50)
-    scores = [f["criticality"] for f in result["flows"]]
-    assert scores == sorted(scores, reverse=True)
+    flows_list = result["flows"]
+    kind_ranks = [cg_flows._KIND_PRIORITY.get(f["entry_reason"], 3) for f in flows_list]
+    assert kind_ranks == sorted(kind_ranks)
+    by_kind: dict = {}
+    for f in flows_list:
+        by_kind.setdefault(f["entry_reason"], []).append(f["criticality"])
+    for scores in by_kind.values():
+        assert scores == sorted(scores, reverse=True)
+    # the two routes in this fixture must both outrank the two plain roots.
+    route_positions = [i for i, f in enumerate(flows_list) if f["entry_reason"] == "route"]
+    root_positions = [i for i, f in enumerate(flows_list) if f["entry_reason"] == "root"]
+    assert route_positions and root_positions
+    assert max(route_positions) < min(root_positions)
 
 
 # ── cycle safety and depth cap ────────────────────────────────────────────
@@ -264,7 +284,7 @@ def test_affected_flows_by_symbol(ws):
     code_graph.index(ws)
     result = code_graph.affected_flows("place_order", workspace=ws)
     assert result["exit_code"] == 0
-    assert any("create_order" in f["name"] for f in result["flows"])
+    assert any("create_order" in f["entry_symbol"] for f in result["flows"])
 
 
 def test_affected_flows_by_symbol_not_in_any_flow(ws):
@@ -299,7 +319,7 @@ def test_impact_gains_affected_flows_key(ws):
     result = code_graph.impact("place_order", workspace=ws)
     assert result["exit_code"] == 0
     assert "affected_flows" in result
-    assert any("create_order" in f["name"] for f in result["affected_flows"])
+    assert any("create_order" in f["entry_symbol"] for f in result["affected_flows"])
 
 
 def test_change_risk_gains_informational_flow_fields_for_diff_mode(ws):
@@ -380,4 +400,4 @@ def test_flows_tool_executor_affected_by_symbol(ws):
     result = asyncio.run(CodeGraphFlowsTool().execute(
         f'{{"root": "{ws}", "symbol": "place_order"}}', {}))
     assert result["exit_code"] == 0
-    assert any("create_order" in f["name"] for f in result["flows"])
+    assert any("create_order" in f["entry_symbol"] for f in result["flows"])
