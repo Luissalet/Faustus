@@ -21,6 +21,7 @@ Two fixtures:
 from __future__ import annotations
 
 import importlib
+import json
 import os
 import subprocess
 import time
@@ -615,7 +616,7 @@ def test_communities_tool_executor(ws):
 
     code_graph.index(ws)
     result = asyncio.run(CodeGraphCommunitiesTool().execute(
-        f'{{"root": "{ws}", "level": 0}}', {}))
+        json.dumps({"root": str(ws), "level": 0}), {}))
     assert result["exit_code"] == 0
     assert len(result["communities"]) >= 1
 
@@ -628,7 +629,7 @@ def test_communities_tool_executor_detail_by_id(ws):
     listing = code_graph.communities(ws, level=0)
     target = listing["communities"][0]["id"]
     result = asyncio.run(CodeGraphCommunitiesTool().execute(
-        f'{{"root": "{ws}", "id": "{target}"}}', {}))
+        json.dumps({"root": str(ws), "id": target}), {}))
     assert result["exit_code"] == 0
     assert result["community"]["id"] == target
 

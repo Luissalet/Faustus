@@ -9,6 +9,7 @@ depth-capped chain to check the cap actually bites.
 from __future__ import annotations
 
 import asyncio
+import json
 import importlib
 import os
 import subprocess
@@ -335,15 +336,6 @@ def test_change_risk_gains_informational_flow_fields_for_diff_mode(ws):
               - result["score"]) < 0.05
 
 
-def test_existing_code_graph_impact_tests_still_pass():
-    import subprocess as sp
-    proc = sp.run(
-        ["/home/claude/venv/bin/python", "-m", "pytest", "-q",
-         "tests/test_code_graph_impact.py"],
-        cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-        capture_output=True, text=True, timeout=180)
-    assert proc.returncode == 0, proc.stdout[-4000:] + proc.stderr[-2000:]
-
 
 # ── workspace confinement ────────────────────────────────────────────────
 
@@ -378,7 +370,7 @@ def test_flows_tool_executor_list(ws):
     from src.agent_tools.code_graph_tools import CodeGraphFlowsTool
 
     code_graph.index(ws)
-    result = asyncio.run(CodeGraphFlowsTool().execute(f'{{"root": "{ws}"}}', {}))
+    result = asyncio.run(CodeGraphFlowsTool().execute(json.dumps({"root": str(ws)}), {}))
     assert result["exit_code"] == 0
     assert len(result["flows"]) >= 1
 
@@ -388,7 +380,7 @@ def test_flows_tool_executor_detail_by_entry(ws):
 
     code_graph.index(ws)
     result = asyncio.run(CodeGraphFlowsTool().execute(
-        f'{{"root": "{ws}", "entry": "create_order"}}', {}))
+        json.dumps({"root": str(ws), "entry": "create_order"}), {}))
     assert result["exit_code"] == 0
     assert result["flow"]["entry_symbol"] == "create_order"
 
@@ -398,6 +390,6 @@ def test_flows_tool_executor_affected_by_symbol(ws):
 
     code_graph.index(ws)
     result = asyncio.run(CodeGraphFlowsTool().execute(
-        f'{{"root": "{ws}", "symbol": "place_order"}}', {}))
+        json.dumps({"root": str(ws), "symbol": "place_order"}), {}))
     assert result["exit_code"] == 0
     assert any("create_order" in f["entry_symbol"] for f in result["flows"])
