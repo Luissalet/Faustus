@@ -55,6 +55,29 @@ def user_request_text(messages: Optional[Iterable[Mapping[str, Any]]]) -> str:
     return ""
 
 
+def asked_before_text(messages: Optional[Iterable[Mapping[str, Any]]]) -> str:
+    """What the assistant said right before the user's latest message: the
+    question the user is answering ("¿Qué puede hacer Faustus con una app
+    conectada?"), or "" when the latest message is not a reply."""
+    seen_user = False
+    for message in reversed(list(messages or ())):
+        if not isinstance(message, Mapping):
+            continue
+        role = message.get("role")
+        if role == "user":
+            if message.get("_agent_injected") or message.get("_harness_note"):
+                continue
+            if seen_user:
+                return ""
+            seen_user = True
+            continue
+        if role == "assistant" and seen_user:
+            content = message.get("content")
+            if isinstance(content, str) and content.strip():
+                return content
+    return ""
+
+
 # Imperatives and infinitives only. A conjugated or negated form ("no la
 # arranques", "¿la arrancaste?") is not an order and must not match.
 _START = (r"arranca(?:lo|la|me)?", r"arrancar(?:lo|la)?", r"inicia(?:lo|la)?", r"iniciar(?:lo|la)?",
@@ -897,11 +920,248 @@ def _edit_matcher(tool: str) -> Callable[..., bool]:
     return lambda user_text, content, workspace="": _edits_the_project(user_text, content, workspace, tool)
 
 
+# ---------------------------------------------------------------------------
+# The user's own apps (plugins connected as app connectors)
+# ---------------------------------------------------------------------------
+#
+# Every tool of a Hoard app ends its description with a `Sinónimos:` line —
+# the Spanish words a person says when they want that tool ("apunta",
+# "guarda este enlace", "examíname"). Live, every one of those requests
+# stopped at the card, because the tool's own description travels in the
+# untrusted lane and arms the gate on the very first turn. The rule here is
+# the same as for the other matchers: the user's latest message must name
+# the act (one of the tool's synonyms, or its name's words) and, for a tool
+# that writes, the target (one of the call's own values, quoted from the
+# user's words). Only tools of a connector the user set up count — an MCP
+# server that is not one of the user's app connectors keeps the gate.
+
+_SYNONYM_LINE_RE = re.compile(r"sin[oó]nimos?\s*:\s*(.+)", re.IGNORECASE)
+
+
+def _tool_synonyms(description: str, name: str) -> list:
+    """Folded phrases from the description's `Sinónimos:` line plus the tool
+    name as words ("cards_due" -> "cards due"). Anything under four letters
+    is dropped: too short to mean a request."""
+    from src import plugins as plugins_mod
+
+    out = []
+    for line in str(description or "").splitlines():
+        m = _SYNONYM_LINE_RE.search(line)
+        if not m:
+            continue
+        for raw in re.split(r"[,;·|]", m.group(1)):
+            phrase = plugins_mod.fold(raw)
+            if len(phrase) >= 4:
+                out.append(phrase)
+    words = plugins_mod.fold(name.replace("_", " "))
+    if len(words) >= 4:
+        out.append(words)
+    return out
+
+
+def _contains_phrase(text: str, phrase: str) -> bool:
+    return re.search(rf"(?<![\w]){re.escape(phrase)}(?![\w])", text) is not None
+
+
+_PHRASE_FILLER = {"este", "esta", "esto", "estos", "estas", "ese", "esa", "eso", "el", "la", "los", "las",
+                  "lo", "le", "de", "del", "al", "en", "mi", "mis", "tu", "un", "una", "que", "me", "se",
+                  "the", "this", "that", "my", "a", "an", "to", "of", "it"}
+
+
+def _same_word(a: str, b: str) -> bool:
+    """"guarda" is "guardar", "repasemos" is "repasar": equal, or the same
+    five-letter stem when both words have one."""
+    if a == b:
+        return True
+    return len(a) >= 5 and len(b) >= 5 and a[:5] == b[:5]
+
+
+def _says(text: str, phrase: str) -> bool:
+    """The user's words say the phrase: the exact phrase, or its meaningful
+    words in order, each within three words of the previous one, matched by
+    stem ("guarda este enlace" says "guardar enlace")."""
+    if _contains_phrase(text, phrase):
+        return True
+    wanted = [w for w in phrase.split() if w not in _PHRASE_FILLER]
+    if not wanted:
+        return False
+    tokens = re.findall(r"\w+", text)
+    for start, token in enumerate(tokens):
+        if not _same_word(wanted[0], token):
+            continue
+        pos, ok = start, True
+        for word in wanted[1:]:
+            nxt = next((j for j in range(pos + 1, min(pos + 5, len(tokens))) if _same_word(word, tokens[j])), None)
+            if nxt is None:
+                ok = False
+                break
+            pos = nxt
+        if ok:
+            return True
+    return False
+
+
+def _arg_values(value: Any, out: list, depth: int = 0) -> None:
+    if depth > 4:
+        return
+    if isinstance(value, Mapping):
+        for v in value.values():
+            _arg_values(v, out, depth + 1)
+    elif isinstance(value, (list, tuple)):
+        for v in value:
+            _arg_values(v, out, depth + 1)
+    elif isinstance(value, bool) or value is None:
+        return
+    elif isinstance(value, (int, float)):
+        out.append(str(value))
+    elif isinstance(value, str):
+        out.append(value)
+
+
+def _names_a_value(text: str, args: Mapping[str, Any]) -> bool:
+    """One of the call's own values appears in the user's words: a name, a
+    URL, an amount (12.5 also as 12,5), a title. Short values (under three
+    letters) and the words that name a period ("hoy") do not count."""
+    from src import plugins as plugins_mod
+
+    values: list = []
+    _arg_values(args, values)
+    for raw in values:
+        candidates = [raw]
+        if re.fullmatch(r"-?\d+(?:\.\d+)?", raw):
+            # 12.5 is said as "12,50", "12,5" or "12.50"
+            two = f"{float(raw):.2f}"
+            candidates += [raw.replace(".", ","), two, two.replace(".", ",")]
+            if raw.endswith(".0"):
+                candidates.append(raw[:-2])
+        for cand in candidates:
+            folded = plugins_mod.fold(cand)
+            if len(folded) < 3 or folded in _PERIOD_WORDS:
+                continue
+            if _contains_phrase(text, folded):
+                return True
+    return False
+
+
+_PERIOD_WORDS = {"hoy", "ayer", "manana", "semana", "mes", "esta semana", "este mes", "today", "yesterday", "week", "month", "all", "todo", "todos", "todas"}
+
+
+def _parse_args(content: Any) -> Dict[str, Any]:
+    if isinstance(content, Mapping):
+        return dict(content)
+    text = str(content or "").strip()
+    if not text:
+        return {}
+    try:
+        import json
+        parsed = json.loads(text)
+        return parsed if isinstance(parsed, dict) else {}
+    except Exception:  # noqa: BLE001 - not JSON: nothing to compare
+        return {}
+
+
+def _answers_what_was_asked(text: str, asked_before: str, meta: Mapping[str, Any], args: Mapping[str, Any]) -> bool:
+    """The user is answering the question the assistant just asked and the
+    call records that answer: a quiz card graded after "está en la carpeta
+    plugins". The answer names no act ("califica") and no value, but the
+    call carries the question itself — one of its values, twelve letters or
+    more, is in the assistant's previous message. Never for a destructive
+    tool."""
+    from src import plugins as plugins_mod
+
+    if not text.strip() or not str(asked_before or "").strip():
+        return False
+    annotations = meta.get("annotations") if isinstance(meta.get("annotations"), Mapping) else {}
+    if annotations.get("destructiveHint") is not False:
+        return False
+    asked = plugins_mod.fold(asked_before)
+    values: list = []
+    _arg_values(args, values)
+    for raw in values:
+        folded = plugins_mod.fold(raw)
+        if len(folded) >= 12 and _contains_phrase(asked, folded):
+            return True
+    return False
+
+
+def _app_tool(user_text: str, content: Any, workspace: str = "", tool: str = "", asked_before: str = "") -> bool:
+    parts = str(tool or "").split("__", 2)
+    if len(parts) != 3 or parts[0] != "mcp" or not parts[1] or not parts[2]:
+        return False
+    server_id, name = parts[1], parts[2]
+    try:
+        from src import connector_sidecar
+        connector = connector_sidecar.get_connector_for_server(server_id)
+    except Exception:  # noqa: BLE001 - no sidecar, no user app
+        connector = None
+    if not connector:
+        return False
+    try:
+        from src.tool_utils import get_mcp_manager
+        mcp = get_mcp_manager()
+        tools = (getattr(mcp, "_tools", {}) or {}).get(server_id) or [] if mcp else []
+    except Exception:  # noqa: BLE001
+        tools = []
+    meta = next((t for t in tools if isinstance(t, dict) and t.get("name") == name), None)
+    if meta is None:
+        return False
+    from src import plugins as plugins_mod
+    from src.mcp_manager import mcp_tool_is_readonly
+
+    text = plugins_mod.fold(user_text)
+    args = _parse_args(content)
+    if not any(_says(text, phrase) for phrase in _tool_synonyms(meta.get("description") or "", name)):
+        return _answers_what_was_asked(text, asked_before, meta, args)
+    if mcp_tool_is_readonly(meta):
+        return True
+    return _names_a_value(text, args) or _answers_what_was_asked(text, asked_before, meta, args)
+
+
+_QUOTED_RE = re.compile(r"[\"“«]([^\"”»]{3,80})[\"”»]")
+
+
+def _skill_read(user_text: str, content: Any, workspace: str = "") -> bool:
+    """`manage_skills view` of the skill whose triggers the user just said.
+
+    With an app connected the gate is armed from the first turn, so
+    «examíname» stopped at a card before the model could open the skill
+    that says how to quiz. A skill read stays private (a user's own skill
+    may hold anything); it passes only for the skill the request points at:
+    one of the quoted phrases of its description ("Use when the user says
+    «examíname», …") or its name's words are in the user's message."""
+    args = _parse_args(content)
+    if str(args.get("action") or "").strip().casefold() not in {"view", "view_ref"}:
+        return False
+    name = str(args.get("name") or args.get("skill_id") or "").strip()
+    if not name:
+        return False
+    from src import plugins as plugins_mod
+
+    text = plugins_mod.fold(user_text)
+    if _says(text, plugins_mod.fold(name.replace("-", " ").replace("_", " "))):
+        return True
+    try:
+        from services.memory.skills import SkillsManager
+        from src.constants import DATA_DIR
+        skills = SkillsManager(DATA_DIR).load() or []
+    except Exception:  # noqa: BLE001 - no library, no match
+        return False
+    skill = next((s for s in skills if isinstance(s, Mapping) and s.get("name") == name), None)
+    if skill is None:
+        return False
+    for phrase in _QUOTED_RE.findall(str(skill.get("description") or "")):
+        folded = plugins_mod.fold(phrase)
+        if len(folded) >= 4 and _says(text, folded):
+            return True
+    return False
+
+
 #: tool name -> matcher(user_text, call_content). A tool that is not here is
 #: never let through by this rule.
 MATCHERS: Dict[str, Callable[..., bool]] = {
     "plugin_app": _plugin_app,
     "manage_memory": _memory_read,
+    "manage_skills": _skill_read,
     "bash": _shell_matcher,
     "powershell": _shell_matcher,
     "python": _analyses_the_data,
@@ -911,9 +1171,12 @@ MATCHERS: Dict[str, Callable[..., bool]] = {
 }
 
 
-def allows(tool_name: Any, content: Any, user_text: str, workspace: str = "") -> bool:
+def allows(tool_name: Any, content: Any, user_text: str, workspace: str = "", asked_before: str = "") -> bool:
     """True when the user's latest message asked for exactly this call."""
     matcher = MATCHERS.get(tool_name) if isinstance(tool_name, str) else None
+    if matcher is None and isinstance(tool_name, str) and tool_name.startswith("mcp__"):
+        matcher = lambda user_text, content, workspace="": _app_tool(  # noqa: E731
+            user_text, content, workspace, tool_name, asked_before)
     if matcher is None or not str(user_text or "").strip():
         return False
     try:

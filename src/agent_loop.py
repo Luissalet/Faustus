@@ -55,6 +55,7 @@ from src.tool_security import (
 )
 from src.tool_policy import GUIDE_ONLY_DIRECTIVE, WEB_TOOL_NAMES, ToolPolicy
 from src.user_request_gate import user_request_text as _user_request_text
+from src.user_request_gate import asked_before_text as _asked_before_text
 from src.tool_capabilities import (
     ResultIntegrity,
     ToolEffect,
@@ -6411,6 +6412,7 @@ async def _stream_agent_loop_body(
             if isinstance((harness_options or {}).get("user_delegation"), dict) else None
         ),
         user_request=_user_request_text(messages),
+        asked_before=_asked_before_text(messages),
         workspace=str(workspace or ""),
     )
     if run_security.user_delegation is not None:

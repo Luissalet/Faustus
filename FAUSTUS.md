@@ -7715,16 +7715,42 @@ de verdad: dos copias iguales → una entrada con `times: 2` y la app de
 origen, un token → «[oculto: token]», `clip_set` → `Get-Clipboard` lo
 devuelve.
 
+### «Lo que pides tú, pasa» para tus apps (23-09)
+
+La descripción de cada herramienta MCP viaja por el carril no fiable, así
+que con una app conectada la puerta de contexto externo se armaba en el
+primer turno y «Examíname», «apunta 12,50 de taxi» o «guarda este enlace»
+acababan todos en «Allow this task to continue?». En vez de un comparador
+por herramienta (hay más de cien entre las nueve apps), `_app_tool` en
+`src/user_request_gate.py` sirve para cualquier `mcp__<server>__<tool>` de
+un servidor que sea **conector de app del usuario**
+(`connector_sidecar.get_connector_for_server`; otro MCP sigue con la
+puerta): el último mensaje del usuario tiene que decir el acto — una frase
+de la línea `Sinónimos:` de la descripción o las palabras del nombre, por
+raíz y en orden («guarda este enlace» dice «guardar enlace», «repasemos»
+dice «repasar»; palabras sueltas y desordenadas no) —; una herramienta de
+solo lectura pasa con eso, y una que escribe además necesita que uno de
+los valores de la llamada salga de sus palabras (un nombre, una URL, un
+importe dicho «12,50», un título; ni valores de menos de tres letras ni
+«hoy», «este mes»). Dos casos que salieron en vivo con un examen de
+Hypatia: (1) contestar la pregunta no nombra ningún acto («está en la
+carpeta plugins»), así que `card_review` volvía a la tarjeta en cada
+respuesta; ahora una escritura no destructiva también pasa cuando uno de
+sus valores (doce letras o más: el anverso) está en el mensaje del
+asistente al que el usuario responde (`asked_before_text`, nuevo campo
+`ToolRunSecurityContext.asked_before`); (2) el modelo abría la skill
+`hoard-study-cards` con `manage_skills view` y eso paraba en la tarjeta
+antes de empezar: `_skill_read` deja pasar la lectura de la skill cuyas
+frases entrecomilladas de la descripción («examíname») o cuyo nombre dice
+el usuario; leer otra skill o escribir una sigue con la puerta (la lectura
+de skills sigue siendo privada a efectos de contaminación).
+`tests/test_user_request_gate_apps.py` (12).
+
 ### Pendiente
 
-- La puerta de contexto externo se arma en cada turno con estas apps (las
-  descripciones MCP viajan por el carril no fiable): cada petición acabó en
-  «Allow this task to continue?». Con la regla «lo que pides tú, pasa» (§166)
-  faltan comparadores para `add_entry`, `save_link`, `upsert_person`,
-  `screen_recent`, `library_search`, `scribe_sessions`…
-- Las siete tienen perfil de arranque e icono en el 7000 (`setup7000.py`),
-  pero nadie las arranca al iniciar sesión: hoy es `hoards_start.ps1` a mano
-  o el perfil desde Faustus. El 7003 y `faustus-hoards-data` son de pruebas
+- Las nueve tienen perfil de arranque e icono en el 7000 (`setup7000.py`),
+  pero nadie las arranca al iniciar sesión: hoy es `D:\LocalAI\Start-Hoards.ps1`
+  (idempotente, `-Stop`) a mano o el perfil desde Faustus. El 7003 y `faustus-hoards-data` son de pruebas
   y no deben quedarse.
 - El 7000 arrancó antes de los arreglos de esta tanda (`00ba4dc0`,
   `5a507d3e`, `31722cf1`, `cf05e543`: efectos MCP, nota en lugar de la

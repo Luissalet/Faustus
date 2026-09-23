@@ -1603,6 +1603,10 @@ class ToolRunSecurityContext:
     # something the model decided after reading untrusted text. Same
     # non-consuming contract as `user_delegation` above.
     user_request: str = ""
+    # What the assistant said right before that message (src.user_request_gate.
+    # asked_before_text): a user answering a quiz question names no act, but
+    # the grading call carries the question the assistant asked.
+    asked_before: str = ""
     # The folder this turn is bound to, for matchers that need to know where
     # a command runs (`cd "<workspace>" && pytest`). Empty when unbound.
     workspace: str = ""
@@ -1794,7 +1798,7 @@ class ToolRunSecurityContext:
             return ToolGateDecision(True)
         if self.user_request:
             from src.user_request_gate import allows as _user_asked_for
-            if _user_asked_for(tool_name, content, self.user_request, self.workspace):
+            if _user_asked_for(tool_name, content, self.user_request, self.workspace, self.asked_before):
                 return ToolGateDecision(True)
         capabilities = capabilities_for_action(tool_name, content)
         blocked_effects = capabilities.effects & POST_EXTERNAL_BLOCKED_EFFECTS
