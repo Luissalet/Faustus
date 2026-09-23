@@ -269,3 +269,28 @@ def test_a_profile_on_the_connection_address_is_not_a_disagreement(world, monkey
     out = asyncio.run(plugin_runtime.ensure_running("platos"))
 
     assert out["ok"] is True and out.get("started") is True
+
+
+def test_the_list_opens_with_which_apps_run_and_which_do_not(monkeypatch):
+    """«¿Qué aplicaciones mías están abiertas?» with 23 apps: the model listed
+    the first four as the open ones. The answer now comes first."""
+    from src import plugin_runtime
+    from src.agent_tools.plugin_tools import PluginsListTool
+
+    rows = [
+        {"plugin": "a", "name": "Alpha", "capabilities": [], "connected": True, "app": {"reachable": True},
+         "can_start": True, "can_show": True},
+        {"plugin": "b", "name": "Beta", "capabilities": [], "connected": True, "app": {"reachable": False},
+         "can_start": True, "can_show": True},
+        {"plugin": "c", "name": "Gamma", "capabilities": [], "connected": False, "app": None,
+         "can_start": False, "can_show": False},
+    ]
+
+    async def fake_survey(owner=None, check=False):
+        return rows
+
+    monkeypatch.setattr(plugin_runtime, "survey", fake_survey)
+    out = asyncio.run(PluginsListTool().execute('{"check": true}', {}))["output"].splitlines()
+    assert out[0] == "Running now (1): Alpha"
+    assert out[1] == "Not running (1): Beta"
+    assert out[2] == "Not connected (1): Gamma"

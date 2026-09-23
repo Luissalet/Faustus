@@ -79,6 +79,22 @@ class PluginsListTool:
                 if row["can_show"]:
                     bits.append("can be shown")
             lines.append(" — ".join(bits))
+        # The answer to "which of my apps are open?" first, in one line each
+        # way. Seen live: with 23 apps described one per line (15k chars with
+        # the data), a 27B listed the first four as "open" and said they were
+        # all of them, although the list said 18 were running.
+        running = [r["name"] for r in rows if r.get("connected") and (r.get("app") or {}).get("reachable")]
+        stopped = [r["name"] for r in rows if r.get("connected") and r.get("app") is not None
+                   and not (r.get("app") or {}).get("reachable")]
+        unconnected = [r["name"] for r in rows if not r.get("connected")]
+        head = []
+        if running or stopped:
+            head.append(f"Running now ({len(running)}): " + (", ".join(running) or "none"))
+            head.append(f"Not running ({len(stopped)}): " + (", ".join(stopped) or "none"))
+        if unconnected:
+            head.append(f"Not connected ({len(unconnected)}): " + ", ".join(unconnected))
+        if head:
+            lines = head + [""] + lines
         return {"output": "\n".join(lines), "plugins": rows}
 
 
