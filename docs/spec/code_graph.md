@@ -109,6 +109,83 @@ tool schema gained `include_history` (boolean, default true). A standalone
 registered exactly like every other `code_graph_*` tool (schema, handler,
 tag, capability, description, ES/EN examples).
 
+## Communities and execution flows (code graph+)
+
+Two questions the graph could trace/impact but not yet answer directly:
+"what parts is this repo made of" and "what paths run through it, and how
+critical are they".
+
+- `src/code_graph/communities.py` — `communities(root, level=0|1, refresh=,
+  summarize=)`, `community(root, id_or_name_or_symbol)`, `community_of(root,
+  symbol)`. Builds a weighted, undirected graph over **files** (not
+  individual symbols — see the module docstring for why aggregating to file
+  granularity is both cheaper and more stable at this scale), weighted by
+  edge kind (`calls` > `registers` > `tests` > `imports`) and certainty
+  (`exact` > `static_inferred` > `lexical`); an edge whose two endpoints
+  disagree on "is this a test file" is dropped from clustering entirely (a
+  test file otherwise imports enough of the codebase to smear every real
+  community together), though test files still get their own community and
+  a community's `test_files` (which tests exercise it) comes from the full,
+  unfiltered edge set. Community detection is a from-scratch, deterministic
+  two-level Louvain (fixed node order, ties broken by smallest id, a
+  standard local-moving phase run once on the file graph for level 0 and
+  again on the aggregated level-0 graph for level 1 — literally "communities
+  of communities") with a wall-clock/size budget that falls back to
+  directory-based grouping (`method: "directory"`) rather than ever hanging
+  a turn. Each community carries a stable id (hash of its sorted member
+  files), a name (common path prefix + top-fan-in symbol), a deterministic
+  `purpose` paragraph, `size` (symbols), `dominant_language`, `cohesion`
+  (internal/incident edge weight), `key_symbols`, `routes`, `entry_points`,
+  `test_files` and `coupling` (top other communities by cross-edge weight).
+  An optional one-sentence model `summary` is added only when
+  `code_graph_community_summaries` is on AND the utility model is already
+  resident and idle (`src.brain.extract.background_llm_gate`, the same
+  check `brain.wiki` uses) — on `summarize=true` or a maintenance pass,
+  never inside a chat turn. Persisted in `ce_store` (`code_communities`,
+  `code_community_files`), keyed by `(workspace, project_id, fingerprint)`
+  where `fingerprint` hashes the index's own `(last_indexed_at, symbols,
+  edges)` — an unchanged index is a cache read, a changed one rebuilds.
+
+- `src/code_graph/flows.py` — `flows(root, limit=, sort=, entry=, refresh=)`,
+  `flow(root, id_or_entry)`, `affected_flows(symbol="" | from a git diff)`.
+  Entry points: HTTP routes, `@tool`/MCP-decorated functions, agent-tool
+  `ClassName.execute` methods, `main`-named functions, and public
+  functions/methods with outgoing calls but no caller from a non-test file
+  (capped and ranked by fan-out — see the module docstring for why CLI
+  decorators are not separately detected). From each entry, a cycle-safe,
+  depth/node-capped DFS over resolved `calls` edges builds a deterministic
+  call tree (`flow`'s indented rendering). Criticality (0..1, weights sum to
+  1.0, documented on `_CRITICALITY_WEIGHTS`) combines flow size, files/
+  communities spanned, members with high global fan-in, side-effect sinks
+  (name matches `db`/`commit`/`write`/`send`/`delete`/`subprocess`/
+  `requests`) and the inverse of how much of the flow a test exercises.
+  Persisted the same way as communities, sharing the same fingerprint.
+
+- `impact()` gains an additive `affected_flows` key (the execution flows
+  through the same seed(s), each with its criticality) — present, possibly
+  an empty list, on success; absent (never a false empty) if it could not be
+  computed, logged at debug. `change_risk()` gains two additive,
+  informational-only fields, `affected_flows_count`/`max_flow_criticality`
+  (diff-seeded mode only) — never folded into `factors`/`score`, so every
+  existing risk-score assertion is unchanged.
+
+- New built-in MCP server `mcp_servers/code_graph_server.py`, registered in
+  `src/builtin_mcp.py` as `"code_graph"` ("Built-in: Code graph"), exposing
+  `code_graph_search`/`trace`/`impact`/`architecture`/`communities`/`flows`/
+  `affected_flows`/`snippet`/`change_risk` as thin wrappers, same shape as
+  `brain_server.py` — not owner-scoped (a code graph has no owner, only a
+  workspace), every tool takes `root` explicitly.
+
+- Agent tools `code_graph_communities` {level?, refresh?, summarize?, id?}
+  and `code_graph_flows` {entry?, id?, symbol?, base_ref?, limit?} (the
+  latter covers list / one flow / affected-by-symbol-or-diff), registered
+  everywhere `code_graph_impact` is (schema, capability, tag, description,
+  ES/EN examples). Routes `GET /api/code-graph/communities`,
+  `/communities/{id}`, `/flows`, `/flows/{id}`, `/affected-flows`, same
+  `require_admin` auth as their neighbours. Setting
+  `code_graph_community_summaries` (default False) in `src/settings.py` and
+  `src/agent_settings_schema.py`'s `code_graph` group.
+
 ## Known gap
 
 `context_engine.code_index`'s `EDGE_KINDS` does not include an `INHERITS`
@@ -131,3 +208,23 @@ hotspots), snippet, incremental reindex (only the touched file is
 reparsed), output-size bounds, workspace confinement, the auto-index hook
 (no-op outside a running loop; schedules inside one), and full tool/schema/
 capability/description/example registration for all six tools.
+
+`tests/test_code_graph_communities.py` — a fixture repo with two clear file
+clusters joined by one bridge file: two communities at level 0, deterministic
+ids across repeated calls, a cache hit on an unchanged index, a rebuild after
+a file changes the fingerprint, the directory fallback under a tiny time
+budget, test files excluded from clustering but still reported as coverage,
+and `community`/`community_of` resolution by id/name/symbol.
+
+`tests/test_code_graph_flows.py` — a route that calls through three files
+into a `commit()`-like sink: one entry point, a deterministic call tree,
+cycle safety (a manufactured call cycle never loops), the depth cap, and a
+flow that touches a sink ranking above a trivial one-hop flow by
+criticality. `affected_flows` from a symbol and from a real `git diff` in a
+temp git repo. `impact()` gaining `affected_flows` and every existing
+`test_code_graph_*` module still passing.
+
+`tests/test_code_graph_mcp.py` — the `code_graph` built-in MCP server:
+importing it starts nothing, `list_tools()` returns a valid schema for
+every tool, and each handler runs in-process against a real fixture
+workspace (no owner-scoping to test, unlike `brain`/`memory`).
