@@ -1321,11 +1321,36 @@ def setup_local_models_routes() -> APIRouter:
                 "in_vram_bytes": in_vram, "spill_bytes": max(0, total - in_vram) if in_vram else 0,
                 "ctx": int(m.get("context_length") or 0), "expires_at": str(m.get("expires_at") or ""),
             })
+        residents_status = vram_admission.residency_status(root, residents)
+        # Lote L: who — across every instance sharing this Ollama, not just
+        # this one — holds each resident model and how. `{}` (never an
+        # extra directory read) while the lease is off.
+        holders_by_model: Dict[str, Any] = {}
+        try:
+            from src import model_lease
+            if model_lease.enabled():
+                for r in residents_status:
+                    holders_by_model[r["name"]] = model_lease.holders(root, r["name"])
+        except Exception as e:  # noqa: BLE001
+            logger.debug("local models: lease holders unavailable: %s", e)
         return {
             "endpoint_id": ep["id"], "root": root, "supported": True,
-            "residents": vram_admission.residency_status(root, residents),
+            "residents": residents_status,
             "grace_seconds": vram_admission.RESIDENCY_GRACE_SECONDS,
+            "holders": holders_by_model,
         }
+
+    @router.get("/instances")
+    async def api_instances(request: Request, endpoint_id: Optional[str] = Query(None)):
+        """Lote L: every Faustus instance sharing this Ollama right now —
+        who is the residency leader, who adopted whose default, and who
+        holds each resident model. `{}`-ish shape with empty lists while the
+        lease is off (nothing else to see)."""
+        require_user(request)
+        from src import model_lease
+        ep = _pick_endpoint(endpoint_id, _endpoints_for(request))
+        root = vram_admission_root(ep["root"]) or ep["root"]
+        return await asyncio.to_thread(model_lease.snapshot, root)
 
     @router.put("/{name:path}/pin")
     async def api_set_pin(request: Request, name: str, endpoint_id: Optional[str] = Query(None)):

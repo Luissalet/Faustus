@@ -203,6 +203,22 @@ def _is_default_model(endpoint: str, model: str) -> bool:
         return False
 
 
+def _is_sibling_protected(endpoint: str, model: str) -> bool:
+    """Lote L: is `model` a SIBLING instance's own pin or default on this
+    same Ollama? Treated exactly like our own default — a run ending here
+    must not shorten what another instance is keeping loaded, even for the
+    few seconds until its own keeper next re-asserts it."""
+    try:
+        from src import model_lease
+        if not model_lease.enabled():
+            return False
+        root = _root(endpoint)
+        key = _norm_model(model)
+        return key in model_lease.sibling_pins(root) or key in model_lease.sibling_defaults(root)
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def _resident_load_options(ps: Dict[str, Any], endpoint: str, model: str) -> Dict[str, Any]:
     """Load-time options that make a keep_alive ping match the runner that is
     already resident: its real context length from /api/ps, plus the saved
@@ -242,10 +258,11 @@ def restore_keep_alive(endpoint: str, model: str, keep_alive: Any) -> bool:
     at all needed since it is already pinned by the residency keeper)."""
     if not endpoint or not model or not _looks_like_ollama(endpoint):
         return False
-    if _is_default_model(endpoint, model):
+    if _is_default_model(endpoint, model) or _is_sibling_protected(endpoint, model):
         ka_text = str(keep_alive).strip()
         if ka_text not in ("-1", "-1.0"):
-            logger.debug("restore_keep_alive: %s is the default model — keeping it pinned at -1 instead of %r",
+            logger.debug("restore_keep_alive: %s is protected (the default model, or a sibling "
+                         "instance's own pin/default) — keeping it pinned at -1 instead of %r",
                          model, keep_alive)
             keep_alive = -1
     url = _root(endpoint) + "/api/generate"

@@ -430,6 +430,22 @@ def resolve_endpoint(
         if not model and not fallback_model:
             logger.warning('[resolve_endpoint] no usable model (all models hidden or list empty)')
 
+        # Lote L (shared model lease): only the plain, no-override "default"
+        # lookup is eligible for adoption — a session that explicitly picked
+        # its own model never reaches this line at all (it returns earlier,
+        # via `fallback_url`/`fallback_model`, above). When a sibling
+        # instance's own default is already resident on this same Ollama,
+        # use that instead of resolving to a second model that would have
+        # to load next to it.
+        if setting_prefix == "default":
+            try:
+                from src import model_lease
+                adopted = model_lease.adopted_model_for(base)
+                if adopted:
+                    model = adopted
+            except Exception as e:  # noqa: BLE001
+                logger.debug("model lease: adopted-model lookup failed: %s", e)
+
         return chat_url, model or fallback_model, headers
     except Exception as e:
         logger.debug(f"Could not resolve {setting_prefix} endpoint: {e}")

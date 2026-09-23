@@ -155,7 +155,16 @@ def reserved_bytes(root: str, *, device: Optional[Union[int, str]] = None,
         if device is None and include_devices:
             total += sum(r["bytes"] for r in rows
                         if r["key"] != key and r["key"].startswith(f"{croot}|gpu"))
-        return total
+    # Lote L: a sibling instance's own reservation on this same root has not
+    # loaded either, but the room is already spoken for on the shared card —
+    # folded in outside the lock (a filesystem read, not our own bookkeeping).
+    try:
+        from src import model_lease
+        if model_lease.enabled():
+            total += model_lease.sibling_reserved_bytes(root)
+    except Exception:  # noqa: BLE001
+        pass
+    return total
 
 
 def try_reserve(root: str, model: str, bytes_needed: int, budget_bytes: int, *,
@@ -194,14 +203,30 @@ def try_reserve(root: str, model: str, bytes_needed: int, budget_bytes: int, *,
                               "bytes": max(0, int(bytes_needed)), "device": device,
                               "created": now, "ttl": float(ttl),
                               "last_heartbeat": now, "loading": False}
-        return rid
+    # Lote L: publish the reservation to the shared lease too, so a sibling
+    # instance's own admission sees this room as taken (sibling_reserved_
+    # bytes) instead of both processes reserving the same physical bytes.
+    try:
+        from src import model_lease
+        if model_lease.enabled():
+            model_lease.note_reservation(root, model, max(0, int(bytes_needed)), float(ttl))
+    except Exception:  # noqa: BLE001
+        pass
+    return rid
 
 
 def release_reservation(reservation_id: Optional[str]) -> None:
     if not reservation_id:
         return
     with _RES_LOCK:
-        _RESERVATIONS.pop(reservation_id, None)
+        r = _RESERVATIONS.pop(reservation_id, None)
+    if r:
+        try:
+            from src import model_lease
+            if model_lease.enabled():
+                model_lease.clear_reservation(r["root"], r["model"])
+        except Exception:  # noqa: BLE001
+            pass
 
 
 def heartbeat(reservation_id: Optional[str]) -> bool:
@@ -277,6 +302,12 @@ def release_reservations_for_model(root: str, model: str) -> None:
     next job. Safe to call even when there is nothing to release."""
     with _RES_LOCK:
         _release_for_model_locked(root, model)
+    try:
+        from src import model_lease
+        if model_lease.enabled():
+            model_lease.clear_reservation(root, model)
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def reservations_snapshot() -> List[Dict[str, Any]]:
@@ -326,6 +357,12 @@ def _note_active(root: str, name: str) -> None:
         return
     with _PIN_LOCK:
         _LAST_ACTIVE[_active_key(root, name)] = time.time()
+    try:
+        from src import model_lease
+        if model_lease.enabled():
+            model_lease.note_active(root, name)
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _seconds_since_active(root: str, name: str, *, now: Optional[float] = None) -> Optional[float]:
@@ -345,6 +382,12 @@ def pin_model(root: str, model: str) -> None:
         raise ValueError("model is required")
     with _PIN_LOCK:
         _PINS.setdefault(_canonical_root(root), set()).add(name.lower())
+    try:
+        from src import model_lease
+        if model_lease.enabled():
+            model_lease.note_pin(root, name)
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def unpin_model(root: str, model: str) -> None:
@@ -356,12 +399,31 @@ def unpin_model(root: str, model: str) -> None:
             pins.discard(name)
             if not pins:
                 _PINS.pop(croot, None)
+    try:
+        from src import model_lease
+        if model_lease.enabled():
+            model_lease.note_unpin(root, name)
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def is_pinned(root: str, model: str) -> bool:
     name = str(model or "").strip().lower()
     with _PIN_LOCK:
-        return name in _PINS.get(_canonical_root(root), set())
+        if name in _PINS.get(_canonical_root(root), set()):
+            return True
+    # Lote L: a sibling instance's own pin or default protects the model
+    # here too — nobody's eviction decision should touch what another
+    # instance is holding onto, silently or otherwise.
+    try:
+        from src import model_lease
+        if model_lease.enabled():
+            key = name[:-7] if name.endswith(":latest") else name
+            if key in model_lease.sibling_pins(root) or key in model_lease.sibling_defaults(root):
+                return True
+    except Exception:  # noqa: BLE001
+        pass
+    return False
 
 
 def pinned_models(root: str) -> List[str]:
@@ -391,6 +453,54 @@ def is_default_model(root: str, model: str) -> bool:
         return False
 
 
+def _sibling_active_seconds(root: str, name: str) -> Optional[float]:
+    """Seconds since a FRESH SIBLING (not this process) last used `name` on
+    `root`, from the shared lease — `None` when the lease is off or nobody
+    else has. This is the cross-process twin of `_seconds_since_active`."""
+    try:
+        from src import model_lease
+        if not model_lease.enabled():
+            return None
+        norm = name[:-7] if str(name or "").strip().lower().endswith(":latest") else str(name or "").strip().lower()
+        epoch = model_lease.sibling_active(root).get(norm)
+        if epoch is None:
+            return None
+        return max(0.0, time.time() - float(epoch))
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _sibling_active_protected(root: str, name: str, now: float) -> bool:
+    """True when a sibling used `name` within `warm_default_model_yield_
+    minutes` — the cross-process reading of the same "in use" rule
+    `RESIDENCY_GRACE_SECONDS`/`_protected` already applies within one
+    process."""
+    age = _sibling_active_seconds(root, name)
+    if age is None:
+        return False
+    try:
+        from src.settings import get_setting
+        yield_minutes = float(get_setting("warm_default_model_yield_minutes", 10) or 10)
+    except Exception:  # noqa: BLE001
+        yield_minutes = 10.0
+    return age < max(0.0, yield_minutes) * 60.0
+
+
+def _sibling_active_port(root: str, name: str) -> Optional[int]:
+    """Which sibling port is actively using `name` right now, for the
+    ticket's "in use by :<port>" label — `None` when nobody is."""
+    if _sibling_active_seconds(root, name) is None:
+        return None
+    try:
+        from src import model_lease
+        for h in model_lease.holders(root, name):
+            if h.get("kind") == "active" and h.get("port"):
+                return int(h["port"])
+    except Exception:  # noqa: BLE001
+        pass
+    return None
+
+
 def _default_yield_plan(root: str, residents: List[Dict[str, Any]],
                         shortfall: int) -> "tuple[List[str], int, bool]":
     """X-D, the owner's rule verbatim: the default model stays resident
@@ -398,17 +508,26 @@ def _default_yield_plan(root: str, residents: List[Dict[str, Any]],
     next to it — in which case the default yields on its own, no card.
 
     Biggest-first fill across every resident that is NOT a user-pinned
-    (Settings → Local models) model OTHER than the default itself — i.e.
-    freely-evictable residents plus the default, never another person's
-    pin. Returns `(names_to_unload, bytes_freed, uses_default)`; a caller
-    only auto-yields when `uses_default` is True AND `bytes_freed >=
-    shortfall` — the default moving for nothing (free residents alone
-    would already have covered it) is not this rule, and neither is the
-    default moving without covering the shortfall."""
-    def _other_pin(r: Dict[str, Any]) -> bool:
-        return is_pinned(root, r["name"]) and not is_default_model(root, r["name"])
+    (Settings → Local models) model OTHER than the default itself, and not
+    a sibling instance's pin/default/active model either (Lote L: this rule
+    never shows a card, so it must never silently take memory another
+    instance is holding) — i.e. freely-evictable residents plus the
+    default, never another person's or process's claim. Returns
+    `(names_to_unload, bytes_freed, uses_default)`; a caller only
+    auto-yields when `uses_default` is True AND `bytes_freed >= shortfall`
+    — the default moving for nothing (free residents alone would already
+    have covered it) is not this rule, and neither is the default moving
+    without covering the shortfall."""
+    now = time.time()
 
-    pool = sorted((r for r in residents if not _other_pin(r)),
+    def _protected(r: Dict[str, Any]) -> bool:
+        if is_default_model(root, r["name"]):
+            return False  # the default is always eligible to yield itself
+        if is_pinned(root, r["name"]):
+            return True
+        return _sibling_active_protected(root, r["name"], now)
+
+    pool = sorted((r for r in residents if not _protected(r)),
                  key=lambda r: r["in_vram_bytes"], reverse=True)
     picked: List[str] = []
     freed = 0
@@ -580,6 +699,10 @@ def assess(root: str, model: str) -> Dict[str, Any]:
             # understands why it is protected and can still tick it when
             # the automatic yield below was not enough on its own.
             "default": is_default_model(root, n),
+            # Lote L: which sibling instance (by port) is actively using this
+            # resident right now, when any — the ticket's "in use by :<port>"
+            # label, `None` when nobody else is.
+            "in_use_by_port": _sibling_active_port(root, n),
         })
     residents.sort(key=lambda r: r["in_vram_bytes"], reverse=True)
     out["residents"] = residents
@@ -696,10 +819,16 @@ def assess(root: str, model: str) -> Dict[str, Any]:
         now = time.time()
 
         def _protected(r: Dict[str, Any]) -> bool:
+            # `is_pinned` already covers a sibling instance's own pin or
+            # default (Lote L); a sibling's recent USE of a resident that is
+            # neither is the cross-process twin of the grace-period check
+            # right below it.
             if is_pinned(root, r["name"]):
                 return True
             age = _seconds_since_active(root, r["name"], now=now)
-            return age is not None and age < RESIDENCY_GRACE_SECONDS
+            if age is not None and age < RESIDENCY_GRACE_SECONDS:
+                return True
+            return _sibling_active_protected(root, r["name"], now)
 
         free_residents = [r for r in residents if not _protected(r)]
         protected_residents = [r for r in residents if _protected(r)]

@@ -1459,6 +1459,20 @@ DEFAULT_SETTINGS = {
     # block at all. Off leaves only the workspace's own `.faustus/rules/`
     # (and the other RULE_DIR_NAMES) in the prompt.
     "project_rules_library_enabled": True,
+    # Shared model lease (src/model_lease.py, lot L): several instances of
+    # this app on one PC, one local Ollama — whether instances publish/read
+    # each other's residency (pins, default, activity, VRAM reservations) so
+    # they share one loaded model instead of fighting over it. Off makes
+    # every instance behave exactly as if it were alone on the machine.
+    "model_lease_enabled": True,
+    # Whether an instance whose own default is NOT resident may adopt a
+    # sibling's resident default instead of loading a second copy of its own.
+    "model_lease_adopt_resident": True,
+    # How often (seconds) a running instance refreshes its own lease file.
+    "model_lease_heartbeat_seconds": 10,
+    # A sibling's lease is ignored once its heartbeat is older than this
+    # (seconds) — it is treated as dead, not just quiet.
+    "model_lease_stale_seconds": 45,
 }
 
 

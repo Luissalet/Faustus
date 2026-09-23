@@ -71,6 +71,13 @@ _keeper: Dict[str, Any] = {
     # default is resident/being kept), and whether the last cycle skipped a
     # reload because the default would not fit next to what is resident.
     "yielding_to": None, "waiting_for_room": False,
+    # Lote L (shared model lease): whether THIS instance is the one driving
+    # the keeper for the default right now (`None` while the lease is off —
+    # there is only ever one instance, so leadership is not a question);
+    # the port of whoever is, when it is not us; the model this instance
+    # adopted from a sibling instead of loading its own; how many fresh
+    # sibling instances the lease currently sees.
+    "leader": None, "follower_of": None, "adopted_model": "", "siblings": 0,
 }
 # Logged once per episode (not every ~20 s cycle) — reset the moment the
 # condition that caused it clears.
@@ -274,13 +281,85 @@ def _is_forever(expires_at: str) -> bool:
         return False
 
 
+def _lease_enabled() -> bool:
+    try:
+        from src import model_lease
+        return bool(model_lease.enabled())
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _lease_is_leader(root: str, model: str) -> bool:
+    try:
+        from src import model_lease
+        return bool(model_lease.is_residency_leader(root, model))
+    except Exception:  # noqa: BLE001
+        return True
+
+
+def _lease_leader(root: str, model: str) -> Dict[str, Any]:
+    try:
+        from src import model_lease
+        return model_lease.residency_leader(root, model) or {}
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def _lease_sibling_count() -> int:
+    try:
+        from src import model_lease
+        return len(model_lease.siblings())
+    except Exception:  # noqa: BLE001
+        return 0
+
+
+def _lease_note_default(root: str, model: str) -> None:
+    try:
+        from src import model_lease
+        model_lease.note_default(root, model)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _lease_adopt(root: str, model: str, resident_models: set) -> str:
+    try:
+        from src import model_lease
+        return model_lease.adopt_resident_default(root, model, resident_models) or ""
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def _lease_note_adopted(model: str) -> None:
+    try:
+        from src import model_lease
+        model_lease.note_adopted(model)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _sibling_active_age(root: str, name: str) -> Optional[float]:
+    """Lote L: seconds since a fresh SIBLING instance last used `name` on
+    `root` — the cross-process reading `vram_admission.last_active_seconds`
+    cannot give on its own (that is this process's own clock only)."""
+    try:
+        from src import model_lease
+        if not model_lease.enabled():
+            return None
+        epoch = model_lease.sibling_active(root).get(_norm_model(name))
+        if epoch is None:
+            return None
+        return max(0.0, time.time() - float(epoch))
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def _active_non_default_resident(ps: Dict[str, Any], target: Dict[str, str],
                                  yield_minutes: float) -> "tuple[Optional[str], Optional[float]]":
     """From an `/api/ps` reading already in hand (no extra call): the name
-    and age (seconds since last chat turn) of a resident local model that is
-    NOT the default and NOT an embedding model, and has been used within
-    `yield_minutes` — the model the owner explicitly picked, per X-D. `None,
-    None` when nothing qualifies."""
+    and age (seconds since last chat turn, ours or a sibling instance's) of
+    a resident local model that is NOT the default and NOT an embedding
+    model, and has been used within `yield_minutes` — the model the owner
+    explicitly picked, per X-D. `None, None` when nothing qualifies."""
     try:
         from src import vram_admission
     except Exception:  # noqa: BLE001
@@ -292,6 +371,8 @@ def _active_non_default_resident(ps: Dict[str, Any], target: Dict[str, str],
         if not name or _norm_model(name) == want_default or _looks_like_embedding_model(name):
             continue
         age = vram_admission.last_active_seconds(target["root"], name)
+        if age is None:
+            age = _sibling_active_age(target["root"], name)
         if age is not None and age < cutoff:
             return name, age
     return None, None
@@ -300,10 +381,11 @@ def _active_non_default_resident(ps: Dict[str, Any], target: Dict[str, str],
 def _idle_unpinned_residents(ps: Dict[str, Any], target: Dict[str, str], yield_minutes: float,
                              fit: Dict[str, Any]) -> List[str]:
     """Resident local models (not the default, not embeddings, not pinned by
-    a person) that have been idle longer than `yield_minutes` — or were
-    never used since they loaded — biggest first, enough of them to cover
-    the default's shortfall. Empty when the shortfall cannot be covered
-    with idle models alone (a busy model is never evicted here)."""
+    a person, not a sibling instance's pin/default/recent use) that have
+    been idle longer than `yield_minutes` — or were never used since they
+    loaded — biggest first, enough of them to cover the default's
+    shortfall. Empty when the shortfall cannot be covered with idle models
+    alone (a busy model is never evicted here)."""
     try:
         from src import vram_admission
     except Exception:  # noqa: BLE001
@@ -320,6 +402,8 @@ def _idle_unpinned_residents(ps: Dict[str, Any], target: Dict[str, str], yield_m
         if vram_admission.is_pinned(target["root"], name) and not vram_admission.is_default_model(target["root"], name):
             continue
         age = vram_admission.last_active_seconds(target["root"], name)
+        if age is None:
+            age = _sibling_active_age(target["root"], name)
         if age is not None and age < cutoff:
             continue
         idle.append((by_name.get(name, 0), name))
@@ -454,6 +538,41 @@ async def check_once() -> Dict[str, Any]:
         _keeper.update({"resident": None, "expires_at": "", "backend": None})
         return dict(_keeper)
     _keeper["backend"] = "ollama"
+
+    # Lote L (shared model lease): several instances of this app can share
+    # one Ollama. Every instance still PUBLISHES its own default every
+    # cycle (needed for the election itself); only the elected LEADER
+    # (oldest instance whose default this is, ties by port) actually acts.
+    # A follower only observes — no pin, no reload, no unload — because the
+    # leader is already doing that, and two keepers fighting over the same
+    # `keep_alive` is exactly the problem this lot exists to remove.
+    lease_on = _lease_enabled()
+    _keeper["siblings"] = _lease_sibling_count() if lease_on else 0
+    if lease_on:
+        _lease_note_default(target["root"], target["model"])
+        if not _lease_is_leader(target["root"], target["model"]):
+            leader = _lease_leader(target["root"], target["model"])
+            _keeper["leader"] = False
+            _keeper["follower_of"] = leader.get("port") if leader else None
+            ps = await _api_ps(target["root"])
+            want = _norm_model(target["model"])
+            row = None
+            if ps is not None:
+                for m in ps.get("models") or []:
+                    names = {_norm_model(m.get("name") or ""), _norm_model(m.get("model") or "")}
+                    if want in names:
+                        row = m
+                        break
+            _keeper["resident"] = row is not None
+            _keeper["expires_at"] = str(row.get("expires_at") or "") if row is not None else ""
+            _keeper["resident_since"] = (_keeper["resident_since"] or time.time()) if row is not None else None
+            return dict(_keeper)
+        _keeper["leader"] = True
+        _keeper["follower_of"] = None
+    else:
+        _keeper["leader"] = None
+        _keeper["follower_of"] = None
+
     _pin(target["root"], target["model"])
     ps = await _api_ps(target["root"])
     if ps is None:
@@ -470,6 +589,22 @@ async def check_once() -> Dict[str, Any]:
         _keeper["resident"] = False
         _keeper["resident_since"] = None
         _keeper["expires_at"] = ""
+        if lease_on:
+            # X-D for several instances: our own default is not here, but a
+            # sibling's own default already is — use that instead of
+            # loading a second copy of a (likely huge) model next to it.
+            resident_names = {_norm_model(str(m.get("name") or m.get("model") or ""))
+                              for m in (ps.get("models") or [])}
+            adopted = _lease_adopt(target["root"], target["model"], resident_names)
+            if adopted:
+                if _keeper.get("adopted_model") != adopted:
+                    logger.info("model warmup: adopting sibling's resident default %s instead of loading our own", adopted)
+                _keeper["adopted_model"] = adopted
+                _lease_note_adopted(adopted)
+                return dict(_keeper)
+            if _keeper.get("adopted_model"):
+                _keeper["adopted_model"] = ""
+                _lease_note_adopted("")
         if _load_in_flight(target["model"]):
             logger.debug("model warmup: default model absent but another load is in flight — waiting")
             return dict(_keeper)
@@ -538,6 +673,10 @@ async def check_once() -> Dict[str, Any]:
         _keeper["resident_since"] = _keeper["resident_since"] or time.time()
         _keeper["expires_at"] = ""
         return dict(_keeper)
+    if lease_on and _keeper.get("adopted_model"):
+        # Our own default is resident again — nothing left to adopt.
+        _keeper["adopted_model"] = ""
+        _lease_note_adopted("")
     expires = str(row.get("expires_at") or "")
     _keeper["resident"] = True
     _keeper["resident_since"] = _keeper["resident_since"] or time.time()
