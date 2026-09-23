@@ -6518,7 +6518,11 @@ async def _stream_agent_loop_body(
         or _conversation_language(messages)
     )
 
-    run_security = ToolRunSecurityContext(
+    # The run's gate, plus the allow-rule table for the engine's own
+    # read-only context calls (src/context_tool_gate.py); with no packet
+    # offered and no matching rule it decides exactly like its parent.
+    from src.context_tool_gate import ContextAwareSecurityContext
+    run_security = ContextAwareSecurityContext(
         external_untrusted_context_seen=(
             bool(external_untrusted_context_seen)
             or bool(
@@ -9958,6 +9962,15 @@ async def _stream_agent_loop_body(
                     _active_route_state.pop("request_messages", None)
                     _active_route_state["tools"] = all_tool_schemas
                     _ce_live_report = dict(_ce_live["report"])
+                    # `context_recall` of an id this turn's packet offered
+                    # passes the external-context gate without a card
+                    # (src/context_tool_gate.py); unknown ids still ask.
+                    try:
+                        run_security.offer_context_ids(
+                            _ce_live_report.get("recallable") or ())
+                    except Exception as _ce_offer_err:  # noqa: BLE001
+                        logger.debug("[context-engine] recall offer skipped: %s",
+                                     _ce_offer_err)
                     _context_packets_delivered.append({
                         "packet_id": str(_ce_live_report.get("packet_id") or ""),
                         "request_id": str(_ce_live_report.get("request_id") or ""),
