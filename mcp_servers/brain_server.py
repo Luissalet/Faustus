@@ -307,12 +307,11 @@ def _compose_edit(owner: str, path: str, content: str) -> str:
     `read_note` when `path` does not exist."""
     notes, render = _engine["notes"], _engine["render"]
     existing = notes.read_note(owner, path)
-    fields = dict(existing["frontmatter"])
-    fields["updated"] = _engine["db"].now_iso()
+    # only `updated` is rewritten; the rest of the YAML goes back verbatim
+    header = _engine["fm"].patch_header(existing.get("content", ""), {"updated": _engine["db"].now_iso()})
     if existing.get("source"):
-        return render.compose(fields, content, existing.get("generated", ""))
-    body = "\n" + str(content or "").strip("\n") + "\n"
-    return _engine["fm"].join(fields, body)
+        return header + render.compose_body(content, existing.get("generated", ""))
+    return header + "\n" + str(content or "").strip("\n") + "\n"
 
 
 def _tool_write_note(owner: str, args: dict) -> list[TextContent]:

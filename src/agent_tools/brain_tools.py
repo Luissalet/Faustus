@@ -64,12 +64,11 @@ def _compose_edit(notes_mod, render_mod, fm_mod, db_mod, owner: str, path: str,
     section, a free note keeps only its frontmatter. Raises
     `FileNotFoundError` (via `read_note`) when `path` does not exist."""
     existing = notes_mod.read_note(owner, path)
-    fields = dict(existing["frontmatter"])
-    fields["updated"] = db_mod.now_iso()
+    # only `updated` is rewritten; the rest of the YAML goes back verbatim
+    header = fm_mod.patch_header(existing.get("content", ""), {"updated": db_mod.now_iso()})
     if existing.get("source"):
-        return render_mod.compose(fields, content, existing.get("generated", ""))
-    body = "\n" + str(content or "").strip("\n") + "\n"
-    return fm_mod.join(fields, body)
+        return header + render_mod.compose_body(content, existing.get("generated", ""))
+    return header + "\n" + str(content or "").strip("\n") + "\n"
 
 
 class BrainTool:

@@ -14,61 +14,90 @@ never stale after an API call returns.
 from __future__ import annotations
 
 import contextlib
+import logging
 import os
 import re
 import sqlite3
 import time
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Callable, Dict, List, Optional, Sequence
 
 from . import db, frontmatter as fm, render, vault, wikilinks
+
+logger = logging.getLogger(__name__)
 
 
 # ── indexing ─────────────────────────────────────────────────────────────
 
+def _index_entry(rel_path: str, full: str, st) -> Dict[str, Any]:
+    text = vault._read(full) or ""
+    fm_data, body = fm.split(text)
+    if not isinstance(fm_data, dict):
+        fm_data = {}
+    title = str(fm_data.get("title") or vault._title_from_path(rel_path))
+    return {
+        "title": title, "kind": str(fm_data.get("kind") or "note"),
+        "source": str(fm_data.get("source") or ""), "hash": db.sha(text),
+        "mtime": st[0] / 1e9, "size": st[1], "frontmatter": fm_data,
+        "tags": wikilinks.tags(body, fm_data), "body": body,
+    }
+
+
+def _resolver(rows) -> "Callable[[str], Optional[str]]":
+    """`[[target]]` -> path: exact title first, then case/accent-folded;
+    among notes sharing a title the first path in sorted order wins (the
+    Studio resolves the same way, so both agree on where a link goes)."""
+    title_to_path: Dict[str, str] = {}
+    fold_to_path: Dict[str, str] = {}
+    for path, title in sorted(rows):
+        title_to_path.setdefault(title, path)
+        fold_to_path.setdefault(db.fold(title), path)
+
+    def resolve(target: str) -> Optional[str]:
+        return title_to_path.get(target) or fold_to_path.get(db.fold(target))
+
+    return resolve
+
+
 def reindex(owner: str = "") -> int:
-    """Rebuild `notes`/`links`/`notes_fts` from what is actually on disk.
-    Returns the number of notes indexed. Idempotent and safe to call often —
-    `vault.sync()` calls it after every import+export pass."""
+    """Bring `notes`/`links`/`notes_fts` in line with what is on disk.
+    Returns the number of notes indexed. Idempotent and cheap to call often:
+    a file whose (mtime, size) match its row is not read again, and one
+    unreadable or odd file is indexed as best it can be (or skipped) without
+    stopping the rest."""
     owner = str(owner or "")
     root = vault.vault_root(owner)
     os.makedirs(root, exist_ok=True)
 
-    found: Dict[str, Dict[str, Any]] = {}
+    on_disk: Dict[str, Any] = {}
     for rel_path, full in vault._iter_files(root):
-        text = vault._read(full)
-        if text is None:
-            continue
-        fm_data, body = fm.split(text)
-        title = str(fm_data.get("title") or vault._title_from_path(rel_path))
-        kind = str(fm_data.get("kind") or "note")
-        source = str(fm_data.get("source") or "")
-        try:
-            stat = os.stat(full)
-            mtime, size = stat.st_mtime, stat.st_size
-        except OSError:
-            mtime, size = 0.0, len(text.encode("utf-8"))
-        found[rel_path] = {
-            "title": title, "kind": kind, "source": source, "hash": db.sha(text),
-            "mtime": mtime, "size": size, "frontmatter": fm_data,
-            "tags": wikilinks.tags(body, fm_data), "body": body,
-        }
-
-    title_to_path: Dict[str, str] = {}
-    fold_to_path: Dict[str, str] = {}
-    for path, info in found.items():
-        title_to_path.setdefault(info["title"], path)
-        fold_to_path.setdefault(db.fold(info["title"]), path)
+        st = vault._stat(full)
+        if st is not None:
+            on_disk[rel_path] = (full, st)
 
     with db.db() as conn:
-        existing = {r["path"] for r in conn.execute(
-            "SELECT path FROM notes WHERE owner=?", (owner,)
+        known = {r["path"]: (float(r["mtime"] or 0), int(r["size"] or 0)) for r in conn.execute(
+            "SELECT path, mtime, size FROM notes WHERE owner=?", (owner,)
         ).fetchall()}
-        for path in existing - set(found):
-            _wipe_path(conn, owner, path)
 
-        now = db.now_iso()
-        for path, info in found.items():
+    changed: Dict[str, Dict[str, Any]] = {}
+    for rel_path, (full, st) in on_disk.items():
+        if known.get(rel_path) == (st[0] / 1e9, st[1]):
+            continue
+        try:
+            changed[rel_path] = _index_entry(rel_path, full, st)
+        except Exception:  # noqa: BLE001 - one odd file must not stop the index
+            logger.warning("brain notes: could not index %s", rel_path, exc_info=True)
+
+    removed = set(known) - set(on_disk)
+    if not changed and not removed:
+        return len(on_disk)
+
+    now = db.now_iso()
+    with db.db() as conn:
+        for path in removed:
+            _wipe_path(conn, owner, path)
+        for path, info in changed.items():
             conn.execute(
                 "INSERT INTO notes (owner, path, title, kind, source, hash, mtime, size, "
                 "frontmatter, tags, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?) "
@@ -87,14 +116,22 @@ def reindex(owner: str = "") -> int:
             )
             conn.execute("DELETE FROM links WHERE owner=? AND src_path=?", (owner, path))
             for link in wikilinks.parse(info["body"]):
-                target = link["target"]
-                dst = title_to_path.get(target) or fold_to_path.get(db.fold(target))
                 conn.execute(
                     "INSERT INTO links (owner, src_path, target, dst_path, label, is_embed) "
                     "VALUES (?,?,?,?,?,?)",
-                    (owner, path, target, dst, link["label"], 1 if link["is_embed"] else 0),
+                    (owner, path, link["target"], None, link["label"], 1 if link["is_embed"] else 0),
                 )
-    return len(found)
+        # Titles changed or notes came/went: re-resolve every link (cheap,
+        # no file reads) so an untouched note's link to a new note resolves.
+        resolve = _resolver([(r["path"], r["title"]) for r in conn.execute(
+            "SELECT path, title FROM notes WHERE owner=?", (owner,)).fetchall()])
+        for row in conn.execute(
+            "SELECT rowid, target, dst_path FROM links WHERE owner=?", (owner,)
+        ).fetchall():
+            dst = resolve(row["target"])
+            if dst != row["dst_path"]:
+                conn.execute("UPDATE links SET dst_path=? WHERE rowid=?", (dst, row["rowid"]))
+    return len(on_disk)
 
 
 def _wipe_path(conn: sqlite3.Connection, owner: str, path: str) -> None:
@@ -217,10 +254,13 @@ def unresolved(owner: str) -> List[Dict[str, Any]]:
 def search(owner: str, q: str, *, limit: int = 20) -> List[Dict[str, Any]]:
     owner = str(owner or "")
     folded = db.fold(q)
-    tokens = [t for t in folded.split() if t]
+    # Every token becomes a quoted FTS5 phrase (a `"` inside doubled), so
+    # quotes, parentheses, `NEAR`, `AND`, `-`, `^` or `col:` typed by a
+    # person are just text, never query syntax.
+    tokens = [t for t in folded.split() if any(ch.isalnum() for ch in t)]
     if not tokens:
         return []
-    match_expr = " ".join(f'"{t}"*' for t in tokens)
+    match_expr = " ".join('"' + t.replace('"', '""') + '"*' for t in tokens)
     with db.db() as conn:
         try:
             rows = conn.execute(
@@ -329,6 +369,22 @@ def create_note(owner: str, title: str, *, folder: str = "Notes", content: str =
     return read_note(owner, applied.get("path") or rel_path)
 
 
+def _foreign_or_missing(owner: str, source: str) -> bool:
+    """True when `source` is not a live source of THIS owner — then a note
+    carrying it is just a file here, and nothing is done to the source."""
+    if source.startswith("mem:"):
+        from src import memory_engine as engine
+        item = engine.get_item(source[4:])
+        return not item or not vault._owns(item.get("owner"), owner)
+    if source.startswith("pmem:"):
+        return vault._personal_entry(owner, source[5:]) is None
+    if source.startswith("ent:"):
+        ent = vault._entities()
+        entity = ent.get_entity(source[4:]) if ent is not None else None
+        return not entity or not vault._owns(entity.get("owner", owner), owner)
+    return True
+
+
 def rename_note(owner: str, path: str, new_title: str, *, update_links: bool = True) -> Dict[str, Any]:
     owner = str(owner or "")
     rel_path = vault.validate_path(path)
@@ -353,7 +409,8 @@ def rename_note(owner: str, path: str, new_title: str, *, update_links: bool = T
         if ent is None:
             raise ValueError("entities are not available in this build")
         entity_id = source[4:]
-        if not ent.get_entity(entity_id):
+        entity = ent.get_entity(entity_id)
+        if not entity or not vault._owns(entity.get("owner", owner), owner):
             raise ValueError(f"unknown entity id {entity_id}")
         ent.update_entity(entity_id, name=new_title)
         new_path = vault._export_single(owner, source) or rel_path
@@ -365,14 +422,21 @@ def rename_note(owner: str, path: str, new_title: str, *, update_links: bool = T
             new_full = vault.abs_path(owner, new_path)
             if vault._read(new_full) is not None:
                 raise ValueError(f"a note already exists at {new_path}")
-            new_fields = dict(fm_data)
-            if new_fields.get("title"):
-                new_fields["title"] = new_title
-            vault._atomic_write(new_full, fm.join(new_fields, body))
+            new_text = text
+            if fm_data.get("title"):
+                # patch just the `title:` line; the rest of the YAML stays as written
+                header, rest = fm.split_raw(text)
+                title_line = fm.join({"title": new_title}, "").split("\n")[1]
+                header = re.sub(r"(?m)^title:.*$", lambda _m: title_line, header, count=1)
+                new_text = header + rest
+            vault._atomic_write(new_full, new_text)
             with contextlib.suppress(OSError):
                 os.remove(full)
             vault._db_delete_notes_row(owner, rel_path)
-            if source:
+            if source.startswith("pmem:"):
+                # a personal note keeps mirroring its entry from the new path
+                vault.rekey_path(owner, rel_path, new_path, user_path=True)
+            elif source:
                 vault._db_delete_sync_state(owner, rel_path)
 
     updated_links = 0
@@ -382,6 +446,7 @@ def rename_note(owner: str, path: str, new_title: str, *, update_links: bool = T
                 "SELECT DISTINCT src_path FROM links WHERE owner=? AND target=?",
                 (owner, old_title),
             ).fetchall()]
+        new_target = vault._title_from_path(new_path)
         for src_path in src_paths:
             if src_path in (rel_path, new_path):
                 continue
@@ -389,10 +454,13 @@ def rename_note(owner: str, path: str, new_title: str, *, update_links: bool = T
             src_text = vault._read(src_full)
             if src_text is None:
                 continue
-            src_fields, src_body = fm.split(src_text)
-            rewritten = wikilinks.rewrite_target(src_body, old_title, new_title)
+            # Only the body is rewritten; the frontmatter block goes back
+            # byte-for-byte (comments, quoting, key order — and a leading
+            # `---` block that is not frontmatter at all stays in the body).
+            header, src_body = fm.split_raw(src_text)
+            rewritten = wikilinks.rewrite_target(src_body, old_title, new_target)
             if rewritten != src_body:
-                vault._atomic_write(src_full, fm.join(src_fields, rewritten))
+                vault._atomic_write(src_full, header + rewritten)
                 updated_links += 1
 
     reindex(owner)
@@ -411,31 +479,33 @@ def delete_note(owner: str, path: str) -> Dict[str, Any]:
     title = str(fm_data.get("title") or vault._title_from_path(rel_path))
 
     effect = "removed"
-    if source.startswith("mem:"):
-        from src import memory_engine as engine
-        item_id = source[4:]
-        if engine.get_item(item_id):
-            engine.set_suppressed(item_id, True)
-        effect = "suppressed"
-    elif source.startswith("pmem:"):
-        from src import memory as memmod
-        mgr = memmod.MemoryManager(vault._personal_data_dir())
-        with contextlib.suppress(memmod.MemoryStoreUnreadable):
-            entries = mgr.load_all_for_update()
-            mgr.save([e for e in entries if str(e.get("id")) != source[5:]])
-        effect = "removed"
-    elif source.startswith("ent:"):
-        ent = vault._entities()
-        if ent is not None:
-            ent.set_hidden(source[4:], True)
-        effect = "hidden"
+    if source.startswith(vault.MIRRORED_PREFIXES) and _foreign_or_missing(owner, source):
+        # Another owner's (or a gone) source: this file is just a file here.
+        source_for_trash = ""
+    else:
+        source_for_trash = source
+        if source.startswith("mem:"):
+            from src import memory_engine as engine
+            engine.set_suppressed(source[4:], True)
+            effect = "suppressed"
+        elif source.startswith("pmem:"):
+            from src import memory as memmod
+            mgr = memmod.MemoryManager(vault._personal_data_dir())
+            with contextlib.suppress(memmod.MemoryStoreUnreadable):
+                entries = mgr.load_all_for_update()
+                mgr.save([e for e in entries if str(e.get("id")) != source[5:]])
+            effect = "removed"
+        elif source.startswith("ent:"):
+            ent = vault._entities()
+            if ent is not None:
+                ent.set_hidden(source[4:], True)
+            effect = "hidden"
 
-    trash_id = vault._trash_add(owner, rel_path, title, source, text, effect)
+    trash_id = vault._trash_add(owner, rel_path, title, source_for_trash, text, effect)
     with contextlib.suppress(OSError):
         os.remove(full)
     vault._db_delete_notes_row(owner, rel_path)
-    if source:
-        vault._db_delete_sync_state(owner, rel_path)
+    vault._db_delete_sync_state(owner, rel_path)
     return {"trash_id": trash_id, "effect": effect}
 
 
@@ -450,6 +520,15 @@ def list_trash(owner: str) -> List[Dict[str, Any]]:
     return [dict(r) for r in rows]
 
 
+def _free_restore_path(owner: str, rel_path: str) -> str:
+    base = rel_path[:-3]
+    candidate, n = rel_path, 2
+    while vault._read(vault.abs_path(owner, candidate)) is not None:
+        candidate = f"{base} {n}.md"
+        n += 1
+    return candidate
+
+
 def restore(owner: str, trash_id: str) -> Dict[str, Any]:
     owner = str(owner or "")
     with db.db() as conn:
@@ -459,19 +538,26 @@ def restore(owner: str, trash_id: str) -> Dict[str, Any]:
     if not row:
         raise ValueError(f"unknown trash id {trash_id}")
     source = row["source"] or ""
+    effect = row["effect"] or ""
 
     if source.startswith("mem:"):
         from src import memory_engine as engine
         item_id = source[4:]
-        if not engine.get_item(item_id):
+        item = engine.get_item(item_id)
+        if not item or not vault._owns(item.get("owner"), owner):
             raise ValueError("the underlying memory no longer exists (it may have been forgotten since)")
+        if item.get("sensitivity") == "secret":
+            raise ValueError("the underlying memory is marked secret; it is not written to the vault")
         engine.set_suppressed(item_id, False)
     elif source.startswith("pmem:"):
         from src import memory as memmod
         mgr = memmod.MemoryManager(vault._personal_data_dir())
         entries = mgr.load_all_for_update()
         entry_id = source[5:]
-        if not any(str(e.get("id")) == entry_id for e in entries):
+        existing = next((e for e in entries if str(e.get("id")) == entry_id), None)
+        if existing is not None and not vault._owns(existing.get("owner"), owner):
+            raise ValueError("unknown personal memory")
+        if existing is None:
             _, body = fm.split(row["content"])
             entries.append({
                 "id": entry_id, "text": render.user_zone_of(body).strip(),
@@ -483,16 +569,25 @@ def restore(owner: str, trash_id: str) -> Dict[str, Any]:
         ent = vault._entities()
         if ent is None:
             raise ValueError("entities are not available in this build")
+        entity = ent.get_entity(source[4:])
+        if not entity or not vault._owns(entity.get("owner", owner), owner):
+            raise ValueError("the underlying entity no longer exists")
         ent.set_hidden(source[4:], False)
 
-    with db.db() as conn:
-        conn.execute("UPDATE trash SET restored_at=? WHERE id=?", (db.now_iso(), trash_id))
-
     if source:
-        new_path = vault._export_single(owner, source) or row["path"]
+        new_path = vault._export_single(owner, source)
+        if not new_path:
+            raise ValueError("the source could not be written back to the vault")
     else:
         new_path = row["path"]
+        if effect == "imported":
+            # the original of a note that became a memory: back as a free
+            # note, not where the sync would turn it into a memory again
+            new_path = f"Notes/{os.path.basename(new_path)}"
+        new_path = _free_restore_path(owner, new_path)
         vault._atomic_write(vault.abs_path(owner, new_path), row["content"])
+    with db.db() as conn:
+        conn.execute("UPDATE trash SET restored_at=? WHERE id=?", (db.now_iso(), trash_id))
     reindex(owner)
     return read_note(owner, new_path)
 
