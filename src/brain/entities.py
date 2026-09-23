@@ -29,6 +29,13 @@ Three concepts:
 * **The owner as an entity** — ``self_entity`` gives every owner a stable
   ``person`` entity aliased "yo"/"me" so "I use X" attaches to a graph node
   the same way "Ada uses X" does.
+
+What may become an entity is decided here too (``valid_entity_name``,
+``proper_noun_in_source`` — function words and sentence-opening capitals
+are not names), as is the mapping of free relation wording onto the
+vocabulary (``canonical_relation``). ``revalidate`` applies both to rows
+written before they existed: it hides and retracts, never deletes, and can
+be undone.
 """
 
 from __future__ import annotations
@@ -120,6 +127,17 @@ _SCHEMA = (
     )
     """,
     "CREATE INDEX IF NOT EXISTS idx_mentions_source ON mentions(source_ref)",
+    # Small per-owner key/value store for one-off passes (the revalidation
+    # version marker and what it last changed, so it can be undone).
+    """
+    CREATE TABLE IF NOT EXISTS brain_meta (
+        owner       TEXT NOT NULL DEFAULT '',
+        key         TEXT NOT NULL DEFAULT '',
+        value       TEXT NOT NULL DEFAULT '',
+        updated_at  TEXT NOT NULL DEFAULT '',
+        PRIMARY KEY(owner, key)
+    )
+    """,
 )
 register_schema("brain_entities", _SCHEMA)
 
@@ -771,7 +789,13 @@ def _relation_window_covers(relation: Dict[str, Any], instant: datetime) -> bool
 
 
 def list_relations(owner: Any, *, entity_id: Any = None, as_of: Any = None,
-                   include_closed: bool = True) -> List[Dict[str, Any]]:
+                   include_closed: bool = True,
+                   include_retracted: bool = False) -> List[Dict[str, Any]]:
+    """Relations of `owner` (optionally touching `entity_id`). A RETRACTED
+    relation (status "retracted": a model claim withdrawn by
+    :func:`revalidate`) is kept in the table for the record and for
+    :func:`undo_revalidate`, but is not part of the graph any more, so it is
+    left out unless `include_retracted`."""
     owner = str(owner or "")
     with db() as conn:
         if entity_id:
@@ -786,6 +810,8 @@ def list_relations(owner: Any, *, entity_id: Any = None, as_of: Any = None,
                 "SELECT * FROM relations WHERE owner = ? ORDER BY created_at", (owner,)
             ).fetchall()
     items = [_row_to_relation(row) for row in rows]
+    if not include_retracted:
+        items = [r for r in items if r["status"] != "retracted"]
     if as_of is not None:
         instant = _coerce_dt(as_of)
         items = [r for r in items if _relation_window_covers(r, instant)]
@@ -882,6 +908,167 @@ def entities_in_text(owner: Any, text: Any, *, limit: int = 8) -> List[Dict[str,
         if len(matched) >= max(1, int(limit or 8)):
             break
     return [get_entity(eid) for eid in matched]
+
+
+# ---------------------------------------------------------------------------
+# Revalidation — the one-off cleanup of rows written before the name filter
+# ---------------------------------------------------------------------------
+#
+# Rows written before `valid_entity_name` and `canonical_relation` existed
+# stay in the store until something looks at them again. `revalidate` is
+# that look: it HIDES (never deletes) entities whose names fail the filter
+# and RETRACTS (never deletes) model relations outside the vocabulary.
+# Anything a person touched is left alone — a locked summary, an entity
+# something was merged into, the owner's own entity, or an entity a person
+# brought back after an earlier revalidation hid it. What it changed is
+# stored so `undo_revalidate` can put it back. Bump REVALIDATE_VERSION when
+# the filter changes enough to deserve another pass.
+
+REVALIDATE_VERSION = 1
+
+_META_VERSION = "revalidate_version"
+_META_LAST = "revalidate_last"
+_META_HIDDEN_EVER = "revalidate_hidden_ever"
+
+
+def _meta_get(conn: sqlite3.Connection, owner: str, key: str, default: Any = None) -> Any:
+    row = conn.execute("SELECT value FROM brain_meta WHERE owner = ? AND key = ?",
+                       (owner, key)).fetchone()
+    return loads(row["value"], default) if row else default
+
+
+def _meta_set(conn: sqlite3.Connection, owner: str, key: str, value: Any) -> None:
+    conn.execute(
+        "INSERT INTO brain_meta (owner, key, value, updated_at) VALUES (?,?,?,?) "
+        "ON CONFLICT(owner, key) DO UPDATE SET value = excluded.value, "
+        "updated_at = excluded.updated_at",
+        (owner, key, dumps(value), now_iso()),
+    )
+
+
+def _is_self_row(row: sqlite3.Row) -> bool:
+    folds = {row["fold_name"]} | {fold(a) for a in loads(row["aliases"], [])}
+    return row["type"] == "person" and set(SELF_WORDS) <= folds
+
+
+def revalidate(owner: Any, *, dry_run: bool = False) -> Dict[str, Any]:
+    """Hide entities of `owner` whose names fail :func:`valid_entity_name`
+    and retract ``method == "llm"`` relations whose ``rel`` is outside
+    :data:`KNOWN_RELATIONS`. Idempotent, reversible (:func:`undo_revalidate`),
+    never raises; returns what it did (or would do, with `dry_run`)."""
+    owner = str(owner or "")
+    report: Dict[str, Any] = {
+        "owner": owner, "version": REVALIDATE_VERSION, "dry_run": bool(dry_run),
+        "hidden": [], "hidden_names": [], "hidden_count": 0,
+        "retracted": [], "retracted_count": 0, "kept_human": 0, "errors": 0,
+    }
+    if not owner:
+        return report
+    try:
+        with db() as conn:
+            rows = conn.execute("SELECT * FROM entities WHERE owner = ?", (owner,)).fetchall()
+            merge_targets = {row["merged_into"] for row in rows if row["merged_into"]}
+            hidden_ever = set(_meta_get(conn, owner, _META_HIDDEN_EVER, []) or [])
+            to_hide: List[sqlite3.Row] = []
+            for row in rows:
+                if row["merged_into"] or row["hidden"] or valid_entity_name(row["name"]):
+                    continue
+                if (row["summary_locked"] or row["id"] in merge_targets or _is_self_row(row)
+                        or row["id"] in hidden_ever):
+                    report["kept_human"] += 1
+                    continue
+                to_hide.append(row)
+
+            rel_rows = conn.execute(
+                "SELECT id, rel, status FROM relations WHERE owner = ? AND method = 'llm' "
+                "AND status != 'retracted'", (owner,)).fetchall()
+            to_retract = [r for r in rel_rows if r["rel"] not in KNOWN_RELATIONS]
+
+            report["hidden"] = [row["id"] for row in to_hide]
+            report["hidden_names"] = [row["name"] for row in to_hide]
+            report["retracted"] = [r["id"] for r in to_retract]
+            report["hidden_count"] = len(to_hide)
+            report["retracted_count"] = len(to_retract)
+            if dry_run:
+                return report
+
+            now = now_iso()
+            for row in to_hide:
+                conn.execute("UPDATE entities SET hidden = 1, updated_at = ? WHERE id = ?",
+                             (now, row["id"]))
+            for rel in to_retract:
+                conn.execute("UPDATE relations SET status = 'retracted', updated_at = ? "
+                             "WHERE id = ?", (now, rel["id"]))
+            _meta_set(conn, owner, _META_LAST, {
+                "version": REVALIDATE_VERSION, "at": now,
+                "hidden": report["hidden"],
+                "retracted": {r["id"]: r["status"] for r in to_retract},
+            })
+            _meta_set(conn, owner, _META_HIDDEN_EVER,
+                      sorted(hidden_ever | set(report["hidden"])))
+    except Exception as exc:  # noqa: BLE001 - a cleanup pass must never raise
+        logger.debug("brain.entities: revalidate(%s) failed (%s)", owner, exc)
+        report["errors"] += 1
+    if report["hidden_count"] or report["retracted_count"]:
+        logger.info("brain revalidate: hid %d entit(y/ies), retracted %d relation(s)",
+                    report["hidden_count"], report["retracted_count"])
+    return report
+
+
+def revalidate_if_needed(owner: Any) -> Optional[Dict[str, Any]]:
+    """Run :func:`revalidate` once per :data:`REVALIDATE_VERSION` for
+    `owner` (a stored marker remembers it ran). None when it had already run
+    for this version, or on error; the report otherwise."""
+    owner = str(owner or "")
+    if not owner:
+        return None
+    try:
+        with db() as conn:
+            if str(_meta_get(conn, owner, _META_VERSION, "")) == str(REVALIDATE_VERSION):
+                return None
+        report = revalidate(owner)
+        if report.get("errors"):
+            return report  # no marker: try again next time
+        with db() as conn:
+            _meta_set(conn, owner, _META_VERSION, str(REVALIDATE_VERSION))
+        return report
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("brain.entities: revalidate_if_needed(%s) failed (%s)", owner, exc)
+        return None
+
+
+def undo_revalidate(owner: Any) -> Dict[str, Any]:
+    """Put back what the last :func:`revalidate` of `owner` changed: un-hide
+    the entities it hid (unless merged since) and give each retracted
+    relation its previous status (unless something changed it since)."""
+    owner = str(owner or "")
+    report: Dict[str, Any] = {"owner": owner, "unhidden": [], "unhidden_count": 0,
+                              "restored": [], "restored_count": 0, "errors": 0}
+    if not owner:
+        return report
+    try:
+        with db() as conn:
+            last = _meta_get(conn, owner, _META_LAST, {}) or {}
+            now = now_iso()
+            for entity_id in last.get("hidden") or []:
+                cur = conn.execute(
+                    "UPDATE entities SET hidden = 0, updated_at = ? WHERE id = ? AND owner = ? "
+                    "AND hidden = 1 AND merged_into = ''", (now, entity_id, owner))
+                if cur.rowcount:
+                    report["unhidden"].append(entity_id)
+            for rel_id, previous in (last.get("retracted") or {}).items():
+                cur = conn.execute(
+                    "UPDATE relations SET status = ?, updated_at = ? WHERE id = ? AND owner = ? "
+                    "AND status = 'retracted'", (str(previous or "active"), now, rel_id, owner))
+                if cur.rowcount:
+                    report["restored"].append(rel_id)
+            _meta_set(conn, owner, _META_LAST, {})
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("brain.entities: undo_revalidate(%s) failed (%s)", owner, exc)
+        report["errors"] += 1
+    report["unhidden_count"] = len(report["unhidden"])
+    report["restored_count"] = len(report["restored"])
+    return report
 
 
 # ---------------------------------------------------------------------------
@@ -1062,7 +1249,8 @@ def stats(owner: Any) -> Dict[str, Any]:
 __all__ = [
     "TYPES", "KNOWN_RELATIONS", "FUNCTIONAL_RELATIONS", "SELF_WORDS", "BrainEntityError",
     "FUNCTION_WORDS", "is_function_word", "clean_name", "valid_entity_name",
-    "proper_noun_in_source", "canonical_relation",
+    "proper_noun_in_source", "canonical_relation", "REVALIDATE_VERSION", "revalidate",
+    "revalidate_if_needed", "undo_revalidate",
     "upsert_entity", "get_entity", "update_entity", "set_hidden", "list_entities",
     "merge_entities", "self_entity", "add_relation", "list_relations", "add_mention",
     "mentions_for", "sources_for", "entities_in_text", "profile", "graph", "stats",
