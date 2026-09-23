@@ -320,7 +320,7 @@ def change_risk(paths_or_symbols: Optional[Sequence[str]] = None, *, workspace: 
         return {"output": msg, "exit_code": 0 if mode == "diff" else 1, "root": root,
                 "mode": mode, "seeds": [], "unresolved": unresolved,
                 "score": 0, "level": "low", "factors": {}, "top_reasons": [],
-                "suggestions": []}
+                "suggestions": [], "affected_flows_count": 0, "max_flow_criticality": 0.0}
 
     fan_in_raw, breadth_raw, call_reached_paths = _fanin_and_breadth(seed_symbol_ids, seed_paths)
     test_files = _test_coverage_files(root, project_id, seed_paths, call_reached_paths)
@@ -412,6 +412,29 @@ def change_risk(paths_or_symbols: Optional[Sequence[str]] = None, *, workspace: 
             f"{hub_path} is a hub imported by {hub_raw} modules -- changes here have a wide "
             "blast radius, review callers carefully")
 
+    # Additive, informational only (code graph+): how many execution flows
+    # this change touches and the highest criticality among them. Never
+    # folded into `factors`/`score` -- the seven weights above already sum
+    # to 1.0 and every existing test pins that exact arithmetic; this is
+    # extra context for the reader, not an eighth factor. Only attempted for
+    # the diff-seeded case: `affected_flows` resolves one symbol name or a
+    # diff, and an explicit multi-path/symbol seed list has no single
+    # equivalent call worth guessing at.
+    affected_flows_count = 0
+    max_flow_criticality = 0.0
+    if mode == "diff":
+        try:
+            from .flows import affected_flows as _affected_flows
+            flows_out = _affected_flows("", workspace=root, project_id=project_id,
+                                        base_ref=base_ref)
+            if flows_out.get("exit_code") == 0:
+                hit_flows = flows_out.get("flows") or []
+                affected_flows_count = len(hit_flows)
+                if hit_flows:
+                    max_flow_criticality = max(f.get("criticality", 0.0) for f in hit_flows)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("code_graph.change_risk: affected_flows lookup failed: %s", exc)
+
     lines = [f"Change risk: {score}/100 ({level})"]
     lines.append(f"seeds: {', '.join(seed_paths) if seed_paths else '(none)'}")
     if unresolved:
@@ -420,12 +443,17 @@ def change_risk(paths_or_symbols: Optional[Sequence[str]] = None, *, workspace: 
     lines += [f"  {r['factor']} (+{r['contribution']}): {r['reason']}" for r in top_reasons]
     lines.append("suggestions:")
     lines += [f"  - {s}" for s in suggestions]
+    if affected_flows_count:
+        lines.append(f"execution flows touched: {affected_flows_count} "
+                    f"(highest criticality {max_flow_criticality:.2f})")
 
     return {
         "output": _clip("\n".join(lines), output_chars), "exit_code": 0, "root": root,
         "mode": mode, "base_ref": base_ref, "seeds": seed_paths, "unresolved": unresolved,
         "score": score, "level": level, "factors": factors,
         "top_reasons": top_reasons, "suggestions": suggestions,
+        "affected_flows_count": affected_flows_count,
+        "max_flow_criticality": max_flow_criticality,
     }
 
 

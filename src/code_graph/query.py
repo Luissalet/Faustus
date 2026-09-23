@@ -520,7 +520,15 @@ def impact(symbol: str = "", *, workspace: str = "", project_id: str = "",
     `code_graph.risk.compact_risk`, seeded from the same symbol/diff this
     call used — a deterministic 0..100 estimate of how risky the change is,
     for a glance before running the suggested tests. See `code_graph_risk`
-    for the full per-factor breakdown."""
+    for the full per-factor breakdown.
+
+    Additive (code graph+): `affected_flows` lists the execution flows
+    (`code_graph.flows.affected_flows`) that pass through the same seed(s),
+    each with its own criticality — so a change that sits inside a hot,
+    critical path shows that here too, not just in a separate tool call.
+    Best-effort: the key is present (an empty list is a real "none found")
+    only when it could be computed at all; a failure leaves it absent and
+    logs at debug, never breaking the rest of this result."""
     try:
         root = _root(workspace)
     except ValueError as exc:
@@ -561,7 +569,7 @@ def impact(symbol: str = "", *, workspace: str = "", project_id: str = "",
                     "affected_tests": [], "affected_tests_via_call": [],
                     "affected_tests_via_import": [], "affected_test_functions": [],
                     "unresolved_edges": 0, "suggested_command": "",
-                    "historical_cochanges": [], "risk": {}}
+                    "historical_cochanges": [], "risk": {}, "affected_flows": []}
 
     # BFS state: symbol id -> best-known node info (weakest certainty wins).
     nodes: Dict[str, Dict[str, Any]] = {}
@@ -649,6 +657,23 @@ def impact(symbol: str = "", *, workspace: str = "", project_id: str = "",
         except Exception as exc:  # noqa: BLE001
             logger.debug("code_graph.impact: risk scoring failed: %s", exc)
 
+    # Additive (R2, code graph+): which execution flows pass through the
+    # same seed(s) this call already resolved. Never changes an existing
+    # key; the key itself is absent (not an empty list) when this fails, so
+    # a caller can tell "no flows matched" from "could not compute this".
+    affected_flows_result: Optional[List[Dict[str, Any]]] = None
+    try:
+        from .flows import affected_flows as _affected_flows
+        if mode == "symbol":
+            flows_out = _affected_flows(symbol, workspace=root, project_id=project_id)
+        else:
+            flows_out = _affected_flows("", workspace=root, project_id=project_id,
+                                        base_ref=base_ref)
+        if flows_out.get("exit_code") == 0:
+            affected_flows_result = flows_out.get("flows") or []
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("code_graph.impact: affected_flows lookup failed: %s", exc)
+
     all_test_files = test_files | import_test_files
     py_tests = sorted(p for p in all_test_files if p.endswith(".py"))
     other_tests = sorted(p for p in all_test_files if not p.endswith(".py"))
@@ -693,8 +718,15 @@ def impact(symbol: str = "", *, workspace: str = "", project_id: str = "",
                   f"confidence={r['confidence']:.2f})" for r in historical_cochanges]
     if risk:
         lines.append(f"Change risk: {risk['score']}/100 ({risk['level']})")
+    if affected_flows_result is not None:
+        if affected_flows_result:
+            lines.append(f"Execution flows through this change ({len(affected_flows_result)}):")
+            lines += [f"  {f['id']}  {f['name']}  criticality={f['criticality']:.2f}"
+                     for f in affected_flows_result[:10]]
+        else:
+            lines.append("Execution flows through this change: none found")
 
-    return {
+    result: Dict[str, Any] = {
         "output": _clip("\n".join(lines), output_chars), "exit_code": 0, "root": root,
         "mode": mode, "seeds": seeds, "reached": reached,
         "affected_tests": sorted(all_test_files),
@@ -706,3 +738,6 @@ def impact(symbol: str = "", *, workspace: str = "", project_id: str = "",
         "historical_cochanges": historical_cochanges,
         "risk": risk,
     }
+    if affected_flows_result is not None:
+        result["affected_flows"] = affected_flows_result
+    return result
