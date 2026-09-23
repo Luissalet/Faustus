@@ -372,7 +372,7 @@ Inspect and control recurring work.
 
 ## Security and data
 
-Context packet summaries include a memory-selection receipt: included entries, omissions and reasons, character usage and degradation. It describes the final Context Engine packet without querying memory again or adding a second selection pass. Items the live packet leaves out for budget stay recoverable: the packet lists them as `[ctx:<id>]` lines and the `context_recall` tool (also on the context MCP server) returns their full text with provenance. `scripts/bench_context_engine.py` compares the legacy context blocks with the compiled packet offline (tokens, sections, latency, recall).
+Context packet summaries include a memory-selection receipt: included entries, omissions and reasons, character usage and degradation. It describes the final Context Engine packet without querying memory again or adding a second selection pass. Items the live packet leaves out for budget stay recoverable: the packet lists them as `[ctx:<id>]` lines and the `context_recall` tool (also on the context MCP server) returns their full text with provenance. `scripts/bench_context_engine.py` compares the legacy context blocks with the compiled packet offline (tokens, sections, latency, recall). With the live engine switched on, both agent and plain chat turns receive the packet; the classic saved-memory and document blocks stay on standby and come back only when no packet is delivered, so nothing is shown twice, and recalling an item the current turn's packet offered does not raise an approval card.
 
 Keep `AUTH_ENABLED=true` for any network-accessible deployment.
 Keep `LOCALHOST_BYPASS=false` outside local development.

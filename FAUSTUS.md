@@ -8035,3 +8035,51 @@ se perdía (OBJ-29).
 `tests/test_context_engine_recall.py` (18), `tests/test_bench_context_engine.py`
 (2) y las suites de wiring, MCP, registro de herramientas, bucle de agente y
 memoria en verde. Falta verificarlo encendido en la máquina en vivo.
+
+## 175. Context Engine: sin duplicados, chat simple y `context_recall` sin tarjeta (23-09-2026)
+
+**Problema.** Tres riesgos que dejaba §174 antes de poder encender
+`agent_context_engine`: (1) en modo agente el prefacio del chat
+(`chat_processor.build_context_preface`) seguía metiendo la memoria guardada
+(memory.json) y los documentos RAG mientras el paquete podía traer los mismos
+`pmem:`/`doc:`; (2) el modo chat simple nunca pasaba por el motor; (3) el
+paquete arma la puerta de contexto externo, así que en modo «ask» la primera
+`context_recall` del turno pedía tarjeta.
+
+**Hecho.**
+- *Reserva del prefacio* (`src/context_engine/standby.py`). Con el motor
+  encendido, `build_chat_context` marca en reserva los bloques «saved memory:
+  pinned context», «saved memory: retrieved context» y «retrieved documents»
+  (clave privada `_context_engine_standby`, que `llm_core` quita antes de
+  enviar). En el bucle de agente, la llamada que recibe paquete los quita junto
+  con la memoria aprendida; la que no lo recibe los conserva o los repone en el
+  mismo sitio (anclados al mensaje anterior), nunca dos veces. Web, páginas,
+  transcripciones y el índice de skills no entran en reserva. Bandera apagada:
+  nada se marca y el prompt es idéntico byte a byte.
+- *Chat simple por el motor* (`wiring.deliver_chat_turn`). Un paquete por turno
+  (`build_request(agent_mode=False, consumer="chat")`), presupuestado sin los
+  bloques en reserva, insertado con la misma regla que
+  `_insert_before_latest_user` (antes del mensaje del usuario y de la línea de
+  idioma; nunca en el mensaje de sistema, que sigue estable para la caché KV).
+  SSE `context_packet` con `round: 1`. Si no llega paquete, el prefacio queda
+  intacto. Recibo único con consumidor `chat` y veredicto según el desenlace
+  (`complete`, `error`, `empty`, `interrupted`, `incomplete`); al guardar con
+  paquete, `metadata.context_receipts` sustituye a `memories_used`/`rag_sources`
+  (que no se enviaron). `observe_receipt` acepta `consumer`.
+- *Puerta* (`src/context_tool_gate.py`). Tabla corta de reglas de permiso que
+  se consulta después de la decisión normal (`ContextAwareSecurityContext`,
+  subclase del contexto de seguridad del bucle): `context_recall` pasa sin
+  tarjeta sólo si **todos** sus ids los ofreció un paquete entregado en este
+  turno (`recallable`, con el mismo analizador que la herramienta). Ids
+  desconocidos: tarjeta como antes. Una regla sólo puede levantar una lectura
+  privada: shell, escritorio por llamada y cualquier escritura, ejecución o
+  salida de red nunca quedan exentos. Añadir una herramienta de lectura del
+  cerebro es una línea (`GateAllowRule("brain", actions=(…))`).
+
+**Estado.** `agent_context_engine` sigue `False` por defecto; los tres riesgos
+quedan cerrados en código y pruebas. Falta el encendido en la máquina en vivo.
+
+**Verificación.** `tests/test_context_engine_standby.py` (11),
+`tests/test_context_engine_chat_turn.py` (10), `tests/test_context_tool_gate.py`
+(16) y las suites de Context Engine, bucle de agente, rutas de chat, puerta de
+contexto externo y aprobaciones sin fallos nuevos frente a la rama base.
