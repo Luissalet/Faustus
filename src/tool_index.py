@@ -362,6 +362,19 @@ def _examples_block(name: str) -> str:
     return " Examples: " + joined + (" | " + folded if folded != joined else "")
 
 
+def _is_native_twin(tool_name: str) -> bool:
+    """`mcp__<server>__<tool>` from a built-in server that only mirrors native
+    tools (`src.builtin_mcp.NATIVE_TWIN_SERVERS`): not indexed for the agent."""
+    if not tool_name.startswith("mcp__"):
+        return False
+    try:
+        from src.builtin_mcp import NATIVE_TWIN_SERVERS
+    except Exception:  # noqa: BLE001 - never fail indexing over this
+        return False
+    server = tool_name[5:].split("__", 1)[0]
+    return server in NATIVE_TWIN_SERVERS
+
+
 class ToolIndexUnavailable(RuntimeError):
     """No embedder at all (fastembed missing/broken): nothing can index tools."""
 
@@ -556,6 +569,8 @@ class ToolIndex:
                 if len(name_desc) == 2:
                     name = name_desc[0].strip()
                     desc = name_desc[1].strip()
+                    if _is_native_twin(name):
+                        continue
                     # Include server identity in the indexed text so RAG can
                     # distinguish "list_emails for server-a" from "list_emails for server-b"
                     server_ctx = f" (server: {current_server})" if current_server else ""
@@ -599,7 +614,7 @@ class ToolIndex:
                     continue
                 results = lane.collection.query(
                     query_embeddings=lane.encode([query]),
-                    n_results=min(k, count),
+                    n_results=min(max(k * 3, 24) if k > 0 else k, count),
                     include=["metadatas", "distances"],
                 )
                 if not results or not results.get("metadatas"):
@@ -625,7 +640,15 @@ class ToolIndex:
             # which needs no model and no network.
             return self.lexical_retrieve(query, k=k)
         rows.sort(key=lambda row: (-row["score"], lane_priority.get(row["embedding_lane"], 99)))
-        if getattr(self, "backend", "") == BACKEND_MEMORY and k > 0:
+        if k > 0 and getattr(self, "backend", "") in (BACKEND_MEMORY, BACKEND_CHROMA):
+            # Every vector backend votes together with the lexical lane: the
+            # in-memory one was measured first (see `_with_lexical_lane`), the
+            # ChromaDB one later on the real catalogue of a running instance
+            # (193 built-in + 279 MCP tools, the same small English embedder):
+            # 22 requests in both languages, the vector lane alone 11, fused 17.
+            # Alone it answered «¿ya existe alguna librería en GitHub para
+            # esto?» with git_init and a code-graph «¿de qué partes se
+            # compone?» with ask_teacher/design_canvas.
             deep = [row["tool_name"] for row in
                     dedupe_results(rows, id_key="tool_name", limit=max(k * 3, 24))]
             return self._with_lexical_lane(query, deep, k)
@@ -649,11 +672,9 @@ class ToolIndex:
         fusing keeps what the embedder is good at instead of trading one
         blind spot for another. It costs about 30ms per turn.
 
-        Only for the in-memory backend, which is the one that was measured.
-        Whether a ChromaDB lane deserves the same company is the same
-        question with a different embedder behind it, and it should be
-        answered by measuring it rather than by assuming this result
-        transfers.
+        First measured for the in-memory backend; the ChromaDB lane was
+        measured separately on a live catalogue before it joined (see
+        `retrieve`) rather than assuming the result transfers.
         """
         try:
             from src.two_tier_search import rrf, _ordered

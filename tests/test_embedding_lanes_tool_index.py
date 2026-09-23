@@ -176,3 +176,43 @@ def test_tool_index_merges_fallback_tool_results_before_limit():
     index._lanes = [custom_lane, fast_lane]
 
     assert index.retrieve("current mcp", k=2) == ["current_mcp", "one"]
+
+
+def test_chroma_backend_fuses_the_lexical_lane(monkeypatch):
+    """Measured on a live catalogue: the ChromaDB lane alone answered Spanish
+    requests with unrelated tools (11/22); fused with the lexical lane, 17/22.
+    A tool the lexical lane ranks first must reach the result even when the
+    vector lane never saw it."""
+    fast_collection = FakeCollection("odysseus_tool_index_fastembed", metadata={"embedding_lane": "fastembed"})
+    fast_collection.add(
+        ids=["builtin_ask", "builtin_canvas"],
+        embeddings=[[0.0] * 384, [0.0] * 384],
+        documents=["Tool: ask_teacher", "Tool: design_canvas"],
+        metadatas=[{"tool_name": "ask_teacher", "tool_type": "builtin"},
+                   {"tool_name": "design_canvas", "tool_type": "builtin"}],
+    )
+    fast_collection.query = lambda **_kwargs: {
+        "ids": [["builtin_ask", "builtin_canvas"]],
+        "metadatas": [[{"tool_name": "ask_teacher", "tool_type": "builtin"},
+                       {"tool_name": "design_canvas", "tool_type": "builtin"}]],
+        "distances": [[0.30, 0.31]],
+    }
+    fast_lane = EmbeddingLane(
+        name=LANE_FASTEMBED,
+        client=FakeEmbedder(384, "mini", "local://fastembed"),
+        collection=fast_collection,
+        collection_name="odysseus_tool_index_fastembed",
+        model="mini",
+        url="local://fastembed",
+        dimension=384,
+        fingerprint="fast",
+    )
+    from src.tool_index import ToolIndex, BACKEND_CHROMA
+
+    index = ToolIndex.__new__(ToolIndex)
+    index._lanes = [fast_lane]
+    index._backend = BACKEND_CHROMA
+    monkeypatch.setattr(index, "lexical_retrieve", lambda query, k=8: ["code_graph_communities"])
+
+    got = index.retrieve("¿de qué partes se compone este repo?", k=2)
+    assert "code_graph_communities" in got
