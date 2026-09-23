@@ -157,5 +157,33 @@ const deepEqual = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   assert(!yaml.includes('empty') && !yaml.includes('missing'), 'an empty or undefined field is left out of the block entirely');
 }
 
+{
+  const report = brain.syncReportFrom({ notes: ['a moved to b'], retired: 2 });
+  assert(deepEqual(report.notes, ['a moved to b']) && report.retired === 2, 'syncReportFrom reads the phase notes as the list the server sends');
+  assert(deepEqual(brain.syncReportFrom({ notes: 'legacy' }).notes, ['legacy']), 'a legacy single-string notes field still reads as one note');
+}
+{
+  const yaml = brain.frontmatterToYaml({ meta: { a: 1 }, refs: [{ u: 'x' }], time: '10:30', ver: '1_000', note: 'yes', when: '2026-09-23T09:17:03Z', day: '2025-01-01', colon: 'a: b' });
+  assert(!yaml.includes('[object Object]'), 'a nested mapping is never serialised as [object Object]');
+  assert(yaml.includes('meta: {"a":1}') && yaml.includes('refs: [{"u":"x"}]'), 'nested values are written as flow-style JSON, which YAML reads back');
+  for (const line of ['time: "10:30"', 'ver: "1_000"', 'note: "yes"', 'when: "2026-09-23T09:17:03Z"', 'day: "2025-01-01"', 'colon: "a: b"']) {
+    assert(yaml.includes(line), `a string that could read as another type is quoted (${line})`);
+  }
+}
+{
+  const content = '---\n# my own comment\nid: abc\nsource: mem:abc\nkind: memory\ntype: fact\ntime: 10:30\nmeta:\n  nested: 1\naliases:\n- Ada L.\nvalid_until: \'2030-01-01T00:00:00Z\'\n---\n\nText\n\n%% faustus:generated — edits below this line are replaced on the next sync %%\n\n## Validity\n';
+  const note = { path: 'Memories/Facts/x (abc).md', source: 'mem:abc', generated: '## Validity', content, frontmatter: { id: 'abc', source: 'mem:abc', kind: 'memory', type: 'fact', time: 630, meta: { nested: 1 }, aliases: ['Ada L.'], valid_until: '2030-01-01T00:00:00Z' } };
+  const text = brain.composeNoteContent(note, 'Text', { type: 'preference', valid_until: null });
+  assert(text.includes('# my own comment') && text.includes('time: 10:30') && text.includes('meta:\n  nested: 1') && text.includes('aliases:\n- Ada L.'), 'an unpatched key keeps its exact original YAML text');
+  assert(text.includes('type: preference') && !text.includes('type: fact'), 'a patched key is rewritten in place');
+  assert(text.includes('valid_until: null') && !text.includes('2030-01-01'), 'clearing a field writes an explicit null the server can see');
+  assert(brain.composeNoteContent(note, 'Text').startsWith(content.split('\n---\n')[0] + '\n---\n'), 'with no patch the frontmatter block is sent back byte-for-byte');
+}
+{
+  const content = '---\nPrimera seccion, sin dos puntos\n---\nSegunda seccion.\n';
+  const note = { path: 'Notes/D.md', source: '', generated: '', content, frontmatter: {} };
+  assert(brain.composeNoteContent(note, content.trimEnd()) === content, 'a leading --- block that is not frontmatter stays body text');
+}
+
 console.log(failed === 0 ? 'ok brain' : `FAIL: ${failed} assertion(s) failed`);
 process.exit(failed === 0 ? 0 : 1);

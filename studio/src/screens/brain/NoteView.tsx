@@ -83,7 +83,8 @@ export function NoteView({
     setSaving(true);
     setSaveError(null);
     try {
-      const content = composeNoteContent(note, draft, frontmatter);
+      // only the keys the person changed are rewritten in the file's YAML
+      const content = composeNoteContent(note, draft, frontmatterPatch);
       const outcome = await writeNote(note.path, content);
       setFrontmatterPatch({});
       onSaved(outcome.note);

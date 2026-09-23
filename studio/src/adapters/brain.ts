@@ -67,7 +67,10 @@ export interface SyncReport {
   guardTripped: boolean;
   errors: string[];
   durationMs: number;
-  notes: string;
+  /** Phase notes (moves, guard, budget) — a list on the wire. */
+  notes: string[];
+  /** Notes moved to the trash because their source left the store. */
+  retired: number;
 }
 
 export function syncReportFrom(raw: unknown): SyncReport {
@@ -82,7 +85,8 @@ export function syncReportFrom(raw: unknown): SyncReport {
     guardTripped: bool(r.guard_tripped),
     errors: strArray(r.errors),
     durationMs: num(r.duration_ms),
-    notes: str(r.notes),
+    notes: typeof r.notes === 'string' ? (r.notes ? [r.notes] : []) : strArray(r.notes),
+    retired: num(r.retired),
   };
 }
 
@@ -608,17 +612,25 @@ export async function saveBrainSettings(patch: Partial<BrainSettings>): Promise<
 
 const MARKER = '%% faustus:generated — edits below this line are replaced on the next sync %%';
 
+/** A string written so any YAML reader gives the SAME string back: quoted
+ *  whenever it could read as something else (a date, `10:30`, `1_000`,
+ *  `yes`, a number) or holds YAML syntax. */
 function yamlScalar(value: string): string {
   if (value === '') return '""';
-  if (/^(true|false|null|~)$/i.test(value) || /^-?\d+(\.\d+)?$/.test(value)) return JSON.stringify(value);
-  if (/^[\w][\w .:/@+-]*$/.test(value)) return value;
+  if (/^(true|false|null|~|yes|no|on|off|y|n)$/i.test(value)) return JSON.stringify(value);
+  if (/^[-+.]?\d/.test(value)) return JSON.stringify(value);
+  if (/^[A-Za-z_][\w ./@+-]*$/.test(value) && !/\s$/.test(value)) return value;
   return JSON.stringify(value);
 }
 
 function yamlValue(value: unknown): string {
   if (value === null || value === undefined) return 'null';
   if (typeof value === 'boolean' || typeof value === 'number') return String(value);
-  if (Array.isArray(value)) return `[${value.map((v) => yamlScalar(String(v))).join(', ')}]`;
+  if (Array.isArray(value)) {
+    return `[${value.map((v) => (v !== null && typeof v === 'object' ? JSON.stringify(v) : yamlScalar(String(v)))).join(', ')}]`;
+  }
+  // A nested mapping as flow-style JSON, which is valid YAML — never "[object Object]".
+  if (typeof value === 'object') return JSON.stringify(value);
   return yamlScalar(String(value));
 }
 
@@ -634,11 +646,55 @@ export function frontmatterToYaml(frontmatter: Record<string, unknown>): string 
   return lines.join('\n');
 }
 
-/** Rebuilds the note's full file text from a (possibly patched) frontmatter
- *  object and a (possibly edited) user zone, keeping the generated zone —
- *  and whether there even is one — exactly as `read_note` reported it. */
-export function composeNoteContent(note: ReadNote, userZone: string, frontmatter: Record<string, unknown> = note.frontmatter): string {
-  const yaml = frontmatterToYaml(frontmatter);
+const TOP_KEY = /^([^\s#:'"-][^:]*?)\s*:(?:\s|$)/;
+
+/** Applies `patch` to a frontmatter YAML block AS TEXT: each patched key's
+ *  own line(s) are replaced (or appended), every other line — comments,
+ *  quoting, key order, values this editor does not understand — stays
+ *  byte-for-byte what the file had. A null value is written as `null`, so
+ *  clearing a field is an explicit change the server can see. */
+export function patchFrontmatterYaml(yaml: string, patch: Record<string, unknown>): string {
+  const lines = yaml === '' ? [] : yaml.split(/\r?\n/);
+  for (const [key, value] of Object.entries(patch)) {
+    const entry = `${key}: ${yamlValue(value)}`;
+    let start = -1;
+    for (let i = 0; i < lines.length; i += 1) {
+      const m = TOP_KEY.exec(lines[i]);
+      if (m && m[1].trim() === key) {
+        start = i;
+        break;
+      }
+    }
+    if (start < 0) {
+      lines.push(entry);
+      continue;
+    }
+    let end = start + 1;
+    while (end < lines.length && (/^\s+\S/.test(lines[end]) || /^-(\s|$)/.test(lines[end]))) end += 1;
+    lines.splice(start, end - start, entry);
+  }
+  return lines.join('\n');
+}
+
+/** The raw YAML text between the opening and closing `---` of a note, or
+ *  null when the file does not open with a frontmatter block. */
+export function rawFrontmatter(content: string): string | null {
+  const text = content.replace(/^﻿/, '');
+  if (/^---\r?\n---[ \t]*(?:\r?\n|$)/.test(text)) return '';
+  const m = /^---\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/.exec(text);
+  return m ? m[1] : null;
+}
+
+/** Rebuilds the note's full file text from the (possibly edited) user zone
+ *  and a PATCH of the frontmatter keys the person changed — only those keys
+ *  are rewritten; the rest of the frontmatter block goes back exactly as
+ *  the file had it (from `note.content`). The generated zone — and whether
+ *  there even is one — stays exactly as `read_note` reported it. */
+export function composeNoteContent(note: ReadNote, userZone: string, patch: Record<string, unknown> = {}): string {
+  const hasFrontmatter = Object.keys(note.frontmatter ?? {}).length > 0;
+  const raw = hasFrontmatter && note.content ? rawFrontmatter(note.content) : null;
+  const base = raw !== null ? raw : frontmatterToYaml(note.frontmatter ?? {});
+  const yaml = Object.keys(patch).length ? patchFrontmatterYaml(base, patch) : base;
   const head = yaml ? `---\n${yaml}\n---\n\n` : '';
   const body = userZone.replace(/\s+$/, '');
   if (!note.source && !note.generated.trim()) return `${head}${body}\n`;
