@@ -170,6 +170,182 @@ def test_recall_caps_ids_and_skips_duplicates():
     assert len(results) == recall.MAX_RECALL_IDS
 
 
+# ── privacy: incognito never feeds the cache, stale sources never answer ────
+#
+# The recall cache exists so a *budget* cut is reversible; it must never be
+# the thing that makes an *incognito* cut, or a forgotten memory, reversible
+# too. Two leaks, one cache:
+#
+#   (a) an incognito/no_memory turn must store nothing at all, and a
+#       recent-messages/session item must never be stored even outside
+#       incognito — that text is already in the conversation, not a place a
+#       separate, longer-lived copy belongs;
+#   (b) a stored body for a mem:/pmem:/ent:/note: source must not outlive the
+#       source: recall re-checks it and, if it is gone, answers "not found"
+#       and deletes the row instead of handing back the last thing it saw.
+
+def test_incognito_turn_stores_nothing():
+    ref = "mem:private-1"
+    packet = _packet([_budget(ref, source_type="memory")])
+    candidate = _candidate(ref, "Bruno's door code is 4711", source_type="memory",
+                           section="retrieved_memory")
+    entries = recall.remember(packet, {ref: candidate}, owner="bruno",
+                              session_id="s-incognito", allow_personal_memory=False)
+    assert entries == []
+    assert recall._row("bruno", recall.short_id("bruno", ref)) is None
+
+
+def test_recent_messages_are_never_stored_even_outside_incognito():
+    ref = "session:s-1#3"
+    packet = _packet([_budget(ref, source_type="message")])
+    candidate = _candidate(ref, "the user's last message", source_type="message",
+                           section="recent_messages")
+    entries = recall.remember(packet, {ref: candidate}, owner="ada",
+                              allow_personal_memory=True)
+    assert entries == []
+    assert recall._row("ada", recall.short_id("ada", ref)) is None
+
+
+def test_forgotten_memory_is_no_longer_recallable(monkeypatch):
+    """r25.py: a memory the owner forgot must not still answer `context_recall`
+    just because a packet cached its body before it was forgotten."""
+    import src.memory_engine as engine
+
+    ref = "mem:door-code"
+    packet = _packet([_budget(ref, source_type="memory")])
+    candidate = _candidate(ref, "Bruno's door code is 4711", source_type="memory",
+                           section="retrieved_memory")
+    entries = recall.remember(packet, {ref: candidate}, owner="bruno")
+    ident = entries[0]["id"]
+
+    # sanity: while the memory is still there, the cached body still answers
+    monkeypatch.setattr(engine, "get_item",
+                        lambda item_id: {"id": item_id, "owner": "bruno",
+                                         "suppressed": False, "sensitivity": "normal"})
+    assert asyncio.run(recall.recall([ident], owner="bruno"))[0]["found"] is True
+
+    monkeypatch.setattr(engine, "get_item", lambda item_id: None)  # forgotten
+    results = asyncio.run(recall.recall([ident], owner="bruno"))
+    assert results[0]["found"] is False
+    assert "no longer available" in results[0]["note"]
+    assert recall._row("bruno", ident) is None, "the stale row must be purged"
+
+
+def test_suppressed_memory_is_no_longer_recallable(monkeypatch):
+    import src.memory_engine as engine
+
+    ref = "mem:suppressed-1"
+    entries = recall.remember(
+        _packet([_budget(ref, source_type="memory")]),
+        {ref: _candidate(ref, "a rule the curator suppressed", source_type="memory")},
+        owner="ada")
+    ident = entries[0]["id"]
+    monkeypatch.setattr(engine, "get_item",
+                        lambda item_id: {"id": item_id, "owner": "ada",
+                                         "suppressed": True, "sensitivity": "normal"})
+    results = asyncio.run(recall.recall([ident], owner="ada"))
+    assert results[0]["found"] is False
+
+
+def test_secret_memory_is_no_longer_recallable(monkeypatch):
+    import src.memory_engine as engine
+
+    ref = "mem:secret-1"
+    entries = recall.remember(
+        _packet([_budget(ref, source_type="memory")]),
+        {ref: _candidate(ref, "something marked secret afterwards", source_type="memory")},
+        owner="ada")
+    ident = entries[0]["id"]
+    monkeypatch.setattr(engine, "get_item",
+                        lambda item_id: {"id": item_id, "owner": "ada",
+                                         "suppressed": False, "sensitivity": "secret"})
+    results = asyncio.run(recall.recall([ident], owner="ada"))
+    assert results[0]["found"] is False
+
+
+def test_removed_personal_memory_is_no_longer_recallable(monkeypatch):
+    import src.memory as memmod
+
+    ref = "pmem:e1"
+    entries = recall.remember(
+        _packet([_budget(ref, source_type="memory")]),
+        {ref: _candidate(ref, "a personal fact, later removed", source_type="memory")},
+        owner="bruno")
+    ident = entries[0]["id"]
+
+    class _GoneManager:
+        def load(self, owner):
+            return []
+
+    monkeypatch.setattr(memmod, "MemoryManager", lambda data_dir: _GoneManager())
+    results = asyncio.run(recall.recall([ident], owner="bruno"))
+    assert results[0]["found"] is False
+
+
+def test_hidden_entity_is_no_longer_recallable(monkeypatch):
+    from src.brain import entities
+
+    ref = "ent:e-1"
+    entries = recall.remember(
+        _packet([_budget(ref, source_type="memory")]),
+        {ref: _candidate(ref, "Cordera Labs (organization)", source_type="memory")},
+        owner="ada")
+    ident = entries[0]["id"]
+    monkeypatch.setattr(entities, "get_entity",
+                        lambda entity_id: {"id": entity_id, "owner": "ada", "hidden": True})
+    results = asyncio.run(recall.recall([ident], owner="ada"))
+    assert results[0]["found"] is False
+
+
+def test_deleted_note_is_no_longer_recallable(monkeypatch):
+    from src.brain import notes
+
+    ref = "note:Notes/plan.md"
+    entries = recall.remember(
+        _packet([_budget(ref, source_type="memory")]),
+        {ref: _candidate(ref, "a note later deleted", source_type="memory")},
+        owner="ada")
+    ident = entries[0]["id"]
+
+    def _missing(owner, path):
+        raise FileNotFoundError(path)
+
+    monkeypatch.setattr(notes, "read_note", _missing)
+    results = asyncio.run(recall.recall([ident], owner="ada"))
+    assert results[0]["found"] is False
+
+
+def test_still_present_mem_source_is_returned_unaffected(monkeypatch):
+    """The recheck must not punish sources that are still there."""
+    import src.memory_engine as engine
+
+    ref = "mem:still-here"
+    entries = recall.remember(
+        _packet([_budget(ref, source_type="memory")]),
+        {ref: _candidate(ref, "Ada prefers pathlib", source_type="memory")},
+        owner="ada")
+    ident = entries[0]["id"]
+    monkeypatch.setattr(engine, "get_item",
+                        lambda item_id: {"id": item_id, "owner": "ada",
+                                         "suppressed": False, "sensitivity": "normal"})
+    results = asyncio.run(recall.recall([ident], owner="ada"))
+    assert results[0]["found"] is True
+    assert results[0]["content"] == "Ada prefers pathlib"
+
+
+def test_purge_source_deletes_every_cached_row_for_that_source():
+    ref = "mem:to-purge"
+    entries = recall.remember(
+        _packet([_budget(ref, source_type="memory")]),
+        {ref: _candidate(ref, "will be purged on forget", source_type="memory")},
+        owner="ada")
+    ident = entries[0]["id"]
+    assert recall._row("ada", ident) is not None
+    assert recall.purge_source("ada", ref) == 1
+    assert recall._row("ada", ident) is None
+    assert recall.purge_source("ada", ref) == 0
+
+
 # ── the footer ─────────────────────────────────────────────────────────────
 
 def test_the_footer_is_byte_stable_for_the_same_omitted_set():

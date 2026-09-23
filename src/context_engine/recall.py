@@ -139,17 +139,36 @@ def recallable_omissions(packet: ContextPacket) -> List[Any]:
     return out
 
 
+#: Source types that must never be written to the recall cache, whatever the
+#: policy: `message` is a `recent_messages`/session turn, and it is already
+#: sitting in the conversation the model is about to see. A second, longer-
+#: lived copy of it in a store keyed by short id would outlive the reasons
+#: (incognito, a deleted turn, a rotated session) the original might go away.
+NEVER_STORED_SOURCE_TYPES = ("message",)
+
+
 def remember(packet: ContextPacket, omitted: Mapping[str, ContextCandidate], *,
-             owner: str, session_id: str = "", project_id: str = ""
-             ) -> List[Dict[str, str]]:
+             owner: str, session_id: str = "", project_id: str = "",
+             allow_personal_memory: bool = True) -> List[Dict[str, str]]:
     """Store every recallable omission of ``packet`` and return one entry per
     stored row: ``{"id", "source_ref", "source_type", "section", "title"}``.
 
     ``omitted`` is what `transforms.collect_budget_omissions` captured during
     the compile (``source_ref -> candidate``).  An omission with no captured
     candidate is stored as a reference only and reopened live on recall.
+
+    ``allow_personal_memory`` is the caller's `ContextPolicy.allow_personal_memory`
+    for this request — incognito and "no memory" both arrive as `False`. When
+    it is `False` nothing is stored at all: a budget cut is reversible by
+    design, an incognito cut must not become reversible as a side effect of
+    that same cache. Independent of that flag, `NEVER_STORED_SOURCE_TYPES`
+    omissions (recent messages) are never stored either.
+
     Never raises: a recall store that fails costs the footer, not the turn."""
-    rows = recallable_omissions(packet)
+    if not allow_personal_memory:
+        return []
+    rows = [o for o in recallable_omissions(packet)
+            if str(getattr(o, "source_type", "") or "") not in NEVER_STORED_SOURCE_TYPES]
     if not rows:
         return []
     who = str(owner or "")
@@ -286,6 +305,117 @@ def _missing(ident: str, raw: Any, note: str) -> Dict[str, Any]:
     return {"id": ident or str(raw or ""), "found": False, "content": "", "note": note}
 
 
+def _owner_mismatch(entry_owner: Any, owner: str) -> bool:
+    stored = str(entry_owner or "")
+    return bool(stored and owner and stored != owner)
+
+
+#: `source_ref` prefixes this module knows how to re-check safely before
+#: handing back a body it cached earlier. Anything else keeps today's
+#: behaviour: a stored body for a prefix outside this list is returned as
+#: before, and a prefix with no stored body already goes through
+#: `_reopen_live`, which has its own access checks.
+_RECHECKED_PREFIXES = ("mem:", "pmem:", "ent:", "note:")
+
+
+def _source_still_available(ref: str, owner: str) -> bool:
+    """Re-check one omission's source right before a cached body is handed
+    back (see module doc, requirement (b) of the recall-cache privacy fix).
+
+    A stored body is a snapshot: the packet compiled it once, and nothing
+    since has re-read the source. If the owner forgot the memory, suppressed
+    it, marked it secret, or deleted/hid the note or entity that produced it
+    in the meantime, the cache must not be the one place that memory still
+    answers. Only the prefixes this function understands are checked; every
+    other kind of reference is treated as still available (unchanged
+    behaviour), because this module does not know how to open it safely."""
+    if ref.startswith("mem:"):
+        try:
+            import src.memory_engine as engine
+
+            item = engine.get_item(ref[4:])
+        except Exception as exc:  # noqa: BLE001 - an unreadable store is not "gone"
+            logger.debug("context recall could not recheck %s: %s", ref, exc)
+            return True
+        if not item:
+            return False
+        if item.get("suppressed"):
+            return False
+        if str(item.get("sensitivity") or "") == "secret":
+            return False
+        return not _owner_mismatch(item.get("owner"), owner)
+    if ref.startswith("pmem:"):
+        wanted = ref[5:]
+        try:
+            from src.constants import DATA_DIR
+            from src.memory import MemoryManager
+
+            entries = MemoryManager(DATA_DIR).load(owner) or []
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("context recall could not recheck %s: %s", ref, exc)
+            return True
+        return any(str(entry.get("id") or "") == wanted for entry in entries)
+    if ref.startswith("ent:"):
+        try:
+            from src.brain import entities
+
+            entity = entities.get_entity(ref[4:])
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("context recall could not recheck %s: %s", ref, exc)
+            return True
+        if not entity or entity.get("hidden"):
+            return False
+        return not _owner_mismatch(entity.get("owner"), owner)
+    if ref.startswith("note:"):
+        try:
+            from src.brain import notes
+
+            notes.read_note(owner, ref[5:])
+        except (FileNotFoundError, ValueError):
+            return False
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("context recall could not recheck %s: %s", ref, exc)
+            return True
+        return True
+    return True
+
+
+def _delete_row(owner: str, ident: str) -> None:
+    try:
+        with store.db() as conn:
+            conn.execute("DELETE FROM context_recall WHERE owner = ? AND short_id = ?",
+                        (owner, ident))
+    except Exception as exc:  # noqa: BLE001 - a stale row left behind is a cache
+                              # miss later, not a leak: the check above already
+                              # refused to return its body.
+        logger.warning("context recall could not purge stale row %s: %s", ident, exc)
+
+
+def purge_source(owner: str, source_ref: str) -> int:
+    """Delete every cached recall row this owner holds for ``source_ref``.
+
+    Not called anywhere yet — see ``R_wiring.md`` for where the memory,
+    entity and note deletion/suppression paths should call it so a short id
+    minted before the removal cannot hand the body back afterward. Recall's
+    own re-check (`_source_still_available`) is the safety net for the ids
+    that slip through before those call sites are wired; this is the cleanup
+    that keeps the cache from ever growing rows for things that are gone.
+    Never raises: returns 0 on a store it could not reach."""
+    who = str(owner or "")
+    ref = str(source_ref or "")
+    if not ref:
+        return 0
+    try:
+        with store.db() as conn:
+            cursor = conn.execute(
+                "DELETE FROM context_recall WHERE owner = ? AND source_ref = ?",
+                (who, ref))
+            return int(cursor.rowcount or 0)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("context recall could not purge %s for %s: %s", ref, who, exc)
+        return 0
+
+
 async def _reopen_live(row: Mapping[str, Any], *, owner: str) -> str:
     """The body of a row stored without one, through the adapter registry."""
     ref = str(row.get("source_ref") or "")
@@ -338,6 +468,14 @@ async def recall(ids: Iterable[Any], *, owner: str) -> List[Dict[str, Any]]:
             continue
         body = str(row.get("body") or "")
         if body:
+            ref = str(row.get("source_ref") or "")
+            if ref.startswith(_RECHECKED_PREFIXES) and not _source_still_available(ref, who):
+                _delete_row(who, ident)
+                item = _shape(ident, row, "", "the source no longer exists")
+                item["found"] = False
+                item["note"] = "the source this id points at is no longer available"
+                out.append(item)
+                continue
             out.append(_shape(ident, row, body, "stored when the packet omitted it"))
             continue
         live = await _reopen_live(row, owner=who)
@@ -373,6 +511,7 @@ def render_recall(results: Sequence[Mapping[str, Any]]) -> str:
 
 __all__ = [
     "FOOTER_ITEMS", "SHORT_ID_CHARS", "MAX_RECALL_IDS", "MAX_RECALL_CHARS",
-    "RECALLABLE_REASONS", "short_id", "normalize_id", "recallable_omissions",
-    "remember", "footer_lines", "render_footer", "recall", "render_recall",
+    "RECALLABLE_REASONS", "NEVER_STORED_SOURCE_TYPES", "short_id", "normalize_id",
+    "recallable_omissions", "remember", "footer_lines", "render_footer", "recall",
+    "render_recall", "purge_source",
 ]

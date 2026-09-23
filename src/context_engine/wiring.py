@@ -477,14 +477,20 @@ async def _compile_live(request: ContextRequest, *,
 
 def _remember_omitted(packet: ContextPacket, omitted: Mapping[str, Any],
                       request: ContextRequest) -> List[Dict[str, str]]:
-    """OBJ-29: store the budget omissions under short ids (never raises)."""
+    """OBJ-29: store the budget omissions under short ids (never raises).
+
+    ``allow_personal_memory`` carries this request's policy straight through:
+    an incognito or "no memory" turn (the same flag that keeps those stores
+    out of retrieval, see `build_request`) must not have its omissions land
+    in a cache that a later, non-incognito call can read back."""
     try:
         from . import recall
 
         return recall.remember(packet, omitted,
                                owner=request.execution.owner,
                                session_id=request.execution.session_id,
-                               project_id=request.execution.project_id)
+                               project_id=request.execution.project_id,
+                               allow_personal_memory=request.policy.allow_personal_memory)
     except Exception as exc:  # noqa: BLE001 - the footer is optional
         logger.debug("context engine could not keep omissions recallable: %s", exc)
         return []
