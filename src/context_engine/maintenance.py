@@ -24,6 +24,9 @@ So every task in :data:`TASK_NAMES` is deterministic and reversible-by-rebuild:
 * `audit_blocks`     — reports oversized, duplicated and contradictory blocks.
                        Reports.  Changes nothing.
 * `vacuum`           — reclaims disk after the deletes above.
+* `memory_conflict_advice` — files typed-decision SUGGESTIONS about memory
+                       pairs the conflict rules say nothing about.  Suggests.
+                       Resolves nothing (owner-scoped, like the brain tasks).
 
 Nothing here calls a model, and nothing here writes a fact.  The model-assisted
 half of §13.2 (proposing experiences, summarising episodes, describing recipes)
@@ -65,7 +68,7 @@ logger = logging.getLogger(__name__)
 TASK_NAMES: Tuple[str, ...] = (
     "prune_packets", "expire_findings", "refresh_code_index",
     "degrade_experiences", "audit_blocks", "vacuum",
-    "brain_vault_sync", "brain_extract", "brain_wiki",
+    "brain_vault_sync", "brain_extract", "brain_wiki", "memory_conflict_advice",
 )
 
 # These tasks describe one project workspace. A scheduled pass fans them out
@@ -77,7 +80,8 @@ SCOPED_TASK_NAMES = frozenset({"refresh_code_index", "degrade_experiences"})
 # scheduled pass fans them out over every owner with brain data instead of
 # running once against whatever owner happened to be passed in, or not at
 # all when no owner is given.
-OWNER_TASK_NAMES = frozenset({"brain_vault_sync", "brain_extract", "brain_wiki"})
+OWNER_TASK_NAMES = frozenset({"brain_vault_sync", "brain_extract", "brain_wiki",
+                              "memory_conflict_advice"})
 
 #: How often each task is worth running, in seconds.  These are floors, not
 #: schedules: :func:`due` says a task *may* run, and something else decides
@@ -96,6 +100,9 @@ TASK_INTERVALS_S: Dict[str, float] = {
     "brain_vault_sync": 120.0,
     "brain_extract": 300.0,
     "brain_wiki": 900.0,
+    # Advisory only (src/memory_conflicts.py `advise`): a typed decision over
+    # memory pairs the closed conflict rules say nothing about.
+    "memory_conflict_advice": 3_600.0,
 }
 
 #: Setting that decides how long a ledger row lives.
@@ -366,6 +373,9 @@ def _brain_extract(*, owner: str = "", **rest: Any) -> Tuple[int, str]:
               f"{report.get('relations', 0)} relation(s)"
               f"{'; ' + str(report.get('errors')) + ' error(s)' if report.get('errors') else ''}"
               f"{_llm_skip_note(report)}")
+    if report.get("typed"):
+        changed += int(report.get("typed") or 0)
+        detail += f"; {report.get('typed')} entit(y/ies) typed"
     if revalidated:
         hidden = int(revalidated.get("hidden_count") or 0)
         retracted = int(revalidated.get("retracted_count") or 0)
@@ -394,6 +404,25 @@ def _brain_wiki(*, owner: str = "", **rest: Any) -> Tuple[int, str]:
     return changed, detail
 
 
+def _memory_conflict_advice(*, owner: str = "", **rest: Any) -> Tuple[int, str]:
+    """Ask a typed decision about memory pairs the deterministic conflict
+    detector found nothing for, and file the confident "contradict"/"update"
+    answers as `suggested` rows. Never resolves or ranks anything down;
+    the same model etiquette as the brain passes (a turn in flight, a model
+    that would have to load, a busy runner: skip)."""
+    if not _brain_enabled():
+        return 0, "brain is disabled; no memory pairs examined"
+    if not owner:
+        return 0, "no owner; no memory pairs examined"
+    from src import memory_conflicts
+
+    report = _run_coro(memory_conflicts.advise(owner, limit=6, budget_s=15.0, background=True))
+    changed = int(report.get("suggested", 0))
+    detail = (f"{report.get('asked', 0)} pair(s) asked, {changed} suggestion(s)"
+              f"{'; skipped: ' + str(report.get('skipped')) if report.get('skipped') else ''}")
+    return changed, detail
+
+
 TASKS: Dict[str, Callable[..., Tuple[int, str]]] = {
     "prune_packets": _prune_packets,
     "expire_findings": _expire_findings,
@@ -404,6 +433,7 @@ TASKS: Dict[str, Callable[..., Tuple[int, str]]] = {
     "brain_vault_sync": _brain_vault_sync,
     "brain_extract": _brain_extract,
     "brain_wiki": _brain_wiki,
+    "memory_conflict_advice": _memory_conflict_advice,
 }
 
 

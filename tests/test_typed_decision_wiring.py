@@ -182,6 +182,85 @@ def test_typing_never_overrides_a_type_set_meanwhile(monkeypatch, brain):
     assert entities.get_entity(labs["id"])["type"] == "project"
 
 
+# ── wiring: memory-conflict suggestions ─────────────────────────────────────
+
+@pytest.fixture()
+def memstore(tmp_path, monkeypatch, endpoint):
+    from src import memory_engine as engine
+    monkeypatch.setattr(engine, "DATA_DIR", str(tmp_path))
+    engine.set_vector_store(None)
+    engine.clear_injected()
+    monkeypatch.setattr("src.context_engine.maintenance.should_yield", lambda: False)
+    yield engine
+    engine.reset_vector_store()
+    engine.clear_injected()
+
+
+def _two_unruled_items(engine):
+    from datetime import datetime, timedelta, timezone
+    t0 = datetime(2026, 3, 1, 9, 0, tzinfo=timezone.utc)
+    a = engine.add_item("Bruno's team meets every Monday morning", owner="ada",
+                        trust_class="human_explicit", now=t0)
+    b = engine.add_item("Bruno's team meets every Thursday afternoon now", owner="ada",
+                        trust_class="human_explicit", now=t0 + timedelta(days=30))
+    return a, b
+
+
+def test_conflict_advice_files_a_suggestion_never_an_open_conflict(monkeypatch, memstore):
+    from src import memory_conflicts as mc
+    a, b = _two_unruled_items(memstore)
+    assert mc.classify(a["text"], b["text"]) is None
+    assert mc.list_conflicts(owner="ada") == []
+    server = serve(monkeypatch, lambda p: (200, openai_body(
+        [{"token": "B", "logprob": _lp(0.9)}, {"token": "A", "logprob": _lp(0.05)}], content="B")))
+    report = run(mc.advise("ada"))
+    assert report["asked"] == 1 and report["suggested"] == 1
+    assert mc.list_conflicts(owner="ada") == []  # nothing open
+    suggested = mc.list_conflicts(owner="ada", status="suggested")
+    assert len(suggested) == 1 and suggested[0]["reason"] == "model_suggested"
+    assert "update" in suggested[0]["detail"]
+    assert mc.open_conflict_for(a["id"], "ada") is None  # no ranking penalty
+    ctx = server.requests[0]["payload"]["messages"][1]["content"]
+    assert ctx.index("Monday") < ctx.index("Thursday")  # older first
+    # asked once
+    run(mc.advise("ada"))
+    assert len(server.requests) == 1
+    # the owner may still resolve it by hand
+    assert mc.resolve(suggested[0]["id"], "both", owner="ada")["status"] == "kept_both"
+
+
+def test_conflict_advice_compatible_or_unavailable_files_nothing(monkeypatch, memstore):
+    from src import memory_conflicts as mc
+    _two_unruled_items(memstore)
+    endpoint_state = {"r": []}
+    monkeypatch.setattr("src.background_job_guard._resident_model_names", lambda url: endpoint_state["r"])
+    server = serve(monkeypatch, lambda p: (200, openai_body([{"token": "C", "logprob": -0.01}], content="C")))
+    report = run(mc.advise("ada"))
+    assert report["skipped"] == "model_not_resident" and server.requests == []
+    endpoint_state["r"] = [MODEL]
+    report = run(mc.advise("ada"))
+    assert report["asked"] == 1 and report["suggested"] == 0
+    assert mc.list_conflicts(owner="ada", status="suggested") == []
+
+
+def test_conflict_advice_skips_pairs_the_rules_already_judge(memstore):
+    from src import memory_conflicts as mc
+    items = [
+        {"id": "1", "text": "Ada lives in Bluehaven", "created_at": "2026-01-01"},
+        {"id": "2", "text": "Ada lives in Villanueva", "created_at": "2026-02-01"},
+        {"id": "3", "text": "Cordera Labs sells garden tools", "created_at": "2026-03-01"},
+    ]
+    assert mc.advice_candidates(items) == []
+
+
+def test_maintenance_registers_the_advice_task():
+    from src.context_engine import maintenance
+    assert "memory_conflict_advice" in maintenance.TASK_NAMES
+    assert "memory_conflict_advice" in maintenance.TASKS
+    assert "memory_conflict_advice" in maintenance.OWNER_TASK_NAMES
+    assert maintenance.TASK_INTERVALS_S["memory_conflict_advice"] >= 600
+
+
 def test_chat_route_uses_the_freshness_decision_on_the_hot_path():
     """The chat route asks `decide_freshness` (rule first, typed decision only
     when the rule is unsure) where it used to ask the bare keyword rule, and

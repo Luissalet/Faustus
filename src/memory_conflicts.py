@@ -27,7 +27,14 @@ Two ways a pair is flagged, both deterministic and both reusing
   (a project cannot use two languages, a person cannot have two "lives in"
   answers) but give a different object.
 
-What this module never does: call a model, guess a subject from wording
+A third, ADVISORY way (``advise``, background only): pairs the two rules
+above say nothing about, but that share enough vocabulary to be about the
+same thing, may be put to a typed decision (``src/typed_decision.py``:
+contradict / update / compatible, read from one prefill). A confident
+"contradict" or "update" is stored as a ``suggested`` row the owner can
+look at — never ``open`` (so never ranked down), never resolved.
+
+What the write-path detection never does: call a model, guess a subject from wording
 alone (it is extracted with an explicit, closed predicate list, the same
 "never inferred" discipline ``conflicts.py`` applies to its own ``subject``
 meta key), or touch either item's stored text. A conflict is a row in its
@@ -42,6 +49,7 @@ import logging
 import re
 import sqlite3
 import threading
+import time
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Sequence, Tuple
@@ -51,12 +59,16 @@ from src.memory import get_text_similarity, tokenize
 
 logger = logging.getLogger(__name__)
 
-REASONS: Tuple[str, ...] = ("negation", "same_subject_different_value")
+REASONS: Tuple[str, ...] = ("negation", "same_subject_different_value", "model_suggested")
 # MEM-TEMPORAL: "superseded" is a resolution like "kept_new"/"kept_old", but
 # reached automatically (see `_maybe_supersede`) rather than by an explicit
 # owner choice, and it is REVERSIBLE (`unsupersede`) — the other three never
 # are, since they `forget()` an item outright.
-STATUSES: Tuple[str, ...] = ("open", "kept_new", "kept_old", "kept_both", "superseded")
+#: "suggested" is the ADVISORY status of a pair only a typed decision
+#: flagged (`advise`): listed on request (``status=suggested``), never
+#: ranked down (`open_conflict_for` reads ``open`` rows only), never resolved
+#: automatically — the owner may resolve it like an open one.
+STATUSES: Tuple[str, ...] = ("open", "kept_new", "kept_old", "kept_both", "superseded", "suggested")
 
 #: LEGACY: rows written before the `supersede` column existed carried the
 #: OLD item's previous `valid_until` after this delimiter inside `detail`.
@@ -672,7 +684,7 @@ def resolve(conflict_id: Any, keep: Any, *, owner: Optional[str] = None,
     if keep not in ("new", "old", "both", "superseded"):
         raise MemoryConflictError("keep must be 'new', 'old', 'both' or 'superseded'")
     conflict = get_conflict(conflict_id)
-    if not conflict or conflict.get("status") != "open":
+    if not conflict or conflict.get("status") not in ("open", ADVISORY_STATUS):
         return None
     if owner is not None and str(conflict.get("owner") or "") != str(owner):
         return None
@@ -755,8 +767,193 @@ def unsupersede(conflict_id: Any, *, now: Optional[datetime] = None) -> Optional
     return conflict
 
 
+# ---------------------------------------------------------------------------
+# Advisory pass — a typed decision over pairs the closed rules say nothing
+# about. Background only, never on the write path, never a resolution.
+# ---------------------------------------------------------------------------
+
+ADVISORY_STATUS = "suggested"
+ADVISORY_REASON = "model_suggested"
+ADVICE_CHOICES: Tuple[str, ...] = ("contradict", "update", "compatible")
+ADVICE_DESCRIPTIONS: Dict[str, str] = {
+    "contradict": "they cannot both be true at the same time",
+    "update": "the newer statement replaces the older one: something changed over time",
+    "compatible": "both can be true together, or they are about different things",
+}
+ADVICE_QUESTION = "How do the older and the newer statement relate?"
+#: Two texts must share at least this much of their core vocabulary to be
+#: worth a question at all: a pair about different subjects is compatible
+#: by construction and asking about it only spends the runner.
+_ADVICE_MIN_OVERLAP = 0.25
+_ADVICE_TABLE = "memory_conflict_advice"
+_ADVICE_SCHEMA = f"""
+CREATE TABLE IF NOT EXISTS {_ADVICE_TABLE} (
+    owner      TEXT NOT NULL DEFAULT '',
+    pair       TEXT NOT NULL DEFAULT '',
+    verdict    TEXT NOT NULL DEFAULT '',
+    confidence REAL,
+    mass       REAL,
+    asked_at   TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY(owner, pair)
+)
+"""
+_ADVICE_TIMEOUT_S = 8.0
+
+
+def _pair_key(a_id: str, b_id: str) -> str:
+    return "|".join(sorted((str(a_id), str(b_id))))
+
+
+def _core_overlap(a: str, b: str) -> float:
+    core_a, core_b = _core_tokens(a), _core_tokens(b)
+    union = core_a | core_b
+    return len(core_a & core_b) / len(union) if union else 0.0
+
+
+def advice_candidates(items: Sequence[Dict[str, Any]], *, per_item: int = 4,
+                      recent: int = 20) -> List[Tuple[Dict[str, Any], Dict[str, Any]]]:
+    """(older, newer) pairs among `items` that the deterministic detector
+    finds NOTHING for, that are not the same statement twice, and that share
+    enough core vocabulary to plausibly be about the same thing. Pure: the
+    caller supplies the active items (dicts with ``id``, ``text``,
+    ``created_at``); the newest `recent` are compared against their
+    `per_item` closest neighbours."""
+    rows = [i for i in items if str(i.get("text") or "").strip() and i.get("id")]
+    rows.sort(key=lambda i: str(i.get("created_at") or ""))
+    seen: set = set()
+    out: List[Tuple[Dict[str, Any], Dict[str, Any]]] = []
+    for newer in reversed(rows[-max(1, recent):]):
+        text = str(newer.get("text") or "")
+        project = str(newer.get("project") or "")
+        others = [o for o in rows if o.get("id") != newer.get("id")
+                  and (not project or str(o.get("project") or "") in ("", project))]
+        scored = sorted(((_core_overlap(text, str(o.get("text") or "")), o) for o in others),
+                        key=lambda pair: -pair[0])
+        for overlap, other in scored[:per_item]:
+            if overlap < _ADVICE_MIN_OVERLAP:
+                break
+            key = _pair_key(newer["id"], other["id"])
+            if key in seen:
+                continue
+            seen.add(key)
+            if classify(text, other.get("text")) is not None:
+                continue  # the rules already have a verdict
+            if _near_duplicate(text, str(other.get("text") or "")):
+                continue
+            older, newest = sorted((other, newer), key=lambda i: str(i.get("created_at") or ""))
+            out.append((older, newest))
+    return out
+
+
+def advice_context(older: Dict[str, Any], newer: Dict[str, Any]) -> str:
+    def _when(item: Dict[str, Any]) -> str:
+        stamp = str(item.get("valid_from") or item.get("created_at") or "")[:10]
+        return f" ({stamp})" if stamp else ""
+    return (f"Older statement{_when(older)}: {str(older.get('text') or '').strip()}\n"
+            f"Newer statement{_when(newer)}: {str(newer.get('text') or '').strip()}")
+
+
+def advice_field() -> Any:
+    from src.typed_decision import Field
+    return Field(name="relation", question=ADVICE_QUESTION, choices=list(ADVICE_CHOICES),
+                 descriptions=ADVICE_DESCRIPTIONS)
+
+
+def _asked_pairs(owner: str) -> set:
+    with _db() as conn:
+        conn.execute(_ADVICE_SCHEMA)
+        rows = conn.execute(f"SELECT pair FROM {_ADVICE_TABLE} WHERE owner = ?", (owner,)).fetchall()
+        existing = conn.execute(
+            f"SELECT new_id, old_id FROM {_TABLE} WHERE owner = ?", (owner,)).fetchall()
+    return {r["pair"] for r in rows} | {_pair_key(r["new_id"], r["old_id"]) for r in existing}
+
+
+def _record_advice(owner: str, pair: str, verdict: str, confidence: Optional[float],
+                   mass: Optional[float]) -> None:
+    with _db() as conn:
+        conn.execute(_ADVICE_SCHEMA)
+        conn.execute(
+            f"INSERT INTO {_ADVICE_TABLE} (owner, pair, verdict, confidence, mass, asked_at) "
+            f"VALUES (?,?,?,?,?,?) ON CONFLICT(owner, pair) DO UPDATE SET verdict = excluded.verdict, "
+            f"confidence = excluded.confidence, mass = excluded.mass, asked_at = excluded.asked_at",
+            (owner, pair, verdict, confidence, mass, _iso()),
+        )
+
+
+async def advise(owner: Any, *, limit: int = 6, budget_s: float = 20.0,
+                 background: bool = True) -> Dict[str, Any]:
+    """Ask a typed decision about pairs the closed rules found nothing for
+    ("contradict" / "update" / "compatible"). A confident "contradict" or
+    "update" becomes a ``suggested`` row (reason ``model_suggested``) for the
+    owner to look at; nothing is resolved, ranked down or forgotten because
+    of it. Every asked pair is remembered so it is asked once. With
+    `background`, the brain's model etiquette (a turn in flight, a model
+    that would have to load, a busy runner) is checked before each call.
+    Never raises; returns a small report."""
+    owner = str(owner or "")
+    report: Dict[str, Any] = {"asked": 0, "suggested": 0, "skipped": ""}
+    start = time.monotonic()
+    try:
+        from src import typed_decision
+        from src.settings import get_setting
+        if not typed_decision.enabled() or not bool(get_setting("typed_decision_memory_conflicts", True)):
+            report["skipped"] = "disabled"
+            return report
+        from src.memory_engine import list_items
+        items = [i for i in list_items(owner=owner, status="active", limit=2000)
+                 if not i.get("suppressed")]
+        asked = _asked_pairs(owner)
+        pairs = [(o, n) for o, n in advice_candidates(items)
+                 if _pair_key(o["id"], n["id"]) not in asked]
+        if not pairs:
+            return report
+        gate = None
+        url = model = None
+        if background:
+            from src.brain.extract import background_llm_gate as gate
+            from src.endpoint_resolver import resolve_endpoint
+            url, model, _headers = resolve_endpoint("utility", owner=owner)
+        min_conf = typed_decision.default_min_confidence()
+        for older, newer in pairs[:max(0, int(limit))]:
+            if time.monotonic() - start > budget_s:
+                break
+            if gate is not None:
+                reason = gate(url, model)
+                if reason:
+                    report["skipped"] = reason
+                    break
+            decisions = await typed_decision.decide(
+                advice_context(older, newer), [advice_field()], owner=owner,
+                timeout_s=max(typed_decision.default_timeout_s(), _ADVICE_TIMEOUT_S),
+                caller="memory_conflict",
+            )
+            decision = decisions.get("relation")
+            if decision is None or decision.method == "unavailable":
+                report["skipped"] = (decision.reason if decision else "") or "unavailable"
+                break
+            report["asked"] += 1
+            pair = _pair_key(older["id"], newer["id"])
+            _record_advice(owner, pair, str(decision.best or decision.value or ""),
+                           decision.confidence, decision.mass)
+            if (decision.method == "logprobs" and decision.value in ("contradict", "update")
+                    and decision.confidence is not None and decision.confidence >= min_conf):
+                row = _insert(owner, str(newer["id"]), str(older["id"]), ADVISORY_REASON,
+                              f"typed decision: {decision.value} (p={decision.confidence:.2f}, "
+                              f"mass={decision.mass:.2f}); advisory, not resolved",
+                              datetime.now(timezone.utc))
+                with _db() as conn:
+                    conn.execute(f"UPDATE {_TABLE} SET status = ? WHERE id = ?",
+                                 (ADVISORY_STATUS, row["id"]))
+                report["suggested"] += 1
+    except Exception as exc:  # noqa: BLE001 - a background pass never raises
+        logger.debug("memory_conflicts: advise failed (%s)", exc)
+        report["skipped"] = report.get("skipped") or "error"
+    return report
+
+
 __all__ = [
     "REASONS", "STATUSES", "RANKING_PENALTY", "MemoryConflictError",
     "classify", "detect_for", "list_conflicts", "get_conflict",
     "open_conflict_for", "resolve", "unsupersede",
+    "ADVISORY_STATUS", "ADVISORY_REASON", "advise", "advice_candidates",
 ]
