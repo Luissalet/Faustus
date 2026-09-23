@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { ReadNote } from '../../adapters/brain';
-import { t } from '../../i18n';
+import { locale, t } from '../../i18n';
 
 /**
  * The note's frontmatter, as a table: every key the vault stores, and — for
@@ -17,6 +17,18 @@ const ENTITY_TYPES = ['person', 'project', 'organization', 'place', 'tool', 'con
 function dateValue(v: unknown): string {
   const s = typeof v === 'string' ? v : '';
   return s.slice(0, 10);
+}
+
+/** A stray field always shown read-only never gets an editable date input,
+ *  so unlike `dateValue` above it can read as a locale date rather than the
+ *  raw ISO timestamp the frontmatter stores it as. */
+const READ_ONLY_DATE_KEYS = new Set(['created', 'updated']);
+
+function readableDate(v: unknown): string {
+  const s = typeof v === 'string' ? v : '';
+  const at = Date.parse(s);
+  if (Number.isNaN(at)) return s;
+  return new Date(at).toLocaleDateString(locale(), { dateStyle: 'medium' });
 }
 
 export function Properties({ note, onChange }: { note: ReadNote; onChange: (patch: Record<string, unknown>) => void }) {
@@ -108,7 +120,7 @@ export function Properties({ note, onChange }: { note: ReadNote; onChange: (patc
           {otherKeys.map((key) => (
             <tr key={key}>
               <th>{key}</th>
-              <td>{Array.isArray(fm[key]) ? (fm[key] as unknown[]).join(', ') : String(fm[key])}</td>
+              <td>{Array.isArray(fm[key]) ? (fm[key] as unknown[]).join(', ') : READ_ONLY_DATE_KEYS.has(key) ? readableDate(fm[key]) : String(fm[key])}</td>
             </tr>
           ))}
         </tbody>
