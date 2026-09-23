@@ -1,0 +1,21 @@
+[
+  {"query": "When do Bluehaven deploys go out, and what has to pass first?",
+   "expect_refs": ["pmem:demo-deploy"]},
+  {"query": "I think I fixed the flaky Bluehaven test. Can I say it is done?",
+   "expect_refs": ["mem:"]},
+  {"query": "Write this week's status update for Villanueva.",
+   "expect_refs": ["pmem:demo-villanueva", "mem:"]},
+  {"query": "I pushed a broken commit to the release branch, how do I undo it?",
+   "expect_refs": ["mem:"]},
+  {"query": "Add a new column to the orders table in Bluehaven.",
+   "expect_refs": ["mem:"]},
+  {"query": "Which region is the Cordera Labs staging cluster in?",
+   "expect_refs": ["mem:"]},
+  {"query": "Who am I and where do I work?",
+   "expect_refs": ["pmem:demo-name"]},
+  {"query": "Reformat this Python file to my usual indentation.",
+   "expect_refs": ["pmem:demo-editor"]},
+  {"query": "What is the capital of Portugal?"},
+  {"query": "Summarize the open risks of the Bluehaven migration.",
+   "expect_refs": ["pmem:demo-villanueva"]}
+]
