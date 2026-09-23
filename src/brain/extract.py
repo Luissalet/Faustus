@@ -29,7 +29,12 @@ whole feature follows:
    reading — never closes a rule-derived relation. A model that names
    something never mentioned in the text is simply ignored, not stored —
    the grounding check IS the safety net that lets this pass run
-   unsupervised in the background.
+   unsupervised in the background. The same name filter the rule pass uses
+   (``entities.valid_entity_name``/``proper_noun_in_source``) is applied to
+   the model's entities — "En", "Todo" or a lowercase "carpetas" never
+   become entities — and a relation survives only if its ``rel`` maps onto
+   the closed vocabulary (``entities.canonical_relation``: "trabaja en" ->
+   works_at) and a literal destination is at most 40 characters.
 
 Nothing here ever raises out to a caller on the chat hot path: this module
 is only ever invoked from a background sweep or an explicit "extract now"
@@ -47,6 +52,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 from src.brain import temporal
 from src.brain.db import db, fold, now_iso, parse_iso, register_schema, sha
 from src.brain.entities import (
+    KNOWN_RELATIONS,
     TYPES,
     add_mention,
     add_relation,
@@ -406,11 +412,23 @@ def _build_llm_prompt(batch: Sequence[Dict[str, Any]]) -> str:
         "Every entity name/alias and every relation src/dst MUST be words that "
         "literally occur in the text below (or a plain quoted value for dst). "
         "Never invent a name that is not in the text.",
+        "Entities are proper names only (people, organizations, places, projects, "
+        "tools, events): never a common noun, a pronoun or a sentence-opening word.",
+        "rel MUST be one of: " + ", ".join(KNOWN_RELATIONS) + ". "
+        "Leave out any relation that does not fit one of them.",
         "",
     ]
     for src in batch:
         lines.append(f"[{src['source_ref']}] {src['text']}")
     return "\n".join(lines)
+
+
+# Types whose label is itself evidence that a sentence-opening word is a name.
+_NAMED_TYPES = frozenset({"person", "organization", "place", "project", "tool", "event"})
+
+# A literal relation value (no entity) longer than this is a sentence tail
+# the model copied, not a value.
+_MAX_LITERAL_LEN = 40
 
 
 def _occurs(term: str, text_fold: str) -> bool:
@@ -490,15 +508,22 @@ async def _extract_llm_batch(owner: str, batch: Sequence[Dict[str, Any]],
         if not isinstance(raw_entity, dict):
             continue
         name = str(raw_entity.get("name") or "").strip()
-        if not name:
-            continue
-        aliases = [str(a).strip() for a in (raw_entity.get("aliases") or []) if str(a).strip()]
+        if not name or not valid_entity_name(name):
+            continue  # "En", "Todo", "7": never a name, whatever the model says
+        aliases = [str(a).strip() for a in (raw_entity.get("aliases") or [])
+                   if str(a).strip() and valid_entity_name(a)]
         candidate_folds = [fold(name)] + [fold(a) for a in aliases]
         if not any(cf and re.search(rf"\b{re.escape(cf)}\b", batch_fold) for cf in candidate_folds):
             continue  # not grounded in the batch text — drop it, never store
         etype = str(raw_entity.get("type") or "other").strip().lower()
         if etype not in TYPES:
             etype = "other"
+        # The model's own type is the extra evidence a single sentence-opening
+        # word needs ("Ada ..." typed person); a concept/other is not.
+        typed = etype in _NAMED_TYPES
+        if not any(proper_noun_in_source(term, src["text"], allow_sentence_initial=typed)
+                   for term in [name, *aliases] for src in batch):
+            continue  # a lowercase common noun or an unsupported capital
         try:
             entity = upsert_entity(owner, name, type=etype, aliases=aliases)
         except Exception:  # noqa: BLE001
@@ -518,14 +543,19 @@ async def _extract_llm_batch(owner: str, batch: Sequence[Dict[str, Any]],
             continue
         src_name = str(raw_rel.get("src") or "").strip()
         dst_name = str(raw_rel.get("dst") or "").strip()
-        rel_key = fold(raw_rel.get("rel")).replace(" ", "_")
-        if not src_name or not dst_name or not rel_key:
+        rel_key = canonical_relation(raw_rel.get("rel"))
+        if not src_name or not dst_name:
             continue
+        if not rel_key:
+            report["dropped_relations"] = int(report.get("dropped_relations") or 0) + 1
+            continue  # outside the closed vocabulary ("intocable", "has_account_named")
         src_entity = kept.get(fold(src_name))
         if not src_entity:
             continue  # source end was not kept -> drop the relation, never guess
         dst_entity = kept.get(fold(dst_name))
         dst_value = "" if dst_entity else dst_name
+        if not dst_entity and len(dst_value) > _MAX_LITERAL_LEN:
+            continue  # a sentence tail is not a value
         src_terms = {fold(src_name)} | spellings.get(src_entity["id"], set())
         dst_terms = ({fold(dst_name)} | spellings.get(dst_entity["id"], set())) if dst_entity \
             else {fold(dst_name)}
