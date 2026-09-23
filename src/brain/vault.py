@@ -146,9 +146,12 @@ def _title_from_path(rel_path: str) -> str:
 # ── entities: optional (Lot B), imported lazily every time it's needed ──
 
 def _entities():
+    # importlib goes through sys.modules first, so a substituted module (a
+    # test double, or a reload) is honoured even after the package attribute
+    # was bound by an earlier import.
     try:
-        from src.brain import entities as mod
-        return mod
+        import importlib
+        return importlib.import_module("src.brain.entities")
     except ImportError:
         return None
 
