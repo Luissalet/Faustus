@@ -65,12 +65,19 @@ logger = logging.getLogger(__name__)
 TASK_NAMES: Tuple[str, ...] = (
     "prune_packets", "expire_findings", "refresh_code_index",
     "degrade_experiences", "audit_blocks", "vacuum",
+    "brain_vault_sync", "brain_extract", "brain_wiki",
 )
 
 # These tasks describe one project workspace. A scheduled pass fans them out
 # over every project instead of recording a misleading global "no workspace"
 # success and then sleeping until the next interval.
 SCOPED_TASK_NAMES = frozenset({"refresh_code_index", "degrade_experiences"})
+
+# These describe one brain owner (a person, not a project workspace). A
+# scheduled pass fans them out over every owner with brain data instead of
+# running once against whatever owner happened to be passed in, or not at
+# all when no owner is given.
+OWNER_TASK_NAMES = frozenset({"brain_vault_sync", "brain_extract", "brain_wiki"})
 
 #: How often each task is worth running, in seconds.  These are floors, not
 #: schedules: :func:`due` says a task *may* run, and something else decides
@@ -83,6 +90,12 @@ TASK_INTERVALS_S: Dict[str, float] = {
     "degrade_experiences": 21_600.0,
     "audit_blocks": 86_400.0,
     "vacuum": 604_800.0,
+    # Defaults only: brain_vault_sync's real interval is read from the
+    # `brain_vault_sync_seconds` setting in `_brain_interval_s`, same as the
+    # ledger days above are read from a setting rather than hard-coded.
+    "brain_vault_sync": 120.0,
+    "brain_extract": 300.0,
+    "brain_wiki": 900.0,
 }
 
 #: Setting that decides how long a ledger row lives.
@@ -264,6 +277,96 @@ def _vacuum(**scope: Any) -> Tuple[int, str]:
     return 0, "reclaimed free pages"
 
 
+# ── the second brain: markdown vault, entity extraction, wiki pages ─────────
+#
+# These three mirror the deterministic-first, model-optional, fail-closed
+# rules the rest of this module already lives by: `brain_vault_sync` is a
+# plain file<->row sync with no model in the loop; `brain_extract` always
+# does its deterministic pass and only adds an LLM batch when
+# `brain_llm_extraction` is on; `brain_wiki` never runs unless
+# `brain_wiki_summaries` is on, and its own fallback (`render_summary_fallback`)
+# is what a disabled or failing model degrades to. All three are additionally
+# gated by `brain_enabled`, on top of `should_yield`/`budget_s`, because they
+# touch a per-owner vault rather than the context-engine's own tables.
+#
+# Unlike the tasks above, these describe one *owner*, not one project
+# workspace, so they are fanned out by `OWNER_TASK_NAMES` in `run_scheduled`
+# rather than `SCOPED_TASK_NAMES` — the scope dict's `owner` key is what they
+# read; `workspace`/`project_id` are unused.
+
+def _brain_enabled() -> bool:
+    try:
+        from src.settings import get_setting
+
+        return bool(get_setting("brain_enabled", True))
+    except Exception:  # noqa: BLE001 - unreadable setting means off
+        return False
+
+
+def _run_coro(coro: Any) -> Any:
+    """Run a `src.brain` coroutine from this module's synchronous tasks.
+
+    Every caller of `run()` that reaches these tasks is either already on a
+    worker thread with no event loop (`scheduler_loop`'s
+    `asyncio.to_thread`) or a synchronous test — never a coroutine itself —
+    so a fresh `asyncio.run` is safe and avoids making the whole maintenance
+    module async for the sake of two `src.brain` functions."""
+    import asyncio
+
+    return asyncio.run(coro)
+
+
+def _brain_vault_sync(*, owner: str = "", **rest: Any) -> Tuple[int, str]:
+    if not _brain_enabled():
+        return 0, "brain is disabled; nothing synced"
+    from src.brain import vault
+
+    report = vault.sync(owner, budget_s=15.0)
+    changed = int(report.get("exported", 0)) + int(report.get("imported", 0))
+    errors = report.get("errors") or []
+    detail = (f"exported {report.get('exported', 0)}, imported "
+              f"{report.get('imported', 0)}, suppressed {report.get('suppressed', 0)}"
+              f"{'; delete guard tripped' if report.get('guard_tripped') else ''}"
+              f"{f'; {len(errors)} error(s)' if errors else ''}")
+    return changed, detail
+
+
+def _brain_extract(*, owner: str = "", **rest: Any) -> Tuple[int, str]:
+    if not _brain_enabled():
+        return 0, "brain is disabled; nothing extracted"
+    from src.brain import extract
+    from src.settings import get_setting
+
+    use_llm = bool(get_setting("brain_llm_extraction", True))
+    batch = int(get_setting("brain_llm_extraction_batch", 12) or 12)
+    report = _run_coro(extract.extract_pending(
+        owner, limit=batch, budget_s=15.0, use_llm=use_llm,
+    ))
+    changed = int(report.get("entities", 0)) + int(report.get("relations", 0))
+    detail = (f"{report.get('processed', 0)} source(s) processed, "
+              f"{report.get('entities', 0)} entit(y/ies), "
+              f"{report.get('relations', 0)} relation(s)"
+              f"{'; ' + str(report.get('errors')) + ' error(s)' if report.get('errors') else ''}")
+    return changed, detail
+
+
+def _brain_wiki(*, owner: str = "", **rest: Any) -> Tuple[int, str]:
+    if not _brain_enabled():
+        return 0, "brain is disabled; no wiki pages refreshed"
+    from src.settings import get_setting
+
+    if not bool(get_setting("brain_wiki_summaries", True)):
+        return 0, "wiki summaries are off"
+    from src.brain import wiki
+
+    report = _run_coro(wiki.refresh_stale(owner, limit=5, budget_s=15.0))
+    changed = int(report.get("updated", 0))
+    detail = (f"{report.get('updated', 0)} page(s) refreshed, "
+              f"{report.get('skipped', 0)} skipped"
+              f"{'; ' + str(report.get('errors')) + ' error(s)' if report.get('errors') else ''}")
+    return changed, detail
+
+
 TASKS: Dict[str, Callable[..., Tuple[int, str]]] = {
     "prune_packets": _prune_packets,
     "expire_findings": _expire_findings,
@@ -271,7 +374,51 @@ TASKS: Dict[str, Callable[..., Tuple[int, str]]] = {
     "degrade_experiences": _degrade_experiences,
     "audit_blocks": _audit_blocks,
     "vacuum": _vacuum,
+    "brain_vault_sync": _brain_vault_sync,
+    "brain_extract": _brain_extract,
+    "brain_wiki": _brain_wiki,
 }
+
+
+def _brain_owners() -> List[str]:
+    """Every owner with brain data, from the brain store and memory items.
+
+    There is no owner registry to enumerate against, so this unions the
+    three places an owner can show up: the vault's own tables (a note or
+    entity written straight to the store), and `memory_engine` (an owner who
+    has memories but has not synced the vault yet). A vault folder on disk
+    with no matching DB row is not possible — `vault.sync` always writes a
+    `notes` row for anything it exports — so the filesystem is not a fourth
+    source here."""
+    owners: set = set()
+    try:
+        from src.brain import db as brain_db
+
+        with brain_db.db() as conn:
+            for table in ("notes", "entities"):
+                try:
+                    rows = conn.execute(
+                        f"SELECT DISTINCT owner FROM {table}").fetchall()
+                except sqlite3.Error:
+                    continue
+                for row in rows:
+                    value = str(row[0] or "").strip()
+                    if value:
+                        owners.add(value)
+    except Exception as exc:  # noqa: BLE001 - an unreadable store yields no owners
+        logger.debug("maintenance could not enumerate brain owners: %s", exc)
+
+    try:
+        from src import memory_engine
+
+        for item in memory_engine.list_items(owner=None, limit=2000):
+            value = str((item or {}).get("owner") or "").strip()
+            if value:
+                owners.add(value)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("maintenance could not enumerate memory owners: %s", exc)
+
+    return sorted(owners)
 
 
 # ── the run record ─────────────────────────────────────────────────────────
@@ -313,24 +460,47 @@ def last_run() -> Dict[str, Any]:
     return out
 
 
+def _brain_interval_s(name: str) -> float:
+    """`brain_vault_sync`'s interval is a setting; the other two brain tasks
+    keep their static defaults (there was no contract for making them
+    separately configurable, and two more settings for two more intervals
+    is not worth it while nobody has asked to tune them)."""
+    if name != "brain_vault_sync":
+        return TASK_INTERVALS_S.get(name, 3_600.0)
+    try:
+        from src.settings import get_setting
+
+        value = float(get_setting("brain_vault_sync_seconds", 120) or 120)
+    except Exception:  # noqa: BLE001 - an unreadable setting is the default
+        return TASK_INTERVALS_S["brain_vault_sync"]
+    return value if value > 0 else TASK_INTERVALS_S["brain_vault_sync"]
+
+
 def due(*, now: Optional[datetime] = None) -> List[str]:
     """Tasks whose interval has elapsed, in `TASK_NAMES` order.
 
     Order matters and is not alphabetical: pruning before vacuuming means the
     vacuum reclaims what the prune freed, and refreshing the index before
-    degrading experiences means the staleness check sees the current tree."""
+    degrading experiences means the staleness check sees the current tree.
+
+    The brain tasks are additionally gated on `brain_enabled` here, not just
+    inside each task, so a disabled brain does not even show up as "due" —
+    `run_scheduled` then skips straight past them instead of recording a
+    once-a-cycle no-op row for a feature the owner turned off."""
     moment = now or datetime.now(timezone.utc)
     if moment.tzinfo is None:
         moment = moment.replace(tzinfo=timezone.utc)
     history = last_run()
     ready: List[str] = []
     for name in TASK_NAMES:
+        if name in OWNER_TASK_NAMES and not _brain_enabled():
+            continue
         entry = history.get(name) or {}
         ran_at = store.parse_iso(entry.get("ran_at")) if entry.get("ran_at") else None
         if ran_at is None:
             ready.append(name)
             continue
-        interval = TASK_INTERVALS_S.get(name, 3_600.0)
+        interval = _brain_interval_s(name)
         if (moment - ran_at).total_seconds() >= interval:
             ready.append(name)
     return ready
@@ -452,6 +622,20 @@ def run_scheduled(*, projects: Sequence[Mapping[str, Any]] = (),
             results.append(result)
             _remember(result)
             continue
+        if name in OWNER_TASK_NAMES:
+            owners = _brain_owners()
+            if not owners:
+                one = run((name,), budget_s=remaining)
+                if one:
+                    results.append(one[0])
+                continue
+            aggregate = _run_fanned_out(
+                name, [{"owner": o} for o in owners], "owner(s)",
+                ceiling=ceiling, started=started,
+            )
+            _remember(aggregate)
+            results.append(aggregate)
+            continue
         if name not in SCOPED_TASK_NAMES:
             one = run((name,), budget_s=remaining)
             if one:
@@ -463,33 +647,42 @@ def run_scheduled(*, projects: Sequence[Mapping[str, Any]] = (),
                 results.append(one[0])
             continue
 
-        changed = elapsed_ms = failures = completed = yielded = 0
-        for scope in scopes:
-            remaining = ceiling - (time.monotonic() - started)
-            if remaining <= 0:
-                break
-            one = run((name,), budget_s=remaining, **scope)
-            if not one:
-                continue
-            row = one[0]
-            changed += row.changed
-            elapsed_ms += row.elapsed_ms
-            failures += 0 if row.ok else 1
-            yielded += 1 if row.detail.startswith("skipped:") else 0
-            completed += 1
-        omitted = max(0, len(scopes) - completed)
-        detail = (
-            f"{completed}/{len(scopes)} project workspace(s); "
-            f"changed {changed}; failures {failures}; yielded {yielded}"
-            + (f"; budget skipped {omitted}" if omitted else "")
-        )
-        aggregate = TaskResult(
-            name=name, ok=failures == 0, changed=changed,
-            detail=detail, elapsed_ms=elapsed_ms,
+        aggregate = _run_fanned_out(
+            name, scopes, "project workspace(s)", ceiling=ceiling, started=started,
         )
         _remember(aggregate)
         results.append(aggregate)
     return results
+
+
+def _run_fanned_out(name: str, scopes: Sequence[Dict[str, str]], unit: str, *,
+                    ceiling: float, started: float) -> TaskResult:
+    """Run one task once per scope (a project workspace or a brain owner),
+    folding the rows into a single aggregate result — the same shape
+    `run_scheduled` has always recorded for `SCOPED_TASK_NAMES`, now shared
+    with the owner fan-out so both read the same way in `last_run()`."""
+    changed = elapsed_ms = failures = completed = yielded = 0
+    for scope in scopes:
+        remaining = ceiling - (time.monotonic() - started)
+        if remaining <= 0:
+            break
+        one = run((name,), budget_s=remaining, **scope)
+        if not one:
+            continue
+        row = one[0]
+        changed += row.changed
+        elapsed_ms += row.elapsed_ms
+        failures += 0 if row.ok else 1
+        yielded += 1 if row.detail.startswith("skipped:") else 0
+        completed += 1
+    omitted = max(0, len(scopes) - completed)
+    detail = (
+        f"{completed}/{len(scopes)} {unit}; "
+        f"changed {changed}; failures {failures}; yielded {yielded}"
+        + (f"; budget skipped {omitted}" if omitted else "")
+    )
+    return TaskResult(name=name, ok=failures == 0, changed=changed,
+                      detail=detail, elapsed_ms=elapsed_ms)
 
 
 async def scheduler_loop(*, interval_s: Optional[float] = None,
@@ -525,6 +718,6 @@ async def scheduler_loop(*, interval_s: Optional[float] = None,
 __all__ = [
     "TASK_NAMES", "TASK_INTERVALS_S", "LEDGER_DAYS_SETTING",
     "DEFAULT_LEDGER_DAYS", "MAX_EXPERIENCE_ROWS", "SCHEMA", "TASKS",
-    "SCOPED_TASK_NAMES", "TaskResult", "should_yield", "run",
-    "run_scheduled", "scheduler_loop", "due", "last_run",
+    "SCOPED_TASK_NAMES", "OWNER_TASK_NAMES", "TaskResult", "should_yield",
+    "run", "run_scheduled", "scheduler_loop", "due", "last_run",
 ]
