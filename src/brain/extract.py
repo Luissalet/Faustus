@@ -63,6 +63,8 @@ from src.brain.entities import (
     proper_noun_in_source,
     repoint_source,
     self_entity,
+    SELF_WORDS,
+    SELF_EXTRA_ALIASES,
     upsert_entity,
     valid_entity_name,
 )
@@ -184,7 +186,7 @@ def _resolve_entity_ref(owner: str, phrase: str, *, project: str, allow_create: 
     phrase = _strip_leading_article(phrase).strip(" .,;:!?\"'")
     if not phrase:
         return None, ""
-    if fold(phrase) in ("yo", "me", "i"):
+    if fold(phrase) in SELF_WORDS + SELF_EXTRA_ALIASES:
         return self_entity(owner), ""
     matches = entities_in_text(owner, phrase, limit=1)
     if matches:
@@ -716,6 +718,12 @@ async def extract_pending(owner: Any, *, limit: Optional[int] = None, budget_s: 
     }
     if not owner:
         return report
+    try:
+        # The owner's own node exists before anything is extracted, so "the
+        # user"/"yo"/their name attach to it instead of a stray person.
+        self_entity(owner)
+    except Exception:  # noqa: BLE001
+        logger.debug("brain.extract: self entity unavailable")
 
     try:
         if not _get_setting("brain_entity_extraction", True):

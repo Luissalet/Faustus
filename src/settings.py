@@ -783,6 +783,9 @@ DEFAULT_SETTINGS = {
     "brain_wiki_summaries": True,
     # Offer entity cards and vault notes to the Context Engine as a source.
     "brain_context_source": True,
+    # How the brain names the owner's own entity (the "yo"/"the user" node).
+    # Empty = "Yo". Set it and a person node with that name folds into it.
+    "owner_display_name": "",
     # Specialist experts (services/experts.py): a local agent with its own
     # corpus — a rubric, the user's own PDFs on disk, and citations that
     # resolve back to the page they came from. Off = no expert block is

@@ -80,8 +80,11 @@ export function SettingsDrawer({ onClose }: { onClose: () => void }) {
             <Field label={t('Supersede on conflict')} help={t('An updated fact closes the previous one instead of leaving both open.')}>
               <Toggle id="memory-temporal-supersede" checked={value.memory_temporal_supersede} onChange={(v) => set('memory_temporal_supersede', v)} />
             </Field>
-            <Field label={t('Context source')} help={t('Which store the context engine reads for this scope; leave empty for the default.')}>
-              <Text id="brain-context-source" value={value.brain_context_source} onChange={(v) => set('brain_context_source', v)} />
+            <Field label={t('Offer to the context engine')} help={t('Entity cards and matching notes can enter a turn\'s context when they are relevant.')}>
+              <Toggle id="brain-context-source" checked={value.brain_context_source} onChange={(v) => set('brain_context_source', v)} />
+            </Field>
+            <Field label={t('Your name')} help={t('How your own entity is called; memories that mention this name are about you.')}>
+              <Text id="owner-display-name" value={value.owner_display_name} onChange={(v) => set('owner_display_name', v)} placeholder={t('Me')} />
             </Field>
             <SaveBar dirty={dirty} saving={saving} onSave={() => void save()} />
           </div>

@@ -577,7 +577,8 @@ export interface BrainSettings {
   brain_entity_extraction: boolean;
   brain_llm_extraction: boolean;
   brain_wiki_summaries: boolean;
-  brain_context_source: string;
+  brain_context_source: boolean;
+  owner_display_name: string;
 }
 
 export function brainSettingsFrom(raw: unknown): BrainSettings {
@@ -591,7 +592,8 @@ export function brainSettingsFrom(raw: unknown): BrainSettings {
     brain_entity_extraction: bool(r.brain_entity_extraction, true),
     brain_llm_extraction: bool(r.brain_llm_extraction),
     brain_wiki_summaries: bool(r.brain_wiki_summaries),
-    brain_context_source: str(r.brain_context_source),
+    brain_context_source: bool(r.brain_context_source, true),
+    owner_display_name: str(r.owner_display_name),
   };
 }
 

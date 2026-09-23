@@ -167,6 +167,7 @@ _SETTINGS_KEYS = (
     "memory_temporal_parse", "memory_temporal_supersede", "brain_enabled",
     "brain_vault_dir", "brain_vault_sync_seconds", "brain_entity_extraction",
     "brain_llm_extraction", "brain_wiki_summaries", "brain_context_source",
+    "owner_display_name",
 )
 
 

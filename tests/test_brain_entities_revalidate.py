@@ -154,3 +154,38 @@ def test_revalidate_is_per_owner(store):
 def test_revalidate_never_raises_on_empty_owner(store):
     report = entities.revalidate("")
     assert report["hidden_count"] == 0 and report["retracted_count"] == 0
+
+
+def test_version_two_hides_lowercase_common_nouns_but_keeps_lowercase_tools(tmp_path, monkeypatch):
+    from src.brain import db, entities
+    db.use_dir(str(tmp_path / "brain2"))
+    try:
+        noun = entities.upsert_entity("alice", "chats", type="concept")
+        tool = entities.upsert_entity("alice", "pytest", type="tool")
+        named = entities.upsert_entity("alice", "Cordera Labs", type="organization")
+        report = entities.revalidate("alice")
+        assert noun["id"] in report["hidden"]
+        assert tool["id"] not in report["hidden"]
+        assert named["id"] not in report["hidden"]
+    finally:
+        db.use_dir(None)
+
+
+def test_self_entity_adopts_display_name_and_folds_in_the_named_person(tmp_path, monkeypatch):
+    from src.brain import db, entities
+    import src.settings as settings
+    db.use_dir(str(tmp_path / "brain3"))
+    try:
+        stray = entities.upsert_entity("alice", "Alice", type="person")
+        me = entities.self_entity("alice")
+        assert me["name"] == "Yo"
+        real_get = settings.get_setting
+        monkeypatch.setattr(settings, "get_setting",
+                            lambda k, d=None: "Alice" if k == "owner_display_name" else real_get(k, d))
+        me = entities.self_entity("alice")
+        assert me["name"] == "Alice"
+        assert entities.get_entity(stray["id"])["merged_into"] == me["id"]
+        # "the user" is the same node
+        assert entities.upsert_entity("alice", "User", type="person")["id"] == me["id"]
+    finally:
+        db.use_dir(None)

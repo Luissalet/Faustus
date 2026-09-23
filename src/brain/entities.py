@@ -71,6 +71,9 @@ FUNCTIONAL_RELATIONS = frozenset({"works_at", "lives_in", "located_in"})
 # Folded aliases that resolve a mention straight to `self_entity(owner)`
 # rather than through the general name/alias match.
 SELF_WORDS: Tuple[str, ...] = ("yo", "me", "i")
+# How the owner is referred to in third person by memories and by the model
+# ("the user prefers…", "el usuario quiere…"): the same node as "yo".
+SELF_EXTRA_ALIASES: Tuple[str, ...] = ("user", "the user", "usuario", "el usuario")
 
 _SCHEMA = (
     """
@@ -652,7 +655,38 @@ def self_entity(owner: Any) -> Dict[str, Any]:
         display = str(get_setting("owner_display_name", "") or "").strip()
     except Exception:  # noqa: BLE001
         display = ""
-    return upsert_entity(owner, display or "Yo", type="person", aliases=SELF_WORDS)
+    aliases = list(SELF_WORDS) + list(SELF_EXTRA_ALIASES)
+    me = _find_self(owner)
+    if me is None:
+        me = upsert_entity(owner, display or "Yo", type="person", aliases=aliases)
+    else:
+        missing = [a for a in aliases if fold(a) not in {fold(x) for x in me.get("aliases") or []}]
+        if missing:
+            me = update_entity(me["id"], aliases=list(me.get("aliases") or []) + missing) or me
+    if display:
+        # A person node the extractor created from the name before the owner
+        # set it ("Ada" in "Ada prefers tabs") IS the owner: fold it in.
+        for other in list_entities(owner, q=display, type="person", limit=20):
+            if other.get("id") != me.get("id") and fold(other.get("name")) == fold(display):
+                me = merge_entities(me["id"], other["id"]) or me
+        if fold(me.get("name")) != fold(display) and fold(me.get("name")) in SELF_WORDS:
+            # The owner told us their name after the node was born as "Yo".
+            me = update_entity(me["id"], name=display) or me
+    return me
+
+
+def _find_self(owner: str) -> Optional[Dict[str, Any]]:
+    """The oldest live person node carrying every self word as an alias."""
+    with db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM entities WHERE owner = ? AND type = 'person' AND "
+            "(merged_into IS NULL OR merged_into = '') ORDER BY created_at, id",
+            (owner,),
+        ).fetchall()
+        for row in rows:
+            if _is_self_row(row):
+                return _row_to_entity(row)
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -1019,7 +1053,7 @@ def entities_in_text(owner: Any, text: Any, *, limit: int = 8) -> List[Dict[str,
 # stored so `undo_revalidate` can put it back. Bump REVALIDATE_VERSION when
 # the filter changes enough to deserve another pass.
 
-REVALIDATE_VERSION = 1
+REVALIDATE_VERSION = 2
 
 _META_VERSION = "revalidate_version"
 _META_LAST = "revalidate_last"
@@ -1039,6 +1073,16 @@ def _meta_set(conn: sqlite3.Connection, owner: str, key: str, value: Any) -> Non
         "updated_at = excluded.updated_at",
         (owner, key, dumps(value), now_iso()),
     )
+
+
+def _name_fits_type(name: Any, etype: Any) -> bool:
+    """A name with no capital letter and no digit ("chats", "projects") is a
+    common noun unless it names software, where lowercase is the norm
+    ("npm", "pytest")."""
+    text = str(name or "")
+    if any(ch.isupper() or ch.isdigit() for ch in text):
+        return True
+    return str(etype or "") == "tool"
 
 
 def _is_self_row(row: sqlite3.Row) -> bool:
@@ -1066,7 +1110,8 @@ def revalidate(owner: Any, *, dry_run: bool = False) -> Dict[str, Any]:
             hidden_ever = set(_meta_get(conn, owner, _META_HIDDEN_EVER, []) or [])
             to_hide: List[sqlite3.Row] = []
             for row in rows:
-                if row["merged_into"] or row["hidden"] or valid_entity_name(row["name"]):
+                if row["merged_into"] or row["hidden"] or (
+                        valid_entity_name(row["name"]) and _name_fits_type(row["name"], row["type"])):
                     continue
                 if (row["summary_locked"] or row["id"] in merge_targets or _is_self_row(row)
                         or row["id"] in hidden_ever):
