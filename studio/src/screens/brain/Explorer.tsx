@@ -74,7 +74,7 @@ function FolderRow({ node, depth, activePath, open, onToggle, onOpen }: { node: 
         <button type="button" className="fs-brain__folder" style={{ paddingInlineStart: `${8 + depth * 14}px` }} onClick={() => onToggle(node.path)} aria-expanded={isOpen} title={node.name} data-testid="brain-folder">
           {isOpen ? <ChevronDown size={13} aria-hidden="true" /> : <ChevronRight size={13} aria-hidden="true" />}
           {isOpen ? <FolderOpen size={14} aria-hidden="true" /> : <Folder size={14} aria-hidden="true" />}
-          <span className="fs-brain__note-title">{node.name}</span>
+          <span className="fs-brain__row-title">{node.name}</span>
         </button>
       )}
       {isOpen && (
@@ -93,7 +93,7 @@ function FolderRow({ node, depth, activePath, open, onToggle, onOpen }: { node: 
                 title={note.path}
               >
                 <Icon size={13} aria-hidden="true" data-kind={note.kind} />
-                <span className="fs-brain__note-title">{note.title}</span>
+                <span className="fs-brain__row-title">{note.title}</span>
               </button>
             );
           })}
@@ -182,7 +182,7 @@ export function Explorer({
             return (
               <button key={hit.path} type="button" className="fs-brain__note-row" data-active={hit.path === activePath || undefined} onClick={() => onOpen(hit.path)} title={hit.path}>
                 <Icon size={13} aria-hidden="true" />
-                <span className="fs-brain__note-title">{hit.title}</span>
+                <span className="fs-brain__row-title">{hit.title}</span>
                 {hit.snippet && <span className="fs-brain__snippet">{hit.snippet}</span>}
               </button>
             );

@@ -193,21 +193,23 @@
   color: var(--fs-text-1);
   font-weight: 600;
 }
-.fs-brain__note-title {
+/* The explorer's own row label — kept as its own class (not shared with the
+   note header's `.fs-brain__note-title` below) after the two used to be the
+   SAME class name: with equal specificity, the header's 20px/650 rule won
+   the cascade by simply appearing later in the file and was silently
+   applied to every folder and note row in the tree too, well past the
+   `--fs-label-size` (13px) the row itself was built for. A folder and a
+   note row size identically; only the folder's weight differs, to read as
+   a level of the tree rather than an item in it. */
+.fs-brain__row-title {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-/* The explorer reuses this class for a list row's label, where it sits next
-   to a fixed-size icon inside a flex row: without an explicit min-width the
-   row cannot shrink the text below its natural content width, so a long
-   title pushes the whole pane wider instead of ellipsizing (the horizontal
-   scrollbar this fixes). Scoped to the explorer so the note header's own
-   `.fs-brain__note-title` (see below) keeps its own sizing. */
-.fs-brain__folder .fs-brain__note-title,
-.fs-brain__note-row .fs-brain__note-title {
   flex: 1 1 auto;
   min-inline-size: 0;
+}
+.fs-brain__folder .fs-brain__row-title {
+  font-weight: 500;
 }
 .fs-brain__snippet {
   display: block;
