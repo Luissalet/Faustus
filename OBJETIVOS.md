@@ -786,3 +786,30 @@ Semántico + léxico + disparador × prior de resultado; explicación por API y 
 ## OBJ-35 · Arriendo compartido de modelos entre instancias — HECHO (23-09-2026)
 
 Fichero por instancia en carpeta compartida de máquina, líder de residencia por default, pines y reservas de vecinas respetados, adopción del default residente, `/api/local-models/instances`. FAUSTUS.md §173. Pendiente: verificar en vivo con dos instancias nuevas (ver PENDIENTES).
+
+## OBJ-36 · Segundo cerebro: bóveda markdown propia, entidades con tiempo y grafo — HECHO (23-09-2026)
+
+Lo que el dueño pedía tras ver la moda de «hazle un segundo cerebro a tu
+agente»: no una imitación de una app de notas de terceros, sino una bóveda
+markdown que Faustus mismo crea y posee, con el motor de contexto (fase 2,
+OBJ-29) como camino de recuperación, validez temporal de los hechos,
+entidades tipadas con relaciones, y una vista de grafo. Borrar una nota en la
+bóveda silencia la memoria (reversible); nunca la olvida de verdad.
+
+Hecho: `src/brain/` (bóveda con sincronización de dos vías, notas libres,
+búsqueda FTS5 y grafo de notas; analizador temporal ES/EN sin inventar
+fechas; entidades tipadas con relaciones y ventanas de validez, un edge por
+hecho, revalidación que retira duplicados del modelo; extracción por reglas
++ pasada opcional del modelo de utilidad, siempre en segundo plano y sin
+cargar/descargar modelos por su cuenta; resúmenes de entidad citados),
+rutas `/api/brain/*`, servidor MCP `brain`, herramienta de agente `brain`,
+fuente del Context Engine, y la pantalla `/brain` («Cerebro») con explorador,
+lectura/edición, panel de entidad y grafo de fuerza dirigida. FAUSTUS.md
+§176; referencia completa de API en `docs/api/brain.md`.
+
+**Queda:** medir cuánto tarda el resumen de entidad en aparecer tras un rato
+de inactividad real del modelo de utilidad; retirar solas las notas
+generadas (proyecto/objetivo/concepto) cuya fuente se borró; dejar de
+repetir el aviso de un fichero ilegible en cada sincronización una vez
+reportado una vez; encender `agent_context_engine` en la instancia principal
+tras esta prueba en la privada (ver PENDIENTES).

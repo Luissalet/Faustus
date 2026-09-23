@@ -176,6 +176,8 @@ Un proyecto también incluye:
 
 **Atención** responde a «¿qué me necesita ahora?» en todas las conversaciones, ejecuciones y flujos de trabajo a lo largo de cuatro ejes —ciclo de vida, causa de la espera, salud de la conexión y siguiente acción—, de modo que una aprobación pendiente, una cola de GPU y una conexión caída son una sola lista, no tres pestañas. [API de atención](docs/api/attention.md).
 
+**Segundo cerebro**: una bóveda markdown que Faustus crea y de la que es dueño — sin app de notas de terceros, sin cuenta aparte — bajo su propia carpeta de datos, en ficheros de texto plano con `[[enlaces wiki]]` que cualquier editor de markdown externo también puede abrir. Las memorias, las notas personales y las entidades tipadas (personas, lugares, herramientas, proyectos) se espejan en notas editables; editar el texto de una nota corrige la memoria que hay detrás, y borrar una la silencia (suprimida, no borrada) en vez de olvidarla — reversible desde una papelera. Un analizador determinista lee marcadores temporales («desde marzo de 2025», «hasta junio», «ya no») para que un hecho lleve su ventana de validez, y un hecho más nuevo del mismo tipo (trabaja en / vive en) cierra la ventana del anterior en vez de dar los dos por vigentes a la vez; una pasada en segundo plano (por reglas, más una pasada opcional con el modelo local que sólo conserva lo que el propio texto dice) extrae entidades y sus relaciones, y puede escribir resúmenes breves y citados cuando el modelo de utilidad está inactivo. La pantalla `/brain` («Cerebro») ofrece un explorador, una vista de lectura y edición, un panel de entidad con relaciones vigentes frente a su historial, y un grafo de fuerza dirigida de toda la bóveda o del entorno de una nota — sin ninguna librería de terceros. El agente recibe una herramienta `brain` (buscar, leer, escribir, añadir, entidad, línea de tiempo, vecinos, nota diaria), un servidor MCP a juego, y una fuente del Motor de contexto que aporta tarjetas de entidad y notas relevantes igual que la memoria aprendida. [API del cerebro](docs/api/brain.md).
+
 ![Requisitos con versiones y evidencia](assets/screens/requirements.png)
 
 ### Sistemas conectados
@@ -190,6 +192,7 @@ Un proyecto también incluye:
 | Perfiles de agentes y modos de completado | Perfiles de especialista reutilizables y políticas de completado según la tarea, dentro de los permisos existentes; un lint que detecta ciclos y roles inalcanzables. | [agent_profiles](src/agent_profiles/), [agent_profile_lint.py](src/agent_profile_lint.py) |
 | Estrategia y recetas | Una estrategia observable por turno que solo escala ante un fallo observado, y recetas reutilizables construidas a partir de ejecuciones reales. | [strategy_policy.py](src/strategy_policy.py), [recipes.py](src/recipes.py) |
 | Requisitos | Una especificación con versiones y aceptación humana, con evidencia tipada y cobertura. | [requirements](src/requirements/) |
+| Segundo cerebro | Una bóveda markdown propia de notas y entidades tipadas con relaciones con ventanas de tiempo, sincronizada en ambos sentidos con el sistema de ficheros, más una vista de grafo. | [brain](src/brain/), [API del cerebro](docs/api/brain.md) |
 | Tablero del proyecto | Incidencias tipadas, kanban, enlaces que cierran incidencias desde el commit y herramientas de agente. | [project_board.py](src/project_board.py) |
 | Panel de Git | Repositorios, identidades, GitHub, ramas y una política por repositorio que el agente obedece. | [git_panel.py](src/git_panel.py) |
 | Modo Enséñame | Capturar demostraciones como procedimientos reutilizables, con revisión y controles de ejecución. | [rutas de Enséñame](routes/teach_mode_routes.py) |
@@ -360,6 +363,13 @@ Configura agentes, clientes y sus comprobaciones.
 Revisa y controla el trabajo recurrente.
 
 ![Automatizaciones: tareas activas y pausadas](assets/screens/automations.png)
+
+</details>
+
+<details>
+<summary>Segundo cerebro</summary>
+
+`/brain` («Cerebro» en Herramientas) es una bóveda markdown de tres paneles: un explorador de ficheros a la izquierda (carpetas, buscador, etiquetas, papelera), la nota actual en el centro (una vista de lectura con `[[enlaces wiki]]` pulsables —uno sin resolver crea la nota al pulsarlo— y una vista de edición con autoguardado y autocompletar `[[`), y a la derecha sus backlinks, enlaces salientes, etiquetas y, para una nota de entidad, sus relaciones vigentes frente a su historial con un selector de fecha «as of». Un interruptor cambia a un grafo de fuerza dirigida de toda la bóveda o del entorno local de una nota.
 
 </details>
 

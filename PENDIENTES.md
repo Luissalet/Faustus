@@ -1,6 +1,40 @@
 # Pendientes de cierre
 
-Actualizado: 22-09-2026. REGLA: nunca nombres de empresas/personas del buzÃ³n de Luis en commits, docs, tests ni comentarios â€” ejemplos siempre ficticios. SÃ³lo trabajo vigente; quitar cada entrada al cerrarla.
+Actualizado: 23-09-2026. REGLA: nunca nombres de empresas/personas del buzÃ³n de Luis en commits, docs, tests ni comentarios â€” ejemplos siempre ficticios. SÃ³lo trabajo vigente; quitar cada entrada al cerrarla.
+
+## 23-09 — documentación del segundo cerebro (FAUSTUS.md §176, OBJ-36) — pendiente de verificar en la máquina en vivo
+
+El código de la ola completa ya está en la rama (§176); este bloque recoge lo
+que la propia ola dejó abierto, para que no se pierda al fusionar:
+
+- **Los resúmenes de entidad por modelo sólo corren con el modelo de
+  utilidad residente e inactivo**: en la máquina del dueño el endpoint de
+  utilidad es un ayudante `llama-server` en loopback — falta confirmar que
+  un resumen aparece de verdad tras un rato de inactividad real, no sólo en
+  el pase forzado a mano.
+- **Las notas generadas** (`Projects/`, `Objectives/<Proyecto>/`,
+  `Concepts/<Proyecto>/`) **cuya fuente se borró no se retiran solas** —
+  siguen en la bóveda hasta que algo las toque explícitamente.
+- **Un fichero ilegible** (marcador dañado, BOM roto) **se reporta en cada
+  sincronización** hasta que alguien lo arregla a mano; no hay forma de
+  silenciarlo ni de que el sistema lo intente reparar solo.
+- **`agent_context_engine` sigue `False` por defecto en código**; sólo está
+  encendido en la instancia privada donde se hizo la verificación en vivo de
+  esta ola. Recomendado encenderlo en la instancia principal después de que
+  el dueño pruebe la pantalla `/brain` unos días.
+- **Modo chat simple** (heredado de §175, seguía abierto al escribir esto):
+  `memories_used`/`rag_sources` se siguen registrando en modo agente aunque
+  el paquete de contexto haya sustituido esos bloques, y el contador de uso
+  de una memoria guardada (`increment_uses`) sube al construir el prefacio
+  aunque no llegue a enviarse.
+- **Rendimiento del modelo grande en la máquina del dueño**: los turnos de
+  agente van lentos cuando otra instancia tiene cargado el modelo grande
+  (~1,5 tok/s con cuantización q8 y contención) — es una condición del
+  entorno de esa máquina, no de esta funcionalidad.
+- **Suite completa en Windows** pendiente de correr entera en el momento de
+  escribir esto; las suites propias del segundo cerebro (bóveda, entidades,
+  tiempo, extracción, rutas, MCP, herramienta de agente, adaptador del
+  Context Engine y la pantalla) están en verde por separado (1.200+ tests).
 
 ## 22-09 noche (5) - coaching con tareas reales: facturación (L4) y ventas (L5)
 

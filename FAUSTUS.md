@@ -8083,3 +8083,181 @@ quedan cerrados en código y pruebas. Falta el encendido en la máquina en vivo.
 `tests/test_context_engine_chat_turn.py` (10), `tests/test_context_tool_gate.py`
 (16) y las suites de Context Engine, bucle de agente, rutas de chat, puerta de
 contexto externo y aprobaciones sin fallos nuevos frente a la rama base.
+
+## 176. Segundo cerebro: bóveda markdown, entidades con tiempo y un grafo (23-09-2026)
+
+**Problema.** Faustus ya recordaba (`memory_engine`) y ya llevaba un grafo de
+conceptos por proyecto, pero no había un sitio único, editable a mano, que
+uniera memorias, personas/lugares/herramientas/proyectos y sus relaciones a lo
+largo del tiempo — justo lo que se pide hoy con la etiqueta «segundo cerebro»:
+un wiki que el propio asistente mantiene, con `[[wikilinks]]` y un grafo, no
+una cuenta de pago en una aplicación externa. El dueño lo pidió completo y con
+una condición fija: la bóveda la crea y es dueña de ella Faustus mismo (nunca
+un servicio de terceros ni una cuenta), y borrar una nota en la bóveda silencia
+la memoria — de forma reversible —, nunca la olvida de verdad.
+
+**Hecho.**
+- *Bóveda* (`src/brain/vault.py`, `notes.py`, `render.py`, `frontmatter.py`,
+  `wikilinks.py`, `db.py`). Bajo `DATA_DIR/brain/vault/<owner>/` (el ajuste
+  `brain_vault_dir` cambia la raíz): `Home.md` (índice generado),
+  `Memories/<Tipo>/`, `Personal/`, `Entities/<Tipo>/`, `Projects/`,
+  `Objectives/<Proyecto>/`, `Concepts/<Proyecto>/`, `Daily/`, `Notes/` (notas
+  libres: el fichero manda) y `.trash/`. Toda nota generada lleva frontmatter
+  YAML, una zona editable por la persona y, tras la línea
+  `%% faustus:generated — … %%`, las secciones generadas — markdown plano con
+  `[[wikilinks]]`, abrible con cualquier editor de texto o de markdown externo.
+- *Sincronización de dos vías* (`vault.sync`): primero importa lo que la
+  persona cambió a mano en el fichero, luego exporta lo que cambió en la base
+  de Faustus, luego reindexa. Editar el texto de una nota de memoria = 
+  `memory_engine.correct()` (conserva fijado, sensibilidad y validez; valida
+  antes de tombstonar la anterior; renombra el fichero al nuevo id). Mover o
+  renombrar un fichero se detecta por su `source:` (renombrar el fichero de
+  una entidad renombra la entidad). Borrar un fichero espejado suprime la
+  memoria / retira la entrada personal / oculta la entidad — nunca borra el
+  dato: el contenido queda en la papelera y es restaurable. Un guardián de
+  borrado masivo (`brain_vault_delete_guard_ratio`, 0.3) no actúa sobre
+  ninguno si en una sola pasada desaparecen de golpe más ficheros espejados de
+  los esperados. Los secretos (`sensitivity == "secret"`) nunca tocan disco.
+  Rendimiento: una sincronización sin cambios de 1.500 memorias baja de
+  ~13,5 s a ~0,13 s tras la pasada de arreglos.
+- *Tiempo* (`src/brain/temporal.py`). Un analizador de fechas español +
+  inglés («desde marzo de 2025», «since 2019», «hasta junio», «entre 2019 y
+  2021», «ya no»/«antes»/«used to», nombres de mes, «el año pasado»…) que
+  nunca inventa una fecha si no hay marcador explícito — 66 casos negativos
+  comprobados en tests («acepta hasta 1024 tokens», puertos, versiones,
+  tamaños no producen nada. `memory_temporal_parse` rellena
+  `valid_from`/`valid_until` al guardar una memoria; `memory_temporal_supersede`
+  hace que un hecho funcional más nuevo (trabaja en / vive en) cierre la
+  ventana del anterior, con la cronología respetada — un hecho histórico
+  nunca cierra el vigente — y de forma reversible (`unsupersede`).
+  `memory_engine.search`/`list_items` aceptan `as_of`.
+- *Entidades* (`src/brain/entities.py`). Tipos persona/proyecto/
+  organización/lugar/herramienta/concepto/evento/otro; vocabulario cerrado de
+  relación (`works_at`, `works_on`, `uses`, `prefers`, `lives_in`,
+  `located_in`, `part_of`, `member_of`, `knows`, `owns`, `created`,
+  `depends_on`, `is_a`, `related_to`, `studied_at`) con sinónimos ES/EN; las
+  relaciones funcionales se supersedan con ventanas de validez;
+  `profile(id, as_of=...)` da hechos, relaciones vigentes, historial cerrado
+  y línea de tiempo. El dueño es él mismo una entidad (`self_entity`, nodo
+  «Yo» con alias yo/me/i/user; el ajuste `owner_display_name` le pone nombre)
+  — y ese nodo absorbe cualquier entidad «persona» nacida por error del
+  propio dueño (creada como «el usuario», o con su nombre antes de fijar el
+  ajuste), fundiéndola con `merge_entities`. Un filtro descarta nombres
+  imposibles (palabras función, mayúscula al inicio de frase sin evidencia,
+  «El modelo», sustantivos comunes en minúscula salvo software).
+  Un hecho repetido — por otra memoria, o por el propio modelo reafirmando
+  lo que una regla ya había encontrado — no abre una segunda arista:
+  `add_relation` lo funde en la existente (evidencia unida; una relación
+  encontrada por regla desplaza en rango a una encontrada por el modelo).
+  `revalidate()` (versión 3, reversible) también retira los restablecimientos
+  del modelo que duplican una arista ya vigente bajo un sinónimo de la
+  relación.
+- *Extracción* (`src/brain/extract.py`). Una pasada determinista (nombres y
+  alias ya conocidos, sustantivos propios en mayúscula, sujeto-verbo-objeto
+  sobre el vocabulario cerrado, ventana temporal) y una pasada opcional con
+  el modelo de utilidad en segundo plano (`brain_llm_extraction`), en JSON
+  estricto, que sólo conserva una entidad si su nombre o un alias aparece
+  literalmente en el texto, y una relación si los dos extremos sobrevivieron
+  ese filtro. Ninguna pasada de modelo bloquea un turno de chat ni carga o
+  descarga el modelo por su cuenta: `background_llm_gate` exige que ningún
+  turno esté en curso, que el modelo de utilidad ya esté residente (Ollama
+  `/api/ps`, o un `llama-server` en loopback vía `/health` + `/v1/models`) y
+  que no esté ocupado (`/slots`, `is_processing`); si algo falla, la pasada
+  se queda en solo-reglas y el informe dice por qué (`llm_skipped`).
+- *Resúmenes de entidad* (`src/brain/wiki.py`). 2-5 frases escritas por el
+  modelo de utilidad, cada afirmación con su cita `[mem:<id8>]` a un hecho
+  real del perfil; se rechaza cualquier salida que cite una referencia que no
+  exista. Con el resumen fijado a mano (`summary_locked`) o sin cambios en
+  los hechos, se salta. Hay un resumen determinista de repuesto cuando no hay
+  modelo disponible.
+- *HTTP* (`routes/brain_routes.py`, prefijo `/api/brain`): estado,
+  sincronización, árbol de notas, nota (crear/leer/editar/renombrar/borrar),
+  papelera y restauración, búsqueda, grafo (`scope=notes|entities`),
+  etiquetas, enlaces sin resolver, nota diaria, entidades (lista, perfil
+  `?as_of=`, PATCH, fusión), línea de tiempo, extracción y refresco de wiki
+  bajo demanda, y ajustes (lectura para cualquiera, escritura sólo admin).
+  Cada ruta trabaja sobre la bóveda de quien la llama (`require_user`); un
+  `ValueError` de `src.brain.*` es 400, una nota inexistente 404. Referencia
+  completa en [docs/api/brain.md](docs/api/brain.md).
+- *Servidor MCP* `brain` (`mcp_servers/brain_server.py`): `brain_search`,
+  `brain_read_note`, `brain_write_note`, `brain_append_note`, `brain_entity`,
+  `brain_timeline`, `brain_graph_neighbors`, `brain_sync` — la bóveda de la
+  que lee o escribe la fija `ODYSSEUS_MCP_BRAIN_OWNER`; sin ese ajuste las
+  lecturas caen a nivel de instalación, pero cualquier escritura se rechaza
+  en vez de aterrizar en la bóveda de nadie en particular.
+- *Herramienta de agente* `brain` (`src/agent_tools/brain_tools.py`, una sola
+  herramienta con `action`: search/read/write/append/entity/timeline/
+  neighbors/daily). Las acciones de lectura pasan la puerta de contexto
+  externo sin tarjeta (`src/context_tool_gate.py`,
+  `GateAllowRule("brain", actions=("search","read","entity","timeline","neighbors"))`,
+  la misma tabla de §175); escribir, anexar o crear la nota diaria piden
+  aprobación igual que `manage_memory`. Palabras clave de selección de
+  herramienta en español e inglés («segundo cerebro», «mi wiki», «qué sé
+  de», «apunta en mis notas»…) en `src/tool_index.py` y
+  `src/agent_tools/subagent_tools.py`.
+- *Fuente del Context Engine* (`src/context_engine/adapters/brain.py`): una
+  tarjeta por cada entidad que el mensaje del turno menciona por nombre o
+  alias, más las notas libres que mejor casan la consulta — mismo hueco
+  (`retrieved_memory`) y misma disciplina de procedencia que la memoria
+  aprendida de §174-§175; apagada del todo bajo `allow_personal_memory=False`
+  (Incógnito) y, además, por su propio interruptor `brain_context_source`,
+  independiente de `brain_enabled` y de la sincronización/extracción de las
+  que lee.
+- *Pantalla* `/brain` («Cerebro» en Herramientas, `studio/src/screens/Brain.tsx`):
+  tres paneles — explorador (carpetas, buscador, etiquetas, papelera),
+  lectura (wikilinks pulsables; uno sin resolver se ve distinto y crea la
+  nota al pulsarlo; los `![[embebidos]]` se ven como tarjeta de enlace) y
+  edición (área monoespaciada, Ctrl+S/autoguardado al perder el foco,
+  autocompletar `[[`, la zona generada se ve pero no se edita), con las
+  propiedades del frontmatter como tabla editable (validez, tipo, alias,
+  fijado) y un panel derecho de backlinks, enlaces salientes, etiquetas y,
+  para una entidad, sus relaciones vigentes, su historial con ventanas y un
+  selector de fecha «as of» que recarga el perfil. Vista de grafo global
+  (fuerza dirigida sobre `<canvas>`, reutilizando `lib/graph.ts`: arrastrar,
+  encuadre automático, zoom con rueda, resalte al pasar el ratón, colisión y
+  anti-solape de etiquetas, respeta «menos movimiento»), con grafo local por
+  profundidad 1-3 desde la nota actual y alcance notas/entidades. Selector
+  rápido Ctrl+O, comando para abrir la nota diaria de hoy, barra de
+  sincronización con el último informe y cajón de ajustes (incluido «Tu
+  nombre» para `owner_display_name`). Sin librería de terceros; los overlays
+  de la pantalla (selector rápido, menús) se montan en la raíz de overlays
+  compartida del resto de la interfaz, no en un contenedor propio.
+
+**Estado.** Encendido por defecto (`brain_enabled=True`); las pasadas con
+modelo (`brain_llm_extraction`, `brain_wiki_summaries`) también lo están por
+defecto pero fallan cerradas a «sin resultado» si no hay modelo de utilidad
+disponible. El Context Engine que esta ola usa como fuente sigue la misma
+bandera que documentan §174-§175: `agent_context_engine` sigue `False` por
+defecto en el código de esta rama.
+
+**Verificación en vivo** (máquina del dueño, instancia privada en un puerto
+aparte, copia de datos reales, sin tocar la instancia principal). La pantalla
+renderiza; una sincronización de datos reales pasó de 37 a 81 notas; la
+extracción de entidades por regla y por el modelo de utilidad en segundo
+plano corrió; el grafo es interactivo (arrastre y encuadre comprobados por
+capturas de pantalla). Un turno de agente con el modelo local de 27B: el
+selector de herramientas ofreció `brain`, la puerta dejó pasar las acciones
+de lectura sin tarjeta, el modelo hizo una búsqueda y cuatro lecturas y
+respondió citando notas sobre las reglas del dueño para una carpeta de
+proyecto real; el paquete de contexto compilado (~700 tokens) se entregó en
+cada ronda. Prueba temporal: «X trabaja en Cordera Labs desde 2019» seguido
+de «… en Bluehaven desde marzo de 2026» cerró el conflicto como superado,
+con la ventana de Cordera 2019-01-01 → 2026-03-01 y el perfil `as_of` 2025
+mostrando Cordera; «acepta hasta 1024 tokens» dejó `valid_until` vacío, como
+debía. Edición de ida y vuelta: cambiar el texto de una nota de memoria desde
+la pantalla corrigió la memoria (id nuevo, validez conservada,
+`human_explicit`) y renombró la nota. Se vieron y arreglaron en esa misma
+pasada en vivo: wikilinks con paréntesis rompían el renderizado, el scroll
+del explorador, el grafo sin encuadrar o demasiado grande, entidades basura
+(«En», «El modelo», «chats»), relaciones del modelo fuera del vocabulario
+cerrado, una página de entidad citando una memoria ya corregida, y la pasada
+en segundo plano preguntando a un modelo de residencia desconocida (ahora
+reconoce un `llama-server` en loopback).
+
+**Pendiente.** Ver PENDIENTES.md: el resumen de entidad por modelo sólo corre
+con el modelo de utilidad residente e inactivo (falta confirmar que aparece
+tras un rato de inactividad en la máquina del dueño); las notas generadas
+(proyectos/objetivos/conceptos) cuya fuente se borró no se retiran solas; un
+fichero ilegible se reporta en cada sincronización hasta que se arregla; y
+`agent_context_engine` sigue `False` por defecto en código, encendido sólo en
+la instancia privada de verificación.

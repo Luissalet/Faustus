@@ -184,6 +184,8 @@ A project also carries:
 
 **Attention** answers "what needs me now?" across every conversation, run and workflow along four axes — lifecycle, cause of waiting, connection health and next action — so a pending approval, a GPU queue and a dropped connection are one list, not three tabs. [Attention API](docs/api/attention.md).
 
+**Second brain**: a markdown vault Faustus creates and owns for you — no third-party note app, no separate account — under its own data folder, plain files with `[[wiki links]]` any external markdown editor can also open. Memories, personal notes and typed entities (people, places, tools, projects) are mirrored into editable notes; editing a note's text corrects the underlying memory, and deleting one silences it (suppressed, not erased) rather than forgetting it — reversible from a trash folder. A deterministic parser reads temporal markers ("since March 2025", "until June", "no longer") so a fact carries a validity window, and a newer fact of the same kind (works at / lives in) closes the older one's window instead of both standing as true at once; a background pass (rule-based, plus an optional local-model pass that only keeps what the source text actually says) extracts entities and their relations, and can write short cited summaries when the utility model is idle. The `/brain` screen ("Cerebro") gives it an explorer, a reading and editing view, an entity panel with relations now vs. history, and a force-directed graph of the whole vault or the neighbourhood around one note — no third-party library. The agent gets a `brain` tool (search, read, write, append, entity, timeline, neighbours, daily note), a matching MCP server, and a Context Engine source that surfaces entity cards and matching notes the same way learned memory does. [Brain API](docs/api/brain.md).
+
 ![Versioned requirements with evidence](assets/screens/requirements.png)
 
 ### Connected systems
@@ -198,6 +200,7 @@ A project also carries:
 | Agent Profiles & Completion Modes | Reusable specialist profiles and task-dependent completion policies, within existing permissions; a lint that catches cycles and unreachable roles. | [agent_profiles](src/agent_profiles/), [agent_profile_lint.py](src/agent_profile_lint.py) |
 | Strategy & recipes | An observable per-turn strategy that escalates only on observed failure, and reusable recipes built from real runs. | [strategy_policy.py](src/strategy_policy.py), [recipes.py](src/recipes.py) |
 | Requirements | A versioned, human-accepted spec with typed evidence and coverage. | [requirements](src/requirements/) |
+| Second brain | A self-owned markdown vault of notes and typed entities with time-windowed relations, two-way synced with the filesystem, plus a graph view. | [brain](src/brain/), [Brain API](docs/api/brain.md) |
 | Project Board | Typed issues, kanban, commit-closing links and agent tools. | [project_board.py](src/project_board.py) |
 | Git panel | Repositories, identities, GitHub, branches and a per-repository policy the agent obeys. | [git_panel.py](src/git_panel.py) |
 | Teach Mode | Capture demonstrations as reusable procedures, with review and execution controls. | [teach mode routes](routes/teach_mode_routes.py) |
@@ -367,6 +370,13 @@ Configure workers, runners and their verification settings.
 Inspect and control recurring work.
 
 ![Automations: active and paused tasks](assets/screens/automations.png)
+
+</details>
+
+<details>
+<summary>Second brain</summary>
+
+`/brain` ("Cerebro" in Tools) is a three-pane markdown vault: a file explorer on the left (folders, search, tags, trash), the current note in the centre (a reading view with clickable `[[wiki links]]` — an unresolved one creates the note on click — and an editing view with autosave and `[[` autocomplete), and on the right its backlinks, outgoing links, tags and, for an entity note, its relations now vs. its history with an "as of" date picker. A toggle switches to a force-directed graph of the whole vault or the local neighbourhood around one note.
 
 </details>
 
