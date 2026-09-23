@@ -79,15 +79,20 @@ def render_summary_fallback(profile_data: Dict[str, Any]) -> str:
     is not literally in `profile_data`."""
     entity = profile_data.get("entity") or {}
     name = str(entity.get("name") or "?")
-    lines = [f"- {name} ({entity.get('type', 'other')})"]
+    etype = str(entity.get("type") or "other")
+    lines = [f"- {name}" + (f" ({etype})" if etype != "other" else "")]
 
+    seen = set(lines)
     for rel in profile_data.get("relations") or []:
         if not rel.get("valid_at"):
             continue
         label = rel.get("dst_name") or rel.get("dst_value") or ""
         if not label:
             continue
-        lines.append(f"- {rel.get('rel', '')}: {label}")
+        line = f"- {rel.get('rel', '')}: {label}"
+        if line not in seen:
+            seen.add(line)
+            lines.append(line)
 
     shown = 0
     for fact in profile_data.get("facts") or []:

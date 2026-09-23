@@ -496,6 +496,10 @@ def upsert_entity(owner: Any, name: Any, *, type: str = "other",  # noqa: A002
             if merged != current_aliases:
                 conn.execute("UPDATE entities SET aliases = ?, updated_at = ? WHERE id = ?",
                             (dumps(merged), now, entity_id))
+            if existing["type"] == "other" and etype != "other":
+                # A later source knows what it is ("Ada" typed person).
+                conn.execute("UPDATE entities SET type = ?, updated_at = ? WHERE id = ?",
+                            (etype, now, entity_id))
             return _row_to_entity(conn.execute(
                 "SELECT * FROM entities WHERE id = ?", (entity_id,)).fetchone())
 
@@ -1107,7 +1111,7 @@ def entities_in_text(owner: Any, text: Any, *, limit: int = 8) -> List[Dict[str,
 # stored so `undo_revalidate` can put it back. Bump REVALIDATE_VERSION when
 # the filter changes enough to deserve another pass.
 
-REVALIDATE_VERSION = 3
+REVALIDATE_VERSION = 4
 
 _META_VERSION = "revalidate_version"
 _META_LAST = "revalidate_last"
@@ -1185,6 +1189,7 @@ def revalidate(owner: Any, *, dry_run: bool = False) -> Dict[str, Any]:
                 "SELECT id, src, rel, dst, dst_value, method, status FROM relations "
                 "WHERE owner = ? AND status = 'active' ORDER BY created_at, id", (owner,)).fetchall()
             seen: Dict[Tuple[str, str, str], sqlite3.Row] = {}
+            merge_evidence: Dict[str, set] = {}
             for row in live:
                 if row["id"] in retract_ids:
                     continue
@@ -1197,9 +1202,11 @@ def revalidate(owner: Any, *, dry_run: bool = False) -> Dict[str, Any]:
                 loser = row
                 if keeper["method"] == "llm" and row["method"] != "llm":
                     seen[key], loser = row, keeper
-                if loser["method"] == "llm":
-                    to_retract.append(loser)
-                    retract_ids.add(loser["id"])
+                # One fact, one edge: whoever loses hands its evidence to the
+                # keeper and is retracted (undo_revalidate brings it back).
+                to_retract.append(loser)
+                retract_ids.add(loser["id"])
+                merge_evidence.setdefault(seen[key]["id"], set()).add(loser["id"])
 
             report["hidden"] = [row["id"] for row in to_hide]
             report["hidden_names"] = [row["name"] for row in to_hide]
@@ -1216,6 +1223,18 @@ def revalidate(owner: Any, *, dry_run: bool = False) -> Dict[str, Any]:
             for rel in to_retract:
                 conn.execute("UPDATE relations SET status = 'retracted', updated_at = ? "
                              "WHERE id = ?", (now, rel["id"]))
+            for keeper_id, loser_ids in merge_evidence.items():
+                keep_row = conn.execute("SELECT evidence FROM relations WHERE id = ?",
+                                        (keeper_id,)).fetchone()
+                evidence = list(loads(keep_row["evidence"], []) if keep_row else [])
+                for loser_id in sorted(loser_ids):
+                    lrow = conn.execute("SELECT evidence FROM relations WHERE id = ?",
+                                        (loser_id,)).fetchone()
+                    for ref in (loads(lrow["evidence"], []) if lrow else []):
+                        if ref not in evidence:
+                            evidence.append(ref)
+                conn.execute("UPDATE relations SET evidence = ?, updated_at = ? WHERE id = ?",
+                             (dumps(evidence), now, keeper_id))
             _meta_set(conn, owner, _META_LAST, {
                 "version": REVALIDATE_VERSION, "at": now,
                 "hidden": report["hidden"],

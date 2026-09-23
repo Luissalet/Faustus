@@ -234,3 +234,27 @@ def test_same_edge_twice_is_one_edge_and_model_synonym_duplicates_retract(tmp_pa
         assert [r["id"] for r in live] == [r1["id"]]
     finally:
         db.use_dir(None)
+
+
+def test_rule_duplicates_merge_into_one_edge_and_type_upgrades(tmp_path):
+    from src.brain import db, entities
+    db.use_dir(str(tmp_path / "brain6"))
+    try:
+        ada = entities.upsert_entity("alice", "Ada")
+        assert ada["type"] == "other"
+        assert entities.upsert_entity("alice", "Ada", type="person")["type"] == "person"
+        blue = entities.upsert_entity("alice", "Bluehaven", type="organization")
+        keep = entities.add_relation("alice", ada["id"], "works_at", dst_id=blue["id"], evidence=["mem:1"])
+        with entities.db() as conn:  # a legacy duplicate written before one-edge-per-fact
+            conn.execute(
+                "INSERT INTO relations (id, owner, project, src, rel, dst, dst_value, valid_from, "
+                "valid_until, asserted_at, evidence, confidence, method, status, superseded_by, "
+                "created_at, updated_at) VALUES ('dup2','alice','',?,'works_at',?,'','','','',"
+                "'[\"mem:2\"]',0.5,'rule','active','','9999','9999')", (ada["id"], blue["id"]))
+        report = entities.revalidate("alice")
+        assert "dup2" in report["retracted"]
+        live = entities.list_relations("alice", entity_id=ada["id"], include_closed=False)
+        assert [r["id"] for r in live] == [keep["id"]]
+        assert set(live[0]["evidence"]) == {"mem:1", "mem:2"}
+    finally:
+        db.use_dir(None)
