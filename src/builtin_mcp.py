@@ -85,6 +85,10 @@ _BUILTIN_SERVERS = {
     # source was or was not in it, and reach the stores the compiler draws from.
     # Owner-scoped through ODYSSEUS_MCP_CONTEXT_OWNER, like the memory server.
     "context":    ("mcp_servers/context_engine_server.py", "Built-in: Context Engine"),
+    # The second brain: markdown vault search/read/write, typed entities, the
+    # note graph and cross-entity timeline. Owner-scoped through
+    # ODYSSEUS_MCP_BRAIN_OWNER, like the memory and context servers.
+    "brain":      ("mcp_servers/brain_server.py", "Built-in: Brain"),
 }
 
 # NPX-based built-in servers (run via npx, not Python).
