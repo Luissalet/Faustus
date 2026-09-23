@@ -191,6 +191,14 @@ def install(owner: Optional[str], slugs: List[str], *, replace: bool = False) ->
         if not replace and slug in already:
             results.append({"slug": slug, "status": "skipped", "reason": "already installed"})
             continue
+        replaced = 0
+        if replace and slug in already:
+            # Replace means replace: without this the import landed beside
+            # the old copy under a `-2` name (seen live after editing a
+            # bundled skill and reinstalling it).
+            for row in uninstall(owner, [slug]).get("results") or []:
+                if row.get("status") == "removed":
+                    replaced += 1
         skill_dir = os.path.join(LIBRARY_DIR, slug)
         scan = skill_import_review.scan_skill_folder(skill_dir)
         if scan.get("risk_level") == "critical":
@@ -212,7 +220,10 @@ def install(owner: Optional[str], slugs: List[str], *, replace: bool = False) ->
             continue
         new_tags = sorted(set(record.get("tags") or []) | {_library_tag(slug)})
         mgr.update_skill(record["name"], {"tags": new_tags}, owner=owner)
-        results.append({"slug": slug, "status": "installed", "name": record["name"]})
+        row = {"slug": slug, "status": "installed", "name": record["name"]}
+        if replaced:
+            row["replaced"] = replaced
+        results.append(row)
         already.add(slug)
     return {"results": results}
 

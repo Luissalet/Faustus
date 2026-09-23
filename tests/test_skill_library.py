@@ -136,10 +136,17 @@ def test_install_is_idempotent_without_replace(isolated_store):
 
 
 def test_install_with_replace_reinstalls(isolated_store):
+    """Replace means replace: seen live, the second install landed beside
+    the first under a `-2` name and both stayed installed."""
     slug = _slugs()[0]
-    skill_library.install("alice", [slug])
+    first = skill_library.install("alice", [slug])
     second = skill_library.install("alice", [slug], replace=True)
     assert second["results"][0]["status"] == "installed"
+    assert second["results"][0]["name"] == first["results"][0]["name"]
+    assert second["results"][0].get("replaced") == 1
+    mgr = skill_library._skills_manager()
+    copies = [s for s in mgr.load(owner="alice") if f"library:{slug}" in (s.get("tags") or [])]
+    assert len(copies) == 1
 
 
 def test_uninstall_removes_the_tagged_copy_and_is_idempotent(isolated_store):
