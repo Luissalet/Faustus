@@ -25,6 +25,8 @@ async function load(rel, name) {
 
 const wiki = await load('lib/wikilinks.ts', 'wikilinks.mjs');
 const brain = await load('adapters/brain.ts', 'brain.mjs');
+const markdown = await load('lib/markdown.ts', 'markdown.mjs');
+const graphSim = await load('screens/brain/graphSim.ts', 'graphSim.mjs');
 
 let failed = 0;
 const assert = (c, msg) => {
@@ -81,6 +83,64 @@ const deepEqual = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   assert(rewritten.includes('[Cordera Labs](#brain-note-new='), 'an unresolved link is still a link, tagged as new');
   const embedded = wiki.rewriteWikilinks('![[Bruno]]', index);
   assert(embedded.startsWith('![Bruno](#brain-embed='), 'an embed becomes a markdown image, not a link');
+}
+
+/* ── wikilinks: a target with punctuation survives the ROUND TRIP through
+   the shared markdown parser (regression: parentheses used to truncate the
+   link's href at the first `)`, spilling the rest of the path as stray
+   text right after the rendered link) ──────────────────────────────── */
+{
+  function flattenText(nodes) {
+    return nodes.map((n) => (n.kind === 'text' ? n.text : n.children ? flattenText(n.children) : '')).join('');
+  }
+  function findLink(inlines) {
+    for (const n of inlines) {
+      if (n.kind === 'link') return n;
+      if (n.children) {
+        const found = findLink(n.children);
+        if (found) return found;
+      }
+    }
+    return null;
+  }
+  // Characters a typed `[[target]]` may legally contain (the grammar only
+  // excludes `]`, `|` and `#` from the target position itself).
+  const typedTargets = [
+    'The demo app uses Rust (794da9ce)',
+    'Café con leche (draft)',
+    'She said "hello" (2025)',
+    "Bruno's plan (v2)",
+    'Simple (a) (b) (c) title',
+  ];
+  const index = wiki.buildTitleIndex(typedTargets.map((title) => ({ path: `Notes/${title}.md`, title })));
+  for (const title of typedTargets) {
+    const source = `See [[${title}]] now.`;
+    const rewritten = wiki.rewriteWikilinks(source, index);
+    const { blocks } = markdown.parseMarkdown(rewritten);
+    const para = blocks.find((b) => b.kind === 'para');
+    assert(para, `"${title}": still parses to one paragraph`);
+    const link = para && findLink(para.children);
+    assert(link, `"${title}": the wikilink survives as a single link node`);
+    const info = link && wiki.parseWikiHref(link.href);
+    assert(info && info.path === `Notes/${title}.md`, `"${title}": the href decodes back to the exact note path (got ${info && info.path})`);
+    const text = para && flattenText(para.children);
+    assert(text === `See ${title} now.`, `"${title}": no stray markdown syntax leaks into the rendered text (got ${JSON.stringify(text)})`);
+  }
+  // Characters that CANNOT appear in typed target text (`]`, `#`, `|` close
+  // or split the `[[…]]` grammar) can still end up in a resolved note's
+  // PATH — vault paths are built server-side from the title, independent of
+  // how a link happens to reference them — so `wikiHref` itself, not the
+  // wikilink grammar, is what has to survive them.
+  const trickyPaths = ['Notes/Roadmap #2.md', 'Notes/Options [A|B].md', "Notes/It's a \"test\" (v1).md", 'Notes/Ångström & Café.md'];
+  for (const path of trickyPaths) {
+    const href = wiki.wikiHref(path, true);
+    const { blocks } = markdown.parseMarkdown(`[label](${href})`);
+    const para = blocks.find((b) => b.kind === 'para');
+    const link = para && findLink(para.children);
+    assert(link, `wikiHref(${JSON.stringify(path)}) stays a single link through the shared parser`);
+    const info = link && wiki.parseWikiHref(link.href);
+    assert(info && info.path === path, `wikiHref(${JSON.stringify(path)}) round-trips exactly (got ${info && info.path})`);
+  }
 }
 
 /* ── wikilinks: `[[` autocomplete ──────────────────────────────────── */
@@ -183,6 +243,70 @@ const deepEqual = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   const content = '---\nPrimera seccion, sin dos puntos\n---\nSegunda seccion.\n';
   const note = { path: 'Notes/D.md', source: '', generated: '', content, frontmatter: {} };
   assert(brain.composeNoteContent(note, content.trimEnd()) === content, 'a leading --- block that is not frontmatter stays body text');
+}
+
+/* ── graphSim: the live force layout's pure math ─────────────────────── */
+{
+  // A path graph (A-B-C-D-E-F) seeded far from equilibrium — every energy
+  // check below relies on the system actually having somewhere to settle.
+  const ids = ['A', 'B', 'C', 'D', 'E', 'F'];
+  const edges = [];
+  for (let i = 0; i < ids.length - 1; i += 1) edges.push({ from: ids[i], to: ids[i + 1], kind: 'link', confidence: null, trust: 'declared', why: '', meta: {} });
+  const positions = {};
+  for (const id of ids) positions[id] = { x: 400 + (id.charCodeAt(0) % 5) * 260 - 500, y: 300 + ((id.charCodeAt(0) * 7) % 5) * 220 - 400 };
+  const sim = graphSim.initSim(positions, ids);
+
+  let energyAt5 = 0;
+  for (let step = 1; step <= 5; step += 1) energyAt5 = graphSim.stepSimulation(sim, edges, { width: 800, height: 600 });
+  let energyAt120 = 0;
+  for (let step = 6; step <= 120; step += 1) energyAt120 = graphSim.stepSimulation(sim, edges, { width: 800, height: 600 });
+  assert(energyAt120 < energyAt5, `energy decays as the simulation runs (5-step ${energyAt5.toFixed(4)} → 120-step ${energyAt120.toFixed(4)})`);
+  assert(graphSim.isSettled(energyAt120), 'a path graph with no more forces to resolve settles under REST_ENERGY');
+
+  const fixedSim = graphSim.initSim(positions, ids);
+  fixedSim.nodes.get('A').fixed = true;
+  const beforeAX = fixedSim.nodes.get('A').x;
+  const beforeAY = fixedSim.nodes.get('A').y;
+  for (let step = 0; step < 30; step += 1) graphSim.stepSimulation(fixedSim, edges, { width: 800, height: 600 });
+  assert(fixedSim.nodes.get('A').x === beforeAX && fixedSim.nodes.get('A').y === beforeAY, 'a fixed (dragged) node never moves, even as forces act on its neighbours');
+  assert(fixedSim.nodes.get('B').x !== positions.B.x || fixedSim.nodes.get('B').y !== positions.B.y, "the fixed node's neighbour still moves");
+}
+{
+  const positions = { A: { x: -100, y: 50 }, B: { x: 300, y: -80 }, C: { x: 60, y: 220 } };
+  const ids = ['A', 'B', 'C'];
+  const viewport = { width: 640, height: 400 };
+  const pad = 30;
+  const t = graphSim.fitTransform(positions, ids, viewport, pad);
+  for (const id of ids) {
+    const s = graphSim.worldToScreen(t, positions[id]);
+    assert(s.x >= pad - 0.5 && s.x <= viewport.width - pad + 0.5, `fitTransform keeps node ${id} inside the viewport horizontally (x=${s.x.toFixed(1)})`);
+    assert(s.y >= pad - 0.5 && s.y <= viewport.height - pad + 0.5, `fitTransform keeps node ${id} inside the viewport vertically (y=${s.y.toFixed(1)})`);
+  }
+  assert(graphSim.fitTransform({}, [], viewport).scale > 0, 'fitTransform on an empty graph still returns a usable (non-zero) scale');
+}
+{
+  const positions = { A: { x: 0, y: 0 }, B: { x: 100, y: 0 }, C: { x: 100, y: 100 } };
+  const ids = ['A', 'B', 'C'];
+  const t = { scale: 1, tx: 50, ty: 50 };
+  const radiusFor = () => 10;
+  assert(graphSim.hitTest(ids, positions, radiusFor, t, { x: 50, y: 50 }) === 'A', 'hitTest finds the node under the point (A, centred by the transform)');
+  assert(graphSim.hitTest(ids, positions, radiusFor, t, { x: 150, y: 50 }) === 'B', 'hitTest finds a different node under a different point (B)');
+  assert(graphSim.hitTest(ids, positions, radiusFor, t, { x: 400, y: 400 }) === null, 'hitTest misses cleanly on empty space');
+  const neighbors = graphSim.neighborsOf('A', [{ from: 'A', to: 'B', kind: 'link', confidence: null, trust: 'declared', why: '', meta: {} }]);
+  assert(neighbors.has('B') && !neighbors.has('C'), 'neighborsOf collects only the directly linked nodes');
+}
+{
+  const t = { scale: 1, tx: 0, ty: 0 };
+  const cursor = { x: 240, y: 130 };
+  const worldBefore = graphSim.screenToWorld(t, cursor);
+  const zoomed = graphSim.zoomAround(t, cursor, 2.4);
+  const worldAfter = graphSim.screenToWorld(zoomed, cursor);
+  assert(Math.abs(worldBefore.x - worldAfter.x) < 1e-6 && Math.abs(worldBefore.y - worldAfter.y) < 1e-6, 'zoomAround keeps the world point under the cursor fixed on screen');
+  assert(zoomed.scale > t.scale, 'zoomAround with factor > 1 actually zooms in');
+  const clampedOut = graphSim.zoomAround(t, cursor, 0.0001);
+  assert(clampedOut.scale === graphSim.ZOOM_MIN, 'zoomAround clamps at ZOOM_MIN rather than collapsing to zero');
+  const worldAfterClamp = graphSim.screenToWorld(clampedOut, cursor);
+  assert(Math.abs(worldBefore.x - worldAfterClamp.x) < 1e-6, 'the cursor point still stays fixed once the zoom factor is clamped');
 }
 
 console.log(failed === 0 ? 'ok brain' : `FAIL: ${failed} assertion(s) failed`);

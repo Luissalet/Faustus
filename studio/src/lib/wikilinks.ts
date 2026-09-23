@@ -97,6 +97,21 @@ export function resolveTitle(index: TitleIndex, target: string): { path: string;
   return index.get(foldTitle(target)) ?? null;
 }
 
+/** `encodeURIComponent` deliberately leaves `( ) ! * ' ~` unescaped — they
+ *  are valid in a URI component by spec — but the shared markdown parser's
+ *  link-target regex (`lib/markdown.ts`, `[^\s)]*`) ends a URL at the very
+ *  first unescaped `)`. A vault path built from a note's title routinely
+ *  has one: every memory note is titled `<Title> (<id8>).md`, and a free
+ *  note can be titled anything a person types, parentheses included. Left
+ *  unescaped, `Rust (794da9ce).md` truncates the href at `Rust (794da9ce`
+ *  and spills `).md)` out as plain text right after the link. Percent-encode
+ *  `(`/`)` on top of whatever `encodeURIComponent` already escapes;
+ *  `decodeURIComponent` undoes a `%28`/`%29` exactly like any other escape,
+ *  so nothing on the decode side has to change. */
+function encodeHrefPath(path: string): string {
+  return encodeURIComponent(path).replace(/[()]/g, (c) => (c === '(' ? '%28' : '%29'));
+}
+
 /** The scheme `lib/markdown.ts#safeHref` leaves untouched: it only rewrites a
  *  Windows path or a `file:line` reference, and turns any *other* scheme it
  *  does not recognise (`mailto:`/`http(s):` excepted) into `#`. A hash
@@ -105,12 +120,12 @@ export function resolveTitle(index: TitleIndex, target: string): { path: string;
  *  never has to fork or modify it. */
 export function wikiHref(path: string, resolved: boolean): string {
   const tag = resolved ? 'brain-note' : 'brain-note-new';
-  return `#${tag}=${encodeURIComponent(path)}`;
+  return `#${tag}=${encodeHrefPath(path)}`;
 }
 
 export function wikiEmbedSrc(path: string, resolved: boolean): string {
   const tag = resolved ? 'brain-embed' : 'brain-embed-new';
-  return `#${tag}=${encodeURIComponent(path)}`;
+  return `#${tag}=${encodeHrefPath(path)}`;
 }
 
 export interface WikiHrefInfo {
