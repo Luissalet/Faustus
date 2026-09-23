@@ -770,3 +770,11 @@ def test_small_app_route_outranks_internal_and_vendored_roots(small_app_repo):
         root_positions = [i for i, f in enumerate(flows_list) if f["entry_reason"] == "root"]
         # non-vendored roots must also outrank vendored ones (the penalty).
         assert max(root_positions) < min(vendor_positions)
+
+
+def test_level1_depth_moves_down_when_one_package_holds_the_repo():
+    from src.code_graph.communities import _level1_depth
+    one_pkg = [f"app/{d}/m{i}.py" for d in ("api", "core", "vendor") for i in range(10)] + ["client/src/a.ts"]
+    assert _level1_depth(one_pkg) == 2
+    spread = [f"src/a{i}.py" for i in range(5)] + [f"routes/r{i}.py" for i in range(5)] + [f"studio/s{i}.ts" for i in range(5)]
+    assert _level1_depth(spread) == 1

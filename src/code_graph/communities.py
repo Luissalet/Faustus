@@ -280,9 +280,16 @@ class _BudgetExceeded(Exception):
 
 # ── fingerprint / scope ─────────────────────────────────────────────────
 
+#: Bumped whenever clustering or naming changes, so a cached result built by
+#: older code is rebuilt instead of served (the index fingerprint alone does
+#: not change when only this module does).
+ALGO_VERSION = "4"
+
+
 def _fingerprint(root: str, project_id: str) -> str:
     status = code_index.status(root, project_id=project_id)
-    raw = f"{status.get('last_indexed_at', '')}|{status.get('symbols', 0)}|{status.get('edges', 0)}"
+    raw = (f"{ALGO_VERSION}|{status.get('last_indexed_at', '')}|"
+           f"{status.get('symbols', 0)}|{status.get('edges', 0)}")
     return hashlib.sha256(raw.encode("utf-8", "replace")).hexdigest()[:16]
 
 
@@ -906,7 +913,8 @@ class _NameCtx:
     """Precomputed, repo-wide inputs the naming/tagging functions need --
     built once per `_build` call, never per community (that would be
     O(communities x files) again)."""
-    __slots__ = ("path_symbols", "dir_file_totals", "file_tokens", "doc_freq", "n_docs")
+    __slots__ = ("path_symbols", "dir_file_totals", "file_tokens", "doc_freq", "n_docs",
+                 "level1_depth")
 
     def __init__(self, path_symbols: Dict[str, int], production_files: Sequence[str]) -> None:
         self.path_symbols = path_symbols
@@ -923,10 +931,34 @@ class _NameCtx:
         self.file_tokens = file_tokens
         self.doc_freq = doc_freq
         self.n_docs = len(production_files) or 1
+        self.level1_depth = _level1_depth(production_files)
+
+
+def _level1_depth(production_files: Sequence[str]) -> int:
+    """Directory depth level-1 names are cut at. Normally the top-level area
+    (`src`, `studio`, `routes`). A repo whose code lives almost entirely
+    under one top-level package (`myapp/...`) would then name every level-1
+    community after that same package -- seen on a ~60-file app: "myapp
+    (ask, backend)", "myapp (comfy, faustus)" -- so the cut moves one level
+    down while a single directory still holds 80% of the files and the next
+    level down actually tells directories apart."""
+    depth = 1
+    n = len(production_files)
+    while n and depth < 4:
+        counts: Dict[str, int] = {}
+        for f in production_files:
+            key = _dir_key(f, depth)
+            counts[key] = counts.get(key, 0) + 1
+        if max(counts.values()) < 0.8 * n:
+            break
+        if len({_dir_key(f, depth + 1) for f in production_files}) <= len(counts):
+            break
+        depth += 1
+    return depth
 
 
 def _name_for(files: Sequence[str], ctx: _NameCtx, *, level1: bool = False) -> str:
-    depth = 1 if level1 else None
+    depth = ctx.level1_depth if level1 else None
     dir_symbols: Dict[str, int] = {}
     dir_files: Dict[str, List[str]] = {}
     for f in files:
@@ -1017,6 +1049,15 @@ def _disambiguate_names(records: List[Dict[str, Any]], ctx: _NameCtx) -> None:
         by_name.setdefault(r["name"], []).append(r)
     for name, group in by_name.items():
         if len(group) < 2:
+            continue
+        # A coarse (level-1) name cut at the top directory collides whenever
+        # the code lives under one package. The full-depth path names tell
+        # such siblings apart better than file-stem tags ("app/hoard_link"
+        # beats "app (comfy, faustus)"); tags remain for what paths can't.
+        deeper = [_name_for(r["files"], ctx, level1=False) for r in group]
+        if len(set(deeper)) == len(group) and all(d != name for d in deeper):
+            for r, d in zip(group, deeper):
+                r["name"] = d
             continue
         exclude = set(re.split(r"[\s+/·]+", name.lower()))
         for r in group:
