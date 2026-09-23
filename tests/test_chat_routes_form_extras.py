@@ -190,6 +190,10 @@ def test_the_users_delegation_reaches_the_gate_as_user_delegation():
     block = block[:block.index("async for chunk in stream_agent_loop(")]
     assert '_harness_options["user_delegation"] = _delegate_tasks' in block
     loop = (Path(__file__).resolve().parents[1] / "src" / "agent_loop.py").read_text(encoding="utf-8")
-    ctor = loop[loop.index("run_security = ToolRunSecurityContext("):]
+    # The run gate is built from `ToolRunSecurityContext` or its context-aware
+    # subclass (src/context_tool_gate.py); either way it gets user_delegation.
+    start = re.search(r"run_security = (?:ToolRunSecurityContext|ContextAwareSecurityContext)\(", loop)
+    assert start
+    ctor = loop[start.start():]
     ctor = ctor[:ctor.index("\n    )\n") + 6]
     assert re.search(r"user_delegation=\(", ctor)

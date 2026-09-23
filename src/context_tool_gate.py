@@ -99,9 +99,17 @@ def _arguments(content: Any) -> Mapping[str, Any]:
     return {}
 
 
-def _action(content: Any) -> str:
-    value = _arguments(content).get("action")
-    return value.strip().lower() if isinstance(value, str) else ""
+def _action(tool_name: str, content: Any) -> str:
+    """The call's action, read exactly as `capabilities_for_action` reads it
+    (same input shapes, aliases and defaults), so the rule and the capability
+    classification can never disagree about which action is being run."""
+    try:
+        from src.tool_capabilities import _action_from_content
+
+        return _action_from_content(tool_name, content) or ""
+    except Exception:  # noqa: BLE001 - fall back to the plain JSON shape
+        value = _arguments(content).get("action")
+        return value.strip().casefold() if isinstance(value, str) else ""
 
 
 def recall_ids(content: Any) -> Tuple[str, ...]:
@@ -141,7 +149,7 @@ def allows(tool_name: Any, content: Any = None, *,
     rule = rule_for(tool_name, rules)
     if rule is None or not _liftable(rule.tool, content):
         return False
-    if rule.actions and _action(content) not in rule.actions:
+    if rule.actions and _action(rule.tool, content) not in rule.actions:
         return False
     if rule.offered_ids_only:
         ids = recall_ids(content)
