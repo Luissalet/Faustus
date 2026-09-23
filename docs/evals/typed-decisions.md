@@ -78,3 +78,25 @@ the pipeline end to end:
 Pending: to be run on the owner's machine against the loopback helper and
 against Ollama (see PENDIENTES.md). Paste the `--markdown` output of each
 run here with the date, the endpoint kind and the model size.
+
+## Results — 23-09-2026, owner's machine
+
+Loopback helper (a 3B model on llama-server, already resident; nothing was
+loaded for the run). Thresholds: confidence ≥ 0.7, mass ≥ 0.5.
+
+| task | n | rule | typed (raw) | combined | flips (right) | typed when accepted | p50 ms | p95 ms |
+|---|---|---|---|---|---|---|---|---|
+| freshness | 60 | 73% | 92% | 93% | 14 (13) | 93% | 389 | 501 |
+| entity_types | 40 | 12% | 85% | 88% | 39 (34) | 87% | 395 | 544 |
+
+Shared prefix: first field p50 389 ms, second field on the same context
+384 ms; cached prompt tokens (mean) 40 on the first field, 53 on the second.
+The prompt is short, so the saving is small here; it grows with the context.
+
+Calibration (freshness): 57 of 60 decisions above 0.95 confidence, 95%
+right there; the three below 0.95 were right once. Entity types: 36 of 40
+above 0.95, 89% right. High confidence is not proof on a 3B model: the
+thresholds stay where they are and the rule keeps the first word.
+
+The run against the big model on Ollama was not repeated here on purpose:
+it would have had to load or share a 27B that another instance was using.

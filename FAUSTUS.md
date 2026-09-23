@@ -8406,9 +8406,15 @@ rutas y responde de extremo a extremo (sin modelo configurado:
 `--fake` recorre todo el camino. **No** se ha medido todavía contra un
 modelo real: en este entorno no hay servidor de modelos.
 
-**Pendiente.** Ver PENDIENTES.md: correr la evaluación en la máquina del
-dueño contra el ayudante en loopback y contra Ollama y pegar las tablas en
-`docs/evals/typed-decisions.md`; con esos números, ajustar umbrales
+**En vivo (23-09, máquina del dueño, ayudante de 3B en loopback ya
+residente).** Actualidad: la regla sola acierta el 73 %, la decisión sola el
+92 % y lo que se envía (regla primero, decisión sólo si la regla duda y con
+confianza) el 93 %: 14 cambios respecto a la regla, 13 correctos. Tipos de
+entidad: del 12 % (todo `other`) al 88 %. p50 ≈ 390 ms por decisión, p95
+≈ 540 ms. Tablas completas en `docs/evals/typed-decisions.md`.
+
+**Pendiente.** Ver PENDIENTES.md: repetir la evaluación contra Ollama con
+el modelo grande cuando esté libre; ajustar umbrales
 (`min_confidence`, `min_mass`) y confirmar la latencia real añadida a un
 turno con pregunta dudosa (el caso «pregunta sin palabra clave» es
 frecuente: en los casos de la evaluación la regla duda en 45 de 60); el
