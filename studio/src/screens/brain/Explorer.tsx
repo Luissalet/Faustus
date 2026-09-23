@@ -71,10 +71,10 @@ function FolderRow({ node, depth, activePath, open, onToggle, onOpen }: { node: 
   return (
     <>
       {depth > 0 && (
-        <button type="button" className="fs-brain__folder" style={{ paddingInlineStart: `${8 + depth * 14}px` }} onClick={() => onToggle(node.path)} aria-expanded={isOpen} data-testid="brain-folder">
+        <button type="button" className="fs-brain__folder" style={{ paddingInlineStart: `${8 + depth * 14}px` }} onClick={() => onToggle(node.path)} aria-expanded={isOpen} title={node.name} data-testid="brain-folder">
           {isOpen ? <ChevronDown size={13} aria-hidden="true" /> : <ChevronRight size={13} aria-hidden="true" />}
           {isOpen ? <FolderOpen size={14} aria-hidden="true" /> : <Folder size={14} aria-hidden="true" />}
-          {node.name}
+          <span className="fs-brain__note-title">{node.name}</span>
         </button>
       )}
       {isOpen && (
@@ -180,7 +180,7 @@ export function Explorer({
           {!searching && searchResults?.map((hit) => {
             const Icon = kindIcon(hit.kind);
             return (
-              <button key={hit.path} type="button" className="fs-brain__note-row" data-active={hit.path === activePath || undefined} onClick={() => onOpen(hit.path)}>
+              <button key={hit.path} type="button" className="fs-brain__note-row" data-active={hit.path === activePath || undefined} onClick={() => onOpen(hit.path)} title={hit.path}>
                 <Icon size={13} aria-hidden="true" />
                 <span className="fs-brain__note-title">{hit.title}</span>
                 {hit.snippet && <span className="fs-brain__snippet">{hit.snippet}</span>}
