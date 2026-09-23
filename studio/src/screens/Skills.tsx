@@ -23,6 +23,8 @@ import {
   type SkillSort,
 } from '../adapters/skills';
 import { NewSkillPane, SkillDetail, confidenceTone, type Tab } from './skills/Detail';
+import { InstinctsPanel } from './skills/Instincts';
+import { SkillLibraryPanel } from './skills/Library';
 import './projects.css';
 import './skills.css';
 import { t, tn } from '../i18n';
@@ -38,6 +40,7 @@ import { t, tn } from '../i18n';
  * attention" is a filter, not a hidden rule inside a delete button.
  */
 
+type View = 'learned' | 'library' | 'instincts';
 type Filter = 'all' | 'drafts' | 'published' | 'attention';
 const SORTS: { value: SkillSort; label: string }[] = [
   { value: 'confidence', label: 'Confidence' },
@@ -149,6 +152,7 @@ export function SkillsScreen() {
   const [selecting, setSelecting] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [tab, setTab] = useState<Tab>('overview');
+  const [view, setView] = useState<View>('learned');
   const [creating, setCreating] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -394,6 +398,25 @@ export function SkillsScreen() {
         </div>
       </header>
 
+      <div className="fs-sk__filters" role="tablist" aria-label={t('View')}>
+        {(
+          [
+            ['learned', t('Learned')],
+            ['library', t('Library')],
+            ['instincts', t('Instincts')],
+          ] as [View, string][]
+        ).map(([key, label]) => (
+          <button key={key} type="button" role="tab" aria-selected={view === key} className="fs-chip" data-on={view === key || undefined} onClick={() => setView(key)} data-testid={`skills-view-${key}`}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {view === 'library' && <SkillLibraryPanel say={say} />}
+      {view === 'instincts' && <InstinctsPanel say={say} />}
+
+      {view === 'learned' && (
+      <>
       <div className="fs-sk__toolbar">
         <label className="fs-sk__search">
           <Search size={13} aria-hidden="true" />
@@ -566,6 +589,8 @@ export function SkillsScreen() {
           )}
         </div>
       </div>
+      </>
+      )}
 
       {confirm?.kind === 'delete' && (
         <Dialog

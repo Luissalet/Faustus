@@ -29,6 +29,9 @@ import {
   loadLocalModels,
   loadModel,
   loadModelCapabilities,
+  loadModelLeaseInstances,
+  type LeaseHolder,
+  type ModelLeaseSnapshot,
   pinWarning,
   vramFit,
   type VramFit,
@@ -327,6 +330,11 @@ export function LocalModelsSection({ admin, say }: { admin: boolean; say: (t: st
   const sources = useRef<Map<string, EventSource>>(new Map());
   const dismissed = useRef<Set<string>>(new Set());
   const [optionsFor, setOptionsFor] = useState('');
+  // Lote L: who else — across every Faustus instance sharing this Ollama —
+  // holds each resident model, and the instance list itself. Best-effort:
+  // `{}`/empty while the lease is off, never a reason to fail the rest of
+  // this screen.
+  const [lease, setLease] = useState<ModelLeaseSnapshot | null>(null);
 
   const refresh = useCallback(
     async (silent = false) => {
@@ -336,6 +344,7 @@ export function LocalModelsSection({ admin, say }: { admin: boolean; say: (t: st
         setError(null);
         setErrorStatus(null);
         if (d.endpoint_id && d.endpoint_id !== endpointId) setEndpointId(d.endpoint_id);
+        void loadModelLeaseInstances(d.endpoint_id).then(setLease).catch(() => setLease(null));
         setPulls((cur) => {
           const next = new Map(cur);
           for (const p of d.pulls ?? []) {
@@ -607,6 +616,8 @@ export function LocalModelsSection({ admin, say }: { admin: boolean; say: (t: st
               defaultModel={defaultModel}
               defaultEndpointId={defaultEndpointId}
               endpointId={data.endpoint_id}
+              holdersByModel={Object.fromEntries((lease?.resident ?? []).map((r) => [r.model, r.holders]))}
+              selfInstanceId={lease?.self_instance_id}
               onUnload={(m) => void act(
                 () => unloadModel(data.endpoint_id, m.name, false),
                 t('Unloaded {name}', { name: m.name }),
@@ -614,6 +625,8 @@ export function LocalModelsSection({ admin, say }: { admin: boolean; say: (t: st
               )}
             />
           </div>
+
+          {lease && lease.instances.length > 0 && <InstancesPanel lease={lease} />}
 
           <div className="fs-set__card">
             <h3 className="fs-set__card-title">
@@ -1167,7 +1180,16 @@ type LoadedModelHw02 = LoadedModel & {
   kv?: { state: 'measured' | 'unknown'; bytes_per_token?: number; context_length?: number; total_bytes?: number };
 };
 
-function LoadedList({ loaded, cards, admin, working = '', defaultModel = '', defaultEndpointId = '', endpointId = '', onUnload }: { loaded: LoadedModelHw02[]; cards: GpuCard[]; admin: boolean; working?: string; defaultModel?: string; defaultEndpointId?: string; endpointId?: string; onUnload: (m: LoadedModel) => void }) {
+/** "in use by :7001 (pinned), :7002 (default)" — every OTHER instance
+ * currently holding this exact model, lot L's `model_lease.holders()`. */
+function holdersLabel(holders: LeaseHolder[] | undefined, selfInstanceId: string | null | undefined): string {
+  const others = (holders ?? []).filter((h) => !selfInstanceId || h.instance_id !== selfInstanceId);
+  if (!others.length) return '';
+  const bits = others.map((h) => `:${h.port ?? '?'} (${h.kind})`);
+  return t('in use by {who}', { who: bits.join(', ') });
+}
+
+function LoadedList({ loaded, cards, admin, working = '', defaultModel = '', defaultEndpointId = '', endpointId = '', holdersByModel, selfInstanceId, onUnload }: { loaded: LoadedModelHw02[]; cards: GpuCard[]; admin: boolean; working?: string; defaultModel?: string; defaultEndpointId?: string; endpointId?: string; holdersByModel?: Record<string, LeaseHolder[]>; selfInstanceId?: string | null; onUnload: (m: LoadedModel) => void }) {
   if (!loaded.length) return <p className="fs-set__help">{t('Nothing is loaded right now.')}</p>;
   // Two large models resident at once is how the machine went down on
   // 08-09-2026 (two 27B against the commit limit). Say it here, where the
@@ -1223,6 +1245,10 @@ function LoadedList({ loaded, cards, admin, working = '', defaultModel = '', def
                   {m.footprint_measured === false ? ` · ${t('size unknown')}` : ''}
                 </span>
               )}
+              {(() => {
+                const label = holdersLabel(holdersByModel?.[m.name], selfInstanceId);
+                return label ? <span className="fs-chip" data-on data-testid="lm-lease-holders">{label}</span> : null;
+              })()}
             </span>
             {admin && m.unloadable !== false && (
               <Button
@@ -1241,6 +1267,43 @@ function LoadedList({ loaded, cards, admin, working = '', defaultModel = '', def
     </ul>
     </>
   );
+}
+
+/** Lote L: every Faustus instance sharing this Ollama right now — who is
+ * the residency leader for its own default model, who adopted whose
+ * default, and where each one keeps its data. */
+function InstancesPanel({ lease }: { lease: ModelLeaseSnapshot }) {
+  return (
+    <div className="fs-set__card" data-testid="lm-instances-panel">
+      <h3 className="fs-set__card-title">{t('Instances sharing this Ollama')}</h3>
+      <ul className="fs-set__list">
+        {lease.instances.map((inst) => {
+          const isSelf = inst.is_self || (!!lease.self_instance_id && inst.instance_id === lease.self_instance_id);
+          return (
+            <li key={inst.instance_id ?? inst.port} className="fs-set__row">
+              <span className="fs-tools__text">
+                <strong>:{inst.port ?? '?'}{isSelf ? ` (${t('this one')})` : ''}</strong>
+                <span className="fs-set__help">
+                  {inst.pid ? `pid ${inst.pid} · ` : ''}
+                  {inst.default?.model ? t('default: {model}', { model: inst.default.model }) : t('no default set')}
+                  {inst.leader ? ` · ${t('residency leader')}` : ''}
+                  {inst.adopted_model ? ` · ${t('adopted {model}', { model: inst.adopted_model })}` : ''}
+                  {inst.pinned.length ? ` · ${t('pinned')}: ${inst.pinned.join(', ')}` : ''}
+                  {inst.age_seconds != null ? ` · ${untilAge(inst.age_seconds)}` : ''}
+                </span>
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+function untilAge(seconds: number): string {
+  if (seconds < 90) return t('{n}s old', { n: Math.round(seconds) });
+  if (seconds < 3600) return t('{n} min old', { n: Math.round(seconds / 60) });
+  return t('{n} h old', { n: (seconds / 3600).toFixed(1) });
 }
 
 /* ── installed ── */

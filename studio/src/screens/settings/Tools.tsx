@@ -1,7 +1,23 @@
-import { Plus, Search, ShieldAlert, Star, Trash2, Wrench } from 'lucide-react';
+import { ChevronDown, Plus, Search, ShieldAlert, Sparkles, Star, Trash2, Wrench } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Button, EmptyState, Skeleton } from '../../components';
 import { listTools, setDisabledTools, TOOL_META, type ToolFlag } from '../../adapters/account';
+import {
+  addLifecycleHooksPreset,
+  emptyHook,
+  lifecycleHooksLog,
+  loadLifecycleHooks,
+  matchSummary,
+  saveLifecycleHooks,
+  testLifecycleHooks,
+  type Hook,
+  type HookAction,
+  type HookEvent,
+  type HookLogEntry,
+  type HookMatch,
+  type HookRunResult,
+  type LifecycleHooksData,
+} from '../../adapters/lifecycleHooks';
 import {
   dryRunTool,
   getToolDescriptor,
@@ -125,7 +141,395 @@ export function ToolsSection({ say }: { say: (t: string) => void }) {
       </section>
       <ToolCatalogPanel say={say} />
       <ArgRulesPanel say={say} />
+      <LifecycleHooksPanel say={say} />
     </>
+  );
+}
+
+/* ── Lifecycle hooks (src/lifecycle_hooks.py) — small automations attached to
+ * a point in the agent's turn (session start, before/after a tool call, turn
+ * end, before compaction): run a command and feed its output back to the
+ * model, inject a fixed note, or warn. Same admin-only gate, same "replace
+ * the whole list" save convention as the argument rules above. ── */
+
+const HOOK_EVENT_LABEL: Record<HookEvent, string> = {
+  session_start: 'Session start',
+  turn_start: 'Turn start',
+  pre_tool: 'Before a tool call',
+  post_tool: 'After a tool call',
+  turn_end: 'Turn end',
+  pre_compact: 'Before compaction',
+};
+
+const HOOK_ACTION_LABEL: Record<HookAction, string> = {
+  command: 'Run a command',
+  inject: 'Inject a note',
+  warn: 'Warn',
+};
+
+function HookRow({ hook, onToggle, onEdit, onDelete }: { hook: Hook; onToggle: (v: boolean) => void; onEdit: () => void; onDelete: () => void }) {
+  const summary = matchSummary(hook.match);
+  return (
+    <li className="fs-set__row" data-testid={`lifecycle-hook-row-${hook.id}`}>
+      <span className="fs-tools__text">
+        <strong>{hook.name}</strong>
+        <span className="fs-set__help">
+          {t(HOOK_EVENT_LABEL[hook.event])} → {t(HOOK_ACTION_LABEL[hook.action])}
+          {summary ? ` · ${summary}` : ''} · <code className="fs-tools__id">{hook.scope}</code>
+        </span>
+      </span>
+      <span className="fs-set__row-actions">
+        <Toggle id={`hook-${hook.id}`} checked={hook.enabled} onChange={onToggle} label={t('enabled')} />
+        <Button variant="ghost" size="sm" label={t('Edit')} onClick={onEdit} />
+        <Button variant="danger" size="sm" icon={Trash2} label={t('Delete')} onClick={onDelete} />
+      </span>
+    </li>
+  );
+}
+
+function HookForm({ draft, setDraft, isNew, saving, formError, onSave, onCancel }: {
+  draft: Hook;
+  setDraft: (h: Hook) => void;
+  isNew: boolean;
+  saving: boolean;
+  formError: string;
+  onSave: () => void;
+  onCancel: () => void;
+}) {
+  const setMatch = (key: keyof HookMatch, value: string) => setDraft({ ...draft, match: { ...draft.match, [key]: value || undefined } });
+  return (
+    <div className="fs-set__form" data-testid="lifecycle-hook-form">
+      <div className="fs-set__grid2">
+        <div className="fs-set__field">
+          <label className="fs-set__label" htmlFor="hook-id">{t('Hook id')}</label>
+          <input id="hook-id" className="fs-field" value={draft.id} disabled={!isNew} onChange={(e) => setDraft({ ...draft, id: e.target.value })} placeholder="format-py" />
+        </div>
+        <div className="fs-set__field">
+          <label className="fs-set__label" htmlFor="hook-name">{t('Name')}</label>
+          <input id="hook-name" className="fs-field" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
+        </div>
+        <div className="fs-set__field">
+          <label className="fs-set__label" htmlFor="hook-event">{t('Event')}</label>
+          <Select id="hook-event" value={draft.event} options={Object.entries(HOOK_EVENT_LABEL).map(([value, label]) => ({ value, label: t(label) }))} onChange={(v) => setDraft({ ...draft, event: v as HookEvent })} />
+        </div>
+        <div className="fs-set__field">
+          <label className="fs-set__label" htmlFor="hook-action">{t('Action')}</label>
+          <Select id="hook-action" value={draft.action} options={Object.entries(HOOK_ACTION_LABEL).map(([value, label]) => ({ value, label: t(label) }))} onChange={(v) => setDraft({ ...draft, action: v as HookAction })} />
+        </div>
+        <div className="fs-set__field">
+          <label className="fs-set__label" htmlFor="hook-scope">{t('Scope')}</label>
+          <Select id="hook-scope" value={draft.scope} options={[{ value: 'global', label: t('Global') }, { value: 'project', label: t('This project only') }]} onChange={(v) => setDraft({ ...draft, scope: v as Hook['scope'] })} />
+        </div>
+        <div className="fs-set__field">
+          <label className="fs-set__label" htmlFor="hook-timeout">{t('Timeout (seconds)')}</label>
+          <input id="hook-timeout" className="fs-field" type="number" min={1} max={120} value={draft.timeout_s ?? ''} placeholder={t('default')} onChange={(e) => setDraft({ ...draft, timeout_s: e.target.value ? Number(e.target.value) : null })} />
+        </div>
+      </div>
+      <p className="fs-set__label">{t('Match (leave a field blank to match every call of this event; tool/path accept a | -separated list of globs)')}</p>
+      <div className="fs-set__grid2">
+        <div className="fs-set__field">
+          <label className="fs-set__label" htmlFor="hook-match-tool">{t('Tool')}</label>
+          <input id="hook-match-tool" className="fs-field" placeholder="edit_file|write_file" value={draft.match.tool ?? ''} onChange={(e) => setMatch('tool', e.target.value)} />
+        </div>
+        <div className="fs-set__field">
+          <label className="fs-set__label" htmlFor="hook-match-path">{t('Path glob')}</label>
+          <input id="hook-match-path" className="fs-field" placeholder="*.py" value={draft.match.path ?? ''} onChange={(e) => setMatch('path', e.target.value)} />
+        </div>
+        <div className="fs-set__field">
+          <label className="fs-set__label" htmlFor="hook-match-command">{t('Command matches (regex)')}</label>
+          <input id="hook-match-command" className="fs-field" value={draft.match.command ?? ''} onChange={(e) => setMatch('command', e.target.value)} />
+        </div>
+        <div className="fs-set__field">
+          <label className="fs-set__label" htmlFor="hook-match-text">{t('Message matches (regex)')}</label>
+          <input id="hook-match-text" className="fs-field" value={draft.match.text ?? ''} onChange={(e) => setMatch('text', e.target.value)} />
+        </div>
+      </div>
+      {draft.action === 'command' ? (
+        <div className="fs-set__field">
+          <label className="fs-set__label" htmlFor="hook-command">{t('Command ({placeholders} available)')}</label>
+          <textarea id="hook-command" className="fs-field fs-set__pre" rows={2} value={draft.command ?? ''} onChange={(e) => setDraft({ ...draft, command: e.target.value })} />
+        </div>
+      ) : (
+        <div className="fs-set__field">
+          <label className="fs-set__label" htmlFor="hook-text">{t('Text')}</label>
+          <textarea id="hook-text" className="fs-field fs-set__pre" rows={2} value={draft.text ?? ''} onChange={(e) => setDraft({ ...draft, text: e.target.value })} />
+        </div>
+      )}
+      <div className="fs-set__field">
+        <label className="fs-set__label" htmlFor="hook-note">{t('Note (shown to the model)')}</label>
+        <input id="hook-note" className="fs-field" value={draft.note} onChange={(e) => setDraft({ ...draft, note: e.target.value })} />
+      </div>
+      {formError && <p className="fs-set__help" data-tone="bad">{formError}</p>}
+      <div className="fs-set__row-actions">
+        <Button variant="primary" size="sm" label={t('Save hook')} onClick={onSave} loading={saving} disabled={saving} />
+        <Button variant="ghost" size="sm" label={t('Cancel')} onClick={onCancel} />
+      </div>
+    </div>
+  );
+}
+
+function LifecycleHooksPanel({ say }: { say: (t: string) => void }) {
+  const [data, setData] = useState<LifecycleHooksData | null>(null);
+  const [failedStatus, setFailedStatus] = useState<number | 'other' | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draft, setDraft] = useState<Hook>(emptyHook());
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState('');
+  const [presetBusy, setPresetBusy] = useState('');
+
+  const [testEvent, setTestEvent] = useState<HookEvent>('post_tool');
+  const [testTool, setTestTool] = useState('');
+  const [testPath, setTestPath] = useState('');
+  const [testCommand, setTestCommand] = useState('');
+  const [testBusy, setTestBusy] = useState(false);
+  const [testMatched, setTestMatched] = useState<string[] | null>(null);
+  const [testRun, setTestRun] = useState<HookRunResult[] | null>(null);
+  const [testError, setTestError] = useState('');
+
+  const [logOpen, setLogOpen] = useState(false);
+  const [log, setLog] = useState<HookLogEntry[] | null>(null);
+
+  const reload = () =>
+    loadLifecycleHooks()
+      .then((d) => { setData(d); setFailedStatus(null); })
+      .catch((e: unknown) => {
+        setFailedStatus((e as { status?: number })?.status ?? 'other');
+        setData({ hooks: [], presets: [], events: [], actions: [] });
+      });
+  useEffect(() => {
+    void reload();
+  }, []);
+
+  const startAdd = () => {
+    setEditingId('');
+    setDraft(emptyHook());
+    setFormError('');
+  };
+  const startEdit = (hook: Hook) => {
+    setEditingId(hook.id);
+    setDraft(hook);
+    setFormError('');
+  };
+  const cancelEdit = () => {
+    setEditingId(null);
+    setDraft(emptyHook());
+    setFormError('');
+  };
+
+  const persist = async (hooks: Hook[]): Promise<boolean> => {
+    setSaving(true);
+    setFormError('');
+    try {
+      const saved = await saveLifecycleHooks(hooks);
+      setData((cur) => (cur ? { ...cur, hooks: saved } : cur));
+      return true;
+    } catch (e: unknown) {
+      setFormError((e as Error)?.message || t('Could not save the hook.'));
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveDraft = async () => {
+    if (!data) return;
+    const id = draft.id.trim();
+    if (!id || !draft.name.trim()) {
+      setFormError(t('Hook id and name are required.'));
+      return;
+    }
+    const isNew = editingId === '';
+    if (isNew && data.hooks.some((h) => h.id === id)) {
+      setFormError(t('A hook with this id already exists.'));
+      return;
+    }
+    const normalized: Hook = { ...draft, id };
+    const next = isNew ? [...data.hooks, normalized] : data.hooks.map((h) => (h.id === editingId ? normalized : h));
+    if (await persist(next)) {
+      cancelEdit();
+      say(t('Hook saved.'));
+    }
+  };
+
+  const toggleHook = async (hook: Hook, enabled: boolean) => {
+    if (!data) return;
+    await persist(data.hooks.map((h) => (h.id === hook.id ? { ...h, enabled } : h)));
+  };
+
+  const removeHook = async (id: string) => {
+    if (!data) return;
+    await persist(data.hooks.filter((h) => h.id !== id));
+  };
+
+  const addPreset = async (presetId: string) => {
+    setPresetBusy(presetId);
+    try {
+      const hooks = await addLifecycleHooksPreset(presetId);
+      setData((cur) => (cur ? { ...cur, hooks } : cur));
+      say(t('Preset added.'));
+    } catch (e: unknown) {
+      say((e as Error)?.message || t('Could not add the preset.'));
+    } finally {
+      setPresetBusy('');
+    }
+  };
+
+  const runTry = async (run: boolean) => {
+    setTestBusy(true);
+    setTestError('');
+    setTestMatched(null);
+    setTestRun(null);
+    try {
+      const ctx: Record<string, unknown> = {};
+      if (testTool.trim()) ctx.tool = testTool.trim();
+      if (testPath.trim()) ctx.path = testPath.trim();
+      if (testCommand.trim()) ctx.command = testCommand.trim();
+      const out = await testLifecycleHooks(testEvent, ctx, run);
+      if (out.matched) setTestMatched(out.matched);
+      if (out.results) setTestRun(out.results);
+    } catch (e: unknown) {
+      setTestError((e as Error)?.message || t('Could not run the test.'));
+    } finally {
+      setTestBusy(false);
+    }
+  };
+
+  const loadLog = () => {
+    setLogOpen((v) => !v);
+    if (!log) void lifecycleHooksLog(50).then(setLog).catch(() => setLog([]));
+  };
+
+  if (failedStatus === 401 || failedStatus === 403) {
+    return <EmptyState tone="denied" title={t('Administrators only')} body={t('This account cannot change lifecycle hooks.')} />;
+  }
+  if (failedStatus === 'other') {
+    return <EmptyState icon={Sparkles} tone="error" title={t('Could not read the lifecycle hooks.')} body={t('GET /api/lifecycle-hooks failed.')} primaryAction={{ label: t('Try again'), onClick: () => void reload() }} />;
+  }
+
+  return (
+    <section className="fs-set__section" aria-labelledby="fs-set-lifecycle-hooks">
+      <header className="fs-set__section-head">
+        <div>
+          <h2 id="fs-set-lifecycle-hooks" className="fs-set__title">{t('Lifecycle hooks')}</h2>
+          <p className="fs-prose">{t('Small automations attached to a point in the agent\'s turn — run a command and feed its output back, inject a fixed note, or warn. A hook never denies or blocks a call by itself; that is what argument rules are for.')}</p>
+        </div>
+        {editingId === null && <Button variant="secondary" size="sm" icon={Plus} label={t('Add hook')} onClick={startAdd} />}
+      </header>
+
+      <div className="fs-set__card">
+        {data === null ? (
+          <Skeleton label={t('Loading')} count={2} height="44px" />
+        ) : data.hooks.length === 0 && editingId === null ? (
+          <p className="fs-set__help">{t('No lifecycle hooks yet — add one or start from a preset below.')}</p>
+        ) : (
+          <ul className="fs-set__list">
+            {data.hooks.map((hook) => (
+              <HookRow key={hook.id} hook={hook} onToggle={(v) => void toggleHook(hook, v)} onEdit={() => startEdit(hook)} onDelete={() => void removeHook(hook.id)} />
+            ))}
+          </ul>
+        )}
+        {editingId !== null && (
+          <HookForm draft={draft} setDraft={setDraft} isNew={editingId === ''} saving={saving} formError={formError} onSave={() => void saveDraft()} onCancel={cancelEdit} />
+        )}
+      </div>
+
+      {data && data.presets.length > 0 && (
+        <div className="fs-set__card">
+          <h3 className="fs-set__card-title">{t('Presets')}</h3>
+          <p className="fs-set__help">{t('Adding a preset already installed does nothing — safe to click again.')}</p>
+          <div className="fs-intg__kinds">
+            {data.presets.map((p) => (
+              <Button
+                key={p.preset_id}
+                variant="secondary"
+                size="sm"
+                label={data.hooks.some((h) => h.id === p.preset_id) ? t('Installed') : p.description}
+                disabled={data.hooks.some((h) => h.id === p.preset_id)}
+                loading={presetBusy === p.preset_id}
+                onClick={() => void addPreset(p.preset_id)}
+                title={p.description}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="fs-set__card">
+        <h3 className="fs-set__card-title">{t('Try')}</h3>
+        <p className="fs-set__help">{t('Check which hooks would fire for an event, or actually run them.')}</p>
+        <div className="fs-set__grid2">
+          <div className="fs-set__field">
+            <label className="fs-set__label" htmlFor="hook-try-event">{t('Event')}</label>
+            <Select id="hook-try-event" value={testEvent} options={Object.entries(HOOK_EVENT_LABEL).map(([value, label]) => ({ value, label: t(label) }))} onChange={(v) => setTestEvent(v as HookEvent)} />
+          </div>
+          <div className="fs-set__field">
+            <label className="fs-set__label" htmlFor="hook-try-tool">{t('Tool')}</label>
+            <input id="hook-try-tool" className="fs-field" value={testTool} onChange={(e) => setTestTool(e.target.value)} />
+          </div>
+          <div className="fs-set__field">
+            <label className="fs-set__label" htmlFor="hook-try-path">{t('Path')}</label>
+            <input id="hook-try-path" className="fs-field" value={testPath} onChange={(e) => setTestPath(e.target.value)} />
+          </div>
+          <div className="fs-set__field">
+            <label className="fs-set__label" htmlFor="hook-try-command">{t('Command')}</label>
+            <input id="hook-try-command" className="fs-field" value={testCommand} onChange={(e) => setTestCommand(e.target.value)} />
+          </div>
+        </div>
+        <div className="fs-set__row-actions">
+          <Button variant="secondary" size="sm" label={t('Show matches')} onClick={() => void runTry(false)} loading={testBusy} disabled={testBusy} testId="lifecycle-hook-try-match" />
+          <Button variant="primary" size="sm" label={t('Run')} onClick={() => void runTry(true)} loading={testBusy} disabled={testBusy} testId="lifecycle-hook-try-run" />
+        </div>
+        {testError && <p className="fs-set__help" data-tone="bad">{testError}</p>}
+        {testMatched && (
+          <p className="fs-set__help" data-testid="lifecycle-hook-try-result">
+            {testMatched.length ? t('Would fire: {ids}', { ids: testMatched.join(', ') }) : t('Nothing would fire.')}
+          </p>
+        )}
+        {testRun && (
+          <ul className="fs-set__list">
+            {testRun.map((r, i) => (
+              <li key={i} className="fs-set__row">
+                <span className="fs-tools__text">
+                  <strong>{r.name}</strong>
+                  <span className="fs-set__help" data-tone={r.ok ? 'ok' : 'bad'}>
+                    {r.ok ? t('ok') : t('failed')} · {r.duration_ms}ms{r.timed_out ? ` · ${t('timed out')}` : ''}
+                  </span>
+                  {r.output && <span className="fs-set__help">{r.output.slice(0, 400)}</span>}
+                  {r.error && <span className="fs-set__help" data-tone="bad">{r.error.slice(0, 400)}</span>}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <div className="fs-set__card">
+        <button type="button" className="fs-set__card-title fs-tools__cat" onClick={loadLog} data-testid="lifecycle-hook-log-toggle">
+          <span>{t('Recent runs')}</span>
+          <ChevronDown size={14} aria-hidden="true" style={{ transform: logOpen ? 'rotate(180deg)' : undefined }} />
+        </button>
+        {logOpen && (
+          log === null ? (
+            <Skeleton label={t('Loading')} count={2} height="30px" />
+          ) : log.length === 0 ? (
+            <p className="fs-set__help">{t('No runs logged yet.')}</p>
+          ) : (
+            <ul className="fs-set__list">
+              {log.map((r, i) => (
+                <li key={i} className="fs-set__row">
+                  <span className="fs-tools__text">
+                    <strong>{r.name}</strong>
+                    <span className="fs-set__help" data-tone={r.ok ? 'ok' : 'bad'}>
+                      {new Date(r.ts * 1000).toLocaleString()} · {r.event} · {r.action} · {r.ok ? t('ok') : t('failed')}
+                    </span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )
+        )}
+      </div>
+    </section>
   );
 }
 

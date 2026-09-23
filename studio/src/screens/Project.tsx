@@ -1,4 +1,4 @@
-import { Activity, AlertTriangle, Archive, ArchiveRestore, ArrowLeft, Brain, Check, ClipboardList, Download, Eye, FileText, FolderOpen, FolderPlus, GitBranch, Image, Kanban, Layers, Link2, Lock, MessageSquare, PencilLine, Pin, PinOff, Plus, RefreshCw, Settings2, Target, Trash2, Unlink, X } from 'lucide-react';
+import { Activity, AlertTriangle, Archive, ArchiveRestore, ArrowLeft, Brain, Check, ClipboardList, Download, Eye, FileText, FolderOpen, FolderPlus, GitBranch, Image, Kanban, Layers, Link2, Lock, MessageSquare, PencilLine, Pin, PinOff, Plus, RefreshCw, Settings2, ShieldCheck, Target, Trash2, Unlink, X } from 'lucide-react';
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { lazyChunk } from '../shell/lazyChunk';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
@@ -54,6 +54,7 @@ import { ProjectAudit } from './project/Audit';
 import { ProjectMemoryFiles } from './project/Memory';
 import { ProjectObjectives } from './project/Objectives';
 import { ProjectRequirements } from './project/Requirements';
+import { ProjectRules } from './project/Rules';
 import { ProjectSettings } from './project/Settings';
 import './projects.css';
 import './home.css';
@@ -72,6 +73,7 @@ const TABS = [
   // /requirements/*`.
   { id: 'requisitos', label: 'Requirements', icon: ClipboardList },
   { id: 'memoria', label: 'Memory', icon: Brain },
+  { id: 'reglas', label: 'Rules', icon: ShieldCheck },
   { id: 'actividad', label: 'Agent activity', icon: Activity },
   { id: 'contexto', label: 'Context', icon: Eye },
   // Lote 86 (CONTRATO_GIT_4.md): "es mejor que un proyecto específico te
@@ -1115,6 +1117,12 @@ export function ProjectScreen() {
       {tab === 'memoria' && (
         <div className="fs-panel">
           <ProjectMemoryFiles project={project} say={say} />
+        </div>
+      )}
+
+      {tab === 'reglas' && (
+        <div className="fs-panel">
+          <ProjectRules workspace={project.workspace ?? ''} say={say} />
         </div>
       )}
 

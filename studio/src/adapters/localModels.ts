@@ -373,6 +373,73 @@ export async function setDefaultResidency(enabled: boolean): Promise<DefaultResi
   }));
 }
 
+/**
+ * Model lease (`src/model_lease.py`, lot L) — when several Faustus instances
+ * (dev + prod, or two ports on the same machine) share one Ollama, this is
+ * who else is out there, who is the residency leader for a given model, and
+ * who — across every instance, not just this one — holds each resident
+ * model right now and how (`default` / `pinned` / `active` / `reserved`).
+ */
+export interface LeaseHolder {
+  port: number | null;
+  instance_id: string | null;
+  kind: 'default' | 'pinned' | 'active' | 'reserved';
+}
+export interface ResidentModelInfo {
+  name: string;
+  key: string;
+  total_bytes: number;
+  in_vram_bytes: number;
+  spill_bytes: number;
+  ctx: number;
+  expires_at: string;
+  pinned?: boolean;
+  seconds_since_active?: number | null;
+  in_grace?: boolean;
+}
+export interface ResidencySnapshot {
+  endpoint_id: string;
+  root: string;
+  supported: boolean;
+  residents: ResidentModelInfo[];
+  grace_seconds?: number;
+  /** `{}` while the lease is off — never an extra directory read for that. */
+  holders: Record<string, LeaseHolder[]>;
+  error?: string | null;
+}
+export interface ModelLeaseInstance {
+  instance_id: string | null;
+  port: number | null;
+  pid: number | null;
+  data_dir: string | null;
+  default: { root?: string; model?: string };
+  pinned: string[];
+  adopted_model: string;
+  leader: boolean;
+  is_self: boolean;
+  age_seconds: number | null;
+}
+export interface ModelLeaseResident {
+  model: string;
+  holders: LeaseHolder[];
+}
+export interface ModelLeaseSnapshot {
+  root: string;
+  self_instance_id: string | null;
+  instances: ModelLeaseInstance[];
+  resident: ModelLeaseResident[];
+}
+/** Who is resident right now, with pin + last-active + (lot L) who else
+ * holds it — the same reading Settings → Local models already pays for. */
+export function loadResidency(endpointId?: string): Promise<ResidencySnapshot> {
+  return getJson<ResidencySnapshot>(`${API}/residency${endpointId ? `?endpoint_id=${encodeURIComponent(endpointId)}` : ''}`);
+}
+/** Every Faustus instance sharing this Ollama right now. Empty lists, not an
+ * error, while the lease is off — there is simply nothing else to see. */
+export function loadModelLeaseInstances(endpointId?: string): Promise<ModelLeaseSnapshot> {
+  return getJson<ModelLeaseSnapshot>(`${API}/instances${endpointId ? `?endpoint_id=${encodeURIComponent(endpointId)}` : ''}`);
+}
+
 export async function vramFit(model: string, targetCtx?: number): Promise<VramFit> {
   const q = new URLSearchParams({ model });
   if (targetCtx) q.set('target_ctx', String(targetCtx));

@@ -8099,3 +8099,134 @@ yours	tuyo
 …or upload a file	…o sube un archivo
 ≥ {lower} GB (incomplete: {reason})	≥ {lower} GB (incompleto: {reason})
 ⟨insert⟩	⟨insertar⟩
+A hook with this id already exists.	Ya existe un hook con este id.
+Add hook	Añadir hook
+Add instinct	Añadir instinto
+Adding a preset already installed does nothing — safe to click again.	Añadir un preset ya instalado no hace nada — se puede pulsar de nuevo sin problema.
+All categories	Todas las categorías
+Any language	Cualquier lenguaje
+Check which hooks would fire for an event, or actually run them.	Comprueba qué hooks se activarían para un evento, o ejecútalos de verdad.
+Command ({placeholders} available)	Comando ({placeholders} disponibles)
+Command matches (regex)	El comando coincide con (regex)
+Contradict	Contradecir
+Could not add the preset.	No se pudo añadir el preset.
+Could not install {id}	No se pudo instalar {id}
+Could not install {slug}	No se pudo instalar {slug}
+Could not read the lifecycle hooks.	No se pudieron leer los hooks de ciclo de vida.
+Could not save the hook.	No se pudo guardar el hook.
+Detected languages	Lenguajes detectados
+Do (action)	Hacer (acción)
+Drafted {n} skill	Se redactó {n} skill
+Drafted {n} skills	Se redactaron {n} skills
+Effective confidence — decays over time without new evidence.	Confianza efectiva — decae con el tiempo sin nuevas evidencias.
+Evolve → draft skill	Evolucionar → redactar skill
+Explain	Explicar
+Export / import	Exportar / importar
+GET /api/lifecycle-hooks failed.	GET /api/lifecycle-hooks falló.
+Generate drafts	Generar borradores
+Global	Global
+Groups instincts that share keywords and suggests a skill, command or agent to write from them. Generating only ever creates drafts.	Agrupa instintos que comparten palabras clave y sugiere una skill, comando o agente a partir de ellos. Generar solo crea borradores.
+Hook id	Id del hook
+Hook id and name are required.	El id y el nombre del hook son obligatorios.
+Hook saved.	Hook guardado.
+How a query is ranked against every published skill: a semantic score, a lexical (word) score, whether the query touches the skill's trigger phrases, and a prior from past outcomes.	Cómo se puntúa una consulta frente a cada skill publicada: una puntuación semántica, una puntuación léxica (de palabras), si la consulta toca las frases disparadoras de la skill, y un prior según resultados pasados.
+Hybrid (semantic + lexical + trigger)	Híbrido (semántico + léxico + disparador)
+Imported {n}	Importados {n}
+Install all of {category}	Instalar todo de {category}
+Installed in this project	Instaladas en este proyecto
+Installed {id}	Instalado {id}
+Installed {name}	Instalado {name}
+Installed {n} skill	Se instaló {n} skill
+Installed {n} skills	Se instalaron {n} skills
+Installing copies the rule into this project's own .faustus/rules folder — it changes nothing until then.	Instalar copia la regla en la carpeta .faustus/rules propia de este proyecto — no cambia nada hasta entonces.
+Instances sharing this Ollama	Instancias que comparten este Ollama
+Instinct added.	Instinto añadido.
+Instincts	Instintos
+Instincts could not be loaded	No se pudieron cargar los instintos
+Learned	Aprendidas
+Lexical	Léxico
+Lexical only	Solo léxico
+Lifecycle hooks	Hooks de ciclo de vida
+Link a folder to this project to discover its rule files and install library rules into it.	Enlaza una carpeta a este proyecto para descubrir sus archivos de reglas e instalar reglas de la biblioteca en ella.
+Match (leave a field blank to match every call of this event; tool/path accept a | -separated list of globs)	Coincidencia (deja un campo en blanco para que coincida con toda llamada de este evento; herramienta/ruta aceptan una lista de globs separados por |)
+Merges the same project-scoped pattern seen in enough projects, with high enough confidence, into one global instinct.	Fusiona el mismo patrón de proyecto visto en suficientes proyectos, con suficiente confianza, en un instinto global.
+Message matches (regex)	El mensaje coincide con (regex)
+No candidate skills.	Ninguna skill candidata.
+No cluster is big enough yet.	Ningún grupo es lo bastante grande todavía.
+No folder linked	Sin carpeta enlazada
+No global instincts yet.	Aún no hay instintos globales.
+No language detected yet.	Aún no se detectó ningún lenguaje.
+No library rule matches.	Ninguna regla de la biblioteca coincide.
+No lifecycle hooks yet — add one or start from a preset below.	Aún no hay hooks de ciclo de vida — añade uno o empieza desde un preset de abajo.
+No project-scoped instincts yet.	Aún no hay instintos de proyecto.
+No rule files found under .faustus/rules, .agents/rules, .claude/rules or .cursor/rules.	No se encontraron archivos de reglas en .faustus/rules, .agents/rules, .claude/rules ni .cursor/rules.
+No runs logged yet.	Aún no hay ejecuciones registradas.
+No skills match.	Ninguna skill coincide.
+Nothing eligible.	Nada es elegible.
+Nothing is eligible to promote yet.	Nada es elegible para promover todavía.
+Nothing is injected yet.	Aún no se inyecta nada.
+Nothing would fire.	Nada se activaría.
+Paste exported JSON…	Pega el JSON exportado…
+Path glob	Glob de ruta
+Patterns the assistant noticed from your corrections, or added by hand. Confirming one raises its confidence; contradicting it lowers it. Project-scoped ones seen in enough projects can be promoted to global.	Patrones que el asistente notó a partir de tus correcciones, o añadidos a mano. Confirmar uno sube su confianza; contradecirlo la baja. Los de proyecto vistos en suficientes proyectos se pueden promover a global.
+Preset added.	Preset añadido.
+Preview clusters	Previsualizar grupos
+Prior	Prior
+Project-scoped	De proyecto
+Promote all eligible	Promover todos los elegibles
+Promote eligible	Promover elegibles
+Promoted {n} instinct to global	Se promovió {n} instinto a global
+Promoted {n} instincts to global	Se promovieron {n} instintos a global
+Query	Consulta
+Removed {id}	Eliminado {id}
+Retire	Retirar
+Rule library	Biblioteca de reglas
+Rules could not be loaded	No se pudieron cargar las reglas
+Save hook	Guardar hook
+Search the library…	Buscar en la biblioteca…
+Selector	Selector
+Semantic	Semántico
+Show matches	Mostrar coincidencias
+Small automations attached to a point in the agent's turn — run a command and feed its output back, inject a fixed note, or warn. A hook never denies or blocks a call by itself; that is what argument rules are for.	Pequeñas automatizaciones ligadas a un punto del turno del agente — ejecutar un comando y devolver su salida, inyectar una nota fija, o avisar. Un hook nunca deniega ni bloquea una llamada por sí mismo; para eso están las reglas de argumentos.
+The library could not be loaded	No se pudo cargar la biblioteca
+This account cannot change lifecycle hooks.	Esta cuenta no puede cambiar los hooks de ciclo de vida.
+This account cannot change the selector.	Esta cuenta no puede cambiar el selector.
+This folder is not yet trusted — its own rule files are discovered but not injected until you trust it.	Esta carpeta aún no es de confianza — sus propios archivos de reglas se descubren pero no se inyectan hasta que confíes en ella.
+This project only	Solo este proyecto
+Threshold	Umbral
+Try	Probar
+Type a message and see how every skill would score against it right now — unfiltered by the threshold above.	Escribe un mensaje y ve cómo puntuaría cada skill ahora mismo — sin filtrar por el umbral de arriba.
+Type a message…	Escribe un mensaje…
+Uninstall	Desinstalar
+Uninstalled {slug}	Desinstalado {slug}
+Weight: lexical	Peso: léxico
+Weight: semantic	Peso: semántico
+Weight: trigger	Peso: disparador
+What the agent receives	Lo que recibe el agente
+When (trigger)	Cuándo (disparador)
+Would fire: {ids}	Se activaría: {ids}
+adopted {model}	adoptó {model}
+default: {model}	por defecto: {model}
+in use by {who}	en uso por {who}
+no default set	sin modelo por defecto
+ok	ok
+pinned	fijado
+residency leader	líder de residencia
+suggested	sugerido
+this one	esta
+timed out	agotó el tiempo
+universal	universal
+{n} active instinct	{n} instinto activo
+{n} active instincts	{n} instintos activos
+{n} folder up	{n} carpeta arriba
+{n} folders up	{n} carpetas arriba
+{n} h old	{n} h de antigüedad
+{n} instinct	{n} instinto
+{n} instincts	{n} instintos
+{n} min old	{n} min de antigüedad
+{n} pattern is eligible for promotion.	{n} patrón es elegible para promoción.
+{n} patterns are eligible for promotion.	{n} patrones son elegibles para promoción.
+{n} piece of evidence	{n} evidencia
+{n} pieces of evidence	{n} evidencias
+{n} projects · mean confidence {pct}%	{n} proyectos · confianza media {pct}%
+{n} words	{n} palabras
