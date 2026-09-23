@@ -1,6 +1,8 @@
 import { Files, Network, Info } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
+import { createPortal } from 'react-dom';
+import { ensureOverlayRoot } from '../shell/overlayRoot';
 import { Button, Dialog } from '../components';
 import {
   createNote,
@@ -318,24 +320,32 @@ export function BrainScreen() {
         )}
       </div>
 
-      {switcherOpen && (
-        <QuickSwitcher
-          notes={tree?.notes ?? []}
-          onPick={(path) => openNote(path)}
-          onDaily={() => openDaily()}
-          onClose={() => setSwitcherOpen(false)}
-        />
-      )}
-      {settingsOpen && <SettingsDrawer onClose={() => setSettingsOpen(false)} />}
-      {trashOpen && (
-        <TrashPanel
-          onClose={() => setTrashOpen(false)}
-          onRestored={(path) => {
-            void reloadTree();
-            reloadTrashCount();
-            openNote(path);
-          }}
-        />
+      {/* Overlays go to the shared overlay root: every screen's children
+          carry the entrance transform, which would make `position: fixed`
+          relative to the screen and push the drawers half off-screen. */}
+      {createPortal(
+        <>
+        {switcherOpen && (
+          <QuickSwitcher
+            notes={tree?.notes ?? []}
+            onPick={(path) => openNote(path)}
+            onDaily={() => openDaily()}
+            onClose={() => setSwitcherOpen(false)}
+          />
+        )}
+        {settingsOpen && <SettingsDrawer onClose={() => setSettingsOpen(false)} />}
+        {trashOpen && (
+          <TrashPanel
+            onClose={() => setTrashOpen(false)}
+            onRestored={(path) => {
+              void reloadTree();
+              reloadTrashCount();
+              openNote(path);
+            }}
+          />
+        )}
+        </>,
+        ensureOverlayRoot(),
       )}
 
       <Dialog
