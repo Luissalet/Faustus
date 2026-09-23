@@ -1236,6 +1236,17 @@ def _process_mem_file(run: _Run, rel: str, fm_data: Dict[str, Any], body: str, i
             _refuse(run, rel, source, f"the edit could not be applied ({exc}); file left as is")
             return None
         new_source = f"mem:{new_item['id']}"
+        ent = _entities()
+        if ent is not None:
+            # this flow knows both ids right here — repoint mentions and
+            # relation evidence to the correction immediately, rather than
+            # waiting for the next extraction sweep to notice the old one
+            # is gone.
+            try:
+                ent.repoint_source(run.owner, source, new_source)
+            except Exception:  # noqa: BLE001 - a graph touch-up must not sink the edit
+                logger.debug("brain vault: repoint_source(%s -> %s) failed", source, new_source,
+                            exc_info=True)
         row = run.vstate.get(rel)
         if row is not None and row.get("user_path"):
             run.set_source(rel, new_source)  # the human's chosen path now holds the corrected memory
