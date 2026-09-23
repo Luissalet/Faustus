@@ -3257,6 +3257,74 @@ def setup_chat_routes(
                             _chat_request_state.get("compactions", {}).get(candidate_index),
                         )
 
+                    # Context Engine (`agent_context_engine`): one packet for
+                    # the whole plain-chat turn (src/context_engine/wiring.py::
+                    # deliver_chat_turn). A delivered packet replaces the
+                    # preface's saved-memory/document blocks (tagged standby
+                    # in build_chat_context) and goes in right before the
+                    # user's message, never into the system prefix. No packet
+                    # (off, timeout, crash, no room) → the prompt is untouched.
+                    _ce_chat = {"packet": None, "receipted": False}
+                    try:
+                        from src.context_engine import wiring as _ce_chat_wiring
+                        if _ce_chat_wiring.enabled():
+                            _ce_chat_messages, _ce_chat["packet"] = await _ce_chat_wiring.deliver_chat_turn(
+                                messages=messages,
+                                owner=_user or "",
+                                session_id=session or "",
+                                model=sess.model or "",
+                                project_id=str((_harness_options or {}).get("project_id") or ""),
+                                turn_id=f"{session or 'session'}:{int(_chat_start * 1000)}"[:128],
+                                incognito=bool(incognito),
+                                no_memory=bool(no_memory),
+                                context_length=int(_selected_context_length or 0),
+                                window_known=bool(_selected_context_length),
+                                max_output_tokens=int(ctx.preset.max_tokens or 0),
+                            )
+                            if _ce_chat["packet"]:
+                                messages = _ce_chat_messages
+                                _chat_request_state = {
+                                    "context_lengths": {0: _selected_context_length},
+                                    "requests": {0: messages},
+                                    "trim_stats": {},
+                                }
+                                if _foreground_policy.enabled:
+                                    _chat_request_factory, _chat_request_state = _chat_candidate_request_factory(
+                                        messages,
+                                        _selected_context_length,
+                                        session=sess,
+                                        owner=_user,
+                                    )
+                                yield "data: " + json.dumps({
+                                    "type": "context_packet",
+                                    "round": 1,
+                                    "data": _ce_chat["packet"]["report"],
+                                }) + "\n\n"
+                    except Exception as _ce_chat_err:  # noqa: BLE001 - never end a chat turn
+                        logger.warning("[context-engine] chat packet skipped: %s", _ce_chat_err)
+                        _ce_chat["packet"] = None
+
+                    def _ce_chat_receipt(verdict: str, outcome_ref: str = "") -> None:
+                        """Receipt the turn's packet once, with the outcome."""
+                        _packet = _ce_chat.get("packet")
+                        if not _packet or _ce_chat.get("receipted"):
+                            return
+                        _ce_chat["receipted"] = True
+                        try:
+                            from src.context_engine import wiring as _ce_receipt_wiring
+                            _report = _packet.get("report") or {}
+                            _ce_receipt_wiring.observe_receipt(
+                                packet_id=str(_report.get("packet_id") or ""),
+                                request_id=str(_report.get("request_id") or ""),
+                                messages=messages,
+                                tool_results=0,
+                                outcome_ref=str(outcome_ref or session or ""),
+                                verdict=verdict,
+                                consumer="chat",
+                            )
+                        except Exception as _ce_receipt_err:  # noqa: BLE001
+                            logger.debug("[context-engine] chat receipt skipped: %s", _ce_receipt_err)
+
                     # ── Chat mode: call stream_llm directly, NO tools, NO document access ──
                     try:
                         while True:
@@ -3517,6 +3585,7 @@ def setup_chat_routes(
                                         )
                                         accumulate_token_usage(session, _terminal_metrics)
                                         _chat_terminal_saved = True
+                                        _ce_chat_receipt("error", _saved_id or "")
                                         _stream_set(session, status="error")
                                         if _saved_id:
                                             yield f'data: {json.dumps({"type": "message_saved", "id": _saved_id})}\n\n'
@@ -3593,18 +3662,32 @@ def setup_chat_routes(
                                         _metrics_to_save = dict(last_metrics or {})
                                         if thinking_response.strip() and not _metrics_to_save.get("thinking"):
                                             _metrics_to_save["thinking"] = thinking_response.strip()
+                                        # With a packet, the preface's memory/document
+                                        # blocks were never sent: the packet's own
+                                        # receipt rows say what the model saw instead.
+                                        _ce_chat_sent_preface = not _ce_chat.get("packet")
+                                        if not _ce_chat_sent_preface:
+                                            try:
+                                                from src.context_engine import wiring as _ce_rows_wiring
+                                                _ce_rows = _ce_rows_wiring.receipt_rows(
+                                                    _ce_chat["packet"].get("report") or {})
+                                                if _ce_rows:
+                                                    _metrics_to_save["context_receipts"] = _ce_rows
+                                            except Exception:  # noqa: BLE001
+                                                logger.debug("[context-engine] chat receipt rows skipped")
                                         _saved_id = save_assistant_response(
                                             sess, session_manager, session, full_response, _metrics_to_save,
                                             character_name=ctx.preset.character_name,
                                             web_sources=web_sources,
-                                            rag_sources=ctx.rag_sources,
+                                            rag_sources=ctx.rag_sources if _ce_chat_sent_preface else None,
                                             research_sources=research_sources,
-                                            used_memories=ctx.used_memories,
+                                            used_memories=ctx.used_memories if _ce_chat_sent_preface else None,
                                             do_research=effective_do_research,
                                             incognito=incognito,
                                             wires=getattr(ctx, "side_thread_wires", None),
                                             behavior_mode=getattr(ctx, "behavior_mode", None),
                                         )
+                                        _ce_chat_receipt("complete", _saved_id or "")
                                         if _saved_id:
                                             yield f'data: {json.dumps({"type": "message_saved", "id": _saved_id})}\n\n'
                                         run_post_response_tasks(
@@ -3618,6 +3701,7 @@ def setup_chat_routes(
                                                 and not tool_approval_continuation
                                             ),
                                         )
+                                    _ce_chat_receipt("empty")
                                     _stream_set(session, status="done")
                                     yield chunk
                             if not _chat_got_done:
@@ -3675,8 +3759,13 @@ def setup_chat_routes(
                             )
                             sess.add_message(ChatMessage("assistant", _stopped_content, metadata=_stopped_md))
                             session_manager.save_sessions()
+                        _ce_chat_receipt("interrupted")
                         raise
                     finally:
+                        # A turn that ended any other way (no DONE, an
+                        # exception) still receipts its packet; a no-op when
+                        # one of the outcomes above already did.
+                        _ce_chat_receipt("incomplete")
                         _active_streams.pop(session, None)
                 else:
                     # ── Agent mode: full agent loop with tools ──

@@ -636,6 +636,89 @@ async def deliver_round(*, request: ContextRequest,
         return None
 
 
+def _insert_before_latest_user(messages: Sequence[Mapping[str, Any]],
+                               context_msg: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """`agent_loop._insert_before_latest_user`, reused so both consumers put
+    the packet in exactly the same slot (before the latest real user message,
+    and before the reply-language directive when there is one). Imported per
+    call: the agent loop is already loaded wherever a chat turn runs."""
+    from src.agent_loop import _insert_before_latest_user as insert
+
+    return insert([dict(m) for m in messages], context_msg)
+
+
+async def deliver_chat_turn(*, messages: Sequence[Mapping[str, Any]],
+                            owner: str, session_id: str, model: str,
+                            project_id: str = "", turn_id: str = "",
+                            incognito: bool = False, no_memory: bool = False,
+                            context_length: int = 0, window_known: bool = False,
+                            max_output_tokens: int = 0
+                            ) -> Tuple[List[Dict[str, Any]], Optional[Dict[str, Any]]]:
+    """A plain chat turn (no tools) through the engine: one packet per turn.
+
+    Returns ``(messages_to_send, delivered)``. ``delivered`` is None when the
+    engine is off or no packet came (timeout, crash, empty, no room): then
+    ``messages_to_send`` is the input unchanged — the chat preface, with its
+    saved-memory and document blocks, is the fallback. When a packet does
+    come, those standby blocks leave (`standby.without_standby`) and the
+    packet goes in right before the user's message, the same slot the agent
+    loop uses. Never in the system message: that prefix stays byte-stable for
+    the backend's prompt cache, and a packet changes every turn.
+
+    Never raises (rule 2)."""
+    original = [dict(m) for m in messages or () if isinstance(m, Mapping)]
+    if not enabled():
+        return original, None
+    try:
+        from .standby import without_standby
+
+        request_messages = without_standby(original)
+        request = build_request(
+            owner=owner, session_id=session_id, model=model,
+            project_id=project_id, run_id=session_id, turn_id=turn_id,
+            messages=request_messages, agent_mode=False, consumer="chat",
+            incognito=incognito, no_memory=no_memory,
+        )
+        delivered = await deliver_round(
+            request=request, messages=request_messages, tool_schemas=(),
+            context_length=context_length, window_known=window_known,
+            max_output_tokens=max_output_tokens, round_index=0,
+        )
+        if not delivered:
+            return original, None
+        return _insert_before_latest_user(request_messages, delivered["message"]), delivered
+    except Exception as exc:  # noqa: BLE001 - rule 2: never end a turn
+        logger.warning("context engine chat delivery failed: %s", exc, exc_info=True)
+        return original, None
+
+
+def receipt_rows(report: Mapping[str, Any]) -> List[Dict[str, str]]:
+    """CMP-04 rows (``{source, kind, ref, why}``) for one delivered packet,
+    deduplicated by (kind, ref) — the same shape the agent loop persists as
+    ``metadata.context_receipts``, so the transcript renders both alike."""
+    rows: List[Dict[str, str]] = []
+    seen = set()
+    for source in (report or {}).get("sources") or ():
+        if not isinstance(source, Mapping):
+            continue
+        ref = str(source.get("source_ref") or "").strip()
+        if not ref:
+            continue
+        kind = str(source.get("source_type") or "context")
+        if (kind, ref) in seen:
+            continue
+        seen.add((kind, ref))
+        section = str(source.get("section") or "")
+        rows.append({
+            "source": section or kind,
+            "kind": kind,
+            "ref": ref,
+            "why": (f"incluido en el contexto del turno (sección {section})"
+                    if section else "incluido en el contexto del turno"),
+        })
+    return rows[:MAX_REPORT_ROWS]
+
+
 # ── what happened next ─────────────────────────────────────────────────────
 
 def _arguments(raw: Any) -> Mapping[str, Any]:
@@ -685,7 +768,7 @@ def _opened_source_refs(messages: Sequence[Mapping[str, Any]]) -> Tuple[str, ...
 def observe_receipt(*, packet_id: str, request_id: str = "",
                     messages: Sequence[Mapping[str, Any]] = (),
                     tool_results: int = 0, outcome_ref: str = "",
-                    verdict: str = "") -> None:
+                    verdict: str = "", consumer: str = "agent") -> None:
     """Record what the runtime *observed* about a delivered packet (§1.5).
 
     `declared_item_ids` stays empty for the whole of Phase 1, and not for want
@@ -694,6 +777,9 @@ def observe_receipt(*, packet_id: str, request_id: str = "",
     system learns to trust its own guesses.  What goes in here is what was
     seen — the references a tool opened, and how many tool results the turn
     appended.
+
+    ``consumer`` is who received the packet: ``"agent"`` for the agent loop,
+    ``"chat"`` for a plain chat turn (`deliver_chat_turn`).
 
     Never raises.  A receipt is the audit trail, and an audit trail that can
     end a turn is one incident away from being switched off."""
@@ -707,7 +793,7 @@ def observe_receipt(*, packet_id: str, request_id: str = "",
         record_receipt(ContextReceipt(
             packet_id=wanted,
             request_id=str(request_id or ""),
-            consumer="agent",
+            consumer=consumer if consumer in CONSUMERS else "agent",
             opened_source_refs=_opened_source_refs(messages),
             tool_results_added=max(0, int(tool_results or 0)),
             outcome_ref=str(outcome_ref or "")[:512],
@@ -740,5 +826,5 @@ __all__ = [
     "MAX_OPENED_REFS", "LIVE_BUDGET_GUARD_TOKENS",
     "enabled", "shadow_enabled", "timeout_s",
     "build_request", "last_user_text", "shadow_round", "deliver_round",
-    "observe_receipt", "note_event",
+    "deliver_chat_turn", "receipt_rows", "observe_receipt", "note_event",
 ]
