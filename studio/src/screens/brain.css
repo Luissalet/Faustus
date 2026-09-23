@@ -699,9 +699,27 @@
   background: var(--fs-canvas);
   overflow: hidden;
 }
+.fs-brain__canvas-wrap:has(> [role='status']) {
+  padding: var(--fs-space-3);
+}
+.fs-brain__canvas-wrap:has(> .fs-empty) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
 .fs-brain__canvas {
+  /* Sized by CSS, not by the `width`/`height` attributes JS sets (those
+     only control the backing bitmap's resolution for a sharp
+     devicePixelRatio redraw) — this is what makes the canvas actually fill
+     the wrap, and the wrap fill the centre panel's height. */
   display: block;
-  cursor: pointer;
+  inline-size: 100%;
+  block-size: 100%;
+  cursor: grab;
+  /* Pan/zoom/drag are handled in JS; without this a touchscreen's own
+     scroll/pinch gesture would fight the pointer handlers for the same
+     drag. */
+  touch-action: none;
 }
 .fs-brain__tooltip {
   position: fixed;

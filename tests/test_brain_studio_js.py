@@ -45,6 +45,7 @@ def test_the_files_this_lot_owns_exist():
         "studio/src/screens/brain/RightPanel.tsx",
         "studio/src/screens/brain/EntityPanel.tsx",
         "studio/src/screens/brain/GraphView.tsx",
+        "studio/src/screens/brain/graphSim.ts",
         "studio/src/screens/brain/QuickSwitcher.tsx",
         "studio/src/screens/brain/SettingsDrawer.tsx",
         "studio/src/screens/brain/TrashPanel.tsx",
@@ -69,6 +70,7 @@ def test_adapters_brain_has_an_api_error_and_no_direct_fetch_in_screens():
         "studio/src/screens/brain/RightPanel.tsx",
         "studio/src/screens/brain/EntityPanel.tsx",
         "studio/src/screens/brain/GraphView.tsx",
+        "studio/src/screens/brain/graphSim.ts",
         "studio/src/screens/brain/QuickSwitcher.tsx",
         "studio/src/screens/brain/SettingsDrawer.tsx",
         "studio/src/screens/brain/TrashPanel.tsx",
@@ -102,6 +104,15 @@ def test_wikilinks_module_has_no_dom_or_network_dependency():
     text = (_REPO / "studio" / "src" / "lib" / "wikilinks.ts").read_text(encoding="utf-8")
     for banned in ("document.", "window.", "fetch(", "from 'react'", "useState(", "useEffect("):
         assert banned not in text, f"lib/wikilinks.ts should stay pure logic (found {banned!r})"
+
+
+def test_graphsim_module_has_no_dom_or_network_dependency():
+    """The live force layout's math (`graphSim.ts`) stays pure logic too —
+    what lets `brain.check.mjs` exercise it under plain node, same as
+    `wikilinks.ts` and `lib/graph.ts`'s own deterministic `layout()`."""
+    text = (_REPO / "studio" / "src" / "screens" / "brain" / "graphSim.ts").read_text(encoding="utf-8")
+    for banned in ("document.", "window.", "fetch(", "requestAnimationFrame(", "from 'react'", "useState(", "useEffect("):
+        assert banned not in text, f"graphSim.ts should stay pure logic (found {banned!r})"
 
 
 def test_routes_and_shell_registration():
