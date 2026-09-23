@@ -33,6 +33,7 @@ const DocumentScreen = lazyChunk(() => import('../screens/documents/Editor').the
 const ProjectScreen = lazyChunk(() => import('../screens/Project').then((m) => ({ default: m.ProjectScreen })));
 const ProjectsScreen = lazyChunk(() => import('../screens/Projects').then((m) => ({ default: m.ProjectsScreen })));
 const NotesScreen = lazyChunk(() => import('../screens/Notes').then((m) => ({ default: m.NotesScreen })));
+const BrainScreen = lazyChunk(() => import('../screens/Brain').then((m) => ({ default: m.BrainScreen })));
 const MemoryScreen = lazyChunk(() => import('../screens/Memory').then((m) => ({ default: m.MemoryScreen })));
 const CalendarScreen = lazyChunk(() => import('../screens/Calendar').then((m) => ({ default: m.CalendarScreen })));
 const EmailScreen = lazyChunk(() => import('../screens/email/Email').then((m) => ({ default: m.EmailScreen })));
@@ -228,7 +229,7 @@ function Rail() {
 function RouteStage() {
   const { pathname, search } = useLocation();
   const editing = (pathname.startsWith('/library/edit') && /[?&](img|draft|new)=/.test(search)) || /^\/documents\/[^/]+/.test(pathname);
-  const screen = pathname.startsWith('/studio') ? 'studio' : editing ? 'editor' : pathname.startsWith('/activity') || pathname.startsWith('/email') || pathname.startsWith('/compare') || pathname.startsWith('/council') || (pathname.startsWith('/memory') && /[?&]t=provenance/.test(search)) || (pathname.startsWith('/agents') && /[?&]t=tournament/.test(search)) || pathname.startsWith('/cookbook') || pathname.startsWith('/source-control') || pathname.startsWith('/workflows') || pathname.startsWith('/creator') || pathname.startsWith('/whatsapp') ? 'wide' : undefined;
+  const screen = pathname.startsWith('/studio') ? 'studio' : editing ? 'editor' : pathname.startsWith('/activity') || pathname.startsWith('/email') || pathname.startsWith('/compare') || pathname.startsWith('/council') || (pathname.startsWith('/memory') && /[?&]t=provenance/.test(search)) || (pathname.startsWith('/agents') && /[?&]t=tournament/.test(search)) || pathname.startsWith('/cookbook') || pathname.startsWith('/source-control') || pathname.startsWith('/workflows') || pathname.startsWith('/creator') || pathname.startsWith('/whatsapp') || pathname.startsWith('/brain') ? 'wide' : undefined;
   return (
     <main className="fs-main" id="fs-main" tabIndex={-1} data-screen={screen}>
       <div className="fs-main__inner">
@@ -254,6 +255,7 @@ function RouteBody() {
         <Route path="/activity" element={<ActivityScreen />} />
         <Route path="/automations" element={<AutomationsScreen />} />
         <Route path="/notes" element={<NotesScreen />} />
+        <Route path="/brain" element={<BrainScreen />} />
         <Route path="/memory" element={<MemoryScreen />} />
         <Route path="/calendar" element={<CalendarScreen />} />
         <Route path="/email" element={<EmailScreen />} />
@@ -284,7 +286,6 @@ function RouteBody() {
         */}
         <Route path="/tasks" element={<Navigate to="/automations" replace />} />
         <Route path="/gallery" element={<Navigate to="/library?type=imagen" replace />} />
-        <Route path="/brain" element={<Navigate to="/memory" replace />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
       </Suspense>

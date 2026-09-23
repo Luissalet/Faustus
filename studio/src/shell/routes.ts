@@ -17,6 +17,7 @@ import {
   Mail,
   MessageCircle,
   Network,
+  NotebookText,
   Plug,
   Sparkles,
   StickyNote,
@@ -100,6 +101,10 @@ export const TOOLS: Tool[] = [
   // path, same list either way so the palette and SERVER_ROUTES agree.
   { path: '/creator', label: 'Creator', icon: Wand2 },
   { path: '/notes', label: 'Notes', icon: StickyNote },
+  // The markdown-vault note app: a file explorer, wiki links, an entity
+  // panel with relations over time and a note graph — see docs/ui build
+  // contract, "Lot D".
+  { path: '/brain', label: 'Brain', icon: NotebookText },
   { path: '/source-control', label: 'Source control', icon: GitBranch },
   { path: '/calendar', label: 'Calendar', icon: CalendarDays },
   { path: '/email', label: 'Mail', icon: Mail },
@@ -135,6 +140,7 @@ export const SERVER_ROUTES = [
   '/automations',
   '/activity',
   '/notes',
+  '/brain',
   '/source-control',
   '/connectors',
   '/whatsapp',
@@ -161,5 +167,4 @@ export const SERVER_ROUTES = [
   // bookmarks; the router redirects each to the screen that took over.
   '/gallery',
   '/tasks',
-  '/brain',
 ];
