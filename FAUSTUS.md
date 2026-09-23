@@ -7665,6 +7665,23 @@ la llamada si no casan, diciendo de qué tarjeta es ese frente; en la
 segunda vuelta el 27B pasó el frente, inventó un id inexistente, recibió
 el 404, volvió a `cards_due` y calificó la buena.
 
+Tercera skill compuesta, `hoard-study-cards`: «hazme tarjetas de lo que
+dice mi biblioteca sobre X» (pasajes de Borges o una página de Links →
+tarjetas en Hypatia, una por hecho, con fuente, sin duplicar frentes) y
+«examíname» (una pregunta por turno, calificación estricta con el frente
+mostrado, cierre con estadísticas). La digest diaria añade la línea de
+estudio (pendientes, repasadas hoy, racha). Y una lección sobre la
+biblioteca de skills: el índice de nivel 0 tiene 400 tokens y mete por
+skill la descripción y el «When to Use» enteros; con tres skills de 200
+tokens cada una sólo entraba una y las otras dos se caían del índice en
+todos los turnos («dropped for budget»). Ahora las tres caben (descripción
+≤ 50 palabras, disparador ≤ 35). Y `install` con `replace: true`
+duplicaba la copia instalada bajo un nombre `-2` en vez de sustituirla
+(`a7cbc582`). `D:\LocalAI\Start-Hoards.ps1` arranca las ocho apps que no
+estén escuchando (idempotente, `-Stop` para pararlas, logs en
+`%LOCALAPPDATA%\Hoards`); no se registra en el inicio de sesión sin
+que Luis lo diga.
+
 Iconos, segunda vuelta: los ocho tenían un anillo semitransparente donde
 estaba el botón del icono original (el borde negro del botón se leía como
 esquina redondeada y se hacía transparente) y el triángulo blanco del
