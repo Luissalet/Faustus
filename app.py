@@ -2369,6 +2369,16 @@ async def _startup_event():
     except Exception as _e:
         logger.warning("Failed to start context maintenance: %s", _e)
 
+    # Persisted, owner-checked session history for compiles that carry no
+    # live transcript (/api/context/compile, shadow compiles). A live turn's
+    # `history_scope` still wins over it — see
+    # src/context_engine/adapters/sessions.py::history_provider.
+    try:
+        from src.context_engine.adapters.session_store import install_default_history_provider
+        install_default_history_provider()
+    except Exception as _e:
+        logger.warning("Failed to install the context history provider: %s", _e)
+
     # Turn Project Context Links' queued/stale states into a real searchable
     # index. Legacy ownerless projects are scoped to the primary admin here;
     # the worker itself deliberately refuses to guess an owner.

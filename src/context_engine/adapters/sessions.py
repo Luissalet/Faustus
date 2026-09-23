@@ -34,6 +34,16 @@ With no provider installed the source reports ``available() == False`` and the
 retrieval simply has no ``recent_messages`` section — visibly absent, which is
 the honest state, rather than silently wrong.
 
+Two providers exist, in a fixed order of precedence:
+
+1. :func:`history_scope` — the live turn's own transcript, set around one
+   compile by ``wiring.deliver_round``.  Always wins while it is active.
+2. the process-wide provider installed at startup
+   (``adapters/session_store.py::install_default_history_provider``), a
+   read-only, owner-checked read of the persisted history.  It serves the
+   compiles that have no live transcript: ``POST /api/context/compile``, the
+   MCP ``context_compile`` tool, and shadow compiles.
+
 Trust follows the speaker, because it has to: a user's message is a human
 statement and an instruction, an assistant's message is a model's claim, and a
 tool result is something the runtime observed.  Flattening the three into one
@@ -104,13 +114,18 @@ def reset_history_provider() -> None:
 
 
 def history_provider() -> Optional[HistoryProvider]:
+    """The provider this compile should read from.
+
+    A :func:`history_scope` wins over the process-wide provider.  The scoped
+    transcript is the one the turn is *actually sending* — already filtered,
+    compacted and annotated — while the global provider reads what was
+    persisted, which lags a live turn by at least its own user message and
+    every tool round since.  Letting the global one answer inside a scope
+    would describe a conversation the model is not in."""
+    if _SCOPED_HISTORY.get() is not None:
+        return _scoped_history_provider
     with _LOCK:
-        explicit = _PROVIDER
-    if explicit is not None:
-        return explicit
-    if _SCOPED_HISTORY.get() is None:
-        return None
-    return _scoped_history_provider
+        return _PROVIDER
 
 
 def _scoped_history_provider(session_id: str, owner: str) -> Sequence[Mapping[str, Any]]:
