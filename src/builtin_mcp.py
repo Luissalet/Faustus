@@ -89,6 +89,11 @@ _BUILTIN_SERVERS = {
     # note graph and cross-entity timeline. Owner-scoped through
     # ODYSSEUS_MCP_BRAIN_OWNER, like the memory and context servers.
     "brain":      ("mcp_servers/brain_server.py", "Built-in: Brain"),
+    # The code graph: symbol search/tracing/impact/architecture, module
+    # communities and execution flows over `src.context_engine.code_index`'s
+    # resolved graph. Not owner-scoped -- a code graph is per workspace, and
+    # every tool takes its `root` explicitly (or the active workspace).
+    "code_graph": ("mcp_servers/code_graph_server.py", "Built-in: Code graph"),
 }
 
 # NPX-based built-in servers (run via npx, not Python).

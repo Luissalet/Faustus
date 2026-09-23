@@ -1424,6 +1424,15 @@ DEFAULT_SETTINGS = {
     # code_graph_search/trace/architecture answer from a warm index on the
     # first ask instead of the agent having to call code_graph_index itself.
     "agent_code_graph_auto_index": True,
+    # Code graph+ (`src/code_graph/communities.py`): an optional one-sentence
+    # model summary per community, on top of the always-computed deterministic
+    # `purpose`. Off by default -- deterministic first, per the wave's own
+    # rule. Even when on, a summary is only attempted when the utility model
+    # is already resident and idle (`src.brain.extract.background_llm_gate`,
+    # the same residency check `brain_wiki_summaries` uses), on explicit
+    # request (`summarize=true`) or a maintenance pass, never inside a chat
+    # turn waiting on a model load.
+    "code_graph_community_summaries": False,
     # Web Push (src/push.py, lot P-A): whether the notification bus
     # (src/notifications.py) fans events out as browser/OS push
     # notifications in addition to the in-app WS/polling paths. On by

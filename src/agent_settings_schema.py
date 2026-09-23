@@ -35,7 +35,7 @@ SCHEMA_KEY_RE = re.compile(r"^(agent_|browser_|desktop_)")
 # Agent-adjacent keys that live under other prefixes but belong on this page.
 EXTRA_KEYS: tuple[str, ...] = ("tool_path_extra_roots", "vision_enabled", "vision_model",
                                "dispatch_model", "dispatch_endpoint_id", "gpu_placement_prefer",
-                               "sandbox_missing_policy")
+                               "sandbox_missing_policy", "code_graph_community_summaries")
 
 FIELD_TYPES: tuple[str, ...] = ("bool", "int", "float", "text", "select", "list", "secret")
 _NUMERIC_TYPES = ("int", "float")
@@ -993,6 +993,10 @@ GROUPS: list[dict[str, Any]] = [
             _bool("agent_code_graph_auto_index", "Auto-index on code turns",
                   "Index a workspace's code graph in the background the first time a code turn opens "
                   "it, so code_graph_search/trace/architecture already have a warm index to answer from."),
+            _bool("code_graph_community_summaries", "Model summaries for code communities",
+                  "Add a one-sentence model summary to each module community, on top of the always-on "
+                  "deterministic purpose line. Only attempted when a local model is already resident "
+                  "and idle -- never loads or evicts one, never inside a chat turn."),
         ],
     ),
     _group(
