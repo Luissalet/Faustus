@@ -658,3 +658,43 @@ async def test_adopt_installs_an_app_that_declares_itself(routes, db, health_ser
     finally:
         connectors.PRESETS.pop("ledger-test", None)
         plugins_mod.reset_cache()
+
+
+@pytest.fixture(autouse=True)
+def _fresh_shared_probes():
+    from src import connector_discovery as cd
+    cd._shared_probes.clear()
+    cd._shared_inflight.clear()
+    yield
+    cd._shared_probes.clear()
+    cd._shared_inflight.clear()
+
+
+@pytest.mark.asyncio
+async def test_concurrent_find_app_calls_share_one_scan(monkeypatch):
+    """Five switched-off apps followed at once used to scan every loopback
+    port five times (a 504 on a forced refresh, seen live)."""
+    import asyncio as _asyncio
+    from src import connector_discovery as cd
+
+    ports = [cd.ListeningPort(port=p) for p in (41001, 41002, 41003)]
+    calls = []
+
+    async def fake_discover(*, ports=None, exclude=None):
+        calls.append(sorted(lp.port for lp in ports))
+        await _asyncio.sleep(0.05)
+        return [cd.Candidate(port=41002, url="http://127.0.0.1:41002", pid=None, process="",
+                             cwd="", title="", health={"service": "x"}, preset_id="jobhunter",
+                             preset_name="Jobhunter", latency_ms=1, values={})]
+
+    monkeypatch.setattr(cd, "discover", fake_discover)
+    job = connectors.get_preset("jobhunter")
+    writer = connectors.get_preset("writer")
+    got = await _asyncio.gather(*(cd.find_app(p, ports=ports) for p in (job, writer, job, writer)))
+    assert got[0] is not None and got[0].port == 41002 and got[2] is not None
+    assert got[1] is None and got[3] is None
+    probed = [p for c in calls for p in c]
+    assert sorted(probed) == sorted(set(probed)), f"a port was probed twice: {calls}"
+    calls.clear()
+    assert (await cd.find_app(job, ports=ports)).port == 41002
+    assert calls == []  # answered from the shared probes

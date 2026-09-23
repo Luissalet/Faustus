@@ -411,7 +411,66 @@ async def find_app(preset: ConnectorPreset, *, current_url: str = "",
     for group in (near, far):
         if not group:
             continue
-        for cand in await discover(ports=group):
+        for cand in await _shared_discover(group):
             if cand.preset_id == preset.id:
                 return cand
     return None
+
+
+#: How long one port's probe answers every `find_app` that asks. A forced
+#: refresh of the Connectors screen follows every switched-off app at once;
+#: each used to probe the same ~80 loopback ports again (1.5 s timeout per
+#: request on the ones that are not web servers), five off apps meant five
+#: full scans. Now concurrent and back-to-back callers share the answers.
+_SHARED_PROBE_TTL_S = 20.0
+_shared_probes: Dict[int, "tuple[float, Optional[Candidate]]"] = {}
+_shared_inflight: Dict["tuple[int, int]", "asyncio.Future"] = {}
+
+
+async def _shared_discover(group: List[ListeningPort]) -> List[Candidate]:
+    """`discover(ports=group)` with per-port answers shared for a short time
+    and in-flight probes coalesced (per event loop)."""
+    now = time.monotonic()
+    loop = asyncio.get_running_loop()
+    loop_key = id(loop)
+    found: List[Candidate] = []
+    todo: List[ListeningPort] = []
+    waits: List["asyncio.Future"] = []
+    for lp in group:
+        hit = _shared_probes.get(lp.port)
+        if hit is not None and now - hit[0] < _SHARED_PROBE_TTL_S:
+            if hit[1] is not None:
+                found.append(hit[1])
+            continue
+        fut = _shared_inflight.get((loop_key, lp.port))
+        if fut is not None and not fut.done():
+            waits.append(fut)
+            continue
+        todo.append(lp)
+    mine: Dict[int, "asyncio.Future"] = {}
+    for lp in todo:
+        fut = loop.create_future()
+        _shared_inflight[(loop_key, lp.port)] = fut
+        mine[lp.port] = fut
+    try:
+        fresh = await discover(ports=todo) if todo else []
+    except BaseException:
+        for port, fut in mine.items():
+            _shared_inflight.pop((loop_key, port), None)
+            if not fut.done():
+                fut.set_result(None)
+        raise
+    by_port = {c.port: c for c in fresh}
+    stamp = time.monotonic()
+    for port, fut in mine.items():
+        cand = by_port.get(port)
+        _shared_probes[port] = (stamp, cand)
+        _shared_inflight.pop((loop_key, port), None)
+        if not fut.done():
+            fut.set_result(cand)
+    found.extend(fresh)
+    for fut in waits:
+        cand = await fut
+        if cand is not None:
+            found.append(cand)
+    return found

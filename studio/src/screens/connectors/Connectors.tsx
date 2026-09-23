@@ -233,21 +233,31 @@ export function ConnectorsScreen() {
     noticeTimer.current = window.setTimeout(() => setNotice(null), 2600);
   }, []);
 
-  const reload = useCallback((check = false) => {
+  // A checked load (`?check=1`) probes every app and can take many seconds
+  // with several apps switched off. The screen shows the stored list at
+  // once and swaps in the checked one when it lands; a slow or failed
+  // check keeps what is already on screen instead of blanking it.
+  const checkedAt = useRef(0);
+  const reload = useCallback((check = false, soft = false) => {
+    const started = Date.now();
     Promise.all([listConnectors(check), listPresets()])
       .then(([c, p]) => {
+        if (!check && checkedAt.current > started) return; // a newer checked list already landed
+        if (check) checkedAt.current = Date.now();
         setConnectors(c);
         setPresets(p);
         setFailed(false);
       })
       .catch(() => {
+        if (soft) return;
         setConnectors([]);
         setFailed(true);
       });
   }, []);
 
   useEffect(() => {
-    reload(true);
+    reload(false);
+    reload(true, true);
   }, [reload]);
 
   // Open by default when there is nothing to pair yet; once connectors

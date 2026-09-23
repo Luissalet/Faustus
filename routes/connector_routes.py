@@ -23,6 +23,7 @@ truly-arbitrary-executable half is narrowed further.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from typing import Any, Dict, Optional
@@ -261,9 +262,9 @@ def setup_connector_routes(mcp_manager: McpManager) -> APIRouter:
             servers_by_id = {s.id: s for s in db.query(McpServer).all()}
         finally:
             db.close()
-        covered = set()
-        out = []
-        for entry in entries:
+        covered = {entry["server_id"] for entry in entries}
+
+        async def _one(entry: Dict[str, Any]) -> Dict[str, Any]:
             if force_check:
                 # A forced refresh is also when a moved app is followed
                 # (redact=False: _follow_app needs the real values).
@@ -272,17 +273,31 @@ def setup_connector_routes(mcp_manager: McpManager) -> APIRouter:
                 if followed.get("relocated_from"):
                     entry = {**(connector_sidecar.get_connector(entry["id"], redact=True) or entry),
                              "relocated_from": followed["relocated_from"]}
-                    db = SessionLocal()
+                    db2 = SessionLocal()
                     try:
-                        srv = db.query(McpServer).filter(McpServer.id == entry["server_id"]).first()
+                        srv = db2.query(McpServer).filter(McpServer.id == entry["server_id"]).first()
                         if srv is not None:
                             servers_by_id[srv.id] = srv
                     finally:
-                        db.close()
+                        db2.close()
             server = servers_by_id.get(entry["server_id"])
-            covered.add(entry["server_id"])
             status = await _connector_status_for(entry, server, force_check=force_check)
-            out.append(_entry_view(entry, server, status))
+            return _entry_view(entry, server, status)
+
+        # Every connector is checked at once. One after another, a forced
+        # refresh with a few apps switched off took longer than the proxy's
+        # timeout (seen live: 23 connectors, five apps off, 504 after 48 s,
+        # and the Connectors screen stayed on its placeholders): each off app
+        # waits out its health probe and then looks for itself on every
+        # loopback port. The per-port probes are shared across them
+        # (`connector_discovery.find_app`), so five off apps cost one scan.
+        sem = asyncio.Semaphore(8)
+
+        async def _bounded(entry: Dict[str, Any]) -> Dict[str, Any]:
+            async with sem:
+                return await _one(entry)
+
+        out = list(await asyncio.gather(*(_bounded(e) for e in entries)))
         for server_id, server in servers_by_id.items():
             if server_id in covered:
                 continue
