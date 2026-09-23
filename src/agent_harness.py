@@ -1291,7 +1291,12 @@ class TurnLedger:
         if ok:
             for p in paths:
                 self.observed_paths.add(_norm(p))
-            if tool in DISCOVERY_TOOLS or kind == "mutation":
+            # A plugin's tool result is a source like `ls` or `grep`: the
+            # file and page a library search cites, the path a model
+            # library returns, exist somewhere the plugin looked. Seen live:
+            # "he creado 4 tarjetas de api/plugins.md" rejected as
+            # fabricated_paths because the citation came from an MCP result.
+            if tool in DISCOVERY_TOOLS or kind == "mutation" or tool.startswith("mcp__"):
                 out = _result_text(result)
                 for tok in extract_path_tokens(out[:60000]):
                     self.observed_paths.add(_norm(tok))

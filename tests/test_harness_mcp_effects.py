@@ -45,3 +45,17 @@ def test_a_report_after_only_lookups_is_still_rejected(tmp_path):
     ledger.record("mcp__5bde74bf__models_stats", "{}", {"models": 0}, 1)
     check = ledger.check_completion("Listo. La carpeta está añadida a la biblioteca.")
     assert "claims_without_mutation" in check["reasons"]
+
+
+def test_paths_a_plugin_result_cites_are_not_fabricated(tmp_path):
+    """The library plugin answered with `api/plugins.md § Plugins`; the model
+    repeated that citation and the harness called it a fabricated path
+    because nothing in the workspace had that name. A plugin result grounds
+    the paths it prints, like `ls` or `grep` do."""
+    ledger = h.TurnLedger(str(tmp_path), "hazme tarjetas de lo que dice mi biblioteca sobre plugins")
+    ledger.record("mcp__02e5e776__library_search", '{"q": "plugins"}',
+                  {"output": '{"hits": [{"file": "api/plugins.md", "page": 1, "text": "A plugin is..."}]}'}, 1)
+    ledger.record("mcp__4f9230b5__cards_add", '{"deck": "Faustus", "cards": []}', {"count": 4}, 2)
+    check = ledger.check_completion("He creado el mazo Faustus con 4 tarjetas sacadas de api/plugins.md.")
+    assert "fabricated_paths" not in check["reasons"], check
+    assert "claims_without_mutation" not in check["reasons"], check

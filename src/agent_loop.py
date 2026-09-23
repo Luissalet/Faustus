@@ -3066,6 +3066,45 @@ def _resolved_tool_event_name(event: dict[str, Any]) -> str:
     return tool
 
 
+def _mcp_servers_used_recently(messages: List[Dict], turns: int = 3) -> Set[str]:
+    """`mcp__<server>__` prefixes of the tools the assistant called in its
+    last `turns` persisted turns of this conversation."""
+    prefixes: Set[str] = set()
+    seen = 0
+    for message in reversed(messages or []):
+        if not isinstance(message, dict) or message.get("role") != "assistant":
+            continue
+        seen += 1
+        if seen > turns:
+            break
+        metadata = message.get("metadata")
+        events = metadata.get("tool_events") if isinstance(metadata, dict) else None
+        for event in events or []:
+            if not isinstance(event, dict):
+                continue
+            parts = _resolved_tool_event_name(event).split("__", 2)
+            if len(parts) == 3 and parts[0] == "mcp" and parts[1]:
+                prefixes.add(f"mcp__{parts[1]}__")
+    return prefixes
+
+
+def _sticky_mcp_tool_names(messages: List[Dict], schema_names, turns: int = 3, cap: int = 30) -> Set[str]:
+    """A plugin the conversation is already using keeps its tools this turn.
+
+    Seen live: the assistant asked the first flashcard from a plugin, the
+    user answered "creo que era el fichero plugin.json", the intent
+    classifier read "fichero" as the files domain and offered `read_file`
+    and `ls` — the grading tool was gone, and the 27B spent ninety seconds
+    thinking before it found it again through `lookup_tools`. The tools of
+    every MCP server called in the assistant's last few turns are kept in
+    the selection, whatever the latest message looks like."""
+    prefixes = _mcp_servers_used_recently(messages, turns)
+    if not prefixes:
+        return set()
+    names = sorted(str(n) for n in schema_names if n and any(str(n).startswith(p) for p in prefixes))
+    return set(names[:cap])
+
+
 def _minimal_recent_notes_tool_context_message(messages: List[Dict]) -> Optional[Dict]:
     """Tiny state bridge for stripped tool LoRAs.
 
@@ -7483,6 +7522,29 @@ async def _stream_agent_loop_body(
             if removed:
                 _relevant_tools.difference_update(_email_fetch_tools)
                 logger.info("[agent-intent] active email draft pruned fetch tools=%s", removed)
+
+    # Conversation continuity for plugins: an MCP server the assistant called
+    # in its last few turns keeps its tools this turn, whatever the latest
+    # message looks like to the intent classifier (see _sticky_mcp_tool_names).
+    # A caller-pinned set (approval replay, scheduler) is left alone.
+    if not guide_only and _relevant_tools is not None and not relevant_tools:
+        try:
+            _mcp_mgr_for_sticky = get_mcp_manager()
+            _mcp_names_for_sticky = [
+                (s.get("function") or {}).get("name")
+                for s in (_mcp_mgr_for_sticky.get_all_openai_schemas({}) if _mcp_mgr_for_sticky else [])
+                if isinstance(s, dict)
+            ]
+            _sticky_mcp = _sticky_mcp_tool_names(messages, _mcp_names_for_sticky)
+        except Exception:  # noqa: BLE001 - continuity is a convenience, never the turn
+            logger.debug("[tool-rag] sticky MCP tools skipped", exc_info=True)
+            _sticky_mcp = set()
+        _sticky_new = sorted(_sticky_mcp - set(_relevant_tools))
+        if _sticky_new:
+            _relevant_tools = set(_relevant_tools) | _sticky_mcp
+            if _hot_seed is not None:
+                _hot_seed |= _sticky_mcp
+            logger.info("[tool-rag] plugin in use in this conversation; keeping its tools: %s", _sticky_new)
 
     # Current-turn chat uploads are real files under the upload/data root. Make
     # the read-side file/document tools visible immediately so the agent can
