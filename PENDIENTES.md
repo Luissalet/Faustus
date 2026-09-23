@@ -31,10 +31,17 @@ que la propia ola dejó abierto, para que no se pierda al fusionar:
   agente van lentos cuando otra instancia tiene cargado el modelo grande
   (~1,5 tok/s con cuantización q8 y contención) — es una condición del
   entorno de esa máquina, no de esta funcionalidad.
-- **Suite completa en Windows** pendiente de correr entera en el momento de
-  escribir esto; las suites propias del segundo cerebro (bóveda, entidades,
-  tiempo, extracción, rutas, MCP, herramienta de agente, adaptador del
-  Context Engine y la pantalla) están en verde por separado (1.200+ tests).
+- **Suite completa en Windows (23-09 tarde)**: 22.268 verdes, 27 fallos con
+  `-n 6`. Repetidos en serie contra la base (`master` 61081475, mismo PC,
+  datos temporales): 13 pasan (dependientes de orden/paralelismo:
+  `test_vram_admission` ×5, `test_workflow_waits`, `test_ui_smoke_audit` ×4,
+  `test_h1`, `test_research_shared_runtime`, `test_memory_extractor_vector_degraded`);
+  12 fallan igual en la base (`tests/eval/test_baseline_match.py` ×6,
+  `test_a20_external_sdk_consumer`, `test_version_build` ×3,
+  `test_windows_native_execution`, y la guarda de colores por
+  `screens/skills/Instincts.tsx`, ya arreglada en esta rama); los 2 propios
+  (guardas de Studio de la pantalla Cerebro y la ruta cruzada de unidad del
+  benchmark) quedaron arreglados en 12f0efeb.
 
 ## 22-09 noche (5) - coaching con tareas reales: facturación (L4) y ventas (L5)
 
