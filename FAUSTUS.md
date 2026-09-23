@@ -7976,3 +7976,62 @@ caducidad, no-ops antes de `start`, pines y reservas de vecinas dentro de
 `model_warmup`, `vram_admission`, `run_model_pin`, `gpu_policy`,
 `hw_vram_reservation`, `chat_vram_gate` y `vram_admission_reconciled` en
 verde.
+
+## 174. Context Engine fase 2: el camino en vivo se puede encender (23-09-2026)
+
+**Problema.** `agent_context_engine` ya entregaba un paquete por llamada al
+modelo, pero encenderlo tenía cuatro agujeros: si el paquete no llegaba
+(`None`, timeout o excepción) la ronda se quedaba **sin memoria aprendida**,
+porque el bloque clásico ya se había suprimido; los compiles sin transcripción
+viva (`/api/context/compile`, `context_compile` por MCP, el shadow) no tenían
+`recent_messages`; un proveedor global de historial habría pisado al
+`history_scope` del turno; y lo que el compilador dejaba fuera por presupuesto
+se perdía (OBJ-29).
+
+**Hecho.**
+- *Red de seguridad.* El bloque de memoria aprendida sale a un helper
+  (`agent_loop._legacy_learned_memory_message`). Con el motor encendido se
+  construye igual, en su sitio de siempre, pero **en reserva**: la ronda que
+  recibe paquete lo quita (el paquete lo sustituye y se presupuesta sin él);
+  la que no lo recibe lo conserva o lo repone (misma etiqueta, mismo carril no
+  confiable, misma posición: antes de la fecha y de la línea de idioma). Nunca
+  los dos, nunca ninguno; `note_injected` una vez por turno y sólo si de verdad
+  se envió.
+- *`project_id`.* `_build_system_prompt(project_id=...)` recibe el proyecto que
+  la ruta ya resolvió (`harness_options["project_id"]`); los bloques de repos y
+  tablero lo usan tal cual y sólo re-resuelven desde la sesión si llega `None`.
+- *Historial.* `context_engine/adapters/session_store.py`: lectura de sólo
+  lectura del historial guardado (`sessions` + `chat_messages`, usuario y
+  asistente, los N últimos en orden), con el dueño comprobado **antes** de leer
+  (misma regla que los paquetes). Se instala al arrancar la app y en el
+  servidor MCP (`context_compile` acepta `session_id`). `history_provider()`
+  consulta primero el `history_scope` del turno: la transcripción viva gana.
+- *Recibos.* `_flush_context_receipts` (idempotente) registra cada paquete
+  entregado con los mensajes finales del turno: al final normal, antes de los
+  dos `return` de error terminal y, vía `_TURN_FINALIZERS`, cuando se para el
+  stream a mitad (`verdict="interrupted"`).
+- *Omisión recuperable (OBJ-29).* `transforms.collect_budget_omissions()` recoge
+  lo que `fit()` deja fuera por presupuesto durante un compile en vivo;
+  `context_engine/recall.py` lo guarda en la base del motor con un id corto
+  determinista por (dueño, `source_ref`), 14 días / 2000 filas por dueño. El
+  paquete termina con `## omitted_for_budget` y hasta 12 líneas
+  `[ctx:<id>] <título> (<source_ref>)`, ordenadas por sección y referencia para
+  que el texto sea idéntico byte a byte mientras no cambie el conjunto (caché
+  KV). Herramienta nueva `context_recall {ids}` (lectura privada, resultado no
+  confiable; registrada en esquemas, handlers, capacidades, índice y ejemplos,
+  y ofrecida siempre que el motor está encendido) y la misma en el servidor MCP
+  de contexto. Filas sin cuerpo se reabren en vivo con `candidates.fetch_ref`.
+- *Benchmark.* `scripts/bench_context_engine.py` compara, sin modelo, los
+  bloques clásicos contra el paquete compilado: tokens, secciones, fuentes,
+  latencia p50/p95 y recall de `expect_refs`. `--demo` siembra un data dir
+  temporal inventado; la línea base está en
+  `docs/evals/context-engine-baseline.md` (demo: 696 → 286 tokens de media,
+  compile p50 ≈10 ms, recall igual 100 %).
+
+**Estado.** `agent_context_engine` sigue `False` por defecto. El chat simple
+(modo chat) no pasa por el motor: ver PENDIENTES.md.
+
+**Verificación.** `tests/test_context_engine_phase2.py` (24),
+`tests/test_context_engine_recall.py` (18), `tests/test_bench_context_engine.py`
+(2) y las suites de wiring, MCP, registro de herramientas, bucle de agente y
+memoria en verde. Falta verificarlo encendido en la máquina en vivo.

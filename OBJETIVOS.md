@@ -714,7 +714,7 @@ proyecto de donde sale el patrón es justamente que se auto-modifica sin
 aprobación humana obligatoria. Encaja con OBJ-26 (cuándo corre) y con las
 tarjetas de aprobación que ya existen (cómo se acepta).
 
-## OBJ-29 · Omisión recuperable en el Context Engine — PENDIENTE (22-09-2026)
+## OBJ-29 · Omisión recuperable en el Context Engine — HECHO EN CÓDIGO, FALTA VERIFICAR EN VIVO (23-09-2026)
 
 Hoy el Context Engine trata una omisión como dato de salida, no como log, pero
 lo omitido no se puede recuperar: si el compilador decide que algo no entra, el
@@ -732,6 +732,13 @@ que ser estable entre turnos o no se hace.
 
 Va después de la fase 2 del Context Engine (llevar el compilador al camino
 caliente detrás de la bandera), no antes.
+
+**Hecho (FAUSTUS.md §174):** junto con la fase 2. Lo omitido por presupuesto
+se guarda con un id corto determinista por (dueño, referencia); el paquete en
+vivo lo lista al final como `[ctx:<id>] <título> (<fuente>)`, en orden fijo
+para no romper el prefijo; `context_recall {ids}` lo devuelve entero con su
+procedencia (herramienta de agente y del servidor MCP de contexto). Falta
+medir en la máquina en vivo cuántas rondas ahorra.
 
 ## OBJ-30 · Canvas de diseño antes de codificar — HERRAMIENTA VIVA (22-09-2026)
 
