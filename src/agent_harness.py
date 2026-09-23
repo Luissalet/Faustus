@@ -1178,6 +1178,16 @@ def progress_list_is_complete(progress: Optional[List[Dict[str, Any]]]) -> bool:
     return all(str(item.get("status") or "") == "completed" for item in progress)
 
 
+#: A result id an app tool hands out for the model to cite: `[L-000042]`
+#: (a calculation), `[N-000123]` (an analysis step), `PA-000001` (a prior-art
+#: report). Two or three capital letters or one, a dash, six digits.
+_CITE_ID_RE = re.compile(r"\b([A-Z]{1,3}-\d{6})\b")
+
+
+def cite_ids(text: str) -> Set[str]:
+    return set(_CITE_ID_RE.findall(text or ""))
+
+
 class TurnLedger:
     """What actually happened this turn, as recorded from tool executions."""
 
@@ -1210,6 +1220,9 @@ class TurnLedger:
         self.language = detect_language(self.user_text)
         self._conversational: Optional[bool] = None
         self.events: List[Dict[str, Any]] = []
+        #: Citation ids any tool result of this turn, or the conversation so
+        #: far (`note_known_text`), actually contained.
+        self.seen_cites: Set[str] = set()
         self.observed_paths: Set[str] = set()
         self.rejections = 0
         self.length_continues = 0
@@ -1281,6 +1294,10 @@ class TurnLedger:
         if (result or {}).get('approval_required') is True:
             ev['approval_required'] = True
         self.events.append(ev)
+        try:
+            self.seen_cites |= cite_ids(result if isinstance(result, str) else json.dumps(result, default=str))
+        except Exception:  # noqa: BLE001 - a guard never breaks a turn
+            pass
         if tool == "ask_user":
             self.asked_user = True
         # Delegated workers: their verified mutations are evidence for the
@@ -1556,6 +1573,27 @@ class TurnLedger:
             "or call ask_user to confirm which file / behaviour the user meant."
         )
 
+    def note_known_text(self, text: str) -> None:
+        """Citation ids already in the conversation (earlier answers, replayed
+        tool results) count as known: citing yesterday's `[L-000004]` again is
+        not an invention."""
+        self.seen_cites |= cite_ids(text)
+
+    def unverified_citations(self, text: str) -> List[str]:
+        """Result ids the answer cites that no tool returned and the
+        conversation never contained. Seen live: asked to fix one wrong cell,
+        a 27B called the calculator once, got `[L-000005]`, and wrote a table
+        citing `[L-000006]`, `[L-000007]` and `[L-000008]` as well -- numbers
+        right, citations invented, and a citation exists precisely so the
+        reader can trust the number without redoing it."""
+        cited = cite_ids(text)
+        if not cited or not self.seen_cites:
+            # No tool of this kind in play (nothing seen at all): an id-shaped
+            # string in the answer is quoted text, not a claim about a call.
+            return []
+        prefixes = {c.split("-", 1)[0] for c in self.seen_cites}
+        return sorted(c for c in cited - self.seen_cites if c.split("-", 1)[0] in prefixes)
+
     def check_completion(self, text: str) -> Dict[str, Any]:
         """Judge a text-only (final) round against the evidence.
 
@@ -1594,6 +1632,9 @@ class TurnLedger:
         untouched = [p for p in self.claimed_untouched_paths(body) if p not in bad_paths]
         if untouched:
             reasons.append("claimed_paths_untouched")
+        bad_cites = self.unverified_citations(body)
+        if bad_cites:
+            reasons.append("fabricated_citations")
         if intent and not claims and not self.conversational_turn():
             reasons.append("intent_without_action")
         if permission:
@@ -1614,6 +1655,7 @@ class TurnLedger:
             "claims": claims,
             "bad_paths": bad_paths,
             "untouched_paths": untouched,
+            "bad_citations": bad_cites,
             "intent": intent,
             "permission": permission,
         }
@@ -1629,7 +1671,8 @@ class TurnLedger:
             return False
         return not (
             reasons
-            & {"claims_without_mutation", "fabricated_paths", "claimed_paths_untouched", "ui_unverified"}
+            & {"claims_without_mutation", "fabricated_paths", "claimed_paths_untouched", "ui_unverified",
+               "fabricated_citations"}
         )
 
     # -- messages -----------------------------------------------------------
@@ -1673,6 +1716,13 @@ class TurnLedger:
                             hints.append(s)
                 if hints:
                     lines.append("    Real files with similar names: " + ", ".join(hints[:8]))
+        if "fabricated_citations" in check["reasons"]:
+            lines.append(
+                "- You cite " + ", ".join(f"[{c}]" for c in check.get("bad_citations") or [])
+                + " but no tool returned those ids this turn or earlier in the conversation. "
+                "A citation must be the id a tool call actually gave you. Call the tool for each "
+                "of those numbers now and cite the ids it returns, or remove those citations."
+            )
         if "claimed_paths_untouched" in check["reasons"]:
             named = check.get("untouched_paths") or []
             done = ", ".join(self.mutated_paths()) or "NONE"
@@ -1716,9 +1766,15 @@ class TurnLedger:
             )
         stall_only = not (
             {"claims_without_mutation", "fabricated_paths", "claimed_paths_untouched", "ui_unverified",
-             "plan_without_action"}
+             "plan_without_action", "fabricated_citations"}
             & set(check["reasons"])
         )
+        if check["reasons"] == ["fabricated_citations"]:
+            lines.append(
+                "The rest of your answer stands and the work already done is real: do NOT redo it. "
+                "Fix only those citations, then give the final answer again."
+            )
+            return "\n".join(lines)
         if permission_only or (permission and stall_only and self.effects):
             lines.append(
                 "The work already done this turn stands. Do NOT redo it and do NOT wait. "
@@ -1776,6 +1832,12 @@ class TurnLedger:
                  ) if es else
                 (f"it claims {named} but never touched it"
                  + (f" (**actually modified**: {done})" if done else ""))
+            )
+        if "fabricated_citations" in check["reasons"]:
+            parts.append(
+                ("cita resultados que ninguna herramienta devolvió: " if es else
+                 "it cites results no tool returned: ")
+                + ", ".join(f"`{c}`" for c in check.get("bad_citations") or [])
             )
         if "intent_without_action" in check["reasons"]:
             parts.append(

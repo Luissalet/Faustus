@@ -3217,9 +3217,10 @@ def _paused_turn_work_note(messages: List[Dict[str, Any]], approved_tool: str,
         if msg.get("role") == "assistant":
             seen += 1
         if isinstance(events, list) and events:
-            done = [e for e in events if isinstance(e, dict)]
-            if done and done[-1].get("tool") == approved_tool and not str(done[-1].get("output") or "").strip():
-                done = done[:-1]
+            done = [e for e in events if isinstance(e, dict)
+                    and not str(e.get("output") or "").startswith("Waiting for an exact user approval")]
+            if done and done[-1].get("tool") == approved_tool:
+                done = done[:-1]  # the approved call: its real result is appended next
             if not done:
                 return None
             snap = _build_actions_snapshot(done, limit=limit)
@@ -8730,6 +8731,14 @@ async def _stream_agent_loop_body(
     _HARNESS_MAX_REJECTIONS = 2
     _HARNESS_MAX_LENGTH_CONTINUES = 2
     _ledger = _harness.TurnLedger(workspace, _last_user)
+    try:
+        # Result ids already in the conversation (earlier answers, replayed
+        # tool output) are not inventions when cited again.
+        for _m in messages or []:
+            if isinstance(_m, dict) and isinstance(_m.get("content"), str):
+                _ledger.note_known_text(_m["content"])
+    except Exception:  # noqa: BLE001
+        pass
     # H4: whole-file rewrite policy (src/rewrite_policy.py), one instance per
     # turn — the 2nd full rewrite of an existing large file is refused with
     # "use edit_file/apply_patch", the 4th is blocked. Threaded to
@@ -9350,6 +9359,10 @@ async def _stream_agent_loop_body(
             logger.debug("[approval] paused-turn work note skipped", exc_info=True)
         if _paused_note:
             messages.append({"role": "system", "content": _paused_note})
+            try:
+                _ledger.note_known_text(_paused_note)
+            except Exception:  # noqa: BLE001
+                pass
             logger.info("[approval] carried %d chars of the paused turn's tool work into the resume",
                         len(_paused_note))
         _append_tool_results(
