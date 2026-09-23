@@ -7505,6 +7505,28 @@ ya conectado no lo reinicia, así que `lookup_tools` encontraba
 `upsert_account` en el catálogo y el esquema nunca llegaba al modelo. En la
 práctica: `disconnect` + `connect` (script `reconnect_all.py` en `_claude_tmp`).
 
+### La séptima: Vulcan's Hoard (23-09, madrugada)
+
+Luis publica modelos imprimibles y guarda miles de STL/3MF/OBJ en carpetas.
+`vulcan` (5186, Python) los escanea en segundo plano con `trimesh`
+(medidas en mm, triángulos, volumen, estanqueidad, cuerpos), renderiza
+miniaturas con un rasterizador propio en numpy/Pillow (sin OpenGL: en el PC
+no hay garantía de contexto), detecta duplicados exactos (sha) y casi
+duplicados (triángulos, volumen ±1 %, caja ±1 %), y guarda por modelo una
+«ficha» de tienda (título, descripción, etiquetas) que el asistente rellena
+con `model_listing_set` — la app no llama a ningún modelo por sí misma.
+Visor three.js en la interfaz. Once herramientas (`models_search`,
+`model_info`, `model_listing_*`, `model_tag`, `models_dupes`,
+`models_add_root`, `models_rescan`, `models_recent`, `models_stats`).
+Conectada en el 7000 con perfil e icono; commit `3c7516f0`.
+
+Iconos: los seis primeros se dibujaron de cero y Luis los rechazó («haz que
+sean como MIS logos»). Ahora todos salen del dragón real de la familia
+(`dragon-src.png` de sus apps): se enmascara el objeto central, se rellena
+el hueco por inpainting, se recolorea el dragón por luminancia con dos tonos
+por app y se compone un glifo dorado vectorial en el anillo. El guion vive
+en la sesión (`real_dragon.py`); los PNG en `Proyectos independientes\Icons`.
+
 ### Pendiente
 
 - La puerta de contexto externo se arma en cada turno con estas apps (las
