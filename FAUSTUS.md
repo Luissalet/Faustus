@@ -7690,6 +7690,31 @@ Ahora la transparencia se limita a las cuatro esquinas del plato, el disco
 del botón entra entero en la máscara y su halo no cuenta como cuerpo.
 Regenerados los ocho en `Icons\` y en cada app.
 
+### La novena: Echo's Hoard (23-09, mañana)
+
+«¿Cuál era esa URL que copié hace una hora?», «cópiame esto». `echo`
+(5188, Python) vigila el portapapeles del PC: cada copia se guarda con
+su tipo (url, correo, ruta, código, número, imagen), la app y ventana de
+origen, cuántas veces se ha copiado lo mismo (el sha lo deduplica), fijados
+con etiqueta, retención de 30 días y tope de 5 000. Privacidad por
+diseño: una contraseña (por forma o porque la ventana era un gestor de
+contraseñas), un token de API, un número de tarjeta (Luhn) o un IBAN se
+sustituyen por «[oculto]» *antes* de tocar la base de datos, y los
+gestores de contraseñas quedan excluidos de la captura. Backend Windows
+en `ctypes` puro (sondeo del número de secuencia del portapapeles cada
+300 ms, ventana en primer plano, imágenes DIB → PNG; sin pywin32),
+`pyperclip` en otros sistemas, falso para tests. Nueve herramientas:
+`clip_recent`, `clip_search`, `clip_get` (rechaza lo oculto), `clip_set`
+(pone texto en el portapapeles del usuario), `clip_copy`, `clip_pin`,
+`clip_delete`, `clip_status`, `clip_capture` (pausa/reanuda). Construida
+por un agente sonnet sobre el contrato; esta sesión corrigió la cabecera
+BMP que el agente daba por fija (el desplazamiento de píxeles depende de
+la cabecera DIB, la paleta y las máscaras) y el listado en móvil, que
+cortaba el texto a ocho letras. Verificada en el PC con el portapapeles
+de verdad: dos copias iguales → una entrada con `times: 2` y la app de
+origen, un token → «[oculto: token]», `clip_set` → `Get-Clipboard` lo
+devuelve.
+
 ### Pendiente
 
 - La puerta de contexto externo se arma en cada turno con estas apps (las
@@ -7705,9 +7730,10 @@ Regenerados los ocho en `Icons\` y en cada app.
   `5a507d3e`, `31722cf1`, `cf05e543`: efectos MCP, nota en lugar de la
   tarjeta, nombres pelados, herramientas pegajosas, rutas de resultados
   MCP, afirmaciones de registro) y antes de `plugins/hypatia/`: hasta que
-  se reinicie sigue con el comportamiento viejo y no conoce el preset
-  `hypatia` (el perfil de arranque ya está creado; `setup7000.py 7000
-  --user admin --password …` adopta y conecta al reiniciar).
+  se reinicie sigue con el comportamiento viejo y no conoce los presets
+  `hypatia` ni `echo` (los perfiles de arranque ya están creados;
+  `setup7000.py 7000 --user admin --password …` adopta y conecta al
+  reiniciar).
 - Scribe: la primera grabación real no captó voz (silencio): probar con una
   llamada de verdad; Borges: indexar una carpeta grande (apuntes del máster) y
   medir; Argus: retención y tamaño en disco tras un día entero; Links: la
