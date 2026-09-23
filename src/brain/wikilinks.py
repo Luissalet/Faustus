@@ -43,8 +43,19 @@ def parse(body: Any) -> List[Dict[str, Any]]:
 def tags(body: Any, fm: Any = None) -> List[str]:
     """Frontmatter `tags:` plus inline `#tags` in the body, deduped, sorted."""
     found = {m.group(1) for m in _TAG_RE.finditer(str(body or ""))}
-    fm = fm or {}
-    for tag in fm.get("tags") or []:
+    fm = fm if isinstance(fm, dict) else {}
+    raw = fm.get("tags")
+    # A hand-written `tags: 2024` or `tags: idea` is one tag, not an error;
+    # anything that is not a list/scalar (a mapping) contributes nothing.
+    if raw is None or isinstance(raw, dict):
+        raw = []
+    elif isinstance(raw, (str, int, float)):
+        raw = [raw]
+    elif not isinstance(raw, (list, tuple, set)):
+        raw = []
+    for tag in raw:
+        if isinstance(tag, (dict, list)):
+            continue
         text = str(tag or "").strip().lstrip("#")
         if text:
             found.add(text)
