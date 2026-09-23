@@ -1,5 +1,5 @@
 """The Hoard apps that ship as plugins (ledger, links, people, argus, borges,
-scribe, vulcan).
+scribe, vulcan, hypatia).
 
 Each is a standalone application with its own repository; what ships here is
 Faustus's side of the contract, copied from the `faustus-plugin.json` the app
@@ -22,6 +22,7 @@ FAMILY = {
     "borges": ("borges-hoard", 5184, "borges"),
     "scribe": ("scribe-hoard", 5185, "scribe"),
     "vulcan": ("vulcan-hoard", 5186, "vulcan"),
+    "hypatia": ("hypatia-hoard", 5187, "hypatia"),
 }
 
 

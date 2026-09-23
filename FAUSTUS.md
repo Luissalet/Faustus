@@ -7608,6 +7608,37 @@ paralelo, 5 rondas, 215 s; el brief dice «sin datos» donde no hay
 biblioteca, y sitúa el tema en pantalla «esta madrugada, ~02:30, en
 VS Code y Claude». Termina ofreciendo registrar la reunión, sin hacerlo.
 
+### La octava: Hypatia's Hoard (23-09, mañana)
+
+Luis estudia un máster y ya tiene sus apuntes indexados en Borges; lo que
+faltaba era el otro lado: que el asistente convierta lo que lee en
+tarjetas y le tome la lección. `hypatia` (5187, Python) son tarjetas de
+repaso espaciado (SM-2 clásico: otra vez/difícil/bien/fácil, factor de
+facilidad, intervalos 1 → 6 → ×facilidad, tope 365 días, olvidos con
+reaprendizaje, límite de nuevas por día por mazo), con interfaz de repaso
+(espacio para ver la respuesta, 1–4 para calificar), mazos, búsqueda FTS
+sin tildes, estadísticas (retención a 30 días, racha, previsión a 7 días)
+e importación/exportación JSON y CSV. Diez herramientas: `decks_list`,
+`deck_create`, `cards_add` (hasta 100, idempotente por frente
+normalizado, siempre con `source`), `cards_due` (la cola con reverso,
+para que el asistente examine en el chat), `card_review` (una llamada
+por respuesta real del usuario, nunca en su nombre), `cards_search`,
+`card_update`, `card_delete`, `cards_stats`, `cards_export`. Las
+instrucciones al agente fijan lo importante: sólo tarjetas de material
+que el usuario tiene, un hecho por tarjeta, no enseñar el reverso antes
+de que conteste. Construida por un agente sonnet sobre el contrato y
+Borges como plantilla; el revisor humano (esta sesión) arregló el reverso
+sin renderizar en la lista y la previsión que pisaba su título, y probó
+el flujo de repaso con Playwright antes de enviarla al PC.
+
+Iconos, segunda vuelta: los ocho tenían un anillo semitransparente donde
+estaba el botón del icono original (el borde negro del botón se leía como
+esquina redondeada y se hacía transparente) y el triángulo blanco del
+botón se colaba como «dragón» porque la máscara HSV sólo veía el amarillo.
+Ahora la transparencia se limita a las cuatro esquinas del plato, el disco
+del botón entra entero en la máscara y su halo no cuenta como cuerpo.
+Regenerados los ocho en `Icons\` y en cada app.
+
 ### Pendiente
 
 - La puerta de contexto externo se arma en cada turno con estas apps (las
