@@ -7552,6 +7552,11 @@ Batería de dos en el 7000 (con login, aprobando cada tarjeta):
   `rescan`, `start`…) marca la llamada como efecto; `*_search`, `*_stats`,
   `get_*`, `list_*` siguen siendo lecturas para que una afirmación tras una
   consulta se siga rechazando (`tests/test_harness_mcp_effects.py`).
+  Con el arreglo, en el 7003: 4 rondas, 226 s, sin rechazos. Y el «más
+  grande en milímetros» salió mal la primera vez por la app, no por el
+  modelo: Vulcan sólo ordenaba por bytes, así que contestó con el fichero
+  más pesado (una placa de 200 mm) habiendo marcos de 226 mm. Ahora hay
+  `sort=-extent` (lado mayor, mm) y `-volume`, y el modelo los usa solo.
 - «Elige un modelo sin ficha, mira sus medidas y escríbele una ficha…» →
   `models_search(has_listing=false, sort=size)` → `model_info` →
   `model_listing_set` con título, 90 palabras en inglés y 10 etiquetas
