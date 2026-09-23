@@ -1532,11 +1532,13 @@ from routes.code_graph_routes import setup_code_graph_routes
 from routes.doc_claims_routes import setup_doc_claims_routes
 from routes.project_concepts_routes import setup_project_concepts_routes
 from routes.typed_choice_routes import setup_typed_choice_routes
+from routes.typed_decision_routes import setup_typed_decision_routes
 app.include_router(setup_contacts_routes())
 app.include_router(setup_code_graph_routes())
 app.include_router(setup_doc_claims_routes())
 app.include_router(setup_project_concepts_routes())
 app.include_router(setup_typed_choice_routes())
+app.include_router(setup_typed_decision_routes())
 
 from companion import setup_companion_routes
 app.include_router(setup_companion_routes())

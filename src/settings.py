@@ -602,6 +602,28 @@ DEFAULT_SETTINGS = {
     # verify_claim) until this is turned on; falls back to the previous
     # behaviour whenever the typed-choice call itself errors.
     "typed_choice_logprobs": False,
+    # Typed decisions (src/typed_decision.py): a closed question about a
+    # text answered from ONE prefill by reading the next-token probabilities
+    # of the allowed answer letters. Advisory only: every caller keeps its
+    # rule logic as the first pass (when that is already confident) and as
+    # the fallback. Never loads or evicts a model: a model that is not
+    # already resident answers "unavailable" unless typed_decisions_may_load.
+    "typed_decisions_enabled": True,
+    # Hard wall-clock budget for one decide() call (all its fields).
+    "typed_decision_timeout_ms": 1500,
+    # Below this renormalised probability the answer is "unknown".
+    "typed_decision_min_confidence": 0.7,
+    # Below this total probability on the allowed letters the model wanted
+    # to say something else: "unknown".
+    "typed_decision_min_mass": 0.5,
+    "typed_decisions_may_load": False,
+    # Per-caller switches (each also needs typed_decisions_enabled):
+    # the web-search freshness check on a chat turn (src/freshness.py),
+    # typing entities the second brain left as "other" (src/brain/extract.py),
+    # and advisory memory-conflict suggestions (src/memory_conflicts.py).
+    "typed_decision_freshness": True,
+    "typed_decision_entity_types": True,
+    "typed_decision_memory_conflicts": True,
     # Per-model load defaults for Ollama models (Settings → Local models →
     # Options…, src/model_load_options.py): {"<endpoint_id>|<model>":
     # {"num_ctx", "num_gpu", "keep_alive"}}. Applied under explicit
