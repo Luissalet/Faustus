@@ -60,7 +60,6 @@ def test_manage_instincts_is_in_tool_handlers_with_a_generic_adapter():
 
 # ── 2. agent_loop.py injection (I_wiring.md §2) ────────────────────────────
 
-@pytest.mark.xfail(strict=True, reason="wired by the integrator: src/agent_loop.py render_block injection (I_wiring.md §2)")
 def test_agent_loop_injects_instincts_block(tmp_path, monkeypatch):
     import src.instincts as instincts_mod
     monkeypatch.setattr(instincts_mod, "DATA_DIR", str(tmp_path), raising=False)
@@ -120,7 +119,6 @@ class _FakeSessionWithHistory:
         return [{"role": m.role, "content": m.content} for m in self.history]
 
 
-@pytest.mark.xfail(strict=True, reason="wired by the integrator: routes/chat_helpers.py post-turn extraction hook (I_wiring.md §3)")
 def test_chat_helpers_fires_instinct_extraction(tmp_path, monkeypatch):
     import routes.chat_helpers as chat_helpers
     import src.instincts as instincts_mod
@@ -159,6 +157,13 @@ def test_chat_helpers_fires_instinct_extraction(tmp_path, monkeypatch):
         await asyncio.sleep(0)
 
     asyncio.run(_drain())
+    # Outside a running loop the hook falls back to a daemon thread; give it
+    # a moment before judging.
+    import time as _time
+    for _ in range(40):
+        if calls:
+            break
+        _time.sleep(0.05)
 
     assert calls, "extract_from_turn was never called for a 2-tool-call turn"
     assert calls[0]["owner"] == "alice"

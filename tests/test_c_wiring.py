@@ -16,7 +16,6 @@ import inspect
 import pytest
 
 
-@pytest.mark.xfail(strict=True, reason="wired by the integrator (C_wiring.md #1)")
 def test_agent_loop_injects_the_project_rules_block():
     from src import agent_loop
     source = inspect.getsource(agent_loop)
@@ -26,11 +25,21 @@ def test_agent_loop_injects_the_project_rules_block():
     )
 
 
-@pytest.mark.xfail(strict=True, reason="wired by the integrator (C_wiring.md #2)")
 def test_app_registers_the_library_routers():
     import app as app_module
 
-    paths = {getattr(r, "path", None) for r in app_module.app.routes}
+    # Newer FastAPI keeps an included router as one lazy `_IncludedRouter`
+    # entry (no `.path`); older ones flatten it — walk both shapes.
+    paths = set()
+    for r in app_module.app.routes:
+        if hasattr(r, "path"):
+            paths.add(r.path)
+            continue
+        inner = getattr(r, "original_router", None)
+        prefix = getattr(getattr(r, "include_context", None), "prefix", "") or ""
+        for sub in getattr(inner, "routes", []) or []:
+            if hasattr(sub, "path"):
+                paths.add(prefix + sub.path)
     assert "/api/rules/library" in paths, (
         "app.py does not yet register routes.project_rules_routes; see C_wiring.md #2"
     )

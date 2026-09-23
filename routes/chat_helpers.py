@@ -1302,6 +1302,76 @@ def save_assistant_response(
     except Exception:
         logger.debug("notifications.emit(turn_finished) failed", exc_info=True)
 
+    # Post-turn automation, all best-effort and never blocking the reply:
+    # lifecycle hooks (`turn_end`, src/lifecycle_hooks.py — side effects and
+    # the run log only, there is no prompt left to inject into) and the
+    # background instinct extraction (src/instincts.py). Incognito turns
+    # returned above, so this only ever runs for a persisted turn.
+    try:
+        _post_turn_owner = getattr(sess, "owner", None)
+        _post_turn_history = [
+            m for m in (sess.get_context_messages() or []) if isinstance(m, dict)
+        ]
+        _post_turn_last_user = next(
+            (str(m.get("content") or "") for m in reversed(_post_turn_history)
+             if m.get("role") == "user" and isinstance(m.get("content"), str)),
+            "",
+        )
+        try:
+            from services.projects import project_context_for_session
+            _post_turn_ctx = project_context_for_session(session_id, _post_turn_owner)
+            _post_turn_workspace = _post_turn_ctx.workspace or None
+            _post_turn_project_id = _post_turn_ctx.project_id or ""
+            _post_turn_project_name = _post_turn_ctx.project_name or ""
+        except Exception:
+            _post_turn_workspace, _post_turn_project_id, _post_turn_project_name = None, "", ""
+
+        async def _post_turn_automation():
+            try:
+                from src import lifecycle_hooks as _hooks
+                await _hooks.run_async("turn_end", {
+                    "session_id": session_id,
+                    "workspace": _post_turn_workspace,
+                    "user_message": _post_turn_last_user,
+                })
+            except Exception:
+                logger.debug("[lifecycle_hooks] turn_end run failed", exc_info=True)
+            try:
+                if not _post_turn_owner:
+                    return
+                from src.instincts import extract_from_turn, project_key, should_extract
+                _tool_count = len(tool_events or [])
+                _round_texts = md.get("round_texts")
+                _round_count = (
+                    len(_round_texts) if isinstance(_round_texts, list)
+                    else int(md.get("round_count") or 0)
+                )
+                if not should_extract(_round_count, _tool_count, _post_turn_last_user):
+                    return
+                history = [
+                    {"role": m.get("role"), "content": m.get("content")}
+                    for m in _post_turn_history
+                    if isinstance(m.get("content"), str)
+                ]
+                await extract_from_turn(
+                    _post_turn_owner, session_id, history,
+                    project=project_key(_post_turn_workspace, _post_turn_project_id),
+                    project_name=_post_turn_project_name,
+                    workspace=_post_turn_workspace,
+                )
+            except Exception:
+                logger.debug("[instincts] extract_from_turn failed", exc_info=True)
+
+        try:
+            asyncio.get_running_loop().create_task(_post_turn_automation())
+        except RuntimeError:
+            import threading as _threading
+            _threading.Thread(
+                target=lambda: asyncio.run(_post_turn_automation()), daemon=True
+            ).start()
+    except Exception:
+        logger.debug("post-turn automation dispatch failed", exc_info=True)
+
     if wires:
         try:
             from src.side_threads import note_wires_used

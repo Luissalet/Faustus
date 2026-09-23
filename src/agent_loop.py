@@ -1002,6 +1002,7 @@ Generate an image. Line 1 = description, line 2 = model name, line 3 = WxH (e.g.
     "manage_session": "- ```manage_session``` — Rename, archive, delete, fork, switch, or `list` chats (the UI calls them 'chats'; 'session' is internal). Line 1 = action (list/switch/rename/archive/unarchive/delete/important/unimportant/truncate/fork), Line 2 = exact chat id from `list_sessions` (or `current` where supported). For delete/archive/truncate, always list first and reuse the exact id; never invent placeholder ids. `switch`/`open` returns a clickable anchor link the user can tap to open the chat — use for \"open my X chat\".",
     "manage_memory": "- ```manage_memory``` — Manage the user's persistent memory (facts about the USER themselves, their preferences, context that persists across chats). Line 1 = action (list/add/edit/delete/search), rest = content. Use when user says 'remember this' about themselves, states identity facts like 'my name is <name>' / 'call me <name>' / 'I live in <place>', or asks about stored memories. DO NOT use for info about another person (their address, phone, email, birthday) — that goes in `manage_contact`. If the user pastes an address/phone with a name and says 'save this for <person>', use `manage_contact add` with the address arg, NOT manage_memory.",
     "manage_skills": "- ```manage_skills``` — Skill registry (SKILL.md format). Args (JSON): {\"action\": \"list|view|view_ref|search|add|edit|patch|publish|delete\", ...}. `list` returns the index of available skills (published + teacher-escalation drafts); `view name=foo` fetches the full SKILL.md; `view_ref name=foo path=...` loads a reference file under the skill directory. For `add`, provide an explicit kebab-case `name` and only report the exact returned name, because storage may normalize or dedupe it. Use this BEFORE doing domain work — there may already be a procedure (published or draft) that prescribes the correct steps. Drafts written by the teacher loop are authoritative guidance even though they're not yet published.",
+    "manage_instincts": "- ```manage_instincts``` — Learned instincts: small per-project behaviours (trigger → action) with a confidence score, mined from earlier sessions. Args (JSON): {\"action\": \"list|view|status|confirm|contradict|add|retire|promote|evolve|export|import\", ...}. `list` shows the active instincts for this project (plus global ones); `confirm id=...`/`contradict id=...` adjust confidence after you saw the behaviour help or hurt; `add` records one explicitly (trigger, action, domain); `evolve generate=true` turns a cluster of related instincts into a draft skill. Use when the user asks what you have learned about how they work, or to correct a learned habit.",
     "manage_tasks": "- ```manage_tasks``` — Create and manage scheduled background tasks (recurring AI jobs). Args (JSON): {\"action\": \"list|create|edit|delete|pause|resume|run\", ...}. Built-in actions that need no model (task_type=action, parameters in the `params` object): weather_report {place, when}, news_brief {topic, hours}, watch_page {url, mode: availability} (report only on change), mail_digest {hours}. Example — '¿qué tiempo hace en Móstoles mañana? que se repita cada día': {\"action\":\"create\",\"name\":\"Tiempo en Móstoles\",\"task_type\":\"action\",\"action_name\":\"weather_report\",\"params\":{\"place\":\"Móstoles\",\"when\":\"tomorrow\"},\"schedule\":\"daily\",\"scheduled_time\":\"08:00\",\"timezone\":\"Europe/Madrid\",\"pin_to_home\":true} — then run it once (action run) so the card has content.",
     "manage_endpoints": "- ```manage_endpoints``` — Add, remove, or configure AI model API endpoints. Args (JSON): {\"action\": \"list|add|delete|enable|disable\", ...}. Use when user wants to add a new AI provider.",
     "manage_mcp": "- ```manage_mcp``` — Manage MCP (Model Context Protocol) tool servers — external tools that extend your capabilities. Args (JSON): {\"action\": \"list|add|delete|reconnect|list_tools\", ...}",
@@ -4445,6 +4446,16 @@ def _build_system_prompt(
             agent_prompt += _pinstr.block(workspace, trusted=_instr_trusted)
         except Exception as _pi_err:
             logger.debug("[instructions] injection failed: %s", _pi_err)
+        # Project rules (src/project_rules.py): the repo's own `.faustus/rules/`
+        # plus the bundled per-language rule library, under a token budget,
+        # with the same trust verdict as the instructions block above.
+        try:
+            from src import project_rules as _prules
+            agent_prompt += _prules.block(
+                workspace, trusted=_instr_trusted, languages=_prules.languages_for(workspace)
+            )
+        except Exception as _pr_err:
+            logger.debug("[project_rules] injection failed: %s", _pr_err)
         try:
             agent_prompt += _big_task_strategy_block()
         except Exception:
@@ -4575,13 +4586,32 @@ def _build_system_prompt(
                 except (TypeError, ValueError):
                     _skill_max_injected = 3
                 _skill_max_injected = max(0, min(12, _skill_max_injected))
-                relevant_skills = sm.get_relevant_skills(
-                    last_user,
+                # Hybrid selector (src/skills_runtime/selector.py): semantic
+                # + lexical + trigger lanes with an outcome prior; falls back
+                # to the lexical ranking when the embedder is unavailable or
+                # `skill_selector_mode` is "lexical". Before selecting, the
+                # user's reaction to the skills surfaced LAST turn in this
+                # session is scored so the prior learns from real use.
+                from src.skills_runtime import selector as _skill_selector
+                try:
+                    _skill_selector.record_outcome_from_reaction(
+                        owner, _skill_selector.last_surfaced(session_id, owner), last_user
+                    )
+                except Exception:
+                    logger.debug("[skills] outcome recording failed", exc_info=True)
+                relevant_skills = _skill_selector.select(
+                    sm, owner, last_user,
                     skills=sm.load(owner=owner),
                     threshold=0.25,
                     max_items=_skill_max_injected,
                     min_confidence=_skill_min_conf,
                 ) if _skill_max_injected > 0 else []
+                try:
+                    _skill_selector.remember_surfaced(
+                        session_id, owner, [s.get("name") for s in relevant_skills if s.get("name")]
+                    )
+                except Exception:
+                    pass
                 lines = [""]
                 if relevant_skills:
                     # Bump the "uses" counter on every skill we actually surface
@@ -6413,6 +6443,56 @@ async def _stream_agent_loop_body(
                 messages,
                 untrusted_context_message("repository map", _repo_map_text, arm_tool_gate=False),
             )
+    # Lifecycle hooks (src/lifecycle_hooks.py): session_start fires once per
+    # session (no assistant reply yet in `messages`), turn_start every turn.
+    # Hooks only ever ADD context (untrusted, user role) — never block.
+    try:
+        from src import lifecycle_hooks as _hooks
+        _hooks_ctx = {
+            "workspace": workspace,
+            "session_id": session_id,
+            "user_message": _last_user or "",
+            "paths": [],
+        }
+        _has_assistant_reply = any(
+            isinstance(m, dict) and m.get("role") == "assistant" for m in messages
+        )
+        _hook_events = ["turn_start"] if _has_assistant_reply else ["session_start", "turn_start"]
+        _hook_results = []
+        for _hev in _hook_events:
+            _hook_results.extend(await _hooks.run_async(_hev, _hooks_ctx))
+        _hooks_text = _hooks.render_context(_hook_results)
+        if _hooks_text:
+            messages = _insert_before_latest_user(
+                messages,
+                untrusted_context_message("lifecycle hooks", _hooks_text, arm_tool_gate=False),
+            )
+        if _hook_results:
+            yield "data: " + json.dumps({
+                "type": "harness_check", "status": "hooks", "event": _hook_events[-1],
+                "hooks": [{"id": r.hook_id, "name": r.name, "ok": r.ok, "duration_ms": r.duration_ms}
+                          for r in _hook_results],
+            }) + "\n\n"
+    except Exception:
+        logger.debug("[lifecycle_hooks] session_start/turn_start run failed", exc_info=True)
+    # Learned instincts (src/instincts.py): small per-project behaviours mined
+    # from earlier sessions, injected as reference data when confident enough.
+    if owner and get_setting("instincts_enabled", True) and not _hopts.get("incognito"):
+        try:
+            from src import instincts as _instincts
+            _inst_text = _instincts.render_block(
+                owner,
+                _instincts.project_key(workspace, _hopts.get("project_id")),
+                user_message=_last_user or "",
+            )
+        except Exception:
+            logger.debug("[instincts] render_block failed", exc_info=True)
+            _inst_text = ""
+        if _inst_text:
+            messages = _insert_before_latest_user(
+                messages,
+                untrusted_context_message("learned instincts", _inst_text, arm_tool_gate=False),
+            )
     # Project concepts (src/project_concepts.py): the agent's own persistent,
     # per-project graph of architecture concepts. Off by default
     # (agent_project_concepts_inject) -- the agent can always call
@@ -7491,8 +7571,9 @@ async def _stream_agent_loop_body(
                     # schemas without a prompt-prose section.
                     from src.tool_policy import known_tool_names
                     _known = known_tool_names()
-                    for _sk in _sm.get_relevant_skills(
-                        _retrieval_query, skills=_owner_skills,
+                    from src.skills_runtime import selector as _skill_selector
+                    for _sk in _skill_selector.select(
+                        _sm, owner, _retrieval_query, skills=_owner_skills,
                         threshold=0.25, max_items=3,
                     ):
                         _skill_tools = {
@@ -7956,6 +8037,20 @@ async def _stream_agent_loop_body(
                     if _ctx_len_for_compaction else 0
                 )
                 if _pct_for_compaction >= COMPACT_THRESHOLD:
+                    # Lifecycle hooks (src/lifecycle_hooks.py) — pre_compact:
+                    # whatever a hook injects rides into the compaction as
+                    # one more untrusted message, so it survives the cut.
+                    try:
+                        from src import lifecycle_hooks as _hooks
+                        _compact_hooks_text = _hooks.render_context(
+                            await _hooks.run_async("pre_compact", {"workspace": workspace, "session_id": session_id})
+                        )
+                        if _compact_hooks_text:
+                            compacted_source = compacted_source + [
+                                untrusted_context_message("lifecycle hooks", _compact_hooks_text, arm_tool_gate=False)
+                            ]
+                    except Exception:
+                        logger.debug("[lifecycle_hooks] pre_compact run failed", exc_info=True)
                     _integrity_messages, _integrity_evidence = compact_with_integrity(
                         compacted_source,
                         owner_id=owner or "system",
@@ -12361,6 +12456,9 @@ async def _stream_agent_loop_body(
             # native id, so the two never disagree about what a call is called.
             _native_tc = converted_calls[i] if i < len(converted_calls) and isinstance(converted_calls[i], dict) else None
             _call_id = str((_native_tc or {}).get("id") or f"call_{round_num}_{i}")
+            # Lifecycle hooks: pre_tool results for THIS call (attached to
+            # its result below); reset per iteration like the timing above.
+            _pre_hook_results = []
             # INF-03: this call's observed wall-clock duration, when one of
             # the branches below actually executes a tool (reset every
             # iteration — a denied/blocked/approval-pending call must never
@@ -12663,6 +12761,29 @@ async def _stream_agent_loop_body(
                     yield "data: " + json.dumps({"type": "harness_check", "status": "checkpoint", "round": round_num,
                                                  "sha": _cp.get("sha"), "created": _cp.get("created"), "ms": _cp.get("ms")}) + "\n\n"
 
+                # Lifecycle hooks (src/lifecycle_hooks.py) — pre_tool. Augment
+                # only: warn/inject outputs ride along on `result` after the
+                # call ran (attach_to_result below), never deny or delay it.
+                try:
+                    from src import lifecycle_hooks as _hooks
+                    _pre_hook_results = await _hooks.run_async("pre_tool", {
+                        "tool": block.tool_type,
+                        "content": block.content,
+                        "paths": _harness._paths_from_args(block.tool_type, block.content),
+                        "command": block.content if block.tool_type in ("bash", "python", "powershell") else "",
+                        "workspace": workspace,
+                        "session_id": session_id,
+                    })
+                    if _pre_hook_results:
+                        yield "data: " + json.dumps({
+                            "type": "harness_check", "status": "hooks", "event": "pre_tool", "round": round_num,
+                            "hooks": [{"id": r.hook_id, "name": r.name, "ok": r.ok, "duration_ms": r.duration_ms}
+                                      for r in _pre_hook_results],
+                        }) + "\n\n"
+                except Exception:
+                    logger.debug("[lifecycle_hooks] pre_tool run failed", exc_info=True)
+                    _pre_hook_results = []
+
                 if i in _prefetched:
                     # CALL-04: this index already ran, concurrently with the
                     # other reads in its group, above — same call, same
@@ -12756,6 +12877,35 @@ async def _stream_agent_loop_body(
                     result.setdefault("repairs", _arg_meta["repairs"])
 
             run_security.observe_tool_result(block.tool_type, result, block.content)
+
+            # Lifecycle hooks (src/lifecycle_hooks.py) — post_tool, plus the
+            # pre_tool notes gathered before the call. Both only ADD a
+            # `hook_notes` key to the result (setdefault, never overwriting
+            # what the tool returned), so the model sees them in the tool
+            # result and byte-parity of the tool output itself is untouched.
+            try:
+                from src import lifecycle_hooks as _hooks
+                _post_hook_results = []
+                if _denial is None:
+                    _post_hook_results = await _hooks.run_async("post_tool", {
+                        "tool": block.tool_type,
+                        "content": block.content,
+                        "paths": _harness._paths_from_args(block.tool_type, block.content),
+                        "command": block.content if block.tool_type in ("bash", "python", "powershell") else "",
+                        "workspace": workspace,
+                        "session_id": session_id,
+                    })
+                _all_hook_results = list(_pre_hook_results) + list(_post_hook_results)
+                if _all_hook_results and isinstance(result, dict):
+                    _hooks.attach_to_result(result, _all_hook_results)
+                if _post_hook_results:
+                    yield "data: " + json.dumps({
+                        "type": "harness_check", "status": "hooks", "event": "post_tool", "round": round_num,
+                        "hooks": [{"id": r.hook_id, "name": r.name, "ok": r.ok, "duration_ms": r.duration_ms}
+                                  for r in _post_hook_results],
+                    }) + "\n\n"
+            except Exception:
+                logger.debug("[lifecycle_hooks] post_tool run failed", exc_info=True)
 
             # Evidence ledger: record what really ran (success, kind, paths).
             try:

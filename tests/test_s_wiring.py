@@ -23,7 +23,6 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
-@pytest.mark.xfail(strict=True, reason="wired by the integrator — see S_wiring.md §1")
 def test_agent_loop_uses_the_hybrid_selector_for_level1_injection():
     text = (REPO_ROOT / "src" / "agent_loop.py").read_text(encoding="utf-8")
     assert "from src.skills_runtime import selector" in text
@@ -35,7 +34,6 @@ def test_agent_loop_uses_the_hybrid_selector_for_level1_injection():
     assert "_sm.get_relevant_skills(" not in text
 
 
-@pytest.mark.xfail(strict=True, reason="wired by the integrator — see S_wiring.md §2")
 def test_app_registers_the_skill_selector_router():
     text = (REPO_ROOT / "app.py").read_text(encoding="utf-8")
     assert "from routes.skill_selector_routes import setup_skill_selector_routes" in text

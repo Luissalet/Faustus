@@ -806,6 +806,10 @@ memory_router = setup_memory_routes(memory_manager, session_manager, memory_vect
 app.include_router(memory_router)
 from routes.skills_routes import setup_skills_routes
 app.include_router(setup_skills_routes(skills_manager))
+from routes.skill_library_routes import setup_skill_library_routes
+app.include_router(setup_skill_library_routes())
+from routes.skill_selector_routes import setup_skill_selector_routes
+app.include_router(setup_skill_selector_routes())
 # A25: git-backed skill sources (pinned revision, verified update, rollback).
 from routes.skill_source_routes import setup_skill_source_routes
 app.include_router(setup_skill_source_routes())
@@ -998,6 +1002,12 @@ app.include_router(setup_command_guard_routes())
 
 from routes.tool_arg_policy_routes import setup_tool_arg_policy_routes
 app.include_router(setup_tool_arg_policy_routes())
+from routes.lifecycle_hooks_routes import setup_lifecycle_hooks_routes
+app.include_router(setup_lifecycle_hooks_routes())
+from routes.project_rules_routes import setup_project_rules_routes
+app.include_router(setup_project_rules_routes())
+from routes.instincts_routes import setup_instincts_routes
+app.include_router(setup_instincts_routes())
 
 from routes.privacy_routes import setup_privacy_routes
 app.include_router(setup_privacy_routes())

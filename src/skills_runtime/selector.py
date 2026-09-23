@@ -306,6 +306,32 @@ def _semantic_scores(owner: Optional[str], query: str, skills: Sequence[Mapping[
 
 # ── outcome prior ────────────────────────────────────────────────────────────
 
+# Which skills were surfaced on the LAST turn of each session, so the user's
+# next message can be scored as a reaction to them. Process-local and
+# bounded: a restart simply forgets the last turn's list (no outcome is then
+# recorded, which is the neutral case), and the table never grows past
+# `_SURFACED_MAX` sessions.
+_SURFACED: Dict[Tuple[str, str], List[str]] = {}
+_SURFACED_MAX = 512
+
+
+def remember_surfaced(session_id: Optional[str], owner: Optional[str], skill_ids: Sequence[str]) -> None:
+    """Record the skills surfaced this turn (empty list = none) for `session_id`."""
+    if not session_id:
+        return
+    key = (str(session_id), str(owner or ""))
+    if key not in _SURFACED and len(_SURFACED) >= _SURFACED_MAX:
+        _SURFACED.pop(next(iter(_SURFACED)))
+    _SURFACED[key] = [str(s) for s in skill_ids if s]
+
+
+def last_surfaced(session_id: Optional[str], owner: Optional[str]) -> List[str]:
+    """The skills surfaced on the previous turn of `session_id` ([] if none/unknown)."""
+    if not session_id:
+        return []
+    return list(_SURFACED.get((str(session_id), str(owner or "")), []))
+
+
 def _outcome_prior(usage_entry: Mapping[str, Any]) -> float:
     """Laplace-smoothed positive rate `(positive+1)/(positive+negative+2)`
     (in [0, 1]) mapped onto a [0.5, 1.5] multiplier — no evidence at all

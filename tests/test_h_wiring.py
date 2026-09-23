@@ -22,21 +22,18 @@ def _read(relpath: str) -> str:
     return (_REPO_ROOT / relpath).read_text(encoding="utf-8")
 
 
-@pytest.mark.xfail(strict=True, reason="wired by the integrator")
 def test_app_registers_the_lifecycle_hooks_router():
     src = _read("app.py")
     assert "from routes.lifecycle_hooks_routes import setup_lifecycle_hooks_routes" in src
     assert "app.include_router(setup_lifecycle_hooks_routes())" in src
 
 
-@pytest.mark.xfail(strict=True, reason="wired by the integrator")
 def test_agent_loop_runs_session_start_and_turn_start_hooks():
     src = _read("src/agent_loop.py")
     assert "lifecycle_hooks" in src
     assert 'run_async("turn_start"' in src or "_hook_events" in src
 
 
-@pytest.mark.xfail(strict=True, reason="wired by the integrator")
 def test_agent_loop_runs_pre_tool_and_post_tool_hooks():
     src = _read("src/agent_loop.py")
     assert 'run_async("pre_tool"' in src
@@ -44,13 +41,11 @@ def test_agent_loop_runs_pre_tool_and_post_tool_hooks():
     assert "attach_to_result" in src
 
 
-@pytest.mark.xfail(strict=True, reason="wired by the integrator")
 def test_agent_loop_runs_pre_compact_hooks():
     src = _read("src/agent_loop.py")
     assert 'run_async("pre_compact"' in src
 
 
-@pytest.mark.xfail(strict=True, reason="wired by the integrator")
 def test_chat_helpers_runs_turn_end_hooks():
     src = _read("routes/chat_helpers.py")
     assert "lifecycle_hooks" in src
