@@ -7569,6 +7569,32 @@ Y una skill de biblioteca, `hoard-daily-digest`, que junta las apps en un
 «sin datos de X» cuando una app no responde, y nunca inventa la parte que
 falta. Instalable desde la biblioteca de skills como las demás.
 
+Probada como usuario («Resume lo que he hecho hoy con mis apps…») en el
+7003, y sacó dos fallos más del arnés, ninguno de las apps:
+
+- **El modelo repetía la tarjeta de aprobación como respuesta.** La
+  pregunta «Allow this task to continue?» se emite como texto del
+  asistente para que quede en el historial; al reanudar tras la
+  aprobación, el 27B leía esa frase como sus últimas palabras y la volvía
+  a decir — dos veces — y la respuesta visible al «resume mi día» fue la
+  tarjeta. Ahora el historial reproducido lleva en su lugar una nota del
+  runtime («paused: the runtime asked the user to approve `tool`; the
+  user approved, its result follows»), el rebote del eco admite dos
+  intentos y ya no reinyecta el eco como último mensaje del asistente
+  (`tests/test_approval_card_history.py`).
+- **`lookup_tools` con nombres «pelados» devolvía fantasmas.** La skill
+  nombra `screen_activity`, `budget_status`, `link_digest`…; el modelo los
+  pasó en `names` y recibió entradas sin esquema y un `promote` de
+  herramientas inexistentes, así que gastó siete rondas (una por app,
+  ~150 s) encontrando los `mcp__<id>__…` de uno en uno. Ahora un nombre
+  pelado que coincide con la cola de una herramienta MCP conectada se
+  resuelve a la calificada, con esquema (`tests/test_tool_serve_bare_names.py`).
+
+Con ambos: 3 rondas y 182 s (antes 9 y 311 s), los seis lectores en
+paralelo en una ronda, y el digest con la forma de la skill: pantalla
+(5 h 58 en 14 apps, top tres), dinero (57,50 € hoy, sin presupuestos),
+lectura 0, gente sin pendientes, reuniones 0, una sugerencia.
+
 ### Pendiente
 
 - La puerta de contexto externo se arma en cada turno con estas apps (las
@@ -7580,9 +7606,11 @@ falta. Instalable desde la biblioteca de skills como las demás.
   pero nadie las arranca al iniciar sesión: hoy es `hoards_start.ps1` a mano
   o el perfil desde Faustus. El 7003 y `faustus-hoards-data` son de pruebas
   y no deben quedarse.
-- El 7000 arrancó antes del arreglo del arnés (`mcp_tool_looks_mutating`):
-  hasta que se reinicie sigue rechazando respuestas verdaderas tras una
-  herramienta MCP que escribe.
+- El 7000 arrancó antes de los tres arreglos de esta tanda
+  (`mcp_tool_looks_mutating`, la nota en lugar de la tarjeta, los nombres
+  pelados en `lookup_tools`): hasta que se reinicie sigue rechazando
+  respuestas verdaderas tras una herramienta MCP que escribe y repitiendo
+  la tarjeta tras aprobar.
 - Scribe: la primera grabación real no captó voz (silencio): probar con una
   llamada de verdad; Borges: indexar una carpeta grande (apuntes del máster) y
   medir; Argus: retención y tamaño en disco tras un día entero; Links: la
