@@ -8422,3 +8422,55 @@ recordatorio de actualidad del bucle del agente sigue leyendo sólo la regla
 (la ruta ya decide si hay herramientas web, y sin ellas ya no se añade);
 las sugerencias de conflicto aún no tienen sitio en la pantalla de Memoria
 (sólo la API con `status=suggested`).
+
+## 178. Nightingale's Hoard: el banco de trabajo de datos como plugin (23-09-2026)
+
+**Problema.** Luis pidió «un plugin especializado en data science»: ingesta,
+visualización y manipulación de datos. La familia ya tenía a Laplace's Hoard,
+que calcula de forma exacta y consulta ficheros en modo sólo lectura; faltaba
+el banco que *cambia* los datos y hace ciencia de datos.
+
+**Hecho.** Repositorio propio en `Proyectos independientes\Nightingale's Hoard`
+(rama `main`, puerto 5189, servicio `nightingale-hoard`), mismo contrato que el
+resto de la familia (salud, `/api/agent/*` con token, puente MCP stdio que
+nunca abre la base, guardia sólo-local, PWA, `faustus-plugin.json`, icono del
+dragón en rosa con una rosa polar dorada). Lo que hace:
+
+- **Ingesta**: CSV/TSV con formatos españoles, Excel, Parquet, JSON, SQLite,
+  carpetas, URL o texto pegado.
+- **Limpieza versionada**: 21 tipos de paso con vista previa, deshacer y
+  rehacer, linaje, receta exportable como SQL y repetición al refrescar.
+- **Reglas de calidad**: 9 tipos.
+- **Gráficos**: 11 tipos, en PNG para el modelo e interactivos en la interfaz,
+  y paneles con indicadores.
+- **Modelos**: supervisado, clustering, PCA, anomalías y previsión
+  Holt-Winters con remuestreo. Los resultados se escriben en un dataset nuevo
+  y el origen no se toca.
+- **Registro** `N-000123` de cada operación.
+- **«Pregúntale a tus datos»**, a través de Hoard Link.
+
+Tiene 18 herramientas MCP. En Faustus: `plugins/nightingale/plugin.json` y el
+test de la familia (diez miembros).
+
+**Verificación.** En la nube, 127 tests y un paseo con Playwright en escritorio
+y móvil. En la máquina de Luis (Python 3.13):
+
+- Los 104 tests de la primera entrega pasan en Windows.
+- Paseo por el puente MCP real con datos inventados en cp1252 y `;`:
+  - Ingesta: detecta la codificación y convierte `importe` a decimal exacto.
+  - Deduplicado (1.506 → 1.500), reglas de calidad y consulta.
+  - Gráfico, regresión (R² de validación cruzada 0,40), previsión, receta SQL,
+    exportación a XLSX y registro.
+- Ese paseo destapó dos fallos, ya arreglados: `unique` exigía `columns`
+  mientras `not_null` aceptaba `column`, y la previsión caía a
+  «seasonal_naive» con datos diarios irregulares.
+- En pantalla aparecieron otros dos:
+  - El modelo escribía las predicciones como versión nueva del dataset de
+    origen y le cambiaba los tipos.
+  - La rejilla mostraba valores crudos.
+  Ambos arreglados. Los datasets de prueba se borraron de su banco de trabajo.
+
+**Pendiente.** Reiniciar el 7000 para que Faustus lea el manifiesto nuevo y
+adoptar la app desde Conectores. Probar «pregúntale a tus datos» con un modelo
+compartido. Subir el repositorio a GitHub cuando Luis lo diga.
+

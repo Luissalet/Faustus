@@ -2,6 +2,12 @@
 
 Actualizado: 23-09-2026. REGLA: nunca nombres de empresas/personas del buzÃ³n de Luis en commits, docs, tests ni comentarios â€” ejemplos siempre ficticios. SÃ³lo trabajo vigente; quitar cada entrada al cerrarla.
 
+
+## 23-09 tarde — decisiones tipadas y Nightingale's Hoard (FAUSTUS.md §177–§178)
+
+- Repetir `scripts/eval_typed_decision.py` contra el modelo grande de Ollama cuando esté libre (el ayudante de 3B ya está medido: actualidad 73 % → 93 %, tipos de entidad 12 % → 88 %, p50 ≈ 390 ms).
+- Tras reiniciar el 7000: adoptar Nightingale's Hoard desde Conectores y probarlo con un turno real del agente («limpia este CSV y hazme un gráfico por ciudad»).
+- Nightingale: probar «pregúntale a tus datos» con un modelo compartido resuelto; decidir si se publica en GitHub como el resto de la familia.
 ## 23-09 — decisiones tipadas (FAUSTUS.md §177, OBJ-37) — sin medir contra un modelo real
 
 - **Correr la evaluación en la máquina del dueño** y pegar las tablas en
