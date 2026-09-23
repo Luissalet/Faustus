@@ -3194,6 +3194,42 @@ def _scrub_approval_card_from_history(messages: List[Dict[str, Any]], tool_name:
     return False
 
 
+def _paused_turn_work_note(messages: List[Dict[str, Any]], approved_tool: str,
+                           limit: int = 6000) -> Optional[str]:
+    """What the paused turn had already done, for the round that resumes it.
+
+    A turn that stops on an approval card is saved as one assistant message:
+    its text, plus every tool call and result in `metadata.tool_events`. The
+    resumed request is rebuilt from history, which replays only the text --
+    seen live: after eleven calls (a decomposition, two repository checks,
+    file reads) the model resumed from a 12k-token prompt with none of those
+    results and had to redo the work. This returns a compact record of those
+    calls (command + head of output, `_build_actions_snapshot`) from the
+    most recent assistant message that has any, minus the approved call
+    itself, whose real result is appended separately. None when there is
+    nothing to carry."""
+    seen = 0
+    for msg in reversed(messages or []):
+        if not isinstance(msg, dict) or msg.get("role") not in ("assistant", "system"):
+            continue
+        meta = msg.get("metadata")
+        events = meta.get("tool_events") if isinstance(meta, dict) else None
+        if msg.get("role") == "assistant":
+            seen += 1
+        if isinstance(events, list) and events:
+            done = [e for e in events if isinstance(e, dict)]
+            if done and done[-1].get("tool") == approved_tool and not str(done[-1].get("output") or "").strip():
+                done = done[:-1]
+            if not done:
+                return None
+            snap = _build_actions_snapshot(done, limit=limit)
+            return ("Work this task already did before it paused for approval -- these tool calls "
+                    "ran and these are their results; use them and do not repeat them:\n\n" + snap)
+        if seen >= 2:
+            return None
+    return None
+
+
 _APPROVAL_CARD_LINE_RE = re.compile(r"[ \t]*" + re.escape(_APPROVAL_CARD_QUESTION) + r"[ \t]*", re.IGNORECASE)
 
 
@@ -9307,6 +9343,15 @@ async def _stream_agent_loop_body(
                 logger.info("[approval] replaced the card text in the replayed history with a runtime note")
         except Exception:  # noqa: BLE001 - cosmetics of the replay, never the turn
             logger.debug("[approval] history scrub skipped", exc_info=True)
+        try:
+            _paused_note = _paused_turn_work_note(messages, approved.tool_name)
+        except Exception:  # noqa: BLE001 - a missing bridge never blocks the resume
+            _paused_note = None
+            logger.debug("[approval] paused-turn work note skipped", exc_info=True)
+        if _paused_note:
+            messages.append({"role": "system", "content": _paused_note})
+            logger.info("[approval] carried %d chars of the paused turn's tool work into the resume",
+                        len(_paused_note))
         _append_tool_results(
             messages,
             "",
