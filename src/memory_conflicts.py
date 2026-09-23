@@ -37,6 +37,7 @@ own table; resolving it (`resolve`) is what the owner does explicitly.
 from __future__ import annotations
 
 import contextlib
+import json
 import logging
 import re
 import sqlite3
@@ -57,10 +58,11 @@ REASONS: Tuple[str, ...] = ("negation", "same_subject_different_value")
 # are, since they `forget()` an item outright.
 STATUSES: Tuple[str, ...] = ("open", "kept_new", "kept_old", "kept_both", "superseded")
 
-#: Private delimiter between a conflict's human-readable `detail` and the
-#: OLD item's `valid_until` from just before it was superseded — the value
-#: `unsupersede` restores. Unlikely enough in ordinary text that a search
-#: for it in `detail` is unambiguous; not a schema change, per the contract.
+#: LEGACY: rows written before the `supersede` column existed carried the
+#: OLD item's previous `valid_until` after this delimiter inside `detail`.
+#: `detail` was cut to 500 chars AFTER that value was appended, so a long
+#: detail lost it; new rows store it in `supersede` (JSON, never truncated)
+#: and this marker is only ever READ, for rows written the old way.
 _PREV_MARK = "␞"
 
 #: The "cannot both be true" predicates this module will pattern-match on,
@@ -94,7 +96,7 @@ _AUX_WORDS = frozenset({"do", "does", "did", "is", "are", "was", "were"})
 _TABLE = "memory_conflicts"
 _COLUMNS: Tuple[str, ...] = (
     "id", "owner", "new_id", "old_id", "reason", "detail", "status",
-    "created_at", "resolved_at",
+    "created_at", "resolved_at", "supersede",
 )
 _DB_LOCK = threading.RLock()
 
@@ -108,9 +110,14 @@ CREATE TABLE IF NOT EXISTS {_TABLE} (
     detail       TEXT NOT NULL DEFAULT '',
     status       TEXT NOT NULL DEFAULT 'open',
     created_at   TEXT NOT NULL DEFAULT '',
-    resolved_at  TEXT NOT NULL DEFAULT ''
+    resolved_at  TEXT NOT NULL DEFAULT '',
+    supersede    TEXT NOT NULL DEFAULT ''
 )
 """
+#: Additive columns for tables created before they existed.
+_ADDED_COLUMNS: Tuple[Tuple[str, str], ...] = (
+    ("supersede", "TEXT NOT NULL DEFAULT ''"),
+)
 _INDEXES: Tuple[str, ...] = (
     f"CREATE INDEX IF NOT EXISTS idx_memconf_owner_status ON {_TABLE}(owner, status)",
     f"CREATE INDEX IF NOT EXISTS idx_memconf_old ON {_TABLE}(old_id, status)",
@@ -140,6 +147,13 @@ def _connect(path: str) -> sqlite3.Connection:
     except sqlite3.Error:
         pass
     conn.execute(_SCHEMA)
+    existing = {row[1] for row in conn.execute(f"PRAGMA table_info({_TABLE})")}
+    for name, ddl in _ADDED_COLUMNS:
+        if name not in existing:
+            try:
+                conn.execute(f"ALTER TABLE {_TABLE} ADD COLUMN {name} {ddl}")
+            except sqlite3.OperationalError:  # a concurrent connection added it first
+                pass
     for stmt in _INDEXES:
         conn.execute(stmt)
     conn.commit()
@@ -168,7 +182,21 @@ def _iso(dt: Optional[datetime] = None) -> str:
 
 
 def _row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
-    return {c: row[c] for c in _COLUMNS}
+    out = {c: row[c] for c in _COLUMNS}
+    out["supersede"] = _load_supersede(out.get("supersede"))
+    return out
+
+
+def _load_supersede(raw: Any) -> Dict[str, Any]:
+    """The structured record of what a supersede changed (see
+    `_apply_supersede`), ``{}`` for rows that never superseded anything."""
+    if isinstance(raw, dict):
+        return raw
+    try:
+        data = json.loads(str(raw or "") or "{}")
+    except (TypeError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
 
 
 # ---------------------------------------------------------------------------
@@ -352,7 +380,7 @@ def _top_k(text: str, candidates: List[Dict[str, Any]], k: int) -> List[Dict[str
 
 
 def _insert(owner: str, new_id: str, old_id: str, reason: str, detail: str,
-           now: datetime) -> Dict[str, Any]:
+           now: datetime, *, supersede: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     row = {
         "id": uuid.uuid4().hex,
         "owner": owner,
@@ -363,12 +391,15 @@ def _insert(owner: str, new_id: str, old_id: str, reason: str, detail: str,
         "status": "open",
         "created_at": _iso(now),
         "resolved_at": "",
+        "supersede": dict(supersede or {}),
     }
+    values = [json.dumps(row[c], ensure_ascii=False) if c == "supersede" else row[c]
+              for c in _COLUMNS]
     with _db() as conn:
         conn.execute(
             f"INSERT INTO {_TABLE} ({', '.join(_COLUMNS)}) "
             f"VALUES ({', '.join('?' for _ in _COLUMNS)})",
-            [row[c] for c in _COLUMNS],
+            values,
         )
     return row
 
@@ -400,11 +431,8 @@ def _supersede_enabled() -> bool:
         return True
 
 
-def _detail_with_prev(detail: str, prev_valid_until: str) -> str:
-    return f"{detail}{_PREV_MARK}{prev_valid_until}"
-
-
 def _split_prev(detail: str) -> Tuple[str, str]:
+    """LEGACY rows only: split `detail` into (human text, saved valid_until)."""
     detail = str(detail or "")
     if _PREV_MARK in detail:
         base, _, prev = detail.partition(_PREV_MARK)
@@ -412,17 +440,83 @@ def _split_prev(detail: str) -> Tuple[str, str]:
     return detail, ""
 
 
-def _close_superseded_item(old_item: Dict[str, Any], new_valid_from: str,
-                           now: datetime) -> str:
-    """Set `old_item`'s `valid_until` to `new_valid_from` and save it.
-    Returns the PREVIOUS `valid_until` (possibly ``""``), for `detail`."""
+def _parse_dt(value: Any) -> Optional[datetime]:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+
+def _start_of(item: Dict[str, Any]) -> Tuple[Optional[datetime], str, bool]:
+    """(start instant, start as stored, explicit?) of an item's validity.
+    `memory_engine.add_item` stamps an undated item's `valid_from` with its
+    `created_at`, so "explicit" means a `valid_from` that differs from it."""
+    created_raw = str(item.get("created_at") or "")
+    vf_raw = str(item.get("valid_from") or "")
+    created = _parse_dt(created_raw)
+    vf = _parse_dt(vf_raw)
+    if vf is None:
+        return created, created_raw, False
+    return vf, vf_raw, created is None or vf != created
+
+
+def _supersede_order(new_item: Dict[str, Any], old_item: Dict[str, Any]) -> Optional[str]:
+    new_start, _, new_explicit = _start_of(new_item)
+    old_start, _, old_explicit = _start_of(old_item)
+    try:
+        from src.brain.temporal import supersede_order
+    except Exception:  # noqa: BLE001 - without the helper, never guess
+        return None
+    return supersede_order(new_start, old_start, new_explicit=new_explicit,
+                           old_explicit=old_explicit)
+
+
+def _apply_supersede(closed: Dict[str, Any], at: str, now: datetime) -> Dict[str, Any]:
+    """Close `closed` at `at` unless it already ended by then (a window is
+    never extended, rewritten later, or made to end before it starts).
+    Returns the structured, never-truncated record `unsupersede` needs:
+    ``{"closed_id", "prev_valid_until", "set_valid_until"}`` — with an empty
+    ``closed_id`` when nothing had to change."""
     from src.memory_engine import save_item
 
-    previous = str(old_item.get("valid_until") or "")
-    old_item["valid_until"] = new_valid_from
-    old_item["updated_at"] = _iso(now)
-    save_item(old_item)
-    return previous
+    at_dt = _parse_dt(at)
+    start, _, _ = _start_of(closed)
+    previous = str(closed.get("valid_until") or "")
+    prev_dt = _parse_dt(previous)
+    if at_dt is None or (start is not None and at_dt < start) or (
+            prev_dt is not None and prev_dt <= at_dt):
+        return {"closed_id": "", "prev_valid_until": "", "set_valid_until": ""}
+    closed = dict(closed)
+    closed["valid_until"] = at
+    closed["updated_at"] = _iso(now)
+    save_item(closed)
+    return {"closed_id": str(closed.get("id") or ""), "prev_valid_until": previous,
+            "set_valid_until": at}
+
+
+def _plan_and_apply(new_item: Dict[str, Any], old_item: Dict[str, Any], now: datetime, *,
+                    manual: bool = False) -> Optional[Dict[str, Any]]:
+    """Close whichever side chronology says is outdated, at the start of the
+    other side. None when the order is unknowable (the conflict stays open)
+    — unless `manual`: an owner who asked for "superseded" gets the OLDER
+    stored item closed, at the later of the two starts, so the window can
+    never end before it begins."""
+    order = _supersede_order(new_item, old_item)
+    if order is None and not manual:
+        return None
+    if order == "new":
+        _, at, _ = _start_of(old_item)
+        return _apply_supersede(new_item, at, now)
+    new_start, new_raw, _ = _start_of(new_item)
+    old_start, old_raw, _ = _start_of(old_item)
+    at = new_raw or _iso(now)
+    if order is None and new_start is not None and old_start is not None and new_start < old_start:
+        at = old_raw
+    return _apply_supersede(old_item, at, now)
 
 
 def detect_for(item: Dict[str, Any], *, k: int = DEFAULT_TOP_K,
@@ -465,17 +559,20 @@ def detect_for(item: Dict[str, Any], *, k: int = DEFAULT_TOP_K,
                 continue
             reason, detail = result
             old_id = str(cand.get("id") or "")
+            record: Optional[Dict[str, Any]] = None
             if (reason == "same_subject_different_value" and supersede_on
                     and _is_supersedable_pair(text, cand.get("text"))):
-                new_valid_from = str(item.get("valid_from") or item.get("created_at")
-                                     or _iso(now))
                 try:
-                    previous_until = _close_superseded_item(dict(cand), new_valid_from, now)
-                except Exception as exc:  # noqa: BLE001 - the row is still recorded
+                    record = _plan_and_apply(item, dict(cand), now)
+                except Exception as exc:  # noqa: BLE001 - nothing closed: leave it open
                     logger.debug("memory_conflicts: supersede close failed (%s)", exc)
-                    previous_until = str(cand.get("valid_until") or "")
-                row = _insert(owner, item_id, old_id, reason,
-                             _detail_with_prev(detail, previous_until), now)
+                    record = None
+            if record is not None:
+                if record.get("closed_id") == item_id:
+                    # the just-written item was the historical side: every
+                    # later candidate must see its new window
+                    item = dict(item, valid_until=record["set_valid_until"])
+                row = _insert(owner, item_id, old_id, reason, detail, now, supersede=record)
                 stamp = _iso(now)
                 with _db() as conn:
                     conn.execute(
@@ -584,6 +681,7 @@ def resolve(conflict_id: Any, keep: Any, *, owner: Optional[str] = None,
     from src.memory_engine import forget, get_item
 
     detail = conflict.get("detail", "")
+    record: Optional[Dict[str, Any]] = _load_supersede(conflict.get("supersede"))
     if keep == "new":
         forget(conflict["old_id"], reason=f"superseded by {conflict['new_id']}")
         status = "kept_new"
@@ -595,10 +693,7 @@ def resolve(conflict_id: Any, keep: Any, *, owner: Optional[str] = None,
         old_item = get_item(conflict["old_id"])
         if not new_item or not old_item:
             return None
-        new_valid_from = str(new_item.get("valid_from") or new_item.get("created_at")
-                             or _iso(now))
-        previous_until = _close_superseded_item(old_item, new_valid_from, now)
-        detail = _detail_with_prev(detail, previous_until)
+        record = _plan_and_apply(new_item, old_item, now, manual=True)
         status = "superseded"
     else:
         status = "kept_both"
@@ -606,12 +701,14 @@ def resolve(conflict_id: Any, keep: Any, *, owner: Optional[str] = None,
     stamp = _iso(now)
     with _db() as conn:
         conn.execute(
-            f"UPDATE {_TABLE} SET status = ?, resolved_at = ?, detail = ? WHERE id = ?",
-            (status, stamp, detail, conflict["id"]),
+            f"UPDATE {_TABLE} SET status = ?, resolved_at = ?, detail = ?, supersede = ? "
+            f"WHERE id = ?",
+            (status, stamp, detail, json.dumps(record or {}, ensure_ascii=False), conflict["id"]),
         )
     conflict["status"] = status
     conflict["resolved_at"] = stamp
     conflict["detail"] = detail
+    conflict["supersede"] = dict(record or {})
     return conflict
 
 
@@ -626,21 +723,35 @@ def unsupersede(conflict_id: Any, *, now: Optional[datetime] = None) -> Optional
 
     from src.memory_engine import get_item, save_item
 
-    base_detail, previous_until = _split_prev(conflict.get("detail", ""))
-    old_item = get_item(conflict["old_id"])
-    if old_item is not None:
-        old_item["valid_until"] = previous_until
-        old_item["updated_at"] = _iso(now or datetime.now(timezone.utc))
-        save_item(old_item)
+    stamp = _iso(now or datetime.now(timezone.utc))
+    record = _load_supersede(conflict.get("supersede"))
+    base_detail = str(conflict.get("detail") or "")
+    if record:
+        closed = get_item(record.get("closed_id")) if record.get("closed_id") else None
+        # restore only a window this supersede set and nobody changed since
+        if closed is not None and str(closed.get("valid_until") or "") == str(
+                record.get("set_valid_until") or ""):
+            closed["valid_until"] = str(record.get("prev_valid_until") or "")
+            closed["updated_at"] = stamp
+            save_item(closed)
+    else:
+        base_detail, previous_until = _split_prev(base_detail)
+        old_item = get_item(conflict["old_id"])
+        if old_item is not None:
+            old_item["valid_until"] = previous_until
+            old_item["updated_at"] = stamp
+            save_item(old_item)
 
     with _db() as conn:
         conn.execute(
-            f"UPDATE {_TABLE} SET status = 'open', resolved_at = '', detail = ? WHERE id = ?",
+            f"UPDATE {_TABLE} SET status = 'open', resolved_at = '', detail = ?, supersede = '' "
+            f"WHERE id = ?",
             (base_detail, conflict["id"]),
         )
     conflict["status"] = "open"
     conflict["resolved_at"] = ""
     conflict["detail"] = base_detail
+    conflict["supersede"] = {}
     return conflict
 
 

@@ -438,15 +438,69 @@ def _close_relation(relation_id: str, valid_until: str, *, status: str, supersed
         )
 
 
+def _relation_start(relation: Dict[str, Any]) -> Tuple[Optional[datetime], bool]:
+    """(start, explicit?) — a relation asserted without a date gets its
+    assertion instant as `valid_from`, so "explicit" means they differ."""
+    start = parse_iso(relation.get("valid_from"))
+    asserted = parse_iso(relation.get("asserted_at"))
+    if start is None:
+        return asserted, False
+    return start, asserted is None or start != asserted
+
+
+def _supersede_functional(new_rel: Dict[str, Any], current: Dict[str, Any],
+                          now: str) -> Optional[str]:
+    """Close whichever of `new_rel`/`current` is outdated; returns the id
+    that was closed, or None when nothing changed."""
+    from src.brain.temporal import supersede_order
+
+    new_start, new_explicit = _relation_start(new_rel)
+    cur_start, cur_explicit = _relation_start(current)
+    order = supersede_order(new_start, cur_start, new_explicit=new_explicit,
+                            old_explicit=cur_explicit)
+    if order == "old":
+        target, other = current, new_rel
+    elif order == "new":
+        target, other = new_rel, current
+    else:
+        return None
+    if str(target.get("method") or "rule") == "rule" and str(other.get("method") or "") == "llm":
+        return None  # a model's claim never ends a fact read deterministically from the text
+    at = str(other.get("valid_from") or "")
+    at_dt = parse_iso(at)
+    target_start, _ = _relation_start(target)
+    target_end = parse_iso(target.get("valid_until"))
+    if at_dt is None or (target_start is not None and at_dt < target_start):
+        return None
+    if target_end is not None and target_end <= at_dt:
+        # already ended by then: its window is never extended nor rewritten,
+        # it is only marked as followed by the other one
+        _close_relation(str(target["id"]), str(target.get("valid_until") or ""),
+                        status="superseded", superseded_by=str(other["id"]), now=now)
+        return str(target["id"])
+    _close_relation(str(target["id"]), at, status="superseded",
+                    superseded_by=str(other["id"]), now=now)
+    return str(target["id"])
+
+
 def add_relation(owner: Any, src_id: Any, rel: Any, *, dst_id: Any = None,
                  dst_value: str = "", valid_from: Any = None, valid_until: Any = None,
                  evidence: Sequence[str] = (), confidence: float = 0.6, method: str = "rule",
                  project: str = "") -> Dict[str, Any]:
     """Assert one relation. When `rel` is functional
     (:data:`FUNCTIONAL_RELATIONS`) and `src_id` already has a DIFFERENT
-    current value for it, that older relation is closed (`valid_until` set
-    to the new one's `valid_from`, status `superseded`) rather than left
-    open alongside the new one."""
+    current value for it, the OUTDATED one of the two is closed
+    (`valid_until` set to the other one's `valid_from`, status
+    `superseded`, `superseded_by` the other) rather than both left open.
+
+    Chronology decides which one is outdated, not arrival order
+    (`temporal.supersede_order`): asserting "works at Cordera Labs since
+    2019" after "works at Bluehaven since 2024" closes the 2019 relation at
+    2024, never the current one at 2019. A window is never made to end
+    before it starts, and one that already ended is never rewritten. When
+    the order is unknowable (equal dated starts; a dated start earlier than
+    an undated one) both stay open for a human to look at. A model-derived
+    relation (method "llm") never closes a rule-derived one."""
     owner = str(owner or "")
     src_id = str(src_id or "")
     rel_key = _normalize_rel(rel)
@@ -476,6 +530,8 @@ def add_relation(owner: Any, src_id: Any, rel: Any, *, dst_id: Any = None,
         )
 
     if rel_key in FUNCTIONAL_RELATIONS:
+        new_rel = {"id": relation_id, "valid_from": valid_from_iso, "valid_until": valid_until_iso,
+                   "asserted_at": now, "method": str(method or "rule")}
         for current in list_relations(owner, entity_id=src_id, include_closed=False):
             if current["id"] == relation_id or current["src"] != src_id or current["rel"] != rel_key:
                 continue
@@ -483,8 +539,12 @@ def add_relation(owner: Any, src_id: Any, rel: Any, *, dst_id: Any = None,
                        (not dst_id and current["dst_value"] == dst_value)
             if same_dst:
                 continue
-            _close_relation(current["id"], valid_from_iso, status="superseded",
-                            superseded_by=relation_id, now=now)
+            closed = _supersede_functional(new_rel, current, now)
+            if closed is not None and closed == relation_id:
+                with db() as conn:
+                    row = conn.execute("SELECT valid_until FROM relations WHERE id = ?",
+                                       (relation_id,)).fetchone()
+                new_rel["valid_until"] = (row["valid_until"] if row else "") or ""
 
     with db() as conn:
         row = conn.execute("SELECT * FROM relations WHERE id = ?", (relation_id,)).fetchone()

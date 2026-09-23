@@ -689,6 +689,30 @@ def parse_temporal(text: Any, *, now: Optional[datetime] = None) -> Dict[str, An
     }
 
 
+def supersede_order(new_start: Optional[datetime], old_start: Optional[datetime], *,
+                    new_explicit: bool, old_explicit: bool) -> Optional[str]:
+    """Which side of a one-value-at-a-time change-over ("works at X" vs
+    "works at Y") is the OUTDATED one: ``"old"``, ``"new"`` or ``None``
+    when the order cannot be known.
+
+    ``*_start`` is each side's ``valid_from`` (or, for an undated item, when
+    it was stored); ``*_explicit`` says whether that start came from a real
+    date. Chronology — not arrival order — decides: a historical fact added
+    after the current one ("since 2019" stored after "since 2024") is the
+    outdated side. Two dated starts, or two undated ones, are comparable; a
+    dated start EARLIER than an undated one is not (the undated fact may
+    have been true long before it was stored), and two equal dated starts
+    are a genuine contradiction for a human to look at. Pure function.
+    """
+    if new_start is None or old_start is None:
+        return None
+    if new_start > old_start:
+        return "old"
+    if new_start < old_start:
+        return "new" if new_explicit == old_explicit else None
+    return "old" if not new_explicit and not old_explicit else None
+
+
 def timeline(owner: Any, *, query: str = "", limit: int = 200) -> List[Dict[str, Any]]:
     """A cross-entity timeline for `GET /api/brain/timeline` when no single
     entity is named: memory items (created/valid_from/valid_until/corrected)
@@ -765,4 +789,4 @@ def timeline(owner: Any, *, query: str = "", limit: int = 200) -> List[Dict[str,
     return events[: max(1, int(limit or 200))]
 
 
-__all__ = ["parse_temporal", "timeline"]
+__all__ = ["parse_temporal", "supersede_order", "timeline"]
