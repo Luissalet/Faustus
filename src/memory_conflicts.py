@@ -51,7 +51,17 @@ from src.memory import get_text_similarity, tokenize
 logger = logging.getLogger(__name__)
 
 REASONS: Tuple[str, ...] = ("negation", "same_subject_different_value")
-STATUSES: Tuple[str, ...] = ("open", "kept_new", "kept_old", "kept_both")
+# MEM-TEMPORAL: "superseded" is a resolution like "kept_new"/"kept_old", but
+# reached automatically (see `_maybe_supersede`) rather than by an explicit
+# owner choice, and it is REVERSIBLE (`unsupersede`) — the other three never
+# are, since they `forget()` an item outright.
+STATUSES: Tuple[str, ...] = ("open", "kept_new", "kept_old", "kept_both", "superseded")
+
+#: Private delimiter between a conflict's human-readable `detail` and the
+#: OLD item's `valid_until` from just before it was superseded — the value
+#: `unsupersede` restores. Unlikely enough in ordinary text that a search
+#: for it in `detail` is unambiguous; not a schema change, per the contract.
+_PREV_MARK = "␞"
 
 #: The "cannot both be true" predicates this module will pattern-match on,
 #: English and Spanish. Deliberately small and literal — a predicate list
@@ -363,6 +373,58 @@ def _insert(owner: str, new_id: str, old_id: str, reason: str, detail: str,
     return row
 
 
+#: Of the closed predicate set above, only the ones describing a state that
+#: naturally has exactly ONE current value for a given subject over time —
+#: where someone lives, where they work — are ever superseded
+#: AUTOMATICALLY. "the project uses Python" -> "uses Rust", "X prefers A" ->
+#: "prefers B", "X is Y" -> "X is Z" stay `open`, the same contradictions a
+#: human should look at they always were: a technology choice or an
+#: identity claim does not "expire" the way an employer or a home town
+#: does, and every pre-existing conflict test is written against exactly
+#: that assumption. `resolve(id, keep="superseded")` still applies this
+#: resolution to ANY pair by hand, since that is an explicit human choice
+#: rather than a guess.
+_SUPERSEDABLE_PREDICATES = frozenset({"lives in", "works at", "works as", "vive en", "trabaja en"})
+
+
+def _is_supersedable_pair(text_a: str, text_b: str) -> bool:
+    svo = _extract_svo(text_a) or _extract_svo(text_b)
+    return bool(svo) and svo[1] in _SUPERSEDABLE_PREDICATES
+
+
+def _supersede_enabled() -> bool:
+    try:
+        from src.settings import get_setting
+        return bool(get_setting("memory_temporal_supersede", True))
+    except Exception:  # noqa: BLE001
+        return True
+
+
+def _detail_with_prev(detail: str, prev_valid_until: str) -> str:
+    return f"{detail}{_PREV_MARK}{prev_valid_until}"
+
+
+def _split_prev(detail: str) -> Tuple[str, str]:
+    detail = str(detail or "")
+    if _PREV_MARK in detail:
+        base, _, prev = detail.partition(_PREV_MARK)
+        return base, prev
+    return detail, ""
+
+
+def _close_superseded_item(old_item: Dict[str, Any], new_valid_from: str,
+                           now: datetime) -> str:
+    """Set `old_item`'s `valid_until` to `new_valid_from` and save it.
+    Returns the PREVIOUS `valid_until` (possibly ``""``), for `detail`."""
+    from src.memory_engine import save_item
+
+    previous = str(old_item.get("valid_until") or "")
+    old_item["valid_until"] = new_valid_from
+    old_item["updated_at"] = _iso(now)
+    save_item(old_item)
+    return previous
+
+
 def detect_for(item: Dict[str, Any], *, k: int = DEFAULT_TOP_K,
                now: Optional[datetime] = None) -> List[Dict[str, Any]]:
     """Compare a just-written item against active items already in its
@@ -372,6 +434,17 @@ def detect_for(item: Dict[str, Any], *, k: int = DEFAULT_TOP_K,
 
     The just-written item is always the "new" side: it was, by
     construction, stored after everything it is compared against.
+
+    MEM-TEMPORAL: a ``same_subject_different_value`` pair, with
+    ``memory_temporal_supersede`` on, is resolved immediately instead of
+    left ``open`` — "Ada works at Bluehaven" after "Ada works at Cordera
+    Labs" is not a contradiction, it is the SAME fact at a later time. The
+    older item's ``valid_until`` is set to the new item's ``valid_from``
+    (or its ``created_at``), the conflict is recorded as ``superseded``
+    (not ``open``), and — because `memory_engine.public_item`'s ranking
+    penalty only ever applies to an ``open`` conflict — the older item is
+    never marked "contradicted" for this. Negation conflicts are never
+    superseded: they stay ``open``, exactly as before this feature.
     """
     try:
         item_id = str(item.get("id") or "")
@@ -384,14 +457,36 @@ def detect_for(item: Dict[str, Any], *, k: int = DEFAULT_TOP_K,
             return []
         candidates = _top_k(text, candidates, max(1, int(k or DEFAULT_TOP_K)))
         now = now or datetime.now(timezone.utc)
+        supersede_on = _supersede_enabled()
         created: List[Dict[str, Any]] = []
         for cand in candidates:
             result = classify(text, cand.get("text"))
             if result is None:
                 continue
             reason, detail = result
-            created.append(_insert(owner, item_id, str(cand.get("id") or ""),
-                                   reason, detail, now))
+            old_id = str(cand.get("id") or "")
+            if (reason == "same_subject_different_value" and supersede_on
+                    and _is_supersedable_pair(text, cand.get("text"))):
+                new_valid_from = str(item.get("valid_from") or item.get("created_at")
+                                     or _iso(now))
+                try:
+                    previous_until = _close_superseded_item(dict(cand), new_valid_from, now)
+                except Exception as exc:  # noqa: BLE001 - the row is still recorded
+                    logger.debug("memory_conflicts: supersede close failed (%s)", exc)
+                    previous_until = str(cand.get("valid_until") or "")
+                row = _insert(owner, item_id, old_id, reason,
+                             _detail_with_prev(detail, previous_until), now)
+                stamp = _iso(now)
+                with _db() as conn:
+                    conn.execute(
+                        f"UPDATE {_TABLE} SET status = 'superseded', resolved_at = ? "
+                        f"WHERE id = ?", (stamp, row["id"]),
+                    )
+                row["status"] = "superseded"
+                row["resolved_at"] = stamp
+                created.append(row)
+            else:
+                created.append(_insert(owner, item_id, old_id, reason, detail, now))
         return created
     except Exception as exc:  # noqa: BLE001 - hot-ish path, must never raise
         logger.debug("memory_conflicts: detect_for failed (%s)", exc)
@@ -464,6 +559,11 @@ def resolve(conflict_id: Any, keep: Any, *, owner: Optional[str] = None,
     * ``"new"``  — the newer item stands; the older one is `forget()`-ed.
     * ``"old"``  — the older item stands; the newer one is `forget()`-ed.
     * ``"both"`` — neither is removed; the conflict is just marked resolved.
+    * ``"superseded"`` — MEM-TEMPORAL: the same resolution `detect_for`
+      applies automatically (close the older item's window instead of
+      forgetting either side), triggered by hand — for a pair the automatic
+      pass left ``open`` because ``memory_temporal_supersede`` was off at
+      the time, or that the owner wants resolved this way regardless.
 
     Owner isolation: with `owner` given, a conflict recorded under a
     DIFFERENT owner is treated as not found rather than resolved — the same
@@ -472,38 +572,80 @@ def resolve(conflict_id: Any, keep: Any, *, owner: Optional[str] = None,
     already resolved, or is not this owner's to resolve.
     """
     keep = str(keep or "").strip().lower()
-    if keep not in ("new", "old", "both"):
-        raise MemoryConflictError("keep must be 'new', 'old' or 'both'")
+    if keep not in ("new", "old", "both", "superseded"):
+        raise MemoryConflictError("keep must be 'new', 'old', 'both' or 'superseded'")
     conflict = get_conflict(conflict_id)
     if not conflict or conflict.get("status") != "open":
         return None
     if owner is not None and str(conflict.get("owner") or "") != str(owner):
         return None
 
-    from src.memory_engine import forget
+    now = now or datetime.now(timezone.utc)
+    from src.memory_engine import forget, get_item
 
+    detail = conflict.get("detail", "")
     if keep == "new":
         forget(conflict["old_id"], reason=f"superseded by {conflict['new_id']}")
         status = "kept_new"
     elif keep == "old":
         forget(conflict["new_id"], reason=f"superseded by {conflict['old_id']}")
         status = "kept_old"
+    elif keep == "superseded":
+        new_item = get_item(conflict["new_id"])
+        old_item = get_item(conflict["old_id"])
+        if not new_item or not old_item:
+            return None
+        new_valid_from = str(new_item.get("valid_from") or new_item.get("created_at")
+                             or _iso(now))
+        previous_until = _close_superseded_item(old_item, new_valid_from, now)
+        detail = _detail_with_prev(detail, previous_until)
+        status = "superseded"
     else:
         status = "kept_both"
 
     stamp = _iso(now)
     with _db() as conn:
         conn.execute(
-            f"UPDATE {_TABLE} SET status = ?, resolved_at = ? WHERE id = ?",
-            (status, stamp, conflict["id"]),
+            f"UPDATE {_TABLE} SET status = ?, resolved_at = ?, detail = ? WHERE id = ?",
+            (status, stamp, detail, conflict["id"]),
         )
     conflict["status"] = status
     conflict["resolved_at"] = stamp
+    conflict["detail"] = detail
+    return conflict
+
+
+def unsupersede(conflict_id: Any, *, now: Optional[datetime] = None) -> Optional[Dict[str, Any]]:
+    """Reverse a ``superseded`` resolution: reopen the conflict and restore
+    the older item's ``valid_until`` to what it was just before it was
+    closed. None if the conflict does not exist or is not currently
+    ``superseded``."""
+    conflict = get_conflict(conflict_id)
+    if not conflict or conflict.get("status") != "superseded":
+        return None
+
+    from src.memory_engine import get_item, save_item
+
+    base_detail, previous_until = _split_prev(conflict.get("detail", ""))
+    old_item = get_item(conflict["old_id"])
+    if old_item is not None:
+        old_item["valid_until"] = previous_until
+        old_item["updated_at"] = _iso(now or datetime.now(timezone.utc))
+        save_item(old_item)
+
+    with _db() as conn:
+        conn.execute(
+            f"UPDATE {_TABLE} SET status = 'open', resolved_at = '', detail = ? WHERE id = ?",
+            (base_detail, conflict["id"]),
+        )
+    conflict["status"] = "open"
+    conflict["resolved_at"] = ""
+    conflict["detail"] = base_detail
     return conflict
 
 
 __all__ = [
     "REASONS", "STATUSES", "RANKING_PENALTY", "MemoryConflictError",
     "classify", "detect_for", "list_conflicts", "get_conflict",
-    "open_conflict_for", "resolve",
+    "open_conflict_for", "resolve", "unsupersede",
 ]

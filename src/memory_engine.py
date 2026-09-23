@@ -820,8 +820,37 @@ def add_item(
     except (TypeError, ValueError):
         conf = trust
     stamp = _iso(now or _utcnow())
+
+    # MEM-TEMPORAL: fill valid_from/valid_until from the text itself when the
+    # caller did not give either explicitly. Only an EXPLICIT date found in
+    # the text is ever used; a bare "ya no"/"used to" with no date attaches
+    # nothing but a `temporal_state` breadcrumb to provenance, never an
+    # invented `valid_until`. See src/brain/temporal.py.
+    temporal_state: Optional[str] = None
+    if valid_from is None and valid_until is None:
+        try:
+            from src.settings import get_setting
+            temporal_on = bool(get_setting("memory_temporal_parse", True))
+        except Exception:  # noqa: BLE001
+            temporal_on = True
+        if temporal_on:
+            try:
+                from src.brain.temporal import parse_temporal
+                parsed = parse_temporal(clean, now=(now or _utcnow()))
+            except Exception:  # noqa: BLE001 - a broken parser costs the window, not the write
+                parsed = None
+            if parsed:
+                if parsed.get("valid_from"):
+                    valid_from = parsed["valid_from"]
+                if parsed.get("valid_until"):
+                    valid_until = parsed["valid_until"]
+                if parsed.get("state") == "past" and not parsed.get("valid_until"):
+                    temporal_state = "past"
+
     prov = dict(provenance) if isinstance(provenance, dict) else {}
     prov.setdefault("who", trust_class)
+    if temporal_state:
+        prov.setdefault("temporal_state", temporal_state)
     item = {
         "id": uuid.uuid4().hex,
         "owner": owner,
@@ -1104,9 +1133,17 @@ def list_items(
     status: Optional[str] = None,
     level: Optional[str] = None,
     limit: int = 200,
+    as_of: Optional[datetime] = None,
 ) -> List[Dict[str, Any]]:
     """Exact-match filtering (this is the dashboard's list). ``None`` for a
-    filter means "any"; ``""`` means "the global/unscoped ones only"."""
+    filter means "any"; ``""`` means "the global/unscoped ones only".
+
+    MEM-TEMPORAL: ``as_of`` is opt-in and OFF by default — the dashboard's
+    own list must keep showing every matching row (deprecated ones
+    included) exactly as it always has. Pass a datetime to additionally
+    filter to items whose validity window (``is_valid_now``) covers that
+    instant, the same check ``search()`` applies on the recall path.
+    """
     where: List[str] = []
     params: List[Any] = []
     for column, value in (("owner", owner), ("project", project),
@@ -1121,7 +1158,10 @@ def list_items(
     params.append(max(1, min(2000, int(limit or 200))))
     with _db() as conn:
         rows = conn.execute(sql, params).fetchall()
-    return [_row_to_item(row) for row in rows]
+    items = [_row_to_item(row) for row in rows]
+    if as_of is not None:
+        items = [item for item in items if is_valid_now(item, as_of)]
+    return items
 
 
 def scoped_items(
@@ -1312,6 +1352,7 @@ def search(
     k: int = 8,
     *,
     now: Optional[datetime] = None,
+    as_of: Optional[datetime] = None,
     levels: Optional[Sequence[str]] = None,
     statuses: Sequence[str] = ("active", "anti_pattern"),
     touch_hits: bool = True,
@@ -1322,13 +1363,21 @@ def search(
     With no vector store the lexical lane is renormalised to 0.90 and every
     row carries ``degraded: True`` — the caller can SEE the lane is missing
     instead of silently getting worse answers.
+
+    MEM-TEMPORAL: ``now`` is the CLOCK (it drives scoring/decay and defaults
+    to the real time); ``as_of`` is the separate, optional instant the
+    validity-window filter is evaluated at, so a caller can ask "what did
+    this owner's memory say as of last March" — filtered to the items valid
+    THEN — while still scoring/ranking with today's decay. ``as_of`` defaults
+    to ``now`` when not given, which is exactly today's behaviour.
     """
     now = now or _utcnow()
+    validity_instant = as_of if as_of is not None else now
     items = scoped_items(owner, project, statuses)
     # MEM-01 vigencia: an item outside its validity window is not recalled —
     # this is what keeps a refuted hypothesis from coming back as a fact
     # (list_items/the dashboard still shows it; this is the recall path).
-    items = [item for item in items if is_valid_now(item, now)]
+    items = [item for item in items if is_valid_now(item, validity_instant)]
     # MEM-01: a "secret" item (a credential or token-shaped fact) is never
     # surfaced through retrieval — it stays visible in list_items()/the
     # dashboard (the human who owns it can still see and delete it), but it
