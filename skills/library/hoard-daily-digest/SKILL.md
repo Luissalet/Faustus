@@ -1,6 +1,6 @@
 ---
 name: hoard-daily-digest
-description: Build the user's "how did my day go" summary from the Hoard apps connected as plugins — what was on screen (Argus), what was spent (Ledger), what was saved to read (Links), who to call back or congratulate (People), which meetings were recorded (Scribe), what is due for study (Hypatia) — and answer in one short, factual digest. Use when the user asks for a summary of the day or week, "¿qué he hecho hoy?", "resumen del día", "¿cómo va la semana?", or wants to catch up after being away. Use when the answer needs more than one Hoard app.
+description: One short digest of the user's day or week from the Hoard plugins: screen time (Argus), money (Ledger), reading (Links), people (People), meetings (Scribe), study (Hypatia). Use when the user asks "¿qué he hecho hoy?", "resumen del día/semana", or wants to catch up after being away.
 version: 1.0.0
 category: research
 tags: [hoards, digest, daily, argus, ledger, links, people, scribe, hypatia]
@@ -10,10 +10,7 @@ source: imported
 
 ## When to Use
 
-The user wants a picture of their day or week that no single app gives:
-time and focus (Argus), money (Ledger), reading (Links), people (People),
-meetings (Scribe), study (Hypatia). Skip it when the question is about one
-app only — call that app's tools directly.
+The user wants the whole picture of a day or week, not one app's answer. Skip it for a single-app question — call that app's tools directly.
 
 ## Procedure
 

@@ -1,6 +1,6 @@
 ---
 name: hoard-study-cards
-description: Turn what the user has read into flashcards and quiz them on it, with the Hoard plugins — passages from the personal library (Borges) or a saved page (Links) become cards in the flashcard app (Hypatia), and "examíname" runs a spaced-repetition session in the chat. Use when the user says "hazme tarjetas de", "fichas de repaso", "quiero memorizar", "prepárame el examen de", "examíname", "pregúntame", "repasemos", or asks to study a topic from their own notes.
+description: Flashcards from what the user has read, and a quiz on them, with the Hoard plugins: library passages (Borges) or saved pages (Links) become cards in Hypatia; "examíname" runs a spaced-repetition session in the chat. Use when the user says "hazme tarjetas de", "quiero memorizar", "prepárame el examen de", "examíname", "pregúntame", "repasemos".
 version: 1.0.0
 tags: [hoards, study, flashcards, hypatia, borges, links, quiz]
 category: research
@@ -10,11 +10,7 @@ source: imported
 
 ## When to Use
 
-Two moments: the user wants cards made from material they own (a topic in
-their library, a saved article, something they just pasted), or they want
-to be quizzed on what is due. Skip it for a general knowledge question
-("¿qué es TCP?") that is not about their material, and for a single
-`cards_stats` question.
+Two moments: the user wants cards made from material they own, or wants to be quizzed on what is due. Skip it for a general knowledge question that is not about their material.
 
 ## Procedure
 

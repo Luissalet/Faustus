@@ -1,6 +1,6 @@
 ---
 name: hoard-meeting-prep
-description: Prepare the user for a meeting, call or reunion with a specific person or on a specific topic by gathering what their Hoard apps already know — who the person is and what was said last time (People), recorded conversations that mention them (Scribe), pages saved about the topic (Links), documents in the personal library (Borges) and what was on screen when it last came up (Argus) — into one short brief. Use when the user says "tengo una reunión con X", "prepárame la llamada con", "qué sé de X", "antes de hablar con", "resúmeme lo que tengo sobre <tema>", or asks what to bring up with someone.
+description: A brief before a meeting or call with a person or on a topic, from the Hoard plugins: who they are and what is pending (People), the last recorded conversation (Scribe), saved pages (Links), library passages (Borges), when it last came up on screen (Argus). Use when the user says "tengo una reunión con X", "prepárame la llamada con", "qué sé de X", "antes de hablar con".
 version: 1.0.0
 tags: [hoards, meeting, brief, people, scribe, links, borges, argus]
 category: research
@@ -10,11 +10,7 @@ source: imported
 
 ## When to Use
 
-The user is about to talk to someone or about something and wants the
-context they already own but cannot remember: the person's facts and
-open reminders, the last conversation with them, what they saved to
-read about the subject, the documents that mention it. Skip it for a
-single-app question ("¿cuándo cumple años X?" is `get_person` alone).
+The user is about to talk to someone or about something and wants the context they already own. Skip it for a one-fact question ("¿cuándo cumple años X?" is `get_person` alone).
 
 ## Procedure
 
