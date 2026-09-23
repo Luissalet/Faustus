@@ -2032,11 +2032,36 @@ def setup_chat_routes(
         _auto_web = False
         if (not _search_enabled and allow_web_search in (None, "")
                 and not is_web_search_explicitly_denied(allow_web_search) and isinstance(message, str)):
+            # The keyword rule decides on its own when it is confident; when
+            # it is not (only a bare time word, or a question with no
+            # keyword at all) a typed decision may settle it within
+            # `typed_decision_timeout_ms`, and the rule stands whenever that
+            # is off, unavailable or unsure (src/freshness.py).
+            _freshness = None
             try:
-                from src.freshness import looks_time_sensitive
-                _auto_web = looks_time_sensitive(message)
+                from src.freshness import decide_freshness
+                try:
+                    _fresh_owner = get_current_user(request)
+                except Exception:  # noqa: BLE001
+                    _fresh_owner = None
+                _freshness = await decide_freshness(message, owner=_fresh_owner or None)
+                _auto_web = bool(_freshness.get("time_sensitive"))
             except Exception:  # noqa: BLE001
-                _auto_web = False
+                try:
+                    from src.freshness import looks_time_sensitive
+                    _auto_web = looks_time_sensitive(message)
+                except Exception:  # noqa: BLE001
+                    _auto_web = False
+            if _freshness and _freshness.get("decision"):
+                _fd = _freshness["decision"]
+                logger.info(
+                    "[freshness] typed decision: %s (best=%s p=%s mass=%s method=%s%s, %.0f ms; "
+                    "rule=%s) -> web search %s",
+                    _fd.get("value"), _fd.get("best"), _fd.get("confidence"), _fd.get("mass"),
+                    _fd.get("method"), f" reason={_fd.get('reason')}" if _fd.get("reason") else "",
+                    float(_fd.get("ms") or 0.0), _freshness.get("why"),
+                    "on" if _auto_web else "off",
+                )
             if _auto_web:
                 _search_enabled = True
                 if chat_mode == "agent":

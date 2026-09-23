@@ -15,6 +15,14 @@ X", "summarize this file"). A false negative reproduces the original bug; a
 false positive is not free either, because the nudge is an instruction and
 sends the model to the web instead of to the tool that holds the answer --
 see ``_OWN_THINGS`` below.
+
+The patterns stay pure and synchronous. On top of them,
+:func:`freshness_assessment` says whether the rule is confident, and the
+async :func:`decide_freshness` (used by the chat route) asks a typed
+decision (``src/typed_decision.py``: one prefill, the next-token
+probabilities of "yes"/"no") ONLY for the turns the rule is unsure about,
+under a hard latency budget, and falls back to the rule whenever the model
+is not already loaded, too slow or not sure enough.
 """
 
 from __future__ import annotations
@@ -22,7 +30,7 @@ from __future__ import annotations
 import re
 from typing import List
 
-__all__ = ["looks_time_sensitive", "freshness_reasons"]
+__all__ = ["looks_time_sensitive", "freshness_reasons", "freshness_assessment", "decide_freshness"]
 
 # Each entry: (label, compiled pattern). Patterns are matched case-
 # insensitively against the raw user text. Spanish and English are mixed in
@@ -120,3 +128,119 @@ def freshness_reasons(text: str) -> List[str]:
 def looks_time_sensitive(text: str) -> bool:
     """True when ``text`` looks like it needs a live web search to answer well."""
     return bool(freshness_reasons(text))
+
+
+# ---------------------------------------------------------------------------
+# How sure is the rule? (pure) — and the optional typed decision (async)
+# ---------------------------------------------------------------------------
+#
+# The patterns above are the first pass and the fallback. They are CERTAIN
+# when a label that names a public, changing subject fires (a match, a price,
+# the weather, an office holder...), and when the turn is plainly not a
+# question about the world (empty, code, a request to write/translate/sum
+# up, the person's own things). They are UNSURE when only a bare time word
+# fired ("¿cuál es la última versión estable?" is fresh; "explícame el
+# último paso" is not), or when nothing fired on something that reads like a
+# question about the world ("¿quién dirige ahora el club?" has no keyword).
+# Only the unsure cases may consult a typed decision.
+
+_QUESTION_START = re.compile(
+    r"^\s*[¿¡]?\s*(qu[eé]|qui[eé]n(?:es)?|cu[aá]ndo|d[oó]nde|cu[aá]l(?:es)?|cu[aá]nt[oa]s?|"
+    r"c[oó]mo|hay|sigue|est[aá]n?|es|son|va|van|ha|han|who|what|when|where|which|how|"
+    r"is|are|was|were|does|do|did|will|has|have|can|could)\b",
+    re.IGNORECASE,
+)
+_TIMELESS_START = re.compile(
+    r"^\s*[¿¡]?\s*(expl[ií]ca(?:me)?|explain|define|traduce|translate|resume|resum[eí]|"
+    r"summari[sz]e|escribe|write|reescribe|rewrite|corrige|fix|refactori[sz]a|refactor|"
+    r"calcula|calculate|compute|demuestra|prove|genera|generate|crea|create|haz|make|"
+    r"lista|list|ordena|sort|convierte|convert|dibuja|draw)\b",
+    re.IGNORECASE,
+)
+_MATH_ONLY = re.compile(r"^[\s\d\.\,\+\-\*/\^\(\)=x×÷%]+\??$")
+_MAX_DECISION_CHARS = 1500
+
+FRESHNESS_QUESTION = (
+    "Does answering this message well require information that changes over time "
+    "or recent events (news, prices, scores or results, software versions, weather, "
+    "schedules, who currently holds a role), so it should be looked up on the web?"
+)
+
+
+def _question_like(raw: str) -> bool:
+    return "?" in raw or "¿" in raw or bool(_QUESTION_START.search(raw))
+
+
+def freshness_assessment(text: str) -> dict:
+    """The rule verdict and whether the rule is confident about it.
+
+    ``{"time_sensitive": bool, "confident": bool, "reasons": [...],
+    "why": str}`` — ``time_sensitive`` is exactly ``looks_time_sensitive``
+    (this function never changes the rule's answer, only says how much to
+    trust it)."""
+    raw = str(text or "")
+    reasons = freshness_reasons(raw)
+    verdict = bool(reasons)
+    stripped = raw.strip()
+    if not stripped:
+        return {"time_sensitive": False, "confident": True, "reasons": [], "why": "empty"}
+    all_hits = [label for label, pattern in _PATTERNS if pattern.search(raw)]
+    if any(label not in _WEAK_LABELS for label in all_hits):
+        return {"time_sensitive": verdict, "confident": True, "reasons": reasons, "why": "strong_label"}
+    if len(stripped) > _MAX_DECISION_CHARS or "```" in raw:
+        why = "long_or_code"
+    elif _OWN_THINGS.search(raw):
+        why = "own_things"
+    elif _MATH_ONLY.match(stripped):
+        why = "math"
+    elif all_hits:
+        return {"time_sensitive": verdict, "confident": False, "reasons": reasons, "why": "weak_label_only"}
+    elif _TIMELESS_START.search(raw):
+        why = "timeless_request"
+    elif _question_like(raw):
+        return {"time_sensitive": verdict, "confident": False, "reasons": reasons, "why": "question_no_label"}
+    else:
+        why = "not_a_question"
+    return {"time_sensitive": verdict, "confident": True, "reasons": reasons, "why": why}
+
+
+async def decide_freshness(text: str, *, owner=None) -> dict:
+    """The hot-path entry: the rule first, a typed decision only when the rule
+    is unsure (see :func:`freshness_assessment`), the rule again whenever the
+    decision is unavailable, unsure or turned off. Never raises.
+
+    Returns ``{"time_sensitive", "source": "rule"|"typed_decision",
+    "reasons", "why", "decision": {...} | None}``; ``decision`` is the
+    audited typed decision (value, confidence, mass, method, reason, ms)
+    whenever one was asked, even if its answer was not used."""
+    try:
+        assessment = freshness_assessment(text)
+    except Exception:  # noqa: BLE001
+        assessment = {"time_sensitive": looks_time_sensitive(text), "confident": True,
+                      "reasons": [], "why": "error"}
+    result = {"time_sensitive": bool(assessment["time_sensitive"]), "source": "rule",
+              "reasons": list(assessment.get("reasons") or []), "why": assessment.get("why", ""),
+              "decision": None}
+    if assessment.get("confident"):
+        return result
+    try:
+        from src import typed_decision
+        if not typed_decision.enabled() or not bool(typed_decision._setting("typed_decision_freshness")):
+            return result
+        decisions = await typed_decision.decide(
+            str(text or ""),
+            [typed_decision.Field("needs_web", FRESHNESS_QUESTION, "bool")],
+            owner=owner, caller="freshness",
+        )
+        decision = decisions.get("needs_web")
+    except Exception:  # noqa: BLE001 - the rule result stands
+        return result
+    if decision is None:
+        return result
+    result["decision"] = {k: getattr(decision, k) for k in
+                          ("value", "best", "confidence", "mass", "method", "reason", "ms")}
+    # A single parsed letter has no probability behind it: keep the rule.
+    if decision.method == "logprobs" and decision.value in ("yes", "no"):
+        result["time_sensitive"] = decision.value == "yes"
+        result["source"] = "typed_decision"
+    return result

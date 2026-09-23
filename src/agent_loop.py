@@ -9345,7 +9345,11 @@ async def _stream_agent_loop_body(
     # domain rule text is in the system prompt); this is the same one-line
     # push other domain hints use, telling the model to act instead of
     # narrating. Only once per turn, not per round.
-    if _intent.get("freshness_reasons") and not guide_only:
+    # A turn whose web tools are all withheld (the person switched search
+    # off, or the route's freshness check settled on "not time-sensitive")
+    # gets no instruction to use them.
+    _web_withheld = set(WEB_TOOL_NAMES) <= set(disabled_tools or ())
+    if _intent.get("freshness_reasons") and not guide_only and not _web_withheld:
         messages.append({
             "role": "system",
             "content": "This question is time-sensitive: search the web before answering.",
