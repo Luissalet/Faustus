@@ -1077,6 +1077,46 @@ def forget(item_id: Any, *, reason: str = "", ref: str = "",
     return tombstone
 
 
+def _lenient(validator: Any, value: Any, default: Any) -> Any:
+    """`validator(value, default)`, or `default` when the stored value is not
+    valid any more — a field copied from an existing row (written before a
+    validation existed, or by an older unvalidated path) must never be the
+    reason a correction of that row fails."""
+    try:
+        return validator(value, default)
+    except MemoryEngineError:
+        return default
+
+
+def _correction_window(old: Dict[str, Any], clean: str,
+                       now: Optional[datetime]) -> Tuple[Any, Any, Optional[str]]:
+    """(valid_from, valid_until, temporal_state) for a correction: the
+    original's window carries over, and an explicit date in the corrected
+    text (same parser and setting as `add_item`) overrides the matching end."""
+    valid_from = old.get("valid_from") or None
+    valid_until = old.get("valid_until") or None
+    state: Optional[str] = None
+    try:
+        from src.settings import get_setting
+        temporal_on = bool(get_setting("memory_temporal_parse", True))
+    except Exception:  # noqa: BLE001
+        temporal_on = True
+    if temporal_on:
+        try:
+            from src.brain.temporal import parse_temporal
+            parsed = parse_temporal(clean, now=(now or _utcnow()))
+        except Exception:  # noqa: BLE001 - a broken parser costs the window, not the write
+            parsed = None
+        if parsed:
+            if parsed.get("valid_from"):
+                valid_from = parsed["valid_from"]
+            if parsed.get("valid_until"):
+                valid_until = parsed["valid_until"]
+            if parsed.get("state") == "past" and not parsed.get("valid_until"):
+                state = "past"
+    return valid_from, valid_until, state
+
+
 def correct(item_id: Any, new_text: Any, *, reason: str = "",
            now: Optional[datetime] = None, **fields: Any) -> Optional[Dict[str, Any]]:
     """MEM-02: replace an item with corrected text, procedure linked back to
@@ -1087,43 +1127,83 @@ def correct(item_id: Any, new_text: Any, *, reason: str = "",
     `respect_tombstones=False` because it is the explicit human act the
     tombstone exists to still allow — otherwise correcting a memory and
     having the corrected text collide with its own tombstone would make
-    `correct` unusable. Any field in `fields` (e.g. `trust_class`, `evidence`)
-    overrides what is copied from the original. Returns the NEW item, or None
-    if `item_id` did not exist.
+    `correct` unusable. Any field in `fields` (e.g. `trust_class`, `evidence`,
+    `pinned`) overrides what is copied from the original. Returns the NEW
+    item, or None if `item_id` did not exist.
+
+    A correction changes the text, nothing else the owner decided: `pinned`,
+    `suppressed`, `sensitivity` and the validity window carry over (a
+    sensitivity silently reset to "normal" would be a privacy regression).
+    The replacement is fully built and validated BEFORE the original is
+    tombstoned, and if writing it still fails the original is put back, so a
+    correction can never lose the memory it was correcting.
     """
     old = get_item(item_id)
     if not old:
         return None
-    # Validate the replacement BEFORE the original is gone: a correction
-    # with empty text must fail with the original still in place, not
-    # tombstone it and then raise from add_item.
     if not isinstance(new_text, str) or not new_text.strip():
         raise MemoryEngineError("correct(): new_text must be a non-empty string")
-    tombstone = forget(item_id, reason=reason or "corrected", now=now)
+    clean = _clean_text(new_text)
     provenance = dict(old.get("provenance") or {})
     provenance["corrected_from"] = str(item_id)
-    if tombstone:
-        provenance["tombstone_id"] = tombstone["id"]
     kwargs: Dict[str, Any] = {
         "owner": old.get("owner", ""),
         "project": old.get("project", ""),
-        "level": old.get("level", "semantic"),
+        "level": _lenient(_valid_level, old.get("level"), "semantic"),
         "category": old.get("category", ""),
-        "trust_class": old.get("trust_class", "agent_assertion"),
+        "trust_class": _lenient(_valid_trust_class, old.get("trust_class"), "agent_assertion"),
         "confidence": old.get("confidence"),
         "evidence": old.get("evidence") or [],
         "status": "active",
         "maturity": "candidate",
-        "type": old.get("type"),
+        "type": _lenient(_valid_type, old.get("type"), None),
         "session_id": old.get("session_id", ""),
-        "valid_from": None,
-        "valid_until": None,
+        "sensitivity": _lenient(_valid_sensitivity, old.get("sensitivity"), "normal"),
         "provenance": provenance,
     }
+    if "valid_from" not in fields and "valid_until" not in fields:
+        valid_from, valid_until, state = _correction_window(old, clean, now)
+        kwargs["valid_from"], kwargs["valid_until"] = valid_from, valid_until
+        if state:
+            provenance.setdefault("temporal_state", state)
+    pinned = bool(fields.pop("pinned", old.get("pinned")))
+    suppressed = bool(fields.pop("suppressed", old.get("suppressed")))
     kwargs.update(fields)
+
+    # Validate everything add_item will, while the original is still intact.
+    _valid_level(kwargs.get("level"))
+    _valid_trust_class(kwargs.get("trust_class"))
+    _valid_status(kwargs.get("status"))
+    _valid_sensitivity(kwargs.get("sensitivity"))
+    _valid_type(kwargs.get("type"), "fact")
+    if str(kwargs.get("maturity") or "candidate").strip().lower() not in MATURITIES:
+        raise MemoryEngineError(f"maturity must be one of {', '.join(MATURITIES)}")
+    for key in ("valid_from", "valid_until"):
+        value = kwargs.get(key)
+        if value not in (None, "") and parse_iso(value) is None:
+            raise MemoryEngineError(f"{key} must be an ISO date or timestamp")
+
+    tombstone = forget(item_id, reason=reason or "corrected", now=now)
+    if tombstone:
+        provenance["tombstone_id"] = tombstone["id"]
     kwargs["respect_tombstones"] = False
     kwargs["now"] = now
-    return add_item(new_text, **kwargs)
+    try:
+        new_item = add_item(clean, **kwargs)
+    except Exception:
+        # Put the original back exactly as it was: a correction that did
+        # not land must not have deleted anything.
+        save_item(old)
+        _index(str(old["id"]), str(old.get("text") or ""))
+        if tombstone:
+            with _db() as conn:
+                conn.execute(f"DELETE FROM {TOMBSTONE_TABLE} WHERE id = ?", (tombstone["id"],))
+        raise
+    if pinned:
+        new_item = _set_flag(new_item["id"], "pinned", True, now) or new_item
+    if suppressed:
+        new_item = _set_flag(new_item["id"], "suppressed", True, now) or new_item
+    return new_item
 
 
 def list_items(
