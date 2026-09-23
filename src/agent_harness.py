@@ -91,6 +91,34 @@ OTHER_EFFECT_TOOLS = frozenset({
     # unsupported even though the dedicated tool had succeeded.
     "project_objectives", "manage_project_context",
 })
+# MCP tools (plugins, connectors) are only known here by name, so the verb in
+# the tool's own name decides whether a successful call is evidence for an
+# "I added / saved / created X" answer. Seen live: a turn whose only tool calls
+# were `models_add_root` + `models_stats` on a plugin ended with "la carpeta
+# está añadida" and was rejected twice as claims_without_mutation — two extra
+# rounds of the 27B to re-say a true sentence. Read-only names (`*_search`,
+# `*_stats`, `get_*`, `list_*`…) stay "read" so a fabricated claim after a
+# lookup is still caught.
+MCP_EFFECT_VERBS = frozenset({
+    "add", "create", "set", "upsert", "update", "delete", "remove", "save", "tag", "untag",
+    "send", "write", "put", "post", "patch", "insert", "move", "rename", "archive", "restore",
+    "reply", "register", "assign", "schedule", "cancel", "clear", "reset", "enable", "disable",
+    "apply", "run", "execute", "submit", "publish", "sync", "connect", "disconnect", "install",
+    "uninstall", "import", "export", "index", "reindex", "rescan", "scan", "record", "start",
+    "stop", "log", "mark", "toggle", "note", "capture", "transcribe", "generate", "build",
+    "edit", "append", "attach", "detach", "merge", "split", "convert", "watch", "unwatch",
+})
+
+
+def mcp_tool_looks_mutating(tool: str) -> bool:
+    """`mcp__<server>__<name>` whose <name> carries a mutating verb."""
+    parts = str(tool or "").split("__", 2)
+    if len(parts) != 3 or parts[0] != "mcp":
+        return False
+    words = set(re.split(r"[^a-z0-9]+", parts[2].lower()))
+    return bool(words & MCP_EFFECT_VERBS)
+
+
 # Tools whose OUTPUT grounds paths: anything they print exists (or existed).
 DISCOVERY_TOOLS = frozenset({
     "ls", "glob", "grep", "read_file", "get_workspace", "project_context",
@@ -1225,7 +1253,7 @@ class TurnLedger:
             if kind != "mutation" and _SHELL_WRITE_HINT_RE.search(content or ""):
                 for p in paths:
                     self.shell_write_hints.add(_norm(p).rsplit("/", 1)[-1])
-        elif tool in OTHER_EFFECT_TOOLS:
+        elif tool in OTHER_EFFECT_TOOLS or mcp_tool_looks_mutating(tool):
             kind = "effect"
         ev = {
             "round": round_num, "tool": tool, "ok": ok, "kind": kind,

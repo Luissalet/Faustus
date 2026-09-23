@@ -7527,6 +7527,43 @@ el hueco por inpainting, se recolorea el dragón por luminancia con dos tonos
 por app y se compone un glifo dorado vectorial en el anillo. El guion vive
 en la sesión (`real_dragon.py`); los PNG en `Proyectos independientes\Icons`.
 
+### Vulcan en el 7000 de verdad, y un fallo del arnés que tocaba a todos los plugins
+
+Escaneo real: 13 371 STL (`Contornos pokemon`, 3,5 GB, 70 M de triángulos)
+en 12,5 min con 18 procesos, 0 errores, 9 011 duplicados detectados,
+miniatura para todos. La primera pasada de esta pregunta había llevado al
+27B a escarbar en la carpeta de datos de Vulcan con PowerShell porque el
+escaneo tardaba y `models_stats` no decía cuánto quedaba; ahora hay
+`rate`/`eta_s` por raíz y la instrucción explícita de no tocar la base.
+
+Batería de dos en el 7000 (con login, aprobando cada tarjeta):
+
+- «Añade la carpeta… ¿cuántos modelos, cuál es el más grande en mm, hay
+  duplicados?» → `lookup_tools` → `models_add_root` → `models_stats` →
+  `models_search` + `models_dupes` en paralelo, y una respuesta correcta…
+  que el usuario nunca vio: el arnés la rechazó dos veces
+  (`claims_without_mutation`) y sustituyó el texto por «No hice ningún
+  cambio verificable». **Causa**: `TurnLedger.record` clasificaba toda
+  llamada `mcp__*` como lectura, así que «la carpeta está añadida» no
+  tenía evidencia aunque `models_add_root` hubiera devuelto `ok`. Con
+  siete apps cuyas herramientas son todas MCP, cualquier respuesta que diga
+  «guardado/añadido/apuntado» corría ese riesgo. Arreglo: el verbo del
+  nombre de la herramienta (`add`, `upsert`, `save`, `set`, `tag`,
+  `rescan`, `start`…) marca la llamada como efecto; `*_search`, `*_stats`,
+  `get_*`, `list_*` siguen siendo lecturas para que una afirmación tras una
+  consulta se siga rechazando (`tests/test_harness_mcp_effects.py`).
+- «Elige un modelo sin ficha, mira sus medidas y escríbele una ficha…» →
+  `models_search(has_listing=false, sort=size)` → `model_info` →
+  `model_listing_set` con título, 90 palabras en inglés y 10 etiquetas
+  sacadas de las medidas reales (226×226×12 mm, 28 triángulos, estanco);
+  122 s, ficha verificada en la app.
+
+Y una skill de biblioteca, `hoard-daily-digest`, que junta las apps en un
+único «¿qué he hecho hoy?»: pantalla (Argus), dinero (Ledger), lectura
+(Links), gente (People), reuniones (Scribe); sólo herramientas de lectura,
+«sin datos de X» cuando una app no responde, y nunca inventa la parte que
+falta. Instalable desde la biblioteca de skills como las demás.
+
 ### Pendiente
 
 - La puerta de contexto externo se arma en cada turno con estas apps (las
@@ -7534,15 +7571,17 @@ en la sesión (`real_dragon.py`); los PNG en `Proyectos independientes\Icons`.
   «Allow this task to continue?». Con la regla «lo que pides tú, pasa» (§166)
   faltan comparadores para `add_entry`, `save_link`, `upsert_person`,
   `screen_recent`, `library_search`, `scribe_sessions`…
-- El otro chat tiene un plugin `argus` (biblioteca de fotos) en su banco de
-  pruebas; mismo id que el Argus de memoria de pantalla. Uno de los dos tiene
-  que cambiar de nombre antes de que el suyo llegue a `plugins/`.
-- Perfiles de arranque para las seis en el 7000 (hoy arrancan a mano con
-  `hoards_start.ps1`), y el 7003 es una instancia de pruebas que no debe
-  quedarse.
+- Las siete tienen perfil de arranque e icono en el 7000 (`setup7000.py`),
+  pero nadie las arranca al iniciar sesión: hoy es `hoards_start.ps1` a mano
+  o el perfil desde Faustus. El 7003 y `faustus-hoards-data` son de pruebas
+  y no deben quedarse.
+- El 7000 arrancó antes del arreglo del arnés (`mcp_tool_looks_mutating`):
+  hasta que se reinicie sigue rechazando respuestas verdaderas tras una
+  herramienta MCP que escribe.
 - Scribe: la primera grabación real no captó voz (silencio): probar con una
   llamada de verdad; Borges: indexar una carpeta grande (apuntes del máster) y
-  medir; Argus: retención y tamaño en disco tras un día entero.
+  medir; Argus: retención y tamaño en disco tras un día entero; Links: la
+  hoja de compartir desde el móvil; Vulcan: la carpeta `Modelos` entera.
 ## 169. Hooks de ciclo de vida: automatización sin burocracia (23-09-2026)
 
 Faustus tenía diecinueve módulos de política y puerta (`tool_policy`,
