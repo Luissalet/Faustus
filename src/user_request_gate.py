@@ -935,24 +935,39 @@ def _edit_matcher(tool: str) -> Callable[..., bool]:
 # user's words). Only tools of a connector the user set up count — an MCP
 # server that is not one of the user's app connectors keeps the gate.
 
-_SYNONYM_LINE_RE = re.compile(r"sin[oó]nimos?\s*:\s*(.+)", re.IGNORECASE)
+_SYNONYM_LINE_RE = re.compile(r"(?:sin[oó]nimos?|keywords|palabras\s+clave)\s*:\s*(.*)", re.IGNORECASE)
+_LABEL_LINE_RE = re.compile(r"^\s*[A-Za-zÁÉÍÓÚáéíóúñÑ ]{2,30}:\s")
 
 
 def _tool_synonyms(description: str, name: str) -> list:
-    """Folded phrases from the description's `Sinónimos:` line plus the tool
-    name as words ("cards_due" -> "cards due"). Anything under four letters
-    is dropped: too short to mean a request."""
+    """Folded phrases from the description's trigger list plus the tool name
+    as words ("cards_due" -> "cards due"). The list is a `Sinónimos:` line
+    or a `Keywords:` / `Palabras clave:` paragraph, which may wrap onto the
+    following lines until a blank line or the next `Label:` (seen live: a
+    calculator's "días laborables" sat on the third line of its Keywords
+    paragraph, the gate never read it and a plain date calculation the user
+    had asked for by the app's name stopped on an approval card). Anything
+    under four letters is dropped: too short to mean a request."""
     from src import plugins as plugins_mod
 
     out = []
-    for line in str(description or "").splitlines():
-        m = _SYNONYM_LINE_RE.search(line)
+    lines = str(description or "").splitlines()
+    i = 0
+    while i < len(lines):
+        m = _SYNONYM_LINE_RE.search(lines[i])
         if not m:
+            i += 1
             continue
-        for raw in re.split(r"[,;·|]", m.group(1)):
-            phrase = plugins_mod.fold(raw)
+        chunk = [m.group(1)]
+        j = i + 1
+        while j < len(lines) and lines[j].strip() and not _LABEL_LINE_RE.match(lines[j]):
+            chunk.append(lines[j])
+            j += 1
+        for raw in re.split(r"[,;·|]", " ".join(chunk)):
+            phrase = plugins_mod.fold(raw.strip().rstrip("."))
             if len(phrase) >= 4:
                 out.append(phrase)
+        i = j
     words = plugins_mod.fold(name.replace("_", " "))
     if len(words) >= 4:
         out.append(words)

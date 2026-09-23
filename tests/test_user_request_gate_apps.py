@@ -44,14 +44,25 @@ CARD_DELETE = {
 }
 
 
+DATE_CALC = {
+    "name": "date_calc",
+    "description": ("Date arithmetic: days between dates, business days.\n\n"
+                    "    Cite as its `cite`.\n\n"
+                    "    Keywords: how many days between, days until, business days, working\n"
+                    "    days, add days, deadline, cuántos días entre, cuántos días faltan,\n"
+                    "    días laborables, días hábiles, sumar días, plazo.\n"),
+    "annotations": {"readOnlyHint": True, "destructiveHint": False},
+}
+
+
 class _Mcp:
-    _tools = {"4f9230b5": [CARDS_DUE, CARD_REVIEW, CARD_DELETE], "10d9867d": [ADD_ENTRY], "41bff0fe": [SAVE_LINK], "df4c1bc4": [SCREEN_SEARCH],
+    _tools = {"7aa0c0de": [DATE_CALC], "4f9230b5": [CARDS_DUE, CARD_REVIEW, CARD_DELETE], "10d9867d": [ADD_ENTRY], "41bff0fe": [SAVE_LINK], "df4c1bc4": [SCREEN_SEARCH],
               "notmine1": [CARDS_DUE]}
 
 
 @pytest.fixture(autouse=True)
 def _wire(monkeypatch):
-    connectors = {"4f9230b5", "10d9867d", "41bff0fe", "df4c1bc4"}
+    connectors = {"4f9230b5", "10d9867d", "41bff0fe", "df4c1bc4", "7aa0c0de"}
     monkeypatch.setattr("src.connector_sidecar.get_connector_for_server",
                         lambda server_id, redact=True: {"id": "c-" + server_id} if server_id in connectors else None)
     monkeypatch.setattr("src.tool_utils.get_mcp_manager", lambda: _Mcp())
@@ -156,3 +167,14 @@ def test_reading_the_skill_the_request_points_at_passes(monkeypatch):
     assert not gate.allows("manage_skills", '{"action": "view", "name": "hoard-daily-digest"}', "Examíname.")
     assert not gate.allows("manage_skills", '{"action": "edit", "name": "hoard-study-cards"}', "Examíname.")
     assert not gate.allows("manage_skills", view, "Hola, ¿qué tal?")
+
+
+def test_a_wrapped_keywords_paragraph_counts_as_the_trigger_list():
+    """The family's own convention is a `Keywords:` paragraph that wraps; the
+    phrase the user said sat on its third line (seen live, card for a date
+    calculation asked for by the app's name)."""
+    msg = "Con Laplace: ¿cuántos días laborables hay entre el 1 de octubre y el 23 de diciembre de 2026?"
+    assert gate.allows("mcp__7aa0c0de__date_calc", '{"operation": "business_days"}', msg)
+    assert not gate.allows("mcp__7aa0c0de__date_calc", '{"operation": "business_days"}', "Hola, ¿qué tal?")
+    words = gate._tool_synonyms(DATE_CALC["description"], "date_calc")
+    assert "dias laborables" in words and "plazo" in words and "working days" in words
