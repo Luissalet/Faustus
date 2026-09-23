@@ -7753,13 +7753,20 @@ de skills sigue siendo privada a efectos de contaminación).
   (idempotente, `-Stop`) a mano o el perfil desde Faustus. El 7003 y `faustus-hoards-data` son de pruebas
   y no deben quedarse.
 - El 7000 arrancó antes de los arreglos de esta tanda (`00ba4dc0`,
-  `5a507d3e`, `31722cf1`, `cf05e543`: efectos MCP, nota en lugar de la
-  tarjeta, nombres pelados, herramientas pegajosas, rutas de resultados
-  MCP, afirmaciones de registro) y antes de `plugins/hypatia/`: hasta que
+  `5a507d3e`, `31722cf1`, `cf05e543`, `1f885549`, `081dc7e8`: efectos MCP,
+  nota en lugar de la tarjeta, nombres pelados, herramientas pegajosas,
+  rutas de resultados MCP, afirmaciones de registro, la puerta para tus
+  apps) y antes de `plugins/hypatia/`: hasta que
   se reinicie sigue con el comportamiento viejo y no conoce los presets
   `hypatia` ni `echo` (los perfiles de arranque ya están creados;
   `setup7000.py 7000 --user admin --password …` adopta y conecta al
   reiniciar).
+- Examen de Hypatia con el 27B local: la primera pregunta ya pasa sin
+  tarjeta (`cards_due`, verificado en el 7003), pero el modelo sigue
+  calificando «bien» una respuesta sobre otra tarjeta y ante «No me
+  acuerdo» repite la pregunta sin `card_review` ni enseñar el reverso. La
+  calificación y la lectura de la skill sólo están probadas en tests: el
+  llama-server del 27B estaba parado cuando tocó repetirlo en vivo.
 - Scribe: la primera grabación real no captó voz (silencio): probar con una
   llamada de verdad; Borges: indexar una carpeta grande (apuntes del máster) y
   medir; Argus: retención y tamaño en disco tras un día entero; Links: la
