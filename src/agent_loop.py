@@ -3020,6 +3020,40 @@ def _compact_subagent_reports(reports) -> list:
         })
     return out
 
+_APPROVAL_CARD_QUESTION = "Allow this task to continue?"
+
+
+def _scrub_approval_card_from_history(messages: List[Dict[str, Any]], tool_name: str) -> bool:
+    """Rewrite the assistant turn that ended on the runtime's approval card.
+
+    The card's question is streamed as assistant text so the transcript keeps
+    it (see the ask_user handling in the loop), which means the model's own
+    last words in the replayed history are "Allow this task to continue?" —
+    words it never chose. Seen live with a 27B: after the user approved, the
+    next round was that sentence again, twice, and the turn ended with the
+    approval card as the visible answer. Replace the card text with a plain
+    runtime note before the approved result is appended, so the model reads
+    "I paused for approval, it was granted" instead of a question to repeat.
+    Returns True when something was rewritten."""
+    q = _APPROVAL_CARD_QUESTION.lower()
+    seen = 0
+    for msg in reversed(messages or []):
+        if not isinstance(msg, dict) or msg.get("role") != "assistant":
+            continue
+        seen += 1
+        if seen > 3:
+            return False
+        content = msg.get("content")
+        if not isinstance(content, str) or q not in content.lower():
+            continue
+        idx = content.lower().rfind(q)
+        kept = content[:idx].rstrip()
+        note = f"(paused: the runtime asked the user to approve `{tool_name}`; the user approved, its result follows)"
+        msg["content"] = (kept + "\n\n" + note) if kept else note
+        return True
+    return False
+
+
 def _resolved_tool_event_name(event: dict[str, Any]) -> str:
     tool = str(event.get("tool") or "").strip()
     if tool != "mcp":
@@ -8639,7 +8673,7 @@ async def _stream_agent_loop_body(
         return _filter_route_tool_schemas(schemas)
 
     _approved_result_injected = False
-    _approval_echo_retried = False
+    _approval_echo_retries = 0  # the card question as an answer: bounce it, twice at most
     if exact_approval is not None:
         approved = exact_approval.pending
         approved_block = ToolBlock(approved.tool_name, approved.content)
@@ -8956,6 +8990,11 @@ async def _stream_agent_loop_body(
         formatted_approved_result = format_tool_result(
             desc, approved_result, tool=approved.tool_name, command=approved.content or "",
         )
+        try:
+            if _scrub_approval_card_from_history(messages, approved.tool_name):
+                logger.info("[approval] replaced the card text in the replayed history with a runtime note")
+        except Exception:  # noqa: BLE001 - cosmetics of the replay, never the turn
+            logger.debug("[approval] history scrub skipped", exc_info=True)
         _append_tool_results(
             messages,
             "",
@@ -10833,11 +10872,13 @@ async def _stream_agent_loop_body(
                         }) + "\n\n"
                     )
 
-        if (not tool_blocks and _approved_result_injected and not _approval_echo_retried
+        if (not tool_blocks and _approved_result_injected and _approval_echo_retries < 2
                 and not _force_answer and not plan_mode
-                and _strip_think_blocks(cleaned_round).strip().lower() == "allow this task to continue?"):
-            _approval_echo_retried = True
-            messages.append({"role": "assistant", "content": cleaned_round})
+                and _strip_think_blocks(cleaned_round).strip().lower() == _APPROVAL_CARD_QUESTION.lower()):
+            _approval_echo_retries += 1
+            # Not the echo itself: replaying it as the assistant's last words
+            # is exactly what makes a local model say it a third time.
+            messages.append({"role": "assistant", "content": "(repeated the runtime's approval card instead of answering)"})
             messages.append({"role": "system", "content": (
                 "That is the already-answered runtime approval question, not task completion. "
                 "Continue the original task using the available tools and verify its outcome. "

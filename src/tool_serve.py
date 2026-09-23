@@ -92,6 +92,45 @@ def schema_for(name: str) -> Optional[Dict[str, Any]]:
     return None
 
 
+def connected_mcp_tool_names() -> List[str]:
+    """Qualified names (`mcp__<server>__<tool>`) of every connected MCP tool."""
+    try:
+        from src.tool_utils import get_mcp_manager
+        mcp = get_mcp_manager()
+        if mcp and hasattr(mcp, "get_all_openai_schemas"):
+            out: List[str] = []
+            for entry in mcp.get_all_openai_schemas({}) or []:
+                fn = entry.get("function") if isinstance(entry, dict) else None
+                name = str((fn or {}).get("name") or "")
+                if name.startswith("mcp__"):
+                    out.append(name)
+            return out
+    except Exception:
+        logger.debug("tool catalog: MCP tool listing failed", exc_info=True)
+    return []
+
+
+def resolve_bare_name(name: str) -> List[str]:
+    """The catalog names a bare tool name stands for.
+
+    A plugin's tools reach the model as `mcp__<server>__<tool>`, but a skill,
+    a doc or the user says `screen_activity`. Passed through as written, the
+    bare name came back as a stub with no schema and a `promote` of a tool
+    that does not exist — seen live: a 27B spent seven `lookup_tools` rounds
+    (one per app, ~150 s) finding names a single call had already asked for.
+    A name that is a real built-in or qualified tool is returned as is; a
+    bare name that matches the tail of one or more connected MCP tools maps
+    to those; anything else is passed through unchanged, as before."""
+    bare = str(name or "").strip()
+    if not bare:
+        return []
+    if bare.startswith("mcp__") or schema_for(bare) is not None:
+        return [bare]
+    suffix = f"__{bare}"
+    matches = [n for n in connected_mcp_tool_names() if n.endswith(suffix)]
+    return matches or [bare]
+
+
 def catalog_entry(name: str, *, detail: str = _DETAIL_CATALOG) -> Dict[str, Any]:
     entry: Dict[str, Any] = {"name": name, "summary": one_liner(name)}
     if detail == _DETAIL_SCHEMA:
@@ -210,7 +249,8 @@ def search_catalog(
         ordered.append(name)
 
     for name in wanted:
-        _add(name)
+        for resolved in resolve_bare_name(name):
+            _add(resolved)
 
     q = (query or "").strip()
     if q:
