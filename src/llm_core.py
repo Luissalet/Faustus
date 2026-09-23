@@ -11,6 +11,7 @@ import re
 import os
 import math
 import unicodedata
+import weakref
 from contextlib import asynccontextmanager
 from fastapi import HTTPException
 from typing import Any, Optional, Dict, List, Tuple, Callable, Mapping
@@ -935,17 +936,57 @@ def _clear_host_dead(url: str) -> None:
 # Shared async HTTP client. Reusing one client keeps connections warm:
 # repeat calls to api.anthropic.com / api.openai.com / openrouter skip the
 # 100-500ms TCP+TLS handshake. Lazy init so we bind to the running event loop.
+#
+# A pooled connection belongs to the event loop that opened it. Background
+# jobs (context maintenance, the second brain's extraction and wiki passes,
+# typed decisions from sync code) run `asyncio.run` in a worker thread: when
+# such a job was the first caller, the shared client's connections were bound
+# to that short-lived loop, the loop closed, and the next chat turn on the app
+# loop failed at once with "Event loop is closed" (reported as a 502
+# transport error). So the shared client remembers the loop that created it:
+# a second live loop gets a client of its own, and a client whose loop is
+# gone is replaced instead of reused.
 _http_client: Optional[httpx.AsyncClient] = None
+_http_client_owner: Optional[Tuple[int, Any]] = None  # (id(client), loop that created it)
+_loop_http_clients: "weakref.WeakKeyDictionary[Any, httpx.AsyncClient]" = weakref.WeakKeyDictionary()
 _http_limits = httpx.Limits(max_connections=100, max_keepalive_connections=30, keepalive_expiry=30.0)
 
+
+def _new_http_client() -> httpx.AsyncClient:
+    from src.tls_overrides import llm_verify
+    return httpx.AsyncClient(limits=_http_limits, http2=False, verify=llm_verify())
+
+
 def _get_http_client() -> httpx.AsyncClient:
-    """Return process-wide AsyncClient. Per-request timeout is passed at call time."""
-    global _http_client
-    if _http_client is None or _http_client.is_closed:
-        from src.tls_overrides import llm_verify
-        _http_client = httpx.AsyncClient(
-            limits=_http_limits, http2=False, verify=llm_verify(),
-        )
+    """Return the AsyncClient for the running event loop. Per-request timeout
+    is passed at call time."""
+    global _http_client, _http_client_owner
+    try:
+        loop: Any = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+    client = _http_client
+    if client is not None and not client.is_closed:
+        owner = _http_client_owner
+        if owner is None or owner[0] != id(client):
+            # Set from outside (tests) or before this bookkeeping existed:
+            # adopt it for the current loop.
+            _http_client_owner = (id(client), loop)
+            return client
+        owner_loop = owner[1]
+        if owner_loop is None or owner_loop is loop or loop is None:
+            return client
+        if not owner_loop.is_closed():
+            # Another loop is alive and owns the shared client (a worker
+            # thread's asyncio.run): this loop gets its own.
+            own = _loop_http_clients.get(loop)
+            if own is None or own.is_closed:
+                own = _new_http_client()
+                _loop_http_clients[loop] = own
+            return own
+        # The owner loop is gone: its pooled connections are unusable.
+    _http_client = _new_http_client()
+    _http_client_owner = (id(_http_client), loop)
     return _http_client
 
 def _get_cached_response(cache_key: str) -> Optional[str]:
