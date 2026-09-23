@@ -410,18 +410,23 @@ def wire_for(url: str) -> Tuple[str, str]:
     url = str(url or "").strip()
     if not url.startswith(("http://", "https://")):
         return "unsupported", url
+    path = (urlparse(url).path or "").rstrip("/")
     try:
         from src import llm_core
-        provider = llm_core._detect_provider(url)
-        if provider == "ollama" or llm_core._is_ollama_native_url(url):
+        if llm_core._is_ollama_native_url(url):
             return "ollama", llm_core._normalize_ollama_url(url)
         if llm_core._is_local_ollama_target(url):
             return "ollama", llm_core._ollama_native_url_for_compat(url)
-        if provider in {"anthropic", "chatgpt-subscription"}:
+        # Anything else must speak chat completions. A provider whose chat
+        # surface is shaped differently gets a different chat URL from the
+        # resolver (a messages or responses path) and is not supported here.
+        if not path.endswith("/chat/completions"):
+            from src.endpoint_resolver import build_chat_url
+            url = build_chat_url(url)
+        if not url.rstrip("/").endswith("/chat/completions"):
             return "unsupported", url
-        return "openai", llm_core._normalize_openai_chat_url(url)
+        return "openai", url
     except Exception:  # noqa: BLE001 - detection helpers moved: plain heuristics
-        path = (urlparse(url).path or "").rstrip("/")
         if path.endswith("/api/chat"):
             return "ollama", url
         return "openai", url if path.endswith("/chat/completions") else url.rstrip("/") + "/chat/completions"
