@@ -96,6 +96,19 @@ def test_names_with_a_leading_function_word_are_invalid():
     assert not entities.valid_entity_name("En Cordera Labs")
 
 
+@pytest.mark.parametrize("name", ["El modelo", "La carpeta", "The model"])
+def test_article_plus_ordinary_lowercase_word_is_not_a_name(name):
+    # a leading article followed only by a common noun (no capital of its
+    # own) is a common noun phrase, not a name — "El modelo" and "La
+    # carpeta" were showing up as entities before this filter.
+    assert not entities.valid_entity_name(name)
+
+
+@pytest.mark.parametrize("name", ["El Salvador", "La Rioja", "The Hague"])
+def test_article_plus_capitalised_word_is_still_a_real_name(name):
+    assert entities.valid_entity_name(name)
+
+
 # ---------------------------------------------------------------------------
 # proper-noun evidence in a source text
 # ---------------------------------------------------------------------------

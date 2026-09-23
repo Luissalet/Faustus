@@ -264,6 +264,101 @@ def test_profile_unknown_entity_raises(store):
         entities.profile("nope")
 
 
+def test_profile_facts_never_render_suppressed_secret_or_gone_memories(store):
+    ada = entities.upsert_entity("alice", "Ada", type="person")
+    live = engine.add_item("Ada works at Cordera Labs", owner="alice", trust_class="human_explicit")
+    secret = engine.add_item("Ada's secret plan", owner="alice", sensitivity="secret")
+    suppressed = engine.add_item("Ada is somewhere", owner="alice")
+    engine.set_suppressed(suppressed["id"], True)
+    entities.add_mention("alice", ada["id"], f"mem:{live['id']}")
+    entities.add_mention("alice", ada["id"], f"mem:{secret['id']}")
+    entities.add_mention("alice", ada["id"], f"mem:{suppressed['id']}")
+    entities.add_mention("alice", ada["id"], "mem:doesnotexist")
+
+    prof = entities.profile(ada["id"])
+    assert {f["source_ref"] for f in prof["facts"]} == {f"mem:{live['id']}"}
+
+
+def test_profile_facts_resolve_free_notes_and_drop_deleted_ones(store):
+    from src.brain import vault as brain_vault
+
+    ada = entities.upsert_entity("alice", "Ada", type="person")
+    note_path = "Notes/About Ada.md"
+    full = brain_vault.abs_path("alice", note_path)
+    os.makedirs(os.path.dirname(full), exist_ok=True)
+    with open(full, "w", encoding="utf-8") as fh:
+        fh.write("---\nkind: note\n---\n\nAda likes tea.\n")
+    entities.add_mention("alice", ada["id"], f"note:{note_path}")
+
+    prof = entities.profile(ada["id"])
+    assert [f["text"] for f in prof["facts"]] == ["Ada likes tea."]
+
+    os.remove(full)
+    prof2 = entities.profile(ada["id"])
+    assert prof2["facts"] == []
+
+
+def test_build_timeline_deduplicates_and_sorts_newest_first():
+    entity = {"created_at": "2024-01-01T00:00:00Z", "name": "Ada"}
+    facts = [
+        {"created_at": "2025-01-01T00:00:00Z", "text": "Ada joined", "source_ref": "mem:1"},
+        {"created_at": "2025-01-01T00:00:00Z", "text": "Ada joined", "source_ref": "mem:1"},
+    ]
+    relations = [
+        {"id": "r1", "rel": "works_at", "dst_name": "Cordera Labs",
+         "valid_from": "2025-06-01T00:00:00Z", "valid_until": ""},
+    ]
+    timeline = entities._build_timeline(entity, facts, relations)
+    ats = [e["at"] for e in timeline]
+    assert ats == sorted(ats, reverse=True)
+    assert len(timeline) == 3  # created, one deduplicated mention, one relation start
+
+
+# ---------------------------------------------------------------------------
+# repoint_source / forget_source — mention & evidence hygiene
+# ---------------------------------------------------------------------------
+
+
+def test_repoint_source_moves_mentions_and_relation_evidence(store):
+    ada = entities.upsert_entity("alice", "Ada", type="person")
+    cordera = entities.upsert_entity("alice", "Cordera Labs")
+    entities.add_mention("alice", ada["id"], "mem:old1")
+    entities.add_relation("alice", ada["id"], "works_at", dst_id=cordera["id"], evidence=("mem:old1",))
+
+    moved = entities.repoint_source("alice", "mem:old1", "mem:new1")
+    assert moved == {"mentions": 1, "relations": 1}
+    assert entities.sources_for(ada["id"]) == ["mem:new1"]
+    rel = entities.list_relations("alice", entity_id=ada["id"])[0]
+    assert rel["evidence"] == ["mem:new1"]
+
+
+def test_repoint_source_does_not_duplicate_an_existing_mention(store):
+    ada = entities.upsert_entity("alice", "Ada", type="person")
+    entities.add_mention("alice", ada["id"], "mem:old1")
+    entities.add_mention("alice", ada["id"], "mem:new1")
+    entities.repoint_source("alice", "mem:old1", "mem:new1")
+    assert entities.sources_for(ada["id"]) == ["mem:new1"]
+
+
+def test_forget_source_drops_mentions_and_evidence(store):
+    ada = entities.upsert_entity("alice", "Ada", type="person")
+    cordera = entities.upsert_entity("alice", "Cordera Labs")
+    entities.add_mention("alice", ada["id"], "mem:gone")
+    entities.add_relation("alice", ada["id"], "works_at", dst_id=cordera["id"],
+                          evidence=("mem:gone", "mem:kept"))
+    removed = entities.forget_source("alice", "mem:gone")
+    assert removed == 1
+    assert entities.sources_for(ada["id"]) == []
+    rel = entities.list_relations("alice", entity_id=ada["id"])[0]
+    assert rel["evidence"] == ["mem:kept"]
+
+
+def test_repoint_and_forget_source_are_no_ops_on_bad_input(store):
+    assert entities.repoint_source("alice", "", "mem:x") == {"mentions": 0, "relations": 0}
+    assert entities.repoint_source("alice", "mem:a", "mem:a") == {"mentions": 0, "relations": 0}
+    assert entities.forget_source("alice", "") == 0
+
+
 # ---------------------------------------------------------------------------
 # merge_entities
 # ---------------------------------------------------------------------------

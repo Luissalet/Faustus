@@ -291,7 +291,11 @@ def _core_name_ok(tokens: Sequence[str]) -> bool:
 def valid_entity_name(name: Any) -> bool:
     """Context-free: could `name` be an entity name at all? Rejects function
     words, single characters, bare numbers and names that start or end with
-    a function word (other than one leading article in a multi-word name)."""
+    a function word (other than one leading article in a multi-word name) —
+    and, among those, an article followed only by ordinary lowercase words
+    ("El modelo", "La carpeta", "The model" are common nouns, not names),
+    keeping a real place name whose word after the article is itself
+    capitalised ("El Salvador", "La Rioja", "The Hague")."""
     tokens = _name_tokens(name)
     if not tokens:
         return False
@@ -299,6 +303,8 @@ def valid_entity_name(name: Any) -> bool:
     if cleaned == tokens:
         return _core_name_ok(tokens)
     if (len(tokens) >= 2 and fold(tokens[0]) in _ARTICLES and cleaned == tokens[1:]):
+        if not cleaned or not cleaned[0][:1].isupper():
+            return False
         return _core_name_ok(cleaned)
     return False
 
@@ -860,6 +866,95 @@ def sources_for(entity_id: Any) -> List[str]:
     return [row["source_ref"] for row in rows]
 
 
+def repoint_source(owner: Any, old_ref: Any, new_ref: Any) -> Dict[str, int]:
+    """A source moved without its facts changing meaning — most often a
+    memory correction (`memory_engine.correct`): the sentence lives on under
+    a NEW id, the old one is gone for good. Every mention of `old_ref` and
+    every relation-evidence citation of it now cite `new_ref` instead, so a
+    correction never turns an entity's already-known facts and relations
+    into orphaned, unresolvable citations. A mention already citing
+    `new_ref` is left alone (no duplicate row); an evidence list gets
+    `old_ref` replaced and de-duplicated. A no-op when either ref is empty
+    or they are equal. Never raises; returns how many rows of each kind
+    moved."""
+    owner = str(owner or "")
+    old_ref = str(old_ref or "")
+    new_ref = str(new_ref or "")
+    moved = {"mentions": 0, "relations": 0}
+    if not owner or not old_ref or not new_ref or old_ref == new_ref:
+        return moved
+    try:
+        with db() as conn:
+            rows = conn.execute(
+                "SELECT entity_id FROM mentions WHERE owner = ? AND source_ref = ?",
+                (owner, old_ref),
+            ).fetchall()
+            now = now_iso()
+            for row in rows:
+                conn.execute(
+                    "INSERT INTO mentions (owner, entity_id, source_ref, created_at) "
+                    "VALUES (?,?,?,?) ON CONFLICT(entity_id, source_ref) DO NOTHING",
+                    (owner, row["entity_id"], new_ref, now),
+                )
+            cur = conn.execute(
+                "DELETE FROM mentions WHERE owner = ? AND source_ref = ?", (owner, old_ref))
+            moved["mentions"] = cur.rowcount or 0
+
+            rel_rows = conn.execute(
+                "SELECT id, evidence FROM relations WHERE owner = ?", (owner,)).fetchall()
+            for row in rel_rows:
+                evidence = loads(row["evidence"], [])
+                if old_ref not in evidence:
+                    continue
+                updated: List[str] = []
+                seen: set = set()
+                for ref in evidence:
+                    ref = new_ref if ref == old_ref else ref
+                    if ref in seen:
+                        continue
+                    seen.add(ref)
+                    updated.append(ref)
+                conn.execute("UPDATE relations SET evidence = ?, updated_at = ? WHERE id = ?",
+                            (dumps(updated), now, row["id"]))
+                moved["relations"] += 1
+    except Exception as exc:  # noqa: BLE001 - a cleanup pass must never raise
+        logger.debug("brain.entities: repoint_source(%s -> %s) failed (%s)", old_ref, new_ref, exc)
+    return moved
+
+
+def forget_source(owner: Any, source_ref: Any) -> int:
+    """`source_ref` is gone for good (forgotten, a deleted personal memory, a
+    deleted free note) with no successor to repoint to: drop every mention
+    of it and strip it out of any relation's evidence list. A relation is
+    never deleted just because one of its citations went stale — evidence is
+    a record of what supported it, not a validity gate; :func:`revalidate`
+    and the vault's own gone-source handling are what retire a relation or
+    entity outright. Never raises; returns how many mentions were removed."""
+    owner = str(owner or "")
+    source_ref = str(source_ref or "")
+    if not owner or not source_ref:
+        return 0
+    removed = 0
+    try:
+        with db() as conn:
+            cur = conn.execute(
+                "DELETE FROM mentions WHERE owner = ? AND source_ref = ?", (owner, source_ref))
+            removed = cur.rowcount or 0
+            rel_rows = conn.execute(
+                "SELECT id, evidence FROM relations WHERE owner = ?", (owner,)).fetchall()
+            now = now_iso()
+            for row in rel_rows:
+                evidence = loads(row["evidence"], [])
+                if source_ref not in evidence:
+                    continue
+                updated = [ref for ref in evidence if ref != source_ref]
+                conn.execute("UPDATE relations SET evidence = ?, updated_at = ? WHERE id = ?",
+                            (dumps(updated), now, row["id"]))
+    except Exception as exc:  # noqa: BLE001 - a cleanup pass must never raise
+        logger.debug("brain.entities: forget_source(%s) failed (%s)", source_ref, exc)
+    return removed
+
+
 # ---------------------------------------------------------------------------
 # Mention detection in free text
 # ---------------------------------------------------------------------------
@@ -1083,17 +1178,19 @@ def _entity_name(entity_id: str) -> str:
     return entity["name"] if entity else ""
 
 
-def _fact_from_source(source_ref: str) -> Optional[Dict[str, Any]]:
+def _fact_from_source(owner: str, source_ref: str) -> Optional[Dict[str, Any]]:
     """Best-effort resolution of a mention's source back to its text and
-    validity window. Unknown/unreachable prefixes degrade to a stub rather
-    than raising — a broken lookup must cost the fact, not the profile."""
+    validity window — None when that source is gone for good (forgotten,
+    corrected away, suppressed, marked secret, a deleted personal memory or
+    a deleted free note): a stale citation must cost the fact, not linger on
+    the entity page. Unknown prefixes degrade to None too, never a stub."""
     if source_ref.startswith("mem:"):
         try:
             from src import memory_engine
         except Exception:  # noqa: BLE001
             return None
         item = memory_engine.get_item(source_ref[4:])
-        if not item:
+        if not item or item.get("suppressed") or item.get("sensitivity") == "secret":
             return None
         return {
             "source_ref": source_ref, "text": item.get("text", ""),
@@ -1119,8 +1216,25 @@ def _fact_from_source(source_ref: str) -> Optional[Dict[str, Any]]:
         except Exception:  # noqa: BLE001
             return None
         return None
-    return {"source_ref": source_ref, "text": "", "valid_from": "", "valid_until": "",
-            "created_at": ""}
+    if source_ref.startswith("note:"):
+        # A free note round-trips nowhere: the file itself, if it is still
+        # there, is the only copy of its text (Lot A's `notes` module, kept
+        # optional the same way the vault export treats it).
+        try:
+            from src.brain import notes
+        except Exception:  # noqa: BLE001
+            return None
+        path = source_ref[len("note:"):]
+        try:
+            note = notes.read_note(owner, path)
+        except Exception:  # noqa: BLE001
+            return None
+        text = str(note.get("user_zone") or note.get("content") or "").strip()
+        if not text:
+            return None
+        return {"source_ref": source_ref, "text": text, "valid_from": "", "valid_until": "",
+                "created_at": ""}
+    return None
 
 
 def _fact_valid_at(fact: Dict[str, Any], instant: datetime) -> bool:
@@ -1152,8 +1266,18 @@ def _build_timeline(entity: Dict[str, Any], facts: List[Dict[str, Any]],
         if rel.get("valid_until"):
             events.append({"at": rel["valid_until"], "kind": "valid_until", "text": text,
                            "source_ref": rel.get("id", "")})
-    events.sort(key=lambda e: e["at"])
-    return events
+    # Newest first, de-duplicated: a fact re-mentioned by more than one
+    # source, or a relation window read twice (open then closed), must not
+    # print the same line twice.
+    seen: set = set()
+    deduped: List[Dict[str, Any]] = []
+    for event in sorted(events, key=lambda e: e["at"], reverse=True):
+        key = (event["at"], event["kind"], event["text"])
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(event)
+    return deduped
 
 
 def profile(entity_id: Any, *, as_of: Any = None) -> Dict[str, Any]:
@@ -1165,7 +1289,7 @@ def profile(entity_id: Any, *, as_of: Any = None) -> Dict[str, Any]:
 
     facts: List[Dict[str, Any]] = []
     for source_ref in sources_for(entity["id"]):
-        fact = _fact_from_source(source_ref)
+        fact = _fact_from_source(owner, source_ref)
         if not fact:
             continue
         fact["valid_now"] = _fact_valid_at(fact, instant)
@@ -1253,5 +1377,6 @@ __all__ = [
     "revalidate_if_needed", "undo_revalidate",
     "upsert_entity", "get_entity", "update_entity", "set_hidden", "list_entities",
     "merge_entities", "self_entity", "add_relation", "list_relations", "add_mention",
-    "mentions_for", "sources_for", "entities_in_text", "profile", "graph", "stats",
+    "mentions_for", "sources_for", "repoint_source", "forget_source",
+    "entities_in_text", "profile", "graph", "stats",
 ]
