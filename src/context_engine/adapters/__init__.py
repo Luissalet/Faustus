@@ -24,6 +24,8 @@ schemes, collected here so a reader does not have to open nine files:
 
     mem:<item_id>                          memory.py   (learned memory)
     pmem:<entry_id>                        memory.py   (memory.json entries)
+    ent:<entity_id>                        brain.py    (a typed entity)
+    note:<vault_path>                      brain.py    (a free vault note)
     objective:OBJ-3                        objectives.py
     project:<filename.md>                  projects.py
     project:instructions                   projects.py
@@ -62,6 +64,7 @@ from __future__ import annotations
 from typing import Callable, List, Tuple
 
 from ..candidates import ContextSource
+from .brain import BrainSource
 from .derived import (
     BlockSource,
     CapsuleSource,
@@ -88,6 +91,7 @@ SOURCE_FACTORIES: Tuple[Callable[[], ContextSource], ...] = (
     ProjectLinksSource,
     MemoryEngineSource,
     PersonalMemorySource,
+    BrainSource,
     SessionSource,
     FileSource,
     DocumentSource,
@@ -116,7 +120,7 @@ def all_sources() -> List[ContextSource]:
 __all__ = [
     "SOURCE_FACTORIES", "all_sources",
     "DocumentSource", "ExpertSource", "FileSource",
-    "MemoryEngineSource", "PersonalMemorySource",
+    "MemoryEngineSource", "PersonalMemorySource", "BrainSource",
     "ObjectivesSource", "ProjectLinksSource", "ProjectMemorySource",
     "ProvenanceSource",
     "SessionSource", "set_history_provider", "reset_history_provider",
