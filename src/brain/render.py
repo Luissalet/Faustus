@@ -17,6 +17,7 @@ file before calling here) and replaces everything after the marker.
 
 from __future__ import annotations
 
+import os
 import re
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
@@ -91,6 +92,57 @@ def _title(titles: Optional[Mapping[str, str]], source: str, fallback: str) -> s
     if titles is None:
         return fallback
     return titles.get(source, "")
+
+
+_DATE_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})")
+
+
+def _short_date(value: Any) -> str:
+    """A stored ISO date/timestamp, compacted for a human to read: day
+    precision as ``YYYY-MM-DD``, or ``YYYY-MM`` when the day is `01` — a
+    bare month a source gave ("marzo de 2026") is always anchored to its
+    first day (see `temporal.parse_temporal`), so that is the one signal
+    available for "the source only said a month". Anything that is not a
+    recognisable date (empty, already short, free text) is returned as-is."""
+    text = str(value or "").strip()
+    match = _DATE_RE.match(text)
+    if not match:
+        return text
+    year, month, day = match.groups()
+    return f"{year}-{month}" if day == "01" else f"{year}-{month}-{day}"
+
+
+def _fact_citation(source_ref: str) -> str:
+    """The plain, non-link citation for a fact whose note cannot be
+    resolved — `` `mem:<id8>` `` / `` `pmem:<id8>` `` / `` `note:<id8>` ``,
+    the same short form the rest of the UI quotes a source by."""
+    prefix, sep, rest = str(source_ref or "").partition(":")
+    if not sep or not rest:
+        return f"`{source_ref}`" if source_ref else ""
+    return f"`{prefix}:{rest[:8]}`"
+
+
+def _resolve_source_title(source_ref: str, titles: Optional[Mapping[str, str]]) -> str:
+    """The note title `source_ref` (a fact's or a mention's citation:
+    `mem:`/`pmem:`/`note:`) resolves to as a `[[wikilink]]`, or "" when it
+    cannot be linked. `titles` (the vault's per-sync id -> current-filename
+    map) is what a memory or personal note needs — their filename depends on
+    their text, which this module never re-derives on its own. A free note
+    under Notes/ needs no such registry: its vault path already IS its
+    title, the note round-trips nowhere so nothing ever renames it out from
+    under this link."""
+    ref = str(source_ref or "")
+    if not ref:
+        return ""
+    if titles is not None:
+        title = titles.get(ref, "")
+        if title:
+            return title
+    if ref.startswith("note:"):
+        path = ref[len("note:"):]
+        if path.lower().endswith(".md"):
+            return os.path.splitext(os.path.basename(path))[0]
+    return ""
 
 
 # ── memory notes ────────────────────────────────────────────────────────
@@ -253,21 +305,40 @@ def entity_note_parts(
     titles: Optional[Mapping[str, str]] = None,
 ) -> Parts:
     profile = profile or {}
-    # Cited as `mem:<id8>` plain text, not a [[wikilink]]: a fact's source_ref
-    # only carries the memory's id, not the title text its filename needs, so
-    # a link built from it could never resolve and would just clutter the
-    # unresolved-links list. Lot C/D can turn this into a real link once it
-    # has the id -> path lookup (`notes.tree` gives it that mapping).
+    entity_id = str(entity.get("id") or "")
+    mention_titles: List[str] = []
+    seen_mentions: set = set()
+
+    def _remember_mention(title: str) -> None:
+        title = str(title or "").strip()
+        key = title.casefold()
+        if title and key not in seen_mentions:
+            seen_mentions.add(key)
+            mention_titles.append(title)
+
+    # `profile["facts"]` already excludes anything gone for good (forgotten,
+    # corrected away, suppressed, secret, a deleted personal memory or free
+    # note — see `entities._fact_from_source`), so every fact printed here is
+    # a source that still exists: cite it with a real [[wikilink]] whenever
+    # `titles` can resolve it, the short plain form otherwise (never a
+    # wikilink to a title that cannot exist).
     facts = profile.get("facts") or []
     fact_lines = []
     for f in facts:
-        ref = str(f.get("source_ref") or "")
-        mem_id = ref.split(":", 1)[1] if ref.startswith("mem:") else ref
-        citation = f"`mem:{mem_id[:8]}`" if mem_id else ""
         text = str(f.get("text") or "").strip()
-        fact_lines.append(f"{text} ({citation})" if text and citation else text)
+        if not text:
+            continue
+        ref = str(f.get("source_ref") or "")
+        title = _resolve_source_title(ref, titles)
+        if title:
+            fact_lines.append(f"{text} ({_link(title)})")
+            _remember_mention(title)
+        else:
+            citation = _fact_citation(ref)
+            fact_lines.append(f"{text} ({citation})" if citation else text)
 
-    relations = [r for r in (profile.get("relations") or []) if r.get("valid_at", True)]
+    all_relations = profile.get("relations") or []
+    relations = [r for r in all_relations if r.get("valid_at", True)]
     rel_lines = []
     for r in relations:
         name = str(r.get("dst_name") or r.get("dst_value") or "")
@@ -282,17 +353,36 @@ def entity_note_parts(
     history = profile.get("history") or []
     hist_lines = [
         f"{h.get('rel')} → {h.get('dst_name') or h.get('dst_value') or ''} "
-        f"({h.get('valid_from') or '?'} → {h.get('valid_until') or '?'})"
+        f"({_short_date(h.get('valid_from')) or '?'} → {_short_date(h.get('valid_until')) or '?'})"
         for h in history
     ]
-    mentions = profile.get("timeline") or []
-    mention_lines = [str(m.get("text") or m.get("source_ref") or "") for m in mentions]
+
+    # "Mentioned in": every OTHER entity page whose own relation points AT
+    # this one — its Relations/History section links [[this entity]], so
+    # this entity is mentioned there, the reverse direction of `rel_lines`
+    # above (this entity's page linking OUT to others).
+    for r in all_relations:
+        if str(r.get("dst") or "") != entity_id or not r.get("src") or r.get("src") == entity_id:
+            continue
+        title = _title(titles, f"ent:{r['src']}", str(r.get("src_name") or ""))
+        if title:
+            _remember_mention(title)
+
+    timeline = profile.get("timeline") or []
+    timeline_lines = []
+    for event in timeline:
+        text = str(event.get("text") or "").strip()
+        if not text:
+            continue
+        date = _short_date(event.get("at"))
+        timeline_lines.append(f"{date}: {text}" if date else text)
 
     generated = "\n\n".join([
         _section("Facts", _bullets(fact_lines)),
         _section("Relations", _bullets(rel_lines)),
         _section("History", _bullets(hist_lines)),
-        _section("Mentioned in", _bullets(mention_lines)),
+        _section("Mentioned in", _bullets(_link(t) for t in sorted(mention_titles, key=str.casefold))),
+        _section("Timeline", _bullets(timeline_lines)),
     ])
     default_zone = user_zone if user_zone else str(entity.get("summary") or profile.get("summary") or "")
     return entity_note_fields(entity), default_zone, generated
