@@ -481,8 +481,12 @@ def setup_brain_routes() -> APIRouter:
         with contextlib.suppress(Exception):
             payload = await request.json() or {}
         limit = payload.get("limit") if isinstance(payload, dict) else None
+        owner = _owner(request)
+        with contextlib.suppress(Exception):
+            from src.brain import entities
+            await asyncio.to_thread(entities.revalidate_if_needed, owner)
         report = await extract.extract_pending(
-            _owner(request), limit=(int(limit) if limit else None))
+            owner, limit=(int(limit) if limit else None))
         return _extract_report(report)
 
     @router.post("/wiki/refresh")

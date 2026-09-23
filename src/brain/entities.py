@@ -663,15 +663,21 @@ def self_entity(owner: Any) -> Dict[str, Any]:
         missing = [a for a in aliases if fold(a) not in {fold(x) for x in me.get("aliases") or []}]
         if missing:
             me = update_entity(me["id"], aliases=list(me.get("aliases") or []) + missing) or me
+    # Person nodes that are really the owner — created from the owner's name
+    # before it was set ("Ada prefers tabs"), or from "the user" before the
+    # self node carried that alias — fold into it.
+    self_names = {fold(a) for a in SELF_EXTRA_ALIASES}
     if display:
-        # A person node the extractor created from the name before the owner
-        # set it ("Ada" in "Ada prefers tabs") IS the owner: fold it in.
-        for other in list_entities(owner, q=display, type="person", limit=20):
-            if other.get("id") != me.get("id") and fold(other.get("name")) == fold(display):
-                me = merge_entities(me["id"], other["id"]) or me
-        if fold(me.get("name")) != fold(display) and fold(me.get("name")) in SELF_WORDS:
-            # The owner told us their name after the node was born as "Yo".
-            me = update_entity(me["id"], name=display) or me
+        self_names.add(fold(display))
+    for other in list_entities(owner, type="person", limit=500):
+        if other.get("id") != me.get("id") and fold(other.get("name")) in self_names:
+            me = merge_entities(me["id"], other["id"]) or me
+    # The node may have been born as "Yo", or adopted a stray "User" row:
+    # name it after the owner when we know it, else "Yo".
+    current = fold(me.get("name"))
+    wanted = display or "Yo"
+    if current != fold(wanted) and (current in SELF_WORDS or current in {fold(a) for a in SELF_EXTRA_ALIASES}):
+        me = update_entity(me["id"], name=wanted) or me
     return me
 
 

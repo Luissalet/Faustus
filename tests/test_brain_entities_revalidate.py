@@ -189,3 +189,19 @@ def test_self_entity_adopts_display_name_and_folds_in_the_named_person(tmp_path,
         assert entities.upsert_entity("alice", "User", type="person")["id"] == me["id"]
     finally:
         db.use_dir(None)
+
+
+def test_self_entity_folds_in_a_stray_user_node(tmp_path):
+    from src.brain import db, entities
+    db.use_dir(str(tmp_path / "brain4"))
+    try:
+        # a row written before "user" was a self alias
+        stray = entities.upsert_entity("alice", "User", type="person")
+        me = entities.self_entity("alice")
+        folded = entities.get_entity(stray["id"])
+        # either adopted as the self node (renamed) or merged into it
+        assert me["name"] == "Yo"
+        assert folded["id"] == me["id"] or folded["merged_into"] == me["id"]
+        assert len([e for e in entities.list_entities("alice", type="person")]) == 1
+    finally:
+        db.use_dir(None)
