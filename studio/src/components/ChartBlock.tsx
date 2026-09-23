@@ -61,9 +61,25 @@ function fmtNumber(n: number): string {
   return n.toFixed(2).replace(/\.?0+$/, '');
 }
 
+/** Axis tick text. Large values go compact in the viewer's locale
+ *  ("350 mil", "1,2 M") — a fixed-width gutter clipped "350000 €" to
+ *  "50000 €" on a sales chart (seen live), which reads as a wrong number. */
+function fmtTick(n: number): string {
+  if (Math.abs(n) >= 10000) {
+    try {
+      return new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 }).format(n);
+    } catch {
+      /* very old engines: plain digits below */
+    }
+  }
+  return fmtNumber(n);
+}
+
 const W = 640;
 const H = 320;
-const PAD_L = 52;
+/** Left gutter floor; it grows with the widest tick label (≈6.5 px/char at
+ *  the axis font size) so no label is ever cut. */
+const PAD_L_MIN = 44;
 const PAD_R = 16;
 const PAD_T = 20;
 const PAD_B = 36;
@@ -117,6 +133,8 @@ function AxesChart({ spec, uid }: { spec: ChartSpec; uid: string }) {
   const axisMax = ticks[ticks.length - 1];
   const span = axisMax - axisMin || 1;
 
+  const tickText = (tv: number) => `${fmtTick(tv)}${spec.unit ? ` ${spec.unit}` : ''}`;
+  const PAD_L = Math.min(140, Math.max(PAD_L_MIN, 14 + Math.max(...ticks.map((tv) => tickText(tv).length)) * 6.5));
   const plotW = W - PAD_L - PAD_R;
   const plotH = H - PAD_T - PAD_B;
   const yFor = (v: number) => PAD_T + plotH - ((v - axisMin) / span) * plotH;
@@ -184,7 +202,7 @@ function AxesChart({ spec, uid }: { spec: ChartSpec; uid: string }) {
           <g key={tv}>
             <line x1={PAD_L} x2={W - PAD_R} y1={yFor(tv)} y2={yFor(tv)} />
             <text x={PAD_L - 8} y={yFor(tv)} textAnchor="end" dominantBaseline="middle">
-              {fmtNumber(tv)}{spec.unit ? ` ${spec.unit}` : ''}
+              {tickText(tv)}
             </text>
           </g>
         ))}
