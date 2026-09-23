@@ -1,5 +1,6 @@
 import { Link2, Tag } from 'lucide-react';
 import type { ReadNote } from '../../adapters/brain';
+import { plainText } from '../../lib/wikilinks';
 import { EntityPanel } from './EntityPanel';
 import { t, tn } from '../../i18n';
 
@@ -24,7 +25,7 @@ export function RightPanel({ note, onOpenNote, onEntityChanged }: { note: ReadNo
           {note.links.map((link, i) => (
             <li key={i}>
               {link.resolved && link.path ? (
-                <button type="button" className="fs-link" onClick={() => onOpenNote(link.path!)}>
+                <button type="button" className="fs-brain__link-item" onClick={() => onOpenNote(link.path!)}>
                   {link.label}
                 </button>
               ) : (
@@ -45,10 +46,10 @@ export function RightPanel({ note, onOpenNote, onEntityChanged }: { note: ReadNo
         <ul className="fs-brain__link-list">
           {note.backlinks.map((bl, i) => (
             <li key={i}>
-              <button type="button" className="fs-link" onClick={() => onOpenNote(bl.path)}>
+              <button type="button" className="fs-brain__link-item" onClick={() => onOpenNote(bl.path)}>
                 {bl.title}
               </button>
-              {bl.context && <p className="fs-muted fs-brain__backlink-context">{bl.context}</p>}
+              {bl.context && <p className="fs-muted fs-brain__backlink-context">{plainText(bl.context)}</p>}
             </li>
           ))}
         </ul>

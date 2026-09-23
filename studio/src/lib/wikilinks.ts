@@ -176,6 +176,26 @@ function escapeLabel(label: string): string {
   return label.replace(/\]/g, '\\]');
 }
 
+/**
+ * A backlink's context line arrives from the server as the raw source text
+ * around the match — wiki syntax and all, since it is just a slice of the
+ * note body. Read as prose in a side panel that is not itself a markdown
+ * renderer, `[[Target|Label]]` should read as "Label", not as bracket
+ * clutter: this strips every wikilink occurrence down to its label (or
+ * target, absent a label) and otherwise leaves the text untouched.
+ */
+export function plainText(body: string): string {
+  let out = '';
+  let last = 0;
+  for (const link of parseWikilinks(body)) {
+    out += body.slice(last, link.start);
+    out += link.label;
+    last = link.end;
+  }
+  out += body.slice(last);
+  return out;
+}
+
 /* ── `[[` autocomplete while typing in the editor ───────────────────────── */
 
 export interface WikiAutocomplete {

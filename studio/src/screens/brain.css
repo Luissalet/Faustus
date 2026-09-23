@@ -541,14 +541,43 @@
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 1px;
+}
+/* Outgoing links and backlinks read as a clean list, same family as the
+   explorer's own rows — not the browser's native grey button chrome a bare
+   `<button>` falls back to whenever nothing more specific resets it (which
+   is what a plain `.fs-link` here used to leave standing, in the dark
+   theme, since the reset in `styles/base.css` only names it for `<a>`). */
+.fs-brain__link-item {
+  display: block;
+  inline-size: 100%;
+  padding: 4px var(--fs-space-2);
+  border: 0;
+  border-radius: var(--fs-radius-control);
+  background: none;
+  color: var(--fs-text-1);
+  text-align: start;
+  font: inherit;
+  font-size: inherit;
+  cursor: pointer;
+}
+.fs-brain__link-item:hover {
+  background: var(--fs-surface-2);
+  color: var(--fs-brand);
+}
+.fs-brain__link-item:focus-visible {
+  outline: 2px solid var(--fs-focus);
+  outline-offset: -1px;
 }
 .fs-brain__backlink-context {
-  margin: 2px 0 0;
+  margin: 2px var(--fs-space-2) 0;
 }
 .fs-brain__unresolved-chip {
-  color: var(--fs-brain-kind-unresolved);
+  display: block;
+  padding: 4px var(--fs-space-2);
+  color: var(--fs-text-3);
   text-decoration: underline dashed;
+  text-underline-offset: 2px;
 }
 .fs-brain__tag-row {
   margin: 0;
