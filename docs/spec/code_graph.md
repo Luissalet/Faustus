@@ -116,35 +116,80 @@ Two questions the graph could trace/impact but not yet answer directly:
 critical are they".
 
 - `src/code_graph/communities.py` — `communities(root, level=0|1, refresh=,
-  summarize=)`, `community(root, id_or_name_or_symbol)`, `community_of(root,
-  symbol)`. Builds a weighted, undirected graph over **files** (not
-  individual symbols — see the module docstring for why aggregating to file
-  granularity is both cheaper and more stable at this scale), weighted by
-  edge kind (`calls` > `registers` > `tests` > `imports`) and certainty
-  (`exact` > `static_inferred` > `lexical`); an edge whose two endpoints
-  disagree on "is this a test file" is dropped from clustering entirely (a
-  test file otherwise imports enough of the codebase to smear every real
-  community together), though test files still get their own community and
-  a community's `test_files` (which tests exercise it) comes from the full,
-  unfiltered edge set. Community detection is a from-scratch, deterministic
-  two-level Louvain (fixed node order, ties broken by smallest id, a
-  standard local-moving phase run once on the file graph for level 0 and
-  again on the aggregated level-0 graph for level 1 — literally "communities
-  of communities") with a wall-clock/size budget that falls back to
-  directory-based grouping (`method: "directory"`) rather than ever hanging
-  a turn. Each community carries a stable id (hash of its sorted member
-  files), a name (common path prefix + top-fan-in symbol), a deterministic
-  `purpose` paragraph, `size` (symbols), `dominant_language`, `cohesion`
-  (internal/incident edge weight), `key_symbols`, `routes`, `entry_points`,
-  `test_files` and `coupling` (top other communities by cross-edge weight).
-  An optional one-sentence model `summary` is added only when
-  `code_graph_community_summaries` is on AND the utility model is already
-  resident and idle (`src.brain.extract.background_llm_gate`, the same
-  check `brain.wiki` uses) — on `summarize=true` or a maintenance pass,
-  never inside a chat turn. Persisted in `ce_store` (`code_communities`,
-  `code_community_files`), keyed by `(workspace, project_id, fingerprint)`
-  where `fingerprint` hashes the index's own `(last_indexed_at, symbols,
-  edges)` — an unchanged index is a cache read, a changed one rebuilds.
+  summarize=, min_files=, include_unattached=)`, `community(root,
+  id_or_name_or_symbol)`, `community_of(root, symbol)`. Builds a weighted,
+  undirected graph over **production files only** (not individual symbols —
+  see the module docstring for why aggregating to file granularity is both
+  cheaper and more stable at this scale; test files are never clustering
+  nodes at all — see below), weighted by edge kind (`calls` > `registers` >
+  `tests` > `imports`) and certainty (`exact` > `static_inferred` >
+  `lexical`). Community detection is a from-scratch, deterministic two-level
+  Louvain (fixed node order, ties broken by smallest id, a standard
+  local-moving phase with a resolution parameter — Reichardt & Bornholdt
+  2006 — run once on the file graph for level 0 and again on the aggregated
+  level-0 graph for level 1) with a wall-clock/size budget that falls back
+  to directory-based grouping (`method: "directory"`) rather than ever
+  hanging a turn.
+
+  Two post-processing passes turn the raw Louvain output into something a
+  human can actually scan (the real-repo numbers in REPORT_CG.md: level 0
+  from 2,013 raw groups down to 59 shown; level 1 down to 24):
+  - `_fold_tiny_groups` — a group under `_FOLD_MIN_FILES` files never stands
+    alone. It merges into, in order, the other group it has the strongest
+    real edge weight to, the group holding a majority of the *other* files
+    in the same directory, or a per-top-level-directory "loose files"
+    bucket if neither exists. Skipped entirely on a workspace too small for
+    anything to reach the threshold (nothing to fold into).
+  - `_split_catchalls` — a big (`>60` files), low-cohesion (`<0.30`) group
+    is Louvain's honest answer for a loosely-coupled "glue" region (routing
+    setup, `__init__` re-exports, ...), not a real single module. It is
+    split by each file's own directory into real sub-communities (marked
+    `split_by: "directory"`) instead of shown as one blob; a too-small
+    resulting sub-community folds into a directory sibling. When every file
+    in the blob is already a direct sibling in one flat directory, there is
+    no structure left to split along and the blob is left as one community
+    (an acknowledged limit of a *directory* split specifically).
+
+  Test files are never graph nodes: each one is attached, after clustering,
+  to the single production community it exercises most, by the summed
+  weight of its `calls`/`imports`/`tests`/`registers` edges into that
+  community's files (`test_files`) — never merged into a "tests" community
+  of its own. A test file with no such edge anywhere goes into one shared
+  "Unattached tests" bucket per level (`bucket: "unattached_tests"`),
+  excluded from `communities()`'s default listing (`include_unattached=True`
+  to see it; its size is always reported via `unattached_tests_count`).
+
+  A community's `name` is path-based, never symbol-based: the one or two
+  directories that hold most of its symbols (by symbol count), e.g.
+  `"src/brain"` or `"src/tournament · src/disk_ballast"`; a directory the
+  community only owns a small slice of is named by its standout file's own
+  stem instead (`"mcp_servers/code_graph_server"`), so a name never implies
+  ownership it does not have. Level-1 names truncate to the top-level
+  directory only ("dominant top-level areas"), e.g. `"src (memory,
+  brain)"`. When two sibling communities land on the same base name, a
+  short TF-IDF-over-file-stem-tokens tag disambiguates them (`_tfidf_tag`).
+  `key_symbols` (unaffected by any of this — still the top-internal-fan-in
+  signal, filtered against `_GENERIC_SYMBOL_NAMES`) is a separate field.
+
+  Each community carries a stable id (hash of its sorted member files), the
+  path-based `name`, a deterministic `purpose` paragraph, `size` (symbols),
+  `dominant_language`, `cohesion` (internal/incident edge weight — the
+  catch-all split's own trigger), `key_symbols`, `routes`, `entry_points`,
+  `test_files`, `coupling` (top other communities by cross-edge weight), and
+  `split_by` (`"directory"` or `""`). `communities()`'s default listing
+  hides communities under `min_files` (default 3 — the literal "at least 3
+  files" floor; distinct from the higher, build-time `_FOLD_MIN_FILES` that
+  does the actual count-coarsening) and the unattached-tests bucket, both
+  counts still reported (`hidden_small_count`, `unattached_tests_count`) so
+  nothing silently disappears. An optional one-sentence model `summary` is
+  added only when `code_graph_community_summaries` is on AND the utility
+  model is already resident and idle
+  (`src.brain.extract.background_llm_gate`, the same check `brain.wiki`
+  uses) — on `summarize=true` or a maintenance pass, never inside a chat
+  turn. Persisted in `ce_store` (`code_communities`, `code_community_files`),
+  keyed by `(workspace, project_id, fingerprint)` where `fingerprint` hashes
+  the index's own `(last_indexed_at, symbols, edges)` — an unchanged index
+  is a cache read, a changed one rebuilds.
 
 - `src/code_graph/flows.py` — `flows(root, limit=, sort=, entry=, refresh=)`,
   `flow(root, id_or_entry)`, `affected_flows(symbol="" | from a git diff)`.
@@ -213,8 +258,17 @@ capability/description/example registration for all six tools.
 clusters joined by one bridge file: two communities at level 0, deterministic
 ids across repeated calls, a cache hit on an unchanged index, a rebuild after
 a file changes the fingerprint, the directory fallback under a tiny time
-budget, test files excluded from clustering but still reported as coverage,
-and `community`/`community_of` resolution by id/name/symbol.
+budget, test files excluded from clustering but attached (not merged) as
+coverage, and `community`/`community_of` resolution by id/name/symbol. Plus
+the quality-round additions: names are path-based with no symbol suffix, the
+`min_files` display floor and its `hidden_small_count`/`unattached_tests_count`
+reporting, an orphan test file landing in the shared "Unattached tests"
+bucket rather than its own community, and direct unit coverage of
+`_fold_tiny_groups` (strongest-edge / directory-majority / loose-bucket / no-op
+when nothing reaches the threshold), `_split_catchalls` (splits a big
+zero-cohesion blob, leaves a cohesive or small one alone), `_assign_tests`,
+`_name_for` (directory name, and the small-slice-of-a-flat-directory file-stem
+fallback) and `_disambiguate_names` (the TF-IDF collision tag).
 
 `tests/test_code_graph_flows.py` — a route that calls through three files
 into a `commit()`-like sink: one entry point, a deterministic call tree,
