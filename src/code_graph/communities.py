@@ -23,18 +23,26 @@ Design decisions, and why:
 * **A community must earn its place: no singletons, no giant blobs.** Two
   post-processing passes run after clustering, both keyed off actual graph
   signal rather than an arbitrary count alone:
-  - `_fold_tiny_groups` merges any group under `_FOLD_MIN_FILES` files into,
-    in order, (a) the other group it has the strongest real edge weight to,
-    (b) the group holding a majority of the *other* files in the same
-    directory, or (c) a per-top-level-directory "loose files" bucket if
-    neither exists — so an isolated or near-isolated file never becomes its
-    own one-file "community".
-  - `_split_catchalls` breaks up the opposite failure mode: a big (`>60`
-    files), low-cohesion (`<0.30`) group that Louvain produced only because
-    the file graph itself has one loosely-coupled "glue" region (routing
-    setup, `__init__` re-exports, ...). Rather than present that as one
-    unreadable blob, it is split by directory into real sub-communities,
-    each marked `split_by: "directory"`.
+  - `_fold_tiny_groups` merges any group under a repo-size-scaled minimum
+    file count (`_fold_min_files_for`) into, in order, (a) the other group
+    it has the strongest real edge weight to, (b) the group holding a
+    majority of the *other* files in the same directory, or (c) a
+    per-top-level-directory "loose files" bucket if neither exists — so an
+    isolated or near-isolated file never becomes its own one-file
+    "community". The threshold scales with repo size (`_fold_min_files_for`)
+    so a 60-file app isn't held to the same absolute floor as a 2,500-file
+    monorepo.
+  - `_split_catchalls` breaks up the opposite failure mode: a group past a
+    repo-size-scaled file count (`_catchall_min_files_for`) that is either
+    low-cohesion (`<0.30`, a loosely-coupled "glue" region — routing setup,
+    `__init__` re-exports, ...) or simply dominates the repo
+    (`_CATCHALL_DOMINANCE_FRACTION` of all production files, even at high
+    cohesion — one small, tightly-coupled package Louvain never had a reason
+    to split). Rather than present that as one unreadable blob, it is split
+    into real sub-communities: first by re-running Louvain on the blob's own
+    internal subgraph at a higher resolution (`split_by: "call_graph"`),
+    falling back to a directory split (`split_by: "directory"`) only when
+    that doesn't yield usable sub-groups.
 * **Edges are weighted by kind and certainty, aggregated per file pair.**
   `calls` edges are the strongest signal of "these two files work together"
   (weight 3.0), `registers` next (a route/tool wiring itself in, 2.0),
@@ -152,7 +160,7 @@ _EDGE_KINDS_FOR_GRAPH = tuple(_KIND_WEIGHT)
 #: null-model term of the Louvain modularity gain. 1.0 is the textbook
 #: value. Empirically (see REPORT_CG.md) the textbook value already gives
 #: this repo's ~2,500 production files a healthy level-0 spread (no
-#: hundred-plus-file mega-blob); it is `_FOLD_MIN_FILES` below, not the
+#: hundred-plus-file mega-blob); it is `_fold_min_files_for` below, not the
 #: resolution, that does the real coarsening work needed to land in the
 #: ~20-120 / ~6-25 community ranges a first-time reader can actually use.
 _RESOLUTION_LEVEL0 = 1.0
@@ -163,23 +171,59 @@ _TOP_COUPLING = 5
 
 #: A group under this many files never stands alone at BUILD time -- see
 #: `_fold_tiny_groups`. This is what actually keeps the *count* of level-0/1
-#: communities in a range a human can scan on a real repo (real-repo numbers
-#: in REPORT_CG.md) -- the Louvain resolution alone was not enough. Kept
-#: separate from `_DEFAULT_MIN_FILES` below (the *display*-time floor
-#: `communities()`'s own `min_files` parameter defaults to) because a small
-#: workspace legitimately has communities under this build-time threshold
-#: with nothing sensible to fold them into (nothing else in a 6-file repo
-#: reaches 5) -- folding backs off in that case (see `_fold_tiny_groups`),
-#: and the display floor is the literal "at least 3 files" the contract
-#: asks for, not this repo-scale coarsening knob.
-_FOLD_MIN_FILES = 8
-#: `communities()`'s default `min_files` display parameter.
+#: communities in a range a human can scan (real-repo numbers in
+#: REPORT_CG.md) -- the Louvain resolution alone was not enough. **Scaled to
+#: repo size** (`_fold_min_files_for`): a fixed value tuned on a ~2,500-file
+#: repo folded away almost everything on a ~60-file one (nothing there ever
+#: reached it) while doing nothing useful on a much bigger one. Kept
+#: conceptually separate from `_DEFAULT_MIN_FILES` below (the *display*-time
+#: floor `communities()`'s own `min_files` parameter defaults to, NOT
+#: scaled) because a small workspace legitimately has communities under the
+#: scaled build-time threshold with nothing sensible to fold them into --
+#: folding backs off in that case (see `_fold_tiny_groups`) -- while the
+#: display floor is the contract's literal "at least 3 files", independent
+#: of repo size.
+_FOLD_MIN_FILES_DIVISOR = 80.0
+_FOLD_MIN_FILES_MIN = 2
+_FOLD_MIN_FILES_MAX = 8
+#: `communities()`'s default `min_files` display parameter (not scaled).
 _DEFAULT_MIN_FILES = 3
-#: A group at or past this many files, with cohesion below the threshold, is
-#: presented as a directory-split set of sub-communities instead of one
-#: catch-all blob -- see `_split_catchalls`.
-_CATCHALL_MIN_FILES = 60
+#: A group at or past this many files, with cohesion below
+#: `_CATCHALL_MAX_COHESION` OR holding more than `_CATCHALL_DOMINANCE_FRACTION`
+#: of the whole repo's production files, is a catch-all -- see
+#: `_split_catchalls`. The file-count floor is **scaled to repo size**
+#: (`_catchall_min_files_for`) the same way and for the same reason as the
+#: fold threshold above: a fixed 60-file floor can never fire on a 60-file
+#: repo (nothing there can even reach it), where the actual problem this
+#: round found was a single community holding *most* of the app (39 of 67
+#: production files, cohesion 0.96 -- too internally consistent to be
+#: "low-cohesion", but far too large a fraction of the repo to be one
+#: module) -- hence the size-relative dominance trigger, independent of
+#: cohesion, alongside the existing absolute-cohesion one.
+_CATCHALL_MIN_FILES_FRACTION = 0.12
+_CATCHALL_MIN_FILES_FLOOR = 15
+_CATCHALL_MIN_FILES_CEIL = 60
 _CATCHALL_MAX_COHESION = 0.30
+_CATCHALL_DOMINANCE_FRACTION = 0.30
+#: Resolution used to re-cluster a catch-all's own internal call/import
+#: subgraph before ever falling back to a directory split (see
+#: `_split_one_catchall`) -- deliberately far above `_RESOLUTION_LEVEL0` so
+#: a package Louvain judged "one dense community" at the repo's own
+#: resolution still gets pulled apart by its *internal* structure (the
+#: files that call each other most within the blob, not across it).
+_CATCHALL_INTERNAL_RESOLUTION = 4.0
+
+
+def _fold_min_files_for(n_production_files: int) -> int:
+    if n_production_files <= 0:
+        return _FOLD_MIN_FILES_MIN
+    return max(_FOLD_MIN_FILES_MIN, min(_FOLD_MIN_FILES_MAX,
+               round(n_production_files / _FOLD_MIN_FILES_DIVISOR)))
+
+
+def _catchall_min_files_for(n_production_files: int) -> int:
+    return max(_CATCHALL_MIN_FILES_FLOOR, min(_CATCHALL_MIN_FILES_CEIL,
+               round(n_production_files * _CATCHALL_MIN_FILES_FRACTION)))
 
 _BUCKET_UNATTACHED_TESTS = "unattached_tests"
 _BUCKET_LOOSE_FILES = "loose_files"
@@ -221,6 +265,12 @@ _GENERIC_PATH_TOKENS = frozenset({
     "test", "tests", "util", "utils", "helper", "helpers", "service",
     "services", "index", "main", "init", "common", "base", "core", "mod",
     "module", "src", "lib", "app", "routes", "route", "api", "v1", "v2",
+    # Generic UI/CRUD/status words: real English (or file-naming) filler
+    # that shows up across unrelated screens/handlers and never actually
+    # tells two communities apart -- e.g. every page in a client app has a
+    # file named "*Page", every handler module has "handler" in its name.
+    "page", "pages", "error", "errors", "check", "checks", "issue", "issues",
+    "whats", "preview", "previews", "handler", "handlers",
 })
 
 
@@ -372,6 +422,110 @@ def _build_adj(pair_weight: Dict[Tuple[str, str], float],
         adj[a][b] = adj[a].get(b, 0.0) + w
         adj[b][a] = adj[b].get(a, 0.0) + w
     return adj
+
+
+# ── JS/TS relative-import edges (code_index does not extract these) ────
+
+#: `code_index._extract_lexical` (used for every non-Python language) never
+#: emits `imports`/`calls` edges for JS/JSX/TS/TSX -- only `defines` edges
+#: from a module to its own lexically-found symbols (see that function's
+#: docstring in `context_engine/code_index.py`). For a client app this means
+#: the file-level clustering graph normally has ZERO real edges between its
+#: own files, so every JS/TS community lands at cohesion 0.0 regardless of
+#: how tightly the screens/components actually depend on each other. Rather
+#: than touch `code_index`/`code_edges` (out of this module's scope, and a
+#: much bigger change), `communities.py` derives its own best-effort,
+#: file-level "imports" edge: a cheap regex over each file's own
+#: `import ... from './x'` / `export ... from './x'` / `require('./x')`
+#: relative specifiers, resolved to another production file the same way
+#: Node/bundler resolution would (trying the usual JS/TS extensions and
+#: `index.<ext>`). This is intentionally NOT a real module resolver -- no
+#: tsconfig paths/aliases, no node_modules, no bare/package specifiers (only
+#: `./x` / `../x` are ever considered local) -- just enough real signal for
+#: client code to cluster by screens/components/lib instead of by nothing.
+#: It contributes to THIS module's clustering graph only; it is never
+#: written back to the database and never affects `impact()`, `flows()`, or
+#: any other consumer of the real code graph.
+_JS_EXTENSIONS = (".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs")
+_JS_RESOLVE_EXTENSIONS = (".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".json")
+_JS_MAX_FILE_BYTES = 512_000
+_JS_IMPORT_RE = re.compile(r"""(?:from\s+|require\(\s*)['"](\.\.?/[^'"]*)['"]""")
+
+
+def _js_relative_imports(source: str) -> List[str]:
+    """Every relative import/require specifier (`./x`, `../y/z`) found in
+    `source`. Deliberately simple: only specifiers starting with `.` or
+    `..` are considered -- bare/package specifiers (`react`, `@scope/pkg`)
+    are never local files and would only add noise or false edges to
+    unrelated files that happen to share a resolved name."""
+    return _JS_IMPORT_RE.findall(source)
+
+
+def _resolve_js_specifier(from_file: str, spec: str, known: Set[str]) -> Optional[str]:
+    """Resolve a relative specifier written inside `from_file` to one of
+    `known` (production file paths, forward-slash, relative to the repo
+    root) -- the same three things Node/bundler resolution tries: the exact
+    joined path, that path plus each known extension, and `index.<ext>`
+    inside it as a directory. Returns None (no match, e.g. the target is
+    outside the indexed/production set, or resolution genuinely can't find
+    it) rather than guessing."""
+    base_dir = from_file.rsplit("/", 1)[0] if "/" in from_file else ""
+    parts = (base_dir.split("/") if base_dir else []) + spec.split("/")
+    resolved: List[str] = []
+    for part in parts:
+        if part in ("", "."):
+            continue
+        if part == "..":
+            if resolved:
+                resolved.pop()
+            continue
+        resolved.append(part)
+    candidate = "/".join(resolved)
+    if candidate in known:
+        return candidate
+    for ext in _JS_RESOLVE_EXTENSIONS:
+        if candidate + ext in known:
+            return candidate + ext
+    for ext in _JS_RESOLVE_EXTENSIONS:
+        idx = f"{candidate}/index{ext}" if candidate else f"index{ext}"
+        if idx in known:
+            return idx
+    return None
+
+
+def _derive_js_import_edges(root: str, production_files: Sequence[str]
+                             ) -> Dict[Tuple[str, str], float]:
+    """Best-effort file-level `pair_weight` contributions for JS/TS relative
+    imports -- see the module note above `_JS_EXTENSIONS`. Reads each JS/TS
+    production file directly off disk (capped at `_JS_MAX_FILE_BYTES`); a
+    file that cannot be read (missing, permissions, too large) is silently
+    skipped, same as a missing edge from the real graph would be. Weight
+    reuses the existing `imports` x `lexical` formula (0.4) -- the same
+    confidence code_index itself would assign a lexically-found, unresolved
+    import, since that is exactly what this is."""
+    known = set(production_files)
+    js_files = [f for f in production_files if f.endswith(_JS_EXTENSIONS)]
+    if not js_files:
+        return {}
+    weight = _KIND_WEIGHT["imports"] * _CERTAINTY_WEIGHT["lexical"]
+    out: Dict[Tuple[str, str], float] = {}
+    for f in js_files:
+        abs_path = os.path.join(root, *f.split("/"))
+        try:
+            with open(abs_path, "rb") as fh:
+                raw = fh.read(_JS_MAX_FILE_BYTES + 1)
+        except OSError:
+            continue
+        if len(raw) > _JS_MAX_FILE_BYTES:
+            continue
+        source = raw.decode("utf-8", "replace")
+        for spec in _js_relative_imports(source):
+            target = _resolve_js_specifier(f, spec, known)
+            if target is None or target == f:
+                continue
+            key = (f, target) if f < target else (target, f)
+            out[key] = out.get(key, 0.0) + weight
+    return out
 
 
 # ── deterministic Louvain (one level) ───────────────────────────────────
@@ -567,38 +721,113 @@ def _fold_siblings(sub: Dict[str, List[str]], *, min_files: int) -> Dict[str, Li
     return result
 
 
-def _split_catchalls(groups: Dict[str, List[str]], pair_weight: Dict[Tuple[str, str], float],
-                      *, min_files: int) -> Tuple[Dict[str, List[str]], Dict[str, str]]:
-    """A group past `_CATCHALL_MIN_FILES` files with cohesion below
-    `_CATCHALL_MAX_COHESION` is Louvain's honest answer for a loosely-
-    coupled "glue" region, not a real single module -- split it by each
-    file's own immediate directory into real sub-communities instead of
-    presenting one illegible blob (a fixed absolute depth would collapse a
+def _split_one_catchall(files: List[str], pair_weight: Dict[Tuple[str, str], float],
+                         *, min_files: int, deadline: float
+                         ) -> Tuple[Optional[Dict[str, List[str]]], str]:
+    """Split one catch-all's file list into sub-groups, preferring the blob's
+    own internal structure over its directory layout. A dense, cohesive blob
+    (e.g. one vendored library or one tightly-coupled package) usually has
+    real substructure in its OWN call graph -- distinct file clusters that
+    Louvain's top-level resolution was too coarse to tell apart from the rest
+    of the repo but that a second Louvain pass, run only on this blob's
+    induced subgraph at a much higher resolution (`_CATCHALL_INTERNAL_RESOLUTION`),
+    can separate. That is tried first (`split_by="call_graph"`); only when it
+    fails to produce at least two usable sub-groups (every internal edge is
+    genuinely uniform, or the blob has no internal edges at all) do we fall
+    back to splitting by each file's own immediate directory
+    (`split_by="directory"`) -- a fixed absolute depth would collapse a
     deeply-nested blob like `studio/src/screens/**` right back to
-    `studio/src` for every file; splitting on the file's own full directory
-    keeps whatever structure the blob actually has, however deep it starts).
-    Sub-groups that come out too small are folded into a directory sibling,
-    same rule as `_fold_tiny_groups`. When even that yields only one group
-    (every file in the blob is a direct sibling in one flat directory, with
-    no subdirectory structure left to split along), splitting genuinely
-    cannot help and the blob is left as-is."""
+    `studio/src` for every file, so splitting on the file's own full
+    directory keeps whatever structure the blob actually has, however deep
+    it starts. Sub-groups that come out too small are folded into a sibling,
+    same rule as `_fold_tiny_groups`. Returns `(None, "")` when neither
+    approach yields at least two sub-groups meeting `min_files` -- e.g. every
+    file in the blob is a direct sibling in one flat directory with no
+    internal edges and no subdirectory structure, so splitting genuinely
+    cannot help and the caller should leave the blob as one community."""
+    file_set = set(files)
+    internal_pw = {(a, b): w for (a, b), w in pair_weight.items()
+                   if a in file_set and b in file_set}
+    if internal_pw:
+        adj = _build_adj(internal_pw, files)
+        try:
+            membership = _one_level(adj, sorted(files), deadline,
+                                     resolution=_CATCHALL_INTERNAL_RESOLUTION)
+        except _BudgetExceeded:
+            membership = None
+        if membership is not None:
+            sub = _group_by(membership)
+            if len(sub) > 1:
+                sub = _fold_siblings_by_weight(sub, internal_pw, min_files=min_files)
+                if len(sub) > 1:
+                    return sub, "call_graph"
+
+    sub = {}
+    for f in files:
+        sub.setdefault(_dir_key(f), []).append(f)
+    sub = _fold_siblings(sub, min_files=min_files)
+    if len(sub) > 1:
+        return sub, "directory"
+    return None, ""
+
+
+def _fold_siblings_by_weight(sub: Dict[str, List[str]], pair_weight: Dict[Tuple[str, str], float],
+                              *, min_files: int) -> Dict[str, List[str]]:
+    """Same idea as `_fold_siblings`, but for call-graph sub-groups (which
+    have no directory-sibling relationship to lean on): a too-small sub-group
+    merges into whichever other sub-group it has the strongest combined edge
+    weight to, else the largest sub-group overall."""
+    big = {k: v for k, v in sub.items() if len(v) >= min_files}
+    if not big:
+        return {k: list(v) for k, v in sub.items()}
+    result: Dict[str, List[str]] = {k: list(v) for k, v in big.items()}
+    _, cross = _internal_cross_weights(sub, pair_weight)
+    for k, files in sub.items():
+        if k in big:
+            continue
+        candidates = {g: w for g, w in cross.get(k, {}).items() if g in big}
+        target = sorted(candidates.items(), key=lambda kv: (-kv[1], kv[0]))[0][0] if candidates \
+            else sorted(big.items(), key=lambda kv: (-len(kv[1]), kv[0]))[0][0]
+        result[target].extend(files)
+    for v in result.values():
+        v.sort()
+    return result
+
+
+def _split_catchalls(groups: Dict[str, List[str]], pair_weight: Dict[Tuple[str, str], float],
+                      *, min_files: int, catchall_min_files: int, total_files: int,
+                      deadline: float) -> Tuple[Dict[str, List[str]], Dict[str, str]]:
+    """A group past `catchall_min_files` files is Louvain's honest answer for
+    a loosely-coupled "glue" region or an outsized dense blob, not a
+    reasonably-sized single module -- split it into real sub-communities
+    instead of presenting one illegible catch-all. Two independent triggers,
+    either sufficient on its own:
+      - cohesion below `_CATCHALL_MAX_COHESION` (the classic "glue" case: a
+        big loosely-coupled group whose internal edges barely outweigh its
+        cross edges), or
+      - the group holds more than `_CATCHALL_DOMINANCE_FRACTION` of the
+        WHOLE repo's production files (the "one dense blob" case a small
+        cohesive package produces: cohesion can be very high, ~1.0, yet the
+        group is still most of the repo and tells a human nothing about its
+        internal structure).
+    See `_split_one_catchall` for how the split itself is attempted (call
+    graph first, directory fallback)."""
     internal, cross = _internal_cross_weights(groups, pair_weight)
     final: Dict[str, List[str]] = {}
     split_of: Dict[str, str] = {}
     for gid, files in groups.items():
         cohesion = _cohesion_of(gid, internal, cross)
-        if len(files) > _CATCHALL_MIN_FILES and cohesion < _CATCHALL_MAX_COHESION:
-            sub: Dict[str, List[str]] = {}
-            for f in files:
-                sub.setdefault(_dir_key(f), []).append(f)
-            sub = _fold_siblings(sub, min_files=min_files)
-            if len(sub) <= 1:
+        dominant = total_files > 0 and (len(files) / total_files) > _CATCHALL_DOMINANCE_FRACTION
+        if len(files) > catchall_min_files and (cohesion < _CATCHALL_MAX_COHESION or dominant):
+            sub, split_by = _split_one_catchall(files, pair_weight, min_files=min_files,
+                                                 deadline=deadline)
+            if sub is None:
                 final[gid] = files  # splitting would not actually help
                 continue
             for skey, sfiles in sub.items():
                 label = f"{gid}::{skey}"
                 final[label] = sfiles
-                split_of[label] = "directory"
+                split_of[label] = split_by
         else:
             final[gid] = files
     return final, split_of
@@ -751,7 +980,17 @@ def _tfidf_tag(files: Sequence[str], ctx: _NameCtx, exclude: Set[str]) -> str:
     """Short disambiguator for two same-named sibling communities: the
     file-stem tokens most distinctive to this community's files versus the
     whole repo (classic TF-IDF), skipping generic/boilerplate tokens and
-    anything already present in the name itself."""
+    anything already present in the name itself.
+
+    A token that appears in only ONE member file's stem is a weak
+    disambiguator in practice -- it usually reads as noise picked off a
+    single filename (e.g. "handler" from one `error_handler.py`) rather than
+    a real theme shared across the community. So tokens with a
+    within-community document frequency of at least 2 (the token's stem
+    appears in >=2 of this community's own files) are preferred outright;
+    count-1 tokens are only used as a fallback when no token clears that
+    bar, so a genuinely small/singleton-flavoured community still gets a
+    tag rather than none at all."""
     tf: Dict[str, int] = {}
     for f in files:
         for t in ctx.file_tokens.get(f, ()):
@@ -763,9 +1002,11 @@ def _tfidf_tag(files: Sequence[str], ctx: _NameCtx, exclude: Set[str]) -> str:
             continue
         idf = math.log((ctx.n_docs + 1) / (ctx.doc_freq.get(t, 0) + 1)) + 1.0
         score = (c / n_files) * idf
-        scored.append((score, t))
+        scored.append((score, t, c))
     scored.sort(key=lambda x: (-x[0], x[1]))
-    return ", ".join(t for _, t in scored[:2])
+    qualified = [(s, t) for s, t, c in scored if c >= 2]
+    chosen = qualified if qualified else [(s, t) for s, t, c in scored]
+    return ", ".join(t for _, t in chosen[:2])
 
 
 def _disambiguate_names(records: List[Dict[str, Any]], ctx: _NameCtx) -> None:
@@ -1044,6 +1285,12 @@ def _build(root: str, project_id: str, fingerprint: str) -> List[Dict[str, Any]]
     production_files = [f for f in inputs.paths if not _is_test_path(f)]
     test_paths = [f for f in inputs.paths if _is_test_path(f)]
     deadline = started + _TIME_BUDGET_S
+    fold_min = _fold_min_files_for(len(production_files))
+    catchall_min = _catchall_min_files_for(len(production_files))
+
+    js_edges = _derive_js_import_edges(root, production_files)
+    for key, w in js_edges.items():
+        pair_weight[key] = pair_weight.get(key, 0.0) + w
 
     if len(production_files) > _NODE_CAP:
         file_to_label0, label0_to_label1_dir, method = _directory_fallback(production_files)
@@ -1084,9 +1331,11 @@ def _build(root: str, project_id: str, fingerprint: str) -> List[Dict[str, Any]]
             parents = {id0: label0_to_label1_dir.get(id0, id0) for id0 in groups0_final}
         else:
             groups0_raw = _group_by(labels0)
-            groups0_folded = _fold_tiny_groups(groups0_raw, pair_weight, min_files=_FOLD_MIN_FILES)
-            groups0_labelled, split_of = _split_catchalls(groups0_folded, pair_weight,
-                                                           min_files=_FOLD_MIN_FILES)
+            groups0_folded = _fold_tiny_groups(groups0_raw, pair_weight, min_files=fold_min)
+            groups0_labelled, split_of = _split_catchalls(
+                groups0_folded, pair_weight, min_files=fold_min,
+                catchall_min_files=catchall_min, total_files=len(production_files),
+                deadline=deadline)
             file_to_label0 = {f: lbl for lbl, files in groups0_labelled.items() for f in files}
 
             try:
@@ -1102,7 +1351,7 @@ def _build(root: str, project_id: str, fingerprint: str) -> List[Dict[str, Any]]
                 groups1_raw.setdefault(lbl1, []).extend(files)
             for v in groups1_raw.values():
                 v.sort()
-            groups1_labelled = _fold_tiny_groups(groups1_raw, pair_weight, min_files=_FOLD_MIN_FILES)
+            groups1_labelled = _fold_tiny_groups(groups1_raw, pair_weight, min_files=fold_min)
 
             label_to_id0 = {lbl: _community_id(files) for lbl, files in groups0_labelled.items()}
             label_to_id1 = {lbl: _community_id(files) for lbl, files in groups1_labelled.items()}

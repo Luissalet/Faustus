@@ -23,6 +23,7 @@ from __future__ import annotations
 import importlib
 import os
 import subprocess
+import time
 
 import pytest
 
@@ -499,26 +500,52 @@ def test_fold_tiny_groups_is_a_noop_when_nothing_reaches_min_files():
 
 def test_split_catchalls_splits_a_big_zero_cohesion_blob_by_directory():
     files = [f"area_a/f{i}.py" for i in range(40)] + [f"area_b/g{i}.py" for i in range(40)]
-    final, split_of = cg_communities._split_catchalls({"blob": files}, {}, min_files=3)
+    final, split_of = cg_communities._split_catchalls(
+        {"blob": files}, {}, min_files=3, catchall_min_files=3, total_files=80,
+        deadline=time.monotonic() + 5.0)
     assert len(final) == 2
     assert set(split_of.values()) == {"directory"}
     assert sum(len(v) for v in final.values()) == 80
 
 
-def test_split_catchalls_leaves_a_cohesive_big_group_alone():
+def test_split_catchalls_leaves_a_cohesive_non_dominant_group_alone():
+    # High cohesion AND a small slice of a (hypothetically) much bigger repo:
+    # neither trigger fires, so the group is left as-is.
     blob = [f"area/f{i}.py" for i in range(70)]
     other = ["other/g0.py", "other/g1.py", "other/g2.py"]
     pair_weight = {(blob[i], blob[i + 1]): 10.0 for i in range(69)}
     pair_weight[(blob[0], other[0])] = 0.5  # one weak cross edge
     final, split_of = cg_communities._split_catchalls(
-        {"blob": blob, "other": other}, pair_weight, min_files=3)
+        {"blob": blob, "other": other}, pair_weight, min_files=3,
+        catchall_min_files=3, total_files=1000, deadline=time.monotonic() + 5.0)
     assert final["blob"] == blob
     assert split_of == {}
 
 
+def test_split_catchalls_splits_a_dominant_cohesive_blob_by_call_graph():
+    # High cohesion but the group IS most of the repo -- this is exactly the
+    # "one dense blob swallows the whole app" failure mode the dominance
+    # trigger exists for. Two internally-dense clusters, weakly cross-linked,
+    # should be told apart by the internal-subgraph Louvain pass.
+    a = [f"area_a/f{i}.py" for i in range(20)]
+    b = [f"area_b/g{i}.py" for i in range(20)]
+    pair_weight = {(a[i], a[i + 1]): 10.0 for i in range(19)}
+    pair_weight.update({(b[i], b[i + 1]): 10.0 for i in range(19)})
+    pair_weight[(a[0], b[0])] = 0.1  # one very weak cross-cluster edge
+    blob = a + b
+    final, split_of = cg_communities._split_catchalls(
+        {"blob": blob}, pair_weight, min_files=3, catchall_min_files=3,
+        total_files=41, deadline=time.monotonic() + 5.0)
+    assert len(final) >= 2
+    assert set(split_of.values()) <= {"call_graph", "directory"}
+    assert sum(len(v) for v in final.values()) == 40
+
+
 def test_split_catchalls_leaves_a_small_group_alone_regardless_of_cohesion():
-    files = [f"area/f{i}.py" for i in range(10)]  # under _CATCHALL_MIN_FILES
-    final, split_of = cg_communities._split_catchalls({"blob": files}, {}, min_files=3)
+    files = [f"area/f{i}.py" for i in range(10)]  # under catchall_min_files
+    final, split_of = cg_communities._split_catchalls(
+        {"blob": files}, {}, min_files=3, catchall_min_files=15, total_files=10,
+        deadline=time.monotonic() + 5.0)
     assert final == {"blob": files}
     assert split_of == {}
 
@@ -604,3 +631,141 @@ def test_communities_tool_executor_detail_by_id(ws):
         f'{{"root": "{ws}", "id": "{target}"}}', {}))
     assert result["exit_code"] == 0
     assert result["community"]["id"] == target
+
+
+# ── small-repo regression: scaled thresholds + entry-kind ranking ───────
+#
+# Reproduces, in miniature, the failure mode a real ~60-file FastAPI+React
+# app hit: fixed (big-repo-tuned) fold/catch-all thresholds either fold
+# every small module away or never fire at all on a repo this size, and a
+# vendored library's own internal entry point can outrank the app's real
+# HTTP routes by raw call-graph criticality alone. Five disconnected-by-
+# design Python "packages" (~37 files: a 10-file clique, an 8-file clique,
+# another 8-file clique, a 5-file vendored clique + one un-called internal
+# root inside it, 4 directory-loose utility files, and one HTTP route
+# calling into the first clique) -- deliberately built so NO package alone
+# would trigger the old fixed catch-all threshold (60 files) or need it to
+# stay separate from the others, the exact shape a "handful of real
+# modules" small app has.
+
+def _clique_package(root, pkg, n):
+    """`n` files, each defining and exporting one PACKAGE-PREFIXED function
+    (`{pkg}_m1`, `{pkg}_m2`, ...) that calls every other sibling -- prefixed
+    so names are globally unique across every package this fixture builds.
+    `code_index`'s call resolver only disambiguates a same-named function
+    across multiple files via an aliased import's module hint (see
+    `_resolve`'s docstring in code_index.py); a plain, non-aliased
+    `from pkg.x_mod import x` -- what `_clique_file` generates and what real
+    code overwhelmingly looks like -- carries no such hint, so a bare name
+    that collides across packages (four different `m1`s) has its call edges
+    silently dropped as unresolvably ambiguous. Unique names sidestep that
+    entirely and let every intra-package call resolve as a real `calls`
+    edge, which this fixture's assertions on `flows()` entry points and
+    fan-out depend on."""
+    names = [f"{pkg}_m{i}" for i in range(1, n + 1)]
+    for me in names:
+        others = [o for o in names if o != me]
+        _write(root, f"{pkg}/{me}_mod.py", _clique_file(pkg, me, others))
+    return names
+
+
+VENDOR_ROOT_PY = '''"""An internal orchestrator nothing else in the vendored package (or the
+app) calls -- a plain "public root" candidate by call-graph shape alone,
+which must be demoted to `vendor_root` because its own directory carries
+the vendoring marker below."""
+from vendor_hoard_link.vendor_hoard_link_m1_mod import vendor_hoard_link_m1
+from vendor_hoard_link.vendor_hoard_link_m2_mod import vendor_hoard_link_m2
+from vendor_hoard_link.vendor_hoard_link_m3_mod import vendor_hoard_link_m3
+from vendor_hoard_link.vendor_hoard_link_m4_mod import vendor_hoard_link_m4
+
+
+def internal_orchestrator():
+    vendor_hoard_link_m1()
+    vendor_hoard_link_m2()
+    vendor_hoard_link_m3()
+    vendor_hoard_link_m4()
+'''
+
+ROUTE_PY = '''"""The app's one real HTTP entry point -- must outrank every internal/
+vendored root in `flows()` regardless of its own (small) call tree."""
+from fastapi import APIRouter
+
+from core.core_m1_mod import core_m1
+
+router = APIRouter()
+
+
+@router.get("/status")
+def get_status():
+    """The one entry point this fixture cares about."""
+    return core_m1()
+'''
+
+UTIL_PY_TMPL = '''"""A standalone utility file, no calls in or out -- must still end up in
+SOME community (the size-scaled fold's directory-loose bucket), never
+folded away entirely and never a fatal error."""
+
+
+def {name}():
+    return {idx}
+'''
+
+
+@pytest.fixture()
+def small_app_repo(tmp_path, ce_db):
+    root = tmp_path / "small_app"
+    root.mkdir()
+    _clique_package(root, "core", 10)
+    _clique_package(root, "workers", 8)
+    _clique_package(root, "models", 8)
+    _clique_package(root, "vendor_hoard_link", 5)
+    _write(root, "vendor_hoard_link/VENDORED.txt",
+           "Vendored third-party code -- do not edit directly.\n")
+    _write(root, "vendor_hoard_link/root_mod.py", VENDOR_ROOT_PY)
+    _write(root, "api/routes.py", ROUTE_PY)
+    for i in range(1, 5):
+        _write(root, f"utils/u{i}.py", UTIL_PY_TMPL.format(name=f"u{i}", idx=i))
+    _commit(str(root))
+    return str(root)
+
+
+def test_small_app_yields_several_level0_communities_not_one_blob(small_app_repo):
+    ws_token, roots_token = _bind(small_app_repo)
+    try:
+        code_graph.index(small_app_repo)
+        result = code_graph.communities(small_app_repo, level=0)
+    finally:
+        _unbind(ws_token, roots_token)
+    assert result["exit_code"] == 0
+    # Five independent packages must not collapse into one catch-all, and
+    # must not each be folded away into nothing either.
+    assert len(result["communities"]) > 1
+    total_shown = sum(c["size"] for c in result["communities"])
+    assert total_shown > 0
+
+
+def test_small_app_route_outranks_internal_and_vendored_roots(small_app_repo):
+    cg_flows = importlib.import_module("src.code_graph.flows")
+    ws_token, roots_token = _bind(small_app_repo)
+    try:
+        code_graph.index(small_app_repo)
+        result = code_graph.flows(small_app_repo, limit=50)
+    finally:
+        _unbind(ws_token, roots_token)
+    assert result["exit_code"] == 0
+    flows_list = result["flows"]
+    reasons = {f["entry_reason"] for f in flows_list}
+    assert "route" in reasons
+    assert "vendor_root" in reasons  # the vendoring marker must be detected
+
+    route_pos = next(i for i, f in enumerate(flows_list) if f["entry_reason"] == "route")
+    vendor_positions = [i for i, f in enumerate(flows_list) if f["entry_reason"] == "vendor_root"]
+    assert route_pos < min(vendor_positions)
+
+    route_flow = flows_list[route_pos]
+    assert route_flow["name"] == "GET /status"
+
+    if any(f["entry_reason"] == "root" for f in flows_list):
+        root_positions = [i for i, f in enumerate(flows_list) if f["entry_reason"] == "root"]
+        # non-vendored roots must also outrank vendored ones (the penalty).
+        assert max(root_positions) < min(vendor_positions)
