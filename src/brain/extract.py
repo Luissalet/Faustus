@@ -464,18 +464,75 @@ def _pick_grounding_source(sources: Sequence[Dict[str, Any]], model_from: Any,
     return best[2], best[3], best[4]
 
 
+def background_llm_gate(url: Any, model: Any) -> str:
+    """May an unattended brain pass call `model` at `url` right now?
+
+    ``""`` when it may; otherwise the reason it may not, checked in this
+    order and meant to be called immediately before EACH model call:
+
+    - ``interactive_turn`` — a chat turn is in flight. Same probe the
+      maintenance scheduler yields to between tasks
+      (``context_engine.maintenance.should_yield``), asked again here
+      because one brain task can make several model calls and a turn can
+      start in between.
+    - ``no_endpoint`` — no utility model is configured.
+    - ``residency_unknown`` — the endpoint cannot say what is loaded (a
+      remote provider, a server without a residency listing, or the runner
+      did not answer). Unknown is treated as "would load": a background job
+      does not gamble on an unattended load or eviction.
+    - ``model_not_resident`` — calling it would make the runner load it.
+
+    Residency comes from ``background_job_guard`` (the runner's own
+    listing of loaded models); the owner's explicit opt-in
+    ``background_jobs_may_load_models`` is honoured exactly as that guard
+    honours it. Never raises."""
+    try:
+        from src.context_engine import maintenance
+        if maintenance.should_yield():
+            return "interactive_turn"
+    except Exception:  # noqa: BLE001 - a probe that cannot answer says no turn
+        logger.debug("brain.extract: could not probe for interactive work")
+    if not url or not model:
+        return "no_endpoint"
+    if _get_setting("background_jobs_may_load_models", False):
+        return ""
+    try:
+        from src import background_job_guard
+        from src.llm_core import _same_model_identity
+        names = background_job_guard._resident_model_names(str(url))
+    except Exception:  # noqa: BLE001
+        names = None
+    if names is None:
+        return "residency_unknown"
+    if not any(_same_model_identity(name, str(model)) for name in names if name):
+        return "model_not_resident"
+    return ""
+
+
 async def _extract_llm_batch(owner: str, batch: Sequence[Dict[str, Any]],
-                             report: Dict[str, Any]) -> bool:
-    """One background model call over `batch`. Returns True iff the model
-    actually answered (used for `report['llm_used']`), regardless of how
-    many — possibly zero — entities/relations survived grounding."""
+                             report: Dict[str, Any], *, background: bool = False) -> bool:
+    """One model call over `batch`. Returns True iff the model actually
+    answered (used for `report['llm_used']`), regardless of how many —
+    possibly zero — entities/relations survived grounding.
+
+    With `background`, :func:`background_llm_gate` is asked right before
+    the call; a refusal is recorded in ``report["llm_skipped"]`` and nothing
+    is called (nor logged as extracted, so a later sweep retries)."""
     try:
         from src.endpoint_resolver import resolve_endpoint
         url, model, headers = resolve_endpoint("utility", owner=owner)
     except Exception:  # noqa: BLE001
-        return False
+        url, model, headers = None, None, None
     if not url or not model:
+        if background:
+            report["llm_skipped"] = "no_endpoint"
         return False
+    if background:
+        reason = background_llm_gate(url, model)
+        if reason:
+            report["llm_skipped"] = reason
+            logger.debug("brain.extract: model pass skipped (%s)", reason)
+            return False
 
     try:
         from src.llm_core import llm_call_async
@@ -585,15 +642,22 @@ async def _extract_llm_batch(owner: str, batch: Sequence[Dict[str, Any]],
 
 
 async def extract_pending(owner: Any, *, limit: Optional[int] = None, budget_s: float = 20.0,
-                          use_llm: Optional[bool] = None) -> Dict[str, Any]:
+                          use_llm: Optional[bool] = None,
+                          background: bool = True) -> Dict[str, Any]:
     """The background sweep: rule pass over everything changed since its
     last extraction, then (optionally) one utility-model pass over what the
-    LLM extraction log has not seen yet. Never raises."""
+    LLM extraction log has not seen yet. Never raises.
+
+    `background` (the default) makes the model pass polite: before each
+    model call :func:`background_llm_gate` must allow it, otherwise the
+    pass stops and ``report["llm_skipped"]`` says why (the rule pass has
+    already run either way). ``background=False`` is for a caller acting
+    on a person's explicit request."""
     start = time.monotonic()
     owner = str(owner or "")
     report: Dict[str, Any] = {
         "processed": 0, "entities": 0, "relations": 0, "skipped": 0,
-        "errors": 0, "llm_used": False,
+        "errors": 0, "llm_used": False, "llm_skipped": "",
     }
     if not owner:
         return report
@@ -635,8 +699,11 @@ async def extract_pending(owner: Any, *, limit: Optional[int] = None, budget_s: 
             for i in range(0, len(llm_sources), batch_size):
                 if time.monotonic() - start > budget_s:
                     break
-                if await _extract_llm_batch(owner, llm_sources[i:i + batch_size], report):
+                if await _extract_llm_batch(owner, llm_sources[i:i + batch_size], report,
+                                            background=background):
                     report["llm_used"] = True
+                if report.get("llm_skipped"):
+                    break
     except Exception as exc:  # noqa: BLE001 - a background sweep must never raise
         logger.debug("brain.extract: extract_pending failed (%s)", exc)
         report["errors"] += 1
@@ -666,4 +733,4 @@ def count_pending(owner: Any) -> int:
     return count
 
 
-__all__ = ["extract_source", "extract_pending", "count_pending"]
+__all__ = ["extract_source", "extract_pending", "count_pending", "background_llm_gate"]

@@ -27,6 +27,16 @@ def store(tmp_path, monkeypatch):
     engine.reset_vector_store()
 
 
+@pytest.fixture(autouse=True)
+def model_resident_and_idle(monkeypatch):
+    """The background model pass only runs when no turn is in flight and the
+    utility model is already loaded (see test_brain_extract_etiquette.py);
+    these tests are about what it does once it runs."""
+    monkeypatch.setattr("src.context_engine.maintenance.should_yield", lambda: False)
+    monkeypatch.setattr("src.background_job_guard._resident_model_names",
+                        lambda url: ["qwen-test"])
+
+
 # ---------------------------------------------------------------------------
 # extract_source — deterministic
 # ---------------------------------------------------------------------------
