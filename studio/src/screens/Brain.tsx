@@ -279,6 +279,13 @@ export function BrainScreen() {
                 onCreateNote={(title) => void createAndOpen(title)}
                 onSaved={(saved) => {
                   setNote(saved);
+                  // A memory note whose text changed comes back at a NEW
+                  // path (its id is derived from the text) — follow it, so
+                  // the address bar and the tree selection never point at a
+                  // file that no longer exists.
+                  if (saved.path !== activePath) {
+                    setParams((p) => { const next = new URLSearchParams(p); next.set('note', saved.path); return next; }, { replace: true });
+                  }
                   void reloadTree();
                   reloadTags();
                 }}
