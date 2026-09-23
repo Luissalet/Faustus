@@ -30,7 +30,8 @@ from __future__ import annotations
 import re
 from typing import List
 
-__all__ = ["looks_time_sensitive", "freshness_reasons", "freshness_assessment", "decide_freshness"]
+__all__ = ["looks_time_sensitive", "freshness_reasons", "freshness_assessment", "decide_freshness",
+           "decision_verdict", "FRESHNESS_QUESTION"]
 
 # Each entry: (label, compiled pattern). Patterns are matched case-
 # insensitively against the raw user text. Spanish and English are mixed in
@@ -239,8 +240,19 @@ async def decide_freshness(text: str, *, owner=None) -> dict:
         return result
     result["decision"] = {k: getattr(decision, k) for k in
                           ("value", "best", "confidence", "mass", "method", "reason", "ms")}
-    # A single parsed letter has no probability behind it: keep the rule.
-    if decision.method == "logprobs" and decision.value in ("yes", "no"):
-        result["time_sensitive"] = decision.value == "yes"
+    verdict = decision_verdict(decision)
+    if verdict is not None:
+        result["time_sensitive"] = verdict
         result["source"] = "typed_decision"
     return result
+
+
+def decision_verdict(decision) -> "bool | None":
+    """What a typed decision says, or None when it must not be used: only a
+    log-probability answer that already passed the confidence and mass
+    thresholds (``value`` set) counts — a single parsed letter has no
+    probability behind it, and an unsure one is no better than the rule."""
+    if decision is None or getattr(decision, "method", "") != "logprobs":
+        return None
+    value = getattr(decision, "value", None)
+    return (value == "yes") if value in ("yes", "no") else None

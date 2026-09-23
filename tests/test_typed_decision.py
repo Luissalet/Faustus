@@ -406,3 +406,36 @@ def test_route_requires_a_user():
     c = TestClient(app)
     assert c.get("/api/typed-decision/stats").status_code == 401
     assert c.post("/api/typed-decision", json={"context": "x", "fields": []}).status_code == 401
+
+
+# ── response shapes as the servers actually send them ───────────────────────
+# Trimmed from a live probe of a loopback llama-server (3B helper) and a
+# local Ollama 0.34 (27B, native /api/chat, think=false) asked the same
+# three-way question ("billing / technical / sales" for a double charge).
+
+_LIVE_LLAMA_TOP = [
+    {"token": "A", "logprob": -0.004585}, {"token": "B", "logprob": -5.417728},
+    {"token": "C", "logprob": -8.902763}, {"token": "Billing", "logprob": -14.813136},
+    {"token": "D", "logprob": -15.104609}, {"token": "T", "logprob": -15.652663}]
+_LIVE_OLLAMA_TOP = [
+    {"token": "A", "logprob": -0.082591}, {"token": "", "logprob": -2.572513},
+    {"token": "B", "logprob": -6.756122}, {"token": "billing", "logprob": -7.707086},
+    {"token": "Billing", "logprob": -8.224601}, {"token": "<tool_call>", "logprob": -8.23153},
+    {"token": " A", "logprob": -8.244203}, {"token": "C", "logprob": -8.88618},
+    {"token": "\n\n", "logprob": -9.529243}, {"token": "D", "logprob": -9.867026}]
+
+
+def test_live_llama_server_shape():
+    fld = td.Field("dept", "department?", ["billing", "technical", "sales"])
+    d = td.interpret(fld, openai_body(_LIVE_LLAMA_TOP), "openai", min_confidence=0.7, min_mass=0.5)
+    assert d.value == "billing" and d.method == "logprobs"
+    assert d.confidence > 0.99 and d.mass > 0.99
+
+
+def test_live_ollama_native_shape():
+    fld = td.Field("dept", "department?", ["billing", "technical", "sales"])
+    d = td.interpret(fld, ollama_body(_LIVE_OLLAMA_TOP), "ollama", min_confidence=0.7, min_mass=0.5)
+    assert d.value == "billing" and d.method == "logprobs"
+    # the empty token took ~8% of the probability: mass says so, the
+    # renormalised confidence does not
+    assert 0.9 < d.mass < 0.93 and d.confidence > 0.99
