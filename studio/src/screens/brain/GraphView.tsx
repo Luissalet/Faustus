@@ -139,8 +139,8 @@ export function GraphView({ center, onOpenNote, onOpenEntity, compact = false }:
     ctx.scale(transform.scale, transform.scale);
 
     const style = getComputedStyle(canvas);
-    const edgeColor = style.getPropertyValue('--fs-graph-edge').trim() || 'rgba(148,163,184,.35)';
-    const labelColor = style.getPropertyValue('--fs-graph-label').trim() || '#e2e8f0';
+    const edgeColor = style.getPropertyValue('--fs-graph-edge').trim() || 'gray';
+    const labelColor = style.getPropertyValue('--fs-graph-label').trim() || 'silver';
     const positions = simPositions(sim);
     const hovered = hoverRef.current;
     const neighbors = hovered ? neighborsOf(hovered, m.edges) : null;

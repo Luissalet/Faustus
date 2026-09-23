@@ -43,3 +43,16 @@ def test_markdown_report_never_names_the_data_dir(tmp_path):
     assert "| # | query |" in text and "## Summary" in text
     assert "p50" in text and "p95" in text
     assert "ctx-bench-demo-" not in text and str(tmp_path) not in text
+
+
+def test_written_path_on_another_drive_does_not_crash(monkeypatch):
+    import importlib.util, os
+    spec = importlib.util.spec_from_file_location(
+        "bench_ce", os.path.join(os.path.dirname(__file__), "..", "scripts", "bench_context_engine.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    def boom(*_a, **_k):
+        raise ValueError("path is on mount 'C:', start on mount 'D:'")
+    monkeypatch.setattr(mod.os.path, "relpath", boom)
+    assert mod._shown_path("/elsewhere/baseline.md") == "baseline.md"

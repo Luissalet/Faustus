@@ -71,6 +71,19 @@
   --fs-graph-edge: rgb(148 163 184 / 0.35);
   --fs-graph-label: rgb(226 232 240 / 0.92);
 
+  /* Note kinds in the Brain screen's explorer and graph. */
+  --fs-brain-kind-memory: #6c8cff;
+  --fs-brain-kind-personal: #3ecf8e;
+  --fs-brain-kind-entity: #e06c75;
+  --fs-brain-kind-project: #f5a623;
+  --fs-brain-kind-objective: #4dd0e1;
+  --fs-brain-kind-concept: #b980f0;
+  --fs-brain-kind-daily: #7198e5;
+  --fs-brain-kind-home: #9aa3b2;
+  --fs-brain-kind-note: #8ab4ff;
+  --fs-brain-kind-unresolved: #6b7280;
+  --fs-brain-kind-unknown: #9aa3b2;
+
   /* ── Shadow: overlays and drag only ── */
   --fs-shadow-overlay: 0 4px 16px rgb(0 0 0 / 0.32);
   --fs-shadow-drag: 0 8px 24px rgb(0 0 0 / 0.32);
@@ -114,6 +127,17 @@
   --fs-kind-unknown: #5b6472;
   --fs-graph-edge: rgb(71 85 105 / 0.35);
   --fs-graph-label: rgb(30 41 59 / 0.92);
+  --fs-brain-kind-memory: #3a5bd9;
+  --fs-brain-kind-personal: #1f7a52;
+  --fs-brain-kind-entity: #c0392b;
+  --fs-brain-kind-project: #96620b;
+  --fs-brain-kind-objective: #10707e;
+  --fs-brain-kind-concept: #7b3fb5;
+  --fs-brain-kind-daily: #2f5fce;
+  --fs-brain-kind-home: #5b6472;
+  --fs-brain-kind-note: #3a5bd9;
+  --fs-brain-kind-unresolved: #6b7280;
+  --fs-brain-kind-unknown: #5b6472;
 
   --fs-shadow-overlay: 0 4px 16px rgb(0 0 0 / 0.08);
   --fs-shadow-drag: 0 8px 24px rgb(0 0 0 / 0.12);
@@ -156,6 +180,17 @@
   --fs-kind-unknown: #5b6472;
   --fs-graph-edge: rgb(71 85 105 / 0.35);
   --fs-graph-label: rgb(30 41 59 / 0.92);
+  --fs-brain-kind-memory: #3a5bd9;
+  --fs-brain-kind-personal: #1f7a52;
+  --fs-brain-kind-entity: #c0392b;
+  --fs-brain-kind-project: #96620b;
+  --fs-brain-kind-objective: #10707e;
+  --fs-brain-kind-concept: #7b3fb5;
+  --fs-brain-kind-daily: #2f5fce;
+  --fs-brain-kind-home: #5b6472;
+  --fs-brain-kind-note: #3a5bd9;
+  --fs-brain-kind-unresolved: #6b7280;
+  --fs-brain-kind-unknown: #5b6472;
 
     --fs-shadow-overlay: 0 4px 16px rgb(0 0 0 / 0.08);
     --fs-shadow-drag: 0 8px 24px rgb(0 0 0 / 0.12);

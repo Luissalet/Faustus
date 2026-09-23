@@ -45,7 +45,7 @@ function ConfidenceBar({ pct }: { pct: number }) {
   const tone = pct >= 80 ? 'ok' : pct >= 50 ? 'warn' : 'bad';
   return (
     <span className="fs-set__help" data-tone={tone} title={t('Effective confidence — decays over time without new evidence.')}>
-      <span style={{ display: 'inline-block', width: 60, height: 6, background: 'var(--fs-border, #ddd)', borderRadius: 3, overflow: 'hidden', verticalAlign: 'middle', marginInlineEnd: 6 }}>
+      <span style={{ display: 'inline-block', width: 60, height: 6, background: 'var(--fs-border)', borderRadius: 3, overflow: 'hidden', verticalAlign: 'middle', marginInlineEnd: 6 }}>
         <span style={{ display: 'block', height: '100%', width: `${Math.max(2, Math.min(100, pct))}%`, background: 'currentColor' }} />
       </span>
       {pct}%

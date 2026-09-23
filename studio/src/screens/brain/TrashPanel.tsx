@@ -33,7 +33,8 @@ export function TrashPanel({ onClose, onRestored }: { onClose: () => void; onRes
   }
 
   return (
-    <div className="fs-brain__drawer-backdrop" onClick={onClose} role="presentation">
+    <div className="fs-brain__drawer-backdrop" role="presentation">
+      <button type="button" className="fs-brain__scrim" aria-label={t('Close')} tabIndex={-1} onClick={onClose} />
       <aside className="fs-brain__drawer" role="dialog" aria-modal="true" aria-label={t('Trash')} onClick={(e) => e.stopPropagation()} data-testid="brain-trash-panel">
         <header className="fs-brain__drawer-head">
           <h3>{t('Trash')}</h3>

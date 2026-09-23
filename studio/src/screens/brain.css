@@ -1,26 +1,11 @@
 /**
  * The Brain screen (docs/ui build contract, "Lot D") — a markdown-vault
- * note app. Everything here is scoped under `.fs-brain` so it can freely
- * define its own tokens (a note's "kind" needs more colours than the
- * shared palette has swatches for) without touching `styles/tokens.css`.
- *
- * Dark is the default, same order of authority as tokens.css: `:root`
- * (dark) → `prefers-color-scheme: light` → `[data-theme]` explicit choice.
+ * note app. Everything here is scoped under `.fs-brain`; the colours of a note's
+ * kind (`--fs-brain-kind-*`) live in `styles/tokens.css` with the other
+ * graph tokens, dark and light.
  */
 
 .fs-brain {
-  --fs-brain-kind-memory: #6c8cff;
-  --fs-brain-kind-personal: #3ecf8e;
-  --fs-brain-kind-entity: #e06c75;
-  --fs-brain-kind-project: #f5a623;
-  --fs-brain-kind-objective: #4dd0e1;
-  --fs-brain-kind-concept: #b980f0;
-  --fs-brain-kind-daily: #7198e5;
-  --fs-brain-kind-home: #9aa3b2;
-  --fs-brain-kind-note: #8ab4ff;
-  --fs-brain-kind-unresolved: #6b7280;
-  --fs-brain-kind-unknown: #9aa3b2;
-
   display: flex;
   flex-direction: column;
   gap: var(--fs-space-3);
@@ -28,34 +13,6 @@
   min-block-size: 0;
 }
 
-@media (prefers-color-scheme: light) {
-  .fs-brain {
-    --fs-brain-kind-memory: #3a5bd9;
-    --fs-brain-kind-personal: #1f7a52;
-    --fs-brain-kind-entity: #c0392b;
-    --fs-brain-kind-project: #96620b;
-    --fs-brain-kind-objective: #10707e;
-    --fs-brain-kind-concept: #7b3fb5;
-    --fs-brain-kind-daily: #2f5fce;
-    --fs-brain-kind-home: #5b6472;
-    --fs-brain-kind-note: #3a5bd9;
-    --fs-brain-kind-unresolved: #6b7280;
-    --fs-brain-kind-unknown: #5b6472;
-  }
-}
-:root[data-theme='light'] .fs-brain {
-  --fs-brain-kind-memory: #3a5bd9;
-  --fs-brain-kind-personal: #1f7a52;
-  --fs-brain-kind-entity: #c0392b;
-  --fs-brain-kind-project: #96620b;
-  --fs-brain-kind-objective: #10707e;
-  --fs-brain-kind-concept: #7b3fb5;
-  --fs-brain-kind-daily: #2f5fce;
-  --fs-brain-kind-home: #5b6472;
-  --fs-brain-kind-note: #3a5bd9;
-  --fs-brain-kind-unresolved: #6b7280;
-  --fs-brain-kind-unknown: #5b6472;
-}
 
 /* ── Sync bar ── */
 
@@ -495,7 +452,7 @@
   border: 1px solid var(--fs-border-strong);
   border-radius: var(--fs-radius-control);
   background: var(--fs-surface-3);
-  box-shadow: 0 8px 24px rgb(0 0 0 / 0.35);
+  box-shadow: var(--fs-shadow-overlay);
 }
 .fs-brain__autocomplete button {
   display: block;
@@ -605,7 +562,7 @@
   padding: 2px 8px;
   border-radius: var(--fs-radius-pill);
   background: var(--fs-brain-kind-entity);
-  color: #fff;
+  color: var(--fs-on-danger);
   font-size: 11px;
 }
 .fs-brain__asof {
@@ -808,7 +765,7 @@
   border: 1px solid var(--fs-border-strong);
   border-radius: var(--fs-radius-panel);
   background: var(--fs-surface-2);
-  box-shadow: 0 24px 60px rgb(0 0 0 / 0.45);
+  box-shadow: var(--fs-shadow-overlay);
   overflow: hidden;
 }
 .fs-brain__switcher-input {
@@ -855,7 +812,7 @@
   z-index: 55;
   display: flex;
   justify-content: flex-end;
-  background: rgb(0 0 0 / 0.4);
+  background: rgb(0 0 0 / 0.5);
 }
 .fs-brain__drawer {
   inline-size: min(420px, 92vw);
@@ -905,4 +862,27 @@
   .fs-brain__graph {
     border-radius: var(--fs-radius-control);
   }
+}
+
+/* The click-away layer behind a drawer or the switcher: a real button so the
+   close action is reachable and announced, painted under the panel. */
+.fs-brain__scrim {
+  position: absolute;
+  inset: 0;
+  block-size: auto;
+  inline-size: auto;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  cursor: default;
+}
+.fs-brain__scrim:hover {
+  background: transparent;
+}
+.fs-brain__switcher,
+.fs-brain__drawer {
+  position: relative;
+  z-index: 1;
 }

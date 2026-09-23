@@ -27,7 +27,8 @@ export function QuickSwitcher({ notes, onPick, onDaily, onClose }: { notes: Note
   }
 
   return (
-    <div className="fs-brain__switcher-backdrop" onClick={onClose} role="presentation">
+    <div className="fs-brain__switcher-backdrop" role="presentation">
+      <button type="button" className="fs-brain__scrim" aria-label={t('Close')} tabIndex={-1} onClick={onClose} />
       <div
         className="fs-brain__switcher"
         role="dialog"

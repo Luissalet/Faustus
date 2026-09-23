@@ -351,6 +351,16 @@ def render_markdown(rows: List[Dict[str, Any]], args: argparse.Namespace, label:
     return "\n".join(lines)
 
 
+def _shown_path(path: str) -> str:
+    """Repo-relative when possible; on Windows a file on another drive has no
+    relative path (``os.path.relpath`` raises), so show its name only."""
+    full = os.path.abspath(path)
+    try:
+        return os.path.relpath(full, ROOT)
+    except ValueError:
+        return os.path.basename(full)
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parse_args(argv)
     temp_dir = ""
@@ -390,8 +400,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 os.makedirs(os.path.dirname(os.path.abspath(args.write)), exist_ok=True)
                 with open(args.write, "w", encoding="utf-8") as fh:
                     fh.write(report)
-                print(f"\nwritten: {os.path.relpath(os.path.abspath(args.write), ROOT)}",
-                      file=sys.stderr)
+                print(f"\nwritten: {_shown_path(args.write)}", file=sys.stderr)
         return 0
     finally:
         if temp_dir:
