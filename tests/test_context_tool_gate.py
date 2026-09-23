@@ -192,3 +192,11 @@ def test_agent_recall_of_an_unknown_id_still_asks(monkeypatch):
     events, executed = _turn(monkeypatch, OTHER)
     assert executed == []
     assert _asked(events), "today's behaviour: an approval card"
+
+
+def test_brain_read_actions_are_exempt_but_writes_are_not():
+    from src import context_tool_gate as gate
+    rule = gate.rule_for("brain")
+    assert rule is not None
+    assert set(rule.actions) == {"search", "read", "entity", "timeline", "neighbors"}
+    assert "write" not in rule.actions and "append" not in rule.actions
