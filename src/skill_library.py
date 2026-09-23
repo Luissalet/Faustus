@@ -126,7 +126,7 @@ def list_library(owner: Optional[str] = None) -> List[Dict]:
     with an `error` field rather than dropped silently or raising — one bad
     file must not take out the listing."""
     out: List[Dict] = []
-    already = installed(owner) if owner else set()
+    already = installed(owner)
     for slug in _library_slugs():
         path = os.path.join(LIBRARY_DIR, slug, "SKILL.md")
         try:
@@ -149,8 +149,9 @@ def list_library(owner: Optional[str] = None) -> List[Dict]:
             "when_to_use": when_to_use,
             "words": words,
         }
-        if owner:
-            row["installed_for"] = slug in already
+        # An ownerless caller (auth off, loopback bypass) installs ownerless
+        # skills, so its flag is just as real as a named owner's.
+        row["installed_for"] = slug in already
         out.append(row)
     out.sort(key=lambda r: (r.get("category") or "", r.get("slug") or ""))
     return out
