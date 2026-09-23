@@ -3510,6 +3510,39 @@ FUNCTION_TOOL_SCHEMAS = [
             }
         }
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "prior_art",
+            "description": "Before building something, find out which parts already exist as maintained open-source projects to reuse (dependency), which exist only as reference implementations to adapt (study the approach, write your own code), and which are small/generic enough to write. Every repository name is checked live against the GitHub API before it reaches the user -- models recall repo names badly. rubric = the decomposition checklist + slate shape to fill in (no network); verify = check every owner/name in a filled slate (existence, archived/fork, health, license compatibility) and get a ranked table + next actions; search = GitHub repo search when you have no candidate; report = read back a saved verify report by id, or list recent ones. Use for 'does this already exist', 'is there a library for this', 'should I write this or use a package', 'reuse or write', 'ya existe una librería para esto', 'antes de construir esto qué hay ya', 'no reinventes la rueda'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["rubric", "verify", "search", "report"], "description": "rubric = decomposition checklist (no network); verify = check a filled slate live; search = GitHub repo search; report = read a saved report by id, or list recent ones."},
+                    "idea": {"type": "string", "description": "For rubric: the idea/feature to decompose, in one or two sentences."},
+                    "stack": {"type": "string", "description": "Target language/stack, e.g. 'python', 'typescript'. Optional, for rubric and verify."},
+                    "license": {"type": "string", "description": "Target project's license (e.g. 'MIT', 'GPL-3.0'). For rubric it's a hint; for verify it's checked against each 'reuse' candidate's license."},
+                    "constraints": {"type": "string", "description": "For rubric: any constraint the decomposition must respect (e.g. 'no GPL dependencies', 'must run offline')."},
+                    "slate": {"type": "object", "description": "For verify: {idea?, components: [{name, verdict: reuse|adapt|write, repos: [owner/name, ...], rationale}]} -- the filled-in rubric.", "properties": {
+                        "idea": {"type": "string"},
+                        "components": {"type": "array", "items": {"type": "object", "properties": {
+                            "name": {"type": "string"},
+                            "verdict": {"type": "string", "enum": ["reuse", "adapt", "write"]},
+                            "repos": {"type": "array", "items": {"type": "string"}, "description": "1-3 candidate repos as 'owner/name'."},
+                            "rationale": {"type": "string"}
+                        }, "required": ["name", "verdict"]}}
+                    }},
+                    "target_license": {"type": "string", "description": "Alias of 'license' for verify -- the target project's license, checked against each 'reuse' candidate."},
+                    "query": {"type": "string", "description": "For search: free-text GitHub repository search query."},
+                    "language": {"type": "string", "description": "For search: restrict to a GitHub-recognized language name."},
+                    "include_stale": {"type": "boolean", "description": "For search: include repos with no push in the last 2 years (default false)."},
+                    "limit": {"type": "integer", "description": "For search (default 8, max 25) or report listing (default 20)."},
+                    "id": {"type": "string", "description": "For report: a saved report id (e.g. 'PA-000123') to read back in full."}
+                },
+                "required": []
+            }
+        }
+    },
 ]
 
 

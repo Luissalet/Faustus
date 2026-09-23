@@ -1196,4 +1196,18 @@ EXAMPLES: Dict[str, List[str]] = {
         "turn what you've picked up into a reusable skill",
         "show me the instincts you've picked up so far",
     ],
+
+    # ── Prior art (GIT-08) — reuse, adapt or write, verified live ──────────
+    "prior_art": [
+        "before we build this, does something like it already exist",
+        "is there a library for parsing this format instead of writing our own",
+        "ya existe alguna librería para esto o lo escribimos nosotros",
+        "no reinventes la rueda, mira si hay algo en GitHub para esto",
+        "should I write my own markdown parser or use an existing one",
+        "find me a maintained project we could depend on for this",
+        "check if that repo you mentioned is actually still maintained",
+        "busca alternativas de código abierto antes de que lo programemos",
+        "verify that this GitHub repo is real and not abandoned",
+        "qué repos existen para hacer esto, compáralos",
+    ],
 }

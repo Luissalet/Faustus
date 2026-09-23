@@ -146,6 +146,16 @@ _register(
     result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
 )
 _register(
+    # prior_art (GIT-08): rubric is a local checklist (no network), but
+    # verify/search hit api.github.com for repo metadata/search -- same
+    # class as web_search/search_hf_models: a read-only network call whose
+    # result (repo descriptions, license, stats) is external, not
+    # Faustus-authored, text.
+    {"prior_art"},
+    ToolEffect.BROKERED_NETWORK_READ,
+    result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
+)
+_register(
     {"web_fetch"},
     ToolEffect.BROKERED_NETWORK_READ,
     ToolEffect.NETWORK_EGRESS,

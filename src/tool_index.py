@@ -334,6 +334,10 @@ BUILTIN_TOOL_DESCRIPTIONS: Dict[str, str] = {
     # from real sessions in the background and injected as context (never a
     # gate) once confident enough. src/instincts.py + src/agent_tools/instinct_tools.py.
     "manage_instincts": "Read or manage the user's learned 'instincts' -- small, per-project (or promoted-to-global) behaviours like 'when writing new FastAPI routes, use the router factory' with a confidence score, mined automatically from past sessions. list/view/status are read-only; confirm/contradict adjust confidence from feedback; add creates a manual one; retire deactivates one; promote merges a pattern seen across several projects into one global instinct; evolve clusters related instincts into a suggested draft skill/command/agent; export/import move the whole set as JSON. Use for 'what have you learned about how I like this project done', 'remember that I always want X when Y', 'that instinct was wrong', 'turn what you've learned into a skill'.",
+    # Prior art (GIT-08): reuse/adapt/write, with every repository name
+    # checked live against the GitHub API before it reaches the user --
+    # models recall repo names badly. src/prior_art.py.
+    "prior_art": "Before building something, work out which parts already exist as maintained open-source projects to reuse (dependency), which exist only as a reference to adapt (study the approach, write your own code -- mandatory when the license is incompatible), and which are small/generic enough to write. Every repository name is checked live against the GitHub API before being presented as real -- existence, archived/fork status, health (last push), stars, and license compatibility. Actions: rubric (the decomposition checklist, no network), verify (check a filled slate live, ranked table + next actions), search (GitHub repo search when there's no candidate yet), report (read back or list saved verify reports). Use for 'does this already exist', 'is there a library for this', 'should I write this myself or use a package', 'reuse or write it', 'ya existe una librería para esto', 'antes de construir esto, qué hay ya', 'no reinventes la rueda', 'hay alguna alternativa de código abierto'.",
 }
 
 
@@ -1021,6 +1025,15 @@ class ToolIndex:
         frozenset({"write a", "create a doc", "draft", "compose", "poem", "story",
                    "essay", "outline", "letter"}):
             {"create_document", "edit_document", "update_document"},
+        # Prior art (GIT-08): reuse/adapt/write, verified live against GitHub.
+        frozenset({"prior art", "ya existe", "hay alguna librería", "hay una librería",
+                   "reutilizar", "reuse or write", "no reinventes la rueda",
+                   "don't reinvent the wheel", "qué repos", "que repos",
+                   "before i build", "antes de construir", "antes de construirlo",
+                   "existing library", "existing libraries", "open source alternative",
+                   "alternativa de código abierto", "should i write this or use",
+                   "is there a package for", "is there a library for"}):
+            {"prior_art"},
     }
 
     def get_tools_for_query(

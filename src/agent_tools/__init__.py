@@ -86,6 +86,7 @@ from .pdf_ops_tool import PdfOpsTool
 from .pdf_tree_tool import PdfOutlineTool, PdfReadSectionTool, PdfFindSectionTool
 from .goal_tools import GoalDefineTool, GoalStatusTool, GoalEvaluateTool, GoalEvidenceTool
 from .plan_tools import PlanStatusTool, PlanTaskTool, PlanDoneTool, PlanSkipTool, PlanNextTool
+from .prior_art_tools import PriorArtTool
 
 TOOL_HANDLERS = {
     "bash": BashTool().execute,
@@ -260,6 +261,9 @@ TOOL_HANDLERS = {
     "plan_done": PlanDoneTool().execute,
     "plan_skip": PlanSkipTool().execute,
     "plan_next": PlanNextTool().execute,
+    # Prior art (GIT-08): reuse, adapt, or write, with every repository name
+    # checked live before it reaches the user. See src/prior_art.py.
+    "prior_art": PriorArtTool().execute,
 }
 # Config/integration admin tools (manage_endpoints/mcp/webhooks/tokens/settings).
 TOOL_HANDLERS.update(ADMIN_TOOL_HANDLERS)
@@ -407,7 +411,10 @@ TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_fi
              # Structural PDF navigation -- src/agent_tools/pdf_tree_tool.py.
              "pdf_outline", "pdf_read_section", "pdf_find_section",
              # Lot I: instincts -- src/agent_tools/instinct_tools.py.
-             "manage_instincts"} | BUILTIN_EMAIL_TOOLS | DESKTOP_TOOLS | SEMANTIC_TOOLS
+             "manage_instincts",
+             # Prior art (GIT-08): reuse/adapt/write, verified live against
+             # GitHub -- src/agent_tools/prior_art_tools.py.
+             "prior_art"} | BUILTIN_EMAIL_TOOLS | DESKTOP_TOOLS | SEMANTIC_TOOLS
 
 ToolBlock = namedtuple("ToolBlock", ["tool_type", "content"])
 
