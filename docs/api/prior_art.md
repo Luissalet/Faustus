@@ -111,7 +111,8 @@ case-insensitively) into four categories:
 | `permissive` | MIT, BSD-2/3/4-Clause, Apache-2.0, ISC, Zlib, Unlicense, 0BSD, CC0-1.0, WTFPL, BSL-1.0 |
 | `weak_copyleft` | LGPL-2.0/2.1/3.0, MPL-1.1/2.0, EPL-1.0/2.0, CDDL-1.0/1.1 |
 | `strong_copyleft` | GPL-1.0/2.0/3.0, AGPL-1.0/3.0 |
-| `none` | No license, GitHub's `NOASSERTION`, or anything unrecognized — treated as default copyright ("all rights reserved"): never safe to copy from. |
+| `unrecognized` | A license file exists but was not identified automatically (GitHub's `NOASSERTION`/`OTHER`, dual or custom licenses, uncommon SPDX ids) — read it before depending on it. |
+| `none` | No license at all — treated as default copyright ("all rights reserved"): never safe to copy from. |
 
 Compatibility (`license_compatibility(target_category, candidate_category,
 verdict)`):
@@ -123,6 +124,8 @@ verdict)`):
 - **`reuse`**: the candidate becomes a dependency, so its license terms
   apply to the combined work.
   - `permissive` candidate → always compatible.
+  - `unrecognized` candidate → not flagged and not downgraded, but marked
+    `review: true` with a next action to read the license first.
   - `none` candidate → **flagged**, not compatible: no license found means
     it is not safe to depend on at all.
   - `weak_copyleft` candidate → compatible unless the target project is

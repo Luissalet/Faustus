@@ -152,7 +152,9 @@ def test_license_category_normalizes_suffixes_and_case():
     assert prior_art._license_category("mit") == "permissive"
     assert prior_art._license_category("GPL-3.0-or-later") == "strong_copyleft"
     assert prior_art._license_category("LGPL-2.1-only") == "weak_copyleft"
-    assert prior_art._license_category("NOASSERTION") == "none"
+    assert prior_art._license_category("NOASSERTION") == "unrecognized"
+    assert prior_art._license_category("OTHER") == "unrecognized"
+    assert prior_art._license_category("SOME-RARE-1.0") == "unrecognized"
     assert prior_art._license_category(None) == "none"
     assert prior_art._license_category("") == "none"
 
@@ -264,6 +266,22 @@ def test_verify_no_license_adapt_note(monkeypatch):
     comp = out["components"][0]
     assert comp["results"][0]["license"]["candidate_category"] == "none"
     assert any("no license" in a.lower() or "read it" in a.lower() for a in comp["next_actions"])
+
+
+def test_verify_unrecognized_license_reuse_is_reviewed_not_downgraded(monkeypatch):
+    # A license file GitHub could not identify (dual/custom) is not "no
+    # license": keep the reuse verdict and ask a human to read it.
+    _stub_client(monkeypatch, repos={
+        "someone/dual": FakeResponse(200, _repo_payload("someone/dual", spdx_id="NOASSERTION")),
+    })
+    slate = {"components": [{"name": "parser", "verdict": "reuse", "repos": ["someone/dual"], "rationale": "hard"}]}
+    out = prior_art.verify(slate, target_license="MIT")
+    comp = out["components"][0]
+    lic = comp["results"][0]["license"]
+    assert lic["candidate_category"] == "unrecognized"
+    assert lic["flag"] is False and lic.get("review") is True
+    assert comp["outcome"] == "confirmed"
+    assert any("read the license" in a for a in comp["next_actions"])
 
 
 # ── downgrade / replace / confirmed outcomes together ────────────────────

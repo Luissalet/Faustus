@@ -72,10 +72,13 @@ _VERDICTS = ("reuse", "adapt", "write")
 
 # ── license matrix ──────────────────────────────────────────────────────────
 # SPDX ids, normalized (strip "-only"/"-or-later", uppercase compared case-
-# insensitively). Anything not listed here — including GitHub's own
-# "NOASSERTION" and a null license — is treated as "none": no license found
-# means default copyright ("all rights reserved"), which is never safe to
-# copy from and is reported as such.
+# insensitively). A null license is "none": no license found means default
+# copyright ("all rights reserved"), which is never safe to copy from and is
+# reported as such. GitHub's "NOASSERTION"/"OTHER", or an SPDX id outside the
+# lists below, is different: a license file exists but was not identified
+# automatically (dual licenses, a custom preamble, an uncommon SPDX id). That
+# is "unrecognized" — flagged for a human to read, never auto-downgraded as if
+# the project had no license at all.
 _PERMISSIVE = {
     "MIT", "BSD-2-CLAUSE", "BSD-3-CLAUSE", "BSD-3-CLAUSE-CLEAR", "BSD-4-CLAUSE",
     "APACHE-2.0", "ISC", "ZLIB", "UNLICENSE", "0BSD", "CC0-1.0", "WTFPL",
@@ -89,20 +92,20 @@ _STRONG_COPYLEFT = {"GPL-1.0", "GPL-2.0", "GPL-3.0", "AGPL-1.0", "AGPL-3.0"}
 
 
 def _license_category(spdx_id: Optional[str]) -> str:
-    """`permissive` / `weak_copyleft` / `strong_copyleft` / `none`."""
-    if not spdx_id:
+    """`permissive` / `weak_copyleft` / `strong_copyleft` / `unrecognized` / `none`."""
+    if not spdx_id or not spdx_id.strip():
         return "none"
     norm = spdx_id.strip().upper()
     norm = re.sub(r"-(ONLY|OR-LATER)$", "", norm)
-    if norm in ("NOASSERTION", "OTHER", ""):
-        return "none"
+    if norm in ("NOASSERTION", "OTHER"):
+        return "unrecognized"
     if norm in _PERMISSIVE:
         return "permissive"
     if norm in _WEAK_COPYLEFT:
         return "weak_copyleft"
     if norm in _STRONG_COPYLEFT:
         return "strong_copyleft"
-    return "none"
+    return "unrecognized"
 
 
 def license_compatibility(target_category: str, candidate_category: str, verdict: str) -> Dict[str, Any]:
@@ -124,6 +127,10 @@ def license_compatibility(target_category: str, candidate_category: str, verdict
     if candidate_category == "permissive":
         return {"compatible": True, "flag": False,
                 "note": "reuse: permissive license, safe to depend on from any project."}
+    if candidate_category == "unrecognized":
+        return {"compatible": None, "flag": False, "review": True,
+                "note": "reuse: a license file exists but was not identified automatically (often a "
+                        "dual or custom license) — read it and confirm it fits before depending on it."}
     if candidate_category == "none":
         return {"compatible": False, "flag": True,
                 "note": "reuse: no license found (\"all rights reserved\" by default) — this is not safe to "
@@ -595,6 +602,9 @@ def _component_outcome(component: Dict[str, Any], ranked: List[Dict[str, Any]],
         problems.append("stale (no push in 18+ months)")
     if (top.get("license") or {}).get("flag"):
         problems.append("license flagged")
+    if not problems and (top.get("license") or {}).get("review"):
+        next_actions.append(f"{component['name']}: read the license of {top.get('full_name')} "
+                            f"before depending on it (not identified automatically).")
     if problems:
         next_actions.append(f"{component['name']}: downgrading reuse to adapt "
                             f"({', '.join(problems)}) — study {top.get('full_name')}, "
