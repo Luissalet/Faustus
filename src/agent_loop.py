@@ -3048,8 +3048,15 @@ def _scrub_approval_card_from_history(messages: List[Dict[str, Any]], tool_name:
             continue
         idx = content.lower().rfind(q)
         kept = content[:idx].rstrip()
-        note = f"(paused: the runtime asked the user to approve `{tool_name}`; the user approved, its result follows)"
-        msg["content"] = (kept + "\n\n" + note) if kept else note
+        note = f"(the assistant paused here: the runtime asked the user to approve `{tool_name}`; the user approved, its result follows)"
+        if kept:
+            msg["content"] = kept
+        else:
+            # Nothing of the assistant's own remains: make it a runtime note
+            # in the system voice. A note in the assistant voice — however it
+            # is worded — is what a local model copies as its next answer.
+            msg["role"] = "system"
+            msg["content"] = note
         return True
     return False
 
@@ -3073,11 +3080,17 @@ def _scrub_approval_cards_from_replay(messages: List[Dict[str, Any]]) -> int:
         content = msg.get("content")
         if not isinstance(content, str) or _APPROVAL_CARD_QUESTION.lower() not in content.lower():
             continue
-        note = "(paused for the user's approval of a tool call; it was granted)"
-        cleaned = _APPROVAL_CARD_LINE_RE.sub(note, content)
-        cleaned = re.sub(r"(?:\(paused for the user's approval of a tool call; it was granted\)\s*){2,}", note + "\n\n", cleaned)
+        cleaned = _APPROVAL_CARD_LINE_RE.sub("", content)
         cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
-        msg["content"] = cleaned or note
+        if cleaned:
+            msg["content"] = cleaned
+        else:
+            # Seen live after a first version that left a note in the
+            # assistant's voice: the model copied the note as its answer.
+            # A message with nothing of the assistant's own becomes a
+            # runtime note in the system voice.
+            msg["role"] = "system"
+            msg["content"] = "(the assistant paused here for the user's approval of a tool call; it was granted)"
         n += 1
     return n
 

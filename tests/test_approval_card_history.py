@@ -18,12 +18,16 @@ def _msgs(last_assistant):
     ]
 
 
-def test_the_card_question_alone_becomes_a_runtime_note():
+def test_the_card_question_alone_becomes_a_runtime_note_in_the_system_voice():
+    """A note in the assistant's voice, however worded, was copied by the
+    model as its next answer (seen live); nothing of the assistant's own
+    remains here, so the message becomes a system note."""
     msgs = _msgs("Allow this task to continue?")
     assert al._scrub_approval_card_from_history(msgs, "manage_skills")
     text = msgs[1]["content"]
     assert "allow this task to continue" not in text.lower()
     assert "manage_skills" in text and "approved" in text
+    assert msgs[1]["role"] == "system"
 
 
 def test_partial_answer_before_the_card_is_kept():
@@ -58,13 +62,17 @@ def test_every_replayed_assistant_message_loses_the_card():
         {"role": "user", "content": "una app"},
         {"role": "assistant", "content": "Allow this task to continue?Allow this task to continue?¡Correcto!"},
         {"role": "user", "content": "No me acuerdo."},
+        {"role": "assistant", "content": "Allow this task to continue?"},
+        {"role": "user", "content": "Siguiente."},
     ]
-    assert al._scrub_approval_cards_from_replay(msgs) == 2
+    assert al._scrub_approval_cards_from_replay(msgs) == 3
     for m in msgs:
         assert "allow this task to continue" not in str(m["content"]).lower()
-    assert msgs[1]["content"].endswith("¿Qué es un plugin?")
-    assert msgs[1]["content"].startswith("(paused for the user's approval")
-    assert msgs[3]["content"].count("(paused for") == 1 and msgs[3]["content"].endswith("¡Correcto!")
+    # the assistant's own words stay, in the assistant's voice, with no note to copy
+    assert msgs[1] == {"role": "assistant", "content": "¡Vamos! Primera tarjeta: ¿Qué es un plugin?"}
+    assert msgs[3] == {"role": "assistant", "content": "¡Correcto!"}
+    # a message that was only the card becomes a runtime note in the system voice
+    assert msgs[5]["role"] == "system" and "paused" in msgs[5]["content"]
     # idempotent, and nothing else is touched
     assert al._scrub_approval_cards_from_replay(msgs) == 0
     assert msgs[0]["content"] == "examíname" and msgs[4]["content"] == "No me acuerdo."
