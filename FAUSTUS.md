@@ -7595,6 +7595,19 @@ paralelo en una ronda, y el digest con la forma de la skill: pantalla
 (5 h 58 en 14 apps, top tres), dinero (57,50 € hoy, sin presupuestos),
 lectura 0, gente sin pendientes, reuniones 0, una sugerencia.
 
+Segunda skill compuesta, `hoard-meeting-prep`: «mañana tengo una reunión
+con X». Quién es y qué hay pendiente (People), la última conversación
+grabada con esa persona (Scribe, una ventana alrededor del hit, nunca la
+sesión entera), lo guardado sobre el tema (Links), la cita exacta con
+fichero y página (Borges) y cuándo salió por última vez en pantalla
+(Argus), más tres puntos para hablar que salen de los datos. Probada con
+la vecina de la batería y «plugins» como tema: `get_person` +
+`scribe_search` + `search_links` + `library_search` + `screen_search` en
+paralelo, 5 rondas, 215 s; el brief dice «sin datos» donde no hay
+(interacciones, Scribe, Links), cita `api/plugins.md` y WP32 de la
+biblioteca, y sitúa el tema en pantalla «esta madrugada, ~02:30, en
+VS Code y Claude». Termina ofreciendo registrar la reunión, sin hacerlo.
+
 ### Pendiente
 
 - La puerta de contexto externo se arma en cada turno con estas apps (las
