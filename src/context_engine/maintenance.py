@@ -153,7 +153,9 @@ def should_yield() -> bool:
     True when any session has a turn in flight.  `run()` checks this between
     tasks and stops; it deliberately does not check it *inside* a task, because
     a half-finished index refresh is worse than one that took four more
-    seconds.
+    seconds.  The exception is a model call: the brain tasks' model passes
+    ask this again right before each call (`brain.extract.background_llm_gate`),
+    because a model call competes with the turn for the same runner.
 
     Never raises: a probe that cannot answer says no.  Answering yes on an
     import error would mean maintenance never runs on an install where
@@ -331,22 +333,45 @@ def _brain_vault_sync(*, owner: str = "", **rest: Any) -> Tuple[int, str]:
     return changed, detail
 
 
+def _llm_skip_note(report: Mapping[str, Any]) -> str:
+    """"; model pass skipped: <reason>" when a brain pass left its model out
+    (a turn in flight, a model that would have to be loaded, ...), so the
+    run history says why the graph or the summaries did not move."""
+    reason = str(report.get("llm_skipped") or "")
+    return f"; model pass skipped: {reason}" if reason else ""
+
+
 def _brain_extract(*, owner: str = "", **rest: Any) -> Tuple[int, str]:
     if not _brain_enabled():
         return 0, "brain is disabled; nothing extracted"
-    from src.brain import extract
+    from src.brain import entities, extract
     from src.settings import get_setting
+
+    # Once per filter version: hide stored entities whose names the current
+    # filter rejects and retract model relations outside the vocabulary.
+    # Reversible (`entities.undo_revalidate`) and reported below.
+    revalidated = entities.revalidate_if_needed(owner) if owner else None
 
     use_llm = bool(get_setting("brain_llm_extraction", True))
     batch = int(get_setting("brain_llm_extraction_batch", 12) or 12)
+    # background=True: the model pass asks, right before each model call,
+    # whether a turn is in flight (`should_yield`) and whether the utility
+    # model is already resident — `run()` only checks between tasks.
     report = _run_coro(extract.extract_pending(
-        owner, limit=batch, budget_s=15.0, use_llm=use_llm,
+        owner, limit=batch, budget_s=15.0, use_llm=use_llm, background=True,
     ))
     changed = int(report.get("entities", 0)) + int(report.get("relations", 0))
     detail = (f"{report.get('processed', 0)} source(s) processed, "
               f"{report.get('entities', 0)} entit(y/ies), "
               f"{report.get('relations', 0)} relation(s)"
-              f"{'; ' + str(report.get('errors')) + ' error(s)' if report.get('errors') else ''}")
+              f"{'; ' + str(report.get('errors')) + ' error(s)' if report.get('errors') else ''}"
+              f"{_llm_skip_note(report)}")
+    if revalidated:
+        hidden = int(revalidated.get("hidden_count") or 0)
+        retracted = int(revalidated.get("retracted_count") or 0)
+        changed += hidden + retracted
+        detail += (f"; revalidated: {hidden} entit(y/ies) hidden, "
+                   f"{retracted} relation(s) retracted")
     return changed, detail
 
 
@@ -359,11 +384,13 @@ def _brain_wiki(*, owner: str = "", **rest: Any) -> Tuple[int, str]:
         return 0, "wiki summaries are off"
     from src.brain import wiki
 
-    report = _run_coro(wiki.refresh_stale(owner, limit=5, budget_s=15.0))
+    report = _run_coro(wiki.refresh_stale(owner, limit=5, budget_s=15.0, background=True))
     changed = int(report.get("updated", 0))
     detail = (f"{report.get('updated', 0)} page(s) refreshed, "
               f"{report.get('skipped', 0)} skipped"
-              f"{'; ' + str(report.get('errors')) + ' error(s)' if report.get('errors') else ''}")
+              f"{', ' + str(report.get('deferred')) + ' deferred' if report.get('deferred') else ''}"
+              f"{'; ' + str(report.get('errors')) + ' error(s)' if report.get('errors') else ''}"
+              f"{_llm_skip_note(report)}")
     return changed, detail
 
 

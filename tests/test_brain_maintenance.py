@@ -237,3 +237,74 @@ def test_run_scheduled_skips_brain_when_disabled(monkeypatch):
     assert "brain_vault_sync" not in names
     assert "brain_extract" not in names
     assert "brain_wiki" not in names
+
+
+# ── model etiquette and the one-off revalidation ─────────────────────────
+
+def test_brain_extract_runs_in_background_mode_and_reports_the_skip(monkeypatch):
+    _enable_brain(monkeypatch, True)
+    seen = {}
+
+    async def fake_extract(owner, **kw):
+        seen.update(kw)
+        return {"processed": 1, "entities": 0, "relations": 0, "errors": 0,
+                "llm_used": False, "llm_skipped": "model_not_resident"}
+
+    monkeypatch.setattr("src.brain.extract.extract_pending", fake_extract)
+    changed, detail = maintenance._brain_extract(owner=OWNER)
+    assert seen.get("background") is True
+    assert "model pass skipped: model_not_resident" in detail
+
+
+def test_brain_wiki_reports_the_skip(monkeypatch):
+    from src import settings as settings_mod
+
+    monkeypatch.setattr(
+        settings_mod, "get_setting",
+        lambda key, default=None: True if key in
+        ("brain_enabled", "brain_wiki_summaries") else default,
+    )
+    seen = {}
+
+    async def fake_refresh(owner, **kw):
+        seen.update(kw)
+        return {"checked": 1, "updated": 0, "skipped": 0, "deferred": 1, "errors": 0,
+                "llm_skipped": "interactive_turn"}
+
+    monkeypatch.setattr("src.brain.wiki.refresh_stale", fake_refresh)
+    changed, detail = maintenance._brain_wiki(owner=OWNER)
+    assert seen.get("background") is True
+    assert "1 deferred" in detail
+    assert "model pass skipped: interactive_turn" in detail
+
+
+def test_brain_extract_revalidates_once_per_version(monkeypatch):
+    _enable_brain(monkeypatch, True)
+    from src.brain import entities
+
+    junk = entities.upsert_entity(OWNER, "En")
+    real = entities.upsert_entity(OWNER, "Cordera Labs", type="organization")
+
+    async def fake_extract(owner, **kw):
+        return {"processed": 0, "entities": 0, "relations": 0, "errors": 0}
+
+    monkeypatch.setattr("src.brain.extract.extract_pending", fake_extract)
+    changed, detail = maintenance._brain_extract(owner=OWNER)
+    assert entities.get_entity(junk["id"])["hidden"] is True
+    assert entities.get_entity(real["id"])["hidden"] is False
+    assert "revalidated: 1 entit(y/ies) hidden, 0 relation(s) retracted" in detail
+    assert changed == 1
+
+    entities.set_hidden(junk["id"], False)  # a person brings it back
+    changed, detail = maintenance._brain_extract(owner=OWNER)
+    assert "revalidated" not in detail
+    assert entities.get_entity(junk["id"])["hidden"] is False
+
+
+def test_brain_extract_disabled_does_not_revalidate(monkeypatch):
+    _enable_brain(monkeypatch, False)
+    from src.brain import entities
+
+    junk = entities.upsert_entity(OWNER, "En")
+    maintenance._brain_extract(owner=OWNER)
+    assert entities.get_entity(junk["id"])["hidden"] is False
