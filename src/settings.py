@@ -755,6 +755,34 @@ DEFAULT_SETTINGS = {
     # marker in public_item() never applies; conflicts already recorded stay
     # readable and resolvable either way.
     "memory_conflict_detection": True,
+    # Time on memories (src/brain/temporal.py). Parse: read "since March",
+    # "hasta 2025", "ya no" in a new memory and fill its validity window.
+    # Supersede: when a newer memory says the same subject has a different
+    # value ("works at B" after "works at A"), close the old one's window
+    # instead of leaving an open contradiction — both stay, at different times.
+    "memory_temporal_parse": True,
+    "memory_temporal_supersede": True,
+    # The second brain (src/brain/): a markdown vault Faustus owns, typed
+    # entities with time, and entity pages kept by the utility model.
+    # Off = no sync, no extraction; the files and brain.db stay on disk.
+    "brain_enabled": True,
+    # Where the vault lives. Empty = DATA_DIR/brain/vault/<owner>.
+    "brain_vault_dir": "",
+    # Seconds between background vault syncs (DB -> files, edited files -> DB).
+    "brain_vault_sync_seconds": 120,
+    # A sync that finds more than this fraction of mirrored notes gone at once
+    # refuses to act on the deletions (a moved folder is not a decision).
+    "brain_vault_delete_guard_ratio": 0.3,
+    # Entities: deterministic extraction on every memory; the LLM pass runs in
+    # the background with the utility model and only keeps names it can find
+    # in the source text.
+    "brain_entity_extraction": True,
+    "brain_llm_extraction": True,
+    "brain_llm_extraction_batch": 12,
+    # Entity wiki pages rewritten by the utility model when their facts change.
+    "brain_wiki_summaries": True,
+    # Offer entity cards and vault notes to the Context Engine as a source.
+    "brain_context_source": True,
     # Specialist experts (services/experts.py): a local agent with its own
     # corpus — a rubric, the user's own PDFs on disk, and citations that
     # resolve back to the page they came from. Off = no expert block is
