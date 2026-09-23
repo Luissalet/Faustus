@@ -1,0 +1,81 @@
+{
+  "schema": 1,
+  "id": "vulcan",
+  "name": "Vulcan's Hoard",
+  "purpose": "The user's personal library of 3D-printable models: folders of STL, 3MF and OBJ files scanned locally (dimensions, triangles, watertightness, thumbnails, duplicates) so the assistant can find models and write their marketplace listings.",
+  "capabilities": [
+    "3d-models",
+    "stl",
+    "3mf",
+    "obj",
+    "mesh-metrics",
+    "thumbnails",
+    "duplicates",
+    "near-duplicates",
+    "listings",
+    "tags",
+    "notes",
+    "collections",
+    "albums",
+    "folder-scan",
+    "folder-watch",
+    "fts-search",
+    "stats"
+  ],
+  "placeholders": [
+    "VULCAN_DIR",
+    "APP_URL",
+    "TOKEN_FILE",
+    "PYTHON"
+  ],
+  "defaults": {
+    "APP_URL": "http://127.0.0.1:5186",
+    "TOKEN_FILE": "{VULCAN_DIR}/data/mcp-token",
+    "PYTHON": "{VULCAN_DIR}/venv/Scripts/python.exe"
+  },
+  "app": {
+    "url_default": "http://127.0.0.1:5186",
+    "ui_url": "{APP_URL}",
+    "health": {
+      "path": "/api/health",
+      "expect": {
+        "service": "vulcan-hoard"
+      }
+    },
+    "identify": {
+      "service": [
+        "vulcan-hoard"
+      ],
+      "title": [
+        "vulcan's hoard",
+        "modelos 3d"
+      ]
+    },
+    "launch_hint": {
+      "kind": "process",
+      "executable": "{PYTHON}",
+      "argv": [
+        "-m",
+        "vulcan"
+      ],
+      "cwd": "{VULCAN_DIR}",
+      "readiness": {
+        "url": "{APP_URL}/api/health",
+        "timeout_s": 30
+      }
+    }
+  },
+  "mcp": {
+    "transport": "stdio",
+    "command": "{PYTHON}",
+    "args": [
+      "{VULCAN_DIR}/mcp_server.py"
+    ],
+    "env": {
+      "VULCAN_URL": "{APP_URL}",
+      "VULCAN_TOKEN_FILE": "{TOKEN_FILE}"
+    },
+    "optional_env": []
+  },
+  "notes": "Keep the app running (python -m vulcan) while the assistant uses it: the MCP bridge proxies every call to the local server and never opens the database. Scanning a big folder takes a while the first time (metrics plus one CPU-rendered thumbnail per file); later scans only read what changed."
+}

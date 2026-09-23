@@ -1,5 +1,5 @@
-"""The six Hoard apps that ship as plugins (ledger, links, people, argus,
-borges, scribe).
+"""The Hoard apps that ship as plugins (ledger, links, people, argus, borges,
+scribe, vulcan).
 
 Each is a standalone application with its own repository; what ships here is
 Faustus's side of the contract, copied from the `faustus-plugin.json` the app
@@ -21,6 +21,7 @@ FAMILY = {
     "argus": ("argus-hoard", 5183, "argus"),
     "borges": ("borges-hoard", 5184, "borges"),
     "scribe": ("scribe-hoard", 5185, "scribe"),
+    "vulcan": ("vulcan-hoard", 5186, "vulcan"),
 }
 
 
@@ -43,7 +44,7 @@ def test_each_member_is_recognisable_startable_and_bridged(pid):
     assert plugin.purpose, "plugins_list shows the purpose; an empty one leaves the model guessing"
 
 
-def test_the_six_ports_do_not_collide_with_each_other_or_with_the_older_plugins():
+def test_the_family_ports_do_not_collide_with_each_other_or_with_the_older_plugins():
     urls = {}
     for pid, plugin in plugins.load_plugins().items():
         url = plugin.defaults.get("APP_URL")
