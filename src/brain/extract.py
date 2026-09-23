@@ -50,9 +50,13 @@ from src.brain.entities import (
     TYPES,
     add_mention,
     add_relation,
+    canonical_relation,
+    clean_name,
     entities_in_text,
+    proper_noun_in_source,
     self_entity,
     upsert_entity,
+    valid_entity_name,
 )
 
 logger = logging.getLogger(__name__)
@@ -157,10 +161,18 @@ def _extract_relations(text: str) -> List[Tuple[str, str, str]]:
     return out
 
 
-def _resolve_entity_ref(owner: str, phrase: str, *, project: str,
-                        allow_create: bool) -> Tuple[Optional[Dict[str, Any]], str]:
+def _resolve_entity_ref(owner: str, phrase: str, *, project: str, allow_create: bool,
+                        source_text: str = "", subject: bool = False,
+                        ) -> Tuple[Optional[Dict[str, Any]], str]:
     """(entity, "") when `phrase` resolves to one (self, known, or newly
-    created); (None, literal_text) when it is kept as a plain dst_value."""
+    created); (None, literal_text) when it is kept as a plain dst_value.
+
+    A NEW entity is created only from the capitalised prefix of `phrase`,
+    cleaned of function words, when `source_text` supports it as a proper
+    noun (:func:`entities.proper_noun_in_source`). A single word that opens
+    the sentence counts only as the WHOLE subject of the matched predicate
+    ("Ada works at ..."), never as the first word of a longer subject ("En
+    la carpeta ... usa ...")."""
     phrase = _strip_leading_article(phrase).strip(" .,;:!?\"'")
     if not phrase:
         return None, ""
@@ -170,8 +182,10 @@ def _resolve_entity_ref(owner: str, phrase: str, *, project: str,
     if matches:
         return matches[0], ""
     if allow_create:
-        candidate = _leading_proper_phrase(phrase)
-        if candidate and len(candidate) <= 80:
+        candidate = clean_name(_leading_proper_phrase(phrase))
+        whole_subject = subject and fold(candidate) == fold(phrase)
+        if candidate and len(candidate) <= 80 and proper_noun_in_source(
+                candidate, source_text or phrase, allow_sentence_initial=whole_subject):
             return upsert_entity(owner, candidate, type="other", project=project), ""
     return None, phrase
 
@@ -212,8 +226,13 @@ def extract_source(owner: Any, source_ref: Any, text: Any, *, project: str = "",
     for spec in specifics:
         if spec.get("type") != "proper_noun":
             continue
-        name = str(spec.get("value") or "").strip()
-        if not name or fold(name) in known_folds:
+        # "En Cordera Labs" -> "Cordera Labs"; a name that shrinks to one
+        # word is left to the relation pass, which has a subject slot to
+        # judge it by (this discovery pass never creates one-word entities).
+        name = clean_name(spec.get("value") or "")
+        if len(name.split()) < 2 or fold(name) in known_folds:
+            continue
+        if not proper_noun_in_source(name, text):
             continue
         try:
             entity = upsert_entity(owner, name, type="other", project=project)
@@ -230,10 +249,12 @@ def extract_source(owner: Any, source_ref: Any, text: Any, *, project: str = "",
     valid_from, valid_until = window.get("valid_from"), window.get("valid_until")
 
     for subject, rel_key, obj in _extract_relations(text):
-        src_entity, _ = _resolve_entity_ref(owner, subject, project=project, allow_create=True)
+        src_entity, _ = _resolve_entity_ref(owner, subject, project=project, allow_create=True,
+                                            source_text=text, subject=True)
         if not src_entity:
             continue
-        dst_entity, dst_literal = _resolve_entity_ref(owner, obj, project=project, allow_create=True)
+        dst_entity, dst_literal = _resolve_entity_ref(owner, obj, project=project, allow_create=True,
+                                                      source_text=text)
         if not dst_entity and not dst_literal:
             continue
         try:

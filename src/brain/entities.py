@@ -181,6 +181,215 @@ def _normalize_rel(value: Any) -> str:
     return fold(value).replace(" ", "_")
 
 
+# ---------------------------------------------------------------------------
+# Name quality — what may become an entity at all
+# ---------------------------------------------------------------------------
+#
+# A capital letter is weak evidence of a name: every sentence starts with
+# one. Without this filter "En la carpeta de informes ..." made an entity
+# called "En", and every later Spanish text containing "en" was then matched
+# to it. Two layers, both deterministic:
+#
+# * a context-free check (`valid_entity_name`) — function words (articles,
+#   prepositions, pronouns, conjunctions, common adverbs, auxiliaries; ES and
+#   EN, folded) are never a name on their own, nor at either end of one;
+#   single characters and bare numbers are never names;
+# * evidence in the source text (`proper_noun_in_source`) — the name must
+#   occur there capitalised, and a single capitalised word that only ever
+#   opens a sentence needs a second capitalised occurrence (or one inside a
+#   sentence) before it counts, unless the caller has independent evidence.
+
+FUNCTION_WORDS = frozenset(fold(w) for w in """
+    el la lo los las un una uno unos unas al del de a
+    en para por con sin sobre tras entre hasta desde hacia ante bajo contra
+    segun durante mediante excepto salvo
+    y e o u ni pero sino aunque porque pues que como cuando donde mientras si no
+    ya aun tambien tampoco siempre nunca jamas luego despues antes entonces ahora
+    hoy ayer manana aqui alli ahi alla asi bien mal muy mas menos solo casi quiza
+    quizas ademas incluso todavia apenas
+    yo tu ella ellos ellas nosotros nosotras vosotros vosotras usted ustedes
+    me te se nos os le les mi mis tus su sus nuestro nuestra nuestros nuestras
+    este esta esto estos estas ese esa eso esos esas aquel aquella aquello
+    aquellos aquellas
+    quien quienes cual cuales cuyo cuya algo alguien nadie nada todo toda todos
+    todas cada otro otra otros otras mismo misma ambos varios varias muchos
+    muchas pocos pocas algun alguno alguna algunos algunas ningun ninguno
+    ninguna cualquier demas tanto tanta tantos tantas
+    hay es son era eran fue fueron ser estar estan estaba tiene tienen tengo
+    hace puede pueden debe deben va voy
+    nota ojo importante hola gracias
+    the an this that these those it its i you he she we they him her us them
+    my your his our their mine yours
+    in on at for to from by with without of about into onto over under after
+    before since until upon within via per
+    and or but nor so yet if when where while whenever because although though
+    unless whether then than also always never often sometimes usually only
+    just not yes all any each every some none both either neither other another
+    such much many more most less few here there now today tomorrow yesterday
+    is are was were be been being am do does did have has had can could would
+    should must might shall what which who whom whose how why please however
+    therefore too very maybe perhaps everything something anything nothing
+    everyone someone anyone nobody everybody somebody note
+""".split())
+
+# A single leading article is part of some real names ("El Salvador", "Las
+# Palmeras"); a leading preposition or adverb never is ("En Cordera Labs").
+_ARTICLES = frozenset({"el", "la", "los", "las", "the"})
+
+_EDGE_PUNCT = " \t\r\n.,;:!?\"'`()[]{}<>«»“”‘’¿¡*_#|/\\-–—…"
+
+
+def is_function_word(word: Any) -> bool:
+    """True for an ES/EN article, preposition, pronoun, conjunction, common
+    adverb or auxiliary — words that open sentences and are never a name
+    by themselves."""
+    return fold(str(word or "").strip(_EDGE_PUNCT)) in FUNCTION_WORDS
+
+
+def _name_tokens(name: Any) -> List[str]:
+    return [tok for tok in (t.strip(_EDGE_PUNCT) for t in str(name or "").split()) if tok]
+
+
+def clean_name(name: Any) -> str:
+    """`name` without leading/trailing function words or edge punctuation —
+    "En Cordera Labs" -> "Cordera Labs"; "" when nothing is left."""
+    tokens = _name_tokens(name)
+    while tokens and is_function_word(tokens[0]):
+        tokens.pop(0)
+    while tokens and is_function_word(tokens[-1]):
+        tokens.pop()
+    return " ".join(tokens)
+
+
+def _core_name_ok(tokens: Sequence[str]) -> bool:
+    if not tokens or not any(ch.isalpha() for tok in tokens for ch in tok):
+        return False
+    if len(tokens) == 1:
+        token = tokens[0]
+        return len(token) >= 2 and not token.isdigit() and not is_function_word(token)
+    return not all(is_function_word(tok) for tok in tokens)
+
+
+def valid_entity_name(name: Any) -> bool:
+    """Context-free: could `name` be an entity name at all? Rejects function
+    words, single characters, bare numbers and names that start or end with
+    a function word (other than one leading article in a multi-word name)."""
+    tokens = _name_tokens(name)
+    if not tokens:
+        return False
+    cleaned = clean_name(" ".join(tokens)).split()
+    if cleaned == tokens:
+        return _core_name_ok(tokens)
+    if (len(tokens) >= 2 and fold(tokens[0]) in _ARTICLES and cleaned == tokens[1:]):
+        return _core_name_ok(cleaned)
+    return False
+
+
+def _strip_accents(text: str) -> str:
+    """Accent-free text that KEEPS case, so capitalisation can still be read
+    from a match (unlike `fold`, which lowercases)."""
+    import unicodedata
+
+    raw = unicodedata.normalize("NFKD", str(text or ""))
+    return "".join(ch for ch in raw if not unicodedata.combining(ch))
+
+
+# Only whitespace, opening quotes/brackets, bullets or a list number between
+# a sentence boundary (or the start of the text) and the word.
+_SENTENCE_START_RE = re.compile(
+    r"(?:^|[.!?:;…\n])[\s\"'“”‘«»(\[¿¡*#>•\-–—]*(?:\d+[.)]\s*)?$")
+
+
+def _is_sentence_initial(text: str, start: int) -> bool:
+    return _SENTENCE_START_RE.search(text[:start]) is not None
+
+
+def _has_upper(token: str) -> bool:
+    return any(ch.isupper() for ch in token)
+
+
+def proper_noun_in_source(name: Any, text: Any, *, allow_sentence_initial: bool = False) -> bool:
+    """Does `text` support `name` as a proper noun?
+
+    `name` must pass :func:`valid_entity_name` and occur in `text` with
+    every non-function word capitalised ("carpetas", "nombres raros" do
+    not). A single word needs at least one capitalised occurrence that is
+    not at the start of a sentence, or two capitalised occurrences — unless
+    `allow_sentence_initial` (the caller has other evidence, e.g. it is the
+    whole grammatical subject of a matched predicate)."""
+    if not valid_entity_name(name):
+        return False
+    tokens = _name_tokens(_strip_accents(str(name)))
+    haystack = _strip_accents(str(text or ""))
+    if not tokens or not haystack:
+        return False
+    pattern = re.compile(
+        r"(?<!\w)" + r"\s+".join(re.escape(tok) for tok in tokens) + r"(?!\w)", re.IGNORECASE)
+    capitalised: List[bool] = []  # one entry per capitalised occurrence: sentence-initial?
+    for match in pattern.finditer(haystack):
+        words = match.group(0).split()
+        content = [w for w in words if not is_function_word(w)] or words
+        if all(_has_upper(w) for w in content):
+            capitalised.append(_is_sentence_initial(haystack, match.start()))
+    if not capitalised:
+        return False
+    if len(tokens) > 1:
+        return True
+    return (not all(capitalised)) or len(capitalised) >= 2 or allow_sentence_initial
+
+
+# ---------------------------------------------------------------------------
+# Relation vocabulary — synonyms a model (or a person) writes -> the key
+# ---------------------------------------------------------------------------
+
+_RELATION_SYNONYMS: Dict[str, str] = {
+    fold(phrase): rel for phrase, rel in (
+        ("works at", "works_at"), ("work at", "works_at"), ("works for", "works_at"),
+        ("work for", "works_at"), ("employed at", "works_at"), ("employed by", "works_at"),
+        ("trabaja en", "works_at"), ("trabaja para", "works_at"), ("trabajo en", "works_at"),
+        ("works on", "works_on"), ("trabaja sobre", "works_on"), ("trabaja en el proyecto", "works_on"),
+        ("uses", "uses"), ("use", "uses"), ("usa", "uses"), ("uso", "uses"),
+        ("utiliza", "uses"), ("utilizo", "uses"), ("using", "uses"),
+        ("prefers", "prefers"), ("prefer", "prefers"), ("prefiere", "prefers"),
+        ("prefiero", "prefers"),
+        ("lives in", "lives_in"), ("live in", "lives_in"), ("vive en", "lives_in"),
+        ("vivo en", "lives_in"), ("resides in", "lives_in"), ("reside en", "lives_in"),
+        ("located in", "located_in"), ("is located in", "located_in"),
+        ("esta en", "located_in"), ("esta ubicado en", "located_in"),
+        ("esta situado en", "located_in"), ("se encuentra en", "located_in"),
+        ("part of", "part_of"), ("is part of", "part_of"), ("es parte de", "part_of"),
+        ("forma parte de", "part_of"),
+        ("member of", "member_of"), ("is member of", "member_of"),
+        ("is a member of", "member_of"), ("belongs to", "member_of"),
+        ("es miembro de", "member_of"), ("miembro de", "member_of"),
+        ("pertenece a", "member_of"),
+        ("knows", "knows"), ("know", "knows"), ("conoce", "knows"), ("conoce a", "knows"),
+        ("conozco", "knows"),
+        ("owns", "owns"), ("own", "owns"), ("posee", "owns"), ("es dueno de", "owns"),
+        ("created", "created"), ("creo", "created"), ("creator of", "created"),
+        ("depends on", "depends_on"), ("depende de", "depends_on"),
+        ("is a", "is_a"), ("is an", "is_a"), ("es un", "is_a"), ("es una", "is_a"),
+        ("related to", "related_to"), ("relacionado con", "related_to"),
+        ("relacionada con", "related_to"), ("relates to", "related_to"),
+        ("studied at", "studied_at"), ("studies at", "studied_at"),
+        ("estudio en", "studied_at"), ("estudia en", "studied_at"),
+    )
+}
+
+
+def canonical_relation(rel: Any) -> Optional[str]:
+    """The :data:`KNOWN_RELATIONS` key `rel` means, or None when it maps to
+    none of them ("works for" -> works_at, "trabaja en" -> works_at,
+    "intocable" -> None). Case, accents, "_"/"-" and spacing are ignored."""
+    text = fold(re.sub(r"[_\-]+", " ", str(rel or ""))).strip()
+    if not text:
+        return None
+    key = text.replace(" ", "_")
+    if key in KNOWN_RELATIONS:
+        return key
+    return _RELATION_SYNONYMS.get(text)
+
+
 def _coerce_dt(value: Any) -> datetime:
     if isinstance(value, datetime):
         return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
@@ -654,6 +863,11 @@ def entities_in_text(owner: Any, text: Any, *, limit: int = 8) -> List[Dict[str,
             name = str(name or "").strip()
             if len(name) < _MIN_MATCH_LEN:
                 continue
+            # A name that is a function word ("En", "Todo" — written before
+            # the name filter existed) would match nearly every text; only
+            # the owner's own self-words are allowed to be that short/common.
+            if fold(name) not in SELF_WORDS and not valid_entity_name(name):
+                continue
             candidates.append((fold(name), row))
     candidates.sort(key=lambda pair: -len(pair[0]))
 
@@ -847,6 +1061,8 @@ def stats(owner: Any) -> Dict[str, Any]:
 
 __all__ = [
     "TYPES", "KNOWN_RELATIONS", "FUNCTIONAL_RELATIONS", "SELF_WORDS", "BrainEntityError",
+    "FUNCTION_WORDS", "is_function_word", "clean_name", "valid_entity_name",
+    "proper_noun_in_source", "canonical_relation",
     "upsert_entity", "get_entity", "update_entity", "set_hidden", "list_entities",
     "merge_entities", "self_entity", "add_relation", "list_relations", "add_mention",
     "mentions_for", "sources_for", "entities_in_text", "profile", "graph", "stats",
