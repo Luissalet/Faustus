@@ -393,3 +393,22 @@ def test_flows_tool_executor_affected_by_symbol(ws):
         json.dumps({"root": str(ws), "symbol": "place_order"}), {}))
     assert result["exit_code"] == 0
     assert any("create_order" in f["entry_symbol"] for f in result["flows"])
+
+
+def test_flow_lists_the_tests_that_reach_it(ws):
+    """Asked live which tests cover a critical flow, the agent had to grep
+    the test folder: the flow now names them and gives the pytest command."""
+    code_graph.index(ws)
+    result = code_graph.flows(ws, limit=50, refresh=True)
+    route_flow = _flow_named(result, "create_order")
+    detail = code_graph.flow(ws, route_flow["id"])
+    assert "tests/test_orders.py" in detail["flow"]["test_files"]
+    assert "pytest -q tests/test_orders.py" in detail["output"]
+
+
+def test_cross_language_bare_name_guesses_are_not_calls():
+    from src.code_graph.communities import cross_language_guess
+    assert cross_language_guess("app/services.py", "client/src/App.jsx", "static_inferred")
+    assert not cross_language_guess("app/services.py", "app/db.py", "static_inferred")
+    assert not cross_language_guess("app/services.py", "client/src/App.jsx", "exact")
+    assert not cross_language_guess("app/x.py", "docs/y.md", "lexical")

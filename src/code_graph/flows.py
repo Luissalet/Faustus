@@ -66,7 +66,7 @@ from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 from src.context_engine import code_index
 from src.context_engine import store as ce_store
 
-from .communities import _fingerprint, _where  # shared fingerprint/scope helpers
+from .communities import _fingerprint, _where, cross_language_guess  # shared helpers
 from .query import DEFAULT_OUTPUT_CHARS, _changed_seeds, _clip, _is_test_path, _resolve_symbol, _root
 
 logger = logging.getLogger(__name__)
@@ -201,6 +201,26 @@ def _load_test_targets(conn: sqlite3.Connection, workspace: str, project_id: str
         f"SELECT DISTINCT path FROM code_symbols WHERE {where2} AND id IN ({marks})",
         [*params2, *dst_ids])
     return {str(r["path"]) for r in rows}
+
+
+def _load_test_map(conn: sqlite3.Connection, workspace: str, project_id: str
+                   ) -> Dict[str, Set[str]]:
+    """`production path -> test files that reach it` through any edge
+    (tests/calls/imports) whose source lives in a test file. Asked live
+    "which tests cover each critical flow?", the agent had to grep the test
+    folder by hand because a flow only carried a coverage fraction."""
+    where, params = _where(workspace, project_id)
+    path_of = {str(r["id"]): str(r["path"]) for r in conn.execute(
+        f"SELECT id, path FROM code_symbols WHERE {where}", params)}
+    out: Dict[str, Set[str]] = {}
+    for r in conn.execute(f"SELECT src, dst FROM code_edges WHERE {where}", params):
+        sp, dp = path_of.get(str(r["src"])), path_of.get(str(r["dst"]))
+        if not sp or not dp or sp == dp:
+            continue
+        if (_is_test_path(sp) and not _is_test_path(dp)
+                and os.path.basename(sp) != "conftest.py"):
+            out.setdefault(dp, set()).add(sp)
+    return out
 
 
 def _load_community_files(conn: sqlite3.Connection, workspace: str, project_id: str,
@@ -455,12 +475,15 @@ def _build(root: str, project_id: str, fingerprint: str) -> List[Dict[str, Any]]
         symbols = _load_symbols(conn, root, project_id)
         calls = _load_calls(conn, root, project_id)
         test_targets = _load_test_targets(conn, root, project_id)
+        test_map = _load_test_map(conn, root, project_id)
         community_of_path = _load_community_files(conn, root, project_id, fingerprint)
 
     calls_out: Dict[str, List[Tuple[str, str, str]]] = {}
     fanin_count: Dict[str, int] = {}
     for src, dst, cert in calls:
         if src not in symbols or dst not in symbols:
+            continue
+        if cross_language_guess(symbols[src].path, symbols[dst].path, cert):
             continue
         calls_out.setdefault(src, []).append((src, dst, cert))
         fanin_count[dst] = fanin_count.get(dst, 0) + 1
@@ -479,6 +502,8 @@ def _build(root: str, project_id: str, fingerprint: str) -> List[Dict[str, Any]]
         name = _route_label(entry_sym.signature, entry_sym.qualname) if reason == "route" \
             else entry_sym.qualname
         fid = _flow_id(entry_id, [m["symbol_id"] for m in members])
+        flow_paths = {entry_sym.path} | {m["path"] for m in members}
+        test_files = sorted(set().union(*(test_map.get(p, set()) for p in flow_paths)))
         records.append({
             "id": fid, "entry_symbol": entry_sym.qualname, "entry_reason": reason,
             "name": name,
@@ -487,6 +512,7 @@ def _build(root: str, project_id: str, fingerprint: str) -> List[Dict[str, Any]]
             "members": members, "files": sorted({entry_sym.path} | {m["path"] for m in members}),
             "criticality": crit["score"], "criticality_factors": crit["factors"],
             "test_coverage_fraction": crit["test_coverage_fraction"],
+            "test_files": test_files[:_MAX_TEST_FILES],
             "files_spanned": crit["files_spanned"], "communities_crossed": crit["communities_crossed"],
             "computed_at": computed_at,
         })
@@ -501,7 +527,10 @@ def _build(root: str, project_id: str, fingerprint: str) -> List[Dict[str, Any]]
 # ── persistence ──────────────────────────────────────────────────────────
 
 _DATA_KEYS = ("entry_reason", "entry", "members", "files", "criticality_factors",
-              "test_coverage_fraction", "files_spanned", "communities_crossed")
+              "test_coverage_fraction", "test_files", "files_spanned", "communities_crossed")
+
+#: Test files listed per flow (the rest are counted, not named).
+_MAX_TEST_FILES = 12
 
 
 def _persist(root: str, project_id: str, fingerprint: str, records: List[Dict[str, Any]]) -> None:
@@ -581,6 +610,14 @@ def _render_tree(r: Dict[str, Any], output_chars: Optional[int]) -> str:
             f"criticality={r['criticality']:.2f} "
             f"({_criticality_level(r['criticality'])})",
             f"{entry['symbol']} ({entry['kind']})  {entry['path']}:{entry['line']}"]
+    # Tests first: a long call tree is clipped from the end, and "which tests
+    # cover this?" is the question that follows a critical flow.
+    tests = r.get("test_files") or []
+    if tests:
+        lines.append("Tests that reach this flow: " + ", ".join(tests))
+        lines.append("Run them: pytest -q " + " ".join(tests))
+    else:
+        lines.append("No test reaches any file of this flow.")
     for m in r["members"]:
         indent = "  " * m["depth"]
         lines.append(f"{indent}└─ {m['symbol']} ({m['kind']})  "

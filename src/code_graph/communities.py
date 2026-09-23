@@ -283,7 +283,7 @@ class _BudgetExceeded(Exception):
 #: Bumped whenever clustering or naming changes, so a cached result built by
 #: older code is rebuilt instead of served (the index fingerprint alone does
 #: not change when only this module does).
-ALGO_VERSION = "4"
+ALGO_VERSION = "6"
 
 
 def _fingerprint(root: str, project_id: str) -> str:
@@ -386,6 +386,26 @@ def _load_test_weighted_edges(conn: sqlite3.Connection, workspace: str, project_
     return out
 
 
+_LANG_FAMILY = {
+    ".py": "py", ".pyi": "py",
+    ".js": "js", ".jsx": "js", ".mjs": "js", ".cjs": "js", ".ts": "js", ".tsx": "js",
+}
+
+
+def cross_language_guess(src_path: str, dst_path: str, certainty: str) -> bool:
+    """A non-exact edge between two different language families is a
+    bare-name collision, not a call: the index resolves an unknown name to
+    the one symbol that has it anywhere in the workspace, so a Python
+    `read()` became a call into a React `read` function (seen live in a flow
+    tree) and `round`/`any` pulled TypeScript helpers into Python
+    communities. Unknown extensions never count as a mismatch."""
+    if certainty == "exact":
+        return False
+    a = _LANG_FAMILY.get(os.path.splitext(src_path)[1].lower())
+    b = _LANG_FAMILY.get(os.path.splitext(dst_path)[1].lower())
+    return bool(a and b and a != b)
+
+
 def _build_file_graph(conn: sqlite3.Connection, workspace: str, project_id: str,
                        inputs: _Inputs) -> Dict[Tuple[str, str], float]:
     """One weighted, undirected entry per unordered *production* file pair
@@ -411,6 +431,8 @@ def _build_file_graph(conn: sqlite3.Connection, workspace: str, project_id: str,
             continue
         if _is_test_path(src_path) or _is_test_path(dst_path):
             continue  # test files are not clustering nodes
+        if cross_language_guess(src_path, dst_path, str(row["certainty"])):
+            continue
         weight = _KIND_WEIGHT.get(str(row["kind"]), 0.0) * \
             _CERTAINTY_WEIGHT.get(str(row["certainty"]), 0.3)
         if weight <= 0:
