@@ -192,6 +192,20 @@ def test_missing_bridge_file_is_unconfigured(tmp_path):
     assert any("bridge script not found" in r for r in resolved["reasons"])
 
 
+def test_a_module_bridge_is_not_checked_as_a_file(tmp_path):
+    """`python -m pkg.mcp` has "-m" as its first argument; adopting such an
+    app failed with "bridge script not found: -m"."""
+    import dataclasses
+    base = connectors.get_preset("jobhunter")
+    preset = dataclasses.replace(base, args=["-m", "pkg.hub.mcp"])
+    app_dir = tmp_path / "app"
+    app_dir.mkdir()
+    resolved = connectors.resolve_preset_values(
+        preset, {"JOBHUNT_DIR": str(app_dir), "APP_URL": "http://127.0.0.1:5178"})
+    assert resolved["ok"] is True, resolved
+    assert resolved["args"] == ["-m", "pkg.hub.mcp"]
+
+
 def test_a_fully_configured_preset_resolves(bridge_dir):
     preset = connectors.get_preset("jobhunter")
     resolved = connectors.resolve_preset_values(

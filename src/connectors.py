@@ -248,6 +248,11 @@ def resolve_preset_values(preset: ConnectorPreset, values: Optional[Dict[str, st
         if not os.path.isdir(dir_value):
             reasons.append(f"{dir_placeholder} is not an existing directory: {dir_value}")
     bridge_path = args[0] if args else ""
+    # `python -m package.module` runs a module, not a file: the first
+    # argument is the flag itself. Seen live with an app whose bridge is a
+    # module: adopting it failed with "bridge script not found: -m".
+    if bridge_path.startswith("-"):
+        bridge_path = ""
     if bridge_path and not os.path.isfile(bridge_path):
         reasons.append(f"bridge script not found: {bridge_path}")
 
