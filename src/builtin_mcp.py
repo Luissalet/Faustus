@@ -94,6 +94,11 @@ _BUILTIN_SERVERS = {
     # resolved graph. Not owner-scoped -- a code graph is per workspace, and
     # every tool takes its `root` explicitly (or the active workspace).
     "code_graph": ("mcp_servers/code_graph_server.py", "Built-in: Code graph"),
+    # Prior art (GIT-08): reuse/adapt/write, with every repository name
+    # checked live against the GitHub API before it reaches the user. Owns
+    # no owner-scoped data (its only outbound calls are read-only GETs to
+    # api.github.com), so unlike brain/context/memory it needs no owner env.
+    "prior_art":  ("mcp_servers/prior_art_server.py", "Built-in: Prior art"),
 }
 
 # NPX-based built-in servers (run via npx, not Python).
