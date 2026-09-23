@@ -143,7 +143,7 @@ def _extract_report(raw: Dict[str, Any]) -> Dict[str, Any]:
 def _wiki_refresh_report(status: str) -> Dict[str, Any]:
     """One `wiki.refresh_entity` outcome, in `WikiRefreshReport` shape."""
     refreshed = 1 if status in ("updated", "fallback") else 0
-    skipped = 1 if status in ("locked", "unchanged", "disabled") else 0
+    skipped = 1 if status in ("locked", "unchanged", "disabled", "deferred") else 0
     errors = [f"entity wiki refresh: {status}"] if status in ("error", "not_found") else []
     return {"refreshed": refreshed, "skipped": skipped, "errors": errors, "status": status}
 
@@ -156,6 +156,10 @@ def _wiki_stale_report(raw: Dict[str, Any]) -> Dict[str, Any]:
         "skipped": int(raw.get("skipped") or 0),
         "errors": ([f"{error_count} entity summary refresh(es) failed"] if error_count else []),
         "checked": int(raw.get("checked") or 0),
+        # Deferred = the utility model was busy or not loaded; the entity keeps
+        # its plain summary and a later sweep retries (never loads a model).
+        "deferred": int(raw.get("deferred") or 0),
+        "llm_skipped": str(raw.get("llm_skipped") or ""),
     }
 
 
