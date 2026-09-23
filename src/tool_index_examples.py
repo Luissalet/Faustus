@@ -907,6 +907,16 @@ EXAMPLES: Dict[str, List[str]] = {
         "plan the refactor first and write the design down",
     ],
 
+    # ── Recoverable omission (OBJ-29) ────────────────────────────────────────
+    "context_recall": [
+        "tráeme entero lo que se quedó fuera del contexto",
+        "recupera el elemento ctx que aparece en la lista de omitidos",
+        "lee completo el recuerdo que no cupo en el contexto",
+        "recall the omitted context item ctx:ab12cd34ef",
+        "show me the full text of what was left out for budget",
+        "expand the omitted memory listed in the context footer",
+    ],
+
     # ── The user's own applications, connected as plugins ──────────────────
     "plugins_list": [
         "qué aplicaciones mías puedes usar",

@@ -61,6 +61,7 @@ from .project_concepts_tools import (
     ConceptUpsertTool, ConceptLinkTool, ConceptRemoveTool,
 )
 from .design_canvas_tools import DesignCanvasTool
+from .context_recall_tools import ContextRecallTool
 from .plugin_tools import PluginAppTool, PluginsListTool
 from .alternatives_tools import (
     AltStartTool, AltCompareTool, AltApplyTool,
@@ -180,6 +181,9 @@ TOOL_HANDLERS = {
     # OBJ-30: declare the design before writing code, and file it in the same
     # graph. See src/agent_tools/design_canvas_tools.py.
     "design_canvas": DesignCanvasTool().execute,
+    # OBJ-29: bring back what the live context packet omitted for budget, by
+    # the `[ctx:<id>]` its footer lists. See src/agent_tools/context_recall_tools.py.
+    "context_recall": ContextRecallTool().execute,
     # The user's own applications, connected as plugins. Reading the list is
     # free; starting one is an act and is gated as such. See
     # src/agent_tools/plugin_tools.py and src/plugin_runtime.py.
@@ -369,6 +373,8 @@ TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_fi
              "concept_upsert", "concept_link", "concept_remove",
              # Design canvas (OBJ-30) -- src/agent_tools/design_canvas_tools.py.
              "design_canvas",
+             # Recoverable omission (OBJ-29) -- src/agent_tools/context_recall_tools.py.
+             "context_recall",
              # The user's own applications -- src/agent_tools/plugin_tools.py.
              "plugins_list", "plugin_app",
              # Isolated, comparable alternatives (CMP-13, W2-G) --

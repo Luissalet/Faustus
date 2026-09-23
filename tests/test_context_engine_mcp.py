@@ -6,7 +6,7 @@ Three things are pinned here, and each is a real failure mode:
   adapter registry and through it memory, RAG and the provenance graph; paying
   that at import would put a second on a server that is usually only asked to
   list its tools;
-* `list_tools()` must return all eight with a schema a client can actually
+* `list_tools()` must return all nine with a schema a client can actually
   validate against — a tool whose `inputSchema` is not an object with typed
   properties is a tool the model guesses at;
 * a write with no `ODYSSEUS_MCP_CONTEXT_OWNER` must be refused and must say so
@@ -26,7 +26,7 @@ import mcp_servers.context_engine_server as ces
 TOOL_NAMES = {
     "context_compile", "context_explain", "context_blocks", "context_capsule",
     "context_experiences", "context_code_index", "context_findings",
-    "context_diagnostics",
+    "context_diagnostics", "context_recall",
 }
 
 
@@ -49,7 +49,7 @@ def test_importing_the_server_starts_nothing(monkeypatch):
     assert ces.server.name == "context"
 
 
-def test_list_tools_returns_eight_usable_schemas():
+def test_list_tools_returns_every_usable_schema():
     tools = asyncio.run(ces.list_tools())
     assert {t.name for t in tools} == TOOL_NAMES
 

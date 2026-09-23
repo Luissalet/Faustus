@@ -565,6 +565,18 @@ _register(
 # taxonomy names -- no network egress to a third party beyond the endpoint the
 # turn is already using, and nothing written outside DATA_DIR.
 _register({"design_canvas"}, ToolEffect.WRITE_PRIVATE)
+# Recoverable omission (OBJ-29, src/agent_tools/context_recall_tools.py). It
+# reads the Context Engine's own recall store (owner-scoped) and, for a row
+# stored without its text, reopens the source through the same adapter
+# registry the packet was compiled from. Nothing is written. Same class as
+# read_overflow/read_artifact, which also re-acquire content that was moved
+# out of the prompt: the bytes are memories, documents and files, so the
+# result is untrusted.
+_register(
+    {"context_recall"},
+    ToolEffect.READ_PRIVATE,
+    result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
+)
 
 # The user's own applications, connected as plugins
 # (src/agent_tools/plugin_tools.py). Split by cost, not by subject:

@@ -57,7 +57,9 @@ from __future__ import annotations
 import logging
 import math
 import re
-from typing import Dict, List, Optional, Sequence, Tuple
+from contextlib import contextmanager
+from contextvars import ContextVar
+from typing import Dict, Iterator, List, Optional, Sequence, Tuple
 
 from src.contracts.base import fingerprint
 from src.memory import tokenize
@@ -347,8 +349,41 @@ def _largest_fitting_excerpt(candidate: ContextCandidate, body: str, budget: int
 
 # ── fitting ────────────────────────────────────────────────────────────────
 
+#: OBJ-29: while a live compile is running, the candidates `fit()` leaves
+#: out for budget are collected here (by `source_ref`), so the caller can keep
+#: their full text recoverable under a short id instead of losing it.  A
+#: ContextVar and not a module list: two users compiling at once must never
+#: see each other's omitted bodies.  `None` (the default) collects nothing.
+_BUDGET_OMITTED: ContextVar[Optional[Dict[str, ContextCandidate]]] = ContextVar(
+    "context_engine_budget_omitted", default=None)
+
+
+@contextmanager
+def collect_budget_omissions() -> Iterator[Dict[str, ContextCandidate]]:
+    """Collect every candidate `fit()` omits for budget inside the block.
+
+    Yields the dict being filled (``source_ref -> candidate``, first wins).
+    Used by `wiring.deliver_round`; nothing else in the compiler changes."""
+    bucket: Dict[str, ContextCandidate] = {}
+    token = _BUDGET_OMITTED.set(bucket)
+    try:
+        yield bucket
+    finally:
+        _BUDGET_OMITTED.reset(token)
+
+
+def _collect_omitted(candidate: ContextCandidate) -> None:
+    bucket = _BUDGET_OMITTED.get()
+    if bucket is None:
+        return
+    ref = str(candidate.source_ref or "")
+    if ref and ref not in bucket:
+        bucket[ref] = candidate
+
+
 def _omission(candidate: ContextCandidate, detail: str, *,
               recoverable: bool = True) -> ContextOmission:
+    _collect_omitted(candidate)
     return ContextOmission(
         source_type=candidate.source_type,
         source_ref=candidate.source_ref,
@@ -446,4 +481,5 @@ def fit_all(candidates_with_budget: Sequence[Tuple[ContextCandidate, int]], *,
 __all__ = [
     "PROTECTED_SOURCE_TYPES", "MIN_EXCERPT_CHARS",
     "to_item", "reference_only", "excerpt", "fit", "fit_all",
+    "collect_budget_omissions",
 ]

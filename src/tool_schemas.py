@@ -2730,6 +2730,20 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "context_recall",
+            "description": "Read in full an item the context packet left out to fit the budget. The packet ends with an `omitted_for_budget` list of lines like `[ctx:ab12cd34ef] Title (source)`; pass those ids here to get each item's complete text with its provenance (source, section, why it was omitted). Use it when one of those items looks relevant to the task instead of searching for it again. Read-only; ids belong to the current user and expire after two weeks.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "ids": {"type": "array", "items": {"type": "string"}, "description": "Context ids from the packet's omitted_for_budget list, e.g. [\"ctx:ab12cd34ef\"] (the ctx: prefix is optional; at most 10)"}
+                },
+                "required": ["ids"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "plugins_list",
             "description": "The user's own applications that this Faustus can use as plugins -- what each one is for, what it lends (contexts, documents, credentials...), whether it is connected, and whether Faustus can start or show it. These are standalone apps the user also runs on their own; Faustus connects to them, it does not contain them. Call this before assuming a capability is missing: the tools for a connected plugin appear as mcp__<server>__<tool>. Read-only.",
             "parameters": {

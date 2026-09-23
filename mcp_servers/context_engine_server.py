@@ -106,6 +106,16 @@ def _ensure_init():
     )
     from src.context_engine.contracts import ContextRequest, ContractError
 
+    # Compiles here have no live transcript; the persisted, owner-checked
+    # history is what gives `session_id` a `recent_messages` section.
+    try:
+        from src.context_engine.adapters.session_store import (
+            install_default_history_provider,
+        )
+        install_default_history_provider()
+    except Exception:  # noqa: BLE001 - no history is a smaller packet, not an error
+        pass
+
     _engine.update(
         blocks=blocks, capsules=capsules, code_index=code_index,
         compiler=compiler, experiences=experiences, manifest=manifest,
@@ -128,6 +138,7 @@ def _request(owner: str, arguments: dict):
         "actor": {"agent_id": "mcp", "role": "assistant",
                   "model": str(arguments.get("model") or "")},
         "execution": {"owner": owner,
+                      "session_id": str(arguments.get("session_id") or ""),
                       "project_id": str(arguments.get("project_id") or ""),
                       "workspace": str(arguments.get("workspace") or "")},
         "task": {"intent": str(arguments.get("intent") or ""),
@@ -140,7 +151,7 @@ def _request(owner: str, arguments: dict):
 # ── the tool surface ───────────────────────────────────────────────────────
 #
 # Every description says WHEN to reach for the tool, not just what it does. A
-# model choosing between eight tools reads the first sentence of each; "manages
+# model choosing between nine tools reads the first sentence of each; "manages
 # blocks" tells it nothing about whether this is the call it wants.
 
 _SCOPE_PROPS = {
@@ -183,9 +194,35 @@ async def list_tools() -> list[Tool]:
                     "model": {"type": "string",
                               "description": "Model the packet is budgeted for. "
                                              "Changes the window, not the ranking."},
+                    "session_id": {"type": "string",
+                                   "description": "Chat session whose persisted "
+                                                  "history fills recent_messages "
+                                                  "(only when it belongs to this "
+                                                  "server's owner)."},
                     **_SCOPE_PROPS,
                 },
                 "required": ["query"],
+            },
+        ),
+        Tool(
+            name="context_recall",
+            description=(
+                "Read in full the items a compiled context packet left out to "
+                "fit its budget. A live packet ends with an omitted_for_budget "
+                "list of `[ctx:<id>] <title> (<source>)` lines; pass those ids "
+                "to get each item's complete text with its provenance (source "
+                "reference, section, packet, why it was omitted). Use it when "
+                "one of the omitted items is what the task needs. Read-only; "
+                "ids are scoped to this server's owner."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "ids": {"type": "array", "items": {"type": "string"},
+                            "description": "Context ids, e.g. [\"ctx:ab12cd34ef\"] "
+                                           "(prefix optional, at most 10)."},
+                },
+                "required": ["ids"],
             },
         ),
         Tool(
@@ -505,6 +542,20 @@ async def _tool_explain(owner: str, args: dict) -> list[TextContent]:
     return _json_result({"ok": True, **verdict})
 
 
+async def _tool_recall(owner: str, args: dict) -> list[TextContent]:
+    from src.context_engine import recall
+
+    ids = args.get("ids")
+    if isinstance(ids, str):
+        ids = [ids]
+    results = await recall.recall(_strings(ids), owner=owner)
+    return _json_result({
+        "ok": True,
+        "found": sum(1 for r in results if r.get("found")),
+        "items": results,
+    })
+
+
 def _tool_blocks(owner: str, args: dict) -> list[TextContent]:
     blocks = _engine["blocks"]
     action = str(args.get("action") or "")
@@ -678,6 +729,7 @@ _HANDLERS = {
 _ASYNC_HANDLERS = {
     "context_compile": _tool_compile,
     "context_explain": _tool_explain,
+    "context_recall": _tool_recall,
 }
 
 
