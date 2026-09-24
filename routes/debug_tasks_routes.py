@@ -48,10 +48,13 @@ def snapshot(frames: int = 12, contains: str = "") -> Dict[str, Any]:
         from src import llm_core
         holder = dict(llm_core._LOCAL_MODEL_CURRENT)
         task = holder.get("task")
+        owner = holder.get("owner")
         slot = {
             "locked": llm_core._LOCAL_MODEL_LOCK.locked(),
             "holder_task": task.get_name() if isinstance(task, asyncio.Task) else None,
             "holder_done": task.done() if isinstance(task, asyncio.Task) else None,
+            "owner": (owner.get_name() if isinstance(owner, asyncio.Task)
+                      else type(owner).__name__ if owner is not None else None),
             "workload": holder.get("workload"),
             "model": holder.get("model"),
             "held_seconds": round(time.time() - float(holder["started"]), 1) if holder.get("started") else None,
