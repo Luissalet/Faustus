@@ -48,3 +48,9 @@ def test_data_rows_and_a_real_document_are_not_loops():
     # Same sentence with a different place each line and numbers: prose, but
     # nothing is quoted, so the place names keep the skeletons distinct.
     assert tool_argument_template_loop(json.dumps({"content": prose})) is None
+
+
+def test_repeated_prose_followed_by_real_data_is_not_a_loop_in_progress():
+    text = "\n".join([f'-> It is from "line {i}": guess NO.' for i in range(60)]
+                     + [f'  "row{i}": [{i}, {i + 1}, {i + 2}],' for i in range(60)])
+    assert tool_argument_template_loop(text) is None

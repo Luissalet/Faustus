@@ -862,23 +862,32 @@ def tool_argument_template_loop(arguments: str) -> Optional[str]:
     if len(text) < _TEMPLATE_LOOP_MIN_CHARS:
         return None
     lines = [ln for ln in re.split(r"\\n|\n", text) if ln.strip()]
-    skeletons = []
-    for ln in lines[-(_TEMPLATE_LOOP_WINDOW * 3):]:
+    # The loop must be what the arguments END with: look only at the last
+    # lines, and stop at the first line that is neither prose nor blank-ish
+    # (a legitimate block of code or data after some repeated prose is not
+    # a loop in progress).
+    skeletons: list = []
+    raw_tail: list = []
+    for ln in reversed(lines[-(_TEMPLATE_LOOP_WINDOW * 3):]):
         sk = _line_skeleton(ln)
         if len(_ALPHA_WORD_RE.findall(sk)) < _TEMPLATE_LOOP_MIN_WORDS:
-            continue
+            if len(ln.strip()) <= 3:
+                continue  # a closing bracket or an empty line
+            break  # a data row: the arguments end in data, not in a loop
         # Prose only: a comment, or a line with no code punctuation. Forty
         # `print(f"...")` lines are a legitimate script, not a loop.
         if not (_COMMENT_START_RE.match(sk) or not _CODE_PUNCT_RE.search(sk)):
-            continue
+            break
         skeletons.append(sk)
-    tail = skeletons[-_TEMPLATE_LOOP_WINDOW:]
+        raw_tail.append(ln)
+        if len(skeletons) >= _TEMPLATE_LOOP_WINDOW:
+            break
+    tail = skeletons
     if len(tail) < _TEMPLATE_LOOP_MIN_LINES:
         return None
     distinct = len(set(tail))
     if distinct > _TEMPLATE_LOOP_MAX_SKELETONS:
         return None
-    raw_tail = lines[-len(tail):]
     if len(set(ln.strip() for ln in raw_tail)) <= distinct:
         return None  # identical lines: the exact-repeat guard's case, not this one
     return (f"tool-call arguments cycle through {distinct} sentence template(s) "

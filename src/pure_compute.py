@@ -27,11 +27,14 @@ from typing import Any
 
 #: Modules a pure computation may import (no I/O, no processes, no network).
 PURE_MODULES = frozenset({
-    "math", "cmath", "itertools", "functools", "operator", "string", "re", "json",
+    "math", "cmath", "itertools", "functools", "string", "re", "json",
     "collections", "statistics", "fractions", "decimal", "datetime", "textwrap",
-    "unicodedata", "random", "heapq", "bisect", "typing", "dataclasses", "enum",
-    "numbers", "difflib", "calendar", "copy", "pprint",
+    "unicodedata", "random", "heapq", "bisect", "numbers", "difflib", "calendar",
 })
+# Left out on purpose: `operator` (attrgetter/methodcaller take attribute
+# names as strings the AST cannot see), `typing` (get_type_hints evaluates
+# strings), `dataclasses`/`enum`/`copy`/`pprint` (reach into object
+# internals or streams). A snippet that needs them simply asks as before.
 
 #: Builtins that reach outside the computation (files, interpreter, user,
 #: introspection that leads to either).
@@ -39,6 +42,14 @@ _FORBIDDEN_NAMES = frozenset({
     "open", "exec", "eval", "compile", "__import__", "input", "breakpoint", "globals",
     "locals", "vars", "memoryview", "help", "exit", "quit", "getattr", "setattr",
     "delattr", "dir", "type", "object", "super", "classmethod", "staticmethod", "property",
+})
+
+#: Attribute names that walk from an ordinary object to frames, globals,
+#: the builtins or a file/process, even without a leading underscore.
+_FORBIDDEN_ATTRS = frozenset({
+    "gi_frame", "gi_code", "cr_frame", "cr_code", "ag_frame", "ag_code", "f_globals",
+    "f_locals", "f_builtins", "f_back", "f_code", "tb_frame", "tb_next", "mro",
+    "Formatter", "get_field", "vformat", "format_field", "open", "system", "popen",
 })
 
 _MAX_CODE_CHARS = 40_000
@@ -79,7 +90,12 @@ def is_pure_compute(content: Any) -> bool:
             if node.id in _FORBIDDEN_NAMES or node.id.startswith("__"):
                 return False
         elif isinstance(node, ast.Attribute):
-            if node.attr.startswith("__") or node.attr.startswith("_"):
+            if node.attr.startswith("_") or node.attr in _FORBIDDEN_ATTRS:
+                return False
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+            # A dunder-shaped string is how a name the AST cannot see gets
+            # looked up (a dict key, a format field): never in a computation.
+            if "__" in node.value:
                 return False
         elif isinstance(node, (ast.Global, ast.Nonlocal)):
             return False

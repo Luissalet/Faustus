@@ -84,12 +84,16 @@ def find_source_claims(text: str, limit: int = 4) -> List[str]:
         m = next((r.search(s) for r in _CLAIM_RES if r.search(s)), None)
         if not m:
             continue
-        # A denial anywhere before the match, or in a parenthesis right after
-        # it ("(conocimiento general, no consultado en web)"), cancels it.
-        before = s[:m.start()]
+        # A denial governing the claim — within the few words right before
+        # it, inside it, or in a parenthesis right after it ("(conocimiento
+        # general, no consultado en web)") — cancels it. A negation earlier
+        # in the sentence about something else ("No hay duda de que he
+        # verificado...") does not.
+        clause = re.split(r"[,;:(—]", s[:m.start()])[-1]  # the claim's own clause
+        before_words = re.findall(r"\S+", clause)[-3:]
         after = s[m.end():m.end() + 80]
-        if _NEGATION_RE.search(before) or _NEGATION_RE.search(m.group(0)) or re.search(
-                r"\(\s*[^)]*\b(?:no|sin|not|without)\b", after, re.IGNORECASE):
+        if (_NEGATION_RE.search(" ".join(before_words)) or _NEGATION_RE.search(m.group(0))
+                or re.search(r"\(\s*[^)]*\b(?:no|sin|not|without)\b", after, re.IGNORECASE)):
             continue
         snippet = s if len(s) <= 220 else s[:217] + "…"
         if snippet not in out:

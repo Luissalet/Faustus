@@ -15,6 +15,9 @@ def test_claims_of_an_outside_check_are_found_in_both_languages():
     assert find_source_claims("La fecha se contrastó... y está confirmada según Wikipedia.")
     assert find_source_claims("I verified the quote against the Folger edition online.")
     assert find_source_claims("We looked it up: the line is from Sonnet 60.")
+    # a negation earlier in the sentence about something else does not cancel it
+    assert find_source_claims("No hay ninguna duda de que he verificado la cita contra el texto original.")
+    assert find_source_claims("Without exaggerating, I verified this against the original published edition.")
 
 
 def test_denials_and_workspace_checks_are_not_claims():

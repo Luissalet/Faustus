@@ -58,6 +58,12 @@ def test_pure_computation_is_recognised_and_runs_without_a_card(code):
     "import pathlib\npathlib.Path('x').write_text('y')",
     "this is not python (",
     "",
+    # review findings: names reached through strings or frames
+    "import operator\ndef _f(): pass\ng = operator.attrgetter('__globals__')(_f)\nb = g['__builtins__']\nb.open('x', 'w')",
+    "import string\nf = string.Formatter()\nprint(f.get_field('0.' + '_' * 2 + 'globals' + '_' * 2, (len,), {}))",
+    "def g():\n    yield 1\nx = g()\nprint(x.gi_frame.f_globals)",
+    "import typing\ntyping.get_type_hints(len)",
+    "d = {}\nprint(d['__builtins__'])",
 ])
 def test_anything_that_can_act_is_not_pure_and_still_asks(code):
     assert not is_pure_compute(code)
