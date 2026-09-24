@@ -37,6 +37,19 @@ def is_source_tool(tool: str) -> bool:
     return name in SOURCE_TOOL_NAMES or name.startswith(SOURCE_TOOL_PREFIXES)
 
 
+#: Tools that open a page (not just list search results). An MCP tool
+#: counts: what it reads cannot be told from its name.
+PAGE_TOOL_NAMES = frozenset({
+    "web_fetch", "fetch_url", "reach_read", "browser_navigate", "browser_snapshot", "browser_get_text",
+})
+PAGE_TOOL_PREFIXES = ("mcp__", "browser_")
+
+
+def is_page_tool(tool: str) -> bool:
+    name = str(tool or "")
+    return name in PAGE_TOOL_NAMES or name.startswith(PAGE_TOOL_PREFIXES)
+
+
 _ES_TARGET = (r"(?:texto|textos|fuente|fuentes|edici[oó]n|ediciones|versi[oó]n|web|internet|"
               r"wikipedia|enciclopedia|can[oó]nic\w*|obra completa|libro|originales? publicad\w*|"
               r"sitio|p[aá]gina web|base de datos|bibliograf[ií]a)")
@@ -126,6 +139,62 @@ def find_source_claims(text: str, limit: int = 4) -> List[str]:
         after = s[m.end():m.end() + 80]
         if (_NEGATION_RE.search(" ".join(before_words)) or _NEGATION_RE.search(m.group(0))
                 or re.search(r"\(\s*[^)]*\b(?:no|sin|not|without)\b", after, re.IGNORECASE)):
+            continue
+        snippet = s if len(s) <= 220 else s[:217] + "…"
+        if snippet not in out:
+            out.append(snippet)
+        if len(out) >= limit:
+            break
+    return out
+
+
+#: "Opened" claims (live, exam run 24): only `web_search` ran, and the
+#: deliverable listed Folger and Project Gutenberg under "Fuentes externas
+#: realmente abiertas" — pages that showed up as search results and were
+#: never opened. A search result is a title and a snippet; saying the page
+#: was opened or read is a false statement about the work.
+_OPENED_CLAIM_RES = [
+    re.compile(r"\b(?:fuentes?|p[aá]ginas?|webs?|sitios?|art[ií]culos?|enlaces?|urls?)\b[^.\n]{0,40}?"
+               r"\b(?:realmente\s+)?(?:abiert[oa]s?|le[ií]d[oa]s?|visitad[oa]s?)\b", re.IGNORECASE),
+    re.compile(r"\b(?:abr[ií]|le[ií]|visit[eé]|he\s+(?:abierto|le[ií]do|visitado)|hemos\s+(?:abierto|le[ií]do))\b"
+               r"[^.\n]{0,40}?\b(?:p[aá]ginas?|art[ií]culos?|webs?|sitios?|fuentes?|enlaces?)\b", re.IGNORECASE),
+    re.compile(r"\b(?:sources?|pages?|sites?|articles?|links?|urls?)\b[^.\n]{0,40}?"
+               r"\b(?:actually\s+)?(?:opened|visited)\b", re.IGNORECASE),
+    re.compile(r"\b(?:I|we)\s+(?:opened|visited|read)\b[^.\n]{0,40}?\b(?:pages?|articles?|sites?|sources?|links?)\b",
+               re.IGNORECASE),
+]
+_EMPTY_LIST_RE = re.compile(
+    r"^\s*(?:[-*\u2022]\s*)?(?:\*\*)?\s*(?:ninguna?|none|nada|no\s+se\s+abri\w*|n/?a|—|-)\b",
+    re.IGNORECASE,
+)
+
+
+def find_opened_claims(text: str, limit: int = 4) -> List[str]:
+    """Lines of ``text`` that say a page or source was opened / read /
+    visited. A heading such as "Fuentes realmente abiertas:" followed by
+    "ninguna" (or a sentence that denies it) is not a claim."""
+    out: List[str] = []
+    lines = (text or "").splitlines()
+    for i, line in enumerate(lines):
+        s = line.strip()
+        if len(s) < 8:
+            continue
+        m = next((r.search(s) for r in _OPENED_CLAIM_RES if r.search(s)), None)
+        if not m or _LOCAL_INSTRUMENT_RE.search(s):
+            # "páginas leídas del PDF", "read the file": local reading.
+            continue
+        clause = re.split(r"[,;:(—]", s[:m.start()])[-1]
+        before = " ".join(re.findall(r"\S+", clause)[-3:])
+        rest = s[m.end():]
+        if _NEGATION_RE.search(before) or _NEGATION_RE.search(m.group(0)):
+            continue
+        tail = re.sub(r"^[\s:*_]+", "", rest)
+        if not tail:
+            # A heading: what the list under it says decides.
+            nxt = next((ln for ln in lines[i + 1:i + 4] if ln.strip()), "")
+            if not nxt.strip() or _EMPTY_LIST_RE.search(nxt):
+                continue
+        elif _EMPTY_LIST_RE.search(tail) or re.match(r"\(?\s*(?:ninguna?|none|no\b)", tail, re.IGNORECASE):
             continue
         snippet = s if len(s) <= 220 else s[:217] + "…"
         if snippet not in out:

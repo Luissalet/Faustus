@@ -120,3 +120,34 @@ def test_a_failed_or_local_prior_tool_does_not_count():
     assert not ledger.prior_sources
     ledger.note_prior_message({"role": "tool", "name": "web_fetch", "content": "page"})
     assert ledger.prior_sources
+
+
+def test_pages_listed_as_opened_after_a_search_only_turn_are_a_claim():
+    from src.agent_harness import TurnLedger
+    deliverable = (
+        "## 5. Herramientas y fuentes\n\n"
+        "**Fuentes externas realmente abiertas:**\n"
+        "- Folger Shakespeare Library: Hamlet\n"
+        "- Project Gutenberg: Hamlet text\n"
+    )
+    ledger = TurnLedger(None, "resuelve")
+    ledger.events.append({"tool": "web_search", "ok": True, "kind": "read"})
+    claims = ledger.unconsulted_source_claims(deliverable)
+    assert claims and "realmente abiertas" in claims[0]
+    assert ledger.source_claims_kind == "search_only"
+    check = ledger.check_completion(deliverable)
+    assert "unconsulted_sources" in check["reasons"] and check["source_claims_kind"] == "search_only"
+
+    opened = TurnLedger(None, "resuelve")
+    opened.events += [{"tool": "web_search", "ok": True, "kind": "read"}, {"tool": "web_fetch", "ok": True, "kind": "read"}]
+    assert opened.unconsulted_source_claims(deliverable) == []
+
+
+def test_an_empty_or_denied_opened_list_and_local_reading_are_not_claims():
+    from src.source_claims import find_opened_claims
+    assert find_opened_claims("**Fuentes externas realmente abiertas:**\n- Ninguna (sólo resultados de búsqueda)") == []
+    assert find_opened_claims("Fuentes externas realmente abiertas: ninguna.") == []
+    assert find_opened_claims("No se abrió ninguna página; sólo resultados de búsqueda.") == []
+    assert find_opened_claims("Páginas leídas del PDF: 1 a 3 de 6a.pdf") == []
+    assert find_opened_claims("I opened the pages on the Folger site to compare the lines.")
+    assert find_opened_claims("Sources actually opened: en.wikipedia.org/wiki/Cable_length")

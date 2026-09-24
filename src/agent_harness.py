@@ -1237,6 +1237,11 @@ class TurnLedger:
         self.written_text: str = ""
         #: An earlier turn of the conversation read an outside source.
         self.prior_sources: bool = False
+        #: ...and opened a page (not only searched).
+        self.prior_pages: bool = False
+        #: "none" (no outside source at all) or "search_only" (search results
+        #: only, no page opened): what the last source-claim check found.
+        self.source_claims_kind: str = ""
         self.rejections = 0
         self.length_continues = 0
         self.intent_nudges = 0
@@ -1602,9 +1607,9 @@ class TurnLedger:
         check did happen, one turn before. A prior message counts when it
         records a source tool: stored tool events (`metadata.tool_events`),
         OpenAI-style `tool_calls`, or a `tool` message naming one."""
-        if self.prior_sources or not isinstance(message, dict):
+        if (self.prior_sources and self.prior_pages) or not isinstance(message, dict):
             return
-        from src.source_claims import is_source_tool
+        from src.source_claims import is_page_tool, is_source_tool
         names: List[str] = []
         meta = message.get("metadata")
         if isinstance(meta, dict):
@@ -1619,6 +1624,8 @@ class TurnLedger:
             names.append(str(message.get("name") or ""))
         if any(is_source_tool(n) for n in names if n):
             self.prior_sources = True
+        if any(is_page_tool(n) for n in names if n):
+            self.prior_pages = True
 
     def unverified_citations(self, text: str) -> List[str]:
         """Result ids the answer cites that no tool returned and the
@@ -1666,10 +1673,23 @@ class TurnLedger:
         """Sentences of the answer, or of files written this turn, that say
         an outside source (a text, an edition, the web) was checked, when no
         tool that reads outside the workspace ran this turn."""
-        from src.source_claims import find_source_claims
-        if self.consulted_sources():
-            return []
-        return find_source_claims((text or "") + "\n\n" + self.written_text)
+        from src.source_claims import find_opened_claims, find_source_claims
+        full = (text or "") + "\n\n" + self.written_text
+        if not self.consulted_sources():
+            self.source_claims_kind = "none"
+            return find_source_claims(full)
+        if not self.opened_pages():
+            # Searched, never opened a page: a claim to have opened or read
+            # one is still false.
+            self.source_claims_kind = "search_only"
+            return find_opened_claims(full)
+        return []
+
+    def opened_pages(self) -> bool:
+        """Whether a tool that opens a page (not only searches) ran this turn
+        or earlier in the conversation."""
+        from src.source_claims import is_page_tool
+        return self.prior_pages or any(e.get("ok") and is_page_tool(str(e.get("tool") or "")) for e in self.events)
 
     def check_completion(self, text: str) -> Dict[str, Any]:
         """Judge a text-only (final) round against the evidence.
@@ -1737,6 +1757,7 @@ class TurnLedger:
             "untouched_paths": untouched,
             "bad_citations": bad_cites,
             "source_claims": source_claims,
+            "source_claims_kind": self.source_claims_kind if source_claims else "",
             "intent": intent,
             "permission": permission,
         }
@@ -1804,7 +1825,19 @@ class TurnLedger:
                 "A citation must be the id a tool call actually gave you. Call the tool for each "
                 "of those numbers now and cite the ids it returns, or remove those citations."
             )
-        if "unconsulted_sources" in check["reasons"]:
+        if "unconsulted_sources" in check["reasons"] and check.get("source_claims_kind") == "search_only":
+            lines.append(
+                "- You say pages or sources were opened, read or visited, but only web_search ran: "
+                "you saw search-result titles and snippets, no page was opened. The lines:"
+            )
+            for c in (check.get("source_claims") or [])[:4]:
+                lines.append(f'    "{c}"')
+            lines.append(
+                "  Either open the pages you rely on now (web_fetch) and keep only those, or list "
+                "them as search results (title + URL, \"search result, not opened\"). Fix the file "
+                "you wrote as well as your answer."
+            )
+        elif "unconsulted_sources" in check["reasons"]:
             lines.append(
                 "- You state that something was verified against, checked in or consulted from an "
                 "outside source (a text, an edition, the web), but NO tool that reads outside the "
@@ -1934,7 +1967,14 @@ class TurnLedger:
                  "it cites results no tool returned: ")
                 + ", ".join(f"`{c}`" for c in check.get("bad_citations") or [])
             )
-        if "unconsulted_sources" in check["reasons"]:
+        if "unconsulted_sources" in check["reasons"] and check.get("source_claims_kind") == "search_only":
+            parts.append(
+                "presenta como abiertas o leídas páginas que sólo aparecieron como resultados de "
+                "búsqueda (no se abrió ninguna)" if es else
+                "it presents as opened or read pages that only appeared as search results (none "
+                "was opened)"
+            )
+        elif "unconsulted_sources" in check["reasons"]:
             parts.append(
                 "dice haber verificado o consultado fuentes externas, pero en este turno no se "
                 "consultó ninguna (lo que atribuye a una fuente viene de memoria y **no está "
