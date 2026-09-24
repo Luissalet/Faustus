@@ -2,12 +2,15 @@
   "schema": 1,
   "id": "writer",
   "name": "Writer's Hoard",
-  "purpose": "Draft, edit and query manuscripts through the Writer's Hoard AI bridge.",
+  "purpose": "Draft, edit and query manuscripts through the Writer's Hoard AI bridge: projects, chapters, notes, outline, search, worldbuilding.",
   "capabilities": [
     "documents",
     "notes",
     "outline",
-    "search"
+    "search",
+    "manuscripts",
+    "worldbuilding",
+    "ai-bridge"
   ],
   "placeholders": [
     "WRITER_DIR",
@@ -16,7 +19,8 @@
   ],
   "defaults": {
     "APP_URL": "http://127.0.0.1:8766",
-    "TOKEN_FILE": "%APPDATA%/writers-hoard/aibridge/token"
+    "TOKEN_FILE": "%APPDATA%/writers-hoard/aibridge/token",
+    "DATA_DIR": "%APPDATA%/writers-hoard/backups"
   },
   "app": {
     "url_default": "http://127.0.0.1:8766",
@@ -37,9 +41,14 @@
       ]
     },
     "launch_hint": {
-      "kind": "open_exe",
+      "kind": "process",
       "executable": "{WRITER_DIR}/release/win-unpacked/Writers Hoard.exe",
-      "argv": []
+      "argv": [],
+      "cwd": "{WRITER_DIR}",
+      "readiness": {
+        "url": "{APP_URL}/api/health",
+        "timeout_s": 40
+      }
     }
   },
   "mcp": {
@@ -55,5 +64,10 @@
     "optional_env": [
       "WH_BRIDGE_GROUPS"
     ]
-  }
+  },
+  "x-family": {
+    "stack": "node",
+    "note": "A desktop app: the port answers only while the AI bridge is switched on in Settings. The token lives under the user's profile, not in the repository folder. DATA_DIR is the app's own archive folder (the ZIP snapshots it rotates itself): a consistent copy of every project, small, never the live IndexedDB store or the media cache."
+  },
+  "notes": "The AI bridge is off by default; turn it on in Writers Hoard → Settings → AI bridge. /api/health answers without a token; every other route needs the bridge token as a Bearer."
 }

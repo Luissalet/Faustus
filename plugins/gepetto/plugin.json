@@ -2,7 +2,7 @@
   "schema": 1,
   "id": "gepetto",
   "name": "Gepetto's Hoard",
-  "purpose": "Drive Gepetto's Hoard's projects, analysis and jobs through its REST API.",
+  "purpose": "Drive Gepetto's Hoard's 3D projects, analysis and jobs through its REST API.",
   "capabilities": [
     "projects",
     "analysis",
@@ -13,7 +13,8 @@
     "APP_URL"
   ],
   "defaults": {
-    "APP_URL": "http://127.0.0.1:8767"
+    "APP_URL": "http://127.0.0.1:8767",
+    "DATA_DIR": "{GEPETTO_DIR}/data"
   },
   "app": {
     "url_default": "http://127.0.0.1:8767",
@@ -35,20 +36,14 @@
     },
     "launch_hint": {
       "kind": "process",
-      "executable": "{GEPETTO_DIR}/.venv/Scripts/python.exe",
+      "executable": "{FAUSTUS_PYTHON}",
       "argv": [
-        "-m",
-        "uvicorn",
-        "backend.app:app",
-        "--host",
-        "127.0.0.1",
-        "--port",
-        "8767"
+        "start.py"
       ],
       "cwd": "{GEPETTO_DIR}",
       "readiness": {
         "url": "{APP_URL}/api/health",
-        "timeout_s": 20
+        "timeout_s": 40
       }
     }
   },
@@ -65,5 +60,10 @@
       "REST_NAME": "Gepetto's Hoard"
     },
     "optional_env": []
+  },
+  "x-family": {
+    "agent_contract": false,
+    "stack": "python",
+    "note": "REST API (OpenAPI) only, reached from Faustus through its generic REST bridge; no /api/agent/call, no token, no events. start.py picks the venv when present."
   }
 }

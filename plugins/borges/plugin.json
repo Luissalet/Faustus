@@ -2,30 +2,9 @@
   "schema": 1,
   "id": "borges",
   "name": "Borges's Hoard",
-  "purpose": "The user's personal library: folders of their own documents indexed locally so the assistant can answer 'where did I read or write about X' with exact page and section citations.",
-  "capabilities": [
-    "library",
-    "documents",
-    "hybrid-search",
-    "citations",
-    "passages",
-    "pdf",
-    "docx",
-    "markdown",
-    "epub",
-    "html",
-    "collections",
-    "folder-watch",
-    "reindex",
-    "similar-passages",
-    "local-embeddings"
-  ],
-  "placeholders": [
-    "BORGES_DIR",
-    "APP_URL",
-    "TOKEN_FILE",
-    "PYTHON"
-  ],
+  "purpose": "The user's personal library: folders of their own documents, and their own Faustus conversations and the links they saved in Links Hoard, indexed locally so the assistant can answer 'where did I read/write/decide X' with exact page, section and chat-turn citations.",
+  "capabilities": ["library", "documents", "hybrid-search", "citations", "passages", "pdf", "docx", "markdown", "epub", "html", "collections", "folder-watch", "reindex", "similar-passages", "local-embeddings", "faustus-conversations", "saved-links", "sources", "date-range-search"],
+  "placeholders": ["BORGES_DIR", "APP_URL", "TOKEN_FILE", "PYTHON"],
   "defaults": {
     "APP_URL": "http://127.0.0.1:5184",
     "TOKEN_FILE": "{BORGES_DIR}/data/mcp-token",
@@ -34,45 +13,21 @@
   "app": {
     "url_default": "http://127.0.0.1:5184",
     "ui_url": "{APP_URL}",
-    "health": {
-      "path": "/api/health",
-      "expect": {
-        "service": "borges-hoard"
-      }
-    },
-    "identify": {
-      "service": [
-        "borges-hoard"
-      ],
-      "title": [
-        "borges's hoard",
-        "biblioteca personal"
-      ]
-    },
+    "health": { "path": "/api/health", "expect": { "service": "borges-hoard" } },
+    "identify": { "service": ["borges-hoard"], "title": ["borges's hoard", "biblioteca personal"] },
     "launch_hint": {
       "kind": "process",
       "executable": "{PYTHON}",
-      "argv": [
-        "-m",
-        "borges"
-      ],
+      "argv": ["-m", "borges"],
       "cwd": "{BORGES_DIR}",
-      "readiness": {
-        "url": "{APP_URL}/api/health",
-        "timeout_s": 30
-      }
+      "readiness": { "url": "{APP_URL}/api/health", "timeout_s": 30 }
     }
   },
   "mcp": {
     "transport": "stdio",
     "command": "{PYTHON}",
-    "args": [
-      "{BORGES_DIR}/mcp_server.py"
-    ],
-    "env": {
-      "BORGES_URL": "{APP_URL}",
-      "BORGES_TOKEN_FILE": "{TOKEN_FILE}"
-    },
+    "args": ["{BORGES_DIR}/mcp_server.py"],
+    "env": { "BORGES_URL": "{APP_URL}", "BORGES_TOKEN_FILE": "{TOKEN_FILE}" },
     "optional_env": []
   },
   "notes": "Keep the app running (python -m borges) while the assistant uses it: the MCP bridge proxies every call to the local server and never opens the database. The first start downloads a ~240 MB multilingual embedding model into data/models; until it is ready, search is keyword-only."

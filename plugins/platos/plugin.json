@@ -13,7 +13,8 @@
     "APP_URL"
   ],
   "defaults": {
-    "APP_URL": "http://127.0.0.1:5000"
+    "APP_URL": "http://127.0.0.1:5000",
+    "DATA_DIR": "{PLATOS_DIR}/data"
   },
   "app": {
     "url_default": "http://127.0.0.1:5000",
@@ -53,5 +54,10 @@
       "REST_NAME": "Plato's Hoard"
     },
     "optional_env": []
+  },
+  "x-family": {
+    "agent_contract": false,
+    "stack": "python",
+    "note": "REST API only, reached from Faustus through its generic REST bridge; no /api/agent/call, no token, no events. The hub lists, starts and backs it up."
   }
 }

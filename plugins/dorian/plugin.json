@@ -14,7 +14,8 @@
   ],
   "defaults": {
     "APP_URL": "http://127.0.0.1:8741",
-    "CREDENTIAL_FILE": "{DORIAN_DIR}/data/agent-clients/faustus.json"
+    "CREDENTIAL_FILE": "{DORIAN_DIR}/data/agent-clients/faustus.json",
+    "DATA_DIR": "{DORIAN_DIR}/data"
   },
   "app": {
     "url_default": "http://127.0.0.1:8741",
@@ -59,6 +60,11 @@
     ],
     "env": {},
     "optional_env": []
+  },
+  "x-family": {
+    "agent_contract": false,
+    "stack": "python",
+    "note": "Its MCP server authenticates with per-client credential files, not a bearer token, so the hub proxy does not call it; the hub lists, starts and backs it up (data/ holds the credential store: keep backups local)."
   },
   "notes": "Knowledge about the user rather than tools over a domain: this is the plugin that widens what Faustus knows about who it works for."
 }
