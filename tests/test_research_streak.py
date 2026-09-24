@@ -76,7 +76,7 @@ def test_streak_nudge_message_names_the_streak_length():
     msg = streak_nudge_message(8)
     assert msg["role"] == "user"
     assert msg["_harness_note"] is True
-    assert "8 rounds" in msg["content"]
+    assert "8 evidence-gathering calls" in msg["content"]
 
 
 # ---------------------------------------------------------------------------
@@ -278,7 +278,7 @@ def test_the_nudge_note_carries_the_users_language(tmp_path, monkeypatch):
     notes = [
         m.get("content") for snap in snapshots for m in snap
         if isinstance(m, dict) and m.get("_harness_note") and isinstance(m.get("content"), str)
-        and "rounds in a row" in m.get("content")
+        and "calls in a row" in m.get("content")
     ]
     assert notes and any("español" in n for n in notes), notes
 
@@ -518,3 +518,14 @@ def test_a_plan_only_round_on_a_threshold_does_not_repeat_the_check(tmp_path, mo
     ))
     last = notes_seen[-1]
     assert sum(1 for n in last if isinstance(n, str) and "Second check" in n) == 1
+
+
+def test_a_round_of_many_vision_questions_counts_each_one():
+    """Live, exam run 19: six regions asked per round; eight rounds were
+    forty-eight vision questions before the first check."""
+    from src.research_streak import streak_action
+    assert streak_action(6, 8, previous=0) == "none"
+    assert streak_action(12, 8, previous=6) == "nudge"      # crossed 8
+    assert streak_action(18, 8, previous=12) == "insist"    # crossed 16
+    assert streak_action(30, 8, previous=18) == "pause"     # crossed 24
+    assert streak_action(31, 8, previous=30) == "none"

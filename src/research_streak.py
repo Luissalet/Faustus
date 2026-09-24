@@ -182,7 +182,7 @@ def is_remote_read_only_round(calls: Sequence[Tuple[str, str]]) -> bool:
 
 _STREAK_NUDGE_TEXT = (
     "[Runtime research check — automatic message, not a new user request] "
-    "You have spent {n} rounds in a row only gathering evidence (web "
+    "You have made {n} evidence-gathering calls in a row, over rounds that only gathered evidence (web "
     "search/fetch, questions to the vision model, or a shell command that "
     "just fetches a URL or clones a repository) — no file written, no "
     "plan/todo update, no progress of your own. Stop and summarise what you "
@@ -233,12 +233,16 @@ PAUSE_ROUNDS = 2
 REPEAT_RUN_PAUSE = 3
 
 
-def streak_action(streak: int, nudge_at: int) -> str:
-    """What the loop should do after a round that left the evidence streak
-    at ``streak``. One of ``none``, ``nudge``, ``insist``, ``pause``; each
-    step fires exactly on its threshold round, so calling this every round
-    never repeats a message within one step."""
-    if nudge_at <= 0 or streak <= 0 or streak % nudge_at:
+def streak_action(streak: int, nudge_at: int, previous: int | None = None) -> str:
+    """What the loop should do after a round that moved the evidence streak
+    from ``previous`` (default ``streak - 1``) to ``streak``. One of
+    ``none``, ``nudge``, ``insist``, ``pause``: the step whose threshold
+    (a multiple of ``nudge_at``) the round crossed, so a round that adds
+    several evidence calls at once cannot jump over a threshold, and a
+    round that crosses none says nothing."""
+    if previous is None:
+        previous = streak - 1
+    if nudge_at <= 0 or streak <= 0 or streak // nudge_at <= max(previous, 0) // nudge_at:
         return "none"
     step = streak // nudge_at
     if step == 1:
@@ -250,7 +254,7 @@ def streak_action(streak: int, nudge_at: int) -> str:
 
 _INSIST_TEXT = (
     "[Runtime research check — automatic message, not a new user request] "
-    "Second check: {n} rounds in a row only gathering evidence, and the "
+    "Second check: {n} evidence-gathering calls in a row, and the "
     "first check did not change course. Before ANY other read: write the "
     "facts you have established so far as a short numbered list (update "
     "your todo list with them), then try to solve the task from that list — "
@@ -263,7 +267,7 @@ _INSIST_TEXT = (
 
 _PAUSE_TEXT = (
     "[Runtime research check — automatic message, not a new user request] "
-    "{n} rounds in a row only gathering evidence. The evidence tools "
+    "{n} evidence-gathering calls in a row. The evidence tools "
     "({tools}) are paused for the next {rounds} rounds. You already have a "
     "large amount of material in this conversation: reason with it now — "
     "list the clues, connect them, run any calculation with a local tool, "
