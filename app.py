@@ -2047,6 +2047,18 @@ async def _startup_event():
     # ACL they were created with. Fix the permissions, not the contents.
     from src.secret_files import harden_secret_files
     harden_secret_files()
+    # Pending approval cards survive a restart inside their TTL (a restart
+    # used to turn every paused turn's card into a 409). Not under pytest:
+    # tests share one process-wide store and the real data dir.
+    if "PYTEST_CURRENT_TEST" not in os.environ:
+        try:
+            from src.settings import get_setting as _gs
+            if _gs("tool_approvals_survive_restart", True):
+                from src.constants import DATA_DIR as _data_dir
+                from src.tool_approvals import tool_approval_store as _approvals
+                _approvals.enable_persistence(os.path.join(_data_dir, "tool_approvals_pending.json"))
+        except Exception as e:  # noqa: BLE001 - never block startup on this
+            logger.warning(f"approval persistence not enabled: {e}")
     webhook_manager.set_loop(asyncio.get_running_loop())
     # Re-open the gate a previous shutdown closed: the manager is a module-level
     # singleton, so without this a second lifespan would drop every webhook.

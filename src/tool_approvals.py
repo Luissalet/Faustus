@@ -495,6 +495,60 @@ class ToolApprovalStore:
         # `consume_with_reason`. Bounded the same way `_expired` is.
         self._consumed: dict[str, dict[str, Any]] = {}
         self._lock = threading.Lock()
+        # Optional file the pending cards are mirrored to, so a server
+        # restart inside the TTL does not strand a paused turn (live,
+        # 24-09-2026: a restart turned every open card into a 409 and the
+        # turn could only be started over). Off unless `enable_persistence`.
+        self._persist_path: str | None = None
+
+    # -- persistence ------------------------------------------------------------
+    def enable_persistence(self, path: str) -> int:
+        """Mirror pending approvals to ``path`` and load the ones already
+        there that have not expired. Returns how many were loaded. The TTL
+        stays absolute from creation: a restart never extends a card."""
+        now = time.time()
+        loaded = 0
+        try:
+            with open(path, encoding="utf-8") as fh:
+                rows = json.load(fh)
+        except FileNotFoundError:
+            rows = []
+        except Exception as exc:  # noqa: BLE001 - a corrupt file starts empty
+            logger.warning("[approvals] could not read %s: %s", path, exc)
+            rows = []
+        with self._lock:
+            self._persist_path = path
+            for row in rows if isinstance(rows, list) else []:
+                try:
+                    row = dict(row)
+                    row["effects"] = tuple(row.get("effects") or ())
+                    row["selected_tools"] = tuple(row.get("selected_tools") or ())
+                    pending = PendingToolApproval(**row)
+                except Exception:  # noqa: BLE001 - skip a row that no longer fits
+                    continue
+                if pending.expires_at <= now or pending.approval_id in self._pending:
+                    continue
+                self._pending[pending.approval_id] = pending
+                loaded += 1
+            self._persist_locked()
+        if loaded:
+            logger.info("[approvals] restored %d pending approval card(s) from %s", loaded, path)
+        return loaded
+
+    def _persist_locked(self) -> None:
+        path = self._persist_path
+        if not path:
+            return
+        try:
+            from dataclasses import asdict
+            rows = [asdict(p) for p in self._pending.values()]
+            tmp = f"{path}.tmp"
+            os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+            with open(tmp, "w", encoding="utf-8") as fh:
+                json.dump(rows, fh)
+            os.replace(tmp, path)
+        except Exception as exc:  # noqa: BLE001 - persistence is best effort
+            logger.warning("[approvals] could not write %s: %s", path, exc)
 
     def _remember_expired_locked(self, pending: PendingToolApproval) -> None:
         self._expired.pop(pending.approval_id, None)
@@ -522,6 +576,8 @@ class ToolApprovalStore:
             dropped = self._pending.pop(approval_id, None)
             if dropped is not None:
                 self._remember_expired_locked(dropped)
+        if expired:
+            self._persist_locked()
 
     def create(
         self,
@@ -615,6 +671,7 @@ class ToolApprovalStore:
                 )
                 self._pending.pop(oldest_id, None)
             self._pending[pending.approval_id] = pending
+            self._persist_locked()
         return pending
 
     def consume(
@@ -703,6 +760,7 @@ class ToolApprovalStore:
                 return "owner_mismatch", None
             self._pending.pop(approval_key, None)
             self._remember_consumed_locked(pending)
+            self._persist_locked()
         normalized_decision = str(decision or "").strip().lower()
         scope = scope_for_decision(normalized_decision)
         _finalize_autonomy_shadow(
@@ -761,6 +819,7 @@ class ToolApprovalStore:
             if pending is None:
                 return False
             self._remember_expired_locked(pending)
+            self._persist_locked()
             return True
 
     def retire_for_session(self, *, owner: Any, session_id: Any) -> bool:
@@ -803,6 +862,8 @@ class ToolApprovalStore:
             )
             for approval_id in retired_ids:
                 self._pending.pop(approval_id, None)
+            if retired_ids:
+                self._persist_locked()
         return retired_ids, carried_taint
 
 

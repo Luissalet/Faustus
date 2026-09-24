@@ -168,6 +168,10 @@ DEFAULT_SETTINGS = {
     # 24-09-2026: a CPU vision model asked to transcribe a crop fell into a
     # repetition loop and generated 3,600+ tokens at ~6 tokens/s (10 min).
     "vision_max_tokens": 1536,
+    # Pending approval cards are mirrored to the data dir and restored on
+    # start, inside their (absolute) TTL, so a restart does not strand a
+    # paused turn.
+    "tool_approvals_survive_restart": True,
     # Cache of vision answers by image, prompt and model (src/vision_cache.py).
     "vision_cache_enabled": True,
     "vision_cache_max_age_days": 30,
