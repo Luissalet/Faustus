@@ -5680,7 +5680,10 @@ def _tool_image_messages(
         if description:
             text = (
                 f"[image from {tool_name} — described by the vision model because "
-                f"the current model cannot view images]\n{description}"
+                f"the current model cannot view images]\n{description}\n"
+                "[You cannot see this image yourself. For a specific detail, call "
+                "inspect_image with action=\"ask\", a precise question and a small "
+                "`region`; action=\"shapes\" measures circles/lines without any model.]"
             )
         else:
             which = f"the current model ({model})" if model else "the current model"
