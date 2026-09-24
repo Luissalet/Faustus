@@ -286,22 +286,36 @@ def parse_body(body: str) -> Dict[str, Any]:
     if not body or not body.strip():
         return out
 
-    sections: List[tuple[Optional[str], List[str]]] = [(None, [])]
+    # Third element is the ORIGINAL (unlowercased) heading text for a section
+    # that isn't one of the four known ones — None for the top-of-body
+    # preamble (text before any "## " heading at all), which has no heading
+    # to preserve. Keeping it lets `body_extra` re-embed the heading on
+    # emit, so a section like "## Reference: ..." round-trips through
+    # `to_markdown()` instead of silently fusing into whatever known section
+    # happens to precede it on the next parse (it used to: `emit_body()`
+    # appends `body_extra` right after Verification with no heading of its
+    # own, so a bare re-parse folded that whole section's text into
+    # `verification`, corrupting it — issue found while adding a skill with
+    # a non-trivial "## Reference" section).
+    sections: List[tuple[Optional[str], Optional[str], List[str]]] = [(None, None, [])]
     for line in body.splitlines():
         m = re.match(r"^##\s+(.*?)\s*$", line)
         if m:
-            heading = m.group(1).strip().lower()
-            key = _HEADING_TO_KEY.get(heading)
-            sections.append((key, []))
+            heading_raw = m.group(1).strip()
+            key = _HEADING_TO_KEY.get(heading_raw.lower())
+            sections.append((key, None if key else heading_raw, []))
             continue
-        sections[-1][1].append(line)
+        sections[-1][2].append(line)
 
-    for key, lines in sections:
+    for key, heading_raw, lines in sections:
         text = "\n".join(lines).strip("\n")
         if key is None:
             extras = text.strip()
-            if extras:
-                out["body_extra"] = (out["body_extra"] + "\n\n" + extras).strip()
+            if not extras and heading_raw is None:
+                continue
+            chunk = f"## {heading_raw}\n\n{extras}".strip() if heading_raw else extras
+            if chunk:
+                out["body_extra"] = (out["body_extra"] + "\n\n" + chunk).strip()
             continue
         if key == "when_to_use":
             out["when_to_use"] = text.strip()
