@@ -700,6 +700,13 @@ def analyze_image_with_vl_prompt(
         except ValueError:
             return {"text": "[No vision model configured — set one in Settings → Vision]", "model": vl_model or ""}
 
+        from src import vision_cache as _vcache
+        _vkey = _vcache.key_for(model_id, prompt, images)
+        _vhit = _vcache.get(_vkey)
+        if _vhit:
+            logger.info("VL custom-prompt answer served from the vision cache (%s)", model_id)
+            return {"text": _vhit["text"], "model": _vhit["model"] or model_id}
+
         content: list = [{"type": "text", "text": prompt}]
         for raw, mime in images:
             img_data = base64.b64encode(raw).decode("utf-8")
@@ -723,6 +730,7 @@ def analyze_image_with_vl_prompt(
                 answer = llm_call(_url, _model, vl_messages, headers=_headers,
                                   timeout=_vision_timeout_seconds())
                 logger.info("VL custom-prompt analysis complete with model %s", _model)
+                _vcache.put(_vkey, answer, _model)
                 return {"text": answer, "model": _model}
             except Exception as e:
                 last_err = e

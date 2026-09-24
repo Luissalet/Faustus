@@ -164,6 +164,9 @@ DEFAULT_SETTINGS = {
     # Longest side of an image sent to the Vision model for one question when
     # the caller did not ask for more (a CPU-only model is minutes per page).
     "vision_max_side": 1280,
+    # Cache of vision answers by image, prompt and model (src/vision_cache.py).
+    "vision_cache_enabled": True,
+    "vision_cache_max_age_days": 30,
     # Tool-result images (FAUSTUS). A tool that returns an image (an MCP
     # browser screenshot, desktop_screenshot) hands it to the model as an
     # image block when the model can see; the longest side is capped at
