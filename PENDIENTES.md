@@ -3,6 +3,14 @@
 Actualizado: 23-09-2026. REGLA: nunca nombres de empresas/personas del buzÃ³n de Luis en commits, docs, tests ni comentarios â€” ejemplos siempre ficticios. SÃ³lo trabajo vigente; quitar cada entrada al cerrarla.
 
 
+## 24-09 — `inspect_image` sin probar en vivo (FAUSTUS.md §181)
+
+- **Probar `inspect_image` contra un modelo de Visión real y un modelo principal con visión real.** Todos los tests nuevos (`tests/test_inspect_image_core.py`, `tests/test_inspect_image_tool.py`) usan `llm_call`/`analyze_image_with_vl_prompt` simulados; falta un turno real (foto con un círculo dibujado a mano, `action: "ask"` con una pregunta concreta) contra un endpoint de Visión de verdad.
+- **`pypdfium2`/`pdf2image` no están instalados en este entorno**: el renderizado de página de PDF (`load_from_path` con `.pdf`) sólo se comprobó por su camino de degradación (mensaje claro, sin traceback). Instalar uno de los dos en un entorno con red y confirmar el camino "feliz".
+- **`opencv` tampoco está instalado**: `detect_shapes` sólo se ha ejercitado por su alternativa Pillow/`numpy`. Instalar `opencv-python` y comparar la detección de círculos/rectángulos/líneas de `cv2.HoughCircles`/contornos contra la alternativa en la misma imagen sintética.
+- Considerar exponer `inspect_image` también por MCP si algún cliente externo (no el propio Studio) lo pide.
+
+
 ## 23-09 noche — grafo de código+, prior art y el bucle con el 27B (FAUSTUS.md §179)
 
 - **Servidor de modelo estropeado.** El `llama-server` 8081 se estropeó (devolvía `////` y sopa de tokens) y el turno murió a los 14 min con un 500 del analizador. Los bucles dentro de argumentos ya se cortan (§179); falta detectar un servidor que devuelve basura desde el primer token para decirlo y no esperar, y medir si hace falta un corte por silencio a mitad de stream.
