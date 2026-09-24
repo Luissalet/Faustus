@@ -6588,6 +6588,7 @@ async def _stream_agent_loop_body(
         mismatch_nudge_message as _mismatch_nudge_message,
         localize_runtime_note as _localize_runtime_note,
     )
+    from src import research_streak as _research_streak
     _reply_language_hint = _turn_language(messages)
     _required_reply_lang = (
         (_reply_language_hint or {}).get("_reply_language")
@@ -8865,6 +8866,18 @@ async def _stream_agent_loop_body(
     _pending_language_nudge = False
     _todo_nudged = False
     _todo_refresh_nudged = False
+    # Research streak (FAUSTUS.md pending item, 23-09 noche): consecutive
+    # rounds whose tool calls only read remote content (web_search/web_fetch,
+    # or a bash/powershell call that is just curl/wget/Invoke-WebRequest/git
+    # clone). `_web_read_streak` counts them; `_web_streak_nudged` blocks a
+    # second nudge for the SAME streak once it has already fired, and clears
+    # the moment the streak breaks so the next streak can nudge again.
+    try:
+        _web_streak_nudge_at = int(get_setting("agent_web_streak_nudge", 8) or 0)
+    except Exception:
+        _web_streak_nudge_at = 8
+    _web_read_streak = 0
+    _web_streak_nudged = False
     _qwen38_notice_sent = False
     _budget_stop_echo_retried = False
     _round_finish_reason = None
@@ -14401,6 +14414,43 @@ async def _stream_agent_loop_body(
                              endpoint_url=(_pinned_fallback_candidate[0]
                                            if _pinned_fallback_candidate else endpoint_url),
                              tool_images_enabled=(False if _images_refused else None))
+
+        # Research streak (FAUSTUS.md pending item, 23-09 noche): a gentle,
+        # non-blocking nudge when many consecutive rounds only read remote
+        # content. A round breaks the streak the instant it writes a file,
+        # touches the plan/todo list, or does anything that is not itself a
+        # bare remote fetch -- narration text alone does not save it, on
+        # purpose: "Reading the next file..." between every curl call is
+        # exactly the pattern this guards against.
+        if _web_streak_nudge_at > 0:
+            _round_tool_calls = [(b.tool_type, b.content) for b in (tool_blocks or [])]
+            _round_touches_plan = any(
+                name in ("todowrite", "update_plan") for name, _ in _round_tool_calls
+            )
+            if (not _round_touches_plan
+                    and _research_streak.is_remote_read_only_round(_round_tool_calls)):
+                _web_read_streak += 1
+            else:
+                _web_read_streak = 0
+                _web_streak_nudged = False
+            if _web_read_streak >= _web_streak_nudge_at and not _web_streak_nudged:
+                _web_streak_nudged = True
+                messages.append({
+                    "role": "user",
+                    "_harness_note": True,
+                    "content": _lang_note(_research_streak.streak_nudge_message(_web_read_streak)["content"]),
+                })
+                _ledger.notes.append(f"web_streak_nudge@{round_num}:{_web_read_streak}")
+                logger.info(
+                    "[harness] round %s: %d consecutive remote-read-only rounds — nudging",
+                    round_num, _web_read_streak,
+                )
+                yield (
+                    "data: " + json.dumps({
+                        "type": "harness_check", "status": "web_read_streak",
+                        "round": round_num, "streak": _web_read_streak,
+                    }) + "\n\n"
+                )
 
         # Progress discipline: a multi-step workspace task that is several tool
         # calls in without a todowrite list gets one nudge, so the Progress

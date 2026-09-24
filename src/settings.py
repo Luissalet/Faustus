@@ -713,6 +713,14 @@ DEFAULT_SETTINGS = {
     # before giving up and asking the user a concrete question instead of
     # ending the turn silently. Was hardcoded to 1.
     "agent_empty_round_max_nudges": 3,
+    # PENDIENTES 23-09 noche / src/research_streak.py: how many CONSECUTIVE
+    # rounds of reading only remote content (web_search/web_fetch, or a bash/
+    # powershell call that is just curl/wget/Invoke-WebRequest/git clone),
+    # with no file written and no plan/todo update, trigger one gentle
+    # nudge asking the model to summarise, decide if it has enough, and
+    # either answer or name the one fact still missing. Non-blocking: the
+    # model is free to keep reading afterwards. 0 disables it.
+    "agent_web_streak_nudge": 8,
     # BUG-STOP-01: a hard wall-clock ceiling per turn, independent of round
     # count — the backstop for a turn whose rounds are each individually
     # cheap (so the round-budget/progress-gate checks above never trip) but
