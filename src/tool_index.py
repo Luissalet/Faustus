@@ -393,6 +393,9 @@ BUILTIN_TOOL_DESCRIPTIONS: Dict[str, str] = {
     # checked live against the GitHub API before it reaches the user --
     # models recall repo names badly. src/prior_art.py.
     "prior_art": "Before building something, work out which parts already exist as maintained open-source projects to reuse (dependency), which exist only as a reference to adapt (study the approach, write your own code -- mandatory when the license is incompatible), and which are small/generic enough to write. Every repository name is checked live against the GitHub API before being presented as real -- existence, archived/fork status, health (last push), stars, and license compatibility. Actions: rubric (the decomposition checklist, no network), verify (check a filled slate live, ranked table + next actions), search (GitHub repo search when there's no candidate yet), report (read back or list saved verify reports). Use for 'does this already exist', 'is there a library for this', 'should I write this myself or use a package', 'reuse or write it', 'ya existe una librería para esto', 'antes de construir esto, qué hay ya', 'no reinventes la rueda', 'hay alguna alternativa de código abierto'.",
+    # Lot F: git history understanding for the codebase explorer --
+    # src/code_history.py / src/agent_tools/code_history_tools.py.
+    "code_history": "Git history understanding for a file or a symbol inside it: who changed it, how often, with which commits, what else usually changes with it, and the risk that implies (churn, author count, co-change fan-out, presence of tests). Read-only, subprocess `git` only. Use for 'who wrote this', 'how often does this file change', 'what usually changes together with this file', 'is this file risky to touch', 'quién ha tocado este archivo', 'qué suele cambiar junto a esto', 'es arriesgado modificar esto'.",
 }
 
 

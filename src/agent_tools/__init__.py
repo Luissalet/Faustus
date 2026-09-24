@@ -25,6 +25,7 @@ from .filesystem_tools import ReadFileTool, WriteFileTool, EditFileTool, ApplyPa
 from .coding_tools import TodoWriteTool
 from .subagent_tools import DelegateAgentsTool
 from .code_tools import FindSymbolTool, CallersTool, TestsForTool, RenameSymbolTool
+from .code_history_tools import CodeHistoryTool
 from .document_tools import CreateDocumentTool, UpdateDocumentTool, EditDocumentTool, SuggestDocumentTool, ManageDocumentTool
 from .interaction_tools import AskUserTool, UpdatePlanTool, LookupToolsTool
 from .model_interaction_tools import ChatWithModelTool, AskTeacherTool, ListModelsTool
@@ -272,6 +273,9 @@ TOOL_HANDLERS = {
     # Prior art (GIT-08): reuse, adapt, or write, with every repository name
     # checked live before it reaches the user. See src/prior_art.py.
     "prior_art": PriorArtTool().execute,
+    # Lot F: git history understanding for a file/symbol -- read-only, see
+    # src/code_history.py / src/agent_tools/code_history_tools.py.
+    "code_history": CodeHistoryTool().execute,
 }
 # Config/integration admin tools (manage_endpoints/mcp/webhooks/tokens/settings).
 TOOL_HANDLERS.update(ADMIN_TOOL_HANDLERS)
@@ -424,7 +428,9 @@ TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_fi
              # GitHub -- src/agent_tools/prior_art_tools.py.
              "prior_art",
              # Targeted image inspection -- src/agent_tools/image_inspect_tool.py.
-             "inspect_image"} | BUILTIN_EMAIL_TOOLS | DESKTOP_TOOLS | SEMANTIC_TOOLS
+             "inspect_image",
+             # Lot F: git history for a file/symbol -- src/code_history.py.
+             "code_history"} | BUILTIN_EMAIL_TOOLS | DESKTOP_TOOLS | SEMANTIC_TOOLS
 
 ToolBlock = namedtuple("ToolBlock", ["tool_type", "content"])
 

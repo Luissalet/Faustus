@@ -3623,6 +3623,26 @@ FUNCTION_TOOL_SCHEMAS = [
             }
         }
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "code_history",
+            "description": "Git history understanding for a file or symbol: who changed it, how often, with which commits, what else usually changes with it, and the risk that implies. Read-only. Use it for 'who wrote this', 'how often does this file change', 'what usually changes together with this file', 'is this risky to touch', 'quien ha tocado este archivo', 'que suele cambiar junto a esto'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "File path (relative to the workspace, or absolute inside it)."},
+                    "symbol": {"type": "string", "description": "Optional function/class name inside `path` to narrow the history to just that symbol's body."},
+                    "mode": {"type": "string", "enum": ["explain", "file", "symbol", "blame", "co_change", "risk"], "description": "explain (default): everything combined with a short summary; file: commit list + churn; symbol: history of one symbol (requires `symbol`); blame: current lines by author; co_change: files that usually change together with `path`; risk: 0-1 heuristic score with explanation."},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 2000, "description": "Commits to consider (mode-dependent default)."},
+                    "start": {"type": "integer", "description": "For mode=blame: first line (1-based) of the range."},
+                    "end": {"type": "integer", "description": "For mode=blame: last line (1-based) of the range."},
+                    "workspace": {"type": "string", "description": "Optional workspace root override; defaults to the turn's active workspace."}
+                },
+                "required": ["path"]
+            }
+        }
+    },
 ]
 
 

@@ -808,6 +808,16 @@ _register(
     {"manage_instincts"},
     ToolEffect.WRITE_PRIVATE,
 )
+_register(
+    # Lot F: code_history (src/code_history.py) only reads the workspace's
+    # own `git` history (log/blame/diff of files already on disk) — same
+    # class as find_symbol/callers/tests_for above: a workspace-scoped
+    # reader whose result quotes source/commit text an attacker could have
+    # planted in the repo.
+    {"code_history"},
+    ToolEffect.READ_WORKSPACE,
+    result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED,
+)
 
 
 TOOL_CAPABILITIES: Mapping[str, ToolCapabilities] = MappingProxyType(dict(_REGISTRY))

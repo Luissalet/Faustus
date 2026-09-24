@@ -296,6 +296,8 @@ PLAN_MODE_READONLY_TOOLS = {
     "git_status",
     "git_log",
     "git_diff",
+    # Lot F: code_history -- git history for a file/symbol, inspection only.
+    "code_history",
     # Project board read tools (Lote 92): inspection only.
     "board_list",
     "board_ready",

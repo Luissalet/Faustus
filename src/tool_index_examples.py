@@ -1235,4 +1235,14 @@ EXAMPLES: Dict[str, List[str]] = {
         "verify that this GitHub repo is real and not abandoned",
         "qué repos existen para hacer esto, compáralos",
     ],
+
+    # ── Lot F: code_history — git history understanding ────────────────────
+    "code_history": [
+        "who has changed this file the most",
+        "how often does this function change",
+        "quién ha tocado este archivo últimamente",
+        "qué archivos suelen cambiar junto con este",
+        "es arriesgado modificar esta función",
+        "muéstrame el historial de este símbolo",
+    ],
 }
