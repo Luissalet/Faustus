@@ -570,6 +570,20 @@ def _load_vl_settings() -> dict:
         return {}
 
 
+def _vision_unavailable_text(configured: str, exc: Exception) -> str:
+    """Why no vision model answered, in words that point at the real cause.
+
+    Live (25-09): the vision model's server had stopped; resolving the
+    configured model failed and the answer said "No vision model
+    configured", so the agent told the user vision was not set up and gave
+    up on the images, when one start of that server would have fixed it."""
+    if configured:
+        reason = str(exc).strip()[:200] or "its endpoint did not list it"
+        return (f"[Vision model '{configured}' is configured but not reachable right now "
+                f"({reason}) — is its server running? Check Settings → Vision / Local models]")
+    return "[No vision model configured — set one in Settings → Vision]"
+
+
 def _resolve_vl_model(configured: str, owner: str | None = None) -> tuple:
     """Resolve the vision model to (url, model_id, headers).
 
@@ -608,8 +622,10 @@ def analyze_image_with_vl_result(image_path: str, owner: str | None = None) -> d
 
         try:
             url, model_id, headers = _resolve_vl_model(vl_model, owner=owner)
-        except ValueError:
-            return {"text": "[No vision model configured — set one in Settings → Vision]", "model": vl_model or ""}
+        except ValueError as exc:
+            # No model answered: an empty "model" is how callers tell a note
+            # about vision from a vision answer (inspect_image, the cache).
+            return {"text": _vision_unavailable_text(vl_model, exc), "model": "", "unavailable": True}
 
         with open(image_path, "rb") as f:
             img_data = base64.b64encode(f.read()).decode("utf-8")
@@ -699,8 +715,10 @@ def analyze_image_with_vl_prompt(
 
         try:
             url, model_id, headers = _resolve_vl_model(vl_model, owner=owner)
-        except ValueError:
-            return {"text": "[No vision model configured — set one in Settings → Vision]", "model": vl_model or ""}
+        except ValueError as exc:
+            # No model answered: an empty "model" is how callers tell a note
+            # about vision from a vision answer (inspect_image, the cache).
+            return {"text": _vision_unavailable_text(vl_model, exc), "model": "", "unavailable": True}
 
         from src import vision_cache as _vcache
         _vkey = _vcache.key_for(model_id, prompt, images)

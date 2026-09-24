@@ -48,3 +48,21 @@ def test_vision_calls_carry_the_token_cap(monkeypatch):
     out = dp.analyze_image_with_vl_prompt([(b"png-bytes", "image/png")], "what is circled?")
     assert out["text"] == "answer"
     assert seen["max_tokens"] == 777
+
+
+def test_a_configured_but_unreachable_vision_model_is_not_reported_as_missing(monkeypatch, tmp_path):
+    from src import document_processor as dp
+    img = tmp_path / "a.png"
+    img.write_bytes(b"\x89PNG\r\n\x1a\n")
+    monkeypatch.setattr(dp, "_load_vl_settings", lambda: {"vision_enabled": True, "vision_model": "vl-local"})
+
+    def boom(configured, owner=None):
+        raise ValueError("model 'vl-local' not found on any reachable endpoint")
+    monkeypatch.setattr(dp, "_resolve_vl_model", boom)
+    out = dp.analyze_image_with_vl_result(str(img))
+    assert out["model"] == "" and out.get("unavailable")
+    assert "configured but not reachable" in out["text"] and "vl-local" in out["text"]
+    assert "No vision model configured" not in out["text"]
+
+    monkeypatch.setattr(dp, "_load_vl_settings", lambda: {"vision_enabled": True, "vision_model": ""})
+    assert "No vision model configured" in dp.analyze_image_with_vl_result(str(img))["text"]
