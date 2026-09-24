@@ -524,6 +524,21 @@ GROUPS: list[dict[str, Any]] = [
             _int("agent_loop_breaker_cycle_min_repeats_long", "Loop breaker: 3-4 step cycle repeats",
                  "Full repetitions of a 3- or 4-call cycle before it is nudged.",
                  2, 50),
+            # Handoff lanes (src/handoff_lanes.py): permissions-as-topology,
+            # which agent may delegate to which, with which tools. The
+            # dedicated Studio panel (GET/PUT /api/handoff-lanes) is the
+            # normal editor; this raw-JSON field is the fallback for a
+            # generic settings client.
+            _list("agent_handoff_lanes", "Handoff lanes",
+                  "Structured lane objects ({\"id\",\"from\",\"to\",\"tools_allow\"?,"
+                  "\"tools_deny\"?,\"max_depth\"?,\"note\"?}) -- edit through the dedicated "
+                  "Handoff lanes panel (Agents) or GET/PUT /api/handoff-lanes, which validate "
+                  "each lane; this generic form only shows the count. Empty by default."),
+            _select("agent_handoff_lanes_mode", "Handoff lanes mode",
+                    "off: unchanged behaviour (default). shadow: evaluate every delegation and "
+                    "log the decision, never block. enforce: refuse a delegation no lane covers, "
+                    "and narrow a covered one to its lane's tools.",
+                    options=["off", "shadow", "enforce"]),
         ],
     ),
     _group(

@@ -133,6 +133,8 @@ def test_groups_follow_the_requested_layout():
             # and its optional extra model pool, kept in this group for the
             # same reason as above.
             "agent_fanout_max_parallel", "agent_fanout_model_pool",
+            # Handoff lanes (lot E): permissions-as-topology for delegation.
+            "agent_handoff_lanes", "agent_handoff_lanes_mode",
             } == set(by_group["subagents"])
     assert {"agent_runs_persist", "agent_runs_keep_hours", "agent_queue_local_concurrency",
             "agent_queue_api_concurrency", "agent_scorecard"} == set(by_group["runs"])
