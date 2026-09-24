@@ -24,6 +24,7 @@ from .web_tools import WebSearchTool, WebFetchTool
 from .filesystem_tools import ReadFileTool, WriteFileTool, EditFileTool, ApplyPatchTool, LsTool, GlobTool, GrepTool, GetWorkspaceTool
 from .coding_tools import TodoWriteTool
 from .subagent_tools import DelegateAgentsTool
+from .night_shift_tools import NightShiftTool
 from .code_tools import FindSymbolTool, CallersTool, TestsForTool, RenameSymbolTool
 from .document_tools import CreateDocumentTool, UpdateDocumentTool, EditDocumentTool, SuggestDocumentTool, ManageDocumentTool
 from .interaction_tools import AskUserTool, UpdatePlanTool, LookupToolsTool
@@ -280,6 +281,9 @@ TOOL_HANDLERS = {
     # CI failure analyzer (lot C): what really broke in a GitHub Actions run,
     # read from the run's own logs. See src/ci_failures.py.
     "ci_failures": CiFailuresTool().execute,
+    # Night shift (lot E): an unattended queue of dispatch jobs run under a
+    # budget, with a morning report. See src/night_shift.py.
+    "night_shift": NightShiftTool().execute,
 }
 # Config/integration admin tools (manage_endpoints/mcp/webhooks/tokens/settings).
 TOOL_HANDLERS.update(ADMIN_TOOL_HANDLERS)
@@ -450,6 +454,8 @@ TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_fi
              "ci_failures"} | BUILTIN_EMAIL_TOOLS | DESKTOP_TOOLS | SEMANTIC_TOOLS
              # Lot D: fix memory -- src/agent_tools/fix_memory_tools.py.
              "recall_fixes"} | BUILTIN_EMAIL_TOOLS | DESKTOP_TOOLS | SEMANTIC_TOOLS
+             # Night shift (lot E): src/agent_tools/night_shift_tools.py.
+             "night_shift"} | BUILTIN_EMAIL_TOOLS | DESKTOP_TOOLS | SEMANTIC_TOOLS
 
 ToolBlock = namedtuple("ToolBlock", ["tool_type", "content"])
 

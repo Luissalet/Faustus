@@ -1121,6 +1121,12 @@ class SubagentRun:
         #: Empty for a worker this delegation never checked (e.g. a run that
         #: raised before `one()` reached the receipt step).
         self.receipts: List[Dict[str, Any]] = []
+        #: `src/handoff_lanes.py` (mode `enforce` only): the lane that matched
+        #: this run's delegation, and the extra tools it takes back away on
+        #: top of whatever `worker_disabled_tools` already denies. Empty/None
+        #: when the feature is off (the default) or in `shadow` mode.
+        self.lane_id: Optional[str] = None
+        self.lane_disabled_tools: set = set()
 
     def touch(self) -> None:
         self.last_event_at = time.time()
@@ -1454,7 +1460,7 @@ async def _run_subagent(
             headers=headers, temperature=0.3, max_tokens=0,
             max_rounds=max_rounds, session_id=child_sid, owner=owner,
             workspace=workspace, workspace_roots=workspace_roots,
-            disabled_tools=worker_disabled_tools(run.instruction, run.permissions),
+            disabled_tools=worker_disabled_tools(run.instruction, run.permissions) | run.lane_disabled_tools,
             security_gate_bypass=True, _is_teacher_run=True,
             gen_overrides=gen_overrides,
             harness_options=_worker_opts,
@@ -1938,6 +1944,20 @@ class DelegateAgentsTool:
         depth_error = _attach_permissions(runs, ctx, workspace, roots)
         if depth_error:
             return {"error": depth_error, "exit_code": 1}
+        # Handoff lanes (src/handoff_lanes.py): an explicit, inspectable
+        # topology of which agent may delegate to which, with which tools.
+        # `off` (the default) makes this call return "" without reading
+        # anything else — byte-for-byte the same behaviour as before this
+        # existed. Must run AFTER permissions are derived (a lane can only
+        # narrow a worker's tools, never grant beyond its definition) and
+        # BEFORE any worker starts (a lane refusal must cost nothing).
+        from src import handoff_lanes as _handoff_lanes
+        _lane_parent = _parent_standing(ctx, workspace, roots)
+        _lane_from = str(getattr(_lane_parent, "slug", "") or "main")
+        _lane_depth = int(getattr(_lane_parent, "depth", 0) or 0)
+        lane_error = _handoff_lanes.apply(runs, _lane_from, _lane_depth)
+        if lane_error:
+            return {"error": lane_error, "exit_code": 1}
         # The effective configuration, pinned next to the permissions and
         # deliberately after them: the resolver contributes the completion mode,
         # the limits and the record; it never contributes authority.

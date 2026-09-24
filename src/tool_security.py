@@ -140,6 +140,7 @@ NON_ADMIN_BLOCKED_TOOLS = BUILTIN_EMAIL_TOOLS | {
     "python",
     "powershell",
     "delegate_agents",
+    "night_shift",
     "manage_bg_jobs",
     "read_file",
     "inspect_media",

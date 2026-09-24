@@ -1618,6 +1618,20 @@ DEFAULT_SETTINGS = {
     # Whether a coding-task turn automatically recalls and injects past
     # fixes, vs. only ever being available through the `recall_fixes` tool.
     "fix_memory_auto_recall": True,
+    # Handoff lanes (src/handoff_lanes.py): an explicit, inspectable policy
+    # of which agent may delegate to which, with which tools. A list of
+    # lane dicts, `src.handoff_lanes.validate()` is the schema. Empty by
+    # default -- adding lanes has no effect until the mode below leaves "off".
+    "agent_handoff_lanes": [],
+    # off (default, byte-for-byte unchanged behaviour) | shadow (evaluate and
+    # log every delegation, never block) | enforce (refuse an uncovered
+    # delegation; narrow a covered one to its lane's tools).
+    "agent_handoff_lanes_mode": "off",
+    # Night shift (src/night_shift.py): an unattended queue of dispatch jobs
+    # run overnight under a budget, with a morning report. Defaults for a
+    # shift that does not state its own ceiling.
+    "night_shift_default_max_minutes": 120,
+    "night_shift_default_max_tasks": 8,
 }
 
 

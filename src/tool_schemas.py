@@ -3702,6 +3702,26 @@ FUNCTION_TOOL_SCHEMAS = [
                     "branch": {"type": "string", "description": "Only consider runs on this branch (default: any branch)."},
                     "propose": {"type": "boolean", "description": "Ask the configured utility model for a ranked {cause, fix, confidence} per failure (default false)."},
                     "limit": {"type": "integer", "minimum": 1, "maximum": 100, "description": "Failures to return (default 20)."}
+            "name": "night_shift",
+            "description": "An unattended queue of dispatch jobs run overnight under a budget, with a morning report -- 'run these N things tonight and tell me in the morning'. Actions: start (queue a shift: task descriptions, a workspace, and a budget of minutes/tasks/tokens -- each task runs as its own verified worker, sequentially, stopping cleanly once the budget runs out); status (a shift's state and per-task results so far, or the recent shifts when no id is given); stop (ask a running shift to stop after its current task); report (the Markdown morning report for a shift, or the latest one when no id is given).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["start", "status", "stop", "report"], "description": "Default 'start'."},
+                    "id": {"type": "string", "description": "A shift id, for status/stop/report. Omitted on status/report: the recent shifts / the latest shift."},
+                    "tasks": {"type": "array", "items": {"type": "string"}, "description": "start: up to 12 task descriptions, run one after another."},
+                    "workspace": {"type": "string", "description": "start: the absolute folder the shift's workers are confined to. Defaults to the current workspace."},
+                    "budget": {
+                        "type": "object",
+                        "description": "start: how far the shift may go before it stops cleanly.",
+                        "properties": {
+                            "max_minutes": {"type": "integer", "description": "Default from settings (120)."},
+                            "max_tasks": {"type": "integer", "description": "Default from settings (8)."},
+                            "max_tokens": {"type": "integer", "description": "Optional; unlimited when omitted."}
+                        }
+                    },
+                    "model": {"type": "string", "description": "start: model for every task in the shift. Empty = the resolved default."},
+                    "verify": {"type": "boolean", "description": "start: verify each task's work (default true)."}
                 },
                 "required": []
             }

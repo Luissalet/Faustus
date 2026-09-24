@@ -403,6 +403,9 @@ BUILTIN_TOOL_DESCRIPTIONS: Dict[str, str] = {
     # CI failure analyzer (lot C): reads the actual GitHub Actions run's own
     # logs instead of just "it failed". src/ci_failures.py.
     "ci_failures": "What actually broke in the last (or a given) GitHub Actions run for the repo behind this workspace's git remote: reads the failed jobs' own logs and pulls out the concrete pytest/jest/tsc/eslint/cargo/go/npm/generic failure -- file, line, test, message -- then maps each one onto the real file in the workspace with who last touched it and, best effort, which area of the codebase it belongs to. Set propose=true (needs a utility model configured) for a ranked cause/fix guess per failure. Read-only, network. Use for 'why did CI fail', 'what broke in the last run', 'read the actual test failure from GitHub Actions', 'qué falló en el pipeline', 'por qué falló el workflow'.",
+    # Night shift (lot E): an unattended queue of dispatch jobs run under a
+    # budget, with a morning report. src/night_shift.py.
+    "night_shift": "Queue up a short list of tasks (up to 12) to run unattended, sequentially, each as its own verified worker, under a budget of minutes/tasks/tokens that stops the queue cleanly once spent -- then read back a morning report of what got done, what changed, and what needs your attention. Actions: start (tasks, workspace, budget), status (a shift's progress), stop (ask a running shift to stop after its current task), report (the Markdown report for a shift, or the latest one). Use for 'run these overnight', 'queue this up for tonight and report in the morning', 'night shift', 'trabaja en esto durante la noche', 'dime en la mañana qué hiciste', 'turno nocturno'.",
 }
 
 

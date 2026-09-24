@@ -10,6 +10,7 @@ import {
   type EffectiveConfig,
 } from '../../adapters/agents';
 import { ProfileLint } from './ProfileLint';
+import { HandoffLanesPanel } from './HandoffLanes';
 import { t, tn } from '../../i18n';
 
 /**
@@ -148,6 +149,7 @@ export function Defs({ onUseAgent }: { onUseAgent: (slug: string) => void }) {
   const [effectiveFor, setEffectiveFor] = useState<string | null>(null);
   const [effective, setEffective] = useState<EffectiveConfig | null>(null);
   const [lintOpen, setLintOpen] = useState(false);
+  const [handoffLanesOpen, setHandoffLanesOpen] = useState(false);
 
   const flash = (msg: string) => {
     setToast(msg);
@@ -234,6 +236,15 @@ export function Defs({ onUseAgent }: { onUseAgent: (slug: string) => void }) {
           title={t('Legal-but-suspicious profile and workflow configurations')}
           onClick={() => setLintOpen(true)}
           testId="def-lint-open"
+        />
+        <Button
+          variant="secondary"
+          size="sm"
+          icon={SlidersHorizontal}
+          label={t('Handoff lanes')}
+          title={t('Which agent may delegate to which, with which tools')}
+          onClick={() => setHandoffLanesOpen(true)}
+          testId="def-handoff-lanes-open"
         />
         <Button variant="ghost" size="sm" icon={RefreshCw} label={t('Refresh')} onClick={() => void load()} />
       </div>
@@ -356,6 +367,7 @@ export function Defs({ onUseAgent }: { onUseAgent: (slug: string) => void }) {
       )}
       {toast && <Toast>{toast}</Toast>}
       {lintOpen && <ProfileLint onClose={() => setLintOpen(false)} />}
+      {handoffLanesOpen && <HandoffLanesPanel onClose={() => setHandoffLanesOpen(false)} />}
     </div>
   );
 }
