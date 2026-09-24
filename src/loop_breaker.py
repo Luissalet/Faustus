@@ -86,6 +86,40 @@ DEFAULT_CYCLE_DETECTION = True
 DEFAULT_CYCLE_MIN_REPEATS_P2 = 3
 DEFAULT_CYCLE_MIN_REPEATS_LONG = 2
 
+#: Revisit detection: the same call again with only its numbers nudged
+#: (a crop region shifted by a few hundredths, the same question each
+#: time). Seen live: a vision question asked six times over overlapping
+#: regions of one page, the answers never converging. A run of calls whose
+#: arguments match once numbers are masked counts as circling when at least
+#: REVISITS_TO_NUDGE of them land close to an earlier call of the run and
+#: the run is RUN_TO_NUDGE long. Integers must match exactly to be "close"
+#: (page 3 then page 4 is progress, not a revisit); other numbers within
+#: REVISIT_TOLERANCE of each other are.
+DEFAULT_REVISIT_RUN_TO_NUDGE = 4
+DEFAULT_REVISITS_TO_NUDGE = 2
+REVISIT_TOLERANCE = 0.12
+
+_NUMBER_RE = __import__("re").compile(r"-?\d+(?:\.\d+)?")
+
+
+def _mask_numbers(norm_args: str) -> Tuple[str, Tuple[float, ...], Tuple[bool, ...]]:
+    numbers = _NUMBER_RE.findall(norm_args)
+    values = tuple(float(n) for n in numbers)
+    is_int = tuple("." not in n for n in numbers)
+    return _NUMBER_RE.sub("#", norm_args), values, is_int
+
+
+def _close(a: Tuple[float, ...], b: Tuple[float, ...], ints: Tuple[bool, ...]) -> bool:
+    if len(a) != len(b):
+        return False
+    for x, y, integer in zip(a, b, ints):
+        if integer:
+            if x != y:
+                return False
+        elif abs(x - y) > REVISIT_TOLERANCE:
+            return False
+    return True
+
 
 def normalize_args(args: Any) -> str:
     """A canonical string for "the same call again" — key order and
@@ -162,6 +196,15 @@ class LoopPolicy:
     last_cycle_period: Optional[int] = field(default=None, repr=False)
     last_cycle_repeats: Optional[int] = field(default=None, repr=False)
     last_cycle_reason: Optional[str] = field(default=None, repr=False)
+    # Revisit track (see DEFAULT_REVISIT_*): masked signature of the current
+    # run, the number vectors seen in it, how many were revisits, and
+    # whether this run already got its one nudge.
+    revisit_detection: bool = True
+    _revisit_key: Optional[str] = field(default=None, repr=False)
+    _revisit_vectors: List[Tuple[float, ...]] = field(default_factory=list, repr=False)
+    _revisit_count: int = field(default=0, repr=False)
+    _revisit_nudged: bool = field(default=False, repr=False)
+    last_revisit_run: Optional[int] = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         # A misconfigured setting (block_after <= nudge_after, or a floor
@@ -227,7 +270,36 @@ class LoopPolicy:
             self._blocked_at = None
         streak_action = self._streak_action(tool)
         self._history.append((tool, norm_args, result_hash))
-        return self._finalize(tool, streak_action)
+        revisit = self._observe_revisit(tool, norm_args)
+        action = self._finalize(tool, streak_action)
+        if action == "none" and revisit:
+            self.last_trigger = "revisit"
+            return "nudge"
+        return action
+
+    def _observe_revisit(self, tool: str, norm_args: str) -> bool:
+        """Advance the revisit track; True exactly once per run, when it
+        first qualifies as circling."""
+        if not self.revisit_detection:
+            return False
+        masked, values, ints = _mask_numbers(norm_args)
+        key = f"{tool}\u241f{masked}"
+        if key != self._revisit_key or not values:
+            self._revisit_key = key if values else None
+            self._revisit_vectors = [values] if values else []
+            self._revisit_count = 0
+            self._revisit_nudged = False
+            return False
+        if any(_close(values, earlier, ints) for earlier in self._revisit_vectors):
+            self._revisit_count += 1
+        self._revisit_vectors.append(values)
+        run = len(self._revisit_vectors)
+        if (not self._revisit_nudged and run >= DEFAULT_REVISIT_RUN_TO_NUDGE
+                and self._revisit_count >= DEFAULT_REVISITS_TO_NUDGE):
+            self._revisit_nudged = True
+            self.last_revisit_run = run
+            return True
+        return False
 
     def observe_skipped(self, tool: str, args: Any) -> str:
         """A duplicate the runtime refused to execute (so there is no result

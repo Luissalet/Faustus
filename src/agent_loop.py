@@ -14214,7 +14214,18 @@ async def _stream_agent_loop_body(
             # pattern instead of "this exact call" (which would be false —
             # no single call repeated, the pair/triple did).
             _loop_is_cycle = _loop_policy.last_trigger == "cycle"
-            if _loop_action == "nudge":
+            if _loop_action == "nudge" and _loop_policy.last_trigger == "revisit":
+                messages.append({"role": "user", "_harness_note": True, "content": (
+                    _lang_note("[Runtime loop recovery — not a new user request] You have made "
+                    f"the same {block.tool_type} call {_loop_policy.last_revisit_run} times in a row "
+                    "with only its numbers shifted, going back over the same ground, and the answers "
+                    "are not converging. Stop re-asking: decide with what you already have, mark what "
+                    "stays uncertain, or change approach (another tool, another source, or a different "
+                    "question).")
+                )})
+                logger.info("[loop-breaker] revisit nudge after %s near-identical calls to %s",
+                            _loop_policy.last_revisit_run, block.tool_type)
+            elif _loop_action == "nudge":
                 if _loop_is_cycle:
                     messages.append({"role": "user", "_harness_note": True, "content": (
                         _lang_note("[Runtime loop recovery — not a new user request] You are "
