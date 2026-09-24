@@ -18,9 +18,11 @@ Actualizado: 23-09-2026. REGLA: nunca nombres de empresas/personas del buzÃ³n 
 
 - **El 27B sin visión propia aún no resuelve la prueba Saber.** Ejecuciones 9, 12 y 13: 37–60 rondas, sin respuesta. Cuello de botella: visión en CPU (`qwen3-vl-30b-cpu`, 30–120 s por pregunta) y que el modelo retranscribe la página (ya hay transcripción humana) en vez de buscar lo que falta. Probar la escalera de racha (§184, tercera tanda) en la ejecución 14 y, si sigue sin cerrar, medir el mismo examen con un modelo principal que vea.
 - **Ejecución 15**: primera respuesta completa (La Habana, ≈ 11,5/100). Hasta la 15 ninguna ejecución tuvo web (el cliente de pruebas no enviaba `allow_web_search`); la 16 va con web. Falta: identificar los círculos (objeto → fuerte), el numeral cisterciense y la unidad (185,2 m/cable), que dependen de la visión.
-- **Cliente de pruebas `talk3`** muere a mitad de turno con `0xC000013A` sin registrar señal (lanzado por WMI o por tarea programada; un proceso canario idéntico sobrevive). Mitigado con `_claude_tmp\exam_watch.py` (reanuda con la aprobación pendiente cuando no hay cliente). Causa sin encontrar.
+- **Cliente de pruebas `talk3`** muere a mitad de turno con `0xC000013A` sin registrar señal. Ahora instala un manejador de eventos de consola (`SetConsoleCtrlHandler`) que registra el evento y lo ignora; si vuelve a morir, el `.log` dirá qué evento fue. Sospecha: la misma caída de procesos de la app de escritorio que tumbó el 8081 el 24-09. Mitigado también con `exam_watch.py`.
 - **`unconsulted_sources`**: medir falsos positivos en turnos reales de conversación. (Una fuente leída en un turno anterior de la conversación ya cuenta: `TurnLedger.note_prior_message`.)
 - **Prueba 02 (Ingenio)** sin ejecutar todavía; el bonus sólo después de cerrar las dos.
+- **Recuperación del motor a mitad de turno** (`engine_swap.recover_after_connect_failure`): probada con tests; falta verla en vivo matando el llama-server gestionado durante un turno. El 8081 ya está adoptado como motor en el 7006; en el 7000 hay que adoptarlo igual (Ajustes → Modelos locales → Añadir motor → Rellenar).
+- **La barra de «modelos / otros»** de la tarjeta de VRAM sigue contando el motor llama.cpp como «otros»; las tarjetas por GPU ya lo nombran.
 - **El 7000** necesita reinicio y `vision_model` configurado (Ajustes → Visión) para tener lo del examen.
 
 
