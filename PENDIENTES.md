@@ -6,6 +6,8 @@ Actualizado: 23-09-2026. REGLA: nunca nombres de empresas/personas del buzÃ³n 
 ## 24-09 — examen Eldoria contra el 27B local (FAUSTUS.md §184)
 
 - **El 27B sin visión propia aún no resuelve la prueba Saber.** Ejecuciones 9, 12 y 13: 37–60 rondas, sin respuesta. Cuello de botella: visión en CPU (`qwen3-vl-30b-cpu`, 30–120 s por pregunta) y que el modelo retranscribe la página (ya hay transcripción humana) en vez de buscar lo que falta. Probar la escalera de racha (§184, tercera tanda) en la ejecución 14 y, si sigue sin cerrar, medir el mismo examen con un modelo principal que vea.
+- **Ejecución 15**: primera respuesta completa (La Habana, ≈ 11,5/100). Hasta la 15 ninguna ejecución tuvo web (el cliente de pruebas no enviaba `allow_web_search`); la 16 va con web. Falta: identificar los círculos (objeto → fuerte), el numeral cisterciense y la unidad (185,2 m/cable), que dependen de la visión.
+- **`unconsulted_sources`**: medir falsos positivos en turnos reales de conversación (una respuesta que cita una comprobación de un turno anterior se rechaza porque el libro es por turno).
 - **Prueba 02 (Ingenio)** sin ejecutar todavía; el bonus sólo después de cerrar las dos.
 - **El 7000** necesita reinicio y `vision_model` configurado (Ajustes → Visión) para tener lo del examen.
 
