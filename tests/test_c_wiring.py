@@ -46,3 +46,20 @@ def test_app_registers_the_library_routers():
     assert "/api/skills/library" in paths, (
         "app.py does not yet register routes.skill_library_routes; see C_wiring.md #2"
     )
+
+
+@pytest.mark.xfail(strict=True, reason="app.py does not yet register routes.ci_failures_routes; see C_wiring.md #3")
+def test_app_registers_the_ci_failures_router():
+    import app as app_module
+
+    paths = set()
+    for r in app_module.app.routes:
+        if hasattr(r, "path"):
+            paths.add(r.path)
+            continue
+        inner = getattr(r, "original_router", None)
+        prefix = getattr(getattr(r, "include_context", None), "prefix", "") or ""
+        for sub in getattr(inner, "routes", []) or []:
+            if hasattr(sub, "path"):
+                paths.add(prefix + sub.path)
+    assert "/api/ci/failures" in paths

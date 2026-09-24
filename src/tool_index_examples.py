@@ -1255,5 +1255,13 @@ EXAMPLES: Dict[str, List[str]] = {
         "hunt for bugs in the payment module",
         "stress test this function with weird inputs",
         "genera tests de casos límite para esta función y dime si hay bugs reales",
+    # ── CI failure analyzer (lot C) ─────────────────────────────────────
+    "ci_failures": [
+        "why did the last CI run fail",
+        "qué falló en el último pipeline de github actions",
+        "read the actual test failure from the failed workflow run",
+        "which file broke the build this time",
+        "check run 12345 and tell me what broke",
+        "propose a fix for what's failing in CI",
     ],
 }

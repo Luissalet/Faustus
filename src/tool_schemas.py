@@ -3676,6 +3676,17 @@ FUNCTION_TOOL_SCHEMAS = [
                     "run_only": {"type": "boolean", "description": "true: generate and run the tests but skip triage and keep_tests -- a quick 'does it already break' pass."}
                 },
                 "required": ["target"]
+            "name": "ci_failures",
+            "description": "What actually broke in the last (or a given) GitHub Actions run for the repo behind this workspace's git remote: reads the failed jobs' own logs and extracts the concrete pytest/jest/tsc/eslint/cargo/go/npm/generic failure blocks -- file, line, test, message -- then maps each one onto the real file in the workspace with who last touched it. Set propose=true (needs a utility model configured) for a ranked cause/fix guess per failure. Read-only, network. Use for 'why did CI fail', 'what broke in the last run', 'read the actual test failure from GitHub Actions', 'qué falló en el pipeline'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "run_id": {"type": "integer", "description": "Analyze this exact GitHub Actions run id instead of the latest failed one."},
+                    "branch": {"type": "string", "description": "Only consider runs on this branch (default: any branch)."},
+                    "propose": {"type": "boolean", "description": "Ask the configured utility model for a ranked {cause, fix, confidence} per failure (default false)."},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 100, "description": "Failures to return (default 20)."}
+                },
+                "required": []
             }
         }
     },

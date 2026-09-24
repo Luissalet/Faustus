@@ -310,6 +310,9 @@ PLAN_MODE_READONLY_TOOLS = {
     "board_ready",
     "board_get",
     "lookup_tools",
+    # CI failure analyzer (lot C): a read-only GitHub REST/`gh` CLI call,
+    # same class as prior_art/web_fetch.
+    "ci_failures",
 }
 
 
