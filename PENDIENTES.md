@@ -1272,15 +1272,13 @@ contamina a cual, y aislar ese estado en una fixture, como se hizo con
 - **`code_graph_drift` no se ha medido en un repositorio grande de verdad**: los tests usan repos sintéticos de un puñado de ficheros; falta ver cuánto tarda `drift()` (y si el presupuesto de tiempo por defecto, 8-10 s, es realista) en un repositorio con miles de ficheros como el propio Faustus.
 - **La habilidad `learn-this-repo` nunca se probó con un modelo real siguiendo sus pasos**: se verificó que el `SKILL.md` parsea, cumple el tope de palabras y sobrevive el reinstalado, pero nadie la ha usado de verdad para estudiar un repositorio — falta ver si el fichero de notas (`LEARN_REPO_NOTES.md`) que el modelo produce es realmente útil para retomar una sesión días después.
 
-## Radar de git (FAUSTUS.md §185) — pendiente de verificar en la máquina en vivo
+## Radar de git (FAUSTUS.md §185, §187)
 
-- Verificar en el 7001: `GET /api/git/radar` con las carpetas reales, la
-  tira en `/source-control`, el diálogo de carpetas vigiladas guardando una
-  ruta de Windows con barras invertidas, el badge del carril y el bloque de
-  Inicio (claro y oscuro, 420 px).
-- Coste en Windows: 62 repos = ~10 s (`git status` de repos grandes con
-  `--untracked-files=all`). La caché caducada ya se sirve al instante con
-  rescaneo de fondo; queda persistir la última instantánea en DATA_DIR para
-  que la PRIMERA llamada tras reiniciar tampoco espere.
-- Acción de vigilante (`watchers.py`) «avísame si algo lleva N días sin
-  push» y herramienta de sólo lectura `git_radar` para el agente.
+- Verificado en vivo en el 7001 (oscuro, escritorio): radar, tira, diálogo
+  de carpetas con rutas de Windows, badge, bloque de Inicio, clic → repo.
+  Sin probar: tema claro y 420 px; la tarjeta de Inicio del vigilante
+  `git_radar` con una notificación push real en el móvil; que el 27B llame
+  `git_radar` a la primera con «¿qué tengo sin subir?» (banco de frases
+  pasa, la conversación real no se ha hecho).
+- El 7000 (app de escritorio, `data/`) aún no tiene `git_watch_roots` ni
+  `git_scan_exclude`: ponerlos desde Source control → Watched folders.

@@ -62,7 +62,7 @@ NO_TOOL_SECURITY_CONTEXT = _NoToolSecurityContext()
 # exact call), which the generic `dynamic_handlers` fallback below does not
 # pass through.
 _GIT_TOOL_NAMES = frozenset({
-    "git_init", "git_publish", "git_status", "git_log", "git_diff",
+    "git_init", "git_publish", "git_radar", "git_status", "git_log", "git_diff",
     "git_branch", "git_checkout", "git_commit",
     "git_merge", "git_delete_branch",  # Lote 89
     "git_push", "git_pull", "git_fetch",

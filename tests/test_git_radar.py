@@ -295,3 +295,96 @@ def test_walk_skips_excluded_names_paths_and_dot_dirs(tmp_path):
     # Without exclusions only the dot-dir is skipped.
     found_all = git_panel._walk_repos(str(root), exclusions=(frozenset(), ()))
     assert sorted(os.path.basename(p) for p in found_all) == ["keep", "one", "third", "throwaway"]
+
+
+# ---------------------------------------------------------------------------
+# Snapshot on disk, the agent tool, the scheduled action
+# ---------------------------------------------------------------------------
+@pytest.fixture(autouse=True)
+def _data_dir(tmp_path, monkeypatch):
+    import src.constants as consts
+    monkeypatch.setattr(consts, "DATA_DIR", str(tmp_path / "data"), raising=False)
+
+
+def test_first_call_after_restart_serves_the_disk_snapshot(roots, tmp_path):
+    repo = _repo(roots / "one")
+    _with_remote(repo, tmp_path / "one.git")
+    (repo / "z.txt").write_text("z")
+    first = git_radar.scan("erin", refresh=True)
+    assert first["attention_count"] == 1
+    key = git_panel._owner_cache_key("erin")
+    assert os.path.exists(git_radar._snapshot_path(key))
+    # A "restart": the in-memory cache is gone.
+    git_radar.invalidate()
+    served = git_radar.scan("erin")
+    assert served["stale"] is True and served["attention_count"] == 1
+    assert served["attention"][0]["name"] == "one"
+
+
+def test_agent_tool_lists_attention_rows(roots, tmp_path):
+    import asyncio
+    from src.agent_tools.git_tools import GitRadarTool
+    repo = _repo(roots / "proj")
+    _with_remote(repo, tmp_path / "proj.git")
+    (repo / "z.txt").write_text("z")
+    clean = _repo(roots / "clean")
+    _with_remote(clean, tmp_path / "clean.git")
+    git_radar.invalidate()
+    result = asyncio.run(GitRadarTool().execute('{"refresh": true}', {"owner": "fay"}))
+    assert result["exit_code"] == 0, result
+    assert result["attention_count"] == 1 and result["total"] == 2
+    assert [r["name"] for r in result["repos"]] == ["proj"]
+    assert "proj [main]" in result["output"] and "uncommitted=1" in result["output"]
+    everything = asyncio.run(GitRadarTool().execute('{"only_attention": false}', {"owner": "fay"}))
+    assert sorted(r["name"] for r in everything["repos"]) == ["clean", "proj"]
+
+
+def test_agent_tool_is_registered_everywhere():
+    from src.agent_tools import TOOL_HANDLERS, TOOL_TAGS
+    from src.tool_execution import _GIT_TOOL_NAMES
+    from src import tool_security, tool_capabilities, tool_index
+    from src.tool_schemas import FUNCTION_TOOL_SCHEMAS
+    assert "git_radar" in TOOL_HANDLERS and "git_radar" in TOOL_TAGS and "git_radar" in _GIT_TOOL_NAMES
+    assert "git_radar" in tool_security.PLAN_MODE_READONLY_TOOLS
+    assert any(s["function"]["name"] == "git_radar" for s in FUNCTION_TOOL_SCHEMAS)
+    assert "git_radar" in tool_index.BUILTIN_TOOL_DESCRIPTIONS
+    assert tool_capabilities.TOOL_CAPABILITIES["git_radar"] == tool_capabilities.TOOL_CAPABILITIES["git_status"]
+
+
+def test_scheduled_action_reports_only_on_change(roots, tmp_path):
+    import asyncio
+    from src import watchers as w
+    from src.builtin_actions import BUILTIN_ACTIONS, TaskNoop
+    assert BUILTIN_ACTIONS["git_radar"] is w.action_git_radar
+    repo = _repo(roots / "proj")
+    _with_remote(repo, tmp_path / "proj.git")
+    (repo / "z.txt").write_text("z")
+    text, ok = asyncio.run(w.action_git_radar("gus", prompt="{}", task_name="radar-test"))
+    assert ok and "1 de 1" in text and "proj" in text and "1 sin commit" in text
+    # Same state again: no noise.
+    with pytest.raises(TaskNoop):
+        asyncio.run(w.action_git_radar("gus", prompt="{}", task_name="radar-test"))
+    # One more dirty file in the same repo is still the same set of reasons.
+    (repo / "y.txt").write_text("y")
+    with pytest.raises(TaskNoop):
+        asyncio.run(w.action_git_radar("gus", prompt="{}", task_name="radar-test"))
+    # `always` reports every run.
+    text, ok = asyncio.run(w.action_git_radar("gus", prompt='{"always": true}', task_name="radar-test"))
+    assert ok and "2 sin commit" in text
+    # A new kind of reason (a commit not pushed) is a change.
+    _git(repo, "add", "z.txt")
+    _git(repo, "commit", "-q", "-m", "z")
+    text, ok = asyncio.run(w.action_git_radar("gus", prompt="{}", task_name="radar-test"))
+    assert ok and "sin push" in text
+
+
+def test_scheduled_action_days_filter_and_plain_text_prompt(roots, tmp_path):
+    import asyncio
+    from src import watchers as w
+    repo = _repo(roots / "proj")
+    _with_remote(repo, tmp_path / "proj.git")
+    (repo / "z.txt").write_text("z")
+    # The commit is from just now: with "3 días" nothing is old enough.
+    text, ok = asyncio.run(w.action_git_radar("hal", prompt="3 días sin push", task_name="radar-days"))
+    assert ok and text.startswith("Todos los repositorios")
+    assert w.radar_rows_for_report({"attention": [{"last_commit_at": None}]}, days=3) == [{"last_commit_at": None}]

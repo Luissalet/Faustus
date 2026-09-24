@@ -949,6 +949,8 @@ repo, badge en la barra lateral y bloque en Inicio que sólo aparece cuando
 hay algo. Los repos de carpetas vigiladas son repos normales del panel.
 FAUSTUS.md §185; API en `docs/api/git.md`.
 
-**Queda:** acción de vigilante programado (`watchers.py`) que avise por
-push/notificación cuando algo lleve más de N días sin subir; herramienta
-de sólo lectura para que el agente conteste «¿qué tengo sin subir?».
+Segunda tanda (mismo día, FAUSTUS.md §187): vigilante programado
+`git_radar` («avísame si algo lleva N días sin subir», avisa sólo cuando
+cambia), herramienta `git_radar` para el agente («¿qué tengo sin subir?»)
+e instantánea en disco para que la primera llamada tras reiniciar no
+espere. **Queda:** nada abierto.

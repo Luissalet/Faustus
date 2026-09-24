@@ -145,6 +145,14 @@ def scan(owner: Optional[str], *, refresh: bool = False) -> Dict[str, Any]:
     if not refresh:
         with _LOCK:
             hit = _CACHE.get(key)
+            if hit is None:
+                # First call since the process started: the snapshot the
+                # previous run left on disk answers now (stale, rescanned
+                # in the background) instead of ten seconds of git.
+                snap = _load_snapshot(key)
+                if snap is not None:
+                    hit = (time.monotonic() - RADAR_TTL - 1, snap)
+                    _CACHE[key] = hit
             if hit is not None:
                 fresh = (time.monotonic() - hit[0]) < RADAR_TTL
                 if not fresh and key not in _INFLIGHT:
@@ -221,7 +229,42 @@ def _compute(owner: Optional[str], key: str, *, refresh: bool) -> Dict[str, Any]
     }
     with _LOCK:
         _CACHE[key] = (time.monotonic(), payload)
+    _save_snapshot(key, payload)
     return payload
+
+
+# ---------------------------------------------------------------------------
+# On-disk snapshot: DATA_DIR/git_radar/<owner-key>.json, the last payload
+# ---------------------------------------------------------------------------
+def _snapshot_path(key: str) -> str:
+    from src.constants import DATA_DIR
+    import hashlib
+    name = hashlib.sha1(key.encode("utf-8")).hexdigest()[:16]
+    return os.path.join(DATA_DIR, "git_radar", f"{name}.json")
+
+
+def _save_snapshot(key: str, payload: Dict[str, Any]) -> None:
+    try:
+        path = _snapshot_path(key)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        from core.atomic_io import atomic_write_json
+        atomic_write_json(path, payload)
+    except Exception:  # noqa: BLE001 - the snapshot is a convenience, never load-bearing
+        logger.debug("git radar: snapshot not saved", exc_info=True)
+
+
+def _load_snapshot(key: str) -> Optional[Dict[str, Any]]:
+    try:
+        import json
+        with open(_snapshot_path(key), encoding="utf-8") as fh:
+            data = json.load(fh)
+        if isinstance(data, dict) and isinstance(data.get("repos"), list):
+            return data
+    except (OSError, ValueError):
+        pass
+    except Exception:  # noqa: BLE001
+        logger.debug("git radar: snapshot not read", exc_info=True)
+    return None
 
 
 def normalize_exclude(exclude: Sequence[Any]) -> Dict[str, Any]:

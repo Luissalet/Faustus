@@ -6,6 +6,7 @@ policy." Nine tools, all thin executors over `src.git_panel` (the same
 argv-only, no-`shell=True`, hardened-flags git runner the Source Control
 panel itself uses — see that module's docstring) — no subprocess of our own:
 
+    git_radar     read   which of the owner's repos still have uncommitted/unpushed work (FAUSTUS.md 185)
     git_status    read   branch, ahead/behind, staged/unstaged/untracked, last N commits
     git_log       read   commit history (limit, ref)
     git_diff      read   working tree / staged / one commit's diff, clipped to 60 KB
@@ -378,6 +379,57 @@ def _clip(text: str, limit: int = _DIFF_CLIP_BYTES) -> tuple[str, bool]:
 # ---------------------------------------------------------------------------
 # Read tools
 # ---------------------------------------------------------------------------
+class GitRadarTool:
+    """`git_radar`: every repository the owner can see (project links plus
+    the watched folders) that still has work on this machine only --
+    uncommitted files, unpushed commits, no upstream, no remote, conflicts.
+    Owner-scoped like the Source control panel itself, never confined to
+    the turn's workspace: "what have I not pushed?" is a cross-project
+    question. Read-only; the classification is `src.git_radar`'s."""
+
+    async def execute(self, content: str, ctx: dict) -> dict:
+        from src import git_radar
+        args = _args(content)
+        owner = _owner(ctx) or None
+        only_attention = args.get("only_attention", True)
+        only_attention = True if only_attention is None else bool(only_attention)
+        try:
+            limit = max(1, min(int(args.get("limit") or 30), 200))
+        except (TypeError, ValueError):
+            limit = 30
+        try:
+            days = max(0, int(args.get("days") or 0))
+        except (TypeError, ValueError):
+            days = 0
+        try:
+            payload = git_radar.scan(owner, refresh=bool(args.get("refresh")))
+        except Exception as exc:  # noqa: BLE001
+            return {"error": f"git_radar: {exc}", "exit_code": 1}
+        rows = list(payload.get("attention") if only_attention else payload.get("repos") or [])
+        if days > 0:
+            import time as _time
+            cutoff = _time.time() - days * 86400
+            rows = [r for r in rows if not r.get("last_commit_at") or r["last_commit_at"] <= cutoff]
+        shown = rows[:limit]
+        lines = [git_radar.format_summary({**payload, "attention": rows}) if only_attention
+                 else f"{len(rows)} repositories ({payload.get('attention_count', 0)} need attention)"]
+        for r in shown:
+            bits = []
+            for x in r.get("reasons") or []:
+                bits.append(f"{x['kind']}={x['count']}" if x.get("count") else x["kind"])
+            lines.append(f"- {r['name']} [{r.get('branch') or 'detached'}] {r['path']}: {', '.join(bits) or 'clean'}")
+        if len(rows) > limit:
+            lines.append(f"... {len(rows) - limit} more (raise `limit`)")
+        return {
+            "output": "\n".join(lines), "exit_code": 0,
+            "attention_count": payload.get("attention_count", 0), "total": payload.get("total", 0),
+            "counts": payload.get("counts", {}), "stale": bool(payload.get("stale")),
+            "repos": [{k: r.get(k) for k in ("id", "name", "path", "branch", "upstream", "ahead", "behind",
+                                               "dirty", "conflicts", "reasons", "attention", "last_commit_at",
+                                               "watched", "project_name")} for r in shown],
+        }
+
+
 class GitStatusTool:
     """`git_status`: branch, ahead/behind, staged/unstaged/untracked, last N commits."""
 

@@ -745,6 +745,11 @@ EXAMPLES: Dict[str, List[str]] = {
         "create the GitHub repo and publish this project",
         "publica el repo usando mi cuenta activa",
     ],
+    "git_radar": [
+        "qué tengo sin subir a github",
+        "which of my projects have unpushed commits",
+        "se me ha olvidado hacer push en algún repo",
+    ],
     "git_status": [
         "en qué estado está el repo",
         "what's changed since my last commit",

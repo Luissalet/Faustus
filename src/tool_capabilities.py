@@ -497,7 +497,7 @@ _register(
 # post-external-context approval gate covers them exactly like bash/
 # write_file/send_email already are, per rule 4 (no new gate invented here).
 _register(
-    {"git_status", "git_log", "git_diff"},
+    {"git_radar", "git_status", "git_log", "git_diff"},
     ToolEffect.READ_WORKSPACE,
     result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED,
 )

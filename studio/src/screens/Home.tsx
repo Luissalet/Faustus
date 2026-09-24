@@ -57,6 +57,7 @@ const CARD_ICON: Record<string, typeof Bot> = {
   news_brief: Newspaper,
   watch_page: Eye,
   mail_digest: Mail,
+  git_radar: GitBranch,
 };
 
 /** `describeTrigger` reads an Automation; a card carries the same schedule

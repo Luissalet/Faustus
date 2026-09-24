@@ -209,6 +209,13 @@ informan pero NO cuentan como atención: ir por detrás no es un olvido.
 `attention_count` es lo que enseña el badge de la barra lateral y el bloque
 «Pendiente de commit o push» de Inicio (que desaparece cuando es 0).
 
+La primera llamada tras reiniciar sirve la instantánea que quedó en
+`DATA_DIR/git_radar/<owner>.json` (también `stale: true`) y rescanea de
+fondo. La misma clasificación la usa la herramienta del agente `git_radar`
+(sólo lectura; `only_attention`, `days`, `limit`, `refresh`) y la acción
+programable `git_radar` (`src/watchers.py`: `{"days", "always"}`, avisa
+sólo cuando cambia el conjunto).
+
 ### `GET /api/git/watch-roots` · `PUT /api/git/watch-roots` (require_human)
 
 Las carpetas vigiladas globales de la instalación (ajuste `git_watch_roots`)

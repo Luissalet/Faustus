@@ -2291,6 +2291,23 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "git_radar",
+            "description": "Which git repositories still have work that never left this machine -- uncommitted files, unpushed commits, a branch with no upstream, a repo with no remote, merge conflicts -- across EVERY repository visible to the user (linked project folders plus the watched folders), not only the active workspace. Read-only. Use it for 'what have I not pushed', 'which projects need a commit', 'did I forget to push anything'. Each row carries its reasons with counts and the age of the last commit.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "only_attention": {"type": "boolean", "description": "true (default): only repositories that need a commit or push; false: every repository, clean ones included"},
+                    "days": {"type": "integer", "minimum": 0, "description": "Only repositories whose last commit is at least this many days old (0 = all, default)"},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 200, "description": "Rows to list (default 30)"},
+                    "refresh": {"type": "boolean", "description": "Force a fresh scan instead of the cached one (slower on many repositories)"}
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "git_status",
             "description": "Git status of a repo: current branch, ahead/behind its upstream, staged/unstaged/untracked/conflicted files, and the last `limit` commits. Read-only. Every git tool accepts an optional `path` or `repo` (see below) -- when neither is given, and the project has more than one repo and the active workspace isn't inside any of them, the call is refused with error_class git.which_repo naming the repo choices; ask the user which one. `path` is confined to this turn's workspace / the session's project folders; a repo outside that is refused.",
             "parameters": {

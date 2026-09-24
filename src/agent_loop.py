@@ -7921,7 +7921,7 @@ async def _stream_agent_loop_body(
             {"git_status", "git_log", "git_diff"}):
         try:
             from src.tool_execution import _GIT_TOOL_NAMES
-            _git_read = {"git_status", "git_log", "git_diff"}
+            _git_read = {"git_radar", "git_status", "git_log", "git_diff"}
             # Continuations such as "Do it" carry their Git intent in the
             # retrieval query (recent user context), not in the two-word last
             # message. Also keep a Git action family coherent: if retrieval

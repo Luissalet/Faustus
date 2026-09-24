@@ -42,7 +42,7 @@ from .exec_tools import InstallDependenciesTool, ManageScriptsTool
 from .browser_tools import CaptureEvidenceTool, BrowserExtractTool
 from .spreadsheet_tools import ManageSpreadsheetTool
 from .git_tools import (
-    GitInitTool, GitPublishTool, GitStatusTool, GitLogTool, GitDiffTool,
+    GitInitTool, GitPublishTool, GitRadarTool, GitStatusTool, GitLogTool, GitDiffTool,
     GitBranchTool, GitCheckoutTool, GitCommitTool,
     GitMergeTool, GitDeleteBranchTool,
     GitPushTool, GitPullTool, GitFetchTool,
@@ -151,6 +151,7 @@ TOOL_HANDLERS = {
     # and the agent git policy gate.
     "git_init": GitInitTool().execute,
     "git_publish": GitPublishTool().execute,
+    "git_radar": GitRadarTool().execute,
     "git_status": GitStatusTool().execute,
     "git_log": GitLogTool().execute,
     "git_diff": GitDiffTool().execute,
@@ -374,7 +375,7 @@ TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_fi
              "app_api",
              # Git tools (Lote 87, OBJ-4; git_merge/git_delete_branch Lote 89) —
              # src/agent_tools/git_tools.py.
-             "git_init", "git_publish", "git_status", "git_log", "git_diff",
+             "git_init", "git_publish", "git_radar", "git_status", "git_log", "git_diff",
              "git_branch", "git_checkout", "git_commit",
              "git_merge", "git_delete_branch",
              "git_push", "git_pull", "git_fetch",

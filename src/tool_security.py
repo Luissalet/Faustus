@@ -204,6 +204,7 @@ NON_ADMIN_BLOCKED_TOOLS = BUILTIN_EMAIL_TOOLS | {
     # write_file/read_file above.
     "git_init",
     "git_publish",
+    "git_radar",
     "git_status",
     "git_log",
     "git_diff",
@@ -291,6 +292,7 @@ PLAN_MODE_READONLY_TOOLS = {
     "chat_with_model",
     "ask_teacher",
     # Git read tools (Lote 87): inspection only, same class as grep/glob/ls.
+    "git_radar",
     "git_status",
     "git_log",
     "git_diff",

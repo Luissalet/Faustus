@@ -22,6 +22,11 @@ model only has to create the task with the right parameters:
 * `mail_digest`     — the last N hours of mail (subjects, senders, the
   unread ones) summarised by the local model. Params: ``{"hours": 24,
   "account": …}``.
+* `git_radar`       — which repositories still have uncommitted or
+  unpushed work (src/git_radar.py), optionally only those whose last
+  commit is older than N days; reports (and so notifies) only when the
+  set of repos/reasons CHANGED since the last run unless ``always`` is
+  set. Params: ``{"days": 0, "always": false}``.
 
 Every action returns ``(markdown, ok)`` like the rest of the registry; the
 markdown is what the Home card shows and what the chat session receives.
@@ -35,6 +40,7 @@ import json
 import logging
 import os
 import re
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -462,6 +468,101 @@ async def action_mail_digest(owner: str, **kwargs) -> Tuple[str, bool]:
     return f"**Correo — últimas {hours} h** ({len(mails)} mensajes, {unread} sin leer) — {stamp}\n\n{summary}", True
 
 
+# ---------------------------------------------------------------------------
+# git_radar -- "avísame si algo lleva N días sin subir"
+# ---------------------------------------------------------------------------
+_RADAR_LABEL = {
+    "conflicts": "{n} conflicts", "uncommitted": "{n} uncommitted", "unpushed": "{n} unpushed",
+    "no_upstream": "no upstream", "local_only": "no remote", "behind": "{n} behind", "detached": "detached HEAD",
+}
+
+
+def radar_rows_for_report(payload: Dict[str, Any], *, days: int) -> List[Dict[str, Any]]:
+    """The attention rows a `git_radar` task reports: every one when `days`
+    is 0, else only those whose last commit is at least `days` old (an
+    unpushed commit from an hour ago is not forgotten yet). A row with no
+    known last commit is kept -- it cannot be proven recent."""
+    rows = list(payload.get("attention") or [])
+    if days <= 0:
+        return rows
+    cutoff = time.time() - days * 86400
+    return [r for r in rows if not r.get("last_commit_at") or r["last_commit_at"] <= cutoff]
+
+
+def radar_fingerprint(rows: List[Dict[str, Any]]) -> str:
+    """What "changed since the last run" means: the set of repos and the
+    reason kinds on each -- NOT the counts, so one more edited file in an
+    already-dirty repo does not fire a fresh notification every hour."""
+    parts = sorted(f"{r.get('path') or r.get('id')}:" + ",".join(sorted(x["kind"] for x in r.get("reasons") or []))
+                   for r in rows)
+    return hashlib.sha1("|".join(parts).encode("utf-8")).hexdigest()[:16]
+
+
+def format_radar_report(rows: List[Dict[str, Any]], *, total: int, days: int, lang: str = "es") -> str:
+    es = lang == "es"
+    if not rows:
+        return ("Todos los repositorios están commiteados y subidos." if es
+                else "Every repository is committed and pushed.") + f" ({total})"
+    head = (f"**{len(rows)} de {total} repositorios con trabajo sin subir**" if es
+            else f"**{len(rows)} of {total} repositories with work not pushed**")
+    if days > 0:
+        head += (f" (último commit hace ≥ {days} d)" if es else f" (last commit ≥ {days} d ago)")
+    lines = [head, ""]
+    for r in rows[:25]:
+        bits = []
+        for x in r.get("reasons") or []:
+            label = _RADAR_LABEL.get(x["kind"], x["kind"]).replace("{n}", str(x.get("count", 0)))
+            if es:
+                label = (label.replace("uncommitted", "sin commit").replace("unpushed", "sin push")
+                         .replace("no upstream", "sin upstream").replace("no remote", "sin remoto")
+                         .replace("conflicts", "conflictos").replace("behind", "por detrás")
+                         .replace("detached HEAD", "HEAD separado"))
+            bits.append(label)
+        age = ""
+        if r.get("last_commit_at"):
+            d = int((time.time() - r["last_commit_at"]) // 86400)
+            age = (f" · último commit hace {d} d" if es else f" · last commit {d} d ago") if d > 0 else ""
+        lines.append(f"- **{r.get('name')}** ({r.get('branch') or 'detached'}): {', '.join(bits)}{age}")
+    if len(rows) > 25:
+        lines.append(f"- … {len(rows) - 25} " + ("más" if es else "more"))
+    lines.append("")
+    lines.append("→ Source control" if es else "→ Source control")
+    return "\n".join(lines)
+
+
+async def action_git_radar(owner: str, **kwargs) -> Tuple[str, bool]:
+    """Scheduled radar: report the repositories waiting for a commit or a
+    push, only when that set changed since the last run (unless `always`)."""
+    import asyncio
+    from src.builtin_actions import TaskNoop
+    from src import git_radar
+
+    params = parse_params(kwargs.get("prompt"), {"days": 0, "always": False, "language": "es"}, text_key="text")
+    try:
+        days = max(0, int(params.get("days") or 0))
+    except (TypeError, ValueError):
+        days = 0
+    # A plain-text prompt ("3 días sin push", "older than 7 days") names the days.
+    m = re.search(r"(\d+)\s*(?:d\b|d[ií]as?\b|days?\b)", str(params.get("text") or ""), re.I)
+    if m:
+        days = max(0, int(m.group(1)))
+    always = bool(params.get("always"))
+    lang = str(params.get("language") or "es")
+    task_name = str(kwargs.get("task_name") or "git_radar")
+    try:
+        payload = await asyncio.to_thread(git_radar.scan, owner or None, refresh=True)
+    except Exception as exc:  # noqa: BLE001
+        return f"git_radar: {exc}", False
+    rows = radar_rows_for_report(payload, days=days)
+    fp = radar_fingerprint(rows)
+    prev = load_state(task_name, f"days={days}")
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    save_state(task_name, f"days={days}", {"fingerprint": fp, "count": len(rows), "checked_at": now})
+    if not always and prev and prev.get("fingerprint") == fp:
+        raise TaskNoop(f"git_radar: unchanged ({len(rows)} repositories waiting)")
+    return format_radar_report(rows, total=int(payload.get("total") or 0), days=days, lang=lang), True
+
+
 def _whatsapp_digest_action():
     from src.whatsapp_tools import action_whatsapp_digest
     return action_whatsapp_digest
@@ -477,6 +578,7 @@ WATCH_ACTIONS = {
     "news_brief": action_news_brief,
     "mail_digest": action_mail_digest,
     "whatsapp_digest": action_whatsapp_digest,
+    "git_radar": action_git_radar,
 }
 WATCH_ACTION_INFO = {
     "weather_report": "Weather for a place (today/tomorrow/next days) from Open-Meteo — params: {\"place\", \"when\"}",
@@ -484,4 +586,5 @@ WATCH_ACTION_INFO = {
     "news_brief": "News briefing on a topic from the last hours, summarised with sources — params: {\"topic\", \"hours\"}",
     "mail_digest": "Summary of the mail received in the last hours: what needs a reply, what is noteworthy, the bulk — params: {\"hours\", \"unread_only\"}",
     "whatsapp_digest": "Summary of the WhatsApp messages of the last hours (paired bridge): who waits for an answer, what is new per chat — params: {\"hours\", \"chat\", \"unread_only\"}",
+    "git_radar": "Which git repositories still have uncommitted or unpushed work; reports only when that set changes — params: {\"days\": only repos whose last commit is at least N days old (0 = all), \"always\": report every run}",
 }
