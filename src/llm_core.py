@@ -831,6 +831,60 @@ def tool_argument_loop(arguments: str) -> Optional[str]:
     return f"tool-call arguments repeat a {unit_len}-char passage {repeats} times"
 
 
+#: Template-loop guard (see `tool_argument_template_loop`).
+_TEMPLATE_LOOP_MIN_CHARS = 3000
+_TEMPLATE_LOOP_WINDOW = 40
+_TEMPLATE_LOOP_MIN_LINES = 24
+_TEMPLATE_LOOP_MAX_SKELETONS = 4
+_TEMPLATE_LOOP_MIN_WORDS = 2
+_QUOTED_RE = re.compile(r'"[^"]{0,400}"|\u201c[^\u201d]{0,400}\u201d')
+_DIGITS_RE = re.compile(r"\d+")
+_COMMENT_START_RE = re.compile(r"^\s*(?:#|//|--|;|\*)")
+_CODE_PUNCT_RE = re.compile(r"[(\[{=]")
+
+
+def _line_skeleton(line: str) -> str:
+    line = line.replace('\\"', '"')  # arguments are JSON text: \" is a quote
+    return _DIGITS_RE.sub("0", _QUOTED_RE.sub("Q", line)).strip()
+
+
+def tool_argument_template_loop(arguments: str) -> Optional[str]:
+    """Tool-call arguments cycling through one sentence template, or None.
+
+    Live, 24-09-2026 (exam run 15): a local 27B tried to recall a poem from
+    memory inside a python comment — "-> It is from <poem>: <line> NO." —
+    one new quoted line after another, 8192 tokens and 14 minutes, never
+    the same line twice in a row, so the exact-repeat guard above never
+    matched. With the quoted parts and numbers masked, the last lines of
+    prose collapse to two or three skeletons. Data rows (`"k": "v",`,
+    `print("...")`) have no prose left once masked and are not counted."""
+    text = arguments or ""
+    if len(text) < _TEMPLATE_LOOP_MIN_CHARS:
+        return None
+    lines = [ln for ln in re.split(r"\\n|\n", text) if ln.strip()]
+    skeletons = []
+    for ln in lines[-(_TEMPLATE_LOOP_WINDOW * 3):]:
+        sk = _line_skeleton(ln)
+        if len(_ALPHA_WORD_RE.findall(sk)) < _TEMPLATE_LOOP_MIN_WORDS:
+            continue
+        # Prose only: a comment, or a line with no code punctuation. Forty
+        # `print(f"...")` lines are a legitimate script, not a loop.
+        if not (_COMMENT_START_RE.match(sk) or not _CODE_PUNCT_RE.search(sk)):
+            continue
+        skeletons.append(sk)
+    tail = skeletons[-_TEMPLATE_LOOP_WINDOW:]
+    if len(tail) < _TEMPLATE_LOOP_MIN_LINES:
+        return None
+    distinct = len(set(tail))
+    if distinct > _TEMPLATE_LOOP_MAX_SKELETONS:
+        return None
+    raw_tail = lines[-len(tail):]
+    if len(set(ln.strip() for ln in raw_tail)) <= distinct:
+        return None  # identical lines: the exact-repeat guard's case, not this one
+    return (f"tool-call arguments cycle through {distinct} sentence template(s) "
+            f"over their last {len(tail)} lines")
+
+
 class _DegenerateStreamGuard:
     """Detect local-model token collapse before it floods the UI.
 
@@ -6283,7 +6337,8 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                                                 if (_args_len >= _TOOL_ARG_LOOP_START_CHARS
                                                         and _args_len - _last >= _TOOL_ARG_LOOP_EVERY_CHARS):
                                                     _tool_arg_checked[call.index] = _args_len
-                                                    _loop = tool_argument_loop(call.arguments)
+                                                    _loop = (tool_argument_loop(call.arguments)
+                                                             or tool_argument_template_loop(call.arguments))
                                                     if _loop:
                                                         yield _degenerate_output_error_chunk(
                                                             DegenerateOutput(f"{call.name or 'tool call'}: {_loop}", model))
