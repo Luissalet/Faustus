@@ -4814,6 +4814,55 @@ def _empty_completion_error_chunk(message: str) -> str:
     )
 
 
+#: Wording that shows up in the transport exceptions this module wraps into
+#: `event: error` chunks (see `_stream_error_chunk` call sites above) when the
+#: cut is a lost connection rather than a definite provider response. Matched
+#: case-insensitively against `error_data["error"]` by `_looks_like_engine_lost`.
+_ENGINE_LOST_WORDING = (
+    "connection reset",
+    "connection closed",
+    "connection refused",
+    "cannot reach",
+    "server disconnected",
+    "remoteprotocolerror",
+    "incomplete chunked read",
+)
+#: HTTP statuses this module uses for a transport failure (connect-phase,
+#: protocol/network error, or a timeout) as opposed to a definite response
+#: from the provider (e.g. a 400/429 the model itself returned).
+_ENGINE_LOST_STATUSES = (502, 503, 504)
+
+
+def _looks_like_engine_lost(error_data, status: Optional[int] = None) -> bool:
+    """True when a stream error reads like the backing engine process died or
+    the connection to it was lost mid-call, rather than an ordinary
+    provider-side failure (bad request, rate limit, degenerate output, ...).
+
+    Used by the agent harness (`src.agent_loop`) to tell a transport cut —
+    the case a managed local engine can recover from by restarting — apart
+    from every other `event: error` shape it already handles specially
+    (degenerate output, refused images, empty completion): those are checked
+    first and never reach here. Matches on either the normalized HTTP status
+    (502/503/504, the ones `_stream_error_chunk` uses for connect/protocol/
+    network/timeout failures) or wording from the wrapped exception's
+    message, since a mid-generation cut can surface under any of those
+    statuses depending on which `except` branch in `_stream_llm_inner` caught
+    it (`ConnectError` -> 503, `ProtocolError`/`NetworkError` -> 502,
+    `PoolTimeout`/`WriteTimeout` -> 504)."""
+    if not isinstance(error_data, dict):
+        return False
+    if status is None:
+        status = error_data.get("status")
+    try:
+        status_int = int(status) if status is not None else None
+    except (TypeError, ValueError):
+        status_int = None
+    if status_int in _ENGINE_LOST_STATUSES:
+        return True
+    message = str(error_data.get("error") or "").lower()
+    return any(wording in message for wording in _ENGINE_LOST_WORDING)
+
+
 def is_empty_completion_error(error_data) -> bool:
     """True when a stream error is a clean empty completion, not a transport cut."""
     if not isinstance(error_data, dict):

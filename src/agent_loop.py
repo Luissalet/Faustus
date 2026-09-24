@@ -31,9 +31,11 @@ from src.llm_core import (
     _normalize_usage_counts,
     is_empty_completion_error,
     is_degenerate_output_error,
+    _looks_like_engine_lost,
     is_reference_context_echo,
     strip_reference_context_echo,
 )
+from src import engine_swap
 from src.model_context import estimate_tokens
 from src.context_compactor import (
     apply_compaction_state,
@@ -9044,6 +9046,15 @@ async def _stream_agent_loop_body(
     # already try a second sampler push and a second endpoint; there is no
     # value in running that whole ladder twice for one turn.
     _recovery_ladder_used = False
+    # The backing engine of a managed local model died mid-generation (not on
+    # connect, which src.engine_swap already recovers before any output —
+    # this is the 502/503/504 that reaches here AFTER deltas were already
+    # streamed, live: a two-hour agent turn killed by the engine process
+    # dying partway through one round). Restarted and the round redone
+    # exactly once per turn, same one-shot budget as the degenerate-output
+    # retry above — a second death in the same turn is treated as a real
+    # outage and falls through to the normal terminal_error.
+    _engine_lost_recovered = False
     _project_objective_nudges = 0
     _project_objective_unavailable_nudges = 0
 
@@ -10468,6 +10479,7 @@ async def _stream_agent_loop_body(
         _think_runaway = False
         _degenerate_output_hit = False
         _degenerate_output_reason = ""
+        _engine_lost_hit = False
         _image_input_refused_now = False
         _round_actual_model = model
         _round_actual_endpoint_id = actual_endpoint_id
@@ -10701,6 +10713,46 @@ async def _stream_agent_loop_body(
                     )
                     _recover_empty_completion = True
                     break
+                # The engine behind a managed local model died IN THE MIDDLE
+                # of this round (not on connect, before any output — that is
+                # already recovered inside src.llm_core/src.engine_swap).
+                # Seen live: a two-hour agent turn's engine process died
+                # partway through a round; every retry hit a closed port,
+                # llm_core could not self-heal because deltas had already
+                # reached the client, and the resulting 502 ended the whole
+                # turn with a raw "Model request failed" instead of just
+                # redoing the one round. One restart attempt per turn, same
+                # budget as the degenerate-output retry above.
+                if (
+                    _looks_like_engine_lost(error_data, terminal_status)
+                    and not _engine_lost_recovered
+                    and round_num < max_rounds
+                    and engine_swap.restartable_engine_for_url(endpoint_url) is not None
+                ):
+                    _engine_lost_recovered = True
+                    logger.warning(
+                        "[harness] round %s: local engine appears to have died mid-generation "
+                        "(status=%s error=%r) — restarting it and redoing the round",
+                        round_num, terminal_status, str(error_data.get("error") or "")[:200],
+                    )
+                    yield (
+                        "data: " + json.dumps({
+                            "type": "harness_check", "status": "auto_continue",
+                            "reason": "engine_lost_recovered", "round": round_num,
+                            "message": (
+                                "The local engine stopped mid-answer; restarting it "
+                                "and redoing this step"
+                            ),
+                        }) + "\n\n"
+                    )
+                    if await engine_swap.recover_after_connect_failure(endpoint_url):
+                        _engine_lost_hit = True
+                        break
+                    logger.warning(
+                        "[harness] round %s: engine restart after mid-generation loss "
+                        "failed or timed out — falling through to the normal error",
+                        round_num,
+                    )
                 if is_degenerate_output_error(error_data) and not _recovery_ladder_used:
                     # Step 1 (the branch above) already ran once and didn't
                     # help. The owner's requirement is that a loaded model
@@ -11178,6 +11230,21 @@ async def _stream_agent_loop_body(
                     "reason": "image_input_refused", "round": round_num,
                 }) + "\n\n"
             )
+            yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
+            continue
+
+        if _engine_lost_hit:
+            # The engine was already restarted and confirmed healthy (above,
+            # before the break). Discard whatever partial text this round
+            # produced before the connection dropped — it is an incomplete
+            # answer, not a real one, and must not be persisted or shown as
+            # if the round had finished — exactly like the degenerate-output
+            # redo just below, then redo the round from scratch.
+            if round_response and full_response.endswith(round_response):
+                full_response = full_response[:-len(round_response)]
+            _ledger.notes.append(f"engine_lost_recovered@{round_num}")
+            _rounds_budget += 1  # the retry must not eat the task's step budget
+            yield f'data: {json.dumps({"type": "response_replace", "text": full_response.strip()})}\n\n'
             yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
             continue
 
