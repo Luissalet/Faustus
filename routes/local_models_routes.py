@@ -441,7 +441,11 @@ def _attribute_gpu_processes(cards: List[Dict[str, Any]]) -> None:
             continue
         pid = int(row.get("pid") or 0)
         label = gpu_shared_memory.label_process(row.get("process_name") or "", pid, engine_pids)
-        card["processes"].append({"pid": pid, "label": label, "used_mb": row.get("used_mb")})
+        # On Windows nvidia-smi also lists every desktop app drawing on the
+        # card (browser, shell, chat clients...): "model" marks the ones
+        # that hold a model, the rest are only counted by the UI.
+        kind = "model" if (pid in engine_pids or label in ("llama-server", "Ollama")) else "other"
+        card["processes"].append({"pid": pid, "label": label, "used_mb": row.get("used_mb"), "kind": kind})
 
 
 def _vram_block(same_machine: bool, held_by_runner: int,

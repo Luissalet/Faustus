@@ -8218,6 +8218,7 @@ export const es: Record<string, string> = {
   "{n} open comments": "{n} comentarios abiertos",
   "{n} option is unsupported for this implementation.": "{n} opción no es compatible con esta implementación.",
   "{n} options are unsupported for this implementation.": "{n} opciones no son compatibles con esta implementación.",
+  "{n} other apps": "{n} apps más",
   "{n} other item has no evidence to check.": "Hay {n} elemento más sin evidencia que comprobar.",
   "{n} other items have no evidence to check.": "Hay {n} elementos más sin evidencia que comprobar.",
   "{n} packet, newest first.": "{n} paquete, el más nuevo primero.",

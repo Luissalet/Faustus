@@ -1085,9 +1085,11 @@ function VramCard({ vram, loaded, policy, admin, onPlacement, onRelease }: { vra
         const gfree = Math.max(0, gt - used);
         const p = (v: number) => (gt ? Math.max(0, Math.min(100, (100 * v) / gt)) : 0);
         const mnames = (g.models ?? []).filter(Boolean).join(', ');
-        const procLine = (g.processes ?? [])
-          .filter((proc) => proc.label)
-          .map((proc) => (proc.used_mb != null ? t('{label} · {size}', { label: proc.label, size: fmtGb(proc.used_mb * 1048576) }) : proc.label))
+        const procs = (g.processes ?? []).filter((proc) => proc.label);
+        const modelProcs = procs.filter((proc) => proc.kind !== 'other');
+        const otherCount = procs.length - modelProcs.length;
+        const procLine = Array.from(new Set(modelProcs
+          .map((proc) => (proc.used_mb != null ? t('{label} · {size}', { label: proc.label, size: fmtGb(proc.used_mb * 1048576) }) : proc.label))))
           .join(', ');
         return (
           <div key={g.index} className="fs-lm__gpu">
@@ -1110,6 +1112,7 @@ function VramCard({ vram, loaded, policy, admin, onPlacement, onRelease }: { vra
             </div>
             <p className="fs-set__help">
               {mnames || procLine || t('nothing loaded on this card')}
+              {otherCount > 0 && ` · ${t('{n} other apps', { n: otherCount })}`}
               {g.budget_bytes != null && ` · ${t('budget')} ${fmtGb(g.budget_bytes)}`}
             </p>
           </div>

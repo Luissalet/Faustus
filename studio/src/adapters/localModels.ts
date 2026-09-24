@@ -75,6 +75,9 @@ export interface GpuProcess {
   /** MB, or null when the driver could not report it (Windows WDDM reports
    * `[N/A]` for a compute app's `used_memory`; the process is still listed). */
   used_mb: number | null;
+  /** "model": holds a model (a managed engine, llama-server, Ollama);
+   * "other": any other app drawing on the card, only counted. */
+  kind?: 'model' | 'other';
 }
 export interface GpuCard {
   index: number;

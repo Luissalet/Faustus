@@ -123,10 +123,12 @@ def test_attribute_gpu_processes_maps_by_uuid_and_labels(monkeypatch):
 
     lm._attribute_gpu_processes(cards)
 
-    assert cards[0]["processes"] == [{"pid": 111, "label": "Coding engine", "used_mb": 11264}]
+    assert cards[0]["processes"] == [{"pid": 111, "label": "Coding engine", "used_mb": 11264, "kind": "model"}]
+    # Any other app drawing on the card is kept but marked "other" (the UI
+    # only counts those).
     assert cards[1]["processes"] == [
-        {"pid": 222, "label": "Ollama", "used_mb": 4096},
-        {"pid": 333, "label": "somebot", "used_mb": None},
+        {"pid": 222, "label": "Ollama", "used_mb": 4096, "kind": "model"},
+        {"pid": 333, "label": "somebot", "used_mb": None, "kind": "other"},
     ]
 
 
