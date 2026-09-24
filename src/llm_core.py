@@ -4103,6 +4103,10 @@ async def _llm_call_async_impl(
     _budget = RetryBudget(LLMConfig.RETRY_TIME_BUDGET)
     _budget.start()
     attempt = 0
+    # Set once this call has already restarted its engine (below) — never a
+    # second time for the same call, so an engine that dies again right
+    # after coming back fails normally instead of looping.
+    _engine_wait_used = False
     while attempt < max_retries:
         attempt += 1
         start = time.time()
@@ -4225,6 +4229,24 @@ async def _llm_call_async_impl(
             _tail = f" — host cooled for {DEAD_HOST_COOLDOWN:.0f}s" if _cooled else " — transient, will retry"
             logger.warning(f"LLM async connect to {target_url} failed after {duration:.2f}s: {e}{_tail}")
             if _cooled or attempt >= max_retries or _budget.exhausted():
+                if not _engine_wait_used:
+                    _engine_wait_used = True
+                    from src import engine_swap
+                    if engine_swap.restartable_engine_for_url(target_url) is not None:
+                        logger.warning(
+                            "LLM async call to %s: retries exhausted on a managed engine — "
+                            "starting it again before failing the turn",
+                            _host_key(target_url),
+                        )
+                        if await engine_swap.recover_after_connect_failure(target_url):
+                            _clear_host_dead(target_url)
+                            # Fresh budget/attempt for the one retry this
+                            # earns: the time already spent waiting must not
+                            # eat into the normal retry budget.
+                            _budget = RetryBudget(LLMConfig.RETRY_TIME_BUDGET)
+                            _budget.start()
+                            attempt -= 1
+                            continue
                 raise _annotate(
                     HTTPException(503, f"Cannot reach {_host_key(target_url)}: {e}"),
                     error_class=err_class,
@@ -5010,7 +5032,8 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                             tool_choice_none: bool = False, gen_overrides: Optional[Dict] = None,
                             max_retries: int = LLMConfig.MAX_RETRIES,
                             availability_only_transport: bool = False,
-                            _attempt: int = 1, _budget: Optional[RetryBudget] = None):
+                            _attempt: int = 1, _budget: Optional[RetryBudget] = None,
+                            _engine_wait_used: bool = False):
     _overrides = _clean_gen_overrides(gen_overrides)
     """Stream LLM responses with improved error handling.
 
@@ -6129,7 +6152,24 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
             session_id=session_id, tool_choice_none=tool_choice_none,
             gen_overrides=gen_overrides, max_retries=max_retries,
             availability_only_transport=availability_only_transport,
-            _attempt=next_attempt, _budget=_budget,
+            _attempt=next_attempt, _budget=_budget, _engine_wait_used=_engine_wait_used,
+        )
+
+    def _retry_after_engine_recovery():
+        """One extra attempt, past this call's own `max_retries`/budget,
+        after `src.engine_swap.recover_after_connect_failure` brought the
+        managed engine behind `target_url` back — a fresh attempt count and time
+        budget (the wait must not eat into either), and `_engine_wait_used`
+        forced True so this can only ever happen once per top-level call."""
+        fresh_budget = RetryBudget(LLMConfig.RETRY_TIME_BUDGET)
+        fresh_budget.start()
+        return _stream_llm_inner(
+            url, model, messages, temperature=temperature, max_tokens=max_tokens,
+            headers=headers, timeout=timeout, prompt_type=prompt_type, tools=tools,
+            session_id=session_id, tool_choice_none=tool_choice_none,
+            gen_overrides=gen_overrides, max_retries=max_retries,
+            availability_only_transport=availability_only_transport,
+            _attempt=1, _budget=fresh_budget, _engine_wait_used=True,
         )
 
     try:
@@ -6435,6 +6475,19 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
             delta_emitted=_delta_emitted,
         )
         _should_retry = _should_retry and not _cooled
+        if not _should_retry and not _delta_emitted and not _engine_wait_used:
+            from src import engine_swap
+            if engine_swap.restartable_engine_for_url(target_url) is not None:
+                logger.warning(
+                    "Stream connect to %s: retries exhausted on a managed engine — "
+                    "starting it again before failing the turn",
+                    _host_key(target_url),
+                )
+                if await engine_swap.recover_after_connect_failure(target_url):
+                    _clear_host_dead(target_url)
+                    async for chunk in _retry_after_engine_recovery():
+                        yield chunk
+                    return
         _tail = f" — host cooled for {DEAD_HOST_COOLDOWN:.0f}s" if _cooled else " — transient, will retry"
         logger.warning(f"Stream connect to {target_url} failed: {e}{_tail}")
         async for chunk in _stream_retry_or_fail(

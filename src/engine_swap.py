@@ -212,6 +212,40 @@ async def _do_start_and_wait(engine_id: str, timeout_s: float) -> Dict[str, Any]
     return {"engine_id": engine_id, "action": "failed", "error": "timed out waiting for engine to become healthy"}
 
 
+def restartable_engine_for_url(url: str) -> Optional[Dict[str, Any]]:
+    """The managed engine behind `url` when on-demand start is on, else None."""
+    if not _settings()["autostart"]:
+        return None
+    return engine_for_url(url)
+
+
+async def recover_after_connect_failure(url: str) -> bool:
+    """A local model call lost its engine mid-turn: bring it back.
+
+    `ensure_ready` runs once, before a call. Live (24-09): the engine died
+    in the middle of a two-hour agent turn, every retry of that call hit a
+    closed port, and the turn failed with HTTP 502 although the engine was
+    a managed one this module would have started on the next call. The
+    caller (`src.llm_core`, once its own retries are spent, only if nothing
+    was streamed yet) calls this; it starts the engine again the same way
+    `ensure_ready` does and says whether it is healthy, so the call can be
+    tried once more. Never raises."""
+    try:
+        engine = restartable_engine_for_url(url)
+        if engine is None:
+            return False
+        logger.warning("[engine-swap] lost engine %s mid-call; starting it again", engine.get("id"))
+        result = await ensure_ready(url)
+        if result.get("action") in ("started", "waited"):
+            return True
+        if result.get("action") == "none":
+            return await _probe_healthy(engine)
+        return False
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[engine-swap] recovery failed for %s: %s", url, exc)
+        return False
+
+
 async def ensure_ready(url: str, *, timeout_s: Optional[float] = None) -> Dict[str, Any]:
     """If `url` maps to a managed engine that is not already healthy, start
     it (single-flight across concurrent callers) and wait for health.
