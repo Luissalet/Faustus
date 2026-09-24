@@ -18,6 +18,7 @@ import {
   type Verification,
 } from '../../adapters/workers';
 import { locale, t, tn } from '../../i18n';
+import { NightShiftSection } from './NightShift';
 
 /**
  * Workers: the dispatch board (workers.js). Describe the tasks, name the
@@ -530,6 +531,7 @@ export function Workers({ agent: agentParam, runner: runnerParam }: WorkersProps
           ))}
         </div>
       )}
+      <NightShiftSection defaultWorkspace={workspace} />
       {toast && <Toast>{toast}</Toast>}
     </div>
   );
