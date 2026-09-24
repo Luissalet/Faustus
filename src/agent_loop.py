@@ -646,6 +646,7 @@ _CODE_INTEL_INTENT_RE = re.compile(
 #: What such a question gets: the answer tools, not the whole family.
 _CODE_INTEL_FAMILY = frozenset({
     "code_graph_impact", "code_graph_flows", "code_graph_communities", "tests_for",
+    "code_graph_drift",
 })
 
 
@@ -6602,6 +6603,7 @@ async def _stream_agent_loop_body(
         user_request=_user_request_text(messages),
         asked_before=_asked_before_text(messages),
         workspace=str(workspace or ""),
+        owner=str(owner or ""),
     )
     if run_security.user_delegation is not None:
         logger.info("[gate] user-dictated delegation in this turn: %d task(s)",
@@ -8766,6 +8768,12 @@ async def _stream_agent_loop_body(
     _HARNESS_MAX_REJECTIONS = 2
     _HARNESS_MAX_LENGTH_CONTINUES = 2
     _ledger = _harness.TurnLedger(workspace, _last_user)
+    # Architecture drift check (src/drift_check.py) — one instance per turn,
+    # same contract as `_rewrite_policy`/`_doubt_review_state` below: no-op
+    # unless a workspace is bound, gated by its own setting, never able to
+    # block or fail the turn.
+    from src.drift_check import DriftCheckState as _DriftCheckState
+    _drift_state = _DriftCheckState(workspace, project_id=str(_hopts.get("project_id") or ""))
     try:
         # Result ids already in the conversation (earlier answers, replayed
         # tool output) are not inventions when cited again.
@@ -13445,6 +13453,18 @@ async def _stream_agent_loop_body(
             except Exception as _ledger_err:
                 logger.debug("[harness] ledger record failed: %s", _ledger_err)
 
+            # Architecture drift check (src/drift_check.py, `code_graph_drift_check`
+            # setting, default on): the turn's first successful mutation takes a
+            # code-graph baseline in the background — time-boxed, best-effort,
+            # never able to delay or fail the turn beyond its own small timeout.
+            if _drift_state.enabled and not _drift_state.snapshot_taken and _ledger.mutations:
+                try:
+                    await asyncio.wait_for(
+                        asyncio.to_thread(_drift_state.snapshot_before_first_edit), timeout=12.0
+                    )
+                except Exception as _drift_snap_err:
+                    logger.debug("[drift_check] snapshot skipped: %s", _drift_snap_err)
+
             # lookup_tools: promote returned names into the next round's
             # native schema list. They were already executable (catalog);
             # this loads the full schema so native function-calling can
@@ -14558,6 +14578,28 @@ async def _stream_agent_loop_body(
         logger.info("[harness] turn summary: stop=%s tools=%s mutations=%s failed=%s rejections=%s",
                     _hsum["stop_reason"], _hsum["tool_calls"], _hsum["mutations"],
                     _hsum["failed_calls"], _hsum["rejections"])
+        # Architecture drift (src/drift_check.py): after the last edit of the
+        # turn, compare against the baseline this turn took at its first one.
+        # Time-boxed, best-effort — a note is attached only above the score
+        # threshold, and any failure here leaves the summary exactly as it
+        # would have been without this check.
+        if _drift_state.enabled and _drift_state.baseline_id:
+            try:
+                _drift_note = await asyncio.wait_for(
+                    asyncio.to_thread(_drift_state.run_after_turn), timeout=12.0
+                )
+            except Exception as _drift_run_err:
+                logger.debug("[drift_check] comparison skipped: %s", _drift_run_err)
+                _drift_note = None
+            if _drift_note:
+                _ledger.notes.append(_drift_note)
+                _hsum["notes"] = _ledger.notes
+                _hsum["architecture_drift"] = {
+                    "baseline_id": _drift_state.baseline_id,
+                    "score": (_drift_state.result or {}).get("score"),
+                    "top_findings": (_drift_state.result or {}).get("top_findings"),
+                }
+                logger.info("[drift_check] %s", _drift_note)
         # P1: close plan tasks the turn evidently finished (completed todos
         # naming them, or all their files present and written this turn)
         # even when the model never called plan_done.

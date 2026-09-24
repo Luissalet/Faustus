@@ -3101,6 +3101,25 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "code_graph_drift",
+            "description": "Architecture drift: record a baseline of this workspace's code graph (communities, cross-community coupling, execution flows, hotspots), then compare the CURRENT graph against one. Reports new/removed communities, files that moved to a different community, new dependencies between communities (especially into one that had none), a dependency cycle introduced since the baseline, flows that gained/lost steps or changed criticality, and a public symbol the baseline recorded that no longer resolves but is still referenced somewhere -- as a single 0-100 drift score with the top findings explained. `action='snapshot'` records a baseline (use `label` to name it); `action='list'` lists recorded baselines; the default action ('drift') compares against the most recent baseline, or `baseline_id` if given. Use for 'has the architecture drifted since we started', 'record a baseline before this refactor', 'what moved between communities'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "description": "'snapshot' to record a baseline, 'list' to list baselines, or omit/'drift' to compare against one (default)"},
+                    "label": {"type": "string", "description": "Optional label for a new baseline (action='snapshot')"},
+                    "baseline_id": {"type": "string", "description": "Compare against this specific baseline instead of the most recent one"},
+                    "refresh": {"type": "boolean", "description": "Force the current communities/flows to rebuild instead of using a cached clustering (default false)"},
+                    "limit": {"type": "integer", "description": "Max baselines to list (action='list', default 20)"},
+                    "root": {"type": "string", "description": "Workspace root (optional -- defaults to the active workspace)"}
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "structural_search",
             "description": "Search code by AST SHAPE, not text, via ast-grep -- finds things grep can't: 'every except Exception: whose body never logs', 'every call to foo() with a None second argument', regardless of whitespace/formatting. Write patterns like the code you're matching, using $NAME to capture exactly one node (e.g. foo($ARG)) or $$$NAME to capture zero-or-more (e.g. a whole statement body). Workflow: try the pattern on ONE file or a small folder first, check the hits and metaVariables look right, THEN widen path to search the whole workspace -- a pattern that looks right can still match more or less than intended.",
             "parameters": {

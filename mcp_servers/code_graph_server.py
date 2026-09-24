@@ -208,6 +208,30 @@ async def list_tools() -> list[Tool]:
             },
         ),
         Tool(
+            name="code_graph_drift",
+            description=(
+                "Record an architecture baseline (action=snapshot) or compare the current code "
+                "graph against one: new/removed communities, files that moved community, new "
+                "cross-community dependencies, a dependency cycle introduced, flows that changed "
+                "shape/criticality, and a removed public symbol still referenced -- a 0-100 drift "
+                "score with the top findings. Grabar/comparar una base de arquitectura. Read-only "
+                "(writes only its own baseline record, never workspace files)."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["snapshot", "drift", "list"],
+                              "description": "snapshot records a baseline; drift (default) compares; list lists baselines."},
+                    "label": {"type": "string", "description": "Optional label for a new baseline."},
+                    "baseline_id": {"type": "string", "description": "Compare against this baseline instead of the most recent one."},
+                    "refresh": {"type": "boolean"},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 200},
+                    **_ROOT_PROP,
+                },
+                "required": [],
+            },
+        ),
+        Tool(
             name="code_graph_change_risk",
             description=(
                 "Deterministic 0-100 change-risk score for paths/symbols or the current diff. "
@@ -298,6 +322,18 @@ def _tool_snippet(args: dict) -> list[TextContent]:
                                    workspace=str(args.get("root") or "")))
 
 
+def _tool_drift(args: dict) -> list[TextContent]:
+    cg = _engine["code_graph"]
+    action = str(args.get("action") or "drift").strip().lower()
+    root = str(args.get("root") or "")
+    if action == "snapshot":
+        return _json_result(cg.snapshot(root, label=str(args.get("label") or "")))
+    if action == "list":
+        return _json_result(cg.list_baselines(root, limit=_limit(args.get("limit"), 20, 200)))
+    return _json_result(cg.drift(root, baseline_id=str(args.get("baseline_id") or ""),
+                                 refresh=bool(args.get("refresh"))))
+
+
 def _tool_change_risk(args: dict) -> list[TextContent]:
     cg = _engine["code_graph"]
     paths = args.get("paths")
@@ -317,6 +353,7 @@ _HANDLERS = {
     "code_graph_flows": _tool_flows,
     "code_graph_affected_flows": _tool_affected_flows,
     "code_graph_snippet": _tool_snippet,
+    "code_graph_drift": _tool_drift,
     "code_graph_change_risk": _tool_change_risk,
 }
 

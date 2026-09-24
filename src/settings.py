@@ -1442,6 +1442,12 @@ DEFAULT_SETTINGS = {
     # request (`summarize=true`) or a maintenance pass, never inside a chat
     # turn waiting on a model load.
     "code_graph_community_summaries": False,
+    # Architecture drift check (`src/code_graph/drift.py` + `src/drift_check.py`):
+    # take a snapshot of a bound workspace's code graph before this turn's
+    # first edit and compare against it after the last one. On by default and
+    # never blocking -- a workspace too small to be worth it, or any failure
+    # along the way, silently skips (see `src.drift_check.DriftCheckState`).
+    "code_graph_drift_check": True,
     # Web Push (src/push.py, lot P-A): whether the notification bus
     # (src/notifications.py) fans events out as browser/OS push
     # notifications in addition to the in-app WS/polling paths. On by

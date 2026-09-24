@@ -242,6 +242,34 @@ class CodeGraphFlowsTool:
         )
 
 
+class CodeGraphDriftTool:
+    """`code_graph_drift` {action?, label?, baseline_id?, refresh?}: architecture
+    drift against a recorded baseline. `action="snapshot"` records one (the
+    default action is `"drift"`, comparing against the most recent baseline
+    unless `baseline_id` is given); `action="list"` lists recorded baselines."""
+
+    async def execute(self, content: str, ctx: dict) -> dict:
+        args = _args(content, first_key="action")
+        action = str(args.get("action") or "drift").strip().lower()
+        root_arg = str(args.get("root") or args.get("workspace") or "")
+        project_id = str(args.get("project_id") or "")
+        if action in ("snapshot", "baseline", "record"):
+            return _catch(
+                code_graph.snapshot, root_arg, project_id=project_id,
+                label=str(args.get("label") or ""), tool="code_graph_drift",
+            )
+        if action in ("list", "baselines", "list_baselines"):
+            return _catch(
+                code_graph.list_baselines, root_arg, project_id=project_id,
+                limit=int(args.get("limit") or 20), tool="code_graph_drift",
+            )
+        return _catch(
+            code_graph.drift, root_arg, project_id=project_id,
+            baseline_id=str(args.get("baseline_id") or ""),
+            refresh=bool(args.get("refresh")), tool="code_graph_drift",
+        )
+
+
 class CodeGraphSnippetTool:
     """`code_graph_snippet` {symbol}: exactly one symbol's source lines."""
 

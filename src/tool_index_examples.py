@@ -1053,6 +1053,14 @@ EXAMPLES: Dict[str, List[str]] = {
         "qué rutas de ejecución pasan por esta función",
         "which flows would this diff actually affect end to end",
     ],
+    "code_graph_drift": [
+        "graba una base de la arquitectura antes de este refactor",
+        "record an architecture baseline before we start this refactor",
+        "ha derivado la arquitectura desde la última vez",
+        "has the architecture drifted since our last baseline",
+        "qué módulos se han movido o acoplado nuevo desde entonces",
+        "check whether this change introduced a new dependency cycle",
+    ],
     "doc_claims_check": [
         "check if the README still matches the code",
         "revisa si FAUSTUS.md tiene referencias rotas al código",

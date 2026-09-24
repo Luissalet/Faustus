@@ -28,6 +28,7 @@ TOOL_NAMES = {
     "code_graph_search", "code_graph_trace", "code_graph_impact",
     "code_graph_architecture", "code_graph_communities", "code_graph_flows",
     "code_graph_affected_flows", "code_graph_snippet", "code_graph_change_risk",
+    "code_graph_drift",
 }
 
 ROUTES_PY = '''"""HTTP routes."""

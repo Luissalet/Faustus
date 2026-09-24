@@ -53,6 +53,7 @@ from .cochange import cochanges
 from .risk import change_risk
 from .communities import communities, community, community_of
 from .flows import flows, flow, affected_flows
+from .drift import snapshot, drift, list_baselines
 
 __all__ = [
     "index", "search_graph", "trace_path", "callers", "callees",
@@ -60,4 +61,5 @@ __all__ = [
     "impact", "cochanges", "change_risk",
     "communities", "community", "community_of",
     "flows", "flow", "affected_flows",
+    "snapshot", "drift", "list_baselines",
 ]

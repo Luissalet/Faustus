@@ -35,7 +35,8 @@ SCHEMA_KEY_RE = re.compile(r"^(agent_|browser_|desktop_)")
 # Agent-adjacent keys that live under other prefixes but belong on this page.
 EXTRA_KEYS: tuple[str, ...] = ("tool_path_extra_roots", "vision_enabled", "vision_model",
                                "dispatch_model", "dispatch_endpoint_id", "gpu_placement_prefer",
-                               "sandbox_missing_policy", "code_graph_community_summaries")
+                               "sandbox_missing_policy", "code_graph_community_summaries",
+                               "code_graph_drift_check")
 
 FIELD_TYPES: tuple[str, ...] = ("bool", "int", "float", "text", "select", "list", "secret")
 _NUMERIC_TYPES = ("int", "float")
@@ -997,6 +998,11 @@ GROUPS: list[dict[str, Any]] = [
                   "Add a one-sentence model summary to each module community, on top of the always-on "
                   "deterministic purpose line. Only attempted when a local model is already resident "
                   "and idle -- never loads or evicts one, never inside a chat turn."),
+            _bool("code_graph_drift_check", "Architecture drift check",
+                  "In a bound workspace, snapshot the code graph before a turn's first edit and "
+                  "compare it after the last one. Never blocks the turn; a short note is only added "
+                  "to the turn summary when the drift score clears the threshold, and small repos "
+                  "are skipped automatically."),
         ],
     ),
     _group(

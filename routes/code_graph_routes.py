@@ -16,6 +16,9 @@ GET  /api/code-graph/communities/{id}  ?root=  (id: community id, name substring
 GET  /api/code-graph/flows          ?entry=&limit=&sort=&refresh=&root=
 GET  /api/code-graph/flows/{id}     ?root=  (id: flow id, or an entry point's name)
 GET  /api/code-graph/affected-flows ?symbol=&base_ref=&limit=&root=
+POST /api/code-graph/drift/snapshot {root?, project_id?, label?}
+GET  /api/code-graph/drift          ?baseline_id=&refresh=&root=&project_id=
+GET  /api/code-graph/drift/baselines ?limit=&root=&project_id=
 """
 import logging
 
@@ -32,6 +35,12 @@ class IndexBody(BaseModel):
     root: str = ""
     force: bool = False
     project_id: str = ""
+
+
+class DriftSnapshotBody(BaseModel):
+    root: str = ""
+    project_id: str = ""
+    label: str = ""
 
 
 def _guarded(fn, *a, **kw):
@@ -118,5 +127,23 @@ def setup_code_graph_routes():
         require_admin(request)
         return _guarded(code_graph.affected_flows, symbol, workspace=root,
                         project_id=project_id, base_ref=base_ref, limit=limit)
+
+    @router.post("/drift/snapshot")
+    def drift_snapshot(body: DriftSnapshotBody, request: Request):
+        require_admin(request)
+        return _guarded(code_graph.snapshot, body.root, project_id=body.project_id,
+                        label=body.label)
+
+    @router.get("/drift/baselines")
+    def drift_baselines(request: Request, root: str = "", project_id: str = "", limit: int = 20):
+        require_admin(request)
+        return _guarded(code_graph.list_baselines, root, project_id=project_id, limit=limit)
+
+    @router.get("/drift")
+    def drift(request: Request, root: str = "", project_id: str = "", baseline_id: str = "",
+             refresh: bool = False):
+        require_admin(request)
+        return _guarded(code_graph.drift, root, project_id=project_id,
+                        baseline_id=baseline_id, refresh=refresh)
 
     return router
