@@ -8902,6 +8902,12 @@ async def _stream_agent_loop_body(
         _web_streak_nudge_at = 8
     _web_read_streak = 0
     _web_streak_nudged = False
+    # Escalation (24-09-2026, exam run 13): the check at N rounds, a firmer
+    # one at 2N, and from 3N the evidence tools are withheld for a couple of
+    # rounds (research_streak.streak_action). These hold what the pause
+    # took away and how many rounds are left before it is given back.
+    _evidence_paused_tools: Set[str] = set()
+    _evidence_pause_left = 0
     # Stalled plan step: the same todo list, with a step in progress, for
     # many rounds in a row. Live (24-09-2026): "Examinar originales" stayed
     # in progress for 36 rounds of image questions and the turn ended asking
@@ -14494,6 +14500,13 @@ async def _stream_agent_loop_body(
         # purpose: "Reading the next file..." between every curl call is
         # exactly the pattern this guards against.
         if _web_streak_nudge_at > 0:
+            if _evidence_pause_left > 0:
+                _evidence_pause_left -= 1
+                if _evidence_pause_left == 0 and _evidence_paused_tools:
+                    disabled_tools.difference_update(_evidence_paused_tools)
+                    logger.info("[harness] round %s: evidence tools back after the pause: %s",
+                                round_num, sorted(_evidence_paused_tools))
+                    _evidence_paused_tools.clear()
             _round_tool_calls = [(b.tool_type, b.content) for b in (tool_blocks or [])]
             _round_touches_plan = any(
                 name in ("todowrite", "update_plan") for name, _ in _round_tool_calls
@@ -14504,6 +14517,32 @@ async def _stream_agent_loop_body(
             else:
                 _web_read_streak = 0
                 _web_streak_nudged = False
+            _streak_step = _research_streak.streak_action(_web_read_streak, _web_streak_nudge_at)
+            if _streak_step == "insist":
+                messages.append({
+                    "role": "user",
+                    "_harness_note": True,
+                    "content": _lang_note(_research_streak.insist_message(_web_read_streak)["content"]),
+                })
+                _ledger.notes.append(f"web_streak_insist@{round_num}:{_web_read_streak}")
+                logger.info("[harness] round %s: evidence streak %d — second check",
+                            round_num, _web_read_streak)
+            elif _streak_step == "pause" and _evidence_pause_left == 0:
+                _to_pause = set(_research_streak.evidence_tools_to_pause(
+                    sorted(_research_streak.EVIDENCE_READ_TOOL_NAMES - set(disabled_tools))))
+                if _to_pause:
+                    _evidence_paused_tools = _to_pause
+                    disabled_tools.update(_to_pause)
+                    _evidence_pause_left = _research_streak.PAUSE_ROUNDS
+                    messages.append({
+                        "role": "user",
+                        "_harness_note": True,
+                        "content": _lang_note(_research_streak.pause_message(
+                            _web_read_streak, sorted(_to_pause))["content"]),
+                    })
+                    _ledger.notes.append(f"web_streak_pause@{round_num}:{_web_read_streak}")
+                    logger.info("[harness] round %s: evidence streak %d — pausing %s",
+                                round_num, _web_read_streak, sorted(_to_pause))
             if _web_read_streak >= _web_streak_nudge_at and not _web_streak_nudged:
                 _web_streak_nudged = True
                 messages.append({

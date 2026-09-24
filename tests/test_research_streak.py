@@ -321,3 +321,73 @@ def test_python_that_does_more_than_crop_breaks_the_streak():
     for code in (calc, writes, no_save, net):
         assert not looks_like_image_prep_code(code), code
     assert not is_remote_read_only_round([("python", calc)])
+
+
+# ---------------------------------------------------------------------------
+# escalation ladder
+# ---------------------------------------------------------------------------
+
+def test_streak_action_ladder():
+    from src.research_streak import streak_action
+    assert [streak_action(n, 4) for n in range(1, 17)] == (
+        ["none"] * 3 + ["nudge"] + ["none"] * 3 + ["insist"] + ["none"] * 3 + ["pause"]
+        + ["none"] * 3 + ["pause"])
+    assert streak_action(8, 0) == "none"
+    assert streak_action(0, 4) == "none"
+
+
+def test_pause_only_takes_evidence_tools():
+    from src.research_streak import evidence_tools_to_pause
+    assert evidence_tools_to_pause(["python", "bash", "inspect_image", "web_fetch", "write_file"]) == (
+        "inspect_image", "web_fetch")
+
+
+def test_a_streak_that_ignores_two_checks_pauses_the_evidence_tools(tmp_path, monkeypatch):
+    _patch_common(monkeypatch, {"agent_web_streak_nudge": 3})
+    calls = {"n": 0}
+    notes_seen = []
+    words = _FAKE_REPO_FILES + ["nu", "xi", "omicron", "pi", "rho"]
+
+    async def _fake_stream(_candidates, messages, **kwargs):
+        notes_seen.append([m.get("content") for m in messages
+                           if isinstance(m, dict) and m.get("_harness_note")])
+        i = calls["n"]
+        calls["n"] += 1
+        if i < 13:
+            url = f"https://example.invalid/page/{words[i]}"
+            yield "data: " + json.dumps({
+                "type": "tool_calls",
+                "calls": [{"name": "web_fetch", "arguments": json.dumps({"url": url})}],
+            }) + "\n\n"
+            yield "data: " + json.dumps({"type": "finish", "finish_reason": "tool_calls"}) + "\n\n"
+        else:
+            yield "data: " + json.dumps({"delta": "Respuesta final."}) + "\n\n"
+            yield "data: " + json.dumps({"type": "finish", "finish_reason": "stop"}) + "\n\n"
+        yield "data: [DONE]\n\n"
+
+    monkeypatch.setattr(al, "stream_llm_with_fallback", _fake_stream, raising=False)
+    executed = []
+
+    async def _rec_exec(block, *a, **k):
+        executed.append((calls["n"], block.tool_type))
+        return (block.tool_type, {"output": f"ok: {block.content}", "exit_code": 0})
+    monkeypatch.setattr(al, "execute_tool_block", _rec_exec, raising=False)
+    gen = al.stream_agent_loop(
+        "http://127.0.0.1:11434/v1", "qwen3-coder:30b",
+        [{"role": "user", "content": "busca en la web y dime qué dice esa página"}],
+        max_rounds=20,
+        relevant_tools={"web_fetch", "bash"},
+        workspace=str(tmp_path),
+    )
+    _collect(gen)
+    all_notes = "\n".join(n for round_notes in notes_seen for n in round_notes if isinstance(n, str))
+    assert "Second check" in all_notes
+    assert "are paused for the next 2 rounds" in all_notes
+    # Rounds are 1-based. The pause is decided after round 9 and covers
+    # rounds 10 and 11: a web_fetch there is not executed; round 12 gets the
+    # tool back. (The refused rounds still count toward the streak — the
+    # model kept trying to read — so round 12 is again a pause threshold.)
+    rounds_executed = [r for r, tool in executed if tool == "web_fetch"]
+    assert rounds_executed[:9] == list(range(1, 10))
+    assert 10 not in rounds_executed and 11 not in rounds_executed
+    assert 12 in rounds_executed

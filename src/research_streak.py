@@ -200,3 +200,82 @@ def streak_nudge_message(streak: int) -> dict:
         "_harness_note": True,
         "content": _STREAK_NUDGE_TEXT.format(n=streak),
     }
+
+
+# ---------------------------------------------------------------------------
+# escalation: a streak that ignores the first check
+# ---------------------------------------------------------------------------
+#
+# Live, 24-09-2026 (exam run 13): one check at eight rounds was not enough —
+# the model acknowledged it and went on for another thirty rounds of
+# questions to the vision model. The ladder below keeps it a nudge first and
+# only then takes the reading tools away, briefly:
+#
+#   streak == N   → "nudge"   (the message above)
+#   streak == 2N  → "insist"  (write down what you know, attempt the answer)
+#   streak == 3N  → "pause"   (evidence tools withheld for PAUSE_ROUNDS
+#                              rounds: reason, compute, answer)
+#   every N after → "pause" again
+#
+# N is `agent_web_streak_nudge`; 0 disables the whole ladder.
+
+#: Rounds the evidence tools stay withheld once the ladder reaches "pause".
+PAUSE_ROUNDS = 2
+
+
+def streak_action(streak: int, nudge_at: int) -> str:
+    """What the loop should do after a round that left the evidence streak
+    at ``streak``. One of ``none``, ``nudge``, ``insist``, ``pause``; each
+    step fires exactly on its threshold round, so calling this every round
+    never repeats a message within one step."""
+    if nudge_at <= 0 or streak <= 0 or streak % nudge_at:
+        return "none"
+    step = streak // nudge_at
+    if step == 1:
+        return "nudge"
+    if step == 2:
+        return "insist"
+    return "pause"
+
+
+_INSIST_TEXT = (
+    "[Runtime research check — automatic message, not a new user request] "
+    "Second check: {n} rounds in a row only gathering evidence, and the "
+    "first check did not change course. Before ANY other read: write the "
+    "facts you have established so far as a short numbered list (update "
+    "your todo list with them), then try to solve the task from that list — "
+    "combine the clues, compute what can be computed, and write a first "
+    "answer, even a provisional one. Only if a specific step of that attempt "
+    "fails for lack of one precise fact may you read again, and only for "
+    "that fact. If the reading tools are used again without that, they will "
+    "be paused."
+)
+
+_PAUSE_TEXT = (
+    "[Runtime research check — automatic message, not a new user request] "
+    "{n} rounds in a row only gathering evidence. The evidence tools "
+    "({tools}) are paused for the next {rounds} rounds. You already have a "
+    "large amount of material in this conversation: reason with it now — "
+    "list the clues, connect them, run any calculation with a local tool, "
+    "and write your answer (or the best provisional answer, saying exactly "
+    "what remains uncertain). The tools come back after the pause."
+)
+
+
+def insist_message(streak: int) -> dict:
+    return {"role": "user", "_harness_note": True, "content": _INSIST_TEXT.format(n=streak)}
+
+
+def pause_message(streak: int, tools: Sequence[str], rounds: int = PAUSE_ROUNDS) -> dict:
+    return {
+        "role": "user",
+        "_harness_note": True,
+        "content": _PAUSE_TEXT.format(n=streak, tools=", ".join(sorted(tools)), rounds=rounds),
+    }
+
+
+def evidence_tools_to_pause(available: Sequence[str]) -> Tuple[str, ...]:
+    """The evidence tools present in ``available`` (the turn's tool names).
+    Shell tools are never paused: they are how the model computes."""
+    have = set(available or ())
+    return tuple(sorted(name for name in EVIDENCE_READ_TOOL_NAMES if name in have))
