@@ -3,6 +3,13 @@
 Actualizado: 23-09-2026. REGLA: nunca nombres de empresas/personas del buzÃ³n de Luis en commits, docs, tests ni comentarios â€” ejemplos siempre ficticios. SÃ³lo trabajo vigente; quitar cada entrada al cerrarla.
 
 
+## 24-09 — examen Eldoria contra el 27B local (FAUSTUS.md §184)
+
+- **El 27B sin visión propia aún no resuelve la prueba Saber.** Ejecuciones 9, 12 y 13: 37–60 rondas, sin respuesta. Cuello de botella: visión en CPU (`qwen3-vl-30b-cpu`, 30–120 s por pregunta) y que el modelo retranscribe la página (ya hay transcripción humana) en vez de buscar lo que falta. Probar la escalera de racha (§184, tercera tanda) en la ejecución 14 y, si sigue sin cerrar, medir el mismo examen con un modelo principal que vea.
+- **Prueba 02 (Ingenio)** sin ejecutar todavía; el bonus sólo después de cerrar las dos.
+- **El 7000** necesita reinicio y `vision_model` configurado (Ajustes → Visión) para tener lo del examen.
+
+
 ## 24-09 — `inspect_image` sin probar en vivo (FAUSTUS.md §181)
 
 - **Probar `inspect_image` contra un modelo de Visión real y un modelo principal con visión real.** Todos los tests nuevos (`tests/test_inspect_image_core.py`, `tests/test_inspect_image_tool.py`) usan `llm_call`/`analyze_image_with_vl_prompt` simulados; falta un turno real (foto con un círculo dibujado a mano, `action: "ask"` con una pregunta concreta) contra un endpoint de Visión de verdad.

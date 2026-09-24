@@ -8599,6 +8599,14 @@ compartido. Subir el repositorio a GitHub cuando Luis lo diga.
 | la misma página descrita una y otra vez, minutos cada vez | caché en disco de respuestas de visión por imagen+pregunta+modelo (`src/vision_cache.py`, `vision_cache_enabled`, 30 días) |
 | con una transcripción humana al lado, el modelo retranscribía la página región a región | acción `inspect_image` `unlisted`: se le pasa la transcripción (`text`/`text_path`) y devuelve sólo lo que la imagen muestra y la transcripción omite (marcas, dibujos, signos, números) |
 
+**Tercera tanda (mediodía, ejecución 13):**
+
+| Síntoma en vivo | Arreglo |
+|---|---|
+| la misma pregunta, misma región, mismo zoom, tres veces seguidas (la segunda y la tercera servidas por la caché en un segundo) | `inspect_image` lleva un registro por sesión de llamadas exactas: la segunda repetición avisa y conserva la respuesta; desde la tercera, aviso y sólo el comienzo de la respuesta |
+| el modelo recorta la página con PIL antes de cada pregunta a la visión; cada recorte rompía la racha de evidencias y 50 rondas de retranscripción nunca recibieron el aviso | un `python` que sólo abre imágenes y guarda recortes cuenta como parte de la mirada (`looks_like_image_prep_code`); si escribe texto, lanza procesos o toca la red, no |
+| el aviso de racha se reconocía y se ignoraba otras 30 rondas | escalera: aviso a N rondas, segundo aviso firme a 2N (escribe los hechos, intenta una respuesta), y desde 3N las herramientas de evidencia (web y visión; nunca las de shell) se retiran 2 rondas para razonar con lo que hay. El aviso sugiere `unlisted` cuando ya hay transcripción |
+
 **Resultado de la ejecución 9 (primera completa):** 37 rondas, 61 min, sin respuesta; el turno acabó preguntando si seguir. 0/100. El cuello de botella es la visión en CPU (1–4 min por pregunta) y que el 27B no se concentra en lo único visual (qué marca cada círculo y el numeral del reverso).
 
 **Operación.** Los turnos largos se lanzan con `Invoke-CimMethod Win32_Process Create` (un `Start-Process` desde el shell de control murió a los 9 min con `EXIT -1`); `D:\LocalAI\_claude_tmp\st.py` resume ronda, fase, herramienta, segundos sin eventos y el slot del llama-server.
