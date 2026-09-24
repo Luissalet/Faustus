@@ -3219,7 +3219,7 @@ def _scrub_approval_card_from_history(messages: List[Dict[str, Any]], tool_name:
 
 
 def _paused_turn_work_note(messages: List[Dict[str, Any]], approved_tool: str,
-                           limit: int = 6000) -> Optional[str]:
+                           limit: int = 24000) -> Optional[str]:
     """What the paused turn had already done, for the round that resumes it.
 
     A turn that stops on an approval card is saved as one assistant message:
@@ -3247,7 +3247,10 @@ def _paused_turn_work_note(messages: List[Dict[str, Any]], approved_tool: str,
                 done = done[:-1]  # the approved call: its real result is appended next
             if not done:
                 return None
-            snap = _build_actions_snapshot(done, limit=limit)
+            # Newest results first to survive the budget, each with room for
+            # a real answer: live, a turn that had asked a vision model twenty
+            # questions resumed with only its first file reads and started over.
+            snap = _build_actions_snapshot(done, limit=limit, output_chars=2500, keep="tail")
             return ("Work this task already did before it paused for approval -- these tool calls "
                     "ran and these are their results; use them and do not repeat them:\n\n" + snap)
         if seen >= 2:
@@ -6281,10 +6284,15 @@ def _apply_steers_to_messages(
     return events, texts, hint, plan, affected
 
 
-def _build_actions_snapshot(tool_events: list, limit: int = 8000) -> str:
+def _build_actions_snapshot(tool_events: list, limit: int = 8000, *,
+                            output_chars: int = 1200, keep: str = "head") -> str:
     """Compact record of what the agent actually did this turn, for the
     verifier to judge against. One block per tool execution: the command and
-    a head of its output."""
+    a head of its output.
+
+    `keep="tail"` drops the OLDEST blocks first when over `limit` (and says
+    how many), for a reader that needs the latest results most -- the resume
+    after an approval. The default keeps the verifier's behaviour."""
     parts = []
     for ev in tool_events:
         tool = ev.get("tool", "?")
@@ -6293,10 +6301,23 @@ def _build_actions_snapshot(tool_events: list, limit: int = 8000) -> str:
         rc = ev.get("exit_code")
         head = f"[{tool}] {cmd}" if cmd else f"[{tool}]"
         rc_s = f" (exit {rc})" if rc not in (None, 0) else ""
-        body = (out[:1200] + " …") if len(out) > 1200 else (out or "(no output)")
+        body = (out[:output_chars] + " …") if len(out) > output_chars else (out or "(no output)")
         parts.append(f"{head}{rc_s}\n-> {body}")
     snap = "\n\n".join(parts)
-    return snap[:limit] if len(snap) > limit else snap
+    if len(snap) <= limit:
+        return snap
+    if keep != "tail":
+        return snap[:limit]
+    kept: List[str] = []
+    used = 0
+    for part in reversed(parts):
+        if used + len(part) + 2 > limit and kept:
+            break
+        kept.append(part[:limit])
+        used += len(part) + 2
+    dropped = len(parts) - len(kept)
+    lead = f"({dropped} earlier call(s) omitted)\n\n" if dropped else ""
+    return lead + "\n\n".join(reversed(kept))
 
 
 async def _run_verifier_subagent(
