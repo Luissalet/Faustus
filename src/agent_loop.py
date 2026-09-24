@@ -11182,8 +11182,11 @@ async def _stream_agent_loop_body(
             _dropped_untrusted = sum(1 for m in messages if _is_untrusted_context_message(m))
             messages[:] = [m for m in messages if not _is_untrusted_context_message(m)]
             _rounds_budget += 1  # the retry must not eat the task's step budget
-            if _degenerate_output_reason.startswith("reasoning loop") or \
-                    "reasoning loop" in _degenerate_output_reason:
+            if ("reasoning loop" in _degenerate_output_reason
+                    or "sentence template" in _degenerate_output_reason):
+                # (a "sentence template" loop is the same recall, written into
+                # a tool call's arguments: live, a poem guessed line by line in
+                # a python comment.)
                 # Not a broken sampler: the model went round in circles in
                 # its reasoning, usually trying to recall something (live:
                 # restating which sonnet holds a line, three times, with web

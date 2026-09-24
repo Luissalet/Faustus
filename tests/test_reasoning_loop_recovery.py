@@ -129,3 +129,33 @@ def test_another_task_still_waits_for_the_slot(monkeypatch):
         return await asyncio.wait_for(o, timeout=3)
 
     assert asyncio.run(main()) == "got it"
+
+
+def test_a_recall_loop_in_tool_arguments_gets_the_same_note(monkeypatch):
+    """Live, exam run 15: the recall went into a python comment instead."""
+    _patch_common(monkeypatch)
+    seen = []
+    msg = ("Stopped generation: m started repeating tokens (python: tool-call arguments cycle "
+           "through 2 sentence template(s) over their last 40 lines).")
+    chunk = ("event: error\n" + "data: " + json.dumps(
+        {"status": 502, "text": msg, "error": msg, "error_class": "degenerate_output",
+         "fallback_eligible": False}) + "\n\n")
+
+    async def _fake_stream(_candidates, messages, **kwargs):
+        seen.append([dict(m) for m in messages])
+        if len(seen) == 1:
+            yield chunk
+        else:
+            yield f'data: {json.dumps({"delta": "Answer."})}\n\n'
+            yield f'data: {json.dumps({"type": "finish", "finish_reason": "stop"})}\n\n'
+            yield "data: [DONE]\n\n"
+
+    monkeypatch.setattr(al, "stream_llm_with_fallback", _fake_stream, raising=False)
+    _collect(al.stream_agent_loop(
+        "http://127.0.0.1:8081/v1", "m",
+        [{"role": "user", "content": "Which poem is this line from? Explain in detail."}],
+        max_rounds=3, relevant_tools={"read_file", "web_search", "python"},
+    ))
+    assert len(seen) == 2
+    notes = [m.get("content", "") for m in seen[1] if m.get("_harness_note")]
+    assert any("went round in circles" in n for n in notes), notes
