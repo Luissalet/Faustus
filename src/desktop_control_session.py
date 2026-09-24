@@ -118,6 +118,10 @@ def desktop_control_run(function):
         state = {"token": uuid.uuid4().hex, "active": False}
         session_id = _bound_session_id(signature, args, kwargs)
         context = _run.set(state)
+        # One run, many step tasks (below): the local model slot must see
+        # the run as its owner, not whichever task took it (src/model_slot_owner.py).
+        from src.model_slot_owner import SLOT_OWNER
+        slot_owner_token = SLOT_OWNER.set(state)
         iterator = function(*args, **kwargs)
         pending = None
         beat = 0.0
@@ -148,6 +152,10 @@ def desktop_control_run(function):
             await iterator.aclose()
             if _read("desktop-control.json").get("token") == state["token"]:
                 _write("desktop-control.json", {})
+            try:
+                SLOT_OWNER.reset(slot_owner_token)
+            except ValueError:  # finalised from another context: nothing to undo there
+                pass
             _run.reset(context)
     return wrapped
 

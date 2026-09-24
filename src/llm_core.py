@@ -265,6 +265,47 @@ def _gate_workload(workload: Optional[str]) -> str:
     return "background" if str(workload or "").lower() == "background" else "foreground"
 
 
+#: How long a request waits on the local model slot before each diagnostic
+#: line naming who holds it.
+_LOCAL_MODEL_WAIT_LOG_SECONDS = 60.0
+
+
+async def _acquire_local_model_lock(model: str) -> None:
+    """Acquire the local model slot, saying who holds it while waiting.
+
+    Live, 24-09-2026 (exam run 18): a recovery step after a reasoning-loop
+    abort waited on the slot with no log line at all, the model server
+    idle, for over a quarter of an hour. Every minute of waiting now logs
+    the holder (task, workload, model, age); a holder task that has already
+    finished can never release the slot — its stream generator was left
+    suspended — so the slot is reclaimed instead of waiting forever."""
+    waited = 0.0
+    while True:
+        try:
+            await asyncio.wait_for(_LOCAL_MODEL_LOCK.acquire(), timeout=_LOCAL_MODEL_WAIT_LOG_SECONDS)
+            return
+        except asyncio.TimeoutError:
+            waited += _LOCAL_MODEL_WAIT_LOG_SECONDS
+            holder = dict(_LOCAL_MODEL_CURRENT)
+            owner = holder.get("owner")
+            age = time.time() - float(holder.get("started") or time.time())
+            logger.warning(
+                "[model-gate] model=%s waited %.0fs for the local model slot; held by owner=%s "
+                "(finished task=%s) workload=%s model=%s for %.0fs",
+                model, waited,
+                owner.get_name() if isinstance(owner, asyncio.Task) else type(owner).__name__,
+                owner.done() if isinstance(owner, asyncio.Task) else None,
+                holder.get("workload"), holder.get("model"), age,
+            )
+            # Only a holder that IS a task, and has finished, is orphaned; a
+            # run-level owner (a turn advancing step by step) is alive even
+            # when the task that took the slot has ended.
+            if isinstance(owner, asyncio.Task) and owner.done() and _LOCAL_MODEL_LOCK.locked():
+                logger.warning("[model-gate] the holder task has finished; reclaiming the orphaned slot")
+                _LOCAL_MODEL_CURRENT.clear()
+                _LOCAL_MODEL_LOCK.release()
+
+
 @asynccontextmanager
 async def _local_model_slot(target_url: str, model: str, workload: Optional[str] = None):
     """Serialize local model traffic, with foreground chat taking priority.
@@ -305,18 +346,22 @@ async def _local_model_slot(target_url: str, model: str, workload: Optional[str]
         global _LOCAL_MODEL_WAITING_FOREGROUND
         kind = _gate_workload(workload)
         current_task = asyncio.current_task()
-        # Re-entrant for the task that already holds the slot. The agent
+        from src.model_slot_owner import current_owner as _current_slot_owner
+        current_owner = _current_slot_owner()
+        # Re-entrant for the run that already holds the slot. The agent
         # loop handles a stream's error event while that stream's generator
         # is still suspended inside this context manager, lock held; its
         # recovery ladder then asks the local server again from the same
-        # task and waited on the lock forever (seen live: a reasoning loop
-        # abort, then "[recovery] step=3" and thirteen silent minutes).
+        # run and waited on the lock forever (seen live: a reasoning loop
+        # abort, then "[recovery] step=3" and thirteen silent minutes). The
+        # owner is the run (src/model_slot_owner.py), not the task: the agent
+        # loop advances in a new task per step.
         if (
-            current_task is not None
+            current_owner is not None
             and _LOCAL_MODEL_LOCK.locked()
-            and _LOCAL_MODEL_CURRENT.get("task") is current_task
+            and _LOCAL_MODEL_CURRENT.get("owner") is current_owner
         ):
-            logger.info("[model-gate] same task already holds the local model slot; "
+            logger.info("[model-gate] this run already holds the local model slot; "
                         "nested call proceeds model=%s", model)
             yield
             return
@@ -343,13 +388,14 @@ async def _local_model_slot(target_url: str, model: str, workload: Optional[str]
 
         acquired = False
         try:
-            await _LOCAL_MODEL_LOCK.acquire()
+            await _acquire_local_model_lock(model)
             acquired = True
             if kind == "foreground":
                 _LOCAL_MODEL_WAITING_FOREGROUND = max(0, _LOCAL_MODEL_WAITING_FOREGROUND - 1)
             _LOCAL_MODEL_CURRENT.clear()
             _LOCAL_MODEL_CURRENT.update({
                 "task": current_task,
+                "owner": current_owner,
                 "workload": kind,
                 "url": target_url,
                 "model": model,
@@ -360,8 +406,8 @@ async def _local_model_slot(target_url: str, model: str, workload: Optional[str]
             if kind == "foreground":
                 _LOCAL_MODEL_WAITING_FOREGROUND = max(0, _LOCAL_MODEL_WAITING_FOREGROUND - 1)
             if acquired and _LOCAL_MODEL_LOCK.locked():
-                owner = _LOCAL_MODEL_CURRENT.get("task")
-                if owner is current_task:
+                owner = _LOCAL_MODEL_CURRENT.get("owner")
+                if owner is current_owner:
                     _LOCAL_MODEL_CURRENT.clear()
                 _LOCAL_MODEL_LOCK.release()
     finally:

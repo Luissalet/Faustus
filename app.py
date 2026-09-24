@@ -845,6 +845,11 @@ app.include_router(setup_approvals_routes())
 from routes.approval_autonomy_routes import setup_approval_autonomy_routes
 app.include_router(setup_approval_autonomy_routes())
 
+# Asyncio task snapshot for diagnosing a turn that hangs inside the process
+# (a lock or slot wait with the model server idle). Admin only, read-only.
+from routes.debug_tasks_routes import setup_debug_tasks_routes
+app.include_router(setup_debug_tasks_routes())
+
 # Durable workflows. Admin, like the rest of the tool layer: the place a
 # person is actually required is a `human_approval` node inside the run, and
 # that is gated by require_human on the approvals routes.
