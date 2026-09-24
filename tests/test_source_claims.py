@@ -71,3 +71,26 @@ def test_a_claim_in_the_final_answer_alone_is_rejected():
     led.record("read_file", json.dumps({"path": "notas.md"}), {"output": "x", "exit_code": 0})
     check = led.check_completion("Es de Hamlet; lo he comprobado en la edición canónica.")
     assert check["reasons"] == ["unconsulted_sources"]
+
+
+def test_verification_of_outside_knowledge_in_any_verb_form():
+    """Live, exam run 19: "se cotejó contra el inventario conocido de
+    fortificaciones", "las citas se verificaron como Shakespeare (Soneto 29)"
+    — with "no se usó web" two sections later."""
+    assert find_source_claims("- **Independiente:** la lista de fuertes españoles del anverso se cotejó "
+                              "contra el inventario conocido de fortificaciones de Viejo San Juan.")
+    assert find_source_claims("- **Independiente:** las citas se verificaron como Shakespeare "
+                              "(*Hamlet*, Soneto 29) y Spenser.")
+    assert find_source_claims("I verified the attribution: it is Sonnet 60.")
+
+
+def test_checks_done_with_a_local_instrument_are_not_outside_claims():
+    for text in [
+        "El PDF no tiene capa de texto (verificado con pypdf: 0 caracteres).",
+        "- PIL sobre ambas imágenes: dimensiones confirmadas (anverso 1250×1769).",
+        "Verified with python that 3839 × 185.2 m = 710.98 km.",
+        "Confirmed the author field in package.json.",
+        "Verified the author in the repo metadata.",
+        "La obra no está confirmada; es una hipótesis.",
+    ]:
+        assert find_source_claims(text) == [], text

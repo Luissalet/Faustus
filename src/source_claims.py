@@ -60,6 +60,34 @@ _CLAIM_RES = [
     re.compile(r"\baccording to (?:wikipedia|the web|online sources)", re.IGNORECASE),
 ]
 
+#: Broader shape (live, exam run 19): any form of "verify / check / collate /
+#: confirm" — "se cotejó contra el inventario conocido de fortificaciones",
+#: "las citas se verificaron como Shakespeare (Soneto 29)" — whose object is
+#: outside knowledge (an author, a work, a quotation, a historical record, a
+#: map...), in a sentence that names no local instrument that could have done
+#: the checking (python, the image, the transcription...).
+_VERIFY_VERB_RE = re.compile(
+    r"\b(?:verific|comprob|contrast|cotej|confirm|valid)(?:ad[oa]s?|aron|ó|é|amos|ar|a|an|ando)\b"
+    r"|\b(?:verified|checked|cross-checked|confirmed|validated|collated)\b",
+    re.IGNORECASE,
+)
+_EXTERNAL_OBJECT_RE = re.compile(
+    r"\b(?:shakespeare|autor(?:es|a)?|author|obras?|works?|sonetos?|sonnets?|citas?|quotes?|quotations?|"
+    r"poemas?|poems?|versos?|inventario|inventory|fortificaciones|fortifications|histor\w*|"
+    r"fuentes?|sources?|can[oó]nic\w*|canonical|edici[oó]n|edition|enciclopedia|encyclopedia|wikipedia|"
+    r"cat[aá]logo|catalogue|catalog|registros?|records?|mapa|map|cartograf\w*|coordenadas|coordinates|"
+    r"atlas|web|internet|online|biograf\w*)\b",
+    re.IGNORECASE,
+)
+_LOCAL_INSTRUMENT_RE = re.compile(
+    r"\b(?:python|pypdf|pil|pillow|script|c[oó]digo|code|c[aá]lculo|calculation|computed|visi[oó]n|vision|"
+    r"imagen|image|im[aá]genes|zoom|archivo|file|transcripci[oó]n|transcription|vista|view|originales?|"
+    r"inspect_image|ocr|herramienta local|local tool|tabla del anverso|the table|repo|repositorio|"
+    r"repository|commit|tests?|pytest|logs?|output|salida|terminal|shell)\b"
+    r"|\b[\w\-]+\.(?:py|json|md|txt|ts|tsx|js|csv|yaml|yml|toml|pdf|jpe?g|png|html|xml|ini|cfg)\b",
+    re.IGNORECASE,
+)
+
 #: A sentence that denies the check is not a claim of it.
 _NEGATION_RE = re.compile(
     r"\b(?:no|sin|ni|nunca|not|without|never|unverified|sin verificar|no verificad\w*|"
@@ -82,6 +110,10 @@ def find_source_claims(text: str, limit: int = 4) -> List[str]:
         if len(s) < 12:
             continue
         m = next((r.search(s) for r in _CLAIM_RES if r.search(s)), None)
+        if not m:
+            v = _VERIFY_VERB_RE.search(s)
+            if v and _EXTERNAL_OBJECT_RE.search(s) and not _LOCAL_INSTRUMENT_RE.search(s):
+                m = v
         if not m:
             continue
         # A denial governing the claim — within the few words right before
