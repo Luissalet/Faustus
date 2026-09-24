@@ -457,3 +457,52 @@ async def test_unlisted_needs_a_transcription(tmp_path):
     p = _save_png(tmp_path / "page.png", 400, 300)
     out = await _run({"action": "unlisted", "path": str(p)}, ctx={"turn_model": "qwen2.5:7b"})
     assert out["exit_code"] == 1 and "text" in out["error"]
+
+
+# ---------------------------------------------------------------------------
+# repeat ledger: the same exact call in one session says so
+# ---------------------------------------------------------------------------
+
+async def test_an_identical_repeat_is_flagged_and_then_trimmed(tmp_path, monkeypatch):
+    p = _save_png(tmp_path / "r.png", 400, 300)
+    long_answer = "quote line " * 100
+
+    def fake_analyze(images, prompt, owner=None, model_override=None):
+        return {"text": long_answer, "model": "local-vl-model"}
+
+    monkeypatch.setattr(dp, "analyze_image_with_vl_prompt", fake_analyze)
+    args = {"action": "ask", "path": p, "question": "transcribe the quotes",
+            "region": [0.4, 0.5, 1.0, 0.95], "zoom": 3}
+    ctx = {"session_id": "sess-repeat-1", "turn_model": "qwen2.5:7b-instruct"}
+
+    first = await _run(args, ctx)
+    assert "already made this EXACT call" not in first["output"]
+    assert long_answer.strip() in first["output"]
+
+    second = await _run(args, ctx)
+    assert "already made this EXACT call 1 time(s)" in second["output"]
+    assert long_answer.strip() in second["output"]  # still whole the second time
+    assert second["repeat_count"] == 2
+
+    third = await _run(args, ctx)
+    assert "already made this EXACT call 2 time(s)" in third["output"]
+    assert "rest identical to your earlier call" in third["output"]
+    assert len(third["output"]) < len(second["output"])
+
+
+async def test_a_different_question_or_session_is_not_a_repeat(tmp_path, monkeypatch):
+    p = _save_png(tmp_path / "s.png", 400, 300)
+
+    def fake_analyze(images, prompt, owner=None, model_override=None):
+        return {"text": "an answer", "model": "local-vl-model"}
+
+    monkeypatch.setattr(dp, "analyze_image_with_vl_prompt", fake_analyze)
+    base = {"action": "ask", "path": p, "question": "what is circled?"}
+    ctx = {"session_id": "sess-repeat-2", "turn_model": "qwen2.5:7b-instruct"}
+
+    await _run(base, ctx)
+    other_q = await _run({**base, "question": "what numbers are written?"}, ctx)
+    other_sess = await _run(base, {**ctx, "session_id": "sess-repeat-3"})
+    no_sess = await _run(base, {"turn_model": "qwen2.5:7b-instruct"})
+    for r in (other_q, other_sess, no_sess):
+        assert "already made this EXACT call" not in r["output"]

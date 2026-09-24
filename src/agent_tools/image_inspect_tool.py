@@ -26,8 +26,10 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hashlib
 import json
 import logging
+from collections import OrderedDict
 from typing import Any, Dict, List, Optional, Tuple
 
 from src import image_inspection as ii
@@ -415,6 +417,70 @@ _ACTIONS = {
 }
 
 
+# ---------------------------------------------------------------------------
+# repeat ledger
+# ---------------------------------------------------------------------------
+#
+# Exam runs showed a text-only model asking the Vision model the SAME
+# question about the SAME crop two, three, four times in a row (the second
+# answer then comes from the vision cache in a second, identical to the
+# first). The loop breaker only escalates after several identical calls,
+# and by then the turn has burnt rounds re-reading one paragraph. The
+# ledger below remembers, per session, which exact (action, path, region,
+# zoom, question...) the model already asked and says so in the result:
+# the second time with the answer still attached, from the third time on
+# with only its start, so re-asking stops paying off and the model moves to
+# the next open step of its plan.
+
+_REPEAT_LEDGER: "OrderedDict[Tuple[str, str], int]" = OrderedDict()
+_REPEAT_LEDGER_MAX = 512
+_REPEAT_EXCERPT_CHARS = 400
+
+
+def _repeat_key(args: Dict[str, Any], ctx: Dict[str, Any]) -> Optional[Tuple[str, str]]:
+    session = str((ctx or {}).get("session_id") or "").strip()
+    if not session:
+        return None
+    try:
+        norm = json.dumps(args, sort_keys=True, ensure_ascii=False, default=str)
+    except Exception:  # noqa: BLE001 - unserializable args just skip the ledger
+        return None
+    return session, hashlib.sha256(norm.encode("utf-8")).hexdigest()
+
+
+def _note_repeat(key: Optional[Tuple[str, str]]) -> int:
+    """Record one more call for ``key``; return how many times it was seen
+    INCLUDING this call (1 = first time)."""
+    if key is None:
+        return 1
+    count = _REPEAT_LEDGER.pop(key, 0) + 1
+    _REPEAT_LEDGER[key] = count
+    while len(_REPEAT_LEDGER) > _REPEAT_LEDGER_MAX:
+        _REPEAT_LEDGER.popitem(last=False)
+    return count
+
+
+def _repeat_note(count: int) -> str:
+    return (f"[inspect_image: you already made this EXACT call {count - 1} time(s) in "
+            "this session — same image, region and question — so the answer cannot "
+            "change. Do not ask it again. Use what you already have: write down the "
+            "facts it gives, then move to the next open step of your plan (a "
+            "different region, a different question, a calculation, or the answer "
+            "itself).]")
+
+
+def _with_repeat_note(result: Dict[str, Any], count: int) -> Dict[str, Any]:
+    if count < 2 or not isinstance(result, dict) or result.get("error"):
+        return result
+    out = str(result.get("output") or "")
+    if count >= 3 and len(out) > _REPEAT_EXCERPT_CHARS:
+        out = out[:_REPEAT_EXCERPT_CHARS].rstrip() + " … [rest identical to your earlier call]"
+    result = dict(result)
+    result["output"] = f"{_repeat_note(count)}\n\n{out}"
+    result["repeat_count"] = count
+    return result
+
+
 class InspectImageTool:
     """`inspect_image`: ask/view/shapes/compare/grid_locate — see module
     docstring."""
@@ -426,8 +492,9 @@ class InspectImageTool:
         if handler is None:
             return {"error": f"inspect_image: unknown action '{action}' — one of "
                               f"{', '.join(sorted(_ACTIONS))}", "exit_code": 1}
+        count = _note_repeat(_repeat_key({**args, "action": action}, ctx or {}))
         try:
-            return await handler(args, ctx or {})
+            return _with_repeat_note(await handler(args, ctx or {}), count)
         except ii.InspectImageError as exc:
             return {"error": str(exc), "exit_code": 1, "error_class": "inspect_image.invalid"}
         except Exception as exc:  # noqa: BLE001 - a bad image/model call is data, not a crash
