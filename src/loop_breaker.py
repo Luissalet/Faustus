@@ -109,6 +109,53 @@ def _mask_numbers(norm_args: str) -> Tuple[str, Tuple[float, ...], Tuple[bool, .
     return _NUMBER_RE.sub("#", norm_args), values, is_int
 
 
+#: A string field at least this long is free text (compared by likeness);
+#: shorter ones (paths, actions, ids) must match exactly.
+FREE_TEXT_MIN_CHARS = 40
+
+
+def _split_free_text(norm_args: str) -> Tuple[str, List[str]]:
+    """(exact part, free-text fields) of a normalized argument string. Only
+    a JSON object is split; anything else is all exact."""
+    try:
+        parsed = json.loads(norm_args)
+    except (json.JSONDecodeError, ValueError):
+        return norm_args, []
+    if not isinstance(parsed, dict):
+        return norm_args, []
+    exact: Dict[str, Any] = {}
+    texts: List[str] = []
+    for k in sorted(parsed):
+        v = parsed[k]
+        if isinstance(v, str) and len(v) >= FREE_TEXT_MIN_CHARS:
+            exact[k] = "<text>"
+            texts.append(v)
+        else:
+            exact[k] = v
+    return json.dumps(exact, sort_keys=True, ensure_ascii=True, separators=(",", ":")), texts
+
+
+def _has_identity(exact_part: str) -> bool:
+    """Whether the exact part names its target: a short string field such
+    as a path or a URL, not only numbers, flags and free text."""
+    try:
+        parsed = json.loads(exact_part)
+    except (json.JSONDecodeError, ValueError):
+        return False
+    if not isinstance(parsed, dict):
+        return False
+    return any(isinstance(v, str) and v != "<text>" and len(v) >= 5 for v in parsed.values())
+
+
+def _similar(a: str, b: str) -> bool:
+    import difflib
+    return difflib.SequenceMatcher(None, a, b, autojunk=False).ratio() >= REVISIT_SIMILARITY
+
+
+#: How alike two free-text fields must read to belong to one run (0-1).
+REVISIT_SIMILARITY = 0.85
+
+
 def _close(a: Tuple[float, ...], b: Tuple[float, ...], ints: Tuple[bool, ...]) -> bool:
     if len(a) != len(b):
         return False
@@ -201,6 +248,7 @@ class LoopPolicy:
     # whether this run already got its one nudge.
     revisit_detection: bool = True
     _revisit_key: Optional[str] = field(default=None, repr=False)
+    _revisit_texts: List[str] = field(default_factory=list, repr=False)
     _revisit_vectors: List[Tuple[float, ...]] = field(default_factory=list, repr=False)
     _revisit_count: int = field(default=0, repr=False)
     _revisit_nudged: bool = field(default=False, repr=False)
@@ -282,10 +330,26 @@ class LoopPolicy:
         first qualifies as circling."""
         if not self.revisit_detection:
             return False
-        masked, values, ints = _mask_numbers(norm_args)
-        key = f"{tool}\u241f{masked}"
-        if key != self._revisit_key or not values:
+        _masked_all, values, ints = _mask_numbers(norm_args)
+        exact_raw, texts = _split_free_text(norm_args)
+        exact_part = _mask_numbers(exact_raw)[0]
+        key = f"{tool}\u241f{exact_part}"
+        # Short fields (a path, an action) must match exactly; long free
+        # text (a question, a query) only has to read alike: live, the model
+        # re-cropped the same corner of a page rephrasing its question each
+        # time.
+        # With a short identifying field (a path) the free text is just the
+        # wording; without one (a shell command) the text IS the call, and it
+        # has to read alike.
+        same_run = (
+            key == self._revisit_key
+            and len(texts) == len(self._revisit_texts)
+            and (_has_identity(exact_raw)
+                 or all(_similar(a, b) for a, b in zip(texts, self._revisit_texts)))
+        )
+        if not same_run or not values:
             self._revisit_key = key if values else None
+            self._revisit_texts = texts
             self._revisit_vectors = [values] if values else []
             self._revisit_count = 0
             self._revisit_nudged = False
