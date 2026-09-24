@@ -268,3 +268,52 @@ async def test_status_reports_unhealthy_when_process_exists_but_probe_unhealthy(
                          })
     status = await engines.status_engine(engine["id"])
     assert status["state"] == "unhealthy"
+
+
+def test_argv_fields_split_a_hand_started_server_into_fields_and_flags():
+    from src.engines import _argv_fields
+    argv = [r"D:\llama\llama-server.exe", "-m", r"D:\m.gguf", "-c", "235008", "-ngl", "99",
+            "-fa", "on", "--jinja", "--host", "127.0.0.1", "--port", "8081", "-t", "8",
+            "--alias", "local-27b", "--metrics"]
+    out = _argv_fields(argv)
+    assert out["executable"] == r"D:\llama\llama-server.exe"
+    assert out["extra_args"] == ["-ngl", "99", "-fa", "on", "--jinja", "-t", "8",
+                                 "--alias", "local-27b", "--metrics"]
+    assert out["argv_ctx_size"] == 235008
+    assert "mtp" not in out
+    mtp = _argv_fields(["llama-server", "--spec-type", "draft-mtp", "--spec-draft-n-max", "3"])
+    assert mtp["mtp"] is True and mtp["mtp_draft_n_max"] == 3 and mtp["extra_args"] == []
+    assert _argv_fields(["python", "-m", "x"]) == {}
+    assert _argv_fields([]) == {}
+
+
+@pytest.mark.asyncio
+async def test_discover_reads_the_context_from_generation_settings(monkeypatch):
+    import httpx
+    from src import engines
+
+    class _Resp:
+        status_code = 200
+
+        def json(self):
+            return {"model_path": "/m.gguf", "model_alias": "local-27b",
+                    "default_generation_settings": {"n_ctx": 235008}}
+
+    class _Client:
+        def __init__(self, *a, **k):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def get(self, url):
+            return _Resp()
+
+    monkeypatch.setattr(httpx, "AsyncClient", _Client)
+    monkeypatch.setattr(engines, "_listening_argv", lambda port: ["llama-server", "-m", "/m.gguf", "--jinja"])
+    out = await engines.discover_from_port(8081)
+    assert out["found"] and out["ctx_size"] == 235008 and out["name"] == "local-27b"
+    assert out["executable"] == "llama-server" and out["extra_args"] == ["--jinja"]

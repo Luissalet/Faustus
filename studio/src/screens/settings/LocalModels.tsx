@@ -963,8 +963,19 @@ function EngineEditor({ engine, onCancel, onSave }: {
     setDiscovering(true);
     try {
       const found = await discoverEngine(draft.port, draft.host || '127.0.0.1');
-      if (found.found) {
-        setDraft((d) => ({ ...d, model_path: found.model_path || d.model_path, ctx_size: found.ctx_size || d.ctx_size }));
+      if (found.found || found.executable) {
+        // Empty fields take what the running server reports; anything the
+        // owner already typed is kept.
+        setDraft((d) => ({
+          ...d,
+          name: d.name || found.name || d.name,
+          executable: d.executable || found.executable || d.executable,
+          model_path: found.model_path || d.model_path,
+          ctx_size: found.ctx_size || found.argv_ctx_size || d.ctx_size,
+          extra_args: (d.extra_args ?? []).length ? d.extra_args : (found.extra_args ?? d.extra_args),
+          mtp: found.mtp ?? d.mtp,
+          mtp_draft_n_max: found.mtp_draft_n_max ?? d.mtp_draft_n_max,
+        }));
       }
     } catch {
       /* nothing listening there, or it did not answer /props — leave the draft as-is */

@@ -88,4 +88,7 @@ export const startEngine = (id: string) => call<Record<string, unknown>>(`${API}
 export const stopEngine = (id: string) => call<Record<string, unknown>>(`${API}/${encodeURIComponent(id)}/stop`, { method: 'POST' });
 export const verifyEngine = (id: string) => call<Record<string, unknown>>(`${API}/${encodeURIComponent(id)}/verify`, { method: 'POST' });
 export const discoverEngine = (port: number, host = '127.0.0.1') =>
-  getJson<{ found: boolean; model_path?: string; ctx_size?: number }>(`${API}/discover?port=${port}&host=${encodeURIComponent(host)}`);
+  getJson<{
+    found: boolean; model_path?: string; ctx_size?: number; name?: string; executable?: string;
+    extra_args?: string[]; mtp?: boolean; mtp_draft_n_max?: number; argv_ctx_size?: number;
+  }>(`${API}/discover?port=${port}&host=${encodeURIComponent(host)}`);

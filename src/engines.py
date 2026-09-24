@@ -90,7 +90,8 @@ def _flag_value(argv: List[str], names: tuple) -> Optional[str]:
 
 
 def _is_engine_executable(executable: str) -> bool:
-    base = os.path.basename(str(executable or "")).lower()
+    # Either separator: a Windows path must be recognised on any host.
+    base = str(executable or "").replace("\\", "/").rsplit("/", 1)[-1].lower()
     return base in _ENGINE_EXE_NAMES
 
 
@@ -502,7 +503,63 @@ async def discover_from_port(port: int, *, host: str = DEFAULT_HOST) -> Dict[str
             body = resp.json()
             out["found"] = True
             out["model_path"] = str(body.get("model_path") or "")
-            out["ctx_size"] = int(body.get("n_ctx") or 0) or None
+            # Current llama-server builds report the context only inside
+            # `default_generation_settings`; older ones at the top level.
+            dgs = body.get("default_generation_settings") or {}
+            n_ctx = body.get("n_ctx") or (dgs.get("n_ctx") if isinstance(dgs, dict) else None)
+            out["ctx_size"] = int(n_ctx or 0) or None
+            if body.get("model_alias"):
+                out["name"] = str(body["model_alias"])
     except Exception as exc:  # noqa: BLE001
         out["error"] = str(exc)
+    # The server's own command line fills what /props cannot say: the
+    # executable and every other flag it was started with, so adopting a
+    # server started by hand keeps it running exactly as it was.
+    try:
+        out.update(_argv_fields(_listening_argv(int(port))))
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("discover: no command line for port %s: %s", port, exc)
+    return out
+
+
+def _listening_argv(port: int) -> List[str]:
+    """Full argv of the process listening on `port`, or []."""
+    from src import process_center
+    hit = process_center.pid_listening_on(port)
+    if not hit:
+        return []
+    psutil = process_center._psutil()
+    if psutil is None:
+        return []
+    return list(psutil.Process(int(hit["pid"])).cmdline() or [])
+
+
+def _argv_fields(argv: List[str]) -> Dict[str, Any]:
+    """Split a llama-server argv into the structured fields and the rest.
+
+    Only an argv whose program is llama-server counts. The structured flags
+    (model, context, port, host) and the MTP pair are taken out; everything
+    else is kept in order as `extra_args`, one token per entry, the shape
+    `_build_argv` appends back."""
+    if not argv or not _is_engine_executable(argv[0]):
+        return {}
+    out: Dict[str, Any] = {"executable": argv[0]}
+    structured = set(_MODEL_FLAGS + _CTX_FLAGS + _PORT_FLAGS + _HOST_FLAGS)
+    extra: List[str] = []
+    i = 1
+    while i < len(argv):
+        tok = argv[i]
+        if tok in structured or tok in _SPEC_TYPE_FLAGS or tok in _SPEC_DRAFT_N_MAX_FLAGS:
+            value = argv[i + 1] if i + 1 < len(argv) else ""
+            if tok in _SPEC_TYPE_FLAGS and value == "draft-mtp":
+                out["mtp"] = True
+            elif tok in _SPEC_DRAFT_N_MAX_FLAGS and value.isdigit():
+                out["mtp_draft_n_max"] = int(value)
+            elif tok in _CTX_FLAGS and value.isdigit():
+                out.setdefault("argv_ctx_size", int(value))
+            i += 2
+            continue
+        extra.append(tok)
+        i += 1
+    out["extra_args"] = extra
     return out
