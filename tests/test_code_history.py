@@ -277,7 +277,7 @@ async def test_code_history_tool_explain(repo, monkeypatch):
     )
     tool = CodeHistoryTool()
     raw = await tool.execute(json.dumps({"path": "mod.py"}), ctx={})
-    data = json.loads(raw)
+    data = raw if isinstance(raw, dict) else json.loads(raw)
     assert data["exit_code"] == 0
     assert "summary_md" in data
 
@@ -290,7 +290,7 @@ async def test_code_history_tool_mode_risk(repo, monkeypatch):
     )
     tool = CodeHistoryTool()
     raw = await tool.execute(json.dumps({"path": "mod.py", "mode": "risk"}), ctx={})
-    data = json.loads(raw)
+    data = raw if isinstance(raw, dict) else json.loads(raw)
     assert data["exit_code"] == 0
     assert "score" in data
 
@@ -303,7 +303,7 @@ async def test_code_history_tool_requires_path(repo, monkeypatch):
     )
     tool = CodeHistoryTool()
     raw = await tool.execute(json.dumps({}), ctx={})
-    data = json.loads(raw)
+    data = raw if isinstance(raw, dict) else json.loads(raw)
     assert data["exit_code"] == 1
 
 
@@ -315,7 +315,7 @@ async def test_code_history_tool_symbol_mode_needs_symbol(repo, monkeypatch):
     )
     tool = CodeHistoryTool()
     raw = await tool.execute(json.dumps({"path": "mod.py", "mode": "symbol"}), ctx={})
-    data = json.loads(raw)
+    data = raw if isinstance(raw, dict) else json.loads(raw)
     assert data["exit_code"] == 1
 
 

@@ -43,16 +43,16 @@ class CodeHistoryTool:
     """`code_history`: who changed a file/symbol, how often, with which
     commits, what else usually changes with it, and the risk that implies."""
 
-    async def execute(self, content: Any, ctx: dict = None) -> str:
+    async def execute(self, content: Any, ctx: dict = None) -> dict:
         args = _args(content)
         try:
             workspace = _workspace(args)
         except ValueError as exc:
-            return json.dumps({"error": f"code_history: {exc}", "exit_code": 1})
+            return {"error": f"code_history: {exc}", "exit_code": 1}
 
         path = str(args.get("path") or "").strip()
         if not path:
-            return json.dumps({"error": "code_history: `path` is required", "exit_code": 1})
+            return {"error": "code_history: `path` is required", "exit_code": 1}
         symbol = str(args.get("symbol") or "").strip() or None
         mode = str(args.get("mode") or ("symbol" if symbol else "explain")).strip().lower()
         if mode not in _MODES:
@@ -67,7 +67,7 @@ class CodeHistoryTool:
                 result = code_history.file_history(workspace, path, limit=limit or 30)
             elif mode == "symbol":
                 if not symbol:
-                    return json.dumps({"error": "code_history: mode=symbol requires `symbol`", "exit_code": 1})
+                    return {"error": "code_history: mode=symbol requires `symbol`", "exit_code": 1}
                 result = code_history.symbol_history(workspace, path, symbol, limit=limit or 20)
             elif mode == "blame":
                 result = code_history.blame_summary(
@@ -82,11 +82,11 @@ class CodeHistoryTool:
                 result = code_history.explain(workspace, path, symbol=symbol)
         except Exception as exc:  # noqa: BLE001 - a tool call never crashes the turn
             logger.warning("code_history tool failed: %s", exc)
-            return json.dumps({"error": f"code_history: {exc}", "exit_code": 1})
+            return {"error": f"code_history: {exc}", "exit_code": 1}
 
         if "error" not in result:
             result.setdefault("exit_code", 0)
             result.setdefault("output", result.get("summary_md") or f"code_history[{mode}] for {path}")
         else:
             result.setdefault("exit_code", 1)
-        return json.dumps(result, default=str)
+        return json.loads(json.dumps(result, default=str))

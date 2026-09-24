@@ -2321,6 +2321,10 @@ async def _execute_tool_block_impl(
             "exit_code": 1
         }
 
+    if not isinstance(result, dict):
+        # A handler that answers with plain text (or a JSON string) must not
+        # crash the turn: wrap it as an ordinary successful tool result.
+        result = {"output": "" if result is None else str(result), "exit_code": 0}
     logger.info(f"Tool executed: {desc} -> exit_code={result.get('exit_code', 'n/a')}")
     return desc, result
 
