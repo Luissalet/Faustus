@@ -417,3 +417,18 @@ async def test_what_goes_to_the_vision_model_is_capped_unless_asked(tmp_path, mo
     assert max(sizes[-1]) == 1280
     await _run({"action": "ask", "path": p, "question": "q", "max_side": 2000}, ctx={"turn_model": "qwen2.5:7b"})
     assert max(sizes[-1]) == 2000
+
+
+async def test_a_blind_view_never_sends_more_than_the_vision_cap(tmp_path, monkeypatch):
+    p = _save_png(tmp_path / "big.png", 2400, 1800)
+    sizes = []
+
+    def fake_analyze(images, prompt, owner=None, model_override=None):
+        from PIL import Image
+        import io as _io
+        sizes.append(Image.open(_io.BytesIO(images[0][0])).size)
+        return {"text": "ok", "model": "vl"}
+
+    monkeypatch.setattr(dp, "analyze_image_with_vl_prompt", fake_analyze)
+    await _run({"action": "view", "path": p, "max_side": 2400}, ctx={"turn_model": "qwen2.5:7b"})
+    assert max(sizes[-1]) == 1280

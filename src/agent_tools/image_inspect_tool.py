@@ -211,7 +211,11 @@ async def _action_view(args: Dict[str, Any], ctx: Dict[str, Any]) -> Dict[str, A
         # called `view` over and over on a scanned page, each time getting a
         # general description instead of an answer. Ask the Vision model the
         # literal question instead, and say how to do better.
-        out = await _action_ask({**args, "question": str(args.get("question") or "").strip() or (
+        # The size a blind model asks for in `view` is meant for its own
+        # eyes, not for the Vision model: live, max_side=2400 on a full page
+        # kept a CPU-only vision model busy for over nine minutes.
+        capped = min(int(args.get("max_side") or _vision_max_side()), _vision_max_side())
+        out = await _action_ask({**args, "max_side": capped, "question": str(args.get("question") or "").strip() or (
             "Transcribe every piece of text in this region exactly, then list every drawing, "
             "mark, circle, arrow or symbol with its position as fractions of the image.")}, ctx)
         out["output"] = (
