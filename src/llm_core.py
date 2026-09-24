@@ -265,6 +265,43 @@ def _gate_workload(workload: Optional[str]) -> str:
     return "background" if str(workload or "").lower() == "background" else "foreground"
 
 
+#: How long a request waits on the local model slot before each diagnostic
+#: line naming who holds it.
+_LOCAL_MODEL_WAIT_LOG_SECONDS = 60.0
+
+
+async def _acquire_local_model_lock(model: str) -> None:
+    """Acquire the local model slot, saying who holds it while waiting.
+
+    Live, 24-09-2026 (exam run 18): a recovery step after a reasoning-loop
+    abort waited on the slot with no log line at all, the model server
+    idle, for over a quarter of an hour. Every minute of waiting now logs
+    the holder (task, workload, model, age); a holder task that has already
+    finished can never release the slot — its stream generator was left
+    suspended — so the slot is reclaimed instead of waiting forever."""
+    waited = 0.0
+    while True:
+        try:
+            await asyncio.wait_for(_LOCAL_MODEL_LOCK.acquire(), timeout=_LOCAL_MODEL_WAIT_LOG_SECONDS)
+            return
+        except asyncio.TimeoutError:
+            waited += _LOCAL_MODEL_WAIT_LOG_SECONDS
+            holder = dict(_LOCAL_MODEL_CURRENT)
+            task = holder.get("task")
+            age = time.time() - float(holder.get("started") or time.time())
+            logger.warning(
+                "[model-gate] model=%s waited %.0fs for the local model slot; held by task=%s "
+                "(done=%s) workload=%s model=%s for %.0fs",
+                model, waited, getattr(task, "get_name", lambda: task)() if task is not None else None,
+                task.done() if isinstance(task, asyncio.Task) else None,
+                holder.get("workload"), holder.get("model"), age,
+            )
+            if isinstance(task, asyncio.Task) and task.done() and _LOCAL_MODEL_LOCK.locked():
+                logger.warning("[model-gate] the holder task has finished; reclaiming the orphaned slot")
+                _LOCAL_MODEL_CURRENT.clear()
+                _LOCAL_MODEL_LOCK.release()
+
+
 @asynccontextmanager
 async def _local_model_slot(target_url: str, model: str, workload: Optional[str] = None):
     """Serialize local model traffic, with foreground chat taking priority.
@@ -343,7 +380,7 @@ async def _local_model_slot(target_url: str, model: str, workload: Optional[str]
 
         acquired = False
         try:
-            await _LOCAL_MODEL_LOCK.acquire()
+            await _acquire_local_model_lock(model)
             acquired = True
             if kind == "foreground":
                 _LOCAL_MODEL_WAITING_FOREGROUND = max(0, _LOCAL_MODEL_WAITING_FOREGROUND - 1)
