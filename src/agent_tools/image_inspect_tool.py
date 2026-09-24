@@ -220,7 +220,7 @@ async def _action_ask(args: Dict[str, Any], ctx: Dict[str, Any]) -> Dict[str, An
         # exactly what's wrong and how to fix it (Settings -> Vision).
         return {"output": f"{text}{warn}", "exit_code": 0, "answered_by": "none",
                 "measurements": measurements}
-    hint = _transcription_hint(loaded, question, args)
+    hint = _transcription_hint(loaded, question, args, text)
     return {"output": f"[{model_used}] {text}{warn}{hint}", "exit_code": 0,
             "answered_by": model_used, "measurements": measurements}
 
@@ -228,19 +228,14 @@ async def _action_ask(args: Dict[str, Any], ctx: Dict[str, Any]) -> Dict[str, An
 _TRANSCRIBE_Q_RE = re.compile(r"\btranscri|\bliteral|\bword by word|\bpalabra por palabra", re.IGNORECASE)
 
 
-def _transcription_hint(loaded: "ii.LoadedImage", question: str, args: Dict[str, Any]) -> str:
-    """When the model asks the vision model to transcribe text and a human
-    transcription sits next to the image, say so once per answer: live
-    (exam runs 13-21) a text-only model re-transcribed, crop by crop, a page
-    whose transcription it had already read — minutes per crop on a CPU
-    vision model, and the vision model's reading is the worse of the two."""
-    if str(args.get("action") or "ask").lower() != "ask" or not _TRANSCRIBE_Q_RE.search(question or ""):
-        return ""
+def _nearby_transcriptions(loaded: "ii.LoadedImage") -> List[str]:
+    """Human transcriptions (*transcri*.md/.txt) in the image's folder or its
+    parent, one level deep, sorted."""
     try:
         from src.image_inspection import resolve_path
         src_path = resolve_path(str(loaded.source))
-    except Exception:  # noqa: BLE001 - a url or an unresolved path: no hint
-        return ""
+    except Exception:  # noqa: BLE001 - a url or an unresolved path: none
+        return []
     base = os.path.dirname(src_path)
     found = []
     for root in {base, os.path.dirname(base)}:
@@ -254,9 +249,65 @@ def _transcription_hint(loaded: "ii.LoadedImage", question: str, args: Dict[str,
                         found.append(os.path.join(dirpath, name))
         except Exception:  # noqa: BLE001
             continue
+    return sorted(set(found))
+
+
+_QUOTED_TERM_RE = re.compile(r"[\"\u201c\u00ab']([^\"\u201d\u00bb'\n]{2,40})[\"\u201d\u00bb']")
+_CAP_WORD_RE = re.compile(r"(?<![.!?]\s)(?<!^)\b([A-Z\u00c0-\u00dd][a-z\u00e0-\u00ff]{3,})\b")
+
+
+def _matching_transcription_lines(path: str, question: str, answer: str, limit: int = 8) -> List[str]:
+    """Lines of the transcription that contain a term the question quotes
+    (or a capitalised name it uses mid-sentence) or one the vision answer
+    quotes. A term that matches more than 3 lines is too common to point
+    at anything and is dropped."""
+    try:
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            lines = [ln.rstrip() for ln in fh.read(200_000).splitlines()]
+    except OSError:
+        return []
+    terms = {t.strip() for t in _QUOTED_TERM_RE.findall(question or "") + _QUOTED_TERM_RE.findall(answer or "")}
+    terms |= set(_CAP_WORD_RE.findall(question or ""))
+    picked: List[str] = []
+    for term in sorted(t for t in terms if len(t) >= 3):
+        rx = re.compile(r"(?<!\w)" + re.escape(term) + r"(?!\w)", re.IGNORECASE)
+        hits = [ln.strip() for ln in lines if ln.strip() and rx.search(ln)]
+        if not hits or len(hits) > 3:
+            continue
+        for h in hits:
+            if h not in picked:
+                picked.append(h)
+    return picked[:limit]
+
+
+def _transcription_hint(loaded: "ii.LoadedImage", question: str, args: Dict[str, Any],
+                        answer: str = "") -> str:
+    """Point the model at the human transcription next to the image.
+
+    Live (exam runs 13-21) a text-only model re-transcribed, crop by crop, a
+    page whose transcription it had already read — minutes per crop on a
+    CPU vision model, whose reading is the worse of the two. In run 24 it
+    went further: the vision model miscounted the arrows of a line, and the
+    deliverable declared the human transcription wrong. So when the
+    transcription has the lines the question is about, they are quoted
+    right under the vision answer; for any other transcription-like
+    question the plain pointer is given."""
+    if str(args.get("action") or "ask").lower() != "ask":
+        return ""
+    found = _nearby_transcriptions(loaded)
     if not found:
         return ""
-    rel = os.path.relpath(sorted(found)[0], os.path.dirname(base)) if base else sorted(found)[0]
+    base = os.path.dirname(os.path.dirname(found[0]))
+    rel = os.path.relpath(found[0], base) if base else found[0]
+    lines = _matching_transcription_lines(found[0], question, answer)
+    if lines:
+        quoted = "\n".join(f"  {ln[:200]}" for ln in lines)
+        return (f"\n\n[inspect_image: the human transcription ({rel}) has these lines for what "
+                f"you asked:\n{quoted}\nWhere the vision reading above differs, trust the "
+                "transcription for words and for counts of written signs (arrows, marks, letters); "
+                "use the vision model only for what the transcription leaves out.]")
+    if not _TRANSCRIBE_Q_RE.search(question or ""):
+        return ""
     return (f"\n\n[inspect_image: a human transcription exists ({rel}). The vision model's reading "
             "above is less reliable than it for text; rely on the transcription for wording, and "
             "ask inspect_image action=\"unlisted\" with text_path for only what it leaves out "

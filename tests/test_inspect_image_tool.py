@@ -573,3 +573,27 @@ async def test_a_transcription_request_points_at_the_human_transcription(tmp_pat
     other = await _run({"action": "ask", "path": p, "question": "What is circled?"},
                        ctx={"turn_model": "qwen2.5:7b-instruct"})
     assert "human transcription" not in other["output"]
+
+
+@pytest.mark.asyncio
+async def test_the_transcription_lines_a_question_is_about_are_quoted_under_the_answer(tmp_path, monkeypatch):
+    import src.image_inspection as ii_mod
+    (tmp_path / "originales").mkdir()
+    (tmp_path / "transcripciones").mkdir()
+    (tmp_path / "transcripciones" / "transcripcion_usuario.md").write_text(
+        "## Reverso\n\nHamlet + ←←←←← = ??\nGlorious + →→→→↑ = ????????\nholy + ←←←←← = ?????\n"
+        "Para poner a prueba vuestro saber\n", encoding="utf-8")
+    p = _save_png(tmp_path / "originales" / "back.png", 400, 300)
+    monkeypatch.setattr(ii_mod, "resolve_path", lambda raw: raw)
+
+    def fake_analyze(images, prompt, owner=None, model_override=None):
+        return {"text": "Glorious: 4 flechas. holy: 4 flechas.", "model": "local-vl-model"}
+
+    monkeypatch.setattr(dp, "analyze_image_with_vl_prompt", fake_analyze)
+    out = await _run({"action": "ask", "path": p,
+                      "question": 'Cuenta las flechas de la línea que empieza con "Glorious" y la de "holy"'},
+                     ctx={"turn_model": "qwen2.5:7b-instruct"})
+    text = out["output"]
+    assert "Glorious + →→→→↑ = ????????" in text and "holy + ←←←←← = ?????" in text
+    assert "Hamlet" not in text.split("[inspect_image: the human transcription")[1]
+    assert "trust the transcription" in text
