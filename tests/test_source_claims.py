@@ -1,0 +1,70 @@
+"""An answer or deliverable must never say it verified or consulted an
+outside source when no tool read one this turn (live, exam run 15: quotation
+attributions "verified against the canonical text" with web search off, two
+of them wrong)."""
+import json
+
+from src.agent_harness import TurnLedger
+from src.source_claims import find_source_claims, is_source_tool
+
+
+def test_claims_of_an_outside_check_are_found_in_both_languages():
+    es = ("- **Identificación de las citas**: verificada contra el texto canónico de\n"
+          "  Shakespeare (*Hamlet* III.1). Coinciden con los fragmentos visibles.")
+    assert find_source_claims(es)
+    assert find_source_claims("La fecha se contrastó... y está confirmada según Wikipedia.")
+    assert find_source_claims("I verified the quote against the Folger edition online.")
+    assert find_source_claims("We looked it up: the line is from Sonnet 60.")
+
+
+def test_denials_and_workspace_checks_are_not_claims():
+    for text in [
+        "1 cable = 185,2 m (conocimiento general, no consultado en web).",
+        "No se utilizó consulta web (no habilitada) ni ayuda del evaluador.",
+        "Símbolos verificados fila a fila por visión, consistentes con la transcripción del usuario.",
+        "The attribution is from memory, not verified against any source.",
+        "The numbers were checked with python.",
+        "Texto superior confirmado por visión sobre la vista.",
+    ]:
+        assert find_source_claims(text) == [], text
+
+
+def test_source_tools():
+    assert is_source_tool("web_search") and is_source_tool("reach_read")
+    assert is_source_tool("mcp__library__search") and is_source_tool("browser_navigate")
+    assert not is_source_tool("read_file") and not is_source_tool("python")
+
+
+def _ledger_with_written(text, extra_tools=()):
+    led = TurnLedger(workspace=None, user_text="resuelve el acertijo")
+    led.record("read_file", json.dumps({"path": "ENUNCIADO.md"}), {"output": "x", "exit_code": 0})
+    for tool in extra_tools:
+        led.record(tool, json.dumps({"query": "sonnet"}), {"output": "results", "exit_code": 0})
+    led.record("write_file", json.dumps({"path": "RESPUESTA.md", "content": text}),
+               {"output": "Wrote", "exit_code": 0})
+    return led
+
+
+def test_a_claim_in_the_written_deliverable_is_rejected_without_a_source_tool():
+    led = _ledger_with_written("## Comprobación\n- Citas verificadas contra el texto canónico.\n")
+    check = led.check_completion("He escrito RESPUESTA.md con la solución.")
+    assert "unconsulted_sources" in check["reasons"]
+    assert check["source_claims"]
+    msg = led.rejection_message(check)
+    assert "NO tool that reads outside the workspace ran" in msg
+    assert "Fix the file you wrote" in msg
+    note = led.user_note(check, final=True)
+    assert "no está" in note and "verificado" in note
+
+
+def test_the_same_claim_passes_after_a_web_search():
+    led = _ledger_with_written("- Citas verificadas contra el texto canónico.\n", extra_tools=("web_search",))
+    check = led.check_completion("He escrito RESPUESTA.md.")
+    assert "unconsulted_sources" not in check["reasons"]
+
+
+def test_a_claim_in_the_final_answer_alone_is_rejected():
+    led = TurnLedger(workspace=None, user_text="¿de qué obra es esta cita?")
+    led.record("read_file", json.dumps({"path": "notas.md"}), {"output": "x", "exit_code": 0})
+    check = led.check_completion("Es de Hamlet; lo he comprobado en la edición canónica.")
+    assert check["reasons"] == ["unconsulted_sources"]

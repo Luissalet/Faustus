@@ -12132,9 +12132,13 @@ async def _stream_agent_loop_body(
                     # with a real editing/terminal tool call. The normal round
                     # budget still protects the host from an actually broken
                     # provider, while useful local work gets more runway.
+                    # A false "I checked the source" is fixed by rewording, not
+                    # by an execution cycle, and the answer is kept with a note.
+                    _sources_only = _check["reasons"] == ["unconsulted_sources"]
                     if (
                         _harness_execution_recoveries < 1
                         and workspace
+                        and not _sources_only
                         and not (_ledger.effects and _harness.TurnLedger.check_is_stall_only(_check))
                         and bool(
                             (set(_tool_names_sent) | set(_relevant_tools or []))
@@ -12170,7 +12174,7 @@ async def _stream_agent_loop_body(
                     # fabricated completion: keep the summary the user can
                     # actually read. Replacing it with "the task remains
                     # unfinished" was the live failure on a 17-file turn.
-                    if _ledger.effects and _harness.TurnLedger.check_is_stall_only(_check):
+                    if (_ledger.effects or _sources_only) and _harness.TurnLedger.check_is_stall_only(_check):
                         logger.warning(
                             "[harness] round %s stall exhausted after %s rejections (%s) — keeping backed answer",
                             round_num, _ledger.rejections, ",".join(_check["reasons"]),

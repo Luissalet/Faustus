@@ -112,6 +112,13 @@ MCP_EFFECT_VERBS = frozenset({
 })
 
 
+#: Tools whose arguments carry text written into a file or document.
+_TEXT_WRITING_TOOLS = frozenset({
+    "write_file", "edit_file", "apply_patch", "create_document", "update_document", "edit_document",
+})
+_WRITTEN_TEXT_CAP = 200_000
+
+
 def mcp_tool_looks_mutating(tool: str) -> bool:
     """`mcp__<server>__<name>` whose <name> carries a mutating verb."""
     parts = str(tool or "").split("__", 2)
@@ -1224,6 +1231,10 @@ class TurnLedger:
         #: far (`note_known_text`), actually contained.
         self.seen_cites: Set[str] = set()
         self.observed_paths: Set[str] = set()
+        #: Text this turn wrote into files (write_file content, edit_file
+        #: new_string...), so a claim made in the deliverable is checked like
+        #: one made in the answer. Capped (`_WRITTEN_TEXT_CAP`).
+        self.written_text: str = ""
         self.rejections = 0
         self.length_continues = 0
         self.intent_nudges = 0
@@ -1294,6 +1305,8 @@ class TurnLedger:
         if (result or {}).get('approval_required') is True:
             ev['approval_required'] = True
         self.events.append(ev)
+        if ok and tool in _TEXT_WRITING_TOOLS:
+            self._note_written_text(content)
         try:
             self.seen_cites |= cite_ids(result if isinstance(result, str) else json.dumps(result, default=str))
         except Exception:  # noqa: BLE001 - a guard never breaks a turn
@@ -1594,6 +1607,41 @@ class TurnLedger:
         prefixes = {c.split("-", 1)[0] for c in self.seen_cites}
         return sorted(c for c in cited - self.seen_cites if c.split("-", 1)[0] in prefixes)
 
+    def _note_written_text(self, content: str) -> None:
+        raw = content or ""
+        parts: List[str] = []
+        try:
+            data = json.loads(raw) if raw.lstrip().startswith("{") else None
+        except Exception:  # noqa: BLE001 - plain-text arguments
+            data = None
+        if isinstance(data, dict):
+            for key in ("content", "new_string", "new_str", "text", "patch", "body", "markdown"):
+                val = data.get(key)
+                if isinstance(val, str):
+                    parts.append(val)
+            for edit in data.get("edits") or []:
+                if isinstance(edit, dict) and isinstance(edit.get("new_string"), str):
+                    parts.append(edit["new_string"])
+        else:
+            parts.append(raw)
+        added = "\n".join(parts)
+        if added:
+            self.written_text = (self.written_text + "\n" + added)[-_WRITTEN_TEXT_CAP:]
+
+    def consulted_sources(self) -> bool:
+        """Whether any tool that reads outside the workspace ran this turn."""
+        from src.source_claims import is_source_tool
+        return any(e.get("ok") and is_source_tool(str(e.get("tool") or "")) for e in self.events)
+
+    def unconsulted_source_claims(self, text: str) -> List[str]:
+        """Sentences of the answer, or of files written this turn, that say
+        an outside source (a text, an edition, the web) was checked, when no
+        tool that reads outside the workspace ran this turn."""
+        from src.source_claims import find_source_claims
+        if self.consulted_sources():
+            return []
+        return find_source_claims((text or "") + "\n\n" + self.written_text)
+
     def check_completion(self, text: str) -> Dict[str, Any]:
         """Judge a text-only (final) round against the evidence.
 
@@ -1635,6 +1683,9 @@ class TurnLedger:
         bad_cites = self.unverified_citations(body)
         if bad_cites:
             reasons.append("fabricated_citations")
+        source_claims = self.unconsulted_source_claims(body)
+        if source_claims:
+            reasons.append("unconsulted_sources")
         if intent and not claims and not self.conversational_turn():
             reasons.append("intent_without_action")
         if permission:
@@ -1656,6 +1707,7 @@ class TurnLedger:
             "bad_paths": bad_paths,
             "untouched_paths": untouched,
             "bad_citations": bad_cites,
+            "source_claims": source_claims,
             "intent": intent,
             "permission": permission,
         }
@@ -1723,6 +1775,20 @@ class TurnLedger:
                 "A citation must be the id a tool call actually gave you. Call the tool for each "
                 "of those numbers now and cite the ids it returns, or remove those citations."
             )
+        if "unconsulted_sources" in check["reasons"]:
+            lines.append(
+                "- You state that something was verified against, checked in or consulted from an "
+                "outside source (a text, an edition, the web), but NO tool that reads outside the "
+                "workspace ran this turn. That statement is false. The sentences:"
+            )
+            for c in (check.get("source_claims") or [])[:4]:
+                lines.append(f'    "{c}"')
+            lines.append(
+                "  Either check it now with web_search / web_fetch (if they are available) and name "
+                "what you found, or rewrite those sentences as what they are: from memory, NOT "
+                "verified. Fix the file you wrote as well as your answer. Never say you verified "
+                "or consulted something you did not."
+            )
         if "claimed_paths_untouched" in check["reasons"]:
             named = check.get("untouched_paths") or []
             done = ", ".join(self.mutated_paths()) or "NONE"
@@ -1769,10 +1835,10 @@ class TurnLedger:
              "plan_without_action", "fabricated_citations"}
             & set(check["reasons"])
         )
-        if check["reasons"] == ["fabricated_citations"]:
+        if set(check["reasons"]) <= {"fabricated_citations", "unconsulted_sources"}:
             lines.append(
                 "The rest of your answer stands and the work already done is real: do NOT redo it. "
-                "Fix only those citations, then give the final answer again."
+                "Fix only those statements, then give the final answer again."
             )
             return "\n".join(lines)
         if permission_only or (permission and stall_only and self.effects):
@@ -1839,6 +1905,14 @@ class TurnLedger:
                  "it cites results no tool returned: ")
                 + ", ".join(f"`{c}`" for c in check.get("bad_citations") or [])
             )
+        if "unconsulted_sources" in check["reasons"]:
+            parts.append(
+                "dice haber verificado o consultado fuentes externas, pero en este turno no se "
+                "consultó ninguna (lo que atribuye a una fuente viene de memoria y **no está "
+                "verificado**)" if es else
+                "it says it verified or consulted outside sources, but none was consulted this "
+                "turn (what it attributes to a source is from memory and **not verified**)"
+            )
         if "intent_without_action" in check["reasons"]:
             parts.append(
                 "anunció una acción y terminó sin ejecutar ninguna herramienta" if es else
@@ -1866,6 +1940,10 @@ class TurnLedger:
             tail = (" No des por hecha esa parte; el resto sí está respaldado por el registro "
                     "de herramientas." if es else
                     " Do not take that part as done; the rest is backed by the tool log.")
+        elif check["reasons"] == ["unconsulted_sources"]:
+            tail = (" El resto de la respuesta se mantiene; esas afirmaciones sobre fuentes no están "
+                    "verificadas." if es else
+                    " The rest of the answer stands; those statements about sources are not verified.")
         elif check["reasons"] == ["asked_instead_of_continuing"]:
             tail = (" El trabajo hecho se mantiene; no esperes permiso, sigue." if es else
                     " The work already done stands; do not wait for permission, continue.")
