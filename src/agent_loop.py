@@ -3258,6 +3258,35 @@ def _paused_turn_work_note(messages: List[Dict[str, Any]], approved_tool: str,
     return None
 
 
+def _resume_plan_line(session_id: Optional[str]) -> str:
+    """Where the plan stood when the turn paused, for the resume note.
+
+    Live (exam run 15): the resume note ended with the saved request, which
+    began "read ENUNCIADO.md and INSTRUCCIONES.md first" — and the model,
+    with twenty tool results in hand, started the task over from reading
+    those files and describing the whole page again. Naming the plan's
+    finished steps and the step to continue keeps the request as context,
+    not as a fresh set of first steps. Empty when the session has no plan."""
+    if not session_id:
+        return ""
+    from src.agent_tools.coding_tools import load_todos
+    todos = [t for t in (load_todos(session_id) or []) if isinstance(t, dict)]
+    if not todos:
+        return ""
+    done = [str(t.get("content") or "").strip() for t in todos
+            if str(t.get("status") or "") == "completed" and str(t.get("content") or "").strip()]
+    open_steps = [t for t in todos if str(t.get("status") or "") not in ("completed", "cancelled")]
+    if not open_steps:
+        return ""
+    current = next((t for t in open_steps if str(t.get("status") or "") == "in_progress"), open_steps[0])
+    parts = []
+    if done:
+        parts.append("Your plan's finished steps (do not redo them): " + "; ".join(done[:8]) + ". ")
+    parts.append("Continue with the step: " + str(current.get("content") or "").strip() + ". ")
+    parts.append("The steps the request below lists first were part of the work you already did. ")
+    return "".join(parts)
+
+
 _APPROVAL_CARD_LINE_RE = re.compile(r"[ \t]*" + re.escape(_APPROVAL_CARD_QUESTION) + r"[ \t]*", re.IGNORECASE)
 
 
@@ -9513,6 +9542,10 @@ async def _stream_agent_loop_body(
             endpoint_url=endpoint_url,
         )
         _approved_result_injected = True
+        try:
+            _resume_plan = _resume_plan_line(session_id)
+        except Exception:  # noqa: BLE001 - the plan line is a hint, never the resume
+            _resume_plan = ""
         messages.append({
             "role": "system",
             "content": (
@@ -9522,6 +9555,7 @@ async def _stream_agent_loop_body(
                 "Use the remaining tools and verify the requested outcome before finishing. "
                 "Listing or focusing a window does not close it. Do not repeat completed actions. "
                 "Current tool restrictions still apply; the runtime handles any further approval. "
+                + _resume_plan +
                 "Original task (saved user request): " + approved.continuation_query)
             ),
         })
