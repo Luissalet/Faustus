@@ -145,6 +145,31 @@ _COMMUNITIES_CAP = 5.0
 _HIGH_FANIN_CAP = 5.0
 _SINKS_CAP = 5.0
 
+#: A same-language `calls` edge is never `exact` (only `imports`/`defines`/
+#: `tests` earn that) -- every one is `static_inferred`, resolved by bare
+#: name against `code_symbols`. When a name is ambiguous (several workspace
+#: symbols share it), `_resolve` (src/context_engine/code_index.py) now
+#: keeps the edge only when something corroborates THIS candidate (same
+#: file, an import from the caller's module, or both being methods of the
+#: same class) -- otherwise it drops it, exactly as it always did for an
+#: uncorroborated ambiguous name. A corroborated-but-ambiguous edge is
+#: marked at this weakest tier instead of `static_inferred`, so flows.py can
+#: tell the two apart without re-deriving ambiguity itself (it only sees
+#: `code_edges`, which `_resolve` has already filtered).
+_AMBIGUOUS_DOWNGRADE_CERTAINTY = "lexical"
+
+#: How much a flow member counts toward `size`/`high_fanin`/`sinks` in
+#: `_criticality`, by the certainty of the edge that reached it. Only the
+#: corroborated-ambiguous edges `_resolve` produces are ever `lexical` here
+#: (a `calls` edge was always `static_inferred` or dropped before this), so
+#: every flow that used to exist keeps an identical score -- this can only
+#: ever LOWER a score, and only for a flow that walks through one of these.
+_MEMBER_WEIGHT: Dict[str, float] = {_AMBIGUOUS_DOWNGRADE_CERTAINTY: 0.5}
+
+
+def _member_weight(certainty: str) -> float:
+    return _MEMBER_WEIGHT.get(certainty, 1.0)
+
 
 def _clamp01(x: float) -> float:
     return 0.0 if x < 0.0 else (1.0 if x > 1.0 else x)
@@ -428,16 +453,25 @@ def _criticality(entry_sym: _Sym, members: List[Dict[str, Any]],
     heaviest weight because a path that mutates state or talks to the
     network matters more than one that only reads), and `coverage` (the
     INVERSE of the fraction of members whose file a test exercises -- an
-    important, untested path is more critical, not less)."""
+    important, untested path is more critical, not less).
+
+    `size`, `high_fanin` and `sinks` count each member at `_member_weight`
+    (its certainty), so a member reached only through an ambiguous
+    same-language name match that `_resolve` needed corroboration to follow
+    at all (certainty downgraded to `lexical`) counts for less than one
+    reached by a normal resolved call -- every OTHER member (certainty
+    `exact`/`static_inferred`, or the entry itself) keeps weight 1.0, so a
+    flow with no such edge scores exactly as before."""
     paths = {entry_sym.path} | {m["path"] for m in members}
     files_spanned = len(paths)
-    size = len(members) + 1  # entry counts as a member of its own flow
+    size = 1.0 + sum(_member_weight(m["certainty"]) for m in members)  # entry is a full member of its own flow
 
     communities = {community_of_path[p] for p in paths if p in community_of_path}
     communities_crossed = len(communities) if communities else 1
 
-    high_fanin = sum(1 for m in members if fanin_count.get(m["symbol_id"], 0) >= _HIGH_FANIN_THRESHOLD)
-    sinks = sum(1 for m in members if _SINK_RE.search(m["symbol"]))
+    high_fanin = sum(_member_weight(m["certainty"]) for m in members
+                     if fanin_count.get(m["symbol_id"], 0) >= _HIGH_FANIN_THRESHOLD)
+    sinks = sum(_member_weight(m["certainty"]) for m in members if _SINK_RE.search(m["symbol"]))
     covered = sum(1 for p in paths if p in test_targets)
     coverage_fraction = covered / max(1, len(paths))
 

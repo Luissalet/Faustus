@@ -879,6 +879,33 @@ def _insert_edges(conn: sqlite3.Connection, workspace: str, project_id: str,
     return len(rows)
 
 
+def _owning_class(qualname: str, kind: str) -> str:
+    """The class part of a method's qualname (``ClassName`` for
+    ``ClassName.method``, exactly as `_extract` recorded it — not
+    module-qualified), or ``""`` for anything that is not a method. ``""``
+    never corroborates against ``""`` (the caller checks it is non-empty)."""
+    if kind != "method" or "." not in qualname:
+        return ""
+    return qualname.rsplit(".", 1)[0]
+
+
+def _ambiguous_call_corroborated(src_path: str, src_qualname: str, src_kind: str,
+                                  candidate_path: str, candidate_qualname: str,
+                                  candidate_kind: str,
+                                  imports_by_path: Mapping[str, Set[str]]) -> bool:
+    """One candidate among several sharing a bare name is still worth an
+    edge when something *other* than the name says so: the caller and the
+    candidate live in the same file, the caller's file imports the
+    candidate's module, or (the "receiver's class known" case) both are
+    methods of a same-named class. Any one is enough."""
+    if src_path and src_path == candidate_path:
+        return True
+    if candidate_path and _module_qualname(candidate_path) in imports_by_path.get(src_path, ()):
+        return True
+    src_class = _owning_class(src_qualname, src_kind)
+    return bool(src_class) and src_class == _owning_class(candidate_qualname, candidate_kind)
+
+
 def _resolve(conn: sqlite3.Connection, workspace: str,
              imports: Sequence[Tuple[str, str, bool]],
              calls: Sequence[Tuple[str, str, str, str]],
@@ -897,17 +924,34 @@ def _resolve(conn: sqlite3.Connection, workspace: str,
       alias — `_py_imports`'s alias map rewrote `_offload(...)` to `offload_
       if_oversized` before this ever runs).  Exactly one symbol with that name
       in this workspace makes it `static_inferred`.  Several candidates are
-      only resolved when the call carried a `module_hint` (the module the
-      alias imported it from) and exactly one candidate is defined in that
-      module — otherwise the edge is dropped.  Guessing between two `save()`s
-      and presenting the guess as a graph edge is the failure §10.3 names; a
-      hint from an explicit import is not a guess.
+      resolved when the call carried a `module_hint` (the module the alias
+      imported it from) and exactly one candidate is defined in that module,
+      also at `static_inferred` — a hint from an explicit import is not a
+      guess.  Failing that, several candidates are *still* resolved, at the
+      weaker `lexical` certainty, when exactly one of them is corroborated by
+      something other than the name itself (see `_ambiguous_call_corroborated`
+      — same file, an unaliased import of its module, or a same-named owning
+      class).  Otherwise the edge is dropped: guessing between two `save()`s
+      with nothing to tell them apart and presenting the guess as a graph edge
+      is the failure §10.3 names.
     * A test module's import of a workspace module is additionally a `tests`
       edge, at the same certainty as the import it was derived from."""
     edges: List[Edge] = []
     modules = {row["qualname"]: row["id"] for row in conn.execute(
         "SELECT qualname, id FROM code_symbols "
         "WHERE workspace = ? AND kind = 'module'", (workspace,))}
+
+    # `path -> {dotted names that file imports}` -- every import in this
+    # batch, resolved to a workspace module or not (`import requests` still
+    # corroborates a `requests.get(...)` call even though `requests` is not
+    # indexed here). Used only as the "an import corroborates it" signal
+    # below, so a call in a file whose imports were not re-parsed alongside
+    # it in the same batch simply gets no import signal, not a wrong one.
+    imports_by_path: Dict[str, Set[str]] = {}
+    for isrc, dotted, _optional in imports:
+        path = module_paths.get(isrc)
+        if path:
+            imports_by_path.setdefault(path, set()).add(dotted)
 
     for src, dotted, optional in imports:
         target = modules.get(dotted)
@@ -920,29 +964,53 @@ def _resolve(conn: sqlite3.Connection, workspace: str,
                               "static_inferred", dotted))
 
     wanted = sorted({name for _, name, _, _ in calls})
-    by_name: Dict[str, List[Tuple[str, str]]] = {}
+    by_name: Dict[str, List[Tuple[str, str, str, str]]] = {}
     for start in range(0, len(wanted), 400):
         chunk = wanted[start:start + 400]
         marks = ",".join("?" * len(chunk))
         for row in conn.execute(
-                f"SELECT name, id, path FROM code_symbols WHERE workspace = ? "
+                f"SELECT name, id, path, qualname, kind FROM code_symbols WHERE workspace = ? "
                 f"AND name IN ({marks}) AND kind IN "
                 "('function', 'method', 'class', 'route', 'tool')",
                 [workspace, *chunk]):
-            by_name.setdefault(row["name"], []).append((row["id"], row["path"]))
+            by_name.setdefault(row["name"], []).append(
+                (row["id"], row["path"], row["qualname"], row["kind"]))
+
+    # `id -> (path, qualname, kind)` for every call's own caller (a
+    # function/method body), needed only for the same-file/same-class
+    # corroboration signals above -- `module_paths` covers modules, not these.
+    call_src_ids = sorted({src for src, _, _, _ in calls})
+    src_info: Dict[str, Tuple[str, str, str]] = {}
+    for start in range(0, len(call_src_ids), 400):
+        chunk = call_src_ids[start:start + 400]
+        marks = ",".join("?" * len(chunk))
+        for row in conn.execute(
+                f"SELECT id, path, qualname, kind FROM code_symbols WHERE workspace = ? "
+                f"AND id IN ({marks})", [workspace, *chunk]):
+            src_info[str(row["id"])] = (str(row["path"]), str(row["qualname"]), str(row["kind"]))
 
     for src, name, detail, module_hint in calls:
-        found = [(sid, path) for sid, path in (by_name.get(name) or []) if sid != src]
+        found = [(sid, path, qual, kind) for sid, path, qual, kind in (by_name.get(name) or [])
+                 if sid != src]
         if not found:
             continue
         if len(found) == 1:
             edges.append(Edge(src, found[0][0], "calls", "static_inferred", detail))
             continue
-        if not module_hint:
-            continue
-        matched = [sid for sid, path in found if _module_qualname(path) == module_hint]
-        if len(matched) == 1:
-            edges.append(Edge(src, matched[0], "calls", "static_inferred", detail))
+        if module_hint:
+            matched = [sid for sid, path, _qual, _kind in found
+                       if _module_qualname(path) == module_hint]
+            if len(matched) == 1:
+                edges.append(Edge(src, matched[0], "calls", "static_inferred", detail))
+                continue
+        src_path, src_qual, src_kind = src_info.get(src, ("", "", ""))
+        corroborated = [
+            (sid, path, qual, kind) for sid, path, qual, kind in found
+            if _ambiguous_call_corroborated(src_path, src_qual, src_kind,
+                                            path, qual, kind, imports_by_path)
+        ]
+        if len(corroborated) == 1:
+            edges.append(Edge(src, corroborated[0][0], "calls", "lexical", detail))
     return edges
 
 

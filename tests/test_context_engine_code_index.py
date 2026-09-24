@@ -564,3 +564,78 @@ def test_from_import_submodule_alias_attribute_call_disambiguates(ce_store, tmp_
     calls = [row for row in ci.neighbors(run.id, kinds=["calls"]) if row["direction"] == "out"]
     assert len(calls) == 1
     assert calls[0]["path"] == "pkg/a.py"
+
+
+# ── ambiguous-name corroboration (PENDIENTES 23-09 noche, item 4) ──────────
+#
+# `helper` in `pkg/a.py` and `pkg/b.py` (via `_alias_fixture`) is ambiguous
+# with no alias at all; these cover the three signals other than an alias
+# that still let `_resolve` follow one candidate instead of guessing or
+# dropping, each at the weaker `lexical` certainty.
+
+def test_ambiguous_call_resolved_by_same_file_membership(ce_store, tmp_path):
+    """The call site lives in `pkg/b.py` itself, alongside its own `helper`
+    -- no alias needed to know which one it means."""
+    root = _alias_fixture(tmp_path)
+    write(root, "pkg/b.py", "def helper():\n    return 'b'\n\n\ndef run():\n    return helper()\n")
+    ci.refresh(root, project_id="p1")
+
+    run = _sym(root, "pkg/b.py", "run")
+    calls = [row for row in ci.neighbors(run.id, kinds=["calls"]) if row["direction"] == "out"]
+    assert len(calls) == 1
+    assert calls[0]["path"] == "pkg/b.py"
+    assert calls[0]["certainty"] == "lexical"
+
+
+def test_ambiguous_call_resolved_by_an_unaliased_import_of_its_module(ce_store, tmp_path):
+    """`helper` is ambiguous and this call carries no alias -- but the
+    caller's file plainly `import`s `pkg.a`, where one candidate lives."""
+    root = _alias_fixture(tmp_path)
+    write(root, "caller.py", "import pkg.a\n\n\ndef run():\n    return helper()\n")
+    ci.refresh(root, project_id="p1")
+
+    run = _sym(root, "caller.py", "run")
+    calls = [row for row in ci.neighbors(run.id, kinds=["calls"]) if row["direction"] == "out"]
+    assert len(calls) == 1
+    assert calls[0]["path"] == "pkg/a.py"
+    assert calls[0]["certainty"] == "lexical"
+
+
+def test_ambiguous_method_call_resolved_by_a_same_named_owning_class(ce_store, tmp_path):
+    """Two different files each define a class named `Processor`; a THIRD,
+    unrelated class also defines `process`, making the bare name ambiguous.
+    A sibling method in one `Processor` file calls `self.process()` -- no
+    alias, no shared file -- but the receiver's class is known by name,
+    enough to tell it apart from the unrelated class's `process`."""
+    root = str(tmp_path / "classes")
+    os.makedirs(root)
+    write(root, "proc_a.py", "class Processor:\n    def process(self):\n        return 'a'\n")
+    write(root, "proc_b.py",
+          "class Processor:\n"
+          "    def run(self):\n"
+          "        return self.process()\n")
+    write(root, "unrelated.py", "class Widget:\n    def process(self):\n        return 'w'\n")
+    ci.refresh(root, project_id="p1")
+
+    run = _sym(root, "proc_b.py", "Processor.run")
+    calls = [row for row in ci.neighbors(run.id, kinds=["calls"]) if row["direction"] == "out"]
+    assert len(calls) == 1
+    assert calls[0]["path"] == "proc_a.py"
+    assert calls[0]["certainty"] == "lexical"
+
+
+def test_ambiguous_call_still_dropped_when_two_candidates_are_corroborated(ce_store, tmp_path):
+    """Same-file corroboration only helps when it narrows to ONE candidate --
+    two `helper`s in the very same file as the caller is still a guess."""
+    root = str(tmp_path / "same_file_ambiguous")
+    os.makedirs(root)
+    write(root, "mod.py",
+          "def helper():\n    return 'top'\n\n\n"
+          "class A:\n"
+          "    def helper(self):\n"
+          "        return 'method'\n\n\n"
+          "def run():\n    return helper()\n")
+    ci.refresh(root, project_id="p1")
+
+    run = _sym(root, "mod.py", "run")
+    assert ci.neighbors(run.id, kinds=["calls"]) == []
