@@ -186,12 +186,40 @@ def scan(owner: Optional[str], *, refresh: bool = False) -> Dict[str, Any]:
     return payload
 
 
-def set_watch_roots(roots: Sequence[Any]) -> Dict[str, Any]:
-    """Validate and persist `git_watch_roots`. Every entry must be an
-    absolute path to an existing directory; the first bad one is reported
-    (`{"ok": False, "error": ..., "path": ...}`) and nothing is written.
-    Returns the normalized list that was stored."""
+def normalize_exclude(exclude: Sequence[Any]) -> Dict[str, Any]:
+    """`git_scan_exclude` entries: a bare folder name (no separators) or an
+    absolute path. Anything else -- a relative path with separators, an
+    empty string, a non-string -- is refused with the offending entry."""
+    cleaned: List[str] = []
+    seen = set()
+    for raw in exclude:
+        if not isinstance(raw, str) or not raw.strip():
+            return {"ok": False, "error": "Each excluded folder must be a name or an absolute path", "path": raw}
+        item = raw.strip()
+        is_name = os.sep not in item and "/" not in item and not os.path.isabs(item)
+        if not is_name and not os.path.isabs(item):
+            return {"ok": False, "error": "Excluded folder must be a bare name or an absolute path", "path": item}
+        key = item.lower() if is_name else os.path.normcase(item)
+        if key in seen:
+            continue
+        seen.add(key)
+        cleaned.append(item)
+    return {"ok": True, "exclude": cleaned}
+
+
+def set_watch_roots(roots: Sequence[Any], exclude: Optional[Sequence[Any]] = None) -> Dict[str, Any]:
+    """Validate and persist `git_watch_roots` (and, when given,
+    `git_scan_exclude`). Every root must be an absolute path to an existing
+    directory; the first bad entry is reported (`{"ok": False, "error":
+    ..., "path": ...}`) and nothing is written. Returns what was stored."""
     from src.settings import update_settings
+
+    patch: Dict[str, Any] = {}
+    if exclude is not None:
+        ex = normalize_exclude(exclude)
+        if not ex["ok"]:
+            return ex
+        patch["git_scan_exclude"] = ex["exclude"]
 
     cleaned: List[str] = []
     seen = set()
@@ -209,10 +237,14 @@ def set_watch_roots(roots: Sequence[Any]) -> Dict[str, Any]:
             continue
         seen.add(k)
         cleaned.append(real)
-    update_settings({"git_watch_roots": cleaned})
+    patch["git_watch_roots"] = cleaned
+    update_settings(patch)
     git_panel.invalidate_discovery_cache()
     invalidate()
-    return {"ok": True, "watch_roots": cleaned}
+    out = {"ok": True, "watch_roots": cleaned}
+    if "git_scan_exclude" in patch:
+        out["exclude"] = patch["git_scan_exclude"]
+    return out
 
 
 def format_summary(payload: Dict[str, Any]) -> str:

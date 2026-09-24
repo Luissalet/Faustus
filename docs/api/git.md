@@ -207,9 +207,11 @@ informan pero NO cuentan como atención: ir por detrás no es un olvido.
 
 ### `GET /api/git/watch-roots` · `PUT /api/git/watch-roots` (require_human)
 
-Las carpetas vigiladas globales de la instalación (ajuste `git_watch_roots`).
-`GET` devuelve `{"watch_roots": [normalizadas y existentes], "configured":
-[tal cual se guardaron]}`. `PUT {"watch_roots": [...]}` valida cada entrada
+Las carpetas vigiladas globales de la instalación (ajuste `git_watch_roots`)
+y las omitidas (`git_scan_exclude`). `GET` devuelve `{"watch_roots":
+[normalizadas y existentes], "configured": [tal cual se guardaron],
+"exclude": [...]}`. `PUT {"watch_roots": [...], "exclude": [...]}` (`exclude`
+opcional: omitido = no se toca) valida cada raíz
 (ruta absoluta a un directorio existente; la primera mala responde 400
 `git.bad_root` con `path` y no guarda nada), deduplica por ruta real,
 guarda e invalida las cachés de descubrimiento y del radar. Un repo bajo
@@ -217,6 +219,15 @@ una carpeta vigilada es un repo de pleno derecho: aparece en
 `GET /api/git/repos` (con `watched: true` y `projects: []`) y todas las
 rutas `/repos/{id}/*` funcionan sobre él. Si además lo enlaza un proyecto,
 gana la entrada del proyecto.
+
+**Omisiones del escaneo.** El recorrido (compartido por el panel y el radar)
+salta siempre las carpetas que empiezan por punto (`.worktrees`, `.cache`…)
+además de `node_modules`/`venv`/`dist`/`build`, y lo que diga
+`git_scan_exclude`: un nombre pelado (`_scratch`) omite cualquier carpeta que
+se llame así a cualquier profundidad; una ruta absoluta omite ese subárbol.
+Una entrada relativa con separadores se rechaza (400). Sin esto, una carpeta
+de clones desechables se comía los 200 repos del presupuesto antes de llegar
+a las que importan.
 
 ### `GET /api/git/repos/{repo_id}`
 

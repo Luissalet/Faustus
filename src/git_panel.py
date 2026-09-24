@@ -64,9 +64,36 @@ GIT_TIMEOUT_LONG = 120.0
 # ---------------------------------------------------------------------------
 # Discovery limits
 # ---------------------------------------------------------------------------
-MAX_REPOS = 120
+MAX_REPOS = 200
 MAX_DEPTH = 3
 _SKIP_DIR_NAMES = frozenset({"node_modules", ".venv", "venv", "__pycache__", "dist", "build"})
+
+
+def scan_exclusions() -> Tuple[frozenset, Tuple[str, ...]]:
+    """The `git_scan_exclude` setting split into (folder NAMES, absolute
+    PATH prefixes -- normcase(realpath)). A bare name skips any directory
+    called that at any depth; an absolute path skips that subtree. Bad
+    entries are ignored, settings unreachable = nothing extra."""
+    try:
+        from src.settings import get_setting
+        raw = get_setting("git_scan_exclude", []) or []
+    except Exception:  # noqa: BLE001
+        return frozenset(), ()
+    names = set()
+    paths: List[str] = []
+    if isinstance(raw, list):
+        for item in raw:
+            if not isinstance(item, str) or not item.strip():
+                continue
+            item = item.strip()
+            if os.path.isabs(item):
+                try:
+                    paths.append(os.path.normcase(os.path.realpath(item)))
+                except OSError:
+                    continue
+            elif os.sep not in item and "/" not in item:
+                names.add(item.lower())
+    return frozenset(names), tuple(paths)
 
 # The filesystem WALK (finding `.git` dirs under an owner's linked folders)
 # is what actually costs seconds on a Windows box with 24 repos -- the live
@@ -260,16 +287,39 @@ def _is_repo_dir(path: str) -> bool:
         return False
 
 
-def _walk_repos(root: str, *, max_depth: int = MAX_DEPTH, budget: int = MAX_REPOS) -> List[str]:
+def _walk_repos(root: str, *, max_depth: int = MAX_DEPTH, budget: int = MAX_REPOS,
+                exclusions: Optional[Tuple[frozenset, Tuple[str, ...]]] = None) -> List[str]:
     """Pre-order DFS from `root` (depth 0) down to `max_depth`, collecting
     every directory that looks like a repo -- including nested ones, since
     a repo directory is not itself excluded from further descent (only its
     internal `.git` entry and the noise dirs are skipped). Symlinked
     directories are not followed, so a repo cannot alias itself into a loop.
+
+    Skipped below the root: the noise names, any dot-prefixed directory
+    (`.worktrees`, `.cache`, ...), and whatever `git_scan_exclude` names
+    (`exclusions`, default read from settings) -- a scratch folder full of
+    throwaway clones would otherwise eat the whole `budget` before the
+    folders that matter are reached.
     """
     found: List[str] = []
     if not os.path.isdir(root):
         return found
+    skip_names, skip_paths = exclusions if exclusions is not None else scan_exclusions()
+
+    def _excluded(full: str, name: str) -> bool:
+        if name.startswith(".") or name in _SKIP_DIR_NAMES:
+            return True
+        if skip_names and name.lower() in skip_names:
+            return True
+        if skip_paths:
+            try:
+                key = os.path.normcase(os.path.realpath(full))
+            except OSError:
+                return False
+            for p in skip_paths:
+                if key == p or key.startswith(p + os.sep):
+                    return True
+        return False
 
     def _walk(path: str, depth: int) -> None:
         if len(found) >= budget:
@@ -285,9 +335,9 @@ def _walk_repos(root: str, *, max_depth: int = MAX_DEPTH, budget: int = MAX_REPO
         for name in names:
             if len(found) >= budget:
                 return
-            if name == ".git" or name in _SKIP_DIR_NAMES:
-                continue
             full = os.path.join(path, name)
+            if _excluded(full, name):
+                continue
             try:
                 if os.path.islink(full) or not os.path.isdir(full):
                     continue
@@ -557,11 +607,13 @@ def discover_repos_for_owner(owner: Optional[str], project_id: str = "", *,
 
     projects = store.list(owner)
     roots = watch_roots()
+    exclusions = scan_exclusions()
     key = _owner_cache_key(owner)
-    # The watched roots are part of the fingerprint for the same reason the
-    # projects are: editing `git_watch_roots` must show up on the next list
-    # without waiting out the TTL.
-    fingerprint = _projects_fingerprint(projects) + (tuple(roots),)
+    # The watched roots and exclusions are part of the fingerprint for the
+    # same reason the projects are: editing `git_watch_roots` /
+    # `git_scan_exclude` must show up on the next list without waiting out
+    # the TTL.
+    fingerprint = _projects_fingerprint(projects) + (tuple(roots), exclusions)
     if use_cache:
         with _DISCOVERY_LOCK:
             hit = _DISCOVERY_CACHE.get(key)

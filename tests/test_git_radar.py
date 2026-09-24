@@ -238,7 +238,7 @@ def test_watch_roots_routes(client, tmp_path, monkeypatch):
     good.mkdir()
 
     r = client.get("/api/git/watch-roots")
-    assert r.status_code == 200 and r.json() == {"watch_roots": [], "configured": []}
+    assert r.status_code == 200 and r.json() == {"watch_roots": [], "configured": [], "exclude": []}
 
     bad = client.put("/api/git/watch-roots", json={"watch_roots": [str(tmp_path / "missing")]})
     assert bad.status_code == 400
@@ -250,3 +250,25 @@ def test_watch_roots_routes(client, tmp_path, monkeypatch):
     assert ok.json()["watch_roots"] == [os.path.realpath(str(good))]
     r = client.get("/api/git/watch-roots")
     assert r.json()["watch_roots"] == [os.path.realpath(str(good))]
+
+    bad_ex = client.put("/api/git/watch-roots", json={"watch_roots": [str(good)], "exclude": ["rel/path"]})
+    assert bad_ex.status_code == 400 and "git_scan_exclude" not in saved
+    ok_ex = client.put("/api/git/watch-roots", json={"watch_roots": [str(good)], "exclude": ["_scratch", str(tmp_path / "vendor"), "_SCRATCH"]})
+    assert ok_ex.status_code == 200, ok_ex.text
+    assert ok_ex.json()["exclude"] == ["_scratch", str(tmp_path / "vendor")]
+    assert saved["git_scan_exclude"] == ["_scratch", str(tmp_path / "vendor")]
+
+
+def test_walk_skips_excluded_names_paths_and_dot_dirs(tmp_path):
+    root = tmp_path / "root"
+    keep = _repo(root / "keep")
+    _repo(root / "_scratch" / "throwaway")
+    _repo(root / "vendor" / "third")
+    _repo(root / ".worktrees" / "wt")
+    nested_keep = _repo(root / "apps" / "one")
+    found = git_panel._walk_repos(str(root), exclusions=(frozenset({"_scratch"}),
+                                                          (os.path.normcase(os.path.realpath(str(root / "vendor"))),)))
+    assert sorted(os.path.basename(p) for p in found) == sorted([os.path.basename(str(keep)), os.path.basename(str(nested_keep))])
+    # Without exclusions only the dot-dir is skipped.
+    found_all = git_panel._walk_repos(str(root), exclusions=(frozenset(), ()))
+    assert sorted(os.path.basename(p) for p in found_all) == ["keep", "one", "third", "throwaway"]

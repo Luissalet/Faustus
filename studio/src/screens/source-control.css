@@ -1018,3 +1018,10 @@
     justify-content: flex-start;
   }
 }
+
+.fs-radar__subhead {
+  margin: var(--fs-space-2) 0 0;
+  font-size: var(--fs-label-size);
+  font-weight: 600;
+  color: var(--fs-text-1);
+}

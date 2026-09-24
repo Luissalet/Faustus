@@ -1258,6 +1258,12 @@ DEFAULT_SETTINGS = {
     # control and in the "needs commit/push" radar. Global to the install
     # (admin-edited), like `tool_path_extra_roots`.
     "git_watch_roots": [],
+    # Folders the repository scan skips (Source control and the radar):
+    # each entry is either a bare folder NAME (skips any directory called
+    # that, at any depth -- e.g. "_scratch") or an ABSOLUTE path (skips that
+    # directory and everything under it). Dot-prefixed directories are
+    # always skipped. Default: nothing extra.
+    "git_scan_exclude": [],
     # ── Built-in browser (Playwright MCP, src/builtin_mcp.py) ──
     # "persistent" keeps cookies/logins in <DATA_DIR>/browser-profile between
     # runs; "isolated" starts every server from a blank in-memory profile.

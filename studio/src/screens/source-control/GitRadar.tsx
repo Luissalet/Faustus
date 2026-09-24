@@ -1,4 +1,4 @@
-import { FolderPlus, Radar, RefreshCw, Trash2 } from 'lucide-react';
+import { Ban, FolderPlus, Radar, RefreshCw, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router';
 import { Button, Dialog, IconButton, Skeleton, Toast } from '../../components';
@@ -200,7 +200,9 @@ export function WatchedFoldersDialog({
   onSaved: () => void;
 }) {
   const [roots, setRoots] = useState<string[] | null>(null);
+  const [exclude, setExclude] = useState<string[]>([]);
   const [draft, setDraft] = useState('');
+  const [draftExclude, setDraftExclude] = useState('');
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
@@ -215,7 +217,9 @@ export function WatchedFoldersDialog({
     let live = true;
     getWatchRoots()
       .then((r) => {
-        if (live) setRoots(r.configured);
+        if (!live) return;
+        setRoots(r.configured);
+        setExclude(r.exclude ?? []);
       })
       .catch((e: unknown) => {
         if (live) {
@@ -239,12 +243,20 @@ export function WatchedFoldersDialog({
     setDraft('');
   };
 
+  const addExclude = () => {
+    const p = draftExclude.trim();
+    if (!p) return;
+    if (!exclude.includes(p)) setExclude([...exclude, p]);
+    setDraftExclude('');
+  };
+
   const save = () => {
     if (!roots) return;
     setSaving(true);
-    putWatchRoots(roots)
+    putWatchRoots(roots, exclude)
       .then((r) => {
         setRoots(r.watch_roots);
+        if (r.exclude) setExclude(r.exclude);
         setToast(t('Watched folders saved'));
         onSaved();
         onOpenChange(false);
@@ -305,6 +317,44 @@ export function WatchedFoldersDialog({
                 data-testid="watched-folder-input"
               />
               <Button type="submit" variant="secondary" size="sm" icon={FolderPlus} label={t('Add')} disabled={!draft.trim()} testId="watched-folder-add" />
+            </form>
+
+            <h3 className="fs-radar__subhead">{t('Skipped folders')}</h3>
+            <p className="fs-radar__empty">{t('A folder name skips every folder called that (a scratch folder full of throwaway clones, say); an absolute path skips that folder and everything under it. Applies to the whole Source control scan.')}</p>
+            {exclude.length > 0 && (
+              <ul className="fs-radar__root-list">
+                {exclude.map((r) => (
+                  <li key={r} className="fs-radar__root">
+                    <code className="fs-radar__root-path" title={r}>{r}</code>
+                    <IconButton
+                      icon={Trash2}
+                      label={t('Remove {path}', { path: r })}
+                      size="sm"
+                      onClick={() => setExclude(exclude.filter((x) => x !== r))}
+                      testId="skipped-folder-remove"
+                    />
+                  </li>
+                ))}
+              </ul>
+            )}
+            <form
+              className="fs-radar__add"
+              onSubmit={(e) => {
+                e.preventDefault();
+                addExclude();
+              }}
+            >
+              <label className="fs-radar__add-label" htmlFor="radar-exclude-input">{t('Skip a folder')}</label>
+              <input
+                id="radar-exclude-input"
+                className="fs-field fs-radar__add-input"
+                value={draftExclude}
+                onChange={(e) => setDraftExclude(e.target.value)}
+                placeholder={t('e.g. _scratch or C:/Users/you/Projects/vendor')}
+                spellCheck={false}
+                data-testid="skipped-folder-input"
+              />
+              <Button type="submit" variant="secondary" size="sm" icon={Ban} label={t('Add')} disabled={!draftExclude.trim()} testId="skipped-folder-add" />
             </form>
           </div>
         )}

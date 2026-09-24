@@ -479,14 +479,16 @@ export function getRadar(opts: { refresh?: boolean } = {}): Promise<GitRadar> {
 export interface GitWatchRoots {
   watch_roots: string[];
   configured: string[];
+  /** `git_scan_exclude`: bare folder names or absolute paths the scan skips. */
+  exclude: string[];
 }
 
 export function getWatchRoots(): Promise<GitWatchRoots> {
   return getGit<GitWatchRoots>('/api/git/watch-roots');
 }
 
-export function putWatchRoots(roots: string[]): Promise<{ ok: boolean; watch_roots: string[] }> {
-  return putGit('/api/git/watch-roots', { watch_roots: roots });
+export function putWatchRoots(roots: string[], exclude?: string[]): Promise<{ ok: boolean; watch_roots: string[]; exclude?: string[] }> {
+  return putGit('/api/git/watch-roots', exclude === undefined ? { watch_roots: roots } : { watch_roots: roots, exclude });
 }
 
 /** `t()` key + values for one radar reason chip — a plain function so the
