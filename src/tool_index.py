@@ -93,6 +93,58 @@ ASSISTANT_ALWAYS_AVAILABLE = frozenset({
 
 COLLECTION_NAME = "odysseus_tool_index"
 
+
+def _instance_collection_suffix() -> str:
+    """A short, stable suffix so different Faustus instances never share a
+    tool-index collection (PENDIENTES 23-09 noche).
+
+    All instances used the SAME collection (``odysseus_tool_index_fastembed``)
+    on the same Chroma server, each with its own tool catalogue. That is
+    actively destructive, not just wasteful: `index_mcp_tools` deletes EVERY
+    ``tool_type == "mcp"`` row in the shared collection (not only its own)
+    before re-adding its own set, so instance A reindexing its MCP tools
+    erases instance B's MCP tools from the shared collection until B happens
+    to reindex again — and two instances whose catalogues both use a plain
+    tool name (``mcp_<name>`` ids, no server/instance in the id) silently
+    overwrite each other's document on `upsert` even without a delete.
+
+    `tool_index_collection_suffix` names it explicitly (e.g. to keep two
+    instances intentionally sharing one collection, or to pin a name across
+    a data-dir move). Left unset, the suffix is derived from a stable hash of
+    this instance's own data directory (`src.constants.DATA_DIR`, itself
+    ``ODYSSEUS_DATA_DIR`` when set) — different data dirs (the normal way to
+    run more than one instance) get different collections automatically,
+    with no configuration required.
+
+    Returns "" only when neither an override nor a usable data dir exists
+    (e.g. in a unit test with no app config loaded), in which case the
+    caller keeps today's unsuffixed, shared collection name -- worse than an
+    isolated one, but no worse than before this fix.
+    """
+    try:
+        from src.settings import get_setting
+        override = str(get_setting("tool_index_collection_suffix", "") or "").strip()
+    except Exception:
+        override = ""
+    if override:
+        return re.sub(r"[^A-Za-z0-9_]+", "_", override).strip("_")[:32]
+    try:
+        from src.constants import DATA_DIR
+        data_dir = os.path.abspath(str(DATA_DIR or "")) if DATA_DIR else ""
+    except Exception:
+        data_dir = ""
+    if not data_dir:
+        return ""
+    return hashlib.sha256(data_dir.encode("utf-8")).hexdigest()[:10]
+
+
+def instance_collection_name() -> str:
+    """The (possibly per-instance-suffixed) base collection name to hand to
+    `build_embedding_lanes` / the in-memory lane. Each embedding lane still
+    appends its own ``_fastembed``/``_custom`` suffix on top of this."""
+    suffix = _instance_collection_suffix()
+    return f"{COLLECTION_NAME}_{suffix}" if suffix else COLLECTION_NAME
+
 # ── Tool description registry ──
 # Each tool gets a searchable description that helps retrieval.
 # These are richer than the system prompt one-liners — they're for embedding.
@@ -403,7 +455,7 @@ class ToolIndex:
         chroma_error: Optional[BaseException] = None
         if not force_memory:
             try:
-                self._lanes = build_embedding_lanes(COLLECTION_NAME)
+                self._lanes = build_embedding_lanes(instance_collection_name())
             except Exception as e:
                 # get_chroma_client() raised: not installed / not reachable.
                 chroma_error = e
@@ -451,7 +503,7 @@ class ToolIndex:
             client = _lanes_mod._build_fastembed_client()
         except Exception as e:
             raise ToolIndexUnavailable(f"no local embedder for the tool index: {e}") from e
-        return build_memory_lane(COLLECTION_NAME, client, cache_path=cache_path)
+        return build_memory_lane(instance_collection_name(), client, cache_path=cache_path)
 
     @property
     def backend(self) -> str:

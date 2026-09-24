@@ -23,6 +23,12 @@ def test_tool_index_indexes_and_retrieves_from_available_lanes(monkeypatch):
     monkeypatch.setattr(lanes, "_build_custom_client", lambda: FakeEmbedder(768, "nomic", "http://embeddings/v1"))
     monkeypatch.setattr(lanes, "_build_fastembed_client", lambda: FakeEmbedder(384, "mini", "local://fastembed"))
 
+    import src.tool_index as tool_index_module
+    # Each Faustus instance now gets its own collection (a stable hash of its
+    # data dir, PENDIENTES 23-09 noche); pin it to "" here so this test keeps
+    # asserting the plain, unsuffixed collection names it always has.
+    monkeypatch.setattr(tool_index_module, "_instance_collection_suffix", lambda: "")
+
     from src.tool_index import ToolIndex
 
     index = ToolIndex()

@@ -320,10 +320,16 @@ def _chroma_down(monkeypatch):
 def _use_embedder(monkeypatch, tmp_path, embedder=None):
     import src.embedding_lanes as lanes
     import src.tool_index_memory as tim
+    import src.tool_index as ti
 
     embedder = embedder or HashingEmbedder()
     monkeypatch.setattr(lanes, "_build_fastembed_client", lambda: embedder)
     monkeypatch.setattr(tim, "DEFAULT_CACHE_PATH", os.path.join(str(tmp_path), "tool_index_cache.json"))
+    # This suite is unrelated to per-instance collection namespacing
+    # (PENDIENTES 23-09 noche, tests/test_tool_index_instance_isolation.py):
+    # pin the suffix to "" so these tests keep asserting the plain,
+    # unsuffixed collection names regardless of the real ambient data dir.
+    monkeypatch.setattr(ti, "_instance_collection_suffix", lambda: "")
     return embedder
 
 
