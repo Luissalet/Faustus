@@ -100,6 +100,55 @@ def looks_like_remote_read_shell_command(command: str) -> bool:
 
 _IMAGE_PATH_RE = re.compile(r"\.(?:png|jpe?g|gif|webp|bmp|tiff?)\b", re.IGNORECASE)
 
+#: A `python` call that only opens an image, crops/resizes/enhances it and
+#: saves the result as another image is preparing evidence, not advancing
+#: the task. Live, 24-09-2026 (exam run 13): the model learnt to crop the
+#: page with PIL and hand each crop to `inspect_image`; every crop call
+#: broke the evidence streak, so 29 rounds of re-transcribing a page that
+#: already had a human transcription never triggered the check.
+_IMAGE_OPEN_RE = re.compile(r"\b(?:Image\.open|cv2\.imread|imageio\.imread)\s*\(")
+_IMAGE_SAVE_RE = re.compile(r"\.save\s*\(|\bimwrite\s*\(")
+_IMAGE_SAVE_TARGET_RE = re.compile(
+    r"(?:\.save|\bimwrite)\s*\(\s*(?:f?r?[\"'][^\"']*\.(?:png|jpe?g|gif|webp|bmp|tiff?)[\"']"
+    r"|[A-Za-z_][A-Za-z0-9_]*\s*[,)])",
+    re.IGNORECASE,
+)
+#: Anything that writes text, runs processes or reaches the network is doing
+#: more than preparing a picture.
+_NON_IMAGE_SIDE_EFFECT_RE = re.compile(
+    r"\.write\s*\(|write_text|write_bytes|json\.dump\b|to_csv|subprocess|os\.system|"
+    r"requests\.|urllib|httpx|open\s*\([^)]*[\"'][wax]\+?b?[\"']",
+    re.IGNORECASE,
+)
+
+
+def _python_code(content: str) -> str:
+    text = str(content or "")
+    stripped = text.lstrip()
+    if stripped.startswith("{"):
+        try:
+            import json as _json
+            parsed = _json.loads(stripped)
+        except Exception:  # noqa: BLE001 - not JSON: it is the code itself
+            return text
+        if isinstance(parsed, dict):
+            return str(parsed.get("code") or parsed.get("content") or "")
+    return text
+
+
+def looks_like_image_prep_code(content: str) -> bool:
+    """True when a `python` call only opens image(s) and saves image crops or
+    enhanced copies: no text written, no process run, no network."""
+    code = _python_code(content)
+    if not code.strip() or not _IMAGE_OPEN_RE.search(code):
+        return False
+    if _NON_IMAGE_SIDE_EFFECT_RE.search(code):
+        return False
+    saves = len(_IMAGE_SAVE_RE.findall(code))
+    if saves == 0:
+        return False
+    return len(_IMAGE_SAVE_TARGET_RE.findall(code)) >= saves
+
 
 def is_remote_read_only_round(calls: Sequence[Tuple[str, str]]) -> bool:
     """True when every one of this round's tool calls only read remote
@@ -117,6 +166,8 @@ def is_remote_read_only_round(calls: Sequence[Tuple[str, str]]) -> bool:
             continue
         if name == "read_file" and _IMAGE_PATH_RE.search(str(content or "")):
             continue  # reading a picture is looking at evidence too
+        if name == "python" and looks_like_image_prep_code(str(content or "")):
+            continue  # cropping a picture to ask about it is part of the look
         if name in SHELL_TOOL_NAMES and looks_like_remote_read_shell_command(str(content or "")):
             continue
         return False
@@ -132,7 +183,11 @@ _STREAK_NUDGE_TEXT = (
     "have actually learned so far. Decide: "
     "do you already have enough to answer the original request? If yes, "
     "answer now using what you have. If not, say the ONE specific fact still "
-    "missing and why the next read is needed, then continue."
+    "missing and why the next read is needed, then continue. For images: "
+    "when the workspace already holds a transcription of a picture, do not "
+    "re-transcribe it crop by crop — ask inspect_image action=\"unlisted\" "
+    "(with that transcription) for only what it leaves out, and target the "
+    "marks, symbols and numbers the puzzle actually depends on."
 )
 
 

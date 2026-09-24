@@ -294,3 +294,30 @@ def test_reading_a_picture_is_an_evidence_read_but_a_source_file_is_not():
     assert is_remote_read_only_round([("read_file", '{"path": ".tmp_crops/op1.png"}'),
                                       ("inspect_image", '{"path": "op1.png"}')])
     assert not is_remote_read_only_round([("read_file", '{"path": "src/app.py"}')])
+
+
+def test_a_python_crop_for_the_vision_model_is_part_of_the_look():
+    """Live, exam run 13: PIL crops between vision questions broke the streak."""
+    from src.research_streak import looks_like_image_prep_code
+    crop = ('from PIL import Image\nim = Image.open("vistas/6a_pagina_1.jpg")\nw, h = im.size\n'
+            'crop = im.crop((int(w*0.45), int(h*0.5), w, int(h*0.95)))\n'
+            'crop = crop.resize((crop.width*2, crop.height*2), Image.LANCZOS)\n'
+            'crop.save("citas_6a.png")\nprint(crop.size)\n')
+    assert looks_like_image_prep_code(crop)
+    import json as _json
+    assert looks_like_image_prep_code(_json.dumps({"code": crop}))
+    assert is_remote_read_only_round([("python", crop), ("inspect_image", '{"path": "citas_6a.png"}')])
+    # a variable holding the target path still counts
+    assert looks_like_image_prep_code('from PIL import Image\nout = "c1.png"\nImage.open("a.jpg").crop((0,0,9,9)).save(out)\n')
+
+
+def test_python_that_does_more_than_crop_breaks_the_streak():
+    from src.research_streak import looks_like_image_prep_code
+    calc = "lat = 18.33\nkm = 3839 * 0.1852\nprint(lat, km)\n"
+    writes = ('from PIL import Image\nImage.open("a.jpg").save("b.png")\n'
+              'open("RESPUESTA.md", "w").write("answer")\n')
+    no_save = 'from PIL import Image\nprint(Image.open("a.jpg").size)\n'
+    net = 'import requests\nfrom PIL import Image\nImage.open("a.jpg").save("b.png")\nrequests.get("http://x")\n'
+    for code in (calc, writes, no_save, net):
+        assert not looks_like_image_prep_code(code), code
+    assert not is_remote_read_only_round([("python", calc)])
