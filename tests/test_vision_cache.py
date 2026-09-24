@@ -16,7 +16,7 @@ def _setup(monkeypatch, tmp_path, calls, answer="a circle at the top left"):
     import src.privacy_policy as pp
     monkeypatch.setattr(pp, "assert_outbound", lambda *a, **k: None)
 
-    def fake_llm_call(url, model, messages, headers=None, timeout=None):
+    def fake_llm_call(url, model, messages, headers=None, timeout=None, **kw):
         calls.append(model)
         if isinstance(answer, Exception):
             raise answer

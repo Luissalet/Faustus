@@ -138,7 +138,8 @@ def test_groups_follow_the_requested_layout():
             "agent_queue_api_concurrency", "agent_scorecard"} == set(by_group["runs"])
     assert all(k.startswith("browser_") for k in by_group["browser"]) and len(by_group["browser"]) == 8
     assert by_group["desktop"] == ["desktop_control_mode"]
-    assert by_group["vision"] == ["vision_enabled", "vision_model", "vision_timeout_seconds", "vision_max_side"]
+    assert by_group["vision"] == ["vision_enabled", "vision_model", "vision_timeout_seconds", "vision_max_side",
+                                  "vision_max_tokens"]
     assert by_group["files"] == ["tool_path_extra_roots"]
 
 

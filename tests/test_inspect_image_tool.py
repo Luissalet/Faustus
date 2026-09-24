@@ -367,7 +367,7 @@ def test_a_slow_vision_model_gets_the_configured_timeout_and_the_reason(monkeypa
 
     calls = {}
 
-    def fake_llm_call(url, model, messages, headers=None, timeout=None):
+    def fake_llm_call(url, model, messages, headers=None, timeout=None, **kw):
         calls["timeout"] = timeout
         raise TimeoutError("read timed out")
 

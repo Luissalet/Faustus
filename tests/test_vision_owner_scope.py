@@ -55,7 +55,7 @@ def test_vision_analysis_uses_owner_scoped_primary_and_fallback(monkeypatch, tmp
         seen["fallback_owner"] = owner
         return []
 
-    def fake_llm_call(url, model, messages, headers=None, timeout=None):
+    def fake_llm_call(url, model, messages, headers=None, timeout=None, **kw):
         seen["llm"] = (url, model, headers, timeout, messages)
         return "description"
 

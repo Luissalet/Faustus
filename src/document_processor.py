@@ -644,8 +644,10 @@ def analyze_image_with_vl_result(image_path: str, owner: str | None = None) -> d
                 # say before this candidate's endpoint is actually reached.
                 from src.privacy_policy import assert_outbound
                 assert_outbound("ocr_vision", _url, owner=owner)
-                description = llm_call(_url, _model, vl_messages, headers=_headers,
-                                       timeout=_vision_timeout_seconds())
+                description = collapse_vision_repetition(
+                    llm_call(_url, _model, vl_messages, headers=_headers,
+                             timeout=_vision_timeout_seconds(),
+                             max_tokens=_vision_max_tokens()))
                 logger.info("VL analysis complete with model %s", _model)
                 return {"text": description, "model": _model}
             except Exception as e:
@@ -727,8 +729,10 @@ def analyze_image_with_vl_prompt(
                 # SEC-04, same gate as analyze_image_with_vl_result above.
                 from src.privacy_policy import assert_outbound
                 assert_outbound("ocr_vision", _url, owner=owner)
-                answer = llm_call(_url, _model, vl_messages, headers=_headers,
-                                  timeout=_vision_timeout_seconds())
+                answer = collapse_vision_repetition(
+                    llm_call(_url, _model, vl_messages, headers=_headers,
+                             timeout=_vision_timeout_seconds(),
+                             max_tokens=_vision_max_tokens()))
                 logger.info("VL custom-prompt analysis complete with model %s", _model)
                 _vcache.put(_vkey, answer, _model)
                 return {"text": answer, "model": _model}
@@ -759,6 +763,51 @@ def _vision_timeout_seconds() -> int:
     except Exception:  # noqa: BLE001
         value = 600
     return max(30, min(value, 3600))
+
+
+def _vision_max_tokens() -> int:
+    """Longest answer one vision question may produce (0 = no limit)."""
+    try:
+        from src.settings import get_setting
+        value = int(get_setting("vision_max_tokens", 1536) or 0)
+    except Exception:  # noqa: BLE001
+        value = 1536
+    return max(0, min(value, 16384))
+
+
+_REPEAT_NOTE = "[the vision model started repeating itself here; the repetition was cut]"
+
+
+def collapse_vision_repetition(text: str, min_repeats: int = 3) -> str:
+    """Cut a vision answer where it falls into a loop.
+
+    Two shapes seen live: the same line over and over, and one short chunk
+    ("[___] [___] [___] ...") repeated inside a line. Keeps the first
+    occurrence and says the rest was cut, so the caller knows the answer is
+    partial rather than reading a wall of repeats as content."""
+    if not isinstance(text, str) or not text:
+        return text
+    lines = text.split("\n")
+    out: list[str] = []
+    run = 0
+    for line in lines:
+        key = line.strip()
+        if key and out and key == out[-1].strip():
+            run += 1
+            if run >= min_repeats - 1:
+                del out[len(out) - (run - 1):]  # keep the first occurrence only
+                out.append(_REPEAT_NOTE)
+                return "\n".join(out)
+            out.append(line)
+            continue
+        run = 0
+        out.append(line)
+    collapsed = "\n".join(out)
+    # A chunk of 2-80 characters repeated back to back many times.
+    m = re.search(r"(.{2,80}?)(?:\s*\1){%d,}" % (max(min_repeats, 2) * 3), collapsed, re.DOTALL)
+    if m and len(m.group(0)) >= 120:
+        return collapsed[: m.start() + len(m.group(1))].rstrip() + " " + _REPEAT_NOTE
+    return collapsed
 
 
 def analyze_image_with_vl(image_path: str, owner: str | None = None) -> str:
