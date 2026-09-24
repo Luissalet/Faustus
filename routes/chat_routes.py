@@ -2761,7 +2761,13 @@ def setup_chat_routes(
             _explicit_web_intent = _explicit_web_intent or bool(_tool_intent and _tool_intent.category == "web")
             if is_web_search_explicitly_denied(allow_web_search) or not _search_enabled:
                 disabled_tools.update(WEB_TOOL_NAMES)
-            if _explicit_web_intent:
+            # A bound workspace is a task on the user's own files: the word
+            # "web" in it ("web search is enabled for this run", "a web app")
+            # is not a request to only look something up. Live, 24-09-2026:
+            # an exam brief with that sentence lost write_file for the whole
+            # turn (the workspace floor restores bash/python/read/edit only),
+            # so the model could not write its answer file.
+            if _explicit_web_intent and not workspace:
                 # A direct lookup/search request should not drift into personal
                 # tools or shell fallbacks. It can only use web_search/web_fetch
                 # when the request's explicit web setting enabled them.

@@ -323,3 +323,15 @@ def test_explicit_false_disables_even_for_admin():
 
 # ── Frontend source-level guards ──────────────────────────────
 
+
+
+def test_a_bound_workspace_is_not_locked_down_by_the_word_web():
+    """Live, 24-09-2026: "la consulta web está habilitada" in an exam brief
+    (workspace bound) stripped write_file for the whole turn; the workspace
+    floor restores bash/python/read_file/edit_file only, so the answer file
+    could not be written. The lookup-only clamp is for turns with no
+    workspace."""
+    source = _CHAT_ROUTES.read_text(encoding="utf-8")
+    assert "if _explicit_web_intent and not workspace:" in source
+    # web tools still follow the explicit per-turn setting in both cases
+    assert "elif _search_enabled:\n                disabled_tools.difference_update(WEB_TOOL_NAMES)" in source
