@@ -8368,3 +8368,4 @@ Skipped folders	Carpetas omitidas
 A folder name skips every folder called that (a scratch folder full of throwaway clones, say); an absolute path skips that folder and everything under it. Applies to the whole Source control scan.	Un nombre de carpeta omite todas las carpetas que se llamen así (una de borradores llena de clones desechables, por ejemplo); una ruta absoluta omite esa carpeta y todo lo que cuelga de ella. Se aplica a todo el escaneo de Control de versiones.
 Skip a folder	Omitir una carpeta
 e.g. _scratch or C:/Users/you/Projects/vendor	p. ej. _borradores o C:/Users/tú/Proyectos/vendor
+Show all {n}	Mostrar los {n}

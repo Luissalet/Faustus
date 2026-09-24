@@ -193,8 +193,16 @@ def _compute(owner: Optional[str], key: str, *, refresh: bool) -> Dict[str, Any]
                 except Exception:  # noqa: BLE001
                     row["last_commit_at"] = None
 
-    rows.sort(key=lambda r: (0 if r["attention"] else 1, r["severity"] if r["severity"] is not None else 99,
-                             r["name"].lower()))
+    # Attention rows first. Among them: conflicts always on top, then the
+    # repo worked on most RECENTLY -- that is the one whose forgotten push
+    # matters today; a checkout untouched for three years is still listed,
+    # just at the bottom. Clean rows follow, by name.
+    rows.sort(key=lambda r: (
+        0 if r["attention"] else 1,
+        0 if any(x["kind"] == "conflicts" for x in r["reasons"]) else 1,
+        -(r["last_commit_at"] or 0),
+        r["name"].lower(),
+    ))
     counts = {k: 0 for k in ATTENTION_KINDS + INFO_KINDS}
     for row in rows:
         for reason in row["reasons"]:

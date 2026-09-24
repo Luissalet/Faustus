@@ -5401,6 +5401,7 @@ export const es: Record<string, string> = {
   "Show": "Mostrar",
   "Show adjustment": "Mostrar ajuste",
   "Show all": "Ver todas",
+  "Show all {n}": "Mostrar los {n}",
   "Show coverage matrix": "Mostrar matriz de cobertura",
   "Show data": "Mostrar datos",
   "Show diff": "Ver diff",

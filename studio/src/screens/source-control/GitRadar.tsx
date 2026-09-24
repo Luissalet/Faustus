@@ -1,4 +1,4 @@
-import { Ban, FolderPlus, Radar, RefreshCw, Trash2 } from 'lucide-react';
+import { Ban, ChevronDown, ChevronUp, FolderPlus, Radar, RefreshCw, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router';
 import { Button, Dialog, IconButton, Skeleton, Toast } from '../../components';
@@ -16,6 +16,9 @@ import {
 import { t, tn } from '../../i18n';
 
 const POLL_MS = 60000;
+/** Rows the strip shows before "Show all": enough to see what is recent,
+ *  not so many that the panel underneath drops off the screen. */
+const STRIP_LIMIT = 6;
 
 /**
  * The git radar (src/git_radar.py): every repository Faustus can see —
@@ -141,6 +144,8 @@ export function RadarRows({ repos, limit }: { repos: GitRadarRepo[]; limit?: num
 export function GitRadarStrip() {
   const { radar, error, reload, loading } = useGitRadar();
   const [rootsOpen, setRootsOpen] = useState(false);
+  const [showAll, setShowAll] = useState(false);
+  const hidden = radar ? Math.max(0, radar.attention_count - STRIP_LIMIT) : 0;
 
   return (
     <section className="fs-radar" data-testid="git-radar" aria-labelledby="git-radar-title">
@@ -174,7 +179,19 @@ export function GitRadarStrip() {
         </div>
       </div>
       {!radar && !error && <Skeleton label={t('Scanning repositories')} count={2} height="44px" />}
-      {radar && radar.attention_count > 0 && <RadarRows repos={radar.attention} />}
+      {radar && radar.attention_count > 0 && <RadarRows repos={radar.attention} limit={showAll ? undefined : STRIP_LIMIT} />}
+      {hidden > 0 && (
+        <div className="fs-radar__foot">
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={showAll ? ChevronUp : ChevronDown}
+            label={showAll ? t('Show fewer') : t('Show all {n}', { n: radar?.attention_count ?? 0 })}
+            onClick={() => setShowAll((v) => !v)}
+            testId="radar-show-all"
+          />
+        </div>
+      )}
       <WatchedFoldersDialog
         open={rootsOpen}
         onOpenChange={setRootsOpen}

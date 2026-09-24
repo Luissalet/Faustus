@@ -1025,3 +1025,8 @@
   font-weight: 600;
   color: var(--fs-text-1);
 }
+
+.fs-radar__foot {
+  display: flex;
+  justify-content: center;
+}

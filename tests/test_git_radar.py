@@ -110,8 +110,10 @@ def test_scan_finds_repos_under_watched_roots_and_classifies(roots, tmp_path):
     assert by_name["ahead"]["ahead"] == 1
     assert [r["kind"] for r in by_name["local"]["reasons"]] == ["local_only"]
     assert all(r["watched"] for r in payload["repos"])
-    # Attention rows first, sorted by severity: uncommitted < unpushed < local_only.
-    assert [r["name"] for r in payload["attention"]] == ["dirty", "ahead", "local"]
+    # Attention rows first, most recent commit first ("ahead" committed last).
+    assert payload["attention"][0]["name"] == "ahead"
+    assert sorted(r["name"] for r in payload["attention"]) == ["ahead", "dirty", "local"]
+    assert payload["repos"][-1]["name"] == "clean"
     assert payload["attention_count"] == 3
     assert payload["counts"]["uncommitted"] == 1 and payload["counts"]["unpushed"] == 1
     assert payload["counts"]["local_only"] == 1
