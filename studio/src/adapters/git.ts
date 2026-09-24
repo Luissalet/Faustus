@@ -469,6 +469,9 @@ export interface GitRadar {
   watch_roots: string[];
   git_version: string | null;
   scanned_at: number;
+  /** True when this is an expired answer served at once while a background
+   *  rescan runs (the next poll gets the fresh one). */
+  stale: boolean;
   summary: string;
 }
 

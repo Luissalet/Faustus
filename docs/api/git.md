@@ -174,7 +174,11 @@ proyectos del owner + las carpetas vigiladas globales), tienen trabajo que
 no ha salido de la máquina. Un `git status --porcelain=v2 --branch` por
 repo, en paralelo; `remote -v` sólo para los que no tienen upstream; `log
 -1` sólo para los que requieren atención. Caché 20 s por owner
-(`refresh=1` la salta, y también la de descubrimiento).
+(`refresh=1` la salta, y también la de descubrimiento). Una caché caducada
+se sirve al instante con `"stale": true` mientras UN rescaneo de fondo por
+owner la renueva: sesenta repos son ~10 s de `git.exe` en Windows y tres
+sondeos (badge, Inicio, tira) lo piden — sólo la primera llamada sin caché
+y el botón Rescan esperan.
 
 ```jsonc
 {
@@ -192,7 +196,7 @@ repo, en paralelo; `remote -v` sólo para los que no tienen upstream; `log
   "counts": {"conflicts": 0, "uncommitted": 1, "unpushed": 1, "no_upstream": 0, "local_only": 0, "behind": 0, "detached": 0},
   "total": 24,
   "watch_roots": ["C:\\Users\\luis\\Proyectos"],
-  "git_version": "2.43.0", "scanned_at": 1758701234.5,
+  "git_version": "2.43.0", "scanned_at": 1758701234.5, "stale": false,
   "summary": "1 of 24 repositories need attention: faustus (master): 4 uncommitted, 2 unpushed"
 }
 ```

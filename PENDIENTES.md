@@ -1271,8 +1271,9 @@ contamina a cual, y aislar ese estado en una fixture, como se hizo con
   tira en `/source-control`, el diálogo de carpetas vigiladas guardando una
   ruta de Windows con barras invertidas, el badge del carril y el bloque de
   Inicio (claro y oscuro, 420 px).
-- Coste en Windows con ~30 repos: cada `git.exe` cuesta; si la primera carga
-  de Inicio se nota, subir `RADAR_TTL` o mover el escaneo a un hilo de fondo
-  con resultado anterior servido al instante.
+- Coste en Windows: 62 repos = ~10 s (`git status` de repos grandes con
+  `--untracked-files=all`). La caché caducada ya se sirve al instante con
+  rescaneo de fondo; queda persistir la última instantánea en DATA_DIR para
+  que la PRIMERA llamada tras reiniciar tampoco espere.
 - Acción de vigilante (`watchers.py`) «avísame si algo lleva N días sin
   push» y herramienta de sólo lectura `git_radar` para el agente.

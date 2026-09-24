@@ -50,6 +50,8 @@ _ORDER = {k: i for i, k in enumerate(ATTENTION_KINDS + INFO_KINDS)}
 _LOCK = threading.Lock()
 # owner-key -> (monotonic ts, payload)
 _CACHE: Dict[str, tuple[float, Dict[str, Any]]] = {}
+# owner-keys with a background rescan in flight (see `scan`)
+_INFLIGHT: set = set()
 
 
 def invalidate(owner: Optional[str] = None) -> None:
@@ -131,14 +133,41 @@ def _row_from_summary(summary: Dict[str, Any], *, has_remote: Optional[bool]) ->
 def scan(owner: Optional[str], *, refresh: bool = False) -> Dict[str, Any]:
     """The radar payload for `owner`: every visible repo classified, the
     attention subset first (sorted by severity, then name), counts per
-    kind, the watched roots in force, and when it was computed."""
+    kind, the watched roots in force, and when it was computed.
+
+    Sixty repos cost ~10 s of `git.exe` on Windows, and three pollers ask
+    for this. So: a fresh cache answers at once; an EXPIRED cache is
+    answered at once too (marked `"stale": true`) while ONE background
+    rescan per owner refreshes it -- the Home block and the rail badge
+    never wait on git. Only the very first call (no cache) and an explicit
+    `refresh=True` (the Rescan button) compute synchronously."""
     key = git_panel._owner_cache_key(owner)
     if not refresh:
         with _LOCK:
             hit = _CACHE.get(key)
-        if hit is not None and (time.monotonic() - hit[0]) < RADAR_TTL:
-            return hit[1]
+            if hit is not None:
+                fresh = (time.monotonic() - hit[0]) < RADAR_TTL
+                if not fresh and key not in _INFLIGHT:
+                    _INFLIGHT.add(key)
+                    threading.Thread(target=_background_scan, args=(owner, key),
+                                     name="git-radar-rescan", daemon=True).start()
+                if fresh:
+                    return hit[1]
+                return {**hit[1], "stale": True}
+    return _compute(owner, key, refresh=refresh)
 
+
+def _background_scan(owner: Optional[str], key: str) -> None:
+    try:
+        _compute(owner, key, refresh=False)
+    except Exception:  # noqa: BLE001 - a failed rescan keeps the stale answer
+        logger.debug("git radar background rescan failed", exc_info=True)
+    finally:
+        with _LOCK:
+            _INFLIGHT.discard(key)
+
+
+def _compute(owner: Optional[str], key: str, *, refresh: bool) -> Dict[str, Any]:
     if refresh:
         git_panel.invalidate_discovery_cache(owner)
     metas = git_panel.discover_repos_for_owner(owner, use_cache=not refresh) or []
@@ -180,6 +209,7 @@ def scan(owner: Optional[str], *, refresh: bool = False) -> Dict[str, Any]:
         "watch_roots": roots,
         "git_version": git_panel.git_version() if git_ok else None,
         "scanned_at": time.time(),
+        "stale": False,
     }
     with _LOCK:
         _CACHE[key] = (time.monotonic(), payload)

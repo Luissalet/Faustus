@@ -126,10 +126,31 @@ def test_scan_is_cached_until_refresh(roots, tmp_path):
     repo = _repo(roots / "one")
     _with_remote(repo, tmp_path / "one.git")
     first = git_radar.scan("bob", refresh=True)
-    assert first["attention_count"] == 0
+    assert first["attention_count"] == 0 and first["stale"] is False
     (repo / "z.txt").write_text("z")
     assert git_radar.scan("bob") is first  # cached
     assert git_radar.scan("bob", refresh=True)["attention_count"] == 1
+
+
+def test_expired_cache_answers_stale_at_once_and_rescans_in_background(roots, tmp_path, monkeypatch):
+    repo = _repo(roots / "one")
+    _with_remote(repo, tmp_path / "one.git")
+    first = git_radar.scan("dora", refresh=True)
+    (repo / "z.txt").write_text("z")
+    # Expire the cache without waiting.
+    with git_radar._LOCK:
+        ts, payload = git_radar._CACHE[git_radar.git_panel._owner_cache_key("dora")]
+        git_radar._CACHE[git_radar.git_panel._owner_cache_key("dora")] = (ts - git_radar.RADAR_TTL - 1, payload)
+    stale = git_radar.scan("dora")
+    assert stale["stale"] is True and stale["attention_count"] == first["attention_count"] == 0
+    # The background rescan lands shortly after.
+    import time as _t
+    for _ in range(50):
+        _t.sleep(0.1)
+        again = git_radar.scan("dora")
+        if not again.get("stale"):
+            break
+    assert again["stale"] is False and again["attention_count"] == 1
 
 
 def test_all_clean_summary(roots, tmp_path):
