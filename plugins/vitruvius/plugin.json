@@ -1,0 +1,90 @@
+{
+  "schema": 1,
+  "id": "vitruvius",
+  "name": "Vitruvius's Hoard",
+  "purpose": "A local frontend-design workbench: a criterion library ingested from open design-skill repos, a render-capture-critique loop on real Chromium, a design-system (tokens) generator with a live playground, and a reference gallery of captured websites.",
+  "capabilities": [
+    "design-criterion-library",
+    "design-rules",
+    "style-catalog",
+    "palette-catalog",
+    "font-pairing-catalog",
+    "html-render",
+    "url-render",
+    "screenshot-capture",
+    "scroll-video-capture",
+    "design-lint",
+    "design-critique",
+    "vision-critique",
+    "render-diff",
+    "design-tokens",
+    "oklch-palettes",
+    "tailwind-export",
+    "css-export",
+    "reference-gallery",
+    "source-ingestion"
+  ],
+  "placeholders": [
+    "VITRUVIUS_DIR",
+    "APP_URL",
+    "TOKEN_FILE",
+    "PYTHON"
+  ],
+  "defaults": {
+    "APP_URL": "http://127.0.0.1:5191",
+    "TOKEN_FILE": "{VITRUVIUS_DIR}/data/mcp-token",
+    "PYTHON": "{VITRUVIUS_DIR}/venv/Scripts/python.exe"
+  },
+  "app": {
+    "url_default": "http://127.0.0.1:5191",
+    "ui_url": "{APP_URL}",
+    "health": {
+      "path": "/api/health",
+      "expect": {
+        "service": "vitruvius-hoard"
+      }
+    },
+    "identify": {
+      "service": [
+        "vitruvius-hoard"
+      ],
+      "title": [
+        "vitruvius's hoard",
+        "taller de diseño de interfaces"
+      ]
+    },
+    "launch_hint": {
+      "kind": "process",
+      "executable": "{PYTHON}",
+      "argv": [
+        "-m",
+        "vitruvius_hoard"
+      ],
+      "cwd": "{VITRUVIUS_DIR}",
+      "env": {
+        "PORT_STRICT": "1",
+        "VITRUVIUS_PORT": "5191"
+      },
+      "readiness": {
+        "url": "{APP_URL}/api/health",
+        "timeout_s": 30
+      }
+    }
+  },
+  "mcp": {
+    "transport": "stdio",
+    "command": "{PYTHON}",
+    "args": [
+      "{VITRUVIUS_DIR}/mcp_server.py"
+    ],
+    "env": {
+      "VITRUVIUS_URL": "{APP_URL}",
+      "VITRUVIUS_TOKEN_FILE": "{TOKEN_FILE}"
+    },
+    "optional_env": [
+      "VITRUVIUS_BRIDGE_AUTOSTART",
+      "VITRUVIUS_DATA_DIR"
+    ]
+  },
+  "notes": "Keep the app running (python -m vitruvius_hoard) so it can render and critique pages: the MCP bridge proxies every call to the local server, never opens the database, and starts the app itself when it is not answering. render_preview, design_critique and tokens_preview change nothing on disk (they only read/render); reference_add, source_add, source_ingest, tokens_delete and reference_delete are the only tools that change or delete something, and are only for when the user asks."
+}
