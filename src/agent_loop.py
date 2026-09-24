@@ -5573,33 +5573,47 @@ async def _image_record_extras(
     return extras
 
 
+#: The automatic caption a text-only model gets for a tool-result image (a
+#: `read_file` on a picture, a screenshot). Unlike the fixed "Describe this
+#: image in detail" `analyze_image_with_vl_result` sends for other callers
+#: (chat attachments), this one asks for the specific things a tool image
+#: tends to matter for — visible text, marks/annotations and where they are —
+#: while staying bounded (a short paragraph, not a transcript). A model that
+#: needs more than this caption (an exact region, a rotated crop, "which
+#: circle points at what") should call `inspect_image` instead; this is only
+#: the automatic fallback for when nobody asked a specific question.
+_TOOL_IMAGE_CAPTION_PROMPT = (
+    "Describe this image for someone who cannot see it. Be specific and literal: "
+    "list any visible text (transcribe it), marks, symbols or annotations and where "
+    "each one is (e.g. \"top-left\", \"about 20% from the left, center\"), then a short "
+    "description of the rest. Say \"unclear\" rather than guessing. Keep it to one "
+    "short paragraph."
+)
+
+
 def _describe_tool_image(result: Dict, owner: Optional[str]) -> str:
     """Describe the first image of a tool result with the configured Vision
-    model (the same `analyze_image_with_vl_result` path chat attachments use).
-    Returns "" when nothing usable came back."""
+    model, asking for visible text/marks/positions (`_TOOL_IMAGE_CAPTION_
+    PROMPT`) rather than a generic caption — small details (a hand-drawn
+    circle, a tilted symbol, faint handwriting) are exactly what a bare
+    "describe this image" tends to lose. Returns "" when nothing usable came
+    back."""
     import base64 as _b64
-    import os as _os
-    import tempfile
 
-    from src.document_processor import analyze_image_with_vl_result
+    from src.document_processor import analyze_image_with_vl_prompt
     from src.tool_images import normalize_result_images
 
     images = normalize_result_images(result)
     if not images:
         return ""
     mime = images[0]["mimeType"]
-    ext = {"image/jpeg": ".jpg", "image/jpg": ".jpg", "image/webp": ".webp", "image/gif": ".gif"}.get(mime, ".png")
     raw = _b64.b64decode(images[0]["data"])
-    fd, path = tempfile.mkstemp(prefix="tool-image-", suffix=ext)
     try:
-        with _os.fdopen(fd, "wb") as fh:
-            fh.write(raw)
-        text = str((analyze_image_with_vl_result(path, owner=owner) or {}).get("text") or "").strip()
-    finally:
-        try:
-            _os.unlink(path)
-        except OSError:
-            pass
+        text = str((analyze_image_with_vl_prompt(
+            [(raw, mime)], _TOOL_IMAGE_CAPTION_PROMPT, owner,
+        ) or {}).get("text") or "").strip()
+    except Exception:  # noqa: BLE001 - a captioning failure must not lose the round
+        text = ""
     # The helper reports its own failures as bracketed notes — not a description.
     if not text or text.startswith("["):
         return ""
