@@ -296,18 +296,20 @@ PLAN_MODE_READONLY_TOOLS = {
     "list_serve_presets",
     "list_cookbook_servers",
     "resolve_contact",
+    # Lot F: code_history -- git history for a file/symbol, inspection only.
+    "code_history",
     "chat_with_model",
     "ask_teacher",
     # Git read tools (Lote 87): inspection only, same class as grep/glob/ls.
     "git_radar",
     "git_status",
     "git_log",
+    # Lot D: fix memory read -- src/agent_tools/fix_memory_tools.py.
+    "recall_fixes",
     "git_diff",
     # GitHub issue read (src/github_pr.py): inspection only, same class as
     # web_fetch/reach_read.
     "github_issue",
-    # Lot F: code_history -- git history for a file/symbol, inspection only.
-    "code_history",
     # Project board read tools (Lote 92): inspection only.
     "board_list",
     "board_ready",
@@ -316,8 +318,6 @@ PLAN_MODE_READONLY_TOOLS = {
     # CI failure analyzer (lot C): a read-only GitHub REST/`gh` CLI call,
     # same class as prior_art/web_fetch.
     "ci_failures",
-    # Lot D: fix memory read -- src/agent_tools/fix_memory_tools.py.
-    "recall_fixes",
 }
 
 

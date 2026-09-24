@@ -274,6 +274,12 @@ TOOL_HANDLERS = {
     "plan_status": PlanStatusTool().execute,
     "plan_task": PlanTaskTool().execute,
     "plan_done": PlanDoneTool().execute,
+    # Lot F: git history understanding for a file/symbol -- read-only, see
+    # src/code_history.py / src/agent_tools/code_history_tools.py.
+    "code_history": CodeHistoryTool().execute,
+    # Night shift (lot E): an unattended queue of dispatch jobs run under a
+    # budget, with a morning report. See src/night_shift.py.
+    "night_shift": NightShiftTool().execute,
     "plan_skip": PlanSkipTool().execute,
     "plan_next": PlanNextTool().execute,
     # Prior art (GIT-08): reuse, adapt, or write, with every repository name
@@ -282,12 +288,6 @@ TOOL_HANDLERS = {
     # CI failure analyzer (lot C): what really broke in a GitHub Actions run,
     # read from the run's own logs. See src/ci_failures.py.
     "ci_failures": CiFailuresTool().execute,
-    # Night shift (lot E): an unattended queue of dispatch jobs run under a
-    # budget, with a morning report. See src/night_shift.py.
-    "night_shift": NightShiftTool().execute,
-    # Lot F: git history understanding for a file/symbol -- read-only, see
-    # src/code_history.py / src/agent_tools/code_history_tools.py.
-    "code_history": CodeHistoryTool().execute,
 }
 # Config/integration admin tools (manage_endpoints/mcp/webhooks/tokens/settings).
 TOOL_HANDLERS.update(ADMIN_TOOL_HANDLERS)
@@ -319,6 +319,7 @@ TOOL_HANDLERS["manage_instincts"] = _manage_instincts_adapter
 # src/agent_tools/bug_hunt_tools.py / src/bug_hunt.py.
 from .bug_hunt_tools import BugHuntTool
 TOOL_HANDLERS["bug_hunt"] = BugHuntTool().execute
+
 # Lot D: fix memory -- read-only recall of past solved issues in this project.
 from .fix_memory_tools import RecallFixesTool  # noqa: E402
 
@@ -453,14 +454,14 @@ TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_fi
              # Targeted image inspection -- src/agent_tools/image_inspect_tool.py.
              "inspect_image",
              # Autonomous bug hunter -- src/agent_tools/bug_hunt_tools.py.
-             "bug_hunt"} | BUILTIN_EMAIL_TOOLS | DESKTOP_TOOLS | SEMANTIC_TOOLS
-             # CI failure analyzer (lot C) -- src/agent_tools/ci_tools.py.
-             "ci_failures"} | BUILTIN_EMAIL_TOOLS | DESKTOP_TOOLS | SEMANTIC_TOOLS
-             # Lot D: fix memory -- src/agent_tools/fix_memory_tools.py.
-             "recall_fixes"} | BUILTIN_EMAIL_TOOLS | DESKTOP_TOOLS | SEMANTIC_TOOLS
-             # Night shift (lot E): src/agent_tools/night_shift_tools.py.
-             "night_shift"} | BUILTIN_EMAIL_TOOLS | DESKTOP_TOOLS | SEMANTIC_TOOLS
-             # Lot F: git history for a file/symbol -- src/code_history.py.
+             "bug_hunt",
+             # CI failure analyzer -- src/agent_tools/ci_tools.py.
+             "ci_failures",
+             # Fix memory recall -- src/agent_tools/fix_memory_tools.py.
+             "recall_fixes",
+             # Night shift -- src/agent_tools/night_shift_tools.py.
+             "night_shift",
+             # Git history for a file/symbol -- src/code_history.py.
              "code_history"} | BUILTIN_EMAIL_TOOLS | DESKTOP_TOOLS | SEMANTIC_TOOLS
 
 ToolBlock = namedtuple("ToolBlock", ["tool_type", "content"])

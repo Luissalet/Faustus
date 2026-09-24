@@ -1601,23 +1601,6 @@ DEFAULT_SETTINGS = {
     # A sibling's lease is ignored once its heartbeat is older than this
     # (seconds) — it is treated as dead, not just quiet.
     "model_lease_stale_seconds": 45,
-    # Autonomous bug hunter (src/bug_hunt.py): "" = the resolved utility
-    # endpoint's own model, generating and triaging the edge-case tests.
-    "bug_hunt_model": "",
-    # Upper bound on generated test cases per target.
-    "bug_hunt_max_cases": 12,
-    # Timeout (seconds) for one isolated pytest run of a generated suite.
-    "bug_hunt_timeout_seconds": 120,
-    # Lot D: fix memory (src/fix_memory.py) -- the agent grows smarter with
-    # every solved issue. Master switch: when False, recording and recall are
-    # both skipped, same posture as instincts_enabled.
-    "fix_memory_enabled": True,
-    # Character budget (estimated in tokens) for the "Past fixes in this
-    # project" block a coding-task turn may inject into the prompt.
-    "fix_memory_prompt_budget_tokens": 600,
-    # Whether a coding-task turn automatically recalls and injects past
-    # fixes, vs. only ever being available through the `recall_fixes` tool.
-    "fix_memory_auto_recall": True,
     # Handoff lanes (src/handoff_lanes.py): an explicit, inspectable policy
     # of which agent may delegate to which, with which tools. A list of
     # lane dicts, `src.handoff_lanes.validate()` is the schema. Empty by
@@ -1632,6 +1615,23 @@ DEFAULT_SETTINGS = {
     # shift that does not state its own ceiling.
     "night_shift_default_max_minutes": 120,
     "night_shift_default_max_tasks": 8,
+    # Lot D: fix memory (src/fix_memory.py) -- the agent grows smarter with
+    # every solved issue. Master switch: when False, recording and recall are
+    # both skipped, same posture as instincts_enabled.
+    "fix_memory_enabled": True,
+    # Character budget (estimated in tokens) for the "Past fixes in this
+    # project" block a coding-task turn may inject into the prompt.
+    "fix_memory_prompt_budget_tokens": 600,
+    # Whether a coding-task turn automatically recalls and injects past
+    # fixes, vs. only ever being available through the `recall_fixes` tool.
+    "fix_memory_auto_recall": True,
+    # Autonomous bug hunter (src/bug_hunt.py): "" = the resolved utility
+    # endpoint's own model, generating and triaging the edge-case tests.
+    "bug_hunt_model": "",
+    # Upper bound on generated test cases per target.
+    "bug_hunt_max_cases": 12,
+    # Timeout (seconds) for one isolated pytest run of a generated suite.
+    "bug_hunt_timeout_seconds": 120,
 }
 
 

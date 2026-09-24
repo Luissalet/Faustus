@@ -3596,6 +3596,23 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "recall_fixes",
+            "description": "Look up past solved issues in this project's own fix memory (src/fix_memory.py) that look similar to a query, an error, or a set of files -- so a fix already worked out once is reused instead of rediscovered from scratch. Read-only, never records or changes anything (recording happens automatically after a turn that changed files and ran tests). Use for 'has this come up before', 'how did we fix this last time', 'have I seen this error in this project'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Free-text description of the current task or problem."},
+                    "files": {"type": "array", "items": {"type": "string"}, "description": "Files involved in the current task, to boost fixes that touched the same files."},
+                    "error": {"type": "string", "description": "An error message/traceback seen right now, to boost fixes with a matching error signature."},
+                    "k": {"type": "integer", "minimum": 1, "maximum": 20, "description": "Max fixes to return (default 5)."}
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "manage_instincts",
             "description": (
                 "Read or manage the user's learned 'instincts' -- small, per-project "
@@ -3625,23 +3642,6 @@ FUNCTION_TOOL_SCHEMAS = [
                     "json": {"type": "string", "description": "For import: the JSON array text previously returned by export."}
                 },
                 "required": ["action"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "recall_fixes",
-            "description": "Look up past solved issues in this project's own fix memory (src/fix_memory.py) that look similar to a query, an error, or a set of files -- so a fix already worked out once is reused instead of rediscovered from scratch. Read-only, never records or changes anything (recording happens automatically after a turn that changed files and ran tests). Use for 'has this come up before', 'how did we fix this last time', 'have I seen this error in this project'.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "Free-text description of the current task or problem."},
-                    "files": {"type": "array", "items": {"type": "string"}, "description": "Files involved in the current task, to boost fixes that touched the same files."},
-                    "error": {"type": "string", "description": "An error message/traceback seen right now, to boost fixes with a matching error signature."},
-                    "k": {"type": "integer", "minimum": 1, "maximum": 20, "description": "Max fixes to return (default 5)."}
-                },
-                "required": []
             }
         }
     },
@@ -3693,6 +3693,12 @@ FUNCTION_TOOL_SCHEMAS = [
                     "run_only": {"type": "boolean", "description": "true: generate and run the tests but skip triage and keep_tests -- a quick 'does it already break' pass."}
                 },
                 "required": ["target"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "ci_failures",
             "description": "What actually broke in the last (or a given) GitHub Actions run for the repo behind this workspace's git remote: reads the failed jobs' own logs and extracts the concrete pytest/jest/tsc/eslint/cargo/go/npm/generic failure blocks -- file, line, test, message -- then maps each one onto the real file in the workspace with who last touched it. Set propose=true (needs a utility model configured) for a ranked cause/fix guess per failure. Read-only, network. Use for 'why did CI fail', 'what broke in the last run', 'read the actual test failure from GitHub Actions', 'qué falló en el pipeline'.",
             "parameters": {
@@ -3702,6 +3708,14 @@ FUNCTION_TOOL_SCHEMAS = [
                     "branch": {"type": "string", "description": "Only consider runs on this branch (default: any branch)."},
                     "propose": {"type": "boolean", "description": "Ask the configured utility model for a ranked {cause, fix, confidence} per failure (default false)."},
                     "limit": {"type": "integer", "minimum": 1, "maximum": 100, "description": "Failures to return (default 20)."}
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "night_shift",
             "description": "An unattended queue of dispatch jobs run overnight under a budget, with a morning report -- 'run these N things tonight and tell me in the morning'. Actions: start (queue a shift: task descriptions, a workspace, and a budget of minutes/tasks/tokens -- each task runs as its own verified worker, sequentially, stopping cleanly once the budget runs out); status (a shift's state and per-task results so far, or the recent shifts when no id is given); stop (ask a running shift to stop after its current task); report (the Markdown morning report for a shift, or the latest one when no id is given).",
             "parameters": {
@@ -3724,6 +3738,12 @@ FUNCTION_TOOL_SCHEMAS = [
                     "verify": {"type": "boolean", "description": "start: verify each task's work (default true)."}
                 },
                 "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "code_history",
             "description": "Git history understanding for a file or symbol: who changed it, how often, with which commits, what else usually changes with it, and the risk that implies. Read-only. Use it for 'who wrote this', 'how often does this file change', 'what usually changes together with this file', 'is this risky to touch', 'quien ha tocado este archivo', 'que suele cambiar junto a esto'.",
             "parameters": {

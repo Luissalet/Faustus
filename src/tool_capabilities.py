@@ -838,6 +838,8 @@ _register(
     {"bug_hunt"},
     ToolEffect.WRITE_WORKSPACE,
     result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED,
+)
+_register(
     # ci_failures (lot C): a read-only GitHub REST/`gh` CLI call over a
     # workflow run's own jobs and logs -- same class as web_fetch/prior_art,
     # a brokered network read whose result quotes external, not
@@ -846,11 +848,17 @@ _register(
     ToolEffect.BROKERED_NETWORK_READ,
     ToolEffect.NETWORK_EGRESS,
     result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
+)
+_register(
     # Lot D: fix memory (src/fix_memory.py, src/agent_tools/fix_memory_tools.py)
     # — read-only recall of past solved issues in this project's own log.
     # Recording happens outside the tool layer (post-turn automation), so
     # `recall_fixes` itself never writes anything.
     {"recall_fixes"},
+    ToolEffect.READ_WORKSPACE,
+    result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED,
+)
+_register(
     # Lot F: code_history (src/code_history.py) only reads the workspace's
     # own `git` history (log/blame/diff of files already on disk) — same
     # class as find_symbol/callers/tests_for above: a workspace-scoped
