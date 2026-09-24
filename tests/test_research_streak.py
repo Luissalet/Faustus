@@ -443,3 +443,41 @@ def test_a_run_of_exact_vision_repeats_pauses_the_evidence_tools_at_once(tmp_pat
     assert 1 in executed and 2 in executed
     assert 3 not in executed and 4 not in executed
     assert 5 in executed
+
+
+def test_a_plan_only_round_neither_extends_nor_breaks_the_streak(tmp_path, monkeypatch):
+    """Live, exam run 15: a plan tick every few rounds wiped the streak."""
+    _patch_common(monkeypatch, {"agent_web_streak_nudge": 3})
+    calls = {"n": 0}
+    script = ["web", "web", "plan", "web", "plan", "web", "web", "web"]
+
+    async def _fake_stream(_candidates, messages, **kwargs):
+        i = calls["n"]
+        calls["n"] += 1
+        if i < len(script):
+            if script[i] == "web":
+                call = {"name": "web_fetch",
+                        "arguments": json.dumps({"url": f"https://example.invalid/{_FAKE_REPO_FILES[i]}"})}
+            else:
+                call = {"name": "todowrite", "arguments": json.dumps(
+                    {"todos": [{"content": f"step {_FAKE_REPO_FILES[i]}", "status": "in_progress"}]})}
+            yield "data: " + json.dumps({"type": "tool_calls", "calls": [call]}) + "\n\n"
+            yield "data: " + json.dumps({"type": "finish", "finish_reason": "tool_calls"}) + "\n\n"
+        else:
+            yield "data: " + json.dumps({"delta": "Respuesta."}) + "\n\n"
+            yield "data: " + json.dumps({"type": "finish", "finish_reason": "stop"}) + "\n\n"
+        yield "data: [DONE]\n\n"
+
+    monkeypatch.setattr(al, "stream_llm_with_fallback", _fake_stream, raising=False)
+    gen = al.stream_agent_loop(
+        "http://127.0.0.1:11434/v1", "qwen3-coder:30b",
+        [{"role": "user", "content": "busca en la web y dime qué dice esa página"}],
+        max_rounds=15,
+        relevant_tools={"web_fetch", "todowrite"},
+        workspace=str(tmp_path),
+    )
+    events = _events(_collect(gen))
+    streak_events = [e for e in events if e.get("type") == "harness_check" and e.get("status") == "web_read_streak"]
+    # web rounds 1,2,4 → streak 3 at round 4 despite the plan tick at round 3
+    assert streak_events and streak_events[0]["streak"] == 3
+    assert streak_events[0]["round"] == 4

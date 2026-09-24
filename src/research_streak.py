@@ -11,9 +11,10 @@ This is a nudge, not a limit. `agent_web_streak_nudge` consecutive
 "remote-read-only" rounds (default 8; 0 disables it) inject one system note
 asking the model to summarise what it has learned, decide whether that is
 enough, and either answer now or say exactly what fact is still missing.
-Nothing is blocked — a model that genuinely needs a ninth read is free to
-keep going, and the streak resets the moment a round writes something,
-touches the plan/todo list, or does anything else. The note fires once per
+Nothing is blocked at first — a model that genuinely needs a ninth read is
+free to keep going, and the streak resets the moment a round writes
+something or does anything else. A round that only updates the plan/todo
+list leaves the streak unchanged. The note fires once per
 streak: it does not repeat every round the pattern continues, only when the
 pattern first crosses the threshold again after having broken.
 """
@@ -32,6 +33,11 @@ WEB_READ_TOOL_NAMES = frozenset({"web_search", "web_fetch", "reach_read", "reach
 #: asked the vision model 36 rounds of questions about one scanned page and
 #: never wrote an answer; the turn ended asking the user whether to go on.
 EVIDENCE_READ_TOOL_NAMES = WEB_READ_TOOL_NAMES | frozenset({"inspect_image"})
+
+#: Plan/todo tools: a round made only of these neither extends nor breaks a
+#: streak (ticking the plan is not progress on its own, and it must not
+#: reset the count either).
+PLAN_TOOL_NAMES = frozenset({"todowrite", "update_plan"})
 
 #: Shell-family tools whose COMMAND, not their name, decides whether a call
 #: read only remote content. Shared with agent_harness's own classification

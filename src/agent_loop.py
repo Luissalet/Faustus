@@ -14528,9 +14528,10 @@ async def _stream_agent_loop_body(
 
         # Research streak (FAUSTUS.md pending item, 23-09 noche): a gentle,
         # non-blocking nudge when many consecutive rounds only read remote
-        # content. A round breaks the streak the instant it writes a file,
-        # touches the plan/todo list, or does anything that is not itself a
-        # bare remote fetch -- narration text alone does not save it, on
+        # content. A round breaks the streak the instant it writes a file or
+        # does anything that is not itself a bare remote fetch (a round that
+        # only updates the plan/todo list is neutral) -- narration text alone
+        # does not save it, on
         # purpose: "Reading the next file..." between every curl call is
         # exactly the pattern this guards against.
         if _web_streak_nudge_at > 0:
@@ -14542,11 +14543,18 @@ async def _stream_agent_loop_body(
                                 round_num, sorted(_evidence_paused_tools))
                     _evidence_paused_tools.clear()
             _round_tool_calls = [(b.tool_type, b.content) for b in (tool_blocks or [])]
-            _round_touches_plan = any(
-                name in ("todowrite", "update_plan") for name, _ in _round_tool_calls
-            )
-            if (not _round_touches_plan
-                    and _research_streak.is_remote_read_only_round(_round_tool_calls)):
+            # Plan/todo updates are neutral: live (exam run 15) a model
+            # ticked its plan every few rounds and each tick wiped a streak
+            # of vision questions, so the second check never came. A round
+            # that ONLY touches the plan leaves the streak as it is; a round
+            # that also reads is judged by its other calls.
+            _round_non_plan_calls = [
+                (name, content) for name, content in _round_tool_calls
+                if name not in _research_streak.PLAN_TOOL_NAMES
+            ]
+            if not _round_non_plan_calls and _round_tool_calls:
+                pass
+            elif _research_streak.is_remote_read_only_round(_round_non_plan_calls):
                 _web_read_streak += 1
             else:
                 _web_read_streak = 0
