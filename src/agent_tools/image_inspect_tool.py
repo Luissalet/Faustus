@@ -29,6 +29,8 @@ import base64
 import hashlib
 import json
 import logging
+import os
+import re
 from collections import OrderedDict
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -218,8 +220,47 @@ async def _action_ask(args: Dict[str, Any], ctx: Dict[str, Any]) -> Dict[str, An
         # exactly what's wrong and how to fix it (Settings -> Vision).
         return {"output": f"{text}{warn}", "exit_code": 0, "answered_by": "none",
                 "measurements": measurements}
-    return {"output": f"[{model_used}] {text}{warn}", "exit_code": 0,
+    hint = _transcription_hint(loaded, question, args)
+    return {"output": f"[{model_used}] {text}{warn}{hint}", "exit_code": 0,
             "answered_by": model_used, "measurements": measurements}
+
+
+_TRANSCRIBE_Q_RE = re.compile(r"\btranscri|\bliteral|\bword by word|\bpalabra por palabra", re.IGNORECASE)
+
+
+def _transcription_hint(loaded: "ii.LoadedImage", question: str, args: Dict[str, Any]) -> str:
+    """When the model asks the vision model to transcribe text and a human
+    transcription sits next to the image, say so once per answer: live
+    (exam runs 13-21) a text-only model re-transcribed, crop by crop, a page
+    whose transcription it had already read — minutes per crop on a CPU
+    vision model, and the vision model's reading is the worse of the two."""
+    if str(args.get("action") or "ask").lower() != "ask" or not _TRANSCRIBE_Q_RE.search(question or ""):
+        return ""
+    try:
+        from src.image_inspection import resolve_path
+        src_path = resolve_path(str(loaded.source))
+    except Exception:  # noqa: BLE001 - a url or an unresolved path: no hint
+        return ""
+    base = os.path.dirname(src_path)
+    found = []
+    for root in {base, os.path.dirname(base)}:
+        try:
+            for dirpath, _dirs, files in os.walk(root):
+                if dirpath.count(os.sep) - root.count(os.sep) > 1:
+                    continue
+                for name in files:
+                    low = name.lower()
+                    if ("transcri" in low or "transcript" in low) and low.endswith((".md", ".txt")):
+                        found.append(os.path.join(dirpath, name))
+        except Exception:  # noqa: BLE001
+            continue
+    if not found:
+        return ""
+    rel = os.path.relpath(sorted(found)[0], os.path.dirname(base)) if base else sorted(found)[0]
+    return (f"\n\n[inspect_image: a human transcription exists ({rel}). The vision model's reading "
+            "above is less reliable than it for text; rely on the transcription for wording, and "
+            "ask inspect_image action=\"unlisted\" with text_path for only what it leaves out "
+            "(marks, circles, symbols, positions).]")
 
 
 # ---------------------------------------------------------------------------

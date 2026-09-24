@@ -552,3 +552,24 @@ async def test_a_requested_max_side_is_capped_for_the_vision_model(tmp_path, mon
     await _run({"action": "ask", "path": p, "question": "q", "max_side": 2400},
                ctx={"turn_model": "qwen2.5:7b-instruct"})
     assert max(seen["size"]) <= 1600
+
+
+async def test_a_transcription_request_points_at_the_human_transcription(tmp_path, monkeypatch):
+    import src.image_inspection as ii_mod
+    (tmp_path / "vistas").mkdir()
+    (tmp_path / "transcripciones").mkdir()
+    (tmp_path / "transcripciones" / "transcripcion_usuario.md").write_text("texto", encoding="utf-8")
+    p = _save_png(tmp_path / "vistas" / "page.png", 400, 300)
+    monkeypatch.setattr(ii_mod, "resolve_path", lambda raw: raw)
+
+    def fake_analyze(images, prompt, owner=None, model_override=None):
+        return {"text": "some words", "model": "local-vl-model"}
+
+    monkeypatch.setattr(dp, "analyze_image_with_vl_prompt", fake_analyze)
+    out = await _run({"action": "ask", "path": p, "question": "Transcribe literalmente el texto"},
+                     ctx={"turn_model": "qwen2.5:7b-instruct"})
+    assert "a human transcription exists" in out["output"]
+    assert "transcripcion_usuario.md" in out["output"]
+    other = await _run({"action": "ask", "path": p, "question": "What is circled?"},
+                       ctx={"turn_model": "qwen2.5:7b-instruct"})
+    assert "human transcription" not in other["output"]
