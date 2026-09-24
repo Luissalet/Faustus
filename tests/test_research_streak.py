@@ -281,3 +281,10 @@ def test_the_nudge_note_carries_the_users_language(tmp_path, monkeypatch):
         and "rounds in a row" in m.get("content")
     ]
     assert notes and any("español" in n for n in notes), notes
+
+
+def test_vision_questions_count_as_evidence_reads():
+    """Live: 36 rounds of inspect_image on one page and no answer."""
+    assert is_remote_read_only_round([("inspect_image", '{"path": "p.jpg", "question": "what is circled?"}')])
+    assert is_remote_read_only_round([("inspect_image", "{}"), ("web_search", '{"query": "sonnet 60"}')])
+    assert not is_remote_read_only_round([("inspect_image", "{}"), ("write_file", '{"path": "a.md"}')])

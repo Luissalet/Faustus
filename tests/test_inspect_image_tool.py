@@ -400,3 +400,20 @@ async def test_view_for_a_model_that_cannot_see_asks_the_vision_model(tmp_path, 
     assert result["answered_by"] == "local-vl-model"
     assert "cannot see images" in result["output"] and "action=\"ask\"" in result["output"]
     assert "Transcribe every piece of text" in seen["prompt"]
+
+
+async def test_what_goes_to_the_vision_model_is_capped_unless_asked(tmp_path, monkeypatch):
+    p = _save_png(tmp_path / "big.png", 2400, 1800)
+    sizes = []
+
+    def fake_analyze(images, prompt, owner=None, model_override=None):
+        from PIL import Image
+        import io as _io
+        sizes.append(Image.open(_io.BytesIO(images[0][0])).size)
+        return {"text": "ok", "model": "vl"}
+
+    monkeypatch.setattr(dp, "analyze_image_with_vl_prompt", fake_analyze)
+    await _run({"action": "ask", "path": p, "question": "q"}, ctx={"turn_model": "qwen2.5:7b"})
+    assert max(sizes[-1]) == 1280
+    await _run({"action": "ask", "path": p, "question": "q", "max_side": 2000}, ctx={"turn_model": "qwen2.5:7b"})
+    assert max(sizes[-1]) == 2000

@@ -108,6 +108,14 @@ def _downscale_warning(proc: "ii.ProcessResult") -> str:
             "to stay within the size limit]")
 
 
+def _vision_max_side() -> int:
+    try:
+        from src.settings import get_setting
+        return max(256, min(int(get_setting("vision_max_side", 1280) or 1280), 4096))
+    except Exception:  # noqa: BLE001
+        return 1280
+
+
 def _main_model_can_see(ctx: Dict[str, Any]) -> bool:
     """The same check the loop uses to decide whether a tool-result image is
     attached or described: the endpoint's reported capability first
@@ -158,11 +166,17 @@ async def _action_ask(args: Dict[str, Any], ctx: Dict[str, Any]) -> Dict[str, An
     )
     loaded = _load_image(args)
     pargs = _process_args(args)
+    sees = await asyncio.to_thread(_main_model_can_see, ctx)
+    if not sees and not pargs.get("max_side"):
+        # What goes to the Vision model is capped (vision_max_side, 1280 px
+        # by default): a CPU-only vision model spent up to four minutes per
+        # full scanned page. Crop a region for detail, or pass max_side.
+        pargs["max_side"] = _vision_max_side()
     proc = ii.process(loaded.image, grid=args.get("grid"), **pargs)
     measurements = _measurements(loaded, proc)
     warn = _downscale_warning(proc)
 
-    if await asyncio.to_thread(_main_model_can_see, ctx):
+    if sees:
         b64, mime = ii.image_to_b64(proc.image)
         text = (f"inspect_image: processed view of {loaded.source} attached "
                 f"(region {measurements['region_used']} of the original) — "

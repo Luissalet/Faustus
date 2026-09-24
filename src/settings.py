@@ -161,6 +161,9 @@ DEFAULT_SETTINGS = {
     # One targeted vision question (inspect_image). A vision model on the CPU
     # needs minutes for a full scanned page.
     "vision_timeout_seconds": 600,
+    # Longest side of an image sent to the Vision model for one question when
+    # the caller did not ask for more (a CPU-only model is minutes per page).
+    "vision_max_side": 1280,
     # Tool-result images (FAUSTUS). A tool that returns an image (an MCP
     # browser screenshot, desktop_screenshot) hands it to the model as an
     # image block when the model can see; the longest side is capped at

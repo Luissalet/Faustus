@@ -34,6 +34,7 @@ from src.settings import DEFAULT_SETTINGS, RETIRED_SETTING_KEYS
 SCHEMA_KEY_RE = re.compile(r"^(agent_|browser_|desktop_)")
 # Agent-adjacent keys that live under other prefixes but belong on this page.
 EXTRA_KEYS: tuple[str, ...] = ("tool_path_extra_roots", "vision_enabled", "vision_model",
+                              "vision_timeout_seconds", "vision_max_side",
                                "dispatch_model", "dispatch_endpoint_id", "gpu_placement_prefer",
                                "sandbox_missing_policy", "code_graph_community_summaries",
                                "code_graph_drift_check", "approval_autonomy")
@@ -593,6 +594,9 @@ GROUPS: list[dict[str, Any]] = [
             _int("vision_timeout_seconds", "Vision question timeout (s)",
                  "How long one targeted image question may take. A vision model running on the CPU "
                  "needs minutes for a full scanned page.", 30, 3600),
+            _int("vision_max_side", "Vision image size (px)",
+                 "Longest side of an image sent to the Vision model for one question, unless the "
+                 "agent asks for more. Smaller is faster; crop a region for detail.", 256, 4096),
         ],
     ),
     _group(

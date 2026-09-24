@@ -27,6 +27,11 @@ from src.agent_harness import SHELL_TOOLS
 
 #: Tools whose entire job is reading something remote.
 WEB_READ_TOOL_NAMES = frozenset({"web_search", "web_fetch", "reach_read", "reach_search"})
+#: Evidence-gathering tools that cost as much as a web read and advance the
+#: task just as little on their own. Live, 24-09-2026: a text-only model
+#: asked the vision model 36 rounds of questions about one scanned page and
+#: never wrote an answer; the turn ended asking the user whether to go on.
+EVIDENCE_READ_TOOL_NAMES = WEB_READ_TOOL_NAMES | frozenset({"inspect_image"})
 
 #: Shell-family tools whose COMMAND, not their name, decides whether a call
 #: read only remote content. Shared with agent_harness's own classification
@@ -105,7 +110,7 @@ def is_remote_read_only_round(calls: Sequence[Tuple[str, str]]) -> bool:
         return False
     for name, content in calls:
         name = (name or "").strip()
-        if name in WEB_READ_TOOL_NAMES:
+        if name in EVIDENCE_READ_TOOL_NAMES:
             continue
         if name in SHELL_TOOL_NAMES and looks_like_remote_read_shell_command(str(content or "")):
             continue
@@ -115,10 +120,11 @@ def is_remote_read_only_round(calls: Sequence[Tuple[str, str]]) -> bool:
 
 _STREAK_NUDGE_TEXT = (
     "[Runtime research check — automatic message, not a new user request] "
-    "You have spent {n} rounds in a row only reading remote content (web "
-    "search/fetch, or a shell command that just fetches a URL or clones a "
-    "repository) — no file written, no plan/todo update, no progress of your "
-    "own. Stop and summarise what you have actually learned so far. Decide: "
+    "You have spent {n} rounds in a row only gathering evidence (web "
+    "search/fetch, questions to the vision model, or a shell command that "
+    "just fetches a URL or clones a repository) — no file written, no "
+    "plan/todo update, no progress of your own. Stop and summarise what you "
+    "have actually learned so far. Decide: "
     "do you already have enough to answer the original request? If yes, "
     "answer now using what you have. If not, say the ONE specific fact still "
     "missing and why the next read is needed, then continue."
