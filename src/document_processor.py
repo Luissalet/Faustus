@@ -659,6 +659,81 @@ def analyze_image_with_vl_result(image_path: str, owner: str | None = None) -> d
         return {"text": "[VL model unavailable - image not analyzed]", "model": ""}
 
 
+def analyze_image_with_vl_prompt(
+    images: list[tuple[bytes, str]],
+    prompt: str,
+    owner: str | None = None,
+    model_override: str | None = None,
+) -> dict:
+    """Like `analyze_image_with_vl_result`, but for a caller-supplied prompt
+    and already-loaded image bytes instead of a fixed "Describe this image in
+    detail" caption read from a path.
+
+    `images` is `[(raw_bytes, mime), ...]` — one entry for a single-image
+    question, several for `inspect_image`'s `compare` action (a multi-image
+    ``image_url`` message, the same shape the OpenAI-compatible vision APIs
+    this project already targets accept). `model_override` picks a specific
+    vision model instead of the admin-configured one (still falls through
+    `vision_model_fallbacks` on failure).
+
+    This is a deliberate sibling of `analyze_image_with_vl_result`, not a
+    replacement it delegates to: that function's own source is pinned by
+    `tests/test_l68_sec04_ocr_tts_stt_egress_audit.py` to contain its
+    `assert_outbound("ocr_vision", ...)` / `llm_call(` calls directly (a
+    source-inspection SEC-04 audit), so its body must keep doing its own
+    resolve-and-dispatch rather than calling out to a shared helper. This
+    function duplicates that same resolve/fallback/privacy-gate/dispatch
+    shape for a custom prompt and image set; `analyze_image_with_vl_result`
+    itself is untouched and behaves exactly as before.
+    """
+    if not images:
+        return {"text": "[No image to analyze]", "model": ""}
+    try:
+        settings = _load_vl_settings()
+        if not settings.get("vision_enabled", True):
+            return {"text": "[Vision is disabled — enable it in Settings → Vision]", "model": ""}
+        vl_model = model_override or settings.get("vision_model", "")
+
+        try:
+            url, model_id, headers = _resolve_vl_model(vl_model, owner=owner)
+        except ValueError:
+            return {"text": "[No vision model configured — set one in Settings → Vision]", "model": vl_model or ""}
+
+        content: list = [{"type": "text", "text": prompt}]
+        for raw, mime in images:
+            img_data = base64.b64encode(raw).decode("utf-8")
+            img_format = (mime or "image/png").split("/")[-1] or "png"
+            content.append({"type": "image_url",
+                             "image_url": {"url": f"data:image/{img_format};base64,{img_data}"}})
+        vl_messages = [{"role": "user", "content": content}]
+
+        try:
+            from src.endpoint_resolver import resolve_vision_fallback_candidates
+            _vl_candidates = [(url, model_id, headers)] + resolve_vision_fallback_candidates(owner=owner)
+        except Exception:
+            _vl_candidates = [(url, model_id, headers)]
+
+        last_err = None
+        for i, (_url, _model, _headers) in enumerate([c for c in _vl_candidates if c and c[0] and c[1]]):
+            try:
+                # SEC-04, same gate as analyze_image_with_vl_result above.
+                from src.privacy_policy import assert_outbound
+                assert_outbound("ocr_vision", _url, owner=owner)
+                answer = llm_call(_url, _model, vl_messages, headers=_headers, timeout=120)
+                logger.info("VL custom-prompt analysis complete with model %s", _model)
+                return {"text": answer, "model": _model}
+            except Exception as e:
+                last_err = e
+                tag = "primary" if i == 0 else "candidate"
+                logger.warning(f"[vision fallback] {tag} {_model} failed ({type(e).__name__}); trying next")
+                continue
+        raise last_err if last_err else RuntimeError("No vision model endpoint configured")
+
+    except Exception as e:
+        logger.error(f"VL model unavailable: {e}")
+        return {"text": "[VL model unavailable - image not analyzed]", "model": ""}
+
+
 def analyze_image_with_vl(image_path: str, owner: str | None = None) -> str:
     """Analyze an image using the admin-configured Vision-Language model."""
     return analyze_image_with_vl_result(image_path, owner=owner).get("text", "")
