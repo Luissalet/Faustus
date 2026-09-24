@@ -6586,12 +6586,27 @@ async def _stream_agent_loop_body(
         conversation_language as _conversation_language,
         reply_language_mismatch as _reply_language_mismatch,
         mismatch_nudge_message as _mismatch_nudge_message,
+        localize_runtime_note as _localize_runtime_note,
     )
     _reply_language_hint = _turn_language(messages)
     _required_reply_lang = (
         (_reply_language_hint or {}).get("_reply_language")
         or _conversation_language(messages)
     )
+
+    def _lang_note(content: str) -> str:
+        """A runtime-injected nudge, with the user's language reminder attached.
+
+        `_required_reply_lang` is read fresh on every call (it is updated as
+        steering/replies settle the turn's language), so a note built early
+        in the turn and one built on round 20 both carry whatever the loop
+        currently believes the user's language is. See
+        ``reply_language.localize_runtime_note`` for why this exists: an
+        English harness note appended after the standing reply-language
+        reminder was the freshest language cue a local model read before the
+        next round, and it argued for English every time.
+        """
+        return _localize_runtime_note(content, _required_reply_lang)
 
     # The run's gate, plus the allow-rule table for the engine's own
     # read-only context calls (src/context_tool_gate.py); with no packet
@@ -9446,13 +9461,13 @@ async def _stream_agent_loop_body(
         messages.append({
             "role": "system",
             "content": (
-                "The user answered the runtime approval card. The sealed action above has now "
+                _lang_note("The user answered the runtime approval card. The sealed action above has now "
                 "been attempted; inspect its result. Resume the original user task, not the "
                 "approval question. Do not repeat 'Allow this task to continue?' as an answer. "
                 "Use the remaining tools and verify the requested outcome before finishing. "
                 "Listing or focusing a window does not close it. Do not repeat completed actions. "
                 "Current tool restrictions still apply; the runtime handles any further approval. "
-                "Original task (saved user request): " + approved.continuation_query
+                "Original task (saved user request): " + approved.continuation_query)
             ),
         })
 
@@ -9468,7 +9483,7 @@ async def _stream_agent_loop_body(
     if _intent.get("freshness_reasons") and not guide_only and not _web_withheld:
         messages.append({
             "role": "system",
-            "content": "This question is time-sensitive: search the web before answering.",
+            "content": _lang_note("This question is time-sensitive: search the web before answering."),
         })
 
     # Round budget. Hitting the cap mid-task used to end the turn with a
@@ -9519,7 +9534,7 @@ async def _stream_agent_loop_body(
         except Exception:
             _saved_todos = []
         if _harness.progress_list_is_complete(_saved_todos):
-            messages.append({"role": "user", "_harness_note": True, "content": TODOWRITE_REFRESH_NUDGE})
+            messages.append({"role": "user", "_harness_note": True, "content": _lang_note(TODOWRITE_REFRESH_NUDGE)})
             _todo_refresh_nudged = True
             logger.info("[harness] todowrite refresh injected at continue turn start")
     try:
@@ -9805,7 +9820,7 @@ async def _stream_agent_loop_body(
                 messages.append({
                     "role": "user",
                     "_harness_note": True,
-                    "content": _auto_continue_text,
+                    "content": _lang_note(_auto_continue_text),
                 })
                 _ledger.notes.append(f"auto_continue_rounds@{round_num - 1}")
                 yield (
@@ -11018,7 +11033,7 @@ async def _stream_agent_loop_body(
             _ledger.notes.append(f"think_cutoff@{round_num}")
             _carry = _think_cutoff_note(round_reasoning)
             if _carry:
-                messages.append({"role": "user", "_harness_note": True, "content": _carry})
+                messages.append({"role": "user", "_harness_note": True, "content": _lang_note(_carry)})
             gen_overrides = dict(gen_overrides or {})
             gen_overrides["think"] = False
             _rounds_budget += 1  # the retry must not eat the task's step budget
@@ -11186,8 +11201,8 @@ async def _stream_agent_loop_body(
                     messages.append({
                         "role": "system",
                         "content": (
-                            "Answer the user's identity/personal-memory question from the compact "
-                            "saved memory facts already provided. Do not call manage_memory or any tool."
+                            _lang_note("Answer the user's identity/personal-memory question from the compact "
+                            "saved memory facts already provided. Do not call manage_memory or any tool.")
                         ),
                     })
                     yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
@@ -11379,9 +11394,9 @@ async def _stream_agent_loop_body(
             # is exactly what makes a local model say it a third time.
             messages.append({"role": "assistant", "content": "(repeated the runtime's approval card instead of answering)"})
             messages.append({"role": "system", "content": (
-                "That is the already-answered runtime approval question, not task completion. "
+                _lang_note("That is the already-answered runtime approval question, not task completion. "
                 "Continue the original task using the available tools and verify its outcome. "
-                "If a tool is blocked, report that concrete blocker. Do not echo the approval card."
+                "If a tool is blocked, report that concrete blocker. Do not echo the approval card.")
             )})
             yield "data: " + json.dumps({"type": "harness_check", "status": "auto_continue", "reason": "approval_echo", "round": round_num}) + "\n\n"
             continue
@@ -11395,9 +11410,9 @@ async def _stream_agent_loop_body(
             _budget_stop_echo_retried = True
             messages.append({"role": "assistant", "content": cleaned_round})
             messages.append({"role": "system", "content": (
-                "That is not a stopping condition this runtime uses. "
+                _lang_note("That is not a stopping condition this runtime uses. "
                 "Keep working the original task with the available tools. "
-                "Do not invent a reason to stop."
+                "Do not invent a reason to stop.")
             )})
             if round_response and full_response.endswith(round_response):
                 full_response = full_response[:-len(round_response)]
@@ -11460,8 +11475,8 @@ async def _stream_agent_loop_body(
                         "role": "user",
                         "_harness_note": True,
                         "content": (
-                            "[Harness check — automatic runtime message, not a new "
-                            "user request] Answer the person's request directly now."
+                            _lang_note("[Harness check — automatic runtime message, not a new "
+                            "user request] Answer the person's request directly now.")
                         ),
                     })
                     yield (
@@ -11568,10 +11583,10 @@ async def _stream_agent_loop_body(
                     "role": "user",
                     "_harness_note": True,
                     "content": (
-                        "[Harness check — automatic message from the runtime, not from the user] "
+                        _lang_note("[Harness check — automatic message from the runtime, not from the user] "
                         "Your previous output was cut off by the max_tokens limit (finish_reason=length). "
                         "Continue EXACTLY where you stopped without repeating anything already written. "
-                        "If you were about to call a tool, call it now."
+                        "If you were about to call a tool, call it now.")
                     ),
                 })
                 yield (
@@ -11621,14 +11636,14 @@ async def _stream_agent_loop_body(
                     "role": "user",
                     "_harness_note": True,
                     "content": (
-                        "[Harness check — automatic message from the runtime, not from the user] "
+                        _lang_note("[Harness check — automatic message from the runtime, not from the user] "
                         "You called a tool that does not exist: " + ", ".join(f"`{d}`" for d in _dropped)
                         + ". NOTHING ran. "
                         + (f"Did you mean: {', '.join(_sugg)}? " if _sugg else "")
                         + "If the tool exists but was not in this turn's schema list, call `lookup_tools` "
                         "with a query or names and then retry. "
                         + "The tools with full schemas this turn are: " + ", ".join(_sent_names[:40])
-                        + ". Call the correct tool now with the same intent."
+                        + ". Call the correct tool now with the same intent.")
                     ),
                 })
                 yield (
@@ -11675,12 +11690,12 @@ async def _stream_agent_loop_body(
                     "role": "user",
                     "_harness_note": True,
                     "content": (
-                        "[Harness check — automatic message from the runtime, not from the user] "
+                        _lang_note("[Harness check — automatic message from the runtime, not from the user] "
                         "Your last message was EMPTY: no text and no tool call, so nothing happened. "
                         + (f"Open objectives: {'; '.join(str(o) for o in _open[:4])}. " if _open else "")
                         + "Either continue the task by calling a tool now, or write the final answer "
                         "stating exactly what was done and what remains. "
-                        "Continúa con la siguiente unidad. Si algo no está claro, haz UNA pregunta concreta."
+                        "Continúa con la siguiente unidad. Si algo no está claro, haz UNA pregunta concreta.")
                     ),
                 })
                 yield (
@@ -11777,9 +11792,9 @@ async def _stream_agent_loop_body(
                     "role": "user",
                     "_harness_note": True,
                     "content": (
-                        "[Harness check — automatic runtime message, not a new user request] "
+                        _lang_note("[Harness check — automatic runtime message, not a new user request] "
                         "Your last message contained only the context separator and no answer. "
-                        "Answer the person's request now, calling a tool first if you need one."
+                        "Answer the person's request now, calling a tool first if you need one.")
                     ),
                 })
                 yield (
@@ -11831,7 +11846,7 @@ async def _stream_agent_loop_body(
                     "role": "user",
                     "_harness_note": True,
                     "content": (
-                        "[Harness check — automatic runtime message, not a new user request] "
+                        _lang_note("[Harness check — automatic runtime message, not a new user request] "
                         "The original request requires work in the active workspace, but your last response "
                         "performed no tool call. An acknowledgement is not completion. START your next response "
                         "with the concrete read, archive-inspection, edit, or terminal tool call needed to advance "
@@ -11840,7 +11855,7 @@ async def _stream_agent_loop_body(
                             " An implementation plan is ACTIVE for this project: call plan_status, then "
                             "plan_task for the current task, and start on it now."
                             if _ledger.plan_active else ""
-                        )
+                        ))
                     ),
                 })
                 yield (
@@ -11871,11 +11886,11 @@ async def _stream_agent_loop_body(
                         "role": "user",
                         "_harness_note": True,
                         "content": (
-                            "[Harness check — automatic message from the runtime, not from the user] "
+                            _lang_note("[Harness check — automatic message from the runtime, not from the user] "
                             "You claimed the project objectives were changed, but this turn has no usable "
                             "project_objectives tool and no mutation evidence. Retract the claim. State that "
                             "nothing was changed, explain that the chat must be attached to a project (or the "
-                            "policy must permit it), and give the smallest next step."
+                            "policy must permit it), and give the smallest next step.")
                         ),
                     })
                     yield (
@@ -11901,12 +11916,12 @@ async def _stream_agent_loop_body(
                     "role": "user",
                     "_harness_note": True,
                     "content": (
-                        "[Harness check — automatic message from the runtime, not from the user] "
+                        _lang_note("[Harness check — automatic message from the runtime, not from the user] "
                         "The user explicitly asked to change the active project's objectives, but no "
                         "successful `project_objectives` call with `action: apply` is in this turn's "
                         "tool log. Prose is not the requested action. Call that tool now with the "
                         "smallest truthful ADD/EDIT/KILL delta and a rationale. If the request is "
-                        "ambiguous, call `ask_user`; do not claim the objective was changed."
+                        "ambiguous, call `ask_user`; do not claim the objective was changed.")
                     ),
                 })
                 yield (
@@ -11980,7 +11995,7 @@ async def _stream_agent_loop_body(
                         # is real and the model merely overstated the scope.
                         if round_response.strip() and _ledger.effects:
                             messages.append({"role": "assistant", "content": round_response})
-                        messages.append({"role": "user", "_harness_note": True, "content": _ledger.rejection_message(_check)})
+                        messages.append({"role": "user", "_harness_note": True, "content": _lang_note(_ledger.rejection_message(_check))})
                         yield (
                             "data: " + json.dumps({
                                 "type": "harness_check", "status": "rejected",
@@ -12019,12 +12034,12 @@ async def _stream_agent_loop_body(
                             "role": "user",
                             "_harness_note": True,
                             "content": (
-                                "[Harness execution recovery — automatic runtime message, not a new user request] "
+                                _lang_note("[Harness execution recovery — automatic runtime message, not a new user request] "
                                 "Stop writing status prose. Your next response must START with a tool call that "
                                 "advances the original task in the active workspace: inspect a real file if still "
                                 "necessary, then use apply_patch/edit_file/write_file or a terminal command to make "
                                 "the change and run its verification. Do not claim completion until those tool "
-                                "results exist. Continue the original task now."
+                                "results exist. Continue the original task now.")
                             ),
                         })
                         yield (
@@ -12091,7 +12106,7 @@ async def _stream_agent_loop_body(
                                        round_num, _ts_check["changed"], _ts_check["missing"])
                         if round_response.strip():
                             messages.append({"role": "assistant", "content": round_response})
-                        messages.append({"role": "user", "_harness_note": True, "content": _ledger.target_substitution_message(_ts_check)})
+                        messages.append({"role": "user", "_harness_note": True, "content": _lang_note(_ledger.target_substitution_message(_ts_check))})
                         yield (
                             "data: " + json.dumps({
                                 "type": "harness_check", "status": "target_substituted", "round": round_num,
@@ -12125,11 +12140,11 @@ async def _stream_agent_loop_body(
                             "role": "user",
                             "_harness_note": True,
                             "content": (
-                                "[Harness check — automatic message from the runtime, not from the user] "
+                                _lang_note("[Harness check — automatic message from the runtime, not from the user] "
                                 "A syntax check of the files you changed FAILED:\n- "
                                 + "\n- ".join(f"{c['path']}: {c['error']}" for c in _syntax_failed)
                                 + "\nRead the affected region with read_file (offset/limit), fix it with "
-                                "edit_file, and only then finish. Do not describe the fix — apply it."
+                                "edit_file, and only then finish. Do not describe the fix — apply it.")
                             ),
                         })
                         yield (
@@ -12185,7 +12200,7 @@ async def _stream_agent_loop_body(
                                        [(f.get("path"), f.get("line"), f.get("code")) for f in _analysis_failed[:5]])
                         if round_response.strip():
                             messages.append({"role": "assistant", "content": round_response})
-                        messages.append({"role": "user", "_harness_note": True, "content": _static_checks.fix_message(_sres)})
+                        messages.append({"role": "user", "_harness_note": True, "content": _lang_note(_static_checks.fix_message(_sres))})
                         yield (
                             "data: " + json.dumps({
                                 "type": "harness_check", "status": "static_analysis", "round": round_num,
@@ -12234,7 +12249,7 @@ async def _stream_agent_loop_body(
                                                round_num, _usres.get("summary"))
                                 if round_response.strip():
                                     messages.append({"role": "assistant", "content": round_response})
-                                messages.append({"role": "user", "_harness_note": True, "content": _ui_smoke.failure_message(_usres)})
+                                messages.append({"role": "user", "_harness_note": True, "content": _lang_note(_ui_smoke.failure_message(_usres))})
                                 yield (
                                     "data: " + json.dumps({
                                         "type": "harness_check", "status": "ui_smoke_failed",
@@ -12303,7 +12318,7 @@ async def _stream_agent_loop_body(
                                            round_num, _tres.get("summary"))
                             if round_response.strip():
                                 messages.append({"role": "assistant", "content": round_response})
-                            messages.append({"role": "user", "_harness_note": True, "content": _ptests.failure_message(_tres)})
+                            messages.append({"role": "user", "_harness_note": True, "content": _lang_note(_ptests.failure_message(_tres))})
                             yield (
                                 "data: " + json.dumps({
                                     "type": "harness_check", "status": "tests_failed", "round": round_num,
@@ -12354,7 +12369,7 @@ async def _stream_agent_loop_body(
                                            round_num, len(_rev_errors))
                             if round_response.strip():
                                 messages.append({"role": "assistant", "content": round_response})
-                            messages.append({"role": "user", "_harness_note": True, "content": _auto_review.fix_message(_rev)})
+                            messages.append({"role": "user", "_harness_note": True, "content": _lang_note(_auto_review.fix_message(_rev))})
                             yield (
                                 "data: " + json.dumps({
                                     "type": "harness_check", "status": "review_issues", "round": round_num,
@@ -12422,10 +12437,10 @@ async def _stream_agent_loop_body(
                     messages.append({
                         "role": "system",
                         "content": (
-                            "An independent verifier reviewed your work against the "
+                            _lang_note("An independent verifier reviewed your work against the "
                             "original request and found issues that must be fixed before "
                             "this is actually done:\n- " + "\n- ".join(_vfail) +
-                            "\n\nFix these now using tools, then finish."
+                            "\n\nFix these now using tools, then finish.")
                         ),
                     })
                     # Require fresh effectful work before verifying again, so we
@@ -12469,14 +12484,14 @@ async def _stream_agent_loop_body(
                 messages.append({
                     "role": "system",
                     "content": (
-                        f"You just wrote: \"{_matched_phrase}\" — but ended the "
+                        _lang_note(f"You just wrote: \"{_matched_phrase}\" — but ended the "
                         "turn without making the actual tool call. The user can "
                         "see you announced the action but didn't run it, which "
                         "is the most frustrating thing you can do. "
                         "DO IT NOW: emit the actual function call this turn. "
                         f"{_cookbook_log_hint}"
                         "If you decided not to do it after all, say so plainly in "
-                        "one sentence instead of restating the plan."
+                        "one sentence instead of restating the plan.")
                     ),
                 })
                 # Visible signal in the stream so the user knows we caught it.
@@ -12582,13 +12597,13 @@ async def _stream_agent_loop_body(
                     messages.append({
                         "role": "system",
                         "content": (
-                            "The completion policy for this turn is `"
+                            _lang_note("The completion policy for this turn is `"
                             + str(_ce_decision.get("mode") or "greedy")
                             + "`, and by it this work is not finished. What is "
                             "still owed, in order:\n- " + "\n- ".join(_ce_next)
                             + "\n\nDo these now with tools, then finish. This "
                             "changes how far you go and grants you no tool, no "
-                            "path and no permission you did not already have."
+                            "path and no permission you did not already have.")
                         ),
                     })
                     continue
@@ -12615,11 +12630,11 @@ async def _stream_agent_loop_body(
                     messages.append({
                         "role": "system",
                         "content": (
-                            "Your own plan for this turn still has unfinished steps, and it does "
+                            _lang_note("Your own plan for this turn still has unfinished steps, and it does "
                             "not yet cover part of what was asked:\n- " + "\n- ".join(_plan_gap)
                             + "\n\nFinish those with tools, then call `update_plan` again and stop. "
                             "This is only what you already planned to do — do not widen scope, "
-                            "refactor unrelated code or add anything not already requested."
+                            "refactor unrelated code or add anything not already requested.")
                         ),
                     })
                     continue
@@ -12705,10 +12720,10 @@ async def _stream_agent_loop_body(
                     "role": "user",
                     "_harness_note": True,
                     "content": (
-                        "[Runtime loop recovery — not a new user request] The "
+                        _lang_note("[Runtime loop recovery — not a new user request] The "
                         "previously hidden tool is available again. Do NOT repeat "
                         "the stalled diagnostic. Take a different next step: a new "
-                        "command, or apply_patch / edit_file / write_file."
+                        "command, or apply_patch / edit_file / write_file.")
                     ),
                 })
             else:
@@ -12720,13 +12735,13 @@ async def _stream_agent_loop_body(
                     "role": "user",
                     "_harness_note": True,
                     "content": (
-                        "[Runtime loop recovery — not a new user request] This diagnostic "
+                        _lang_note("[Runtime loop recovery — not a new user request] This diagnostic "
                         "retry was skipped because it repeats the stalled investigation. "
                         "The repeatedly selected tool is temporarily unavailable. Continue "
                         "the original implementation plan by calling apply_patch, "
                         "edit_file, or write_file for the next concrete code change. "
                         "A real dependency-install command is also allowed if required."
-                        + _emphasis
+                        + _emphasis)
                     ),
                 })
             full_response += "\n\n"
@@ -12862,13 +12877,13 @@ async def _stream_agent_loop_body(
                 "role": "user",
                 "_harness_note": True,
                 "content": (
-                    "[Runtime loop recovery — not a new user request] The current "
+                    _lang_note("[Runtime loop recovery — not a new user request] The current "
                     "diagnostic call was skipped because this investigation is "
                     "cycling. The repeated diagnostic tool is temporarily unavailable. "
                     "Continue the ORIGINAL implementation plan NOW: make "
                     "the next concrete file change with apply_patch, edit_file, or "
                     "write_file. If a dependency is genuinely missing, install it "
-                    "directly instead of running another probe."
+                    "directly instead of running another probe.")
                 ),
             })
             full_response += "\n\n"
@@ -14161,8 +14176,8 @@ async def _stream_agent_loop_body(
             if _loop_action == "nudge":
                 if _loop_is_cycle:
                     messages.append({"role": "user", "_harness_note": True, "content": (
-                        "[Runtime loop recovery — not a new user request] You are "
-                        f"{_loop_policy.last_cycle_reason}."
+                        _lang_note("[Runtime loop recovery — not a new user request] You are "
+                        f"{_loop_policy.last_cycle_reason}.")
                     )})
                     logger.info(
                         "[loop-breaker] cycle nudge: period=%d repeats=%d",
@@ -14170,20 +14185,20 @@ async def _stream_agent_loop_body(
                     )
                 else:
                     messages.append({"role": "user", "_harness_note": True, "content": (
-                        "[Runtime loop recovery — not a new user request] This exact call, with "
+                        _lang_note("[Runtime loop recovery — not a new user request] This exact call, with "
                         "this exact result, has now repeated "
                         f"{_loop_policy.streak} times. Take a different concrete action; do not "
-                        "repeat it."
+                        "repeat it.")
                     )})
                     logger.info("[loop-breaker] nudge after %d identical calls to %s", _loop_policy.streak, block.tool_type)
             elif _loop_action == "block_tool":
                 disabled_tools.update(_loop_policy.blocked_tools)
                 if _loop_is_cycle:
                     messages.append({"role": "user", "_harness_note": True, "content": (
-                        "[Runtime loop recovery — not a new user request] "
+                        _lang_note("[Runtime loop recovery — not a new user request] "
                         f"{_loop_policy.last_cycle_reason.capitalize()}. The tool(s) involved "
                         f"({', '.join(sorted(_loop_policy.blocked_tools))}) are withheld for the "
-                        "rest of this turn. Finish with what you have or use a different tool."
+                        "rest of this turn. Finish with what you have or use a different tool.")
                     )})
                     logger.info(
                         "[loop-breaker] cycle block: period=%d repeats=%d tools=%s",
@@ -14192,10 +14207,10 @@ async def _stream_agent_loop_body(
                     )
                 else:
                     messages.append({"role": "user", "_harness_note": True, "content": (
-                        "[Runtime loop recovery — not a new user request] The tool "
+                        _lang_note("[Runtime loop recovery — not a new user request] The tool "
                         f"`{block.tool_type}` is withheld for the rest of this turn: the same call "
                         "kept returning the same result. Finish with what you have or use a "
-                        "different tool."
+                        "different tool.")
                     )})
                     logger.info("[loop-breaker] tool %s withheld after %d identical calls", block.tool_type, _loop_policy.streak)
             elif _loop_action == "stop":
@@ -14218,11 +14233,11 @@ async def _stream_agent_loop_body(
                     if _rw_note not in _ledger.notes:
                         _ledger.notes.append(_rw_note)
                     messages.append({"role": "user", "_harness_note": True, "content": (
-                        "[Runtime rewrite policy — not a new user request] You have rewritten "
+                        _lang_note("[Runtime rewrite policy — not a new user request] You have rewritten "
                         f"`{_rw_path}` from scratch {int(result.get('count') or 0)} times this turn "
                         "and it is now blocked for whole-file writes. Read the file (read_file) and the "
                         "diff of your last change before touching it again, then change ONLY the lines "
-                        "that need it with edit_file or apply_patch."
+                        "that need it with edit_file or apply_patch.")
                     )})
                 yield (
                     "data: " + json.dumps({
@@ -14407,10 +14422,10 @@ async def _stream_agent_loop_body(
                 "role": "user",
                 "_harness_note": True,
                 "content": (
-                    "[Harness check — automatic message from the runtime, not from the user] "
+                    _lang_note("[Harness check — automatic message from the runtime, not from the user] "
                     "You are several tool calls into a multi-step task without a task list. Call "
                     "todowrite ONCE now with the concrete objectives (one in_progress, the rest pending), "
-                    "then continue the work. Update it as objectives are verifiably completed."
+                    "then continue the work. Update it as objectives are verifiably completed.")
                 ),
             })
             logger.info("[harness] todowrite nudge injected on round %s", round_num)
@@ -14421,7 +14436,7 @@ async def _stream_agent_loop_body(
             and _todowrite_offered
         ):
             _todo_refresh_nudged = True
-            messages.append({"role": "user", "_harness_note": True, "content": TODOWRITE_REFRESH_NUDGE})
+            messages.append({"role": "user", "_harness_note": True, "content": _lang_note(TODOWRITE_REFRESH_NUDGE)})
             logger.info("[harness] todowrite refresh injected on round %s (stale completed list)", round_num)
 
         # Emit agent_step event

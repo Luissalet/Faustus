@@ -297,6 +297,52 @@ def mismatch_nudge_message(required_code: str) -> Optional[Dict[str, str]]:
     }
 
 
+# One line, appended to a runtime nudge (`_harness_note`, loop-recovery,
+# verifier/review/test-failure text and the like) that Faustus itself
+# injects between rounds. Those notes are hard-coded in English at every
+# call site; on a long local-model turn several of them can be the LAST
+# thing in `messages` before the next round is requested, right where
+# ``refresh_continuation`` already places the standing reply-language
+# reminder -- a harness note appended AFTER that reminder pushes it out of
+# last place. A local model then settles its own interim narration
+# ("Continuing with the analysis...") on whichever cue is freshest, which
+# was the runtime's own English text, not the user's language. This keeps
+# every such note arguing for the right language too, however many of them
+# stack up in a round.
+_INTERIM_REMINDER: Dict[str, str] = {
+    "en": "Any further narration before your final answer must also be in English.",
+    "es": "Cualquier narración antes de tu respuesta final debe ser también en español.",
+    "fr": "Toute narration avant ta réponse finale doit aussi être en français.",
+    "de": "Jede weitere Erläuterung vor deiner endgültigen Antwort muss ebenfalls auf Deutsch sein.",
+    "pt": "Qualquer narração antes da tua resposta final também deve ser em português.",
+    "it": "Qualsiasi narrazione prima della tua risposta finale deve essere anche in italiano.",
+}
+
+
+def runtime_note_language_reminder(code: Optional[str]) -> Optional[str]:
+    """The one-line reminder for `code`, or ``None`` when there is none.
+
+    ``None`` for an unset or unrecognised code keeps today's behaviour: an
+    install that never settles a language gets no extra text.
+    """
+    if not code:
+        return None
+    return _INTERIM_REMINDER.get(code)
+
+
+def localize_runtime_note(content: str, code: Optional[str]) -> str:
+    """Append the interim-language reminder to a runtime-injected note.
+
+    A no-op (returns `content` unchanged) when `code` settles nothing or is
+    a language this module does not carry a reminder for -- callers can wrap
+    every harness-note / loop-recovery message unconditionally.
+    """
+    reminder = runtime_note_language_reminder(code)
+    if not reminder or not isinstance(content, str) or not content:
+        return content
+    return f"{content}\n\n({reminder})"
+
+
 def reply_language_mismatch(required_code: Optional[str], reply_text: Any) -> Optional[str]:
     """Return the observed wrong language, or ``None`` when there is no mismatch.
 
