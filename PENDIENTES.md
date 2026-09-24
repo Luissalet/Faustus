@@ -11,15 +11,15 @@ Actualizado: 23-09-2026. REGLA: nunca nombres de empresas/personas del buzÃ³n 
 - Considerar exponer `inspect_image` también por MCP si algún cliente externo (no el propio Studio) lo pide.
 
 
-## 23-09 noche — grafo de código+, prior art y el bucle con el 27B (FAUSTUS.md §179)
+## 23-09 noche — grafo de código+, prior art y el bucle con el 27B (FAUSTUS.md §179, §183)
 
 - **Servidor de modelo estropeado.** El `llama-server` 8081 se estropeó (devolvía `////` y sopa de tokens) y el turno murió a los 14 min con un 500 del analizador. Los bucles dentro de argumentos ya se cortan (§179); falta detectar un servidor que devuelve basura desde el primer token para decirlo y no esperar, y medir si hace falta un corte por silencio a mitad de stream.
-- **Una investigación que no para**: sin límite propio, el modelo encadenó 32 `bash`+`curl` leyendo código de un repo ajeno. El presupuesto de rondas lo acabaría parando, pero tarde; valorar un aviso cuando muchas rondas seguidas sólo leen la web sin avanzar el plan.
-- **Colección de ChromaDB compartida entre instancias.** Todas usan `odysseus_tool_index_fastembed` en el mismo Chroma (8100) con catálogos distintos (7000, 7003, 7006): comprobar que una no borra ni pisa las herramientas MCP de otra.
-- **Narración intermedia en inglés** a un usuario que escribe en español («Continuing with the analysis…») en turnos largos; la respuesta final sí sale en español.
-- **Aristas por nombre dentro del mismo lenguaje** (`run_pca → transform` en Nightingale): mejorar la resolución del índice o bajar su peso en flujos.
 - **Hoards de Node (Ledger, Links, People)**: la primera línea de 9–14 descripciones MCP pasa de 110 caracteres; el índice ya lee la descripción entera, pero el contrato de la familia pide ≤110.
 - **Reiniciar el 7000** para que cargue todo esto (y los plugins adoptados en el 7006 se adoptan igual allí desde Conectores).
+- ~~Narración intermedia en inglés a un usuario que escribe en español~~ — cerrado (FAUSTUS.md §183): el recordatorio de idioma que ya se adjuntaba a la respuesta final ahora también se adjunta a cada nota que el propio bucle inyecta entre rondas (`agent_web_streak_nudge` incluido), en el idioma del turno (`src/reply_language.py`).
+- ~~Una investigación que no para (32 `bash`+`curl` seguidos)~~ — cerrado (FAUSTUS.md §183): aviso no bloqueante tras N rondas seguidas (`agent_web_streak_nudge`, 8 por defecto, 0 desactiva) que sólo leyeron web/remoto sin tocar el plan ni escribir archivos.
+- ~~Colección de ChromaDB compartida entre instancias~~ — cerrado (FAUSTUS.md §183): cada instancia usa ahora su propia colección (`_instance_collection_suffix`, hash del data dir o `tool_index_collection_suffix`); la colección antigua sin sufijo sigue disponible sólo para migración de lectura, nunca se borra.
+- ~~Aristas por nombre dentro del mismo lenguaje (`run_pca → transform`)~~ — cerrado (FAUSTUS.md §183): el resolutor del índice (`code_index._resolve`) ya no sigue un nombre ambiguo salvo que algo lo corrobore (mismo archivo, import sin alias del módulo, o clase homónima del receptor); esas aristas corroboradas pesan menos en la criticidad de `code_graph.flows`.
 
 
 ## 23-09 tarde — decisiones tipadas y Nightingale's Hoard (FAUSTUS.md §177–§178)
