@@ -63,10 +63,13 @@ def _parse_remote_url(url: str) -> Optional[tuple]:
     `host:owner/repo.git` scp-like form, or an `ssh://` URL. Works for a
     custom SSH `Host` alias (e.g. `git@myhost:owner/repo.git`) since it
     never checks the hostname, only the trailing `owner/repo[.git]` path."""
-    raw = (url or "").strip()
+    raw = (url or "").strip().replace("\\", "/")
     if not raw:
         return None
-    if "://" in raw:
+    if re.match(r"^[A-Za-z]:/", raw):
+        # Windows drive path (a local bare repo as `origin`): plain path.
+        path = raw
+    elif "://" in raw:
         path = urlparse(raw).path
     elif "@" in raw and ":" in raw and raw.index(":") > raw.index("@"):
         # scp-like syntax: user@host:owner/repo.git (no scheme)
