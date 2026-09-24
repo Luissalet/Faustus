@@ -448,6 +448,22 @@ def _repeat_key(args: Dict[str, Any], ctx: Dict[str, Any]) -> Optional[Tuple[str
     return session, hashlib.sha256(norm.encode("utf-8")).hexdigest()
 
 
+#: Per session: how many calls IN A ROW were exact repeats. Live (exam run
+#: 14) a model that got the repeat note went round the same seven questions
+#: again and again — a cycle too long for the loop breaker's periods. The
+#: agent loop reads this (``consecutive_repeats``) and pauses the evidence
+#: tools once it reaches a few.
+_CONSECUTIVE_REPEATS: "OrderedDict[str, int]" = OrderedDict()
+
+
+def consecutive_repeats(session_id: Optional[str]) -> int:
+    return _CONSECUTIVE_REPEATS.get(str(session_id or ""), 0)
+
+
+def reset_consecutive_repeats(session_id: Optional[str]) -> None:
+    _CONSECUTIVE_REPEATS.pop(str(session_id or ""), None)
+
+
 def _note_repeat(key: Optional[Tuple[str, str]]) -> int:
     """Record one more call for ``key``; return how many times it was seen
     INCLUDING this call (1 = first time)."""
@@ -457,6 +473,14 @@ def _note_repeat(key: Optional[Tuple[str, str]]) -> int:
     _REPEAT_LEDGER[key] = count
     while len(_REPEAT_LEDGER) > _REPEAT_LEDGER_MAX:
         _REPEAT_LEDGER.popitem(last=False)
+    session = key[0]
+    streak = _CONSECUTIVE_REPEATS.pop(session, 0) + 1 if count >= 2 else 0
+    if not streak:
+        _CONSECUTIVE_REPEATS.pop(session, None)
+    else:
+        _CONSECUTIVE_REPEATS[session] = streak
+        while len(_CONSECUTIVE_REPEATS) > _REPEAT_LEDGER_MAX:
+            _CONSECUTIVE_REPEATS.popitem(last=False)
     return count
 
 

@@ -222,6 +222,10 @@ def streak_nudge_message(streak: int) -> dict:
 #: Rounds the evidence tools stay withheld once the ladder reaches "pause".
 PAUSE_ROUNDS = 2
 
+#: Exact repeats of earlier vision questions in a row (inspect_image's
+#: ledger) that pause the evidence tools right away, whatever the streak.
+REPEAT_RUN_PAUSE = 3
+
 
 def streak_action(streak: int, nudge_at: int) -> str:
     """What the loop should do after a round that left the evidence streak
@@ -260,6 +264,26 @@ _PAUSE_TEXT = (
     "and write your answer (or the best provisional answer, saying exactly "
     "what remains uncertain). The tools come back after the pause."
 )
+
+
+_REPEAT_PAUSE_TEXT = (
+    "[Runtime research check — automatic message, not a new user request] "
+    "Your last {n} image questions were all exact repeats of questions you "
+    "had already asked in this conversation; their answers are already "
+    "above. The evidence tools ({tools}) are paused for the next {rounds} "
+    "rounds. Scroll back through the answers you already have, list the "
+    "clues they give, connect them, compute what can be computed with a "
+    "local tool, and write your answer (or the best provisional one, saying "
+    "exactly what remains uncertain)."
+)
+
+
+def repeat_pause_message(repeats: int, tools: Sequence[str], rounds: int = PAUSE_ROUNDS) -> dict:
+    return {
+        "role": "user",
+        "_harness_note": True,
+        "content": _REPEAT_PAUSE_TEXT.format(n=repeats, tools=", ".join(sorted(tools)), rounds=rounds),
+    }
 
 
 def insist_message(streak: int) -> dict:

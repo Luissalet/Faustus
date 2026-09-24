@@ -506,3 +506,28 @@ async def test_a_different_question_or_session_is_not_a_repeat(tmp_path, monkeyp
     no_sess = await _run(base, {"turn_model": "qwen2.5:7b-instruct"})
     for r in (other_q, other_sess, no_sess):
         assert "already made this EXACT call" not in r["output"]
+
+
+async def test_consecutive_repeats_count_only_repeats_in_a_row(tmp_path, monkeypatch):
+    from src.agent_tools import image_inspect_tool as iit
+    p = _save_png(tmp_path / "c.png", 400, 300)
+
+    def fake_analyze(images, prompt, owner=None, model_override=None):
+        return {"text": "an answer", "model": "local-vl-model"}
+
+    monkeypatch.setattr(dp, "analyze_image_with_vl_prompt", fake_analyze)
+    ctx = {"session_id": "sess-run-1", "turn_model": "qwen2.5:7b-instruct"}
+    a = {"action": "ask", "path": p, "question": "q one"}
+    b = {"action": "ask", "path": p, "question": "q two"}
+    await _run(a, ctx)
+    await _run(b, ctx)
+    assert iit.consecutive_repeats("sess-run-1") == 0
+    await _run(a, ctx)
+    await _run(b, ctx)
+    assert iit.consecutive_repeats("sess-run-1") == 2
+    await _run({**a, "question": "q three"}, ctx)  # something new breaks the run
+    assert iit.consecutive_repeats("sess-run-1") == 0
+    await _run(a, ctx)
+    assert iit.consecutive_repeats("sess-run-1") == 1
+    iit.reset_consecutive_repeats("sess-run-1")
+    assert iit.consecutive_repeats("sess-run-1") == 0

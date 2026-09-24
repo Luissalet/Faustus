@@ -391,3 +391,55 @@ def test_a_streak_that_ignores_two_checks_pauses_the_evidence_tools(tmp_path, mo
     assert rounds_executed[:9] == list(range(1, 10))
     assert 10 not in rounds_executed and 11 not in rounds_executed
     assert 12 in rounds_executed
+
+
+def test_a_run_of_exact_vision_repeats_pauses_the_evidence_tools_at_once(tmp_path, monkeypatch):
+    """Live, exam run 14: the model went round seven questions it had
+    already asked, a cycle too long for the loop breaker."""
+    from src.agent_tools import image_inspect_tool as iit
+    _patch_common(monkeypatch)  # default N=8: the ladder alone would wait
+    calls = {"n": 0}
+    notes_seen = []
+
+    async def _fake_stream(_candidates, messages, **kwargs):
+        notes_seen.append([m.get("content") for m in messages
+                           if isinstance(m, dict) and m.get("_harness_note")])
+        i = calls["n"]
+        calls["n"] += 1
+        if i < 5:
+            yield "data: " + json.dumps({
+                "type": "tool_calls",
+                "calls": [{"name": "inspect_image",
+                           "arguments": json.dumps({"path": "p.jpg", "question": f"q {_FAKE_REPO_FILES[i]}"})}],
+            }) + "\n\n"
+            yield "data: " + json.dumps({"type": "finish", "finish_reason": "tool_calls"}) + "\n\n"
+        else:
+            yield "data: " + json.dumps({"delta": "Respuesta final."}) + "\n\n"
+            yield "data: " + json.dumps({"type": "finish", "finish_reason": "stop"}) + "\n\n"
+        yield "data: [DONE]\n\n"
+
+    monkeypatch.setattr(al, "stream_llm_with_fallback", _fake_stream, raising=False)
+    executed = []
+
+    async def _rec_exec(block, *a, **k):
+        executed.append(calls["n"])
+        return (block.tool_type, {"output": f"ok: {block.content}", "exit_code": 0})
+    monkeypatch.setattr(al, "execute_tool_block", _rec_exec, raising=False)
+    # after round 2, the ledger reports three repeats in a row
+    monkeypatch.setattr(iit, "consecutive_repeats", lambda sid: 3 if calls["n"] == 2 else 0)
+    monkeypatch.setattr(iit, "reset_consecutive_repeats", lambda sid: None)
+    gen = al.stream_agent_loop(
+        "http://127.0.0.1:11434/v1", "qwen3-coder:30b",
+        [{"role": "user", "content": "mira esta imagen y resuelve el acertijo"}],
+        max_rounds=10,
+        relevant_tools={"inspect_image", "python"},
+        workspace=str(tmp_path),
+        session_id="sess-streak-repeat",
+    )
+    _collect(gen)
+    all_notes = "\n".join(n for rn in notes_seen for n in rn if isinstance(n, str))
+    assert "exact repeats of questions you had already asked" in all_notes
+    # rounds 3 and 4 are paused: their inspect_image calls do not run
+    assert 1 in executed and 2 in executed
+    assert 3 not in executed and 4 not in executed
+    assert 5 in executed

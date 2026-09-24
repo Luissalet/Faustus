@@ -14518,6 +14518,23 @@ async def _stream_agent_loop_body(
                 _web_read_streak = 0
                 _web_streak_nudged = False
             _streak_step = _research_streak.streak_action(_web_read_streak, _web_streak_nudge_at)
+            # Exact repeats in a row (inspect_image's per-session ledger):
+            # the model is going round questions it already asked, however
+            # long the cycle. Pause the evidence tools now, not at 3N.
+            _repeat_run = 0
+            _pause_for_repeats = False
+            try:
+                from src.agent_tools import image_inspect_tool as _iit
+                _repeat_run = _iit.consecutive_repeats(session_id)
+            except Exception:  # noqa: BLE001 - the ledger is advisory
+                _repeat_run = 0
+            if _repeat_run >= _research_streak.REPEAT_RUN_PAUSE and _streak_step == "none":
+                _streak_step = "pause"
+                _pause_for_repeats = True
+                try:
+                    _iit.reset_consecutive_repeats(session_id)
+                except Exception:  # noqa: BLE001
+                    pass
             if _streak_step == "insist":
                 messages.append({
                     "role": "user",
@@ -14537,8 +14554,11 @@ async def _stream_agent_loop_body(
                     messages.append({
                         "role": "user",
                         "_harness_note": True,
-                        "content": _lang_note(_research_streak.pause_message(
-                            _web_read_streak, sorted(_to_pause))["content"]),
+                        "content": _lang_note((
+                            _research_streak.repeat_pause_message(_repeat_run, sorted(_to_pause))
+                            if _pause_for_repeats else
+                            _research_streak.pause_message(_web_read_streak, sorted(_to_pause))
+                        )["content"]),
                     })
                     _ledger.notes.append(f"web_streak_pause@{round_num}:{_web_read_streak}")
                     logger.info("[harness] round %s: evidence streak %d — pausing %s",
