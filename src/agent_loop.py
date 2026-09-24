@@ -14559,14 +14559,19 @@ async def _stream_agent_loop_body(
                 (name, content) for name, content in _round_tool_calls
                 if name not in _research_streak.PLAN_TOOL_NAMES
             ]
+            _streak_grew = False
             if not _round_non_plan_calls and _round_tool_calls:
                 pass
             elif _research_streak.is_remote_read_only_round(_round_non_plan_calls):
                 _web_read_streak += 1
+                _streak_grew = True
             else:
                 _web_read_streak = 0
                 _web_streak_nudged = False
-            _streak_step = _research_streak.streak_action(_web_read_streak, _web_streak_nudge_at)
+            # A neutral (plan-only) round leaves the streak on its threshold:
+            # the step for that threshold already fired, so it must not again.
+            _streak_step = (_research_streak.streak_action(_web_read_streak, _web_streak_nudge_at)
+                            if _streak_grew else "none")
             # Exact repeats in a row (inspect_image's per-session ledger):
             # the model is going round questions it already asked, however
             # long the cycle. Pause the evidence tools now, not at 3N.

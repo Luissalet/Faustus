@@ -481,3 +481,40 @@ def test_a_plan_only_round_neither_extends_nor_breaks_the_streak(tmp_path, monke
     # web rounds 1,2,4 → streak 3 at round 4 despite the plan tick at round 3
     assert streak_events and streak_events[0]["streak"] == 3
     assert streak_events[0]["round"] == 4
+
+
+def test_a_plan_only_round_on_a_threshold_does_not_repeat_the_check(tmp_path, monkeypatch):
+    """Live, exam run 16: the second check fired at rounds 21 and 22, the
+    second of which only updated the plan."""
+    _patch_common(monkeypatch, {"agent_web_streak_nudge": 2})
+    calls = {"n": 0}
+    notes_seen = []
+    script = ["web", "web", "web", "web", "plan", "plan"]
+
+    async def _fake_stream(_candidates, messages, **kwargs):
+        notes_seen.append([m.get("content") for m in messages
+                           if isinstance(m, dict) and m.get("_harness_note")])
+        i = calls["n"]
+        calls["n"] += 1
+        if i < len(script):
+            if script[i] == "web":
+                call = {"name": "web_fetch",
+                        "arguments": json.dumps({"url": f"https://example.invalid/{_FAKE_REPO_FILES[i]}"})}
+            else:
+                call = {"name": "todowrite", "arguments": json.dumps(
+                    {"todos": [{"content": f"step {_FAKE_REPO_FILES[i]}", "status": "in_progress"}]})}
+            yield "data: " + json.dumps({"type": "tool_calls", "calls": [call]}) + "\n\n"
+            yield "data: " + json.dumps({"type": "finish", "finish_reason": "tool_calls"}) + "\n\n"
+        else:
+            yield "data: " + json.dumps({"delta": "Respuesta."}) + "\n\n"
+            yield "data: " + json.dumps({"type": "finish", "finish_reason": "stop"}) + "\n\n"
+        yield "data: [DONE]\n\n"
+
+    monkeypatch.setattr(al, "stream_llm_with_fallback", _fake_stream, raising=False)
+    _collect(al.stream_agent_loop(
+        "http://127.0.0.1:11434/v1", "qwen3-coder:30b",
+        [{"role": "user", "content": "busca en la web y dime qué dice esa página"}],
+        max_rounds=12, relevant_tools={"web_fetch", "todowrite"}, workspace=str(tmp_path),
+    ))
+    last = notes_seen[-1]
+    assert sum(1 for n in last if isinstance(n, str) and "Second check" in n) == 1
