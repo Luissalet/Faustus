@@ -1,0 +1,84 @@
+{
+  "schema": 1,
+  "id": "cassandra",
+  "name": "Cassandra's Hoard",
+  "purpose": "Observability for the local AI stack: which local services (the workspace, llama-server, Ollama, ComfyUI, the launcher and every Hoard app) are up, what went down and when, what else changed at that moment, what the logs said, what the GPUs were doing, and opt-in restarts.",
+  "capabilities": [
+    "service-status",
+    "health-checks",
+    "incidents",
+    "probable-cause",
+    "uptime-history",
+    "log-search",
+    "log-tailing",
+    "gpu-timeline",
+    "vram",
+    "restart-policies",
+    "restart",
+    "watch-list",
+    "reboot-detection"
+  ],
+  "placeholders": [
+    "CASSANDRA_DIR",
+    "APP_URL",
+    "TOKEN_FILE",
+    "PYTHON"
+  ],
+  "defaults": {
+    "APP_URL": "http://127.0.0.1:5190",
+    "TOKEN_FILE": "{CASSANDRA_DIR}/data/mcp-token",
+    "PYTHON": "{CASSANDRA_DIR}/venv/Scripts/python.exe"
+  },
+  "app": {
+    "url_default": "http://127.0.0.1:5190",
+    "ui_url": "{APP_URL}",
+    "health": {
+      "path": "/api/health",
+      "expect": {
+        "service": "cassandra-hoard"
+      }
+    },
+    "identify": {
+      "service": [
+        "cassandra-hoard"
+      ],
+      "title": [
+        "cassandra's hoard",
+        "vigía del stack local"
+      ]
+    },
+    "launch_hint": {
+      "kind": "process",
+      "executable": "{PYTHON}",
+      "argv": [
+        "-m",
+        "cassandra_hoard"
+      ],
+      "cwd": "{CASSANDRA_DIR}",
+      "env": {
+        "PORT_STRICT": "1",
+        "CASSANDRA_PORT": "5190"
+      },
+      "readiness": {
+        "url": "{APP_URL}/api/health",
+        "timeout_s": 30
+      }
+    }
+  },
+  "mcp": {
+    "transport": "stdio",
+    "command": "{PYTHON}",
+    "args": [
+      "{CASSANDRA_DIR}/mcp_server.py"
+    ],
+    "env": {
+      "CASSANDRA_URL": "{APP_URL}",
+      "CASSANDRA_TOKEN_FILE": "{TOKEN_FILE}"
+    },
+    "optional_env": [
+      "CASSANDRA_BRIDGE_AUTOSTART",
+      "CASSANDRA_DATA_DIR"
+    ]
+  },
+  "notes": "Keep the app running (python -m cassandra_hoard) so it keeps watching: the MCP bridge proxies every call to the local server, never opens the database, and starts the app itself when it is not answering. Probable causes are heuristics: quote them as probable. svc_restart and svc_watch change things and are only for when the user asks; restart commands can only be set from the UI or data/services.json unless CASSANDRA_AGENT_COMMANDS=1."
+}

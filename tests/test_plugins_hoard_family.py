@@ -25,6 +25,7 @@ FAMILY = {
     "hypatia": ("hypatia-hoard", 5187, "hypatia"),
     "echo": ("echo-hoard", 5188, "echo"),
     "nightingale": ("nightingale-hoard", 5189, "nightingale"),
+    "cassandra": ("cassandra-hoard", 5190, "cassandra"),
 }
 
 
