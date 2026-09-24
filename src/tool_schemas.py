@@ -3307,6 +3307,48 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "inspect_image",
+            "description": "Look closely at an image, photo, picture or diagram: crop, zoom, rotate, mark a circle - imagen, foto, dibujo. Recorta una región, amplía, gira o resalta un círculo o una marca en un pergamino o escaneo, superpone una cuadrícula etiquetada (celdas tipo C4) y pregunta al modelo de visión algo CONCRETO sobre ella -- o adjúntala para que un modelo principal con visión la vea directamente -- en vez de confiar en la descripción genérica automática. action: 'ask' (default, pregunta algo específico sobre la imagen/región procesada), 'view' (devuelve el recorte tal cual), 'shapes' (detección local de círculos/rectángulos/líneas, sin modelo), 'compare' (dos imágenes, una pregunta), 'grid_locate' (superpone una cuadrícula y pregunta qué celdas coinciden). Use this instead of trusting read_file's automatic caption whenever a small detail -- which object a hand-drawn circle marks, a tilted symbol in a corner, faint handwriting -- needs a precise, targeted look.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["ask", "view", "shapes", "compare", "grid_locate"], "description": "Which action to run. Default 'ask'"},
+                    "path": {"type": "string", "description": "Local image path (png/jpg/jpeg/webp/gif/bmp/tiff) or a .pdf path (with `page`). Image A for `compare`. Give either this or `url`, not both"},
+                    "url": {"type": "string", "description": "An http(s) image URL to fetch instead of `path` (public destinations only, ~2 MB fetch limit -- download and use `path` for a bigger file)"},
+                    "page": {"type": "integer", "description": "1-based PDF page number, when `path` is a .pdf"},
+                    "dpi": {"type": "integer", "description": "PDF page render resolution in DPI (default 150)"},
+                    "region": {"type": "array", "items": {"type": "number"}, "minItems": 4, "maxItems": 4, "description": "[x0, y0, x1, y1] of the region to look at, as fractions 0-1 of the FULL image (default) or pixels with units:\"px\". Omit for the whole image"},
+                    "units": {"type": "string", "enum": ["fraction", "px"], "description": "Unit of `region`/`frame`. Default 'fraction'"},
+                    "rotate": {"type": "number", "description": "Rotate the crop clockwise, in degrees. 0/90/180/270 keep an exact mapping of any position back to the original image; other angles lose that mapping"},
+                    "zoom": {"type": "number", "description": "Resize multiplier applied after crop/rotate (e.g. 2 doubles the resolution so small detail reads more clearly). Default 1 (no change)"},
+                    "max_side": {"type": "integer", "description": "Cap the longest side of the final image in pixels (default ~2048); a bigger crop is downscaled and the result says so"},
+                    "enhance": {"type": "array", "items": {"type": "string", "enum": ["autocontrast", "sharpen", "grayscale", "threshold"]}, "description": "Local Pillow filters to apply, in order, before asking/viewing: autocontrast, sharpen, grayscale, threshold (binarize -- good for faint handwriting)"},
+                    "grid": {"description": "Overlay a labelled grid so an answer can reference a cell (e.g. \"C4\"): an integer for an NxN grid (default 10 = columns A-J, rows 1-10), or [cols, rows] for a rectangular one. Required (implicitly defaulted) for `grid_locate`"},
+                    "question": {"type": "string", "description": "The SPECIFIC question to ask about the image (ask/compare/grid_locate) -- e.g. 'what does the hand-drawn circle point at?', 'is this symbol a check-mark or an X?'. Default is a generic-but-literal description request"},
+                    "model": {"type": "string", "description": "Use this specific vision model instead of the admin-configured one for this call"},
+                    "frame": {"type": "array", "items": {"type": "number"}, "minItems": 4, "maxItems": 4, "description": "shapes only: a region (same units as `region`/`frame_units`) to ALSO report every shape's position relative to, e.g. \"12% x, 55% y inside this frame\""},
+                    "frame_units": {"type": "string", "enum": ["fraction", "px"], "description": "Unit of `frame`. Default 'fraction'"},
+                    "annotate": {"type": "boolean", "description": "shapes only: also return a preview image with the detected shapes boxed. Default true"},
+                    "path_b": {"type": "string", "description": "compare only: image B's local path (mirrors `path`)"},
+                    "url_b": {"type": "string", "description": "compare only: image B's URL (mirrors `url`)"},
+                    "page_b": {"type": "integer", "description": "compare only: image B's PDF page (mirrors `page`)"},
+                    "dpi_b": {"type": "integer", "description": "compare only: image B's PDF render DPI (mirrors `dpi`)"},
+                    "region_b": {"type": "array", "items": {"type": "number"}, "minItems": 4, "maxItems": 4, "description": "compare only: image B's region (mirrors `region`)"},
+                    "units_b": {"type": "string", "enum": ["fraction", "px"], "description": "compare only: image B's region unit (mirrors `units`)"},
+                    "rotate_b": {"type": "number", "description": "compare only: image B's rotation (mirrors `rotate`)"},
+                    "zoom_b": {"type": "number", "description": "compare only: image B's zoom (mirrors `zoom`)"},
+                    "max_side_b": {"type": "integer", "description": "compare only: image B's max side cap (mirrors `max_side`)"},
+                    "enhance_b": {"type": "array", "items": {"type": "string", "enum": ["autocontrast", "sharpen", "grayscale", "threshold"]}, "description": "compare only: image B's enhance filters (mirrors `enhance`)"},
+                    "grid_b": {"description": "compare only: image B's grid overlay (mirrors `grid`)"},
+                    "point": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2, "description": "compare only: [x, y] fraction of EACH image's own frame to mark identically on both, e.g. before asking \"is the object at this point the same in both?\""},
+                    "crosshair": {"type": "boolean", "description": "compare only: draw a crosshair at `point` on both images before asking. Default false"}
+                }
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "pdf_outline",
             "description": "Build (or reuse the cached) table-of-contents tree of a PDF -- from the PDF's own outline/bookmarks when it has one, else conservative heading detection, else fixed 10-page chunks -- and return it as a compact indented list (\"id  title  (pp. a-b)\") plus the structured nodes. Workflow for a long PDF: call pdf_outline to see the sections and their EXACT physical page ranges, pick a node id (or use pdf_find_section when the outline is long), then call pdf_read_section with that id. Page numbers always come from this tool, never invent one.",
             "parameters": {

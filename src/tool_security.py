@@ -143,6 +143,7 @@ NON_ADMIN_BLOCKED_TOOLS = BUILTIN_EMAIL_TOOLS | {
     "manage_bg_jobs",
     "read_file",
     "inspect_media",
+    "inspect_image",
     "plan_media_transform",
     "transform_media",
     "write_file",
@@ -246,6 +247,7 @@ NON_ADMIN_BLOCKED_TOOLS = BUILTIN_EMAIL_TOOLS | {
 PLAN_MODE_READONLY_TOOLS = {
     "read_file",
     "inspect_media",
+    "inspect_image",
     "plan_media_transform",
     "grep",
     "glob",

@@ -84,6 +84,7 @@ from .structural_search_tools import StructuralSearchTool, StructuralRewriteTool
 from .doc_claims_tool import DocClaimsCheckTool
 from .pdf_ops_tool import PdfOpsTool
 from .pdf_tree_tool import PdfOutlineTool, PdfReadSectionTool, PdfFindSectionTool
+from .image_inspect_tool import InspectImageTool
 from .goal_tools import GoalDefineTool, GoalStatusTool, GoalEvaluateTool, GoalEvidenceTool
 from .plan_tools import PlanStatusTool, PlanTaskTool, PlanDoneTool, PlanSkipTool, PlanNextTool
 from .prior_art_tools import PriorArtTool
@@ -96,6 +97,11 @@ TOOL_HANDLERS = {
     "web_fetch": WebFetchTool().execute,
     "read_file": ReadFileTool().execute,
     "inspect_media": InspectMediaTool().execute,
+    # Targeted look at ONE image/PDF page: ask a specific question about a
+    # region, crop/rotate/zoom/enhance, overlay a grid, detect shapes locally,
+    # or compare two images -- src/image_inspection.py + this module's own
+    # src/agent_tools/image_inspect_tool.py.
+    "inspect_image": InspectImageTool().execute,
     "plan_media_transform": MediaTransformTool(preview=True).execute,
     "transform_media": MediaTransformTool().execute,
     "write_file": WriteFileTool().execute,
@@ -415,7 +421,9 @@ TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_fi
              "manage_instincts",
              # Prior art (GIT-08): reuse/adapt/write, verified live against
              # GitHub -- src/agent_tools/prior_art_tools.py.
-             "prior_art"} | BUILTIN_EMAIL_TOOLS | DESKTOP_TOOLS | SEMANTIC_TOOLS
+             "prior_art",
+             # Targeted image inspection -- src/agent_tools/image_inspect_tool.py.
+             "inspect_image"} | BUILTIN_EMAIL_TOOLS | DESKTOP_TOOLS | SEMANTIC_TOOLS
 
 ToolBlock = namedtuple("ToolBlock", ["tool_type", "content"])
 

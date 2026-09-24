@@ -106,6 +106,18 @@ EXAMPLES: Dict[str, List[str]] = {
         "does this audio file have stereo channels",
         "cuántos fotogramas por segundo tiene este vídeo",
     ],
+    "inspect_image": [
+        "amplía la esquina superior izquierda de esta foto, ¿qué pone ahí?",
+        "what does the circle drawn on this scan point at?",
+        "recorta esta imagen a la mitad de la derecha y dime qué hay",
+        "is that a check-mark or an X in this photo",
+        "gira esta imagen 90 grados y mira si hay texto",
+        "zoom into the bottom-right of this diagram, there's something faint there",
+        "pon una cuadrícula sobre esta imagen y dime en qué celda está el sello",
+        "compara estas dos fotos, ¿es el mismo objeto en el mismo sitio?",
+        "hay una marca a mano en este pergamino, dime exactamente qué señala",
+        "mira esta página del PDF con más detalle, hay un símbolo torcido en la esquina",
+    ],
     "grep": [
         "busca dónde se usa esta función en el código",
         "find every place the word TODO appears in this repo",

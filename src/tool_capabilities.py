@@ -742,6 +742,21 @@ _register(
     result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED,
 )
 _register(
+    # inspect_image (src/image_inspection.py + src/agent_tools/
+    # image_inspect_tool.py): reads a workspace/uploads image or PDF page
+    # (same class as read_file/pdf_ops) and, optionally, fetches an http(s)
+    # `url` through the SSRF-guarded broker (same class as web_fetch) --
+    # writes nothing, so both effects without WRITE_WORKSPACE. Its `shapes`
+    # action is local/model-free; `ask`/`compare`/`grid_locate` may also call
+    # the configured Vision model, gated by assert_outbound("ocr_vision", ...)
+    # inside analyze_image_with_vl_prompt exactly like the existing caption
+    # path -- not a capability of the TOOL call itself.
+    {"inspect_image"},
+    ToolEffect.READ_WORKSPACE,
+    ToolEffect.BROKERED_NETWORK_READ,
+    result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED,
+)
+_register(
     # Structural PDF navigation (src/pdf_tree.py + src/agent_tools/
     # pdf_tree_tool.py): all three read an input PDF from the workspace/
     # uploads allowlist and never write anything -- same class as

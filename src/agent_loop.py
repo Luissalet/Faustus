@@ -548,7 +548,8 @@ _DOMAIN_RULES = {
 - Prefer `grep`, `glob`, and `ls` over shell equivalents when available.
 - Use `edit_file`/`write_file` for writes; avoid shell redirection/heredocs for editing files.
 - Run a project's tests with the shell tool calling the runner directly (`python -m pytest -q`, `npm test`), not through `python` + subprocess: a plain runner is what "run/fix the tests" already covers, anything else waits for approval.
-- To see whether a package is installed, run the check on its own (`python -c "import pandas"`); never chain an install after it (`|| pip install ...`). Installing downloads code and needs the user's approval: if the check fails, say what is missing and ask.""",
+- To see whether a package is installed, run the check on its own (`python -c "import pandas"`); never chain an install after it (`|| pip install ...`). Installing downloads code and needs the user's approval: if the check fails, say what is missing and ask.
+- `read_file` on an image just shows you the picture (or, on a text-only model, a generic caption). For a small detail — which object a hand-drawn circle marks, a tilted symbol in a corner, faint handwriting, a specific region of a PDF page — call `inspect_image` instead: it can crop/zoom/rotate/enhance a region, overlay a labelled grid, ask a SPECIFIC question, detect circles/rectangles/lines with no model at all, or compare two images. Never settle for the generic caption when the user's question needs a targeted look.""",
     "settings": """\
 ## Settings/API rules
 - Use `manage_settings` for preferences and tool enable/disable.
@@ -606,7 +607,7 @@ _DOMAIN_TOOL_MAP = {
     "notes_calendar_tasks": {"manage_notes", "manage_calendar", "manage_tasks"},
     "ui": {"ui_control"},
     "sessions": {"create_session", "list_sessions", "manage_session", "send_to_session", "search_chats", "search_project_chats"},
-    "files": {"bash", "python", "powershell", "read_file", "write_file", "edit_file", "apply_patch", "todowrite", "grep", "glob", "ls", "get_workspace", "project_context", "project_objectives", "manage_project_context", "manage_bg_jobs"},
+    "files": {"bash", "python", "powershell", "read_file", "inspect_image", "write_file", "edit_file", "apply_patch", "todowrite", "grep", "glob", "ls", "get_workspace", "project_context", "project_objectives", "manage_project_context", "manage_bg_jobs"},
     "settings": {"manage_settings", "manage_endpoints", "manage_mcp", "manage_webhooks", "manage_tokens", "app_api"},
     "contacts": {"resolve_contact", "manage_contact"},
     "whatsapp": {"whatsapp_read", "whatsapp_send", "whatsapp_react"},
