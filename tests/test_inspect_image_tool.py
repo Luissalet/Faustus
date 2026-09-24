@@ -309,3 +309,30 @@ async def test_ask_with_url_uses_the_outbound_broker(monkeypatch):
     )
     assert result["exit_code"] == 0
     assert result["measurements"]["source"] == "https://example.com/pic.png"
+
+
+async def test_the_endpoint_probe_beats_a_multimodal_sounding_name(tmp_path, monkeypatch):
+    """Live: a text-only 27B on llama.cpp, whose family name the heuristic
+    counts as multimodal, got the raw image attached (which it cannot see)
+    instead of the Vision model's answer to the question."""
+    import src.chat_helpers as ch
+
+    p = _save_png(tmp_path / "a.png", 400, 300)
+    seen = {}
+
+    def fake_probe(model, endpoint):
+        seen["probe"] = (model, endpoint)
+        return False  # the server says: no vision
+
+    def fake_analyze(images, prompt, owner=None, model_override=None):
+        return {"text": "a circle", "model": "local-vl-model"}
+
+    monkeypatch.setattr(ch, "model_supports_vision", fake_probe)
+    monkeypatch.setattr(ch, "is_vision_model", lambda m: True)  # the name lies
+    monkeypatch.setattr(dp, "analyze_image_with_vl_prompt", fake_analyze)
+    result = await _run(
+        {"action": "ask", "path": p, "question": "what is circled?"},
+        ctx={"turn_model": "family-27b-llamacpp", "turn_endpoint_url": "http://127.0.0.1:8081/v1"},
+    )
+    assert seen["probe"] == ("family-27b-llamacpp", "http://127.0.0.1:8081/v1")
+    assert result["answered_by"] == "local-vl-model"

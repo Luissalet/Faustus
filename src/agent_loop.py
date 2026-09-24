@@ -9189,6 +9189,7 @@ async def _stream_agent_loop_body(
                         # nothing. The turn's model is the one the user chose and the
                         # one already warm.
                         "turn_model": model,
+                        "turn_endpoint_url": endpoint_url,
                     },
                 )
             finally:
@@ -13003,6 +13004,7 @@ async def _stream_agent_loop_body(
                             # nothing. The turn's model is the one the user chose and the
                             # one already warm.
                             "turn_model": model,
+                        "turn_endpoint_url": endpoint_url,
                         },
                     )
                     _prefetched_duration_ms[idx] = round(max(0.0, (time.monotonic() - _pt0) * 1000.0), 1)
@@ -13399,6 +13401,7 @@ async def _stream_agent_loop_body(
                                     # nothing. The turn's model is the one the user chose and the
                                     # one already warm.
                                     "turn_model": model,
+                        "turn_endpoint_url": endpoint_url,
                                 },
                             )
                         finally:

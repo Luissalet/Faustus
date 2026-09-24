@@ -109,14 +109,23 @@ def _downscale_warning(proc: "ii.ProcessResult") -> str:
 
 
 def _main_model_can_see(ctx: Dict[str, Any]) -> bool:
-    """Reuses `model_supports_vision`/`is_vision_model` (src.chat_helpers) —
-    the same check the loop uses to decide whether a tool-result image is
-    attached or described. `ctx` carries `turn_model` but no live endpoint
-    URL, so this is the name-heuristic half of that check."""
+    """The same check the loop uses to decide whether a tool-result image is
+    attached or described: the endpoint's reported capability first
+    (`model_supports_vision`), the name only when there is no endpoint.
+
+    The name alone was wrong live: a text-only 27B served by llama.cpp under
+    a family name the heuristic counts as multimodal got the raw image
+    "attached", which it could not see, instead of the Vision model's answer
+    to the question.
+    """
     model = str((ctx or {}).get("turn_model") or "").strip()
     if not model:
         return False
+    endpoint = str((ctx or {}).get("turn_endpoint_url") or "").strip()
     try:
+        if endpoint:
+            from src.chat_helpers import model_supports_vision
+            return bool(model_supports_vision(model, endpoint))
         from src.chat_helpers import is_vision_model
         return bool(is_vision_model(model))
     except Exception:  # noqa: BLE001
@@ -153,7 +162,7 @@ async def _action_ask(args: Dict[str, Any], ctx: Dict[str, Any]) -> Dict[str, An
     measurements = _measurements(loaded, proc)
     warn = _downscale_warning(proc)
 
-    if _main_model_can_see(ctx):
+    if await asyncio.to_thread(_main_model_can_see, ctx):
         b64, mime = ii.image_to_b64(proc.image)
         text = (f"inspect_image: processed view of {loaded.source} attached "
                 f"(region {measurements['region_used']} of the original) — "
@@ -246,7 +255,7 @@ async def _action_compare(args: Dict[str, Any], ctx: Dict[str, Any]) -> Dict[str
     measurements = {"a": _measurements(loaded_a, proc_a), "b": _measurements(loaded_b, proc_b)}
     warn = _downscale_warning(proc_a) or _downscale_warning(proc_b)
 
-    if _main_model_can_see(ctx):
+    if await asyncio.to_thread(_main_model_can_see, ctx):
         b64a, mimea = ii.image_to_b64(img_a)
         b64b, mimeb = ii.image_to_b64(img_b)
         text = (f"inspect_image compare: image A ({loaded_a.source}) and image B "
@@ -297,7 +306,7 @@ async def _action_grid_locate(args: Dict[str, Any], ctx: Dict[str, Any]) -> Dict
         "(e.g. \"C4\" or \"C4, D4\"), or \"unclear\" if none match."
     )
 
-    if _main_model_can_see(ctx):
+    if await asyncio.to_thread(_main_model_can_see, ctx):
         b64, mime = ii.image_to_b64(proc.image)
         text = (f"inspect_image grid_locate: {cols}x{rows} grid overlaid on {loaded.source} attached — "
                 f"{prompt}{warn}")
