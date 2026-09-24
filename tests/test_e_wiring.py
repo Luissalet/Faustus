@@ -28,7 +28,6 @@ def _read(relpath: str) -> str:
     return (_REPO_ROOT / relpath).read_text(encoding="utf-8")
 
 
-@pytest.mark.xfail(strict=True, reason="app.py wiring is the integrator's job (see E_wiring.md)")
 def test_app_registers_the_handoff_lanes_and_night_shift_routers():
     src = _read("app.py")
     assert "from routes.handoff_lanes_routes import setup_handoff_lanes_routes" in src

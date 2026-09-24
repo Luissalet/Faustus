@@ -647,7 +647,7 @@ _CODE_INTEL_INTENT_RE = re.compile(
 #: What such a question gets: the answer tools, not the whole family.
 _CODE_INTEL_FAMILY = frozenset({
     "code_graph_impact", "code_graph_flows", "code_graph_communities", "tests_for",
-    "code_graph_drift",
+    "code_graph_drift", "code_history",
 })
 
 
@@ -6883,6 +6883,26 @@ async def _stream_agent_loop_body(
                 messages,
                 untrusted_context_message("learned instincts", _inst_text, arm_tool_gate=False),
             )
+    # Fix memory (src/fix_memory.py): past solved issues of this project,
+    # recalled by lexical/file/error overlap with the request and injected the
+    # same way instincts are. Never blocks; empty when nothing matches.
+    if (workspace and owner and get_setting("fix_memory_enabled", True)
+            and get_setting("fix_memory_auto_recall", True) and not _hopts.get("incognito")):
+        try:
+            from src import fix_memory as _fixmem
+            _fm_project = _fixmem.project_key(workspace, _hopts.get("project_id"))
+            _fm_entries = _fixmem.recall(owner, _fm_project, _last_user or "", k=5)
+            _fm_text = _fixmem.prompt_block(
+                _fm_entries, budget_tokens=int(get_setting("fix_memory_prompt_budget_tokens", 600)),
+            )
+        except Exception:
+            logger.debug("[fix_memory] recall/prompt_block failed", exc_info=True)
+            _fm_text = ""
+        if _fm_text:
+            messages = _insert_before_latest_user(
+                messages,
+                untrusted_context_message("fix memory", _fm_text, arm_tool_gate=False),
+            )
     # Project concepts (src/project_concepts.py): the agent's own persistent,
     # per-project graph of architecture concepts. Off by default
     # (agent_project_concepts_inject) -- the agent can always call
@@ -7921,7 +7941,7 @@ async def _stream_agent_loop_body(
             {"git_status", "git_log", "git_diff"}):
         try:
             from src.tool_execution import _GIT_TOOL_NAMES
-            _git_read = {"git_radar", "git_status", "git_log", "git_diff"}
+            _git_read = {"git_radar", "git_status", "git_log", "git_diff", "github_issue", "code_history"}
             # Continuations such as "Do it" carry their Git intent in the
             # retrieval query (recent user context), not in the two-word last
             # message. Also keep a Git action family coherent: if retrieval

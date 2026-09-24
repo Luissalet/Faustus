@@ -1548,6 +1548,21 @@ app.include_router(setup_typed_choice_routes())
 app.include_router(setup_typed_decision_routes())
 app.include_router(setup_prior_art_routes())
 
+# Autonomous engineering wave: bug hunter, CI failure analyzer, fix memory,
+# handoff lanes, night shift and git history per file/symbol.
+from routes.bug_hunt_routes import setup_bug_hunt_routes
+from routes.ci_failures_routes import setup_ci_failures_routes
+from routes.fix_memory_routes import setup_fix_memory_routes
+from routes.handoff_lanes_routes import setup_handoff_lanes_routes
+from routes.night_shift_routes import setup_night_shift_routes
+from routes.code_history_routes import setup_code_history_routes
+app.include_router(setup_bug_hunt_routes())
+app.include_router(setup_ci_failures_routes())
+app.include_router(setup_fix_memory_routes())
+app.include_router(setup_handoff_lanes_routes())
+app.include_router(setup_night_shift_routes())
+app.include_router(setup_code_history_routes())
+
 from companion import setup_companion_routes
 app.include_router(setup_companion_routes())
 

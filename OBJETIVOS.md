@@ -954,3 +954,17 @@ Segunda tanda (mismo día, FAUSTUS.md §187): vigilante programado
 cambia), herramienta `git_radar` para el agente («¿qué tengo sin subir?»)
 e instantánea en disco para que la primera llamada tras reiniciar no
 espere. **Queda:** nada abierto.
+
+## OBJ-43 · Ingeniería autónoma: issue→PR, cazador de bugs, CI, memoria de arreglos, carriles y turno de noche — HECHO (24-09-2026)
+
+Seis capacidades que faltaban frente a los agentes de código de moda y que
+Faustus ahora tiene, sin quitar nada: `github_issue`/`git_open_pr` (de la
+issue a la pull request respetando la política git del repo), `bug_hunt`
+(tests de borde generados, ejecutados aislados y triados en bug real / test
+malo), `ci_failures` + equipo `deploy-*` de cinco agentes de biblioteca,
+`fix_memory` (ledger de arreglos por proyecto recordado antes de cada turno),
+carriles de traspaso entre agentes (`off`/`shadow`/`enforce`, grafo Mermaid)
+y turno de noche (cola desatendida con presupuesto e informe), más
+`code_history` (churn, blame, co-cambio y riesgo por fichero/símbolo).
+FAUSTUS.md §189; API en `docs/api/{git,bug_hunt,ci_failures,fix_memory,handoff_lanes,night_shift,code_history}.md`.
+**Queda:** verificación en vivo con el 27B y con un repo real de GitHub (ver PENDIENTES).

@@ -1349,6 +1349,22 @@ def save_assistant_response(
                 })
             except Exception:
                 logger.debug("[lifecycle_hooks] turn_end run failed", exc_info=True)
+            # Fix memory (src/fix_memory.py): remember what this turn changed and
+            # how it was verified, before the instincts branch may return early.
+            if not _post_turn_owner:
+                return
+            try:
+                from src import fix_memory
+                await fix_memory.record_from_turn(
+                    _post_turn_owner,
+                    project_key=fix_memory.project_key(_post_turn_workspace, _post_turn_project_id),
+                    user_message=_post_turn_last_user,
+                    tool_events=list(tool_events or []),
+                    harness_meta=md,
+                    workspace=_post_turn_workspace or "",
+                )
+            except Exception:
+                logger.debug("[fix_memory] record_from_turn failed", exc_info=True)
             try:
                 if not _post_turn_owner:
                     return

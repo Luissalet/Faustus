@@ -3,6 +3,16 @@
 Actualizado: 23-09-2026. REGLA: nunca nombres de empresas/personas del buzÃ³n de Luis en commits, docs, tests ni comentarios â€” ejemplos siempre ficticios. SÃ³lo trabajo vigente; quitar cada entrada al cerrarla.
 
 
+## 24-09 noche — ingeniería autónoma (FAUSTUS.md §189, OBJ-43) — verificado por tests, no en vivo
+
+- **`github_issue` / `git_open_pr` contra GitHub de verdad**: sólo probados con transporte falso. Probar con el token de `reach` (o `gh`) sobre un repo de pruebas: leer una issue, subir rama, abrir PR, comprobar «Closes #N» y que la política git del repo los frena cuando toca.
+- **`bug_hunt` con el 27B**: la generación de tests y el triaje se probaron con el modelo simulado y la batería determinista; medir calidad real sobre `src/git_radar.py` o similar y ajustar el prompt si inventa expectativas.
+- **`ci_failures`**: sin ejecución de GitHub Actions accesible en la nube; probar con el repo Faustus (tiene workflows) y un run fallido.
+- **`fix_memory`**: comprobar en un chat real que un turno con ficheros cambiados deja línea en `DATA_DIR/fix_memory/<owner>/` y que el turno siguiente parecido enseña el bloque «Past fixes» en el ledger de contexto.
+- **Carriles en `enforce`** con `delegate_agents` real y un `AGENT.md` de biblioteca; el diálogo de Studio pintado y usado con clics.
+- **Turno de noche** con 2–3 tareas reales de `dispatch` y presupuesto corto; tarjeta de Inicio vía la acción `night_shift_report`.
+- **El 7000** necesita reinicio para cargar todo esto.
+
 ## 24-09 — examen Eldoria contra el 27B local (FAUSTUS.md §184)
 
 - **El 27B sin visión propia aún no resuelve la prueba Saber.** Ejecuciones 9, 12 y 13: 37–60 rondas, sin respuesta. Cuello de botella: visión en CPU (`qwen3-vl-30b-cpu`, 30–120 s por pregunta) y que el modelo retranscribe la página (ya hay transcripción humana) en vez de buscar lo que falta. Probar la escalera de racha (§184, tercera tanda) en la ejecución 14 y, si sigue sin cerrar, medir el mismo examen con un modelo principal que vea.

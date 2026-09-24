@@ -48,7 +48,6 @@ def test_app_registers_the_library_routers():
     )
 
 
-@pytest.mark.xfail(strict=True, reason="app.py does not yet register routes.ci_failures_routes; see C_wiring.md #3")
 def test_app_registers_the_ci_failures_router():
     import app as app_module
 

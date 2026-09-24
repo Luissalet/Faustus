@@ -18,7 +18,6 @@ from __future__ import annotations
 import pytest
 
 
-@pytest.mark.xfail(strict=True, reason="A_wiring.md: _GIT_TOOL_NAMES not yet updated by the integrator")
 def test_git_tool_names_includes_github_pr_tools():
     from src.tool_execution import _GIT_TOOL_NAMES
 

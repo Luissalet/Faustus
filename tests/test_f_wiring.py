@@ -23,20 +23,17 @@ def _read(relpath: str) -> str:
     return (_REPO_ROOT / relpath).read_text(encoding="utf-8")
 
 
-@pytest.mark.xfail(strict=True, reason="app.py wiring pending (see F_wiring.md)")
 def test_app_registers_the_code_history_router():
     src = _read("app.py")
     assert "from routes.code_history_routes import setup_code_history_routes" in src
     assert "app.include_router(setup_code_history_routes())" in src
 
 
-@pytest.mark.xfail(strict=True, reason="agent_loop.py git-read wiring pending (see F_wiring.md)")
 def test_agent_loop_offers_code_history_as_a_git_read_tool():
     src = _read("src/agent_loop.py")
-    assert '_git_read = {"git_radar", "git_status", "git_log", "git_diff", "code_history"}' in src
+    assert '"git_diff", "github_issue", "code_history"}' in src
 
 
-@pytest.mark.xfail(strict=True, reason="agent_loop.py code-intel wiring pending (see F_wiring.md)")
 def test_agent_loop_code_intel_family_includes_code_history():
     src = _read("src/agent_loop.py")
     assert '"code_graph_drift", "code_history"' in src

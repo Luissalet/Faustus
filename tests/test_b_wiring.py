@@ -12,7 +12,6 @@ from __future__ import annotations
 import pytest
 
 
-@pytest.mark.xfail(strict=True, reason="app.py does not register the bug-hunt router yet; see B_wiring.md")
 def test_app_registers_the_bug_hunt_router():
     import app as app_module
 

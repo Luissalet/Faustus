@@ -8372,19 +8372,11 @@ Show all {n}	Mostrar los {n}
 Handoff lanes	Vías de traspaso
 Which agent may delegate to which, with which tools	Qué agente puede delegar en cuál, con qué herramientas
 Which agent may delegate to which, with which tools — an explicit, inspectable policy. Off by default: nothing changes until a mode below is picked.	Qué agente puede delegar en cuál, con qué herramientas — una política explícita e inspeccionable. Desactivada por defecto: nada cambia hasta elegir un modo abajo.
-Mode	Modo
 Off — unchanged behaviour	Desactivado — comportamiento sin cambios
 Shadow — evaluate and log, never block	Sombra — evalúa y registra, nunca bloquea
 Enforce — refuse uncovered handoffs	Forzar — rechaza traspasos sin vía
-Refresh	Actualizar
-Saving…	Guardando…
-Save	Guardar
 Could not read the handoff lanes	No se han podido leer las vías de traspaso
-Could not save	No se ha podido guardar
 Loading handoff lanes	Cargando vías de traspaso
-Id	Id
-From	Desde
-To	Hasta
 Tools allow	Herramientas permitidas
 Tools deny	Herramientas denegadas
 Max depth	Profundidad máxima
@@ -8394,9 +8386,7 @@ Test a handoff	Probar un traspaso
 from (e.g. main)	desde (p. ej. main)
 to (e.g. coder)	hasta (p. ej. coder)
 tools (comma separated)	herramientas (separadas por comas)
-Test	Probar
 Allowed	Permitido
-Refused	Rechazado
 lane	vía
 tools taken back	herramientas retiradas
 Diagram	Diagrama
@@ -8405,11 +8395,9 @@ One task per line, up to 12	Una tarea por línea, hasta 12
 Max minutes	Minutos máximos
 Max tasks	Tareas máximas
 Verify each task's work before moving on	Verifica el trabajo de cada tarea antes de continuar
-verify	verificar
 Queuing…	Encolando…
 Queue night shift	Encolar turno nocturno
 No night shift yet.	Todavía no hay ningún turno nocturno.
 Loading night shifts	Cargando turnos nocturnos
 tasks	tareas
-Stop	Detener
 budget exhausted	presupuesto agotado
