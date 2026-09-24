@@ -876,7 +876,7 @@ function EnginesSection({ admin, say, defaultModel }: { admin: boolean; say: (t:
               <li key={engine.id} className="fs-set__row" data-testid={`engine-row-${engine.id}`}>
                 <div>
                   <strong>{engine.name}</strong>{' '}
-                  <span className="fs-set__help" data-testid="engine-state" data-state={state}>{state}</span>
+                  <span className="fs-set__help" data-testid="engine-state" data-state={state}>{t(ENGINE_STATE_LABELS[state] ?? state)}</span>
                   {engine.mtp && <span className="fs-set__tag" data-testid="engine-mtp-tag">{t('MTP')}</span>}
                   {status?.model && <span className="fs-set__help"> · {status.model}</span>}
                   {status?.context_length ? <span className="fs-set__help"> · {fmtCtx(status.context_length)}</span> : null}
@@ -1042,6 +1042,11 @@ function EngineEditor({ engine, onCancel, onSave }: {
 }
 
 /* ── the card(s) ── */
+
+/** Engine states as words, not the raw status value. */
+const ENGINE_STATE_LABELS: Record<string, string> = {
+  running: 'Engine running', unhealthy: 'Engine unhealthy', stopped: 'Engine stopped', unknown: 'Engine state unknown',
+};
 
 function VramCard({ vram, loaded, policy, admin, onPlacement, onRelease }: { vram: Vram; loaded: LoadedModel[]; policy?: { prefer: number; order?: number[] }; admin: boolean; onPlacement: (order: number[]) => Promise<void>; onRelease: (pid: number) => void }) {
   if (!vram?.supported) return <p className="fs-set__help">{t('No VRAM reading for this endpoint.')} {vram?.reason ?? ''}</p>;

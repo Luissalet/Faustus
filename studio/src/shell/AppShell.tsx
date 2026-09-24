@@ -194,7 +194,7 @@ function Rail() {
         <div className="fs-nav__tools" aria-label={t('Tools')}>
           <p className="fs-nav__tools-head">{t('Tools')}</p>
           {tools.map((tool) => (
-            <NavLink key={tool.path} to={tool.path} className="fs-nav__tool" data-testid={`tool-${tool.label.toLowerCase()}`}>
+            <NavLink key={tool.path} to={tool.path} className="fs-nav__tool" title={t(tool.label)} data-testid={`tool-${tool.label.toLowerCase()}`}>
               <tool.icon size={13} aria-hidden="true" />
               <span>{t(tool.label)}</span>
               {countFor(tool.path, badges) > 0 && (

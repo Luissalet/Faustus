@@ -609,6 +609,17 @@ html[data-studio-shell='on'] body > *:not(#studio-root):not(#fs-overlay-root) {
     translate var(--fs-duration-normal) var(--fs-ease-out);
 }
 
+/* A long label next to a badge ("Control de versiones" + 11) wrapped onto
+   two lines and overlapped its neighbours: one line, cut with an ellipsis
+   (the link's title carries the full name). */
+.fs-nav__tool > span:not(.fs-nav__badge) {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .fs-nav__tool:hover {
   color: var(--fs-text-1);
   background: var(--fs-highlight);
