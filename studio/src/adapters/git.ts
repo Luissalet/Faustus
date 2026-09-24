@@ -161,6 +161,10 @@ export interface GitRepo {
   projects?: GitRepoProjectRef[];
   root_folder: string;
   parent_repo_id: string | null;
+  /** True when the repo was found under a watched folder (`git_watch_roots`,
+   *  Source control → Watched folders) and not under any project link.
+   *  Optional: a server predating the radar omits it. */
+  watched?: boolean;
   branch: string | null;
   detached: boolean;
   head_sha: string;
@@ -168,6 +172,9 @@ export interface GitRepo {
   ahead: number;
   behind: number;
   dirty: GitDirtyCounts;
+  /** Unmerged entries (a subset of `dirty`); optional, a server predating
+   *  the radar omits it. */
+  conflicts?: number;
   user: GitUser;
   remotes: GitRemote[];
   /** Lote 83: the identity whose ssh host alias matches `origin`'s remote,
@@ -418,6 +425,96 @@ export function listRepos(projectId?: string, opts: { light?: boolean } = {}): P
     ...res,
     repos: dedupeRepos(res.repos),
   }));
+}
+
+/* ── Radar: which repos are waiting for a commit or a push (src/git_radar.py) ── */
+
+export type GitRadarKind = 'conflicts' | 'uncommitted' | 'unpushed' | 'no_upstream' | 'local_only' | 'behind' | 'detached';
+
+export interface GitRadarReason {
+  kind: GitRadarKind;
+  count: number;
+}
+
+export interface GitRadarRepo {
+  id: string;
+  name: string;
+  path: string;
+  project_id: string | null;
+  project_name: string | null;
+  projects: GitRepoProjectRef[];
+  root_folder: string | null;
+  watched: boolean;
+  branch: string | null;
+  detached: boolean;
+  upstream: string | null;
+  ahead: number;
+  behind: number;
+  dirty: GitDirtyCounts;
+  conflicts: number;
+  reasons: GitRadarReason[];
+  /** True when at least one reason is one the badge counts (not `behind`/`detached`). */
+  attention: boolean;
+  severity: number | null;
+  /** Unix seconds of the last commit; only filled for attention rows. */
+  last_commit_at: number | null;
+}
+
+export interface GitRadar {
+  repos: GitRadarRepo[];
+  attention: GitRadarRepo[];
+  attention_count: number;
+  counts: Record<GitRadarKind, number>;
+  total: number;
+  watch_roots: string[];
+  git_version: string | null;
+  scanned_at: number;
+  summary: string;
+}
+
+export function getRadar(opts: { refresh?: boolean } = {}): Promise<GitRadar> {
+  return getGit<GitRadar>(`/api/git/radar${query({ refresh: opts.refresh ? 1 : undefined })}`);
+}
+
+export interface GitWatchRoots {
+  watch_roots: string[];
+  configured: string[];
+}
+
+export function getWatchRoots(): Promise<GitWatchRoots> {
+  return getGit<GitWatchRoots>('/api/git/watch-roots');
+}
+
+export function putWatchRoots(roots: string[]): Promise<{ ok: boolean; watch_roots: string[] }> {
+  return putGit('/api/git/watch-roots', { watch_roots: roots });
+}
+
+/** `t()` key + values for one radar reason chip — a plain function so the
+ *  check script can exercise it without a translation table. */
+export function radarReasonLabel(reason: GitRadarReason): { key: string; values?: Record<string, number> } {
+  switch (reason.kind) {
+    case 'conflicts':
+      return { key: '{n} conflicts', values: { n: reason.count } };
+    case 'uncommitted':
+      return { key: '{n} uncommitted', values: { n: reason.count } };
+    case 'unpushed':
+      return { key: '{n} unpushed', values: { n: reason.count } };
+    case 'behind':
+      return { key: '{n} behind', values: { n: reason.count } };
+    case 'no_upstream':
+      return { key: 'No upstream' };
+    case 'local_only':
+      return { key: 'No remote' };
+    case 'detached':
+      return { key: 'Detached HEAD' };
+    default:
+      return { key: String(reason.kind) };
+  }
+}
+
+/** The single-line "why" for a radar row: its reason chips joined. */
+export function radarReasonKinds(repo: Pick<GitRadarRepo, 'reasons'>): GitRadarKind[] {
+  return repo.reasons.map((r) => r.kind);
 }
 
 export function getRepo(repoId: string): Promise<GitRepo> {

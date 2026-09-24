@@ -843,3 +843,178 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* ── Git radar: repos waiting for a commit or a push (GitRadar.tsx) ── */
+.fs-radar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fs-space-3);
+  margin-block-end: var(--fs-space-4);
+  padding: var(--fs-space-3) var(--fs-space-4);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-panel);
+  background: var(--fs-surface-2);
+}
+
+.fs-radar__head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'title actions'
+    'sub actions';
+  column-gap: var(--fs-space-3);
+  align-items: center;
+}
+
+.fs-radar__title {
+  grid-area: title;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  margin: 0;
+  font-size: var(--fs-label-size);
+  font-weight: 600;
+  color: var(--fs-text-1);
+}
+
+.fs-radar__sub {
+  grid-area: sub;
+  margin: 0;
+  max-width: none;
+  font-size: 12px;
+  color: var(--fs-text-3);
+}
+
+.fs-radar__actions {
+  grid-area: actions;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--fs-space-1);
+}
+
+.fs-radar__list {
+  margin: 0;
+}
+
+.fs-radar__row .fs-row__name {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--fs-space-2);
+  min-inline-size: 0;
+}
+
+.fs-radar__branch {
+  font-family: var(--fs-font-code);
+  font-size: 11px;
+  color: var(--fs-text-3);
+  white-space: nowrap;
+}
+
+.fs-radar__chips {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--fs-space-1);
+  flex-shrink: 0;
+}
+
+.fs-radar__chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: var(--fs-radius-pill);
+  border: 1px solid var(--fs-border);
+  font-size: 11px;
+  line-height: 16px;
+  white-space: nowrap;
+  color: var(--fs-text-2);
+  background: var(--fs-surface-1);
+}
+
+.fs-radar__chip[data-tone='warning'] {
+  border-color: color-mix(in srgb, var(--fs-warning) 45%, var(--fs-border));
+  color: var(--fs-warning);
+}
+
+.fs-radar__chip[data-tone='danger'] {
+  border-color: color-mix(in srgb, var(--fs-danger) 45%, var(--fs-border));
+  color: var(--fs-danger);
+}
+
+/* Watched folders dialog */
+.fs-radar__roots {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fs-space-3);
+}
+
+.fs-radar__empty {
+  margin: 0;
+  font-size: var(--fs-label-size);
+  color: var(--fs-text-3);
+}
+
+.fs-radar__root-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--fs-space-1);
+}
+
+.fs-radar__root {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--fs-space-2);
+  max-width: none;
+  padding: var(--fs-space-1) var(--fs-space-2);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-control);
+  background: var(--fs-surface-1);
+}
+
+.fs-radar__root-path {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.fs-radar__add {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--fs-space-2);
+  align-items: center;
+}
+
+.fs-radar__add-label {
+  grid-column: 1 / -1;
+  font-size: 12px;
+  color: var(--fs-text-2);
+}
+
+.fs-radar__add-input {
+  inline-size: 100%;
+}
+
+@media (max-width: 640px) {
+  .fs-radar__head {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'title'
+      'sub'
+      'actions';
+    row-gap: var(--fs-space-2);
+  }
+
+  .fs-radar__row {
+    flex-wrap: wrap;
+  }
+
+  .fs-radar__chips {
+    justify-content: flex-start;
+  }
+}

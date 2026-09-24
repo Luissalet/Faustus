@@ -8336,3 +8336,31 @@ Entity cards and matching notes can enter a turn's context when they are relevan
 Your name	Tu nombre
 How your own entity is called; memories that mention this name are about you.	Cómo se llama tu propia entidad; los recuerdos que mencionan este nombre hablan de ti.
 Me	Yo
+Every git repository under your linked project folders and watched folders.	Todos los repositorios git bajo las carpetas enlazadas a tus proyectos y las carpetas vigiladas.
+Folders scanned for git repositories besides your linked project folders (up to three levels deep). Absolute paths.	Carpetas en las que se buscan repositorios git además de las enlazadas a tus proyectos (hasta tres niveles). Rutas absolutas.
+Loading watched folders	Cargando carpetas vigiladas
+Needs commit or push	Pendiente de commit o push
+No watched folders yet. Add one below.	Aún no hay carpetas vigiladas. Añade una abajo.
+Remove {path}	Quitar {path}
+Repositories needing attention	Repositorios que requieren atención
+Scanning repositories	Buscando repositorios
+Scanning repositories…	Buscando repositorios…
+Watched folder	Carpeta vigilada
+Watched folders	Carpetas vigiladas
+Watched folders saved	Carpetas vigiladas guardadas
+Watched: {folder}	Vigilada: {folder}
+Your {n} repository is committed and pushed.	Tu repositorio está commiteado y subido.
+All {n} repositories are committed and pushed.	Los {n} repositorios están commiteados y subidos.
+e.g. C:/Users/you/Projects or /home/you/code	p. ej. C:/Users/tú/Proyectos o /home/tú/codigo
+last commit {when}	último commit {when}
+{n} more in Source control	{n} más en Control de versiones
+{n} of {total} repositories have work that has not left this machine.	{n} de {total} repositorios tienen trabajo que no ha salido de este equipo.
+{n} repositories need a commit or push	{n} repositorios necesitan commit o push
+Add a folder	Añadir una carpeta
+{n} conflicts	{n} conflictos
+{n} uncommitted	{n} sin commit
+{n} unpushed	{n} sin push
+{n} behind	{n} por detrás
+No upstream	Sin upstream
+No remote	Sin remoto
+Detached HEAD	HEAD separado

@@ -64,7 +64,7 @@ GIT_TIMEOUT_LONG = 120.0
 # ---------------------------------------------------------------------------
 # Discovery limits
 # ---------------------------------------------------------------------------
-MAX_REPOS = 60
+MAX_REPOS = 120
 MAX_DEPTH = 3
 _SKIP_DIR_NAMES = frozenset({"node_modules", ".venv", "venv", "__pycache__", "dist", "build"})
 
@@ -406,6 +406,79 @@ def _walk_projects(projects: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return out
 
 
+def _normalize_root(raw: Any) -> Optional[str]:
+    """One `git_watch_roots` entry as a real absolute directory path, or
+    None when it is not a string / not absolute / not a directory. Relative
+    paths are refused on purpose: a root that depends on the server's cwd
+    would silently scan a different tree after a restart."""
+    if not isinstance(raw, str):
+        return None
+    p = raw.strip()
+    if not p or not os.path.isabs(p):
+        return None
+    try:
+        real = os.path.realpath(p)
+        if not os.path.isdir(real):
+            return None
+    except OSError:
+        return None
+    return real
+
+
+def watch_roots() -> List[str]:
+    """The install-wide folder roots the radar scans besides project links
+    (`git_watch_roots` setting), normalized and deduplicated; entries that
+    are not absolute existing directories are dropped here, not stored."""
+    try:
+        from src.settings import get_setting
+        raw = get_setting("git_watch_roots", []) or []
+    except Exception:  # noqa: BLE001 - settings unreachable = no extra roots
+        return []
+    if not isinstance(raw, list):
+        return []
+    seen = set()
+    out: List[str] = []
+    for item in raw:
+        real = _normalize_root(item)
+        if real is None:
+            continue
+        key = os.path.normcase(real)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(real)
+    return out
+
+
+def _walk_watch_roots(roots: Sequence[str], *, budget: int) -> List[Dict[str, Any]]:
+    """Discovery records for every repo under the install's watched roots
+    -- same shape as `_walk_projects`, with no project (`project_id` None)
+    and `"watched": True` so the panel can label where a repo came from.
+    A repo that is ALSO under a project link is collapsed by `_dedupe_repos`
+    (the project entry, listed first, wins)."""
+    out: List[Dict[str, Any]] = []
+    for root in roots:
+        if len(out) >= budget:
+            break
+        paths = _walk_repos(root, max_depth=MAX_DEPTH, budget=budget - len(out))
+        parents = _assign_parents(paths)
+        for path in paths:
+            if len(out) >= budget:
+                break
+            parent_path = parents.get(path)
+            out.append({
+                "id": compute_repo_id(path),
+                "path": path,
+                "name": os.path.basename(path.rstrip(os.sep)) or path,
+                "project_id": None,
+                "project_name": None,
+                "root_folder": root,
+                "parent_repo_id": compute_repo_id(parent_path) if parent_path else None,
+                "watched": True,
+            })
+    return out
+
+
 def _dedupe_repos(entries: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Collapse entries that share a normalized real path -- e.g. two
     projects linking the same folder on disk -- into ONE row per repo. The
@@ -424,9 +497,14 @@ def _dedupe_repos(entries: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         if base is None:
             base = dict(entry)
             base["projects"] = []
+            base.setdefault("watched", False)
             by_key[key] = base
             order.append(key)
         proj = {"id": entry.get("project_id"), "name": entry.get("project_name")}
+        # A watched-root entry has no project: it must not add a (None, None)
+        # row to a repo that a project link also surfaced.
+        if proj["id"] is None and proj["name"] is None:
+            continue
         if proj not in base["projects"]:
             base["projects"].append(proj)
     return [by_key[k] for k in order]
@@ -478,8 +556,12 @@ def discover_repos_for_owner(owner: Optional[str], project_id: str = "", *,
         return _dedupe_repos(_walk_projects([project]))
 
     projects = store.list(owner)
+    roots = watch_roots()
     key = _owner_cache_key(owner)
-    fingerprint = _projects_fingerprint(projects)
+    # The watched roots are part of the fingerprint for the same reason the
+    # projects are: editing `git_watch_roots` must show up on the next list
+    # without waiting out the TTL.
+    fingerprint = _projects_fingerprint(projects) + (tuple(roots),)
     if use_cache:
         with _DISCOVERY_LOCK:
             hit = _DISCOVERY_CACHE.get(key)
@@ -488,7 +570,10 @@ def discover_repos_for_owner(owner: Optional[str], project_id: str = "", *,
             if cached_fingerprint == fingerprint and (time.monotonic() - ts) < _DISCOVERY_TTL:
                 return cached_result
 
-    result = _dedupe_repos(_walk_projects(projects))
+    walked = _walk_projects(projects)
+    if roots:
+        walked.extend(_walk_watch_roots(roots, budget=max(0, MAX_REPOS - len(walked))))
+    result = _dedupe_repos(walked)
     if use_cache:
         with _DISCOVERY_LOCK:
             _DISCOVERY_CACHE[key] = (time.monotonic(), fingerprint, result)
@@ -719,7 +804,7 @@ def repo_status(repo_path: str) -> Dict[str, Any]:
 
 def repo_summary(path: str, *, project_id: Any, project_name: Any, root_folder: str,
                   parent_repo_id: Optional[str], projects: Optional[List[Dict[str, Any]]] = None,
-                  light: bool = False) -> Dict[str, Any]:
+                  light: bool = False, watched: bool = False) -> Dict[str, Any]:
     """The full `GET /api/git/repos/{id}` shape, freshly computed.
 
     ONE `git` call in `light` mode (branch/ahead/behind/dirty only -- for
@@ -741,6 +826,9 @@ def repo_summary(path: str, *, project_id: Any, project_name: Any, root_folder: 
         "projects": projects if projects is not None else [{"id": project_id, "name": project_name}],
         "root_folder": root_folder,
         "parent_repo_id": parent_repo_id,
+        # True when the repo was found under a `git_watch_roots` folder and
+        # not under any project link (src/git_radar.py, Source control label).
+        "watched": bool(watched),
         "branch": status["branch"],
         "detached": status["detached"],
         "head_sha": status["head_sha"],
@@ -752,6 +840,11 @@ def repo_summary(path: str, *, project_id: Any, project_name: Any, root_folder: 
             "unstaged": len(status["unstaged"]),
             "untracked": len(status["untracked"]),
         },
+        # Unmerged entries (a subset of what `dirty` already counts); the
+        # radar (src/git_radar.py) reads this to rank a conflict above a
+        # plain dirty tree. Kept OUT of `dirty` so its three-key contract
+        # shape stays byte-for-byte what the panel's tests pin.
+        "conflicts": len(status["conflicts"]),
     }
     if light:
         return row
@@ -776,7 +869,7 @@ def repo_summaries(metas: Sequence[Dict[str, Any]], *, light: bool = False,
         return repo_summary(
             meta["path"], project_id=meta.get("project_id"), project_name=meta.get("project_name"),
             root_folder=meta.get("root_folder"), parent_repo_id=meta.get("parent_repo_id"),
-            projects=meta.get("projects"), light=light,
+            projects=meta.get("projects"), light=light, watched=bool(meta.get("watched")),
         )
 
     with ThreadPoolExecutor(max_workers=workers) as pool:

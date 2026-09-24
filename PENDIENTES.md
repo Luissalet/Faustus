@@ -1264,3 +1264,15 @@ contamina a cual, y aislar ese estado en una fixture, como se hizo con
 - **El panel de autonomía sólo muestra el agregado por familia**, no el registro completo de decisiones individuales; si hace falta auditar una decisión concreta habría que ir a la base de datos directamente (`approval_shadow_log`) — sería razonable añadir un desplegable con las últimas N filas por familia.
 - **`code_graph_drift` no se ha medido en un repositorio grande de verdad**: los tests usan repos sintéticos de un puñado de ficheros; falta ver cuánto tarda `drift()` (y si el presupuesto de tiempo por defecto, 8-10 s, es realista) en un repositorio con miles de ficheros como el propio Faustus.
 - **La habilidad `learn-this-repo` nunca se probó con un modelo real siguiendo sus pasos**: se verificó que el `SKILL.md` parsea, cumple el tope de palabras y sobrevive el reinstalado, pero nadie la ha usado de verdad para estudiar un repositorio — falta ver si el fichero de notas (`LEARN_REPO_NOTES.md`) que el modelo produce es realmente útil para retomar una sesión días después.
+
+## Radar de git (FAUSTUS.md §185) — pendiente de verificar en la máquina en vivo
+
+- Verificar en el 7001: `GET /api/git/radar` con las carpetas reales, la
+  tira en `/source-control`, el diálogo de carpetas vigiladas guardando una
+  ruta de Windows con barras invertidas, el badge del carril y el bloque de
+  Inicio (claro y oscuro, 420 px).
+- Coste en Windows con ~30 repos: cada `git.exe` cuesta; si la primera carga
+  de Inicio se nota, subir `RADAR_TTL` o mover el escaneo a un hilo de fondo
+  con resultado anterior servido al instante.
+- Acción de vigilante (`watchers.py`) «avísame si algo lleva N días sin
+  push» y herramienta de sólo lectura `git_radar` para el agente.

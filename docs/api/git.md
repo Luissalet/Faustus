@@ -155,6 +155,8 @@ responde 404).
     "branch": "master", "detached": false, "head_sha": "abc123...",
     "upstream": "origin/master", "ahead": 0, "behind": 2,
     "dirty": {"staged": 1, "unstaged": 3, "untracked": 5},
+    "conflicts": 0,          // entradas sin fusionar (subconjunto de dirty)
+    "watched": false,        // true si sólo lo encontró una carpeta vigilada (radar)
     // Los 4 campos siguientes -- ausentes con `?light=1` (ver Rendimiento arriba):
     "user": {"name": "Luis", "email": "luis@example.com"},
     "remotes": [{"name": "origin", "fetch_url": "git@github.com:...", "push_url": "git@github.com:..."}],
@@ -164,6 +166,57 @@ responde 404).
   "git_version": "2.43.0"
 }
 ```
+
+### `GET /api/git/radar?refresh=<0|1>` — el radar de git (`src/git_radar.py`)
+
+Qué repositorios, de TODOS los que ve Faustus (carpetas enlazadas de los
+proyectos del owner + las carpetas vigiladas globales), tienen trabajo que
+no ha salido de la máquina. Un `git status --porcelain=v2 --branch` por
+repo, en paralelo; `remote -v` sólo para los que no tienen upstream; `log
+-1` sólo para los que requieren atención. Caché 20 s por owner
+(`refresh=1` la salta, y también la de descubrimiento).
+
+```jsonc
+{
+  "repos": [ /* todos, con `reasons`, los de atención primero */ ],
+  "attention": [{
+    "id": "a1b2c3d4e5f6", "name": "faustus", "path": "D:\\LocalAI\\faustus",
+    "projects": [{"id": "p1", "name": "Faustus"}], "watched": false, "root_folder": "D:\\LocalAI",
+    "branch": "master", "detached": false, "upstream": "origin/master", "ahead": 2, "behind": 0,
+    "dirty": {"staged": 0, "unstaged": 1, "untracked": 3}, "conflicts": 0,
+    "reasons": [{"kind": "uncommitted", "count": 4}, {"kind": "unpushed", "count": 2}],
+    "attention": true, "severity": 1,
+    "last_commit_at": 1758700000   // epoch; sólo en filas de atención
+  }],
+  "attention_count": 1,
+  "counts": {"conflicts": 0, "uncommitted": 1, "unpushed": 1, "no_upstream": 0, "local_only": 0, "behind": 0, "detached": 0},
+  "total": 24,
+  "watch_roots": ["C:\\Users\\luis\\Proyectos"],
+  "git_version": "2.43.0", "scanned_at": 1758701234.5,
+  "summary": "1 of 24 repositories need attention: faustus (master): 4 uncommitted, 2 unpushed"
+}
+```
+
+`kind`, por gravedad: `conflicts` (entradas sin fusionar), `uncommitted`
+(ficheros staged/unstaged/untracked), `unpushed` (commits por delante del
+upstream), `no_upstream` (rama sin tracking pero el repo tiene remoto: falta
+un `push -u`), `local_only` (sin ningún remoto). `behind` y `detached` se
+informan pero NO cuentan como atención: ir por detrás no es un olvido.
+`attention_count` es lo que enseña el badge de la barra lateral y el bloque
+«Pendiente de commit o push» de Inicio (que desaparece cuando es 0).
+
+### `GET /api/git/watch-roots` · `PUT /api/git/watch-roots` (require_human)
+
+Las carpetas vigiladas globales de la instalación (ajuste `git_watch_roots`).
+`GET` devuelve `{"watch_roots": [normalizadas y existentes], "configured":
+[tal cual se guardaron]}`. `PUT {"watch_roots": [...]}` valida cada entrada
+(ruta absoluta a un directorio existente; la primera mala responde 400
+`git.bad_root` con `path` y no guarda nada), deduplica por ruta real,
+guarda e invalida las cachés de descubrimiento y del radar. Un repo bajo
+una carpeta vigilada es un repo de pleno derecho: aparece en
+`GET /api/git/repos` (con `watched: true` y `projects: []`) y todas las
+rutas `/repos/{id}/*` funcionan sobre él. Si además lo enlaza un proyecto,
+gana la entrada del proyecto.
 
 ### `GET /api/git/repos/{repo_id}`
 

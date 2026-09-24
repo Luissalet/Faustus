@@ -32,7 +32,7 @@ from pydantic import BaseModel, Field
 
 from core.middleware import require_human
 from src.auth_helpers import effective_user, require_user
-from src import agent_git_policy, git_github, git_identities, git_panel
+from src import agent_git_policy, git_github, git_identities, git_panel, git_radar
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +72,10 @@ class PushBody(BaseModel):
 class PathsBody(BaseModel):
     paths: Optional[List[str]] = None
     all: Optional[bool] = None
+
+
+class WatchRootsBody(BaseModel):
+    watch_roots: List[str] = Field(default_factory=list)
 
 
 class DiscardBody(BaseModel):
@@ -214,7 +218,7 @@ def _summary(meta: Dict[str, Any], owner: Optional[str] = None, *, light: bool =
     row = git_panel.repo_summary(
         meta["path"], project_id=meta["project_id"], project_name=meta["project_name"],
         root_folder=meta["root_folder"], parent_repo_id=meta["parent_repo_id"],
-        projects=meta.get("projects"), light=light,
+        projects=meta.get("projects"), light=light, watched=bool(meta.get("watched")),
     )
     if light:
         return row
@@ -316,6 +320,31 @@ def setup_git_routes() -> APIRouter:
         if not is_light:
             rows = [_attach_identity_policy(row, owner) for row in rows]
         return {"repos": rows, "git_version": git_panel.git_version()}
+
+    # ------------------------------------------------------------------
+    # Radar (src/git_radar.py): which repos are waiting for a commit/push
+    # ------------------------------------------------------------------
+    @router.get("/radar")
+    def get_radar(request: Request, refresh: int = 0, _u: str = Depends(require_user)) -> Any:
+        owner = _owner(request)
+        if not git_panel.git_available():
+            return _git_missing()
+        payload = git_radar.scan(owner, refresh=bool(refresh))
+        return {**payload, "summary": git_radar.format_summary(payload)}
+
+    @router.get("/watch-roots")
+    def get_watch_roots(_u: str = Depends(require_user)) -> Any:
+        from src.settings import get_setting
+        raw = get_setting("git_watch_roots", []) or []
+        return {"watch_roots": git_panel.watch_roots(),
+                "configured": [r for r in raw if isinstance(r, str)]}
+
+    @router.put("/watch-roots")
+    def put_watch_roots(body: WatchRootsBody, _h: None = Depends(require_human)) -> Any:
+        result = git_radar.set_watch_roots(body.watch_roots)
+        if not result.get("ok"):
+            return _error(400, "git.bad_root", str(result.get("error")), path=result.get("path"))
+        return result
 
     @router.get("/repos/{repo_id}")
     def get_repo(repo_id: str, request: Request, _u: str = Depends(require_user)) -> Any:

@@ -55,7 +55,10 @@ export function RepoList({
       {repos.map((repo) => {
         const dirtyTotal = repo.dirty.staged + repo.dirty.unstaged + repo.dirty.untracked;
         const ab = aheadBehindLabel(repo.ahead, repo.behind);
-        const projectsLabel = repoProjectsLabel(repo);
+        // A repo found only under a watched folder (git_watch_roots) has no
+        // project: say which folder it came from instead of nothing.
+        const watchedBase = repo.watched ? repo.root_folder.replace(/[\\/]+$/, '').split(/[\\/]/).pop() : '';
+        const projectsLabel = repoProjectsLabel(repo) || (watchedBase ? t('Watched: {folder}', { folder: watchedBase }) : '');
         return (
           <div
             key={repo.id}

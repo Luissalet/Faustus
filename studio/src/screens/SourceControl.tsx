@@ -1,6 +1,7 @@
 import { GitBranch } from 'lucide-react';
 import { useSearchParams } from 'react-router';
 import { SourceControlPanel } from './source-control/SourceControlPanel';
+import { GitRadarStrip } from './source-control/GitRadar';
 import './source-control.css';
 import { t } from '../i18n';
 
@@ -29,9 +30,13 @@ export function SourceControlScreen() {
           <h1 className="fs-screen__title">
             <GitBranch size={20} aria-hidden="true" /> {t('Source control')}
           </h1>
-          <p className="fs-screen__sub">{t('Every git repository under your linked project folders.')}</p>
+          <p className="fs-screen__sub">{t('Every git repository under your linked project folders and watched folders.')}</p>
         </div>
       </header>
+      {/* The radar (src/git_radar.py): which of those repos still has work
+          that never left this machine. Scoped to the whole owner, not to
+          `?project=` — forgetting a push is a cross-project problem. */}
+      {!projectId && <GitRadarStrip />}
       <SourceControlPanel projectId={projectId} />
     </div>
   );

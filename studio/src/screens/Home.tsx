@@ -1,4 +1,4 @@
-import { Bot, ChevronRight, CloudSun, Code2, Eye, FileText, Image, Inbox, Mail, Newspaper, RefreshCw, Search } from 'lucide-react';
+import { Bot, ChevronRight, CloudSun, Code2, Eye, FileText, GitBranch, Image, Inbox, Mail, Newspaper, RefreshCw, Search } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { Button, EmptyState, Skeleton, StatusBadge } from '../components';
@@ -10,6 +10,8 @@ import {
 } from '../adapters/home';
 import { describeTrigger, runAutomation, type Automation } from '../adapters/automations';
 import { listHomeCards, unpinHomeCard, type HomeCard } from '../adapters/homeCards';
+import { RadarRows, useGitRadar } from './source-control/GitRadar';
+import './source-control.css';
 import { Rich } from './rich';
 import { BrandMark } from '../shell/BrandMark';
 import { useSpotlight } from '../shell/useSpotlight';
@@ -181,6 +183,32 @@ const QUICK_STARTS = [
   { label: 'Research', icon: Search, draft: 'Research on the web ' },
 ];
 
+/* ── Needs commit or push: the git radar, live (src/git_radar.py) ──
+ * Not a pinned automation: it reads the repositories directly, so it is
+ * always current and needs no schedule. Absent entirely when everything
+ * is committed and pushed — a green "all clear" on Home is noise. */
+const RADAR_HOME_LIMIT = 6;
+
+function GitRadarBlock() {
+  const { radar } = useGitRadar();
+  if (!radar || radar.attention_count === 0) return null;
+  const more = radar.attention_count - RADAR_HOME_LIMIT;
+  return (
+    <Block
+      title={t('Needs commit or push')}
+      index={2}
+      aside={
+        <Link className="fs-block__more" to="/source-control" data-testid="home-radar-all">
+          <GitBranch size={14} aria-hidden="true" />
+          {more > 0 ? t('{n} more in Source control', { n: more }) : t('Open Source control')}
+        </Link>
+      }
+    >
+      <RadarRows repos={radar.attention} limit={RADAR_HOME_LIMIT} />
+    </Block>
+  );
+}
+
 export function HomeScreen() {
   const spotlight = useSpotlight();
   const navigate = useNavigate();
@@ -270,6 +298,8 @@ export function HomeScreen() {
       </header>
 
       <HomeCards cards={cards} onChanged={reloadCards} />
+
+      <GitRadarBlock />
 
       {data.approvals.length > 0 && (
         <Block title={t('Needs your decision')} index={2}>

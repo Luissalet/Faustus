@@ -14,9 +14,11 @@ export interface Badges {
   calendar: number;
   /** Notes whose reminder is today or already past. */
   notes: number;
+  /** Repositories with uncommitted or unpushed work (src/git_radar.py). */
+  git: number;
 }
 
-const EMPTY: Badges = { calendar: 0, notes: 0 };
+const EMPTY: Badges = { calendar: 0, notes: 0, git: 0 };
 const EVERY_MS = 5 * 60_000;
 
 async function read(): Promise<Badges> {
@@ -37,6 +39,12 @@ async function read(): Promise<Badges> {
     out.notes = notes.filter((n) => n.dueDate && (isToday(n.dueDate) || isOverdue(n.dueDate))).length;
   } catch {
     /* no notes, no badge */
+  }
+  try {
+    const { getRadar } = await import('../adapters/git');
+    out.git = (await getRadar()).attention_count;
+  } catch {
+    /* no git, no badge */
   }
   return out;
 }

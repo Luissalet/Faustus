@@ -438,3 +438,19 @@
     transform: none;
   }
 }
+
+/* The small link at the right of a block title (the git radar's "Open Source control"). */
+.fs-block__more {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--fs-space-1);
+  font-size: 12px;
+  color: var(--fs-text-2);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.fs-block__more:hover {
+  color: var(--fs-text-1);
+  text-decoration: underline;
+}

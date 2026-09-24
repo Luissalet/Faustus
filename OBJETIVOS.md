@@ -936,3 +936,19 @@ la fundía dentro de la sección conocida anterior — justo lo que hace
 **Queda:** usar `learn-this-repo` de verdad con un modelo real y ver si el
 fichero de notas resulta útil para retomar sesiones (ver PENDIENTES).
 
+
+## OBJ-41 · Radar de git: qué repositorios esperan un commit o un push — HECHO (24-09-2026)
+
+Un cambio hecho desde un chat, la pestaña cerrada, y el push que nunca
+llega: el radar (`src/git_radar.py`) mira todos los repositorios que
+Faustus ve — carpetas enlazadas de los proyectos más las carpetas vigiladas
+globales (`git_watch_roots`, editables desde Source control) — y dice
+cuáles tienen trabajo que no ha salido de la máquina (sin commit, sin push,
+sin upstream, sin remoto, conflictos). Tira en Source control con clic al
+repo, badge en la barra lateral y bloque en Inicio que sólo aparece cuando
+hay algo. Los repos de carpetas vigiladas son repos normales del panel.
+FAUSTUS.md §185; API en `docs/api/git.md`.
+
+**Queda:** acción de vigilante programado (`watchers.py`) que avise por
+push/notificación cuando algo lleve más de N días sin subir; herramienta
+de sólo lectura para que el agente conteste «¿qué tengo sin subir?».

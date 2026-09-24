@@ -70,10 +70,11 @@ const Tour = lazyChunk(() => import('./Tour').then((m) => ({ default: m.Tour }))
  * the node in every layout: the full sidebar, the collapsed rail, and the
  * horizontal bottom bar on a phone.
  */
-/** Which tool a badge belongs to. Only two have one; the rest get none. */
-function countFor(path: string, badges: { calendar: number; notes: number }): number {
+/** Which tool a badge belongs to. Only three have one; the rest get none. */
+function countFor(path: string, badges: { calendar: number; notes: number; git: number }): number {
   if (path.startsWith('/calendar')) return badges.calendar;
   if (path.startsWith('/notes')) return badges.notes;
+  if (path.startsWith('/source-control')) return badges.git;
   return 0;
 }
 
@@ -197,7 +198,7 @@ function Rail() {
               <tool.icon size={13} aria-hidden="true" />
               <span>{t(tool.label)}</span>
               {countFor(tool.path, badges) > 0 && (
-                <span className="fs-nav__badge" title={t('{n} for today', { n: countFor(tool.path, badges) })}>
+                <span className="fs-nav__badge" title={tool.path.startsWith('/source-control') ? t('{n} repositories need a commit or push', { n: countFor(tool.path, badges) }) : t('{n} for today', { n: countFor(tool.path, badges) })}>
                   {countFor(tool.path, badges)}
                 </span>
               )}

@@ -1252,6 +1252,12 @@ DEFAULT_SETTINGS = {
     # flow when its constraint is violated. Empty list = no effect, same as
     # before this existed.
     "tool_arg_rules": [],
+    # Git radar (src/git_radar.py): extra folder roots -- absolute paths --
+    # scanned for git repositories on top of every project's linked folders,
+    # so a repo that belongs to no Faustus project still shows up in Source
+    # control and in the "needs commit/push" radar. Global to the install
+    # (admin-edited), like `tool_path_extra_roots`.
+    "git_watch_roots": [],
     # ── Built-in browser (Playwright MCP, src/builtin_mcp.py) ──
     # "persistent" keeps cookies/logins in <DATA_DIR>/browser-profile between
     # runs; "isolated" starts every server from a blank in-memory profile.
