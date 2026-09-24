@@ -415,8 +415,11 @@ async def test_what_goes_to_the_vision_model_is_capped_unless_asked(tmp_path, mo
     monkeypatch.setattr(dp, "analyze_image_with_vl_prompt", fake_analyze)
     await _run({"action": "ask", "path": p, "question": "q"}, ctx={"turn_model": "qwen2.5:7b"})
     assert max(sizes[-1]) == 1280
+    await _run({"action": "ask", "path": p, "question": "q", "max_side": 1500}, ctx={"turn_model": "qwen2.5:7b"})
+    assert max(sizes[-1]) == 1500
+    # ...up to vision_max_side_limit (1600 by default)
     await _run({"action": "ask", "path": p, "question": "q", "max_side": 2000}, ctx={"turn_model": "qwen2.5:7b"})
-    assert max(sizes[-1]) == 2000
+    assert max(sizes[-1]) == 1600
 
 
 async def test_a_blind_view_never_sends_more_than_the_vision_cap(tmp_path, monkeypatch):
@@ -531,3 +534,21 @@ async def test_consecutive_repeats_count_only_repeats_in_a_row(tmp_path, monkeyp
     assert iit.consecutive_repeats("sess-run-1") == 1
     iit.reset_consecutive_repeats("sess-run-1")
     assert iit.consecutive_repeats("sess-run-1") == 0
+
+
+async def test_a_requested_max_side_is_capped_for_the_vision_model(tmp_path, monkeypatch):
+    """Live, exam run 21: max_side=2400 made each CPU vision question take
+    three and a half minutes."""
+    from PIL import Image as _Image
+    import io as _io
+    p = _save_png(tmp_path / "big.png", 3000, 2000)
+    seen = {}
+
+    def fake_analyze(images, prompt, owner=None, model_override=None):
+        seen["size"] = _Image.open(_io.BytesIO(images[0][0])).size
+        return {"text": "ok", "model": "local-vl-model"}
+
+    monkeypatch.setattr(dp, "analyze_image_with_vl_prompt", fake_analyze)
+    await _run({"action": "ask", "path": p, "question": "q", "max_side": 2400},
+               ctx={"turn_model": "qwen2.5:7b-instruct"})
+    assert max(seen["size"]) <= 1600

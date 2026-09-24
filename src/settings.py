@@ -164,6 +164,9 @@ DEFAULT_SETTINGS = {
     # Longest side of an image sent to the Vision model for one question when
     # the caller did not ask for more (a CPU-only model is minutes per page).
     "vision_max_side": 1280,
+    # The most a caller may ask for (max_side) when the Vision model answers:
+    # 2400 px made each question on a CPU vision model take minutes.
+    "vision_max_side_limit": 1600,
     # Longest answer one vision question may produce (0 = no limit). Live,
     # 24-09-2026: a CPU vision model asked to transcribe a crop fell into a
     # repetition loop and generated 3,600+ tokens at ~6 tokens/s (10 min).

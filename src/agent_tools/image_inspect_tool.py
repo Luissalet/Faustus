@@ -110,6 +110,16 @@ def _downscale_warning(proc: "ii.ProcessResult") -> str:
             "to stay within the size limit]")
 
 
+def _vision_max_side_limit() -> int:
+    """The most a caller may ask for with max_side when the Vision model
+    answers (vision_max_side_limit, 1600 px by default)."""
+    try:
+        from src.settings import get_setting
+        return max(_vision_max_side(), min(int(get_setting("vision_max_side_limit", 1600) or 1600), 4096))
+    except Exception:  # noqa: BLE001
+        return 1600
+
+
 def _vision_max_side() -> int:
     try:
         from src.settings import get_setting
@@ -169,6 +179,16 @@ async def _action_ask(args: Dict[str, Any], ctx: Dict[str, Any]) -> Dict[str, An
     loaded = _load_image(args)
     pargs = _process_args(args)
     sees = await asyncio.to_thread(_main_model_can_see, ctx)
+    if not sees and pargs.get("max_side"):
+        # A caller may ask for more than the default, but not without bound:
+        # live (exam run 21) max_side=2400 made every question on a CPU
+        # vision model take three and a half minutes instead of one.
+        limit = _vision_max_side_limit()
+        try:
+            if int(pargs["max_side"]) > limit:
+                pargs["max_side"] = limit
+        except (TypeError, ValueError):
+            pargs["max_side"] = _vision_max_side()
     if not sees and not pargs.get("max_side"):
         # What goes to the Vision model is capped (vision_max_side, 1280 px
         # by default): a CPU-only vision model spent up to four minutes per
