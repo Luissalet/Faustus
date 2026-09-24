@@ -432,3 +432,28 @@ async def test_a_blind_view_never_sends_more_than_the_vision_cap(tmp_path, monke
     monkeypatch.setattr(dp, "analyze_image_with_vl_prompt", fake_analyze)
     await _run({"action": "view", "path": p, "max_side": 2400}, ctx={"turn_model": "qwen2.5:7b"})
     assert max(sizes[-1]) == 1280
+
+
+async def test_unlisted_asks_only_for_what_the_transcription_misses(tmp_path, monkeypatch):
+    p = _save_png(tmp_path / "page.png", 400, 300)
+    t = tmp_path / "t.md"
+    t.write_text("Line one of the letter.\nA table of forts.", encoding="utf-8")
+    seen = {}
+
+    def fake_analyze(images, prompt, owner=None, model_override=None):
+        seen["prompt"] = prompt
+        return {"text": "a hand-drawn circle at 0.1,0.3 around the bread", "model": "vl"}
+
+    monkeypatch.setattr(dp, "analyze_image_with_vl_prompt", fake_analyze)
+    import src.image_inspection as iim
+    monkeypatch.setattr(iim, "resolve_path", lambda raw: str(tmp_path / raw) if not str(raw).startswith(str(tmp_path)) else raw)
+    out = await _run({"action": "unlisted", "path": str(p), "text_path": "t.md"},
+                     ctx={"turn_model": "qwen2.5:7b"})
+    assert out["answered_by"] == "vl"
+    assert "does NOT capture" in seen["prompt"] and "A table of forts." in seen["prompt"]
+
+
+async def test_unlisted_needs_a_transcription(tmp_path):
+    p = _save_png(tmp_path / "page.png", 400, 300)
+    out = await _run({"action": "unlisted", "path": str(p)}, ctx={"turn_model": "qwen2.5:7b"})
+    assert out["exit_code"] == 1 and "text" in out["error"]

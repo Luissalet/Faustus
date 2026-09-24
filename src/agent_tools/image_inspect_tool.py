@@ -368,8 +368,46 @@ async def _action_grid_locate(args: Dict[str, Any], ctx: Dict[str, Any]) -> Dict
             "measurements": measurements, "cells": matches}
 
 
+_UNLISTED_PROMPT = (
+    "Below is a text transcription of this image, made by someone else. Your job "
+    "is the DIFFERENCE: list every visible element that the transcription does "
+    "NOT capture, or gets wrong. Think of hand-drawn marks (circles, ellipses, "
+    "arrows, underlines, crosses), drawings and figures, symbols and signs "
+    "(including unusual numerals or glyphs), numbers, stamps, and any text it "
+    "omits or misreads. For each element say what it is, where it is (fractions "
+    "of the image), and what it touches or points at. Do not repeat what the "
+    "transcription already says correctly.\n\nTRANSCRIPTION:\n"
+)
+
+
+async def _action_unlisted(args: Dict[str, Any], ctx: Dict[str, Any]) -> Dict[str, Any]:
+    """What the image shows that a given transcription leaves out -- the
+    check a transcription invites ("drawings and signs not transcribed must
+    be read in the original"). One question instead of re-transcribing the
+    whole page region by region, which is what a text-only model did live."""
+    text = str(args.get("text") or "").strip()
+    text_path = str(args.get("text_path") or "").strip()
+    if not text and text_path:
+        # Same workspace-confined resolution the image path gets.
+        resolved = str(ii.resolve_path(text_path))
+        try:
+            with open(resolved, "r", encoding="utf-8", errors="replace") as fh:
+                text = fh.read()
+        except OSError as exc:
+            raise ii.InspectImageError(f"inspect_image: cannot read text_path {text_path!r}: {exc}")
+    if not text:
+        raise ii.InspectImageError(
+            "inspect_image unlisted: give the transcription as `text` or `text_path`")
+    question = _UNLISTED_PROMPT + text[:12000]
+    extra = str(args.get("question") or "").strip()
+    if extra:
+        question += f"\n\nAlso: {extra}"
+    return await _action_ask({**args, "question": question}, ctx)
+
+
 _ACTIONS = {
     "ask": _action_ask,
+    "unlisted": _action_unlisted,
     "view": _action_view,
     "shapes": _action_shapes,
     "compare": _action_compare,
