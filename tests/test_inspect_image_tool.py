@@ -336,3 +336,25 @@ async def test_the_endpoint_probe_beats_a_multimodal_sounding_name(tmp_path, mon
     )
     assert seen["probe"] == ("family-27b-llamacpp", "http://127.0.0.1:8081/v1")
     assert result["answered_by"] == "local-vl-model"
+
+
+async def test_the_turn_endpoint_reaches_the_tool_ctx(monkeypatch):
+    """The loop's turn options carry the endpoint; the tool context built for
+    a registry tool must pass it on (it used to stop at the model name)."""
+    import src.tool_execution as te
+    import src.agent_tools as at
+
+    seen = {}
+
+    async def probe_tool(content, ctx):
+        seen["ctx"] = ctx
+        return {"output": "ok", "exit_code": 0}
+
+    monkeypatch.setitem(at.TOOL_HANDLERS, "probe_ctx_tool", probe_tool)
+    token = te._active_turn_options.set({"turn_model": "m", "turn_endpoint_url": "http://127.0.0.1:8081/v1"})
+    try:
+        await te._direct_fallback("probe_ctx_tool", "{}")
+    finally:
+        te._active_turn_options.reset(token)
+    assert seen["ctx"]["turn_model"] == "m"
+    assert seen["ctx"]["turn_endpoint_url"] == "http://127.0.0.1:8081/v1"
