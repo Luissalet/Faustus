@@ -487,6 +487,117 @@ def reset_vram_cache() -> None:
         _vram_cache["data"] = None
 
 
+# ── Per-process attribution ──────────────────────────────────────────────────
+#
+# `vram_snapshot` says how much of a card is used; it does not say by WHOM.
+# The Local models page used to answer that only for models Ollama itself
+# reports as loaded, so a llama.cpp `llama-server` engine holding several GB
+# on a card showed up as an unexplained "other" — the owner could see the
+# bar move and nothing that said why. `nvidia-smi --query-compute-apps` is
+# the missing half: one row per (gpu, pid) actually running compute on that
+# card, straight from the driver, independent of Ollama.
+
+_COMPUTE_APPS_FIELDS = ("gpu_uuid", "pid", "process_name", "used_memory")
+_PROC_TTL = 8.0
+_proc_cache: Dict[str, Any] = {"ts": 0.0, "data": None}
+_proc_lock = threading.Lock()
+
+
+def parse_compute_apps(stdout: str) -> List[Dict[str, Any]]:
+    """Rows of ``--query-compute-apps=gpu_uuid,pid,process_name,used_memory``
+    (csv, noheader, nounits) → ``[{gpu_uuid, pid, process_name, used_mb}]``.
+    ``used_mb`` is ``None`` when the driver cannot report it — on Windows
+    WDDM `nvidia-smi` prints ``[N/A]`` for `used_memory` on every row, and the
+    process is still worth listing without a size. A process name may itself
+    contain no commas in practice (it is a path), but the pid is always the
+    second field and the size always the last one, so a stray comma in the
+    name cannot shift those two off their columns."""
+    rows: List[Dict[str, Any]] = []
+    for line in (stdout or "").splitlines():
+        parts = [p.strip() for p in line.split(",")]
+        if len(parts) < len(_COMPUTE_APPS_FIELDS):
+            continue
+        gpu_uuid = parts[0]
+        try:
+            pid = int(float(parts[1]))
+        except ValueError:
+            continue
+        process_name = ",".join(parts[2:-1]).strip()
+        if not gpu_uuid or not process_name:
+            continue
+        try:
+            used_mb: Optional[int] = int(float(parts[-1]))
+        except ValueError:
+            used_mb = None  # "[N/A]" (WDDM) or anything else unparsable
+        rows.append({"gpu_uuid": gpu_uuid, "pid": pid, "process_name": process_name, "used_mb": used_mb})
+    return rows
+
+
+def _compute_apps_uncached() -> List[Dict[str, Any]]:
+    exe = _nvidia_smi_path()
+    if not exe:
+        return []
+    try:
+        proc = subprocess.run(
+            [exe, f"--query-compute-apps={','.join(_COMPUTE_APPS_FIELDS)}",
+             "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=4,
+        )
+    except (OSError, subprocess.SubprocessError) as e:
+        logger.debug("nvidia-smi compute-apps query failed: %s", e)
+        return []
+    if proc.returncode != 0:
+        return []
+    return parse_compute_apps(proc.stdout)
+
+
+def compute_apps() -> List[Dict[str, Any]]:
+    """Cached (like :func:`vram_snapshot`) per-process GPU usage. Never
+    raises: no nvidia-smi, a timeout or a parse problem all just mean no
+    attribution this time, same as an empty pool of readings — callers fall
+    back to whatever they already showed."""
+    with _proc_lock:
+        cached = _proc_cache.get("data")
+        if cached is not None and time.time() - _proc_cache["ts"] < _PROC_TTL:
+            return cached
+    try:
+        data = _compute_apps_uncached()
+    except Exception as e:  # pragma: no cover - defensive, subprocess is guarded
+        logger.debug("gpu compute-apps collection failed: %s", e)
+        data = []
+    with _proc_lock:
+        _proc_cache["ts"] = time.time()
+        _proc_cache["data"] = data
+    return data
+
+
+def reset_compute_apps_cache() -> None:
+    with _proc_lock:
+        _proc_cache["ts"] = 0.0
+        _proc_cache["data"] = None
+
+
+def label_process(process_name: str, pid: int, engine_names_by_pid: Optional[Dict[int, str]] = None) -> str:
+    """One `compute_apps()` row → a name a person recognises. In order: a
+    managed engine whose pid is listening on its configured port beats
+    everything (the caller resolves that — this module has no notion of
+    engines); then the literal executable, "llama-server" first because
+    Ollama itself spawns a process by that exact name on recent versions and
+    an unmanaged, hand-run llama-server is otherwise indistinguishable from
+    it; then anything named like an Ollama runner; else the plain basename,
+    so a process nobody recognises still gets *a* label instead of none."""
+    if engine_names_by_pid and pid in engine_names_by_pid:
+        return engine_names_by_pid[pid]
+    raw = str(process_name or "").strip()
+    base = raw.replace("\\", "/").rsplit("/", 1)[-1]
+    base_lower = base.lower()
+    if base_lower in ("llama-server", "llama-server.exe"):
+        return "llama-server"
+    if base_lower.startswith("ollama"):
+        return "Ollama"
+    return base or raw
+
+
 def describe(snapshot: Optional[Dict[str, Any]] = None) -> str:
     """One line for logs and for `/usage` in the chat."""
     d = snapshot if snapshot is not None else collect()

@@ -7627,6 +7627,7 @@ you@mail	tu@correo
 your card	tu tarjeta
 yours	tuyo
 {"expert": {...}, "deltas": [...], "text": "the passage"}	{"expert": {...}, "deltas": [...], "text": "el pasaje"}
+{label} · {size}	{label} · {size}
 {amount} ago	hace {amount}
 {available} free / {waiting} waiting	{available} libres / {waiting} en espera
 {a} GB ({b} GB in VRAM)	{a} GB ({b} GB en VRAM)

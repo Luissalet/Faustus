@@ -69,6 +69,13 @@ export interface LoadedModel {
    * rather than a runtime VRAM reading — set alongside `engine`. */
   footprint_measured?: boolean;
 }
+export interface GpuProcess {
+  pid: number;
+  label: string;
+  /** MB, or null when the driver could not report it (Windows WDDM reports
+   * `[N/A]` for a compute app's `used_memory`; the process is still listed). */
+  used_mb: number | null;
+}
 export interface GpuCard {
   index: number;
   name?: string;
@@ -78,6 +85,11 @@ export interface GpuCard {
   other_bytes?: number | null;
   budget_bytes?: number | null;
   models?: string[];
+  /** Every process nvidia-smi sees actually running compute on this card
+   * right now — set even when `models` is empty, e.g. a llama.cpp engine
+   * that Ollama knows nothing about. Empty (not undefined) when nvidia-smi
+   * is unavailable or nothing is attributable. */
+  processes?: GpuProcess[];
 }
 export interface Vram {
   supported: boolean;

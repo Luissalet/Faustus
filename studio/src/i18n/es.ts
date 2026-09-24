@@ -7942,6 +7942,7 @@ export const es: Record<string, string> = {
   "{kind} · {n} field(s) · {unknown} never observed": "{kind} · {n} campo(s) · {unknown} nunca observados",
   "{k} known, {a} announced": "{k} conocidas, {a} anunciadas",
   "{label} value": "valor de {label}",
+  "{label} · {size}": "{label} · {size}",
   "{level} risk ({n} findings)": "Riesgo {level} ({n} hallazgos)",
   "{login} (active)": "{login} (activa)",
   "{lower}–{upper} GB": "{lower}–{upper} GB",

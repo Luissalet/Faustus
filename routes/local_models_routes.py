@@ -10,7 +10,18 @@ servers this install is configured against:
                                             card(s) — `vram` is the pool plus
                                             one entry per card, `gpus` the
                                             list the Options form pins to —
-                                            and a fit verdict per model
+                                            and a fit verdict per model. Each
+                                            `vram.gpus[i]` also carries
+                                            `processes`: every pid nvidia-smi
+                                            sees actually running compute on
+                                            that card (`gpu_shared_memory.
+                                            compute_apps`), labelled with a
+                                            managed engine's name, "llama-
+                                            server" or "Ollama" — so a card
+                                            holding a llama.cpp engine's model
+                                            shows that instead of "nothing
+                                            loaded" just because Ollama has
+                                            nothing there.
   POST   /api/local-models/pull             {endpoint_id, name} → SSE progress
                                             (?stream=false → {id} only)
   GET    /api/local-models/pulls            active + recent pulls (re-attach)
@@ -377,6 +388,62 @@ def _disk(root: str, same_machine: bool) -> Dict[str, Any]:
     return {"path": path, "free_bytes": int(usage.free), "total_bytes": int(usage.total)}
 
 
+def _engine_pids() -> Dict[int, str]:
+    """pid -> engine name, for llama.cpp engines (src/engines.py) that are
+    actually listening on their configured port right now. Best-effort: any
+    failure to read engines or their ports just means no engine labels this
+    time, never a broken GPU card."""
+    try:
+        from src import engines as _engines
+        from src import process_center
+    except Exception:  # noqa: BLE001
+        return {}
+    out: Dict[int, str] = {}
+    try:
+        for eng in _engines.list_engines():
+            port = eng.get("port")
+            if not port:
+                continue
+            try:
+                held = process_center.pid_listening_on(int(port))
+            except Exception:  # noqa: BLE001
+                held = None
+            if held and held.get("pid"):
+                out[int(held["pid"])] = str(eng.get("name") or eng.get("id") or "engine")
+    except Exception:  # noqa: BLE001
+        return {}
+    return out
+
+
+def _attribute_gpu_processes(cards: List[Dict[str, Any]]) -> None:
+    """Fills each card's `processes`: whoever `nvidia-smi` says is actually
+    running compute on it right now (`gpu_shared_memory.compute_apps`),
+    labelled with the managed engine's name when the pid matches one
+    (`_engine_pids`), else `gpu_shared_memory.label_process`'s
+    "llama-server" / "Ollama" / basename. This is what lets a card with
+    nothing loaded by Ollama still say who is actually holding its VRAM.
+    Never raises — no nvidia-smi, an unmapped uuid or a parse failure just
+    leaves `processes` empty, same as today's "nothing loaded"."""
+    for c in cards:
+        c["processes"] = []
+    if not cards:
+        return
+    rows = gpu_shared_memory.compute_apps()
+    if not rows:
+        return
+    by_uuid = {str(c.get("uuid") or "").strip().lower(): c for c in cards if c.get("uuid")}
+    if not by_uuid:
+        return
+    engine_pids = _engine_pids()
+    for row in rows:
+        card = by_uuid.get(str(row.get("gpu_uuid") or "").strip().lower())
+        if card is None:
+            continue
+        pid = int(row.get("pid") or 0)
+        label = gpu_shared_memory.label_process(row.get("process_name") or "", pid, engine_pids)
+        card["processes"].append({"pid": pid, "label": label, "used_mb": row.get("used_mb")})
+
+
 def _vram_block(same_machine: bool, held_by_runner: int,
                 placements: Optional[Dict[str, Dict[str, Any]]] = None) -> Dict[str, Any]:
     """The card(s) as the fit arithmetic sees them. Mirrors model_routes'
@@ -391,10 +458,12 @@ def _vram_block(same_machine: bool, held_by_runner: int,
         return {"supported": False, "reason": vram.get("reason", "")}
     used = int(vram.get("used") or 0)
     others = max(0, used - held_by_runner)
-    return vram_fit.pool_budgets(
+    result = vram_fit.pool_budgets(
         vram, held_by_runner_bytes=held_by_runner, others_bytes=others,
         placements=placements, reserve_per_card=_FIT_RESERVE_BYTES,
     )
+    _attribute_gpu_processes(result.get("gpus") or [])
+    return result
 
 
 def _gpu_list(same_machine: bool) -> List[Dict[str, Any]]:
