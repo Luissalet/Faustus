@@ -158,6 +158,9 @@ DEFAULT_SETTINGS = {
     "vision_enabled": True,
     # Ordered fallback chain for the Vision model (image analysis, OCR, tagging).
     "vision_model_fallbacks": [],
+    # One targeted vision question (inspect_image). A vision model on the CPU
+    # needs minutes for a full scanned page.
+    "vision_timeout_seconds": 600,
     # Tool-result images (FAUSTUS). A tool that returns an image (an MCP
     # browser screenshot, desktop_screenshot) hands it to the model as an
     # image block when the model can see; the longest side is capped at

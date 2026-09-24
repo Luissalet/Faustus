@@ -358,3 +358,28 @@ async def test_the_turn_endpoint_reaches_the_tool_ctx(monkeypatch):
         te._active_turn_options.reset(token)
     assert seen["ctx"]["turn_model"] == "m"
     assert seen["ctx"]["turn_endpoint_url"] == "http://127.0.0.1:8081/v1"
+
+
+def test_a_slow_vision_model_gets_the_configured_timeout_and_the_reason(monkeypatch, tmp_path):
+    """Live: a CPU-only vision model on a full page needed more than the old
+    fixed 120 s, and the answer only said "VL model unavailable"."""
+    import src.document_processor as dpm
+
+    calls = {}
+
+    def fake_llm_call(url, model, messages, headers=None, timeout=None):
+        calls["timeout"] = timeout
+        raise TimeoutError("read timed out")
+
+    monkeypatch.setattr(dpm, "_resolve_vl_model", lambda m, owner=None: ("http://x/v1", "vl", {}))
+    monkeypatch.setattr(dpm, "llm_call", fake_llm_call)
+    monkeypatch.setattr(dpm, "_load_vl_settings", lambda: {"vision_enabled": True, "vision_model": "vl"})
+    monkeypatch.setattr("src.settings.get_setting",
+                        lambda k, d=None: 900 if k == "vision_timeout_seconds" else d)
+    import src.endpoint_resolver as er
+    monkeypatch.setattr(er, "resolve_vision_fallback_candidates", lambda owner=None: [])
+    import src.privacy_policy as pp
+    monkeypatch.setattr(pp, "assert_outbound", lambda *a, **k: None)
+    out = dpm.analyze_image_with_vl_prompt([(b"\x89PNG....", "image/png")], "what?", None, None)
+    assert calls["timeout"] == 900
+    assert "TimeoutError" in out["text"] and "vision_timeout_seconds=900" in out["text"]

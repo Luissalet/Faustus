@@ -590,6 +590,9 @@ GROUPS: list[dict[str, Any]] = [
             _text("vision_model", "Vision model",
                   "Model id used for image analysis. The picker in AI Defaults → Vision lists the available ones.",
                   placeholder="e.g. qwen2.5vl:7b"),
+            _int("vision_timeout_seconds", "Vision question timeout (s)",
+                 "How long one targeted image question may take. A vision model running on the CPU "
+                 "needs minutes for a full scanned page.", 30, 3600),
         ],
     ),
     _group(

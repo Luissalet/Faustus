@@ -80,7 +80,7 @@ def test_vision_analysis_uses_owner_scoped_primary_and_fallback(monkeypatch, tmp
         "http://primary.test/chat/completions",
         "vision-primary",
         {"X-Test": "1"},
-        120,
+        dp._vision_timeout_seconds(),  # vision_timeout_seconds, 600 by default
     )
 
 

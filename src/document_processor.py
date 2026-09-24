@@ -644,7 +644,8 @@ def analyze_image_with_vl_result(image_path: str, owner: str | None = None) -> d
                 # say before this candidate's endpoint is actually reached.
                 from src.privacy_policy import assert_outbound
                 assert_outbound("ocr_vision", _url, owner=owner)
-                description = llm_call(_url, _model, vl_messages, headers=_headers, timeout=120)
+                description = llm_call(_url, _model, vl_messages, headers=_headers,
+                                       timeout=_vision_timeout_seconds())
                 logger.info("VL analysis complete with model %s", _model)
                 return {"text": description, "model": _model}
             except Exception as e:
@@ -719,7 +720,8 @@ def analyze_image_with_vl_prompt(
                 # SEC-04, same gate as analyze_image_with_vl_result above.
                 from src.privacy_policy import assert_outbound
                 assert_outbound("ocr_vision", _url, owner=owner)
-                answer = llm_call(_url, _model, vl_messages, headers=_headers, timeout=120)
+                answer = llm_call(_url, _model, vl_messages, headers=_headers,
+                                  timeout=_vision_timeout_seconds())
                 logger.info("VL custom-prompt analysis complete with model %s", _model)
                 return {"text": answer, "model": _model}
             except Exception as e:
@@ -731,7 +733,24 @@ def analyze_image_with_vl_prompt(
 
     except Exception as e:
         logger.error(f"VL model unavailable: {e}")
-        return {"text": "[VL model unavailable - image not analyzed]", "model": ""}
+        # Say why: "unavailable" after exactly the timeout reads as a dead
+        # model when it was a slow one (a CPU-only vision model on a full
+        # page took longer than the old fixed 120 s).
+        reason = f"{type(e).__name__}: {str(e)[:160]}".strip().rstrip(":")
+        return {"text": f"[VL model unavailable - image not analyzed ({reason}); "
+                        f"timeout is vision_timeout_seconds={_vision_timeout_seconds()}s]",
+                "model": ""}
+
+
+def _vision_timeout_seconds() -> int:
+    """How long one targeted vision question may take. A vision model on the
+    CPU needs minutes for a full scanned page; 120 s cut it off live."""
+    try:
+        from src.settings import get_setting
+        value = int(get_setting("vision_timeout_seconds", 600) or 600)
+    except Exception:  # noqa: BLE001
+        value = 600
+    return max(30, min(value, 3600))
 
 
 def analyze_image_with_vl(image_path: str, owner: str | None = None) -> str:
