@@ -804,6 +804,18 @@ EXAMPLES: Dict[str, List[str]] = {
         "fetch from the remote",
         "comprueba si hay algo nuevo sin traerlo todavía",
     ],
+    "github_issue": [
+        "lee la issue #42 de este repo",
+        "what does GitHub issue owner/repo#7 ask for",
+        "resume la issue que me han asignado antes de arreglarla",
+        "fetch that GitHub issue and give me a brief",
+    ],
+    "git_open_pr": [
+        "abre un pull request con esta rama",
+        "open a PR for the branch I just pushed",
+        "crea el pull request y ciérralo contra la issue 42",
+        "submit this fix as a pull request",
+    ],
 
     # ── Research ──────────────────────────────────────────────────────────
     "trigger_research": [

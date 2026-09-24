@@ -46,6 +46,7 @@ from .git_tools import (
     GitBranchTool, GitCheckoutTool, GitCommitTool,
     GitMergeTool, GitDeleteBranchTool,
     GitPushTool, GitPullTool, GitFetchTool,
+    GithubIssueTool, GitOpenPrTool,
 )
 from .board_tools import (
     BoardListTool, BoardReadyTool, BoardGetTool,
@@ -163,6 +164,9 @@ TOOL_HANDLERS = {
     "git_push": GitPushTool().execute,
     "git_pull": GitPullTool().execute,
     "git_fetch": GitFetchTool().execute,
+    # GitHub issue -> pull request (src/github_pr.py).
+    "github_issue": GithubIssueTool().execute,
+    "git_open_pr": GitOpenPrTool().execute,
     # Project board tools (Lote 92, OBJ-6): "the project's task list" --
     # thin executors over src.project_board. See src/agent_tools/board_tools.py.
     "board_list": BoardListTool().execute,
@@ -379,6 +383,7 @@ TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_fi
              "git_branch", "git_checkout", "git_commit",
              "git_merge", "git_delete_branch",
              "git_push", "git_pull", "git_fetch",
+             "github_issue", "git_open_pr",
              # Project board tools (Lote 92, OBJ-6) -- src/agent_tools/board_tools.py.
              "board_list", "board_ready", "board_get",
              "board_create", "board_update", "board_comment",

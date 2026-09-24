@@ -59,6 +59,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from typing import Any, Dict, List, Optional
 
 from src import agent_git_policy
@@ -957,3 +958,123 @@ class GitFetchTool:
         except (git_panel.GitCommandError, git_panel.GitNotFoundError) as exc:
             return _git_error("git_fetch", exc)
         return {"output": output.strip() or "Already up to date.", "exit_code": 0, "repo_root": repo_root}
+
+
+# ---------------------------------------------------------------------------
+# GitHub issue -> pull request (src/github_pr.py)
+# ---------------------------------------------------------------------------
+_PR_CLOSING_RE_TEMPLATE = r"\b(close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#{number}\b"
+
+
+class GithubIssueTool:
+    """`github_issue`: fetch a GitHub issue by URL, `owner/repo#N` or a bare
+    `#N` (resolved against the repo's own `origin` remote) and return a
+    compact brief plus a suggested branch name -- the first step of "give
+    the agent an issue and it ends with a pull request". Read-only,
+    network."""
+
+    async def execute(self, content: str, ctx: dict) -> dict:
+        from src import github_pr
+        args = _args(content)
+        ref = str(args.get("ref") or "").strip()
+        if not ref:
+            return {"error": "github_issue: `ref` is required (an issue URL, owner/repo#N or #N)",
+                    "exit_code": 1, "error_class": "args.missing"}
+
+        parsed = github_pr.parse_issue_ref(ref)
+        if not parsed:
+            workspace = None
+            try:
+                workspace = _confined_path(str(args.get("path") or ""))
+            except _OutsideWorkspace:
+                workspace = None
+            if workspace:
+                parsed = github_pr.parse_issue_ref(ref, workspace=workspace)
+        if not parsed:
+            return {
+                "error": f"github_issue: could not resolve {ref!r} to an owner/repo#number "
+                         "-- a bare '#N' needs a workspace whose 'origin' remote points at GitHub",
+                "exit_code": 1, "error_class": "github.bad_ref",
+            }
+
+        try:
+            issue = await github_pr.fetch_issue(parsed["owner"], parsed["repo"], parsed["number"])
+        except github_pr.GithubPRError as exc:
+            return {"error": f"github_issue: {exc}", "exit_code": 1, "error_class": "github.failed"}
+
+        brief = github_pr.issue_brief(issue)
+        branch = github_pr.suggest_branch_name({**issue, "number": parsed["number"]})
+        return {
+            "output": brief, "exit_code": 0, "issue": issue, "brief": brief,
+            "suggested_branch": branch, "owner": parsed["owner"], "repo": parsed["repo"],
+            "number": parsed["number"],
+        }
+
+
+class GitOpenPrTool:
+    """`git_open_pr`: open a pull request for a branch already pushed to
+    `origin` (never pushes itself -- refuses when `head` has no upstream and
+    tells the caller to `git_push` first). Gated by the SAME `policy.push`
+    field `git_push`/`git_publish` already check: opening a PR is a remote
+    write on a repository this process does not own, same risk class as
+    pushing to it."""
+
+    async def execute(self, content: str, ctx: dict) -> dict:
+        from src import github_pr
+        args = _args(content)
+        title = str(args.get("title") or "").strip()
+        if not title:
+            return {"error": "git_open_pr: `title` is required", "exit_code": 1, "error_class": "args.missing"}
+
+        repo_root, _repo_err = _resolve_repo_root("git_open_pr", args, ctx)
+        if _repo_err:
+            return _repo_err
+
+        policy = _effective_policy(_owner(ctx), repo_root)
+        denial = _policy_denied("git_open_pr", "push", ctx, args, allowed=bool(policy.get("push")))
+        if denial:
+            return denial
+
+        head = str(args.get("head") or "").strip()
+        if not head:
+            head, detached = git_panel.current_branch(repo_root)
+            if detached or not head:
+                return {"error": "git_open_pr: HEAD is detached -- pass `head` explicitly",
+                        "exit_code": 1, "error_class": "git.detached_head"}
+
+        upstream_check = git_panel.run_git(repo_root, "rev-parse", "--abbrev-ref", f"{head}@{{u}}")
+        if upstream_check.returncode != 0:
+            return {
+                "error": f"git_open_pr: branch {head!r} has no upstream on the remote yet -- "
+                         "run `git_push` for it first, then retry",
+                "exit_code": 1, "error_class": "git.no_upstream", "branch": head,
+            }
+
+        base = str(args.get("base") or "").strip() or github_pr.detect_default_branch(repo_root)
+
+        issue: Optional[Dict[str, Any]] = None
+        issue_ref = str(args.get("issue_ref") or "").strip()
+        if issue_ref:
+            issue = github_pr.parse_issue_ref(issue_ref, workspace=repo_root)
+
+        body = str(args.get("body") or "")
+        if issue and issue.get("number"):
+            closing_re = re.compile(_PR_CLOSING_RE_TEMPLATE.format(number=issue["number"]), re.IGNORECASE)
+            if not closing_re.search(body):
+                closes = f"Closes #{issue['number']}"
+                body = f"{closes}\n\n{body}".strip() + "\n" if body.strip() else closes + "\n"
+
+        try:
+            result = await github_pr.open_pull_request(
+                repo_root, base=base, head=head, title=title, body=body,
+                draft=bool(args.get("draft")),
+            )
+        except github_pr.GithubPRError as exc:
+            return {"error": f"git_open_pr: {exc}", "exit_code": 1, "error_class": "github.failed"}
+
+        verb = "Opened" if result.get("created") else "Already open"
+        return {
+            "output": f"{verb} pull request #{result.get('number')}: {result.get('url')}",
+            "exit_code": 0, "repo_root": repo_root, "base": base, "head": head,
+            "url": result.get("url"), "number": result.get("number"), "created": bool(result.get("created")),
+        }

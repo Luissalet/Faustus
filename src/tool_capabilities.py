@@ -522,6 +522,21 @@ _register(
     ToolEffect.NETWORK_EGRESS, ToolEffect.EXTERNAL_SIDE_EFFECT,
     result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
 )
+# GitHub issue -> pull request (src/github_pr.py). `github_issue` reads an
+# attacker-reachable page (an issue's title/body/comments can be planted by
+# anyone with issue access) -- same class as web_fetch/reach_read.
+# `git_open_pr` opens a pull request on a repository this process does not
+# own -- same class as git_push/git_publish, gated by the same policy field.
+_register(
+    {"github_issue"},
+    ToolEffect.BROKERED_NETWORK_READ,
+    result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
+)
+_register(
+    {"git_open_pr"},
+    ToolEffect.NETWORK_EGRESS, ToolEffect.EXTERNAL_SIDE_EFFECT,
+    result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
+)
 # Project board tools (Lote 92, OBJ-6, src/agent_tools/board_tools.py) — the
 # project's own task list, stored in its own SQLite under DATA_DIR (never the
 # workspace filesystem, never a network call). Same class as

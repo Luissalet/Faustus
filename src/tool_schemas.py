@@ -2501,6 +2501,44 @@ FUNCTION_TOOL_SCHEMAS = [
             }
         }
     },
+    # ── GitHub issue -> pull request (src/github_pr.py) ────────────────────
+    {
+        "type": "function",
+        "function": {
+            "name": "github_issue",
+            "description": "Fetch a GitHub issue (or pull request) by URL, `owner/repo#N`, or a bare `#N` resolved against the workspace's own `origin` remote. Returns the issue's title/body/labels/state/comments plus a compact markdown brief and a suggested branch name. Read-only, network. Use it as the first step of 'here's an issue, fix it and open a PR'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "ref": {"type": "string", "description": "Issue reference: a full GitHub URL, 'owner/repo#12', or '#12'/'12' (needs `path` or the active workspace to resolve the 'origin' remote)"},
+                    "path": {"type": "string", "description": "Path inside the repo whose 'origin' remote resolves a bare '#N' (optional; defaults to the active workspace)"}
+                },
+                "required": ["ref"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "git_open_pr",
+            "description": "Open a pull request on GitHub for a branch that has ALREADY been pushed (never pushes itself -- refuses with git.no_upstream when `head` has no upstream, telling you to run git_push first). Defaults `base` to the repo's detected default branch and `head` to the current branch. When `issue_ref` is given, appends 'Closes #N' to the body if not already present. Returns the existing PR (created=false) if one for this head already exists. Gated by the same push policy as git_push/git_publish.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string", "description": "Pull request title"},
+                    "body": {"type": "string", "description": "Pull request body (markdown, optional)"},
+                    "base": {"type": "string", "description": "Base branch (optional; defaults to the repo's detected default branch)"},
+                    "head": {"type": "string", "description": "Head branch, already pushed to origin (optional; defaults to the current branch)"},
+                    "draft": {"type": "boolean", "description": "Open as a draft pull request (default false)"},
+                    "issue_ref": {"type": "string", "description": "Issue this PR closes -- same formats as github_issue's `ref` (optional)"},
+                    "path": {"type": "string", "description": "Path inside the repo (optional). Same resolution order as the other git_* tools."},
+                    "repo": {"type": "string", "description": "Repo name instead of `path` (optional)"},
+                    "user_confirmed": {"type": "boolean", "description": "Set true only after the user explicitly approved overriding a push=false git policy for this exact call"}
+                },
+                "required": ["title"]
+            }
+        }
+    },
     # ── Project board tools (Lote 92, OBJ-6): the project's task list
     # (FAU-12 style ids) -- see src/agent_tools/board_tools.py. The project is
     # always resolved from the current chat; none of these take a project id.

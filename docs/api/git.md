@@ -866,3 +866,58 @@ esquemas fallara). También están en `_GIT_TOOL_NAMES`
 quién llama ni si ya se aprobó la llamada -- y por tanto en el "suelo" de
 tools que `src/agent_loop.py` ofrece cuando el turno habla de git
 (`_GIT_TOOL_NAMES` es la única fuente, así que entrar ahí ya es suficiente).
+
+## De una issue a un pull request (`src/github_pr.py`)
+
+Dos tools nuevas cierran el ciclo "dale al agente una issue de GitHub y que
+termine en un pull request", sobre un módulo puro (`src/github_pr.py`) sin
+dependencia de las tools ni del agente:
+
+* `github_issue` (lectura, red) -- resuelve una referencia de issue/PR
+  (`parse_issue_ref`: URL completa, `owner/repo#12`, o un `#12`/`12` que se
+  resuelve contra el remoto `origin` del workspace) y trae el issue vía la
+  API pública de GitHub (`src.reach.credentials.get_token("github")` si hay
+  token configurado; si no, cae a `gh issue view --json` cuando `gh` está
+  instalado). Devuelve el issue completo (`title`, `body`, `labels`,
+  `state`, hasta 20 `comments`, `url`), un brief compacto en markdown
+  (`issue_brief`: título, labels, body recortado a ~2000 caracteres, y los
+  `- [ ]` del cuerpo extraídos como pistas de aceptación) y una rama
+  sugerida (`suggest_branch_name`: `fix/123-slug-corto`, o `feat/...` si
+  alguna label suena a feature/enhancement).
+
+* `git_open_pr` (efecto lateral, red) -- abre el pull request para una rama
+  que YA se empujó a `origin` (nunca hace push por sí misma): si `head` no
+  tiene upstream, se rechaza con `error_class: git.no_upstream` pidiendo
+  ejecutar `git_push` primero. `base` por defecto es la rama por defecto del
+  repo (`detect_default_branch`: `origin/HEAD` si está seteado, si no la
+  primera de `main`/`master` que exista como rama remota, si no `main` --
+  nunca toca la red, solo refs locales). Si se pasa `issue_ref`, añade
+  `Closes #N` al body cuando no está ya. Si ya existe un PR abierto para ese
+  `head`, lo devuelve tal cual (`created: false`) en vez de duplicarlo.
+  Usa la misma API pública (o `gh pr create` de respaldo sin token) y está
+  gateada por el MISMO campo `policy.push` que `git_push`/`git_publish` --
+  abrir un PR es una escritura remota sobre un repositorio que este proceso
+  no posee, misma clase de riesgo que empujarle un commit.
+
+Clasificación: `github_issue` como `ToolEffect.BROKERED_NETWORK_READ` (mismo
+tipo que `web_fetch`/`reach_read` -- el título/body/comentarios de un issue
+puede haberlos escrito cualquiera con acceso al repo, contenido no fiable);
+`git_open_pr` como `NETWORK_EGRESS` + `EXTERNAL_SIDE_EFFECT` (mismo tipo que
+`git_push`/`git_publish`). Ambas en `NON_ADMIN_BLOCKED_TOOLS`; `github_issue`
+además en `PLAN_MODE_READONLY_TOOLS`.
+
+`pr_body_from_turn(issue, summary, files_changed, tests_line)` es el helper
+que arma el body de un PR a partir del resumen de un turno del agente
+(`Closes #N`, el resumen, la lista de ficheros tocados, una línea de tests) --
+sin llamar a la red, para que el propio agente pueda inspeccionarlo antes de
+llamar a `git_open_pr`.
+
+Nota de wiring: `_GIT_TOOL_NAMES` (`src/tool_execution.py`) y el "suelo" de
+git tools en `src/agent_loop.py` (que la usa para decidir qué tools de git
+ofrecer cuando el turno habla de git/pull request) son ficheros del
+integrador y no incluyen todavía estas dos tools -- ver `A_wiring.md` para
+el diff exacto. Mientras tanto ambas tools funcionan igual (se despachan por
+`dynamic_handlers`, que ya pasa `owner`); lo único que falta es que una
+tarjeta de aprobación ya sellada por otra causa cubra automáticamente esta
+llamada -- el camino "pregunta al usuario y reintenta con
+`user_confirmed: true`" ya funciona hoy.
