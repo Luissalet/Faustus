@@ -202,6 +202,13 @@ _register(
     ToolEffect.EXECUTE_CODE,
     result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED,
 )
+# Night shift (lot E): launches a sequence of dispatch jobs in the
+# background, same risk class as delegate_agents/bash above.
+_register(
+    {"night_shift"},
+    ToolEffect.EXECUTE_CODE,
+    result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED,
+)
 _register(
     {"apply_patch", "edit_file", "write_file"},
     ToolEffect.WRITE_WORKSPACE,

@@ -24,6 +24,7 @@ from .web_tools import WebSearchTool, WebFetchTool
 from .filesystem_tools import ReadFileTool, WriteFileTool, EditFileTool, ApplyPatchTool, LsTool, GlobTool, GrepTool, GetWorkspaceTool
 from .coding_tools import TodoWriteTool
 from .subagent_tools import DelegateAgentsTool
+from .night_shift_tools import NightShiftTool
 from .code_tools import FindSymbolTool, CallersTool, TestsForTool, RenameSymbolTool
 from .document_tools import CreateDocumentTool, UpdateDocumentTool, EditDocumentTool, SuggestDocumentTool, ManageDocumentTool
 from .interaction_tools import AskUserTool, UpdatePlanTool, LookupToolsTool
@@ -272,6 +273,9 @@ TOOL_HANDLERS = {
     # Prior art (GIT-08): reuse, adapt, or write, with every repository name
     # checked live before it reaches the user. See src/prior_art.py.
     "prior_art": PriorArtTool().execute,
+    # Night shift (lot E): an unattended queue of dispatch jobs run under a
+    # budget, with a morning report. See src/night_shift.py.
+    "night_shift": NightShiftTool().execute,
 }
 # Config/integration admin tools (manage_endpoints/mcp/webhooks/tokens/settings).
 TOOL_HANDLERS.update(ADMIN_TOOL_HANDLERS)
@@ -424,7 +428,9 @@ TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_fi
              # GitHub -- src/agent_tools/prior_art_tools.py.
              "prior_art",
              # Targeted image inspection -- src/agent_tools/image_inspect_tool.py.
-             "inspect_image"} | BUILTIN_EMAIL_TOOLS | DESKTOP_TOOLS | SEMANTIC_TOOLS
+             "inspect_image",
+             # Night shift (lot E): src/agent_tools/night_shift_tools.py.
+             "night_shift"} | BUILTIN_EMAIL_TOOLS | DESKTOP_TOOLS | SEMANTIC_TOOLS
 
 ToolBlock = namedtuple("ToolBlock", ["tool_type", "content"])
 

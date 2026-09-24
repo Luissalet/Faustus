@@ -563,6 +563,29 @@ async def action_git_radar(owner: str, **kwargs) -> Tuple[str, bool]:
     return format_radar_report(rows, total=int(payload.get("total") or 0), days=days, lang=lang), True
 
 
+async def action_night_shift_report(owner: str, **kwargs) -> Tuple[str, bool]:
+    """Scheduled report of the latest night shift (src/night_shift.py), for a
+    Home card: since Home cards are read live off a `ScheduledTask` (src/
+    home_cards.py), this is how a night shift gets one -- report only when
+    that shift has actually finished since the last run (`always` overrides)."""
+    from src.builtin_actions import TaskNoop
+    from src import night_shift
+
+    params = parse_params(kwargs.get("prompt"), {"always": False}, text_key="text")
+    always = bool(params.get("always"))
+    task_name = str(kwargs.get("task_name") or "night_shift_report")
+    latest = night_shift.latest_for(owner or None)
+    if latest is None:
+        raise TaskNoop("night_shift_report: no shift has run yet")
+    if latest.get("state") in ("queued", "running"):
+        raise TaskNoop(f"night_shift_report: shift {latest['id']} is still {latest['state']}")
+    prev = load_state(task_name, "last_shift")
+    save_state(task_name, "last_shift", {"id": latest["id"], "finished": latest.get("finished")})
+    if not always and prev and prev.get("id") == latest["id"]:
+        raise TaskNoop(f"night_shift_report: unchanged (shift {latest['id']} already reported)")
+    return night_shift.report(owner or None, latest["id"]), True
+
+
 def _whatsapp_digest_action():
     from src.whatsapp_tools import action_whatsapp_digest
     return action_whatsapp_digest
@@ -579,6 +602,7 @@ WATCH_ACTIONS = {
     "mail_digest": action_mail_digest,
     "whatsapp_digest": action_whatsapp_digest,
     "git_radar": action_git_radar,
+    "night_shift_report": action_night_shift_report,
 }
 WATCH_ACTION_INFO = {
     "weather_report": "Weather for a place (today/tomorrow/next days) from Open-Meteo — params: {\"place\", \"when\"}",
@@ -587,4 +611,5 @@ WATCH_ACTION_INFO = {
     "mail_digest": "Summary of the mail received in the last hours: what needs a reply, what is noteworthy, the bulk — params: {\"hours\", \"unread_only\"}",
     "whatsapp_digest": "Summary of the WhatsApp messages of the last hours (paired bridge): who waits for an answer, what is new per chat — params: {\"hours\", \"chat\", \"unread_only\"}",
     "git_radar": "Which git repositories still have uncommitted or unpushed work; reports only when that set changes — params: {\"days\": only repos whose last commit is at least N days old (0 = all), \"always\": report every run}",
+    "night_shift_report": "The morning report of the latest night shift (src/night_shift.py); reports only once per finished shift — params: {\"always\": report every run}",
 }

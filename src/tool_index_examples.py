@@ -1235,4 +1235,15 @@ EXAMPLES: Dict[str, List[str]] = {
         "verify that this GitHub repo is real and not abandoned",
         "qué repos existen para hacer esto, compáralos",
     ],
+
+    # ── Night shift (lot E) — unattended queue under a budget ───────────────
+    "night_shift": [
+        "run these tasks overnight and tell me in the morning",
+        "queue this up for tonight, don't wait for me",
+        "trabaja en esto durante la noche y hazme un resumen mañana",
+        "set up a night shift with a two hour budget",
+        "how did the night shift go",
+        "stop the night shift, I need the machine now",
+        "turno nocturno con un máximo de 8 tareas",
+    ],
 }
