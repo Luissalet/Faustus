@@ -1235,6 +1235,8 @@ class TurnLedger:
         #: new_string...), so a claim made in the deliverable is checked like
         #: one made in the answer. Capped (`_WRITTEN_TEXT_CAP`).
         self.written_text: str = ""
+        #: An earlier turn of the conversation read an outside source.
+        self.prior_sources: bool = False
         self.rejections = 0
         self.length_continues = 0
         self.intent_nudges = 0
@@ -1592,6 +1594,32 @@ class TurnLedger:
         not an invention."""
         self.seen_cites |= cite_ids(text)
 
+    def note_prior_message(self, message: Any) -> None:
+        """An earlier turn of this conversation that read an outside source.
+
+        The source-claim check is per turn, so a follow-up answer ("as I
+        checked against the edition earlier...") was rejected although the
+        check did happen, one turn before. A prior message counts when it
+        records a source tool: stored tool events (`metadata.tool_events`),
+        OpenAI-style `tool_calls`, or a `tool` message naming one."""
+        if self.prior_sources or not isinstance(message, dict):
+            return
+        from src.source_claims import is_source_tool
+        names: List[str] = []
+        meta = message.get("metadata")
+        if isinstance(meta, dict):
+            for ev in meta.get("tool_events") or []:
+                if isinstance(ev, dict) and ev.get("exit_code") in (None, 0) and not ev.get("error"):
+                    names.append(str(ev.get("tool") or ""))
+        for call in message.get("tool_calls") or []:
+            if isinstance(call, dict):
+                fn = call.get("function")
+                names.append(str((fn or {}).get("name") if isinstance(fn, dict) else call.get("name") or ""))
+        if message.get("role") == "tool":
+            names.append(str(message.get("name") or ""))
+        if any(is_source_tool(n) for n in names if n):
+            self.prior_sources = True
+
     def unverified_citations(self, text: str) -> List[str]:
         """Result ids the answer cites that no tool returned and the
         conversation never contained. Seen live: asked to fix one wrong cell,
@@ -1629,9 +1657,10 @@ class TurnLedger:
             self.written_text = (self.written_text + "\n" + added)[-_WRITTEN_TEXT_CAP:]
 
     def consulted_sources(self) -> bool:
-        """Whether any tool that reads outside the workspace ran this turn."""
+        """Whether any tool that reads outside the workspace ran this turn
+        (or in an earlier turn of the conversation, `note_prior_message`)."""
         from src.source_claims import is_source_tool
-        return any(e.get("ok") and is_source_tool(str(e.get("tool") or "")) for e in self.events)
+        return self.prior_sources or any(e.get("ok") and is_source_tool(str(e.get("tool") or "")) for e in self.events)
 
     def unconsulted_source_claims(self, text: str) -> List[str]:
         """Sentences of the answer, or of files written this turn, that say

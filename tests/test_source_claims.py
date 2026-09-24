@@ -94,3 +94,29 @@ def test_checks_done_with_a_local_instrument_are_not_outside_claims():
         "La obra no está confirmada; es una hipótesis.",
     ]:
         assert find_source_claims(text) == [], text
+
+
+def test_a_source_read_in_an_earlier_turn_counts():
+    from src.agent_harness import TurnLedger
+    claim = "Las citas se verificaron contra la edición canónica de la obra."
+    fresh = TurnLedger(None, "¿y la segunda cita?")
+    assert fresh.unconsulted_source_claims(claim)
+
+    ledger = TurnLedger(None, "¿y la segunda cita?")
+    ledger.note_prior_message({"role": "user", "content": "busca la cita"})
+    ledger.note_prior_message({"role": "assistant", "content": "hecho", "metadata": {
+        "tool_events": [{"tool": "web_search", "exit_code": 0}]}})
+    assert ledger.prior_sources
+    assert ledger.unconsulted_source_claims(claim) == []
+
+
+def test_a_failed_or_local_prior_tool_does_not_count():
+    from src.agent_harness import TurnLedger
+    ledger = TurnLedger(None, "x")
+    ledger.note_prior_message({"role": "assistant", "content": "", "metadata": {
+        "tool_events": [{"tool": "web_fetch", "exit_code": 1}, {"tool": "read_file", "exit_code": 0}]}})
+    ledger.note_prior_message({"role": "assistant", "content": "", "tool_calls": [
+        {"function": {"name": "python"}}]})
+    assert not ledger.prior_sources
+    ledger.note_prior_message({"role": "tool", "name": "web_fetch", "content": "page"})
+    assert ledger.prior_sources

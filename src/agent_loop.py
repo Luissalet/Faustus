@@ -8884,6 +8884,7 @@ async def _stream_agent_loop_body(
         for _m in messages or []:
             if isinstance(_m, dict) and isinstance(_m.get("content"), str):
                 _ledger.note_known_text(_m["content"])
+            _ledger.note_prior_message(_m)
     except Exception:  # noqa: BLE001
         pass
     # H4: whole-file rewrite policy (src/rewrite_policy.py), one instance per
