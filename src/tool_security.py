@@ -306,6 +306,8 @@ PLAN_MODE_READONLY_TOOLS = {
     # GitHub issue read (src/github_pr.py): inspection only, same class as
     # web_fetch/reach_read.
     "github_issue",
+    # Lot F: code_history -- git history for a file/symbol, inspection only.
+    "code_history",
     # Project board read tools (Lote 92): inspection only.
     "board_list",
     "board_ready",

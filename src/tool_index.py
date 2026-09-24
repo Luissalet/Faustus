@@ -406,6 +406,9 @@ BUILTIN_TOOL_DESCRIPTIONS: Dict[str, str] = {
     # Night shift (lot E): an unattended queue of dispatch jobs run under a
     # budget, with a morning report. src/night_shift.py.
     "night_shift": "Queue up a short list of tasks (up to 12) to run unattended, sequentially, each as its own verified worker, under a budget of minutes/tasks/tokens that stops the queue cleanly once spent -- then read back a morning report of what got done, what changed, and what needs your attention. Actions: start (tasks, workspace, budget), status (a shift's progress), stop (ask a running shift to stop after its current task), report (the Markdown report for a shift, or the latest one). Use for 'run these overnight', 'queue this up for tonight and report in the morning', 'night shift', 'trabaja en esto durante la noche', 'dime en la mañana qué hiciste', 'turno nocturno'.",
+    # Lot F: git history understanding for the codebase explorer --
+    # src/code_history.py / src/agent_tools/code_history_tools.py.
+    "code_history": "Git history understanding for a file or a symbol inside it: who changed it, how often, with which commits, what else usually changes with it, and the risk that implies (churn, author count, co-change fan-out, presence of tests). Read-only, subprocess `git` only. Use for 'who wrote this', 'how often does this file change', 'what usually changes together with this file', 'is this file risky to touch', 'quién ha tocado este archivo', 'qué suele cambiar junto a esto', 'es arriesgado modificar esto'.",
 }
 
 

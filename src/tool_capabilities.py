@@ -851,6 +851,12 @@ _register(
     # Recording happens outside the tool layer (post-turn automation), so
     # `recall_fixes` itself never writes anything.
     {"recall_fixes"},
+    # Lot F: code_history (src/code_history.py) only reads the workspace's
+    # own `git` history (log/blame/diff of files already on disk) — same
+    # class as find_symbol/callers/tests_for above: a workspace-scoped
+    # reader whose result quotes source/commit text an attacker could have
+    # planted in the repo.
+    {"code_history"},
     ToolEffect.READ_WORKSPACE,
     result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED,
 )

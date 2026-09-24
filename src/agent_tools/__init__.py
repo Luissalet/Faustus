@@ -26,6 +26,7 @@ from .coding_tools import TodoWriteTool
 from .subagent_tools import DelegateAgentsTool
 from .night_shift_tools import NightShiftTool
 from .code_tools import FindSymbolTool, CallersTool, TestsForTool, RenameSymbolTool
+from .code_history_tools import CodeHistoryTool
 from .document_tools import CreateDocumentTool, UpdateDocumentTool, EditDocumentTool, SuggestDocumentTool, ManageDocumentTool
 from .interaction_tools import AskUserTool, UpdatePlanTool, LookupToolsTool
 from .model_interaction_tools import ChatWithModelTool, AskTeacherTool, ListModelsTool
@@ -284,6 +285,9 @@ TOOL_HANDLERS = {
     # Night shift (lot E): an unattended queue of dispatch jobs run under a
     # budget, with a morning report. See src/night_shift.py.
     "night_shift": NightShiftTool().execute,
+    # Lot F: git history understanding for a file/symbol -- read-only, see
+    # src/code_history.py / src/agent_tools/code_history_tools.py.
+    "code_history": CodeHistoryTool().execute,
 }
 # Config/integration admin tools (manage_endpoints/mcp/webhooks/tokens/settings).
 TOOL_HANDLERS.update(ADMIN_TOOL_HANDLERS)
@@ -456,6 +460,8 @@ TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_fi
              "recall_fixes"} | BUILTIN_EMAIL_TOOLS | DESKTOP_TOOLS | SEMANTIC_TOOLS
              # Night shift (lot E): src/agent_tools/night_shift_tools.py.
              "night_shift"} | BUILTIN_EMAIL_TOOLS | DESKTOP_TOOLS | SEMANTIC_TOOLS
+             # Lot F: git history for a file/symbol -- src/code_history.py.
+             "code_history"} | BUILTIN_EMAIL_TOOLS | DESKTOP_TOOLS | SEMANTIC_TOOLS
 
 ToolBlock = namedtuple("ToolBlock", ["tool_type", "content"])
 

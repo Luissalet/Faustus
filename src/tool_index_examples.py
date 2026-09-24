@@ -1281,5 +1281,13 @@ EXAMPLES: Dict[str, List[str]] = {
         "how did the night shift go",
         "stop the night shift, I need the machine now",
         "turno nocturno con un máximo de 8 tareas",
+    # ── Lot F: code_history — git history understanding ────────────────────
+    "code_history": [
+        "who has changed this file the most",
+        "how often does this function change",
+        "quién ha tocado este archivo últimamente",
+        "qué archivos suelen cambiar junto con este",
+        "es arriesgado modificar esta función",
+        "muéstrame el historial de este símbolo",
     ],
 }
