@@ -1,0 +1,41 @@
+Third-party attribution
+=======================
+
+The reference material in this skill's "Reference: WCAG 2.2 and Web
+Platform Rules" section is adapted and condensed from the "web" design-rules
+document of the platform-design-skills project:
+
+    https://github.com/ehmo/platform-design-skills
+    (specifically skills/web/SKILL.md at the time of adaptation)
+
+That project is MIT-licensed. Its license file reads, in full:
+
+    MIT License
+
+    Copyright (c) 2026
+
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the "Software"), to deal
+    in the Software without restriction, including without limitation the rights
+    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in
+    all copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+    THE SOFTWARE.
+
+This NOTICE file exists so that attribution and license terms travel with
+the adapted content wherever this skill folder is copied (including into a
+user's own installed skill store by `src/skill_library.py`). Faustus's own
+condensation, reorganisation and any additions in this skill's other
+sections (When to Use / Procedure / Pitfalls / Verification) are original
+and carry no separate license obligation, but the reference section above
+remains subject to the MIT terms quoted here.
