@@ -645,6 +645,68 @@ def _unexpected_script_fraction(text: str) -> float:
     return (unexpected / counted) if counted else 0.0
 
 
+_SCRIPT_GROUPS = (
+    ("LATIN", "LATIN"),
+    ("CJK", "CJK"), ("HIRAGANA", "CJK"), ("KATAKANA", "CJK"), ("HANGUL", "CJK"),
+    ("HALFWIDTH", "CJK"), ("FULLWIDTH", "CJK"),
+    ("CYRILLIC", "CYRILLIC"), ("GREEK", "GREEK"), ("ARABIC", "ARABIC"),
+    ("HEBREW", "HEBREW"), ("THAI", "THAI"), ("DEVANAGARI", "DEVANAGARI"),
+    ("BENGALI", "BENGALI"), ("TAMIL", "TAMIL"), ("GEORGIAN", "GEORGIAN"),
+    ("ARMENIAN", "ARMENIAN"), ("ETHIOPIC", "ETHIOPIC"), ("KHMER", "KHMER"),
+)
+
+
+def _script_class(ch: str) -> str:
+    try:
+        name = unicodedata.name(ch)
+    except ValueError:
+        return ""
+    for prefix, group in _SCRIPT_GROUPS:
+        if name.startswith(prefix):
+            return group
+    return "OTHER"
+
+
+def _token_soup_reason(text: str) -> Optional[str]:
+    """Word salad across writing systems: the output of a model server whose
+    state is broken, not of a model thinking in some language.
+
+    24-09-2026, llama-server after another process loaded a large model on
+    the same GPUs: fragments such as «orque多大wanysofarotre成果 compens狼癞»
+    from the first token, Chinese, Thai, Cyrillic, Arabic and Katakana glued
+    to Latin fragments with almost no spaces. Only 14% of the letters were
+    non-Latin, so the script-fraction check never fired, and the turn spent
+    fifteen minutes on it before the server answered HTTP 500.
+
+    Two signals, each rare in real text: three or more non-Latin writing
+    systems inside one window (a Chinese/English or Japanese/English mix
+    has one), or a dozen script switches in a window with hardly any
+    whitespace (prose, code and JSON all have spaces or newlines).
+    """
+    classes = []
+    whitespace = 0
+    for ch in text:
+        if ch.isspace():
+            whitespace += 1
+            continue
+        if not ch.isalpha():
+            continue
+        cls = _script_class(ch)
+        if cls:
+            classes.append(cls)
+    if len(classes) < 40:
+        return None
+    foreign = {c for c in classes if c not in ("LATIN", "OTHER")}
+    switches = sum(1 for a, b in zip(classes, classes[1:]) if a != b)
+    ws_ratio = whitespace / max(len(text), 1)
+    if len(foreign) >= 3:
+        return (f"word salad across {len(foreign) + 1} writing systems "
+                f"({', '.join(sorted(foreign))} mixed into Latin)")
+    if switches >= 12 and ws_ratio < 0.06:
+        return f"word salad: {switches} script switches with {ws_ratio:.0%} whitespace"
+    return None
+
+
 def _gibberish_guard_settings() -> Tuple[int, float]:
     """(window_chars, threshold) from settings, falling back safely."""
     try:
@@ -853,6 +915,13 @@ class _DegenerateStreamGuard:
                         f"{frac:.0%} non-Latin characters over the last "
                         f"{len(self.script_tail)} chars"
                     )
+                else:
+                    reason = _token_soup_reason(self.script_tail)
+                if reason and self.total_chars <= self._gibberish_window * 2:
+                    # Garbage from the very first tokens is the server, not
+                    # the conversation: say what usually fixes it.
+                    reason += (" from the first tokens; the model server itself is probably "
+                               "in a broken state, and restarting it usually fixes this")
 
         if reason:
             raise DegenerateOutput(reason, self.model)
