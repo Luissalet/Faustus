@@ -730,6 +730,9 @@ DEFAULT_SETTINGS = {
     # either answer or name the one fact still missing. Non-blocking: the
     # model is free to keep reading afterwards. 0 disables it.
     "agent_web_streak_nudge": 8,
+    # Rounds a plan step may stay in progress with the plan unchanged before
+    # the loop asks the model to close it and move on (0 = off).
+    "agent_todo_stall_nudge": 12,
     # PENDIENTES 23-09 noche / src/tool_index.py: names this instance's tool
     # index collection explicitly (e.g. so two instances keep sharing one on
     # purpose, or to pin a name across a data-dir move). Left empty (the

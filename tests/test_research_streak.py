@@ -288,3 +288,9 @@ def test_vision_questions_count_as_evidence_reads():
     assert is_remote_read_only_round([("inspect_image", '{"path": "p.jpg", "question": "what is circled?"}')])
     assert is_remote_read_only_round([("inspect_image", "{}"), ("web_search", '{"query": "sonnet 60"}')])
     assert not is_remote_read_only_round([("inspect_image", "{}"), ("write_file", '{"path": "a.md"}')])
+
+
+def test_reading_a_picture_is_an_evidence_read_but_a_source_file_is_not():
+    assert is_remote_read_only_round([("read_file", '{"path": ".tmp_crops/op1.png"}'),
+                                      ("inspect_image", '{"path": "op1.png"}')])
+    assert not is_remote_read_only_round([("read_file", '{"path": "src/app.py"}')])

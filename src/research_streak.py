@@ -98,6 +98,9 @@ def looks_like_remote_read_shell_command(command: str) -> bool:
     return saw_remote_read
 
 
+_IMAGE_PATH_RE = re.compile(r"\.(?:png|jpe?g|gif|webp|bmp|tiff?)\b", re.IGNORECASE)
+
+
 def is_remote_read_only_round(calls: Sequence[Tuple[str, str]]) -> bool:
     """True when every one of this round's tool calls only read remote
     content, and the round made at least one call.
@@ -112,6 +115,8 @@ def is_remote_read_only_round(calls: Sequence[Tuple[str, str]]) -> bool:
         name = (name or "").strip()
         if name in EVIDENCE_READ_TOOL_NAMES:
             continue
+        if name == "read_file" and _IMAGE_PATH_RE.search(str(content or "")):
+            continue  # reading a picture is looking at evidence too
         if name in SHELL_TOOL_NAMES and looks_like_remote_read_shell_command(str(content or "")):
             continue
         return False

@@ -8902,6 +8902,17 @@ async def _stream_agent_loop_body(
         _web_streak_nudge_at = 8
     _web_read_streak = 0
     _web_streak_nudged = False
+    # Stalled plan step: the same todo list, with a step in progress, for
+    # many rounds in a row. Live (24-09-2026): "Examinar originales" stayed
+    # in progress for 36 rounds of image questions and the turn ended asking
+    # the user whether to go on. One note per stalled list.
+    try:
+        _todo_stall_at = int(get_setting("agent_todo_stall_nudge", 12) or 0)
+    except Exception:
+        _todo_stall_at = 12
+    _todo_stall_key: Optional[str] = None
+    _todo_stall_rounds = 0
+    _todo_stall_nudged_key: Optional[str] = None
     _qwen38_notice_sent = False
     _budget_stop_echo_retried = False
     _round_finish_reason = None
@@ -14509,6 +14520,49 @@ async def _stream_agent_loop_body(
                     "data: " + json.dumps({
                         "type": "harness_check", "status": "web_read_streak",
                         "round": round_num, "streak": _web_read_streak,
+                    }) + "\n\n"
+                )
+
+        if _todo_stall_at > 0 and session_id:
+            try:
+                from src.agent_tools.coding_tools import load_todos as _load_todos_stall
+                _stall_todos = _load_todos_stall(session_id) or []
+            except Exception:  # noqa: BLE001 - a missing plan never breaks a round
+                _stall_todos = []
+            _stall_in_progress = [t for t in _stall_todos
+                                  if isinstance(t, dict) and str(t.get("status")) == "in_progress"]
+            _stall_key = json.dumps(
+                [(str(t.get("content")), str(t.get("status"))) for t in _stall_todos if isinstance(t, dict)],
+                ensure_ascii=False,
+            ) if _stall_todos else None
+            if _stall_key and _stall_key == _todo_stall_key and _stall_in_progress:
+                _todo_stall_rounds += 1
+            else:
+                _todo_stall_key = _stall_key
+                _todo_stall_rounds = 0
+            if (_stall_in_progress and _todo_stall_rounds >= _todo_stall_at
+                    and _todo_stall_nudged_key != _stall_key):
+                _todo_stall_nudged_key = _stall_key
+                _stalled_step = str(_stall_in_progress[0].get("content") or "")[:160]
+                messages.append({
+                    "role": "user",
+                    "_harness_note": True,
+                    "content": _lang_note(
+                        "[Runtime plan check — automatic message, not a new user request] The step "
+                        f"\"{_stalled_step}\" has been in progress for {_todo_stall_rounds} rounds while "
+                        "the plan did not change. Close it now: write down what you have established "
+                        "for it and the evidence, mark it completed (or split what really remains into "
+                        "a smaller next step), and move on to the next step. Certainty is not required: "
+                        "mark doubts as doubts."
+                    ),
+                })
+                _ledger.notes.append(f"todo_stall_nudge@{round_num}:{_todo_stall_rounds}")
+                logger.info("[harness] round %s: plan step stalled for %d rounds — nudging",
+                            round_num, _todo_stall_rounds)
+                yield (
+                    "data: " + json.dumps({
+                        "type": "harness_check", "status": "todo_stall",
+                        "round": round_num, "rounds": _todo_stall_rounds,
                     }) + "\n\n"
                 )
 
