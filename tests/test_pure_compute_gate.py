@@ -72,3 +72,19 @@ def test_anything_that_can_act_is_not_pure_and_still_asks(code):
 
 def test_only_the_python_tool_gets_the_exemption():
     assert not _armed().decision_for("bash", "echo hi").allowed
+
+
+def test_a_module_an_allowed_module_re_exports_is_not_reachable():
+    from src.pure_compute import is_pure_compute
+    for code in (
+        "import calendar\ncalendar.sys.modules['os'].remove('x')",
+        "import datetime\ndatetime.sys.modules['subprocess'].run(['whoami'])",
+        "import json\njson.codecs.open('x', 'w').write('y')",
+        "import fractions\nfractions.operator.attrgetter('x')",
+        "from calendar import sys\nsys.exit()",
+        "from statistics import *\nsys.exit()",
+        "from json import _default_encoder",
+    ):
+        assert not is_pure_compute(code), code
+    assert is_pure_compute("import calendar\nprint(calendar.monthrange(2026, 2))")
+    assert is_pure_compute("from statistics import mean\nprint(mean([1, 2, 3]))")

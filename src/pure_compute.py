@@ -50,7 +50,48 @@ _FORBIDDEN_ATTRS = frozenset({
     "gi_frame", "gi_code", "cr_frame", "cr_code", "ag_frame", "ag_code", "f_globals",
     "f_locals", "f_builtins", "f_back", "f_code", "tb_frame", "tb_next", "mro",
     "Formatter", "get_field", "vformat", "format_field", "open", "system", "popen",
+    # Modules an allowed module re-exports (`calendar.sys.modules["os"]`,
+    # `json.codecs.open`, `fractions.operator.attrgetter`): the walk below
+    # adds whatever this Python exposes; these stay even if it finds none.
+    "sys", "modules", "codecs", "operator", "copyreg", "enum", "os", "io", "builtins",
+    "subprocess", "importlib", "shutil", "socket", "pathlib", "ctypes",
 })
+
+
+def _reexported_unsafe_modules() -> frozenset:
+    """Public attribute names, anywhere under the allowed modules, whose value
+    is a module outside them."""
+    import importlib
+    import types
+    out: set = set()
+    seen: set = set()
+    queue = []
+    for name in PURE_MODULES:
+        try:
+            queue.append(importlib.import_module(name))
+        except Exception:  # noqa: BLE001 - a missing module adds nothing
+            pass
+    while queue:
+        mod = queue.pop()
+        if mod.__name__ in seen:
+            continue
+        seen.add(mod.__name__)
+        for attr in dir(mod):
+            if attr.startswith("_"):
+                continue
+            val = getattr(mod, attr, None)
+            if isinstance(val, types.ModuleType):
+                if val.__name__.split(".")[0] in PURE_MODULES:
+                    queue.append(val)
+                else:
+                    out.add(attr)
+    return frozenset(out)
+
+
+try:
+    _FORBIDDEN_ATTRS = _FORBIDDEN_ATTRS | _reexported_unsafe_modules()
+except Exception:  # noqa: BLE001 - the static list above still applies
+    pass
 
 _MAX_CODE_CHARS = 40_000
 
@@ -85,6 +126,10 @@ def is_pure_compute(content: Any) -> bool:
                 return False
         elif isinstance(node, ast.ImportFrom):
             if node.level or not node.module or node.module.split(".")[0] not in PURE_MODULES:
+                return False
+            # `from calendar import sys` is `calendar.sys` by another name.
+            if any(alias.name == "*" or alias.name.startswith("_") or alias.name in _FORBIDDEN_ATTRS
+                   for alias in node.names):
                 return False
         elif isinstance(node, ast.Name):
             if node.id in _FORBIDDEN_NAMES or node.id.startswith("__"):
