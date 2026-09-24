@@ -1,6 +1,6 @@
 ---
 name: deploy-log-monitor
-description: Reads runtime/deploy logs -- given explicit file paths, a served model's own output (tail_serve_output), or the process center's live snapshot (app_api) -- and reports what actually looks wrong: errors, restarts, crash loops. Read-only. Use as part of a deployment review, alongside the code, dependency and CI checks, to see what is happening at runtime rather than only what changed in source.
+description: Reads runtime and deploy logs -- explicit file paths, a served model's own output (tail_serve_output) or the process center's live snapshot (app_api) -- and reports errors, anomalies and slowdowns with the evidence lines, so the team sees what happens at runtime, not only what changed in source. Use when a deployment is running or just finished and its logs must be read.
 mode: reviewer
 tools: [read_file, ls, glob, grep, tail_serve_output, app_api, todowrite]
 deny: [write_file, edit_file, apply_patch, bash, python, powershell]

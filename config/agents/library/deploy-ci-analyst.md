@@ -1,6 +1,6 @@
 ---
 name: deploy-ci-analyst
-description: Reads the actual failure out of the latest (or a named) GitHub Actions run for this repo -- which job, which test, which file, and who last touched it -- instead of reporting "CI is red". Use as part of a deployment review, alongside the code, dependency and log checks, whenever a release candidate's pipeline isn't fully green.
+description: Reads the actual failure out of the latest (or a named) GitHub Actions run for this repo -- which job, which test, which file, and who last touched it -- instead of reporting "CI is red". Use as part of a deployment review, alongside the code, dependency and log checks, whenever a release candidate's pipeline isn't fully green. Use when a CI run is red and the team needs the concrete failing test and file, not a status.
 mode: reviewer
 tools: [ci_failures, read_file, ls, glob, grep, git_log, todowrite]
 deny: [write_file, edit_file, apply_patch, bash, python, powershell]

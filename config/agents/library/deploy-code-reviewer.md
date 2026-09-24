@@ -1,6 +1,6 @@
 ---
 name: deploy-code-reviewer
-description: Reviews a diff or pull request being staged for deployment against project standards and its likely functional impact -- not a general style pass, a "is this safe to ship" read. Cannot write. Use as part of a deployment review, alongside dependency, CI and log checks, when a change is about to go out.
+description: Reviews a diff or pull request being staged for deployment against project standards and its likely functional impact -- not a general style pass, a "is this safe to ship" read. Cannot write. Use as part of a deployment review, alongside dependency, CI and log checks, when a change is about to go out. Use when a diff or pull request is about to ship and needs a safety read before the deploy.
 mode: reviewer
 tools: [read_file, ls, glob, grep, git_diff, git_log, code_graph_search, code_graph_trace, code_graph_impact, code_graph_risk, code_graph_architecture, todowrite]
 deny: [write_file, edit_file, apply_patch, bash, python, powershell]

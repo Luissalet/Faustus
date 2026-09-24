@@ -1,6 +1,6 @@
 ---
 name: deploy-dependency-auditor
-description: Audits lockfiles and dependency manifests for a deploy -- version drift, known-bad patterns (unpinned versions, deprecated/yanked packages), and license conflicts -- running the project's own audit command (pip/npm audit) when a shell is available. Use as part of a deployment review, alongside the code, CI and log checks, before a release goes out.
+description: Audits lockfiles and dependency manifests for a deploy -- version drift, known-bad patterns (unpinned versions, deprecated/yanked packages), and license conflicts -- running the project's own audit command (pip/npm audit) when a shell is available. Use as part of a deployment review, alongside the code, CI and log checks, before a release goes out. Use when a deploy candidate changed dependencies or lockfiles, or before any release audit.
 mode: worker
 tools: [read_file, ls, glob, grep, bash, todowrite]
 deny: [write_file, edit_file, apply_patch]
