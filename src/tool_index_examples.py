@@ -1235,4 +1235,13 @@ EXAMPLES: Dict[str, List[str]] = {
         "verify that this GitHub repo is real and not abandoned",
         "qué repos existen para hacer esto, compáralos",
     ],
+
+    # ── Autonomous bug hunter -- src/bug_hunt.py ────────────────────────────
+    "bug_hunt": [
+        "busca bugs en src/foo.py",
+        "find edge-case bugs in this function",
+        "hunt for bugs in the payment module",
+        "stress test this function with weird inputs",
+        "genera tests de casos límite para esta función y dime si hay bugs reales",
+    ],
 }

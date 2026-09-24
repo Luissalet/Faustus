@@ -3623,6 +3623,24 @@ FUNCTION_TOOL_SCHEMAS = [
             }
         }
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "bug_hunt",
+            "description": "Autonomous bug hunter for one function/class/file or a whole directory: understands the code, generates edge-case pytest tests for it (normal, boundary, invalid-input, idempotency), runs them isolated under the workspace, and triages every failure as a real bug in the code, a wrong expectation in the generated test, or unclear -- never blaming the code for a test that made a bad assumption. Writes only under the workspace ('.faustus/bughunt/' scratch files, plus 'tests/' when keep_tests is true). Use for 'find bugs in <file/function>', 'stress test this function', 'busca bugs en src/foo.py'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "target": {"type": "string", "description": "A file path, 'path::symbol' (one function/class), or a directory to hunt across."},
+                    "workspace": {"type": "string", "description": "Optional workspace root; defaults to the active workspace."},
+                    "max_cases": {"type": "integer", "minimum": 1, "maximum": 30, "description": "Upper bound on generated test cases per target (default from settings, 12)."},
+                    "keep_tests": {"type": "boolean", "description": "true: copy the tests that exposed a real bug into tests/test_bughunt_<slug>.py as regression tests (deduped by test name)."},
+                    "run_only": {"type": "boolean", "description": "true: generate and run the tests but skip triage and keep_tests -- a quick 'does it already break' pass."}
+                },
+                "required": ["target"]
+            }
+        }
+    },
 ]
 
 

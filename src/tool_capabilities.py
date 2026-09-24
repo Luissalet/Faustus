@@ -808,6 +808,15 @@ _register(
     {"manage_instincts"},
     ToolEffect.WRITE_PRIVATE,
 )
+_register(
+    # Autonomous bug hunter (src/bug_hunt.py, src/agent_tools/bug_hunt_tools.py):
+    # writes generated test files under the workspace's .faustus/bughunt/ and,
+    # with keep_tests, under tests/ too — same effect class as write_file, so
+    # the existing write-approval policy applies unchanged (no new gate).
+    {"bug_hunt"},
+    ToolEffect.WRITE_WORKSPACE,
+    result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED,
+)
 
 
 TOOL_CAPABILITIES: Mapping[str, ToolCapabilities] = MappingProxyType(dict(_REGISTRY))

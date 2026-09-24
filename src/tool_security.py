@@ -232,6 +232,10 @@ NON_ADMIN_BLOCKED_TOOLS = BUILTIN_EMAIL_TOOLS | {
     "alt_start",
     "alt_compare",
     "alt_apply",
+    # Autonomous bug hunter (src/agent_tools/bug_hunt_tools.py): generates
+    # and runs pytest files under the workspace -- same privilege class as
+    # bash/write_file above.
+    "bug_hunt",
 }
 
 

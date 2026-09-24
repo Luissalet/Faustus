@@ -1601,6 +1601,13 @@ DEFAULT_SETTINGS = {
     # A sibling's lease is ignored once its heartbeat is older than this
     # (seconds) — it is treated as dead, not just quiet.
     "model_lease_stale_seconds": 45,
+    # Autonomous bug hunter (src/bug_hunt.py): "" = the resolved utility
+    # endpoint's own model, generating and triaging the edge-case tests.
+    "bug_hunt_model": "",
+    # Upper bound on generated test cases per target.
+    "bug_hunt_max_cases": 12,
+    # Timeout (seconds) for one isolated pytest run of a generated suite.
+    "bug_hunt_timeout_seconds": 120,
 }
 
 
