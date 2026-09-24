@@ -11,6 +11,7 @@ Actualizado: 23-09-2026. REGLA: nunca nombres de empresas/personas del buzÃ³n 
 - **`fix_memory`**: comprobar en un chat real que un turno con ficheros cambiados deja línea en `DATA_DIR/fix_memory/<owner>/` y que el turno siguiente parecido enseña el bloque «Past fixes» en el ledger de contexto.
 - **Carriles en `enforce`** con `delegate_agents` real y un `AGENT.md` de biblioteca; el diálogo de Studio pintado y usado con clics.
 - **Turno de noche** con 2–3 tareas reales de `dispatch` y presupuesto corto; tarjeta de Inicio vía la acción `night_shift_report`.
+- Verificado en vivo en el 7001 con el 27B (llama-server): «¿quién ha tocado más `src/git_radar.py`…?» → el tool-RAG ofreció `code_history`, el modelo lo llamó (`mode=explain`) y respondió en tres líneas con autores, co-cambios y riesgo 0,35 correctos (241 s, 3 rondas). El primer intento reventó el turno porque el tool devolvía un JSON string en vez de un dict: arreglado (`8f048e56`) y, de paso, cualquier resultado no-dict de un tool se envuelve en vez de tumbar el turno.
 - **El 7000** necesita reinicio para cargar todo esto.
 
 ## 24-09 — examen Eldoria contra el 27B local (FAUSTUS.md §184)
