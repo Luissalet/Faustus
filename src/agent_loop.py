@@ -10625,7 +10625,13 @@ async def _stream_agent_loop_body(
                         # (the round's own abort, then the step-1 retry) —
                         # skip a third same-model attempt and go straight to
                         # the utility model.
-                        skip_same_model_retry=True,
+                        # ...except a reasoning loop: the model is fine, it
+                        # was circling one question. Its own tools-off answer
+                        # (step 2) beats handing an agent task to the small
+                        # utility model.
+                        skip_same_model_retry=(
+                            "reasoning loop" not in str(error_data.get("error") or "")
+                        ),
                         pending_cancel=pending_cancel,
                     ):
                         if _rk == "event":
@@ -11101,6 +11107,22 @@ async def _stream_agent_loop_body(
             _dropped_untrusted = sum(1 for m in messages if _is_untrusted_context_message(m))
             messages[:] = [m for m in messages if not _is_untrusted_context_message(m)]
             _rounds_budget += 1  # the retry must not eat the task's step budget
+            if _degenerate_output_reason.startswith("reasoning loop") or \
+                    "reasoning loop" in _degenerate_output_reason:
+                # Not a broken sampler: the model went round in circles in
+                # its reasoning, usually trying to recall something (live:
+                # restating which sonnet holds a line, three times, with web
+                # search available). Say so, and point at the tools.
+                messages.append({
+                    "role": "user", "_harness_note": True,
+                    "content": _lang_note(
+                        "Your previous reasoning went round in circles and was stopped. Do not "
+                        "try to recall the same thing again from memory: check it with a tool "
+                        "(web_search/web_fetch for a quotation, source or fact; read_file or "
+                        "inspect_image for the material; python for a calculation), or carry on "
+                        "with what is already established and mark the rest as uncertain."
+                    ),
+                })
             yield f'data: {json.dumps({"type": "response_replace", "text": full_response.strip()})}\n\n'
             yield (
                 "data: " + json.dumps({

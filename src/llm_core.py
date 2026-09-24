@@ -305,6 +305,21 @@ async def _local_model_slot(target_url: str, model: str, workload: Optional[str]
         global _LOCAL_MODEL_WAITING_FOREGROUND
         kind = _gate_workload(workload)
         current_task = asyncio.current_task()
+        # Re-entrant for the task that already holds the slot. The agent
+        # loop handles a stream's error event while that stream's generator
+        # is still suspended inside this context manager, lock held; its
+        # recovery ladder then asks the local server again from the same
+        # task and waited on the lock forever (seen live: a reasoning loop
+        # abort, then "[recovery] step=3" and thirteen silent minutes).
+        if (
+            current_task is not None
+            and _LOCAL_MODEL_LOCK.locked()
+            and _LOCAL_MODEL_CURRENT.get("task") is current_task
+        ):
+            logger.info("[model-gate] same task already holds the local model slot; "
+                        "nested call proceeds model=%s", model)
+            yield
+            return
         if kind == "foreground":
             _LOCAL_MODEL_WAITING_FOREGROUND += 1
             current = dict(_LOCAL_MODEL_CURRENT)
