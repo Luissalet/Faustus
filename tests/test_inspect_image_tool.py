@@ -383,3 +383,20 @@ def test_a_slow_vision_model_gets_the_configured_timeout_and_the_reason(monkeypa
     out = dpm.analyze_image_with_vl_prompt([(b"\x89PNG....", "image/png")], "what?", None, None)
     assert calls["timeout"] == 900
     assert "TimeoutError" in out["text"] and "vision_timeout_seconds=900" in out["text"]
+
+
+async def test_view_for_a_model_that_cannot_see_asks_the_vision_model(tmp_path, monkeypatch):
+    p = _save_png(tmp_path / "a.png", 400, 300)
+    seen = {}
+
+    def fake_analyze(images, prompt, owner=None, model_override=None):
+        seen["prompt"] = prompt
+        return {"text": "text: HELLO; a circle at 0.2,0.5", "model": "local-vl-model"}
+
+    monkeypatch.setattr(dp, "analyze_image_with_vl_prompt", fake_analyze)
+    result = await _run({"action": "view", "path": p, "region": [0, 0, 0.5, 0.5]},
+                        ctx={"turn_model": "qwen2.5:7b"})
+    assert "images" not in result
+    assert result["answered_by"] == "local-vl-model"
+    assert "cannot see images" in result["output"] and "action=\"ask\"" in result["output"]
+    assert "Transcribe every piece of text" in seen["prompt"]

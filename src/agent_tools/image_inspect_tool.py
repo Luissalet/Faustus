@@ -191,6 +191,21 @@ async def _action_ask(args: Dict[str, Any], ctx: Dict[str, Any]) -> Dict[str, An
 # ---------------------------------------------------------------------------
 
 async def _action_view(args: Dict[str, Any], ctx: Dict[str, Any]) -> Dict[str, Any]:
+    if (ctx or {}).get("turn_model") and not await asyncio.to_thread(_main_model_can_see, ctx):
+        # The turn's model cannot see the crop it would be handed; the loop
+        # would caption it with a generic prompt. Seen live: a text-only 27B
+        # called `view` over and over on a scanned page, each time getting a
+        # general description instead of an answer. Ask the Vision model the
+        # literal question instead, and say how to do better.
+        out = await _action_ask({**args, "question": str(args.get("question") or "").strip() or (
+            "Transcribe every piece of text in this region exactly, then list every drawing, "
+            "mark, circle, arrow or symbol with its position as fractions of the image.")}, ctx)
+        out["output"] = (
+            "(Your model cannot see images, so `view` was answered by the Vision model. "
+            "Ask it specific questions with action=\"ask\" and a small `region` for details; "
+            "use action=\"shapes\" to measure where marks are.)\n" + str(out.get("output") or "")
+        )
+        return out
     loaded = _load_image(args)
     pargs = _process_args(args)
     proc = ii.process(loaded.image, grid=args.get("grid"), **pargs)
