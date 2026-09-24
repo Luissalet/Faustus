@@ -16,7 +16,11 @@
     "restart-policies",
     "restart",
     "watch-list",
-    "reboot-detection"
+    "reboot-detection",
+    "audit-trail",
+    "agent-calls",
+    "secrets-audit",
+    "event-bus"
   ],
   "placeholders": [
     "CASSANDRA_DIR",

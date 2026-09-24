@@ -11,7 +11,12 @@
     "highlights",
     "search",
     "digest",
-    "import"
+    "import",
+    "watches",
+    "feeds",
+    "github-releases",
+    "page-changes",
+    "event-bus"
   ],
   "placeholders": [
     "LINKS_DIR",

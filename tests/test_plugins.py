@@ -133,6 +133,18 @@ def test_a_manifest_is_refused_with_a_reason_a_person_can_act_on(data, fragment)
     assert fragment in str(exc.value), str(exc.value)
 
 
+def test_extension_keys_are_skipped_not_refused():
+    """A manifest is read by more than Faustus (the family's desktop hub, a
+    launcher): what those readers need lives under ``x-`` keys and must not
+    make the manifest fail here. A plain unknown key still does."""
+    plugin = plugins.parse_manifest(_minimal(**{"x-tools": ["a", "b"], "x_desktop": True},
+                                             app={"health": {"path": "/x", "x-probe": 3}},
+                                             provides={"x-recipes": []}))
+    assert plugin.id == "sample" and plugin.health_path == "/x"
+    with pytest.raises(plugins.ManifestError):
+        plugins.parse_manifest(_minimal(tools=["a"]))
+
+
 def test_one_bad_manifest_does_not_take_the_others_with_it(tmp_path, monkeypatch):
     """The alternative — one malformed third-party file and Faustus has no
     connectors at all — is not a trade worth making."""

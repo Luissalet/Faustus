@@ -204,10 +204,22 @@ def _expand_default(value: str) -> str:
     return os.path.normpath(expanded)
 
 
+#: A key starting with this prefix is an extension: something another
+#: consumer of the same manifest (the family's desktop hub, a launcher, a
+#: tool catalogue) needs and Faustus does not. It is skipped, not refused —
+#: the same convention OpenAPI uses for ``x-`` fields — so one manifest can
+#: serve every reader without any of them rejecting the others' keys.
+EXTENSION_PREFIXES = ("x-", "x_")
+
+
+def is_extension_key(key: Any) -> bool:
+    return isinstance(key, str) and key.lower().startswith(EXTENSION_PREFIXES)
+
+
 def _unknown(keys: Any, allowed: set, where: str) -> None:
     if not isinstance(keys, dict):
         raise ManifestError(f"{where} must be an object")
-    extra = sorted(set(keys) - allowed)
+    extra = sorted(k for k in set(keys) - allowed if not is_extension_key(k))
     if extra:
         raise ManifestError(f"{where} has unknown key(s): {', '.join(extra)}")
 
