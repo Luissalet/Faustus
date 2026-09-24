@@ -392,6 +392,9 @@ BUILTIN_TOOL_DESCRIPTIONS: Dict[str, str] = {
     # Prior art (GIT-08): reuse/adapt/write, with every repository name
     # checked live against the GitHub API before it reaches the user --
     # models recall repo names badly. src/prior_art.py.
+    # Lot D: fix memory -- past solved issues remembered per project and
+    # recalled before a similar task. src/fix_memory.py + src/agent_tools/fix_memory_tools.py.
+    "recall_fixes": "Look up past solved issues in this project's own fix memory that look similar to a query, an error, or a set of files -- so a fix already worked out once is reused instead of rediscovered. Read-only. Use for 'has this come up before', 'how did we fix this last time', 'have I seen this error in this project'.",
     "prior_art": "Before building something, work out which parts already exist as maintained open-source projects to reuse (dependency), which exist only as a reference to adapt (study the approach, write your own code -- mandatory when the license is incompatible), and which are small/generic enough to write. Every repository name is checked live against the GitHub API before being presented as real -- existence, archived/fork status, health (last push), stars, and license compatibility. Actions: rubric (the decomposition checklist, no network), verify (check a filled slate live, ranked table + next actions), search (GitHub repo search when there's no candidate yet), report (read back or list saved verify reports). Use for 'does this already exist', 'is there a library for this', 'should I write this myself or use a package', 'reuse or write it', 'ya existe una librería para esto', 'antes de construir esto, qué hay ya', 'no reinventes la rueda', 'hay alguna alternativa de código abierto'.",
 }
 

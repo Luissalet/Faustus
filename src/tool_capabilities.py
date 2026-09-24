@@ -808,6 +808,15 @@ _register(
     {"manage_instincts"},
     ToolEffect.WRITE_PRIVATE,
 )
+_register(
+    # Lot D: fix memory (src/fix_memory.py, src/agent_tools/fix_memory_tools.py)
+    # — read-only recall of past solved issues in this project's own log.
+    # Recording happens outside the tool layer (post-turn automation), so
+    # `recall_fixes` itself never writes anything.
+    {"recall_fixes"},
+    ToolEffect.READ_WORKSPACE,
+    result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED,
+)
 
 
 TOOL_CAPABILITIES: Mapping[str, ToolCapabilities] = MappingProxyType(dict(_REGISTRY))

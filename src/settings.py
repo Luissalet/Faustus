@@ -1601,6 +1601,16 @@ DEFAULT_SETTINGS = {
     # A sibling's lease is ignored once its heartbeat is older than this
     # (seconds) — it is treated as dead, not just quiet.
     "model_lease_stale_seconds": 45,
+    # Lot D: fix memory (src/fix_memory.py) -- the agent grows smarter with
+    # every solved issue. Master switch: when False, recording and recall are
+    # both skipped, same posture as instincts_enabled.
+    "fix_memory_enabled": True,
+    # Character budget (estimated in tokens) for the "Past fixes in this
+    # project" block a coding-task turn may inject into the prompt.
+    "fix_memory_prompt_budget_tokens": 600,
+    # Whether a coding-task turn automatically recalls and injects past
+    # fixes, vs. only ever being available through the `recall_fixes` tool.
+    "fix_memory_auto_recall": True,
 }
 
 

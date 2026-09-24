@@ -1222,6 +1222,15 @@ EXAMPLES: Dict[str, List[str]] = {
         "show me the instincts you've picked up so far",
     ],
 
+    # ── Fix memory (Lot D) — past solved issues, recalled per project ──────
+    "recall_fixes": [
+        "have we run into this error before in this project",
+        "how did we fix this the last time it came up",
+        "search past fixes for anything about the login timeout",
+        "hemos tenido este error antes en este proyecto",
+        "cómo arreglamos esto la última vez",
+    ],
+
     # ── Prior art (GIT-08) — reuse, adapt or write, verified live ──────────
     "prior_art": [
         "before we build this, does something like it already exist",

@@ -301,6 +301,8 @@ PLAN_MODE_READONLY_TOOLS = {
     "board_ready",
     "board_get",
     "lookup_tools",
+    # Lot D: fix memory read -- src/agent_tools/fix_memory_tools.py.
+    "recall_fixes",
 }
 
 

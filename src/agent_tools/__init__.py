@@ -298,6 +298,11 @@ async def _manage_instincts_adapter(content, ctx):
 
 TOOL_HANDLERS["manage_instincts"] = _manage_instincts_adapter
 
+# Lot D: fix memory -- read-only recall of past solved issues in this project.
+from .fix_memory_tools import RecallFixesTool  # noqa: E402
+
+TOOL_HANDLERS["recall_fixes"] = RecallFixesTool().execute
+
 # ---------------------------------------------------------------------------
 # Constants (re-exported for backward compatibility — single source of truth
 # is src.constants; always prefer importing from there for new code)
@@ -424,7 +429,9 @@ TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_fi
              # GitHub -- src/agent_tools/prior_art_tools.py.
              "prior_art",
              # Targeted image inspection -- src/agent_tools/image_inspect_tool.py.
-             "inspect_image"} | BUILTIN_EMAIL_TOOLS | DESKTOP_TOOLS | SEMANTIC_TOOLS
+             "inspect_image",
+             # Lot D: fix memory -- src/agent_tools/fix_memory_tools.py.
+             "recall_fixes"} | BUILTIN_EMAIL_TOOLS | DESKTOP_TOOLS | SEMANTIC_TOOLS
 
 ToolBlock = namedtuple("ToolBlock", ["tool_type", "content"])
 
