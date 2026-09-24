@@ -311,6 +311,10 @@ TOOL_HANDLERS["manage_instincts"] = _manage_instincts_adapter
 # src/agent_tools/bug_hunt_tools.py / src/bug_hunt.py.
 from .bug_hunt_tools import BugHuntTool
 TOOL_HANDLERS["bug_hunt"] = BugHuntTool().execute
+# Lot D: fix memory -- read-only recall of past solved issues in this project.
+from .fix_memory_tools import RecallFixesTool  # noqa: E402
+
+TOOL_HANDLERS["recall_fixes"] = RecallFixesTool().execute
 
 # ---------------------------------------------------------------------------
 # Constants (re-exported for backward compatibility — single source of truth
@@ -444,6 +448,8 @@ TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_fi
              "bug_hunt"} | BUILTIN_EMAIL_TOOLS | DESKTOP_TOOLS | SEMANTIC_TOOLS
              # CI failure analyzer (lot C) -- src/agent_tools/ci_tools.py.
              "ci_failures"} | BUILTIN_EMAIL_TOOLS | DESKTOP_TOOLS | SEMANTIC_TOOLS
+             # Lot D: fix memory -- src/agent_tools/fix_memory_tools.py.
+             "recall_fixes"} | BUILTIN_EMAIL_TOOLS | DESKTOP_TOOLS | SEMANTIC_TOOLS
 
 ToolBlock = namedtuple("ToolBlock", ["tool_type", "content"])
 

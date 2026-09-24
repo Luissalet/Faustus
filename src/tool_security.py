@@ -313,6 +313,8 @@ PLAN_MODE_READONLY_TOOLS = {
     # CI failure analyzer (lot C): a read-only GitHub REST/`gh` CLI call,
     # same class as prior_art/web_fetch.
     "ci_failures",
+    # Lot D: fix memory read -- src/agent_tools/fix_memory_tools.py.
+    "recall_fixes",
 }
 
 

@@ -1608,6 +1608,16 @@ DEFAULT_SETTINGS = {
     "bug_hunt_max_cases": 12,
     # Timeout (seconds) for one isolated pytest run of a generated suite.
     "bug_hunt_timeout_seconds": 120,
+    # Lot D: fix memory (src/fix_memory.py) -- the agent grows smarter with
+    # every solved issue. Master switch: when False, recording and recall are
+    # both skipped, same posture as instincts_enabled.
+    "fix_memory_enabled": True,
+    # Character budget (estimated in tokens) for the "Past fixes in this
+    # project" block a coding-task turn may inject into the prompt.
+    "fix_memory_prompt_budget_tokens": 600,
+    # Whether a coding-task turn automatically recalls and injects past
+    # fixes, vs. only ever being available through the `recall_fixes` tool.
+    "fix_memory_auto_recall": True,
 }
 
 

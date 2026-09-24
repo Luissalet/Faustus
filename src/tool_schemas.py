@@ -3631,6 +3631,23 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "recall_fixes",
+            "description": "Look up past solved issues in this project's own fix memory (src/fix_memory.py) that look similar to a query, an error, or a set of files -- so a fix already worked out once is reused instead of rediscovered from scratch. Read-only, never records or changes anything (recording happens automatically after a turn that changed files and ran tests). Use for 'has this come up before', 'how did we fix this last time', 'have I seen this error in this project'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Free-text description of the current task or problem."},
+                    "files": {"type": "array", "items": {"type": "string"}, "description": "Files involved in the current task, to boost fixes that touched the same files."},
+                    "error": {"type": "string", "description": "An error message/traceback seen right now, to boost fixes with a matching error signature."},
+                    "k": {"type": "integer", "minimum": 1, "maximum": 20, "description": "Max fixes to return (default 5)."}
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "prior_art",
             "description": "Before building something, find out which parts already exist as maintained open-source projects to reuse (dependency), which exist only as reference implementations to adapt (study the approach, write your own code), and which are small/generic enough to write. Every repository name is checked live against the GitHub API before it reaches the user -- models recall repo names badly. rubric = the decomposition checklist + slate shape to fill in (no network); verify = check every owner/name in a filled slate (existence, archived/fork, health, license compatibility) and get a ranked table + next actions; search = GitHub repo search when you have no candidate; report = read back a saved verify report by id, or list recent ones. Use for 'does this already exist', 'is there a library for this', 'should I write this or use a package', 'reuse or write', 'ya existe una librería para esto', 'antes de construir esto qué hay ya', 'no reinventes la rueda'.",
             "parameters": {
