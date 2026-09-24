@@ -8588,4 +8588,17 @@ compartido. Subir el repositorio a GitHub cuando Luis lo diga.
 | el razonamiento repetía «that doesn't include pebbled shore» | intentaba recordar un soneto de memoria con la web disponible | tras un bucle de razonamiento, el reintento lleva una nota («no lo recuerdes otra vez: compruébalo con una herramienta…») y un segundo bucle prueba la respuesta sin herramientas del mismo modelo antes que el modelo auxiliar de 3B |
 | seis preguntas iguales al modelo de visión con la región movida unas centésimas | ninguna regla de bucles lo veía: argumentos distintos, resultados distintos | `LoopPolicy` añade la pista «revisita»: misma llamada con los números enmascarados; si varias caen cerca de una anterior de la racha (los enteros deben coincidir: página tras página sigue siendo avance), un aviso por racha |
 
+**Segunda tanda (mismo día, mañana):**
+
+| Síntoma en vivo | Arreglo |
+|---|---|
+| la misma esquina de la página re-preguntada con la pregunta reformulada | la pista «revisita» compara los campos cortos (ruta) exactos y sólo pide parecido al texto libre cuando nada más identifica el objetivo (un comando de shell) |
+| tras aprobar un `python`, el turno volvía a leer el enunciado y a describir la página | la nota de continuidad tras una aprobación guarda lo más reciente (24 000 caracteres, 2 500 por resultado) y dice cuántas llamadas antiguas omite |
+| 36 rondas de preguntas a la visión, sin respuesta, y el turno acaba preguntando al usuario si sigue | `inspect_image` cuenta como «recolección de evidencias» para el aviso de racha (`agent_web_streak_nudge`) |
+| una pregunta a la visión en CPU de más de 9 min con `max_side=2400` | lo que va al modelo de visión se limita a `vision_max_side` (1280 px) salvo que la llamada pida más; un `view` de un modelo ciego nunca pasa ese límite |
+| la misma página descrita una y otra vez, minutos cada vez | caché en disco de respuestas de visión por imagen+pregunta+modelo (`src/vision_cache.py`, `vision_cache_enabled`, 30 días) |
+| con una transcripción humana al lado, el modelo retranscribía la página región a región | acción `inspect_image` `unlisted`: se le pasa la transcripción (`text`/`text_path`) y devuelve sólo lo que la imagen muestra y la transcripción omite (marcas, dibujos, signos, números) |
+
+**Resultado de la ejecución 9 (primera completa):** 37 rondas, 61 min, sin respuesta; el turno acabó preguntando si seguir. 0/100. El cuello de botella es la visión en CPU (1–4 min por pregunta) y que el 27B no se concentra en lo único visual (qué marca cada círculo y el numeral del reverso).
+
 **Operación.** Los turnos largos se lanzan con `Invoke-CimMethod Win32_Process Create` (un `Start-Process` desde el shell de control murió a los 9 min con `EXIT -1`); `D:\LocalAI\_claude_tmp\st.py` resume ronda, fase, herramienta, segundos sin eventos y el slot del llama-server.
