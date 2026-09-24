@@ -864,3 +864,75 @@ el informe. Herramienta `prior_art`, rutas `/api/prior-art/*`, servidor MCP
 **Queda:** pantalla en Studio para los informes; poner el token de GitHub en
 Ajustes si 60 peticiones/hora se quedan cortas.
 
+## OBJ-40 · Deriva de arquitectura: una base del grafo de código y qué cambió desde ella — HECHO (24-09-2026)
+
+El grafo de código (OBJ-38) describe la arquitectura en un instante; faltaba
+saber si cambió desde la última vez. `snapshot` graba una base (comunidades,
+acoplamiento, flujos, símbolos públicos aproximados); `drift` la compara
+contra el grafo actual por solapamiento de ficheros (los ids son un hash del
+propio conjunto, así que no sirven para emparejar directamente) y por campo
+estable en los flujos: comunidades nuevas o desaparecidas, ficheros que
+cambiaron de módulo, dependencias nuevas (con aviso si entran en una
+comunidad antes aislada), ciclos introducidos, flujos que cambiaron de forma
+o criticidad, símbolos públicos eliminados que aún se referencian. Puntuación
+0-100 con los hallazgos explicados.
+
+Hecho: `src/code_graph/drift.py`, enganche no bloqueante en el bucle del
+agente (`src/drift_check.py`, ajuste `code_graph_drift_check`, activo por
+defecto): graba una base antes de la primera edición del turno y compara tras
+la última, con una nota en el resumen si la deriva supera el umbral.
+Herramienta `code_graph_drift`, rutas `/api/code-graph/drift*`. FAUSTUS.md
+§180.
+
+**Queda:** medir en vivo durante un refactor real; el presupuesto de tiempo
+por defecto (8-10 s) no se ha medido contra un repositorio de miles de
+ficheros (ver PENDIENTES).
+
+## OBJ-41 · Autonomía en sombra: aprender de qué aprobaciones se repiten sin arriesgar las que no — HECHO (24-09-2026)
+
+Cada tarjeta de aprobación pedía siempre confirmación, sin importar cuántas
+veces ya se hubiera aprobado exactamente lo mismo. Ahora, opcional
+(`approval_autonomy`, apagado por defecto): `shadow` registra qué habría
+decidido una puntuación de confianza 0-1 (solo lectura, si el usuario nombró
+el objetivo, aprobaciones previas de esa familia, si es reversible) frente a
+lo que la persona decidió de verdad, sin cambiar nada visible; `active`
+aprueba sola una familia ya promovida (≥20 decisiones de confianza alta,
+≥95 % de acuerdo, cero desacuerdos en algo destructivo). Bloqueos duros que
+ninguna puntuación salta: nada destructivo, nada fuera del workspace
+confirmado, ningún envío de mensaje o pago.
+
+Hecho: `src/approval_autonomy.py`, integración en la única rama de la puerta
+de aprobación que ya cubre esas dos clases de capacidad (nunca toca la
+confirmación de escritorio ni el guardia de comandos peligrosos), rutas
+`/api/approval-autonomy/*` (leer es admin, promover es solo humano — el
+modelo no puede promocionar sus propias herramientas), panel en
+Ajustes → Agente. FAUSTUS.md §180.
+
+**Queda:** dejarlo en `shadow` una sesión real y revisar el historial;
+revisar si la familia por nombre de herramienta es demasiado gruesa con datos
+de uso reales (ver PENDIENTES).
+
+## OBJ-42 · Dos skills nuevas: diseño web/accesibilidad y un tutor de repositorios — HECHO (24-09-2026)
+
+`web-accessibility-design`: reglas de diseño web y accesibilidad WCAG 2.2
+(semántica, teclado y foco, formularios, responsive, contraste, movimiento),
+adaptada y condensada de un paquete de reglas con licencia MIT, con su
+atribución completa en un `NOTICE` propio. `learn-this-repo`: un tutor nativo
+que usa `code_graph_communities`/`code_graph_flows` para construir un plan de
+estudio en orden de dependencia, explica cada módulo desde el código real,
+hace preguntas de repaso, y guarda el dominio por módulo en un fichero de
+notas del workspace para retomar la sesión más tarde. (La transcripción de
+YouTube que se había pedido como tercera skill ya existía — `reach_read` con
+`youtube_transcript_api` y comentarios por `yt-dlp` — así que no hacía falta
+una nueva.)
+
+De paso, un arreglo de fondo en el formato de skills (`services/memory/
+skill_format.py`): una sección no reconocida (p. ej. `## Referencia: …`)
+perdía su encabezado al volver a guardarse, así que una relectura posterior
+la fundía dentro de la sección conocida anterior — justo lo que hace
+`src/skill_library.py` al instalar una skill de la biblioteca. FAUSTUS.md
+§180.
+
+**Queda:** usar `learn-this-repo` de verdad con un modelo real y ver si el
+fichero de notas resulta útil para retomar sesiones (ver PENDIENTES).
+
