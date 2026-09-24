@@ -302,6 +302,12 @@ async def _manage_instincts_adapter(content, ctx):
 
 TOOL_HANDLERS["manage_instincts"] = _manage_instincts_adapter
 
+# Bug hunter: understand a module/function, generate edge-case pytest tests
+# for it, run them isolated, triage bug-vs-wrong-test, structured report --
+# src/agent_tools/bug_hunt_tools.py / src/bug_hunt.py.
+from .bug_hunt_tools import BugHuntTool
+TOOL_HANDLERS["bug_hunt"] = BugHuntTool().execute
+
 # ---------------------------------------------------------------------------
 # Constants (re-exported for backward compatibility — single source of truth
 # is src.constants; always prefer importing from there for new code)
@@ -429,7 +435,9 @@ TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_fi
              # GitHub -- src/agent_tools/prior_art_tools.py.
              "prior_art",
              # Targeted image inspection -- src/agent_tools/image_inspect_tool.py.
-             "inspect_image"} | BUILTIN_EMAIL_TOOLS | DESKTOP_TOOLS | SEMANTIC_TOOLS
+             "inspect_image",
+             # Autonomous bug hunter -- src/agent_tools/bug_hunt_tools.py.
+             "bug_hunt"} | BUILTIN_EMAIL_TOOLS | DESKTOP_TOOLS | SEMANTIC_TOOLS
 
 ToolBlock = namedtuple("ToolBlock", ["tool_type", "content"])
 
