@@ -88,6 +88,7 @@ from .image_inspect_tool import InspectImageTool
 from .goal_tools import GoalDefineTool, GoalStatusTool, GoalEvaluateTool, GoalEvidenceTool
 from .plan_tools import PlanStatusTool, PlanTaskTool, PlanDoneTool, PlanSkipTool, PlanNextTool
 from .prior_art_tools import PriorArtTool
+from .ci_tools import CiFailuresTool
 
 TOOL_HANDLERS = {
     "bash": BashTool().execute,
@@ -272,6 +273,9 @@ TOOL_HANDLERS = {
     # Prior art (GIT-08): reuse, adapt, or write, with every repository name
     # checked live before it reaches the user. See src/prior_art.py.
     "prior_art": PriorArtTool().execute,
+    # CI failure analyzer (lot C): what really broke in a GitHub Actions run,
+    # read from the run's own logs. See src/ci_failures.py.
+    "ci_failures": CiFailuresTool().execute,
 }
 # Config/integration admin tools (manage_endpoints/mcp/webhooks/tokens/settings).
 TOOL_HANDLERS.update(ADMIN_TOOL_HANDLERS)
@@ -424,7 +428,9 @@ TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_fi
              # GitHub -- src/agent_tools/prior_art_tools.py.
              "prior_art",
              # Targeted image inspection -- src/agent_tools/image_inspect_tool.py.
-             "inspect_image"} | BUILTIN_EMAIL_TOOLS | DESKTOP_TOOLS | SEMANTIC_TOOLS
+             "inspect_image",
+             # CI failure analyzer (lot C) -- src/agent_tools/ci_tools.py.
+             "ci_failures"} | BUILTIN_EMAIL_TOOLS | DESKTOP_TOOLS | SEMANTIC_TOOLS
 
 ToolBlock = namedtuple("ToolBlock", ["tool_type", "content"])
 

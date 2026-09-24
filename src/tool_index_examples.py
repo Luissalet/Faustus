@@ -1235,4 +1235,14 @@ EXAMPLES: Dict[str, List[str]] = {
         "verify that this GitHub repo is real and not abandoned",
         "qué repos existen para hacer esto, compáralos",
     ],
+
+    # ── CI failure analyzer (lot C) ─────────────────────────────────────
+    "ci_failures": [
+        "why did the last CI run fail",
+        "qué falló en el último pipeline de github actions",
+        "read the actual test failure from the failed workflow run",
+        "which file broke the build this time",
+        "check run 12345 and tell me what broke",
+        "propose a fix for what's failing in CI",
+    ],
 }
