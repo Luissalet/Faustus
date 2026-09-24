@@ -87,6 +87,45 @@
   box-shadow: var(--fs-panel-shadow);
 }
 
+/* ── Approval autonomy: per-family shadow-log stats ── */
+
+.fs-autonomy-table {
+  inline-size: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-label-size);
+}
+
+.fs-autonomy-table th,
+.fs-autonomy-table td {
+  padding: 6px 10px;
+  text-align: start;
+  border-bottom: 1px solid var(--fs-border);
+}
+
+.fs-autonomy-table th {
+  color: var(--fs-text-3);
+  font-weight: 600;
+}
+
+.fs-autonomy-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.fs-autonomy-badge[data-tone='promoted'] {
+  background: color-mix(in srgb, var(--fs-success) 20%, transparent);
+  color: var(--fs-success);
+}
+
+.fs-autonomy-badge[data-tone='not-promoted'] {
+  background: var(--fs-surface-2);
+  color: var(--fs-text-3);
+}
+
 /* ── Search health (which SearXNG engines really answer) ── */
 
 .fs-set__search-health {

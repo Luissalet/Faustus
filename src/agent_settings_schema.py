@@ -36,7 +36,7 @@ SCHEMA_KEY_RE = re.compile(r"^(agent_|browser_|desktop_)")
 EXTRA_KEYS: tuple[str, ...] = ("tool_path_extra_roots", "vision_enabled", "vision_model",
                                "dispatch_model", "dispatch_endpoint_id", "gpu_placement_prefer",
                                "sandbox_missing_policy", "code_graph_community_summaries",
-                               "code_graph_drift_check")
+                               "code_graph_drift_check", "approval_autonomy")
 
 FIELD_TYPES: tuple[str, ...] = ("bool", "int", "float", "text", "select", "list", "secret")
 _NUMERIC_TYPES = ("int", "float")
@@ -1003,6 +1003,22 @@ GROUPS: list[dict[str, Any]] = [
                   "compare it after the last one. Never blocks the turn; a short note is only added "
                   "to the turn summary when the drift score clears the threshold, and small repos "
                   "are skipped automatically."),
+        ],
+    ),
+    _group(
+        "approval_autonomy", "Approval autonomy",
+        "Confidence-scored autonomy for the approval gate that already exists once untrusted "
+        "content has entered a run (src/approval_autonomy.py). Off leaves every approval exactly "
+        "as it is today.",
+        [
+            _select("approval_autonomy", "Autonomy mode",
+                    "Off (default): unchanged behaviour, nothing is logged. Shadow: still asks every "
+                    "time, but records what the confidence model would have decided next to what you "
+                    "actually chose. Active: auto-approves a tool family only once its shadow history "
+                    "has earned it -- never anything destructive, outside the workspace, or a message/"
+                    "payment send.",
+                    [{"value": "off", "label": "Off"}, {"value": "shadow", "label": "Shadow (log only)"},
+                     {"value": "active", "label": "Active (auto-approve promoted families)"}]),
         ],
     ),
     _group(

@@ -167,6 +167,51 @@ export async function getAgentSchema(signal?: AbortSignal): Promise<{ groups: Sc
   return { groups, defaults: data.defaults ?? {} };
 }
 
+/* ── Approval autonomy: shadow-log stats + manual promote/demote ───────── */
+
+export interface AutonomyFamilyStat {
+  owner: string;
+  family: string;
+  total: number;
+  act_total: number;
+  act_agree: number;
+  destructive_disagree: number;
+  agreement_rate: number;
+  override: 'promoted' | 'demoted' | null;
+  promoted: boolean;
+}
+
+export interface AutonomyMode {
+  mode: 'off' | 'shadow' | 'active' | string;
+  modes: string[];
+  act_threshold: number;
+  advise_threshold: number;
+  promote_min_decisions: number;
+  promote_min_agreement: number;
+}
+
+export async function getApprovalAutonomyMode(signal?: AbortSignal): Promise<AutonomyMode> {
+  return getJson<AutonomyMode>('/api/approval-autonomy/mode', signal);
+}
+
+/** `owner=''` aggregates every owner (an admin-wide view). */
+export async function getApprovalAutonomyStats(owner = '', signal?: AbortSignal): Promise<AutonomyFamilyStat[]> {
+  const qs = owner ? `?owner=${encodeURIComponent(owner)}` : '';
+  const data = await getJson<{ families?: AutonomyFamilyStat[] }>(`/api/approval-autonomy/stats${qs}`, signal);
+  return data.families ?? [];
+}
+
+/** `status: ''` clears a manual override back to the computed value. */
+export async function setApprovalAutonomyFamily(owner: string, family: string, status: 'promoted' | 'demoted' | ''): Promise<void> {
+  await okr(
+    await fetch('/api/approval-autonomy/family', {
+      method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ owner, family, status }),
+    }),
+    'approval-autonomy/family',
+  );
+}
+
 /* ── Model endpoints ── */
 
 export interface ModelEndpoint {

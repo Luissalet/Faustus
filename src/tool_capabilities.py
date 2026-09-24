@@ -1636,6 +1636,16 @@ class ToolRunSecurityContext:
     # The folder this turn is bound to, for matchers that need to know where
     # a command runs (`cd "<workspace>" && pytest`). Empty when unbound.
     workspace: str = ""
+    # The account this run belongs to (approval shadow-log / family stats are
+    # per-owner). Empty for an unauthenticated/local run, exactly like every
+    # other owner-scoped field elsewhere in this codebase.
+    owner: str = ""
+    # Dedup for the autonomy auto-approve override below: `decision_for` is
+    # called more than once for the same tool call in a turn (the loop, then
+    # `src/tool_execution.py` right before running it) — this keeps a second,
+    # third, ... call for the SAME content from writing a second shadow-log
+    # row for what is really one decision.
+    _autonomy_seen: set = field(default_factory=set, repr=False, compare=False)
 
     @staticmethod
     def _delegation_payload(content: Any) -> Optional[Mapping[str, Any]]:
@@ -1785,6 +1795,61 @@ class ToolRunSecurityContext:
         if messages_contain_external_untrusted_context(message_list):
             self.external_untrusted_context_seen = True
 
+    def _autonomy_decision(
+        self,
+        tool_name: Any,
+        content: Any,
+        capabilities: ToolCapabilities,
+        blocked_effects: frozenset,
+    ) -> Optional[ToolGateDecision]:
+        """Shadow-mode / active-mode autonomy override for THIS gate only
+        (the post-external-context "blocked_effects" denial above) — never
+        for the desktop-input or destructive-command-guard denials, which
+        return before this is ever reached. See `src.approval_autonomy` for
+        the confidence model, the hard-block rules and the promotion
+        contract; this method only asks it a question and, in "active" mode
+        for a promoted, non-hard-blocked, high-confidence action, turns the
+        denial into an allow. Never raises: a broken autonomy module must
+        never grant anything it would not have granted before it existed."""
+        try:
+            from src import approval_autonomy as autonomy
+        except Exception:  # noqa: BLE001
+            return None
+        try:
+            if autonomy.autonomy_mode() != "active":
+                return None
+            if not blocked_effects or not (blocked_effects <= autonomy.PROMOTABLE_EFFECTS):
+                return None
+            if autonomy.is_hard_blocked(
+                tool_name, content, workspace=self.workspace, capabilities=capabilities
+            ):
+                return None
+            result = autonomy.compute_confidence(
+                tool_name, content, workspace=self.workspace, owner=self.owner,
+                user_text=self.user_request, capabilities=capabilities,
+            )
+            if result.tier != "act":
+                return None
+            family = autonomy.family_for(tool_name, content)
+            if not autonomy.is_family_promoted(self.owner, family):
+                return None
+            dedup_key = autonomy.dedup_key(tool_name, content)
+            if dedup_key not in self._autonomy_seen:
+                self._autonomy_seen.add(dedup_key)
+                autonomy.record_shadow_decision(
+                    owner=self.owner, family=family, tool_name=str(tool_name or ""),
+                    workspace=self.workspace, score=result.score, tier=result.tier,
+                    source="active_auto",
+                    destructive=(ToolEffect.DESTRUCTIVE in capabilities.effects),
+                    actual_decision="approved", agreed=True,
+                )
+                logger.info("[autonomy] auto-approved %s (family=%s score=%.2f)",
+                            tool_name, family, result.score)
+            return ToolGateDecision(True)
+        except Exception:  # noqa: BLE001 - never widen a denial into a bug
+            logger.debug("approval_autonomy check failed", exc_info=True)
+            return None
+
     def decision_for(self, tool_name: Any, content: Any = None) -> ToolGateDecision:
         mode = tool_approval_mode()
         # This controls the approval gate only. Tool availability, account,
@@ -1830,6 +1895,9 @@ class ToolRunSecurityContext:
         blocked_effects = capabilities.effects & POST_EXTERNAL_BLOCKED_EFFECTS
         if capabilities.known and not blocked_effects:
             return ToolGateDecision(True)
+        autonomy_decision = self._autonomy_decision(tool_name, content, capabilities, blocked_effects)
+        if autonomy_decision is not None:
+            return autonomy_decision
         effects = ", ".join(sorted(effect.value for effect in blocked_effects))
         if not capabilities.known:
             effects = "unknown/high-impact"

@@ -67,6 +67,7 @@ import { AccountSection } from './settings/Account';
 import { UsersSection } from './settings/Users';
 import { ToolsSection } from './settings/Tools';
 import { SystemExtras } from './settings/SystemExtras';
+import { ApprovalAutonomySection } from './settings/ApprovalAutonomy';
 import { EffectiveConfigSection } from './settings/EffectiveConfig';
 import { IntegrationsSection } from './settings/Integrations';
 import { LocalModelsSection } from './settings/LocalModels';
@@ -1627,7 +1628,12 @@ export function SettingsScreen() {
           {section === 'voice' && <VoiceSection settings={settings} endpoints={endpoints ?? []} onSave={onSave} say={say} />}
           {section === 'search' && <SearchSection settings={settings} onSave={onSave} say={say} />}
           {section === 'reminders' && <RemindersSection settings={settings} onSave={onSave} say={say} />}
-          {section === 'agent' && <AgentSection settings={settings} onSave={onSave} say={say} />}
+          {section === 'agent' && (
+            <>
+              <AgentSection settings={settings} onSave={onSave} say={say} />
+              {admin && <ApprovalAutonomySection say={say} />}
+            </>
+          )}
           {section === 'modes' && <BehaviorModesSection say={say} admin={admin} />}
           {section === 'repositories' && <RepositoriesSection say={say} />}
           {section === 'integrations' && <IntegrationsSection say={say} />}

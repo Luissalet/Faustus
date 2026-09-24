@@ -1448,6 +1448,14 @@ DEFAULT_SETTINGS = {
     # never blocking -- a workspace too small to be worth it, or any failure
     # along the way, silently skips (see `src.drift_check.DriftCheckState`).
     "code_graph_drift_check": True,
+    # Shadow mode + confidence-tiered autonomy for the post-external-context
+    # approval gate (`src/approval_autonomy.py`). "off" (default) leaves
+    # every approval-requiring action exactly as it always behaved. "shadow"
+    # logs what the confidence model would have decided, next to what the
+    # user actually clicked, without changing anything. "active" auto-
+    # approves a tool family only once its shadow history has earned it —
+    # see that module's own docstring for the full promotion contract.
+    "approval_autonomy": "off",
     # Web Push (src/push.py, lot P-A): whether the notification bus
     # (src/notifications.py) fans events out as browser/OS push
     # notifications in addition to the in-app WS/polling paths. On by

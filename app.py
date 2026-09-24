@@ -839,6 +839,12 @@ app.include_router(setup_tool_registry_routes())
 from routes.approvals_routes import setup_approvals_routes
 app.include_router(setup_approvals_routes())
 
+# Shadow mode / confidence-tiered auto-approval (feature 2): read-only stats
+# are admin, changing the mode setting or a family's promotion is
+# require_human -- same split as the approval cards just above.
+from routes.approval_autonomy_routes import setup_approval_autonomy_routes
+app.include_router(setup_approval_autonomy_routes())
+
 # Durable workflows. Admin, like the rest of the tool layer: the place a
 # person is actually required is a `human_approval` node inside the run, and
 # that is gated by require_human on the approvals routes.

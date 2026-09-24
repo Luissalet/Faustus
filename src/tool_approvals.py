@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import secrets
 import threading
@@ -26,6 +27,8 @@ from src.tool_approval_scopes import (
     scope_for_decision,
 )
 from src.tool_capabilities import ToolCapabilities, capabilities_for_action
+
+logger = logging.getLogger(__name__)
 
 
 def _ttl_from_env(default_seconds: int) -> int:
@@ -194,9 +197,15 @@ class PendingToolApproval:
     # exposed in the browser payload.
     selected_tools: tuple[str, ...] = ()
     continuation_query: str = ""
+    # Shadow-mode / active-mode autonomy (src.approval_autonomy): a short,
+    # human-readable confidence note. Empty in "off" and "shadow" modes (both
+    # leave the card byte-identical to before this field existed); set only
+    # in "active" mode for a call that was NOT auto-approved outright, so the
+    # person reviewing it sees why the check leaned the way it did.
+    autonomy_note: str = ""
 
     def public_payload(self, *, reason: str | None = None) -> dict[str, Any]:
-        return {
+        payload = {
             "kind": "tool_approval",
             "approval_id": self.approval_id,
             # The browser already owns this chat id. Persisting it with the
@@ -245,6 +254,9 @@ class PendingToolApproval:
             ],
             "action": self._action_payload(),
         }
+        if self.autonomy_note:
+            payload["autonomy_note"] = self.autonomy_note
+        return payload
 
     def _action_payload(self) -> dict[str, Any]:
         action: dict[str, Any] = {
@@ -386,6 +398,73 @@ class ExactToolApproval:
             return True
 
 
+def _autonomy_shadow_log(*, approval_id: str, owner: Any, tool_name: Any, content: Any,
+                          workspace: str, user_text: str, capabilities: ToolCapabilities) -> str:
+    """Best-effort bridge to `src.approval_autonomy`, called once per card
+    created here. Mode "off" (the default) is a single settings read and
+    nothing else -- no import, no score, no row, no note: the card this
+    function returns for "off" is exactly the empty string it always
+    returned before this function existed. Never raises: a failure in the
+    autonomy module must never block an approval card."""
+    try:
+        from src import approval_autonomy as autonomy
+    except Exception:  # noqa: BLE001
+        return ""
+    try:
+        mode = autonomy.autonomy_mode()
+        if mode == "off":
+            return ""
+        blocked = capabilities.effects & set(autonomy.PROMOTABLE_EFFECTS)
+        if not blocked or blocked != capabilities.effects:
+            # Only log/annotate the class of action `active` mode could ever
+            # auto-approve (see `PROMOTABLE_EFFECTS`) -- a `bash` or
+            # `send_email` card is untouched, in every mode.
+            return ""
+        result = autonomy.compute_confidence(
+            tool_name, content, workspace=workspace, owner=owner,
+            user_text=user_text, capabilities=capabilities,
+        )
+        from src.tool_capabilities import ToolEffect
+        autonomy.record_shadow_decision(
+            owner=owner, family=autonomy.family_for(tool_name, content),
+            tool_name=str(tool_name or ""), workspace=workspace,
+            score=result.score, tier=result.tier, source="shadow",
+            destructive=(ToolEffect.DESTRUCTIVE in capabilities.effects),
+            approval_id=approval_id,
+        )
+        if mode != "active":
+            return ""
+        return (
+            f"Autonomy check: {result.tier} ({result.score:.0%} confidence) — "
+            + "; ".join(result.reasons[:3]) + "."
+        )
+    except Exception:  # noqa: BLE001 - see docstring
+        logger.warning("approval_autonomy shadow log failed", exc_info=True)
+        return ""
+
+
+def _finalize_autonomy_shadow(*, approval_id: str, scope: Any, normalized_decision: str) -> None:
+    """Fill in what the user actually clicked for the shadow row `create()`
+    logged (a no-op if that row does not exist -- mode "off", or a card
+    whose action class `_autonomy_shadow_log` never logs). A resolved scope
+    is an approval of some breadth; `scope is None` together with the
+    literal deny wire value is a denial. Any other unmapped decision string
+    is neither and is left unresolved rather than guessed at."""
+    try:
+        from src import approval_autonomy as autonomy
+        if autonomy.autonomy_mode() == "off":
+            return
+        if scope is not None:
+            actual = "approved"
+        elif normalized_decision == DENY_APPROVAL_DECISION:
+            actual = "denied"
+        else:
+            return
+        autonomy.finalize_shadow_decision(approval_id=approval_id, actual_decision=actual)
+    except Exception:  # noqa: BLE001 - finalizing a log must never break consumption
+        logger.warning("approval_autonomy finalize failed", exc_info=True)
+
+
 class ToolApprovalStore:
     """Thread-safe pending approval registry with destructive consumption."""
 
@@ -480,8 +559,14 @@ class ToolApprovalStore:
             effects=effects,
             result_integrity=result_integrity,
         )
+        approval_id = secrets.token_urlsafe(32)
+        autonomy_note = _autonomy_shadow_log(
+            approval_id=approval_id, owner=payload["owner"], tool_name=tool_name,
+            content=content, workspace=payload["workspace"],
+            user_text=payload["continuation_query"], capabilities=capabilities,
+        )
         pending = PendingToolApproval(
-            approval_id=secrets.token_urlsafe(32),
+            approval_id=approval_id,
             owner=payload["owner"],
             session_id=payload["session_id"],
             origin_run_id=payload["origin_run_id"],
@@ -501,6 +586,7 @@ class ToolApprovalStore:
             expires_at=now + self._ttl_seconds,
             selected_tools=tuple(payload["selected_tools"]),
             continuation_query=payload["continuation_query"],
+            autonomy_note=autonomy_note,
         )
         with self._lock:
             self._purge_expired_locked(now)
@@ -619,6 +705,9 @@ class ToolApprovalStore:
             self._remember_consumed_locked(pending)
         normalized_decision = str(decision or "").strip().lower()
         scope = scope_for_decision(normalized_decision)
+        _finalize_autonomy_shadow(
+            approval_id=approval_key, scope=scope, normalized_decision=normalized_decision,
+        )
         if scope is None:
             return "invalid_decision", None
         if not allow_continuation:
