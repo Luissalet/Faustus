@@ -119,6 +119,11 @@ GROUPS: list[dict[str, Any]] = [
                  "A round with no text and no tool call gets nudged to continue this many times before "
                  "the turn ends with a concrete question instead of silence.",
                  1, 10),
+            _int("agent_web_streak_nudge", "Research-streak nudge threshold",
+                 "Consecutive rounds that only read remote content (web search/fetch, or a curl/wget/"
+                 "git-clone-only shell command) with no file written and no plan/todo update, before "
+                 "one gentle nudge asks the model to summarise and decide if it has enough. 0 disables it.",
+                 0, 100),
             _int("agent_turn_max_seconds", "Turn wall-clock ceiling (seconds)",
                  "Hard backstop independent of round count: once a turn has run this long in real time, "
                  "it ends with a summary and a question instead of continuing indefinitely.",

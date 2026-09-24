@@ -721,6 +721,13 @@ DEFAULT_SETTINGS = {
     # either answer or name the one fact still missing. Non-blocking: the
     # model is free to keep reading afterwards. 0 disables it.
     "agent_web_streak_nudge": 8,
+    # PENDIENTES 23-09 noche / src/tool_index.py: names this instance's tool
+    # index collection explicitly (e.g. so two instances keep sharing one on
+    # purpose, or to pin a name across a data-dir move). Left empty (the
+    # default), the collection name is derived automatically from a stable
+    # hash of this instance's own data directory, so different instances
+    # (different ports/data dirs) never share one collection by accident.
+    "tool_index_collection_suffix": "",
     # BUG-STOP-01: a hard wall-clock ceiling per turn, independent of round
     # count — the backstop for a turn whose rounds are each individually
     # cheap (so the round-budget/progress-gate checks above never trip) but
