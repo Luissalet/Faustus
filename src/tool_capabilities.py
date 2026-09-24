@@ -1898,6 +1898,15 @@ class ToolRunSecurityContext:
             return ToolGateDecision(True)
         if not self.external_untrusted_context_seen:
             return ToolGateDecision(True)
+        # A python snippet that provably cannot act outside its own process
+        # (src/pure_compute.py) has no effect for injected content to steer.
+        if tool_name == "python":
+            try:
+                from src.pure_compute import is_pure_compute
+                if is_pure_compute(content):
+                    return ToolGateDecision(True)
+            except Exception:  # noqa: BLE001 - unsure means the normal gate
+                pass
         if self._trusted_override(tool_name, content):
             return ToolGateDecision(True)
         if self._user_delegation_allows(tool_name, content):
