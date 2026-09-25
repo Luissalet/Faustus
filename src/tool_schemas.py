@@ -3835,6 +3835,79 @@ FUNCTION_TOOL_SCHEMAS = [
             }
         }
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "swarm_map",
+            "description": "Apply ONE instruction to MANY items in parallel (e.g. 40 companies, 30 files, 100 URLs): one model call per item (mode llm) or one small tool-using worker per item (mode agent), as many at once as the model server really serves, each item retried once and recorded on its own, then an optional reduce over all results. Results become a table (Markdown, CSV, JSONL) saved as artifacts. Use for wide, uniform work over a list; for a few different tasks use delegate_agents, to compare models on one prompt use fanout_run. Returns a run_id; with wait true it waits up to wait_timeout seconds and returns the table inline when it finishes in time.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "instruction": {"type": "string", "description": "What to do with each item. Put {item} where the item goes ({item.key} for one key of an object item); without a placeholder the item is appended."},
+                    "items": {"type": "array", "items": {}, "description": "The items: strings or small JSON objects (one per element)."},
+                    "mode": {"type": "string", "enum": ["llm", "agent"], "description": "llm (default): one model call per item, no tools. agent: one limited worker per item that may use tools (e.g. to read a file or fetch a URL)."},
+                    "output_fields": {"type": "array", "items": {"type": "string"}, "description": "Optional column names: each item's answer is asked as a JSON object with these keys and becomes one row of the table."},
+                    "reduce": {"type": "string", "description": "Optional instruction for one final pass over all the collected results (e.g. 'rank them and name the top 5')."},
+                    "wait": {"type": "boolean", "description": "Wait for the run to finish and return the results inline (for small jobs)."},
+                    "wait_timeout": {"type": "number", "description": "Seconds to wait when wait is true (default 120, max 900); the run carries on in the background after that."},
+                    "model": {"type": "string", "description": "Optional model (default: this chat's model)."},
+                    "endpoint_id": {"type": "string", "description": "Optional endpoint id to run on instead of this chat's endpoint."},
+                    "tools": {"type": "array", "items": {"type": "string"}, "description": "agent mode only: the tools each worker may use (default: the usual worker tools)."},
+                    "max_rounds": {"type": "integer", "description": "agent mode only: rounds per worker (default 6, max 12)."},
+                    "per_item_timeout": {"type": "number", "description": "Seconds per item attempt (default 180 llm / 900 agent)."},
+                    "max_parallel": {"type": "integer", "description": "Optional lower cap on items at once (never above what the backend serves)."},
+                    "max_items": {"type": "integer", "description": "Optional lower cap on the number of items accepted."},
+                    "resume_run_id": {"type": "string", "description": "Resume an interrupted or cancelled run instead of starting a new one (only its pending items run)."}
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "swarm_status",
+            "description": "Progress of a swarm_map run: items ok/failed/pending, how many run at once and why, files. Without run_id, lists this user's recent runs. Read-only.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "run_id": {"type": "string", "description": "Run id returned by swarm_map (optional)."}
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "swarm_results",
+            "description": "Result rows of a swarm_map run, paged (offset/limit), optionally only ok or failed rows, plus the reduce output. Read-only.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "run_id": {"type": "string", "description": "Run id returned by swarm_map"},
+                    "offset": {"type": "integer", "description": "First row (default 0)"},
+                    "limit": {"type": "integer", "description": "Rows per page (default 50, max 500)"},
+                    "status": {"type": "string", "enum": ["ok", "failed", "pending"], "description": "Only rows in this state"}
+                },
+                "required": ["run_id"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "swarm_cancel",
+            "description": "Cancel a swarm_map run: no new items start, in-flight ones are stopped; finished items are kept and the rest stay pending (resume later with swarm_map resume_run_id).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "run_id": {"type": "string", "description": "Run id returned by swarm_map"}
+                },
+                "required": ["run_id"]
+            }
+        }
+    }
 ]
 
 

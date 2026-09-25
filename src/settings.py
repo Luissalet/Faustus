@@ -1673,6 +1673,16 @@ DEFAULT_SETTINGS = {
     # A "deep" turn multiplies the local thinking watchdog
     # (agent_local_think_budget_seconds) by this factor.
     "think_mode_deep_watchdog_factor": 2.0,
+    # Swarm map (src/swarm/, docs/recipes/swarm.md): how many items one run
+    # sends at once. llama-server reports its own slots (/slots); Ollama
+    # cannot be asked, so this states the OLLAMA_NUM_PARALLEL the Ollama
+    # server was started with; a remote API gets swarm_api_parallel. All are
+    # capped by swarm_max_parallel, and one run takes at most
+    # swarm_max_items items.
+    "swarm_ollama_parallel": 1,
+    "swarm_api_parallel": 8,
+    "swarm_max_parallel": 16,
+    "swarm_max_items": 200,
 }
 
 

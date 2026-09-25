@@ -23,7 +23,7 @@
   "events": [
     {"type": null, "name": "delta", "stability": "core", "fields": {"delta": "string", "thinking": "bool?"}, "note": "text tokens; `thinking` marks reasoning text"},
     {"type": "tool_start", "stability": "core", "fields": {"tool": "string", "command": "string?", "full_command": "string?", "round": "int?"}},
-    {"type": "tool_progress", "stability": "core", "fields": {"tool": "string?", "message": "string?", "event": "string?", "subagent": "object?"}},
+    {"type": "tool_progress", "stability": "core", "fields": {"tool": "string?", "message": "string?", "event": "string?", "subagent": "object?", "swarm": "object?"}},
     {"type": "tool_output", "stability": "core", "fields": {"tool": "string", "command": "string?", "output": "string?", "exit_code": "int?", "diff": "string?", "doc_id": "string?", "screenshot": "string?", "argument_errors": "array?", "repairs": "array?", "evidence_refs": "array?", "execution_target": "object?", "call_id": "string?", "duration_ms": "int?", "turn_elapsed_ms": "int?"}},
     {"type": "tool_effect", "stability": "core", "fields": {"call_id": "string", "tool": "string", "effect_class": "string", "state": "pending|confirmed|failed", "idempotency_key": "string"}},
     {"type": "agent_step", "stability": "core", "fields": {"round": "int"}},

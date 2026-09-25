@@ -8425,3 +8425,11 @@ Reasoning: {label}	Razonamiento: {label}
 How much the model reasons before answering, for this chat. /think auto|fast|think|deep does the same.	Cuánto razona el modelo antes de responder, en este chat. /think auto|fast|think|deep hace lo mismo.
 Reasoning for this chat: {label}.	Razonamiento de este chat: {label}.
 The model's reasoning, if it supports it: a mode for this chat (auto, fast, think, deep) or on/off.	Razonamiento del modelo, si lo soporta: un modo para este chat (auto, fast, think, deep) o on/off.
+workers	trabajadores
+model calls	llamadas al modelo
+reduce	reducción
+{n} at a time	{n} a la vez
+{ok} ok, {failed} failed, {pending} pending of {total}	{ok} bien, {failed} fallidos, {pending} pendientes de {total}
+Swarm: one instruction applied to many items at once, as many as the model server serves in parallel. Started from a chat with the swarm_map tool.	Enjambre: una misma instrucción aplicada a muchos elementos a la vez, tantos como el servidor del modelo atiende en paralelo. Se lanza desde un chat con la herramienta swarm_map.
+Loading swarm runs	Cargando las ejecuciones del enjambre
+No swarm run yet.	Todavía no hay ninguna ejecución del enjambre.

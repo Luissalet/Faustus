@@ -25,6 +25,7 @@ from .filesystem_tools import ReadFileTool, WriteFileTool, EditFileTool, ApplyPa
 from .coding_tools import TodoWriteTool
 from .subagent_tools import DelegateAgentsTool
 from .night_shift_tools import NightShiftTool
+from .swarm_tools import SwarmCancelTool, SwarmMapTool, SwarmResultsTool, SwarmStatusTool
 from .code_tools import FindSymbolTool, CallersTool, TestsForTool, RenameSymbolTool
 from .code_history_tools import CodeHistoryTool
 from .document_tools import CreateDocumentTool, UpdateDocumentTool, EditDocumentTool, SuggestDocumentTool, ManageDocumentTool
@@ -288,6 +289,12 @@ TOOL_HANDLERS = {
     # CI failure analyzer (lot C): what really broke in a GitHub Actions run,
     # read from the run's own logs. See src/ci_failures.py.
     "ci_failures": CiFailuresTool().execute,
+    # Swarm map: one instruction over N items in parallel, sized to the
+    # backend's real parallel slots. See src/swarm/.
+    "swarm_map": SwarmMapTool().execute,
+    "swarm_status": SwarmStatusTool().execute,
+    "swarm_results": SwarmResultsTool().execute,
+    "swarm_cancel": SwarmCancelTool().execute,
 }
 # Config/integration admin tools (manage_endpoints/mcp/webhooks/tokens/settings).
 TOOL_HANDLERS.update(ADMIN_TOOL_HANDLERS)
@@ -477,7 +484,9 @@ TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_fi
              "code_history",
              # Context self-management -- src/agent_tools/context_tools.py.
              "context_status", "context_pin", "context_unpin",
-             "context_drop", "context_note"} | BUILTIN_EMAIL_TOOLS | DESKTOP_TOOLS | SEMANTIC_TOOLS
+             "context_drop", "context_note",
+             # Swarm map -- src/agent_tools/swarm_tools.py.
+             "swarm_map", "swarm_status", "swarm_results", "swarm_cancel"} | BUILTIN_EMAIL_TOOLS | DESKTOP_TOOLS | SEMANTIC_TOOLS
 
 ToolBlock = namedtuple("ToolBlock", ["tool_type", "content"])
 

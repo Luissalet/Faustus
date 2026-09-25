@@ -306,6 +306,13 @@ async def _acquire_local_model_lock(model: str) -> None:
                 _LOCAL_MODEL_LOCK.release()
 
 
+def _foreground_model_busy() -> bool:
+    """A foreground call is waiting for the local model slot or holds it."""
+    if _LOCAL_MODEL_WAITING_FOREGROUND > 0:
+        return True
+    return _LOCAL_MODEL_LOCK.locked() and _LOCAL_MODEL_CURRENT.get("workload") == "foreground"
+
+
 @asynccontextmanager
 async def _local_model_slot(target_url: str, model: str, workload: Optional[str] = None):
     """Serialize local model traffic, with foreground chat taking priority.
@@ -340,6 +347,21 @@ async def _local_model_slot(target_url: str, model: str, workload: Optional[str]
 
     try:
         if not _local_model_gate_enabled():
+            yield
+            return
+
+        # Swarm lane (src/swarm/lane.py): a swarm item calling the server
+        # it was sized for skips the one-pipe lock -- its runner already
+        # caps its calls at the server's parallel slots -- after yielding to
+        # any foreground call that is waiting for or holding the model.
+        try:
+            from src.swarm.lane import lane_for as _swarm_lane_for
+            _swarm_lane = _swarm_lane_for(target_url)
+        except Exception:  # noqa: BLE001
+            _swarm_lane = None
+        if _swarm_lane is not None:
+            while _foreground_model_busy():
+                await asyncio.sleep(0.25)
             yield
             return
 

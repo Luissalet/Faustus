@@ -1328,4 +1328,33 @@ EXAMPLES: Dict[str, List[str]] = {
         "resume esos resultados en una nota y libera el contexto",
         "sustituye las lecturas de ficheros por un resumen de lo importante",
     ],
+
+    # ── Swarm map — one instruction over many items in parallel ─────────────
+    "swarm_map": [
+        "do this for each of these 40 companies",
+        "summarise every file in this list, one line each",
+        "check all these URLs and tell me which are down",
+        "para cada empresa de la lista, busca su sector y su tamaño",
+        "haz lo mismo con cada uno de estos elementos en paralelo",
+        "classify these 200 reviews as positive or negative",
+        "extrae nombre, precio y fecha de cada uno de estos textos",
+    ],
+    "swarm_status": [
+        "how far along is the batch",
+        "how many items have failed so far",
+        "cuánto le queda al lote que lancé",
+        "va bien el procesamiento en paralelo",
+    ],
+    "swarm_results": [
+        "show me the results of the batch",
+        "which items failed in that run",
+        "enséñame la tabla de resultados del lote",
+        "dame la siguiente página de resultados",
+    ],
+    "swarm_cancel": [
+        "stop the batch, it's taking too long",
+        "cancel that run over the list",
+        "para el lote que está en marcha",
+        "cancela el procesamiento de la lista",
+    ],
 }
