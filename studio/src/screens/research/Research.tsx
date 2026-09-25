@@ -5,6 +5,7 @@ import {
   Cpu,
   Download,
   ExternalLink,
+  Headphones,
   Library,
   ListPlus,
   MessageSquare,
@@ -54,6 +55,7 @@ import { safeExternal } from '../../lib/markdown';
 import { Rich } from '../rich';
 import { Vitals } from '../studio/Vitals';
 import { VramAdmissionDialog } from '../VramAdmissionDialog';
+import { PodcastPanel } from './Podcast';
 import '../research.css';
 
 /**
@@ -219,6 +221,7 @@ export function CoverageMap({ coverage }: { coverage: CoverageNode[] }) {
 
 function ResultCard({ job, formats, onDiscuss, onDelete, onDismiss, say }: { job: Job; formats: string[]; onDiscuss: () => void; onDelete: () => void; onDismiss: () => void; say: (m: string, tone?: 'ok' | 'warn') => void }) {
   const [open, setOpen] = useState(false);
+  const [podcast, setPodcast] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const r = job.result;
   const copy = async () => {
@@ -306,10 +309,14 @@ function ResultCard({ job, formats, onDiscuss, onDelete, onDismiss, say }: { job
             items={formats.map((f) => ({ label: f.toUpperCase(), onSelect: () => window.open(exportUrl(job.sessionId as string, f), '_blank', 'noopener') }))}
           />
         )}
+        {job.sessionId && (
+          <Button variant="ghost" size="sm" icon={Headphones} label={t('Podcast')} onClick={() => setPodcast((v) => !v)} title={t('Two voices talk this report through')} testId="research-podcast-toggle" />
+        )}
         <IconButton icon={Copy} label={t('Copy the report')} size="sm" onClick={() => void copy()} />
         <span className="fs-spacer" />
         <Button variant="ghost" size="sm" icon={Trash2} label={t('Delete')} onClick={onDelete} />
       </footer>
+      {podcast && job.sessionId && <PodcastPanel researchId={job.sessionId} autostart say={say} />}
     </article>
   );
 }
@@ -396,6 +403,7 @@ export function ResearchScreen() {
   const [expandedPrompt, setExpandedPrompt] = useState(false);
   const [jobs, setJobs] = useState<Job[]>(() => readJson<Job[]>(QUEUE_KEY, []).filter((j) => j.status === 'queued'));
   const [dismissed, setDismissed] = useState<Set<string>>(() => new Set(readJson<string[]>(DISMISSED_KEY, [])));
+  const [podcastFor, setPodcastFor] = useState<string | null>(null);
   const [recent, setRecent] = useState<ResearchItem[] | null>(null);
   const [providers, setProviders] = useState<SearchProvider[]>([]);
   const [modelRoutes, setModelRoutes] = useState<ModelRoute[]>([]);
@@ -934,8 +942,10 @@ export function ResearchScreen() {
                     <span>{t('Visual report')}</span>
                   </a>
                   <Button variant="ghost" size="sm" icon={MessageSquare} label={t('Discuss')} onClick={() => void discuss(r.id)} />
+                  <Button variant="ghost" size="sm" icon={Headphones} label={t('Podcast')} onClick={() => setPodcastFor((cur) => (cur === r.id ? null : r.id))} title={t('Two voices talk this report through')} />
                   <IconButton icon={X} label={t('Clear from the list')} size="sm" onClick={() => setDismissed((d) => new Set(d).add(r.id))} />
                 </div>
+                {podcastFor === r.id && <PodcastPanel researchId={r.id} autostart say={say} />}
               </li>
             ))}
           </ul>

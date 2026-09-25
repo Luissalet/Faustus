@@ -513,3 +513,67 @@ export function phaseLabel(p: ResearchProgress | null, maxRounds: number): strin
       return p.phase;
   }
 }
+
+/* ── Podcast (src/research_podcast.py) ─────────────────────────────────── */
+
+export interface PodcastLine {
+  speaker: 'A' | 'B';
+  text: string;
+}
+
+export interface PodcastState {
+  status: 'none' | 'running' | 'done' | 'failed';
+  phase: string;
+  linesDone: number;
+  linesTotal: number;
+  chunksDone: number;
+  chunksTotal: number;
+  script: PodcastLine[];
+  warnings: string[];
+  error: string;
+  audioUrl: string | null;
+  downloadUrl: string | null;
+  transcriptUrl: string | null;
+  durationS: number;
+  voices: { A: string; B: string } | null;
+}
+
+function podcastFrom(raw: Record<string, unknown>): PodcastState {
+  const progress = (raw.progress && typeof raw.progress === 'object' ? raw.progress : {}) as Record<string, unknown>;
+  const pod = (raw.podcast && typeof raw.podcast === 'object' ? raw.podcast : {}) as Record<string, unknown>;
+  const status = String(raw.status ?? 'none');
+  const voices = pod.voices && typeof pod.voices === 'object' ? (pod.voices as Record<string, unknown>) : null;
+  const str = (v: unknown) => (typeof v === 'string' && v ? v : null);
+  return {
+    status: (['none', 'running', 'done', 'failed'].includes(status) ? status : 'failed') as PodcastState['status'],
+    phase: String(progress.phase ?? ''),
+    linesDone: Number(progress.lines_done) || 0,
+    linesTotal: Number(progress.lines_total) || 0,
+    chunksDone: Number(progress.chunks_done) || 0,
+    chunksTotal: Number(progress.chunks_total) || 0,
+    script: asArray<Record<string, unknown>>(raw, 'script')
+      .map((l) => ({ speaker: (l.speaker === 'B' ? 'B' : 'A') as 'A' | 'B', text: String(l.text ?? '') }))
+      .filter((l) => l.text),
+    warnings: asArray<unknown>(raw, 'warnings').map(String),
+    error: String(raw.error ?? ''),
+    audioUrl: str(raw.audio_url),
+    downloadUrl: str(raw.download_url),
+    transcriptUrl: str(raw.transcript_url),
+    durationS: Number(pod.duration_s) || 0,
+    voices: voices ? { A: String(voices.A ?? ''), B: String(voices.B ?? '') } : null,
+  };
+}
+
+export async function podcastStatus(id: string, signal?: AbortSignal): Promise<PodcastState> {
+  return podcastFrom(await getJson<Record<string, unknown>>(`/api/research/${encodeURIComponent(id)}/podcast`, signal));
+}
+
+/** Start the podcast job. A 409 (already running) resolves to the live state. */
+export async function startPodcast(id: string): Promise<PodcastState> {
+  try {
+    return podcastFrom(await post(`/api/research/${encodeURIComponent(id)}/podcast`));
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 409) return podcastStatus(id);
+    throw err;
+  }
+}
