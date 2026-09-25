@@ -1575,6 +1575,56 @@ class TurnLedger:
     def mutated_ui_paths(self) -> List[str]:
         return [p for p in self.mutated_paths() if UI_PATH_RE.search(p.replace("\\", "/"))]
 
+    def confirmed_mutated_paths(self) -> List[str]:
+        """`mutated_paths()`, kept only where the workspace itself agrees the
+        content really changed, was created, or was deleted this turn.
+
+        `mutated_paths()` is a record of tool calls that CLAIMED a mutation
+        (`edit_file`/`write_file`/`apply_patch` reported no error) -- exactly
+        right for deciding whether to run tests or a review, but not for a
+        "Changes" list shown to the user: a no-op edit (old_string ==
+        new_string, or a write that lands back at its own prior content)
+        reports success and names a path with nothing behind it, and so does
+        a path resolved somewhere the tool never actually reached. Seen live:
+        the turn summary listed a CSV that had not changed and a JSON file in
+        the workspace root that did not exist.
+
+        The pre-turn shadow checkpoint (`workspace_checkpoints`) is the
+        ground truth here -- the same diff `src/auto_review.py` reviews and
+        the same one `workspace_checkpoints.changed_since` computes for the
+        functional tests. When no checkpoint is available (checkpoints off,
+        no git binary) this falls back to the weakest thing still worth
+        checking: a claimed path that plainly does not exist on disk, and
+        was never reported as removed, is not a change."""
+        paths = self.mutated_paths()
+        if not paths or not self.workspace:
+            return paths
+        sha = (self.checkpoint or {}).get("sha") if isinstance(self.checkpoint, dict) else None
+        if sha:
+            try:
+                from src import workspace_checkpoints as wc
+                if wc.has_checkpoint(self.workspace, sha):
+                    changed = wc.changed_since(self.workspace, sha, paths)
+                    confirmed = {
+                        _norm(c.get("path") or "") for c in changed
+                        if isinstance(c, dict) and c.get("path")
+                    }
+                    return [p for p in paths if _norm(p) in confirmed]
+            except Exception:  # noqa: BLE001 - never let a report crash the turn
+                logger.debug("[harness] confirmed_mutated_paths: checkpoint diff failed", exc_info=True)
+        # No checkpoint to verify against (checkpoints disabled, or no git
+        # binary at all): the weakest thing still worth checking is whether
+        # the claimed path exists on disk at all.
+        out: List[str] = []
+        for p in paths:
+            try:
+                full = p if os.path.isabs(p) else os.path.join(self.workspace, p)
+                if os.path.exists(full):
+                    out.append(p)
+            except Exception:  # noqa: BLE001
+                out.append(p)
+        return out
+
     def has_browser_evidence(self) -> bool:
         for e in self.events:
             if not e.get("ok"):
@@ -2247,6 +2297,7 @@ class TurnLedger:
         )
 
     def summary(self, git: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        changed_now = self.confirmed_mutated_paths()
         return {
             "language": self.language,
             "tools_run": self.tools_run(),
@@ -2255,8 +2306,7 @@ class TurnLedger:
             # execution nor an execution failure. Keep the raw ledger intact.
             "failed_calls": sum(not e.get('approval_required') for e in self.failed),
             "waiting_approval_calls": sum(bool(e.get('approval_required')) for e in self.events),
-            "mutations": self.mutated_paths() + [p for p in self.prior_leg_paths
-                                                 if p not in self.mutated_paths()],
+            "mutations": changed_now + [p for p in self.prior_leg_paths if p not in changed_now],
             "effects": len(self.effects),
             "rejections": self.rejections,
             "length_continues": self.length_continues,

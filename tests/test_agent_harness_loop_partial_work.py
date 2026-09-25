@@ -13,6 +13,7 @@ fake LLM stream, fake tool execution.
 
 import asyncio
 import json
+import os
 
 import src.agent_loop as al
 
@@ -70,13 +71,28 @@ def _workspace(tmp_path):
     return str(tmp_path)
 
 
-def _patch(monkeypatch, rounds):
+def _patch(monkeypatch, rounds, workspace=None):
     monkeypatch.setattr(al, "get_setting", lambda key, default=None: default, raising=False)
     monkeypatch.setattr(al, "get_mcp_manager", lambda: None, raising=False)
     monkeypatch.setattr(al, "estimate_tokens", lambda *a, **k: 10, raising=False)
     monkeypatch.setattr(al, "blocked_tools_for_owner", lambda owner: set(), raising=False)
 
     async def _fake_exec(block, *a, **k):
+        # A real edit_file really rewrites the file on disk, exactly like the
+        # production tool does -- the turn summary's "mutations" is now
+        # verified against the workspace's own pre-turn checkpoint, so a
+        # stub that only CLAIMS success without touching the file would make
+        # the harness (correctly) treat it as no real change.
+        if workspace and block.tool_type == "edit_file":
+            try:
+                args = json.loads(block.content)
+                p = os.path.join(workspace, args["path"])
+                text = open(p, encoding="utf-8").read()
+                if args["old_string"] in text:
+                    open(p, "w", encoding="utf-8").write(
+                        text.replace(args["old_string"], args["new_string"], 1))
+            except Exception:
+                pass
         return (block.tool_type, {"output": "Edited cart.py (1 replacement)", "exit_code": 0})
     monkeypatch.setattr(al, "execute_tool_block", _fake_exec, raising=False)
 
@@ -110,7 +126,7 @@ def _run(workspace, user=USER, max_rounds=8):
 
 def test_editing_one_file_and_reporting_two_is_not_verified(tmp_path, monkeypatch):
     ws = _workspace(tmp_path)
-    calls = _patch(monkeypatch, [(EDIT_CART, "tool_calls"), (HALF_DONE_ANSWER, "stop")])
+    calls = _patch(monkeypatch, [(EDIT_CART, "tool_calls"), (HALF_DONE_ANSWER, "stop")], workspace=ws)
     events = _run(ws)
 
     checks = [e for e in events if e.get("type") == "harness_check"]
@@ -155,7 +171,7 @@ def test_the_model_that_writes_both_files_is_verified(tmp_path, monkeypatch):
         (EDIT_CART, "tool_calls"),
         (write_test, "tool_calls"),
         (HALF_DONE_ANSWER, "stop"),
-    ])
+    ], workspace=ws)
     events = _run(ws)
     checks = [e for e in events if e.get("type") == "harness_check"]
     statuses = [c["status"] for c in checks]
@@ -175,7 +191,7 @@ def test_an_honest_partial_answer_is_not_punished(tmp_path, monkeypatch):
               "subtotal(items) y le suma el envío.\n\n"
               "No he escrito el test todavía: los tests existentes están en "
               "tests/test_cart.py y ese fichero sigue sin tocar. ¿Lo añado ahí?")
-    _patch(monkeypatch, [(EDIT_CART, "tool_calls"), (honest, "stop")])
+    _patch(monkeypatch, [(EDIT_CART, "tool_calls"), (honest, "stop")], workspace=ws)
     events = _run(ws)
     statuses = [e["status"] for e in events if e.get("type") == "harness_check"]
     assert "rejected" not in statuses and "unverified" not in statuses, statuses
