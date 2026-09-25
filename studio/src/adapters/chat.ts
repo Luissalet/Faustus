@@ -543,6 +543,9 @@ export type ChatEvent =
    *  `null` when none is active — never surfaced before this lot added
    *  this `case` (see `adapters/strategy.ts`'s own doc comment on the gap). */
   | { type: 'strategy'; method: string; profile: string; recipeId: string | null; reasons: string[]; steps: string[]; budget: Record<string, unknown> }
+  /** Lot T: the reasoning mode this turn runs with (`src/think_mode.py`),
+   *  sent once at the top of the stream for a thinking-capable model. */
+  | { type: 'think_mode'; mode: 'fast' | 'think' | 'deep'; requested: string; source: string; reasons: string[]; budget: number | null }
   | {
       type: 'research';
       phase: string;
@@ -1139,6 +1142,8 @@ export interface SendOptions {
   attachments?: string[];
   /** Per-session sampling knobs (/temp, /maxtokens…), validated server-side. */
   genOverrides?: Record<string, number | boolean>;
+  /** Lot T: the composer's reasoning mode (auto/fast/think/deep). */
+  thinkMode?: string;
   /** Answering a tool approval: the message goes empty and these travel. */
   approval?: { id: string; decision: 'approve' | 'approve_task' | 'approve_workspace' | 'deny' };
   /** `/agents`: the delegation travels as its own field; the server swaps
@@ -1558,6 +1563,17 @@ export function decode(raw: Record<string, unknown>, sseEvent: string | null): C
         steps: asArray<unknown>(data.steps).map(String).filter(Boolean),
         budget: data.budget && typeof data.budget === 'object' ? (data.budget as Record<string, unknown>) : {},
       };
+    case 'think_mode': {
+      const mode = data.mode === 'think' || data.mode === 'deep' ? data.mode : 'fast';
+      return {
+        type: 'think_mode',
+        mode,
+        requested: str(data.requested, 'auto'),
+        source: str(data.source),
+        reasons: asArray<unknown>(data.reasons).map(String).filter(Boolean),
+        budget: num(data.budget) ?? null,
+      };
+    }
     case 'metrics':
       return { type: 'metrics', metrics: metricsFrom(data) };
     case 'web_sources':
@@ -1861,6 +1877,7 @@ export async function* sendTurn(options: SendOptions): AsyncGenerator<ChatEvent>
   if (options.genOverrides && Object.keys(options.genOverrides).length) {
     fd.append('gen_overrides', JSON.stringify(options.genOverrides));
   }
+  if (options.thinkMode) fd.append('think_mode', options.thinkMode);
   if (options.approval) {
     fd.append('tool_approval_id', options.approval.id);
     fd.append('tool_approval_decision', options.approval.decision);

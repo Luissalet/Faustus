@@ -31,4 +31,10 @@ export const en: Record<string, string> = {
   // B1 (CONTRATO_EXCURSOS.md): "N inherited" reads the same in English
   // whether N is 1 or many; Spanish needs "heredado"/"heredados".
   '{n} inherited#': '{n} inherited',
+  // Lot T: the reasoning-mode chip (Auto / Rápido / Pensar / A fondo);
+  // "Auto" elsewhere reads "Automático" in Spanish.
+  'Auto#think_mode': 'Auto',
+  'Fast#think_mode': 'Fast',
+  'Think#think_mode': 'Think',
+  'Deep#think_mode': 'Deep',
 };

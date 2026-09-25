@@ -38,8 +38,13 @@ import {
   setWorkspace as persistWorkspace,
   uploadFiles,
   vetWorkspace,
+  parseThinkMode,
+  readThinkMode,
+  thinkModeLabel,
+  writeThinkMode,
   type Attachment,
   type GenOverrides,
+  type ThinkMode,
 } from '../adapters/composer';
 import {
   archiveSession,
@@ -515,6 +520,11 @@ export function StudioScreen() {
   const [workspace, setWorkspaceState] = useState(() => getWorkspace());
   const [wsOpen, setWsOpen] = useState(false);
   const [gen, setGen] = useState<GenOverrides>({});
+  // Lot T: this chat's reasoning mode (null = no pick of its own, the
+  // `think_mode_default` setting applies) and that global default.
+  const [thinkPick, setThinkPick] = useState<ThinkMode | null>(null);
+  const [thinkDefault, setThinkDefault] = useState<ThinkMode>('auto');
+  const thinkMode: ThinkMode = thinkPick ?? thinkDefault;
   const [modelSignal, setModelSignal] = useState(0);
   const [panel, panelDispatch] = useChatPanel(sessionId,knobs.incognito);
   // CMP-01-layout (W2-A2): conversation / document / review, per session
@@ -808,13 +818,57 @@ export function StudioScreen() {
     return () => controller.abort();
   }, []);
 
-  /* Per-session generation knobs. */
+  /* Per-session generation knobs. A brand-new chat gets its id on the first
+   * send: whatever was set before that (`/think on` typed into the empty
+   * chat) carries over to the new id instead of being reset to nothing,
+   * which used to drop it from every turn after the first. */
+  const prevGenSessionRef = useRef<string | null>(sessionId);
+  const genRef = useRef<GenOverrides>(gen);
+  genRef.current = gen;
+  const thinkPickRef = useRef<ThinkMode | null>(thinkPick);
+  thinkPickRef.current = thinkPick;
   useEffect(() => {
+    const born = !prevGenSessionRef.current && Boolean(sessionId);
+    prevGenSessionRef.current = sessionId;
+    if (born && sessionId) {
+      const stored = readJson<GenOverrides>(`${GEN_KEY}_${sessionId}`, {});
+      if (!Object.keys(stored).length && Object.keys(genRef.current).length) {
+        writeJson(`${GEN_KEY}_${sessionId}`, genRef.current);
+      } else {
+        setGen(stored);
+      }
+      const storedThink = readThinkMode(sessionId);
+      if (!storedThink && thinkPickRef.current) writeThinkMode(sessionId, thinkPickRef.current);
+      else setThinkPick(storedThink);
+      return;
+    }
     setGen(sessionId ? readJson<GenOverrides>(`${GEN_KEY}_${sessionId}`, {}) : {});
+    setThinkPick(readThinkMode(sessionId));
   }, [sessionId]);
   useEffect(() => {
     if (sessionId) writeJson(`${GEN_KEY}_${sessionId}`, gen);
   }, [gen, sessionId]);
+  // Written where it is picked, not in an effect: an effect would run once
+  // with the previous chat's pick against the next chat's id.
+  const pickThinkMode = useCallback((mode: ThinkMode) => {
+    setThinkPick(mode);
+    writeThinkMode(sessionId, mode);
+  }, [sessionId]);
+  useEffect(() => {
+    let live = true;
+    void getSettings()
+      .then((s) => { if (live) setThinkDefault(parseThinkMode(s.think_mode_default) ?? 'auto'); })
+      .catch(() => { /* Auto stays the default */ });
+    return () => { live = false; };
+  }, []);
+  // What the server ran the latest answered turn with ("Auto · Think").
+  const thinkChosen: ThinkMode | null = useMemo(() => {
+    for (let i = (turns?.length ?? 0) - 1; i >= 0; i -= 1) {
+      const tm = turns?.[i]?.thinkMode;
+      if (tm) return tm.mode;
+    }
+    return null;
+  }, [turns]);
 
   const turnsFromHistory = useCallback(
     async (sid: string, signal?: AbortSignal) => {
@@ -1210,6 +1264,7 @@ export function StudioScreen() {
           route,
           attachments: options.attachments?.map((a) => a.id),
           genOverrides: Object.keys(gen).length ? (gen as Record<string, number | boolean>) : undefined,
+          thinkMode,
           approval: options.approval,
           questionId: options.questionId,
           optionIds: options.optionIds,
@@ -1264,7 +1319,7 @@ export function StudioScreen() {
         refreshStaleWires(sid);
       }
     },
-    [knobs, workspace, route, gen, patchLast, refreshSessions, syncIds, preset, panel.doc,teamEnabled,panelDispatch,refreshStaleWires],
+    [knobs, workspace, route, gen, thinkMode, patchLast, refreshSessions, syncIds, preset, panel.doc,teamEnabled,panelDispatch,refreshStaleWires],
   );
 
   /**
@@ -1465,7 +1520,20 @@ export function StudioScreen() {
         case 'temp':
         case 'maxtokens':
         case 'topp':
-        case 'think':
+        case 'think': {
+          // `/think auto|fast|think|deep` (also rápido/pensar/a fondo) picks
+          // the reasoning mode; `/think on|off` keeps pinning the switch.
+          const picked = name === 'think' ? parseThinkMode(args) : null;
+          if (picked) {
+            pickThinkMode(picked);
+            say(t('Reasoning for this chat: {label}.', { label: thinkModeLabel(picked) }));
+            return true;
+          }
+          const next = genFromArgs(name, args, gen);
+          setGen(next);
+          say(Object.keys(next).length ? t('Generation settings applied to this chat.') : t('Generation settings removed.'));
+          return true;
+        }
         case 'gen': {
           const next = genFromArgs(name, args, gen);
           setGen(next);
@@ -2278,6 +2346,7 @@ export function StudioScreen() {
       reportFrom,
       navigate,
       gen,
+      pickThinkMode,
       workspace,
       setWorkspace,
       pickWorkspace,
@@ -3090,6 +3159,9 @@ export function StudioScreen() {
           onClearGen={() => setGen({})}
           onSetGen={setGen}
           modelName={route?.model ?? null}
+          thinkMode={thinkMode}
+          thinkChosen={thinkChosen}
+          onSetThinkMode={pickThinkMode}
           attachments={attachments}
           setAttachments={(update) => setAttachments(update)}
           sessionId={sessionId}

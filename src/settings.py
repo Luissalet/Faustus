@@ -1662,6 +1662,17 @@ DEFAULT_SETTINGS = {
     "bug_hunt_max_cases": 12,
     # Timeout (seconds) for one isolated pytest run of a generated suite.
     "bug_hunt_timeout_seconds": 120,
+    # Lot T: per-turn reasoning mode (src/think_mode.py). The composer's
+    # default for a chat with no pick of its own: auto | fast | think | deep.
+    "think_mode_default": "auto",
+    # `reasoning_budget` (tokens) for the "think" and "deep" modes. Reaches
+    # llama-server / self-hosted OpenAI-compatible engines only; Ollama's
+    # native API has no budget, so there deep is just thinking on.
+    "think_mode_budget_think": 4096,
+    "think_mode_budget_deep": 16384,
+    # A "deep" turn multiplies the local thinking watchdog
+    # (agent_local_think_budget_seconds) by this factor.
+    "think_mode_deep_watchdog_factor": 2.0,
 }
 
 

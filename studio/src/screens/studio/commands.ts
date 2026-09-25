@@ -133,7 +133,7 @@ export const COMMANDS: SlashCommand[] = [
   { name: 'temp', aliases: ['temperature'], category: 'Model', usage: '/temp 0.4', help: 'Temperature of this chat (0-2). No value removes it.' },
   { name: 'maxtokens', aliases: ['max_tokens'], category: 'Model', usage: '/maxtokens 2048', help: 'Maximum reply tokens.' },
   { name: 'topp', aliases: ['top_p'], category: 'Model', usage: '/topp 0.9', help: 'top_p (0-1).' },
-  { name: 'think', aliases: ['thinking'], category: 'Model', usage: '/think on|off', help: "The model's reasoning, if it supports it." },
+  { name: 'think', aliases: ['thinking'], category: 'Model', usage: '/think auto|fast|think|deep|on|off', help: "The model's reasoning, if it supports it: a mode for this chat (auto, fast, think, deep) or on/off." },
   { name: 'gen', aliases: ['model-settings'], category: 'Model', usage: '/gen key=value …', help: 'Generation settings: top_k, num_ctx, temperature… No arguments clears them.' },
   { name: 'preset', category: 'Model', usage: '/preset [name|off]', help: 'Preset or persona (system prompt). Without a name it opens the list.' },
   { name: 'usage', aliases: ['sys', 'gpu'], category: 'Model', usage: '/usage [on|off]', help: 'Shows or hides the live usage (GPU, VRAM, model, RAM) in the header.' },

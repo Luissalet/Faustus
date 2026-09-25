@@ -383,6 +383,65 @@ export function supportsThinking(model: string | null | undefined): boolean {
   return THINKING_MODEL_PATTERNS.some((p) => m.includes(p));
 }
 
+/* ── Reasoning mode (Auto / Rápido / Pensar / A fondo) ──
+ * Sent per turn as the `think_mode` form field; the server
+ * (`src/think_mode.py`) turns it into think/reasoning_budget overrides and
+ * answers with a `think_mode` event saying what it ran with. Kept per chat
+ * in localStorage; a chat with no pick of its own uses the
+ * `think_mode_default` setting. */
+
+export type ThinkMode = 'auto' | 'fast' | 'think' | 'deep';
+export const THINK_MODES: ThinkMode[] = ['auto', 'fast', 'think', 'deep'];
+
+const THINK_MODE_ALIASES: Record<string, ThinkMode> = {
+  auto: 'auto', automatico: 'auto', 'automático': 'auto',
+  fast: 'fast', rapido: 'fast', 'rápido': 'fast', quick: 'fast',
+  think: 'think', pensar: 'think',
+  deep: 'deep', 'a fondo': 'deep', fondo: 'deep', profundo: 'deep',
+};
+
+export function parseThinkMode(value: unknown): ThinkMode | null {
+  if (typeof value !== 'string') return null;
+  return THINK_MODE_ALIASES[value.trim().toLowerCase().replace(/\s+/g, ' ')] ?? null;
+}
+
+export function thinkModeLabel(mode: ThinkMode): string {
+  switch (mode) {
+    case 'fast': return t('Fast#think_mode');
+    case 'think': return t('Think#think_mode');
+    case 'deep': return t('Deep#think_mode');
+    default: return t('Auto#think_mode');
+  }
+}
+
+/** The chip text: the pick, and after an Auto turn what Auto chose
+ *  ("Auto · Think"). */
+export function thinkModeChipText(mode: ThinkMode, chosen?: ThinkMode | null): string {
+  if (mode === 'auto' && chosen && chosen !== 'auto') return `${t('Auto#think_mode')} · ${thinkModeLabel(chosen)}`;
+  return thinkModeLabel(mode);
+}
+
+const THINK_MODE_KEY = 'faustus_studio_think_mode';
+
+export function readThinkMode(sessionId: string | null | undefined): ThinkMode | null {
+  if (!sessionId) return null;
+  try {
+    return parseThinkMode(window.localStorage.getItem(`${THINK_MODE_KEY}_${sessionId}`));
+  } catch {
+    return null;
+  }
+}
+
+export function writeThinkMode(sessionId: string | null | undefined, mode: ThinkMode | null): void {
+  if (!sessionId) return;
+  try {
+    if (mode) window.localStorage.setItem(`${THINK_MODE_KEY}_${sessionId}`, mode);
+    else window.localStorage.removeItem(`${THINK_MODE_KEY}_${sessionId}`);
+  } catch {
+    /* private window or blocked storage: the pick lasts this visit only */
+  }
+}
+
 /* ── Sampling panel (composer chip -> real controls, not just /temp etc.) ──
  * Each control's effective value is either the global default
  * (`local_*_default` settings, SET-07) or an explicit per-conversation

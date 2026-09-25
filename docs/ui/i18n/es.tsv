@@ -8413,3 +8413,15 @@ Vision is off.	La visión está apagada.
 In use: {model}	En uso: {model}
 In use: auto: {model}	En uso: automático: {model}
 In use: none found	En uso: no se ha encontrado ninguno
+Auto#think_mode	Auto
+Fast#think_mode	Rápido
+Think#think_mode	Pensar
+Deep#think_mode	A fondo
+Decides per message: quick for small talk, reasoning for code, maths or analysis.	Decide en cada mensaje: rápido para la charla, razonando para código, cálculos o análisis.
+Answers straight away, without reasoning first.	Responde enseguida, sin razonar antes.
+Reasons before answering, with the normal budget.	Razona antes de responder, con el presupuesto normal.
+Reasons at length, with a larger budget. Slower.	Razona a fondo, con un presupuesto mayor. Más lento.
+Reasoning: {label}	Razonamiento: {label}
+How much the model reasons before answering, for this chat. /think auto|fast|think|deep does the same.	Cuánto razona el modelo antes de responder, en este chat. /think auto|fast|think|deep hace lo mismo.
+Reasoning for this chat: {label}.	Razonamiento de este chat: {label}.
+The model's reasoning, if it supports it: a mode for this chat (auto, fast, think, deep) or on/off.	Razonamiento del modelo, si lo soporta: un modo para este chat (auto, fast, think, deep) o on/off.
