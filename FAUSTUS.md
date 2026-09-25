@@ -8972,3 +8972,5 @@ La causa de los errores de fechas y cuentas era que el modo Auto mandaba las pre
 - *Tests.* El de concurrencia del enjambre usaba un margen de tiempo que fallaba en Windows con carga; las comprobaciones JS se saltan cuando no está `esbuild`.
 
 **Verificado en vivo (7006).** Tres turnos del mismo chat con la caché medida (arriba); la receta, la traducción y el correo con las herramientas correctas; la nota dictada sin tarjeta y con una respuesta limpia; el auxiliar 8082 se arranca solo en la primera llamada; el 27B reiniciado vuelve a contestar bien.
+
+**Visto en el navegador (cierre de pendientes de §197).** En el 7006 se han visto el chip de razonamiento con los niveles, el par endpoint+modelo de Visión con su línea «En uso: qwen3-vl-30b-cpu» y la sección Enjambre de Agentes → Workers. En el 7009, el podcast del informe WAD: voces A y B (Piper, es_ES e inglés), duración (3–15 min), reproductor de 2:52, descarga y transcripción.
