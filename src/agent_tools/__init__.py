@@ -325,6 +325,12 @@ from .fix_memory_tools import RecallFixesTool  # noqa: E402
 
 TOOL_HANDLERS["recall_fixes"] = RecallFixesTool().execute
 
+# Lot P: research podcast -- a saved Deep Research report as a two-voice
+# podcast (background job). src/agent_tools/research_podcast_tools.py.
+from .research_podcast_tools import ResearchPodcastTool  # noqa: E402
+
+TOOL_HANDLERS["research_podcast"] = ResearchPodcastTool().execute
+
 # ---------------------------------------------------------------------------
 # Constants (re-exported for backward compatibility — single source of truth
 # is src.constants; always prefer importing from there for new code)
@@ -462,7 +468,9 @@ TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_fi
              # Night shift -- src/agent_tools/night_shift_tools.py.
              "night_shift",
              # Git history for a file/symbol -- src/code_history.py.
-             "code_history"} | BUILTIN_EMAIL_TOOLS | DESKTOP_TOOLS | SEMANTIC_TOOLS
+             "code_history",
+             # Research podcast -- src/agent_tools/research_podcast_tools.py.
+             "research_podcast"} | BUILTIN_EMAIL_TOOLS | DESKTOP_TOOLS | SEMANTIC_TOOLS
 
 ToolBlock = namedtuple("ToolBlock", ["tool_type", "content"])
 

@@ -1296,4 +1296,13 @@ EXAMPLES: Dict[str, List[str]] = {
         "es arriesgado modificar esta función",
         "muéstrame el historial de este símbolo",
     ],
+    # ── Lot P: research podcast — src/research_podcast.py ───────────────────
+    "research_podcast": [
+        "make a podcast out of that research report",
+        "I want to listen to the report as a conversation",
+        "turn the deep research into audio with two hosts",
+        "haz un podcast del informe de investigación",
+        "quiero escuchar la investigación mientras conduzco",
+        "convierte el informe en un audio con dos voces",
+    ],
 }

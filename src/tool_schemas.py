@@ -3761,6 +3761,22 @@ FUNCTION_TOOL_SCHEMAS = [
             }
         }
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "research_podcast",
+            "description": "Turn a saved Deep Research report into a two-voice audio podcast (script by the utility model, voices by local Piper TTS), or read how that job is going. action='start' (default) begins a background job and returns at once; action='status' reports progress, then the audio link when done. The podcast plays from the Research screen. Use for 'make a podcast of that research', 'read the report to me as a conversation', 'haz un podcast del informe'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "research_id": {"type": "string", "description": "The research id (from manage_research list)."},
+                    "action": {"type": "string", "enum": ["start", "status"], "description": "start (default): begin the podcast job; status: progress / result."},
+                    "regenerate": {"type": "boolean", "description": "With start: make a new podcast even if one already exists (default false)."}
+                },
+                "required": ["research_id"]
+            }
+        }
+    },
 ]
 
 

@@ -491,3 +491,35 @@ def test_save_artifacts_and_audio_file_against_a_real_store(tmp_path, monkeypatc
     path, media, label = found
     assert open(path, "rb").read() == wav
     assert media.startswith("audio/") and label == "podcast-x.wav"
+
+
+# ── agent tool ──────────────────────────────────────────────────────────────
+
+def test_tool_is_owner_scoped_and_returns_dicts(tmp_path, monkeypatch, fake_tts):
+    from src import research_handler
+    from src.agent_tools.research_podcast_tools import ResearchPodcastTool
+    d = tmp_path / "data" / "deep_research"
+    monkeypatch.setattr(research_handler, "RESEARCH_DATA_DIR", d)
+    _write_research(tmp_path, sid="tool-1", owner="alice")
+    tool = ResearchPodcastTool()
+
+    out = asyncio.run(tool.execute('{"research_id": "tool-1", "action": "status"}', {"owner": "bob"}))
+    assert isinstance(out, dict) and out["exit_code"] == 1 and "not found" in out["error"]
+    out = asyncio.run(tool.execute('{"research_id": "../etc"}', {"owner": "alice"}))
+    assert out["exit_code"] == 1
+    out = asyncio.run(tool.execute('{"research_id": "tool-1", "action": "status"}', {"owner": "alice"}))
+    assert out["exit_code"] == 0 and out["status"] == "none"
+
+    monkeypatch.setattr(rp, "make_llm_caller", lambda owner: FakeLLM([_script_json(4)]))
+
+    async def run():
+        started = await tool.execute('{"research_id": "tool-1"}', {"owner": "alice"})
+        await rp._JOBS["tool-1"]["task"]
+        done = await tool.execute('{"research_id": "tool-1", "action": "status"}', {"owner": "alice"})
+        again = await tool.execute('{"research_id": "tool-1"}', {"owner": "alice"})
+        return started, done, again
+
+    started, done, again = asyncio.run(run())
+    assert started["status"] == "running" and started["exit_code"] == 0
+    assert done["status"] == "done" and "Podcast ready" in done["output"]
+    assert again["status"] == "done"   # an existing podcast is not remade without regenerate
