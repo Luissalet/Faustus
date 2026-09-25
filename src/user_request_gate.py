@@ -632,8 +632,60 @@ def _runs_the_named_script(user_text: str, command: str, workspace: str) -> bool
     return True
 
 
+# "Escríbeme un script que cuente las palabras de los .txt y .md de esta
+# carpeta. Pruébalo aquí mismo" (seen live): the script was written in the
+# turn and running it stopped at the card. `python <script.py>` passes when
+# the user's message orders a run or a test, the script is a workspace file,
+# every other argument is a workspace path, and the script's code passes the
+# same vetting as the analysis the user asked for (`_confined_code`: only
+# computation, reads inside the workspace, output files).
+_ORDERS_A_RUN = re.compile(
+    r"\b(?:pruebal[oa]s?|prueba(?:lo|la)?|probar(?:lo|la)?|ejecuta(?:lo|la)?|ejecutar(?:lo|la)?"
+    r"|correr(?:lo|la)?|corre(?:lo|la)?|lanza(?:lo|la)?|comprueba(?:lo|la)?|ensename\s+la\s+salida"
+    r"|run(?:\s+it)?|test(?:\s+it)?|try(?:\s+it)?|execute)\b")
+
+
+def _runs_a_confined_script(user_text: str, command: str, workspace: str) -> bool:
+    import os
+    import shlex
+
+    from src import plugins as plugins_mod
+    from src.tool_capabilities import is_abs_path, path_inside_trusted
+
+    if not workspace or not command or re.search(r"[`$\\]", re.sub(r"'[^']*'", "", command)):
+        return False
+    try:
+        words = shlex.split(command)
+    except ValueError:
+        return False
+    if len(words) < 2 or not re.fullmatch(r"(?:python3?|py)(?:\.exe)?", words[0], re.IGNORECASE):
+        return False
+    if any(word and set(word) <= set("|&;<>()") for word in words):
+        return False
+    if not _ORDERS_A_RUN.search(plugins_mod.fold(str(user_text or ""))):
+        return False
+    script = words[1]
+    if script.startswith("-") or not script.lower().endswith(".py"):
+        return False
+    paths = []
+    for arg in words[1:]:
+        if arg.startswith("-") or re.search(r"[~{}*?\[\]]", arg) or re.search(r"(?:^|[\\/])\.\.(?:[\\/]|$)", arg):
+            return False
+        target = os.path.normpath(arg if is_abs_path(arg) else os.path.join(workspace, arg))
+        if not path_inside_trusted(workspace, target):
+            return False
+        paths.append(target)
+    try:
+        with open(paths[0], encoding="utf-8") as handle:
+            code = handle.read(200_000)
+    except OSError:
+        return False
+    return _confined_code(code, workspace)
+
+
 def _one_command(user_text: str, command: str, workspace: str) -> bool:
     return (_runs_the_tests(user_text, command, workspace)
+            or _runs_a_confined_script(user_text, command, workspace)
             or _runs_what_the_user_wrote(user_text, command, workspace)
             or _inspects_the_workspace(command, workspace)
             or _python_dash_c(user_text, command, workspace)
@@ -798,6 +850,7 @@ _OPEN_MODULES = frozenset({
 })
 # Libraries with I/O and import machinery inside: only these names.
 _LISTED_MODULES = {
+    "pathlib": frozenset({"Path", "PurePath"}),
     "pandas": frozenset({
         "DataFrame", "Series", "Index", "MultiIndex", "Categorical", "CategoricalDtype", "Timestamp",
         "Timedelta", "Period", "NA", "NaT", "read_csv", "read_excel", "read_json", "read_parquet",
@@ -909,6 +962,8 @@ def _suspicious_string(value: str, workspace: str) -> bool:
     from src.tool_capabilities import path_inside_trusted
 
     text = value.strip()
+    if text == "__main__":  # `if __name__ == "__main__":`
+        return False
     if "__" in text or "://" in text or text.startswith(("\\\\", "//", "~")):
         return True
     if re.search(r"(?:^|[\\/])\.\.(?:[\\/]|$)", text):
@@ -996,14 +1051,73 @@ def _module_allows(module: str, name: str) -> bool:
 
 
 def _analyses_the_data(user_text: str, content: Any, workspace: str = "") -> bool:
-    import ast
-
     from src import plugins as plugins_mod
 
     if not workspace or not _ASKS_FOR_DATA_WORK.search(plugins_mod.fold(user_text)):
         return False
+    return _confined_code(_code_of(content), workspace)
+
+
+# pathlib, for scripts that walk the workspace ("list the .txt and .md files
+# here and count their words", seen live): a Path is built only from literal
+# paths inside the workspace (or none: the working directory), and nothing
+# that leaves it, links out of it or writes is used.
+_PATH_ESCAPES = frozenset({
+    "parent", "parents", "home", "cwd", "expanduser", "readlink", "joinpath", "with_name",
+    "with_stem", "with_suffix", "relative_to", "anchor", "drive", "root",
+    "write_text", "write_bytes", "touch", "mkdir", "unlink", "rename", "replace", "rmdir", "chmod",
+    "lchmod", "symlink_to", "hardlink_to", "link_to", "owner", "group", "open",
+})
+
+
+def _pathlib_confined(tree: Any, modules: dict, workspace: str) -> bool:
+    import ast
+
+    path_names = {a.asname or a.name for n in ast.walk(tree)
+                  if isinstance(n, ast.ImportFrom) and n.module == "pathlib" for a in n.names}
+    pathlib_names = {local for local, mod in modules.items() if mod == "pathlib"}
+    if not path_names and not pathlib_names:
+        return True
+
+    def is_path_ctor(func: Any) -> bool:
+        if isinstance(func, ast.Name):
+            return func.id in path_names
+        return (isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name)
+                and func.value.id in pathlib_names and func.attr in ("Path", "PurePath"))
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and is_path_ctor(node.func):
+            if node.keywords or any(_literal_path(a, workspace) is None for a in node.args):
+                return False
+        elif isinstance(node, ast.Attribute) and node.attr in _PATH_ESCAPES:
+            return False
+        elif isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
+            right = node.right
+            if isinstance(right, ast.Constant) and isinstance(right.value, (int, float)):
+                continue
+            if not (isinstance(right, ast.Constant) and isinstance(right.value, str)
+                    and _literal_path(right, workspace) is not None and not re.search(r"(?:^|[\\/])\.\.", right.value)
+                    and not re.match(r"^(?:[a-zA-Z]:|[\\/])", right.value)):
+                return False
+        elif (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+              and node.func.attr in ("glob", "rglob")):
+            pattern = node.args[0] if node.args else None
+            if not (isinstance(pattern, ast.Constant) and isinstance(pattern.value, str)
+                    and ".." not in pattern.value and not re.match(r"^(?:[a-zA-Z]:|[\\/~])", pattern.value)):
+                return False
+    return True
+
+
+def _confined_code(code: str, workspace: str) -> bool:
+    """Python that only computes, reads files inside the workspace and writes
+    output files there: the vetting `_analyses_the_data` applies to the code
+    the user asked for."""
+    import ast
+
+    if not workspace:
+        return False
     try:
-        tree = ast.parse(_code_of(content))
+        tree = ast.parse(code)
     except (SyntaxError, ValueError):
         return False
     known = _OPEN_MODULES | set(_LISTED_MODULES)
@@ -1035,6 +1149,13 @@ def _analyses_the_data(user_text: str, content: Any, workspace: str = "") -> boo
     type_names = {a.asname or a.name for n in ast.walk(tree)
                   if isinstance(n, ast.ImportFrom) and n.module == "typing" for a in n.names}
     type_names |= {n.name for n in ast.walk(tree) if isinstance(n, ast.ClassDef)}
+    # `def contar(ruta: Path) -> int` (seen live): the pathlib class as a type
+    type_names |= {a.asname or a.name for n in ast.walk(tree)
+                   if isinstance(n, ast.ImportFrom) and n.module == "pathlib" for a in n.names}
+    uses_pathlib = any(
+        (isinstance(n, ast.ImportFrom) and n.module == "pathlib")
+        or (isinstance(n, ast.Import) and any(a.name == "pathlib" for a in n.names))
+        for n in ast.walk(tree))
     for mod in set(modules.values()):
         if _workspace_shadows(mod.split(".")[0], workspace):
             return False
@@ -1074,7 +1195,9 @@ def _analyses_the_data(user_text: str, content: Any, workspace: str = "") -> boo
     }
     for node in ast.walk(tree):
         if isinstance(node, ast.Name):
-            if "__" in node.id or node.id in _DYNAMIC:
+            # `if __name__ == "__main__":` reads the one dunder that is only a string
+            if ("__" in node.id and not (node.id == "__name__" and isinstance(node.ctx, ast.Load))) \
+                    or node.id in _DYNAMIC:
                 return False
             if isinstance(node.ctx, (ast.Store, ast.Del)) and node.id in modules:
                 return False  # rebinding a module name would defeat the lists
@@ -1092,7 +1215,9 @@ def _analyses_the_data(user_text: str, content: Any, workspace: str = "") -> boo
         elif isinstance(node, ast.Attribute):
             attr = node.attr
             if attr.startswith("_") or attr in _DYNAMIC | _MODULE_ATTRS | _UNSAFE_FORMATS:
-                return False
+                # Path(...).glob(pattern): a method, vetted by _pathlib_confined
+                if not (uses_pathlib and attr == "glob"):
+                    return False
             base = dotted(node.value)
             if base is not None and base in known and not _module_allows(base, attr):
                 return False
@@ -1140,7 +1265,7 @@ def _analyses_the_data(user_text: str, content: Any, workspace: str = "") -> boo
                 target = _literal_path(p, workspace)
                 if target is None or (writes and not _writable_output(target)):
                     return False
-    return True
+    return _pathlib_confined(tree, modules, workspace)
 
 
 def _edit_matcher(tool: str) -> Callable[..., bool]:
