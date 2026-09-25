@@ -983,3 +983,21 @@ hay delante ahora, Writer's Hoard conectado (arranque por máquina en el Hub).
 persistido; que el selector ofrezca las skills de familia (`hoard-daily-digest`)
 en vez de diez `lookup_tools`; la landing con Vitruvius de principio a fin
 con el 27B.
+
+
+## OBJ-45 · Lo que valía la pena de otros harness: visión para modelos ciegos, contexto gestionado por el modelo, razonamiento por turno, enjambre local y podcast — HECHO (25-09-2026)
+
+Cinco capacidades sacadas de revisar plataformas de otros fabricantes, sin
+quitar nada y solo donde Faustus no lo tenía ya: resolvedor único del modelo
+de visión auxiliar con autodetección local y ventana pequeña (`vision_routing`,
+`vision_num_ctx`), herramientas `context_*` para que el modelo fije, saque o
+resuma su propio contexto (con vertido por resultado en rutas no nativas y
+tokens por trayectoria), modo Auto/Rápido/Pensar/A fondo por turno
+(`think_mode`), `swarm_map` sobre los slots libres reales del servidor, y el
+informe de Deep Research como podcast a dos voces Piper.
+FAUSTUS.md §193; API en `docs/api/{vision,context_tools,research_podcast}.md`,
+`docs/spec/think_mode.md`, `docs/recipes/swarm.md`.
+**Queda:** ver en navegador el chip de razonamiento, los selectores del
+podcast y la sección Swarm; medir el ofrecimiento automático de `context_*`
+en una ejecución larga real; enjambre en modo `agent` en vivo.
+

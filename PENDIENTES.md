@@ -3,6 +3,16 @@
 Actualizado: 25-09-2026. REGLA: nunca nombres de empresas/personas del buzÃ³n de Luis en commits, docs, tests ni comentarios â€” ejemplos siempre ficticios. SÃ³lo trabajo vigente; quitar cada entrada al cerrarla.
 
 
+## 25-09 tarde — visión, contexto, razonamiento, enjambre, podcast (FAUSTUS.md §193, OBJ-45)
+
+- **Sin desplegar en 7000/7003/7006**: probado en una instancia privada 7009 (`D:\LocalAI\_claude_tmp\vx_wt`, datos `vx_data`). El 7000 lo coge al reiniciarlo con el master nuevo; el `vite build` de la carpeta principal hay que rehacerlo.
+- **No visto en navegador**: el chip Auto/Rápido/Pensar/A fondo del compositor, el par endpoint+modelo de Visión con su línea de estado, los selectores de voz y duración del podcast y la sección Swarm de Workers (solo `tsc` y `vite build`).
+- **`context_*` automáticos**: en vivo solo se probó pidiéndolo («usa context_note»). Falta una ejecución larga real (Silhouettes o similar) para ver si el 27B las usa solo cuando se le ofrecen al 45 % o en la ronda 12, y si el aviso al umbral blando ayuda o estorba.
+- **`swarm_map` modo `agent`** sin probar en vivo; el modo `llm` sí (6 ciudades). Con otros chats ocupando slots del 8081, dos elementos agotaron sus 180 s esperando cola antes del arreglo que reserva los slots ocupados; volver a medirlo con el 8081 compartido.
+- **Visión**: tras el arreglo de `vision_num_ctx` la descripción del adjunto va a 6,5 GB, pero con el 27B q8 ocupando las cuatro GPU generó a ~7 tok/s (≈3 min para una descripción de 1.536 tokens). Valorar bajar `vision_max_tokens` para adjuntos o pedir descripciones más cortas.
+- **Tests inestables bajo xdist** (pasan solos y en el orden real del worker): `test_swarm.py::test_rest_routes_are_owner_scoped`, `test_chat_helpers.py::test_save_assistant_response_emits_turn_finished_once`.
+- **Eco «Allow this task to continue?»** sigue apareciendo en el texto de una respuesta tras aprobar `swarm_map` (ya anotado; no es de esta ola).
+
 ## 25-09 tarde — familia Hoard con uso real (FAUSTUS.md §191–§192)
 
 - **Tarjeta «Allow this task to continue?» que no se suelta en el 7003**: en «hazme una landing para La Espiga… compruébalo con Vitruvius» el 27B abrió con `manage_tasks {"action":"list"}` (una lectura), salió la tarjeta, `talk3 --approve` la aprobó y el turno volvió a pedir la misma aprobación y se quedó colgado una hora (sesión `21387e68…`, 3 mensajes, el último a las 12:56 UTC). Revisar por qué `manage_tasks list` pide aprobación exacta y por qué la reanudación re-emite la tarjeta en vez de ejecutar. Tras reiniciar el 7003 con el master de las 15:00, `recall` ya no pide tarjeta y `whatsapp_read` la pide pero el turno sigue; falta repetir la landing para confirmar lo de `manage_tasks`.
