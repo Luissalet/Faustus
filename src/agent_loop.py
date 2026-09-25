@@ -5544,6 +5544,11 @@ def _tool_arg_error_result(errors: list) -> Dict[str, Any]:
     }
 
 
+def _reasoning_ends_with_tool_call(reasoning: str) -> bool:
+    text = str(reasoning or "").rstrip()
+    return text.endswith("</tool_call>") and "<tool_call>" in text
+
+
 def _resolve_tool_blocks(
     round_response: str,
     native_tool_calls: list,
@@ -5552,6 +5557,7 @@ def _resolve_tool_blocks(
     allow_fenced_for_api: bool = False,
     arg_validation: Optional[Dict[int, Dict[str, Any]]] = None,
     path_roots: Optional[Sequence[str]] = None,
+    round_reasoning: str = "",
 ):
     """Choose native function calls or fenced code block parsing. Returns
     (tool_blocks, used_native, converted_calls) — the same three values it
@@ -5601,6 +5607,16 @@ def _resolve_tool_blocks(
         tool_blocks = parse_tool_blocks(round_response, skip_fenced=(is_api_model and not allow_fenced_for_api))
         if tool_blocks:
             logger.info(f"Agent round {round_num}: {len(tool_blocks)} fenced tool block(s) detected")
+        # llama.cpp sometimes routes a Qwen3 tool call into reasoning_content
+        # instead of tool_calls (llama.cpp issues #20809, #22684): the round
+        # ends with no text, no call, and the call sitting at the very end of
+        # the reasoning. Only that shape counts -- a <tool_call> the model
+        # drafts in the middle of its thinking is not a call.
+        elif not round_response.strip() and _reasoning_ends_with_tool_call(round_reasoning):
+            tail = round_reasoning[round_reasoning.rfind("<tool_call>"):]
+            tool_blocks = parse_tool_blocks(tail, skip_fenced=True)
+            if tool_blocks:
+                logger.warning("Agent round %s: tool call recovered from the end of the reasoning", round_num)
 
     resp_preview = round_response[:200].replace('\n', '\\n') if round_response else "(empty)"
     logger.info(f"Agent round {round_num} summary: {len(round_response)} chars, "
@@ -11745,6 +11761,7 @@ async def _stream_agent_loop_body(
             # check and the tool never disagree about an absolute path
             # inside the workspace (14-09-2026).
             path_roots=[r for r in [workspace, *(workspace_roots or [])] if r],
+            round_reasoning=round_reasoning,
         )
         if _ody_doc_stream_create_mode and tool_blocks:
             create_idx = next(

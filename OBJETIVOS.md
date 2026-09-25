@@ -1015,3 +1015,20 @@ FAUSTUS.md §197; API en `docs/api/{vision,context_tools,research_podcast}.md`,
 podcast y la sección Swarm; medir el ofrecimiento automático de `context_*`
 en una ejecución larga real; enjambre en modo `agent` en vivo.
 
+
+## OBJ-46 · Investigación continua: configuración del modelo local, harness, contexto y herramientas
+
+Acordado el 25-09-2026 (noche): «que no sea sólo prueba y error: un flujo de ideas, consejos y descubrimientos alimentando el trabajo, sobre modelos, harness, contexto, herramientas… y otros proyectos (GitTrend y similares)». Cada ronda manda subagentes a investigar con fuentes; lo que se aplica se mide en el 7006 antes y después. El registro de ideas con fuentes vive en el documento del proyecto `claude/faustus-investigacion-continua.md`.
+
+**Aplicado y medido (25-09).**
+- Prompt estable dentro del turno y entre turnos (Manus, «Don't Break the Cache»): el paquete de contexto no cambia de sitio ni de contenido dentro del turno (§203–§204); el razonamiento de las vueltas del turno se conserva para Qwen3 (su plantilla lo espera; quitarlo rompía la caché); el chat conserva el juego de herramientas del turno anterior mientras cubre el nuevo (la lista de herramientas va arriba del prompt).
+- Embebedor bilingüe propio para elegir herramientas y umbral de puntuación (§204).
+
+**Por probar, en este orden.**
+1. Caché KV en q8_0 (`-ctk q8_0 -ctv q8_0`, necesita `-fa on`, ya puesto): libera VRAM casi sin pérdida según llama.cpp; medir VRAM, velocidad y la batería objetiva (A/B de §202) antes de dejarlo. Requiere reiniciar el 8081, que comparten las otras instancias.
+2. Muestreo por modo según la ficha de Qwen3 (pensando: temp 0,6, top_p 0,95, min_p 0; sin pensar: 0,7 / 0,8): en el A/B de §202 acertó lo mismo y fue ~10 % más rápido; falta medirlo con herramientas.
+3. Llamadas a herramientas que llama.cpp deja dentro de `reasoning_content` (issues #20809, #22684 de llama.cpp): comprobar si Faustus las recoge o se pierden.
+4. Batería fija de uso diario (20–30 tareas con comprobación determinista: fechas, cuentas, herramienta correcta, sin tarjeta, tiempo) lanzable con un comando y guardada con fecha, para medir cada cambio del harness en vez de probar a mano.
+5. Decidir si llamar a una herramienta antes de llamarla (Probe&Prefill, «LLM Agents Already Know When to Call Tools»): con el 3B auxiliar como enrutador barato para preguntas triviales.
+
+**Descartado por ahora (con motivo).** Decodificación especulativa con modelo borrador: resultados mixtos o negativos en multi-GPU y sin VRAM libre. `split-mode tensor`: exige caché KV sin cuantizar y enlace rápido entre GPU.
