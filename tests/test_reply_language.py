@@ -267,3 +267,12 @@ def test_continuation_reminder_rides_with_the_tool_batch_without_accumulating():
     assert conversation_language(messages) == "en"
     refresh_continuation(messages, None)
     assert messages == original
+
+
+def test_a_requested_output_language_is_recognised():
+    from src.reply_language import requested_output_language as req
+    assert req("Tradúceme al inglés, manteniendo el tono informal: «Oye…»") == "en"
+    assert req("Translate this into Spanish please") == "es"
+    assert req("Escríbelo en francés") == "fr"
+    assert req("¿Qué tal el inglés de Marta?") is None
+    assert req("Hola") is None

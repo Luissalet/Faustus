@@ -1533,3 +1533,19 @@ def test_fetching_a_link_the_search_returned_needs_no_card_when_asked_to_look_up
     other = ToolRunSecurityContext(user_request="Hola, ¿qué tal?")
     other.observe_tool_result("web_search", {"output": "https://www.example.org/padron/", "exit_code": 0}, "q")
     assert not other.decision_for("web_fetch", '{"url": "https://www.example.org/padron"}').allowed
+
+
+def test_a_tool_result_image_in_the_prompt_is_outside_content_for_text_writing_allowances():
+    """Found in review: a screenshot replayed as "tool result: <tool>" was
+    counted as Faustus's own context, so "write me a document" could carry
+    an attacker page into the editor without a card."""
+    from src.prompt_security import untrusted_context_message
+
+    text = "Escríbeme un documento con el resumen"
+    ctx = ToolRunSecurityContext(user_request=text)
+    ctx.observe_messages([untrusted_context_message("tool result: browser_take_screenshot", "…")])
+    assert ctx.decision_for("create_document", '{"title": "x", "content": "y"}').allowed is False
+    own = ToolRunSecurityContext(user_request=text)
+    own.observe_messages([untrusted_context_message("skills", "…"),
+                          untrusted_context_message("saved memory: pinned context", "…")])
+    assert own.decision_for("create_document", '{"title": "x", "content": "y"}').allowed is True

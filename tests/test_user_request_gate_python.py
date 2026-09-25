@@ -5,6 +5,7 @@ that code could reach past the workspace or over the user's own files."""
 import json
 import os
 import time
+from pathlib import Path
 
 import pytest
 
@@ -225,3 +226,93 @@ def test_a_follow_up_on_the_same_numbers_is_data_work(ws):
     text = ("¿Y si lo del id 400 fueran en realidad 120 unidades? Dime cómo quedarían "
             "septiembre, el total del año y el porcentaje de la Mochila. No toques ningún archivo.")
     assert allows("python", code, text, ws) is True
+
+
+# ── "Write me a script… test it here" ──────────────────────────────────────
+
+_WORD_COUNT = '''from pathlib import Path
+
+
+def contar_palabras(ruta: Path) -> int:
+    return len(ruta.read_text(encoding="utf-8", errors="replace").split())
+
+
+def main() -> None:
+    ficheros = sorted(p for p in Path(".").iterdir() if p.is_file() and p.suffix.lower() in {".txt", ".md"})
+    resultados = [(p, contar_palabras(p)) for p in ficheros]
+    resultados.sort(key=lambda item: item[1], reverse=True)
+    for ruta, total in resultados:
+        print(f"{ruta.name:<20} {total:>8}")
+
+
+if __name__ == "__main__":
+    main()
+'''
+_ASK_SCRIPT = ("En esta carpeta, escríbeme un script de Python que liste los ficheros .txt y .md y diga "
+               "cuántas palabras tiene cada uno. Pruébalo aquí mismo y enséñame la salida.")
+
+
+def test_running_the_confined_script_the_user_asked_to_test(ws):
+    (Path(ws) / "contar_palabras.py").write_text(_WORD_COUNT, encoding="utf-8")
+    assert allows("bash", "python contar_palabras.py", _ASK_SCRIPT, ws) is True
+    assert allows("bash", f'cd "{ws}" && python contar_palabras.py', _ASK_SCRIPT, ws) is True
+
+
+@pytest.mark.parametrize("script", [
+    "import os\nos.remove('ventas_junio.csv')\n",
+    "from pathlib import Path\nprint(Path('/etc/passwd').read_text())\n",
+    "from pathlib import Path\nprint(Path('.').parent.iterdir())\n",
+    "from pathlib import Path\nPath('app.py').write_text('x')\n",
+])
+def test_a_script_that_reaches_out_keeps_the_card(ws, script):
+    (Path(ws) / "s.py").write_text(script, encoding="utf-8")
+    assert allows("bash", "python s.py", _ASK_SCRIPT, ws) is False
+
+
+def test_no_order_to_run_keeps_the_card(ws):
+    (Path(ws) / "contar_palabras.py").write_text(_WORD_COUNT, encoding="utf-8")
+    assert allows("bash", "python contar_palabras.py", "Escríbeme un script que cuente palabras.", ws) is False
+    assert allows("bash", "python ../contar_palabras.py", _ASK_SCRIPT, ws) is False
+
+
+_LISTING = '''"""Lista."""
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+
+def contar(texto: str) -> tuple[int, int]:
+    return len(texto.splitlines()), len(texto.split())
+
+
+def main() -> None:
+    carpeta = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(".")
+    if not carpeta.is_dir():
+        sys.exit(f"Error: {carpeta} no es una carpeta")
+    for f in sorted(p for p in carpeta.iterdir() if p.suffix.lower() in (".txt", ".md")):
+        print(f.name, *contar(f.read_text(encoding="utf-8")))
+
+
+if __name__ == "__main__":
+    main()
+'''
+
+
+def test_a_script_with_a_folder_argument_runs_on_workspace_folders_only(ws):
+    # seen live: `from __future__`, `import sys`, Path(sys.argv[1]), sys.exit
+    (Path(ws) / "listar.py").write_text(_LISTING, encoding="utf-8")
+    assert allows("bash", "python listar.py", _ASK_SCRIPT, ws) is True
+    assert allows("bash", "python listar.py .", _ASK_SCRIPT, ws) is True
+    assert allows("bash", "python listar.py C:/Users", _ASK_SCRIPT, ws) is False
+
+
+@pytest.mark.parametrize("script", [
+    "import sys\nprint(sys.modules)\n",
+    "import sys\nsys.path.append('x')\n",
+    "from sys import modules\n",
+    "exit()\n",
+])
+def test_the_rest_of_sys_stays_out(ws, script):
+    (Path(ws) / "s.py").write_text(script, encoding="utf-8")
+    assert allows("bash", "python s.py", _ASK_SCRIPT, ws) is False

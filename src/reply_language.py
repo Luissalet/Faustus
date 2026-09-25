@@ -387,3 +387,32 @@ def locate_for_edit(document_text: str, needle: str) -> Optional[Tuple[int, int]
     from services.search.lang_normalize import locate_normalized
 
     return locate_normalized(document_text, needle)
+
+
+# ---------------------------------------------------------------------------
+# A reply the user asked for in another language
+# ---------------------------------------------------------------------------
+# "Tradúceme al inglés: «…»" is a Spanish turn whose answer is English. Seen
+# live: the harness called the correct English translation a wrong-language
+# reply, nudged a rewrite, and the saved answer held the translation twice.
+_LANGUAGE_NAMES = {
+    "ingles": "en", "english": "en", "espanol": "es", "castellano": "es", "spanish": "es",
+    "frances": "fr", "french": "fr", "aleman": "de", "german": "de", "italiano": "it",
+    "italian": "it", "portugues": "pt", "portuguese": "pt",
+}
+_ASKS_FOR_A_LANGUAGE = re.compile(
+    r"\b(?:traduc\w*|tradu[cz]c?a\w*|pasa(?:lo|la|me)?|ponlo|ponla|escrib\w*|redact\w*|respond\w*|contest\w*"
+    r"|dimelo|translate\w*|write|answer|reply|respond|say)\b[^.?!\n]{0,60}?\b(?:al|en|a|in|into|to)\s+"
+    r"(ingles|english|espanol|castellano|spanish|frances|french|aleman|german|italiano|italian|portugues|portuguese)\b"
+)
+
+
+def requested_output_language(text: Any) -> Optional[str]:
+    """The language the user asked the answer (or the text) to be in, when it
+    is named with a verb of writing or translating; ``None`` otherwise."""
+    import unicodedata
+
+    raw = unicodedata.normalize("NFKD", str(visible_text(text) or ""))
+    folded = "".join(ch for ch in raw if not unicodedata.combining(ch)).casefold()
+    match = _ASKS_FOR_A_LANGUAGE.search(folded)
+    return _LANGUAGE_NAMES.get(match.group(1)) if match else None

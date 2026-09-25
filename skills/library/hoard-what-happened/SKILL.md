@@ -1,9 +1,9 @@
 ---
 name: hoard-what-happened
-description: Reconstruct what happened around one moment or failure — which app went down, what the assistant called before, which rule ran, what logs and GPUs said — from Cassandra's audit and the hub's bus. Use when the user asks "¿qué pasó a las 4?" or "why is X down".
+description: Reconstruct what happened around one moment or failure — which app went down, what the assistant called before, which rule ran, what logs and GPUs said — from Cassandra's audit and the hub's bus. Use when the user asks "¿qué pasó a las 4?", "¿qué se rompió anoche?", "¿por qué se cayó X?" or "why is X down".
 version: 1.0.0
 category: research
-tags: [hoards, cassandra, hub, incidents, audit, forensics]
+tags: [hoards, cassandra, hub, incidents, audit, forensics, rompio, cayo, caido, fallo, anoche, madrugada, incidente]
 status: published
 source: imported
 ---
