@@ -9,6 +9,7 @@ logic this wrapper drives, and `src.document_processor.
 analyze_image_with_vl_prompt` for the model call itself.
 
 Actions: ``ask`` (default, a specific question about the processed image),
+``count`` (how many of something, tile by tile and in one look),
 ``view`` (just return the crop), ``shapes`` (local, model-free circle/
 rectangle/line detection), ``compare`` (two images, one question),
 ``grid_locate`` (overlay a lettered/numbered grid and ask which cells match).
@@ -651,8 +652,119 @@ async def _action_unlisted(args: Dict[str, Any], ctx: Dict[str, Any]) -> Dict[st
     return await _action_ask({**args, "question": question}, ctx)
 
 
+# ---------------------------------------------------------------------------
+# count
+# ---------------------------------------------------------------------------
+
+_COUNT_TILE_PROMPT = (
+    "Count {what} in this picture. A red box is drawn on it: count ONLY the ones whose "
+    "centre is inside the red box, and ignore every one whose centre is outside it, even "
+    "if part of it shows. Count partly hidden ones too. Answer with the number alone on "
+    "the first line; on the second line say in a few words what you counted."
+)
+_COUNT_WHOLE_PROMPT = (
+    "Count {what} in this picture. Count partly hidden ones too. Answer with the number "
+    "alone on the first line; on the second line say in a few words what you counted."
+)
+#: Tile questions in flight at once: the main llama-server has a few slots
+#: and a turn is already using one of them.
+_COUNT_CONCURRENCY = 3
+
+
+def _fit_side(image: Any, max_side: int) -> Any:
+    w, h = image.size
+    if max(w, h) <= max_side:
+        return image
+    scale = max_side / float(max(w, h))
+    return image.resize((max(1, int(w * scale)), max(1, int(h * scale))))
+
+
+async def _action_count(args: Dict[str, Any], ctx: Dict[str, Any]) -> Dict[str, Any]:
+    """How many of something a region holds, asked tile by tile (see
+    `ii.count_tiles`) and once for the whole region, so the model gets two
+    numbers and where they disagree instead of one guess."""
+    what = str(args.get("what") or args.get("question") or "").strip()
+    if not what:
+        return {"error": "inspect_image count: say what to count in `what` (e.g. \"people\", "
+                         "\"red circles\", \"windows\")", "exit_code": 1}
+    owner = ctx.get("owner") if isinstance(ctx, dict) else None
+    try:
+        tiles_n = int(args.get("tiles") or 2)
+    except (TypeError, ValueError):
+        tiles_n = 2
+    tiles_n = max(1, min(tiles_n, 3))
+    loaded = _load_image(args)
+    pargs = _process_args(args)
+    pargs.pop("max_side", None)  # tiles are cut from the full-resolution region
+    proc = ii.process(loaded.image, **pargs)
+    measurements = _measurements(loaded, proc)
+
+    sees = await asyncio.to_thread(_main_model_can_see, ctx)
+    model_override = str(args.get("model") or "").strip() or None
+    if not model_override and sees:
+        # The turn's own model can see: it is on the GPU and much faster than
+        # a CPU vision helper, and five short questions are a lot for one.
+        model_override = str((ctx or {}).get("turn_model") or "").strip() or None
+    max_side = _vision_max_side()
+    min_side = 0 if await asyncio.to_thread(_vision_runs_locally, model_override) else _vision_min_side()
+
+    def _prepared(image: Any) -> Tuple[bytes, str]:
+        image, _ = _enlarge_small(image, min_side, max_side)
+        b64, mime = ii.image_to_b64(_fit_side(image, max_side))
+        return _b64_to_bytes(b64), mime
+
+    jobs: List[Tuple[str, Tuple[bytes, str], str]] = [
+        ("whole", _prepared(proc.image), _COUNT_WHOLE_PROMPT.format(what=what))]
+    plan = ii.count_tiles(tiles_n) if tiles_n > 1 else []
+    for spec in plan:
+        jobs.append((spec["cell"], _prepared(ii.tile_with_core_box(proc.image, spec["tile"], spec["core"])),
+                     _COUNT_TILE_PROMPT.format(what=what)))
+
+    gate = asyncio.Semaphore(_COUNT_CONCURRENCY)
+
+    async def _one(image: Tuple[bytes, str], prompt: str) -> Dict[str, str]:
+        async with gate:
+            return await _ask_vision_model([image], prompt, owner, model_override)
+
+    answers = await asyncio.gather(*(_one(image, prompt) for _, image, prompt in jobs))
+    model_used = next((str(a.get("model") or "") for a in answers if a.get("model")), "")
+    if not model_used:
+        return {"output": str(answers[0].get("text") or "No vision model answered."), "exit_code": 0,
+                "answered_by": "none", "measurements": measurements}
+
+    whole_text = str(answers[0].get("text") or "")
+    whole = ii.parse_count(whole_text)
+    per_tile: List[Dict[str, Any]] = []
+    for (cell, _, _), answer, spec in zip(jobs[1:], answers[1:], plan):
+        text = str(answer.get("text") or "")
+        per_tile.append({"cell": cell, "count": ii.parse_count(text), "core": spec["core"],
+                         "said": text.strip()[:160]})
+    lines = [f"[{model_used}] Counting {what} in {loaded.source}, region "
+             f"{measurements['region_used']} of the original."]
+    lines.append(f"One look at the whole region: {whole if whole is not None else 'no number'}"
+                 f" ({whole_text.strip()[:160]})")
+    total: Optional[int] = None
+    if per_tile:
+        known = [t["count"] for t in per_tile if t["count"] is not None]
+        total = sum(known) if len(known) == len(per_tile) else None
+        parts = ", ".join(f"{t['cell']}={t['count'] if t['count'] is not None else '?'}" for t in per_tile)
+        lines.append(f"By {tiles_n}x{tiles_n} tiles (each counts only what is centred in its own cell; "
+                     f"A1 is top-left): {parts} -> total {total if total is not None else 'incomplete'}.")
+        unclear = [t for t in per_tile if t["count"] is None]
+        for t in unclear:
+            lines.append(f"Tile {t['cell']} gave no number: {t['said']}")
+        if total is not None and whole is not None and total != whole:
+            lines.append("The two counts differ. For many small or crowded things the tile total is "
+                         "usually closer; for a few large things that the tiles cut into pieces, the "
+                         "whole look is. Check the tile that looks off with action=\"ask\" and its region.")
+    return {"output": "\n".join(lines), "exit_code": 0, "answered_by": model_used,
+            "count": total if total is not None else whole, "whole_count": whole,
+            "tile_total": total, "tiles": per_tile, "measurements": measurements}
+
+
 _ACTIONS = {
     "ask": _action_ask,
+    "count": _action_count,
     "unlisted": _action_unlisted,
     "view": _action_view,
     "shapes": _action_shapes,
@@ -750,7 +862,7 @@ def _with_repeat_note(result: Dict[str, Any], count: int) -> Dict[str, Any]:
 
 
 class InspectImageTool:
-    """`inspect_image`: ask/view/shapes/compare/grid_locate — see module
+    """`inspect_image`: ask/count/view/shapes/compare/grid_locate — see module
     docstring."""
 
     async def execute(self, content: str, ctx: dict) -> dict:

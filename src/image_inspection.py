@@ -462,6 +462,80 @@ def draw_crosshair(img: Image.Image, point: Tuple[float, float], *, size: int = 
     return img
 
 
+# ---------------------------------------------------------------------------
+# Counting by tiles. A vision model miscounts many small things in one look
+# and does better on a few at a time (LVLM-Count, arXiv 2412.00686, halves
+# the counting error that way). Each tile is a grid cell grown by an overlap
+# so an object on a border is seen whole; a red box marks the cell itself,
+# and only objects whose centre lies inside the box are counted, so an object
+# in the overlap of two tiles is counted by exactly one of them.
+# ---------------------------------------------------------------------------
+
+def count_tiles(n: int, overlap: float = 0.15) -> List[Dict[str, Tuple[float, float, float, float]]]:
+    """The n x n tiles of a picture as fractions: each item has ``core`` (the
+    grid cell, the tiles' cores partition the picture) and ``tile`` (the core
+    grown by ``overlap`` of a cell on every side, clamped to the picture)."""
+    n = max(1, min(int(n), 4))
+    overlap = max(0.0, min(float(overlap), 0.5))
+    step = 1.0 / n
+    out = []
+    for row in range(n):
+        for col in range(n):
+            core = (col * step, row * step, (col + 1) * step, (row + 1) * step)
+            grow = overlap * step
+            tile = (max(0.0, core[0] - grow), max(0.0, core[1] - grow),
+                    min(1.0, core[2] + grow), min(1.0, core[3] + grow))
+            out.append({"core": core, "tile": tile, "cell": cell_id(col, row)})
+    return out
+
+
+def tile_with_core_box(img: Image.Image, tile: Tuple[float, float, float, float],
+                       core: Tuple[float, float, float, float]) -> Image.Image:
+    """The ``tile`` crop of ``img`` with the ``core`` cell outlined in red
+    (both fractions of ``img``). Only a thin line on the core's border is
+    drawn, so the picture inside stays visible."""
+    img = img.convert("RGB")
+    w, h = img.size
+    x0, y0, x1, y1 = fraction_to_px(tile, (w, h))
+    crop = img.crop((x0, y0, max(x0 + 1, x1), max(y0 + 1, y1))).copy()
+    cw, ch = crop.size
+    tw, th = (tile[2] - tile[0]) or 1.0, (tile[3] - tile[1]) or 1.0
+    bx0 = (core[0] - tile[0]) / tw * cw
+    by0 = (core[1] - tile[1]) / th * ch
+    bx1 = (core[2] - tile[0]) / tw * cw
+    by1 = (core[3] - tile[1]) / th * ch
+    width = max(2, int(round(min(cw, ch) / 160)))
+    ImageDraw.Draw(crop).rectangle([bx0, by0, bx1 - 1, by1 - 1], outline=(255, 0, 0), width=width)
+    return crop
+
+
+_FIRST_NUMBER = re.compile(r"(?<![\w.])(\d{1,5})(?![\w.])")
+_NUMBER_WORDS = {
+    "zero": 0, "none": 0, "cero": 0, "ninguno": 0, "ninguna": 0, "one": 1, "uno": 1, "una": 1,
+    "two": 2, "dos": 2, "three": 3, "tres": 3, "four": 4, "cuatro": 4, "five": 5, "cinco": 5,
+    "six": 6, "seis": 6, "seven": 7, "siete": 7, "eight": 8, "ocho": 8, "nine": 9, "nueve": 9,
+    "ten": 10, "diez": 10,
+}
+
+
+def parse_count(text: str) -> Optional[int]:
+    """The count a model answered: the first standalone number of its first
+    non-empty line, or a number word there ("none", "tres"); else the first
+    number anywhere. None when there is no count at all ("unclear")."""
+    text = str(text or "").strip()
+    if not text:
+        return None
+    first = next((line for line in text.splitlines() if line.strip()), "")
+    match = _FIRST_NUMBER.search(first)
+    if match:
+        return int(match.group(1))
+    for word in re.findall(r"[a-záéíóúñ]+", first.lower()):
+        if word in _NUMBER_WORDS:
+            return _NUMBER_WORDS[word]
+    match = _FIRST_NUMBER.search(text)
+    return int(match.group(1)) if match else None
+
+
 def process(
     loaded: Image.Image,
     *,

@@ -115,6 +115,8 @@ EXAMPLES: Dict[str, List[str]] = {
         "zoom into the bottom-right of this diagram, there's something faint there",
         "pon una cuadrícula sobre esta imagen y dime en qué celda está el sello",
         "compara estas dos fotos, ¿es el mismo objeto en el mismo sitio?",
+        "¿cuántas personas hay en este cuadro?",
+        "count the people in this painting",
         "hay una marca a mano en este pergamino, dime exactamente qué señala",
         "mira esta página del PDF con más detalle, hay un símbolo torcido en la esquina",
     ],
