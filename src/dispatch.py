@@ -1311,6 +1311,32 @@ def resolve_route(owner: Optional[str], model: Optional[str] = None) -> tuple[st
         configured = str(get_setting("dispatch_model", "") or "").strip()
     except Exception:
         configured = ""
+    if configured and not str(model or "").strip():
+        # A model named without an endpoint runs where it is served. Seen
+        # live: `dispatch_model` = qwen3.5:9b with no endpoint fell through
+        # to the utility endpoint, a llama-server whose only model is a 3B
+        # helper -- it would have answered under the 9B's name. When no
+        # endpoint serves it, the workers use the resolved endpoint's own model.
+        explicit_ep = ""
+        try:
+            from src.settings import get_setting
+            explicit_ep = str(get_setting("dispatch_endpoint_id", "") or "").strip()
+        except Exception:
+            explicit_ep = ""
+        if not explicit_ep:
+            from src.endpoint_resolver import endpoint_id_serving, models_listed_at, resolve_endpoint_by_id
+            ep_id = endpoint_id_serving(configured, owner)
+            routed = resolve_endpoint_by_id(ep_id, configured, owner=owner) if ep_id else None
+            if routed:
+                url, resolved_model, headers = routed
+            else:
+                listed = models_listed_at(url, owner)
+                # Only when the server's own list is known and lacks it: an
+                # unlisted model on a server that was never listed may exist.
+                if listed and configured not in listed:
+                    logger.warning("dispatch_model %s is not served by any endpoint; using %s",
+                                   configured, resolved_model or "the endpoint's model")
+                    configured = ""
     m = str(model or "").strip() or configured or str(resolved_model or "")
     if not m:
         raise ValueError("no model configured for dispatch")

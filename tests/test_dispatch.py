@@ -494,3 +494,19 @@ def test_the_workers_skill_ships_inside_the_claude_code_bundle(monkeypatch):
     assert r.status_code == 200
     names = zipfile.ZipFile(io.BytesIO(r.content)).namelist()
     assert "skills/faustus-workers/SKILL.md" in names and "skills/odysseus/SKILL.md" in names
+
+
+def test_a_worker_model_runs_where_it_is_served(monkeypatch):
+    """`dispatch_model` without an endpoint: sent to the endpoint that lists
+    it; dropped when the fallback server lists its models and not this one
+    (a llama-server would answer as its own model under the other's name)."""
+    import src.endpoint_resolver as er
+    from src import settings as settings_mod
+    monkeypatch.setattr(er, "resolve_endpoint", lambda prefix, owner=None: ("http://127.0.0.1:8082/v1", "qwen2.5-3b-helper", None))
+    monkeypatch.setattr(settings_mod, "get_setting", lambda key, default=None: {"dispatch_model": "qwen3.5:9b"}.get(key, default))
+    monkeypatch.setattr(er, "endpoint_id_serving", lambda model, owner=None: None)
+    monkeypatch.setattr(er, "models_listed_at", lambda url, owner=None: ["qwen2.5-3b-helper"])
+    assert dispatch.resolve_route("luis") == ("http://127.0.0.1:8082/v1", "qwen2.5-3b-helper", None)
+    monkeypatch.setattr(er, "endpoint_id_serving", lambda model, owner=None: "ep-ollama")
+    monkeypatch.setattr(er, "resolve_endpoint_by_id", lambda ep, model=None, owner=None, **k: ("http://127.0.0.1:11434/v1", model, None))
+    assert dispatch.resolve_route("luis") == ("http://127.0.0.1:11434/v1", "qwen3.5:9b", None)

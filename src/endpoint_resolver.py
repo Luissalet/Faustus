@@ -523,6 +523,64 @@ def _resolve_endpoint_by_id_with_descriptor(
         db.close()
 
 
+def endpoint_id_serving(model: str, owner: Optional[str] = None) -> Optional[str]:
+    """The id of an enabled endpoint of `owner` whose model list names
+    `model`, or None. Used when a setting names a model but no endpoint:
+    sending that name to whatever server the fallback chain picked does not
+    run that model (a llama-server serves its one model under any name)."""
+    wanted = str(model or "").strip()
+    if not wanted:
+        return None
+    db = SessionLocal()
+    try:
+        query = db.query(ModelEndpoint)
+        try:
+            from src.auth_helpers import owner_filter
+            query = owner_filter(query, ModelEndpoint, owner)
+        except Exception:  # noqa: BLE001 - no owner scoping available: every endpoint
+            pass
+        for ep in query.all():
+            if getattr(ep, "is_enabled", True) is False:
+                continue
+            names = set(_endpoint_cached_models(ep)) | set(_endpoint_pinned_models(ep))
+            if wanted in names:
+                return str(ep.id)
+        return None
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("endpoint lookup for model %s failed: %s", wanted, exc)
+        return None
+    finally:
+        db.close()
+
+
+def models_listed_at(url: str, owner: Optional[str] = None) -> list:
+    """Every model the owner's endpoints at `url` (same host and port) list;
+    empty when none is known or the lists were never fetched."""
+    target = urlparse(str(url or ""))
+    if not target.hostname:
+        return []
+    db = SessionLocal()
+    try:
+        query = db.query(ModelEndpoint)
+        try:
+            from src.auth_helpers import owner_filter
+            query = owner_filter(query, ModelEndpoint, owner)
+        except Exception:  # noqa: BLE001
+            pass
+        out: list = []
+        for ep in query.all():
+            base = urlparse(str(getattr(ep, "url", "") or getattr(ep, "base_url", "") or ""))
+            if (base.hostname or "").lower() == target.hostname.lower() and base.port == target.port:
+                out.extend(_endpoint_cached_models(ep))
+                out.extend(_endpoint_pinned_models(ep))
+        return out
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("model list lookup for %s failed: %s", url, exc)
+        return []
+    finally:
+        db.close()
+
+
 def resolve_endpoint_by_id(
     ep_id: str,
     model: Optional[str] = None,
