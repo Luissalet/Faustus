@@ -587,28 +587,19 @@ def _vision_unavailable_text(configured: str, exc: Exception) -> str:
 def _resolve_vl_model(configured: str, owner: str | None = None) -> tuple:
     """Resolve the vision model to (url, model_id, headers).
 
-    Uses admin-configured model if set, otherwise tries auto-detection
-    of known vision-capable models across configured endpoints.
+    `configured` (the admin/user `vision_model`, or an explicit override)
+    wins; empty means auto-detection. Both go through
+    `src.vision_routing.resolve_vision_route` — `vision_endpoint_id`, local
+    vision-capable models first, then known vision model names, never an
+    endpoint the `ocr_vision` privacy gate would refuse — so chat
+    attachments, tool images and every other caller get the same answer.
     """
-    from src.ai_interaction import _resolve_model
+    from src.vision_routing import resolve_vision_route
 
-    if configured:
-        return _resolve_model(configured, owner=owner)
-
-    # Auto-detect: try known vision-capable models in priority order
-    candidates = [
-        "gpt-4o", "gpt-4o-mini", "gpt-4.1", "gpt-4.1-mini",
-        "claude-sonnet-4-5-20250929", "claude-opus-4-20250514",
-        "gemini-2.0-flash", "gemini-2.5-pro",
-        "llava", "pixtral", "qwen2-vl",
-    ]
-    for candidate in candidates:
-        try:
-            return _resolve_model(candidate, owner=owner)
-        except (ValueError, Exception):
-            continue
-
-    raise ValueError("No vision model available")
+    route = resolve_vision_route(owner=owner, configured=configured or "")
+    if not route.get("model") or not route.get("url"):
+        raise ValueError(route.get("error") or "No vision model available")
+    return route["url"], route["model"], route["headers"]
 
 
 def analyze_image_with_vl_result(image_path: str, owner: str | None = None) -> dict:
