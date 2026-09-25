@@ -2,8 +2,8 @@
   "schema": 1,
   "id": "hypatia",
   "name": "Hypatia's Hoard",
-  "purpose": "The user's own flashcards with spaced repetition (SM-2): the assistant fills cards from what the user reads and can quiz them in chat; the app is the scheduler and the review UI.",
-  "capabilities": ["flashcards", "spaced-repetition", "decks", "review-queue", "quiz", "search", "stats", "import-export"],
+  "purpose": "The user's exam-prep bank (Exam Coach) on their PC: subjects, topics and questions with spaced repetition, quizzes and mock exams in chat, answer grading, and a notebook of their own sources with cited answers, study guides, podcast, mind maps and a Socratic tutor. The Exam Coach PWA served by the same app shows and syncs the same data.",
+  "capabilities": ["exam-prep", "question-bank", "spaced-repetition", "quiz", "mock-exams", "answer-grading", "weak-topics", "key-concepts", "deliverables", "question-suggestions", "notebook-sources", "citations", "study-guides", "podcast", "mind-map", "tutor", "search", "stats"],
   "placeholders": ["HYPATIA_DIR", "APP_URL", "TOKEN_FILE", "PYTHON"],
   "defaults": {
     "APP_URL": "http://127.0.0.1:5187",
@@ -14,7 +14,7 @@
     "url_default": "http://127.0.0.1:5187",
     "ui_url": "{APP_URL}",
     "health": { "path": "/api/health", "expect": { "service": "hypatia-hoard" } },
-    "identify": { "service": ["hypatia-hoard"], "title": ["hypatia's hoard", "tarjetas"] },
+    "identify": { "service": ["hypatia-hoard"], "title": ["hypatia's hoard", "exam coach"] },
     "launch_hint": {
       "kind": "process",
       "executable": "{PYTHON}",
@@ -30,5 +30,5 @@
     "env": { "HYPATIA_URL": "{APP_URL}", "HYPATIA_TOKEN_FILE": "{TOKEN_FILE}" },
     "optional_env": []
   },
-  "notes": "Keep the app running (python -m hypatia) while the assistant uses it: the MCP bridge proxies every call to the local server and never opens the database."
+  "notes": "HYPATIA_DIR is the Exam Coach repository folder. Keep the app running (python -m hypatia) while the assistant uses it: the MCP bridge proxies every call to the local server (starting it if needed) and never opens the database. Build the PWA once with `npm run build:hoard` to use it at {APP_URL}."
 }
