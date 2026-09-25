@@ -1553,16 +1553,37 @@ const STRATEGY_PROFILE_WORD: Record<string, string> = {
  * Collapsed by default like `ContextReceiptCard` right below; the full
  * reasons/steps/budget sit inside for whoever opens it.
  */
+const STRATEGY_METHOD_WORD: Record<string, string> = {
+  direct_edit: t('direct edit'),
+  plan_then_execute: t('plan, then do'),
+  research: t('research'),
+  specialised_review: t('specialised review'),
+  explore_alternatives: t('compare alternatives'),
+};
+
+/** The policy's fallback ("no specific pattern matched") on the default
+ * profile with no recipe: nothing was decided for this turn, so a line under
+ * every plain question saying so is noise. Seen live under a question about
+ * a rental contract, in English inside a Spanish chat. */
+export function strategyIsDefault(strategy: TurnStrategy): boolean {
+  return !strategy.recipeId
+    && strategy.profile === 'balanced'
+    && (strategy.reasons[0] ?? '').startsWith('no specific pattern matched');
+}
+
 function StrategyLine({ strategy }: { strategy: TurnStrategy }) {
+  if (strategyIsDefault(strategy)) return null;
   const profile = STRATEGY_PROFILE_WORD[strategy.profile] ?? strategy.profile;
-  const reason = strategy.reasons[0] ?? '';
+  const method = STRATEGY_METHOD_WORD[strategy.method] ?? strategy.method;
+  // The reasons are the server's own notes (English); they sit inside the
+  // collapsed body, not in the one line everyone sees.
   return (
     <details className="fs-studio__thinking" data-testid="turn-strategy">
       <summary>
-        {t('Strategy: {method} · {profile}{reason}', { method: strategy.method, profile, reason: reason ? ` — ${reason}` : '' })}
+        {t('Strategy: {method} · {profile}{reason}', { method, profile, reason: '' })}
       </summary>
       {strategy.recipeId && <p className="fs-prose">{t('Active recipe: {id}', { id: strategy.recipeId })}</p>}
-      {strategy.reasons.length > 1 && (
+      {strategy.reasons.length > 0 && (
         <ul className="fs-ctx__compaction-body">
           {strategy.reasons.map((r, i) => (
             <li key={i} className="fs-ctx__note">{r}</li>
