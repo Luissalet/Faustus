@@ -630,6 +630,22 @@ _DOMAIN_TOOL_MAP = {
     },
 }
 
+#: Per domain, the tools a request in that domain almost always needs first.
+#: They skip the catalog (see the domain seeding in `stream_agent_loop`);
+#: the rest of the domain stays one `lookup_tools` away.
+_DOMAIN_HOT_TOOLS = {
+    "notes_calendar_tasks": {"manage_notes", "manage_calendar", "manage_tasks"},
+    "email": {"list_emails", "read_email", "reply_to_email", "send_email"},
+    "whatsapp": {"whatsapp_read", "whatsapp_send"},
+    "contacts": {"resolve_contact"},
+    "documents": {"create_document", "edit_document", "manage_documents"},
+    "sessions": {"search_chats"},
+    "ui": {"ui_control"},
+    "integrations": {"api_call"},
+    "desktop": {"desktop_screenshot", "desktop_list_windows"},
+    "media": {"inspect_media"},
+}
+
 _WORKSPACE_TERMINUS_TOOLS = (
     _DOMAIN_TOOL_MAP["files"]
     | {"manage_skills", "ask_teacher", "web_search", "web_fetch", "ask_user", "update_plan",
@@ -7817,6 +7833,14 @@ async def _stream_agent_loop_body(
     if not guide_only and _relevant_tools is not None:
         for _domain in (_intent.get("domains") or set()):
             _relevant_tools.update(_DOMAIN_TOOL_MAP.get(str(_domain), set()))
+            # The domain's everyday tools go out as full schemas, not only in
+            # the catalog. Seen live: «Mira mi calendario de esta semana»
+            # matched the calendar domain, retrieval returned unrelated MCP
+            # tools, `manage_calendar` was deferred, and the turn spent a
+            # whole round on `lookup_tools` plus a full prompt reprocess
+            # (the tool list sits at the top of the prompt) before reading it.
+            if _hot_seed is not None and not relevant_tools:
+                _hot_seed |= _DOMAIN_HOT_TOOLS.get(str(_domain), set())
         if "cookbook" in (_intent.get("domains") or set()):
             _relevant_tools.update({
                 "list_served_models",
