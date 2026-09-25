@@ -497,3 +497,40 @@ def test_reasoning_budget_setting_default_and_override(monkeypatch):
         return default
     monkeypatch.setattr(settings_mod, "get_setting", _fake_get_setting)
     assert llm_core._local_sampler_default("local_openai_reasoning_budget_default", 4096) == 0
+
+
+def test_helper_calls_to_llama_server_do_not_think_by_default(monkeypatch):
+    """The non-streaming helper path (titles, summaries, swarm items, a
+    podcast script) used to leave the chat template's default -- thinking ON
+    for qwen3.x on llama-server -- and a podcast script came back empty
+    after spending its whole budget reasoning."""
+    import asyncio
+
+    sent = {}
+
+    class _Resp:
+        status_code = 200
+        headers = {}
+        text = ""
+
+        def json(self):
+            return {"choices": [{"message": {"content": "ok"}}]}
+
+        def raise_for_status(self):
+            return None
+
+    async def fake_post(client, url, headers, **kw):
+        sent["payload"] = kw.get("json") or {}
+        return _Resp()
+
+    monkeypatch.setattr(llm_core, "httpx_post_kimi_aware_async", fake_post)
+    monkeypatch.setattr(llm_core, "_is_host_dead", lambda u: False)
+    monkeypatch.setattr(llm_core, "_get_cached_response", lambda key: None)
+    try:
+        asyncio.run(llm_core.llm_call_async(
+            "http://127.0.0.1:8081/v1", "qwen3.8-27b-q8-llamacpp",
+            [{"role": "user", "content": "write the script"}], max_tokens=200))
+    except Exception:
+        pass
+    assert sent, "no request was sent"
+    assert sent["payload"].get("chat_template_kwargs", {}).get("enable_thinking") is False

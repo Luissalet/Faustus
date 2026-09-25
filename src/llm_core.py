@@ -3463,6 +3463,15 @@ def llm_call(url: str, model: str, messages: List[Dict], temperature: float = LL
         # keyed the same way. Asking about the normalised /chat/completions
         # form answers "unknown" and drops the schema without a word.
         _apply_openai_response_format(payload, url, schema, model=model)
+        # Same default as the async helper path: a llama-server/vLLM thinking
+        # model answers a helper call without reasoning unless asked to.
+        if (_supports_thinking(model) and _is_self_hosted_openai_compatible(url)
+                and not _is_local_ollama_target(url)):
+            _ctk = payload.get("chat_template_kwargs")
+            if not isinstance(_ctk, dict):
+                _ctk = {}
+                payload["chat_template_kwargs"] = _ctk
+            _ctk.setdefault("enable_thinking", False)
         _suppress_thinking_for_small_talk(payload, model, messages_copy)
         if provider == "mistral" and _supports_thinking(model):
             payload["reasoning_effort"] = _MISTRAL_REASONING_EFFORT
@@ -4092,6 +4101,18 @@ async def _llm_call_async_impl(
         # Suppress thinking for qwen3/gemma4 on Ollama /v1 — same as stream_llm.
         if _is_ollama_openai_compat_url(url) and _supports_thinking(model):
             payload["think"] = False
+        # And the llama-server / vLLM spelling of the same default. Without it
+        # the chat template's own default applies -- thinking ON for qwen3.x
+        # -- and every helper call (titles, summaries, a swarm item, a
+        # podcast script) reasoned for minutes before its first word, or
+        # spent its whole budget thinking and returned no content at all.
+        if (_supports_thinking(model) and _is_self_hosted_openai_compatible(url)
+                and not _is_local_ollama_target(url)):
+            _ctk = payload.get("chat_template_kwargs")
+            if not isinstance(_ctk, dict):
+                _ctk = {}
+                payload["chat_template_kwargs"] = _ctk
+            _ctk.setdefault("enable_thinking", False)
         if provider == "mistral" and _supports_thinking(model):
             payload["reasoning_effort"] = _MISTRAL_REASONING_EFFORT
         _apply_local_cache_affinity(payload, url, session_id)
