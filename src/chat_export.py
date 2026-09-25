@@ -634,6 +634,29 @@ def _tool_calls_from_metadata(metadata: Dict[str, Any]) -> List[ToolCall]:
     return calls
 
 
+def _without_approval_questions(text: str, metadata: Dict[str, Any]) -> str:
+    """The message text without the permission card's own question.
+
+    The card's question ("Allow this task to continue?") is saved as the
+    assistant's text so the turn is not empty; the app hides it behind the
+    card, but an export printed it as if the assistant had written it."""
+    events = metadata.get("tool_events")
+    if not isinstance(events, list) or not text:
+        return text
+    questions = set()
+    for event in events:
+        ask = event.get("ask_user") if isinstance(event, dict) else None
+        if isinstance(ask, dict) and ask.get("kind") == "tool_approval":
+            question = _text_value(ask.get("question")).strip().lower()
+            if question:
+                questions.add(question)
+    if not questions:
+        return text
+    kept = [line for line in text.splitlines() if line.strip().lower() not in questions]
+    cleaned = "\n".join(kept).strip()
+    return cleaned or "_(paused here for the user's permission)_"
+
+
 def _attachments_from_metadata(metadata: Dict[str, Any]) -> List[str]:
     raw = metadata.get("attachments")
     if not isinstance(raw, list):
@@ -675,6 +698,8 @@ def build_transcript(session, *, include_tools: bool = True,
         if role == "system" and not include_system:
             continue
         raw_text = _content_to_text(_attr(entry, "content", None))
+        if role == "assistant":
+            raw_text = _without_approval_questions(raw_text, metadata)
         model = _text_value(metadata.get("model") or metadata.get("requested_model")).strip()
         messages.append(ExportMessage(
             role=role or "user",

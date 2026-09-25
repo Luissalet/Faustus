@@ -849,3 +849,19 @@ def test_five_hundred_messages_export_quickly():
 def _transcript_from_text(text: str) -> Transcript:
     """A one-message transcript whose single user message is *text*."""
     return build_transcript(FakeSession(history=[FakeMessage("user", text)]))
+
+
+def test_the_permission_cards_question_is_not_exported_as_the_assistants_words():
+    card = {"tool": "bash", "command": "rm -rf build", "ask_user": {
+        "kind": "tool_approval", "question": "Allow this task to continue?"}}
+    session = FakeSession(history=[
+        FakeMessage("user", "limpia la carpeta build"),
+        FakeMessage("assistant", "Allow this task to continue?", {"tool_events": [card]}),
+        FakeMessage("assistant", "Voy a borrar build.\n\nAllow this task to continue?", {"tool_events": [card]}),
+        FakeMessage("assistant", "Allow this task to continue? is what the card says.", {}),
+    ])
+    transcript = build_transcript(session)
+    texts = [m.raw_text for m in transcript.messages]
+    assert texts[1] == "_(paused here for the user's permission)_"
+    assert texts[2] == "Voy a borrar build."
+    assert texts[3] == "Allow this task to continue? is what the card says."
