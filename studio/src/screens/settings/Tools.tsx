@@ -437,7 +437,7 @@ function LifecycleHooksPanel({ say }: { say: (t: string) => void }) {
         <div className="fs-set__card">
           <h3 className="fs-set__card-title">{t('Presets')}</h3>
           <p className="fs-set__help">{t('Adding a preset already installed does nothing — safe to click again.')}</p>
-          <div className="fs-intg__kinds">
+          <div className="fs-intg__kinds fs-hooks__presets">
             {data.presets.map((p) => (
               <Button
                 key={p.preset_id}

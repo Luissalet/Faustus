@@ -907,6 +907,28 @@
   min-inline-size: 0;
 }
 
+/* A row with a long description keeps its controls on the first line: the
+   text takes the room that is left and wraps inside it (Lifecycle hooks with
+   a long match summary pushed toggle/Edit/Delete to a second line). */
+.fs-set__row > .fs-tools__text {
+  flex: 1 1 16rem;
+  overflow-wrap: anywhere;
+}
+.fs-set__row > .fs-set__row-actions {
+  flex: none;
+  margin-inline-start: auto;
+}
+
+/* Hook presets are labelled with their description: let a long one wrap
+   inside its button instead of stretching the row. */
+.fs-hooks__presets .fs-btn {
+  max-inline-size: 100%;
+  white-space: normal;
+  text-align: start;
+  block-size: auto;
+  min-block-size: 28px;
+}
+
 .fs-tools__id {
   font-family: var(--fs-font-code);
   font-size: 0.75rem;
