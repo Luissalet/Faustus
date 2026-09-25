@@ -1322,3 +1322,11 @@ contamina a cual, y aislar ese estado en una fixture, como se hizo con
 - En el turno de prueba la primera ronda tardó 565 s para 130 tokens de salida: casi todo fue esperar turno en el servidor compartido con 16,7 k tokens de prompt. Esa ronda llamó a `inspect_media` (sólo cabecera; la herramienta ya avisa de que no mira los píxeles) y la siguiente a `read_file`, que es la que le dio la imagen. Es inofensivo, pero es una ronda de más.
 - Con la casilla verificada en el navegador (etiqueta «Visión», casilla marcada, Guardar deja `--mmproj` una sola vez y la espera de 180 s), queda sin probar sólo el caso de un modelo sin proyector (casilla desactivada).
 
+## Uso diario 25-09 tarde (FAUSTUS.md §196)
+
+- La puerta del modelo local (`_local_model_slot` en `src/llm_core.py`) es un solo candado para toda la instancia: dos turnos del mismo 7006 contra el mismo `llama-server` con 4 ranuras esperan uno tras otro («waited 60s for the local model slot»). Valorar un grupo por URL (varias peticiones al mismo servidor y modelo ya cargado, hasta sus ranuras; exclusivo frente a otros destinos, que son los que cargan modelos en la VRAM). Tocar con cuidado: es la protección de VRAM.
+- El motor «llama.cpp helper» (8082, qwen2.5-3b) está caído en el 7006: cada listado de modelos espera su sondeo (hasta 3 s) y las llamadas de ayuda en segundo plano fallan. Decidir si arrancarlo desde Ajustes o quitar el endpoint.
+- El recuperador de ToolRAG sigue añadiendo herramientas que no vienen al caso (`whatsapp_send`, `req_list`, `structural_search` para una lista de la compra; todo el juego de código para una pregunta sobre un PDF en el espacio de trabajo): 7–11 k tokens de herramientas por ronda.
+- Cantidades en listas de la compra y recetas escaladas: el 27B no usa `python` para multiplicar raciones y se equivoca (6 muslos para 7 personas «2,5–3 kg»). Un aviso de respuesta, al estilo de `answer_checks`, que detecte «para N personas» con cantidades y pida la cuenta, está por pensar.
+- La tarjeta de aprobación se transmite como texto del asistente en inglés («Allow this task to continue?») y queda pegada al principio de la respuesta en el mensaje guardado; la interfaz la oculta al releer el historial, pero la exportación y otros clientes la verán.
+
