@@ -188,6 +188,12 @@ _MEMORY_FRAMING = frozenset({
     "likes", "gusta", "gustan", "favorito", "favorita", "favourite", "favorite",
     "para", "futuro", "future", "siempre", "always", "desde", "sobre", "about",
     "with", "that", "this", "from", "have", "como", "pero", "tambien", "also",
+    # function words a paraphrase adds ("prefiere que las reuniones SEAN por la tarde")
+    "sean", "sea", "sera", "seran", "esta", "estan", "estar", "suele", "suelen", "cuando",
+    "donde", "cada", "todos", "todas", "todo", "toda", "entre", "hasta", "mucho", "mucha",
+    "muchos", "muchas", "tener", "hace", "hacer", "which", "when", "where", "there", "been",
+    "were", "usually", "every", "each", "some", "more", "most", "very", "prefiere", "prefieren",
+    "prefer", "prefered", "preferred", "gustaria", "quiere", "quieren", "wants", "would",
 })
 
 
@@ -216,13 +222,21 @@ def _user_said_all_of(user_folded: str, saved: str) -> bool:
                    if (len(w) >= 4 or any(ch.isdigit() for ch in w)) and w not in _MEMORY_FRAMING]
     if not distinctive:
         return False
+    unmatched = []
     for word in distinctive:
         if word in user_words:
             continue
         if len(word) >= 5 and word[:5] in stems:
             continue
-        return False
-    return True
+        unmatched.append(word)
+    # One short linking word of the paraphrase may be new ("…y prefiere que
+    # SEAN por la tarde") when at least three distinctive words are the
+    # user's own; a fact the user never stated needs more than that.
+    if not unmatched:
+        return True
+    matched = len(distinctive) - len(unmatched)
+    return (len(unmatched) == 1 and len(unmatched[0]) <= 5
+            and not any(ch.isdigit() for ch in unmatched[0]) and matched >= 3)
 
 
 def _memory_read(user_text: str, content: Any, workspace: str = "") -> bool:

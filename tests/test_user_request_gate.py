@@ -554,6 +554,14 @@ def test_remember_that_lets_the_users_own_fact_be_saved(content):
     assert allows("manage_memory", content, _REMEMBER) is True
 
 
+def test_remember_with_the_paraphrase_seen_live():
+    text = "Recuerda que los lunes trabajo desde casa y que prefiero las reuniones por la tarde."
+    saved = "add\nLos lunes trabaja desde casa y prefiere que las reuniones sean por la tarde.\npreference"
+    assert allows("manage_memory", saved, text) is True
+    # …but one new word that carries a fact is still one too many
+    assert allows("manage_memory", "add\nLos lunes trabaja desde Berlín.\nfact", text) is False
+
+
 def test_remember_in_english_too():
     assert allows("manage_memory", "add\nUser's favourite colour is teal.\npreference",
                   "Remember that my favourite colour is teal") is True
