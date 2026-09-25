@@ -36,10 +36,12 @@ _EN_DAY_RE = r"(monday|tuesday|wednesday|thursday|friday|saturday|sunday)"
 _ES_MONTH_RE = "(" + "|".join(_ES_MONTHS) + ")"
 _EN_MONTH_RE = "(" + "|".join(_EN_MONTHS) + ")"
 
+# An aside in brackets between a date and its weekday: "(Todos los Santos)".
+_ASIDE = r"(?:\s*\((?!\s*(?:lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo)\s*\))[^()\n]{1,60}\))?"
 # "25 de diciembre de 2026 cae en domingo", "el 25 de diciembre de 2026 será domingo",
 # "25 de diciembre de 2026 (domingo)"
 _ES_DATE_THEN_DAY = re.compile(
-    r"\b(\d{1,2})\s+de\s+" + _ES_MONTH_RE + r"\s+de(?:l)?\s+(\d{4})\**\s*"
+    r"\b(\d{1,2})\s+de\s+" + _ES_MONTH_RE + r"\s+de(?:l)?\s+(\d{4})\**" + _ASIDE + r"\s*"
     r"(?:\(|,|:|—|-|\bes\b|\bser[aá]\b|\bfue\b|\bcae(?:r[aá])?\s+en\b|\bca[yí]o\s+en\b|\bera\b)\s*(?:un\s+|en\s+)?\**"
     + _ES_DAY_RE + r"\b",
     re.IGNORECASE,
@@ -64,6 +66,30 @@ _EN_DAY_THEN_DATE = re.compile(
 )
 
 
+# A date written without its year, when the answer (or the question) has
+# already said which year it is talking about: "el 2 de noviembre (Todos los
+# Santos) cae en sábado", "el 6 de diciembre (Día de la Constitución) en
+# viernes" (seen live, both wrong for 2026, a few lines after "12 de octubre
+# de 2026"). An aside in brackets may sit between the date and the weekday.
+_ES_NOYEAR_THEN_DAY = re.compile(
+    r"\b(\d{1,2})\s+de\s+" + _ES_MONTH_RE + r"(?!\s+de(?:l)?\s+\d{4})\**" + _ASIDE + r"\s*"
+    r"(?:\(|,|:|—|-|\bes\b|\bser[aá]\b|\bfue\b|\bcae(?:r[aá])?(?:\s+en)?\b|\bca[yí]o(?:\s+en)?\b|\bera\b|\ben\b)"
+    r"\s*(?:un\s+|en\s+)?\**" + _ES_DAY_RE + r"\b",
+    re.IGNORECASE,
+)
+_ES_DAY_THEN_NOYEAR = re.compile(
+    r"\b" + _ES_DAY_RE + r"\**\s*,?\s*(?:el\s+)?(\d{1,2})\s+de\s+" + _ES_MONTH_RE + r"(?!\s+de(?:l)?\s+\d{4})\b",
+    re.IGNORECASE,
+)
+_YEAR = re.compile(r"\b(20\d{2}|19\d{2})\b")
+
+
+def _year_before(text: str, pos: int, fallback: Optional[str]) -> Optional[str]:
+    """The last year the text names before ``pos``, else ``fallback``."""
+    years = [m.group(1) for m in _YEAR.finditer(text, 0, pos)]
+    return years[-1] if years else fallback
+
+
 def _fold_day(name: str) -> str:
     return name.lower().replace("é", "e").replace("á", "a")
 
@@ -81,10 +107,24 @@ def _check(out: List[Dict[str, str]], day: str, month: int, dnum: str, year: str
             out.append(item)
 
 
-def weekday_mismatches(text: str) -> List[Dict[str, str]]:
-    """Full dates the text pairs with a weekday the calendar contradicts."""
+def weekday_mismatches(text: str, context: str = "") -> List[Dict[str, str]]:
+    """Dates the text pairs with a weekday the calendar contradicts.
+
+    Full dates always; a date without its year only when a year can be read
+    from the text before it or, failing that, from ``context`` (the user's
+    question) — never guessed from today's date."""
     body = str(text or "")
     out: List[Dict[str, str]] = []
+    ctx_years = _YEAR.findall(str(context or ""))
+    ctx_year = ctx_years[-1] if len(set(ctx_years)) == 1 else None
+    for m in _ES_NOYEAR_THEN_DAY.finditer(body):
+        year = _year_before(body, m.start(), ctx_year)
+        if year:
+            _check(out, m.group(3), _ES_MONTHS[m.group(2).lower()], m.group(1), year, "es", m.group(0))
+    for m in _ES_DAY_THEN_NOYEAR.finditer(body):
+        year = _year_before(body, m.start(), ctx_year)
+        if year:
+            _check(out, m.group(1), _ES_MONTHS[m.group(3).lower()], m.group(2), year, "es", m.group(0))
     for m in _ES_DATE_THEN_DAY.finditer(body):
         _check(out, m.group(4), _ES_MONTHS[m.group(2).lower()], m.group(1), m.group(3), "es", m.group(0))
     for m in _ES_DAY_THEN_DATE.finditer(body):

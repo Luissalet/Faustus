@@ -101,3 +101,33 @@ def test_free_or_non_suggested_slots_are_left_alone(answer):
 
 def test_no_calendar_listed_means_nothing_to_check():
     assert ac.slot_conflicts("Te sugiero el martes 29 a las 17:00.", ["no events"]) == []
+
+
+# Dates without their year, a few lines after one that has it (seen live:
+# "¿Qué día cae el 12 de octubre de 2026? ¿hay puente?" → a correct Monday,
+# then two wrong weekdays for the next holidays).
+PUENTE = ("El **12 de octubre de 2026 cae en lunes**.\n"
+          "De hecho, el 2 de noviembre (Todos los Santos) cae en sábado y el 6 de diciembre "
+          "(Día de la Constitución) en viernes, así que también hay puentes.")
+
+
+def test_a_date_without_year_takes_the_year_named_before_it():
+    found = {m["date"]: m for m in ac.weekday_mismatches(PUENTE)}
+    assert found["2026-11-02"]["real"] == "lunes"
+    assert found["2026-12-06"]["real"] == "domingo"
+    assert "2026-10-12" not in found
+
+
+def test_a_date_without_year_takes_the_question_year_when_the_answer_has_none():
+    assert ac.weekday_mismatches("el 6 de diciembre cae en viernes", "¿y el 6 de diciembre de 2026?")[0]["real"] == "domingo"
+    assert ac.weekday_mismatches("el 6 de diciembre cae en viernes", "¿qué día es el 6 de diciembre de 2024?") == []
+
+
+@pytest.mark.parametrize("text", [
+    "el 6 de diciembre cae en viernes",                      # no year anywhere: not guessed
+    "En 2026, el viernes 25 de diciembre y el domingo 27 de diciembre",
+    "En 2026: el 1 de noviembre es domingo y el 8 de diciembre (Inmaculada) cae en martes",
+    "El domingo 11 de octubre y el lunes 12 de octubre de 2026",
+])
+def test_right_or_unknowable_weekdays_pass(text):
+    assert ac.weekday_mismatches(text) == []
