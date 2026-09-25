@@ -213,6 +213,9 @@ export interface Turn {
   contextReceipts?: ContextReceipt[];
   /** CMP-09/CMP-12 (W3-A): see `TurnStrategy`'s doc comment. */
   strategy?: TurnStrategy;
+  /** Lot T: the reasoning mode the server ran this turn with (live
+   *  `think_mode` event); what the composer's "Auto · …" chip reads. */
+  thinkMode?: { mode: 'fast' | 'think' | 'deep'; requested: string; source: string; budget: number | null };
   images: string[];
   attachments: Attachment[];
   ask?: AskUser;
@@ -945,6 +948,8 @@ export function apply(turn: Turn, event: ChatEvent): Turn {
     }
     case 'context_receipts':
       return { ...turn, contextReceipts: event.receipts };
+    case 'think_mode':
+      return { ...turn, thinkMode: { mode: event.mode, requested: event.requested, source: event.source, budget: event.budget } };
     case 'strategy':
       return {
         ...turn,

@@ -68,10 +68,14 @@ import {
   isImage,
   searchWorkspaceFiles,
   supportsThinking,
+  THINK_MODES,
+  thinkModeChipText,
+  thinkModeLabel,
   uploadFiles,
   type Attachment,
   type GenOverrides,
   type SamplingDefaults,
+  type ThinkMode,
   type WorkspaceFile,
 } from '../../adapters/composer';
 import type { Suggestion } from './commands';
@@ -145,6 +149,11 @@ export interface ComposerProps {
    *  switch (`supportsThinking`, adapters/composer.ts) — `null` while the
    *  route has not resolved yet. */
   modelName: string | null;
+  /** Lot T: this chat's reasoning mode and what Auto chose on the last
+   *  turn (null before any). The chip shows only for a thinking model. */
+  thinkMode?: ThinkMode;
+  thinkChosen?: ThinkMode | null;
+  onSetThinkMode?: (mode: ThinkMode) => void;
   attachments: Attachment[];
   setAttachments: (update: (list: Attachment[]) => Attachment[]) => void;
   sessionId: string | null;
@@ -278,6 +287,9 @@ export function Composer({
   onClearGen,
   onSetGen,
   modelName,
+  thinkMode = 'auto',
+  thinkChosen = null,
+  onSetThinkMode,
   attachments,
   setAttachments,
   sessionId,
@@ -990,6 +1002,9 @@ export function Composer({
             <EyeOff size={13} aria-hidden="true" /> {t('Incognito')}
           </button>
           {presetChip}
+          {onSetThinkMode && supportsThinking(modelName) && (
+            <ThinkModeChip mode={thinkMode} chosen={thinkChosen} onPick={onSetThinkMode} />
+          )}
           <span className="fs-studio__chipgroup">
             <GenSettingsPopover gen={gen} onSetGen={onSetGen} modelName={modelName} genLabel={genLabel} />
             {genLabel && (
@@ -1556,6 +1571,49 @@ function ApprovalSelector({ disabled, onNotice }: { disabled: boolean; onNotice:
       {choices.map(choice => <button key={choice.value} type="button" role="radio" aria-checked={mode === choice.value} disabled={saving || disabled} onClick={() => void choose(choice.value)}><strong>{choice.label}</strong><span>{choice.detail}</span></button>)}
     </div>
   </Popover>;
+}
+
+/**
+ * Lot T: the reasoning-mode chip (Auto / Fast / Think / Deep). Same
+ * Popover + radiogroup shape as `ApprovalSelector` above. After an Auto turn
+ * the chip says what Auto chose ("Auto · Think").
+ */
+function ThinkModeChip({ mode, chosen, onPick }: {
+  mode: ThinkMode;
+  chosen: ThinkMode | null;
+  onPick: (mode: ThinkMode) => void;
+}) {
+  const details: Record<ThinkMode, string> = {
+    auto: t('Decides per message: quick for small talk, reasoning for code, maths or analysis.'),
+    fast: t('Answers straight away, without reasoning first.'),
+    think: t('Reasons before answering, with the normal budget.'),
+    deep: t('Reasons at length, with a larger budget. Slower.'),
+  };
+  const text = thinkModeChipText(mode, chosen);
+  return (
+    <Popover
+      placement="composer"
+      className="fs-studio__permission-menu"
+      testId="studio-think-mode-menu"
+      trigger={
+        <button type="button" className="fs-studio__chip fs-studio__chip--compact" data-think-mode={mode}
+          title={t('Reasoning: {label}', { label: text })} aria-label={t('Reasoning: {label}', { label: text })}
+          data-testid="studio-think-mode-chip">
+          <Brain size={14} aria-hidden="true" /><span className="fs-studio__chip-label">{text}</span>
+        </button>
+      }
+    >
+      <p>{t('How much the model reasons before answering, for this chat. /think auto|fast|think|deep does the same.')}</p>
+      <div role="radiogroup" aria-label={t('Reasoning')}>
+        {THINK_MODES.map((m) => (
+          <button key={m} type="button" role="radio" aria-checked={mode === m} onClick={() => onPick(m)}
+            data-testid={`studio-think-mode-${m}`}>
+            <strong>{thinkModeLabel(m)}</strong><span>{details[m]}</span>
+          </button>
+        ))}
+      </div>
+    </Popover>
+  );
 }
 
 /**
