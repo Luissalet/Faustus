@@ -961,6 +961,16 @@ class McpManager:
             safe_mode.record_mcp_connection(server_id, "error")
             return False
 
+        # A server saved while the app lived in another folder (src/mcp_path_heal.py).
+        _heal_notes: List[str] = []
+        try:
+            from src.mcp_path_heal import heal as _heal_paths
+            command, args, _heal_notes = _heal_paths(command, list(args or []))
+            for _note in _heal_notes:
+                logger.warning(f"MCP server {name} ({server_id}): {_note}")
+        except Exception as _heal_exc:  # noqa: BLE001 - never block a connect on this
+            logger.debug(f"mcp path heal skipped for {name}: {_heal_exc}")
+
         server_params = StdioServerParameters(
             command=command,
             args=args,
