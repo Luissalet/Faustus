@@ -868,6 +868,16 @@ _register(
     ToolEffect.READ_WORKSPACE,
     result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED,
 )
+_register(
+    # Lot C: the model managing its own context (src/context_self_manage.py).
+    # These read and rewrite only the turn's own in-memory prompt, plus
+    # Faustus's overflow store and compaction pins under DATA_DIR -- the same
+    # control-plane bookkeeping class as update_plan/plan_done, never a
+    # workspace or external effect, so no approval card. context_status lists
+    # handles, tool names and sizes; no result body is quoted back.
+    {"context_status", "context_pin", "context_unpin", "context_drop", "context_note"},
+    ToolEffect.USER_INTERACTION,
+)
 
 
 TOOL_CAPABILITIES: Mapping[str, ToolCapabilities] = MappingProxyType(dict(_REGISTRY))

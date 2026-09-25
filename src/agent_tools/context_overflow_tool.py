@@ -10,11 +10,12 @@ consultable per-session/run reacquisition log
 (`src.context_overflow.reacquisitions_for`/`reacquisition_summary`) so a
 report can show what compaction saved and what got paid back.
 
-NOT YET REGISTERED in `src.tool_schemas.FUNCTION_TOOL_SCHEMAS` or
-`src.agent_tools.TOOL_HANDLERS` — both are outside T8's owned files for this
-lot (docs/spec/paridad/CONTRATO.md rule 6). The exact two-line diff each
-needs is in `T8_wiring.md`; `tests/test_t8_wiring.py` proves it with an
-`xfail(strict=True)` until the integrator applies it.
+Registered in `src.tool_schemas.FUNCTION_TOOL_SCHEMAS` and
+`src.agent_tools.TOOL_HANDLERS`, so the live agent loop offers and runs it;
+`tests/test_t8_wiring.py` keeps both registrations (and the schema copy in
+`tool_schemas.py` matching `TOOL_SCHEMA` below) from drifting. The model's own
+`context_drop`/`context_note` (src/context_self_manage.py) leave the same
+stub, so this tool restores what the model dropped as well.
 """
 from __future__ import annotations
 
@@ -24,8 +25,8 @@ from typing import Any, Dict
 from src import context_overflow
 from src.owner_identity import effective_storage_owner
 
-#: Registration entry for `src.tool_schemas.FUNCTION_TOOL_SCHEMAS` (see
-#: T8_wiring.md) — kept here so the schema travels with its implementation.
+#: Registration entry for `src.tool_schemas.FUNCTION_TOOL_SCHEMAS` (a literal
+#: copy lives there) — kept here so the schema travels with its implementation.
 TOOL_SCHEMA: Dict[str, Any] = {
     "type": "function",
     "function": {

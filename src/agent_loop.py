@@ -5846,6 +5846,9 @@ def _append_tool_results(
                 "role": "tool",
                 "tool_call_id": tc.get("id", f"call_{round_num}_{j}"),
                 "content": result_text,
+                # Private (never sent): which round produced it, for the
+                # model's context_status listing (src/context_self_manage.py).
+                "_tool_round": round_num,
             }
             capabilities = capabilities_for_action(tool_name, tool_content)
             should_arm_gate = tool_result_should_arm_gate(
@@ -5898,13 +5901,33 @@ def _append_tool_results(
             )
             for record in tool_result_records
         )
-        messages.append(
-            untrusted_context_message(
-                "tool execution results",
-                tool_output_text,
-                arm_tool_gate=arm_tool_gate,
-            )
+        # Each result's place inside the one fenced message is recorded so the
+        # mid-turn spill and the model's own context tools can act on ONE
+        # result instead of the whole round (src/tool_result_segments.py).
+        # Escaping is idempotent: the joined body is the same text
+        # untrusted_context_message would have produced from the plain join.
+        _seg_spans = None
+        try:
+            from src import tool_result_segments as _trs
+            tool_output_text, _seg_spans = _trs.escape_results(tool_results)
+        except Exception:  # noqa: BLE001 - segment bookkeeping never costs a round
+            _seg_spans = None
+        _fenced_msg = untrusted_context_message(
+            "tool execution results",
+            tool_output_text,
+            arm_tool_gate=arm_tool_gate,
         )
+        if _seg_spans is not None:
+            try:
+                _trs.annotate(
+                    _fenced_msg, tool_output_text, _seg_spans,
+                    round_num=round_num,
+                    tools=[str((r or {}).get("tool_name") or "") for r in tool_result_records],
+                    call_ids=[str((r or {}).get("call_id") or "") for r in tool_result_records],
+                )
+            except Exception:  # noqa: BLE001
+                logger.debug("[agent] fenced result segments not recorded", exc_info=True)
+        messages.append(_fenced_msg)
         # Same image hand-off for the fenced-call route (local models): the
         # image message follows the wrapped text results.
         for record in tool_result_records:
@@ -8105,6 +8128,81 @@ async def _stream_agent_loop_body(
             logger.info("[tool-preflight] pruned=%s", _preflight_pruned)
 
     _intent_domains = set(_intent.get("domains") or set())
+    # Context tools (src/context_self_manage.py): the model managing its own
+    # context. Offered only once the run is long or the user asked — each
+    # round decides (see the block after mid-turn pressure) — so a retriever
+    # hit on round 1 does not put them in every prompt.
+    from src import context_self_manage as _csm
+    _ctx_tools_state: Dict[str, Any] = {
+        "enabled": bool(get_setting("agent_context_tools_enabled", True)),
+        "asked": _csm.user_asked(_last_user),
+        "offered": False,
+        "offer_note_sent": False,
+        "nudged": False,
+        "counts": {"status": 0, "pins": 0, "unpins": 0, "drops": 0, "notes": 0, "tokens_freed": 0},
+    }
+    _ctx_tools_state["offered"] = bool(_ctx_tools_state["enabled"] and _ctx_tools_state["asked"])
+    if _relevant_tools is not None and not _ctx_tools_state["offered"]:
+        _relevant_tools = set(_relevant_tools) - set(_csm.CONTEXT_TOOL_NAMES)
+    elif _relevant_tools is not None and _ctx_tools_state["offered"]:
+        _relevant_tools = set(_relevant_tools) | (set(_csm.CONTEXT_TOOL_NAMES) - set(disabled_tools))
+
+    def _apply_context_intent(tool_name, result, round_no):
+        """Post-tool hook for the context tools: apply the intent the handler
+        returned to the live `messages` (in place), replace the tool result
+        with what actually happened, and return the `context_op` SSE payload
+        (None when the call was not a context tool). Runs before this round's
+        results are appended, so a handle can only name a result the model
+        has already read."""
+        if tool_name not in _csm.CONTEXT_TOOL_NAMES or not isinstance(result, dict):
+            return None
+        intent = result.pop(_csm.INTENT_KEY, None)
+        if not isinstance(intent, dict):
+            return None
+        if not _ctx_tools_state["enabled"]:
+            result.clear()
+            result.update({"error": f"{tool_name}: context tools are turned off "
+                                    "(agent_context_tools_enabled)", "exit_code": 1})
+            return None
+        try:
+            _soft = float(get_setting("agent_midturn_compact_pct", 0.70) or 0.70)
+        except (TypeError, ValueError):
+            _soft = 0.70
+        try:
+            _max_pins = int(get_setting("agent_context_tools_max_pins", _csm.DEFAULT_MAX_PINS)
+                            or _csm.DEFAULT_MAX_PINS)
+        except (TypeError, ValueError):
+            _max_pins = _csm.DEFAULT_MAX_PINS
+        _octx = _csm.OpContext(
+            session_id=session_id or "",
+            owner=owner or "system",
+            run_id=str(_hopts.get("run_id") or ""),
+            round_num=int(round_no or 0),
+            durable=not bool(_hopts.get("incognito") or _hopts.get("no_memory")),
+            model=str(model or ""),
+            context_length=int(_last_route_context_length or context_length or 0),
+            soft_pct=_soft,
+            max_pins=_max_pins,
+        )
+        _new_messages, _outcome = _csm.apply_intent(messages, intent, _octx)
+        if _new_messages is not messages:
+            messages[:] = _new_messages
+        result.clear()
+        result.update(_csm.outcome_to_tool_result(_outcome))
+        _op = str(_outcome.get("op") or "")
+        _counts = _ctx_tools_state["counts"]
+        _n = len(_outcome.get("handles") or [])
+        _key = {"status": "status", "pin": "pins", "unpin": "unpins",
+                "drop": "drops", "note": "notes"}.get(_op)
+        if _key:
+            _counts[_key] += 1 if _key == "status" else _n
+        _counts["tokens_freed"] += int(_outcome.get("tokens_freed") or 0)
+        return {
+            "type": "context_op", "round": int(round_no or 0), "op": _op,
+            "ok": bool(_outcome.get("ok")), "handles": list(_outcome.get("handles") or []),
+            "tokens_freed": int(_outcome.get("tokens_freed") or 0),
+            "overflow_ids": list(_outcome.get("overflow_ids") or [])[:20],
+        }
     from src.tool_serve import LOOKUP_TOOL as _LOOKUP_TOOL, partition_offer as _partition_offer
     _schema_tools = None
     _deferred_tools: Set[str] = set()
@@ -9228,6 +9326,14 @@ async def _stream_agent_loop_body(
                 schemas = base_schemas + route_mcp_schemas
             if route_state["ody_qwen_finetune_model"]:
                 schemas = []
+            # Context tools ride only on rounds that offered them (usage or
+            # round thresholds, or the user asked) — also when the turn has
+            # no RAG selection and would otherwise send every schema.
+            if not _ctx_tools_state.get("offered"):
+                schemas = [
+                    schema for schema in schemas
+                    if schema.get("function", {}).get("name") not in _csm.CONTEXT_TOOL_NAMES
+                ]
             # One denylist, read as-is. The workspace floor was subtracted from
             # it once, upstream, where the floor is resolved — NOT here, into a
             # local. A local is how this filter and the execution gate came to
@@ -9548,6 +9654,15 @@ async def _stream_agent_loop_body(
                 yield "data: " + json.dumps({"type": "progress_update", "round": 0, "todos": _annotated_todos}) + "\n\n"
         except Exception as _ledger_err:
             logger.debug("[harness] ledger record (approved) failed: %s", _ledger_err)
+        # Context tools never ask for approval, but a sealed replay of one
+        # still goes through the same hook as the main path.
+        try:
+            _ctx_evt = _apply_context_intent(approved.tool_name, approved_result, 0)
+        except Exception as _ctx_hook_err:  # noqa: BLE001
+            _ctx_evt = None
+            logger.warning("[context-tools] %s not applied: %s", approved.tool_name, _ctx_hook_err)
+        if _ctx_evt:
+            yield "data: " + json.dumps(_ctx_evt) + "\n\n"
         # A12: an oversized result is stored whole (owner-scoped, sha256) and
         # the model reads a bounded summary + artifact_id it can open with
         # read_artifact — never a silent truncation.
@@ -9598,6 +9713,7 @@ async def _stream_agent_loop_body(
                     "content": approved.content,
                     "result": approved_result,
                     "text": formatted_approved_result,
+                    "call_id": _approved_call_id,
                 }
             ],
             model=model,
@@ -10137,6 +10253,55 @@ async def _stream_agent_loop_body(
                 )
         except Exception as _midturn_err:
             logger.warning("[agent] midturn pressure skipped: %s", _midturn_err)
+        # Context tools (src/context_self_manage.py): offered once the run is
+        # long (usage >= agent_context_tools_offer_pct of the window, or round
+        # >= agent_context_tools_offer_round) or the user asked; one short
+        # nudge once usage reaches the mid-turn soft ceiling. A fenced-call
+        # route's system prompt was built before any offer, so it gets the
+        # call syntax in a one-time note instead of a schema.
+        if _ctx_tools_state["enabled"] and not _force_answer:
+            try:
+                from src.token_calibration import estimate_tokens_for as _ctx_est
+                _ctx_window = int(_last_route_context_length or context_length or 0)
+                _ctx_used = int(_ctx_est(messages, model))
+                if not _ctx_tools_state["offered"]:
+                    try:
+                        _ctx_offer_pct = float(get_setting("agent_context_tools_offer_pct", _csm.DEFAULT_OFFER_PCT))
+                    except (TypeError, ValueError):
+                        _ctx_offer_pct = _csm.DEFAULT_OFFER_PCT
+                    try:
+                        _ctx_offer_round = int(get_setting("agent_context_tools_offer_round", _csm.DEFAULT_OFFER_ROUND))
+                    except (TypeError, ValueError):
+                        _ctx_offer_round = _csm.DEFAULT_OFFER_ROUND
+                    _ctx_tools_state["offered"] = _csm.offer_decision(
+                        enabled=True, used_tokens=_ctx_used, context_length=_ctx_window,
+                        round_num=round_num, offer_pct=_ctx_offer_pct,
+                        offer_round=_ctx_offer_round, asked=_ctx_tools_state["asked"],
+                    )
+                    if _ctx_tools_state["offered"]:
+                        logger.info("[context-tools] offered at round %s (%s/%s tokens)",
+                                    round_num, _ctx_used, _ctx_window)
+                if _ctx_tools_state["offered"]:
+                    _ctx_names = set(_csm.CONTEXT_TOOL_NAMES) - set(disabled_tools or ())
+                    for _ctx_set in (_relevant_tools, _base_relevant_tools, _schema_tools, _base_schema_tools):
+                        if _ctx_set is not None:
+                            _ctx_set.update(_ctx_names)
+                    _deferred_tools -= _ctx_names
+                    if not _is_api_model and not _ctx_tools_state["offer_note_sent"] and _ctx_names:
+                        _ctx_tools_state["offer_note_sent"] = True
+                        messages.append({"role": "user", "_harness_note": True,
+                                         "content": _csm.offer_note(_ctx_used, _ctx_window)})
+                    try:
+                        _ctx_soft = float(get_setting("agent_midturn_compact_pct", 0.70) or 0.70)
+                    except (TypeError, ValueError):
+                        _ctx_soft = 0.70
+                    if (_ctx_window and not _ctx_tools_state["nudged"] and _ctx_names
+                            and _ctx_used >= _ctx_soft * _ctx_window):
+                        _ctx_tools_state["nudged"] = True
+                        messages.append({"role": "user", "_harness_note": True,
+                                         "content": _csm.nudge_note(_ctx_used, _ctx_window)})
+            except Exception as _ctx_offer_err:  # noqa: BLE001 - an offer never costs the round
+                logger.debug("[context-tools] offer skipped: %s", _ctx_offer_err)
         try:
             _qwen_notice = qwen38_long_run_notice(
                 str(model or ""),
@@ -13778,6 +13943,16 @@ async def _stream_agent_loop_body(
                 except Exception as _drift_snap_err:
                     logger.debug("[drift_check] snapshot skipped: %s", _drift_snap_err)
 
+            # Context tools: apply the model's own context operation to the
+            # live messages now, before this round's results are appended.
+            try:
+                _ctx_evt = _apply_context_intent(block.tool_type, result, round_num)
+            except Exception as _ctx_hook_err:  # noqa: BLE001 - never costs the round
+                _ctx_evt = None
+                logger.warning("[context-tools] %s not applied: %s", block.tool_type, _ctx_hook_err)
+            if _ctx_evt:
+                yield "data: " + json.dumps(_ctx_evt) + "\n\n"
+
             # lookup_tools: promote returned names into the next round's
             # native schema list. They were already executable (catalog);
             # this loads the full schema so native function-calling can
@@ -14574,6 +14749,7 @@ async def _stream_agent_loop_body(
                 "content": block.content,
                 "result": result,
                 "text": formatted,
+                "call_id": _call_id,
             }
             # Image-bearing result: decide NOW, off the event loop, whether
             # the route's model can see it, and — when it cannot but a Vision
@@ -15364,6 +15540,14 @@ async def _stream_agent_loop_body(
         metrics["harness"]["review_mode"] = bool(_hopts.get("review_mode")) and bool(_hsum.get("mutations"))
         if _hopts.get("project_id"):
             metrics["harness"]["project_id"] = _hopts.get("project_id")
+        # Tokens per trajectory, and what the model did to its own context
+        # (src/context_self_manage.py) — pins/drops/notes and tokens freed.
+        if metrics.get("total_tokens") is not None:
+            metrics["harness"]["total_tokens"] = int(metrics.get("total_tokens") or 0)
+        try:
+            metrics["harness"]["context_ops"] = _csm.summarize_ops(_ctx_tools_state["counts"])
+        except Exception:  # noqa: BLE001
+            pass
         # Model scorecard (src/scorecard.py): one line per agent turn so the
         # user can compare models on verified rate, questions, tests, time.
         if _harness_enabled and not _is_teacher_run and (workspace or _ledger.events):
@@ -15378,6 +15562,9 @@ async def _stream_agent_loop_body(
                     harness=_hsum, tests=_hsum.get("tests"), review=_hsum.get("review"),
                     tokens_per_second=metrics.get("tokens_per_second"),
                     output_tokens=metrics.get("output_tokens"),
+                    input_tokens=metrics.get("input_tokens"),
+                    total_tokens=metrics.get("total_tokens"),
+                    context_ops=(metrics.get("harness") or {}).get("context_ops"),
                     asked_user=bool(_hsum.get("asked_user")), task_tag=_hopts.get("task_tag"),
                     # INF-03: link this row to the engine/launch/phase
                     # breakdown the same turn's `execution` metrics already

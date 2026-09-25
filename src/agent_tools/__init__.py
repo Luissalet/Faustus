@@ -325,6 +325,18 @@ from .fix_memory_tools import RecallFixesTool  # noqa: E402
 
 TOOL_HANDLERS["recall_fixes"] = RecallFixesTool().execute
 
+# Lot C: the model managing its own context in a long run -- intents the
+# agent loop applies to the live messages (src/context_self_manage.py).
+from .context_tools import (  # noqa: E402
+    ContextDropTool, ContextNoteTool, ContextPinTool, ContextStatusTool,
+)
+
+TOOL_HANDLERS["context_status"] = ContextStatusTool().execute
+TOOL_HANDLERS["context_pin"] = ContextPinTool().execute
+TOOL_HANDLERS["context_unpin"] = ContextPinTool(unpin=True).execute
+TOOL_HANDLERS["context_drop"] = ContextDropTool().execute
+TOOL_HANDLERS["context_note"] = ContextNoteTool().execute
+
 # ---------------------------------------------------------------------------
 # Constants (re-exported for backward compatibility — single source of truth
 # is src.constants; always prefer importing from there for new code)
@@ -462,7 +474,10 @@ TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_fi
              # Night shift -- src/agent_tools/night_shift_tools.py.
              "night_shift",
              # Git history for a file/symbol -- src/code_history.py.
-             "code_history"} | BUILTIN_EMAIL_TOOLS | DESKTOP_TOOLS | SEMANTIC_TOOLS
+             "code_history",
+             # Context self-management -- src/agent_tools/context_tools.py.
+             "context_status", "context_pin", "context_unpin",
+             "context_drop", "context_note"} | BUILTIN_EMAIL_TOOLS | DESKTOP_TOOLS | SEMANTIC_TOOLS
 
 ToolBlock = namedtuple("ToolBlock", ["tool_type", "content"])
 
