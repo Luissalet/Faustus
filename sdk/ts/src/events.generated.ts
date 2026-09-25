@@ -28,6 +28,7 @@ export interface ToolProgressEvent {
   message?: string;
   event?: string;
   subagent?: Record<string, unknown>;
+  swarm?: Record<string, unknown>;
   sequence?: number;
   trace_id?: string;
   step_id?: string;
