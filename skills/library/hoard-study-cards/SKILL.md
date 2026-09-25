@@ -2,7 +2,7 @@
 name: hoard-study-cards
 description: Study with Hypatia (Exam Coach): questions from what the user read, heard or discussed (Borges, Links, Scribe, past chats, the subject's own PDFs), quizzes and mock exams with honest grading. Use when the user says "hazme preguntas de", "quiero memorizar", "examíname", "pregúntame", "repasemos", "simulacro".
 version: 2.0.0
-tags: [hoards, study, flashcards, hypatia, exam-coach, borges, links, scribe, quiz]
+tags: [hoards, study, flashcards, hypatia, exam-coach, borges, links, scribe, quiz, estudio, estudiar, tarjetas, repaso, repasar, preguntas, examen, examinar, memorizar, simulacro, examíname, pregúntame, tarjeta]
 category: research
 status: published
 source: imported
