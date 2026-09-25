@@ -270,7 +270,8 @@ def _calendar_list_summary_from_tool_output(raw: str, max_items: int = 20) -> st
     if not isinstance(raw, str) or not raw.strip():
         return ""
     if re.search(r"\bno events between\b", raw, re.IGNORECASE):
-        return raw.strip().splitlines()[0]
+        first = raw.strip().splitlines()[0].strip()
+        return first[4:].strip() if first.startswith("AI: ") else first
 
     items: list[str] = []
     for line in raw.splitlines():
@@ -15339,7 +15340,11 @@ async def _stream_agent_loop_body(
         full_response = (full_response.rstrip() + _note_delta).strip()
         yield f"data: {json.dumps({'delta': _note_delta})}\n\n"
     _response_before_tool_summary = full_response
-    if tool_events:
+    # The formatted listing stands in for the answer only when the model gave
+    # none. Seen live: «¿qué día tengo más libre esta semana?» got a good
+    # answer, then this block replaced it with the raw "AI: No events
+    # between …" line -- appended on screen and the only text saved.
+    if tool_events and not strip_tool_blocks(full_response or "").strip():
         for _ev in reversed(tool_events):
             _tool_name = _resolved_tool_event_name(_ev)
             _tool_action = ""
