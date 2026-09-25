@@ -6664,6 +6664,12 @@ async def _stream_agent_loop_body(
         (_reply_language_hint or {}).get("_reply_language")
         or _conversation_language(messages)
     )
+    try:
+        from src.reply_language import requested_output_language as _requested_output_language
+        from src.user_request_gate import user_request_text as _urt_for_lang
+        _requested_output_lang = _requested_output_language(_urt_for_lang(messages))
+    except Exception:  # noqa: BLE001 - a missing hint only means no exception
+        _requested_output_lang = None
 
     def _lang_note(content: str) -> str:
         """A runtime-injected nudge, with the user's language reminder attached.
@@ -11552,6 +11558,11 @@ async def _stream_agent_loop_body(
             _observed_wrong_lang = _reply_language_mismatch(
                 str(_required_reply_lang), _narr_for_lang
             )
+            # "Tradúceme al inglés…": the language the user asked the text in
+            # is not a wrong one (seen live: a correct translation nudged and
+            # saved twice).
+            if _observed_wrong_lang and _observed_wrong_lang == _requested_output_lang:
+                _observed_wrong_lang = None
             if _observed_wrong_lang and tool_blocks:
                 _pending_language_nudge = True
 
@@ -11967,6 +11978,10 @@ async def _stream_agent_loop_body(
                 )
                 if round_response.strip() and not _boundary_echo_only:
                     messages.append({"role": "assistant", "content": round_response})
+                    # The rewrite replaces this reply; do not leave both on screen.
+                    if full_response.endswith(round_response):
+                        full_response = full_response[:-len(round_response)]
+                        yield f'data: {json.dumps({"type": "response_replace", "text": full_response.strip()})}\n\n'
                 _lang_nudge = _mismatch_nudge_message(str(_required_reply_lang))
                 if _lang_nudge:
                     content = _lang_nudge["content"]

@@ -782,3 +782,21 @@ def test_slow_but_short_thinking_is_not_cut_off(tmp_path, monkeypatch):
 
     events = _run(monkeypatch, str(tmp_path), user="¿Dónde está el contador de proyectos?", max_rounds=2)
     assert not [e for e in events if e.get("type") == "harness_check" and e.get("status") == "think_cutoff"]
+
+
+def test_a_translation_into_another_language_is_not_a_wrong_language_reply(tmp_path, monkeypatch):
+    """Live: "Tradúceme al inglés…" was answered in English (right), nudged as
+    a wrong-language reply, and the translation was saved twice."""
+    _patch_common(monkeypatch)
+    calls = _scripted_stream(monkeypatch, [
+        ("Hey, turns out I'm not gonna make it to Friday's dinner, work got crazy. Next week instead?", "stop"),
+    ])
+    gen = al.stream_agent_loop(
+        "http://127.0.0.1:11434/v1", "qwen3-coder:30b",
+        [{"role": "user", "content": "Tradúceme al inglés, manteniendo el tono informal: «Oye, que al "
+                                     "final no llego a la cena del viernes, se me ha liado el curro.»"}],
+        max_rounds=3, relevant_tools={"read_file"},
+    )
+    events = _events(_collect(gen))
+    assert not [e for e in events if e.get("status") == "language_mismatch"], events
+    assert calls["n"] == 1
