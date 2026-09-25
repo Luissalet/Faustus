@@ -144,7 +144,7 @@ async def maybe_extract_skill(
         return None
 
     try:
-        from src.llm_core import llm_call_async
+        from src.task_endpoint import task_llm_call_async
 
         # Get recent messages
         history = session.get_context_messages()
@@ -191,16 +191,32 @@ async def maybe_extract_skill(
             "[skill-extract] calling LLM (endpoint=%s, ctx=%d msgs, timeout=30s)",
             endpoint_url, len(recent),
         )
-        response = await llm_call_async(
-            endpoint_url,
-            model,
-            [
-                {"role": "system", "content": prompt},
-                {"role": "user", "content": f"Conversation:\n{conversation}"},
-            ],
-            headers=headers,
-            timeout=30,
-        )
+        # Resolved as a fallback CHAIN (configured task/utility model, then the
+        # default model, then the model already carrying this conversation),
+        # the same way other background helpers (watchers, meetings, the task
+        # scheduler) resolve theirs -- not a single fixed model. Seen live: the
+        # configured background-task model was not actually installed on the
+        # local Ollama (404), and the extractor gave up instead of trying the
+        # model already known to work for this session.
+        try:
+            response = await task_llm_call_async(
+                [
+                    {"role": "system", "content": prompt},
+                    {"role": "user", "content": f"Conversation:\n{conversation}"},
+                ],
+                fallback_url=endpoint_url,
+                fallback_model=model,
+                fallback_headers=headers,
+                owner=owner,
+                timeout=30,
+            )
+        except RuntimeError as e:
+            # task_llm_call_async raises this only when every candidate in the
+            # fallback chain (configured task/utility model, default model,
+            # this session's own model) came up empty -- nothing to call, so
+            # there is nothing to warn loudly about either.
+            logger.info("[skill-extract] no usable model available for this owner, skipping: %s", e)
+            return None
         logger.debug(
             "[skill-extract] LLM returned in %.1fs (len=%d, head=%r)",
             _time.monotonic() - _t0, len(response or ""), (response or "")[:80],
