@@ -223,5 +223,22 @@
   "answer_all": [
    "tornillos"
   ]
+ },
+ {
+  "id": "memory-recall",
+  "messages": [
+   "Recuerda que mi taller de cerámica es los jueves a las 19:30.",
+   "¿A qué hora empieza mi taller de cerámica?"
+  ],
+  "new_chat_each": true,
+  "writes": true,
+  "answer_all": [
+   "19[:.h]\\s?30"
+  ],
+  "tools_none": [
+   "manage_calendar",
+   "web_search"
+  ],
+  "max_cards": 0
  }
 ]

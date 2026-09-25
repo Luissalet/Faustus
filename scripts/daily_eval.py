@@ -162,7 +162,11 @@ def run(args) -> Dict[str, Any]:
             continue
         session = client.new_session(args.model, args.endpoint_url)
         result: Dict[str, Any] = {"answer": "", "tools": [], "cards": 0, "seconds": 0.0, "error": ""}
-        for message in task["messages"]:
+        for index, message in enumerate(task["messages"]):
+            # "new_chat_each": every message in a fresh chat (memory recall
+            # across chats); the checks read the last one.
+            if index and task.get("new_chat_each"):
+                session = client.new_session(args.model, args.endpoint_url)
             try:
                 result = client.turn(session, message, task.get("mode", "agent"), args.model,
                                      bool(task.get("web")), args.timeout, approve=True)
