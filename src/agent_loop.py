@@ -4883,7 +4883,8 @@ def _build_system_prompt(
         except Exception:
             agent_prompt += _harness.local_model_policy()
 
-    if not suppress_local_context:
+    # With tools in play (every real agent turn): the rule names the python tool.
+    if not suppress_local_context and relevant_tools:
         agent_prompt += _harness.answer_hygiene_policy()
 
     # When creating email documents, instruct the AI on the format
