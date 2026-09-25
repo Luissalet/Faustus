@@ -271,12 +271,22 @@ def _matching_transcription_lines(path: str, question: str, answer: str, limit: 
     picked: List[str] = []
     for term in sorted(t for t in terms if len(t) >= 3):
         rx = re.compile(r"(?<!\w)" + re.escape(term) + r"(?!\w)", re.IGNORECASE)
-        hits = [ln.strip() for ln in lines if ln.strip() and rx.search(ln)]
-        if not hits or len(hits) > 3:
+        idx = [i for i, ln in enumerate(lines) if ln.strip() and rx.search(ln)]
+        if not idx or len(idx) > 3:
             continue
-        for h in hits:
-            if h not in picked:
-                picked.append(h)
+        for i in idx:
+            # A table row brings its whole table: live (run 25) the question
+            # named the column headers and only the header line was quoted.
+            block = [i]
+            if lines[i].lstrip().startswith("|"):
+                j = i + 1
+                while j < len(lines) and lines[j].lstrip().startswith("|"):
+                    block.append(j)
+                    j += 1
+            for k in block:
+                h = lines[k].strip()
+                if h and h not in picked and not re.fullmatch(r"\|?[\s:|-]+\|?", h):
+                    picked.append(h)
     return picked[:limit]
 
 
@@ -299,7 +309,14 @@ def _transcription_hint(loaded: "ii.LoadedImage", question: str, args: Dict[str,
         return ""
     base = os.path.dirname(os.path.dirname(found[0]))
     rel = os.path.relpath(found[0], base) if base else found[0]
-    lines = _matching_transcription_lines(found[0], question, answer)
+    transcribing = bool(_TRANSCRIBE_Q_RE.search(question or ""))
+    lines = _matching_transcription_lines(found[0], question, answer, limit=30 if transcribing else 8)
+    if lines and transcribing:
+        quoted = "\n".join(f"  {ln[:200]}" for ln in lines)
+        return (f"\n\n[inspect_image: this is already transcribed by a person ({rel}); the "
+                f"matching part:\n{quoted}\nUse that text, not the vision reading above, for the "
+                "wording. Ask inspect_image action=\"unlisted\" with text_path only for what it "
+                "leaves out (marks, circles, symbols, positions).]")
     if lines:
         quoted = "\n".join(f"  {ln[:200]}" for ln in lines)
         return (f"\n\n[inspect_image: the human transcription ({rel}) has these lines for what "

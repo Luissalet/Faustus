@@ -597,3 +597,27 @@ async def test_the_transcription_lines_a_question_is_about_are_quoted_under_the_
     assert "Glorious + →→→→↑ = ????????" in text and "holy + ←←←←← = ?????" in text
     assert "Hamlet" not in text.split("[inspect_image: the human transcription")[1]
     assert "trust the transcription" in text
+
+
+@pytest.mark.asyncio
+async def test_a_transcribe_question_on_a_table_quotes_the_whole_table_and_says_it_is_done(tmp_path, monkeypatch):
+    import src.image_inspection as ii_mod
+    (tmp_path / "vistas").mkdir()
+    (tmp_path / "transcripciones").mkdir()
+    (tmp_path / "transcripciones" / "t.transcripcion.md").write_text(
+        "## Tabla\n\n| Fuerte | Potencia colonial | Símbolo |\n|---|---|---|\n"
+        "| Fort Uno | España | ancla |\n| Fort Dos | Francia | pluma |\n\nOtro texto\n", encoding="utf-8")
+    p = _save_png(tmp_path / "vistas" / "page.png", 400, 300)
+    monkeypatch.setattr(ii_mod, "resolve_path", lambda raw: raw)
+
+    def fake_analyze(images, prompt, owner=None, model_override=None):
+        return {"text": "Fort Uno, Spain", "model": "local-vl-model"}
+
+    monkeypatch.setattr(dp, "analyze_image_with_vl_prompt", fake_analyze)
+    out = await _run({"action": "ask", "path": p,
+                      "question": 'Transcribe EXACTAMENTE esta tabla (columnas: "Fuerte" / "Potencia colonial")'},
+                     ctx={"turn_model": "qwen2.5:7b-instruct"})
+    text = out["output"]
+    assert "already transcribed by a person" in text
+    assert "| Fort Uno | España | ancla |" in text and "| Fort Dos | Francia | pluma |" in text
+    assert "|---|" not in text and "Otro texto" not in text
