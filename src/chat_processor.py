@@ -396,8 +396,16 @@ class ChatProcessor:
                     preface.append(untrusted_context_message(
                         "saved memory: retrieved context",
                         (
-                            "Memory context. Do not reference unless the user asks "
-                            f"about these topics.\n{ext_text}"
+                            # Seen live: "¿A qué hora empieza mi taller de
+                            # cerámica?" with "El taller de cerámica de los
+                            # jueves empieza a las 19:30" recalled here; the
+                            # model searched the calendar instead and said it
+                            # found nothing. The old line only said when NOT
+                            # to use these facts.
+                            "Memory context: facts the user told you earlier. When the "
+                            "user asks about one of these topics, answer from them "
+                            "(before searching tools, and say it is what they told you); "
+                            f"do not bring them up otherwise.\n{ext_text}"
                         ),
                     ))
                     for m in relevant:
