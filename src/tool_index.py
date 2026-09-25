@@ -517,6 +517,8 @@ class ToolIndex:
         )
         self._fingerprint = ""
         self._mcp_generation = -1
+        # What each lane holds for MCP tools right now (id -> indexed text).
+        self._mcp_synced: Dict[str, Dict[str, str]] = {}
         self._healthy = True
         # The lexical floor's corpus, kept in step with what was indexed so
         # the fallback can never surface a tool the lanes have dropped.
@@ -607,7 +609,14 @@ class ToolIndex:
         logger.info(f"Indexed {len(docs)} built-in tools")
 
     def index_mcp_tools(self, mcp_mgr, disabled_map: Optional[Dict] = None):
-        """Index MCP tool descriptions. Call after MCP servers connect/disconnect."""
+        """Index MCP tool descriptions. Call after MCP servers connect/disconnect.
+
+        Only what changed is embedded again. The manager's generation moves
+        for things that leave the indexed listing as it was -- seen live: a
+        chat's own browser instance disconnecting at the end of every turn --
+        and each move used to drop and re-embed all 475 tools in a background
+        thread for 6-29 s, right while the next turn was preparing its call.
+        """
         if not mcp_mgr:
             return
 
@@ -616,36 +625,59 @@ class ToolIndex:
         if gen == self._mcp_generation:
             return
 
-        # The MCP half of the lexical floor is rebuilt wholesale below, so a
-        # server that disconnected cannot leave its tools behind in it.
-        self._set_corpus("mcp", {})
+        docs, ids, metadatas = self._mcp_listing(mcp_mgr, disabled_map)
+        wanted = dict(zip(ids, docs))
+        self._set_corpus("mcp", dict(zip([m["tool_name"] for m in metadatas], docs)))
+        meta_by_id = dict(zip(ids, metadatas))
 
-        # Remove old MCP entries
+        indexed = not ids
+        changed = 0
         for lane in self._lanes:
             try:
-                existing = lane.collection.get(where={"tool_type": "mcp"})
-                if existing and existing["ids"]:
-                    lane.collection.delete(ids=existing["ids"])
-            except Exception:
-                logger.warning("tool index: could not drop old MCP entries; stale names may linger",
-                               exc_info=True)
+                have = self._mcp_synced.get(lane.name)
+                if have is None:
+                    have = {}
+                    existing = lane.collection.get(where={"tool_type": "mcp"}, include=["documents"])
+                    for row_id, row_doc in zip((existing or {}).get("ids") or [],
+                                               (existing or {}).get("documents") or []):
+                        have[str(row_id)] = str(row_doc or "")
+                gone = [row_id for row_id in have if row_id not in wanted]
+                fresh = [row_id for row_id in ids if have.get(row_id) != wanted[row_id]]
+                if gone:
+                    lane.collection.delete(ids=gone)
+                if fresh:
+                    fresh_docs = [wanted[row_id] for row_id in fresh]
+                    lane.collection.upsert(
+                        ids=fresh,
+                        documents=fresh_docs,
+                        embeddings=lane.encode(fresh_docs),
+                        metadatas=[meta_by_id[row_id] for row_id in fresh],
+                    )
+                self._mcp_synced[lane.name] = dict(wanted)
+                changed = max(changed, len(gone) + len(fresh))
+                indexed = True
+            except Exception as e:
+                # Unknown state: the next call reads the lane again.
+                self._mcp_synced.pop(lane.name, None)
+                logger.warning("MCP tool indexing failed in %s lane: %s", lane.name, e)
+        if not indexed:
+            logger.warning("MCP tool indexing failed in all embedding lanes")
+            return
+        self._mcp_generation = gen
+        if changed:
+            logger.info("Indexed %d MCP tools (%d changed)", len(docs), changed)
 
-        # Get current MCP tools
+    def _mcp_listing(self, mcp_mgr, disabled_map):
+        """(docs, ids, metadatas) for every enabled MCP tool."""
         try:
             all_tools = mcp_mgr.get_tool_descriptions_for_prompt(disabled_map or {})
         except Exception:
             all_tools = ""
-
-        if not all_tools:
-            self._mcp_generation = gen
-            return
-
-        # Parse MCP tool descriptions from the prompt text
-        docs = []
-        ids = []
-        metadatas = []
+        docs: List[str] = []
+        ids: List[str] = []
+        metadatas: List[Dict[str, str]] = []
         current_server = ""
-        for line in all_tools.strip().split("\n"):
+        for line in str(all_tools or "").strip().split("\n"):
             line = line.strip()
             # Track which server section we're in (for context in descriptions)
             if line.startswith("**") and line.endswith(":**"):
@@ -661,40 +693,27 @@ class ToolIndex:
                     # Include server identity in the indexed text so RAG can
                     # distinguish "list_emails for server-a" from "list_emails for server-b"
                     server_ctx = f" (server: {current_server})" if current_server else ""
-                    doc_text = f"Tool: {name}{server_ctx}\n{desc}"
-                    docs.append(doc_text)
+                    docs.append(f"Tool: {name}{server_ctx}\n{desc}")
                     ids.append(f"mcp_{name}")
                     metadatas.append({"tool_name": name, "tool_type": "mcp"})
-
         # The prompt listing above cuts every description to 120 characters
         # of its first line; index the full text when the manager has it.
         structured = _mcp_index_docs(mcp_mgr, disabled_map)
         if structured[0] is not None:
             docs, ids, metadatas = structured
-
-        if not docs:
-            self._mcp_generation = gen
-            return
-
-        self._set_corpus("mcp", dict(zip([m["tool_name"] for m in metadatas], docs)))
-
-        indexed = False
-        for lane in self._lanes:
-            try:
-                lane.collection.upsert(
-                    ids=ids,
-                    documents=docs,
-                    embeddings=lane.encode(docs),
-                    metadatas=metadatas,
-                )
-                indexed = True
-            except Exception as e:
-                logger.warning("MCP tool indexing failed in %s lane: %s", lane.name, e)
-        if not indexed:
-            logger.warning("MCP tool indexing failed in all embedding lanes")
-            return
-        self._mcp_generation = gen
-        logger.info(f"Indexed {len(docs)} MCP tools")
+        # One row per id (a duplicate would make the upsert fail).
+        seen: Dict[str, int] = {}
+        out_docs: List[str] = []
+        out_ids: List[str] = []
+        out_meta: List[Dict[str, str]] = []
+        for doc, row_id, meta in zip(docs, ids, metadatas):
+            if row_id in seen:
+                continue
+            seen[row_id] = 1
+            out_docs.append(doc)
+            out_ids.append(row_id)
+            out_meta.append(meta)
+        return out_docs, out_ids, out_meta
 
     def retrieve(self, query: str, k: int = 8) -> List[str]:
         """Retrieve the top-K most relevant tool names for a query."""
