@@ -1011,10 +1011,6 @@ export function Composer({
             <EyeOff size={13} aria-hidden="true" /> {t('Incognito')}
           </button>
           {presetChip}
-          {onSetThinkMode && supportsThinking(modelName) && (
-            <ThinkModeChip mode={thinkMode} chosen={thinkChosen} onPick={onSetThinkMode}
-              levels={reasoningLevels} effort={thinkEffort} onPickEffort={onSetThinkEffort} />
-          )}
           <span className="fs-studio__chipgroup">
             <GenSettingsPopover gen={gen} onSetGen={onSetGen} modelName={modelName} genLabel={genLabel} />
             {genLabel && (
@@ -1062,6 +1058,13 @@ export function Composer({
         <RecipeSelector recipeId={activeRecipeId} recipes={recipes} onPick={pickRecipe} />
         </div>
         <div className="fs-studio__bar-end">
+        {/* Next to the model, where it is seen: how much it reasons (the mode,
+            or one of the model's own levels). It used to sit inside the "+"
+            menu, out of sight. */}
+        {onSetThinkMode && supportsThinking(modelName) && (
+          <ThinkModeChip mode={thinkMode} chosen={thinkChosen} onPick={onSetThinkMode}
+            levels={reasoningLevels} effort={thinkEffort} onPickEffort={onSetThinkEffort} />
+        )}
         <div className="fs-studio__model-control">{modelPicker}</div>
           <span className="fs-studio__mic" data-recording={dictation ? true : undefined}>
             <IconButton
