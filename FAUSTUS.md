@@ -8894,3 +8894,32 @@ compartido. Subir el repositorio a GitHub cuando Luis lo diga.
 - *Eco de «Allow this task to continue?»*: en el Studio, el mensaje que pausó muestra «Permiso respondido · Lo permitiste para toda la tarea» y la respuesta sigue limpia; el texto del eco solo aparece en el cliente de pruebas, que concatena los deltas de las dos patas del turno.
 
 **Fuera de mi alcance.** Firmar el instalador de Windows: hace falta un certificado de firma de código (o una cuenta de Azure Artifact Signing) a nombre de Luis; la ruta automática (`dist:publish` con `WIN_CSC_LINK`/`WIN_CSC_KEY_PASSWORD`) ya está preparada y exige firma.
+
+
+## 202. Auditoría del razonamiento del 27B y selector de nivel del propio modelo (25-09-2026, noche)
+
+**Problema.** Luis compartió una auditoría del razonamiento del 27B local (trazar la petición real, revisar cómo se trata el pensamiento y el esfuerzo, A/B con pruebas objetivas y arreglar lo que rompa la integración en vez de culpar al modelo). Después pidió controles de nivel de razonamiento junto al selector de modelo, para los modelos que los tienen.
+
+**Traza.** Lo que Faustus manda a llama-server tras mezclar ajustes: temperatura 0,4 en agente (0,6 en chat), top_p 0,8, top_k 20, min_p 0,05, repeat_penalty 1,05, max_tokens 8192, `chat_template_kwargs.enable_thinking`, `reasoning_budget`, `session_id` y `cache_prompt`. La plantilla del modelo acepta `reasoning_effort` ∈ {low, medium, xhigh} (xhigh por defecto); **«high» devolvía HTTP 500** («Unexpected reasoning effort»), que es lo que el modo A fondo mandaba.
+
+**A/B (8 tareas con respuesta comprobable, directo contra el servidor).**
+
+| Configuración | Aciertos | Tiempo medio |
+|---|---|---|
+| Pensando, muestreo de Faustus | 16/16 | 67 s |
+| Pensando, muestreo de la ficha del modelo | 16/16 | 61 s |
+| Sin pensar | 6/24 | 2 s |
+| Esfuerzo low | 13/13 | — |
+| Esfuerzo medium | 1 fallo (día de la semana) | — |
+
+La causa de los errores de fechas y cuentas era que el modo Auto mandaba las preguntas cortas **sin razonar**. El muestreo no se nota; la penalización de repetición tampoco (§198).
+
+**Arreglado.**
+- *El 500 de A fondo*: `llm_core.fit_reasoning_effort` ajusta el esfuerzo pedido a lo que acepta la plantilla del servidor local (`chat_helpers.llamacpp_reasoning_efforts` lee `/props`, con caché y sólo en hosts locales): «high» pasa al nivel más alto, un valor desconocido al más cercano y uno inválido se quita.
+- *Razonamiento ligero en vez de ninguno*: las familias nuevas «fechas» y «cantidades», y las preguntas cortas o de consulta, piensan con esfuerzo low y presupuesto `think_mode_budget_light` (1024) en vez de nada. El vigilante que cortaba un razonamiento largo reintenta primero con esfuerzo low y sólo después sin pensar.
+- *Selector de nivel del propio modelo*: `GET /api/models/reasoning-levels?endpoint_id=` devuelve los niveles de la plantilla (`src/reasoning_levels.py`, sólo endpoints configurados del usuario). El chip de razonamiento está junto al selector de modelo; cuando el modelo tiene niveles, arriba del todo salen «Según el modo», Bajo, Medio, Máximo y «Sin razonar», y el elegido manda sobre el modo (campo `reasoning_effort` del formulario; `none` apaga el razonamiento, `low` usa el presupuesto ligero, `medium` el normal y el más alto el de A fondo). Se guarda por chat. Elegir un modo devuelve el control al modo. El evento `think_mode` lleva `source: "effort"` y el nivel.
+- *Una suma de fechas no es una pregunta para la web*: «Si hoy es viernes 25 de septiembre de 2026, ¿qué día de la semana será el 1 de enero de 2027?» disparaba la frescura («hoy» + un año), el chat pasaba a agente y buscaba «viernes» en la web (2k tokens de páginas sobre la palabra). Un día de la semana, una cuenta de días o una premisa dada por el usuario ya no cuentan como frescura, salvo que haya un tema público (un partido, una versión).
+
+**Verificado en vivo (7006, 27B q8).** Elegido «Máximo»: el chip dice «Nivel: Máximo», la petición lleva `reasoning_effort: "xhigh"` y presupuesto 16384, sin 500, y «¿cuántas r tiene ferrocarrilero?» → 5 (38 s). Elegido «Bajo»: `reasoning_effort: "low"` y presupuesto 1024; el 1 de enero de 2027 → viernes (98 días, 14 semanas), correcto.
+
+**Pendiente.** Ver PENDIENTES: el paquete de contexto se reinserta con contenido distinto antes del último mensaje en cada vuelta y rompe la caché de prompt (15–19 s de reproceso por vuelta); los niveles de Ollama no se sondean.
