@@ -131,3 +131,18 @@ def test_a_date_without_year_takes_the_question_year_when_the_answer_has_none():
 ])
 def test_right_or_unknowable_weekdays_pass(text):
     assert ac.weekday_mismatches(text) == []
+
+
+def test_a_listed_event_with_abbreviated_month_is_checked_against_this_year():
+    # seen live, "¿Qué tengo en el calendario la semana que viene?" on Friday
+    # 25 Sep 2026: "Lunes 29 sep" (a Tuesday), "Jueves 1 oct" (right)
+    import datetime as dt
+
+    answer = "- **Lunes 29 sep, 17:00–18:00** — Cita\n- **Jueves 1 oct, 10:00–11:00** — Reunión"
+    found = ac.weekday_mismatches(answer, "", dt.date(2026, 9, 25))
+    assert [(m["date"], m["real"]) for m in found] == [("2026-09-29", "martes")]
+    # without today's date nothing is guessed
+    assert ac.weekday_mismatches(answer) == []
+    # the nearest occurrence is the one meant: 3 July 2026 was a Friday
+    assert ac.weekday_mismatches("el viernes 3 de julio", "", dt.date(2026, 9, 25)) == []
+    assert ac.weekday_mismatches("el lunes 3 de julio", "", dt.date(2026, 9, 25))[0]["real"] == "viernes"

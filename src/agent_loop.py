@@ -12399,7 +12399,12 @@ async def _stream_agent_loop_body(
             if _hc_text and not _answer_rewrite_used and not plan_mode and round_num < max_rounds:
                 try:
                     from src import answer_checks as _answer_checks
-                    _wd_bad = (_answer_checks.weekday_mismatches(_hc_text, _last_user or "")
+                    try:
+                        from src.user_time import now_user_local as _now_local
+                        _today_local = _now_local().date()
+                    except Exception:  # noqa: BLE001 - no date, no guessing
+                        _today_local = None
+                    _wd_bad = (_answer_checks.weekday_mismatches(_hc_text, _last_user or "", _today_local)
                                or _answer_checks.asked_weekday_mismatch(_last_user or "", _hc_text))
                     _aloud = _answer_checks.thinking_aloud(_hc_text)
                     _slot_bad = _answer_checks.slot_conflicts(

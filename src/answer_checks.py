@@ -29,6 +29,10 @@ _EN_MONTHS = {
     "january": 1, "february": 2, "march": 3, "april": 4, "may": 5, "june": 6, "july": 7,
     "august": 8, "september": 9, "october": 10, "november": 11, "december": 12,
 }
+_ES_MONTH_ABBR = {
+    "ene": 1, "feb": 2, "mar": 3, "abr": 4, "may": 5, "jun": 6, "jul": 7, "ago": 8,
+    "sep": 9, "sept": 9, "set": 9, "oct": 10, "nov": 11, "dic": 12,
+}
 _ES_DAYS = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
 _EN_DAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
 _ES_DAY_RE = r"(lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo)"
@@ -78,7 +82,9 @@ _ES_NOYEAR_THEN_DAY = re.compile(
     re.IGNORECASE,
 )
 _ES_DAY_THEN_NOYEAR = re.compile(
-    r"\b" + _ES_DAY_RE + r"\**\s*,?\s*(?:el\s+)?(\d{1,2})\s+de\s+" + _ES_MONTH_RE + r"(?!\s+de(?:l)?\s+\d{4})\b",
+    r"\b" + _ES_DAY_RE + r"\**\s*,?\s*(?:el\s+)?(\d{1,2})\s+(?:de\s+)?"
+    r"(" + "|".join(sorted(list(_ES_MONTHS) + list(_ES_MONTH_ABBR), key=len, reverse=True)) + r")\.?"
+    r"(?!\s+de(?:l)?\s+\d{4})(?![a-záéíóú])",
     re.IGNORECASE,
 )
 _YEAR = re.compile(r"\b(20\d{2}|19\d{2})\b")
@@ -88,6 +94,27 @@ def _year_before(text: str, pos: int, fallback: Optional[str]) -> Optional[str]:
     """The last year the text names before ``pos``, else ``fallback``."""
     years = [m.group(1) for m in _YEAR.finditer(text, 0, pos)]
     return years[-1] if years else fallback
+
+
+def _near_year(month: int, day: int, today: Optional[_dt.date]) -> Optional[str]:
+    """The year that puts day/month within half a year of today ("el lunes
+    29 sep" in a list of next week's events), or None when none does."""
+    if today is None:
+        return None
+    best = None
+    for year in (today.year - 1, today.year, today.year + 1):
+        try:
+            gap = abs((_dt.date(year, month, day) - today).days)
+        except ValueError:
+            continue
+        if gap <= 183 and (best is None or gap < best[0]):
+            best = (gap, year)
+    return str(best[1]) if best else None
+
+
+def _month_number(name: str) -> int:
+    key = name.lower().rstrip(".")
+    return _ES_MONTHS.get(key) or _ES_MONTH_ABBR[key]
 
 
 def _fold_day(name: str) -> str:
@@ -107,7 +134,8 @@ def _check(out: List[Dict[str, str]], day: str, month: int, dnum: str, year: str
             out.append(item)
 
 
-def weekday_mismatches(text: str, context: str = "") -> List[Dict[str, str]]:
+def weekday_mismatches(text: str, context: str = "",
+                       today: Optional[_dt.date] = None) -> List[Dict[str, str]]:
     """Dates the text pairs with a weekday the calendar contradicts.
 
     Full dates always; a date without its year only when a year can be read
@@ -118,13 +146,15 @@ def weekday_mismatches(text: str, context: str = "") -> List[Dict[str, str]]:
     ctx_years = _YEAR.findall(str(context or ""))
     ctx_year = ctx_years[-1] if len(set(ctx_years)) == 1 else None
     for m in _ES_NOYEAR_THEN_DAY.finditer(body):
-        year = _year_before(body, m.start(), ctx_year)
+        month = _ES_MONTHS[m.group(2).lower()]
+        year = _year_before(body, m.start(), ctx_year) or _near_year(month, int(m.group(1)), today)
         if year:
-            _check(out, m.group(3), _ES_MONTHS[m.group(2).lower()], m.group(1), year, "es", m.group(0))
+            _check(out, m.group(3), month, m.group(1), year, "es", m.group(0))
     for m in _ES_DAY_THEN_NOYEAR.finditer(body):
-        year = _year_before(body, m.start(), ctx_year)
+        month = _month_number(m.group(3))
+        year = _year_before(body, m.start(), ctx_year) or _near_year(month, int(m.group(2)), today)
         if year:
-            _check(out, m.group(1), _ES_MONTHS[m.group(3).lower()], m.group(2), year, "es", m.group(0))
+            _check(out, m.group(1), month, m.group(2), year, "es", m.group(0))
     for m in _ES_DATE_THEN_DAY.finditer(body):
         _check(out, m.group(4), _ES_MONTHS[m.group(2).lower()], m.group(1), m.group(3), "es", m.group(0))
     for m in _ES_DAY_THEN_DATE.finditer(body):
