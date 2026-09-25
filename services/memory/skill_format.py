@@ -76,11 +76,37 @@ def slugify(text: str, fallback: str = "skill") -> str:
 # Frontmatter (minimal YAML — we don't pull in PyYAML for one feature)
 # ---------------------------------------------------------------------------
 
-# We accept a tiny subset of YAML: scalar `key: value`, inline lists `[a, b]`,
-# and block lists with `-`. That covers everything in our schema and avoids
-# a new dependency.
+# We accept a small subset of YAML: scalar `key: value`, inline lists `[a, b]`,
+# block lists with `-`, one level of nested `key: value` map (the open skill
+# format's `metadata:`), and `|` / `>` block scalars (a long `description:`
+# in skills written for other agents). That covers our schema and the open
+# SKILL.md format without a new dependency. Keys may contain hyphens
+# (`allowed-tools`).
 
-_FM_KEY_RE = re.compile(r"^([a-z_][a-z0-9_]*):\s*(.*)$", re.IGNORECASE)
+_FM_KEY_RE = re.compile(r"^([a-z_][a-z0-9_-]*):\s*(.*)$", re.IGNORECASE)
+_FM_NESTED_KEY_RE = re.compile(r"^\s+([a-z_][a-z0-9_-]*):\s*(.*)$", re.IGNORECASE)
+_FM_BLOCK_SCALARS = ("|", ">", "|-", ">-", "|+", ">+")
+
+
+def _block_scalar(style: str, lines: List[str]) -> str:
+    """The value of a `|` (keep lines) or `>` (fold lines) block scalar."""
+    body = [line.rstrip() for line in lines]
+    while body and not body[-1].strip():
+        body.pop()
+    indents = [len(line) - len(line.lstrip()) for line in body if line.strip()]
+    cut = min(indents) if indents else 0
+    body = [line[cut:] if line.strip() else "" for line in body]
+    if style.startswith("|"):
+        return "\n".join(body)
+    out: List[str] = []
+    for line in body:
+        if not line:
+            out.append("\n")
+        elif out and out[-1] != "\n":
+            out.append(" " + line)
+        else:
+            out.append(line)
+    return "".join(out).strip()
 _FM_BLOCK_LIST_RE = re.compile(r"^\s*-\s*(.*)$")
 
 
@@ -161,13 +187,24 @@ def parse_frontmatter(text: str) -> tuple[Dict[str, Any], str]:
     body = text[end + 4:].lstrip("\n")
     fm: Dict[str, Any] = {}
     pending_key: Optional[str] = None
-    for line in fm_text.splitlines():
+    lines = fm_text.splitlines()
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        i += 1
         if not line.strip() or line.lstrip().startswith("#"):
             continue
         m = _FM_KEY_RE.match(line)
         if m:
             key, val = m.group(1), m.group(2)
-            if val.strip() == "":
+            if val.strip() in _FM_BLOCK_SCALARS:
+                block: List[str] = []
+                while i < len(lines) and (not lines[i].strip() or lines[i][:1] in (" ", "\t")):
+                    block.append(lines[i])
+                    i += 1
+                fm[key] = _block_scalar(val.strip(), block)
+                pending_key = None
+            elif val.strip() == "":
                 pending_key = key
                 fm[key] = []
             else:
@@ -180,6 +217,15 @@ def parse_frontmatter(text: str) -> tuple[Dict[str, Any], str]:
             if not isinstance(existing, list):
                 fm[pending_key] = []
             fm[pending_key].append(_parse_scalar(m2.group(1)))
+            continue
+        m3 = _FM_NESTED_KEY_RE.match(line)
+        if m3 and pending_key:
+            existing = fm.get(pending_key)
+            if not isinstance(existing, dict):
+                if existing:  # a list already started: not a map
+                    continue
+                fm[pending_key] = {}
+            fm[pending_key][m3.group(1)] = _parse_scalar(m3.group(2))
     return fm, body
 
 
@@ -213,7 +259,9 @@ def _emit_scalar(v: Any) -> str:
     if isinstance(v, list):
         return "[" + ", ".join(_emit_scalar(x) for x in v) + "]"
     s = str(v)
-    if any(c in s for c in _FM_MUST_QUOTE):
+    if any(c in s for c in _FM_MUST_QUOTE) or (s and _parse_scalar(s) != s):
+        # The second test: a string that would read back as a number, a
+        # boolean or null ("1.0", "yes") keeps its quotes.
         # ensure_ascii=False keeps non-ASCII text as itself. SKILL.md is UTF-8 at
         # both ends (skills.py reads it, atomic_write_text writes it), so the
         # \uXXXX form bought nothing and leaked into the parsed value (#5210).
@@ -243,7 +291,12 @@ def _as_float(v: Any, default: float = 0.8) -> float:
 def emit_frontmatter(fm: Dict[str, Any]) -> str:
     lines = []
     for k, v in fm.items():
-        if v is None or v == [] or v == "":
+        if v is None or v == [] or v == "" or v == {}:
+            continue
+        if isinstance(v, dict):
+            lines.append(f"{k}:")
+            lines.extend(f"  {sub}: {_emit_scalar(val)}" for sub, val in v.items()
+                         if val is not None and val != "")
             continue
         lines.append(f"{k}: {_emit_scalar(v)}")
     return "\n".join(lines)
@@ -381,6 +434,13 @@ def emit_body(sections: Dict[str, Any]) -> str:
 #: rather than leaving it implicit in a frontmatter comment.
 STATUSES: Tuple[str, ...] = ("draft", "published", "obsolete", "deprecated", "superseded")
 
+#: Frontmatter keys `Skill` has its own fields for; any other key is kept in
+#: `Skill.extra`.
+_MODELLED_KEYS = frozenset({
+    "name", "description", "version", "category", "tags", "platforms", "requires_toolsets",
+    "fallback_for_toolsets", "status", "confidence", "source", "teacher_model", "owner", "created",
+})
+
 
 @dataclass
 class Skill:
@@ -409,6 +469,10 @@ class Skill:
     pitfalls: List[str] = field(default_factory=list)
     verification: List[str] = field(default_factory=list)
     body_extra: str = ""
+    #: Frontmatter keys this schema does not model (the open SKILL.md format's
+    #: `license`, `compatibility`, `metadata`, `allowed-tools`, …), written
+    #: back unchanged so an imported skill keeps them.
+    extra: Dict[str, Any] = field(default_factory=dict)
     # Sidecar (not persisted in SKILL.md)
     uses: int = 0
     last_used: Optional[int] = None
@@ -436,6 +500,8 @@ class Skill:
         if self.teacher_model: fm["teacher_model"] = self.teacher_model
         if self.owner:         fm["owner"] = self.owner
         fm["created"] = self.created or _now_iso()
+        for key, value in (self.extra or {}).items():
+            fm.setdefault(key, value)
         return fm
 
     def to_dict(self) -> Dict[str, Any]:
@@ -460,6 +526,7 @@ class Skill:
             "pitfalls": list(self.pitfalls),
             "verification": list(self.verification),
             "body_extra": self.body_extra,
+            "extra": dict(self.extra or {}),
             "uses": int(self.uses or 0),
             "last_used": self.last_used,
             "path": self.path,
@@ -497,6 +564,7 @@ class Skill:
             pitfalls=list(sections["pitfalls"]),
             verification=list(sections["verification"]),
             body_extra=sections["body_extra"],
+            extra={k: v for k, v in fm.items() if k not in _MODELLED_KEYS},
             path=path,
         )
 
