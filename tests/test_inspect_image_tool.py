@@ -621,3 +621,28 @@ async def test_a_transcribe_question_on_a_table_quotes_the_whole_table_and_says_
     assert "already transcribed by a person" in text
     assert "| Fort Uno | España | ancla |" in text and "| Fort Dos | Francia | pluma |" in text
     assert "|---|" not in text and "Otro texto" not in text
+
+
+@pytest.mark.asyncio
+async def test_earlier_answers_on_the_same_region_are_shown_next_to_a_new_one(tmp_path, monkeypatch):
+    p = _save_png(tmp_path / "page.png", 400, 300)
+    answers = iter(["One person at the table.", "Thirteen people at the table.", "A dog.", "Two people."])
+
+    def fake_analyze(images, prompt, owner=None, model_override=None):
+        return {"text": next(answers), "model": "local-vl-model"}
+
+    monkeypatch.setattr(dp, "analyze_image_with_vl_prompt", fake_analyze)
+    ctx = {"turn_model": "qwen2.5:7b-instruct", "session_id": "sess-region-notes"}
+    first = await _run({"action": "ask", "path": p, "region": [0, 0, 0.5, 0.5],
+                        "question": "How many people?"}, ctx=ctx)
+    assert "earlier in this session" not in first["output"]
+    second = await _run({"action": "ask", "path": p, "region": [0, 0.02, 0.5, 0.52],
+                         "question": "Count the people carefully"}, ctx=ctx)
+    assert "earlier in this session" in second["output"] and "One person at the table." in second["output"]
+    other = await _run({"action": "ask", "path": p, "region": [0.6, 0.6, 1, 1],
+                        "question": "What animal?"}, ctx=ctx)
+    assert "earlier in this session" not in other["output"]
+    elsewhere = await _run({"action": "ask", "path": p, "region": [0, 0, 0.5, 0.5],
+                            "question": "How many people?"}, ctx={"turn_model": "qwen2.5:7b-instruct",
+                                                                  "session_id": "another-session"})
+    assert "earlier in this session" not in elsewhere["output"]

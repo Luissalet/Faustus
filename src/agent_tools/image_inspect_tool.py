@@ -221,8 +221,67 @@ async def _action_ask(args: Dict[str, Any], ctx: Dict[str, Any]) -> Dict[str, An
         return {"output": f"{text}{warn}", "exit_code": 0, "answered_by": "none",
                 "measurements": measurements}
     hint = _transcription_hint(loaded, question, args, text)
-    return {"output": f"[{model_used}] {text}{warn}{hint}", "exit_code": 0,
+    session = str((ctx or {}).get("session_id") or "")
+    region = tuple(measurements.get("region_used") or (0.0, 0.0, 1.0, 1.0))
+    earlier = _earlier_on_region(session, str(loaded.source), region)
+    _record_region(session, str(loaded.source), region, question, text)
+    return {"output": f"[{model_used}] {text}{warn}{earlier}{hint}", "exit_code": 0,
             "answered_by": model_used, "measurements": measurements}
+
+
+# What the vision model already said about (almost) the same region of the
+# same image in this session. Live (exam run 25): across resumed legs the
+# model asked again and again about the same four frames and the same table,
+# worded differently each time (so the exact-repeat ledger never fired), and
+# got different counts each time ("1 person" in The Last Supper, then 13).
+# Putting the earlier answers next to the new one shows the repetition and
+# the disagreement in one place.
+_REGION_NOTES: "OrderedDict[str, List[Dict[str, Any]]]" = OrderedDict()
+_REGION_NOTES_MAX_SESSIONS = 64
+_REGION_NOTES_PER_SESSION = 60
+
+
+def _region_iou(a: Tuple[float, ...], b: Tuple[float, ...]) -> float:
+    try:
+        ax0, ay0, ax1, ay1 = (float(v) for v in a)
+        bx0, by0, bx1, by1 = (float(v) for v in b)
+    except (TypeError, ValueError):
+        return 0.0
+    ix = max(0.0, min(ax1, bx1) - max(ax0, bx0))
+    iy = max(0.0, min(ay1, by1) - max(ay0, by0))
+    inter = ix * iy
+    union = (ax1 - ax0) * (ay1 - ay0) + (bx1 - bx0) * (by1 - by0) - inter
+    return inter / union if union > 0 else 0.0
+
+
+def _earlier_on_region(session: str, source: str, region: Tuple[float, ...], limit: int = 3) -> str:
+    if not session:
+        return ""
+    notes = [n for n in _REGION_NOTES.get(session, [])
+             if n["source"] == source and _region_iou(n["region"], region) >= 0.5]
+    if not notes:
+        return ""
+    lines = []
+    for n in reversed(notes[-limit:]):
+        q = " ".join(n["question"].split())[:140]
+        a = " ".join(n["answer"].split())[:240]
+        lines.append(f"  - asked: {q}\n    answer: {a}")
+    more = f" ({len(notes)} earlier questions in all)" if len(notes) > limit else ""
+    return ("\n\n[inspect_image: earlier in this session, on (almost) the same region of this image"
+            f"{more}:\n" + "\n".join(lines) + "\nIf these answers disagree with the one above, the "
+            "vision model cannot settle it: stop asking about this region, take what the human "
+            "transcription says, or mark it as uncertain and move on.]")
+
+
+def _record_region(session: str, source: str, region: Tuple[float, ...], question: str, answer: str) -> None:
+    if not session or not answer:
+        return
+    notes = _REGION_NOTES.pop(session, [])
+    notes.append({"source": source, "region": tuple(region), "question": str(question or ""),
+                  "answer": str(answer or "")})
+    _REGION_NOTES[session] = notes[-_REGION_NOTES_PER_SESSION:]
+    while len(_REGION_NOTES) > _REGION_NOTES_MAX_SESSIONS:
+        _REGION_NOTES.popitem(last=False)
 
 
 _TRANSCRIBE_Q_RE = re.compile(r"\btranscri|\bliteral|\bword by word|\bpalabra por palabra", re.IGNORECASE)
