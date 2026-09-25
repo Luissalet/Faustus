@@ -240,6 +240,19 @@ def model_supports_vision(model_name: str, endpoint_url: str = "") -> bool:
     `qwen3.5:9b` reports vision from Ollama but nothing in the name says so,
     and a text-only tag can carry "vl" in its name.
     """
+    # The official Claude Code client route (src/cli_model.py) is not an HTTP
+    # endpoint the probes below can reach, and its pinned model is usually the
+    # opaque "client-default" — a name the keyword heuristic below would call
+    # text-only. That route now forwards image blocks itself (Claude Code's
+    # `--input-format stream-json`), so it is vision-capable independent of
+    # both the probe and the model name; the Codex route is deliberately not
+    # included here because cli_model.complete still refuses its images.
+    try:
+        from src.cli_model import PREFIX as _CLI_PREFIX
+        if str(endpoint_url or '').lower().startswith(f'{_CLI_PREFIX}claude/'):
+            return True
+    except ImportError:  # pragma: no cover - cli_model always ships with this module
+        pass
     if endpoint_url:
         try:
             advertised = lmstudio_supports_vision(endpoint_url, model_name or "")

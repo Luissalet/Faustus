@@ -24,14 +24,19 @@ def test_nested_result_does_not_replace_top_level_answer():
 
 
 def test_context_retains_roles_tool_results_unicode():
-    prompt = client.render_context([{'role': 'system', 'content': 'Español'},
+    rendered = client.render_context([{'role': 'system', 'content': 'Español'},
         {'role': 'tool', 'content': [{'type': 'text', 'text': '✓'}], 'tool_call_id': 'abc'}])
+    prompt = rendered.prompt
     assert 'Español' in prompt and '✓' in prompt and '"tool_call_id": "abc"' in prompt
+    assert rendered.images == ()
 
 
-def test_images_are_rejected_not_silently_discarded():
-    with pytest.raises(client.ClientModelError, match='text only'):
-        client.render_context([{'role': 'user', 'content': [{'type': 'image_url', 'image_url': {'url': 'data:...'}}]}])
+def test_remote_image_urls_are_rejected_not_silently_fetched():
+    # This client has no network of its own; a non-`data:` URL must be
+    # refused rather than treated as fetchable (see tests/test_cli_model_images.py).
+    with pytest.raises(client.ClientModelError, match='remote image URL'):
+        client.render_context([{'role': 'user', 'content': [
+            {'type': 'image_url', 'image_url': {'url': 'http://example.test/x.png'}}]}])
 
 
 @pytest.mark.parametrize('provider,model', [('claude', 'client-default'), ('codex', 'gpt-5')])
