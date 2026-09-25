@@ -49,6 +49,13 @@ IMAGE_DOWNLOAD_TIMEOUT = 60
 IMAGE_DOWNLOAD_MIME = ("image/", "application/octet-stream", "binary/octet-stream")
 
 
+def _memory_text_key(text: str) -> str:
+    """How two memory texts compare for "already saved": case, spacing and
+    closing punctuation do not count."""
+    import re as _re
+    return _re.sub(r"\s+", " ", str(text or "")).strip().rstrip(".!;:").strip().casefold()
+
+
 def _provider_image_profile(result_url: str, endpoint_url: str) -> Tuple[str, bool]:
     """Pick the outbound trust profile for a provider-supplied image URL."""
     import os
@@ -480,6 +487,15 @@ async def do_manage_memory(content: str, session_id: Optional[str] = None, owner
         except MemoryStoreUnreadable as e:
             logger.error("Refusing to add memory, store unreadable: %s", e)
             return {"error": "Memory store is temporarily unreadable — nothing was saved."}
+        # The same fact saved twice is one memory. Seen live: a turn resumed
+        # after an approval card replayed both of its `add` calls, so each
+        # preference was stored twice.
+        _key = _memory_text_key(text)
+        for existing in memories:
+            if (isinstance(existing, dict) and _memory_text_key(existing.get("text", "")) == _key
+                    and (existing.get("owner") or None) == (owner or None)):
+                return {"action": "add", "memory_id": existing.get("id"), "duplicate": True,
+                        "results": f"Already saved: [{existing.get('category', category)}] {existing.get('text', text)}"}
         memories.append(entry)
         _memory_manager.save(memories)
 
