@@ -182,6 +182,10 @@ DEFAULT_SETTINGS = {
     # 24-09-2026: a CPU vision model asked to transcribe a crop fell into a
     # repetition loop and generated 3,600+ tokens at ~6 tokens/s (10 min).
     "vision_max_tokens": 1536,
+    # Context window for one vision-helper call on a local Ollama (a caption:
+    # image + short prompt). 0 = the server's default, which can be the chat
+    # model's whole window and triples the helper's VRAM.
+    "vision_num_ctx": 8192,
     # Pending approval cards are mirrored to the data dir and restored on
     # start, inside their (absolute) TTL, so a restart does not strand a
     # paused turn.

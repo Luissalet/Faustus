@@ -35,7 +35,7 @@ SCHEMA_KEY_RE = re.compile(r"^(agent_|browser_|desktop_)")
 # Agent-adjacent keys that live under other prefixes but belong on this page.
 EXTRA_KEYS: tuple[str, ...] = ("tool_path_extra_roots", "vision_enabled", "vision_model",
                               "vision_timeout_seconds", "vision_max_side", "vision_max_side_limit", "vision_min_side",
-                               "vision_max_tokens",
+                               "vision_max_tokens", "vision_num_ctx",
                                "dispatch_model", "dispatch_endpoint_id", "gpu_placement_prefer",
                                "sandbox_missing_policy", "code_graph_community_summaries",
                                "code_graph_drift_check", "approval_autonomy")
@@ -644,6 +644,10 @@ GROUPS: list[dict[str, Any]] = [
             _int("vision_max_tokens", "Vision answer length (tokens)",
                  "Longest answer one image question may produce; 0 = no limit. Stops a vision model "
                  "that falls into repeating itself from spending minutes on one question.", 0, 16384),
+            _int("vision_num_ctx", "Vision context window (tokens)",
+                 "Context window for one Vision model call on a local Ollama: the image plus a short "
+                 "question. 0 = the server's default, which can be the chat model's whole window and "
+                 "makes the helper take three times the VRAM.", 0, 262144),
         ],
     ),
     _group(

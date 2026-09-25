@@ -652,9 +652,10 @@ def analyze_image_with_vl_result(image_path: str, owner: str | None = None) -> d
                 from src.privacy_policy import assert_outbound
                 assert_outbound("ocr_vision", _url, owner=owner)
                 description = collapse_vision_repetition(
-                    llm_call(_url, _model, vl_messages, headers=_headers,
+                    llm_call(_vision_call_url(_url), _model, vl_messages, headers=_headers,
                              timeout=_vision_timeout_seconds(),
-                             max_tokens=_vision_max_tokens()))
+                             max_tokens=_vision_max_tokens(),
+                             num_ctx=_vision_num_ctx(_url)))
                 logger.info("VL analysis complete with model %s", _model)
                 return {"text": description, "model": _model}
             except Exception as e:
@@ -739,9 +740,10 @@ def analyze_image_with_vl_prompt(
                 from src.privacy_policy import assert_outbound
                 assert_outbound("ocr_vision", _url, owner=owner)
                 answer = collapse_vision_repetition(
-                    llm_call(_url, _model, vl_messages, headers=_headers,
+                    llm_call(_vision_call_url(_url), _model, vl_messages, headers=_headers,
                              timeout=_vision_timeout_seconds(),
-                             max_tokens=_vision_max_tokens()))
+                             max_tokens=_vision_max_tokens(),
+                             num_ctx=_vision_num_ctx(_url)))
                 logger.info("VL custom-prompt analysis complete with model %s", _model)
                 _vcache.put(_vkey, answer, _model)
                 return {"text": answer, "model": _model}
@@ -772,6 +774,35 @@ def _vision_timeout_seconds() -> int:
     except Exception:  # noqa: BLE001
         value = 600
     return max(30, min(value, 3600))
+
+
+def _vision_call_url(url: str) -> str:
+    """A local Ollama reached through its OpenAI-compatible /v1 route is
+    called on the native /api/chat instead, the only route where a request
+    can size its own context window (`vision_num_ctx`)."""
+    try:
+        from src.chat_helpers import _is_local_ollama_url
+        from src.llm_core import _is_ollama_native_url
+        if url and _is_local_ollama_url(url) and not _is_ollama_native_url(url) and _vision_num_ctx(url):
+            from urllib.parse import urlparse
+            p = urlparse(url)
+            return f"{p.scheme}://{p.netloc}/api/chat"
+    except Exception:  # noqa: BLE001
+        pass
+    return url
+
+
+def _vision_num_ctx(url: str = "") -> int:
+    """Context window for a vision helper call on a local Ollama (setting
+    `vision_num_ctx`, default 8192; 0 = the server's own default). A caption
+    needs the image plus a short prompt; without this Ollama loaded an 8B
+    vision model with the chat model's 64k window (21 GB instead of ~7)."""
+    try:
+        from src.settings import get_setting
+        value = int(get_setting("vision_num_ctx", 8192) or 0)
+    except Exception:  # noqa: BLE001
+        value = 8192
+    return max(0, min(value, 262144))
 
 
 def _vision_max_tokens() -> int:

@@ -3368,8 +3368,13 @@ def normalize_model_id(
 def llm_call(url: str, model: str, messages: List[Dict], temperature: float = LLMConfig.DEFAULT_TEMPERATURE,
              max_tokens: int = LLMConfig.DEFAULT_MAX_TOKENS, headers: Optional[Dict] = None,
              timeout: int = LLMConfig.DEFAULT_TIMEOUT, prompt_type: Optional[str] = None,
-             response_schema: Optional[Dict] = None) -> str:
+             response_schema: Optional[Dict] = None, num_ctx: Optional[int] = None) -> str:
     """Synchronous LLM call with optional prompt type enhancement.
+
+    ``num_ctx`` (native Ollama only) sizes the context window for this
+    call instead of the server's default. Helper calls that need a few
+    thousand tokens (a vision caption) pass a small one so loading the
+    helper does not reserve a KV cache for the chat model's window.
 
     ``response_schema`` is a JSON Schema the answer must obey. It only has
     teeth on a native Ollama endpoint (``format`` on /api/chat); everywhere
@@ -3435,6 +3440,8 @@ def llm_call(url: str, model: str, messages: List[Dict], temperature: float = LL
         _model_defaults = _clean_gen_overrides(_model_load_defaults(url, model))
         if _model_defaults:
             _apply_gen_overrides_ollama(payload, _model_defaults)
+        if num_ctx and int(num_ctx) > 0:
+            payload.setdefault("options", {})["num_ctx"] = int(num_ctx)
     else:
         target_url = _normalize_openai_chat_url(url)
         if provider == "copilot":

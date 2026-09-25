@@ -476,3 +476,45 @@ def test_llamacpp_without_cached_props_claims_nothing(monkeypatch):
     url = "http://127.0.0.1:8081/v1/chat/completions"
     assert vr.known_vision_models(url, ["qwen3.8-27b-q8-llamacpp"], backend="llamacpp") == []
     assert vr.known_vision_models(url, ["qwen3.8-27b-q8-llamacpp"]) == ["qwen3.8-27b-q8-llamacpp"]
+
+
+def test_vision_helper_calls_native_ollama_with_a_small_window(monkeypatch):
+    from src import document_processor as dp
+    monkeypatch.setattr(ch, "_is_local_ollama_url", lambda url: "11434" in url)
+    monkeypatch.setattr("src.settings.get_setting",
+                        lambda k, d=None: {"vision_num_ctx": 8192}.get(k, d))
+    assert dp._vision_call_url("http://127.0.0.1:11434/v1/chat/completions") == "http://127.0.0.1:11434/api/chat"
+    assert dp._vision_call_url("https://api.example.com/v1/chat/completions") == \
+        "https://api.example.com/v1/chat/completions"
+    assert dp._vision_num_ctx() == 8192
+    monkeypatch.setattr("src.settings.get_setting", lambda k, d=None: {"vision_num_ctx": 0}.get(k, d))
+    # 0 = leave the server's default and the URL as configured.
+    assert dp._vision_call_url("http://127.0.0.1:11434/v1/chat/completions") == \
+        "http://127.0.0.1:11434/v1/chat/completions"
+
+
+def test_sync_llm_call_puts_num_ctx_in_ollama_options(monkeypatch):
+    from src import llm_core
+    sent = {}
+
+    class _Resp:
+        status_code = 200
+        text = ""
+        def raise_for_status(self): pass
+        def json(self): return {"message": {"content": "a red square"}}
+
+    def fake_post(url, headers=None, json=None, timeout=None, **kw):
+        sent["url"], sent["payload"] = url, json
+        return _Resp()
+
+    monkeypatch.setattr(llm_core, "_model_load_defaults", lambda url, model: {})
+    monkeypatch.setattr(llm_core, "get_context_length", lambda url, model: 65536)
+    monkeypatch.setattr(llm_core, "httpx_post_kimi_aware", fake_post)
+    monkeypatch.setattr(llm_core, "_get_cached_response", lambda key: None)
+    try:
+        llm_core.llm_call("http://127.0.0.1:11434/api/chat", "qwen3-vl:8b", [{"role": "user", "content": "x"}],
+                          num_ctx=8192)
+    except Exception:
+        pass
+    assert sent, "no request was sent"
+    assert sent["payload"]["options"]["num_ctx"] == 8192
