@@ -3822,6 +3822,8 @@ def setup_chat_routes(
                                                     _metrics_to_save["context_receipts"] = _ce_rows
                                             except Exception:  # noqa: BLE001
                                                 logger.debug("[context-engine] chat receipt rows skipped")
+                                        from routes.chat_helpers import count_sent_memory_uses as _count_mem_uses
+                                        _count_mem_uses(ctx, memory_manager, _ce_chat_sent_preface)
                                         _saved_id = save_assistant_response(
                                             sess, session_manager, session, full_response, _metrics_to_save,
                                             character_name=ctx.preset.character_name,
@@ -4057,6 +4059,12 @@ def setup_chat_routes(
                         # turn remains confined to the project workspace, and
                         # exposes an archive's real path without exposing any
                         # sibling uploads.
+                        # Whether a context packet went into this turn. With
+                        # one, the preface's saved memories and RAG blocks
+                        # were replaced by the packet, so they are not saved
+                        # as "used" (the packet's own receipts are); same
+                        # rule as the chat path's `_ce_chat_sent_preface`.
+                        _agent_packet_seen = False
                         _turn_file_roots = list(_project_roots or [])
                         for _upload in ctx.uploaded_files:
                             _upload_path = str(_upload.get("path") or "").strip()
@@ -4126,6 +4134,8 @@ def setup_chat_routes(
                             if chunk.startswith("data: ") and not chunk.startswith("data: [DONE]"):
                                 try:
                                     data = json.loads(chunk[6:])
+                                    if isinstance(data, dict) and data.get("type") == "context_packet":
+                                        _agent_packet_seen = True
                                     if "delta" in data:
                                         # Reasoning tokens arrive flagged thinking:true.
                                         # Forward them for the live indicator, but keep
@@ -4284,6 +4294,8 @@ def setup_chat_routes(
                                         else:
                                             terminal_content = failure_note
                                         if not _terminal_saved:
+                                            from routes.chat_helpers import count_sent_memory_uses as _count_mem_uses
+                                            _count_mem_uses(ctx, memory_manager, not _agent_packet_seen)
                                             _saved_id = save_assistant_response(
                                                 sess,
                                                 session_manager,
@@ -4292,8 +4304,8 @@ def setup_chat_routes(
                                                 terminal_metadata,
                                                 character_name=ctx.preset.character_name,
                                                 web_sources=web_sources,
-                                                rag_sources=ctx.rag_sources,
-                                                used_memories=ctx.used_memories,
+                                                rag_sources=None if _agent_packet_seen else ctx.rag_sources,
+                                                used_memories=None if _agent_packet_seen else ctx.used_memories,
                                                 incognito=incognito,
                                                 wires=getattr(ctx, "side_thread_wires", None),
                                                 behavior_mode=getattr(ctx, "behavior_mode", None),
@@ -4353,12 +4365,14 @@ def setup_chat_routes(
                                     if thinking_response.strip() and not _metrics_to_save.get("thinking"):
                                         _metrics_to_save["thinking"] = thinking_response.strip()
                                     _terminal_saved = True
+                                    from routes.chat_helpers import count_sent_memory_uses as _count_mem_uses
+                                    _count_mem_uses(ctx, memory_manager, not _agent_packet_seen)
                                     _saved_id = save_assistant_response(
                                         sess, session_manager, session, _response_to_save, _metrics_to_save,
                                         character_name=ctx.preset.character_name,
                                         web_sources=web_sources,
-                                        rag_sources=ctx.rag_sources,
-                                        used_memories=ctx.used_memories,
+                                        rag_sources=None if _agent_packet_seen else ctx.rag_sources,
+                                        used_memories=None if _agent_packet_seen else ctx.used_memories,
                                         incognito=incognito,
                                         wires=getattr(ctx, "side_thread_wires", None),
                                         behavior_mode=getattr(ctx, "behavior_mode", None),

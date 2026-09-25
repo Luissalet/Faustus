@@ -103,11 +103,6 @@ que la propia ola dejó abierto, para que no se pierda al fusionar:
   encendido en la instancia privada donde se hizo la verificación en vivo de
   esta ola. Recomendado encenderlo en la instancia principal después de que
   el dueño pruebe la pantalla `/brain` unos días.
-- **Modo chat simple** (heredado de §175, seguía abierto al escribir esto):
-  `memories_used`/`rag_sources` se siguen registrando en modo agente aunque
-  el paquete de contexto haya sustituido esos bloques, y el contador de uso
-  de una memoria guardada (`increment_uses`) sube al construir el prefacio
-  aunque no llegue a enviarse.
 - **Rendimiento del modelo grande en la máquina del dueño**: los turnos de
   agente van lentos cuando otra instancia tiene cargado el modelo grande
   (~1,5 tok/s con cuantización q8 y contención) — es una condición del
@@ -959,7 +954,6 @@ Deployed cleanly on top of prior history (rebased my own docs commits). Tests: t
 API verification:
 - /api/auth/settings has memory_snapshot_per_session=True, memory_block_max_chars=6000, skill_list_budget_tokens=400, skill_body_budget_tokens=1500, and the five local_*_default sampling keys (temperature 0.6, top_p 0.8, top_k 20, min_p 0.05, repeat_penalty 1.05).
 - /api/engines lists both engines running with correct models.
-- GAP FOUND (not fixed, per instructions): GET /api/memory-engine/pack (routes/memory_engine_routes.py preview_pack) calls engine.pack_detail() only and never engine.pack_for_session(), so the live pack response has no snapshot, snapshot_taken_at or drop-count fields even though src/memory_engine.py's pack_for_session() and agent_loop.py already produce/consume them internally. Worth wiring the route to the session-aware function in a future round.
 
 UI verification (browser, admin login), screenshots under D:\LocalAI\_claude_tmp\shots\:
 (a) a_generation_chip.png - Studio composer's Generation chip (found inside the '+' Add-files-and-tools menu, agent mode only, bottom of the list) opens a panel with Temperature/top_p/top_k sliders, all reading the sampling defaults. Works.
@@ -1001,7 +995,6 @@ UI verification (browser, admin login), screenshots under D:\LocalAI\_claude_tmp
 ## Context Engine fase 2 (FAUSTUS.md §174) — pendiente de verificar en la máquina en vivo
 
 - **Encenderlo de verdad**: `agent_context_engine` sigue `False`. Antes de cambiarlo, correr `scripts/bench_context_engine.py --data-dir <data dir real> --snapshot --owner <dueño>` y un turno de agente real con la bandera encendida (SSE `context_packet`, que la memoria aprendida no salga dos veces, y que al forzar un timeout la ronda conserve el bloque clásico).
-- **Modo agente: `memories_used`/`rag_sources` al guardar**: con paquete, el modo chat ya no declara como usados los bloques del prefacio que no se enviaron, pero la ruta de agente sigue guardando `ctx.used_memories`/`ctx.rag_sources` aunque el paquete los haya sustituido en todas las rondas. Y `increment_uses` de memory.json se sigue contando al construir el prefacio, se envíe o no.
 - **Encendido en vivo del chat simple**: verificar con la bandera encendida un turno de chat real (SSE `context_packet` con `round: 1`, que «saved memory» no salga dos veces, y que un timeout deja el prefacio).
 - **Recibos en error no terminal**: un turno que termina por excepción no controlada dentro del cuerpo queda con `verdict="interrupted"` (vía `_TURN_FINALIZERS`), no «error».
 

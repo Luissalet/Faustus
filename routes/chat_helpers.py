@@ -170,6 +170,25 @@ class PreprocessedMessage:
     attachment_meta: list
 
 
+def _preface_counted_now(preface_kwargs: dict) -> bool:
+    """Whether `build_context_preface` already counted the memory uses."""
+    return bool(preface_kwargs.get("count_memory_uses", True))
+
+
+def count_sent_memory_uses(ctx: "ChatContext", memory_manager: Any, sent: bool) -> None:
+    """Bump the use counters of the preface's saved memories when the preface
+    was really sent (no context packet replaced it). Once per context; never
+    raises."""
+    ids = list(getattr(ctx, "used_memory_ids", None) or [])
+    ctx.used_memory_ids = []
+    if not (sent and ids and hasattr(memory_manager, "increment_uses")):
+        return
+    try:
+        memory_manager.increment_uses(ids)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Failed to increment memory uses: %s", exc)
+
+
 @dataclass
 class ChatContext:
     """Everything needed to call the LLM after context-building."""
@@ -194,6 +213,10 @@ class ChatContext:
     # The chat route emits a doc_update SSE event for each before streaming
     # begins, so the editor pane switches to the new doc immediately.
     auto_opened_docs: list = field(default_factory=list)
+    # Ids of the saved memories the preface carries whose use counters were
+    # NOT bumped yet (context engine on): `count_sent_memory_uses` bumps them
+    # once the route knows the preface was sent.
+    used_memory_ids: list = field(default_factory=list)
     # Uploads attached to this user turn, resolved and owner-checked for the
     # agent's private context. This is not emitted to the browser.
     uploaded_files: list = field(default_factory=list)
@@ -832,7 +855,16 @@ async def build_chat_context(
     )
     if use_rag is not None or is_research_spinoff or casual_low_signal:
         _preface_kwargs["use_rag"] = use_rag_val
+    # With the context engine on, a packet may replace the preface's memory
+    # block before anything is sent; the route counts the uses afterwards
+    # (`count_sent_memory_uses`), only when the preface really went out.
+    try:
+        from src.context_engine import wiring as _ce_count_wiring
+        _preface_kwargs["count_memory_uses"] = not _ce_count_wiring.enabled()
+    except Exception:  # noqa: BLE001 - counting is never worth the turn
+        pass
     preface, rag_sources, web_sources = chat_processor.build_context_preface(**_preface_kwargs)
+    used_memory_ids = list(getattr(chat_processor, "_last_used_memory_ids", []) or [])
 
     # Context Engine on: the saved-memory and document blocks above are the
     # same stores the live packet selects from, so they ride along as a
@@ -976,6 +1008,7 @@ async def build_chat_context(
         rag_sources=rag_sources,
         web_sources=web_sources,
         used_memories=used_memories,
+        used_memory_ids=used_memory_ids if not _preface_counted_now(_preface_kwargs) else [],
         messages=messages,
         context_length=context_length,
         was_compacted=was_compacted,

@@ -318,8 +318,14 @@ class ChatProcessor:
         use_skills: bool = True,
         behavior_mode_block: Optional[str] = None,
         unknown_effects_block: Optional[str] = None,
+        count_memory_uses: bool = True,
     ) -> Tuple[List[Dict[str, str]], List[Dict[str, Any]], List[Dict[str, str]]]:
         """Build the context preface for LLM calls.
+
+        ``count_memory_uses`` False leaves the saved memories' use counters
+        alone: with the context engine on, the preface can be replaced by a
+        packet before it is sent, so the caller counts the ids in
+        ``_last_used_memory_ids`` once it knows the preface went out.
 
         Returns:
             Tuple of (preface messages, rag_sources list)
@@ -382,6 +388,7 @@ class ChatProcessor:
 
         # Memory: core pinned facts + relevant pinned/extended recall.
         self._last_used_memories = []  # track what was injected
+        self._last_used_memory_ids = []
         if use_memory:
             mem_entries = self.memory_manager.load(owner=owner)
 
@@ -430,7 +437,8 @@ class ChatProcessor:
                             _used_ids.append(m["id"])
 
             # Bump usage counters for the memories that were actually injected.
-            if _used_ids and hasattr(self.memory_manager, "increment_uses"):
+            self._last_used_memory_ids = list(_used_ids)
+            if count_memory_uses and _used_ids and hasattr(self.memory_manager, "increment_uses"):
                 try:
                     self.memory_manager.increment_uses(_used_ids)
                 except Exception as _e:
