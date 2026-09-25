@@ -851,6 +851,10 @@ _OPEN_MODULES = frozenset({
 # Libraries with I/O and import machinery inside: only these names.
 _LISTED_MODULES = {
     "pathlib": frozenset({"Path", "PurePath"}),
+    # a script's command line and exit (the arguments are vetted as
+    # workspace paths where the script is run: `_runs_a_confined_script`)
+    "sys": frozenset({"argv", "exit", "stdout", "stderr"}),
+    "__future__": frozenset({"annotations"}),
     "pandas": frozenset({
         "DataFrame", "Series", "Index", "MultiIndex", "Categorical", "CategoricalDtype", "Timestamp",
         "Timedelta", "Period", "NA", "NaT", "read_csv", "read_excel", "read_json", "read_parquet",
@@ -1085,9 +1089,17 @@ def _pathlib_confined(tree: Any, modules: dict, workspace: str) -> bool:
         return (isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name)
                 and func.value.id in pathlib_names and func.attr in ("Path", "PurePath"))
 
+    sys_names = {local for local, mod in modules.items() if mod == "sys"}
+
+    def is_argv_item(arg: Any) -> bool:
+        return (isinstance(arg, ast.Subscript) and isinstance(arg.value, ast.Attribute)
+                and arg.value.attr == "argv" and isinstance(arg.value.value, ast.Name)
+                and arg.value.value.id in sys_names)
+
     for node in ast.walk(tree):
         if isinstance(node, ast.Call) and is_path_ctor(node.func):
-            if node.keywords or any(_literal_path(a, workspace) is None for a in node.args):
+            if node.keywords or any(_literal_path(a, workspace) is None and not is_argv_item(a)
+                                    for a in node.args):
                 return False
         elif isinstance(node, ast.Attribute) and node.attr in _PATH_ESCAPES:
             return False
@@ -1215,8 +1227,10 @@ def _confined_code(code: str, workspace: str) -> bool:
         elif isinstance(node, ast.Attribute):
             attr = node.attr
             if attr.startswith("_") or attr in _DYNAMIC | _MODULE_ATTRS | _UNSAFE_FORMATS:
-                # Path(...).glob(pattern): a method, vetted by _pathlib_confined
-                if not (uses_pathlib and attr == "glob"):
+                # Path(...).glob(pattern): a method, vetted by _pathlib_confined;
+                # sys.exit: the listed attribute of a listed module
+                if not ((uses_pathlib and attr == "glob")
+                        or (dotted(node.value) == "sys" and attr in _LISTED_MODULES["sys"])):
                     return False
             base = dotted(node.value)
             if base is not None and base in known and not _module_allows(base, attr):
