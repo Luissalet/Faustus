@@ -5,6 +5,7 @@ import sys
 import threading
 import time
 import types
+from datetime import datetime, timezone
 from unittest.mock import MagicMock
 from types import SimpleNamespace
 
@@ -1828,6 +1829,147 @@ def test_api_models_returns_only_pinned_proxy_models_without_refresh_probe(monke
     assert result["items"][0]["endpoint_kind"] == "proxy"
     assert "offline" not in result["items"][0]
     assert json.loads(row.cached_models) == ["cached-model", "other-model"]
+
+
+# ── inline sync refresh for stale "auto" local endpoints (#stale-cached-models) ──
+#
+# Reproduces the reported bug: a local Ollama endpoint (`model_refresh_mode`
+# "auto") whose `cached_models` is days old and no longer matches the live
+# `/v1/models` list. The Studio picker always calls
+# `/api/models?background=false` (`studio/src/adapters/chat.ts`), which used
+# to mean the "auto" endpoint never actually refreshed — see
+# `_sync_refresh_local_endpoint` in routes/model_routes.py.
+
+def _stale_local_row(**overrides):
+    kwargs = dict(
+        cached_models=["deepseek-r1:32b", "qwen3-coder:30b"],
+        endpoint_kind="local",
+        refresh_mode="auto",
+    )
+    kwargs.update(overrides)
+    row = _route_ep("ollama", "http://127.0.0.1:11434/v1", **kwargs)
+    # 11 days stale, like the reported endpoint (`updated_at` 2026-09-14).
+    row.updated_at = datetime.fromtimestamp(time.time() - 11 * 86400, tz=timezone.utc)
+    return row
+
+
+def test_api_models_refreshes_stale_local_auto_endpoint_and_persists(monkeypatch):
+    row = _stale_local_row()
+    db = _RouteDb([row])
+    router = model_routes.setup_model_routes(model_discovery=None)
+
+    monkeypatch.setattr(model_routes, "ModelEndpoint", _RouteModelEndpoint)
+    monkeypatch.setattr(model_routes, "SessionLocal", lambda: db)
+    monkeypatch.setattr(model_routes, "_auth_disabled", lambda: True)
+    monkeypatch.setattr(model_routes, "build_chat_url", lambda base: f"{base}/chat/completions")
+    monkeypatch.setattr(threading, "Thread", _NoopThread)
+
+    live_models = ["qwen3-vl-30b-cpu:latest", "qwen3-vl:8b-instruct"]
+    probe_calls = []
+
+    def fake_probe(base_url, api_key=None, timeout=None):
+        probe_calls.append((base_url, timeout))
+        return list(live_models)
+
+    monkeypatch.setattr(model_routes, "_probe_endpoint", fake_probe)
+
+    # Default call (background=false, refresh=false) — exactly what the
+    # Studio picker sends — must still pick up the live list, not the stale
+    # 11-day-old cache.
+    result = _route_endpoint(router, "/api/models")(_route_request())
+
+    assert probe_calls, "stale local auto endpoint was never probed"
+    assert result["items"][0]["models"] == live_models
+    assert "deepseek-r1:32b" not in result["items"][0]["models"]
+    # Persisted, not just served once from memory.
+    assert json.loads(row.cached_models) == live_models
+    assert db.commits >= 1
+    # The probe must be bounded — never the long, manual-refresh timeout.
+    assert probe_calls[0][1] <= 5
+
+
+def test_api_models_falls_back_to_cache_when_probe_fails(monkeypatch):
+    row = _stale_local_row()
+    stale_models = json.loads(row.cached_models)
+    db = _RouteDb([row])
+    router = model_routes.setup_model_routes(model_discovery=None)
+
+    monkeypatch.setattr(model_routes, "ModelEndpoint", _RouteModelEndpoint)
+    monkeypatch.setattr(model_routes, "SessionLocal", lambda: db)
+    monkeypatch.setattr(model_routes, "_auth_disabled", lambda: True)
+    monkeypatch.setattr(model_routes, "build_chat_url", lambda base: f"{base}/chat/completions")
+    monkeypatch.setattr(threading, "Thread", _NoopThread)
+
+    def failing_probe(*args, **kwargs):
+        raise httpx.ConnectError("connection refused")
+
+    monkeypatch.setattr(model_routes, "_probe_endpoint", failing_probe)
+
+    result = _route_endpoint(router, "/api/models")(_route_request())
+
+    # A dead endpoint on this one probe must not blank out a model list that
+    # was working a moment ago.
+    assert result["items"][0]["models"] == stale_models
+    assert json.loads(row.cached_models) == stale_models
+    assert "offline" not in result["items"][0]
+
+
+def test_api_models_does_not_reprobe_local_auto_endpoint_within_ttl(monkeypatch):
+    row = _route_ep(
+        "ollama",
+        "http://127.0.0.1:11434/v1",
+        cached_models=["qwen3-vl:8b-instruct"],
+        endpoint_kind="local",
+        refresh_mode="auto",
+    )
+    row.updated_at = datetime.fromtimestamp(time.time() - 5, tz=timezone.utc)  # fresh, well under the TTL
+    db = _RouteDb([row])
+    router = model_routes.setup_model_routes(model_discovery=None)
+
+    monkeypatch.setattr(model_routes, "ModelEndpoint", _RouteModelEndpoint)
+    monkeypatch.setattr(model_routes, "SessionLocal", lambda: db)
+    monkeypatch.setattr(model_routes, "_auth_disabled", lambda: True)
+    monkeypatch.setattr(model_routes, "build_chat_url", lambda base: f"{base}/chat/completions")
+    monkeypatch.setattr(threading, "Thread", _NoopThread)
+
+    def fail_probe(*args, **kwargs):
+        raise AssertionError("should not probe a local auto endpoint inside its TTL")
+
+    monkeypatch.setattr(model_routes, "_probe_endpoint", fail_probe)
+
+    result = _route_endpoint(router, "/api/models")(_route_request())
+
+    assert result["items"][0]["models"] == ["qwen3-vl:8b-instruct"]
+
+
+def test_api_models_explicit_refresh_does_not_double_probe_local_endpoint(monkeypatch):
+    """`refresh=true` already forces `_refresh_caches_bg`; the inline TTL
+    probe must stand down for that request so a stale local endpoint isn't
+    probed twice."""
+    row = _stale_local_row()
+    db = _RouteDb([row])
+    router = model_routes.setup_model_routes(model_discovery=None)
+
+    monkeypatch.setattr(model_routes, "ModelEndpoint", _RouteModelEndpoint)
+    monkeypatch.setattr(model_routes, "SessionLocal", lambda: db)
+    monkeypatch.setattr(model_routes, "_auth_disabled", lambda: True)
+    monkeypatch.setattr(model_routes, "build_chat_url", lambda base: f"{base}/chat/completions")
+
+    probe_calls = []
+    probe_done = threading.Event()
+
+    def fake_probe(base_url, api_key=None, timeout=None):
+        probe_calls.append(base_url)
+        probe_done.set()
+        return ["qwen3-vl:8b-instruct"]
+
+    monkeypatch.setattr(model_routes, "_probe_endpoint", fake_probe)
+
+    _route_endpoint(router, "/api/models")(_route_request(), refresh=True)
+
+    assert probe_done.wait(2)
+    assert _wait_for(lambda: json.loads(row.cached_models) == ["qwen3-vl:8b-instruct"])
+    assert probe_calls == ["http://127.0.0.1:11434/v1"]
 
 
 def test_api_models_openrouter_uses_pinned_models_not_hidden(monkeypatch):

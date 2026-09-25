@@ -1545,6 +1545,13 @@ def setup_model_routes(model_discovery):
     _models_cache: dict = {}
     _MODELS_CACHE_TTL = 30  # seconds
 
+    # How long a *local* auto-refresh endpoint's `cached_models` may go stale
+    # before `/api/models` re-lists it inline (see `_sync_refresh_local_endpoint`
+    # below). Bounded short — this runs on the request path, not in a
+    # background thread — so a probe here must never make the picker feel
+    # slow even when an Ollama box is warming up.
+    _LOCAL_MODEL_SYNC_PROBE_TIMEOUT = 2.0
+
     def _invalidate_models_cache() -> None:
         """Clear the per-user /api/models cache. Call after any change that
         affects the visible endpoint list (CRUD on ModelEndpoint, prefs
@@ -1694,7 +1701,95 @@ def setup_model_routes(model_discovery):
                 _refresh_inflight["v"] = False
         threading.Thread(target=_do, daemon=True).start()
 
-    def _fetch_models(owner: str = "", is_admin: bool = False):
+    def _sync_refresh_local_endpoint(db, ep, now: float) -> bool:
+        """Re-list a stale *local* auto-refresh endpoint right here, on the
+        `/api/models` read path, and persist the result. Returns True when
+        `ep.cached_models` was updated.
+
+        Why this exists: `_refresh_caches_bg` above is the only thing that
+        ever calls `_probe_endpoint` for an "auto" endpoint, but it only runs
+        when `/api/models` is called with `background=true` or `refresh=true`.
+        The Studio picker always calls `/api/models?background=false`
+        (`studio/src/adapters/chat.ts`, `listModels`), and every other screen
+        that lists models goes through that same function — so a plain page
+        open or picker render never set `background`, the background thread
+        never started, and an "auto" local endpoint's `cached_models` sat
+        frozen forever (observed: 11 days stale, listing models deleted since
+        and missing ones installed since). A NULL `model_refresh_interval`
+        must not read as "never" either — `_endpoint_refresh_interval`
+        already defaults it to 60s for local endpoints; the bug was that
+        nothing on this path ever consulted it.
+
+        Scope: local (loopback) endpoints only. A remote/paid API in "auto"
+        mode has the same theoretical staleness, but probing it inline here
+        would add real request latency (and, for a metered API, real cost)
+        to an ordinary model-list read; it keeps relying on the background
+        refresher / manual "Refresh" button instead, unchanged.
+
+        Bounded and best-effort: short timeout, single-flight per endpoint
+        base+key, exponential backoff after failures (shared `_refresh_state`
+        with the background refresher), and any exception falls back to
+        whatever is already cached — this must never turn a working endpoint
+        offline because a probe hiccuped.
+        """
+        base = _normalize_base(getattr(ep, "base_url", "") or "")
+        if not base:
+            return False
+        kind = _effective_endpoint_kind(ep, base)
+        if _classify_endpoint(base, kind) != "local":
+            return False
+        if _endpoint_refresh_mode(ep, kind) != "auto":
+            return False
+
+        key = _refresh_key(base, getattr(ep, "api_key", None))
+        state = _refresh_state.setdefault(key, {})
+        if state.get("inflight"):
+            return False
+
+        fails = int(state.get("fail_count") or 0)
+        if fails:
+            last_failure = float(state.get("last_failure") or 0.0)
+            if now - last_failure < _failure_delay(fails):
+                return False
+
+        last_good = (
+            float(state.get("last_success") or 0.0)
+            or _ts(getattr(ep, "updated_at", None))
+            or _ts(getattr(ep, "created_at", None))
+        )
+        ttl = _endpoint_refresh_interval(ep, "local")
+        if last_good and (now - last_good) < ttl:
+            return False
+
+        state["inflight"] = True
+        try:
+            ids = _probe_endpoint(base, getattr(ep, "api_key", None),
+                                   timeout=_LOCAL_MODEL_SYNC_PROBE_TIMEOUT)
+        except Exception as e:
+            ids = None
+            logger.debug("Inline local model refresh failed for %s: %s", _redact_url_for_log(base), e)
+
+        changed = False
+        if ids:
+            ep.cached_models = json.dumps(ids)
+            try:
+                db.add(ep)
+                db.commit()
+                changed = True
+            except Exception as e:
+                logger.warning("Failed to persist refreshed model list for %s: %s",
+                                _redact_url_for_log(base), e)
+                db.rollback()
+            state["last_success"] = _time.time()
+            state["fail_count"] = 0
+            state.pop("last_failure", None)
+        else:
+            state["last_failure"] = _time.time()
+            state["fail_count"] = fails + 1
+        state["inflight"] = False
+        return changed
+
+    def _fetch_models(owner: str = "", is_admin: bool = False, sync_local_refresh: bool = True):
         """Return model list from cached data (instant). Background refresh keeps caches fresh.
 
         SECURITY: filters endpoints by `owner` — without this the picker
@@ -1704,6 +1799,12 @@ def setup_model_routes(model_discovery):
 
         Admins see EVERY endpoint (they manage the global pool, and the
         scoped filter was making the picker disappear for them).
+
+        `sync_local_refresh` gates the inline per-endpoint TTL probe (see
+        `_sync_refresh_local_endpoint`). The caller turns it off for an
+        explicit `refresh=true` request: that path already forces a full
+        `_refresh_caches_bg` sweep, and running both would probe every local
+        endpoint twice.
         """
         items = []
 
@@ -1717,6 +1818,27 @@ def setup_model_routes(model_discovery):
                 # (legacy / shared). Admins see everything.
                 q = owner_filter(q, ModelEndpoint, owner)
             endpoints = q.all()
+
+            if sync_local_refresh:
+                # Local "auto" endpoints re-list themselves here when their
+                # cache has aged past its TTL — see
+                # `_sync_refresh_local_endpoint` for why this can't be left
+                # to the background refresher alone. Kept inside this `try`
+                # so the write lands on the same session that read the row
+                # (no detached-instance surprises), and bounded by a short
+                # per-endpoint timeout so a slow/offline box never turns this
+                # into a slow page load.
+                now = _time.time()
+                changed = False
+                for ep in endpoints:
+                    try:
+                        if _sync_refresh_local_endpoint(db, ep, now):
+                            changed = True
+                    except Exception as e:
+                        logger.debug("Inline local model refresh raised for endpoint %s: %s",
+                                     getattr(ep, "id", "?"), e)
+                if changed:
+                    _invalidate_models_cache()
         finally:
             db.close()
 
@@ -1822,7 +1944,7 @@ def setup_model_routes(model_discovery):
         cache_entry = _models_cache.get(_cache_key)
         if not refresh and cache_entry is not None and (now - cache_entry["time"]) < _MODELS_CACHE_TTL:
             return cache_entry["data"]
-        result = _fetch_models(owner=owner, is_admin=_is_admin)
+        result = _fetch_models(owner=owner, is_admin=_is_admin, sync_local_refresh=not refresh)
         _models_cache[_cache_key] = {"data": result, "time": now}
         # Kick off background refresh to update caches from live endpoints.
         # Page boot can opt out with background=false so opening Faustus does
