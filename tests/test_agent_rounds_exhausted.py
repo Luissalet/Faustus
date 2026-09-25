@@ -574,3 +574,25 @@ def test_distinct_bash_commands_are_not_a_semantic_probe_loop(monkeypatch):
     assert len(executed) == 6, executed
     summary = next(e for e in events if e.get("type") == "harness_summary")
     assert summary["data"]["stop_reason"] == "complete"
+
+
+def test_a_round_cap_that_ends_on_a_bare_done_gets_a_synthesized_answer(monkeypatch):
+    _patch_common(monkeypatch)
+    calls = []
+
+    async def _fake_llm_call_async(**kwargs):
+        calls.append(kwargs)
+        return "Found: three of four items. Still unknown: the last one."
+
+    import src.llm_core as llm_core
+    monkeypatch.setattr(llm_core, "llm_call_async", _fake_llm_call_async)
+    events = _run_loop(
+        monkeypatch,
+        'Done.\n```update_plan\n{"plan":"- [ ] keep going"}\n```',
+        max_rounds=2,
+    )
+    assert any(e.get("type") == "rounds_exhausted" for e in events), events
+    assert calls, "the round cap should ask once for an answer from what was gathered"
+    text = "".join(e.get("delta") or "" for e in events if "delta" in e)
+    assert "Still unknown" in text
+    assert "step limit" in text or "límite de pasos" in text

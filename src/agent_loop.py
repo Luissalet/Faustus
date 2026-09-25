@@ -14839,7 +14839,20 @@ async def _stream_agent_loop_body(
     # rounds of work. The conversation already holds every tool result, so
     # ask once, without tools, for the answer they add up to; the canned line
     # is only for when even that comes back empty.
-    if (_ledger.stop_reason == _LOOP_STOP_REASON
+    # The round cap has the same hole (live, exam run 25): 40 rounds of work
+    # ended on the model's stray "Done." — no answer, no file, and a word
+    # that says the task is finished. When the cap ends a turn whose visible
+    # text is empty or only a bare completion word, the same one-shot
+    # synthesis runs, and the reply says the step limit was reached.
+    _visible_final = _strip_think_blocks(strip_tool_blocks(full_response)).strip()
+    _bare_done_final = bool(_visible_final) and bool(re.fullmatch(
+        r"(?:\s*(?:done|all\s+set|completed|finished|hecho|listo|completado|terminado)[.!]?)+\s*",
+        _visible_final, re.IGNORECASE))
+    _cap_needs_answer = bool(_exhausted_rounds) and (not _visible_final or _bare_done_final)
+    if _cap_needs_answer and _bare_done_final:
+        full_response = ""
+        yield f"data: {json.dumps({'type': 'response_replace', 'text': ''})}\n\n"
+    if ((_ledger.stop_reason == _LOOP_STOP_REASON or _cap_needs_answer)
             and not _strip_think_blocks(strip_tool_blocks(full_response)).strip()):
         _answering = _pinned_fallback_candidate or (endpoint_url, model, headers)
         _synth = ""
@@ -14878,6 +14891,12 @@ async def _stream_agent_loop_body(
             "answer together. Want me to try a more specific question, "
             "or summarize what I did find?"
         )
+        if _cap_needs_answer:
+            _cap_note = ("(Se alcanzó el límite de pasos de este turno; esto es lo reunido hasta ahora. "
+                         "Di «continúa» para seguir.)" if _ledger.language == "es" else
+                         "(This turn reached its step limit; this is what was gathered so far. "
+                         "Say \"continue\" to go on.)")
+            _out = f"{_out}\n\n{_cap_note}"
         yield f'data: {json.dumps({"delta": _out})}\n\n'
         full_response += _out
         if round_texts:
