@@ -4216,6 +4216,9 @@ aside.fs-panel { position: relative; }
    a wide stage they show only their icon (the label lives in the tooltip and
    the aria-label); the popover still spells everything out. */
 .fs-studio__chip--compact .fs-studio__chip-label { max-inline-size: 12ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The badge is only for the collapsed chip: with its label showing, the
+   label already says the same thing. */
+.fs-studio__chip-badge { display: none; font-size: 10px; font-weight: 600; line-height: 1; letter-spacing: 0.02em; }
 /* Secondary chips collapse to icons inside the composer (always ≤ 860px).
    The action cluster stays on the same row; the middle zone scrolls. */
 @container (max-width: 1040px) {
@@ -4228,6 +4231,12 @@ aside.fs-panel { position: relative; }
   }
   .fs-studio__chip--compact:hover {
     translate: none;
+  }
+  .fs-studio__chip-badge { display: inline; }
+  .fs-studio__chip--compact:has(.fs-studio__chip-badge) {
+    inline-size: auto;
+    padding-inline: var(--fs-space-2);
+    gap: 3px;
   }
 }
 @container (max-width: 560px) {

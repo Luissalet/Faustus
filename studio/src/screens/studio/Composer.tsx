@@ -1606,6 +1606,13 @@ function ThinkModeChip({ mode, chosen, onPick, levels = [], effort = null, onPic
     deep: t('Reasons at length, with a larger budget. Slower.'),
   };
   const text = effort ? `${t('Level#effort')}: ${reasoningLevelLabel(effort)}` : thinkModeChipText(mode, chosen);
+  // Collapsed to its icon in a narrow composer, the chip still says what is
+  // set when it is not the default: the first letters of the level or mode.
+  const short = (label: string) => {
+    const word = label.replace(/^\p{L}\s+/u, '').split(/\s+/)[0] || '';
+    return word.length <= 5 ? word : word.slice(0, 3);
+  };
+  const badge = effort ? short(reasoningLevelLabel(effort)) : (mode !== 'auto' ? short(thinkModeLabel(mode)) : '');
   return (
     <Popover
       placement="composer"
@@ -1616,6 +1623,7 @@ function ThinkModeChip({ mode, chosen, onPick, levels = [], effort = null, onPic
           title={t('Reasoning: {label}', { label: text })} aria-label={t('Reasoning: {label}', { label: text })}
           data-testid="studio-think-mode-chip">
           <Brain size={14} aria-hidden="true" /><span className="fs-studio__chip-label">{text}</span>
+          {badge && <span className="fs-studio__chip-badge" aria-hidden="true" data-testid="studio-think-mode-badge">{badge}</span>}
         </button>
       }
     >
