@@ -21,7 +21,7 @@ Actualizado: 23-09-2026. REGLA: nunca nombres de empresas/personas del buzÃ³n 
 - **Cliente de pruebas `talk3`** muere a mitad de turno con `0xC000013A` sin registrar señal. Ahora instala un manejador de eventos de consola (`SetConsoleCtrlHandler`) que registra el evento y lo ignora; si vuelve a morir, el `.log` dirá qué evento fue. Sospecha: la misma caída de procesos de la app de escritorio que tumbó el 8081 el 24-09. Mitigado también con `exam_watch.py`.
 - **`unconsulted_sources`**: medir falsos positivos en turnos reales de conversación. (Una fuente leída en un turno anterior de la conversación ya cuenta: `TurnLedger.note_prior_message`.)
 - **Prueba 02 (Ingenio)** sin ejecutar todavía; el bonus sólo después de cerrar las dos.
-- **Recuperación del motor a mitad de turno** (`engine_swap.recover_after_connect_failure`): probada con tests; falta verla en vivo matando el llama-server gestionado durante un turno. El 8081 ya está adoptado como motor en el 7006; en el 7000 hay que adoptarlo igual (Ajustes → Modelos locales → Añadir motor → Rellenar).
+- **Recuperación del motor a mitad de turno**: verificada en vivo en el 7006 el 25-09 (se mató el llama-server gestionado con la respuesta a medias; el bucle emitió `engine_lost_recovered`, Faustus lo arrancó de nuevo en 40 s, rehízo la ronda y la respuesta salió entera). Falta adoptar el 8081 como motor también en el 7000 (Ajustes → Modelos locales → Añadir motor → Rellenar).
 - **La barra de «modelos / otros»** de la tarjeta de VRAM sigue contando el motor llama.cpp como «otros»; las tarjetas por GPU ya lo nombran.
 - **El 7000** necesita reinicio y `vision_model` configurado (Ajustes → Visión) para tener lo del examen.
 
