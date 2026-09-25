@@ -596,3 +596,21 @@ def test_a_round_cap_that_ends_on_a_bare_done_gets_a_synthesized_answer(monkeypa
     text = "".join(e.get("delta") or "" for e in events if "delta" in e)
     assert "Still unknown" in text
     assert "step limit" in text or "límite de pasos" in text
+
+
+def test_a_round_cap_whose_summary_fails_reports_the_task_list_not_a_canned_line(monkeypatch):
+    _patch_common(monkeypatch)
+
+    async def _failing_llm_call_async(**kwargs):
+        raise TimeoutError("slow model")
+
+    import src.llm_core as llm_core
+    monkeypatch.setattr(llm_core, "llm_call_async", _failing_llm_call_async)
+    events = _run_loop(
+        monkeypatch,
+        'Done.\n```update_plan\n{"plan":"- [ ] keep going"}\n```',
+        max_rounds=2,
+    )
+    text = "".join(e.get("delta") or "" for e in events if "delta" in e)
+    assert "search results" not in text
+    assert "could not write up a summary" in text or "No he podido redactar" in text

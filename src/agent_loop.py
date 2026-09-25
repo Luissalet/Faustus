@@ -14870,7 +14870,11 @@ async def _stream_agent_loop_body(
             }]
             _raw = await _llm_call_async(
                 url=_answering[0], model=_answering[1], messages=_synth_messages,
-                headers=_answering[2], temperature=0.3, max_tokens=max_tokens, timeout=60,
+                # A long turn's context takes a local model minutes to read
+                # back in (live: 60k tokens shared with another run); 60 s
+                # always timed out and the user got the canned line.
+                headers=_answering[2], temperature=0.3, max_tokens=max_tokens,
+                timeout=(300 if _cap_needs_answer else 60),
             )
             _raw_text = _raw or ""
             _synth = _strip_think_blocks(strip_tool_blocks(_raw_text)).strip()
@@ -14886,6 +14890,20 @@ async def _stream_agent_loop_body(
             ))
         except Exception as _e:  # noqa: BLE001
             logger.warning("[agent] loop-breaker synthesis failed: %s", _e)
+        if not _synth and _cap_needs_answer:
+            # No summary came back: say what the task list shows instead of
+            # a canned line about search results (in the user's language).
+            _es = _ledger.language == "es"
+            _items = [t for t in (_ledger.progress or []) if isinstance(t, dict) and t.get("content")]
+            _done = [str(t["content"])[:120] for t in _items if t.get("status") == "completed"]
+            _open = [str(t["content"])[:120] for t in _items if t.get("status") != "completed"]
+            _lines = []
+            if _done:
+                _lines.append(("Hecho: " if _es else "Done: ") + "; ".join(_done[:6]) + ".")
+            if _open:
+                _lines.append(("Pendiente: " if _es else "Still open: ") + "; ".join(_open[:6]) + ".")
+            _synth = ("No he podido redactar un resumen de lo reunido. " if _es else
+                      "I could not write up a summary of what was gathered. ") + " ".join(_lines)
         _out = _synth or (
             "I gathered some search results but couldn't pull a clean "
             "answer together. Want me to try a more specific question, "
