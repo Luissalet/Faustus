@@ -3,14 +3,6 @@
 Actualizado: 25-09-2026. REGLA: nunca nombres de empresas/personas del buzÃ³n de Luis en commits, docs, tests ni comentarios â€” ejemplos siempre ficticios. SÃ³lo trabajo vigente; quitar cada entrada al cerrarla.
 
 
-## 25-09 noche — razonamiento del 27B y selector de nivel (FAUSTUS.md §202)
-
-- **Caché de prompt**: arreglada la parte en que una nota del harness movía la pregunta y el sitio del paquete (§203). Queda: el paquete se recompila en cada vuelta y puede cambiar si el presupuesto encoge; y cualquier cambio en la lista de herramientas a mitad de turno (un `lookup_tools` que promociona) reprocesa el prompt entero, porque la plantilla pone las herramientas al principio.
-- **Ruido de la búsqueda de herramientas**: para preguntas sin dominio (una receta, un mensaje) la búsqueda vectorial sigue ofreciendo herramientas sin relación (`ask_teacher`, `desktop_scroll`, `whatsapp_react`, `screen_pause`…).
-- **Niveles de Ollama**: `GET /api/models/reasoning-levels` sólo lee la plantilla de un llama-server local; un modelo servido por Ollama o por una API con niveles no muestra el selector.
-- **Consulta de búsqueda de mala calidad**: la consulta extraída para la búsqueda automática del chat salió «viernes» de una pregunta de fechas. El caso ya no busca (§202), pero el extractor sigue sin comprobar que la consulta conserve el tema.
-- **Chip compacto**: con la ventana estrecha el chip de razonamiento es sólo el icono; el nivel elegido se ve en el título y en el menú, no a simple vista.
-
 ## 25-09 tarde — visión, contexto, razonamiento, enjambre, podcast (FAUSTUS.md §197, OBJ-45)
 
 - **Sin desplegar en 7000/7003/7006**: probado en una instancia privada 7009 (`D:\LocalAI\_claude_tmp\vx_wt`, datos `vx_data`). El 7000 lo coge al reiniciarlo con el master nuevo; el `vite build` de la carpeta principal hay que rehacerlo.
