@@ -3200,6 +3200,9 @@ def setup_chat_routes(
 
                 full_response = ""
                 thinking_response = ""
+                # When reasoning started and last grew: the saved reply keeps
+                # how long the model thought, or a reloaded chat says "1s".
+                _thinking_span = [0.0, 0.0]
                 last_metrics = None
 
                 # Foreground Chat and Agent requests share one explicit owner-aware
@@ -3502,6 +3505,10 @@ def setup_chat_routes(
                                             # reply (mirrors the rewrite path below).
                                             if data.get("thinking"):
                                                 thinking_response += data["delta"]
+                                                _now = time.monotonic()
+                                                if not _thinking_span[0]:
+                                                    _thinking_span[0] = _now
+                                                _thinking_span[1] = _now
                                             else:
                                                 full_response += data["delta"]
                                                 _stream_set(session, partial=full_response)
@@ -3799,6 +3806,9 @@ def setup_chat_routes(
                                         _metrics_to_save = dict(last_metrics or {})
                                         if thinking_response.strip() and not _metrics_to_save.get("thinking"):
                                             _metrics_to_save["thinking"] = thinking_response.strip()
+                                        if _thinking_span[0] and not _metrics_to_save.get("thinking_time"):
+                                            _metrics_to_save["thinking_time"] = round(
+                                                max(1.0, _thinking_span[1] - _thinking_span[0]), 1)
                                         # With a packet, the preface's memory/document
                                         # blocks were never sent: the packet's own
                                         # receipt rows say what the model saw instead.
