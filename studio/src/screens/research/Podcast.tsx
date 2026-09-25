@@ -2,6 +2,7 @@ import { Download, FileText, Headphones, RefreshCw } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from '../../components';
 import { podcastStatus, startPodcast, type PodcastState } from '../../adapters/research';
+import { loadPiperStatus, type PiperVoiceInfo } from '../../adapters/piper';
 import { t } from '../../i18n';
 import '../research.css';
 
@@ -45,6 +46,17 @@ export function PodcastPanel({ researchId, autostart = false, say }: { researchI
   const [busy, setBusy] = useState(false);
   const [showScript, setShowScript] = useState(false);
   const autostarted = useRef(false);
+  const [voices, setVoices] = useState<PiperVoiceInfo[]>([]);
+  const [voiceA, setVoiceA] = useState('');
+  const [voiceB, setVoiceB] = useState('');
+  const [length, setLength] = useState(0);
+  useEffect(() => {
+    let alive = true;
+    loadPiperStatus()
+      .then((st) => { if (alive) setVoices(st.installed_voices || []); })
+      .catch(() => { /* the picker just stays on Auto */ });
+    return () => { alive = false; };
+  }, []);
   // The parent's toast callback may be a new function every render; reading
   // it through a ref keeps it out of the effects' dependencies.
   const sayRef = useRef(say);
@@ -55,7 +67,7 @@ export function PodcastPanel({ researchId, autostart = false, say }: { researchI
   const start = useCallback(async () => {
     setBusy(true);
     try {
-      setState(await startPodcast(researchId));
+      setState(await startPodcast(researchId, { voiceA, voiceB, minutes: length || undefined }));
     } catch (err) {
       const message = (err as Error).message || t('The podcast could not be started.');
       setState((prev) => ({ ...(prev ?? emptyState()), status: 'failed', error: message }));
@@ -63,7 +75,7 @@ export function PodcastPanel({ researchId, autostart = false, say }: { researchI
     } finally {
       setBusy(false);
     }
-  }, [researchId]);
+  }, [researchId, voiceA, voiceB, length]);
 
   useEffect(() => {
     const ac = new AbortController();
@@ -111,8 +123,36 @@ export function PodcastPanel({ researchId, autostart = false, say }: { researchI
     </ul>
   );
 
+  const voiceSelect = (value: string, set: (v: string) => void, label: string, testId: string) => (
+    <label className="fs-rs__podcast-opt">
+      <span>{label}</span>
+      <select value={value} onChange={(e) => set(e.target.value)} data-testid={testId}>
+        <option value="">{t('Automatic')}</option>
+        {voices.map((v) => (
+          <option key={v.name} value={v.name}>{`${v.name} (${v.language})`}</option>
+        ))}
+      </select>
+    </label>
+  );
+  const options = state.status !== 'running' && (
+    <div className="fs-rs__podcast-row fs-rs__podcast-opts">
+      {voiceSelect(voiceA, setVoiceA, t('Voice A'), 'research-podcast-voice-a')}
+      {voiceSelect(voiceB, setVoiceB, t('Voice B'), 'research-podcast-voice-b')}
+      <label className="fs-rs__podcast-opt">
+        <span>{t('Length')}</span>
+        <select value={length} onChange={(e) => setLength(Number(e.target.value))} data-testid="research-podcast-length">
+          <option value={0}>{t('Default')}</option>
+          {[3, 6, 10, 15].map((m) => (
+            <option key={m} value={m}>{t('{n} min', { n: m })}</option>
+          ))}
+        </select>
+      </label>
+    </div>
+  );
+
   return (
     <section className="fs-rs__podcast" data-status={state.status} data-testid="research-podcast" aria-label={t('Podcast')}>
+      {options}
       {state.status === 'none' && (
         <div className="fs-rs__podcast-row">
           <Button variant="secondary" size="sm" icon={Headphones} label={t('Make a podcast')} loading={busy} onClick={() => void start()} testId="research-podcast-start" />

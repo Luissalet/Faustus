@@ -548,3 +548,7 @@
 .fs-rs__podcast-script li[data-speaker='B'] strong {
   color: var(--fs-accent, inherit);
 }
+
+.fs-rs__podcast-opts { gap: var(--space-3, 12px); flex-wrap: wrap; }
+.fs-rs__podcast-opt { display: inline-flex; flex-direction: column; gap: 2px; font-size: var(--text-sm, 13px); }
+.fs-rs__podcast-opt select { min-width: 0; max-width: 100%; }

@@ -534,3 +534,13 @@ def test_tool_is_owner_scoped_and_returns_dicts(tmp_path, monkeypatch, fake_tts)
     assert started["status"] == "running" and started["exit_code"] == 0
     assert done["status"] == "done" and "Podcast ready" in done["output"]
     assert again["status"] == "done"   # an existing podcast is not remade without regenerate
+
+
+def test_request_voices_win_over_settings(monkeypatch):
+    from src import research_podcast as rp
+    installed = [{"name": "es_ES-davefx-medium", "language": "es_ES", "quality": "medium"},
+                 {"name": "es_ES-sharvard-medium", "language": "es_ES", "quality": "medium"}]
+    monkeypatch.setattr(rp, "_setting", lambda k, d=None: {"research_podcast_voice_a": "es_ES-davefx-medium"}.get(k, d))
+    got = rp.pick_voices("es", installed=installed, voice_a="es_ES-sharvard-medium", voice_b="es_ES-davefx-medium",
+                         catalogue=[])
+    assert (got["A"], got["B"]) == ("es_ES-sharvard-medium", "es_ES-davefx-medium")

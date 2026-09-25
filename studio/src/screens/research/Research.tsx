@@ -310,7 +310,7 @@ function ResultCard({ job, formats, onDiscuss, onDelete, onDismiss, say }: { job
           />
         )}
         {job.sessionId && (
-          <Button variant="ghost" size="sm" icon={Headphones} label={t('Podcast')} onClick={() => setPodcast((v) => !v)} title={t('Two voices talk this report through')} testId="research-podcast-toggle" />
+          <Button variant="ghost" size="sm" icon={Headphones} label={t('Podcast')} onClick={() => setPodcast((v) => !v)} title={t('Make or play the podcast of this report')} testId="research-podcast-toggle" />
         )}
         <IconButton icon={Copy} label={t('Copy the report')} size="sm" onClick={() => void copy()} />
         <span className="fs-spacer" />
@@ -942,7 +942,7 @@ export function ResearchScreen() {
                     <span>{t('Visual report')}</span>
                   </a>
                   <Button variant="ghost" size="sm" icon={MessageSquare} label={t('Discuss')} onClick={() => void discuss(r.id)} />
-                  <Button variant="ghost" size="sm" icon={Headphones} label={t('Podcast')} onClick={() => setPodcastFor((cur) => (cur === r.id ? null : r.id))} title={t('Two voices talk this report through')} />
+                  <Button variant="ghost" size="sm" icon={Headphones} label={t('Podcast')} onClick={() => setPodcastFor((cur) => (cur === r.id ? null : r.id))} title={t('Make or play the podcast of this report')} />
                   <IconButton icon={X} label={t('Clear from the list')} size="sm" onClick={() => setDismissed((d) => new Set(d).add(r.id))} />
                 </div>
                 {podcastFor === r.id && <PodcastPanel researchId={r.id} autostart say={say} />}

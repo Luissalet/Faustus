@@ -424,8 +424,25 @@ def setup_research_routes(research_handler, session_manager=None) -> APIRouter:
         _validate_session_id(session_id)
         _assert_owns_research(session_id, user)
         path = _require_research_path(session_id)
+        # Optional JSON body: this request's voices and length (the pickers
+        # on the Research screen); an empty or missing body keeps the
+        # settings / automatic pick.
+        opts: dict = {}
         try:
-            return await research_podcast.start_podcast(session_id, path, user)
+            body_fn = getattr(request, "body", None)
+            raw = await body_fn() if callable(body_fn) else b""
+            if raw:
+                parsed = json.loads(raw)
+                if isinstance(parsed, dict):
+                    opts = parsed
+        except (ValueError, UnicodeDecodeError):
+            raise HTTPException(400, "The podcast options must be a JSON object.")
+        voice_a = str(opts.get("voice_a") or "").strip()[:120] or None
+        voice_b = str(opts.get("voice_b") or "").strip()[:120] or None
+        minutes = opts.get("minutes")
+        try:
+            return await research_podcast.start_podcast(session_id, path, user, voice_a=voice_a,
+                                                        voice_b=voice_b, minutes=minutes)
         except research_podcast.PodcastBusy as e:
             raise HTTPException(409, str(e))
         except research_podcast.PodcastError as e:

@@ -97,8 +97,13 @@ export async function researchDetail(id: string): Promise<ResearchDetail> {
   };
 }
 
-async function post(path: string): Promise<Record<string, unknown>> {
-  const res = await fetch(path, { method: 'POST', credentials: 'same-origin' });
+async function post(path: string, body?: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const init: RequestInit = { method: 'POST', credentials: 'same-origin' };
+  if (body) {
+    init.headers = { 'Content-Type': 'application/json' };
+    init.body = JSON.stringify(body);
+  }
+  const res = await fetch(path, init);
   if (!res.ok) {
     let detail = '';
     try {
@@ -568,10 +573,22 @@ export async function podcastStatus(id: string, signal?: AbortSignal): Promise<P
   return podcastFrom(await getJson<Record<string, unknown>>(`/api/research/${encodeURIComponent(id)}/podcast`, signal));
 }
 
+/** This request's choices; empty fields keep the settings / automatic pick. */
+export interface PodcastOptions {
+  voiceA?: string;
+  voiceB?: string;
+  minutes?: number;
+}
+
 /** Start the podcast job. A 409 (already running) resolves to the live state. */
-export async function startPodcast(id: string): Promise<PodcastState> {
+export async function startPodcast(id: string, opts: PodcastOptions = {}): Promise<PodcastState> {
+  const body: Record<string, unknown> = {};
+  if (opts.voiceA) body.voice_a = opts.voiceA;
+  if (opts.voiceB) body.voice_b = opts.voiceB;
+  if (opts.minutes) body.minutes = opts.minutes;
   try {
-    return podcastFrom(await post(`/api/research/${encodeURIComponent(id)}/podcast`));
+    return podcastFrom(await post(`/api/research/${encodeURIComponent(id)}/podcast`,
+      Object.keys(body).length ? body : undefined));
   } catch (err) {
     if (err instanceof ApiError && err.status === 409) return podcastStatus(id);
     throw err;

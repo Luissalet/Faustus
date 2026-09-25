@@ -790,19 +790,25 @@ def is_running(session_id: str) -> bool:
     return bool(job and job.get("status") == "running")
 
 
-def preflight(language: str) -> Dict[str, Any]:
-    """Check the TTS side before any model call; returns the voice pick."""
+def preflight(language: str, voice_a: Optional[str] = None,
+              voice_b: Optional[str] = None) -> Dict[str, Any]:
+    """Check the TTS side before any model call; returns the voice pick.
+    `voice_a`/`voice_b` (one request's choice) win over the settings."""
     if _runtime() is None:
         raise PodcastError(
             "Piper is not installed: install the piper-tts package or the engine in "
             "Settings → Voice → Local (Piper), then download a voice.")
-    return pick_voices(language)
+    return pick_voices(language, voice_a=voice_a or None, voice_b=voice_b or None)
 
 
 async def start_podcast(session_id: str, path: Path, owner: str, *,
                         llm: Optional[LLMCaller] = None,
-                        hosts: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
-    """Start the background job; PodcastBusy if one is already running."""
+                        hosts: Optional[Dict[str, str]] = None,
+                        voice_a: Optional[str] = None, voice_b: Optional[str] = None,
+                        minutes: Optional[float] = None) -> Dict[str, Any]:
+    """Start the background job; PodcastBusy if one is already running.
+    `voice_a`/`voice_b`/`minutes` are this request's choices (the Research
+    screen's pickers); empty means the settings / automatic pick."""
     if is_running(session_id):
         raise PodcastBusy("A podcast for this report is already being made.")
     data = read_research(path)
@@ -810,7 +816,11 @@ async def start_podcast(session_id: str, path: Path, owner: str, *,
     if not md:
         raise PodcastError("This research has no finished report yet.")
     language = language_of(data, md)
-    voices = preflight(language)
+    voices = preflight(language, voice_a, voice_b)
+    try:
+        minutes = max(1.0, min(float(minutes), 30.0)) if minutes else None
+    except (TypeError, ValueError):
+        minutes = None
     job: Dict[str, Any] = {
         "status": "running", "phase": "starting", "lines_done": 0, "lines_total": 0,
         "chunks_done": 0, "chunks_total": 0, "started_at": time.time(),
@@ -826,6 +836,7 @@ async def start_podcast(session_id: str, path: Path, owner: str, *,
     except BaseException:
         _JOBS.pop(session_id, None)
         raise
+    job["minutes"] = minutes or target_minutes_setting()
     job["task"] = asyncio.create_task(
         _run(session_id, Path(path), owner, data, md, language, voices, job, llm=llm, hosts=hosts))
     return status_payload(session_id, path)
@@ -838,7 +849,7 @@ async def _run(session_id: str, path: Path, owner: str, data: Dict[str, Any], md
         job.update(update)
 
     try:
-        lines = await build_script(md, language, target_minutes_setting(), hosts,
+        lines = await build_script(md, language, job.get("minutes") or target_minutes_setting(), hosts,
                                    query=str(data.get("query") or ""), llm=llm, owner=owner,
                                    on_progress=progress)
         job["script"] = lines
