@@ -697,3 +697,64 @@ def test_backed_work_is_kept_when_a_permission_stall_is_exhausted(tmp_path, monk
     assert any(str(n).startswith("stall_exhausted:") for n in (summary.get("notes") or []))
 
 
+
+
+def test_a_rejected_draft_the_model_rewrites_is_taken_off_the_screen(tmp_path, monkeypatch):
+    """Seen live: a draft rejected for a file it only claimed stayed on screen
+    and in the saved answer, above the corrected one. When nothing real backs
+    the draft (no effects), the model writes the answer again, so the draft
+    is retracted with response_replace."""
+    _patch_common(monkeypatch)
+    (tmp_path / "server.py").write_text("x = 1\n", encoding="utf-8")
+    read = "```read_file\nserver.py\n```"
+    _scripted_stream(monkeypatch, [
+        (read, "tool_calls"),
+        ("He creado utils.py con los helpers.", "stop"),
+        ("No he cambiado ningún fichero: server.py define x = 1.", "stop"),
+    ])
+    events = _run(monkeypatch, str(tmp_path), user="Revisa server.py")
+    assert any(e.get("type") == "harness_check" and e.get("status") == "rejected" for e in events)
+    replaces = [e for e in events if e.get("type") == "response_replace"]
+    assert replaces and "utils.py" not in replaces[0]["text"], replaces
+
+
+def test_a_rejected_draft_backed_by_real_work_stays(tmp_path, monkeypatch):
+    _patch_common(monkeypatch)
+    (tmp_path / "x.py").write_text("a = 1\n", encoding="utf-8")
+    edit = "```edit_file\n" + json.dumps({"path": "x.py", "old_string": "a = 1", "new_string": "a = 2"}) + "\n```"
+    _scripted_stream(monkeypatch, [
+        (edit, "tool_calls"),
+        ("He cambiado x.py y he creado utils.py.", "stop"),
+        ("Sólo x.py cambió.", "stop"),
+    ])
+    events = _run(monkeypatch, str(tmp_path), user="Cambia a por 2 en x.py")
+    rejected = [e for e in events if e.get("type") == "harness_check" and e.get("status") == "rejected"]
+    assert rejected
+    replaces = [e for e in events if e.get("type") == "response_replace"
+                and "He cambiado x.py" not in (e.get("text") or "")]
+    first_reject = events.index(rejected[0])
+    assert not [e for e in replaces if events.index(e) < first_reject + 1], replaces
+
+
+def test_an_answer_with_a_wrong_weekday_or_visible_working_is_rewritten_once(tmp_path, monkeypatch):
+    """Seen live: 'el 25 de diciembre de 2026 cae en domingo' (a Friday) and
+    '…espera, recalculo… Déjame ser riguroso…' as the visible answer."""
+    _patch_common(monkeypatch)
+    calls = _scripted_stream(monkeypatch, [
+        ("El 25 de diciembre de 2026 cae en domingo. Te quedan 3... espera, recalculo: 3 manzanas.", "stop"),
+        ("El 25 de diciembre de 2026 cae en viernes. Tienes 3 manzanas.", "stop"),
+        ("El 25 de diciembre de 2026 cae en viernes. Tienes 3 manzanas.", "stop"),
+    ])
+    gen = al.stream_agent_loop(
+        "http://127.0.0.1:11434/v1", "qwen3-coder:30b",
+        [{"role": "user", "content": "¿Qué día de la semana es el 25 de diciembre de 2026 y cuántas manzanas tengo?"}],
+        max_rounds=6, relevant_tools={"read_file"},
+    )
+    events = _events(_collect(gen))
+    rejected = [e for e in events if e.get("type") == "harness_check" and e.get("status") == "rejected"]
+    assert rejected and set(rejected[0]["reasons"]) == {"wrong_weekday", "thinking_aloud"}, rejected
+    assert rejected[0]["weekdays"][0]["real"] == "viernes"
+    replaces = [e for e in events if e.get("type") == "response_replace"]
+    assert replaces and "domingo" not in replaces[0]["text"]
+    assert calls["n"] == 2
+    assert len(rejected) == 1

@@ -9069,6 +9069,9 @@ async def _stream_agent_loop_body(
     # retry above — a second death in the same turn is treated as a real
     # outage and falls through to the normal terminal_error.
     _engine_lost_recovered = False
+    # One clean rewrite per turn when the final answer names a weekday the
+    # calendar contradicts or thinks aloud (src/answer_checks.py).
+    _answer_rewrite_used = False
     _project_objective_nudges = 0
     _project_objective_unavailable_nudges = 0
 
@@ -12148,6 +12151,36 @@ async def _stream_agent_loop_body(
                 full_response += "\n\n"
                 yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
                 continue
+            if _hc_text and not _answer_rewrite_used and not plan_mode and round_num < max_rounds:
+                try:
+                    from src import answer_checks as _answer_checks
+                    _wd_bad = _answer_checks.weekday_mismatches(_hc_text)
+                    _aloud = _answer_checks.thinking_aloud(_hc_text)
+                except Exception as _ac_err:  # a check never breaks a turn
+                    logger.debug("[harness] answer checks failed: %s", _ac_err)
+                    _wd_bad, _aloud = [], []
+                if _wd_bad or _aloud:
+                    _answer_rewrite_used = True
+                    logger.warning("[harness] round %s answer rewrite: weekdays=%s aloud=%s",
+                                   round_num, _wd_bad, _aloud)
+                    _ledger.notes.append(f"answer_rewrite@{round_num}")
+                    if round_response.strip():
+                        messages.append({"role": "assistant", "content": round_response})
+                        if full_response.endswith(round_response):
+                            full_response = full_response[:-len(round_response)]
+                            yield f'data: {json.dumps({"type": "response_replace", "text": full_response.strip()})}\n\n'
+                    messages.append({"role": "user", "_harness_note": True,
+                                     "content": _lang_note(_answer_checks.rewrite_note(_wd_bad, _aloud))})
+                    yield (
+                        "data: " + json.dumps({
+                            "type": "harness_check", "status": "rejected",
+                            "reasons": (["wrong_weekday"] if _wd_bad else []) + (["thinking_aloud"] if _aloud else []),
+                            "round": round_num, "attempt": 1, "max_attempts": 1,
+                            "weekdays": _wd_bad, "phrases": _aloud[:4],
+                        }) + "\n\n"
+                    )
+                    yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
+                    continue
             # H1 before the claims check: when the turn touched UI files and
             # no browser evidence exists, run the harness's own smoke crawl
             # NOW, so `ui_unverified` only fires when the smoke could not
@@ -12207,8 +12240,16 @@ async def _stream_agent_loop_body(
                         # their own invention and makes the next retry repeat
                         # it. Preserve partial answers only when some mutation
                         # is real and the model merely overstated the scope.
-                        if round_response.strip() and _ledger.effects:
+                        _draft_kept = bool(round_response.strip() and _ledger.effects)
+                        if _draft_kept:
                             messages.append({"role": "assistant", "content": round_response})
+                        elif round_response.strip() and full_response.endswith(round_response):
+                            # The model will not see this draft again and writes
+                            # the answer anew, so the user should not see it
+                            # either: live, a rejected "He creado X" stayed on
+                            # screen above the corrected answer.
+                            full_response = full_response[:-len(round_response)]
+                            yield f'data: {json.dumps({"type": "response_replace", "text": full_response.strip()})}\n\n'
                         messages.append({"role": "user", "_harness_note": True, "content": _lang_note(_ledger.rejection_message(_check))})
                         yield (
                             "data: " + json.dumps({
