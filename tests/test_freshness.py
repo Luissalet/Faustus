@@ -117,3 +117,21 @@ def test_reasons_are_stable_labels():
     reasons = freshness_reasons("¿Ganó el Madrid su último partido?")
     assert "sports_result" in reasons
     assert all(isinstance(r, str) for r in reasons)
+
+
+def test_date_arithmetic_with_today_and_a_year_is_timeless():
+    from src.freshness import freshness_assessment, looks_time_sensitive
+    for text in (
+        "Si hoy es viernes 25 de septiembre de 2026, ¿qué día de la semana será el 1 de enero de 2027?",
+        "¿Qué día de la semana cae el 12 de octubre de 2026?",
+        "¿Cuántos días hábiles hay entre hoy y el 31 de diciembre de 2026?",
+        "How many days until Christmas 2026?",
+    ):
+        assert not looks_time_sensitive(text), text
+        assert freshness_assessment(text)["confident"], text
+
+
+def test_calendar_words_do_not_hide_a_public_subject():
+    from src.freshness import looks_time_sensitive
+    assert looks_time_sensitive("¿Qué día de la semana juega hoy el partido la selección?")
+    assert looks_time_sensitive("¿Cuántos días faltan para que salga la nueva versión de 2026?")

@@ -117,6 +117,24 @@ _OWN_THINGS = re.compile(
 )
 
 
+# Arithmetic on dates is timeless even though it names "hoy" and a year.
+# Seen live: "Si hoy es viernes 25 de septiembre de 2026, ¿qué día de la
+# semana será el 1 de enero de 2027?" fired "time_word" + "explicit_year",
+# the chat turn was escalated to a web search for "viernes", and 2k tokens of
+# pages about the word "viernes" were put in front of a calendar sum. The
+# user gave the premise, or the question is a weekday / day count: nothing
+# on the web changes the answer.
+_CALENDAR_MATH = re.compile(
+    r"\b(?:si hoy es|suponiendo que hoy|if today is|assuming today|"
+    r"qu[eé] d[ií]a de la semana|en qu[eé] d[ií]a (?:de la semana )?(?:cae|caer[aá]|cay[oó])|"
+    r"what day of the week|which day of the week|"
+    r"cu[aá]nt[oa]s (?:d[ií]as|semanas|meses)(?: (?:h[aá]biles|laborables|naturales))? "
+    r"(?:hay|faltan|quedan|pasan|van|han pasado)|"
+    r"how many (?:days|weeks|months|working days|business days) (?:are there|until|between|since|left))",
+    re.IGNORECASE,
+)
+
+
 def freshness_reasons(text: str) -> List[str]:
     """Return the labels of every freshness pattern that fired on ``text``.
 
@@ -126,7 +144,8 @@ def freshness_reasons(text: str) -> List[str]:
     if not raw.strip():
         return []
     hits = [label for label, pattern in _PATTERNS if pattern.search(raw)]
-    if hits and all(label in _WEAK_LABELS for label in hits) and _OWN_THINGS.search(raw):
+    if hits and all(label in _WEAK_LABELS for label in hits) and (
+            _OWN_THINGS.search(raw) or _CALENDAR_MATH.search(raw)):
         return []
     return hits
 
@@ -199,6 +218,8 @@ def freshness_assessment(text: str) -> dict:
         why = "own_things"
     elif _MATH_ONLY.match(stripped):
         why = "math"
+    elif _CALENDAR_MATH.search(raw):
+        why = "calendar_math"
     elif all_hits:
         return {"time_sensitive": verdict, "confident": False, "reasons": reasons, "why": "weak_label_only"}
     elif _TIMELESS_START.search(raw):
