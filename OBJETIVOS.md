@@ -968,3 +968,18 @@ y turno de noche (cola desatendida con presupuesto e informe), más
 `code_history` (churn, blame, co-cambio y riesgo por fichero/símbolo).
 FAUSTUS.md §189; API en `docs/api/{git,bug_hunt,ci_failures,fix_memory,handoff_lanes,night_shift,code_history}.md`.
 **Queda:** verificación en vivo con el 27B y con un repo real de GitHub (ver PENDIENTES).
+
+
+## OBJ-44 · Familia Hoard usada de verdad desde Faustus — EN CURSO (25-09-2026)
+
+Que cada app Hoard aguante preguntas reales hechas con el 27B, no solo sus
+tests: arrancar todo desde el Hub, llamar a cada tool por el proxy y pasar
+baterías de preguntas por el 7003. Dos vueltas el 25-09 (FAUSTUS.md §191 y
+§192): puentes que arrancan su app, timeline de Argus en segmentos, `since`
+humano en Links y Echo, primeras líneas que el índice entiende, búsqueda
+híbrida en Vitruvius, duplicados plegados en Vulcan, `recall` que sabe qué
+hay delante ahora, Writer's Hoard conectado (arranque por máquina en el Hub).
+**Queda:** `since` común en `hoard_link`; DiskHoard con el último escaneo
+persistido; que el selector ofrezca las skills de familia (`hoard-daily-digest`)
+en vez de diez `lookup_tools`; la landing con Vitruvius de principio a fin
+con el 27B.

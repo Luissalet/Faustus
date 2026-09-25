@@ -42,7 +42,10 @@
     },
     "launch_hint": {
       "kind": "process",
-      "executable": "{WRITER_DIR}/release/win-unpacked/Writers Hoard.exe",
+      "executable": [
+        "%LOCALAPPDATA%/Programs/writers-hoard/Writers Hoard.exe",
+        "{WRITER_DIR}/release/win-unpacked/Writers Hoard.exe"
+      ],
       "argv": [],
       "cwd": "{WRITER_DIR}",
       "readiness": {

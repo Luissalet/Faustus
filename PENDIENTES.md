@@ -3,11 +3,18 @@
 Actualizado: 25-09-2026. REGLA: nunca nombres de empresas/personas del buzÃ³n de Luis en commits, docs, tests ni comentarios â€” ejemplos siempre ficticios. SÃ³lo trabajo vigente; quitar cada entrada al cerrarla.
 
 
+## 25-09 tarde — familia Hoard con uso real (FAUSTUS.md §191–§192)
+
+- **Tarjeta «Allow this task to continue?» que no se suelta en el 7003**: en «hazme una landing para La Espiga… compruébalo con Vitruvius» el 27B abrió con `manage_tasks {"action":"list"}` (una lectura), salió la tarjeta, `talk3 --approve` la aprobó y el turno volvió a pedir la misma aprobación y se quedó colgado una hora (sesión `21387e68…`, 3 mensajes, el último a las 12:56 UTC). Revisar por qué `manage_tasks list` pide aprobación exacta y por qué la reanudación re-emite la tarjeta en vez de ejecutar. Tras reiniciar el 7003 con el master de las 15:00, `recall` ya no pide tarjeta y `whatsapp_read` la pide pero el turno sigue; falta repetir la landing para confirmar lo de `manage_tasks`.
+- **Skill `hoard-daily-digest` sin elegir**: «¿cómo ha ido mi día?» se resolvió a mano (13 min, 10 `lookup_tools`) con la skill instalada. Su descripción ya incluye esa frase; hace falta reinstalarla en el 7003 y medir si el selector la ofrece.
+- **DiskHoard olvida el escaneo al reiniciar**: cada respuesta sobre espacio empieza por `disk_scan` de C: (~3 min). Guardar el último árbol en `data/`.
+- **`since` común en `hoard_link`**: Links (JS) y Echo (Python) lo implementan cada uno por su lado; subirlo a la librería vendorizada y usarlo en toda la familia.
+- **Writer's Hoard, release**: el exe de `release/win-unpacked` se recompiló (0.1.2 con el puente de familia) pero una release pública nueva es de Luis; en esta máquina el Hub arranca el modo desarrollo por `data/hub.json` → `launch_overrides` (la biblioteca vive en el origen `127.0.0.1:5174`). Origen estable para ambos modos sigue abierto como decisión de la app.
+
 ## 25-09 mediodía — uso diario en el 7006 (FAUSTUS.md §184, puntos 17–22) — verificado por tests, falta en vivo
 
 - **Desplegar en el 7006** (checkout de master, `npm run build`, `Start-7006Task.ps1`) cuando no haya una ejecución larga que deba sobrevivir, y repetir: «Recuerda que…» sin tarjeta; la tarjeta que sí salga nombra el contexto del prompt; tras aprobar no queda la tarjeta duplicada en el historial; `grep …; wc -l …` sobre el CSV sin tarjeta; el ledger ya no marca `ventas.csv` como modificado por un `if x > 100`.
 - **Ruta ofrecida vs inventada**: medir en turnos reales que una oferta («¿quieres que guarde X?») ya no provoca el rechazo, y que un «He guardado X» falso sí.
-- **Writer's Hoard**: su puente responde con token válido pero lista 0 proyectos; la copia automática en disco tiene 5. Causa: los datos viven en el IndexedDB del origen `http://127.0.0.1:5174` (modo desarrollo, `run.bat` → `npm run dev:desktop`, ~45 MB), y el `launch_hint` del manifiesto arranca el ejecutable empaquetado (`release/win-unpacked`), que carga desde `file://` y ve otra base de datos vacía. Decidir en esa app: origen estable para ambos modos (protocolo propio + migración) o que el manifiesto arranque el modo desarrollo (con `strictPort`, o un puerto distinto cambia el origen otra vez).
 - **La memoria guardada, el índice de skills y las descripciones MCP arman la puerta en cada turno** por diseño. Si siguen saliendo tarjetas en peticiones explícitas, añadir la regla de «lo pidió el usuario» para esa herramienta en `src/user_request_gate.py` en vez de rebajar la puerta.
 
 ## 24-09 noche — ingeniería autónoma (FAUSTUS.md §189, OBJ-43) — verificado por tests, no en vivo

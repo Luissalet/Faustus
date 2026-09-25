@@ -1,6 +1,6 @@
 ---
 name: hoard-daily-digest
-description: One short digest of the user's day or week from the Hoard plugins: screen time (Argus), money (Ledger), reading (Links), people (People), meetings (Scribe), study (Hypatia). Use when the user asks "¿qué he hecho hoy?", "resumen del día/semana", or wants to catch up after being away.
+description: One short digest of the user's day or week from the Hoard plugins: screen time (Argus), money (Ledger), reading (Links), people (People), meetings (Scribe), study (Hypatia). Use when the user asks "¿qué he hecho hoy?", "¿cómo ha ido mi día?", "how did my day go", "resumen del día/semana", or wants to catch up after being away.
 version: 1.0.0
 category: research
 tags: [hoards, digest, daily, argus, ledger, links, people, scribe, hypatia]
