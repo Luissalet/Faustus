@@ -194,6 +194,55 @@ def llamacpp_supports_vision(url: str) -> Optional[bool]:
     return answer
 
 
+_llamacpp_effort_cache: dict = {}
+_EFFORT_CHECK_RE = re.compile(
+    r"reasoning_effort[^\n]{0,400}?\bnot\s+in\s+\(([^)]*)\)", re.IGNORECASE | re.DOTALL)
+_EFFORT_DEFAULT_RE = re.compile(r"reasoning_effort\s*\|\s*default\(\s*['\"]([\w-]+)['\"]")
+
+
+def llamacpp_reasoning_efforts(url: str) -> Optional[tuple]:
+    """The reasoning-effort values the loaded chat template accepts, read
+    from llama-server's `/props` (`chat_template`), default first; None when
+    the endpoint is not a local llama-server or its template does not check
+    the value. Seen live: Qwen3.8's template accepts only xhigh/medium/low and
+    answers "high" with HTTP 500 ("Unexpected reasoning effort high")."""
+    parsed = urlparse(url or "")
+    host = parsed.hostname or ""
+    if not _is_local_host(host):
+        return None
+    key = (host, parsed.port)
+    now = time.time()
+    cached = _llamacpp_effort_cache.get(key)
+    if cached is not None and cached[1] > now:
+        return cached[0]
+    authority = host if parsed.port is None else f"{host}:{parsed.port}"
+    try:
+        r = httpx.get(f"{parsed.scheme or 'http'}://{authority}/props", timeout=1.0)
+        data = r.json() if r.is_success else {}
+    except Exception:
+        return None
+    template = str((data or {}).get("chat_template") or "") if isinstance(data, dict) else ""
+    answer = parse_reasoning_efforts(template)
+    _llamacpp_effort_cache[key] = (answer, now + _PROVIDER_FINGERPRINT_TTL)
+    return answer
+
+
+def parse_reasoning_efforts(template: str) -> Optional[tuple]:
+    """The values a chat template accepts for `reasoning_effort`, its default
+    first, or None when the template does not restrict them."""
+    m = _EFFORT_CHECK_RE.search(template or "")
+    if not m:
+        return None
+    values = re.findall(r"['\"]([\w-]+)['\"]", m.group(1))
+    if not values:
+        return None
+    d = _EFFORT_DEFAULT_RE.search(template)
+    default = d.group(1) if d and d.group(1) in values else None
+    if default:
+        values = [default] + [v for v in values if v != default]
+    return tuple(dict.fromkeys(values))
+
+
 def _is_local_ollama_url(url: str) -> bool:
     """A local Ollama server, on its native `/api` surface or its OpenAI
     `/v1` surface (both answer `/api/show`). Never a public host."""

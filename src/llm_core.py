@@ -4613,6 +4613,56 @@ def _with_model_defaults(url: str, model: str, gen_overrides: Optional[Dict]) ->
     return merged if merged else gen_overrides
 
 
+_EFFORT_ORDER = ("none", "minimal", "low", "medium", "high", "xhigh")
+
+
+def fit_reasoning_effort(value: str, accepted: Optional[tuple]) -> Optional[str]:
+    """Map Faustus's effort vocabulary onto what the model's template accepts.
+
+    ``accepted`` is the template's own list (``chat_helpers.
+    llamacpp_reasoning_efforts``); None means the template does not restrict
+    it and the value goes out as it is. "high" (Faustus's top level) becomes
+    the template's top level when "high" itself is not accepted (Qwen3.8:
+    "xhigh"); any other unknown value takes the nearest accepted level. Never
+    invents a value the template did not list."""
+    value = str(value or "").strip().lower()
+    if not value or accepted is None:
+        return value or None
+    if value in accepted:
+        return value
+    try:
+        want = _EFFORT_ORDER.index(value)
+    except ValueError:
+        return None
+    ranked = sorted((v for v in accepted if v in _EFFORT_ORDER), key=_EFFORT_ORDER.index)
+    if not ranked:
+        return None
+    if value == "high":
+        return ranked[-1]
+    return min(ranked, key=lambda v: (abs(_EFFORT_ORDER.index(v) - want), -_EFFORT_ORDER.index(v)))
+
+
+def _fit_reasoning_effort_to_template(payload: Dict, url: str) -> None:
+    """A local llama-server renders `reasoning_effort` into the model's chat
+    template, which may raise on a value it does not list (HTTP 500)."""
+    effort = payload.get("reasoning_effort")
+    if not effort or not _is_self_hosted_openai_compatible(url) or _is_local_ollama_target(url):
+        return
+    try:
+        from src.chat_helpers import llamacpp_reasoning_efforts
+        accepted = llamacpp_reasoning_efforts(url)
+    except Exception:  # noqa: BLE001 - unknown template, leave the value alone
+        return
+    fitted = fit_reasoning_effort(str(effort), accepted)
+    if fitted != effort:
+        logger.info("[reasoning] effort %r is not in this template's %s; sending %r",
+                    effort, accepted, fitted)
+    if fitted:
+        payload["reasoning_effort"] = fitted
+    else:
+        payload.pop("reasoning_effort", None)
+
+
 def _apply_gen_overrides_openai(payload: Dict, overrides: Dict, url: str) -> None:
     """Apply pinned sampling params to an OpenAI-compatible payload."""
     for k in ("top_p", "seed", "presence_penalty", "frequency_penalty"):
@@ -5286,6 +5336,7 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                         payload["reasoning_budget"] = _budget
         if _overrides:
             _apply_gen_overrides_openai(payload, _overrides, url)
+        _fit_reasoning_effort_to_template(payload, url)
         _apply_local_cache_affinity(payload, url, session_id)
         _apply_local_generation_stability(payload, target_url, model)
         _scrub_openai_chat_tool_reasoning(payload, target_url, model)
