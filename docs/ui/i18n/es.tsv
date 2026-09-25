@@ -5503,6 +5503,7 @@ Strategy profile	Perfil de estrategia
 Strategy profile: {label}	Perfil de estrategia: {label}
 Strategy: {method} · {profile}{reason}	Estrategia: {method} · {profile}{reason}
 Untrusted context influenced this run, so continuing with otherwise-gated actions needs your explicit approval.	Algo de fuera (una página, un archivo, un resultado de herramienta) ha influido en esta tarea, así que seguir con acciones protegidas necesita tu permiso expreso.
+Use {path}? It was chosen {n} min after the dialog opened.	¿Usar {path}? Se eligió {n} min después de abrir el diálogo.
 Where you answered "Always for this workspace folder": chats in these folders, and in every folder under them, continue after reading outside content without asking. The destructive-command guard and every other restriction still apply.	Donde respondiste «Siempre en esta carpeta del espacio de trabajo»: los chats de estas carpetas, y de todas las que cuelgan de ellas, siguen sin preguntar después de leer contenido de fuera. El guardián de comandos destructivos y las demás restricciones siguen igual.
 allowed {when}	permitida el {when}
 direct edit	edición directa

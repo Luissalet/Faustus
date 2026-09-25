@@ -6724,6 +6724,7 @@ export const es: Record<string, string> = {
   "Use this signature": "Usar esta firma",
   "Use this text": "Usar este texto",
   "Use this workspace": "Usar este espacio de trabajo",
+  "Use {path}? It was chosen {n} min after the dialog opened.": "¿Usar {path}? Se eligió {n} min después de abrir el diálogo.",
   "Used to clone over ssh with this identity's key.": "Se usa para clonar por ssh con la clave de esta identidad.",
   "Used to look up per-model load options.": "Se usa para buscar las opciones de carga por modelo.",
   "Used when Faustus drafts replies for you. Extract reads your sent mail and writes it down.": "Se usa cuando Faustus redacta respuestas por ti. Extraer lee tus enviados y lo describe.",

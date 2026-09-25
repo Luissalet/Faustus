@@ -117,7 +117,31 @@ export interface NativePick {
  * throws for the "can't" cases — those return `unavailable` so the UI can
  * show its own dialog instead; a rejected folder (vet failed) throws.
  */
+/** A dialog answered after this long may not be the answer the user meant
+ *  to give now (see `confirmLatePick`). */
+const LATE_PICK_MS = 90_000;
+
+/**
+ * A choice that arrives long after the dialog opened is confirmed before it
+ * is used. Seen live: a folder dialog nobody answered came back minutes later
+ * with a subfolder just created in another program, and the composer's
+ * workspace changed without a word; the agent then worked in that folder.
+ */
+function confirmLatePick(pick: NativePick, startedAt: number): NativePick {
+  if (pick.status !== 'ok' || Date.now() - startedAt < LATE_PICK_MS || typeof window === 'undefined') return pick;
+  const chosen = pick.path ?? (pick.paths ?? []).join(', ');
+  const minutes = Math.max(1, Math.round((Date.now() - startedAt) / 60_000));
+  return window.confirm(t('Use {path}? It was chosen {n} min after the dialog opened.', { path: chosen, n: minutes }))
+    ? pick
+    : { status: 'cancelled' };
+}
+
 export async function pickNative(kind: PickKind, initial = ''): Promise<NativePick> {
+  const startedAt = Date.now();
+  return confirmLatePick(await pickNativeRaw(kind, initial), startedAt);
+}
+
+async function pickNativeRaw(kind: PickKind, initial: string): Promise<NativePick> {
   let response: Response;
   try {
     response = await fetch('/api/workspace/pick', {

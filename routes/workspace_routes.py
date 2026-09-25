@@ -92,7 +92,9 @@ def _reject_cross_origin(request: Request) -> None:
 # window behind the first.
 
 _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost", "testclient"})
-_PICK_TIMEOUT_S = 600
+#: A dialog nobody answers closes after this long: an answer that arrives
+#: much later is rarely meant for the screen the user is on now.
+_PICK_TIMEOUT_S = 180
 _PICK_LOCK = __import__("threading").Lock()
 
 _PICK_SCRIPT = r"""
