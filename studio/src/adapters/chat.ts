@@ -1144,6 +1144,8 @@ export interface SendOptions {
   genOverrides?: Record<string, number | boolean>;
   /** Lot T: the composer's reasoning mode (auto/fast/think/deep). */
   thinkMode?: string;
+  /** The model's own reasoning level picked in the composer (low/medium/xhigh…). */
+  reasoningEffort?: string;
   /** Answering a tool approval: the message goes empty and these travel. */
   approval?: { id: string; decision: 'approve' | 'approve_task' | 'approve_workspace' | 'deny' };
   /** `/agents`: the delegation travels as its own field; the server swaps
@@ -1878,6 +1880,7 @@ export async function* sendTurn(options: SendOptions): AsyncGenerator<ChatEvent>
     fd.append('gen_overrides', JSON.stringify(options.genOverrides));
   }
   if (options.thinkMode) fd.append('think_mode', options.thinkMode);
+  if (options.reasoningEffort) fd.append('reasoning_effort', options.reasoningEffort);
   if (options.approval) {
     fd.append('tool_approval_id', options.approval.id);
     fd.append('tool_approval_decision', options.approval.decision);

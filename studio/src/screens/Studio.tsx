@@ -41,6 +41,9 @@ import {
   vetWorkspace,
   parseThinkMode,
   readThinkMode,
+  getReasoningLevels,
+  readThinkEffort,
+  writeThinkEffort,
   thinkModeLabel,
   writeThinkMode,
   type Attachment,
@@ -528,6 +531,10 @@ export function StudioScreen() {
   const [thinkPick, setThinkPick] = useState<ThinkMode | null>(null);
   const [thinkDefault, setThinkDefault] = useState<ThinkMode>('auto');
   const thinkMode: ThinkMode = thinkPick ?? thinkDefault;
+  // The model's own reasoning level for this chat (null = follow the mode),
+  // and the levels the current model accepts.
+  const [effortPick, setEffortPick] = useState<string | null>(null);
+  const [reasoningLevels, setReasoningLevels] = useState<string[]>([]);
   const [modelSignal, setModelSignal] = useState(0);
   const [panel, panelDispatch] = useChatPanel(sessionId,knobs.incognito);
   // CMP-01-layout (W2-A2): conversation / document / review, per session
@@ -857,6 +864,7 @@ export function StudioScreen() {
     }
     setGen(sessionId ? readJson<GenOverrides>(`${GEN_KEY}_${sessionId}`, {}) : {});
     setThinkPick(readThinkMode(sessionId));
+    setEffortPick(readThinkEffort(sessionId));
   }, [sessionId]);
   useEffect(() => {
     if (sessionId) writeJson(`${GEN_KEY}_${sessionId}`, gen);
@@ -866,7 +874,28 @@ export function StudioScreen() {
   const pickThinkMode = useCallback((mode: ThinkMode) => {
     setThinkPick(mode);
     writeThinkMode(sessionId, mode);
+    // A mode picked after a level: the mode decides again.
+    setEffortPick(null);
+    writeThinkEffort(sessionId, null);
   }, [sessionId]);
+  const pickThinkEffort = useCallback((effort: string | null) => {
+    setEffortPick(effort);
+    writeThinkEffort(sessionId, effort);
+  }, [sessionId]);
+  // The levels the current model accepts, from its own template.
+  useEffect(() => {
+    const endpointId = route?.endpointId ?? '';
+    const controller = new AbortController();
+    setReasoningLevels([]);
+    if (endpointId) {
+      void getReasoningLevels(endpointId, controller.signal).then((r) => {
+        if (!controller.signal.aborted) setReasoningLevels(r.levels);
+      });
+    }
+    return () => controller.abort();
+  }, [route?.endpointId, route?.model]);
+  // A level the current model does not list is not sent.
+  const thinkEffort = effortPick && (effortPick === 'none' || reasoningLevels.includes(effortPick)) ? effortPick : null;
   useEffect(() => {
     let live = true;
     void getSettings()
@@ -1284,6 +1313,7 @@ export function StudioScreen() {
           attachments: options.attachments?.map((a) => a.id),
           genOverrides: Object.keys(gen).length ? (gen as Record<string, number | boolean>) : undefined,
           thinkMode,
+          reasoningEffort: thinkEffort ?? undefined,
           approval: options.approval,
           questionId: options.questionId,
           optionIds: options.optionIds,
@@ -1338,7 +1368,7 @@ export function StudioScreen() {
         refreshStaleWires(sid);
       }
     },
-    [knobs, workspace, route, gen, thinkMode, patchLast, refreshSessions, syncIds, preset, panel.doc,teamEnabled,panelDispatch,refreshStaleWires],
+    [knobs, workspace, route, gen, thinkMode, thinkEffort, patchLast, refreshSessions, syncIds, preset, panel.doc,teamEnabled,panelDispatch,refreshStaleWires],
   );
 
   /**
@@ -3181,6 +3211,9 @@ export function StudioScreen() {
           thinkMode={thinkMode}
           thinkChosen={thinkChosen}
           onSetThinkMode={pickThinkMode}
+          reasoningLevels={reasoningLevels}
+          thinkEffort={thinkEffort}
+          onSetThinkEffort={pickThinkEffort}
           attachments={attachments}
           setAttachments={(update) => setAttachments(update)}
           sessionId={sessionId}

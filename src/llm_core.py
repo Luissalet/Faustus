@@ -4496,7 +4496,7 @@ def _clean_gen_overrides(overrides: Optional[Dict]) -> Dict:
             elif k == "think":
                 out[k] = bool(v) if not isinstance(v, str) else v.strip().lower() in ("1", "true", "on", "yes")
             elif k == "reasoning_effort":
-                if str(v) in ("low", "medium", "high", "none"):
+                if str(v) in ("minimal", "low", "medium", "high", "xhigh", "none"):
                     out[k] = str(v)
             elif k == "keep_alive":
                 # Seconds as a number, or an Ollama duration ("10m", "-1").

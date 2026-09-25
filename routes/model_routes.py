@@ -2183,6 +2183,31 @@ def setup_model_routes(model_discovery):
             out["models"][name] = entry
         return out
 
+    @router.get("/models/reasoning-levels")
+    async def api_models_reasoning_levels(request: Request, endpoint_id: str = ""):
+        """The reasoning levels the model behind one configured endpoint
+        accepts (`src/reasoning_levels.py`), for the composer's effort
+        control: `{"levels": [...], "default": ..., "source": "template"}`,
+        or `{"levels": []}` when the server does not say. Only a configured
+        endpoint the caller can see is probed, never a URL from the client."""
+        require_user(request)
+        owner = effective_user(request) or ""
+        db = SessionLocal()
+        try:
+            q = db.query(ModelEndpoint).filter(ModelEndpoint.id == str(endpoint_id or ""))
+            if owner:
+                q = owner_filter(q, ModelEndpoint, owner)
+            ep = q.first()
+            base = str(getattr(ep, "base_url", "") or "") if ep else ""
+        finally:
+            db.close()
+        if not base:
+            return {"levels": []}
+        import asyncio as _asyncio
+        from src.reasoning_levels import levels_for
+        found = await _asyncio.to_thread(levels_for, base)
+        return found or {"levels": []}
+
     @router.get("/models/fit")
     async def api_models_fit(request: Request, refresh: bool = False):
         """Per-model VRAM fit hints for the model picker.

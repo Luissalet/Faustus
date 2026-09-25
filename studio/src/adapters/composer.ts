@@ -442,6 +442,59 @@ export function writeThinkMode(sessionId: string | null | undefined, mode: Think
   }
 }
 
+/* ── The model's own reasoning levels ──
+ * Read from the running server (`GET /api/models/reasoning-levels`, from the
+ * model's chat template): Qwen3.8 lists low / medium / xhigh and rejects a
+ * generic "high". A pick is kept per chat and sent per turn as
+ * `reasoning_effort`; it wins over the reasoning mode. */
+
+export interface ReasoningLevels { levels: string[]; default?: string | null; source?: string }
+
+export async function getReasoningLevels(endpointId: string, signal?: AbortSignal): Promise<ReasoningLevels> {
+  if (!endpointId) return { levels: [] };
+  try {
+    const raw = await getJson<ReasoningLevels>(
+      `/api/models/reasoning-levels?endpoint_id=${encodeURIComponent(endpointId)}`, signal);
+    return { levels: asArray<string>(raw?.levels), default: raw?.default ?? null, source: raw?.source };
+  } catch {
+    return { levels: [] };
+  }
+}
+
+export function reasoningLevelLabel(level: string): string {
+  switch (level) {
+    case 'none': return t('Off#effort');
+    case 'minimal': return t('Minimal#effort');
+    case 'low': return t('Low#effort');
+    case 'medium': return t('Medium#effort');
+    case 'high': return t('High#effort');
+    case 'xhigh': return t('Maximum#effort');
+    default: return level;
+  }
+}
+
+const THINK_EFFORT_KEY = 'faustus_studio_think_effort';
+
+export function readThinkEffort(sessionId: string | null | undefined): string | null {
+  if (!sessionId) return null;
+  try {
+    const v = window.localStorage.getItem(`${THINK_EFFORT_KEY}_${sessionId}`);
+    return v && /^[a-z]{3,10}$/.test(v) ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+export function writeThinkEffort(sessionId: string | null | undefined, effort: string | null): void {
+  if (!sessionId) return;
+  try {
+    if (effort) window.localStorage.setItem(`${THINK_EFFORT_KEY}_${sessionId}`, effort);
+    else window.localStorage.removeItem(`${THINK_EFFORT_KEY}_${sessionId}`);
+  } catch {
+    /* the pick lasts this visit only */
+  }
+}
+
 /* ── Sampling panel (composer chip -> real controls, not just /temp etc.) ──
  * Each control's effective value is either the global default
  * (`local_*_default` settings, SET-07) or an explicit per-conversation

@@ -47,3 +47,29 @@ def test_the_payload_is_fitted_only_for_a_local_llama_server(monkeypatch):
     remote = {"reasoning_effort": "high"}
     llm_core._fit_reasoning_effort_to_template(remote, "https://api.openai.com/v1")
     assert remote["reasoning_effort"] == "high"
+
+
+def test_levels_for_a_llama_server_come_from_its_template(monkeypatch):
+    from src import reasoning_levels
+
+    monkeypatch.setattr(chat_helpers, "llamacpp_reasoning_efforts", lambda url: ("xhigh", "medium", "low"))
+    assert reasoning_levels.levels_for("http://127.0.0.1:8081/v1") == {
+        "levels": ["low", "medium", "xhigh"], "default": "xhigh", "source": "template"}
+    monkeypatch.setattr(chat_helpers, "llamacpp_reasoning_efforts", lambda url: None)
+    assert reasoning_levels.levels_for("http://127.0.0.1:8081/v1") is None
+
+
+def test_an_explicit_level_becomes_overrides():
+    from src.reasoning_levels import overrides_for
+
+    assert overrides_for("auto") == {}
+    assert overrides_for("none") == {"think": False}
+    assert overrides_for("low") == {"think": True, "reasoning_effort": "low", "reasoning_budget": 1024}
+    assert overrides_for("medium")["reasoning_budget"] == 4096
+    assert overrides_for("xhigh", budgets={"deep": 20000}) == {
+        "think": True, "reasoning_effort": "xhigh", "reasoning_budget": 20000}
+
+
+def test_xhigh_survives_the_override_cleaner():
+    assert llm_core._clean_gen_overrides({"reasoning_effort": "xhigh"}) == {"reasoning_effort": "xhigh"}
+    assert llm_core._clean_gen_overrides({"reasoning_effort": "ultra"}) == {}

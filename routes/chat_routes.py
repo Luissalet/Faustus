@@ -2727,6 +2727,31 @@ def setup_chat_routes(
                     chat_mode=chat_mode, workspace=workspace,
                     attachments=len(att_ids or []), history_len=_think_history_len,
                 )
+                # The model's own reasoning level, picked in the composer
+                # (src/reasoning_levels.py). An explicit level wins over the
+                # mode; "none" turns thinking off.
+                _effort_requested = str(form_data.get("reasoning_effort") or (body or {}).get("reasoning_effort") or "").strip().lower()
+                if _effort_requested and _effort_requested != "auto" and re.fullmatch(r"[a-z]{3,10}", _effort_requested):
+                    try:
+                        from src.reasoning_levels import overrides_for as _effort_overrides
+                        from src.settings import get_setting as _gs_eff
+                        _eov = _effort_overrides(_effort_requested, budgets={
+                            "light": int(_gs_eff("think_mode_budget_light", 1024) or 1024),
+                            "think": int(_gs_eff("think_mode_budget_think", 4096) or 4096),
+                            "deep": int(_gs_eff("think_mode_budget_deep", 16384) or 16384),
+                        })
+                        if _eov:
+                            _gen_overrides = {k: v for k, v in dict(_gen_overrides or {}).items()
+                                              if k not in ("think", "reasoning_effort", "reasoning_budget")}
+                            _gen_overrides.update(_eov)
+                            _think_mode_event = {
+                                "mode": "fast" if _eov.get("think") is False else ("deep" if _eov.get("reasoning_budget", 0) >= 16384 else "think"),
+                                "requested": _effort_requested, "source": "effort",
+                                "reasons": ["model_level"], "effort": _effort_requested,
+                                "budget": _eov.get("reasoning_budget"),
+                            }
+                    except Exception as _eff_err:  # noqa: BLE001
+                        logger.debug("[think-mode] effort skipped: %s", _eff_err)
                 if _think_mode_event:
                     logger.info("[think-mode] session=%s requested=%s -> %s (%s%s) budget=%s",
                                 session, _think_mode_event.get("requested"), _think_mode_event.get("mode"),
