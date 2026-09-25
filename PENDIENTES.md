@@ -970,7 +970,6 @@ UI verification (browser, admin login), screenshots under D:\LocalAI\_claude_tmp
   - `tests/test_completion_gate.py::test_red_test_turn_closes_complete_unverified_end_to_end`
   - `tests/test_l91_domain_synonyms.py` (2 tests, texto de reglas)
   No se ha investigado su causa en esta ronda -- confirmar con `git stash`/bisect antes de tocarlos, para no arreglar algo que ya estaba roto por otra razon.
-- **`artifact_search` (FAUSTUS.md §123): los fragmentos devueltos traen saltos de linea escapados como JSON** (`\n` literal en vez de salto real) en vez de texto legible tal cual. Funciona para localizar el rango a abrir con `read_artifact`, pero el propio snippet de vista previa queda menos legible de lo que podria.
 - **`llm_trace` (FAUSTUS.md §126): retencion por defecto de 7 dias** (`llm_trace_retention_days`). Revisar si es suficiente para depurar un problema reportado varios dias despues, o si conviene subirlo cuando el disco lo permita.
 
 ## Grounding lint (FAUSTUS.md §145) — pendiente de verificar en la máquina en vivo

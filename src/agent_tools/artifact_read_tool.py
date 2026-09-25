@@ -149,4 +149,19 @@ class ArtifactSearchTool:
         hits = search_offloaded(
             owner, query, session_id=session_id, artifact_id=artifact_id, limit=limit,
         )
-        return {"hits": hits, "count": len(hits)}
+        return {"hits": hits, "count": len(hits), "output": render_hits(query, hits)}
+
+
+def render_hits(query: str, hits: list) -> str:
+    """The hits as readable text for the model: the structured result was
+    handed over as JSON, so every snippet's line breaks arrived as literal
+    ``\\n`` escapes."""
+    if not hits:
+        return f"artifact_search: no stored result contains {query!r}."
+    lines = [f"artifact_search: {len(hits)} hit(s) for {query!r}. "
+             "Open one with read_artifact(artifact_id, start, end)."]
+    for n, hit in enumerate(hits, 1):
+        snippet = str(hit.get("snippet") or "").strip()
+        lines.append(f"\n[{n}] {hit.get('artifact_id')} ({hit.get('tool') or 'tool'}) "
+                     f"chars {hit.get('start')}-{hit.get('end')}:\n{snippet}")
+    return "\n".join(lines)
