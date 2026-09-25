@@ -1647,6 +1647,16 @@ DEFAULT_SETTINGS = {
     "bug_hunt_max_cases": 12,
     # Timeout (seconds) for one isolated pytest run of a generated suite.
     "bug_hunt_timeout_seconds": 120,
+    # Swarm map (src/swarm/, docs/recipes/swarm.md): how many items one run
+    # sends at once. llama-server reports its own slots (/slots); Ollama
+    # cannot be asked, so this states the OLLAMA_NUM_PARALLEL the Ollama
+    # server was started with; a remote API gets swarm_api_parallel. All are
+    # capped by swarm_max_parallel, and one run takes at most
+    # swarm_max_items items.
+    "swarm_ollama_parallel": 1,
+    "swarm_api_parallel": 8,
+    "swarm_max_parallel": 16,
+    "swarm_max_items": 200,
 }
 
 
