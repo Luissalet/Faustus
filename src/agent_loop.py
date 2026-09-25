@@ -7846,6 +7846,15 @@ async def _stream_agent_loop_body(
             # (the tool list sits at the top of the prompt) before reading it.
             if _hot_seed is not None and not relevant_tools:
                 _hot_seed |= _DOMAIN_HOT_TOOLS.get(str(_domain), set())
+        # The board belongs to a project: in a chat with none, every board_*
+        # call refuses (`board.no_project`). Seen live: «¿Qué tareas tengo
+        # pendientes?» offered all eight, and the model spent a 90-second
+        # round planning calls that could only fail.
+        if not relevant_tools and not str(_hopts.get("project_id") or "").strip():
+            _no_board = _DOMAIN_TOOL_MAP["project_board"]
+            _relevant_tools -= _no_board
+            if _hot_seed is not None:
+                _hot_seed -= _no_board
         if "cookbook" in (_intent.get("domains") or set()):
             _relevant_tools.update({
                 "list_served_models",

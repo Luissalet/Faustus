@@ -67,3 +67,37 @@ def test_personal_tasks_in_spanish_reach_the_tasks_domain():
     coding = "Sigue con la tarea del refactor en el repositorio"
     assert "notes_calendar_tasks" not in al._classify_agent_request(
         [{"role": "user", "content": coding}], coding)["domains"]
+
+
+def test_board_tools_stay_out_of_a_chat_with_no_project(monkeypatch, caplog):
+    caplog.set_level("INFO", logger="src.agent_loop")
+    monkeypatch.setattr(al, "get_setting", lambda key, default=None: default, raising=False)
+    monkeypatch.setattr(al, "get_mcp_manager", lambda: None, raising=False)
+    monkeypatch.setattr(al, "estimate_tokens", lambda *a, **k: 10, raising=False)
+
+    class FakeIndex:
+        def get_tools_for_query(self, query, k=8, **kwargs):
+            return {"board_list", "ask_user"}
+
+        def index_mcp_tools(self, *a, **k):
+            return None
+
+    monkeypatch.setattr(ti, "get_tool_index", lambda: FakeIndex())
+    monkeypatch.setattr(ti, "tool_rerank_options", lambda owner: {})
+    sent = []
+
+    async def _fake_stream(_candidates, messages, **kwargs):
+        sent.append(kwargs.get("tools"))
+        yield "data: " + json.dumps({"delta": "ok"}) + "\n\n"
+        yield "data: [DONE]\n\n"
+
+    monkeypatch.setattr(al, "stream_llm_with_fallback", _fake_stream, raising=False)
+
+    async def _run(options):
+        return [c async for c in al.stream_agent_loop(
+            "https://api.openai.com/v1", "gpt-test",
+            [{"role": "user", "content": "¿Qué tareas tengo pendientes?"}],
+            max_rounds=1, relevant_tools=None, harness_options=options)]
+
+    asyncio.run(_run({}))
+    assert not {n for n in _names(sent[-1]) if n and n.startswith("board_")}
