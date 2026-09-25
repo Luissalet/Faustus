@@ -1747,6 +1747,7 @@ def external_context_labels(messages: Iterable[dict], limit: int = 4) -> list[st
 
 
 _TRUSTED_WRITE_TOOLS = frozenset({"write_file", "edit_file", "apply_patch"})
+_ARTIFACT_ID_RE = re.compile(r"\bocc_[0-9a-f]{32}\b")
 _URL_RE = re.compile(r"https?://[^\s<>\"'`)\]]+")
 _ASKS_TO_LOOK_UP = re.compile(
     r"\b(?:busca\w*|investiga\w*|averigua\w*|consulta\w*|comprueba\w*|mira\s+en|fuentes?|cita\w*"
@@ -1886,6 +1887,10 @@ class ToolRunSecurityContext:
     # context). A web_fetch of one of them, when the user asked to look
     # something up, is reading a result -- see `_fetches_a_seen_link`.
     seen_urls: set = field(default_factory=set)
+    # Artifact ids (`occ_…`) that tool results of THIS run handed back, e.g.
+    # an oversized result the offload stored. Re-reading one brings nothing
+    # new into the run: its bytes were this run's own tool output.
+    seen_artifacts: set = field(default_factory=set)
     # What the assistant said right before that message (src.user_request_gate.
     # asked_before_text): a user answering a quiz question names no act, but
     # the grading call carries the question the assistant asked.
@@ -2032,6 +2037,26 @@ class ToolRunSecurityContext:
             text = str(value)
         for url in _URL_RE.findall(text or "")[:500]:
             self.seen_urls.add(_url_key(url))
+        for artifact in _ARTIFACT_ID_RE.findall(text or "")[:200]:
+            self.seen_artifacts.add(artifact)
+
+    def note_run_artifacts(self, value: Any) -> None:
+        """Remember the artifact ids a (possibly offloaded) tool result names."""
+        try:
+            self._note_urls(value)
+        except Exception:  # noqa: BLE001 - bookkeeping only
+            pass
+
+    def _rereads_own_artifact(self, tool_name: Any, content: Any) -> bool:
+        """`read_artifact`/`read_overflow`/`artifact_search` on an artifact a
+        tool result of this run returned. Seen live: a model's evaluation
+        was large enough to be offloaded, the model opened the stored copy
+        to find the AUC, and the turn stopped at a card to read back its own
+        tool output."""
+        if tool_name not in {"read_artifact", "read_overflow", "artifact_search"}:
+            return False
+        ids = set(_ARTIFACT_ID_RE.findall(json.dumps(content, default=str) if not isinstance(content, str) else content))
+        return bool(ids) and ids <= self.seen_artifacts
 
     def _fetches_a_seen_link(self, tool_name: Any, content: Any) -> bool:
         """"Busca la población de Valencia según el INE" then web_fetch of a
@@ -2202,6 +2227,8 @@ class ToolRunSecurityContext:
         if self._user_delegation_allows(tool_name, content):
             return ToolGateDecision(True)
         if self._fetches_a_seen_link(tool_name, content):
+            return ToolGateDecision(True)
+        if self._rereads_own_artifact(tool_name, content):
             return ToolGateDecision(True)
         if self.user_request and (
             tool_name not in _WRITES_OUTSIDE_TEXT

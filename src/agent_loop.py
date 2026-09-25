@@ -9754,6 +9754,7 @@ async def _stream_agent_loop_body(
             )
         except Exception:  # noqa: BLE001
             logger.debug("[tool_result_offload] skipped for %s", approved.tool_name, exc_info=True)
+        run_security.note_run_artifacts(approved_result)
         formatted_approved_result = format_tool_result(
             desc, approved_result, tool=approved.tool_name, command=approved.content or "",
         )
@@ -14829,6 +14830,10 @@ async def _stream_agent_loop_body(
                 )
             except Exception:  # noqa: BLE001
                 logger.debug("[tool_result_offload] skipped for %s", block.tool_type, exc_info=True)
+            if _model_result is not result:
+                # The stub names the stored copy: reading it back is this
+                # run's own output, not new outside content (tool_capabilities).
+                run_security.note_run_artifacts(_model_result)
             if _model_result is not result and _attach_timing is not None:
                 _attach_timing(_model_result, _result_timing)
             # command_output_filters wiring: tag the command's own tool/text

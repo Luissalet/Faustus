@@ -1534,11 +1534,41 @@ def _app_tool(user_text: str, content: Any, workspace: str = "", tool: str = "",
         # «Con Laplace: …», «dime qué documentación tiene Babel»: the user
         # sent this request to that app by name, and the call only reads.
         return True
+    if _asks_for_the_action(text, args) and _names_the_app(text, connector):
+        # «En Nightingale… dame su diagnóstico»: one tool with many actions
+        # (`data_model`: train, evaluate, report…) is not read-only as a
+        # whole, so the read the user asked for by name stopped at a card.
+        return True
     if not any(_says(text, phrase) for phrase in _tool_synonyms(meta.get("description") or "", name)):
         return _answers_what_was_asked(text, asked_before, meta, args)
     if mcp_tool_is_readonly(meta):
         return True
     return _names_a_value(text, args) or _answers_what_was_asked(text, asked_before, meta, args)
+
+
+#: Read-type `action` values of multi-action app tools, and the words
+#: (folded, Spanish and English) a request uses for them. A write action is
+#: not here: those still need one of the call's own values in the request.
+_READ_ACTION_WORDS: Dict[str, tuple] = {
+    "evaluate": ("evalua", "evaluar", "evaluacion", "diagnostico", "diagnostica", "metricas",
+                 "evaluate", "evaluation", "diagnostics", "metrics"),
+    "diagnose": ("diagnostico", "diagnostica", "diagnose", "diagnostics"),
+    "report": ("informe", "reporte", "report"),
+    "explain": ("explica", "explicacion", "importancia", "explain", "importance"),
+    "compare": ("compara", "comparar", "comparacion", "compare", "comparison"),
+    "preview": ("vista previa", "muestrame", "ensename", "preview"),
+    "profile": ("perfil", "perfila", "profile"),
+    "list": ("lista", "listar", "cuales", "list"),
+    "search": ("busca", "buscar", "search"),
+    "stats": ("estadisticas", "stats", "statistics"),
+    "status": ("estado", "status"),
+}
+
+
+def _asks_for_the_action(text: str, args: Mapping[str, Any]) -> bool:
+    action = str(args.get("action") or "").strip().casefold()
+    words = _READ_ACTION_WORDS.get(action)
+    return bool(words) and any(_says(text, w) for w in words)
 
 
 _QUOTED_RE = re.compile(r"[\"“«]([^\"”»]{3,80})[\"”»]")
