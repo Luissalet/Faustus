@@ -800,3 +800,15 @@ def test_a_translation_into_another_language_is_not_a_wrong_language_reply(tmp_p
     events = _events(_collect(gen))
     assert not [e for e in events if e.get("status") == "language_mismatch"], events
     assert calls["n"] == 1
+
+
+def test_a_letter_to_write_is_a_documents_turn_not_a_coding_one():
+    # seen live: "Escríbeme una reclamación…" had no domain, and the model
+    # went looking for a folder to write a file in (get_workspace, bash)
+    from src.agent_loop import _classify_agent_request as classify
+
+    for text in ("Escríbeme una reclamación para mi compañía de luz", "Redacta una carta al casero"):
+        assert "documents" in classify([{"role": "user", "content": text}], text)["domains"]
+    for text in ("Escríbeme una función que sume dos números", "escríbeme un script que cuente palabras"):
+        domains = classify([{"role": "user", "content": text}], text)["domains"]
+        assert "documents" not in domains and "files" in domains

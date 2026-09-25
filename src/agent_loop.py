@@ -465,6 +465,7 @@ _AGENT_RULES = """\
 - The project board (FAU-12 style ids) is the project's task list: when the user reports a bug, asks for a feature, drops an idea or asks what is pending, use board_* — create, update, comment, claim — and cite ids. Never keep a parallel list in markdown.
 - Users speak plainly: map what they ask to the right tool yourself; never ask them to name a tool, a path or a command, and never say a tool is unavailable without first calling `lookup_tools`.
 - Visual work is verified by seeing it. After a UI/layout/window/page change, call `desktop_screenshot` (this PC's screen; the image is attached) and report what you actually see. Never say you could not look because of a sandbox, Docker, or a missing browser.
+- A text the user asks you to write for them (a letter, complaint, email, message, post, speech) is written in your reply; use `create_document` only when they ask for a document or file, or when it is long. Never look for a folder or write a file to hold it unless they asked for one.
 - For a comparison, trend or breakdown that is clearer as a picture, write a fenced ```chart``` block with JSON {"type":"bar|line|pie|area","title"?,"x":[labels],"series":[{"name","values":[numbers]}],"unit"?,"stacked"?}; Studio renders it inline (docs/ui/charts.md). Always give "x", one label per value (the category names, months, zones...): without it the slices and bars are only numbered.
 """
 
@@ -486,6 +487,7 @@ _API_AGENT_RULES = """\
 - The project board (FAU-12 style ids) is the project's task list: when the user reports a bug, asks for a feature, drops an idea or asks what is pending, use board_* — create, update, comment, claim — and cite ids. Never keep a parallel list in markdown.
 - Users speak plainly: map what they ask to the right tool yourself; never ask them to name a tool, a path or a command, and never say a tool is unavailable without first calling `lookup_tools`.
 - Visual work is verified by seeing it. After a UI/layout/window/page change, call `desktop_screenshot` (this PC's screen; the image is attached) and report what you actually see. Never say you could not look because of a sandbox, Docker, or a missing browser.
+- A text the user asks you to write for them (a letter, complaint, email, message, post, speech) is written in your reply; use `create_document` only when they ask for a document or file, or when it is long. Never look for a folder or write a file to hold it unless they asked for one.
 - For a comparison, trend or breakdown that is clearer as a picture, write a fenced ```chart``` block with JSON {"type":"bar|line|pie|area","title"?,"x":[labels],"series":[{"name","values":[numbers]}],"unit"?,"stacked"?}; Studio renders it inline (docs/ui/charts.md). Always give "x", one label per value (the category names, months, zones...): without it the slices and bars are only numbered.
 """
 
@@ -2890,7 +2892,9 @@ def _classify_agent_request(messages: List[Dict], last_user: str, *,
         r"ruby|php|swift|kotlin|bash|shell|html|css|sql)\b",
         r"\b(?:code|script|program|game|function|class|module|app)\b",
     )
-    if has(r"\b(documents?|docs?|draft|compose|poem|story|essay|outline|letter|edit|rewrite|proofread|suggest|feedback|review this|make a file)\b"):
+    if has(r"\b(documents?|docs?|draft|compose|poem|story|essay|outline|letter|edit|rewrite|proofread|suggest|feedback|review this|make a file)\b",
+           # LANG-02: redacta/escríbeme una carta, una reclamación, una queja…
+           r"\b(red[aá]cta(?:me|lo|la)?|escr[ií]be(?:me|le|nos)?\s+(?:una?|el|la)\s+(?!funci|script|program|c[oó]dig|clase|test|m[oó]dulo|app|consulta|query)\w+|cartas?|reclamaci[oó]n|queja|borrador|instancia|solicitud|poema|cuento|ensayo|corrige(?:me)?\s+(?:el|este|esta)\s+texto)\b"):
         domains.add("documents")
     if "notes_calendar_tasks" not in domains and has(r"\bwrite\b"):
         domains.add("documents")
