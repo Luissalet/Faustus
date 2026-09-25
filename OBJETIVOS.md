@@ -979,7 +979,9 @@ baterías de preguntas por el 7003. Dos vueltas el 25-09 (FAUSTUS.md §191 y
 humano en Links y Echo, primeras líneas que el índice entiende, búsqueda
 híbrida en Vitruvius, duplicados plegados en Vulcan, `recall` que sabe qué
 hay delante ahora, Writer's Hoard conectado (arranque por máquina en el Hub).
-**Queda:** `since` común en `hoard_link`; DiskHoard con el último escaneo
-persistido; que el selector ofrezca las skills de familia (`hoard-daily-digest`)
-en vez de diez `lookup_tools`; la landing con Vitruvius de principio a fin
-con el 27B.
+Tercera vuelta (§193): `since` común en `hoard_link` (Python y JS, en las 18
+apps), DiskHoard guarda el último escaneo, Vitruvius acepta páginas por ruta,
+y la landing con Vitruvius salió de principio a fin con el 27B (19/19 en
+`page_assay`).
+**Queda:** que el selector ofrezca las skills de familia (`hoard-daily-digest`)
+en vez de diez `lookup_tools`; los candidatos fantasma `mcp__vitruvius__*`.
