@@ -3,7 +3,7 @@ name: hoard-family-recap
 description: A short recap of what the Hoard family did by itself since a moment: watched releases and feed entries, rules and jobs, backups, apps started or stopped, incidents. Use when the user asks "¿qué ha pasado en las hoards?", "what came in from my watches", "did the backup run".
 version: 1.0.0
 category: research
-tags: [hoards, hub, events, watches, rules, backups, recap]
+tags: [hoards, hub, events, watches, rules, backups, recap, novedades, familia, copias, vigia]
 status: published
 source: imported
 ---

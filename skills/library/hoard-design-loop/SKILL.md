@@ -1,9 +1,9 @@
 ---
 name: hoard-design-loop
-description: Build or fix a web page with Vitruvius's Hoard in the loop — a cited brief first, then render, critique, fix, and a functional check before calling it done. Use when the user asks for a landing, a page, a component or "make this look less generic".
+description: Build or fix a web page with Vitruvius's Hoard in the loop — a cited brief first, then render, critique, fix, and a functional check before calling it done. Use when the user asks for a landing, a page, a component or "make this look less generic"; en español: «hazme/diséñame una landing», «una página web», «que no parezca genérica».
 version: 1.0.0
 category: engineering
-tags: [hoards, vitruvius, frontend, design, critique, assay, tokens]
+tags: [hoards, vitruvius, frontend, design, critique, assay, tokens, landing, web, pagina, diseno, disename, maqueta, comprueba]
 status: published
 source: imported
 ---
