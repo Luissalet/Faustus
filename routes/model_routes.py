@@ -47,6 +47,7 @@ _ENDPOINT_SETTING_FIELDS = {
     "utility_endpoint_id":  ("utility_model",   "Utility Model"),
     "research_endpoint_id": ("research_model",  "Deep Research"),
     "task_endpoint_id":     ("task_model",       "Background Tasks"),
+    "vision_endpoint_id":   ("vision_model",     "Vision Model"),
 }
 
 _ENDPOINT_FALLBACK_FIELDS = {
@@ -78,6 +79,16 @@ def _clear_speech_settings_for_endpoint(settings: dict, ep_id: str) -> list:
             settings[model_key] = default_model
             cleared.append(label)
     return cleared
+
+
+def _known_vision_models(chat_url: str, model_ids: list) -> list:
+    """`models_vision` for one `/api/models` item; [] on any failure."""
+    try:
+        from src.vision_routing import known_vision_models
+        return known_vision_models(chat_url, model_ids)
+    except Exception as e:  # noqa: BLE001
+        logger.debug("models_vision skipped: %s", e)
+        return []
 
 
 def _endpoint_settings_using_endpoint(settings: dict, ep_id: str, *, include_speech: bool = False) -> list:
@@ -1886,6 +1897,10 @@ def setup_model_routes(model_discovery):
                     "models_display": [_model_display_name(mid) for mid in curated],
                     "models_extra": extra,
                     "models_extra_display": [_model_display_name(mid) for mid in extra],
+                    # Models known to accept images (docs/api/vision.md): from
+                    # capability caches and the name heuristic only — never a
+                    # probe, so this adds no latency to the listing.
+                    "models_vision": _known_vision_models(chat_url, [*curated, *extra]),
                     "endpoint_id": ep.id,
                     "endpoint_name": ep.name,
                     "category": category,
@@ -1904,6 +1919,7 @@ def setup_model_routes(model_discovery):
                     "models_display": [],
                     "models_extra": [],
                     "models_extra_display": [],
+                    "models_vision": [],
                     "endpoint_id": ep.id,
                     "endpoint_name": ep.name,
                     "category": category,
@@ -2284,6 +2300,18 @@ def setup_model_routes(model_discovery):
             db.close()
 
         return {"assertions": assertions, "candidates": candidates, "endpoint_name": ep_name}
+
+    @router.get("/vision/status")
+    async def api_vision_status(request: Request):
+        """Which vision model reads images for a model that cannot see, for
+        the caller (docs/api/vision.md): `source` is `configured`, `auto` or
+        `none`. Resolved with the caller's own endpoints and preferences; the
+        lookup (cached, may probe local servers once) runs off the loop."""
+        require_user(request)
+        owner = effective_user(request) or None
+        import asyncio as _asyncio
+        from src.vision_routing import vision_status
+        return await _asyncio.to_thread(vision_status, owner)
 
     @router.get("/models/fit-explain")
     async def api_models_fit_explain(

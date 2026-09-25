@@ -155,6 +155,12 @@ DEFAULT_SETTINGS = {
     "image_model": "",
     "image_quality": "medium",
     "vision_model": "",
+    # Endpoint the Vision model is resolved on ("" = any endpoint; with no
+    # model either, a vision-capable model is auto-detected, local first).
+    "vision_endpoint_id": "",
+    # Before a request goes to a model that cannot see, image blocks in the
+    # conversation become their cached description or a short placeholder.
+    "vision_history_filter": True,
     "vision_enabled": True,
     # Ordered fallback chain for the Vision model (image analysis, OCR, tagging).
     "vision_model_fallbacks": [],
@@ -1898,7 +1904,7 @@ def is_setting_overridden(key: str) -> bool:
 # model + image-generation model. The owner argument is the authed username
 # resolved by FastAPI deps; an empty/None owner falls through to the global.
 _PER_USER_KEYS = {
-    "vision_model", "vision_enabled", "vision_model_fallbacks",
+    "vision_model", "vision_enabled", "vision_model_fallbacks", "vision_endpoint_id",
     "image_model", "image_gen_enabled", "image_quality",
     # Default chat endpoint / model — without per-user resolution every new
     # account inherited whatever the most-recent admin picked, which then
