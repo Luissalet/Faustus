@@ -127,6 +127,29 @@ _THINK_SIGNALS = (
         r"\b(?:plan|planifica\w*|planning|estrategia|strategy|roadmap|hoja de ruta|arquitectura|"
         r"architecture|dise[ñn]a\w*|design|organiza\w*|cronograma|schedule a|trade-?offs?)\b",
     )),
+    # Dates and calendars: which weekday a date falls on, long weekends,
+    # "next week", N days from now. Seen live with thinking off ("fast" for a
+    # short question): "el 2 de noviembre cae en sábado", "Lunes 29 sep" --
+    # both wrong -- while the same model with thinking on got every weekday
+    # right in a direct A/B.
+    ("dates", _rx(
+        r"\bqu[eé] d[ií]a (?:de la semana )?(?:es|cae|caer[aá]|ser[aá]|fue|era|toca)\b",
+        r"\ben qu[eé] d[ií]a (?:de la semana )?cae\b", r"\bpuentes?\b", r"\bfestivos?\b",
+        r"\bd[ií]as? (?:laborables|h[aá]biles|naturales)\b",
+        r"\b(?:dentro de|hace|en|faltan|quedan) \d+ (?:d[ií]as|semanas|meses)\b",
+        r"\bcu[aá]ntos d[ií]as\b", r"\b(?:semana|mes) que viene\b", r"\bpr[oó]xim[oa] (?:semana|mes)\b",
+        r"\b\d{1,2} de (?:enero|febrero|marzo|abril|mayo|junio|julio|agosto|sept?iembre|octubre|noviembre|diciembre)\b",
+        r"\bwhat day (?:of the week )?(?:is|was|will)\b", r"\bhow many days\b", r"\bdays (?:until|left|from now)\b",
+        r"\bnext (?:week|month)\b", r"\bbank holiday\b", r"\blong weekend\b",
+    )),
+    # Quantities for N people, a recipe scaled, a shopping list with amounts:
+    # "somos 8, pásame la lista de la compra con cantidades" came back with
+    # "6 muslos (2,5–3 kg)".
+    ("quantities", _rx(
+        r"\bpara \d+ (?:personas|comensales|invitados|raciones)\b", r"\bsomos \d+\b",
+        r"\blista de la compra\b", r"\bcantidades\b", r"\braciones\b", r"\bescala\w*\b",
+        r"\bfor \d+ (?:people|guests|servings)\b", r"\bshopping list\b", r"\bscale (?:it|the recipe)\b",
+    )),
     ("compare", _rx(
         r"\bcompar\w*\b", r"\bvs\.?\b", r"\bversus\b", r"\bdiferencias? entre\b", r"\bdifference between\b",
         r"\bpros y contras\b", r"\bpros and cons\b", r"\bventajas\b", r"\bwhich is better\b",

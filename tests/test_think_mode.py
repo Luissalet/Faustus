@@ -249,3 +249,24 @@ def test_one_line_answer_about_work_still_thinks():
 
 def test_one_line_answer_to_small_question_is_fast():
     assert decide("Dime en una línea qué es un agujero negro")["mode"] == "fast"
+
+
+# Seen live with thinking off: wrong weekdays for a long weekend and for next
+# week's calendar, and wrong amounts in a shopping list for 8; the same model
+# with thinking on got the weekdays right in a direct A/B.
+@pytest.mark.parametrize("text,family", [
+    ("¿Qué día de la semana cae el 12 de octubre de 2026? Es festivo, ¿hay puente?", "dates"),
+    ("¿Qué tengo en el calendario la semana que viene?", "dates"),
+    ("¿Qué fecha será dentro de 100 días?", "dates"),
+    ("What day of the week is Christmas this year?", "dates"),
+    ("Somos 8: pásame la lista de la compra con cantidades.", "quantities"),
+    ("Pásame la receta para 10 personas", "quantities"),
+])
+def test_dates_and_quantities_get_thinking(text, family):
+    d = think_mode.decide(text)
+    assert d["mode"] == "think" and family in d["reasons"]
+
+
+@pytest.mark.parametrize("text", ["hola", "¿cuál es la capital de Francia?", "gracias, perfecto"])
+def test_plain_lookups_stay_fast(text):
+    assert think_mode.decide(text)["mode"] == "fast"
