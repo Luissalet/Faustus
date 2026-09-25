@@ -3,7 +3,7 @@
 Actualizado: 25-09-2026. REGLA: nunca nombres de empresas/personas del buzÃ³n de Luis en commits, docs, tests ni comentarios â€” ejemplos siempre ficticios. SÃ³lo trabajo vigente; quitar cada entrada al cerrarla.
 
 
-## 25-09 tarde — visión, contexto, razonamiento, enjambre, podcast (FAUSTUS.md §195, OBJ-45)
+## 25-09 tarde — visión, contexto, razonamiento, enjambre, podcast (FAUSTUS.md §197, OBJ-45)
 
 - **Sin desplegar en 7000/7003/7006**: probado en una instancia privada 7009 (`D:\LocalAI\_claude_tmp\vx_wt`, datos `vx_data`). El 7000 lo coge al reiniciarlo con el master nuevo; el `vite build` de la carpeta principal hay que rehacerlo.
 - **No visto en navegador**: el chip Auto/Rápido/Pensar/A fondo del compositor, el par endpoint+modelo de Visión con su línea de estado, los selectores de voz y duración del podcast y la sección Swarm de Workers (solo `tsc` y `vite build`).
@@ -15,12 +15,11 @@ Actualizado: 25-09-2026. REGLA: nunca nombres de empresas/personas del buzÃ³n 
 
 ## 25-09 tarde — familia Hoard con uso real (FAUSTUS.md §191–§192)
 
-- **Tarjeta «Allow this task to continue?» que no se suelta en el 7003**: en «hazme una landing para La Espiga… compruébalo con Vitruvius» el 27B abrió con `manage_tasks {"action":"list"}` (una lectura), salió la tarjeta, `talk3 --approve` la aprobó y el turno volvió a pedir la misma aprobación y se quedó colgado una hora (sesión `21387e68…`, 3 mensajes, el último a las 12:56 UTC). Revisar por qué `manage_tasks list` pide aprobación exacta y por qué la reanudación re-emite la tarjeta en vez de ejecutar. Tras reiniciar el 7003 con el master de las 15:00, `recall` ya no pide tarjeta, `whatsapp_read` y `render_preview` la piden pero el turno sigue tras aprobar (landing de principio a fin, 19/19 en `page_assay`). Sin repetir: si `manage_tasks list` sigue pidiendo tarjeta.
-- **Umbral del selector de skills fijo a 0,25 en `agent_loop.py`** (el selector usa 0,22 por defecto) y skills con descripción solo en inglés: las preguntas en español se quedan por debajo. Arreglado a base de tags en español en cuatro skills de la familia (§193); falta `hoard-study-cards` (0,214, la lleva otra sesión) y decidir si el umbral debe ser configurable o si el selector debería puntuar también los triggers traducidos. Medido en un turno real: el digest se inyecta y se sigue (7 min, lecturas en paralelo).
-- **Catálogo de herramientas de un conector desfasado**: Hypatia cambió su juego de herramientas (`cards_stats` → `study_stats`) y el conector `4f9230b5` del 7003 sigue ofreciendo las viejas en `lookup_tools`; el modelo las llama y recibe «Unknown tool». Además la exportación marca esas llamadas como «ok». Refrescar el catálogo cuando la app responde «Unknown tool» (o al reconectar) y marcar como fallo un resultado `{"error": …}`.
-- **Candidatos fantasma en `lookup_tools`**: en el 7003 devolvió `mcp__vitruvius__design_brief`, `…render_preview`, `…page_assay` cuando ningún servidor MCP se llama `vitruvius` (el conector es `67b3358f`). Averiguar de qué índice salen (¿manifiesto de plugin no conectado, caché de `tool_index_cache.json`?) y no ofrecer nombres que no se pueden llamar.
-- **El 7003 murió a las 15:45 sin dejar traza** en `server7003.log`; se relanzó. Vigilar si se repite (Cassandra no lo vigila: solo conoce el 7001).
-- **Writer's Hoard, release**: el exe de `release/win-unpacked` se recompiló (0.1.2 con el puente de familia) pero una release pública nueva es de Luis; en esta máquina el Hub arranca el modo desarrollo por `data/hub.json` → `launch_overrides` (la biblioteca vive en el origen `127.0.0.1:5174`). Origen estable para ambos modos sigue abierto como decisión de la app.
+- **`hoard-study-cards` por debajo del umbral** (0,214 con «hazme tarjetas de estudio…»): la skill la lleva la sesión de Hypatia; cuando cierre, darle tags y triggers en español como a las otras cuatro (§193).
+- **Access violation en `sqlite3.dll` en la batería de tests** (25-09 17:46, `tests/` de mcp/skills/export): hilos del Context Engine (`store.db()`) y una conexión nueva de SQLAlchemy (`set_sqlite_pragma`) a la vez. No se repitió al relanzar. Si vuelve, aislar el test y probar un candado alrededor del `connect` de SQLAlchemy o `check_same_thread`.
+- **Writer's Hoard**: la app empaquetada ya abre la misma biblioteca que el modo desarrollo (§195); falta que Luis publique la release. La copia instalada en `%LOCALAPPDATA%` es la vieja (`file://`), por eso el Hub sigue arrancando el modo desarrollo por `launch_overrides`.
+- **El resumen del día mezcla cifras de pantalla**: con Funes (`activity_summary`) dijo «~10 min activo, 7 h ausente» y a la vez sesiones de Claude de casi 4 h. Revisar qué mide `activity_summary` frente a `screen_activity` y cuál debe usar la skill.
+- **`tests/test_approval_autonomy.py`: 4 fallos en Windows** también sin los cambios de §195 (`is_hard_blocked` de un `write_file` dentro del workspace, la señal `named` a 0, y el modo activo que no aprueba una familia promovida). Revisar con quien lleve la autonomía de aprobaciones.
 
 ## 25-09 mediodía — uso diario en el 7006 (FAUSTUS.md §184, puntos 17–35)
 
@@ -1332,4 +1331,12 @@ contamina a cual, y aislar ese estado en una fixture, como se hizo con
 - El perfil del motor 72561c7e del 7006 se editó a mano (`--mmproj`, espera de 180 s); el script externo `Start-LlamaServerTask.ps1` también lleva ya el proyector. Si se recrea el motor desde Ajustes, se encontrará solo.
 - En el turno de prueba la primera ronda tardó 565 s para 130 tokens de salida: casi todo fue esperar turno en el servidor compartido con 16,7 k tokens de prompt. Esa ronda llamó a `inspect_media` (sólo cabecera; la herramienta ya avisa de que no mira los píxeles) y la siguiente a `read_file`, que es la que le dio la imagen. Es inofensivo, pero es una ronda de más.
 - Con la casilla verificada en el navegador (etiqueta «Visión», casilla marcada, Guardar deja `--mmproj` una sola vez y la espera de 180 s), queda sin probar sólo el caso de un modelo sin proyector (casilla desactivada).
+
+## Uso diario 25-09 tarde (FAUSTUS.md §196)
+
+- La puerta del modelo local (`_local_model_slot` en `src/llm_core.py`) es un solo candado para toda la instancia: dos turnos del mismo 7006 contra el mismo `llama-server` con 4 ranuras esperan uno tras otro («waited 60s for the local model slot»). Valorar un grupo por URL (varias peticiones al mismo servidor y modelo ya cargado, hasta sus ranuras; exclusivo frente a otros destinos, que son los que cargan modelos en la VRAM). Tocar con cuidado: es la protección de VRAM.
+- El motor «llama.cpp helper» (8082, qwen2.5-3b) está caído en el 7006: cada listado de modelos espera su sondeo (hasta 3 s) y las llamadas de ayuda en segundo plano fallan. Decidir si arrancarlo desde Ajustes o quitar el endpoint.
+- El recuperador de ToolRAG sigue añadiendo herramientas que no vienen al caso (`whatsapp_send`, `req_list`, `structural_search` para una lista de la compra; todo el juego de código para una pregunta sobre un PDF en el espacio de trabajo): 7–11 k tokens de herramientas por ronda.
+- Cantidades en listas de la compra y recetas escaladas: el 27B no usa `python` para multiplicar raciones y se equivoca (6 muslos para 7 personas «2,5–3 kg»). Un aviso de respuesta, al estilo de `answer_checks`, que detecte «para N personas» con cantidades y pida la cuenta, está por pensar.
+- La tarjeta de aprobación se transmite como texto del asistente en inglés («Allow this task to continue?») y queda pegada al principio de la respuesta en el mensaje guardado; la interfaz la oculta al releer el historial, pero la exportación y otros clientes la verán.
 

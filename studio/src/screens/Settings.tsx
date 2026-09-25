@@ -1025,7 +1025,7 @@ function RemindersSection({ settings, onSave, say }: { settings: Settings | null
   );
 }
 
-const SYSTEM_KEYS = ['app_public_url', 'share_defaults_with_users', 'tool_path_extra_roots', 'urgent_email_prompt', 'gpu_placement_prefer', 'model_load_options', 'skill_max_injected', 'skill_autosave_min_confidence',
+const SYSTEM_KEYS = ['app_public_url', 'share_defaults_with_users', 'tool_path_extra_roots', 'urgent_email_prompt', 'gpu_placement_prefer', 'model_load_options', 'skill_max_injected', 'skill_autosave_min_confidence', 'skill_selector_threshold',
   'vram_admission', 'vram_admission_timeout_seconds', 'research_local_tokens_per_second', 'research_local_time_multiplier'];
 const VRAM_ADMISSION: Opt[] = [
   { value: 'ask', label: 'Ask what to unload (recommended)' },
@@ -1089,6 +1089,11 @@ function SystemSection({ settings, onSave, say, admin }: { settings: Settings | 
         </Field>
         <Field label={t('Minimum confidence to save a skill on its own')} htmlFor="skconf">
           <Text id="skconf" type="number" value={str(draft.skill_autosave_min_confidence)} onChange={(v) => set('skill_autosave_min_confidence', Number(v) || 0)} />
+        </Field>
+      </div>
+      <div className="fs-set__grid2">
+        <Field label={t('Minimum score to bring in a skill')} htmlFor="skthr" help={t('From 0 to 1; lower brings skills in on looser matches. 0.22 by default.')}>
+          <Text id="skthr" type="number" value={str(draft.skill_selector_threshold, '0.22')} onChange={(v) => set('skill_selector_threshold', Number(v) || 0)} />
         </Field>
       </div>
       <SaveBar dirty={dirty} saving={saving} onSave={() => void save(changed)} />

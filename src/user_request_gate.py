@@ -1623,9 +1623,38 @@ def _adds_to_the_calendar(user_text: str, content: Any, workspace: str = "") -> 
     return True
 
 
+# «¿Qué tareas tengo pendientes?» Live the model answered with `board_ready`
+# and the turn stopped at «Allow this task to continue?»: the skills index and
+# the tool list in the prompt had armed the gate before anything ran, and a
+# read of the user's own board is READ_PRIVATE. Listing the user's own tasks,
+# issues or scheduled jobs is what that question asks for, and nothing is
+# written, sent or run. Only listings pass: `manage_tasks` with another action
+# (create, run, delete…) still stops at the card.
+_OWN_ITEMS_RE = re.compile(
+    r"\b(tareas?|pendientes?|issues?|incidencias?|tablero|board|tasks?|to-?dos?|backlog"
+    r"|programad[ao]s?|scheduled|automatizacion(?:es)?|trabajos?|jobs?)\b"
+)
+
+
+def _lists_own_items(tool: str) -> Callable[..., bool]:
+    def _matcher(user_text: str, content: Any, workspace: str = "") -> bool:
+        if tool == "manage_tasks":
+            from src.tool_capabilities import _action_from_content
+            action = _action_from_content(tool, content) or "list"
+            if action != "list":
+                return False
+        from src import plugins as plugins_mod
+        return bool(_OWN_ITEMS_RE.search(plugins_mod.fold(user_text)))
+    return _matcher
+
+
 #: tool name -> matcher(user_text, call_content). A tool that is not here is
 #: never let through by this rule.
 MATCHERS: Dict[str, Callable[..., bool]] = {
+    "board_list": _lists_own_items("board_list"),
+    "board_ready": _lists_own_items("board_ready"),
+    "board_get": _lists_own_items("board_get"),
+    "manage_tasks": _lists_own_items("manage_tasks"),
     "plugin_app": _plugin_app,
     "manage_memory": _memory_read,
     "create_document": _writes_a_document,

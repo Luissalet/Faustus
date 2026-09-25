@@ -119,6 +119,7 @@ Studio installs as a standalone app (a PWA) straight from the browser — no app
 - **Fan-out** races one prompt across N candidate models (local and paid mixed freely), each in its own isolated worktree, and scores the results automatically instead of asking you to eyeball N diffs.
 - **PDF operations** transform an existing PDF — merge, split by arbitrary range, rotate, reorder, compress, watermark, rasterize, OCR — the one thing the rest of the PDF layer never covered.
 - **PDF structure navigation** (`pdf_outline`/`pdf_find_section`/`pdf_read_section`) builds a table-of-contents tree from a PDF's own bookmarks (or heading detection, or fixed chunks as a last resort) so a long PDF can be jumped to by section instead of read page by page, with page numbers that always come from the tree, never guessed by the model.
+- **Documents read as documents** — `read_file` on a PDF returns its text page by page (with the outline/section tools for long ones and `inspect_image` for scanned pages), on a Word, PowerPoint, Excel or EPUB file returns it as Markdown, decodes UTF-16 exports, and names any other binary instead of dumping it; an image comes back as the picture itself.
 - **Look closely at an image, not a generic caption** (`inspect_image`) — crop a region, rotate, zoom, enhance (autocontrast/sharpen/grayscale/threshold), overlay a labelled grid, ask a SPECIFIC question, or detect circles/rectangles/lines with no model at all; works on a local image, a PDF page, or a fetched URL, and compares two images with a shared crosshair point. A vision-capable model gets the processed image attached directly; a text-only main model gets the same question answered by the configured Vision model instead of the fixed "describe this image" caption `read_file` falls back to.
 - **Precise RAG locators for PDFs** — every chunk indexed from a PDF carries a stable, deterministic `p12#b3` (or `p12-13#b3` when it spans pages) locator pointing at its exact page and block, shown alongside citations in retrieved context so an answer can point at the exact spot it came from. Optional `rag_pii_redaction` setting (off by default) sanitises emails, phone numbers, IBANs, card numbers (Luhn-checked), Spanish DNI/NIE (control-letter checked) and IPv4 addresses out of chunk text before it's embedded/indexed, without touching the original uploaded file.
 - **Agent personas** — 16 built-in identities (backend, security, writing, product, ML…) that slot into an agent's own AGENT.md without replacing its tool permissions.
@@ -182,6 +183,10 @@ Project identity is stored independently of the sidebar folder name. An agent ca
 The context engine retrieves and budgets relevant material from project sources, history and memory. It tracks provenance, conflicts and compact context capsules instead of trying to place an entire disk in a model's prompt. Persistent storage extends what can be retrieved, **not the model's native context window**.
 
 The MCP tools and integrations blocks in the prompt are scoped the same way: only the tools already selected for the turn get a one-line reminder (they already carry a full native schema), every other connected server collapses to a single "N more tools — call lookup_tools" line, and the whole block is capped by `agent_mcp_prompt_budget_tokens` (0 turns it off). Tool discovery (`lookup_tools`, tool-RAG) reads the full tool index regardless, so nothing becomes unreachable — this only trims what repeats in the prompt text. A full listing every turn is still available behind `agent_mcp_prompt_full_listing`.
+
+`lookup_tools` only proposes names a connected server offers right now, whatever the embedding index still remembers. When a server answers that a tool does not exist (it changed its tools without announcing it), Faustus re-reads that server's list on the spot, so the index stops offering the old name, and the failed result tells the model which tools the server has now. A result whose body is a JSON object with an `error` counts as a failed call in the run, the harness and exports.
+
+Skills relevant to the request are chosen by a hybrid selector (semantic, lexical and trigger lanes); the cutoff is the `skill_selector_threshold` setting (Settings → System, 0.22 by default), so a skill written in one language can still be picked for a request in another by adding tags and triggers in that language.
 
 Use **Skip memory recall** in the composer to suppress automatic personal-memory retrieval for subsequent messages, including live context compilation. Existing chat history and project sources remain available. This does not disable memory tools or saving the chat; use Incognito for its separate privacy behavior.
 
@@ -381,6 +386,8 @@ Measured on 12 September 2026: 16,993 tests pass on Linux (`-m "not slow"`, abou
 `python scripts/acceptance_run.py` runs the 36 parity acceptance cases (A01-A36) and writes one evidence row per case; `python scripts/benchmark_matrix.py` runs a case × system × model benchmark matrix that reports a cell as `MISSING` rather than shrinking the denominator, and an unpriceable cost as `"unknown"`, never `0`.
 
 Current verification results and remaining checks are listed in [PENDIENTES.md](PENDIENTES.md).
+
+A process that ends without shutting down leaves a trace: every start writes `data/logs/running.json` (pid and start time) and removes it on a clean shutdown, so the next start logs a `[lifecycle]` warning when the previous process was killed or crashed, and native faults write their thread stacks to `data/logs/crash.log`.
 
 ## Screens
 

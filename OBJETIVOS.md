@@ -1006,7 +1006,7 @@ resuma su propio contexto (con vertido por resultado en rutas no nativas y
 tokens por trayectoria), modo Auto/Rápido/Pensar/A fondo por turno
 (`think_mode`), `swarm_map` sobre los slots libres reales del servidor, y el
 informe de Deep Research como podcast a dos voces Piper.
-FAUSTUS.md §195; API en `docs/api/{vision,context_tools,research_podcast}.md`,
+FAUSTUS.md §197; API en `docs/api/{vision,context_tools,research_podcast}.md`,
 `docs/spec/think_mode.md`, `docs/recipes/swarm.md`.
 **Queda:** ver en navegador el chip de razonamiento, los selectores del
 podcast y la sección Swarm; medir el ofrecimiento automático de `context_*`

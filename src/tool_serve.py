@@ -262,10 +262,25 @@ def search_catalog(
                 retrieved = list(idx.retrieve(q, k=max(k, 1)))
         except Exception:
             logger.debug("tool catalog: index retrieve failed", exc_info=True)
+        # The embedding index can outlive a connector (a failed delete, a
+        # server that renamed its tools); only names a live server offers
+        # right now are callable, so nothing else is ever proposed.
+        live_mcp: Optional[Set[str]] = None
+
+        def _callable(name: str) -> bool:
+            nonlocal live_mcp
+            if not name.startswith("mcp__"):
+                return True
+            if live_mcp is None:
+                live_mcp = set(connected_mcp_tool_names())
+            return name in live_mcp
+
         for name in _keyword_hits(q):
-            _add(name)
+            if _callable(name):
+                _add(name)
         for name in retrieved:
-            _add(name)
+            if _callable(name):
+                _add(name)
         if not retrieved:
             from src.tool_index import BUILTIN_TOOL_DESCRIPTIONS
             needle = q.lower()

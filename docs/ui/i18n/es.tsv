@@ -3218,6 +3218,8 @@ Minimal environment: only what this server was explicitly configured with.	Entor
 Minimize window	Minimizar ventana
 Minimum confidence	Confianza mínima
 Minimum confidence to save a skill on its own	Confianza mínima para guardar una skill sola
+Minimum score to bring in a skill	Puntuación mínima para traer una skill
+From 0 to 1; lower brings skills in on looser matches. 0.22 by default.	De 0 a 1; más bajo trae skills con coincidencias más flojas. 0,22 por defecto.
 Mirror left to right	Espejo de izquierda a derecha
 Mirror top to bottom	Espejo de arriba abajo
 Mismatch: requested {requested}, observed {observed}	Discrepancia: solicitado {requested}, observado {observed}
@@ -5483,6 +5485,11 @@ Story 1080 × 1920	Historia 1080 × 1920
 Strategy profile	Perfil de estrategia
 Strategy profile: {label}	Perfil de estrategia: {label}
 Strategy: {method} · {profile}{reason}	Estrategia: {method} · {profile}{reason}
+direct edit	edición directa
+plan, then do	planificar y hacer
+research	investigación
+specialised review	revisión especializada
+compare alternatives	comparar alternativas
 Strength	Intensidad
 Strict	Estricto
 Strikethrough	Tachado
@@ -8453,3 +8460,5 @@ Make it again	Hacerlo de nuevo
 Make or play the podcast of this report	Crear o escuchar el podcast de este informe
 Voice A	Voz A
 Voice B	Voz B
+Vision: load the model's own image projector (mmproj)	Visión: cargar el proyector de imágenes del propio modelo (mmproj)
+No vision projector ships with this model.	Este modelo no trae proyector de visión.
