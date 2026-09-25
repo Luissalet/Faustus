@@ -80,3 +80,45 @@ def test_a_trailing_runtime_instruction_is_still_the_last_thing_read():
     assert messages[-1]["content"] == "The tests FAILED. Fix them."
     assert messages[-2].get("_agent_injected") == "reply_language_continuity"
     _assert_every_call_is_answered_next(messages)
+
+
+def test_the_reminder_stays_put_while_little_follows_it():
+    """Moving it every round re-read the previous round from the prompt
+    cache; it moves only once a real stretch of work follows it."""
+    messages = [{"role": "user", "content": "hola"}, _call(1), _result(1)]
+    refresh_continuation(messages, HINT)
+    first = [id(m) for m in messages]
+    messages += [_call(2), _result(2)]
+    before = list(messages)
+
+    refresh_continuation(messages, HINT)
+
+    assert messages == before and [id(m) for m in messages[:4]] == first
+    assert sum(1 for m in messages if m.get("_agent_injected") == "reply_language_continuity") == 1
+
+
+def test_the_reminder_moves_forward_after_a_long_stretch():
+    from src.reply_language import KEEP_REMINDER_CHARS
+
+    messages = [{"role": "user", "content": "hola"}, _call(1), _result(1)]
+    refresh_continuation(messages, HINT)
+    long_result = {"role": "tool", "tool_call_id": "c2", "content": "x" * (KEEP_REMINDER_CHARS + 1)}
+    messages += [_call(2), long_result]
+
+    refresh_continuation(messages, HINT)
+
+    assert _roles(messages) == ["user", "assistant", "tool", "reply_language_continuity", "assistant", "tool"]
+    _assert_every_call_is_answered_next(messages)
+
+
+def test_a_changed_reminder_is_replaced_at_once():
+    messages = [{"role": "user", "content": "hello"}, _call(1), _result(1)]
+    refresh_continuation(messages, HINT)
+    messages += [_call(2), _result(2)]
+    other = {"role": "user", "content": "[Runtime requirement — reply language]\nAnswer in English."}
+
+    refresh_continuation(messages, other)
+
+    reminders = [m for m in messages if m.get("_agent_injected") == "reply_language_continuity"]
+    assert len(reminders) == 1 and reminders[0]["content"] == other["content"]
+    assert _roles(messages)[-3] == "reply_language_continuity"

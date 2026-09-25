@@ -39,3 +39,15 @@ def test_the_packet_stays_before_the_persons_message():
     # Same slot as on the first round, before any tool call or note.
     first = _insert_before_latest_user(_turn()[:2], packet)
     assert first[1] is packet
+
+
+def test_a_tool_image_does_not_pull_the_packet_behind_it():
+    """`inspect_image` hands its picture over in a user-role message marked
+    untrusted; live, the packet moved behind it and 14,000 tokens were
+    re-read."""
+    packet = {"role": "user", "_agent_injected": "context_engine", "content": "ctx"}
+    rows = _turn() + [{"role": "user", "content": [{"type": "text", "text": "[image from inspect_image]"}],
+                       "metadata": {"trusted": False, "source": "tool result: inspect_image"}}]
+    out = _insert_before_latest_user(rows, packet)
+    assert out[1] is packet
+    assert _last_user_index(rows) == 1

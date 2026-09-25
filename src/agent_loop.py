@@ -1827,9 +1827,15 @@ def _insert_before_latest_user(messages: List[Dict], context_msg: Dict) -> List[
     # are skipped too: the packet stays in front of the person's message, so
     # a round that adds a note does not move it and lose the prompt cache for
     # everything after its old slot.
+    # So are the user-role messages that carry a tool's image
+    # (`_tool_image_messages`, marked untrusted): live on the exam (26-09) the
+    # packet jumped behind an `inspect_image` picture and the next request
+    # re-read 14,000 tokens.
     for idx in range(len(out) - 1, -1, -1):
+        meta = out[idx].get("metadata")
         if (out[idx].get("role") == "user" and not out[idx].get("_agent_injected")
-                and not out[idx].get("_harness_note")):
+                and not out[idx].get("_harness_note")
+                and not (isinstance(meta, dict) and meta.get("trusted") is False)):
             insert_at = idx
             for prior in range(idx - 1, -1, -1):
                 content = str(out[prior].get("content") or "")

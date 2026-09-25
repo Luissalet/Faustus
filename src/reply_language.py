@@ -199,6 +199,10 @@ def conversation_language(messages: Optional[Iterable[Dict[str, Any]]]) -> Optio
 def refresh_continuation(messages: List[Dict[str, Any]], hint: Optional[Dict[str, str]]) -> None:
     """One current reminder after tool results, never a growing prompt tail.
 
+    It is moved forward only once enough work follows it
+    (`KEEP_REMINDER_CHARS`): every move costs the prompt cache from its old
+    slot on.
+
     Placed BEFORE the final message, not after it. This runs at the top of a
     round, when the last thing in the list is whatever the previous round
     ended with -- tool results, or a runtime instruction as pointed as "the
@@ -216,10 +220,39 @@ def refresh_continuation(messages: List[Dict[str, Any]], hint: Optional[Dict[str
     the identical call again, every time, before answering. The exchange is
     kept whole and the reminder goes in front of it.
     """
+    if hint and _current_reminder_is_recent(messages, hint):
+        return
     messages[:] = [m for m in messages if m.get("_agent_injected") != "reply_language_continuity"]
     if hint:
         messages.insert(_continuation_slot(messages),
                         {**hint, "_agent_injected": "reply_language_continuity"})
+
+
+#: How much conversation may follow the reminder before it is moved forward
+#: again. Moving it every round cost the prompt cache everything after its
+#: old slot: measured on the exam (26-09), each round re-read the previous
+#: round's call and results, 2,500-3,800 tokens, only to put 120 tokens of
+#: reminder four messages later. Under this much text it stays put.
+KEEP_REMINDER_CHARS = 12000
+
+
+def _current_reminder_is_recent(messages: List[Dict[str, Any]], hint: Dict[str, Any]) -> bool:
+    """Whether the reminder already in `messages` says the same thing and has
+    less than `KEEP_REMINDER_CHARS` of text after it."""
+    at = next((i for i in range(len(messages) - 1, -1, -1)
+               if messages[i].get("_agent_injected") == "reply_language_continuity"), None)
+    if at is None or messages[at].get("content") != hint.get("content"):
+        return False
+    after = 0
+    for message in messages[at + 1:]:
+        content = message.get("content")
+        if isinstance(content, str):
+            after += len(content)
+        elif isinstance(content, list):
+            after += sum(len(str(part.get("text") or "")) for part in content if isinstance(part, dict))
+        for call in message.get("tool_calls") or []:
+            after += len(str(call))
+    return after < KEEP_REMINDER_CHARS
 
 
 def _continuation_slot(messages: List[Dict[str, Any]]) -> int:
