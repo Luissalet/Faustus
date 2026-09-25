@@ -151,3 +151,25 @@ def test_an_empty_or_denied_opened_list_and_local_reading_are_not_claims():
     assert find_opened_claims("Páginas leídas del PDF: 1 a 3 de 6a.pdf") == []
     assert find_opened_claims("I opened the pages on the Folger site to compare the lines.")
     assert find_opened_claims("Sources actually opened: en.wikipedia.org/wiki/Cable_length")
+
+
+def test_files_written_before_an_approval_pause_count_for_the_resumed_leg():
+    from src.agent_harness import TurnLedger
+    ledger = TurnLedger("/w", "crea stats.py y ejecuta los tests")
+    ledger.note_prior_message({"role": "user", "content": "crea stats.py y ejecuta los tests"})
+    ledger.note_prior_message({"role": "assistant", "content": "Allow this task to continue?",
+                               "metadata": {"harness": {"stop_reason": "awaiting_user",
+                                                        "mutations": ["stats.py", "test_stats.py"]}}})
+    assert ledger.prior_leg_paths == ["stats.py", "test_stats.py"]
+    assert "stats.py" in ledger.summary()["mutations"]
+    assert ledger.claimed_untouched_paths("He creado `stats.py` y `test_stats.py`.") == []
+
+    # A new request starts a new task: earlier legs no longer count.
+    ledger.note_prior_message({"role": "user", "content": "ahora otra cosa"})
+    assert ledger.prior_leg_paths == []
+
+    # A leg that ended normally is not part of the resumed task.
+    other = TurnLedger("/w", "x")
+    other.note_prior_message({"role": "assistant", "content": "hecho",
+                              "metadata": {"harness": {"stop_reason": "complete", "mutations": ["a.py"]}}})
+    assert other.prior_leg_paths == []

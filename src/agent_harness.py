@@ -1239,6 +1239,11 @@ class TurnLedger:
         self.prior_sources: bool = False
         #: ...and opened a page (not only searched).
         self.prior_pages: bool = False
+        #: Files written by earlier legs of THIS task: the legs that ended on
+        #: an approval card since the last user message. Live (25-09): the
+        #: turn resumed after "run the tests?" was judged "changeset
+        #: contradicted" for naming stats.py, written one leg earlier.
+        self.prior_leg_paths: List[str] = []
         #: "none" (no outside source at all) or "search_only" (search results
         #: only, no page opened): what the last source-claim check found.
         self.source_claims_kind: str = ""
@@ -1525,7 +1530,7 @@ class TurnLedger:
             return []
         if any(e["ok"] and e["tool"].startswith("delegate_agents") for e in self.events):
             return []
-        touched = {_norm(p).rsplit("/", 1)[-1] for p in self.mutated_paths()}
+        touched = {_norm(p).rsplit("/", 1)[-1] for p in self.mutated_paths() + self.prior_leg_paths}
         touched |= self.shell_write_hints
         out: List[str] = []
         for tok in find_claimed_paths(text):
@@ -1607,7 +1612,10 @@ class TurnLedger:
         check did happen, one turn before. A prior message counts when it
         records a source tool: stored tool events (`metadata.tool_events`),
         OpenAI-style `tool_calls`, or a `tool` message naming one."""
-        if (self.prior_sources and self.prior_pages) or not isinstance(message, dict):
+        if not isinstance(message, dict):
+            return
+        self._note_prior_leg(message)
+        if self.prior_sources and self.prior_pages:
             return
         from src.source_claims import is_page_tool, is_source_tool
         names: List[str] = []
@@ -1626,6 +1634,21 @@ class TurnLedger:
             self.prior_sources = True
         if any(is_page_tool(n) for n in names if n):
             self.prior_pages = True
+
+    def _note_prior_leg(self, message: Dict[str, Any]) -> None:
+        role = message.get("role")
+        meta = message.get("metadata") if isinstance(message.get("metadata"), dict) else {}
+        if role == "user" and not message.get("_harness_note") and not (meta or {}).get("source"):
+            self.prior_leg_paths = []  # a new request starts a new task
+            return
+        if role != "assistant":
+            return
+        harness = (meta or {}).get("harness") if isinstance((meta or {}).get("harness"), dict) else {}
+        if str((harness or {}).get("stop_reason") or "") != "awaiting_user":
+            return
+        for p in (harness or {}).get("mutations") or []:
+            if isinstance(p, str) and p and p not in self.prior_leg_paths:
+                self.prior_leg_paths.append(p)
 
     def unverified_citations(self, text: str) -> List[str]:
         """Result ids the answer cites that no tool returned and the
@@ -2064,7 +2087,8 @@ class TurnLedger:
             # execution nor an execution failure. Keep the raw ledger intact.
             "failed_calls": sum(not e.get('approval_required') for e in self.failed),
             "waiting_approval_calls": sum(bool(e.get('approval_required')) for e in self.events),
-            "mutations": self.mutated_paths(),
+            "mutations": self.mutated_paths() + [p for p in self.prior_leg_paths
+                                                 if p not in self.mutated_paths()],
             "effects": len(self.effects),
             "rejections": self.rejections,
             "length_continues": self.length_continues,
