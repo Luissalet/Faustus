@@ -130,7 +130,13 @@ _CALENDAR_MATH = re.compile(
     r"what day of the week|which day of the week|"
     r"cu[aá]nt[oa]s (?:d[ií]as|semanas|meses)(?: (?:h[aá]biles|laborables|naturales))? "
     r"(?:hay|faltan|quedan|pasan|van|han pasado)|"
-    r"how many (?:days|weeks|months|working days|business days) (?:are there|until|between|since|left))",
+    r"how many (?:days|weeks|months|working days|business days) (?:are there|until|between|since|left)|"
+    # "¿Cuántos lunes tiene octubre de 2026?" -- seen live: a web search
+    # for printable calendars before counting five Mondays.
+    r"cu[aá]nt[oa]s (?:lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bados|domingos|fines de semana|"
+    r"d[ií]as|semanas) (?:tiene|trae|hay en)|"
+    r"how many (?:mondays|tuesdays|wednesdays|thursdays|fridays|saturdays|sundays|weekends|days|weeks) "
+    r"(?:are )?(?:in|does))",
     re.IGNORECASE,
 )
 

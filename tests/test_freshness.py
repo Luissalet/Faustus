@@ -126,6 +126,8 @@ def test_date_arithmetic_with_today_and_a_year_is_timeless():
         "¿Qué día de la semana cae el 12 de octubre de 2026?",
         "¿Cuántos días hábiles hay entre hoy y el 31 de diciembre de 2026?",
         "How many days until Christmas 2026?",
+        "¿Cuántos lunes tiene octubre de 2026?",
+        "How many Fridays are in March 2027?",
     ):
         assert not looks_time_sensitive(text), text
         assert freshness_assessment(text)["confident"], text
