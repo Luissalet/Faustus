@@ -39,6 +39,10 @@ POSITIVE_CASES = [
     "is he still the president",
     # Weather
     "¿qué tiempo hace hoy en Madrid?",
+    "¿Qué tiempo va a hacer mañana en Zaragoza? ¿Hace falta paraguas?",
+    "¿qué tiempo hará el domingo en Bilbao?",
+    "¿va a llover esta tarde en Sevilla?",
+    "¿cuántos grados hay ahora en Burgos?",
     "will it rain tomorrow",
     "what's the weather forecast this weekend",
     # Schedules
@@ -73,6 +77,8 @@ NEGATIVE_CASES = [
     "resume mis notas de esta semana",
     "what did I change in my repo yesterday",
     "¿cuál es el estado actual de la rama?",
+    "¿cuánto tiempo tarda en cocerse un huevo?",
+    "no tengo tiempo para leer el informe entero, resúmelo",
 ]
 
 # The same words on a public subject still fire, whoever asks.

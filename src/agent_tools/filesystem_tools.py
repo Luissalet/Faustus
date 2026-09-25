@@ -76,6 +76,81 @@ def _unified_diff(old: str, new: str, path: str) -> Optional[Dict[str, Any]]:
         "file": os.path.basename(path) or (path or "file"),
     }
 
+_BINARY_PROBE_BYTES = 8192
+
+
+def _looks_binary(path: str) -> bool:
+    """A NUL byte in the first 8 KB: not text in any encoding a model reads."""
+    try:
+        with open(path, "rb") as fh:
+            return b"\x00" in fh.read(_BINARY_PROBE_BYTES)
+    except OSError:
+        return False
+
+
+def _utf16_text(path: str) -> Optional[str]:
+    """A UTF-16 file (with its byte-order mark, as Windows tools write them)
+    decoded, or None. Its NUL bytes are not a sign of a binary file."""
+    try:
+        with open(path, "rb") as fh:
+            head = fh.read(2)
+            if head not in (b"\xff\xfe", b"\xfe\xff"):
+                return None
+            fh.seek(0)
+            return fh.read(MAX_READ_CHARS * 2 + 4).decode("utf-16", errors="replace")
+    except OSError:
+        return None
+
+
+def _document_result(path: str, shown: str, owner: Optional[str],
+                     offset: int = 0, limit: int = 0) -> Optional[Dict[str, Any]]:
+    """read_file on a PDF or an Office/EPUB file returns its text.
+
+    Seen live: `read_file contrato.pdf` handed the model the raw PDF bytes
+    (`%PDF-1.4 … /Type /Font …`); it then wrote a pypdf script to get at the
+    text and stopped on an approval card for it. Other binaries answer with
+    what they are instead of pages of mojibake. None = a plain text file,
+    read as before."""
+    if not os.path.isfile(path):
+        return None
+    ext = os.path.splitext(path)[1].lower()
+    text: Optional[str] = None
+    note = ""
+    if ext == ".pdf":
+        from src.document_processor import _process_pdf, strip_pdf_content_marker
+        text = strip_pdf_content_marker(_process_pdf(path, owner=owner, allow_vision=False)).strip()
+        note = (f"{shown}: PDF, text extracted page by page. A long PDF: pdf_outline, then "
+                f"pdf_read_section. A page that is only an image: inspect_image with that page.")
+        if "needs_ocr=true" in text:
+            note += " Some pages have no text layer; look at them with inspect_image."
+    else:
+        from src.markitdown_runtime import is_markitdown_format, convert_to_markdown
+        if is_markitdown_format(path):
+            text = convert_to_markdown(path)
+            if not text or not text.strip():
+                return {"error": f"read_file: {shown}: no text could be extracted from this "
+                                 f"{ext[1:].upper()} document", "exit_code": 1}
+            note = f"{shown}: {ext[1:].upper()} document, converted to Markdown."
+        elif _utf16_text(path) is not None:
+            text = _utf16_text(path) or ""
+            note = f"{shown}: UTF-16 text."
+        elif _looks_binary(path):
+            size = os.path.getsize(path)
+            # Not a failure: what the file is IS the answer to "read it".
+            return {"output": f"{shown}: binary file ({ext or 'no extension'}, {size} bytes); "
+                              "it has no text to read. Use a tool made for this kind of file.",
+                    "exit_code": 0}
+        else:
+            return None
+    if offset > 0 or limit > 0:
+        lines = text.splitlines(keepends=True)
+        start = max(offset, 1) - 1
+        text = "".join(lines[start:start + limit] if limit > 0 else lines[start:])
+    if len(text) > MAX_READ_CHARS:
+        text = text[:MAX_READ_CHARS] + f"\n... [truncated at {MAX_READ_CHARS} chars; use offset/limit]"
+    return {"output": f"{note}\n\n{text}", "exit_code": 0}
+
+
 def _read_text_lf(path: str):
     """Read a text file without newline translation and return
     (text with LF line endings, had_crlf, revision). Models quote text with
@@ -421,6 +496,16 @@ class ReadFileTool:
         image = await asyncio.to_thread(_image_result, path, raw_path or path)
         if image is not None:
             return image
+        try:
+            document = await asyncio.to_thread(
+                _document_result, path, raw_path or path,
+                str(ctx.get("owner") or "") or None, offset, limit)
+        except Exception as exc:  # noqa: BLE001 - extraction must not hide the file
+            logger.warning("read_file: text extraction failed for %s: %s", path, exc)
+            document = {"error": f"read_file: {raw_path or path}: could not extract its text ({exc})",
+                        "exit_code": 1}
+        if document is not None:
+            return document
         try:
             def _read():
                 if ranged:

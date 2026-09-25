@@ -3,7 +3,7 @@
 Actualizado: 25-09-2026. REGLA: nunca nombres de empresas/personas del buzÃ³n de Luis en commits, docs, tests ni comentarios â€” ejemplos siempre ficticios. SÃ³lo trabajo vigente; quitar cada entrada al cerrarla.
 
 
-## 25-09 tarde — visión, contexto, razonamiento, enjambre, podcast (FAUSTUS.md §194, OBJ-45)
+## 25-09 tarde — visión, contexto, razonamiento, enjambre, podcast (FAUSTUS.md §195, OBJ-45)
 
 - **Sin desplegar en 7000/7003/7006**: probado en una instancia privada 7009 (`D:\LocalAI\_claude_tmp\vx_wt`, datos `vx_data`). El 7000 lo coge al reiniciarlo con el master nuevo; el `vite build` de la carpeta principal hay que rehacerlo.
 - **No visto en navegador**: el chip Auto/Rápido/Pensar/A fondo del compositor, el par endpoint+modelo de Visión con su línea de estado, los selectores de voz y duración del podcast y la sección Swarm de Workers (solo `tsc` y `vite build`).
@@ -1325,3 +1325,11 @@ contamina a cual, y aislar ese estado en una fixture, como se hizo con
   pasa, la conversación real no se ha hecho).
 - El 7000 (app de escritorio, `data/`) aún no tiene `git_watch_roots` ni
   `git_scan_exclude`: ponerlos desde Source control → Watched folders.
+
+## Todo local: visión del propio modelo (FAUSTUS.md §194)
+
+- El servidor del 27B es compartido por el 7003, el 7006 y el 7009: con tres turnos a la vez la generación cae a 2–3 t/s y un turno sencillo con imagen tardó 15 min. Mirar si conviene limitar ranuras por instancia o una cola por prioridad antes que MTP.
+- El perfil del motor 72561c7e del 7006 se editó a mano (`--mmproj`, espera de 180 s); el script externo `Start-LlamaServerTask.ps1` también lleva ya el proyector. Si se recrea el motor desde Ajustes, se encontrará solo.
+- En el turno de prueba la primera ronda tardó 565 s para 130 tokens de salida: casi todo fue esperar turno en el servidor compartido con 16,7 k tokens de prompt. Esa ronda llamó a `inspect_media` (sólo cabecera; la herramienta ya avisa de que no mira los píxeles) y la siguiente a `read_file`, que es la que le dio la imagen. Es inofensivo, pero es una ronda de más.
+- Con la casilla verificada en el navegador (etiqueta «Visión», casilla marcada, Guardar deja `--mmproj` una sola vez y la espera de 180 s), queda sin probar sólo el caso de un modelo sin proyector (casilla desactivada).
+

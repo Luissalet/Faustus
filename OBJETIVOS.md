@@ -986,6 +986,15 @@ y la landing con Vitruvius salió de principio a fin con el 27B (19/19 en
 **Queda:** que el selector ofrezca las skills de familia (`hoard-daily-digest`)
 en vez de diez `lookup_tools`; los candidatos fantasma `mcp__vitruvius__*`.
 
+**Todo local (25-09, tarde; FAUSTUS.md §194).** Luis: «todo local, queremos
+que sea potente por sí mismo». Nada de modelos de suscripción para visión ni
+para nada. Hecho: el 27B carga su propio proyector (`--mmproj`) y lee las
+imágenes él mismo en la GPU; los motores lo encuentran y lo pasan solos.
+**Queda:** medir MTP (`draft-mtp`) con una sola instancia en el servidor;
+reparto de ranuras entre instancias que comparten el servidor; probar
+`--image-min-tokens` en escaneos con letra pequeña; repetir la ruta del
+examen con visión local.
+
 
 ## OBJ-45 · Lo que valía la pena de otros harness: visión para modelos ciegos, contexto gestionado por el modelo, razonamiento por turno, enjambre local y podcast — HECHO (25-09-2026)
 
@@ -997,7 +1006,7 @@ resuma su propio contexto (con vertido por resultado en rutas no nativas y
 tokens por trayectoria), modo Auto/Rápido/Pensar/A fondo por turno
 (`think_mode`), `swarm_map` sobre los slots libres reales del servidor, y el
 informe de Deep Research como podcast a dos voces Piper.
-FAUSTUS.md §194; API en `docs/api/{vision,context_tools,research_podcast}.md`,
+FAUSTUS.md §195; API en `docs/api/{vision,context_tools,research_podcast}.md`,
 `docs/spec/think_mode.md`, `docs/recipes/swarm.md`.
 **Queda:** ver en navegador el chip de razonamiento, los selectores del
 podcast y la sección Swarm; medir el ofrecimiento automático de `context_*`

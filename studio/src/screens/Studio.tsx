@@ -23,6 +23,7 @@ import {
   type Delegation,
   type DelegationTask,
   type ModelRoute,
+  routeForSession,
 } from '../adapters/chat';
 import { ApiError } from '../adapters/api';
 import { listProjects, type Project } from '../adapters/projects';
@@ -412,6 +413,8 @@ export function StudioScreen() {
      next new chat (seen live: one voice session on a small model and every
      new chat on every device came up on it instead of the default). */
   const explicitPick = useRef(false);
+  /** A just-opened conversation's model, waiting for the model list to load. */
+  const pendingSessionRoute = useRef<{ sessionId: string; model: string; endpointUrl: string } | null>(null);
   const [knobs, setKnobsState] = useState<Knobs>(() => ({
     ...readJson<Knobs>(KNOBS_KEY, { mode: 'agent', web: false, bash: true, plan: false, rag: false, incognito: false, research: false }),
     rag: getRagActive(),
@@ -601,6 +604,16 @@ export function StudioScreen() {
     }
     return routes[0] ?? null;
   }, [routes, routeId, serverDefault]);
+  useEffect(() => {
+    const pending = pendingSessionRoute.current;
+    if (!pending || routes.length === 0) return;
+    pendingSessionRoute.current = null;
+    // Only for the conversation still on screen, and never over a pick the
+    // user made in the meantime.
+    if (pending.sessionId !== sessionId || explicitPick.current) return;
+    const hit = routeForSession(routes, pending.model, pending.endpointUrl);
+    if (hit) setRouteId(hit.id);
+  }, [routes, sessionId]);
   const current = useMemo(() => sessions?.find((s) => s.id === sessionId) ?? null, [sessions, sessionId]);
   const visibleSession = useRef(sessionId);
   visibleSession.current = sessionId;
@@ -982,8 +995,14 @@ export function StudioScreen() {
         setTurns(result.turns);
         pinnedRef.current = true;
         if (result.model) {
-          const match = (r: ModelRoute) => r.model === result.model;
-          setRouteId((id) => routes.find(match)?.id ?? id);
+          // The model list may still be loading (both requests leave at page
+          // load): seen live, a conversation held on the 8081 llama-server
+          // opened on "No models", then on the Ollama default — and the next
+          // message would have gone to that other model. What cannot be
+          // matched now is matched once the list arrives (effect below).
+          const hit = routeForSession(routes, result.model, result.endpointUrl);
+          if (hit) setRouteId(hit.id);
+          else pendingSessionRoute.current = { sessionId, model: result.model, endpointUrl: result.endpointUrl };
         }
         // History is what was SAVED. If the turn is still going, the server
         // still has it: rejoin so the conversation carries on in front of
@@ -3180,7 +3199,7 @@ export function StudioScreen() {
           }}
           voiceActive={Boolean(voiceSession)}
           onNotice={say}
-          modelPicker={<ModelPicker routes={routes} current={route} onPick={(r) => { explicitPick.current = true; setRouteId(r.id); }} onRefresh={refreshModels} refreshing={refreshingModels} openSignal={modelSignal} />}
+          modelPicker={<ModelPicker routes={routes} current={route} onPick={(r) => { explicitPick.current = true; pendingSessionRoute.current = null; setRouteId(r.id); }} onRefresh={refreshModels} refreshing={refreshingModels} openSignal={modelSignal} />}
           behaviorModes={modeCatalog.modes}
           behaviorModeId={activeModeId}
           onPickBehaviorMode={pickBehaviorMode}

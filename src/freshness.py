@@ -70,8 +70,13 @@ _PATTERNS: List[tuple] = [
         re.IGNORECASE,
     )),
     ("weather", re.compile(
-        r"\b(el tiempo|qu[eé] tiempo hace|llover[aá]|weather|forecast|"
-        r"will it rain|rain tomorrow)\b",
+        # Seen live: "¿Qué tiempo va a hacer mañana en Zaragoza? ¿Hace falta
+        # paraguas?" matched none of the first forms, so the turn was routed
+        # as a calendar question ("mañana").
+        r"\b(el tiempo|qu[eé] tiempo (?:hace|har[aá]|va a hacer|hizo)|"
+        r"llover[aá]|va a llover|llueve|lluvias?|paraguas|previsi[oó]n meteorol[oó]gica|"
+        r"pron[oó]stico del tiempo|cu[aá]ntos grados|temperaturas? (?:m[aá]xima|m[ií]nima)|"
+        r"weather|forecast|will it rain|rain tomorrow)\b",
         re.IGNORECASE,
     )),
     ("schedules", re.compile(
