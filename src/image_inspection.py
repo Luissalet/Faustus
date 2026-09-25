@@ -748,6 +748,15 @@ def _annotate_shapes(img: Image.Image, shapes: List[Dict[str, Any]]) -> Tuple[st
     return image_to_b64(canvas, "image/png")
 
 
+def _rows(np, found: Any, width: int) -> Any:
+    """OpenCV's result as rows of its first `width` numbers, whatever the
+    nesting (see the note in `_detect_shapes_cv2`)."""
+    arr = np.asarray(found)
+    if arr.ndim == 1:
+        arr = arr.reshape(1, -1)
+    return arr.reshape(-1, arr.shape[-1])[:, :width]
+
+
 def _detect_shapes_cv2(img: Image.Image, cv2, np) -> Tuple[List[Dict[str, Any]], str]:
     arr = np.array(img.convert("RGB"))
     gray = cv2.cvtColor(arr, cv2.COLOR_RGB2GRAY)
@@ -759,8 +768,11 @@ def _detect_shapes_cv2(img: Image.Image, cv2, np) -> Tuple[List[Dict[str, Any]],
         blurred, cv2.HOUGH_GRADIENT, dp=1.2, minDist=max(10, min(w, h) // 12),
         param1=100, param2=30, minRadius=max(3, min(w, h) // 60), maxRadius=max(6, min(w, h) // 2),
     )
-    if circles is not None:
-        for cx, cy, r in circles[0]:
+    # Flattened by shape, not by index: OpenCV 4 returns circles as (1, N, 3)
+    # and lines as (N, 1, 4); OpenCV 5 dropped a dimension, and indexing the
+    # old way failed live with "cannot unpack non-iterable numpy.int32".
+    if circles is not None and np.asarray(circles).size:
+        for cx, cy, r in _rows(np, circles, 3):
             cx, cy, r = float(cx), float(cy), float(r)
             box = ((cx - r) / w, (cy - r) / h, (cx + r) / w, (cy + r) / h)
             shapes.append({"kind": "circle", "box": box,
@@ -787,8 +799,8 @@ def _detect_shapes_cv2(img: Image.Image, cv2, np) -> Tuple[List[Dict[str, Any]],
 
     lines = cv2.HoughLinesP(edges, 1, np.pi / 180, threshold=40,
                              minLineLength=min(w, h) * 0.1, maxLineGap=10)
-    if lines is not None:
-        for x1, y1, x2, y2 in lines[:, 0]:
+    if lines is not None and np.asarray(lines).size:
+        for x1, y1, x2, y2 in _rows(np, lines, 4):
             x1, y1, x2, y2 = float(x1), float(y1), float(x2), float(y2)
             box = (min(x1, x2) / w, min(y1, y2) / h, max(x1, x2) / w, max(y1, y2) / h)
             shapes.append({"kind": "line", "box": box,
