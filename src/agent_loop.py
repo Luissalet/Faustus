@@ -5103,8 +5103,15 @@ def _build_system_prompt(
                 relevant_tools=relevant_tools,
             )
             if _mcp_desc:
+                # Servers on this machine were installed by the owner; a
+                # network server's descriptions are someone else's text.
+                _remote_mcp = False
+                try:
+                    _remote_mcp = bool(mcp_mgr.has_remote_servers())
+                except Exception:  # noqa: BLE001 - unsure means remote
+                    _remote_mcp = True
                 _mcp_desc_message = untrusted_context_message(
-                    "MCP tools",
+                    "MCP tools (remote servers)" if _remote_mcp else "MCP tools",
                     _mcp_desc,
                 )
         except Exception as _mcp_err:

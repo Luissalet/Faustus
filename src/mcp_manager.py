@@ -2281,6 +2281,18 @@ class McpManager:
             by_server.setdefault(sn, []).append(t)
         return by_server
 
+    def has_remote_servers(self) -> bool:
+        """A connected server reached over the network (SSE or HTTP) rather
+        than a program started on this machine. Their tool descriptions are
+        written by whoever runs that server, so the agent prompt labels the
+        MCP block apart and the tool gate does not count it as Faustus's
+        own context."""
+        return any(
+            isinstance(conn, dict) and conn.get("status") == "connected"
+            and str(conn.get("transport") or "") in ("sse", "http")
+            for conn in list(self._connections.values())
+        )
+
     def get_tool_descriptions_for_prompt(
         self,
         disabled_map: Optional[Dict[str, set]] = None,
