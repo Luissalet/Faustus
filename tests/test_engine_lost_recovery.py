@@ -263,3 +263,12 @@ def test_engine_lost_pattern_is_ignored_for_a_non_managed_endpoint(monkeypatch, 
     assert not recover_calls
     terminal = next(e for e in events if e.get("type") == "agent_terminal")
     assert terminal["data"]["failed"] is True
+
+
+def test_a_degenerate_output_stop_is_not_a_lost_engine():
+    """Its 502 reads like a transport cut, but the engine is healthy."""
+    from src.llm_core import DEGENERATE_OUTPUT_ERROR_CLASS, _looks_like_engine_lost
+    data = {"status": 502, "error": "Stopped generation: m started repeating tokens (repeated unit '/')",
+            "error_class": DEGENERATE_OUTPUT_ERROR_CLASS}
+    assert not _looks_like_engine_lost(data, 502)
+    assert _looks_like_engine_lost({"status": 502, "error": "peer closed connection"}, 502)

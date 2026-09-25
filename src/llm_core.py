@@ -4965,6 +4965,11 @@ def _looks_like_engine_lost(error_data, status: Optional[int] = None) -> bool:
     `PoolTimeout`/`WriteTimeout` -> 504)."""
     if not isinstance(error_data, dict):
         return False
+    # A degenerate-output stop is a 502 too, but the engine is fine. Seen
+    # live: the second degenerate round of a turn (its retry already spent)
+    # fell through to here and the harness "restarted" a healthy 27B.
+    if str(error_data.get("error_class") or "") == DEGENERATE_OUTPUT_ERROR_CLASS:
+        return False
     if status is None:
         status = error_data.get("status")
     try:
