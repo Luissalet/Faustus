@@ -36,6 +36,8 @@ def test_right_or_unpaired_or_invalid_dates_are_left_alone(text):
     "Déjame ser riguroso: 3 manzanas",
     "4, wait: no, 3",
     "Let me recount the days: 91.",
+    "Martes 29 de octubre… o sea, 29 de septiembre",  # seen live
+    "the 29th of October... I mean, September",
 ])
 def test_visible_working_is_found(text):
     assert ac.thinking_aloud(text)
@@ -46,6 +48,7 @@ def test_visible_working_is_found(text):
     "Wait times are long on Mondays.",
     "```\nwait: 5\n```",
     "Tienes 3 manzanas.",
+    "Trabajas en remoto, o sea, desde casa.",
     # correcting the user's premise is wanted, not working
     "Corrección: hoy es viernes 25 de septiembre, no jueves.",
 ])

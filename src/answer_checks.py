@@ -107,7 +107,9 @@ _THINKING_ALOUD = re.compile(
     r"|\bd[eé]jame\s+(?:ser\s+riguros[oa]|recalcular|calcularlo|revisarlo|volver\s+a\s+calcular|pensar)"
     r"|\blet\s+me\s+(?:re-?check|recalculate|recount|redo|double[- ]check|think\s+again)"
     r"|\bactually,?\s+no\b"
-    r"|(?:\.\.\.|…)\s*no\s*[:,])",
+    r"|(?:\.\.\.|…)\s*no\s*[:,]"
+    # "Martes 29 de octubre… o sea, 29 de septiembre" (seen live)
+    r"|(?:\.\.\.|…)\s*(?:o\s+sea|mejor\s+dicho|quiero\s+decir|perd[oó]n|I\s+mean|sorry)\b)",
     re.IGNORECASE,
 )
 _CODE_BLOCK = re.compile(r"```.*?```", re.DOTALL)
