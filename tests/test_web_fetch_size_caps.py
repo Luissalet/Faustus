@@ -86,6 +86,9 @@ class _FakeStream:
             self.body_reads += 1
             yield self._body[i:i + self._chunk]
 
+    def iter_raw(self):
+        yield from self.iter_bytes()
+
 
 @pytest.fixture
 def no_cache(monkeypatch, tmp_path):
@@ -187,17 +190,38 @@ def test_fetch_requests_identity_encoding(monkeypatch, no_cache):
     assert seen["headers"].get("Accept-Encoding") == "identity"
 
 
-def test_rejects_compressed_response_that_ignored_identity(monkeypatch, no_cache):
-    # We request Accept-Encoding: identity, but a server can ignore it and send
-    # gzip anyway. httpx would decode it, so a tiny compressed body could balloon
-    # past the cap in one decoded chunk. Refuse before reading the body.
+def test_rejects_an_encoding_it_cannot_bound(monkeypatch, no_cache):
+    # We request Accept-Encoding: identity, but a server can ignore it. An
+    # encoding we cannot decode with a strict output bound is refused before
+    # reading the body.
     fake = _FakeStream(b"x" * 5000, content_length=40)
-    fake.headers["content-encoding"] = "gzip"
+    fake.headers["content-encoding"] = "br"
     _patch_stream(monkeypatch, fake)
     r = content_mod.fetch_webpage_content("https://example.com/a.txt")
     assert r["success"] is False
     assert "Content-Encoding" in r["error"] or "compressed" in r["error"]
-    assert fake.body_reads == 0  # refused before decoding any body
+    assert fake.body_reads == 0
+
+
+def test_gzip_sent_despite_identity_is_decoded_within_the_cap(monkeypatch, no_cache):
+    # Live: python.org answers gzip even to "Accept-Encoding: identity".
+    import gzip
+    fake = _FakeStream(gzip.compress("Python 3.14 is the newest release.".encode()), chunk=7)
+    fake.headers["content-encoding"] = "gzip"
+    _patch_stream(monkeypatch, fake)
+    r = content_mod.fetch_webpage_content("https://example.com/a.txt")
+    assert r["success"] is True, r
+    assert "Python 3.14" in json.dumps(r)
+
+
+def test_a_gzip_bomb_stops_at_the_cap(monkeypatch, no_cache):
+    import gzip
+    from src import outbound_fetch
+    bomb = gzip.compress(b"\0" * (WEB_FETCH_HARD_MAX_BYTES * 4))
+    fake = _FakeStream(bomb, chunk=65536)
+    fake.headers["content-encoding"] = "gzip"
+    body, truncated = outbound_fetch._read_bounded_decoded(fake, "gzip", 1_000_000)
+    assert truncated is True and len(body) == 1_000_000
 
 
 def test_oversized_title_does_not_hide_partial_notice(monkeypatch):

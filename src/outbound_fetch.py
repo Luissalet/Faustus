@@ -18,7 +18,7 @@ import ssl
 import time
 import zlib
 from dataclasses import dataclass
-from typing import Callable, Iterable, cast
+from typing import Any, Callable, Iterable, cast
 from urllib.parse import urljoin, urlparse
 
 import httpcore
@@ -280,6 +280,46 @@ class _CappedFetch:
             )
 
 
+_BOUNDED_DECODINGS = ("gzip", "x-gzip", "deflate")
+
+
+def _read_bounded_decoded(response: Any, enc: str, cap: int) -> "tuple[bytes, bool]":
+    """Decode a gzip/deflate body from the RAW stream without ever holding
+    more than `cap` decoded bytes: zlib's `max_length` bounds each step's
+    output, and input it has not consumed yet waits in `unconsumed_tail`."""
+    import zlib
+    if enc in ("gzip", "x-gzip"):
+        decoder = zlib.decompressobj(16 + zlib.MAX_WBITS)
+    else:
+        decoder = zlib.decompressobj()            # zlib-wrapped deflate
+        raw_deflate = zlib.decompressobj(-zlib.MAX_WBITS)
+    out = bytearray()
+    first = True
+    for raw in response.iter_raw():
+        data = raw
+        while data:
+            room = cap - len(out)
+            if room <= 0:
+                return bytes(out), True
+            try:
+                piece = decoder.decompress(data, room)
+            except zlib.error:
+                if enc == "deflate" and first:
+                    # Some servers send raw deflate without the zlib header.
+                    decoder = raw_deflate
+                    first = False
+                    continue
+                raise httpx.DecodingError(f"invalid {enc} body")
+            first = False
+            out += piece
+            data = decoder.unconsumed_tail
+            if len(out) >= cap and (data or not decoder.eof):
+                return bytes(out[:cap]), True
+            if decoder.eof:
+                return bytes(out), False
+    return bytes(out), False
+
+
 def _get_public_url(
     url: str,
     headers: dict,
@@ -323,11 +363,27 @@ def _get_public_url(
                     continue
 
                 enc = (response.headers.get("content-encoding") or "").strip().lower()
-                if enc and enc != "identity":
+                if enc and enc != "identity" and enc not in _BOUNDED_DECODINGS:
                     raise httpx.RequestError(
                         f"Refusing compressed response (Content-Encoding: {enc}) after "
                         "requesting identity: cannot bound decoded body size",
                         request=httpx.Request("GET", current),
+                    )
+                if enc in _BOUNDED_DECODINGS:
+                    # Live (25-09): python.org answers gzip even to
+                    # "Accept-Encoding: identity", and the page could not be
+                    # read at all. gzip/deflate are decoded here with zlib's
+                    # own output bound (max_length), so a compression bomb
+                    # never inflates past the cap, not even inside a chunk.
+                    body, truncated = _read_bounded_decoded(response, enc, cap)
+                    return _CappedFetch(
+                        response.status_code,
+                        response.headers,
+                        body,
+                        truncated,
+                        None,
+                        response.encoding,
+                        str(response.url),
                     )
 
                 declared = None
