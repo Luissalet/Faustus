@@ -1712,6 +1712,14 @@ def _fetch_url(content: Any) -> str:
 # Tools whose user-request allowance (src/user_request_gate.py) holds only
 # while nothing from outside -- a tool result, web text -- is in the run.
 _WRITES_OUTSIDE_TEXT = frozenset({"create_document", "manage_memory", "manage_calendar"})
+# Prompt context Faustus builds from its own installation and the owner's own
+# stores: saved memory, learned rules, the skill index, tool descriptions, the
+# context packet compiled from the owner's store. Anything else is outside.
+_OWN_CONTEXT_LABELS = frozenset({
+    "skills", "available skills index", "mcp tools", "integrations", "learned memory",
+    "compiled context packet", "email writing style",
+})
+_OWN_CONTEXT_PREFIXES = ("saved memory",)
 _APPLY_PATCH_DELETE_RE = re.compile(r"^\*\*\*\s+Delete\s+File:", re.MULTILINE)
 
 
@@ -1988,7 +1996,10 @@ class ToolRunSecurityContext:
             if not label.startswith("prompt context ("):
                 return False
             inner = label[len("prompt context ("):].rstrip(")").strip().casefold()
-            if inner in _EXTERNAL_MESSAGE_SOURCES or inner.startswith(_EXTERNAL_MESSAGE_SOURCE_PREFIXES):
+            # An allowlist, not a denylist: a label this code does not know
+            # ("tool result: <tool>" on a screenshot from an earlier turn,
+            # found in review) is outside content until shown otherwise.
+            if not (inner in _OWN_CONTEXT_LABELS or inner.startswith(_OWN_CONTEXT_PREFIXES)):
                 return False
         return True
 
