@@ -535,6 +535,12 @@ async def _collect_usage_uncached() -> Dict[str, Any]:
     if ollama.get("models") and gpus:
         report = await asyncio.to_thread(gpu_placement.report, ollama.get("base", ""), ollama["models"], gpus)
     _merge_placement(ollama, gpus, report)
+    # The WDDM shared-memory counter (gpu_shared_memory) cannot tell a real
+    # spill apart from the CUDA driver's own staging/pinned-buffer overhead.
+    # Ollama's own /api/ps numbers, gathered above, are authoritative for
+    # whether the weights actually fit -- reconcile the "PCIe spill" flag
+    # against them before it reaches the badge.
+    gpu_mem = gpu_shared_memory.reconcile_with_ollama(gpu_mem, ollama.get("models"))
     # Runners no Ollama server owns any more (a restart leaves them
     # behind) — they hold VRAM every other gauge files under "other".
     orphans: List[Dict[str, Any]] = []

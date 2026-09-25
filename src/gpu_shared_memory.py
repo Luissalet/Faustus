@@ -308,6 +308,56 @@ def reset_cache() -> None:
         _cache["data"] = None
 
 
+def reconcile_with_ollama(gpu_mem: Optional[Dict[str, Any]], ollama_models: Optional[List[Dict[str, Any]]]) -> Optional[Dict[str, Any]]:
+    """``gpu_mem`` (a :func:`collect` snapshot) with ``ollama.spilling``
+    corrected against Ollama's OWN accounting for the models it has resident
+    (``/api/ps``'s ``size``/``size_vram``, the same pair the "X% GPU" figures
+    elsewhere in this app are built from).
+
+    The WDDM shared-memory counter this module reads cannot tell a real
+    spill apart from the CUDA driver's own staging/pinned-buffer overhead,
+    which is not a flat number — the docstring above measured ~706 MB on one
+    box — and grows with the model's own footprint. Seen live: the "PCIe
+    spill" badge fired for a model Ollama itself reported as 100 % in VRAM
+    (``size_vram >= size`` for every resident model). Ollama decides
+    placement, so when it says nothing is short of VRAM, this module's own
+    heuristic is overridden rather than left to contradict it.
+
+    Only ever turns a spill OFF, never on — this module still owns
+    detecting what Ollama's own placement accounting cannot see (weights
+    paging behind its back on Windows). Returns ``gpu_mem`` unchanged
+    (including ``None`` and "not supported") whenever there is nothing to
+    reconcile against: no models resident, or the flag was already False.
+    Never raises.
+    """
+    try:
+        if not isinstance(gpu_mem, dict) or not gpu_mem.get("supported"):
+            return gpu_mem
+        ollama = gpu_mem.get("ollama") or {}
+        if not ollama.get("spilling"):
+            return gpu_mem
+        models = [m for m in (ollama_models or []) if isinstance(m, dict)]
+        if not models:
+            return gpu_mem
+
+        def _fully_resident(m: Dict[str, Any]) -> bool:
+            size = int(m.get("size") or 0)
+            vram = int(m.get("size_vram") or 0)
+            return bool(size) and vram >= size
+
+        if not all(_fully_resident(m) for m in models):
+            return gpu_mem
+        out = dict(gpu_mem)
+        out_ollama = dict(ollama)
+        out_ollama["spilling"] = False
+        out_ollama["spilling_overridden"] = True
+        out["ollama"] = out_ollama
+        return out
+    except Exception:  # noqa: BLE001 - a reconciliation pass never breaks the gauge
+        logger.debug("gpu shared memory: reconcile_with_ollama failed", exc_info=True)
+        return gpu_mem
+
+
 # ── The cards' own VRAM, before anything is loaded ──────────────────────────
 #
 # Everything above answers "is the runner paging over PCIe *right now*" — a

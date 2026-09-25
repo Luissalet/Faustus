@@ -228,3 +228,83 @@ def test_one_card_snapshot_is_the_card_plus_count_and_gpus():
     assert snap["name"] == "NVIDIA GeForce RTX 4070 Ti"
     assert snap["total"] == 12282 * MB and snap["used"] == 8461 * MB and snap["free"] == 3821 * MB
     assert snap["count"] == 1 and snap["gpus"] == one
+
+
+# ---------------------------------------------------------------------------
+# reconcile_with_ollama: the "PCIe spill" badge must not fire on a model
+# Ollama itself reports fully resident (seen live: it did, at 100 % GPU).
+# ---------------------------------------------------------------------------
+
+def _spilling_snapshot(shared=5 * GB, dedicated=8 * GB):
+    return {
+        "supported": True, "threshold": gsm.DEFAULT_WARN_BYTES, "warn_fraction": gsm.WARN_FRACTION,
+        "total_shared": shared,
+        "ollama": {"pids": [100], "processes": ["llama-server.exe"], "shared": shared,
+                   "dedicated": dedicated, "shared_fraction": round(shared / (shared + dedicated), 4),
+                   "spilling": True},
+    }
+
+
+def test_fully_resident_model_clears_a_spilling_flag():
+    """Ollama says size_vram >= size for the only resident model: the WDDM
+    heuristic's own "spilling" must be overridden to False."""
+    gpu_mem = _spilling_snapshot()
+    out = gsm.reconcile_with_ollama(gpu_mem, [{"name": "qwen3.5:9b", "size": 8 * GB, "size_vram": 8 * GB}])
+    assert out["ollama"]["spilling"] is False
+    assert out["ollama"]["spilling_overridden"] is True
+    # Never mutates the snapshot it was given.
+    assert gpu_mem["ollama"]["spilling"] is True
+
+
+def test_size_vram_slightly_over_size_still_clears_it():
+    """Ollama occasionally rounds size_vram a hair over size -- still fully
+    resident, must not be treated as ambiguous."""
+    gpu_mem = _spilling_snapshot()
+    out = gsm.reconcile_with_ollama(gpu_mem, [{"name": "m", "size": 8 * GB, "size_vram": 8 * GB + 1024}])
+    assert out["ollama"]["spilling"] is False
+
+
+def test_a_genuinely_short_model_keeps_the_flag():
+    """Ollama's own numbers agree something is actually short of VRAM: the
+    flag must survive reconciliation."""
+    gpu_mem = _spilling_snapshot()
+    out = gsm.reconcile_with_ollama(gpu_mem, [{"name": "m", "size": 20 * GB, "size_vram": 14 * GB}])
+    assert out["ollama"]["spilling"] is True
+    assert "spilling_overridden" not in out["ollama"]
+
+
+def test_one_short_model_among_several_keeps_the_flag():
+    """Several models resident, only one fully in VRAM: cannot rule out that
+    the OTHER one is what is really spilling."""
+    gpu_mem = _spilling_snapshot()
+    out = gsm.reconcile_with_ollama(gpu_mem, [
+        {"name": "a", "size": 8 * GB, "size_vram": 8 * GB},
+        {"name": "b", "size": 10 * GB, "size_vram": 6 * GB},
+    ])
+    assert out["ollama"]["spilling"] is True
+
+
+def test_no_resident_models_is_left_alone():
+    gpu_mem = _spilling_snapshot()
+    assert gsm.reconcile_with_ollama(gpu_mem, []) == gpu_mem
+    assert gsm.reconcile_with_ollama(gpu_mem, None) == gpu_mem
+
+
+def test_a_non_spilling_snapshot_is_returned_unchanged():
+    gpu_mem = {"supported": True, "ollama": {"spilling": False, "shared": 0}}
+    out = gsm.reconcile_with_ollama(gpu_mem, [{"name": "m", "size": 8 * GB, "size_vram": 1 * GB}])
+    assert out is gpu_mem
+
+
+def test_unsupported_and_none_pass_through():
+    assert gsm.reconcile_with_ollama({"supported": False, "reason": "x"}, [{"size": 1, "size_vram": 1}]) == \
+        {"supported": False, "reason": "x"}
+    assert gsm.reconcile_with_ollama(None, [{"size": 1, "size_vram": 1}]) is None
+
+
+def test_never_raises_on_malformed_model_rows():
+    gpu_mem = _spilling_snapshot()
+    out = gsm.reconcile_with_ollama(gpu_mem, [{"size": "not-a-number"}, "not-a-dict", None])
+    # Malformed rows fail the "fully resident" test rather than crashing it,
+    # so the flag is left exactly as the WDDM counters reported it.
+    assert out["ollama"]["spilling"] is True
