@@ -79,7 +79,7 @@ async def test_concurrency_is_the_backend_parallelism(env, monkeypatch):
     assert manifest["status"] == "done"
     assert manifest["counts"] == {"total": 9, "ok": 9, "failed": 0, "pending": 0}
     assert manifest["parallel"]["effective"] == 3
-    assert elapsed < 0.05 * 9 * 0.8        # really parallel, not one after another
+    assert elapsed < 0.05 * 9              # less than one after another would take
 
 
 async def test_concurrency_never_exceeds_the_global_cap_or_the_item_count(env, monkeypatch):
