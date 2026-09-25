@@ -11596,6 +11596,18 @@ async def _stream_agent_loop_body(
                 "with repeat_penalty raised and untrusted context dropped",
                 round_num, _degenerate_output_reason or "degenerate output",
             )
+            # A managed local engine that answers everything with one symbol
+            # is broken, not looping: no sampler setting fixes it. Checked
+            # with a trivial prompt and restarted before the retry.
+            try:
+                if await engine_swap.restart_if_garbled(endpoint_url, model):
+                    _ledger.notes.append(f"engine_restarted_garbled@{round_num}")
+                    yield "data: " + json.dumps({
+                        "type": "system_notice", "round": round_num,
+                        "message": "The local model engine was answering with garbage and was restarted.",
+                    }) + "\n\n"
+            except Exception as _garbled_err:  # noqa: BLE001
+                logger.debug("[harness] garbled-engine check skipped: %s", _garbled_err)
             if round_response and full_response.endswith(round_response):
                 full_response = full_response[:-len(round_response)]
             _ledger.notes.append(f"degenerate_output_retry@{round_num}")

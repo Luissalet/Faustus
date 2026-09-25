@@ -246,6 +246,79 @@ async def recover_after_connect_failure(url: str) -> bool:
         return False
 
 
+_GARBAGE_RE = None
+_RESTART_PAUSE_S = 2.0  # let the port close before starting it again
+_SANITY_PROMPT = "Reply with one short friendly greeting."
+
+
+def _is_garbage(text: str) -> bool:
+    """A reply made of one short unit repeated (``////``, ``0000``, ``!!``)."""
+    import re
+    global _GARBAGE_RE
+    if _GARBAGE_RE is None:
+        _GARBAGE_RE = re.compile(r"^(.{1,3}?)\1{5,}.{0,3}$", re.DOTALL)
+    body = "".join(str(text or "").split())
+    return bool(body) and bool(_GARBAGE_RE.match(body)) and not any(ch.isalpha() for ch in body)
+
+
+async def generates_sanely(url: str, model: str, *, timeout_s: float = 30.0) -> Optional[bool]:
+    """Ask the engine behind `url` for a one-line greeting with reasoning off.
+
+    False when it answers with one symbol repeated -- the state seen live
+    (25-09) in which a llama-server on a GPU that another process had just
+    squeezed answered every prompt, even "Di hola.", with ``/`` until it was
+    restarted. None when the probe itself could not run (no answer, not a
+    chat endpoint): nothing is concluded from that. Never raises."""
+    import httpx
+    base = str(url or "").rstrip("/")
+    if not base.endswith("/v1"):
+        base = base.split("/v1/")[0].rstrip("/") + "/v1"
+    body = {"model": model, "messages": [{"role": "user", "content": _SANITY_PROMPT}],
+            "max_tokens": 16, "temperature": 0.0,
+            "chat_template_kwargs": {"enable_thinking": False}}
+    try:
+        async with httpx.AsyncClient(timeout=timeout_s, trust_env=False) as client:
+            resp = await client.post(base + "/chat/completions", json=body)
+        if resp.status_code != 200:
+            return None
+        msg = ((resp.json().get("choices") or [{}])[0].get("message") or {})
+        text = str(msg.get("content") or "") + str(msg.get("reasoning_content") or "")
+        if not text.strip():
+            return None
+        return not _is_garbage(text)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("[engine-swap] sanity probe failed for %s: %s", url, exc)
+        return None
+
+
+async def restart_if_garbled(url: str, model: str) -> bool:
+    """Restart the managed engine behind `url` when it only produces garbage.
+
+    Called by the agent harness after a token-repeat collapse. A collapse is
+    usually the model's own doing (a loop, a bad sampler), which the harness
+    retries with other settings; but when the engine answers a trivial prompt
+    with the same repeated symbol, no setting helps and the whole turn --
+    every retry, then the fallback -- is lost. True when it restarted the
+    engine and it came back healthy and sane. Never raises."""
+    try:
+        engine = restartable_engine_for_url(url)
+        if engine is None:
+            return False
+        if await generates_sanely(url, model) is not False:
+            return False
+        from src import engines
+        logger.warning("[engine-swap] engine %s answers with garbage; restarting it", engine.get("id"))
+        await engines.stop_engine(engine["id"])
+        await asyncio.sleep(_RESTART_PAUSE_S)
+        result = await _do_start_and_wait(engine["id"], float(_settings()["autostart_timeout_s"]))
+        if result.get("action") != "started":
+            return False
+        return bool(await generates_sanely(url, model))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[engine-swap] garbled-engine restart failed for %s: %s", url, exc)
+        return False
+
+
 async def ensure_ready(url: str, *, timeout_s: Optional[float] = None) -> Dict[str, Any]:
     """If `url` maps to a managed engine that is not already healthy, start
     it (single-flight across concurrent callers) and wait for health.
