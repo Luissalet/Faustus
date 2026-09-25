@@ -1,7 +1,14 @@
 # Pendientes de cierre
 
-Actualizado: 23-09-2026. REGLA: nunca nombres de empresas/personas del buzÃ³n de Luis en commits, docs, tests ni comentarios â€” ejemplos siempre ficticios. SÃ³lo trabajo vigente; quitar cada entrada al cerrarla.
+Actualizado: 25-09-2026. REGLA: nunca nombres de empresas/personas del buzÃ³n de Luis en commits, docs, tests ni comentarios â€” ejemplos siempre ficticios. SÃ³lo trabajo vigente; quitar cada entrada al cerrarla.
 
+
+## 25-09 mediodía — uso diario en el 7006 (FAUSTUS.md §184, puntos 17–22) — verificado por tests, falta en vivo
+
+- **Desplegar en el 7006** (checkout de master, `npm run build`, `Start-7006Task.ps1`) cuando no haya una ejecución larga que deba sobrevivir, y repetir: «Recuerda que…» sin tarjeta; la tarjeta que sí salga nombra el contexto del prompt; tras aprobar no queda la tarjeta duplicada en el historial; `grep …; wc -l …` sobre el CSV sin tarjeta; el ledger ya no marca `ventas.csv` como modificado por un `if x > 100`.
+- **Ruta ofrecida vs inventada**: medir en turnos reales que una oferta («¿quieres que guarde X?») ya no provoca el rechazo, y que un «He guardado X» falso sí.
+- **Writer's Hoard**: su puente responde con token válido pero lista 0 proyectos; la copia automática en disco tiene 5. Revisar la configuración de datos de esa app (no es de Faustus).
+- **La memoria guardada, el índice de skills y las descripciones MCP arman la puerta en cada turno** por diseño. Si siguen saliendo tarjetas en peticiones explícitas, añadir la regla de «lo pidió el usuario» para esa herramienta en `src/user_request_gate.py` en vez de rebajar la puerta.
 
 ## 24-09 noche — ingeniería autónoma (FAUSTUS.md §189, OBJ-43) — verificado por tests, no en vivo
 

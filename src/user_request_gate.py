@@ -161,7 +161,7 @@ _ASKS_WHAT_IS_REMEMBERED = re.compile(
 )
 
 
-# "Recuerda que mi editorial favorita es Anagrama" asks, in so many words, for
+# "Recuerda que mi editorial favorita es Tinta Roja" asks, in so many words, for
 # a memory to be added. Live it stopped at the card ("This run has already
 # taken in content Faustus did not write itself") on the very first call of a
 # fresh turn: the saved memories and the skill index in the prompt arm the
