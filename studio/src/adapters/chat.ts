@@ -883,8 +883,8 @@ export async function listSessions(signal?: AbortSignal): Promise<ChatSession[]>
 export async function loadHistory(
   sessionId: string,
   signal?: AbortSignal,
-): Promise<{ name: string; model: string; history: HistoryMessage[] }> {
-  const raw = await getJson<{ name?: string; model?: string; history?: unknown }>(
+): Promise<{ name: string; model: string; endpointUrl: string; history: HistoryMessage[] }> {
+  const raw = await getJson<{ name?: string; model?: string; endpoint_url?: string; history?: unknown }>(
     `/api/history/${encodeURIComponent(sessionId)}`,
     signal,
   );
@@ -907,7 +907,7 @@ export async function loadHistory(
       >,
       index,
     }));
-  return { name: raw.name ?? '', model: raw.model ?? '', history };
+  return { name: raw.name ?? '', model: raw.model ?? '', endpointUrl: raw.endpoint_url ?? '', history };
 }
 
 /**
@@ -2364,4 +2364,17 @@ export async function forkLlmTrace(
     throw new Error(detail || `fork failed (${response.status})`);
   }
   return llmTraceForkResultFrom((await response.json()) as Record<string, unknown>);
+}
+
+/** The route a conversation was using: same model on the same server when
+ * that is listed (a model name can be served by two endpoints, e.g. a GGUF
+ * through Ollama and through llama-server), else the same model anywhere.
+ * Endpoint URLs are compared without the `/chat/completions` tail the list
+ * adds. */
+export function routeForSession(routes: ModelRoute[], model: string, endpointUrl = ''): ModelRoute | null {
+  if (!model) return null;
+  const base = (u: string) => u.replace(/\/+$/, '').replace(/\/chat\/completions$/, '').replace(/\/v1$/, '').toLowerCase();
+  const want = base(endpointUrl);
+  const same = routes.filter((r) => r.model === model);
+  return (want && same.find((r) => base(r.endpointUrl) === want)) || same[0] || null;
 }
