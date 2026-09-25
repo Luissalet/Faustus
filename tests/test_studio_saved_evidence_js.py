@@ -7,7 +7,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 
 
-@pytest.mark.skipif(not shutil.which('node'), reason='Node.js required')
+@pytest.mark.skipif(not shutil.which("node") or not (Path(__file__).resolve().parent.parent / "node_modules" / "esbuild" / "lib" / "main.js").exists(), reason="node + node_modules/esbuild needed")
 def test_saved_evidence_adapter_and_rendering():
     result = subprocess.run(['node', 'studio/checks/saved-evidence.check.mjs'], cwd=ROOT,
                             capture_output=True, text=True, encoding='utf-8', timeout=60)

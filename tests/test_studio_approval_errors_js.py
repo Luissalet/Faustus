@@ -7,7 +7,7 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 
 
-@pytest.mark.skipif(not shutil.which("node"), reason="Node.js required")
+@pytest.mark.skipif(not shutil.which("node") or not (Path(__file__).resolve().parent.parent / "node_modules" / "esbuild" / "lib" / "main.js").exists(), reason="node + node_modules/esbuild needed")
 def test_approval_error_messages_keep_the_server_explanation():
     result = subprocess.run(["node", "studio/checks/approval-errors.check.mjs"], cwd=ROOT,
                             capture_output=True, text=True, encoding="utf-8", timeout=60)

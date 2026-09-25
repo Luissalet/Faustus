@@ -14,7 +14,7 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 
 
-@pytest.mark.skipif(not shutil.which("node"), reason="Node.js required")
+@pytest.mark.skipif(not shutil.which("node") or not (Path(__file__).resolve().parent.parent / "node_modules" / "esbuild" / "lib" / "main.js").exists(), reason="node + node_modules/esbuild needed")
 def test_model_state_and_vram_gate_reach_the_turn():
     result = subprocess.run(["node", "studio/checks/vram-live.check.mjs"], cwd=ROOT,
                             capture_output=True, text=True, encoding="utf-8", timeout=90)
