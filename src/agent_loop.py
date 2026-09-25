@@ -5808,6 +5808,15 @@ def _tool_image_messages(
     return [{"role": "user", "content": content, "metadata": metadata}]
 
 
+def _template_keeps_turn_reasoning(model: Optional[str]) -> bool:
+    """Does this model's chat template itself keep the reasoning of the
+    current turn's assistant messages (and drop earlier turns')? True for the
+    Qwen3 family (its official template); False otherwise (Nemotron's
+    re-injects every prior reasoning, see `_append_tool_results`)."""
+    name = str(model or "").lower()
+    return "qwen3" in name or "qwq" in name
+
+
 def _append_tool_results(
     messages: List[Dict],
     round_response: str,
@@ -5865,9 +5874,16 @@ def _append_tool_results(
             logger.warning("[agent] tool image could not be attached: %s", _img_err)
             return []
     # Strip reasoning_content from earlier assistant turns; only the newest keeps it.
-    for _m in messages:
-        if _m.get("role") == "assistant":
-            _m.pop("reasoning_content", None)
+    # Qwen3-family templates are the exception: they render the reasoning of
+    # every assistant message after the last user question themselves (and
+    # drop older turns'), so stripping round 1's reasoning on round 3 changed
+    # a message the server had already processed -- a prompt-cache miss from
+    # that point on every round -- and took from the model reasoning its own
+    # template expects to see.
+    if not _template_keeps_turn_reasoning(model):
+        for _m in messages:
+            if _m.get("role") == "assistant":
+                _m.pop("reasoning_content", None)
     if used_native and native_tool_calls:
         assistant_msg = {"role": "assistant"}
         # When the model emitted ONLY tool calls (no prose), content must be
