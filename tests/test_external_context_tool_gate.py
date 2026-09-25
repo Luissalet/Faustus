@@ -155,6 +155,23 @@ def test_workspace_write_diff_taints_before_later_host_action():
     assert context.decision_for("bash").allowed is False
 
 
+def test_prompt_context_that_arms_the_gate_is_named_on_the_card():
+    # Live the card said "...content Faustus did not write itself." and
+    # named nothing, on the first call of a fresh turn.
+    from src.prompt_security import untrusted_context_message
+
+    context = ToolRunSecurityContext()
+    context.observe_messages([
+        untrusted_context_message("saved memory: pinned context", "- likes tea"),
+        untrusted_context_message("repository map", "src/", arm_tool_gate=False),
+        untrusted_context_message("skills", "- a skill"),
+    ])
+    decision = context.decision_for("bash", "ls")
+    assert decision.allowed is False
+    assert "via prompt context (saved memory: pinned context), prompt context (skills)" in decision.reason
+    assert "repository map" not in decision.reason
+
+
 def test_model_visible_failed_web_result_taints_run():
     context = ToolRunSecurityContext()
 

@@ -1634,33 +1634,53 @@ _EXTERNAL_MESSAGE_SOURCES = frozenset(
 _EXTERNAL_MESSAGE_SOURCE_PREFIXES = ("web page:",)
 
 
+def _message_arms_gate(message: Any) -> bool:
+    if not isinstance(message, dict):
+        return False
+    metadata = message.get("metadata")
+    if not isinstance(metadata, dict) or metadata.get("trusted") is not False:
+        return False
+    gate_marker = metadata.get("tool_gate_untrusted")
+    if gate_marker is True:
+        return True
+    if gate_marker is False:
+        # Explicit current-format opt-outs are authoritative.  The source
+        # label heuristics below exist only for older saved wrappers that
+        # predate the marker.
+        return False
+    if metadata.get("provenance_origin") == "external":
+        return True
+    source = metadata.get("source")
+    if not isinstance(source, str):
+        return False
+    normalized_source = source.strip().casefold()
+    if normalized_source in _EXTERNAL_MESSAGE_SOURCES:
+        return True
+    return normalized_source.startswith(_EXTERNAL_MESSAGE_SOURCE_PREFIXES)
+
+
 def messages_contain_external_untrusted_context(messages: Iterable[dict]) -> bool:
     """Detect explicitly labelled external context already present in a run."""
+    return any(_message_arms_gate(message) for message in messages or ())
+
+
+def external_context_labels(messages: Iterable[dict], limit: int = 4) -> list[str]:
+    """The source labels of the prompt context that armed the gate ("saved
+    memory: pinned context", "skills", "web page: …"), so the approval card
+    can say where the outside content came from. Live the card read "This run
+    has already taken in content Faustus did not write itself." with nothing
+    after it, on the first call of a fresh turn."""
+    labels: list[str] = []
     for message in messages or ():
-        if not isinstance(message, dict):
+        if not _message_arms_gate(message):
             continue
-        metadata = message.get("metadata")
-        if not isinstance(metadata, dict) or metadata.get("trusted") is not False:
-            continue
-        gate_marker = metadata.get("tool_gate_untrusted")
-        if gate_marker is True:
-            return True
-        if gate_marker is False:
-            # Explicit current-format opt-outs are authoritative.  The source
-            # label heuristics below exist only for older saved wrappers that
-            # predate the marker.
-            continue
-        if metadata.get("provenance_origin") == "external":
-            return True
-        source = metadata.get("source")
-        if not isinstance(source, str):
-            continue
-        normalized_source = source.strip().casefold()
-        if normalized_source in _EXTERNAL_MESSAGE_SOURCES:
-            return True
-        if normalized_source.startswith(_EXTERNAL_MESSAGE_SOURCE_PREFIXES):
-            return True
-    return False
+        source = str((message.get("metadata") or {}).get("source") or "").strip()
+        label = f"prompt context ({source[:80]})" if source else "prompt context"
+        if label not in labels:
+            labels.append(label)
+        if len(labels) >= limit:
+            break
+    return labels
 
 
 _TRUSTED_WRITE_TOOLS = frozenset({"write_file", "edit_file", "apply_patch"})
@@ -1926,8 +1946,12 @@ class ToolRunSecurityContext:
             for message in message_list
         ):
             self.approval_gate_bypassed = True
-        if messages_contain_external_untrusted_context(message_list):
+        labels = external_context_labels(message_list)
+        if labels:
             self.external_untrusted_context_seen = True
+            for label in labels:
+                if label not in self.external_sources:
+                    self.external_sources.append(label)
 
     def _autonomy_decision(
         self,

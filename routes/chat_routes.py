@@ -3282,6 +3282,7 @@ def setup_chat_routes(
                     _actual_route = _requested_route
                     _actual_candidate_index = 0
                     _chat_terminal_saved = False
+                    _chat_done_saved = False
                     def _commit_chat_compaction(candidate_index: int) -> bool:
                         return apply_compaction_state(
                             sess,
@@ -3719,6 +3720,7 @@ def setup_chat_routes(
                                             behavior_mode=getattr(ctx, "behavior_mode", None),
                                         )
                                         _ce_chat_receipt("complete", _saved_id or "")
+                                        _chat_done_saved = True
                                         if _saved_id:
                                             yield f'data: {json.dumps({"type": "message_saved", "id": _saved_id})}\n\n'
                                         run_post_response_tasks(
@@ -3774,7 +3776,10 @@ def setup_chat_routes(
                                     continue
                             break
                     except (asyncio.CancelledError, GeneratorExit):
-                        if full_response and not incognito:
+                        # A client that leaves after the answer was saved (it
+                        # read [DONE] or the approval card and closed) must not
+                        # save it a second time as a "stopped" partial.
+                        if full_response and not incognito and not (_chat_terminal_saved or _chat_done_saved):
                             logger.info("Client disconnected mid-stream (chat mode) for session %s, saving partial (%d chars)", session, len(full_response))
                             _stopped_content, _stopped_md = clean_thinking_for_save(
                                 full_response,
@@ -4231,6 +4236,7 @@ def setup_chat_routes(
                                     _metrics_to_save = dict(last_metrics or {})
                                     if thinking_response.strip() and not _metrics_to_save.get("thinking"):
                                         _metrics_to_save["thinking"] = thinking_response.strip()
+                                    _terminal_saved = True
                                     _saved_id = save_assistant_response(
                                         sess, session_manager, session, _response_to_save, _metrics_to_save,
                                         character_name=ctx.preset.character_name,
@@ -4285,7 +4291,11 @@ def setup_chat_routes(
                         # outer finally from running and left _active_streams
                         # with a stale entry).
                         try:
-                            if full_response and not incognito:
+                            # Already saved on [DONE] or as a terminal failure: a
+                            # client that closes afterwards (talk clients close on
+                            # the approval card) is not a partial answer. Seen
+                            # live: "Allow this task to continue?" stored twice.
+                            if full_response and not incognito and not _terminal_saved:
                                 logger.info("Client disconnected mid-stream for session %s, saving partial response (%d chars)", session, len(full_response))
                                 _stopped_content2, _stopped_md2 = clean_thinking_for_save(
                                     full_response,

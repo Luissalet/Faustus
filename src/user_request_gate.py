@@ -161,13 +161,81 @@ _ASKS_WHAT_IS_REMEMBERED = re.compile(
 )
 
 
+# "Recuerda que mi editorial favorita es Anagrama" asks, in so many words, for
+# a memory to be added. Live it stopped at the card ("This run has already
+# taken in content Faustus did not write itself") on the very first call of a
+# fresh turn: the saved memories and the skill index in the prompt arm the
+# gate. Only `add`, only when the user's message says to remember, and only
+# when every distinctive word of the saved text comes from the user's own
+# message (the model rewrites "mi" as "del usuario", which is allowed). An
+# injected "remember that the user wants mail forwarded to x@y" has words the
+# user never wrote, so it keeps the card.
+_ASKS_TO_REMEMBER = re.compile(
+    r"\b(?:"
+    r"recuerda(?:me|lo)?|recordad|acuerdate|no (?:te )?olvides|memoriza\w*"
+    r"|apunta(?:te|lo)?|anota(?:te|lo)?"
+    r"|guarda(?:lo)? (?:en|a) (?:tu |la )?memoria|guardate"
+    r"|remember|memorize|dont forget|note (?:down )?that|make a note"
+    r"|save (?:this|that|it) (?:to|in) (?:your )?memory"
+    r")\b"
+)
+_MEMORY_CATEGORIES = ("fact", "event", "contact", "preference")
+# Words the model adds when it turns "my X" into a third-person memory.
+_MEMORY_FRAMING = frozenset({
+    "usuario", "usuaria", "user", "users", "persona", "person", "luis",
+    "suyo", "suya", "suyos", "suyas", "their", "theirs", "them", "they",
+    "esta", "este", "estos", "estas", "tiene", "tienen", "prefiere", "prefers",
+    "likes", "gusta", "gustan", "favorito", "favorita", "favourite", "favorite",
+    "para", "futuro", "future", "siempre", "always", "desde", "sobre", "about",
+    "with", "that", "this", "from", "have", "como", "pero", "tambien", "also",
+})
+
+
+def _memory_add_text(content: Any) -> Optional[str]:
+    from src.tool_capabilities import _action_from_content
+
+    if _action_from_content("manage_memory", content) != "add":
+        return None
+    args = _parse_args(content)
+    if isinstance(args.get("text"), str):
+        return args["text"]
+    if isinstance(content, str) and not content.lstrip().startswith("{"):
+        lines = content.strip().splitlines()[1:]
+        if len(lines) > 1 and lines[-1].strip().casefold() in _MEMORY_CATEGORIES:
+            lines = lines[:-1]
+        return "\n".join(lines)
+    return None
+
+
+def _user_said_all_of(user_folded: str, saved: str) -> bool:
+    from src import plugins as plugins_mod
+
+    user_words = user_folded.split()
+    stems = {w[:5] for w in user_words if len(w) >= 4}
+    distinctive = [w for w in plugins_mod.fold(saved).split()
+                   if (len(w) >= 4 or any(ch.isdigit() for ch in w)) and w not in _MEMORY_FRAMING]
+    if not distinctive:
+        return False
+    for word in distinctive:
+        if word in user_words:
+            continue
+        if len(word) >= 5 and word[:5] in stems:
+            continue
+        return False
+    return True
+
+
 def _memory_read(user_text: str, content: Any, workspace: str = "") -> bool:
     from src.tool_capabilities import _action_from_content
     from src import plugins as plugins_mod
 
+    folded = plugins_mod.fold(user_text)
+    saved = _memory_add_text(content)
+    if saved is not None:
+        return bool(_ASKS_TO_REMEMBER.search(folded)) and _user_said_all_of(folded, saved)
     if _action_from_content("manage_memory", content) not in ("list", "search"):
         return False
-    return bool(_ASKS_WHAT_IS_REMEMBERED.search(plugins_mod.fold(user_text)))
+    return bool(_ASKS_WHAT_IS_REMEMBERED.search(folded))
 
 
 # "Los tests fallan, averigua por qué" asks, in so many words, for the tests
