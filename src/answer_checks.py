@@ -141,3 +141,61 @@ def rewrite_note(mismatches: List[Dict[str, str]], aloud: List[str]) -> str:
             "tool if you have it)."
         )
     return " ".join(parts)
+
+
+_ASKS_WEEKDAY = re.compile(
+    r"(?:qu[eé]\s+d[ií]a\s+(?:de\s+la\s+semana\s+)?(?:es|ser[aá]|fue|cae|caer[aá]|cay[oó]|era)"
+    r"|what\s+day\s+(?:of\s+the\s+week\s+)?(?:is|was|will)|which\s+weekday)",
+    re.IGNORECASE,
+)
+_ES_FULL_DATE = re.compile(r"\b(\d{1,2})\s+de\s+" + _ES_MONTH_RE + r"\s+de(?:l)?\s+(\d{4})\b", re.IGNORECASE)
+_EN_FULL_DATE = re.compile(
+    r"\b(?:" + _EN_MONTH_RE + r"\s+(\d{1,2})(?:st|nd|rd|th)?|(\d{1,2})(?:st|nd|rd|th)?\s+" + _EN_MONTH_RE
+    + r"),?\s+(\d{4})\b", re.IGNORECASE)
+
+
+def _full_dates(text: str) -> List[_dt.date]:
+    out: List[_dt.date] = []
+    for m in _ES_FULL_DATE.finditer(text):
+        try:
+            out.append(_dt.date(int(m.group(3)), _ES_MONTHS[m.group(2).lower()], int(m.group(1))))
+        except ValueError:
+            pass
+    for m in _EN_FULL_DATE.finditer(text):
+        month = (m.group(1) or m.group(4)).lower()
+        try:
+            out.append(_dt.date(int(m.group(5)), _EN_MONTHS[month], int(m.group(2) or m.group(3))))
+        except ValueError:
+            pass
+    return out
+
+
+def asked_weekday_mismatch(question: str, answer: str) -> List[Dict[str, str]]:
+    """The user asked which weekday ONE full date falls on and the answer
+    names weekdays but never the right one ("2. Domingo." for a Friday, seen
+    live: the date was only in the question, so `weekday_mismatches` had
+    nothing to pair)."""
+    q = str(question or "")
+    a = str(answer or "")
+    asked = _ASKS_WEEKDAY.search(q)
+    if not asked:
+        return []
+    dates = list(dict.fromkeys(_full_dates(q)))
+    if len(dates) > 1:
+        # "si hoy es jueves 25 de septiembre de 2026, ¿qué día será el 25 de
+        # diciembre de 2026?": the date asked about follows the question.
+        dates = list(dict.fromkeys(_full_dates(q[asked.start():])))
+    if len(dates) != 1:
+        return []
+    date = dates[0]
+    folded = _fold_day(a)
+    for names, lang in ((_ES_DAYS, "es"), (_EN_DAYS, "en")):
+        said = [n for n in names if re.search(r"\b" + _fold_day(n) + r"\b", folded)]
+        if not said:
+            continue
+        real = names[date.weekday()]
+        if _fold_day(real) in (_fold_day(n) for n in said):
+            return []
+        return [{"date": date.isoformat(), "said": said[0], "real": real, "lang": lang,
+                 "text": f"{date.isoformat()} → {said[0]}"}]
+    return []

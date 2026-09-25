@@ -57,3 +57,17 @@ def test_the_rewrite_note_names_the_calendar_weekday_and_the_phrases():
     note = ac.rewrite_note(ac.weekday_mismatches("el 25 de diciembre de 2026 cae en domingo"),
                            ["espera,"])
     assert "2026-12-25 is a viernes" in note and '"espera,"' in note
+
+
+def test_a_weekday_asked_about_a_date_in_the_question_is_checked():
+    q = ("Si hoy es jueves 25 de septiembre de 2026, ¿qué día de la semana será el "
+         "25 de diciembre de 2026?")
+    # two dates: the one after the question is the one asked about (seen live)
+    assert ac.asked_weekday_mismatch(q, "2. Domingo.")[0]["real"] == "viernes"
+    assert ac.asked_weekday_mismatch("¿Qué día es mejor, el 1 de mayo de 2026 o el 2 de mayo de 2026?", "El sábado.") == []
+    q1 = "¿Qué día de la semana será el 25 de diciembre de 2026?"
+    found = ac.asked_weekday_mismatch(q1, "2. Domingo.")
+    assert found and found[0]["real"] == "viernes"
+    assert ac.asked_weekday_mismatch(q1, "Cae en viernes.") == []
+    assert ac.asked_weekday_mismatch(q1, "No lo sé.") == []
+    assert ac.asked_weekday_mismatch("What day of the week is December 25, 2026?", "Sunday.")[0]["real"] == "friday"
