@@ -812,3 +812,13 @@ def test_a_letter_to_write_is_a_documents_turn_not_a_coding_one():
     for text in ("Escríbeme una función que sume dos números", "escríbeme un script que cuente palabras"):
         domains = classify([{"role": "user", "content": text}], text)["domains"]
         assert "documents" not in domains and "files" in domains
+
+
+def test_a_request_for_a_text_is_answered_with_the_text():
+    from src.agent_loop import _asks_for_a_text
+
+    assert _asks_for_a_text("Escríbeme una reclamación para mi compañía de luz: quiero que revisen la lectura del contador.")
+    assert _asks_for_a_text("Redacta un correo a mi jefe pidiendo el viernes libre")
+    assert _asks_for_a_text("write me a cover letter for this job")
+    assert not _asks_for_a_text("Escríbeme una función que sume dos números")
+    assert not _asks_for_a_text("arregla el contador de la página de inicio")

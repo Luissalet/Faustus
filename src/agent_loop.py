@@ -2263,6 +2263,24 @@ def _explanation_request(text: str) -> bool:
     return not _WORKSPACE_CODE_ACTION_RE.search(text)
 
 
+_TEXT_FOR_THE_USER_RE = re.compile(
+    r"\b(?:red[aá]cta(?:me|le)?|escr[ií]be(?:me|le|nos)?|write\s+(?:me|up)|draft|compose)\b[^.?!\n]{0,40}?"
+    r"\b(?:cartas?|reclamaci[oó]n(?:es)?|quejas?|correos?|e-?mails?|mensajes?|whatsapps?|posts?|"
+    r"discursos?|brindis|felicitaci[oó]n|poemas?|cuentos?|instancias?|solicitud(?:es)?|recursos?|"
+    r"letters?|complaints?|messages?|speech|toast|poems?|stor(?:y|ies)|cover\s+letter|bio)\b",
+    re.IGNORECASE,
+)
+
+
+def _asks_for_a_text(text: str) -> bool:
+    """The user asked for a piece of writing (a letter, a complaint, an
+    email...), which is answered with the text itself. Seen live: "Escríbeme
+    una reclamación… que revisen la lectura del contador" read as a code
+    request ("escribe" + "contador"), so the answer was sent back as "no
+    workspace action", and the next rounds went looking for a file to save."""
+    return bool(_TEXT_FOR_THE_USER_RE.search(str(text or "")))
+
+
 def _looks_like_workspace_coding_request(text: str) -> bool:
     """Best-effort signal for when an active workspace should become code mode.
 
@@ -12300,6 +12318,8 @@ async def _stream_agent_loop_body(
                 # Same lesson, one step further out: a request to EXPLAIN is
                 # answered in prose, so prose is not a shirked job.
                 and not _explanation_request(_last_user)
+                # …and neither is a letter or email written as asked.
+                and not (_asks_for_a_text(_last_user) and not workspace)
             ):
                 _no_action_nudges += 1
                 _ledger.notes.append(f"no_action_nudge@{round_num}")
