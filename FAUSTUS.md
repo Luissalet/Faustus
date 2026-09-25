@@ -8869,3 +8869,15 @@ compartido. Subir el repositorio a GitHub cuando Luis lo diga.
 - *Resumen del día*: la skill dice que la línea de pantalla sale de Argus (`screen_activity`) y que `activity_summary` de Funes solo sirve para «activo/ausente». En vivo: 6 min, 0 fallos, cifras coherentes (Claude 4 h 19, escritorio 53 min, terminal 46 min).
 - *`tests/test_approval_autonomy.py`*: los 4 fallos eran JSON escrito a mano con rutas de Windows (`\U…` sin escapar); ahora usa `json.dumps`. 32/32.
 - *Access violation en `sqlite3.dll`*: 55 000 aperturas concurrentes (SQLAlchemy con `set_sqlite_pragma`, `context_engine.store.db()` y `sqlite3` directo, 7 hilos) sin un fallo. Todo apunta a hilos de adaptadores que siguen vivos cuando un test ya ha desmontado su entorno; no se ha visto fuera de la batería.
+
+## 199. Uso diario, cuarta tanda: la memoria que arma la puerta, fechas abreviadas (25-09-2026, noche)
+
+**Problema.** Seguir probando el uso cotidiano. Tres preguntas: «¿A qué hora empieza mi taller de cerámica?» (guardado antes con «Recuerda que…»), «El 6 de diciembre de 2026 cae en viernes, ¿verdad?» y «¿Qué tengo en el calendario la semana que viene?».
+
+**Bien.** Le corrigió al usuario la fecha falsa (domingo, puente de sábado a lunes) en vez de darle la razón. «¿Cómo invierto una lista en Python sin modificarla?»: tres formas correctas y el aviso de `reverse()`.
+
+**Arreglado.**
+- *La memoria armaba la puerta para leer tus propios datos*: el recuerdo recuperado es texto «de fuera» para la puerta, así que `manage_calendar list_events` paraba en la tarjeta; con la memoria en casi todos los prompts, cualquier «¿qué tengo mañana?» la pedía. Si todo lo que armó la puerta es contexto propio de Faustus y la llamada sólo lee datos de la persona (efecto `READ_PRIVATE` y nada más), pasa. Revisión de seguridad (subagente): las lecturas así no mandan nada fuera ni cambian nada; después del resultado de una lectura privada (un correo, un evento con texto de un remitente) la siguiente vuelve a pedir tarjeta; y las descripciones MCP de un servidor remoto (SSE/HTTP), que escribe otro, no deben contar como propias. Hecho: con un servidor MCP remoto conectado el bloque se etiqueta «MCP tools (remote servers)» y queda fuera de la lista de contexto propio. El canal de consulta de `web_search` tras contenido de fuera ya existía y no cambia.
+- *El recuerdo sólo decía cuándo no usarlo* («Do not reference unless the user asks about these topics»). Con el dato recuperado, el modelo buscó en el calendario y contestó que no lo encontraba. Ahora dice que son hechos que el usuario contó, que se responda con ellos primero cuando pregunta por ese tema y que no se saquen si no. En la repetición llegó a «jueves a las 19:30», aunque pasando antes por el calendario y el cerebro: el 27B sigue prefiriendo buscar.
+- *Días de la semana con mes abreviado*: la lista de la semana que viene decía «Lunes 29 sep» (martes). Ahora se leen «lunes 29 sep», «jueves 1 oct.» y «martes 29 septiembre», y una fecha sin año en la respuesta ni en la pregunta toma el año que la deja más cerca de hoy (a menos de medio año); sin la fecha de hoy no se adivina.
+
