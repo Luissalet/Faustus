@@ -21,6 +21,9 @@ The user wants the whole picture of a day or week, not one app's answer. Skip it
    the harness allows it:
    - `screen_activity` (Argus): time by app and top windows for the period;
      `screen_status` first if you need to know whether Argus was watching.
+     This is the screen line. Funes's `activity_summary` measures something
+     else (input activity: active vs away); use it only for an "activo/ausente"
+     note, never as the time by app.
    - `summary` and `budget_status` (Ledger) for the current month; `list_entries`
      with `from`/`to` for the period's movements.
    - `link_digest` (Links) with `since` = start of the period.
@@ -64,6 +67,9 @@ Hoy (mar 23 sept)
 - Reading the apps' data folders or databases with the shell: everything is
   behind the tools, and each app has a single writer.
 - Padding a line that has no data with guesses.
+- Mixing sources in one line: a window can stay open for hours while the
+  user is away. Time by app comes from Argus; "activo X, ausente Y" from
+  Funes, labelled as such, or left out.
 
 ## Verification
 

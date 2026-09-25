@@ -16,10 +16,6 @@ Actualizado: 25-09-2026. REGLA: nunca nombres de empresas/personas del buzÃ³n 
 ## 25-09 tarde — familia Hoard con uso real (FAUSTUS.md §191–§192)
 
 - **`hoard-study-cards` por debajo del umbral** (0,214 con «hazme tarjetas de estudio…»): la skill la lleva la sesión de Hypatia; cuando cierre, darle tags y triggers en español como a las otras cuatro (§193).
-- **Access violation en `sqlite3.dll` en la batería de tests** (25-09 17:46, `tests/` de mcp/skills/export): hilos del Context Engine (`store.db()`) y una conexión nueva de SQLAlchemy (`set_sqlite_pragma`) a la vez. No se repitió al relanzar. Si vuelve, aislar el test y probar un candado alrededor del `connect` de SQLAlchemy o `check_same_thread`.
-- **Writer's Hoard**: la app empaquetada ya abre la misma biblioteca que el modo desarrollo (§195); falta que Luis publique la release. La copia instalada en `%LOCALAPPDATA%` es la vieja (`file://`), por eso el Hub sigue arrancando el modo desarrollo por `launch_overrides`.
-- **El resumen del día mezcla cifras de pantalla**: con Funes (`activity_summary`) dijo «~10 min activo, 7 h ausente» y a la vez sesiones de Claude de casi 4 h. Revisar qué mide `activity_summary` frente a `screen_activity` y cuál debe usar la skill.
-- **`tests/test_approval_autonomy.py`: 4 fallos en Windows** también sin los cambios de §195 (`is_hard_blocked` de un `write_file` dentro del workspace, la señal `named` a 0, y el modo activo que no aprueba una familia promovida). Revisar con quien lleve la autonomía de aprobaciones.
 
 ## 25-09 mediodía — uso diario en el 7006 (FAUSTUS.md §184, puntos 17–35)
 

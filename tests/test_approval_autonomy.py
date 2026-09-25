@@ -18,6 +18,8 @@ Four layers, smallest first:
 """
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from src import approval_autonomy as autonomy
@@ -108,7 +110,7 @@ def test_hard_blocked_write_outside_workspace(tmp_path):
     inside = tmp_path / "ws"
     inside.mkdir()
     outside = tmp_path / "elsewhere" / "x.py"
-    content = f'{{"path": "{outside}"}}'
+    content = json.dumps({"path": str(outside)})
     assert autonomy.is_hard_blocked("write_file", content, workspace=str(inside),
                                     capabilities=_write_caps()) is True
 
@@ -117,7 +119,7 @@ def test_hard_blocked_write_inside_workspace_is_not_blocked(tmp_path):
     inside = tmp_path / "ws"
     inside.mkdir()
     target = inside / "x.py"
-    content = f'{{"path": "{target}"}}'
+    content = json.dumps({"path": str(target)})
     assert autonomy.is_hard_blocked("write_file", content, workspace=str(inside),
                                     capabilities=_write_caps()) is False
 
@@ -127,7 +129,7 @@ def test_compute_confidence_readonly_named_and_workspace_signals(tmp_path):
     inside.mkdir()
     target = inside / "notes.py"
     target.write_text("# existing file\n")
-    content = f'{{"path": "{target}"}}'
+    content = json.dumps({"path": str(target)})
 
     result = autonomy.compute_confidence(
         "write_file", content, workspace=str(inside), owner="alice",
@@ -144,7 +146,7 @@ def test_compute_confidence_not_named_scores_lower(tmp_path):
     inside = tmp_path / "ws"
     inside.mkdir()
     target = inside / "notes.py"
-    content = f'{{"path": "{target}"}}'
+    content = json.dumps({"path": str(target)})
     named = autonomy.compute_confidence(
         "write_file", content, workspace=str(inside), user_text="please update notes.py",
         capabilities=_write_caps(),
@@ -299,14 +301,14 @@ def test_active_mode_auto_approves_a_promoted_act_tier_family(monkeypatch, tmp_p
     monkeypatch.setattr(autonomy, "record_shadow_decision", lambda **kw: logged.append(kw) or "id")
 
     gate = _gate(owner="alice", workspace=str(inside))
-    decision = gate.decision_for("write_file", f'{{"path": "{target}"}}')
+    decision = gate.decision_for("write_file", json.dumps({"path": str(target)}))
     assert decision.allowed is True
     assert len(logged) == 1
     assert logged[0]["source"] == "active_auto"
 
     # A second decision_for call for the SAME content must not log twice
     # (decision_for is called more than once per real tool call).
-    decision2 = gate.decision_for("write_file", f'{{"path": "{target}"}}')
+    decision2 = gate.decision_for("write_file", json.dumps({"path": str(target)}))
     assert decision2.allowed is True
     assert len(logged) == 1
 
@@ -321,7 +323,7 @@ def test_active_mode_never_overrides_a_hard_block(monkeypatch, tmp_path):
         score=1.0, tier="act", signals={}, reasons=[]))
 
     gate = _gate(owner="alice", workspace=str(inside))
-    decision = gate.decision_for("write_file", f'{{"path": "{outside}"}}')
+    decision = gate.decision_for("write_file", json.dumps({"path": str(outside)}))
     assert decision.allowed is False
 
 
@@ -335,7 +337,7 @@ def test_active_mode_does_not_override_unpromoted_family(monkeypatch, tmp_path):
         score=1.0, tier="act", signals={}, reasons=[]))
 
     gate = _gate(owner="alice", workspace=str(inside))
-    decision = gate.decision_for("write_file", f'{{"path": "{target}"}}')
+    decision = gate.decision_for("write_file", json.dumps({"path": str(target)}))
     assert decision.allowed is False
 
 

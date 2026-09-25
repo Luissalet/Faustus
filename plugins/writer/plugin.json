@@ -43,6 +43,7 @@
     "launch_hint": {
       "kind": "process",
       "executable": [
+        "%LOCALAPPDATA%/Programs/Writers Hoard/Writers Hoard.exe",
         "%LOCALAPPDATA%/Programs/writers-hoard/Writers Hoard.exe",
         "{WRITER_DIR}/release/win-unpacked/Writers Hoard.exe"
       ],
