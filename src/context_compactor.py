@@ -1515,6 +1515,109 @@ def _overflow_stub(
     return "\n".join(lines)
 
 
+#: A fenced result shorter than this is left alone: its stub would not be
+#: smaller than the result itself.
+FENCED_SPILL_MIN_CHARS = 600
+
+
+def _persist_or_digest(text: str, *, session_id: str, tool: str, call_id: str,
+                       durable: bool, run_id: str, round_num: int) -> Tuple[str, int, bool]:
+    from src import context_overflow as overflow
+    nbytes = len(text.encode("utf-8", "replace"))
+    if durable:
+        try:
+            rec = overflow.persist(
+                session_id=session_id, content=text, tool=tool, call_id=call_id,
+                role="tool", run_id=run_id, round_num=round_num, durable=True,
+            )
+            return rec["content_sha256"], int(rec.get("bytes") or nbytes), True
+        except Exception as e:  # noqa: BLE001
+            logger.warning("midturn spill persist failed: %s", e)
+    return hashlib.sha256(text.encode("utf-8", "replace")).hexdigest(), nbytes, False
+
+
+def _spill_stub_for(text: str, *, digest: str, tool: str, call_id: str,
+                    nbytes: int, durable: bool) -> str:
+    ids = extract_protected_strings(text)
+    head_bits = []
+    if ids:
+        head_bits.append("ids: " + ", ".join(_dedupe_preserve_order(ids)[:12]))
+    head_bits.append(text[:OVERFLOW_STUB_HEAD_CHARS])
+    return _overflow_stub(content_sha256=digest, tool=tool, call_id=call_id,
+                          nbytes=nbytes, head="\n".join(head_bits), durable=durable)
+
+
+def _spill_fenced_results(
+    messages: List[Dict[str, Any]],
+    *,
+    session_id: str,
+    keep_tool_rounds: int,
+    spill_chars: int,
+    durable: bool,
+    run_id: str,
+    round_num: int,
+    pinned: set,
+) -> Tuple[List[Dict[str, Any]], List[str]]:
+    """The fenced-call half of ``spill_large_tool_results``: old (or
+    oversized) results inside "tool execution results" user messages."""
+    from src import tool_result_segments as trs
+
+    fenced_idx = [i for i, m in enumerate(messages) if trs.is_fenced_results(m)]
+    if not fenced_idx:
+        return messages, []
+    recent = set(fenced_idx[-keep_tool_rounds:]) if keep_tool_rounds > 0 else set()
+    limit = max(1, int(spill_chars))
+    out: Optional[List[Dict[str, Any]]] = None
+    ids: List[str] = []
+    for i in fenced_idx:
+        msg = messages[i]
+        if pinned and _row_fingerprint(msg.get("role"), msg.get("content")) in pinned:
+            continue
+        is_recent = i in recent
+        current = msg
+        segs = trs.segments(current)
+        if segs:
+            for j, seg in enumerate(segs):
+                text = trs.segment_text(current, seg)
+                if len(text) < FENCED_SPILL_MIN_CHARS or _OVERFLOW_ID_RE.search(text):
+                    continue
+                if is_recent and len(text) < limit:
+                    continue
+                tool = str(seg.get("tool") or "")
+                call_id = str(seg.get("call_id") or "")
+                digest, nbytes, wrote = _persist_or_digest(
+                    text, session_id=session_id, tool=tool, call_id=call_id,
+                    durable=durable, run_id=run_id, round_num=round_num)
+                stub = _spill_stub_for(text, digest=digest, tool=tool, call_id=call_id,
+                                       nbytes=nbytes, durable=wrote)
+                current = trs.replace_segment(current, j, stub)
+                ids.append(digest)
+        else:
+            span = trs.body_span(current)
+            if span is None:
+                continue
+            body = str(current.get("content") or "")[span[0]:span[1]]
+            if len(body) < FENCED_SPILL_MIN_CHARS or _OVERFLOW_ID_RE.search(body):
+                continue
+            if is_recent and len(body) < limit:
+                continue
+            digest, nbytes, wrote = _persist_or_digest(
+                body, session_id=session_id, tool="tool execution results", call_id="",
+                durable=durable, run_id=run_id, round_num=round_num)
+            stub = _spill_stub_for(body, digest=digest, tool="tool execution results",
+                                   call_id="", nbytes=nbytes, durable=wrote)
+            current = trs.replace_body(current, stub)
+            ids.append(digest)
+        if current is not msg:
+            meta = dict(current.get("metadata") or {})
+            meta["overflow_spilled"] = True
+            current["metadata"] = meta
+            if out is None:
+                out = list(messages)
+            out[i] = current
+    return (out if out is not None else messages), ids
+
+
 def spill_large_tool_results(
     messages: List[Dict[str, Any]],
     *,
@@ -1524,8 +1627,18 @@ def spill_large_tool_results(
     durable: bool = True,
     run_id: str = "",
     round_num: int = 0,
+    pinned: Optional[set] = None,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """Replace old / oversized tool bodies with overflow stubs.
+
+    Native routes: each ``role:"tool"`` message is one body. Fenced-call
+    routes (local models) get a round's results back as ONE user-role
+    "tool execution results" message; its results are spilled one by one
+    inside that message (src/tool_result_segments.py), or — for a message
+    whose per-result offsets are unknown — its whole body at once. Either way
+    the wrapper stays intact and every stub is reacquirable by its id.
+
+    ``pinned`` (row fingerprints, see ``compaction_pins``) are never spilled.
 
     Returns ``(new_messages, report)``. ``messages`` is not mutated when
     nothing changes (same list identity).
@@ -1539,6 +1652,17 @@ def spill_large_tool_results(
     out: Optional[List[Dict[str, Any]]] = None
     spilled = 0
     overflow_ids: List[str] = []
+    pinned = set(pinned or ())
+
+    fenced_out, fenced_ids = _spill_fenced_results(
+        messages, session_id=session_id, keep_tool_rounds=keep_tool_rounds,
+        spill_chars=spill_chars, durable=durable, run_id=run_id,
+        round_num=round_num, pinned=pinned,
+    )
+    if fenced_ids:
+        out = fenced_out
+        spilled += len(fenced_ids)
+        overflow_ids.extend(fenced_ids)
 
     for i, msg in enumerate(messages):
         if not isinstance(msg, dict) or msg.get("role") != "tool":
@@ -1547,6 +1671,8 @@ def spill_large_tool_results(
         if not isinstance(content, str) or not content:
             continue
         if _OVERFLOW_ID_RE.search(content):
+            continue
+        if pinned and _row_fingerprint(msg.get("role"), content) in pinned:
             continue
         oversized = len(content) >= max(1, int(spill_chars))
         if i in recent and not oversized:
@@ -1707,6 +1833,11 @@ async def apply_midturn_pressure(
 
     current = messages
     try:
+        from src.context_engine import compaction_pins as _pins
+        _pinned = _pins.pinned_fingerprints(owner or "system", session_id or "")
+    except Exception:  # noqa: BLE001 - pins are never load-bearing
+        _pinned = set()
+    try:
         current, spill_report = spill_large_tool_results(
             current,
             session_id=session_id or "session",
@@ -1715,6 +1846,7 @@ async def apply_midturn_pressure(
             durable=durable_overflow,
             run_id=run_id,
             round_num=round_num,
+            pinned=_pinned,
         )
         report["spilled"] = int(spill_report.get("spilled") or 0)
         report["overflow_ids"] = list(spill_report.get("overflow_ids") or [])
